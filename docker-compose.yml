@@ -1,0 +1,25 @@
+services:
+  nomarr:
+    build: .
+    image: nomarr:latest
+    container_name: nomarr
+    user: "1000:1000"
+    networks:
+      - lidarr_network
+    # ports:
+    #   - "8356:8356"  # Only expose if needed outside Docker network
+    # Note: Internal endpoints on same port, protected by separate internal_key
+    volumes:
+      - ./models:/app/models
+      - ./config:/app/config
+      - /your/music/location/as/per/lidar/volume/mapping:/same/as/lidarr
+    environment:
+      - NOMARR_DB=/app/config/db/essentia.sqlite
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped

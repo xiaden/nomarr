@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nomarr - Audio Tagger</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <!-- Login Screen -->
+    <div id="login-screen" class="login-container" style="display: none;">
+        <div class="login-box">
+            <div class="login-header">
+                <h1>🎵 Nomarr</h1>
+                <p>Audio Tagger Admin</p>
+            </div>
+            <form id="login-form">
+                <div class="form-group">
+                    <label class="form-label">Admin Password</label>
+                    <input type="password" id="password" class="form-input" 
+                           placeholder="Enter admin password" required autofocus />
+                </div>
+                <div id="login-error" class="error-message"></div>
+                <button type="submit" class="btn btn-primary btn-block">Login</button>
+            </form>
+            <div class="login-footer">
+                <p>First run? Check container logs for auto-generated password.</p>
+                <p>Reset: <code>nom manage-password reset</code></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Screen -->
+    <div id="main-screen" style="display: none;">
+        <!-- Header -->
+        <header>
+            <div class="logo">
+                <h1>🎵 Nomarr</h1>
+                <span class="subtitle">Audio Tagger</span>
+            </div>
+            <div class="header-actions">
+                <div class="status-indicator">
+                    <div class="status-dot" id="connection-status"></div>
+                </div>
+                <button id="btn-logout" class="btn btn-sm">Logout</button>
+            </div>
+        </header>
+        
+        <!-- Messages Container (for notifications) -->
+        <div id="messages" class="messages-container"></div>
+        
+        <!-- Navigation Tabs -->
+        <nav class="nav-tabs">
+            <button class="nav-tab active" data-tab="dashboard">Dashboard</button>
+            <button class="nav-tab" data-tab="process">Process Files</button>
+            <button class="nav-tab" data-tab="queue">Queue</button>
+            <button class="nav-tab" data-tab="library">Library</button>
+            <button class="nav-tab" data-tab="navidrome">Navidrome</button>
+            <button class="nav-tab" data-tab="analytics">Analytics</button>
+            <button class="nav-tab" data-tab="inspect">Inspect Tags</button>
+            <button class="nav-tab" data-tab="config">Configuration</button>
+            <button class="nav-tab" data-tab="admin">Admin</button>
+        </nav>
+        
+        <!-- Main Container -->
+        <div class="container">
+            <!-- Dashboard Tab -->
+            <div id="tab-dashboard" class="tab-content active">
+                <!-- Stats -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-pending">-</div>
+                        <div class="stat-label">Pending</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-running">-</div>
+                        <div class="stat-label">Running</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-completed">-</div>
+                        <div class="stat-label">Completed</div>
+                    </div>
+                </div>
+                
+                <!-- Active Jobs -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Active Jobs</h2>
+                    </div>
+                    <div id="job-list" class="job-list">
+                        <div class="empty-state">No active jobs</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Process Files Tab -->
+            <div id="tab-process" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Process Single File</h2>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">File Path</label>
+                        <input type="text" class="form-input" id="file-path" 
+                               placeholder="/music/Artist/Album/Track.mp3" />
+                    </div>
+                    
+                    <div class="form-checkbox">
+                        <input type="checkbox" id="force-reprocess" />
+                        <label for="force-reprocess">Force processing (skip version check)</label>
+                    </div>
+                    
+                    <div class="btn-group">
+                        <button class="btn btn-primary" id="btn-process-file">Process Now</button>
+                    </div>
+                    
+                    <div id="progress" class="output-section" style="display: none;">
+                        <h3>Processing...</h3>
+                        <div class="console"></div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Batch Process Multiple Files</h2>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">File Paths (one per line)</label>
+                        <textarea class="form-input" id="batch-paths" rows="5"
+                                  placeholder="/music/Artist/Album/Track1.mp3&#10;/music/Artist/Album/Track2.mp3"></textarea>
+                    </div>
+                    
+                    <div class="form-checkbox">
+                        <input type="checkbox" id="batch-force-reprocess" />
+                        <label for="batch-force-reprocess">Force processing (skip version check)</label>
+                    </div>
+                    
+                    <div class="btn-group">
+                        <button class="btn btn-primary" id="btn-batch-process">Process Batch</button>
+                    </div>
+                    
+                    <div id="batch-results" class="output-section" style="display: none;">
+                        <h3>Batch Results</h3>
+                        <div class="console"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Queue Tab -->
+            <div id="tab-queue" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Job Queue</h2>
+                        <div class="btn-group">
+                            <button class="btn btn-sm" id="btn-refresh-queue">Refresh</button>
+                            <button class="btn btn-danger btn-sm" id="btn-clear-errors">Clear Errors</button>
+                            <button class="btn btn-danger btn-sm" id="btn-clear-completed">Clear Completed</button>
+                            <button class="btn btn-danger btn-sm" id="btn-clear-all">Clear All</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Queue Filters -->
+                    <div class="queue-filters" style="margin: 1rem 0; display: flex; gap: 0.5rem; align-items: center;">
+                        <button class="btn btn-sm active" data-filter="all">All</button>
+                        <button class="btn btn-sm" data-filter="pending">
+                            Pending <span id="queue-pending" class="badge">0</span>
+                        </button>
+                        <button class="btn btn-sm" data-filter="running">
+                            Running <span id="queue-running" class="badge">0</span>
+                        </button>
+                        <button class="btn btn-sm" data-filter="done">
+                            Done <span id="queue-completed" class="badge">0</span>
+                        </button>
+                        <button class="btn btn-sm" data-filter="error">
+                            Errors <span id="queue-errors" class="badge">0</span>
+                        </button>
+                    </div>
+                    
+                    <table id="queue-table" class="table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Path</th>
+                                <th>Status</th>
+                                <th>Created</th>
+                                <th>Message</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td colspan="6" class="empty-state">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                    
+                    <!-- Pagination -->
+                    <div style="margin-top: 1rem; display: flex; justify-content: space-between; align-items: center;">
+                        <div id="queue-pagination-info" style="color: #666;"></div>
+                        <div id="queue-pagination" style="display: flex; gap: 0.5rem;"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Inspect Tags Tab -->
+            <div id="tab-inspect" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Inspect File Tags</h2>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">File Path</label>
+                        <input type="text" class="form-input" id="inspect-path" 
+                               placeholder="/music/Artist/Album/Track.mp3" />
+                    </div>
+                    
+                    <button class="btn btn-primary" onclick="app.inspectTags()">Show Tags</button>
+                    
+                    <div class="output-section">
+                        <h3>Tags</h3>
+                        <div id="inspect-result" class="console">
+                            Enter a file path to view tags.
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Library Tab -->
+            <div id="tab-library" class="tab-content">
+                <!-- Library Scanner Status -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Library Scanner</h2>
+                        <span id="library-scanner-status" class="status-badge">Unknown</span>
+                    </div>
+                    <div class="card-content">
+                        <p><strong>Library Path:</strong> <span id="library-path">Not configured</span></p>
+                        <p><strong>Current Scan:</strong> <span id="current-scan-status">Idle</span></p>
+                        
+                        <div class="button-group">
+                            <button id="btn-start-scan" class="btn btn-primary">Start Library Scan</button>
+                            <button id="btn-cancel-scan" class="btn btn-danger" style="display: none;">Cancel Scan</button>
+                            <button id="btn-pause-scanner" class="btn">Pause Scanner</button>
+                            <button id="btn-resume-scanner" class="btn" style="display: none;">Resume Scanner</button>
+                            <button id="btn-clear-library" class="btn btn-danger">Clear Library Data</button>
+                        </div>
+                        
+                        <!-- Scan Progress -->
+                        <div id="scan-progress" style="margin-top: 20px; display: none;">
+                            <h3>Scan Progress</h3>
+                            <div class="stats-grid">
+                                <div class="stat-card">
+                                    <div class="stat-value" id="scan-files-scanned">0</div>
+                                    <div class="stat-label">Files Scanned</div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-value" id="scan-files-added">0</div>
+                                    <div class="stat-label">Added</div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-value" id="scan-files-updated">0</div>
+                                    <div class="stat-label">Updated</div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-value" id="scan-files-removed">0</div>
+                                    <div class="stat-label">Removed</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Scan History -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Scan History</h2>
+                        <button class="btn btn-sm" onclick="app.libraryManager.loadScanHistory()">Refresh</button>
+                    </div>
+                    <div class="card-content">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Scan ID</th>
+                                    <th>Started</th>
+                                    <th>Finished</th>
+                                    <th>Status</th>
+                                    <th>Files Scanned</th>
+                                    <th>Added</th>
+                                    <th>Updated</th>
+                                    <th>Removed</th>
+                                </tr>
+                            </thead>
+                            <tbody id="scan-history-table">
+                                <tr><td colspan="8" style="text-align: center;">No scans found</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Navidrome Tab -->
+            <div id="tab-navidrome" class="tab-content">
+                <!-- Tag Preview -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Tag Preview</h2>
+                        <button class="btn btn-primary" onclick="app.loadNavidromePreview()">Load Preview</button>
+                    </div>
+                    <div id="navidrome-preview-container">
+                        <p class="info-text">Click "Load Preview" to see available tags in your library.</p>
+                    </div>
+                </div>
+
+                <!-- Config Generator -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Navidrome Configuration</h2>
+                        <div>
+                            <button class="btn btn-primary" onclick="app.generateNavidromeConfig()">Generate Config</button>
+                            <button class="btn btn-secondary" onclick="app.copyNavidromeConfig()" id="copy-config-btn" style="display: none;">Copy to Clipboard</button>
+                        </div>
+                    </div>
+                    <div id="navidrome-config-container">
+                        <p class="info-text">Click "Generate Config" to create navidrome.toml configuration.</p>
+                    </div>
+                </div>
+
+                <!-- Smart Playlist Builder -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Smart Playlist Builder</h2>
+                    </div>
+                    <div class="card-content">
+                        <div style="margin-bottom: 1rem;">
+                            <label for="playlist-query" style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Query</label>
+                            <textarea
+                                id="playlist-query"
+                                rows="3"
+                                placeholder="Example: tag:mood_happy > 0.7 AND tag:energy > 0.6"
+                                style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-tertiary); color: var(--text-primary); font-family: 'Courier New', monospace; font-size: 0.9rem;"
+                            ></textarea>
+                            <div style="margin-top: 0.5rem; color: var(--text-secondary); font-size: 0.85rem;">
+                                <strong>Syntax:</strong> <code>tag:KEY OPERATOR VALUE</code><br>
+                                <strong>Operators:</strong> <code>&gt;</code>, <code>&lt;</code>, <code>=</code>, <code>contains</code><br>
+                                <strong>Logic:</strong> <code>AND</code>, <code>OR</code><br>
+                                <strong>Examples:</strong><br>
+                                • <code>tag:mood_happy > 0.7</code><br>
+                                • <code>tag:genre = Rock</code><br>
+                                • <code>tag:bpm > 120 AND tag:danceability > 0.8</code><br>
+                                • <code>tag:artist contains Beatles OR tag:artist contains Stones</code>
+                            </div>
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                            <div>
+                                <label for="playlist-name" style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Playlist Name</label>
+                                <input
+                                    type="text"
+                                    id="playlist-name"
+                                    value="My Playlist"
+                                    style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-tertiary); color: var(--text-primary);"
+                                />
+                            </div>
+                            <div>
+                                <label for="playlist-limit" style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Track Limit (optional)</label>
+                                <input
+                                    type="number"
+                                    id="playlist-limit"
+                                    placeholder="No limit"
+                                    min="1"
+                                    style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-tertiary); color: var(--text-primary);"
+                                />
+                            </div>
+                        </div>
+
+                        <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
+                            <button class="btn btn-secondary" onclick="app.previewPlaylist()">Preview Results</button>
+                            <button class="btn btn-primary" onclick="app.generatePlaylist()">Generate Playlist</button>
+                            <button class="btn btn-secondary" onclick="app.downloadPlaylist()" id="download-playlist-btn" style="display: none;">Download .nsp</button>
+                        </div>
+
+                        <div id="playlist-preview-container"></div>
+                    </div>
+                </div>
+
+                <!-- Playlist Templates -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Playlist Templates</h2>
+                        <button class="btn btn-primary" onclick="app.loadTemplateList()">Load Templates</button>
+                    </div>
+                    <div id="templates-container">
+                        <p class="info-text">Click "Load Templates" to see available playlist templates.</p>
+                    </div>
+                    <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+                        <button class="btn btn-primary" onclick="app.generateAllTemplates()" id="generate-templates-btn" style="display: none;">Generate All Templates</button>
+                        <button class="btn btn-secondary" onclick="app.downloadAllTemplates()" id="download-templates-btn" style="display: none;">Download as ZIP</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Analytics Tab -->
+            <div id="tab-analytics" class="tab-content">
+                <!-- Library Overview -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Library Overview</h2>
+                        <button class="btn btn-sm" onclick="app.loadLibraryOverview()">Refresh</button>
+                    </div>
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-value" id="lib-total-files">-</div>
+                            <div class="stat-label">Total Files</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="lib-total-artists">-</div>
+                            <div class="stat-label">Artists</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="lib-total-albums">-</div>
+                            <div class="stat-label">Albums</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="lib-total-duration">-</div>
+                            <div class="stat-label">Total Duration</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tag Frequencies -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Top Essentia Tags</h2>
+                        <button class="btn btn-sm" onclick="app.loadTagFrequencies()">Refresh</button>
+                    </div>
+                    <div style="position: relative; height: 400px;">
+                        <canvas id="tag-frequency-chart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Tag Co-occurrences Explorer -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Tag Co-occurrences</h2>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Select Tag:</label>
+                        <input type="text" class="form-input" id="cooccurrence-tag" 
+                               placeholder="Enter tag name (e.g., 'yamnet_relaxed')" />
+                        <button class="btn btn-primary" onclick="app.loadTagCoOccurrences()">Analyze</button>
+                    </div>
+                    <div id="cooccurrence-results" style="display: none;">
+                        <h3>Co-occurring Tags</h3>
+                        <div style="position: relative; height: 300px;">
+                            <canvas id="cooccurrence-chart"></canvas>
+                        </div>
+                        <h3 style="margin-top: 20px;">Top Artists</h3>
+                        <div id="cooccurrence-artists" class="tag-list"></div>
+                        <h3 style="margin-top: 20px;">Top Genres</h3>
+                        <div id="cooccurrence-genres" class="tag-list"></div>
+                    </div>
+                </div>
+
+                <!-- Mood Distribution -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Mood Distribution</h2>
+                        <button class="btn btn-sm" onclick="app.loadMoodDistribution()">Refresh</button>
+                    </div>
+                    <div style="position: relative; height: 400px;">
+                        <canvas id="mood-chart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Tag Correlation Matrix -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Tag Correlation Heatmap</h2>
+                        <button class="btn btn-sm" onclick="app.loadCorrelationMatrix()">Refresh</button>
+                    </div>
+                    <div id="correlation-matrix" style="overflow-x: auto;"></div>
+                </div>
+            </div>
+            
+            <!-- Configuration Tab -->
+            <div id="tab-config" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Configuration</h2>
+                        <button class="btn btn-sm" onclick="app.configManager.loadConfig()">Refresh</button>
+                    </div>
+                    
+                    <div class="info-banner" style="margin-bottom: 1rem;">
+                        <strong>Note:</strong> Most configuration changes require a container restart to take effect. 
+                        Only worker settings update immediately.
+                    </div>
+                    
+                    <!-- Tag Writing Settings -->
+                    <div class="card" style="margin-top: 1rem;">
+                        <div class="card-header">
+                            <h3>Tag Writing Settings</h3>
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label class="form-label">Namespace</label>
+                                <input type="text" id="config-namespace" class="form-input" />
+                                <small class="form-hint">Tag namespace prefix (e.g., 'essentia')</small>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Version Tag</label>
+                                <input type="text" id="config-version-tag" class="form-input" />
+                                <small class="form-hint">Version tracking tag name</small>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Overwrite Existing Tags</label>
+                                <select id="config-overwrite-tags" class="form-input">
+                                    <option value="true">Yes</option>
+                                    <option value="false">No</option>
+                                </select>
+                                <small class="form-hint">Whether to overwrite existing Essentia tags</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Processing Rules -->
+                    <div class="card" style="margin-top: 1rem;">
+                        <div class="card-header">
+                            <h3>Processing Rules</h3>
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label class="form-label">Minimum Duration (seconds)</label>
+                                <input type="number" id="config-min-duration" class="form-input" min="0" />
+                                <small class="form-hint">Minimum audio duration to process</small>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Allow Short Files</label>
+                                <select id="config-allow-short" class="form-input">
+                                    <option value="true">Yes</option>
+                                    <option value="false">No</option>
+                                </select>
+                                <small class="form-hint">Process files shorter than minimum duration</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Worker Settings -->
+                    <div class="card" style="margin-top: 1rem;">
+                        <div class="card-header">
+                            <h3>Worker Settings</h3>
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label class="form-label">Worker Enabled</label>
+                                <select id="config-worker-enabled" class="form-input">
+                                    <option value="true">Yes</option>
+                                    <option value="false">No</option>
+                                </select>
+                                <small class="form-hint">Enable/disable background worker (takes effect immediately)</small>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Worker Count</label>
+                                <input type="number" id="config-worker-count" class="form-input" min="1" max="8" />
+                                <small class="form-hint">Number of parallel workers (1-8, requires restart)</small>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Poll Interval (seconds)</label>
+                                <input type="number" id="config-poll-interval" class="form-input" min="1" />
+                                <small class="form-hint">How often worker checks for new jobs</small>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Cleanup Age (hours)</label>
+                                <input type="number" id="config-cleanup-age" class="form-input" min="1" />
+                                <small class="form-hint">Age threshold for automatic job cleanup</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- API Settings -->
+                    <div class="card" style="margin-top: 1rem;">
+                        <div class="card-header">
+                            <h3>API Settings</h3>
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label class="form-label">Blocking Mode</label>
+                                <select id="config-blocking-mode" class="form-input">
+                                    <option value="true">Yes</option>
+                                    <option value="false">No</option>
+                                </select>
+                                <small class="form-hint">Whether /api/v1/tag blocks until completion</small>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Blocking Timeout (seconds)</label>
+                                <input type="number" id="config-blocking-timeout" class="form-input" min="1" />
+                                <small class="form-hint">Maximum wait time for blocking requests</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Cache Settings -->
+                    <div class="card" style="margin-top: 1rem;">
+                        <div class="card-header">
+                            <h3>Model Cache Settings</h3>
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label class="form-label">Cache Idle Timeout (seconds)</label>
+                                <input type="number" id="config-cache-timeout" class="form-input" min="0" />
+                                <small class="form-hint">Seconds before unloading idle models (0 = never)</small>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Auto Evict</label>
+                                <select id="config-cache-auto-evict" class="form-input">
+                                    <option value="true">Yes</option>
+                                    <option value="false">No</option>
+                                </select>
+                                <small class="form-hint">Automatically evict cache after timeout</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Library Settings -->
+                    <div class="card" style="margin-top: 1rem;">
+                        <div class="card-header">
+                            <h3>Library Scanner Settings</h3>
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label class="form-label">Library Path</label>
+                                <input type="text" id="config-library-path" class="form-input" />
+                                <small class="form-hint">Path to music library directory</small>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Scan Poll Interval (seconds)</label>
+                                <input type="number" id="config-library-poll" class="form-input" min="1" />
+                                <small class="form-hint">How often library scanner checks for changes</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Save Button -->
+                    <div style="margin-top: 1.5rem; text-align: right;">
+                        <button class="btn btn-primary" onclick="app.configManager.saveAllConfig()">Save All Changes</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Admin Tab -->
+            <div id="tab-admin" class="tab-content">
+                <!-- Worker Control -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Worker Control</h2>
+                        <span id="worker-status" class="badge badge-info">Unknown</span>
+                    </div>
+                    
+                    <div class="btn-group">
+                        <button class="btn btn-secondary" id="btn-pause-worker">Pause Worker</button>
+                        <button class="btn btn-primary" id="btn-resume-worker" style="display: none;">Resume Worker</button>
+                    </div>
+                </div>
+                
+                <!-- Cache Management -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Cache Management</h2>
+                    </div>
+                    
+                    <button class="btn btn-primary" id="btn-refresh-cache">Refresh Model Cache</button>
+                </div>
+                
+                <!-- Server Control -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Server Control</h2>
+                    </div>
+                    
+                    <div class="info-banner" style="margin-bottom: 1rem;">
+                        <strong>Note:</strong> Restarting the server applies config changes. 
+                        The page will reconnect automatically in a few seconds.
+                    </div>
+                    
+                    <button class="btn btn-danger" onclick="app.adminManager.restartServer()">Restart Server</button>
+                </div>
+                
+                <!-- Cleanup -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Cleanup & Reset</h2>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Cleanup jobs older than (hours):</label>
+                        <input type="number" class="form-input" id="cleanup-hours" value="168" min="1" />
+                    </div>
+                    
+                    <div class="btn-group">
+                        <button class="btn" onclick="app.adminManager.cleanupOldJobs()">Cleanup Old Jobs</button>
+                        <button class="btn btn-danger" onclick="app.adminManager.resetJobs('stuck')">Reset Stuck Jobs</button>
+                        <button class="btn btn-danger" onclick="app.adminManager.resetJobs('errors')">Reset Error Jobs</button>
+                    </div>
+                </div>
+                
+                <!-- Console -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Result</h2>
+                    </div>
+                    <div id="admin-result" class="console">
+                        Admin console ready.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script type="module" src="/static/app.js"></script>
+</body>
+</html>

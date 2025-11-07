@@ -1,0 +1,43 @@
+name: Docs consistency check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  docs-check:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changes requiring docs
+        id: detect
+        run: |
+          set -euo pipefail
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          echo "Comparing $BASE_SHA..$HEAD_SHA"
+          CHANGED=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          echo "$CHANGED" | sed 's/^/changed: /'
+
+          NEED_DOCS="false"
+          echo "$CHANGED" | grep -E '^(essentia_autotag/(api_app|cli|processor)\.py|models/.+\.json)$' && NEED_DOCS="true" || true
+          echo "need_docs=$NEED_DOCS" >> $GITHUB_OUTPUT
+
+      - name: Check README/API_REFERENCE updated
+        if: steps.detect.outputs.need_docs == 'true'
+        run: |
+          set -euo pipefail
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          CHANGED_DOCS=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- readme.md API_REFERENCE.md)
+          if [ -z "$CHANGED_DOCS" ]; then
+            echo "Docs check failed: changes to API/CLI/processor or models detected, but readme.md or API_REFERENCE.md not updated."
+            echo "Please update documentation or mark as not required."
+            exit 1
+          fi
+          echo "Docs updated: $CHANGED_DOCS"

@@ -1,0 +1,13 @@
+{
+  "name": "essentia-autotag-web",
+  "version": "1.0.0",
+  "description": "Web UI for Essentia Autotag",
+  "private": true,
+  "scripts": {
+    "lint": "eslint nomarr/interfaces/web/**/*.js",
+    "lint:fix": "eslint nomarr/interfaces/web/**/*.js --fix"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0"
+  }
+}

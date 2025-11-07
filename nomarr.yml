@@ -1,0 +1,22 @@
+services:
+  nomarr:
+    build: .
+    image: nomarr:latest
+    container_name: nomarr
+    user: ${PUID}:${MEDIACENTER_GID}
+    networks:
+      - lidarr_network
+    volumes:
+      - ${APPDATA_DIR}/nomarr/models:/app/models
+      - ${APPDATA_DIR}/nomarr/config:/app/config
+      - /nas/data:/data
+    environment:
+      - ESSENTIA_DB=/app/config/db/tagger.sqlite
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

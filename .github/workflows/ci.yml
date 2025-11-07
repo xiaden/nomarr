@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+
+      - name: Build Docker image
+        run: |
+          docker build -t nomarr -f docker/dockerfile .
+
+      - name: Run tests in container
+        run: |
+          docker run --rm nomarr python3 -m unittest discover -s /app/tests -p 'test_*.py'
+
+      - name: Lint with ruff (host)
+        run: |
+          pip install ruff
+          ruff essentia_autotag/

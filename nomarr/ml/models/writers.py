@@ -1,0 +1,264 @@
+#!/usr/bin/env python3
+# ======================================================================
+#  Essentia Autotag - Writers (fixed)
+#  MP3 (ID3 TXXX) and MP4/M4A (iTunes freeform) tag writer
+#  - Removes misuse of flatten_json (was a JSON string, not a mapping)
+#  - Avoids calling util.namespaced(key, ns) (util only accepts key)
+#  - Adds local, safe namespacing helper with double-namespace guard
+#  - Preserves full-precision numeric string writes
+# ======================================================================
+
+from __future__ import annotations
+
+import json
+from collections.abc import Iterable
+from typing import Any
+
+from mutagen import MutagenError
+from mutagen.flac import FLAC
+from mutagen.id3 import ID3, TXXX, ID3NoHeaderError
+from mutagen.mp4 import MP4, MP4FreeForm
+from mutagen.oggopus import OggOpus
+from mutagen.oggvorbis import OggVorbis
+
+
+def _to_text_value(v: Any) -> str:
+    """
+    Convert a value to a text representation without losing numeric precision.
+    - Numbers: write via JSON to keep a stable, locale-independent representation
+    - Dict/List: JSON encode compactly
+    - Everything else: str()
+    """
+    if isinstance(v, int | float):
+        return json.dumps(v, ensure_ascii=False, separators=(",", ":"))
+    if isinstance(v, dict | list):
+        return json.dumps(v, ensure_ascii=False, separators=(",", ":"))
+    return str(v)
+
+
+def _ns_key(key: str, ns_prefix: str) -> str:
+    """
+    Ensure 'key' is namespaced with 'ns_prefix' exactly once.
+
+    Examples:
+      _ns_key("yamnet_happy", "essentia")         -> "essentia:yamnet_happy"
+      _ns_key("essentia:yamnet_happy", "essentia") -> "essentia:yamnet_happy" (unchanged)
+      _ns_key("otherns:key", "essentia")           -> "essentia:otherns:key" (do not strip)
+    """
+    if not ns_prefix:
+        return key
+    prefix = f"{ns_prefix}:"
+    if key.startswith(prefix):
+        return key
+    return f"{prefix}{key}"
+
+
+# ----------------------------------------------------------------------
+# MP3 (ID3 v2.x) writer
+# ----------------------------------------------------------------------
+class _MP3Writer:
+    def __init__(self, overwrite: bool = True, ns_prefix: str = "essentia"):
+        self.overwrite = overwrite
+        self.ns_prefix = ns_prefix
+
+    def _clear_ns(self, id3: ID3) -> None:
+        """Remove existing namespaced TXXX frames if overwriting."""
+        if not self.overwrite:
+            return
+        to_delete = []
+        for key, frame in id3.items():
+            if not isinstance(frame, TXXX):
+                continue
+            # TXXX(desc=...) holds our "<ns>:<key>"
+            if isinstance(frame.desc, str) and frame.desc.startswith(f"{self.ns_prefix}:"):
+                to_delete.append(key)
+        for k in to_delete:
+            try:
+                del id3[k]
+            except Exception:
+                # Silently continue on any oddities in old tags
+                pass
+
+    def write(self, path: str, tags: dict[str, Any]) -> None:
+        """Write tags as ID3 TXXX frames (one save per file)."""
+        try:
+            try:
+                id3 = ID3(path)
+            except ID3NoHeaderError:
+                id3 = ID3()
+
+            self._clear_ns(id3)
+
+            # Expect a flat dict of keys -> values.
+            for k, v in (tags or {}).items():
+                ns_key = _ns_key(k, self.ns_prefix)
+                # Allow multi-value tags when provided a list of strings
+                if isinstance(v, list) and all(isinstance(x, str) for x in v):
+                    id3.add(TXXX(encoding=3, desc=ns_key, text=v))
+                else:
+                    txt = _to_text_value(v)
+                    id3.add(TXXX(encoding=3, desc=ns_key, text=[txt]))
+
+            id3.save(path, v2_version=4)  # Use ID3v2.4 for proper multi-value support
+        except MutagenError as e:
+            raise RuntimeError(f"MP3 write failed: {e}") from e
+
+
+# ----------------------------------------------------------------------
+# MP4/M4A (iTunes freeform atoms) writer
+# ----------------------------------------------------------------------
+class _MP4Writer:
+    def __init__(self, overwrite: bool = True, ns_prefix: str = "essentia"):
+        self.overwrite = overwrite
+        self.ns_prefix = ns_prefix
+
+    @staticmethod
+    def _ff_key(ns_key: str) -> str:
+        """
+        Build the iTunes freeform key:
+          '----:com.apple.iTunes:<ns_key>'
+        where ns_key is '<namespace>:<key>'.
+        """
+        return f"----:com.apple.iTunes:{ns_key}"
+
+    def _clear_ns(self, mp4: MP4) -> None:
+        """Remove existing namespaced freeform atoms if overwriting."""
+        if not self.overwrite:
+            return
+        if mp4.tags is None:
+            return
+        to_delete: Iterable[str] = [
+            k
+            for k in list(mp4.tags.keys())
+            if isinstance(k, str) and k.startswith(f"----:com.apple.iTunes:{self.ns_prefix}:")
+        ]
+        for k in to_delete:
+            try:
+                del mp4.tags[k]
+            except Exception:
+                # If a malformed key exists, ignore and continue
+                pass
+
+    def write(self, path: str, tags: dict[str, Any]) -> None:
+        """Write tags as iTunes freeforms with UTF-8 payloads."""
+        try:
+            mp4 = MP4(path)
+            if mp4.tags is None:
+                mp4.add_tags()
+
+            self._clear_ns(mp4)
+
+            for k, v in (tags or {}).items():
+                ns_key = _ns_key(k, self.ns_prefix)
+                atom_key = self._ff_key(ns_key)
+                # Multi-value support: list of strings -> multiple freeform atoms
+                if isinstance(v, list) and all(isinstance(x, str) for x in v):
+                    mp4.tags[atom_key] = [MP4FreeForm(x.encode("utf-8")) for x in v]
+                else:
+                    payload = _to_text_value(v).encode("utf-8")
+                    mp4.tags[atom_key] = [MP4FreeForm(payload)]
+
+            mp4.save()
+        except MutagenError as e:
+            raise RuntimeError(f"MP4/M4A write failed: {e}") from e
+
+
+# ----------------------------------------------------------------------
+# FLAC/OGG/Opus (Vorbis comments) writer
+# ----------------------------------------------------------------------
+class _VorbisWriter:
+    def __init__(self, overwrite: bool = True, ns_prefix: str = "essentia"):
+        self.overwrite = overwrite
+        self.ns_prefix = ns_prefix
+
+    @staticmethod
+    def _vorbis_key(ns_key: str) -> str:
+        """
+        Convert namespaced key to Vorbis-compatible format.
+        Replace ':' and '-' with '_', then uppercase.
+
+        Examples:
+          'essentia:mood-strict' -> 'ESSENTIA_MOOD_STRICT'
+          'essentia:yamnet_happy' -> 'ESSENTIA_YAMNET_HAPPY'
+        """
+        return ns_key.replace(":", "_").replace("-", "_").upper()
+
+    def _clear_ns(self, vorbis_file) -> None:
+        """Remove existing namespaced tags if overwriting."""
+        if not self.overwrite:
+            return
+        if vorbis_file.tags is None:
+            return
+
+        # Vorbis tags are case-insensitive, but stored keys may vary
+        prefix = self._vorbis_key(f"{self.ns_prefix}:")
+        to_delete = [k for k in list(vorbis_file.tags.keys()) if k.upper().startswith(prefix)]
+
+        for k in to_delete:
+            try:
+                del vorbis_file.tags[k]
+            except Exception:
+                pass
+
+    def write(self, path: str, tags: dict[str, Any]) -> None:
+        """Write tags as Vorbis comments (native multi-value support)."""
+        try:
+            # Detect file type
+            ext = path.lower().rsplit(".", 1)[-1]
+            if ext == "flac":
+                vorbis_file = FLAC(path)
+            elif ext == "ogg":
+                vorbis_file = OggVorbis(path)
+            elif ext == "opus":
+                vorbis_file = OggOpus(path)
+            else:
+                raise RuntimeError(f"Unsupported Vorbis file type: .{ext}")
+
+            if vorbis_file.tags is None:
+                vorbis_file.add_tags()
+
+            self._clear_ns(vorbis_file)
+
+            for k, v in (tags or {}).items():
+                ns_key = _ns_key(k, self.ns_prefix)
+                vorbis_key = self._vorbis_key(ns_key)
+
+                # Vorbis natively supports multiple values - just assign a list
+                if isinstance(v, list) and all(isinstance(x, str) for x in v):
+                    vorbis_file.tags[vorbis_key] = v
+                else:
+                    vorbis_file.tags[vorbis_key] = _to_text_value(v)
+
+            vorbis_file.save()
+        except MutagenError as e:
+            raise RuntimeError(f"Vorbis write failed: {e}") from e
+
+
+# ----------------------------------------------------------------------
+# Public, format-aware writer
+# ----------------------------------------------------------------------
+class TagWriter:
+    """
+    Format-aware tag writer that respects:
+      - overwrite: if True, clears only existing '<namespace>:' tags before writing
+      - full precision: numeric values are written as unrounded strings
+      - namespace: every key is written as '<namespace>:<key>' exactly once
+    """
+
+    def __init__(self, overwrite: bool = True, namespace: str = "essentia"):
+        self.overwrite = overwrite
+        self.namespace = namespace
+        self._mp3 = _MP3Writer(overwrite=overwrite, ns_prefix=namespace)
+        self._mp4 = _MP4Writer(overwrite=overwrite, ns_prefix=namespace)
+        self._vorbis = _VorbisWriter(overwrite=overwrite, ns_prefix=namespace)
+
+    def write(self, path: str, tags: dict[str, Any]) -> None:
+        ext = path.lower().rsplit(".", 1)[-1]
+        if ext == "mp3":
+            self._mp3.write(path, tags)
+        elif ext in ("m4a", "mp4", "m4b"):
+            self._mp4.write(path, tags)
+        elif ext in ("flac", "ogg", "opus"):
+            self._vorbis.write(path, tags)
+        else:
+            raise RuntimeError(f"Unsupported file type for writing: .{ext}")

@@ -1,0 +1,206 @@
+#!/usr/bin/env python3
+"""
+Discovery module - finds and organizes model files using folder structure.
+Structure: models/<backbone>/embeddings/*.pb and models/<backbone>/heads/<type>/*.pb
+"""
+
+import glob
+import json
+import os
+from typing import Any
+
+
+class Sidecar:
+    """Represents a model sidecar JSON file (head or embedding extractor)."""
+
+    def __init__(self, path: str, data: dict[str, Any]):
+        self.path = path
+        self.data = data
+        self.infer = data.get("inference", {})
+        self.schema = data.get("schema", {})
+        self.inputs = self.schema.get("inputs", [])
+        self.outputs = self.schema.get("outputs", [])
+
+    @property
+    def name(self) -> str:
+        """Model name from sidecar."""
+        return self.data.get("name") or self.data.get("head_name") or os.path.basename(self.path).rsplit(".", 1)[0]
+
+    @property
+    def labels(self) -> list[str]:
+        """Class labels for classification heads."""
+        return list(self.data.get("classes") or self.data.get("labels") or [])
+
+    @property
+    def sr(self) -> int:
+        """Expected sample rate."""
+        explicit = self.data.get("audio", {}).get("sample_rate") or self.infer.get("sample_rate")
+        if explicit:
+            return int(explicit)
+        return 16000
+
+    @property
+    def segment_hop(self) -> tuple[float, float]:
+        """Segment length and hop for windowed processing."""
+        seg = self.data.get("segment", {})
+        segment_s = float(seg.get("length_s", seg.get("length", 10.0)))
+        hop_s = float(seg.get("hop_s", seg.get("hop", 5.0)))
+        return (segment_s, hop_s)
+
+    def graph_abs(self, models_dir: str) -> str | None:
+        """Resolve absolute path to the .pb graph file (same dir as JSON)."""
+        pb_path = self.path.rsplit(".", 1)[0] + ".pb"
+        return pb_path if os.path.exists(pb_path) else None
+
+    def input_dim(self) -> int | None:
+        """Expected embedding dimension for heads (from schema.inputs)."""
+        try:
+            if not self.inputs:
+                return None
+            shp = self.inputs[0].get("shape")
+            if isinstance(shp, list):
+                if len(shp) == 1 and isinstance(shp[0], int):
+                    return shp[0]
+                if len(shp) == 2 and isinstance(shp[1], int):
+                    return shp[1]
+        except Exception:
+            pass
+        return None
+
+    def head_output_name(self) -> str | None:
+        """Output node name for head predictions (from schema.outputs)."""
+        try:
+            if not self.outputs:
+                return None
+            for out in self.outputs:
+                purpose = str(out.get("output_purpose") or "").lower()
+                if purpose in ("predictions", "logits", "probabilities", "probs"):
+                    return str(out.get("name"))
+            return str(self.outputs[0].get("name"))
+        except Exception:
+            return None
+
+    def head_input_name(self) -> str | None:
+        """Input node name for head (from schema.inputs)."""
+        try:
+            if not self.inputs:
+                return None
+            return str(self.inputs[0].get("name"))
+        except Exception:
+            return None
+
+
+class HeadInfo:
+    """
+    Container for a head model with its associated embedding model info.
+    Derived purely from folder structure.
+    """
+
+    def __init__(
+        self,
+        sidecar: Sidecar,
+        backbone: str,
+        head_type: str,
+        embedding_graph: str,
+    ):
+        self.sidecar = sidecar
+        self.backbone = backbone
+        self.head_type = head_type
+        self.embedding_graph = embedding_graph
+
+    @property
+    def name(self) -> str:
+        return self.sidecar.name
+
+
+def get_embedding_output_node(backbone: str) -> str:
+    """
+    Return the documented output node name for embedding extractors.
+    Based on modelsinfo.md examples.
+    """
+    if backbone == "yamnet":
+        return "embeddings"
+    if backbone == "vggish":
+        return "model/vggish/embeddings"
+    if backbone == "effnet":
+        return "PartitionedCall:1"
+    if backbone == "musicnn":
+        return "model/dense/BiasAdd"
+    return "embeddings"
+
+
+def get_head_output_node(head_type: str, sidecar: Sidecar) -> str:
+    """
+    Return the documented output node name for classification heads.
+    Based on modelsinfo.md examples and folder structure.
+    """
+    schema_out = sidecar.head_output_name()
+    if schema_out:
+        return schema_out
+
+    type_lower = head_type.lower()
+    if "identity" in type_lower or "regression" in type_lower:
+        return "model/Identity"
+    if "softmax" in type_lower or "classification" in type_lower:
+        return "model/Softmax"
+
+    return "model/Softmax"
+
+
+def discover_heads(models_dir: str) -> list[HeadInfo]:
+    """
+    Discover all classification/regression heads using folder structure.
+
+    Structure expected:
+        models/<backbone>/embeddings/*.pb
+        models/<backbone>/heads/<type>/*.json
+
+    Returns HeadInfo objects with backbone, head_type, and embedding graph resolved.
+    """
+    heads: list[HeadInfo] = []
+
+    for backbone_dir in glob.glob(os.path.join(models_dir, "*")):
+        if not os.path.isdir(backbone_dir):
+            continue
+
+        backbone = os.path.basename(backbone_dir)
+        embeddings_dir = os.path.join(backbone_dir, "embeddings")
+        heads_dir = os.path.join(backbone_dir, "heads")
+
+        if not os.path.isdir(embeddings_dir) or not os.path.isdir(heads_dir):
+            continue
+
+        embedding_pb_files = glob.glob(os.path.join(embeddings_dir, "*.pb"))
+        if not embedding_pb_files:
+            continue
+
+        embedding_graph = embedding_pb_files[0]
+
+        for head_type_dir in glob.glob(os.path.join(heads_dir, "*")):
+            if not os.path.isdir(head_type_dir):
+                continue
+
+            head_type = os.path.basename(head_type_dir)
+
+            for json_path in glob.glob(os.path.join(head_type_dir, "*.json")):
+                try:
+                    with open(json_path, encoding="utf-8") as f:
+                        data = json.load(f)
+
+                    if not isinstance(data, dict):
+                        continue
+
+                    sidecar = Sidecar(json_path, data)
+                    head_info = HeadInfo(
+                        sidecar=sidecar,
+                        backbone=backbone,
+                        head_type=head_type,
+                        embedding_graph=embedding_graph,
+                    )
+                    heads.append(head_info)
+
+                except Exception:
+                    continue
+
+    heads.sort(key=lambda h: h.name)
+    return heads

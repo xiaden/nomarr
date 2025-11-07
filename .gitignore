@@ -1,0 +1,44 @@
+# Node modules
+node_modules/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Config & Data (don't commit local config/db)
+config/db/
+config/*.sqlite*
+
+# Docker
+.dockerignore
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Temp files
+*.tmp
+*.bak
