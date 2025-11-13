@@ -30,13 +30,13 @@ from nomarr.ml.inference import compute_embeddings_for_backbone, make_head_only_
 from nomarr.ml.models.discovery import discover_heads
 from nomarr.ml.models.embed import pool_scores
 from nomarr.ml.models.heads import run_head_decision
-from nomarr.ml.models.writers import TagWriter
 from nomarr.tagging.aggregation import (
     add_regression_mood_tiers,
     aggregate_mood_tiers,
     load_calibrations,
     normalize_tag_label,
 )
+from nomarr.tagging.writer import TagWriter
 
 
 def _check_already_tagged(path: str, namespace: str, version_tag_key: str, current_version: str) -> bool:

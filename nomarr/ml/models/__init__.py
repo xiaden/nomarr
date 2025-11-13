@@ -16,7 +16,6 @@ from .heads import (
     head_is_regression,
     run_head_decision,
 )
-from .writers import TagWriter
 
 __all__ = [
     "Cascade",
@@ -25,7 +24,6 @@ __all__ = [
     "HeadSpec",
     "Segments",
     "Sidecar",
-    "TagWriter",
     "analyze_with_segments",
     "decide_multiclass_adaptive",
     "decide_multilabel",

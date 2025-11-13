@@ -1039,6 +1039,66 @@
             </div>
           </div>
 
+          <!-- Apply Calibration to Library -->
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">Apply Calibration to Library</h2>
+            </div>
+
+            <div class="info-banner" style="margin-bottom: 1rem">
+              <strong>Note:</strong> After generating calibration, use this to
+              update tier and mood tags in your library with calibrated values.
+              This process loads raw scores from the database and applies
+              calibration without re-running ML inference, making it much faster
+              than retagging.
+            </div>
+
+            <button class="btn btn-primary" id="btn-apply-calibration">
+              Apply Calibration to All Library Files
+            </button>
+
+            <div
+              id="recalibration-result"
+              style="display: none; margin-top: 1rem"
+            >
+              <div class="stats-grid" style="margin-bottom: 1rem">
+                <div class="stat-card">
+                  <div class="stat-value" id="recalib-queued">-</div>
+                  <div class="stat-label">Queued</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-value" id="recalib-pending">-</div>
+                  <div class="stat-label">Pending</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-value" id="recalib-running">-</div>
+                  <div class="stat-label">Running</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-value" id="recalib-done">-</div>
+                  <div class="stat-label">Done</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-value" id="recalib-error">-</div>
+                  <div class="stat-label">Errors</div>
+                </div>
+              </div>
+
+              <div class="progress-container" style="margin-bottom: 1rem">
+                <div class="progress-bar" id="recalibration-progress"></div>
+              </div>
+
+              <div class="btn-group" style="margin-bottom: 1rem">
+                <button class="btn" id="btn-refresh-recalib-status">
+                  Refresh Status
+                </button>
+                <button class="btn btn-danger" id="btn-clear-recalib-queue">
+                  Clear Queue
+                </button>
+              </div>
+            </div>
+          </div>
+
           <!-- Server Control -->
           <div class="card">
             <div class="card-header">

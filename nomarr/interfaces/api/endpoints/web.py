@@ -921,6 +921,82 @@ async def web_library_stats():
 
 
 # ----------------------------------------------------------------------
+# Calibration Management
+# ----------------------------------------------------------------------
+
+
+@router.post("/api/calibration/apply", dependencies=[Depends(verify_session)])
+async def apply_calibration_to_library():
+    """
+    Queue all library files for recalibration.
+    This updates tier and mood tags by applying calibration to existing raw scores.
+    """
+    try:
+        recal_service = app.application.services.get("recalibration")
+        if not recal_service:
+            raise HTTPException(status_code=503, detail="Recalibration service not available")
+
+        # Get all library file paths
+        cursor = app.db.conn.execute("SELECT file_path FROM library_files")
+        paths = [row[0] for row in cursor.fetchall()]
+
+        if not paths:
+            return {"queued": 0, "message": "No library files found"}
+
+        # Enqueue all files
+        count = recal_service.enqueue_library(paths)
+
+        return {"queued": count, "message": f"Queued {count} files for recalibration"}
+
+    except RuntimeError as e:
+        logging.error(f"[Web API] Recalibration service error: {e}")
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    except Exception as e:
+        logging.exception("[Web API] Error queueing recalibration")
+        raise HTTPException(status_code=500, detail=f"Error queueing recalibration: {e}") from e
+
+
+@router.get("/api/calibration/status", dependencies=[Depends(verify_session)])
+async def get_calibration_status():
+    """Get current recalibration queue status."""
+    try:
+        recal_service = app.application.services.get("recalibration")
+        if not recal_service:
+            raise HTTPException(status_code=503, detail="Recalibration service not available")
+
+        status = recal_service.get_status()
+        worker_alive = recal_service.is_worker_alive()
+        worker_busy = recal_service.is_worker_busy()
+
+        return {
+            **status,
+            "worker_alive": worker_alive,
+            "worker_busy": worker_busy,
+        }
+
+    except Exception as e:
+        logging.exception("[Web API] Error getting calibration status")
+        raise HTTPException(status_code=500, detail=f"Error getting calibration status: {e}") from e
+
+
+@router.post("/api/calibration/clear", dependencies=[Depends(verify_session)])
+async def clear_calibration_queue():
+    """Clear all pending and completed recalibration jobs."""
+    try:
+        recal_service = app.application.services.get("recalibration")
+        if not recal_service:
+            raise HTTPException(status_code=503, detail="Recalibration service not available")
+
+        count = recal_service.clear_queue()
+
+        return {"cleared": count, "message": f"Cleared {count} jobs from calibration queue"}
+
+    except Exception as e:
+        logging.exception("[Web API] Error clearing calibration queue")
+        raise HTTPException(status_code=500, detail=f"Error clearing calibration queue: {e}") from e
+
+
+# ----------------------------------------------------------------------
 # Config Management
 # ----------------------------------------------------------------------
 

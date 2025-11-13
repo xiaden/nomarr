@@ -71,6 +71,21 @@ SCHEMA = [
         error_message TEXT
     );
     """,
+    # Calibration queue - tracks recalibration jobs (apply calibration to existing tags)
+    """
+    CREATE TABLE IF NOT EXISTS calibration_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        file_path TEXT NOT NULL,
+        status TEXT DEFAULT 'pending',
+        started_at INTEGER,
+        completed_at INTEGER,
+        error_message TEXT
+    );
+    """,
+    # Index for fast calibration queue queries
+    """
+    CREATE INDEX IF NOT EXISTS idx_calibration_queue_status ON calibration_queue(status);
+    """,
     # Library tags - normalized tag storage for fast queries
     """
     CREATE TABLE IF NOT EXISTS library_tags (
@@ -475,6 +490,83 @@ class Database:
             Number of scans reset
         """
         cur = self.conn.execute("UPDATE library_queue SET status='pending' WHERE status='running'")
+        self.conn.commit()
+        return cur.rowcount
+
+    # ---------------------------- Calibration Queue ----------------------------
+    def enqueue_calibration(self, file_path: str) -> int:
+        """Add file to calibration queue. Returns calibration job ID."""
+        cur = self.conn.cursor()
+        cur.execute(
+            "INSERT INTO calibration_queue(file_path, status, started_at) VALUES(?, 'pending', ?)",
+            (file_path, now_ms()),
+        )
+        self.conn.commit()
+        job_id = cur.lastrowid
+        if job_id is None:
+            raise RuntimeError("Failed to enqueue calibration - no row ID returned")
+        return job_id
+
+    def get_next_calibration_job(self) -> tuple[int, str] | None:
+        """
+        Get next pending calibration job and mark it running.
+
+        Returns:
+            (job_id, file_path) or None if no jobs pending
+        """
+        cur = self.conn.execute(
+            "SELECT id, file_path FROM calibration_queue WHERE status='pending' ORDER BY id LIMIT 1"
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+
+        job_id, file_path = row
+        self.conn.execute(
+            "UPDATE calibration_queue SET status='running' WHERE id=?",
+            (job_id,),
+        )
+        self.conn.commit()
+        return (job_id, file_path)
+
+    def complete_calibration_job(self, job_id: int) -> None:
+        """Mark calibration job as completed."""
+        self.conn.execute(
+            "UPDATE calibration_queue SET status='done', completed_at=? WHERE id=?",
+            (now_ms(), job_id),
+        )
+        self.conn.commit()
+
+    def fail_calibration_job(self, job_id: int, error_message: str) -> None:
+        """Mark calibration job as failed."""
+        self.conn.execute(
+            "UPDATE calibration_queue SET status='error', completed_at=?, error_message=? WHERE id=?",
+            (now_ms(), error_message, job_id),
+        )
+        self.conn.commit()
+
+    def get_calibration_status(self) -> dict[str, int]:
+        """
+        Get calibration queue status counts.
+
+        Returns:
+            {"pending": count, "running": count, "done": count, "error": count}
+        """
+        cursor = self.conn.execute("SELECT status, COUNT(*) FROM calibration_queue GROUP BY status")
+        counts = {"pending": 0, "running": 0, "done": 0, "error": 0}
+        for status, count in cursor.fetchall():
+            counts[status] = count
+        return counts
+
+    def clear_calibration_queue(self) -> int:
+        """Clear all completed/failed calibration jobs. Returns number cleared."""
+        cur = self.conn.execute("DELETE FROM calibration_queue WHERE status IN ('done', 'error')")
+        self.conn.commit()
+        return cur.rowcount
+
+    def reset_running_calibration_jobs(self) -> int:
+        """Reset stuck 'running' calibration jobs back to 'pending'. Returns count reset."""
+        cur = self.conn.execute("UPDATE calibration_queue SET status='pending' WHERE status='running'")
         self.conn.commit()
         return cur.rowcount
 

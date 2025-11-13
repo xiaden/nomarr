@@ -103,6 +103,7 @@ class Application:
         self.coordinator: ProcessingCoordinator | None = None
         self.workers: list = []
         self.library_scan_worker = None
+        self.recalibration_worker = None
 
         # Infrastructure
         self.event_broker = None
@@ -219,6 +220,24 @@ class Application:
         else:
             logging.info("[Application] LibraryScanWorker not started (no library_path)")
 
+        # Start recalibration worker
+        logging.info("[Application] Starting RecalibrationWorker...")
+        from nomarr.services.recalibration import RecalibrationService
+        from nomarr.services.workers.recalibration import RecalibrationWorker
+
+        self.recalibration_worker = RecalibrationWorker(
+            db=db,
+            models_dir=cfg.get("models_dir", "/app/models"),
+            namespace=cfg.get("namespace", "essentia"),
+            poll_interval=2,
+        )
+        self.recalibration_worker.start()
+
+        self.services["recalibration"] = RecalibrationService(
+            database=db,
+            worker=self.recalibration_worker,
+        )
+
         # Start health monitor
         logging.info("[Application] Starting health monitor...")
         self.health_monitor = HealthMonitor(check_interval=10)
@@ -234,6 +253,10 @@ class Application:
         # Register library scan worker
         if self.library_scan_worker:
             self.health_monitor.register_worker(self.library_scan_worker, name="LibraryScanWorker")
+
+        # Register recalibration worker
+        if self.recalibration_worker:
+            self.health_monitor.register_worker(self.recalibration_worker, name="RecalibrationWorker")
 
         self.health_monitor.start()
 
@@ -262,6 +285,11 @@ class Application:
         if self.library_scan_worker:
             logging.info("[Application] Stopping library scan worker...")
             self.library_scan_worker.stop()
+
+        # Stop recalibration worker
+        if self.recalibration_worker:
+            logging.info("[Application] Stopping recalibration worker...")
+            self.recalibration_worker.stop()
 
         # Stop tagger workers
         if "worker" in self.services:
