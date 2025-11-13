@@ -20,15 +20,16 @@ router = APIRouter(tags=["admin"], prefix="/admin")
 #  Dependency: get app globals
 # ----------------------------------------------------------------------
 def get_globals():
-    """Get global instances (db, queue, queue_service, worker_service, etc.) from app app."""
+    """Get global instances (db, queue, services, etc.) from app.application."""
 
     return {
         "db": app.db,
         "queue": app.queue,
-        "queue_service": app.queue_service,
-        "worker_service": app.worker_service,
-        "worker_pool": app.worker_pool,
-        "processor_coord": app.processor_coord,
+        "queue_service": app.application.services["queue"],
+        "worker_service": app.application.services["worker"],
+        "worker_pool": app.application.workers,
+        "processor_coord": app.application.coordinator,
+        "event_broker": app.application.event_broker,
     }
 
 
@@ -58,10 +59,10 @@ async def admin_remove_job(payload: RemoveJobRequest):
     if worker_service:
         worker_service.enable()
         updated_pool = worker_service.start_workers()
-        # Update global pool reference
-        from nomarr.interfaces import api
+        # Update application worker pool
+        import nomarr.app as app
 
-        api.worker_pool = updated_pool
+        app.application.workers = updated_pool
 
     return {"status": "ok", "removed": job_id, "worker_enabled": True}
 
@@ -94,9 +95,9 @@ async def admin_flush_queue(payload: FlushRequest = Body(default=None)):
     if worker_service:
         worker_service.enable()
         updated_pool = worker_service.start_workers()
-        from nomarr.interfaces import api
+        import nomarr.app as app
 
-        api.worker_pool = updated_pool
+        app.application.workers = updated_pool
 
     return {"status": "ok", "flushed_statuses": statuses, "removed": total_removed, "worker_enabled": True}
 
@@ -170,9 +171,9 @@ async def admin_resume_worker():
     if worker_service:
         worker_service.enable()
         updated_pool = worker_service.start_workers(event_broker=event_broker)
-        from nomarr.interfaces import api
+        import nomarr.app as app
 
-        api.worker_pool = updated_pool
+        app.application.workers = updated_pool
 
     # Publish worker status update
     if event_broker:

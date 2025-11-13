@@ -94,7 +94,7 @@ def get_queue_stats(db: Database) -> dict[str, int]:
     Returns:
         Dict with keys: pending, running, completed, errors
     """
-    cur = db.conn.execute("SELECT status, COUNT(*) FROM queue GROUP BY status")
+    cur = db.conn.execute("SELECT status, COUNT(*) FROM tag_queue GROUP BY status")
     counts = {row[0]: row[1] for row in cur.fetchall()}
     return {
         "pending": counts.get("pending", 0),

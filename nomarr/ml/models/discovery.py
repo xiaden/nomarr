@@ -102,15 +102,66 @@ class HeadInfo:
         backbone: str,
         head_type: str,
         embedding_graph: str,
+        embedding_sidecar: Sidecar | None = None,
     ):
         self.sidecar = sidecar
         self.backbone = backbone
         self.head_type = head_type
         self.embedding_graph = embedding_graph
+        self.embedding_sidecar = embedding_sidecar
 
     @property
     def name(self) -> str:
         return self.sidecar.name
+
+    def build_versioned_tag_key(
+        self,
+        label: str,
+        framework_version: str,
+        calib_method: str = "none",
+        calib_version: int = 0,
+    ) -> str:
+        """
+        Build versioned tag key from model metadata and runtime framework version.
+
+        Format: {label}_{framework}{version}_{embedder}{date}_{head}{date}_{calib}_{version}
+        Example: happy_essentia21b6dev1389_yamnet20210604_happy20220825_platt_1
+
+        Args:
+            label: Friendly label (e.g., "happy", "approachable")
+            framework_version: Runtime Essentia-TensorFlow version (e.g., "2.1b6.dev1389")
+            calib_method: Calibration method ("platt", "isotonic", "none")
+            calib_version: Calibration version number
+
+        Returns:
+            Versioned tag key (without namespace prefix)
+        """
+        # Convert framework version to compact form: "2.1b6.dev1389" -> "21b6dev1389"
+        # Keep full version including dev/patch suffixes (TF version changes matter)
+        fw_short = framework_version.replace(".", "")
+        framework_part = f"essentia{fw_short}"
+
+        # Extract embedder release date from embedding sidecar
+        embedder_date = "unknown"
+        if self.embedding_sidecar:
+            embedder_release = self.embedding_sidecar.data.get("release_date", "")
+            if embedder_release:
+                embedder_date = embedder_release.replace("-", "")  # 2022-08-25 -> 20220825
+
+        # Extract head release date from head sidecar
+        head_release = self.sidecar.data.get("release_date", "")
+        head_date = head_release.replace("-", "") if head_release else "unknown"
+
+        # Build embedder name (backbone + date)
+        embedder_part = f"{self.backbone}{embedder_date}"
+
+        # Build head name (label + date)
+        head_part = f"{label}{head_date}"
+
+        # Build calibration suffix
+        calib_part = f"{calib_method}_{calib_version}"
+
+        return f"{label}_{framework_part}_{embedder_part}_{head_part}_{calib_part}"
 
 
 def get_embedding_output_node(backbone: str) -> str:
@@ -176,6 +227,18 @@ def discover_heads(models_dir: str) -> list[HeadInfo]:
 
         embedding_graph = embedding_pb_files[0]
 
+        # Load embedding sidecar JSON (for metadata)
+        embedding_sidecar = None
+        embedding_json = embedding_graph.rsplit(".", 1)[0] + ".json"
+        if os.path.exists(embedding_json):
+            try:
+                with open(embedding_json, encoding="utf-8") as f:
+                    embedding_data = json.load(f)
+                if isinstance(embedding_data, dict):
+                    embedding_sidecar = Sidecar(embedding_json, embedding_data)
+            except Exception:
+                pass
+
         for head_type_dir in glob.glob(os.path.join(heads_dir, "*")):
             if not os.path.isdir(head_type_dir):
                 continue
@@ -196,6 +259,7 @@ def discover_heads(models_dir: str) -> list[HeadInfo]:
                         backbone=backbone,
                         head_type=head_type,
                         embedding_graph=embedding_graph,
+                        embedding_sidecar=embedding_sidecar,
                     )
                     heads.append(head_info)
 

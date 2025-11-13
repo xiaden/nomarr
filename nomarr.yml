@@ -7,9 +7,12 @@ services:
     networks:
       - lidarr_network
     volumes:
-      - ${APPDATA_DIR}/nomarr/models:/app/models
+      # Required: Config and database persistence
       - ${APPDATA_DIR}/nomarr/config:/app/config
+      # Required: Music library
       - /nas/data:/data
+      # Optional: Custom models (only if not using packaged models)
+      # - ${APPDATA_DIR}/nomarr/models:/app/models
     environment:
       - ESSENTIA_DB=/app/config/db/tagger.sqlite
     restart: unless-stopped

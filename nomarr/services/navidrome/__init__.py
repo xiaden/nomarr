@@ -14,4 +14,18 @@ from .templates import (
     get_template_summary,
 )
 
-__all__ = ['PlaylistGenerator', 'PlaylistQueryError', 'generate_navidrome_config', 'generate_nsp_playlist', 'generate_template_files', 'get_all_templates', 'get_mixed_templates', 'get_mood_templates', 'get_quality_templates', 'get_style_templates', 'get_template_summary', 'preview_playlist_query', 'preview_tag_stats']
+__all__ = [
+    "PlaylistGenerator",
+    "PlaylistQueryError",
+    "generate_navidrome_config",
+    "generate_nsp_playlist",
+    "generate_template_files",
+    "get_all_templates",
+    "get_mixed_templates",
+    "get_mood_templates",
+    "get_quality_templates",
+    "get_style_templates",
+    "get_template_summary",
+    "preview_playlist_query",
+    "preview_tag_stats",
+]

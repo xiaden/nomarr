@@ -6,29 +6,30 @@ from __future__ import annotations
 
 import argparse
 
+import nomarr.app as app
 from nomarr.config import compose
-from nomarr.data.queue import JobQueue
-from nomarr.interfaces.cli.ui import InfoPanel, print_info, show_spinner
-from nomarr.interfaces.cli.utils import get_db
-from nomarr.services.queue import QueueService
+from nomarr.interfaces.cli.ui import InfoPanel, print_error, print_info, show_spinner
 
 
 def cmd_cleanup(args: argparse.Namespace) -> int:
     """
     Remove old finished jobs from the queue to prevent bloat.
     """
-    cfg = compose({})
-    db = get_db(cfg)
+    # Check if Application is running
+    if not app.application.is_running():
+        print_error("Application is not running. Start the server first.")
+        return 1
+
     try:
+        cfg = compose({})
         max_age_hours = args.hours if args.hours is not None else int(cfg.get("cleanup_age_hours", 168))
 
         # Task to perform cleanup using service
-        def _do_cleanup(service: QueueService, hours: int) -> int:
+        def _do_cleanup(service, hours: int) -> int:
             return service.cleanup_old_jobs(max_age_hours=hours)
 
-        # Create service
-        queue = JobQueue(db)
-        queue_service = QueueService(db, queue)
+        # Use service from running Application
+        queue_service = app.application.services["queue"]
 
         # Run with spinner
         count = show_spinner(
@@ -46,5 +47,6 @@ def cmd_cleanup(args: argparse.Namespace) -> int:
             print_info(f"No jobs older than {max_age_hours} hours found")
 
         return 0
-    finally:
-        db.close()
+    except Exception as e:
+        print_error(f"Error during cleanup: {e}")
+        return 1

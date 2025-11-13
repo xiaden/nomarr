@@ -16,7 +16,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-venv cron \
     libsndfile1 ffmpeg sox ca-certificates curl git tini sqlite3 \
- && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/*
 
 # ----------------------------------------------------------------------
 #  User and working directory
@@ -28,7 +28,7 @@ WORKDIR /app
 #  Python dependencies (before copying project files for layer caching)
 # ----------------------------------------------------------------------
 RUN python3 -m pip install --upgrade pip \
- && python3 -m pip install \
+    && python3 -m pip install \
     "essentia-tensorflow==2.1b6.dev1389" \
     "numpy==1.26.4" \
     "scipy==1.13.1" \
@@ -38,7 +38,9 @@ RUN python3 -m pip install --upgrade pip \
     "fastapi==0.115.0" \
     "uvicorn==0.30.6" \
     "rich==13.7.1" \
-    "requests==2.32.3"
+    "requests==2.32.3" \
+    "pytest==8.3.3" \
+    "pytest-cov==5.0.0"
 
 # Sanity probe
 RUN python3 - <<'PY'
@@ -94,4 +96,4 @@ USER 1000:1000
 #  Entrypoint and graceful shutdown
 # ----------------------------------------------------------------------
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["python3", "-m", "nomarr.start_api"]
+CMD ["python3", "-m", "nomarr.start"]

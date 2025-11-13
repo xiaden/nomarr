@@ -11,7 +11,6 @@ from nomarr.interfaces.cli.commands.admin_reset import cmd_admin_reset
 from nomarr.interfaces.cli.commands.cache_refresh import cmd_cache_refresh
 from nomarr.interfaces.cli.commands.cleanup import cmd_cleanup
 from nomarr.interfaces.cli.commands.manage_password import cmd_manage_password
-from nomarr.interfaces.cli.commands.recover_internal_key import cmd_recover_internal_key
 from nomarr.interfaces.cli.commands.remove import cmd_remove
 
 
@@ -25,8 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
         "  nom admin-reset --stuck                    # Reset stuck jobs\n"
         "  nom cache-refresh                          # Rebuild model cache\n"
         "  nom remove --status error                  # Remove failed jobs\n"
-        "  nom manage-password reset                  # Change admin password\n"
-        "  nom recover-internal-key --force           # Regenerate internal key (emergency)",
+        "  nom manage-password reset                  # Change admin password",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
@@ -74,11 +72,6 @@ def build_parser() -> argparse.ArgumentParser:
     # manage-password reset: Change password
     ps = password_sub.add_parser("reset", help="Change admin password")
     ps.set_defaults(func=cmd_manage_password)
-
-    # recover-internal-key: Emergency CLI recovery
-    s = sub.add_parser("recover-internal-key", help="Regenerate internal API key (emergency recovery)")
-    s.add_argument("--force", action="store_true", help="skip confirmation prompt")
-    s.set_defaults(func=cmd_recover_internal_key)
 
     return p
 

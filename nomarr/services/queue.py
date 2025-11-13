@@ -7,13 +7,13 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from typing import TYPE_CHECKING, Any
 
 from nomarr.helpers.files import collect_audio_files
 
 if TYPE_CHECKING:
-    from nomarr.data.db import Database
-    from nomarr.data.queue import JobQueue
+    from nomarr.data.queue import ProcessingQueue
 
 
 class QueueService:
@@ -24,15 +24,13 @@ class QueueService:
     allowing CLI, API, and Web interfaces to be thin presentation layers.
     """
 
-    def __init__(self, db: Database, queue: JobQueue):
+    def __init__(self, queue: ProcessingQueue):
         """
         Initialize queue service.
 
         Args:
-            db: Database instance
-            queue: Job queue instance
+            queue: ProcessingQueue instance (data access layer)
         """
-        self.db = db
         self.queue = queue
 
     def add_files(self, paths: str | list[str], force: bool = False, recursive: bool = True) -> dict[str, Any]:
@@ -114,21 +112,27 @@ class QueueService:
         """
         if job_id is not None:
             # Remove single job by ID
-            with self.queue.lock:
-                self.db.conn.execute("DELETE FROM queue WHERE id=?", (job_id,))
-                self.db.conn.commit()
+            removed = self.queue.delete(job_id)
             logging.info(f"[QueueService] Removed job {job_id}")
-            return 1
+            return removed
 
         elif all:
             # Remove all jobs (including pending, done, error - not running)
-            removed = self.queue.flush(statuses=["pending", "done", "error"])
+            # Business logic: don't remove running jobs
+            removed = self.queue.delete_by_status(["pending", "done", "error"])
             logging.info(f"[QueueService] Removed all {removed} jobs from queue")
             return removed
 
         elif status:
             # Remove jobs by status
-            removed = self.queue.flush(statuses=[status])
+            # Business logic: validate status
+            valid_statuses = {"pending", "done", "error"}
+            if status not in valid_statuses:
+                raise ValueError(f"Invalid status: {status}")
+            if status == "running":
+                raise ValueError("Cannot remove running jobs")
+
+            removed = self.queue.delete_by_status([status])
             logging.info(f"[QueueService] Removed {removed} job(s) with status '{status}'")
             return removed
 
@@ -148,7 +152,7 @@ class QueueService:
         """
         from nomarr.helpers.db import get_queue_stats
 
-        return get_queue_stats(self.db)
+        return get_queue_stats(self.queue.db)
 
     def get_job(self, job_id: int) -> dict[str, Any] | None:
         """
@@ -185,44 +189,22 @@ class QueueService:
         reset_count = 0
 
         if stuck:
-            # Reset running jobs to pending (clear all state fields)
-            with self.queue.lock:
-                count_cur = self.db.conn.execute("SELECT COUNT(*) FROM queue WHERE status='running'")
-                row = count_cur.fetchone()
-                count = row[0] if row else 0
-
-                if count > 0:
-                    self.db.conn.execute(
-                        """UPDATE queue
-                           SET status='pending', started_at=NULL, error_message=NULL, finished_at=NULL
-                           WHERE status='running'"""
-                    )
-                    self.db.conn.commit()
-                    reset_count += count
-                    logging.info(f"[QueueService] Reset {count} stuck job(s) from 'running' to 'pending'")
+            count = self.queue.reset_stuck_jobs()
+            reset_count += count
+            if count > 0:
+                logging.info(f"[QueueService] Reset {count} stuck job(s) from 'running' to 'pending'")
 
         if errors:
-            # Reset error jobs to pending (clear error state)
-            with self.queue.lock:
-                count_cur = self.db.conn.execute("SELECT COUNT(*) FROM queue WHERE status='error'")
-                row = count_cur.fetchone()
-                count = row[0] if row else 0
-
-                if count > 0:
-                    self.db.conn.execute(
-                        """UPDATE queue
-                           SET status='pending', error_message=NULL, finished_at=NULL
-                           WHERE status='error'"""
-                    )
-                    self.db.conn.commit()
-                    reset_count += count
-                    logging.info(f"[QueueService] Reset {count} error job(s) to 'pending'")
+            count = self.queue.reset_error_jobs()
+            reset_count += count
+            if count > 0:
+                logging.info(f"[QueueService] Reset {count} error job(s) to 'pending'")
 
         return reset_count
 
     def cleanup_old_jobs(self, max_age_hours: int = 24) -> int:
         """
-        Remove old completed/error jobs from queue.
+        Remove old completed/error jobs from tag queue.
 
         Args:
             max_age_hours: Remove jobs older than this many hours
@@ -230,7 +212,19 @@ class QueueService:
         Returns:
             Number of jobs removed
         """
-        removed = self.queue.cleanup_old_jobs(max_age_hours=max_age_hours)
+        from nomarr.helpers.db import count_and_delete
+
+        # Calculate cutoff timestamp (milliseconds since epoch)
+        cutoff_ms = int((time.time() - (max_age_hours * 3600)) * 1000)
+
+        # Remove old done/error jobs
+        removed = count_and_delete(
+            self.queue.db,
+            "tag_queue",
+            where_clause="status IN ('done', 'error') AND finished_at < ?",
+            params=(cutoff_ms,),
+        )
+
         logging.info(f"[QueueService] Cleaned up {removed} old job(s) (>{max_age_hours}h)")
         return removed
 
@@ -257,7 +251,7 @@ class QueueService:
 
         from nomarr.helpers.db import get_queue_stats
 
-        stats = get_queue_stats(self.db)
+        stats = get_queue_stats(self.queue.db)
         event_broker.update_queue_state(**stats)
         logging.debug(f"[QueueService] Published queue update: {stats}")
 

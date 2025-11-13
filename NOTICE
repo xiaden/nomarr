@@ -1,0 +1,74 @@
+NOMARR
+Copyright (c) 2025 Nomarr Contributors
+
+Licensed under Creative Commons Attribution-NonCommercial-ShareAlike 4.0
+International License (CC BY-NC-SA 4.0)
+https://creativecommons.org/licenses/by-nc-sa/4.0/
+
+This project is designed for the self-hosted music community.
+Commercial use is not permitted without explicit permission.
+
+================================================================================
+
+This product includes software developed by third parties:
+
+================================================================================
+Essentia Pre-trained Models
+================================================================================
+
+This product includes pre-trained machine learning models developed by:
+Music Technology Group
+Universitat Pompeu Fabra
+Barcelona, Spain
+https://essentia.upf.edu/models.html
+
+Licensed under Creative Commons Attribution-NonCommercial-ShareAlike 4.0
+International License (CC BY-NC-SA 4.0)
+https://creativecommons.org/licenses/by-nc-sa/4.0/
+
+The models are for NON-COMMERCIAL USE ONLY.
+For commercial licensing, contact: https://www.upf.edu/web/mtg/contact
+
+================================================================================
+Essentia Audio Analysis Library
+================================================================================
+
+This product uses Essentia, developed by:
+Music Technology Group
+Universitat Pompeu Fabra
+Barcelona, Spain
+https://essentia.upf.edu/
+https://github.com/MTG/essentia
+
+Licensed under GNU Affero General Public License v3.0 (AGPL-3.0)
+https://www.gnu.org/licenses/agpl-3.0.html
+
+================================================================================
+TensorFlow
+================================================================================
+
+This product uses TensorFlow, developed by Google LLC
+https://www.tensorflow.org/
+https://github.com/tensorflow/tensorflow
+
+Licensed under Apache License 2.0
+https://www.apache.org/licenses/LICENSE-2.0
+
+Copyright 2015 The TensorFlow Authors. All Rights Reserved.
+
+================================================================================
+Requests
+================================================================================
+
+This product uses Requests, developed by Kenneth Reitz
+https://requests.readthedocs.io/
+https://github.com/psf/requests
+
+Licensed under Apache License 2.0
+https://www.apache.org/licenses/LICENSE-2.0
+
+Copyright 2019 Kenneth Reitz
+
+================================================================================
+
+For complete license information for all dependencies, see the LICENSE file.

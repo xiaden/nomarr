@@ -1,30 +1,62 @@
 # Nomarr
 
-## 1. Project Overview
+**Intelligent audio auto-tagging for your music library using state-of-the-art machine learning.**
 
-Nomarr provides audio auto-tagging for Lidarr using Essentia ML models. It runs as a Docker sidecar or standalone service, analyzing audio and writing tags directly into MP3/M4A metadata.
+Nomarr analyzes your music files with Essentia's pre-trained ML models and writes rich metadata tags directly into MP3/M4A files. Perfect for organizing large libraries, discovering moods, and enriching metadata for music servers like Navidrome and Plex.
 
-## 2. Features & Architecture
+![Web UI Dashboard](docs/images/placeholder-dashboard.png)
+_Screenshot: Web UI dashboard - coming soon_
 
-- **Unified API:** Single FastAPI app (port 8356) with public (Lidarr/webhook) and internal (CLI) endpoints.
-- **Dual Authentication:** Public endpoints use `api_key`, internal endpoints use `internal_key`.
-- **Warm Model Cache:** Models are lazy-loaded and shared for fast inference.
-- **Multi-worker Parallelism:** Configurable worker count; each loads independent model cache (~9GB VRAM for embeddings, please plan accordingly).
-- **GPU Concurrency:** TensorFlow environment variables enable concurrent GPU access.
-- **Tagging:** Writes base probabilities for all labels, mood aggregation, and native multi-value tags.
-- **Blocking API:** `/tag` endpoint blocks for completion by default (configurable).
-- **Queue Management:** Unified tools for job listing, status, cleanup, and admin reset.
-- **Native Tag Writing:** MP3 (ID3v2 TXXX), M4A (iTunes freeform atoms).
+![CLI Processing](docs/images/placeholder-cli.png)
+_Screenshot: CLI batch processing - coming soon_
 
-## 3. Quick Start (Docker + Lidarr)
+---
 
-1. Prepare host folders:
+## 🎯 What Does It Do?
+
+Nomarr automatically tags your audio files with:
+
+- **Mood & Emotion** - Happy, sad, aggressive, relaxed, party, etc.
+- **Genre Classification** - Electronic, rock, classical, jazz, and more
+- **Instruments** - Piano, guitar, strings, voice, percussion
+- **Acoustic Properties** - Danceability, energy, timbre
+- **Multi-value Tags** - Native support for complex metadata
+
+All tags are written as native metadata (ID3v2 for MP3, iTunes atoms for M4A) - no external database required.
+
+---
+
+## ✨ Key Features
+
+- **🔌 Lidarr Integration** - Drop-in Docker sidecar that auto-tags imports via webhooks
+- **🌐 Web UI** - Modern browser interface for monitoring, queue management, and batch processing
+- **⚡ GPU Accelerated** - NVIDIA CUDA support for ~10x faster processing
+- **🎨 Rich Metadata** - Writes probabilities, tiers, and aggregated mood tags
+- **📊 Queue System** - Background processing with pause/resume, status tracking, and cleanup
+- **🔐 Secure** - API key authentication for automation, session-based auth for web UI
+- **🐳 Docker Native** - Single container with NVIDIA GPU passthrough
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- Docker with NVIDIA GPU support (for GPU acceleration)
+- Lidarr (optional, for automatic tagging)
+- Music library mounted at consistent path
+
+### Installation
+
+1. **Clone and configure:**
 
    ```bash
-   mkdir -p config/db models
+   git clone https://github.com/xiaden/nomarr.git
+   cd nomarr
+   mkdir -p config/db
    ```
 
-2. Example docker-compose snippet:
+2. **Start with Docker Compose:**
 
    ```yaml
    services:
@@ -36,9 +68,8 @@ Nomarr provides audio auto-tagging for Lidarr using Essentia ML models. It runs 
        networks:
          - lidarr_network
        volumes:
-         - ./models:/app/models
          - ./config:/app/config
-         - /your/music/location/as/per/lidar/volume/mapping:/same/as/lidarr
+         - /path/to/music:/music # Must match Lidarr's path
        environment:
          - NOMARR_DB=/app/config/db/essentia.sqlite
        deploy:
@@ -51,198 +82,128 @@ Nomarr provides audio auto-tagging for Lidarr using Essentia ML models. It runs 
        restart: unless-stopped
    ```
 
-3. Start and get API key:
-
    ```bash
    docker compose up -d
+   ```
+
+3. **Get your API key:**
+
+   ```bash
    docker compose exec nomarr python3 -m nomarr.manage_key --show
    ```
 
-4. Test a tag request:
+4. **Access the Web UI:**
+   - Navigate to `http://localhost:8356/`
+   - Login with auto-generated admin password (check logs: `docker compose logs nomarr | grep "Admin password"`)
 
-   ```bash
-   curl -X POST \
-     -H "Authorization: Bearer <API_KEY>" \
-     -H "Content-Type: application/json" \
-     -d '{"path":"/music/Album/Track.mp3"}' \
-     http://nomarr:8356/api/v1/tag
-   ```
+---
 
-   Tip: In Lidarr, use a custom script or webhook to POST to `/api/v1/tag` after import.
+## 📚 Usage
 
-## 4. Configuration
+### Web UI
 
-Configuration is loaded from multiple sources with priority (lowest to highest):
+The easiest way to use Nomarr - point and click interface for processing files, managing the queue, and monitoring system status.
 
-1. **Built-in defaults** (hardcoded in code)
-2. **System config:** `/etc/nomarr/config.yaml`
-3. **User config:** `/app/config/config.yaml` (Docker volume-mounted)
-4. **Environment variables:** `TAGGER_*` or `NOMARR_TAGGER_*`
-5. **Database meta table:** User customizations from web UI (operational config only)
+### CLI
 
-### Infrastructure vs Operational Config
-
-**Infrastructure config** (immutable, YAML/env only):
-- `db_path` - Database file location
-- `host`, `port` - API server binding
-- `models_dir` - Model files directory
-
-**Operational config** (mutable, editable via web UI):
-- `namespace`, `version_tag` - Tag writing settings
-- `worker_count`, `poll_interval` - Worker behavior
-- `min_duration_s`, `allow_short` - Processing rules
-- Cache settings, library scanner settings
-
-### Recovery Mode
-
-If database config gets corrupted, bypass it with an environment variable:
-
-```yaml
-environment:
-  - NOMARR_IGNORE_DB_CONFIG=true
-```
-
-This forces the system to use only YAML/env config, ignoring any database-stored settings.
-
-### Example config.yaml
-
-Place at `config/config.yaml` (mounted at `/app/config/config.yaml`):
-
-```yaml
-models_dir: /app/models
-db_path: /app/config/db/essentia.sqlite
-namespace: essentia
-version_tag: essentia_at_version
-min_duration_s: 7
-allow_short: false
-overwrite_tags: true
-host: 0.0.0.0
-port: 8356
-blocking_mode: true
-blocking_timeout: 3600
-poll_interval: 2
-worker_enabled: true
-worker_count: 1
-cleanup_age_hours: 168
-```
-
-## 5. CLI Usage
-
-Invoke the CLI via the `nom` wrapper script inside the container:
+Process files directly from the command line:
 
 ```bash
-nom run /music/Album --recursive
-nom watch
-nom queue /music/Album
-nom list --limit 50
-nom remove --all
-nom admin-reset --stuck
-nom cleanup --hours 168
-nom show-tags /music/Track.mp3
-nom info
-nom cache-refresh
+# Process a single file
+docker exec nomarr nom run /music/Album/Track.mp3
+
+# Process entire directory
+docker exec nomarr nom run /music/Album --recursive
+
+# Check queue status
+docker exec nomarr nom list
+
+# View tags in file
+docker exec nomarr nom show-tags /music/Track.mp3
 ```
 
-All commands use the internal API for warm cache and real-time progress when available.
+### Lidarr Integration
 
-## 6. Web UI
-
-Nomarr includes a browser-based web UI for monitoring and controlling the tagging system.
-
-### Accessing the Web UI
-
-1. Navigate to `http://<server-ip>:8356/` (or `http://nomarr:8356/` from same Docker network)
-2. Log in with the admin password (auto-generated on first run)
-
-### Admin Password Management
-
-The admin password is automatically generated on the first API startup. To view, verify, or reset it:
+Configure a custom script in Lidarr (Settings → Connect) to auto-tag on import:
 
 ```bash
-# Inside the container
-docker compose exec nomarr python3 -m nomarr.manage_password --show
-
-# Verify a password
-docker compose exec nomarr python3 -m nomarr.manage_password --verify
-
-# Reset to a new password (prompts twice for confirmation)
-docker compose exec nomarr python3 -m nomarr.manage_password --reset
+#!/bin/bash
+API_KEY="your-api-key-here"
+curl -X POST \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d "{\"path\":\"$lidarr_trackfile_path\",\"force\":true}" \
+  http://nomarr:8356/api/v1/tag
 ```
 
-**Initial password retrieval:** Check container logs after first startup:
-```bash
-docker compose logs nomarr | grep "Admin password"
+---
+
+## 🎵 Example Output
+
+Nomarr writes tags under the `essentia:` namespace:
+
+```
+essentia:danceability = 0.7234
+essentia:danceability_tier = medium
+essentia:aggressive = 0.1203
+essentia:aggressive_tier = low
+essentia:mood-strict = ["happy", "party", "not sad", "not aggressive"]
+essentia:mood-regular = ["happy", "party", "energetic", "not sad"]
+essentia:genre_electronic = 0.8941
+essentia:voice_instrumental = 0.2341
 ```
 
-You can also set a custom password in `config/config.yaml`:
-```yaml
-admin_password: your_secure_password_here
-```
+---
 
-### Web UI Features
+## 📖 Documentation
 
-- **Process Tab:** Process single files or batches, with real-time streaming progress
-- **Queue Tab:** View and manage queued jobs (pause, resume, remove)
-- **List Jobs Tab:** Paginated job list with filtering by status
-- **Admin Tab:** Worker control (pause/resume), cache refresh, queue cleanup, reset stuck jobs
-- **Info Tab:** System information, cache status, worker stats, model counts
+- **[API Reference](docs/API_REFERENCE.md)** - Complete endpoint documentation and Lidarr integration examples
+- **[Deployment Guide](docs/DEPLOYMENT.md)** - Docker setup, configuration, and troubleshooting
+- **[Model Information](docs/modelsinfo.md)** - Details about Essentia ML models
+- **[Configuration Guide](docs/README.md)** - Advanced configuration and architecture overview
 
-### Authentication Architecture
+---
 
-The web UI uses a three-layer authentication system:
-1. **Browser → Web API:** Session-based authentication with admin password
-2. **Web API → Internal API:** Server-side proxy using `internal_key` (never exposed to browser)
-3. **External → Public API:** Direct API access using `api_key` (for Lidarr/webhooks)
+## ⚠️ License & Usage
 
-This ensures the sensitive `internal_key` remains server-side while providing secure browser access.
+**Nomarr is licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) - Non-Commercial use only**
 
-## 7. API Reference & Integration
+This project is designed for the self-hosted music community and personal use. Commercial use is not permitted.
 
-- **Public API** (port 8356, requires `api_key`):
-  - POST `/api/v1/tag` { path, force? } → queues job; blocks until done by default
-  - GET `/api/v1/status/{job_id}` → job details
-  - GET `/api/v1/list?limit=50&offset=0&status=pending` → list jobs with pagination
-  - POST `/admin/queue/cleanup` → remove old jobs
-  - POST `/admin/worker/pause` / `/admin/worker/resume`
-  - POST `/admin/cache/refresh` → rebuild predictor cache
-- **Internal API** (same port, requires `internal_key`):
-  - POST `/internal/process_direct` { path, force? } → process immediately
-  - POST `/internal/process_stream` { path, force? } → SSE streaming
-  - POST `/internal/batch_process` { paths[], force? } → batch process
-  - GET `/internal/health` → cache/worker status
-- **Status values:** `pending`, `running`, `done`, `skipped`, `error`
-- See `docs/API_REFERENCE.md` for full schemas and Lidarr webhook examples.
+- **Attribution Required:** Credit Nomarr and the Music Technology Group, Universitat Pompeu Fabra (for Essentia models)
+- **ShareAlike:** Derivative works must use the same license
+- **Non-Commercial:** No commercial use without explicit permission
 
-## 8. Tagging Details
+See [LICENSE](LICENSE) and [NOTICE](NOTICE) for complete attribution and third-party license information.
 
-- Tags are written under the `essentia:` namespace.
-- Base probabilities for all labels; tiers for selected labels.
-- Mood aggregation: `mood-strict`, `mood-regular`, `mood-loose` as native multi-value tags.
-- Example:
+---
 
-  ```
-  essentia:yamnet_relaxed = 0.8941
-  essentia:yamnet_relaxed_tier = high
-  essentia:mood-strict = ["relaxed", "not happy", "not party", "not aggressive"]
-  ```
+## 🙏 Credits
 
-## 9. Troubleshooting
+Built with:
 
-- No tags written: Check container user permissions on `/music` and `/app/config`.
-- Slow first run: Models warm into memory; subsequent jobs reuse cache.
-- Changed models: Call `POST /admin/cache/refresh`.
-- Ensure Lidarr and Nomarr see the same absolute file paths.
-- Low GPU usage: Ensure `TF_FORCE_GPU_ALLOW_GROWTH=true` is set in `processor.py`.
-- "No workers available": All worker slots are in use. Wait or increase `worker_count`.
-- Skipped jobs: Files already tagged with the current version are marked as `skipped`. Use CLI `admin-reset --stuck` to reset stuck jobs, and `remove --status skipped` to clear skipped jobs if needed.
+- **[Essentia](https://essentia.upf.edu/)** - Audio analysis and ML models by Music Technology Group, UPF
+- **[TensorFlow](https://www.tensorflow.org/)** - Machine learning inference
+- **[FastAPI](https://fastapi.tiangolo.com/)** - Modern Python web framework
+- **[Rich](https://github.com/Textualize/rich)** - Beautiful terminal UI
 
-## 10. Documentation Map
+See [Credits & Technologies](docs/README.md#credits) for complete list.
 
-- Start here: `docs/README.md`
-- API reference: `docs/API_REFERENCE.md`
-- Model layout: `docs/modelsinfo.md`, `docs/MODEL_WIRING_VALIDATION.md`
-- Deployment guide: `docs/DEPLOYMENT.md`
+---
 
-## 11. Credits
+## 🤝 Contributing
 
-Built on [Essentia](https://essentia.upf.edu/) (© Music Technology Group, Universitat Pompeu Fabra)
+Contributions are welcome! This project is in active development.
+
+**Note:** Please consult with MTG, UPF regarding any contributions that modify model processing or create derivative works of the ML models, as they are subject to CC BY-NC-SA 4.0 ShareAlike terms.
+
+---
+
+## 💬 Support
+
+- **Issues:** [GitHub Issues](https://github.com/xiaden/nomarr/issues)
+- **Discussions:** [GitHub Discussions](https://github.com/xiaden/nomarr/discussions)
+
+---
+
+**Made with ❤️ for the self-hosted music community**

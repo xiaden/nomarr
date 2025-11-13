@@ -183,15 +183,15 @@ def update_library_file_from_tags(db: Database, file_path: str, namespace: str) 
             year=metadata.get("year"),
             track_number=metadata.get("track_number"),
             tags_json=json.dumps(metadata.get("all_tags", {})),
-            essentia_tags_json=json.dumps(metadata.get("essentia_tags", {})),
+            nom_tags=json.dumps(metadata.get("nom_tags", {})),
         )
 
         # Get file ID and populate library_tags table
         file_record = db.get_library_file(file_path)
-        if file_record and metadata.get("essentia_tags"):
-            essentia_tags = metadata["essentia_tags"]
+        if file_record and metadata.get("nom_tags"):
+            nom_tags = metadata["nom_tags"]
             # Parse tag values to detect types
-            parsed_tags = _parse_tag_values(essentia_tags)
+            parsed_tags = _parse_tag_values(nom_tags)
             db.upsert_file_tags(file_record["id"], parsed_tags)
 
         logging.debug(f"[library_scanner] Updated library for {file_path}")
@@ -207,7 +207,7 @@ def _extract_metadata(file_path: str, namespace: str) -> dict[str, Any]:
         - duration: float (seconds)
         - artist, album, title, genre, year, track_number: str/int
         - all_tags: dict of all tags
-        - essentia_tags: dict of tags in the essentia namespace
+        - nom_tags: dict of tags in the nom namespace (stored WITHOUT nom: prefix)
     """
     metadata: dict[str, Any] = {
         "duration": None,
@@ -218,7 +218,7 @@ def _extract_metadata(file_path: str, namespace: str) -> dict[str, Any]:
         "year": None,
         "track_number": None,
         "all_tags": {},
-        "essentia_tags": {},
+        "nom_tags": {},
     }
 
     try:
@@ -250,8 +250,8 @@ def _extract_metadata(file_path: str, namespace: str) -> dict[str, Any]:
             # Get all tags
             metadata["all_tags"] = {k: str(v) for k, v in audio.tags.items()}
 
-            # Extract essentia tags (freeform)
-            essentia_tags = {}
+            # Extract nom namespace tags (freeform) - store WITHOUT namespace prefix
+            nom_tags = {}
             for key in audio.tags:
                 if key.startswith("----:com.apple.iTunes:"):
                     tag_name = key.replace("----:com.apple.iTunes:", "")
@@ -260,11 +260,13 @@ def _extract_metadata(file_path: str, namespace: str) -> dict[str, Any]:
                         if value:
                             # MP4FreeForm values are bytes - decode them properly
                             raw_value = value[0]
+                            # Strip namespace prefix for storage
+                            tag_key = tag_name[len(namespace) + 1 :]
                             if isinstance(raw_value, bytes):
-                                essentia_tags[tag_name] = raw_value.decode("utf-8")
+                                nom_tags[tag_key] = raw_value.decode("utf-8")
                             else:
-                                essentia_tags[tag_name] = str(raw_value)
-            metadata["essentia_tags"] = essentia_tags
+                                nom_tags[tag_key] = str(raw_value)
+            metadata["nom_tags"] = nom_tags
 
         else:
             # MP3 and other formats
@@ -295,20 +297,22 @@ def _extract_metadata(file_path: str, namespace: str) -> dict[str, Any]:
                 id3 = ID3(file_path)
                 metadata["all_tags"] = {str(k): str(v) for k, v in id3.items()}
 
-                # Extract essentia tags from TXXX frames
-                essentia_tags = {}
+                # Extract nom namespace tags from TXXX frames - store WITHOUT namespace prefix
+                nom_tags = {}
                 for frame in id3.getall("TXXX"):
                     if frame.desc.startswith(f"{namespace}:"):
+                        # Strip namespace prefix for storage
+                        tag_key = frame.desc[len(namespace) + 1 :]
                         # Handle multi-value tags (frame.text is always a list)
                         if len(frame.text) > 1:
                             # Multi-value tag - store as JSON array string
-                            essentia_tags[frame.desc] = json.dumps(frame.text, ensure_ascii=False)
+                            nom_tags[tag_key] = json.dumps(frame.text, ensure_ascii=False)
                         elif len(frame.text) == 1:
                             # Single value - store as string
-                            essentia_tags[frame.desc] = frame.text[0]
+                            nom_tags[tag_key] = frame.text[0]
                         else:
-                            essentia_tags[frame.desc] = ""
-                metadata["essentia_tags"] = essentia_tags
+                            nom_tags[tag_key] = ""
+                metadata["nom_tags"] = nom_tags
             except Exception:
                 pass
 

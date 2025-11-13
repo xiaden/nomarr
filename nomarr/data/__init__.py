@@ -3,6 +3,6 @@ Data package.
 """
 
 from .db import SCHEMA, SCHEMA_VERSION, Database, now_ms
-from .queue import Job, JobQueue, TaggerWorker
+from .queue import Job, ProcessingQueue
 
-__all__ = ['SCHEMA', 'SCHEMA_VERSION', 'Database', 'Job', 'JobQueue', 'TaggerWorker', 'now_ms']
+__all__ = ["SCHEMA", "SCHEMA_VERSION", "Database", "Job", "ProcessingQueue", "now_ms"]

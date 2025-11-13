@@ -29,7 +29,6 @@ from .utils import (
     format_tag_summary,
     get_avg_processing_time,
     get_db,
-    get_internal_key,
     update_avg_processing_time,
 )
 
@@ -53,7 +52,6 @@ __all__ = [
     "format_tag_summary",
     "get_avg_processing_time",
     "get_db",
-    "get_internal_key",
     "print_error",
     "print_info",
     "print_success",

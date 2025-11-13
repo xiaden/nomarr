@@ -1,15 +1,18 @@
 # API Endpoints Reference
 
 ## Authentication
-All endpoints (except `/info` for public health checks) require Bearer token authentication:
+
+All endpoints (except `/api/v1/info` for public health checks) require Bearer token authentication:
+
 ```bash
 Authorization: Bearer <API_KEY>
 ```
 
 Get/generate API key inside container:
+
 ```bash
-docker exec autotag python3 manage_key.py --show
-docker exec autotag python3 manage_key.py --generate
+docker exec nomarr python3 -m nomarr.manage_key --show
+docker exec nomarr python3 -m nomarr.manage_key --generate
 ```
 
 ---
@@ -17,9 +20,11 @@ docker exec autotag python3 manage_key.py --generate
 ## Core Endpoints (Lidarr Integration)
 
 ### POST /api/v1/tag
+
 Enqueue a file for tagging. Returns immediately (non-blocking) or waits for completion (blocking mode).
 
 **Request:**
+
 ```json
 {
   "path": "/music/Artist/Album/Track.mp3",
@@ -28,6 +33,7 @@ Enqueue a file for tagging. Returns immediately (non-blocking) or waits for comp
 ```
 
 **Response (non-blocking):**
+
 ```json
 {
   "job_id": 123,
@@ -37,6 +43,7 @@ Enqueue a file for tagging. Returns immediately (non-blocking) or waits for comp
 ```
 
 **Response (blocking mode, on completion):**
+
 ```json
 {
   "job_id": 123,
@@ -51,6 +58,7 @@ Enqueue a file for tagging. Returns immediately (non-blocking) or waits for comp
 ```
 
 **Lidarr Custom Script Example:**
+
 ```bash
 #!/bin/bash
 # Save as /config/scripts/autotag.sh in Lidarr container
@@ -68,6 +76,7 @@ curl -X POST \
 ---
 
 ### GET /api/v1/queue
+
 List recent jobs with summary (legacy endpoint for backward compatibility).
 
 **Note:** Use `/list` for pagination and filtering support.
@@ -75,6 +84,7 @@ List recent jobs with summary (legacy endpoint for backward compatibility).
 Query params: `limit` (default 5 if omitted or 25)
 
 Response:
+
 ```json
 {
   "summary": {"pending": 0, "running": 0, "done": 10, "error": 1},
@@ -88,14 +98,17 @@ Response:
 ---
 
 ### GET /api/v1/list
+
 List jobs with pagination and optional status filtering.
 
 **Query Parameters:**
+
 - `limit` (int, default: 50) - Maximum number of jobs to return
 - `offset` (int, default: 0) - Number of jobs to skip (for pagination)
 - `status` (string, optional) - Filter by status: `pending`, `running`, `done`, or `error`
 
 **Examples:**
+
 ```bash
 # Get first 50 jobs
 GET /api/v1/list
@@ -111,6 +124,7 @@ GET /api/v1/list?limit=100&offset=200&status=error
 ```
 
 **Response:**
+
 ```json
 {
   "total": 1234,
@@ -137,6 +151,7 @@ GET /api/v1/list?limit=100&offset=200&status=error
 ```
 
 **Notes:**
+
 - `total` reflects the count matching the status filter (or all jobs if no filter)
 - `counts` always shows totals for all statuses regardless of filter
 - Timestamps are in milliseconds since epoch
@@ -145,9 +160,11 @@ GET /api/v1/list?limit=100&offset=200&status=error
 ---
 
 ### GET /api/v1/status/{job_id}
+
 Get status of a specific job.
 
 **Response:**
+
 ```json
 {
   "job_id": 123,
@@ -165,9 +182,11 @@ Get status of a specific job.
 ---
 
 ### GET /api/v1/info
+
 Comprehensive system info: config, models, queue, worker state.
 
 **Response:**
+
 ```json
 {
   "config": {
@@ -208,9 +227,11 @@ Comprehensive system info: config, models, queue, worker state.
 ## Admin Endpoints
 
 ### POST /admin/queue/remove
+
 Remove a non-running job. Auto-resumes worker.
 
 **Request:**
+
 ```json
 {
   "job_id": 123
@@ -218,6 +239,7 @@ Remove a non-running job. Auto-resumes worker.
 ```
 
 **Response:**
+
 ```json
 {
   "status": "ok",
@@ -229,9 +251,11 @@ Remove a non-running job. Auto-resumes worker.
 ---
 
 ### POST /admin/queue/flush
+
 Flush jobs by status (default: pending + error). Auto-resumes worker.
 
 **Request:**
+
 ```json
 {
   "statuses": ["pending", "error", "done"]
@@ -239,6 +263,7 @@ Flush jobs by status (default: pending + error). Auto-resumes worker.
 ```
 
 **Response:**
+
 ```json
 {
   "status": "ok",
@@ -250,17 +275,21 @@ Flush jobs by status (default: pending + error). Auto-resumes worker.
 ---
 
 ### POST /admin/queue/cleanup
+
 Remove old finished jobs (done/error older than N hours).
 
 **Request:**
+
 ```json
 {
   "max_age_hours": 168
 }
 ```
+
 Or use query param: `POST /admin/queue/cleanup?max_age_hours=168`
 
 **Response:**
+
 ```json
 {
   "status": "ok",
@@ -272,16 +301,21 @@ Or use query param: `POST /admin/queue/cleanup?max_age_hours=168`
 ---
 
 #### POST /admin/cache/refresh
+
 Rebuild the in-memory predictor cache now (discover heads, load missing, drop stale on access). Use after adding/removing models.
 
 Response:
+
 ```json
 { "status": "ok", "predictors": 17 }
 ```
+
 ### POST /admin/worker/pause
+
 Disable the background worker (stops processing queue).
 
 **Response:**
+
 ```json
 {
   "status": "ok",
@@ -292,9 +326,11 @@ Disable the background worker (stops processing queue).
 ---
 
 ### POST /admin/worker/resume
+
 Enable the background worker (resumes queue processing).
 
 **Response:**
+
 ```json
 {
   "status": "ok",
@@ -309,6 +345,7 @@ Enable the background worker (resumes queue processing).
 All endpoints now return consistent structures matching the CLI output:
 
 **Job Object:**
+
 ```json
 {
   "job_id": 123,
@@ -322,6 +359,7 @@ All endpoints now return consistent structures matching the CLI output:
 ```
 
 **Queue Summary:**
+
 ```json
 {
   "pending": 10,
@@ -332,6 +370,7 @@ All endpoints now return consistent structures matching the CLI output:
 ```
 
 **Config Section:**
+
 ```json
 {
   "db_path": "...",
@@ -344,6 +383,7 @@ All endpoints now return consistent structures matching the CLI output:
 ```
 
 **Models Section:**
+
 ```json
 {
   "total_heads": 17,
@@ -356,6 +396,7 @@ All endpoints now return consistent structures matching the CLI output:
 ## Lidarr Integration Patterns
 
 ### On Import Hook (recommended)
+
 Use Lidarr's **On Import** custom script to tag files immediately after import:
 
 1. **Lidarr Settings** → **Connect** → **Add Custom Script**
@@ -363,6 +404,7 @@ Use Lidarr's **On Import** custom script to tag files immediately after import:
 3. **Script Path:** `/path/to/autotag-hook.sh`
 
 **Script Template:**
+
 ```bash
 #!/bin/bash
 # /config/scripts/lidarr-autotag-hook.sh
@@ -399,6 +441,7 @@ fi
 ```
 
 ### Polling Pattern (for non-blocking mode)
+
 If you set `blocking_mode: false` in config:
 
 ```bash
@@ -420,7 +463,7 @@ JOB_ID=$(echo "$RESPONSE" | grep -o '"job_id":[0-9]*' | grep -o '[0-9]*')
 for i in {1..30}; do
   STATUS=$(curl -s -H "Authorization: Bearer $API_KEY" \
     "$AUTOTAG_URL/status/$JOB_ID" | grep -o '"status":"[^"]*"' | cut -d'"' -f4)
-  
+
   if [ "$STATUS" = "done" ] || [ "$STATUS" = "error" ]; then
     echo "Job $JOB_ID finished with status: $STATUS"
     break
@@ -436,6 +479,7 @@ done
 ## Configuration for Lidarr Use Case
 
 **Recommended `config/config.yaml` for Lidarr:**
+
 ```yaml
 paths:
   models_dir: /app/models
@@ -443,30 +487,34 @@ paths:
 
 tagger:
   namespace: essentia
-  overwrite_tags: true  # Allow retagging on upgrades
+  overwrite_tags: true # Allow retagging on upgrades
 
 api:
   host: 0.0.0.0
   port: 8356
-  blocking_mode: true      # Wait for completion (important for Lidarr hooks)
-  blocking_timeout: 600    # 10 min timeout per file
+  blocking_mode: true # Wait for completion (important for Lidarr hooks)
+  blocking_timeout: 600 # 10 min timeout per file
 
 worker:
   enabled: true
   poll_interval: 2
 
-cleanup_age_hours: 168  # Auto-cleanup old jobs after 7 days
+cleanup_age_hours: 168 # Auto-cleanup old jobs after 7 days
 ```
 
 **Docker Compose Volume Mapping:**
+
 ```yaml
 services:
   autotag:
     volumes:
-      - /path/to/music:/music  # SAME path as Lidarr uses
+      - /path/to/music:/music # SAME path as Lidarr uses
       - ./config:/app/config
-      - ./models:/app/models
+      # Optional: Custom models (only if not using packaged models)
+      # - ./models:/app/models
 ```
+
+**Note:** The `models` directory is **optional**. The Docker image includes pre-trained Essentia models. Only map a custom models directory if you want to use your own TensorFlow models.
 
 **Critical:** The music library must be mounted at the **same absolute path** in both Lidarr and autotag containers. If Lidarr sees `/music/Album/Track.mp3`, autotag must also see `/music/Album/Track.mp3`.
 
@@ -474,7 +522,7 @@ services:
 
 ## Web UI Endpoints
 
-The web UI provides a browser-based interface for monitoring and controlling the tagging system. All web endpoints use session-based authentication and proxy internal API calls server-side.
+The web UI provides a browser-based interface for monitoring and controlling the tagging system. All web endpoints use session-based authentication.
 
 **Authentication:** Session token (obtained via login) sent as Bearer token.
 
@@ -483,9 +531,11 @@ The web UI provides a browser-based interface for monitoring and controlling the
 ### Authentication Endpoints
 
 #### POST /web/auth/login
+
 Authenticate with admin password and receive session token.
 
 **Request:**
+
 ```json
 {
   "password": "your_admin_password"
@@ -493,6 +543,7 @@ Authenticate with admin password and receive session token.
 ```
 
 **Response (success):**
+
 ```json
 {
   "token": "abc123def456...",
@@ -501,6 +552,7 @@ Authenticate with admin password and receive session token.
 ```
 
 **Response (failure):**
+
 ```json
 {
   "detail": "Invalid password"
@@ -510,14 +562,17 @@ Authenticate with admin password and receive session token.
 **Session lifetime:** 24 hours (86400 seconds)
 
 #### POST /web/auth/logout
+
 Invalidate current session token.
 
 **Headers:**
+
 ```
 Authorization: Bearer <session_token>
 ```
 
 **Response:**
+
 ```json
 {
   "status": "ok"
@@ -526,12 +581,14 @@ Authorization: Bearer <session_token>
 
 ### Processing Endpoints
 
-All processing endpoints require session authentication and proxy to the internal API.
+All processing endpoints require session authentication.
 
 #### POST /web/api/process
+
 Process a single file with SSE streaming progress (same as `/internal/process_stream`).
 
 **Request:**
+
 ```json
 {
   "path": "/music/Track.mp3",
@@ -542,9 +599,11 @@ Process a single file with SSE streaming progress (same as `/internal/process_st
 **Response:** SSE stream (see Internal Endpoints for event format)
 
 #### POST /web/api/batch-process
+
 Process multiple files synchronously (same as `/internal/batch_process`).
 
 **Request:**
+
 ```json
 {
   "paths": ["/music/Track1.mp3", "/music/Track2.mp3"],
@@ -553,11 +612,12 @@ Process multiple files synchronously (same as `/internal/batch_process`).
 ```
 
 **Response:**
+
 ```json
 {
   "results": [
-    {"path": "/music/Track1.mp3", "tags_written": 42, "duration": 3.5},
-    {"path": "/music/Track2.mp3", "tags_written": 38, "duration": 3.2}
+    { "path": "/music/Track1.mp3", "tags_written": 42, "duration": 3.5 },
+    { "path": "/music/Track2.mp3", "tags_written": 38, "duration": 3.2 }
   ]
 }
 ```
@@ -565,9 +625,11 @@ Process multiple files synchronously (same as `/internal/batch_process`).
 ### Queue Management Endpoints
 
 #### GET /web/api/list
+
 List jobs with pagination and filtering (proxies public `/list` endpoint).
 
 **Query Parameters:**
+
 - `limit` (int, default: 50)
 - `offset` (int, default: 0)
 - `status` (string, optional): `pending`, `running`, `done`, `error`
@@ -575,22 +637,27 @@ List jobs with pagination and filtering (proxies public `/list` endpoint).
 **Response:** Same as public `/list` endpoint
 
 #### GET /web/api/queue
+
 Get queue summary (proxies public `/queue` endpoint).
 
 **Query Parameters:**
+
 - `limit` (int, default: 5)
 
 **Response:** Same as public `/queue` endpoint
 
 #### GET /web/api/status/{job_id}
+
 Get status of specific job (proxies public `/status/{job_id}`).
 
 **Response:** Same as public `/status/{job_id}` endpoint
 
 #### POST /web/api/queue/remove
+
 Remove a job from queue (proxies public `/admin/queue/remove`).
 
 **Request:**
+
 ```json
 {
   "job_id": 123
@@ -598,6 +665,7 @@ Remove a job from queue (proxies public `/admin/queue/remove`).
 ```
 
 **Response:**
+
 ```json
 {
   "status": "ok",
@@ -607,9 +675,11 @@ Remove a job from queue (proxies public `/admin/queue/remove`).
 ```
 
 #### POST /web/api/queue/flush
+
 Flush jobs by status (proxies public `/admin/queue/flush`).
 
 **Request:**
+
 ```json
 {
   "statuses": ["pending", "error"]
@@ -617,6 +687,7 @@ Flush jobs by status (proxies public `/admin/queue/flush`).
 ```
 
 **Response:**
+
 ```json
 {
   "status": "ok",
@@ -626,9 +697,11 @@ Flush jobs by status (proxies public `/admin/queue/flush`).
 ```
 
 #### POST /web/api/queue/cleanup
+
 Remove old finished jobs (proxies public `/admin/queue/cleanup`).
 
 **Request:**
+
 ```json
 {
   "max_age_hours": 168
@@ -636,6 +709,7 @@ Remove old finished jobs (proxies public `/admin/queue/cleanup`).
 ```
 
 **Response:**
+
 ```json
 {
   "status": "ok",
@@ -645,11 +719,13 @@ Remove old finished jobs (proxies public `/admin/queue/cleanup`).
 ```
 
 #### POST /web/api/queue/reset-stuck
+
 Reset jobs stuck in "running" state to "pending".
 
 **Request:** Empty body
 
 **Response:**
+
 ```json
 {
   "status": "ok",
@@ -660,9 +736,11 @@ Reset jobs stuck in "running" state to "pending".
 ### Admin Endpoints
 
 #### POST /web/api/admin/worker/pause
+
 Pause the background worker (proxies public `/admin/worker/pause`).
 
 **Response:**
+
 ```json
 {
   "status": "ok",
@@ -671,9 +749,11 @@ Pause the background worker (proxies public `/admin/worker/pause`).
 ```
 
 #### POST /web/api/admin/worker/resume
+
 Resume the background worker (proxies public `/admin/worker/resume`).
 
 **Response:**
+
 ```json
 {
   "status": "ok",
@@ -682,9 +762,11 @@ Resume the background worker (proxies public `/admin/worker/resume`).
 ```
 
 #### POST /web/api/admin/cache/refresh
+
 Refresh predictor cache (proxies public `/admin/cache/refresh`).
 
 **Response:**
+
 ```json
 {
   "status": "ok",
@@ -695,14 +777,17 @@ Refresh predictor cache (proxies public `/admin/cache/refresh`).
 ### Utility Endpoints
 
 #### GET /web/api/info
+
 Get system information (proxies public `/info`).
 
 **Response:** Same as public `/info` endpoint
 
 #### GET /web/api/health
+
 Get cache and worker status (proxies internal `/internal/health`).
 
 **Response:**
+
 ```json
 {
   "cache_initialized": true,
@@ -716,150 +801,60 @@ Get cache and worker status (proxies internal `/internal/health`).
 The admin password is managed via CLI (`manage_password.py`) and stored as a salted SHA-256 hash in the database.
 
 **View current password:**
+
 ```bash
 docker exec nomarr python3 -m nomarr.manage_password --show
 ```
 
 **Verify a password:**
+
 ```bash
 docker exec nomarr python3 -m nomarr.manage_password --verify
 ```
 
 **Reset password (prompts twice):**
+
 ```bash
 docker exec nomarr python3 -m nomarr.manage_password --reset
 ```
 
 **Set password in config:**
+
 ```yaml
 # config/config.yaml
 admin_password: your_secure_password
 ```
 
 **Retrieve auto-generated password from logs:**
+
 ```bash
 docker compose logs nomarr | grep "Admin password"
 ```
 
 ---
 
-## Internal Endpoints (CLI Use)
+## CLI Architecture
 
-These endpoints require the separate `internal_key` (auto-generated, stored in DB) and are used by the CLI for direct access to warm cache and real-time processing.
+The CLI accesses Application services directly (no HTTP endpoints). Commands like `nom run`, `nom list`, and `nom remove` work entirely within the same Python process that runs the API server.
 
-**Authentication:**
-```bash
-Authorization: Bearer <INTERNAL_KEY>
-```
+**Benefits:**
 
-The internal key is automatically generated on API startup and differs from the public API key.
+- No HTTP overhead or authentication needed
+- Direct access to model cache and services
+- Instant execution with no network latency
+- Real-time progress via Rich terminal UI
 
-### POST /internal/process_stream
-Process a file with real-time Server-Sent Events (SSE) streaming progress.
+**Worker Management:**
 
-**Request:**
-```json
-{
-  "path": "/music/Track.mp3",
-  "force": false
-}
-```
-
-**Response:** SSE stream with events:
-- `progress`: Head-by-head processing updates with percentages
-- `complete`: Final result with tags written
-- `error`: Error details if processing fails
-- `done`: Stream completion marker
-
-**Event format:**
-```
-event: progress
-data: {"type": "progress", "current": 5, "total": 20, "head": "danceability", "state": "complete"}
-
-event: complete
-data: {"type": "complete", "result": {"tags_written": 42, "duration": 3.5}}
-
-event: done
-data: {"type": "done"}
-```
-
-Used by: `autotag run` command for multi-worker parallel processing with per-worker progress bars.
-
-### POST /internal/process_direct
-Synchronous file processing (blocks until complete).
-
-**Request:**
-```json
-{
-  "path": "/music/Track.mp3",
-  "force": false
-}
-```
-
-**Response:**
-```json
-{
-  "tags_written": 42,
-  "duration": 3.5,
-  "path": "/music/Track.mp3"
-}
-```
-
-**Error (503):** No workers available (all worker slots in use).
-
-### POST /internal/batch_process
-Process multiple files synchronously.
-
-**Request:**
-```json
-{
-  "paths": ["/music/Track1.mp3", "/music/Track2.mp3"],
-  "force": false
-}
-```
-
-**Response:**
-```json
-{
-  "results": [
-    {"path": "/music/Track1.mp3", "tags_written": 42, "duration": 3.5},
-    {"path": "/music/Track2.mp3", "tags_written": 38, "duration": 3.2}
-  ]
-}
-```
-
-### GET /internal/health
-Get cache and worker status (no auth required).
-
-**Response:**
-```json
-{
-  "cache_initialized": true,
-  "worker_count": 4,
-  "available_workers": 2
-}
-```
-
----
-
-## Performance & Parallelism
-
-**Multi-worker architecture:**
-- API uses ProcessingCoordinator (in `interfaces/api/coordinator.py`) with ProcessPoolExecutor and configurable `worker_count` (default 1)
+- Application uses ProcessingCoordinator with configurable `worker_count` (default 1)
 - Each worker process loads independent model cache (~400MB RAM)
 - GPU-enabled workers run concurrently via `TF_FORCE_GPU_ALLOW_GROWTH=true`
-- CLI `run` command creates N threads (matching worker_count) for parallel streaming
-
-**Worker slot management:**
-- Worker slots are allocated on demand from the process pool
-- Slots release when processing completes or client disconnects
 - Error 503 "No workers available" means all slots are in use
-- Ctrl+C on CLI releases slots but lets background processing complete (prevents file corruption)
 
-**GPU concurrency:**
+**GPU Concurrency:**
+
 - Environment variables in `core/processor.py` enable concurrent GPU access:
   - `TF_FORCE_GPU_ALLOW_GROWTH=true` - Incremental VRAM allocation
   - `TF_GPU_THREAD_MODE=gpu_private` - Per-process GPU thread pools
 - Check `nvidia-smi` for multiple processes using GPU simultaneously
 - Low GPU usage (~3%) suggests sequential access (missing GPU config)
-

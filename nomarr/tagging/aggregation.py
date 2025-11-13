@@ -4,10 +4,61 @@ Tag aggregation logic - mood tiers, label simplification, and conflict resolutio
 
 from __future__ import annotations
 
+import json
 import logging
+from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+
+def load_calibrations(models_dir: str) -> dict[str, dict[str, Any]]:
+    """
+    Load all calibration sidecars from models directory.
+
+    Returns lookup table: tag_key -> calibration_params (p5, p95, method)
+    Gracefully handles missing calibration files (returns empty dict).
+
+    Args:
+        models_dir: Path to models directory
+
+    Returns:
+        Dictionary mapping tag keys to calibration parameters
+    """
+    calibrations = {}
+
+    try:
+        models_path = Path(models_dir)
+        if not models_path.exists():
+            logging.debug(f"[calibration] Models directory not found: {models_dir}")
+            return calibrations
+
+        # Find all calibration sidecar files
+        calib_files = list(models_path.rglob("*-calibration-v*.json"))
+        logging.info(f"[calibration] Found {len(calib_files)} calibration sidecar files")
+
+        for calib_file in calib_files:
+            try:
+                with open(calib_file, encoding="utf-8") as f:
+                    calib_data = json.load(f)
+
+                # Extract label calibrations
+                labels = calib_data.get("labels", {})
+                for label, params in labels.items():
+                    # Build tag key to match what's in the tags dict
+                    # This needs to match the versioned tag format
+                    # For now, use label as key - will need refinement based on actual tag format
+                    calibrations[label] = params
+
+            except Exception as e:
+                logging.warning(f"[calibration] Failed to load {calib_file}: {e}")
+
+        logging.info(f"[calibration] Loaded calibrations for {len(calibrations)} labels")
+
+    except Exception as e:
+        logging.error(f"[calibration] Error loading calibrations: {e}")
+
+    return calibrations
 
 
 def get_prefix(backbone: str) -> str:
@@ -21,6 +72,24 @@ def get_prefix(backbone: str) -> str:
     if backbone == "musicnn":
         return "musicnn_"
     return ""
+
+
+def normalize_tag_label(label: str) -> str:
+    """
+    Normalize model label for tag key consistency.
+
+    Converts 'non_*' to 'not_*' for consistent naming.
+    Example: 'non_happy' -> 'not_happy'
+
+    Args:
+        label: Raw label from model (e.g., 'happy', 'non_happy')
+
+    Returns:
+        Normalized label for use in tag keys
+    """
+    if label.startswith("non_"):
+        return f"not_{label[4:]}"
+    return label
 
 
 def simplify_label(base_key: str) -> str:
@@ -49,15 +118,10 @@ def add_regression_mood_tiers(tags: dict[str, Any], predictions: dict[str, list[
     - Low values (<0.3) indicate STRONG presence of the opposite attribute
     - Middle values (0.3-0.7) are neutral/ambiguous
 
-    Only emit tags when variance is LOW (model is confident/consistent):
-    - High variance indicates the model is flip-flopping → unreliable, skip
-    - Low variance indicates stable measurement → trustworthy, use it
-
-    Tier assignment combines both intensity AND stability:
-    - "high" tier: Extreme values (very strong) with very low variance
-    - "medium" tier: Strong values with low variance
-    - "low" tier: Moderate values with acceptable variance
-    - No tag: High variance (unreliable) or neutral values (0.3-0.7)
+    ALWAYS writes the base tag with the mean value (clamped to [0, 1]).
+    Variance only affects TIER assignment:
+    - High variance → no tier (unreliable measurement)
+    - Low variance + extreme value → tier assigned based on confidence
 
     Modifies tags dict in-place by adding synthetic <prefix>_<term> and <prefix>_<term>_tier tags.
     """
@@ -67,13 +131,13 @@ def add_regression_mood_tiers(tags: dict[str, Any], predictions: dict[str, list[
     # Intensity thresholds (mean value indicates strength, not probability)
     STRONG_THRESHOLD = 0.7  # Strongly mainstream/engaging
     WEAK_THRESHOLD = 0.3  # Strongly fringe/mellow
-    # Values between 0.3-0.7 are neutral → don't emit
+    # Values between 0.3-0.7 are neutral → still write tag, but may not assign tier
 
     # Variance thresholds (std deviation indicates measurement reliability)
     VERY_STABLE = 0.08  # Extremely consistent → high tier if value is extreme
     STABLE = 0.15  # Consistent → medium tier if value is strong
     ACCEPTABLE = 0.25  # Moderately consistent → low tier if value qualifies
-    # std >= 0.25 → too inconsistent, don't trust the measurement
+    # std >= 0.25 → too inconsistent, don't assign tier (but still write base tag)
 
     # Map head names to mood terms (positive/negative pairs)
     mood_mapping = {
@@ -90,22 +154,43 @@ def add_regression_mood_tiers(tags: dict[str, Any], predictions: dict[str, list[
         mean_val = float(np.mean(arr))
         std_val = float(np.std(arr))
 
-        # Skip if variance too high (model is flip-flopping, unreliable)
-        if std_val >= ACCEPTABLE:
-            logging.info(
-                f"[aggregation] Skipping {head_name}: high variance (std={std_val:.3f}) indicates unreliable measurement"
-            )
-            continue
-
-        # Skip if value is neutral (neither strongly high nor strongly low)
-        if WEAK_THRESHOLD < mean_val < STRONG_THRESHOLD:
-            logging.debug(f"[aggregation] Skipping {head_name}: neutral value (mean={mean_val:.3f}) in ambiguous range")
-            continue
+        # Clamp mean to [0, 1] range (regression models can occasionally output slightly outside)
+        mean_val = max(0.0, min(1.0, mean_val))
 
         # Determine which term to emit based on intensity
         high_term, low_term = mood_mapping[head_name]
         is_high = mean_val >= STRONG_THRESHOLD
-        mood_term = high_term if is_high else low_term
+        is_low = mean_val <= WEAK_THRESHOLD
+
+        # ALWAYS write the base tag (even if neutral or high variance)
+        if is_high:
+            mood_term = high_term
+        elif is_low:
+            mood_term = low_term
+        else:
+            # Neutral value - write both terms with the value
+            # This preserves the raw data even when we can't confidently assign a direction
+            tag_base_high = f"effnet_{high_term}"
+            tag_base_low = f"effnet_{low_term}"
+            tags[tag_base_high] = mean_val
+            tags[tag_base_low] = 1.0 - mean_val  # Inverse for the opposite
+            logging.debug(
+                f"[aggregation] Regression neutral: {head_name} → both {high_term}/{low_term} "
+                f"(mean={mean_val:.3f}, std={std_val:.3f})"
+            )
+            continue
+
+        # Write base tag with clamped mean value
+        tag_base = f"effnet_{mood_term}"
+        tags[tag_base] = mean_val
+
+        # Only assign tier if variance is acceptable AND value is non-neutral
+        if std_val >= ACCEPTABLE:
+            logging.debug(
+                f"[aggregation] Regression no tier: {head_name} → {mood_term} "
+                f"(mean={mean_val:.3f}, std={std_val:.3f} - high variance)"
+            )
+            continue
 
         # Determine tier based on BOTH variance (stability) AND intensity (extremeness)
         # More extreme values + lower variance → higher tier (more confident)
@@ -121,10 +206,6 @@ def add_regression_mood_tiers(tags: dict[str, Any], predictions: dict[str, list[
             # Acceptable variance OR moderate intensity → loose tier
             tier = "low"
 
-        # Add synthetic tags that mimic natural head outputs
-        # Use "effnet_" prefix since these are effnet regression heads
-        tag_base = f"effnet_{mood_term}"
-        tags[tag_base] = mean_val  # Raw intensity value
         tags[f"{tag_base}_tier"] = tier  # Tier for aggregation
 
         logging.info(
@@ -133,9 +214,15 @@ def add_regression_mood_tiers(tags: dict[str, Any], predictions: dict[str, list[
         )
 
 
-def aggregate_mood_tiers(tags: dict[str, Any], mood_terms: set[str] | None = None) -> None:
+def aggregate_mood_tiers(
+    tags: dict[str, Any], mood_terms: set[str] | None = None, calibrations: dict[str, dict[str, Any]] | None = None
+) -> None:
     """
     Aggregate mood-tier tags into mood-strict, mood-regular, mood-loose collections.
+
+    Optionally applies calibration to raw scores before tier assignment. If calibrations
+    are provided, raw scores are normalized using min-max scaling to make different models
+    comparable. If no calibration exists for a tag, the raw score is used unchanged.
 
     Applies pair conflict suppression: if both sides of a pair (e.g., happy/sad,
     aggressive/relaxed) have the same tier, neither is emitted to avoid contradictory tags.
@@ -143,8 +230,15 @@ def aggregate_mood_tiers(tags: dict[str, Any], mood_terms: set[str] | None = Non
     Also applies label improvements for better human readability.
 
     Modifies tags dict in-place.
+
+    Args:
+        tags: Dictionary of tag keys to values
+        mood_terms: Optional set of mood terms to filter
+        calibrations: Optional calibration data (tag_key -> {p5, p95, method})
     """
-    logging.debug(f"[aggregation] aggregate_mood_tiers called with mood_terms={mood_terms}")
+    logging.debug(
+        f"[aggregation] aggregate_mood_tiers called with mood_terms={mood_terms}, calibrations={calibrations is not None}"
+    )
 
     # Collect all tier tags with their probabilities
     tier_map: dict[str, tuple[str, float]] = {}  # base_key -> (tier, prob)
@@ -175,6 +269,14 @@ def aggregate_mood_tiers(tags: dict[str, Any], mood_terms: set[str] | None = Non
         if p is None:
             logging.warning(f"[aggregation] No probability value found for {base_key} (tier tag {k})")
             continue
+
+        # Apply calibration if available (conditional)
+        if calibrations and base_key in calibrations:
+            from nomarr.ml.calibration import apply_minmax_calibration
+
+            raw_p = p
+            p = apply_minmax_calibration(p, calibrations[base_key])
+            logging.debug(f"[aggregation] Applied calibration to {base_key}: {raw_p:.3f} → {p:.3f}")
 
         tier_map[base_key] = (tier, p)
 

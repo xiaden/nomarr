@@ -6,12 +6,8 @@ from __future__ import annotations
 
 import argparse
 
-from nomarr.config import compose
-from nomarr.data.queue import JobQueue
+import nomarr.app as app
 from nomarr.interfaces.cli.ui import InfoPanel, print_error, print_info, print_success, print_warning
-from nomarr.interfaces.cli.utils import get_db
-from nomarr.services.queue import QueueService
-from nomarr.services.worker import WorkerService
 
 
 def cmd_remove(args: argparse.Namespace) -> int:
@@ -19,12 +15,15 @@ def cmd_remove(args: argparse.Namespace) -> int:
     Remove job(s) from the queue.
     Supports single job removal, bulk flush by status, or remove all.
     """
-    cfg = compose({})
-    db = get_db(cfg)
+    # Check if Application is running
+    if not app.application.is_running():
+        print_error("Application is not running. Start the server first.")
+        return 1
+
     try:
-        queue = JobQueue(db)
-        queue_service = QueueService(db, queue)
-        worker_service = WorkerService(db, queue)
+        # Use services from running Application
+        queue_service = app.application.services["queue"]
+        worker_service = app.application.services["worker"]
 
         # Check if worker is currently enabled (preserve state)
         was_enabled = worker_service.is_enabled()
@@ -125,5 +124,6 @@ def cmd_remove(args: argparse.Namespace) -> int:
                 worker_service.enable()
                 print_info("Worker resumed")
 
-    finally:
-        db.close()
+    except Exception as e:
+        print_error(f"Error removing jobs: {e}")
+        return 1

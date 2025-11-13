@@ -3,6 +3,7 @@
 This file captures concise, actionable knowledge for coding agents to be productive in this repository.
 
 - Quick entry points:
+
   - `readme.md` — canonical overview, Docker/Lidarr setup, cache semantics, CLI vs API behavior, and links to deeper docs.
   - `docs/NAMING_STANDARDS.md` — **CRITICAL**: Naming conventions for variables, functions, database columns, API fields. Review before adding new code.
   - `docs/API_REFERENCE.md` — endpoint details, schemas, and Lidarr integration examples.
@@ -20,12 +21,14 @@ This file captures concise, actionable knowledge for coding agents to be product
   - `scripts/generate_inits.py` — auto-generate `__init__.py` files with proper `__all__` exports (run after adding/removing public classes/functions).
 
 - Development tools:
+
   - `ruff` — linter and formatter (**RUN AFTER MAJOR CHANGES**: `ruff check .` then `ruff check --fix .`)
   - `scripts/discover_api.py` — **MANDATORY before writing tests**: Shows actual module API (classes, methods, signatures)
   - `scripts/check_naming.py` — detect naming convention violations (optional)
   - `scripts/generate_inits.py` — auto-generate `__init__.py` files; run with `python scripts/generate_inits.py` after adding/removing/renaming public exports
 
 - Codebase structure (semantic layered architecture):
+
   ```
   nomarr/
   ├── interfaces/          # Presentation layer (all user-facing code)
@@ -60,29 +63,29 @@ This file captures concise, actionable knowledge for coding agents to be product
   │   └── queue.py        # JobQueue, TaggerWorker (queue worker)
   ├── helpers/            # Shared utilities
   │   └── (various helpers)
-  └── (root modules)      # config.py, rules.py, start_api.py
+  └── (root modules)      # config.py, rules.py, start.py
   ```
 
 - High-level architecture (how pieces communicate):
-  - **Single unified API** (0.0.0.0:8356) serves public endpoints (for Lidarr), internal endpoints (for CLI), and web endpoints (for browser UI).
-  - **Three-layer authentication**:
-    - Public endpoints (`/tag`, `/queue`, etc.) use `api_key` authentication (for Lidarr/webhooks)
-    - Internal endpoints (`/internal/*`) use separate `internal_key` (for CLI, auto-generated and hidden)
+
+  - **Single unified API** (0.0.0.0:8356) serves public endpoints (for Lidarr), and web endpoints (for browser UI).
+  - **Two-layer authentication**:
+    - Public endpoints (`/api/v1/tag`, `/api/v1/queue`, etc.) use `api_key` authentication (for Lidarr/webhooks)
     - Web endpoints (`/web/*`, `/web/api/*`) use session tokens from admin password login (for browser UI)
-  - Web UI uses server-side proxy architecture: browser → session token → `/web/api/*` → server-side proxy → `/internal/*` with `internal_key` (never exposed to browser)
   - Admin password: auto-generated on first run, stored as salted SHA-256 hash in DB, managed via `manage_password.py` CLI
   - Sessions: write-through cache (in-memory for performance, DB for persistence), 24-hour expiry, survives container restarts
-  - API + TaggerWorker + LibraryScanWorker share a single SQLite DB (`config/db/essentia.sqlite`). The DB stores queue rows, library files, library scans, meta (api_key, internal_key, admin_password_hash, worker_enabled, averages), results, session tokens.
-  - API starts on container boot via `start_api.py`. Model cache is **lazy-loaded** (models cached on first use, not at startup).
+  - API + TaggerWorker + LibraryScanWorker share a single SQLite DB (`config/db/essentia.sqlite`). The DB stores queue rows, library files, library scans, meta (api_key, admin_password_hash, worker_enabled, averages), results, session tokens.
+  - API starts on container boot via `start.py`. Model cache is **lazy-loaded** (models cached on first use, not at startup).
   - **TaggerWorker**: Polls DB for pending tag jobs and calls `core/processor.py:process_file()`; DB mutations are under `queue.lock`. Long-running work happens outside the lock.
   - **LibraryScanWorker**: Background thread (in `services/workers/scanner.py`) that scans music library directory, reads all tags from audio files, and updates `library_files` table. Configured via `library_path` in config.yaml. Runs independently from tagging operations.
-  - **CLI requires internal API** to be running. Uses `/internal/process_stream` for instant processing with warm cache and real-time streaming progress.
-  - **Web UI requires internal API** to be running. Uses `/web/api/*` proxy endpoints that call `/internal/*` server-side. Includes Library tab for managing library scans.
+  - **CLI accesses services directly**: Uses `app.application.services` directly (no HTTP, runs in same process as API server).
+  - **Web UI** requires API to be running. Uses `/web/api/*` endpoints that access Application services.
   - **Multi-worker parallelism**: ProcessingCoordinator (in `interfaces/api/coordinator.py`) uses ProcessPoolExecutor with configurable worker_count (default 1). Each worker process loads independent model cache (~400MB per worker). Note: Multiple workers can overwhelm consumer GPUs; adjust carefully.
   - **GPU concurrency**: TensorFlow configured via environment variables (`TF_FORCE_GPU_ALLOW_GROWTH=true`, `TF_GPU_THREAD_MODE=gpu_private`) to enable multiple worker processes to use GPU simultaneously without pre-allocating all VRAM.
   - **Service layer**: All business operations go through services (ProcessingService, QueueService, LibraryService, WorkerService, HealthMonitor). Services provide fail-fast behavior and proper error handling.
 
 - Important repository-specific conventions and patterns:
+
   - Tag namespace: all tags are written under `essentia:<key>` (config `namespace`).
   - Emit-all scores: multilabel/multiclass heads write base probabilities for all labels; tiers only for selected labels.
   - Mood aggregation: `mood-strict`, `mood-regular`, `mood-loose` are native multi-value tags derived from `*_tier` tags. Mood terms come from head names (spaces or underscores handled). Per-model probabilities are available via individual label keys.
@@ -94,6 +97,7 @@ This file captures concise, actionable knowledge for coding agents to be product
   - **CLI commands**: Available commands are `run`, `queue`, `list`, `remove`, `info`, `show-tags`, `cleanup`, `cache-refresh`, `admin-reset`, `watch`. The `admin-reset` command has `--stuck` and `--errors` flags to target specific job states.
 
 - Data shapes and contracts (quick reference):
+
   - POST /api/v1/tag: { path: string, force?: boolean } (public API, queues job)
   - GET /api/v1/list?limit=50&offset=0&status=pending: list jobs with pagination and filtering (recommended)
   - GET /api/v1/queue?limit=5: legacy job listing (use /list instead)
@@ -113,6 +117,7 @@ This file captures concise, actionable knowledge for coding agents to be product
   - SSE events: `progress` (head updates), `complete` (result), `error`, `done` (stream end)
 
 - Integration and operational notes (useful for fixes/features):
+
   - Models live under `/app/models`; ensure both `.json` and `.pb` exist for each head/embedding.
   - API keys: `python3 -m nomarr.manage_key --show` (public key). Internal key is auto-generated and stored in DB.
   - Admin password: `python3 -m nomarr.manage_password --show` (view), `--verify` (check), `--reset` (change). Auto-generated on first run and logged to container output.
@@ -123,6 +128,7 @@ This file captures concise, actionable knowledge for coding agents to be product
   - All endpoints (public + internal + web) are on port 8356; different auth per layer.
 
 - Small decisions to respect when changing behavior:
+
   - Never process audio while holding the DB lock.
   - Maintain backward-compatible config keys (flat + legacy nested aliases).
   - Preserve tag format and namespace; do not change key naming schemes lightly.
@@ -138,7 +144,7 @@ This file captures concise, actionable knowledge for coding agents to be product
   - `nomarr/interfaces/api/auth.py` — authentication logic (API keys, admin password hashing, session management)
   - `nomarr/interfaces/api/endpoints/web.py` — web UI endpoints (login/logout, proxy endpoints)
   - `nomarr/interfaces/web/` — browser UI files (app.js, index.html, styles.css)
-  - `nomarr/start_api.py` — single-process API launcher
+  - `nomarr/start.py` — Application launcher (starts Application, then API server)
   - `nomarr/manage_password.py` — admin password CLI tool
   - `nomarr/interfaces/cli/main.py` — internal API client with local fallback
   - `nomarr/core/processor.py` — orchestration of model inference and tag writing
@@ -174,26 +180,30 @@ Docker & Lidarr sideloading (Ubuntu server notes)
 - Purpose: this project is intended to run as a Docker sidecar alongside Lidarr so imported files (on shared volumes) can be tagged in-place.
 
 - Networking & compose:
+
   - Prefer a Docker Compose service in the same Docker network as Lidarr. Example service name `nomarr` is reachable by `http://nomarr:8356` from Lidarr when both are in the same compose network.
   - Keep the default container port internal; no host port needs to be exposed when accessed from the same Docker network.
 
 - Volumes and permissions (critical):
+
   - Mount your music library into the container at the same absolute path Lidarr uses (e.g., `/music`). Use a consistent mapping: host:/music -> container:/music.
   - The container must be able to write audio files and the SQLite DB file. Ensure UID/GID used by the container matches or has write permission to the host-mounted paths. The existing `docker-compose` snippet uses `user: "1000:1000"` for this reason.
   - The SQLite DB should be persisted on a volume: e.g., host `./config` -> container `/app/config` so `config/db/essentia.sqlite` survives restarts.
 
 - Lidarr integration (post-import):
+
   - Use a post-import script (Lidarr's custom script or webhook) to call the tagger. Example cURL (from Lidarr server or from an entrypoint container on same network):
 
     curl -X POST \
-      -H "Authorization: Bearer <API_KEY>" \
-      -H "Content-Type: application/json" \
-      -d '{"path":"/music/Album/Track.mp3"}' \
-      http://nomarr:8356/api/v1/tag
+     -H "Authorization: Bearer <API_KEY>" \
+     -H "Content-Type: application/json" \
+     -d '{"path":"/music/Album/Track.mp3"}' \
+     http://nomarr:8356/api/v1/tag
 
   - If Lidarr runs on the host (not in the same docker network), call the container using the host IP and an exposed port, or create a docker network that both services join.
 
 - API key & testing inside container:
+
   - The API key is persisted in DB meta. To show or regenerate it inside the container:
 
     python3 -m nomarr.manage_key --show
@@ -204,6 +214,7 @@ Docker & Lidarr sideloading (Ubuntu server notes)
     python3 -m nomarr.interfaces.cli.main run /music/TestSong.mp3
 
 - Common deployment checklist for Ubuntu servers:
+
   1. Install Docker + Docker Compose (compose V2 CLI recommended).
   2. Ensure host directories exist and are owned/writable by the container user (or use `user:` in compose to match host UID/GID).
   3. Place models under `./models` and config under `./config` (which contains `db/essentia.sqlite`).
@@ -239,11 +250,13 @@ python scripts/discover_api.py nomarr.data.queue --summary
 ```
 
 **DO NOT:**
+
 - ❌ Guess at function names (`add_job` vs `add`, `get_job` vs `get`)
 - ❌ Assume class structures (`SessionManager` when it's just functions)
 - ❌ Write tests without discovering actual signatures first
 
 **DO:**
+
 - ✅ Run `discover_api.py` to see actual method names and signatures
 - ✅ Copy exact signatures from discovery output
 - ✅ Verify parameter names match before using
@@ -270,6 +283,7 @@ npm run lint:fix
 ```
 
 **Run linters after:**
+
 - Creating new files
 - Major refactors (like error_text → error_message)
 - Adding multiple functions/classes
@@ -286,7 +300,9 @@ npm run lint:fix
 6. **Check naming** → `python scripts/check_naming.py` (optional)
 
 This prevents the cycle of:
+
 - Guess API → Write test → Test fails → Fix test → Repeat 10 times ❌
 
 Instead:
+
 - Discover API → Write correct test → Test passes → Done ✅

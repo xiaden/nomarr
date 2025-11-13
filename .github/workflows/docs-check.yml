@@ -25,7 +25,7 @@ jobs:
           echo "$CHANGED" | sed 's/^/changed: /'
 
           NEED_DOCS="false"
-          echo "$CHANGED" | grep -E '^(essentia_autotag/(api_app|cli|processor)\.py|models/.+\.json)$' && NEED_DOCS="true" || true
+          echo "$CHANGED" | grep -E '^(nomarr/(interfaces|core|services|ml)/.+\.py|models/.+\.json)$' && NEED_DOCS="true" || true
           echo "need_docs=$NEED_DOCS" >> $GITHUB_OUTPUT
 
       - name: Check README/API_REFERENCE updated

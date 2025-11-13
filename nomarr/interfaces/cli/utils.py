@@ -6,7 +6,6 @@ Helper functions used across multiple command modules.
 from __future__ import annotations
 
 import json
-import logging
 from urllib import error as urlerror
 from urllib import request
 
@@ -19,7 +18,6 @@ __all__ = [
     "format_tag_summary",
     "get_avg_processing_time",
     "get_db",
-    "get_internal_key",
     "update_avg_processing_time",
 ]
 
@@ -88,21 +86,6 @@ def update_avg_processing_time(db: Database, job_elapsed: float):
     # Weighted average: 80% old avg, 20% new job
     new_avg = (current_avg * 0.8) + (job_elapsed * 0.2)
     db.set_meta("avg_processing_time", str(new_avg))
-
-
-def get_internal_key() -> str | None:
-    """Get internal API key from DB for CLI access."""
-    try:
-        cfg = compose({})
-        db = get_db(cfg)
-        try:
-            key = db.get_meta("internal_key")
-            return key
-        finally:
-            db.close()
-    except Exception as e:
-        logging.warning(f"Failed to get internal key: {e}")
-        return None
 
 
 def format_tag_summary(tags: dict) -> str:

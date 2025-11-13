@@ -1,6 +1,6 @@
 """
-Web UI endpoints - authentication and API proxies.
-These endpoints handle web UI login and proxy internal API calls server-side.
+Web UI endpoints - authentication and service access.
+These endpoints handle web UI login and provide authenticated access to application services.
 """
 
 from __future__ import annotations
@@ -114,11 +114,10 @@ async def logout(creds=Depends(verify_session)):
 
 
 # ----------------------------------------------------------------------
-# API proxy endpoints - wrap internal/admin/public endpoints server-side
+# API proxy endpoints - wrap service layer operations
 # ----------------------------------------------------------------------
-# These endpoints accept session tokens from the browser and call
-# internal endpoints using the real internal_key server-side.
-# The browser never sees the internal_key.
+# These endpoints accept session tokens from the browser and directly
+# call service layer operations (queue, processing, library, etc.).
 
 
 # Request/Response models for web API (mirror internal models)
@@ -145,10 +144,30 @@ class AdminResetRequest(BaseModel):
 
 # Helper to get app state
 def get_state():
-    """Get global app state instances."""
+    """
+    Get global app state instances via Application.
+    Returns a simple namespace with references to services and infrastructure.
+    """
+    from types import SimpleNamespace
+
     import nomarr.app as app
 
-    return state
+    return SimpleNamespace(
+        # Direct module-level references (singletons)
+        db=app.db,
+        queue=app.queue,
+        cfg=app.cfg,
+        # Application-owned references (via app.application)
+        queue_service=app.application.services.get("queue"),
+        worker_service=app.application.services.get("worker"),
+        library_service=app.application.services.get("library"),
+        key_service=app.application.services.get("keys"),
+        processor_coord=app.application.coordinator,
+        worker_pool=app.application.workers,
+        event_broker=app.application.event_broker,
+        health_monitor=app.application.health_monitor,
+        library_scan_worker=app.application.library_scan_worker,
+    )
 
 
 # ----------------------------------------------------------------------
@@ -767,11 +786,12 @@ async def web_analytics_tag_frequencies(limit: int = 50):
         result = get_tag_frequencies(app.db, namespace=namespace, limit=limit)
 
         # Transform to format expected by frontend
-        # Backend returns: {"essentia_tags": [(tag, count), ...], ...}
+        # Backend returns: {"nom_tags": [(tag, count), ...], ...} (tags without namespace prefix)
         # Frontend expects: {"tag_frequencies": [{"tag_key": tag, "total_count": count}, ...]}
+        # Add namespace prefix back for display
         tag_frequencies = [
             {"tag_key": f"{namespace}:{tag}", "total_count": count, "unique_values": count}
-            for tag, count in result.get("essentia_tags", [])
+            for tag, count in result.get("nom_tags", [])
         ]
 
         return {"tag_frequencies": tag_frequencies}
@@ -1090,3 +1110,65 @@ async def web_sse_status(token: str):
             "X-Accel-Buffering": "no",  # Disable nginx buffering
         },
     )
+
+
+# ----------------------------------------------------------------------
+# Calibration endpoints
+# ----------------------------------------------------------------------
+
+
+class CalibrationRequest(BaseModel):
+    save_sidecars: bool = True  # Save calibration files next to models by default
+
+
+@router.post("/api/calibration/generate", dependencies=[Depends(verify_session)])
+async def generate_calibration(request: CalibrationRequest):
+    """
+    Generate min-max scale calibration from library tags.
+
+    Analyzes all tagged files in the library to compute scaling parameters (5th/95th percentiles)
+    for normalizing each model to a common [0, 1] scale. This makes model outputs comparable
+    while preserving semantic meaning.
+
+    Uses industry standard minimum of 1000 samples per tag for reliable calibration.
+
+    If save_sidecars=True, writes calibration JSON files next to model files.
+    """
+    s = get_state()
+
+    try:
+        from nomarr.ml.calibration import (
+            generate_minmax_calibration,
+            save_calibration_sidecars,
+        )
+
+        # Run calibration in background thread (can take time with 18k songs)
+        loop = asyncio.get_event_loop()
+        calibration_data = await loop.run_in_executor(
+            None,
+            generate_minmax_calibration,
+            s.db,
+            app.cfg.get("namespace", "nom"),
+        )
+
+        # Optionally save sidecars
+        save_result = None
+        if request.save_sidecars:
+            models_dir = app.cfg.get("models_dir", "models")
+            save_result = await loop.run_in_executor(
+                None,
+                save_calibration_sidecars,
+                calibration_data,
+                models_dir,
+                1,  # version
+            )
+
+        return {
+            "status": "success",
+            "data": calibration_data,
+            "saved_files": save_result,
+        }
+
+    except Exception as e:
+        logging.error(f"[Web] Calibration generation failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e)) from e

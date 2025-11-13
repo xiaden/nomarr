@@ -1,0 +1,128 @@
+Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
+
+Copyright (c) 2025 Nomarr Contributors
+
+This work is licensed under the Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License.
+
+To view a copy of this license, visit:
+https://creativecommons.org/licenses/by-nc-sa/4.0/
+
+or send a letter to:
+Creative Commons, PO Box 1866, Mountain View, CA 94042, USA.
+
+=== SUMMARY ===
+
+You are free to:
+
+- Share: Copy and redistribute the material in any medium or format
+- Adapt: Remix, transform, and build upon the material
+
+Under the following terms:
+
+- Attribution: You must give appropriate credit, provide a link to the license, and indicate if changes were made
+- NonCommercial: You may not use the material for commercial purposes
+- ShareAlike: If you remix, transform, or build upon the material, you must distribute your contributions under the same license
+
+=== FULL LICENSE TEXT ===
+
+For the complete legal text of this license, see:
+https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode
+
+================================================================================
+THIRD-PARTY COMPONENTS
+================================================================================
+
+This software incorporates or depends on third-party components with their own
+licenses. Users must comply with these licenses when using this software.
+
+---
+
+## Essentia Pre-trained Models
+
+The pre-trained machine learning models included in this distribution are
+licensed under the Creative Commons Attribution-NonCommercial-ShareAlike 4.0
+International License (CC BY-NC-SA 4.0).
+
+Copyright (c) Music Technology Group, Universitat Pompeu Fabra
+Source: https://essentia.upf.edu/models.html
+License: https://creativecommons.org/licenses/by-nc-sa/4.0/
+
+YOU ARE FREE TO:
+
+- Share: copy and redistribute the models
+- Adapt: remix, transform, and build upon the models
+
+UNDER THE FOLLOWING TERMS:
+
+- Attribution: You must give appropriate credit to Music Technology Group, UPF
+- NonCommercial: You may not use the models for commercial purposes
+- ShareAlike: Derivative works must use the same CC BY-NC-SA 4.0 license
+
+For commercial licensing of the models, contact Music Technology Group, UPF.
+
+---
+
+## Essentia Audio Analysis Library (AGPL-3.0)
+
+This software uses the Essentia audio analysis library, which is licensed
+under the GNU Affero General Public License v3.0 (AGPL-3.0).
+
+Copyright (c) Music Technology Group, Universitat Pompeu Fabra
+Source: https://github.com/MTG/essentia
+License: https://www.gnu.org/licenses/agpl-3.0.html
+
+Note: This project uses Essentia as a library dependency. The Nomarr source
+code remains under the MIT License, but users must comply with AGPL-3.0 terms
+when distributing Essentia itself.
+
+---
+
+## GPL-Licensed Dependencies
+
+This software depends on the following GPL-licensed components (used as
+libraries or system tools, not distributed with source code):
+
+- mutagen: GPL-2.0 or later (https://github.com/quodlibet/mutagen)
+- FFmpeg: LGPL-2.1 or GPL-2.0+ depending on build (https://ffmpeg.org/)
+- SoX: GPL-2.0 or LGPL (http://sox.sourceforge.net/)
+
+These are runtime dependencies installed in the Docker container. Users are
+responsible for compliance with their respective licenses.
+
+---
+
+## Apache-Licensed Dependencies
+
+- TensorFlow: Apache License 2.0 (https://github.com/tensorflow/tensorflow)
+- Requests: Apache License 2.0 (https://github.com/psf/requests)
+
+---
+
+## BSD-Licensed Dependencies
+
+- NumPy: BSD-3-Clause (https://github.com/numpy/numpy)
+- SciPy: BSD-3-Clause (https://github.com/scipy/scipy)
+- Uvicorn: BSD-3-Clause (https://github.com/encode/uvicorn)
+- soundfile: BSD-3-Clause (https://github.com/bastibe/python-soundfile)
+
+---
+
+## MIT-Licensed Dependencies
+
+- FastAPI: MIT (https://github.com/tiangolo/fastapi)
+- Rich: MIT (https://github.com/Textualize/rich)
+- PyYAML: MIT (https://github.com/yaml/pyyaml)
+- Ruff: MIT (https://github.com/astral-sh/ruff)
+- Pytest: MIT (https://github.com/pytest-dev/pytest)
+- ESLint: MIT (https://github.com/eslint/eslint)
+
+---
+
+## Public Domain
+
+- SQLite: Public Domain (https://www.sqlite.org/copyright.html)
+
+================================================================================
+
+For complete license texts and attributions, see the respective project
+repositories linked above.

@@ -18,7 +18,7 @@ def get_tag_frequencies(db: Database, namespace: str = "nom", limit: int = 50) -
 
     Returns:
         {
-            "essentia_tags": [(tag_name, count), ...],
+            "nom_tags": [(tag_name, count), ...],  # Tags without namespace prefix
             "standard_tags": {
                 "artists": [(artist, count), ...],
                 "genres": [(genre, count), ...],
@@ -47,7 +47,7 @@ def get_tag_frequencies(db: Database, namespace: str = "nom", limit: int = 50) -
     )
 
     # Format results (remove namespace prefix)
-    essentia_tag_counts = [(tag_key.replace(namespace_prefix, ""), count) for tag_key, count in cursor.fetchall()]
+    nom_tag_counts = [(tag_key.replace(namespace_prefix, ""), count) for tag_key, count in cursor.fetchall()]
 
     # Count standard metadata (still needs library_files table)
     artist_cursor = db.conn.execute(
@@ -90,7 +90,7 @@ def get_tag_frequencies(db: Database, namespace: str = "nom", limit: int = 50) -
     album_counts = album_cursor.fetchall()
 
     return {
-        "essentia_tags": essentia_tag_counts,
+        "nom_tags": nom_tag_counts,
         "standard_tags": {
             "artists": artist_counts,
             "genres": genre_counts,

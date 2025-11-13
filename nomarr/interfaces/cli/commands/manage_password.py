@@ -7,9 +7,11 @@ from __future__ import annotations
 import argparse
 import getpass
 
+import nomarr.app as app
 from nomarr.config import compose
 from nomarr.data.db import Database
 from nomarr.interfaces.cli.ui import print_error, print_info, print_success
+from nomarr.services.keys import KeyManagementService
 
 
 def cmd_manage_password(args: argparse.Namespace) -> int:
@@ -27,11 +29,16 @@ def cmd_manage_password(args: argparse.Namespace) -> int:
     Returns:
         Exit code (0 = success)
     """
-    config = compose()
-    db_path = config["db_path"]
-
-    db = Database(db_path)
-    service = KeyManagementService(db)
+    # Try to use running Application's service, fall back to direct DB access
+    if app.application.is_running():
+        service = app.application.services["keys"]
+        db = None  # Don't need to close it, Application owns it
+    else:
+        # Application not running - create our own instances
+        config = compose()
+        db_path = config["db_path"]
+        db = Database(db_path)
+        service = KeyManagementService(db)
 
     try:
         if args.password_cmd == "show":
@@ -45,7 +52,9 @@ def cmd_manage_password(args: argparse.Namespace) -> int:
             return 1
 
     finally:
-        db.close()
+        # Only close DB if we created it ourselves
+        if db is not None:
+            db.close()
 
 
 def _show_password(service: KeyManagementService) -> int:
@@ -54,7 +63,7 @@ def _show_password(service: KeyManagementService) -> int:
 
     if not password_hash:
         print_info("No admin password set")
-        print_info("A password will be auto-generated on first API startup")
+        print_info("A password will be auto-generated on first application startup")
         return 0
 
     print_info("Current admin password hash:")

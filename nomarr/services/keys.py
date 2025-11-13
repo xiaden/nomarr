@@ -3,7 +3,6 @@ Key Management Service
 
 Centralized service for managing authentication credentials:
 - Public API keys (for Lidarr/external integrations)
-- Internal API keys (for CLI access)
 - Admin passwords (for web UI authentication)
 - Session tokens (for web UI session management)
 """
@@ -86,57 +85,6 @@ class KeyManagementService:
         new_key = secrets.token_urlsafe(32)
         self.db.set_meta("api_key", new_key)
         logging.warning("[KeyManagement] API key rotated - old key invalidated")
-        return new_key
-
-    # ----------------------------------------------------------------------
-    # Internal API Key Management (for CLI)
-    # ----------------------------------------------------------------------
-
-    def get_internal_key(self) -> str:
-        """
-        Get the internal API key (raises if not found).
-
-        Returns:
-            Internal API key string
-
-        Raises:
-            RuntimeError: If internal key not found in database
-        """
-        key = self.db.get_meta("internal_key")
-        if not key:
-            raise RuntimeError("Internal API key not found in DB. Key should be generated during initialization.")
-        return key
-
-    def get_or_create_internal_key(self) -> str:
-        """
-        Get or create the internal API key for CLI-only endpoints.
-        This key is used by the CLI to access internal processing endpoints.
-
-        Returns:
-            Internal API key string (existing or newly generated)
-        """
-        key = self.db.get_meta("internal_key")
-        if key:
-            return key
-        new_key = secrets.token_urlsafe(32)
-        self.db.set_meta("internal_key", new_key)
-        logging.info("[KeyManagement] Generated new internal API key for CLI access.")
-        return new_key
-
-    def rotate_internal_key(self) -> str:
-        """
-        Generate a new internal API key, replacing any existing one.
-
-        Returns:
-            New internal API key string
-
-        Warning:
-            This invalidates the old key immediately. CLI will need to
-            restart to pick up the new key.
-        """
-        new_key = secrets.token_urlsafe(32)
-        self.db.set_meta("internal_key", new_key)
-        logging.warning("[KeyManagement] Internal API key rotated - old key invalidated")
         return new_key
 
     # ----------------------------------------------------------------------

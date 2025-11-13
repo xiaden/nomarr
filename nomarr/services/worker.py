@@ -10,8 +10,9 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from nomarr.data.db import Database
-    from nomarr.data.queue import JobQueue, TaggerWorker
+    from nomarr.data.queue import ProcessingQueue
     from nomarr.interfaces.api.coordinator import ProcessingCoordinator
+    from nomarr.services.workers.base import BaseWorker
 
 
 class WorkerService:
@@ -25,7 +26,7 @@ class WorkerService:
     def __init__(
         self,
         db: Database,
-        queue: JobQueue,
+        queue: ProcessingQueue,
         processor_coord: ProcessingCoordinator | None = None,
         default_enabled: bool = True,
         worker_count: int = 1,
@@ -48,7 +49,7 @@ class WorkerService:
         self.default_enabled = default_enabled
         self.worker_count = worker_count
         self.poll_interval = poll_interval
-        self.worker_pool: list[TaggerWorker] = []
+        self.worker_pool: list[BaseWorker] = []
 
     def is_enabled(self) -> bool:
         """
@@ -121,7 +122,7 @@ class WorkerService:
             any_busy = any(w.is_busy() for w in self.worker_pool if w.is_alive())
 
             # Check if any jobs are currently running in DB
-            cur = self.db.conn.execute("SELECT COUNT(*) FROM queue WHERE status='running'")
+            cur = self.db.conn.execute("SELECT COUNT(*) FROM tag_queue WHERE status='running'")
             row = cur.fetchone()
             running_count = row[0] if row else 0
 
@@ -157,7 +158,7 @@ class WorkerService:
         """
         jobs_reset = 0
         with self.queue.lock:
-            cur = self.db.conn.execute("SELECT id FROM queue WHERE status='running'")
+            cur = self.db.conn.execute("SELECT id FROM tag_queue WHERE status='running'")
             running_job_ids = [row[0] for row in cur.fetchall()]
 
             for job_id in running_job_ids:
@@ -169,7 +170,7 @@ class WorkerService:
 
         return jobs_reset
 
-    def start_workers(self, event_broker: Any | None = None) -> list[TaggerWorker]:
+    def start_workers(self, event_broker: Any | None = None) -> list[BaseWorker]:
         """
         Start worker threads up to configured count.
 
@@ -226,14 +227,21 @@ class WorkerService:
 
         # Start new workers up to worker_count
         for i in range(current_count, self.worker_count):
-            worker = TaggerWorker(
+            from nomarr.services.workers.tagger import create_tagger_worker
+
+            # Ensure event_broker is provided (required for BaseWorker)
+            if not event_broker:
+                raise RuntimeError("event_broker is required for workers")
+
+            worker = create_tagger_worker(
                 db=self.db,
                 queue=self.queue,
+                event_broker=event_broker,
                 interval=self.poll_interval,
-                process_fn=process_via_pool,  # Route through process pool
                 worker_id=i,
-                event_broker=event_broker,  # Pass event broker for SSE updates
             )
+            # Override process_fn to use process pool
+            worker.process_fn = process_via_pool
             worker.start()
             self.worker_pool.append(worker)
             logging.info(f"[WorkerService] Started worker {i + 1}/{self.worker_count}")
@@ -282,7 +290,7 @@ class WorkerService:
                 {
                     "id": i,
                     "alive": worker.is_alive(),
-                    "name": worker.thread.name if hasattr(worker, "thread") else f"Worker-{i}",
+                    "name": worker.name,
                 }
             )
 

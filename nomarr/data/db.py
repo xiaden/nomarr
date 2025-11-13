@@ -16,9 +16,9 @@ def now_ms() -> int:
 #  Schema
 # ----------------------------------------------------------------------
 SCHEMA = [
-    # Job queue - tracks processing state and errors
+    # Tag processing queue - tracks ML tagging jobs and errors
     """
-    CREATE TABLE IF NOT EXISTS queue (
+    CREATE TABLE IF NOT EXISTS tag_queue (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         path TEXT,
         status TEXT DEFAULT 'pending',
@@ -52,14 +52,14 @@ SCHEMA = [
         year INTEGER,
         track_number INTEGER,
         tags_json TEXT,
-        essentia_tags_json TEXT,
+        nom_tags TEXT,
         scanned_at INTEGER,
         last_tagged_at INTEGER
     );
     """,
-    # Library scans - tracks scan history
+    # Library scan queue - tracks library scanning jobs (read existing tags from files)
     """
-    CREATE TABLE IF NOT EXISTS library_scans (
+    CREATE TABLE IF NOT EXISTS library_queue (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         started_at INTEGER,
         finished_at INTEGER,
@@ -106,8 +106,8 @@ SCHEMA = [
     """,
 ]
 
-# Schema version for migrations
-SCHEMA_VERSION = 5
+# Schema version (pre-alpha, no migrations yet - just initial schema)
+SCHEMA_VERSION = 1
 
 
 # ----------------------------------------------------------------------
@@ -144,8 +144,10 @@ class Database:
             self.conn.execute(ddl)
         self.conn.commit()
 
-        # Run migrations if needed
-        self._migrate_schema()
+        # Store schema version for reference (pre-alpha: no migrations, just delete DB on schema changes)
+        current_version = self.get_meta("schema_version")
+        if not current_version:
+            self.set_meta("schema_version", str(SCHEMA_VERSION))
 
     def create_tag_scan_cache_table(self):
         self.conn.execute("""
@@ -176,27 +178,6 @@ class Database:
     def get_all_tag_scans(self):
         return self.conn.execute("SELECT * FROM tag_scan_cache").fetchall()
 
-    def _migrate_schema(self):
-        """Apply schema migrations for existing databases."""
-        current_version = self.get_meta("schema_version")
-        current_version = int(current_version) if current_version else 1
-
-        if current_version < 2:
-            # Migration 1->2: Add results_json column
-            try:
-                self.conn.execute("ALTER TABLE queue ADD COLUMN results_json TEXT")
-                self.conn.commit()
-            except sqlite3.OperationalError:
-                # Column already exists (migration already applied)
-                pass
-
-        if current_version < 3:
-            # Migration 2->3: Add library_files and library_scans tables
-            # These are created via SCHEMA if they don't exist, so just update version
-            pass
-
-        self.set_meta("schema_version", str(SCHEMA_VERSION))
-
     # ---------------------------- Meta ----------------------------
     def get_meta(self, key: str) -> str | None:
         cur = self.conn.execute("SELECT value FROM meta WHERE key=?", (key,))
@@ -212,11 +193,11 @@ class Database:
         self.conn.execute("DELETE FROM meta WHERE key=?", (key,))
         self.conn.commit()
 
-    # ---------------------------- Queue ----------------------------
+    # ---------------------------- Tag Queue ----------------------------
     def enqueue(self, path: str, force: bool = False) -> int:
         cur = self.conn.cursor()
         cur.execute(
-            "INSERT INTO queue(path, status, created_at, force) VALUES(?,?,?,?)",
+            "INSERT INTO tag_queue(path, status, created_at, force) VALUES(?,?,?,?)",
             (path, "pending", now_ms(), int(force)),
         )
         self.conn.commit()
@@ -224,7 +205,7 @@ class Database:
         # Validate successful insert and return type
         job_id = cur.lastrowid
         if job_id is None:
-            raise RuntimeError("Failed to insert job into queue - no row ID returned")
+            raise RuntimeError("Failed to insert job into tag_queue - no row ID returned")
         return job_id
 
     def update_job(
@@ -234,18 +215,18 @@ class Database:
         results_json = json.dumps(results) if results else None
 
         if status == "running":
-            self.conn.execute("UPDATE queue SET status=?, started_at=? WHERE id=?", (status, ts, job_id))
+            self.conn.execute("UPDATE tag_queue SET status=?, started_at=? WHERE id=?", (status, ts, job_id))
         elif status in ("done", "error"):
             self.conn.execute(
-                "UPDATE queue SET status=?, finished_at=?, error_message=?, results_json=? WHERE id=?",
+                "UPDATE tag_queue SET status=?, finished_at=?, error_message=?, results_json=? WHERE id=?",
                 (status, ts, error_message, results_json, job_id),
             )
         else:
-            self.conn.execute("UPDATE queue SET status=? WHERE id=?", (status, job_id))
+            self.conn.execute("UPDATE tag_queue SET status=? WHERE id=?", (status, job_id))
         self.conn.commit()
 
     def job_status(self, job_id: int) -> dict[str, Any] | None:
-        cur = self.conn.execute("SELECT * FROM queue WHERE id=?", (job_id,))
+        cur = self.conn.execute("SELECT * FROM tag_queue WHERE id=?", (job_id,))
         row = cur.fetchone()
         if not row:
             return None
@@ -253,7 +234,7 @@ class Database:
         return dict(zip(columns, row, strict=False))
 
     def queue_depth(self) -> int:
-        cur = self.conn.execute("SELECT COUNT(*) FROM queue WHERE status IN ('pending', 'running')")
+        cur = self.conn.execute("SELECT COUNT(*) FROM tag_queue WHERE status IN ('pending', 'running')")
         return int(cur.fetchone()[0])
 
     def queue_stats(self) -> dict[str, int]:
@@ -261,7 +242,7 @@ class Database:
         cur = self.conn.execute(
             """
             SELECT status, COUNT(*) as count
-            FROM queue
+            FROM tag_queue
             GROUP BY status
             """
         )
@@ -273,7 +254,7 @@ class Database:
 
     def clear_old_jobs(self, max_age_hours: int = 168):
         cutoff = now_ms() - max_age_hours * 3600 * 1000
-        self.conn.execute("DELETE FROM queue WHERE finished_at IS NOT NULL AND finished_at < ?", (cutoff,))
+        self.conn.execute("DELETE FROM tag_queue WHERE finished_at IS NOT NULL AND finished_at < ?", (cutoff,))
         self.conn.commit()
 
     def reset_running_to_pending(self) -> int:
@@ -283,11 +264,11 @@ class Database:
         Returns the number of jobs reset.
         """
         # Count first, then update (rowcount doesn't work reliably with SQLite)
-        count_cursor = self.conn.execute("SELECT COUNT(*) FROM queue WHERE status = 'running'")
+        count_cursor = self.conn.execute("SELECT COUNT(*) FROM tag_queue WHERE status = 'running'")
         row = count_cursor.fetchone()
         count = row[0] if row else 0
         self.conn.execute(
-            "UPDATE queue SET status = 'pending', started_at = NULL, error_message = NULL, finished_at = NULL WHERE status = 'running'"
+            "UPDATE tag_queue SET status = 'pending', started_at = NULL, error_message = NULL, finished_at = NULL WHERE status = 'running'"
         )
         self.conn.commit()
         return count
@@ -306,7 +287,7 @@ class Database:
         year: int | None = None,
         track_number: int | None = None,
         tags_json: str | None = None,
-        essentia_tags_json: str | None = None,
+        nom_tags: str | None = None,
         last_tagged_at: int | None = None,
     ) -> int:
         """
@@ -320,7 +301,7 @@ class Database:
             INSERT INTO library_files(
                 path, file_size, modified_time, duration_seconds,
                 artist, album, title, genre, year, track_number,
-                tags_json, essentia_tags_json, scanned_at, last_tagged_at
+                tags_json, nom_tags, scanned_at, last_tagged_at
             ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(path) DO UPDATE SET
                 file_size=excluded.file_size,
@@ -333,7 +314,7 @@ class Database:
                 year=excluded.year,
                 track_number=excluded.track_number,
                 tags_json=excluded.tags_json,
-                essentia_tags_json=excluded.essentia_tags_json,
+                nom_tags=excluded.nom_tags,
                 scanned_at=excluded.scanned_at,
                 last_tagged_at=COALESCE(excluded.last_tagged_at, last_tagged_at)
             """,
@@ -349,7 +330,7 @@ class Database:
                 year,
                 track_number,
                 tags_json,
-                essentia_tags_json,
+                nom_tags,
                 scanned_at,
                 last_tagged_at,
             ),
@@ -405,10 +386,10 @@ class Database:
         self.conn.commit()
 
     def clear_library_data(self):
-        """Clear all library files, tags, and scans (keeps queue and meta)."""
+        """Clear all library files, tags, and scans (keeps tag_queue and meta)."""
         self.conn.execute("DELETE FROM library_tags")
         self.conn.execute("DELETE FROM library_files")
-        self.conn.execute("DELETE FROM library_scans")
+        self.conn.execute("DELETE FROM library_queue")
         self.conn.commit()
 
     def get_library_stats(self) -> dict[str, Any]:
@@ -430,12 +411,12 @@ class Database:
         columns = [desc[0] for desc in cur.description]
         return dict(zip(columns, row, strict=False))
 
-    # ---------------------------- Library Scans ----------------------------
+    # ---------------------------- Library Scan Queue ----------------------------
     def create_library_scan(self) -> int:
         """Start a new library scan. Returns scan ID."""
         cur = self.conn.cursor()
         # Create scan in 'pending' status - worker will mark it 'running' when it starts
-        cur.execute("INSERT INTO library_scans(started_at, status) VALUES(?, 'pending')", (now_ms(),))
+        cur.execute("INSERT INTO library_queue(started_at, status) VALUES(?, 'pending')", (now_ms(),))
         self.conn.commit()
         scan_id = cur.lastrowid
         if scan_id is None:
@@ -481,7 +462,7 @@ class Database:
 
         if updates:
             params.append(scan_id)
-            query = f"UPDATE library_scans SET {', '.join(updates)} WHERE id=?"
+            query = f"UPDATE library_queue SET {', '.join(updates)} WHERE id=?"
             self.conn.execute(query, params)
             self.conn.commit()
 
@@ -493,7 +474,7 @@ class Database:
         Returns:
             Number of scans reset
         """
-        cur = self.conn.execute("UPDATE library_scans SET status='pending' WHERE status='running'")
+        cur = self.conn.execute("UPDATE library_queue SET status='pending' WHERE status='running'")
         self.conn.commit()
         return cur.rowcount
 
@@ -728,7 +709,7 @@ class Database:
 
     def get_library_scan(self, scan_id: int) -> dict[str, Any] | None:
         """Get library scan by ID."""
-        cur = self.conn.execute("SELECT * FROM library_scans WHERE id=?", (scan_id,))
+        cur = self.conn.execute("SELECT * FROM library_queue WHERE id=?", (scan_id,))
         row = cur.fetchone()
         if not row:
             return None
@@ -737,7 +718,7 @@ class Database:
 
     def list_library_scans(self, limit: int = 10) -> list[dict[str, Any]]:
         """List recent library scans."""
-        cur = self.conn.execute("SELECT * FROM library_scans ORDER BY started_at DESC LIMIT ?", (limit,))
+        cur = self.conn.execute("SELECT * FROM library_queue ORDER BY started_at DESC LIMIT ?", (limit,))
         columns = [desc[0] for desc in cur.description]
         return [dict(zip(columns, row, strict=False)) for row in cur.fetchall()]
 

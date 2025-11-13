@@ -19,7 +19,7 @@ class LibraryService:
     Library scanning operations - shared by all interfaces.
 
     This service encapsulates library scanning logic, ensuring CLI and API
-    coordinate properly when accessing the library_scans table.
+    coordinate properly when accessing the library_queue table.
     """
 
     def __init__(
@@ -52,7 +52,7 @@ class LibraryService:
     def start_scan(
         self,
         namespace: str | None = None,
-        progress_callback: Callable[[int, int, str], None] | None = None,
+        progress_callback: Callable[[int, int], None] | None = None,
         background: bool = False,
     ) -> int:
         """
@@ -60,7 +60,7 @@ class LibraryService:
 
         Args:
             namespace: Optional tag namespace to filter by
-            progress_callback: Optional callback for progress updates (file_num, total, path)
+            progress_callback: Optional callback for progress updates (file_num, total)
             background: If True, queue scan in worker (API). If False, run synchronously (CLI)
 
         Returns:
@@ -79,7 +79,8 @@ class LibraryService:
 
         if background and self.worker:
             # API mode: queue scan in background worker
-            scan_id = self.worker.request_scan(namespace=namespace)
+            # Note: LibraryScanWorker uses its own configured namespace
+            scan_id = self.worker.request_scan()
             logging.info(f"[LibraryService] Queued background scan {scan_id}")
             return scan_id
         else:
@@ -90,12 +91,12 @@ class LibraryService:
             stats = scan_library(
                 db=self.db,
                 library_path=self.library_path,
-                namespace=namespace,
+                namespace=namespace if namespace is not None else "essentia",
                 progress_callback=progress_callback,
             )
 
             # Get the scan_id from the most recent scan
-            cur = self.db.conn.execute("SELECT id FROM library_scans ORDER BY started_at DESC LIMIT 1")
+            cur = self.db.conn.execute("SELECT id FROM library_queue ORDER BY started_at DESC LIMIT 1")
             row = cur.fetchone()
             scan_id = row[0] if row else 0
 
@@ -163,7 +164,7 @@ class LibraryService:
         if running:
             cur = self.db.conn.execute(
                 """SELECT id, files_processed, total_files, current_file
-                   FROM library_scans
+                   FROM library_queue
                    WHERE status='running'
                    ORDER BY started_at DESC
                    LIMIT 1"""
@@ -199,7 +200,7 @@ class LibraryService:
         cur = self.db.conn.execute(
             """SELECT id, status, started_at, finished_at,
                       files_scanned, files_added, files_updated, files_removed, error_message
-               FROM library_scans
+               FROM library_queue
                ORDER BY started_at DESC
                LIMIT ?""",
             (limit,),
@@ -230,6 +231,6 @@ class LibraryService:
         Returns:
             True if a scan is in 'running' status
         """
-        cur = self.db.conn.execute("SELECT COUNT(*) FROM library_scans WHERE status='running'")
+        cur = self.db.conn.execute("SELECT COUNT(*) FROM library_queue WHERE status='running'")
         count = cur.fetchone()[0]
         return count > 0

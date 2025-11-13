@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -313,18 +314,22 @@ class HeadDecision:
         # Optional complete probability map (label -> p)
         self.all_probs = all_probs or {}
 
-    def as_tags(self, prefix: str = "") -> dict[str, Any]:
+    def as_tags(self, prefix: str = "", key_builder: Callable[[str], str] | None = None) -> dict[str, Any]:
         """
         Produce a flat tag dict:
           - regression: { "<name>/<label>": value }
           - multilabel/multiclass: { "<name>/<label>": probability, "<name>/<label>_tier": tier }
-        Prefixed (e.g. "yamnet") by caller if desired.
+
+        Args:
+            prefix: Legacy simple prefix (e.g., "yamnet_")
+            key_builder: Optional function(label) -> versioned_key for modern tag naming
         """
         tags: dict[str, Any] = {}
         if head_is_regression(self.head):
             # details is {label: float}
             for k, v in self.details.items():
-                tags[f"{prefix}{k}"] = v
+                tag_key = key_builder(k) if key_builder else f"{prefix}{k}"
+                tags[tag_key] = v
             return tags
 
         # details is {label: {"p": float, "tier": str}}
@@ -334,22 +339,24 @@ class HeadDecision:
         if head_is_multiclass(self.head):
             # Emit selected classes as before
             for k, v in self.details.items():
-                tags[f"{prefix}{k}"] = float(v.get("p", 0.0))
+                tag_key = key_builder(k) if key_builder else f"{prefix}{k}"
+                tags[tag_key] = float(v.get("p", 0.0))
             # Additionally emit raw probabilities for all labels if available
             for lab, p in (self.all_probs or {}).items():
-                key = f"{prefix}{lab}"
-                if key not in tags:
-                    tags[key] = float(p)
+                tag_key = key_builder(lab) if key_builder else f"{prefix}{lab}"
+                if tag_key not in tags:
+                    tags[tag_key] = float(p)
             return tags
 
         for k, v in self.details.items():
-            tags[f"{prefix}{k}"] = float(v.get("p", 0.0))
-            tags[f"{prefix}{k}_tier"] = v.get("tier", "low")
+            tag_key = key_builder(k) if key_builder else f"{prefix}{k}"
+            tags[tag_key] = float(v.get("p", 0.0))
+            tags[f"{tag_key}_tier"] = v.get("tier", "low")
         # Also emit probabilities for non-selected labels if available (without tiers)
         for lab, p in (self.all_probs or {}).items():
-            key = f"{prefix}{lab}"
-            if key not in tags:  # don't override ones with tiers
-                tags[key] = float(p)
+            tag_key = key_builder(lab) if key_builder else f"{prefix}{lab}"
+            if tag_key not in tags:  # don't override ones with tiers
+                tags[tag_key] = float(p)
         return tags
 
 

@@ -24,10 +24,10 @@ ANTI_PATTERNS = [
     (r"\berr_msg\b", "error_message", "Use error_message instead of err_msg"),
     (r"\berr_text\b", "error_message", "Use error_message instead of err_text"),
     # Uncomment to enforce more standards as needed:
-    # (r'\bnum_workers\b', 'worker_count', 'Use worker_count instead of num_workers'),
-    # (r'\bmax_results\b', 'limit', 'Use limit for consistency with API parameters'),
-    # (r'\bfile_cnt\b', 'file_count', 'Use file_count instead of file_cnt'),
-    # (r'\bworker_cnt\b', 'worker_count', 'Use worker_count instead of worker_cnt'),
+    (r"\bnum_workers\b", "worker_count", "Use worker_count instead of num_workers"),
+    (r"\bmax_results\b", "limit", "Use limit for consistency with API parameters"),
+    (r"\bfile_cnt\b", "file_count", "Use file_count instead of file_cnt"),
+    (r"\bworker_cnt\b", "worker_count", "Use worker_count instead of worker_cnt"),
 ]
 
 # Note: These are acceptable abbreviations (DO NOT add to anti-patterns):

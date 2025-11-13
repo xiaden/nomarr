@@ -19,15 +19,15 @@ router = APIRouter(prefix="/api/v1", tags=["public"])
 #  Dependency: get app globals from parent scope
 # ----------------------------------------------------------------------
 def get_globals():
-    """Get global instances (db, queue, queue_service, worker_service, etc.) from app app."""
+    """Get global instances (db, queue, services, etc.) from app.application."""
 
     return {
         "db": app.db,
         "queue": app.queue,
-        "queue_service": app.queue_service,
-        "worker_service": app.worker_service,
-        "worker_pool": app.worker_pool,
-        "processor_coord": app.processor_coord,
+        "queue_service": app.application.services["queue"],
+        "worker_service": app.application.services["worker"],
+        "worker_pool": app.application.workers,
+        "processor_coord": app.application.coordinator,
         "BLOCKING_MODE": app.BLOCKING_MODE,
         "BLOCKING_TIMEOUT": app.BLOCKING_TIMEOUT,
         "WORKER_ENABLED_DEFAULT": app.WORKER_ENABLED_DEFAULT,

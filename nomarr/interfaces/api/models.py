@@ -27,16 +27,17 @@ class FlushRequest(BaseModel):
     statuses: list[str] | None = None  # e.g., ["pending","error"]; None => default
 
 
-# Internal API request models
+# Legacy processing request models (kept for backward compatibility)
+# These were originally for internal API endpoints (now deleted)
 class InternalProcessRequest(BaseModel):
-    """Request to process a file via internal API."""
+    """Request to process a file (legacy model)."""
 
     path: str
     force: bool | None = False
 
 
 class InternalBatchRequest(BaseModel):
-    """Request to process multiple files via internal API."""
+    """Request to process multiple files (legacy model)."""
 
     paths: list[str]
     force: bool | None = False

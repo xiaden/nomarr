@@ -6,11 +6,8 @@ from __future__ import annotations
 
 import argparse
 
-from nomarr.config import compose
-from nomarr.data.queue import JobQueue
+import nomarr.app as app
 from nomarr.interfaces.cli.ui import InfoPanel, print_error, print_info, print_success
-from nomarr.interfaces.cli.utils import get_db
-from nomarr.services.queue import QueueService
 
 
 def cmd_admin_reset(args: argparse.Namespace) -> int:
@@ -18,12 +15,14 @@ def cmd_admin_reset(args: argparse.Namespace) -> int:
     Admin command to reset jobs to pending status.
     Supports resetting stuck running jobs (--stuck) or error jobs (--errors).
     """
-    cfg = compose({})
-    db = get_db(cfg)
+    # Check if Application is running
+    if not app.application.is_running():
+        print_error("Application is not running. Start the server first.")
+        return 1
+
     try:
-        # Create service
-        queue = JobQueue(db)
-        queue_service = QueueService(db, queue)
+        # Use services from running Application
+        queue_service = app.application.services["queue"]
 
         # Determine which reset mode to use
         if hasattr(args, "stuck") and args.stuck:
@@ -84,5 +83,6 @@ These jobs will be retried by the worker.
             print_error("Must specify either --stuck or --errors")
             return 1
 
-    finally:
-        db.close()
+    except Exception as e:
+        print_error(f"Error resetting jobs: {e}")
+        return 1

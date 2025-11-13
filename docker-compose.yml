@@ -1,18 +1,22 @@
 services:
   nomarr:
-    build: .
-    image: nomarr:latest
+    # Use pre-built image from GitHub Container Registry
+    # To build locally instead: uncomment 'build: .' and comment out 'image:'
+    image: ghcr.io/xiaden/nomarr:latest
+    # build: .
     container_name: nomarr
     user: "1000:1000"
     networks:
       - lidarr_network
     # ports:
     #   - "8356:8356"  # Only expose if needed outside Docker network
-    # Note: Internal endpoints on same port, protected by separate internal_key
     volumes:
-      - ./models:/app/models
+      # Required: Config and database persistence
       - ./config:/app/config
+      # Required: Music library (must match Lidarr's volume mapping)
       - /your/music/location/as/per/lidar/volume/mapping:/same/as/lidarr
+      # Optional: Custom models (only if not using packaged models)
+      # - ./models:/app/models
     environment:
       - NOMARR_DB=/app/config/db/essentia.sqlite
     deploy:

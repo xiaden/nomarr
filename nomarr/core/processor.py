@@ -16,13 +16,27 @@ from typing import Any
 
 import numpy as np
 
+# Get Essentia version for tag versioning
+try:
+    import essentia
+
+    ESSENTIA_VERSION = essentia.__version__
+except (ImportError, AttributeError):
+    ESSENTIA_VERSION = "unknown"
+
+import nomarr.app as app
 from nomarr.data.db import Database
 from nomarr.ml.inference import compute_embeddings_for_backbone, make_head_only_predictor_batched
 from nomarr.ml.models.discovery import discover_heads
 from nomarr.ml.models.embed import pool_scores
 from nomarr.ml.models.heads import run_head_decision
 from nomarr.ml.models.writers import TagWriter
-from nomarr.tagging.aggregation import add_regression_mood_tiers, aggregate_mood_tiers, get_prefix
+from nomarr.tagging.aggregation import (
+    add_regression_mood_tiers,
+    aggregate_mood_tiers,
+    load_calibrations,
+    normalize_tag_label,
+)
 
 
 def _check_already_tagged(path: str, namespace: str, version_tag_key: str, current_version: str) -> bool:
@@ -251,7 +265,18 @@ def process_file(path: str, force: bool = False, progress_callback=None) -> dict
 
             try:
                 decision = run_head_decision(head_info.sidecar, pooled_vec, prefix="")
-                head_tags = decision.as_tags(prefix=get_prefix(head_info.backbone))
+
+                # Build versioned tag keys using runtime framework version and model metadata
+                # Normalize labels (non_happy -> not_happy) before building keys
+                # Capture head_info in closure to avoid late binding issue
+                head_tags = decision.as_tags(
+                    key_builder=lambda label, h=head_info: h.build_versioned_tag_key(
+                        normalize_tag_label(label),
+                        framework_version=ESSENTIA_VERSION,
+                        calib_method="none",
+                        calib_version=0,
+                    )
+                )
 
                 # Combined log: processing complete + tags produced
                 logging.info(
@@ -330,7 +355,14 @@ def process_file(path: str, force: bool = False, progress_callback=None) -> dict
     # Convert regression head predictions (approachability, engagement) to mood tier tags
     add_regression_mood_tiers(tags_accum, regression_predictions)
 
-    aggregate_mood_tiers(tags_accum, mood_terms if mood_terms else None)
+    # Load calibrations if available (conditional - gracefully handles missing files)
+    calibrations = load_calibrations(models_dir)
+    if calibrations:
+        logging.info(f"[aggregation] Loaded calibrations for {len(calibrations)} labels")
+    else:
+        logging.debug("[aggregation] No calibrations found, using raw scores")
+
+    aggregate_mood_tiers(tags_accum, mood_terms if mood_terms else None, calibrations)
 
     tags_accum[version_tag_key] = tagger_version
     logging.info(f"[processor] Writing {len(tags_accum)} tags to file")

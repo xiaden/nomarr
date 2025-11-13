@@ -3,32 +3,32 @@ models_dir: /app/models
 db_path: /app/config/db/essentia.sqlite
 
 # Tag writing settings
-namespace: essentia                  # Tag namespace prefix
-version_tag: essentia_at_version    # Version tracking tag name
-tagger_version: 0.1.0               # Current version
+namespace: nom # Tag namespace prefix
+version_tag: nom_version # Version tracking tag name
+tagger_version: 0.1.0 # Current version
 
 # Audio processing rules
-min_duration_s: 7                   # Minimum audio duration to process
-allow_short: false                  # Whether to process files shorter than minimum
-overwrite_tags: true                # Whether to overwrite existing tags
+min_duration_s: 7 # Minimum audio duration to process
+allow_short: false # Whether to process files shorter than minimum
+overwrite_tags: true # Whether to overwrite existing tags
 
 # API and worker settings
-host: 0.0.0.0                       # API listen address
-port: 8356                          # API listen port
-blocking_mode: true                 # If true, /api/v1/tag blocks until job complete
-blocking_timeout: 3600              # Max seconds for a blocking /api/v1/tag call
-poll_interval: 2                    # Worker queue check interval (seconds)
-worker_enabled: true                # Whether to start worker on startup
-worker_count: 1                     # Number of parallel worker processes (1-8 recommended)
-cleanup_age_hours: 168              # Age threshold for job cleanup (default: 7 days)
+host: 0.0.0.0 # API listen address
+port: 8356 # API listen port
+blocking_mode: true # If true, /api/v1/tag blocks until job complete
+blocking_timeout: 3600 # Max seconds for a blocking /api/v1/tag call
+poll_interval: 2 # Worker queue check interval (seconds)
+worker_enabled: true # Whether to start worker on startup
+worker_count: 1 # Number of parallel worker processes (1-8 recommended)
+cleanup_age_hours: 168 # Age threshold for job cleanup (default: 7 days)
 
 # Model cache settings (GPU memory management)
-cache_idle_timeout: 300             # Seconds of inactivity before unloading models (default: 5 minutes, 0=never)
-cache_auto_evict: true              # Automatically evict cache after idle timeout
+cache_idle_timeout: 300 # Seconds of inactivity before unloading models (default: 5 minutes, 0=never)
+cache_auto_evict: true # Automatically evict cache after idle timeout
 
 # Library scanner settings
-library_path:                       # Path to music library directory (optional)
-library_scan_poll_interval: 10      # Library scanner poll interval (seconds)
+library_path: # Path to music library directory (optional)
+library_scan_poll_interval: 10 # Library scanner poll interval (seconds)
 
 # Web UI authentication
-admin_password:                     # Admin password for web UI (optional; auto-generated if not set)
+admin_password: # Admin password for web UI (optional; auto-generated if not set)

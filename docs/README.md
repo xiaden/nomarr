@@ -1,6 +1,6 @@
 # Documentation Index
 
-This folder centralizes documentation for Essentia Autotag.
+This folder centralizes documentation for Nomarr.
 
 ## Main Documentation
 
@@ -13,9 +13,9 @@ This folder centralizes documentation for Essentia Autotag.
 ## Architecture Overview
 
 ```
-essentia_autotag/
+nomarr/
 ├── interfaces/          # Presentation layer (all user-facing code)
-│   ├── api/            # FastAPI HTTP (public + internal + web endpoints, auth, coordinator, event_broker, state)
+│   ├── api/            # FastAPI HTTP (public + admin + web endpoints, auth, coordinator, event_broker, state)
 │   ├── cli/            # Rich terminal CLI (commands, UI components, utils)
 │   └── web/            # Browser-based web UI (HTML/CSS/JS, session-based auth)
 ├── services/           # Business operations & orchestration
@@ -36,40 +36,41 @@ essentia_autotag/
 │   └── models/         # Model interfaces (discovery, embed, heads, writers)
 ├── tagging/            # Tag processing rules (aggregation.py)
 ├── data/               # Persistence layer (db.py, queue.py)
-└── (shared utilities)  # config.py, util.py, rules.py, helpers/
+└── (shared utilities)  # config.py, rules.py, helpers/, app.py, start.py
 ```
 
 ## Authentication Architecture
 
-Nomarr uses a **three-layer authentication system**:
+Nomarr uses a **two-layer authentication system**:
 
-1. **Public API** (Lidarr/webhooks):
-   - Endpoints: `/tag`, `/queue`, `/status`, `/admin/*`
+1. **Public/Admin API** (Lidarr/webhooks/management):
+
+   - Endpoints: `/api/v1/tag`, `/api/v1/queue`, `/api/v1/status`, `/admin/*`
    - Auth: `api_key` (Bearer token)
-   - Use case: External automation, Lidarr post-import hooks
+   - Use case: External automation, Lidarr post-import hooks, queue/worker management
 
-2. **Internal API** (CLI):
-   - Endpoints: `/internal/process_stream`, `/internal/process_direct`, `/internal/batch_process`, `/internal/health`
-   - Auth: `internal_key` (auto-generated, stored in DB)
-   - Use case: CLI commands with warm cache and real-time streaming
-
-3. **Web UI** (browser):
-   - Endpoints: `/web/auth/login`, `/web/auth/logout`, `/web/api/*` (proxy endpoints)
+2. **Web UI** (browser):
+   - Endpoints: `/web/auth/login`, `/web/auth/logout`, `/web/api/*`
    - Auth: Session token (24-hour expiry) obtained via admin password login
    - Use case: Browser-based monitoring and control
-   - Security: Server-side proxy to internal API (never exposes `internal_key` to browser)
+
+**CLI Architecture:**
+
+- CLI accesses Application services directly (no HTTP endpoints)
+- No authentication needed (runs in same process as API server)
+- Direct access to model cache and services
 
 **Security model:**
+
 - `api_key`: User-managed, shown via `manage_key.py --show`, used for external integrations
-- `internal_key`: Auto-generated at startup, hidden from users, used for CLI ↔ API communication
 - `admin_password`: User-managed via `manage_password.py`, used for web UI login, stored as salted SHA-256 hash
-- Session tokens: Write-through cache (in-memory for performance + DB for persistence), 24-hour lifetime, survives container restarts
+- Session tokens: Write-through cache (in-memory + DB), 24-hour lifetime, survive container restarts
 
 ## Key Conventions
 
-- **Single unified API** on port 8356 with public (`/tag`), internal (`/internal/*`), and web (`/web/*`) endpoints
-- **API key auth**: Public endpoints use `api_key`, internal endpoints use `internal_key`, web endpoints use session tokens
-- **Cache warmup**: Predictor cache loaded at startup, refreshed via `/admin/cache/refresh`
+- **Single unified API** on port 8356 with public (`/api/v1/*`), admin (`/admin/*`), and web (`/web/*`) endpoints
+- **API key auth**: Public/admin endpoints use `api_key`, web endpoints use session tokens
+- **Cache strategy**: Models lazy-loaded on first use, refreshed via `/admin/cache/refresh`
 - **Tag namespace**: All tags written under `essentia:` prefix
 - **Mood aggregation**: `mood-strict`, `mood-regular`, `mood-loose` are native multi-value tags
 - **DB concurrency**: Lock acquired only for mutations, never during file processing

@@ -1,0 +1,172 @@
+"""
+Unit tests for nomarr.services.queue module.
+
+Tests use REAL fixtures from conftest.py - no redundant mocks.
+"""
+
+import pytest
+
+
+class TestQueueServiceAddFiles:
+    """Test QueueService.add_files() operations."""
+
+    def test_add_files_success(self, real_queue_service, temp_audio_file):
+        """Should successfully add files."""
+        # Arrange
+
+        # Act
+        result = real_queue_service.add_files(paths=[str(temp_audio_file)])
+
+        # Assert
+        assert isinstance(result, dict)
+        # Verify item was added
+        # TODO: Check item can be retrieved
+        # TODO: Verify count/depth increased
+
+    def test_add_files_invalid_path_raises_error(self, real_queue_service):
+        """Should raise error for invalid file path."""
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(FileNotFoundError):
+            real_queue_service.add_files(paths=["/nonexistent.mp3"], force=True, recursive=True)
+
+
+class TestQueueServiceCleanupOldJobs:
+    """Test QueueService.cleanup_old_jobs() operations."""
+
+    def test_cleanup_old_jobs_success(self, real_queue_service):
+        """Should successfully cleanup old jobs."""
+        # Arrange
+
+        # Act
+        result = real_queue_service.cleanup_old_jobs()
+
+        # Assert
+        assert isinstance(result, int)
+        assert result >= 0  # Non-negative count
+
+
+class TestQueueServiceGetDepth:
+    """Test QueueService.get_depth() operations."""
+
+    def test_get_depth_success(self, real_queue_service):
+        """Should successfully get depth."""
+        # Arrange
+
+        # Act
+        result = real_queue_service.get_depth()
+
+        # Assert
+        assert isinstance(result, int)
+        assert result >= 0  # Non-negative count
+        # TODO: Verify returned data is correct
+
+
+class TestQueueServiceGetJob:
+    """Test QueueService.get_job() operations."""
+
+    def test_get_job_success(self, real_queue_service, temp_audio_file):
+        """Should successfully get job."""
+        # Arrange - add a job first
+        add_result = real_queue_service.add_files(paths=[str(temp_audio_file)])
+        job_id = add_result["job_ids"][0]  # Get first job ID from list
+
+        # Act
+        result = real_queue_service.get_job(job_id=job_id)
+
+        # Assert
+        assert isinstance(result, dict)
+        assert result["id"] == job_id
+        assert "status" in result
+        assert "path" in result
+
+    def test_get_job_not_found(self, real_queue_service):
+        """Should return None when item not found."""
+        # Arrange
+
+        # Act
+        result = real_queue_service.get_job(job_id=99999)
+
+        # Assert
+        assert result is None
+
+
+class TestQueueServiceGetStatus:
+    """Test QueueService.get_status() operations."""
+
+    def test_get_status_success(self, real_queue_service):
+        """Should successfully get status."""
+        # Arrange
+
+        # Act
+        result = real_queue_service.get_status()
+
+        # Assert
+        assert isinstance(result, dict)
+        # TODO: Verify returned data is correct
+
+
+class TestQueueServicePublishQueueUpdate:
+    """Test QueueService.publish_queue_update() operations."""
+
+    def test_publish_queue_update_success(self, real_queue_service):
+        """Should successfully publish queue update."""
+        # Arrange
+
+        # Act
+        real_queue_service.publish_queue_update(event_broker=None)
+
+        # Assert
+        # Method returns None - verify it completes without exception
+
+
+class TestQueueServiceRemoveJobs:
+    """Test QueueService.remove_jobs() operations."""
+
+    def test_remove_jobs_success(self, real_queue_service):
+        """Should successfully remove jobs."""
+        # Arrange
+
+        # Act
+        result = real_queue_service.remove_jobs(all=True)
+
+        # Assert
+        assert isinstance(result, int)
+        assert result >= 0  # Non-negative count
+        # TODO: Verify item was removed
+        # TODO: Verify get() returns None after delete
+
+
+class TestQueueServiceResetJobs:
+    """Test QueueService.reset_jobs() operations."""
+
+    def test_reset_jobs_success(self, real_queue_service):
+        """Should successfully reset jobs."""
+        # Arrange
+
+        # Act
+        result = real_queue_service.reset_jobs(stuck=True)
+
+        # Assert
+        assert isinstance(result, int)
+        assert result >= 0  # Non-negative count
+        # TODO: Verify state changed
+        # TODO: Verify get() reflects new state
+
+
+class TestQueueServiceWaitForJobCompletion:
+    """Test QueueService.wait_for_job_completion() operations."""
+
+    @pytest.mark.skip(reason="Async method - needs async test setup")
+    def test_wait_for_job_completion_success(self, real_queue_service):
+        """Should successfully wait for job completion."""
+        # TODO: Convert to async test with pytest-asyncio
+        # Arrange
+
+        # Act
+        # result = await real_queue_service.wait_for_job_completion(job_id=1, timeout=30)
+
+        # Assert
+        # assert isinstance(result, dict)
+        pass
