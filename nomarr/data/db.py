@@ -54,7 +54,10 @@ SCHEMA = [
         tags_json TEXT,
         nom_tags TEXT,
         scanned_at INTEGER,
-        last_tagged_at INTEGER
+        last_tagged_at INTEGER,
+        tagged INTEGER DEFAULT 0,
+        tagged_version TEXT,
+        skip_auto_tag INTEGER DEFAULT 0
     );
     """,
     # Library scan queue - tracks library scanning jobs (read existing tags from files)

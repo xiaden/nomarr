@@ -29,6 +29,14 @@ cache_auto_evict: true # Automatically evict cache after idle timeout
 # Library scanner settings
 library_path: # Path to music library directory (optional)
 library_scan_poll_interval: 10 # Library scanner poll interval (seconds)
+library_auto_tag: true # Automatically enqueue untagged files during scan
+library_ignore_patterns: "" # Comma-separated path patterns to skip (e.g., "*/Audiobooks/*,*.wav")
+
+# Calibration settings
+calibration_auto_run: false # Automatically trigger calibration when thresholds met
+calibration_min_files: 100 # Minimum tagged files before auto-calibration
+calibration_check_interval: 604800 # Seconds between calibration checks (default: 1 week)
+calibration_quality_threshold: 0.85 # Don't recalibrate if quality score above this
 
 # Web UI authentication
 admin_password: # Admin password for web UI (optional; auto-generated if not set)

@@ -25,7 +25,7 @@ except (ImportError, AttributeError):
     ESSENTIA_VERSION = "unknown"
 
 import nomarr.app as app
-from nomarr.data.db import Database
+from nomarr.data.db import Database, now_ms
 from nomarr.ml.inference import compute_embeddings_for_backbone, make_head_only_predictor_batched
 from nomarr.ml.models.discovery import discover_heads
 from nomarr.ml.models.embed import pool_scores
@@ -391,6 +391,13 @@ def process_file(
             db = Database(db_path)
             try:
                 update_library_file_from_tags(db, path, ns)
+                # Mark file as tagged with current version
+                cursor = db.conn.cursor()
+                cursor.execute(
+                    "UPDATE library_files SET tagged=1, tagged_version=?, last_tagged_at=? WHERE path=?",
+                    (tagger_version, now_ms(), path),
+                )
+                db.conn.commit()
                 logging.info(f"[processor] Updated library database for {path}")
             finally:
                 db.close()
