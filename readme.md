@@ -211,8 +211,10 @@ essentia:voice_instrumental = 0.2341
 ## 📖 Documentation
 
 - **[API Reference](docs/API_REFERENCE.md)** - Complete endpoint documentation and Lidarr integration examples
+- **[Calibration System](docs/CALIBRATION.md)** - ML model calibration with drift tracking (dev feature)
 - **[Deployment Guide](docs/DEPLOYMENT.md)** - Docker setup, configuration, and troubleshooting
 - **[Model Information](docs/modelsinfo.md)** - Details about Essentia ML models
+- **[Navidrome Integration](docs/NAVIDROME_INTEGRATION.md)** - Smart playlist generation and config export
 - **[Configuration Guide](docs/README.md)** - Advanced configuration and architecture overview
 
 ---

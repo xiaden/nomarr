@@ -340,6 +340,107 @@ Enable the background worker (resumes queue processing).
 
 ---
 
+### POST /admin/calibration/run
+
+Generate calibration from all library files with drift tracking. Requires `calibrate_heads: true` in config (returns 403 otherwise).
+
+**Request:** Empty body
+
+**Response:**
+
+```json
+{
+  "version": 3,
+  "heads_processed": 17,
+  "stable_heads": 12,
+  "unstable_heads": 5,
+  "heads": [
+    {
+      "model_name": "effnet",
+      "head_name": "mood_happy",
+      "version": 3,
+      "file_count": 3500,
+      "is_stable": false,
+      "drift": {
+        "apd_p5": 0.023,
+        "apd_p95": 0.015,
+        "srd": 0.067,
+        "jsd": 0.142,
+        "median_drift": 0.031,
+        "iqr_drift": 0.089
+      },
+      "reference_updated": true
+    }
+  ]
+}
+```
+
+See [CALIBRATION.md](CALIBRATION.md) for drift metrics interpretation.
+
+---
+
+### GET /admin/calibration/history
+
+Query calibration run history. Requires `calibrate_heads: true`.
+
+**Query Parameters:**
+- `model`: Filter by model name (optional)
+- `head`: Filter by head name (optional)
+- `limit`: Max results (default: 50)
+
+**Example:** `GET /admin/calibration/history?model=effnet&head=mood_happy&limit=10`
+
+**Response:**
+
+```json
+{
+  "runs": [
+    {
+      "id": 42,
+      "model_name": "effnet",
+      "head_name": "mood_happy",
+      "version": 3,
+      "file_count": 3500,
+      "timestamp": 1704067200.0,
+      "p5": 0.12,
+      "p95": 0.89,
+      "range": 0.77,
+      "reference_version": 2,
+      "is_stable": false,
+      "drift": {
+        "apd_p5": 0.023,
+        "apd_p95": 0.015,
+        "srd": 0.067,
+        "jsd": 0.142,
+        "median_drift": 0.031,
+        "iqr_drift": 0.089
+      }
+    }
+  ]
+}
+```
+
+---
+
+### POST /admin/calibration/retag-all
+
+Bulk enqueue all tagged files for re-tagging with final stable calibration. Requires `calibrate_heads: true`.
+
+**Request:** Empty body
+
+**Response:**
+
+```json
+{
+  "enqueued": 8423,
+  "message": "Enqueued 8423 tagged files for re-tagging"
+}
+```
+
+**Use case:** After iterative calibration refinement, use this to apply final stable calibration to entire library.
+
+---
+
 ## Unified Schema Summary
 
 All endpoints now return consistent structures matching the CLI output:
