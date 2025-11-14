@@ -149,7 +149,9 @@ def scan_library(
         raise
 
 
-def update_library_file_from_tags(db: Database, file_path: str, namespace: str) -> None:
+def update_library_file_from_tags(
+    db: Database, file_path: str, namespace: str, tagged_version: str | None = None
+) -> None:
     """
     Update library database with current file metadata and tags.
 
@@ -160,6 +162,7 @@ def update_library_file_from_tags(db: Database, file_path: str, namespace: str) 
         db: Database instance
         file_path: Path to audio file
         namespace: Tag namespace (e.g., "nom" or "essentia")
+        tagged_version: Optional tagger version to mark file as tagged
     """
     try:
         # Get file stats
@@ -193,6 +196,16 @@ def update_library_file_from_tags(db: Database, file_path: str, namespace: str) 
             # Parse tag values to detect types
             parsed_tags = _parse_tag_values(nom_tags)
             db.upsert_file_tags(file_record["id"], parsed_tags)
+
+        # Mark file as tagged if tagger version provided (called from processor)
+        if tagged_version and file_record:
+            from nomarr.data.db import now_ms
+
+            db.conn.execute(
+                "UPDATE library_files SET tagged=1, tagged_version=?, last_tagged_at=? WHERE path=?",
+                (tagged_version, now_ms(), file_path),
+            )
+            db.conn.commit()
 
         logging.debug(f"[library_scanner] Updated library for {file_path}")
     except Exception as e:
