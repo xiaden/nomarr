@@ -173,10 +173,18 @@ class ConfigService:
             "library_auto_tag": True,
             "library_ignore_patterns": "",
             # Calibration settings
+            "calibrate_heads": False,
+            "calibration_repo": "https://github.com/xiaden/nom-cal",
             "calibration_auto_run": False,
             "calibration_min_files": 100,
             "calibration_check_interval": 604800,
             "calibration_quality_threshold": 0.85,
+            # Calibration drift thresholds
+            "calibration_apd_threshold": 0.01,
+            "calibration_srd_threshold": 0.05,
+            "calibration_jsd_threshold": 0.1,
+            "calibration_median_threshold": 0.05,
+            "calibration_iqr_threshold": 0.1,
             # Web UI authentication
             "admin_password": None,  # Optional; auto-generated if not set
         }

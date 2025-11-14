@@ -33,10 +33,18 @@ library_auto_tag: true # Automatically enqueue untagged files during scan
 library_ignore_patterns: "" # Comma-separated path patterns to skip (e.g., "*/Audiobooks/*,*.wav")
 
 # Calibration settings
-calibration_auto_run: false # Automatically trigger calibration when thresholds met
+calibrate_heads: false # Enable calibration generation mode (dev feature)
+calibration_repo: "https://github.com/xiaden/nom-cal" # GitHub repo for downloading calibration files
+calibration_auto_run: false # Automatically trigger calibration when thresholds met (requires calibrate_heads=true)
 calibration_min_files: 100 # Minimum tagged files before auto-calibration
 calibration_check_interval: 604800 # Seconds between calibration checks (default: 1 week)
 calibration_quality_threshold: 0.85 # Don't recalibrate if quality score above this
+# Calibration drift thresholds (tighter = more sensitive)
+calibration_apd_threshold: 0.01 # Max absolute percentile drift (1%)
+calibration_srd_threshold: 0.05 # Max scale range drift (5%)
+calibration_jsd_threshold: 0.1 # Max Jensen-Shannon divergence
+calibration_median_threshold: 0.05 # Max median drift (5%)
+calibration_iqr_threshold: 0.1 # Max IQR drift (10%)
 
 # Web UI authentication
 admin_password: # Admin password for web UI (optional; auto-generated if not set)
