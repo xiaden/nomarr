@@ -2,7 +2,25 @@
 
 **Intelligent audio auto-tagging for your music library using state-of-the-art machine learning.**
 
-Nomarr analyzes your music files with Essentia's pre-trained ML models and writes rich metadata tags directly into MP3/M4A files. Perfect for organizing large libraries, discovering moods, and enriching metadata for music servers like Navidrome and Plex.
+Nomarr is a WIP PRE-ALPHA PROGRAM that analyzes your music files with Essentia's pre-trained ML models and writes rich metadata tags directly into MP3/M4A files. Perfect for organizing large libraries, discovering moods, and enriching metadata for music servers like Navidrome and Plex.
+
+## WARNING
+
+This is PRE-ALPHA program that is HEAVILY made with assistance of AI. I make no gaurentee it is functional, useful, or even worth installing yet. The codebase changes DAILY in rather large ways, and I'm not done staging things at all yet. Github hosting is mainly to get CI tooling and a working image to test with.
+
+That said, I will take PR and feature requests, and do gaurentee that every line of code will be human-reviewed (and honestly... probably refactored into a much better shape than the current AI slop) Prior to releasing as a version 1.
+
+Do also note (WITH A BIG CAPITAL WARNING) that the EFFNET embedder (so any EFFNET HEADS used) REQUIRES 9 GB of VRAM to run on GPU. and you want it on GPU, it's the difference between a 40s per song tagging job, and a 2 second per song tagging job. The embedder is cached in VRAM, to prevent spin up time
+each song, and will remain resident on VRAM for some time after the last song is tagged (this is kinda legacy from API logic, where I'm expecting songs to trickle in)
+
+## Roadmap
+
+Currently, The program was designed with lidarr autotagging in mind, and a deep desire to "have ML inference that works without needing understanding and configuration of Tensorflow and Essentia" on music.
+
+That evolved into the current shape, where the WEB UI is the first class citizen, and API takes a backseat.
+
+Nomarr is currently in the process of being refactored into a ML tagging music library assistant, that will take a music library, tag using whatever essentia tf models are provided, monitor the library for changes, verify tags, calibrate heads to match in scale, and provide the user with
+Tags that are ONLY high quality, playlists that work in navidrome, and analytics about their library's tags. So, you set the library path, scan, and get high quality ML tags in like... a day ish (based on my NAS share 18k song library I've built up... your time may be lower or higher).
 
 ![Web UI Dashboard](docs/images/placeholder-dashboard.png)
 _Screenshot: Web UI dashboard - coming soon_
