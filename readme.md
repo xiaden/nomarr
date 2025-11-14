@@ -28,11 +28,14 @@ All tags are written as native metadata (ID3v2 for MP3, iTunes atoms for M4A) - 
 
 ## ✨ Key Features
 
+- **🌐 Modern Web UI** - Browser interface for processing, monitoring, analytics, and configuration
 - **🔌 Lidarr Integration** - Drop-in Docker sidecar that auto-tags imports via webhooks
-- **🌐 Web UI** - Modern browser interface for monitoring, queue management, and batch processing
-- **⚡ GPU Accelerated** - NVIDIA CUDA support for ~10x faster processing
-- **🎨 Rich Metadata** - Writes probabilities, tiers, and aggregated mood tags
-- **📊 Queue System** - Background processing with pause/resume, status tracking, and cleanup
+- **📚 Library Scanner** - Automatic background scanning of your music library with tag analytics
+- **📊 Calibration System** - Normalize model outputs with min-max scaling for consistent scoring
+- **⚡ GPU Accelerated** - NVIDIA CUDA support for fast ML inference
+- **🎨 Rich Metadata** - Writes probabilities, tiers, and aggregated mood tags in native format (ID3v2/MP4)
+- **📊 Queue System** - Background processing with pause/resume, status tracking, and error recovery
+- **🎵 Navidrome Integration** - Smart playlist generation and config export
 - **🔐 Secure** - API key authentication for automation, session-based auth for web UI
 - **🐳 Docker Native** - Single container with NVIDIA GPU passthrough
 
@@ -86,41 +89,73 @@ All tags are written as native metadata (ID3v2 for MP3, iTunes atoms for M4A) - 
    docker compose up -d
    ```
 
-3. **Get your API key:**
+3. **Get your admin password:**
+
+   Check container logs for the auto-generated password:
 
    ```bash
-   docker compose exec nomarr python3 -m nomarr.manage_key --show
+   docker compose logs nomarr | grep "Admin password"
    ```
 
 4. **Access the Web UI:**
+
    - Navigate to `http://localhost:8356/`
-   - Login with auto-generated admin password (check logs: `docker compose logs nomarr | grep "Admin password"`)
+   - Login with the admin password from step 3
+   - Use the Process Files tab to tag your music!
+
+5. **(Optional) For Lidarr Integration:**
+
+   The API key is auto-generated and stored in the database. To retrieve it, query the database:
+
+   ```bash
+   docker compose exec nomarr sqlite3 /app/config/db/essentia.sqlite \
+     "SELECT value FROM meta WHERE key='api_key';"
+   ```
 
 ---
 
 ## 📚 Usage
 
-### Web UI
+### Web UI (Recommended)
 
-The easiest way to use Nomarr - point and click interface for processing files, managing the queue, and monitoring system status.
+The easiest way to use Nomarr - modern browser interface for:
+
+- **Processing files** - Single file or batch upload with real-time progress
+- **Queue management** - Monitor jobs, pause/resume workers, clear errors
+- **Library scanning** - Automatic tag scanning and analytics
+- **Navidrome integration** - Smart playlist generation and config export
+- **Calibration** - Generate and apply calibration to normalize model outputs
+- **Tag analytics** - Mood distributions, correlations, and co-occurrences
+
+Access at `http://localhost:8356/` (login with auto-generated admin password)
 
 ### CLI
 
-Process files directly from the command line:
+Administrative commands for queue and system management:
 
 ```bash
-# Process a single file
-docker exec nomarr nom run /music/Album/Track.mp3
+# Remove jobs from queue
+docker exec nomarr nom remove <job_id>          # Remove specific job
+docker exec nomarr nom remove --all             # Remove all non-running jobs
+docker exec nomarr nom remove --status error    # Remove failed jobs
 
-# Process entire directory
-docker exec nomarr nom run /music/Album --recursive
+# Clean up old completed jobs
+docker exec nomarr nom cleanup --hours 168      # Remove jobs older than 7 days
 
-# Check queue status
-docker exec nomarr nom list
+# Reset stuck or failed jobs
+docker exec nomarr nom admin-reset --stuck      # Reset jobs stuck in 'running' state
+docker exec nomarr nom admin-reset --errors     # Reset all failed jobs to retry
 
-# View tags in file
-docker exec nomarr nom show-tags /music/Track.mp3
+# Model cache management
+docker exec nomarr nom cache-refresh            # Rebuild cache after adding models
+
+# Admin password management
+docker exec nomarr nom manage-password show     # Display password hash
+docker exec nomarr nom manage-password verify   # Test a password
+docker exec nomarr nom manage-password reset    # Change admin password
 ```
+
+**Note:** For processing files, use the Web UI (`/`) which provides real-time progress and SSE streaming. The CLI focuses on administrative operations.
 
 ### Lidarr Integration
 
