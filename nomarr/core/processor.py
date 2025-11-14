@@ -370,7 +370,9 @@ def process_file(
     add_regression_mood_tiers(tags_accum, regression_predictions)
 
     # Load calibrations if available (conditional - gracefully handles missing files)
-    calibrations = load_calibrations(models_dir)
+    # Use calibrate_heads flag from config to determine which calibration files to load
+    calibrate_heads = config.get("calibrate_heads", False)
+    calibrations = load_calibrations(models_dir, calibrate_heads=calibrate_heads)
     if calibrations:
         logging.info(f"[aggregation] Loaded calibrations for {len(calibrations)} labels")
     else:

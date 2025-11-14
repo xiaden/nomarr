@@ -232,6 +232,7 @@ class Application:
             models_dir=cfg.get("models_dir", "/app/models"),
             namespace=cfg.get("namespace", "essentia"),
             poll_interval=2,
+            calibrate_heads=cfg.get("calibrate_heads", False),
         )
         self.recalibration_worker.start()
 

@@ -12,7 +12,7 @@ from typing import Any
 import numpy as np
 
 
-def load_calibrations(models_dir: str) -> dict[str, dict[str, Any]]:
+def load_calibrations(models_dir: str, calibrate_heads: bool = False) -> dict[str, dict[str, Any]]:
     """
     Load all calibration sidecars from models directory.
 
@@ -21,6 +21,7 @@ def load_calibrations(models_dir: str) -> dict[str, dict[str, Any]]:
 
     Args:
         models_dir: Path to models directory
+        calibrate_heads: If True, load versioned files (dev mode). If False, load reference files (default)
 
     Returns:
         Dictionary mapping tag keys to calibration parameters
@@ -33,9 +34,17 @@ def load_calibrations(models_dir: str) -> dict[str, dict[str, Any]]:
             logging.debug(f"[calibration] Models directory not found: {models_dir}")
             return calibrations
 
-        # Find all calibration sidecar files
-        calib_files = list(models_path.rglob("*-calibration-v*.json"))
-        logging.info(f"[calibration] Found {len(calib_files)} calibration sidecar files")
+        # Find calibration sidecar files
+        # For normal users (calibrate_heads=false): load reference files (calibration.json)
+        # For dev mode (calibrate_heads=true): load versioned files (calibration-v*.json)
+        if calibrate_heads:
+            calib_files = list(models_path.rglob("*-calibration-v*.json"))
+            logging.info(f"[calibration] Loading versioned calibration files (dev mode): {len(calib_files)} found")
+        else:
+            calib_files = list(models_path.rglob("*-calibration.json"))
+            # Filter out versioned files (keep only reference files without -v suffix)
+            calib_files = [f for f in calib_files if "-calibration-v" not in f.name]
+            logging.info(f"[calibration] Loading reference calibration files: {len(calib_files)} found")
 
         for calib_file in calib_files:
             try:

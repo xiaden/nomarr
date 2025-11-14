@@ -34,6 +34,7 @@ class RecalibrationWorker(threading.Thread):
         models_dir: str,
         namespace: str = "nom",
         poll_interval: int = 2,
+        calibrate_heads: bool = False,
     ):
         """
         Initialize recalibration worker.
@@ -43,12 +44,14 @@ class RecalibrationWorker(threading.Thread):
             models_dir: Path to models directory (for loading calibration sidecars)
             namespace: Tag namespace (default: "nom")
             poll_interval: Seconds between queue polls (default: 2)
+            calibrate_heads: If True, use versioned calibration files (dev mode)
         """
         super().__init__(daemon=True, name="RecalibrationWorker")
         self.db = db
         self.models_dir = models_dir
         self.namespace = namespace
         self.poll_interval = max(1, poll_interval)
+        self.calibrate_heads = calibrate_heads
 
         # Worker state
         self._stop_event = threading.Event()
@@ -135,7 +138,8 @@ class RecalibrationWorker(threading.Thread):
         logging.debug(f"[RecalibrationWorker] Processing {file_path}")
 
         # Load calibrations from models directory
-        calibrations = load_calibrations(self.models_dir)
+        # Use versioned files in dev mode (calibrate_heads=True), reference files otherwise
+        calibrations = load_calibrations(self.models_dir, calibrate_heads=self.calibrate_heads)
 
         # Get file from library
         library_file = self.db.get_library_file(file_path)
