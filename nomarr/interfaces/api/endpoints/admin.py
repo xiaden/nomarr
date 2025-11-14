@@ -180,3 +180,140 @@ async def admin_resume_worker():
         event_broker.update_worker_state({"enabled": True})
 
     return {"status": "ok", "worker_enabled": True}
+
+
+# ----------------------------------------------------------------------
+#  POST /admin/calibration/run
+# ----------------------------------------------------------------------
+@router.post("/calibration/run", dependencies=[Depends(verify_key)])
+async def admin_run_calibration():
+    """
+    Generate calibrations with drift tracking (requires calibrate_heads=true).
+
+    Analyzes library tags, calculates drift metrics, saves versioned files,
+    and updates reference files for unstable heads.
+
+    Returns:
+        Calibration summary with drift metrics per head
+    """
+    from nomarr.services.calibration import CalibrationService
+
+    g = get_globals()
+    db = g["db"]
+
+    # Check if calibrate_heads mode is enabled
+    calibrate_heads = app.cfg.get("calibrate_heads", False)
+
+    if not calibrate_heads:
+        raise HTTPException(
+            status_code=403,
+            detail="Calibration generation disabled. Set calibrate_heads: true in config to enable.",
+        )
+
+    # Get config values
+    models_dir = app.cfg.get("models_dir", "/app/models")
+    namespace = app.cfg.get("namespace", "nom")
+    thresholds = {
+        "apd_p5": app.cfg.get("calibration_apd_threshold", 0.01),
+        "apd_p95": app.cfg.get("calibration_apd_threshold", 0.01),
+        "srd": app.cfg.get("calibration_srd_threshold", 0.05),
+        "jsd": app.cfg.get("calibration_jsd_threshold", 0.1),
+        "median": app.cfg.get("calibration_median_threshold", 0.05),
+        "iqr": app.cfg.get("calibration_iqr_threshold", 0.1),
+    }
+
+    # Run calibration service
+    service = CalibrationService(db=db, models_dir=models_dir, namespace=namespace, thresholds=thresholds)
+
+    try:
+        result = service.generate_calibration_with_tracking()
+        return {"status": "ok", "calibration": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Calibration generation failed: {e!s}") from e
+
+
+# ----------------------------------------------------------------------
+#  GET /admin/calibration/history
+# ----------------------------------------------------------------------
+@router.get("/calibration/history", dependencies=[Depends(verify_key)])
+async def admin_calibration_history(model: str | None = None, head: str | None = None, limit: int = 100):
+    """
+    Get calibration history with drift metrics.
+
+    Query params:
+        model: Filter by model name (optional)
+        head: Filter by head name (optional)
+        limit: Maximum number of results (default 100)
+
+    Returns:
+        List of calibration runs with drift metrics
+    """
+    g = get_globals()
+    db = g["db"]
+
+    # Check if calibrate_heads mode is enabled
+    calibrate_heads = app.cfg.get("calibrate_heads", False)
+
+    if not calibrate_heads:
+        raise HTTPException(
+            status_code=403,
+            detail="Calibration history not available. Set calibrate_heads: true in config to enable.",
+        )
+
+    try:
+        runs = db.list_calibration_runs(model_name=model, head_name=head, limit=limit)
+        return {"status": "ok", "runs": runs, "count": len(runs)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve calibration history: {e!s}") from e
+
+
+# ----------------------------------------------------------------------
+#  POST /admin/calibration/retag-all
+# ----------------------------------------------------------------------
+@router.post("/calibration/retag-all", dependencies=[Depends(verify_key)])
+async def admin_retag_all():
+    """
+    Mark all tagged files for re-tagging (requires calibrate_heads=true).
+
+    This enqueues all library_files with tagged=1 for ML re-tagging.
+    Use after deciding final calibration is stable and want to apply it
+    to entire library.
+
+    Returns:
+        Number of files enqueued
+    """
+    g = get_globals()
+    db = g["db"]
+
+    # Check if calibrate_heads mode is enabled
+    calibrate_heads = app.cfg.get("calibrate_heads", False)
+
+    if not calibrate_heads:
+        raise HTTPException(
+            status_code=403,
+            detail="Bulk re-tagging not available. Set calibrate_heads: true in config to enable.",
+        )
+
+    try:
+        # Get all tagged files from library
+        all_files, total = db.list_library_files(limit=100000)  # Large limit to get all files
+        tagged_files = [f for f in all_files if f.get("tagged")]
+
+        if not tagged_files:
+            return {"status": "ok", "message": "No tagged files found", "enqueued": 0}
+
+        # Enqueue all tagged files for re-tagging
+        count = 0
+        for file in tagged_files:
+            try:
+                db.enqueue(file["path"], force=True)  # Force re-tag even if already tagged
+                count += 1
+            except Exception as e:
+                import logging
+
+                logging.error(f"Failed to enqueue {file['path']}: {e}")
+
+        return {"status": "ok", "message": f"Enqueued {count} files for re-tagging", "enqueued": count}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to enqueue files: {e!s}") from e
