@@ -9,11 +9,13 @@ The calibration system tracks statistical drift in ML model outputs to minimize 
 ### Two Modes
 
 **Production Mode (default)**: `calibrate_heads: false`
+
 - Uses stable reference calibration files (`*-calibration.json`)
 - Downloaded from pre-made calibration repository (nom-cal)
 - Optimized for end users who just want stable tagging
 
 **Development Mode**: `calibrate_heads: true`
+
 - Generates versioned calibration files (`*-calibration-v{N}.json`)
 - Tracks drift metrics in database (`calibration_runs` table)
 - Automatically updates reference files when heads become unstable
@@ -30,7 +32,7 @@ CREATE TABLE calibration_runs (
     head_name TEXT NOT NULL,            -- e.g., "mood_happy"
     version INTEGER NOT NULL,           -- Run number (increments together for all heads)
     file_count INTEGER NOT NULL,        -- Number of files used to generate calibration
-    timestamp REAL NOT NULL,            -- Unix timestamp
+    timestamp INTEGER NOT NULL,         -- Unix timestamp (milliseconds)
     p5 REAL,                            -- 5th percentile score
     p95 REAL,                           -- 95th percentile score
     range REAL,                         -- p95 - p5
@@ -41,18 +43,20 @@ CREATE TABLE calibration_runs (
     jsd REAL,                           -- Jensen-Shannon Divergence
     median_drift REAL,                  -- Median drift (robust to outliers)
     iqr_drift REAL,                     -- IQR drift (spread measurement)
-    is_stable BOOLEAN NOT NULL          -- Overall stability decision
+    is_stable INTEGER DEFAULT 0         -- Overall stability decision (SQLite boolean)
 );
 ```
 
 ### File Management
 
 **Versioned Files**: `mood_happy-calibration-v3.json`
+
 - Generated during each calibration run
 - Contains p5/p95 parameters per label
 - Preserved for reproducibility
 
 **Reference Files**: `mood_happy-calibration.json`
+
 - Updated when head becomes unstable (or first run)
 - Stable heads keep their existing reference (minimizes re-tagging)
 - Used by production mode
@@ -62,6 +66,7 @@ CREATE TABLE calibration_runs (
 The system uses five complementary metrics from ML monitoring best practices:
 
 #### 1. Absolute Percentile Drift (APD)
+
 Measures how much percentiles shift between calibrations.
 
 ```python
@@ -70,10 +75,12 @@ APD_p95 = |new_p95 - ref_p95|
 ```
 
 **Threshold**: `0.01` (very stable)
+
 - Values < 0.01 indicate minimal drift
 - Sensitive to small changes in distribution tails
 
 #### 2. Scale Range Drift (SRD)
+
 Measures change in the spread of the distribution.
 
 ```python
@@ -81,10 +88,12 @@ SRD = |new_range - ref_range| / ref_range
 ```
 
 **Threshold**: `0.05` (excellent stability)
+
 - < 5% change in range indicates stable scaling
 - Helps detect compression/expansion of score distributions
 
 #### 3. Jensen-Shannon Divergence (JSD)
+
 Measures similarity between score distributions using information theory.
 
 ```python
@@ -93,11 +102,13 @@ where M = 0.5 * (P + Q)
 ```
 
 **Threshold**: `0.1` (similar distributions)
+
 - 0 = identical distributions
 - 1 = completely different distributions
 - More sophisticated than simple percentile comparison
 
 #### 4. Median Drift
+
 Measures shift in the central tendency (robust to outliers).
 
 ```python
@@ -105,10 +116,12 @@ median_drift = |new_median - ref_median|
 ```
 
 **Threshold**: `0.05`
+
 - Complements APD by focusing on center of distribution
 - Less sensitive to extreme values
 
 #### 5. IQR Drift
+
 Measures change in distribution spread (robust alternative to range).
 
 ```python
@@ -116,6 +129,7 @@ IQR_drift = |new_IQR - ref_IQR| / ref_IQR
 ```
 
 **Threshold**: `0.1`
+
 - Interquartile range = Q3 - Q1
 - More robust than range (ignores outliers)
 
@@ -139,11 +153,13 @@ If any metric fails, the head is **unstable** and its reference file is updated.
 ### Versioning Strategy
 
 **Version = Run Number** (Option A)
+
 - All heads increment version together (v1, v2, v3...)
 - Stability tracked independently per head via `is_stable` flag
 - `reference_version` pointer tracks which version is currently the reference
 
 Example:
+
 ```
 Run 1 (1000 files):
   mood_happy: unstable → update reference to v1
@@ -172,11 +188,11 @@ calibrate_heads: false
 calibration_repo: "https://github.com/xiaden/nom-cal"
 
 # Drift detection thresholds
-calibration_drift_apd: 0.01      # Absolute Percentile Drift
-calibration_drift_srd: 0.05      # Scale Range Drift
-calibration_drift_jsd: 0.1       # Jensen-Shannon Divergence
-calibration_drift_median: 0.05   # Median drift
-calibration_drift_iqr: 0.1       # IQR drift
+calibration_drift_apd: 0.01 # Absolute Percentile Drift
+calibration_drift_srd: 0.05 # Scale Range Drift
+calibration_drift_jsd: 0.1 # Jensen-Shannon Divergence
+calibration_drift_median: 0.05 # Median drift
+calibration_drift_iqr: 0.1 # IQR drift
 ```
 
 ## API Endpoints
@@ -190,30 +206,46 @@ Generate calibration from all library files.
 **Request**: Empty body
 
 **Response**:
+
 ```json
 {
-  "version": 3,
-  "heads_processed": 17,
-  "stable_heads": 12,
-  "unstable_heads": 5,
-  "heads": [
-    {
-      "model_name": "effnet",
-      "head_name": "mood_happy",
-      "version": 3,
-      "file_count": 3500,
-      "is_stable": false,
-      "drift": {
-        "apd_p5": 0.023,
-        "apd_p95": 0.015,
-        "srd": 0.067,
-        "jsd": 0.142,
-        "median_drift": 0.031,
-        "iqr_drift": 0.089
-      },
-      "reference_updated": true
+  "status": "ok",
+  "calibration": {
+    "version": 3,
+    "library_size": 3500,
+    "heads": {
+      "effnet/mood_happy": {
+        "model_name": "effnet",
+        "head_name": "mood_happy",
+        "labels": {
+          "happy": {"p5": 0.1, "p95": 0.9, "method": "minmax"}
+        },
+        "drift_metrics": {
+          "apd_p5": 0.023,
+          "apd_p95": 0.015,
+          "srd": 0.067,
+          "jsd": 0.142,
+          "median_drift": 0.031,
+          "iqr_drift": 0.089,
+          "is_stable": false,
+          "failed_metrics": ["apd_p5", "jsd"]
+        },
+        "is_stable": false,
+        "reference_version": 2
+      }
+    },
+    "saved_files": {
+      "effnet/mood_happy": "/app/models/effnet/heads/mood_happy-calibration-v3.json"
+    },
+    "reference_updates": {
+      "effnet/mood_happy": "updated"
+    },
+    "summary": {
+      "total_heads": 17,
+      "stable_heads": 12,
+      "unstable_heads": 5
     }
-  ]
+  }
 }
 ```
 
@@ -222,13 +254,17 @@ Generate calibration from all library files.
 Query calibration run history.
 
 **Query Parameters**:
+
 - `model`: Filter by model name (optional)
 - `head`: Filter by head name (optional)
 - `limit`: Max results (default: 50)
 
 **Response**:
+
 ```json
 {
+  "status": "ok",
+  "count": 1,
   "runs": [
     {
       "id": 42,
@@ -236,24 +272,24 @@ Query calibration run history.
       "head_name": "mood_happy",
       "version": 3,
       "file_count": 3500,
-      "timestamp": 1704067200.0,
+      "timestamp": 1704067200000,
       "p5": 0.12,
       "p95": 0.89,
       "range": 0.77,
       "reference_version": 2,
-      "is_stable": false,
-      "drift": {
-        "apd_p5": 0.023,
-        "apd_p95": 0.015,
-        "srd": 0.067,
-        "jsd": 0.142,
-        "median_drift": 0.031,
-        "iqr_drift": 0.089
-      }
+      "apd_p5": 0.023,
+      "apd_p95": 0.015,
+      "srd": 0.067,
+      "jsd": 0.142,
+      "median_drift": 0.031,
+      "iqr_drift": 0.089,
+      "is_stable": 0
     }
   ]
 }
 ```
+
+Note: `is_stable` is 0 (false) or 1 (true) in SQLite. `timestamp` is Unix milliseconds.
 
 ### POST /admin/calibration/retag-all
 
@@ -262,6 +298,7 @@ Bulk enqueue all tagged files for re-tagging with final stable calibration.
 **Request**: Empty body
 
 **Response**:
+
 ```json
 {
   "enqueued": 8423,
@@ -274,35 +311,42 @@ Bulk enqueue all tagged files for re-tagging with final stable calibration.
 ### Development Workflow (calibrate_heads=true)
 
 1. **Tag initial batch** (e.g., 1000 files):
+
    ```bash
    # Files are tagged and stored in library_files table
    # Raw scores stored in library_tags table
    ```
 
 2. **Generate first calibration**:
+
    ```bash
    curl -X POST http://localhost:8356/admin/calibration/run \
      -H "Authorization: Bearer <API_KEY>"
    ```
+
    - Creates v1 calibration for all heads
    - All heads marked unstable (first run)
    - Reference files updated to v1
 
 3. **Tag more files** (e.g., 2000 total):
+
    ```bash
    # Continue tagging with v1 calibration
    ```
 
 4. **Generate second calibration**:
+
    ```bash
    curl -X POST http://localhost:8356/admin/calibration/run \
      -H "Authorization: Bearer <API_KEY>"
    ```
+
    - Creates v2 calibration
    - Compares to v1 (reference)
    - Some heads stable (keep v1), others unstable (update to v2)
 
 5. **Repeat until convergence**:
+
    - Tag more files
    - Run calibration
    - Check history for stability trends
@@ -320,10 +364,11 @@ Bulk enqueue all tagged files for re-tagging with final stable calibration.
 ### Production Workflow (calibrate_heads=false)
 
 1. **Download pre-made calibrations** (manual for now):
+
    ```bash
    # Clone nom-cal repository
    git clone https://github.com/xiaden/nom-cal
-   
+
    # Copy reference files to models directory
    cp nom-cal/essentia/effnet/*.cal.json models/effnet/heads/
    ```
@@ -338,13 +383,13 @@ Bulk enqueue all tagged files for re-tagging with final stable calibration.
 
 ### Drift Metrics Interpretation
 
-| Metric | Excellent | Good | Acceptable | Unstable |
-|--------|-----------|------|------------|----------|
-| APD (p5/p95) | < 0.01 | 0.01-0.02 | 0.02-0.05 | > 0.05 |
-| SRD | < 0.05 | 0.05-0.10 | 0.10-0.20 | > 0.20 |
-| JSD | < 0.1 | 0.1-0.2 | 0.2-0.3 | > 0.3 |
-| Median | < 0.05 | 0.05-0.10 | 0.10-0.20 | > 0.20 |
-| IQR | < 0.1 | 0.1-0.2 | 0.2-0.3 | > 0.3 |
+| Metric       | Excellent | Good      | Acceptable | Unstable |
+| ------------ | --------- | --------- | ---------- | -------- |
+| APD (p5/p95) | < 0.01    | 0.01-0.02 | 0.02-0.05  | > 0.05   |
+| SRD          | < 0.05    | 0.05-0.10 | 0.10-0.20  | > 0.20   |
+| JSD          | < 0.1     | 0.1-0.2   | 0.2-0.3    | > 0.3    |
+| Median       | < 0.05    | 0.05-0.10 | 0.10-0.20  | > 0.20   |
+| IQR          | < 0.1     | 0.1-0.2   | 0.2-0.3    | > 0.3    |
 
 ### Common Patterns
 
@@ -361,37 +406,43 @@ Bulk enqueue all tagged files for re-tagging with final stable calibration.
 ### Manual Testing
 
 1. Enable calibration mode:
+
    ```yaml
    # config/config.yaml
    calibrate_heads: true
    ```
 
 2. Tag test batch (500-1000 files):
+
    ```bash
    python -m nomarr.interfaces.cli.main run /music/*.mp3
    ```
 
 3. Generate calibration:
+
    ```bash
    curl -X POST http://localhost:8356/admin/calibration/run \
      -H "Authorization: Bearer <API_KEY>"
    ```
 
 4. Check results in database:
+
    ```bash
    sqlite3 config/db/essentia.sqlite
-   SELECT model_name, head_name, version, is_stable, apd_p5, apd_p95, srd, jsd 
-   FROM calibration_runs 
+   SELECT model_name, head_name, version, is_stable, apd_p5, apd_p95, srd, jsd
+   FROM calibration_runs
    ORDER BY version DESC, model_name, head_name;
    ```
 
 5. Verify reference files created:
+
    ```bash
    ls -l models/effnet/heads/*-calibration.json
    ls -l models/effnet/heads/*-calibration-v*.json
    ```
 
 6. Tag another batch (check uses new calibration):
+
    ```bash
    python -m nomarr.interfaces.cli.main run /music/more/*.mp3
    ```
@@ -424,7 +475,8 @@ See `tests/test_calibration.py` (TODO: create comprehensive test suite).
 
 **Cause**: Inherent variability in that classification (e.g., rare labels, ambiguous concepts).
 
-**Solution**: 
+**Solution**:
+
 - Check label distribution (too few examples?)
 - Consider adjusting thresholds for that specific head
 - May need more training data or model refinement

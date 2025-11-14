@@ -350,28 +350,43 @@ Generate calibration from all library files with drift tracking. Requires `calib
 
 ```json
 {
-  "version": 3,
-  "heads_processed": 17,
-  "stable_heads": 12,
-  "unstable_heads": 5,
-  "heads": [
-    {
-      "model_name": "effnet",
-      "head_name": "mood_happy",
-      "version": 3,
-      "file_count": 3500,
-      "is_stable": false,
-      "drift": {
-        "apd_p5": 0.023,
-        "apd_p95": 0.015,
-        "srd": 0.067,
-        "jsd": 0.142,
-        "median_drift": 0.031,
-        "iqr_drift": 0.089
-      },
-      "reference_updated": true
+  "status": "ok",
+  "calibration": {
+    "version": 3,
+    "library_size": 3500,
+    "heads": {
+      "effnet/mood_happy": {
+        "model_name": "effnet",
+        "head_name": "mood_happy",
+        "labels": {
+          "happy": {"p5": 0.1, "p95": 0.9, "method": "minmax"}
+        },
+        "drift_metrics": {
+          "apd_p5": 0.023,
+          "apd_p95": 0.015,
+          "srd": 0.067,
+          "jsd": 0.142,
+          "median_drift": 0.031,
+          "iqr_drift": 0.089,
+          "is_stable": false,
+          "failed_metrics": ["apd_p5", "jsd"]
+        },
+        "is_stable": false,
+        "reference_version": 2
+      }
+    },
+    "saved_files": {
+      "effnet/mood_happy": "/app/models/effnet/heads/mood_happy-calibration-v3.json"
+    },
+    "reference_updates": {
+      "effnet/mood_happy": "updated"
+    },
+    "summary": {
+      "total_heads": 17,
+      "stable_heads": 12,
+      "unstable_heads": 5
     }
-  ]
+  }
 }
 ```
 
@@ -384,6 +399,7 @@ See [CALIBRATION.md](CALIBRATION.md) for drift metrics interpretation.
 Query calibration run history. Requires `calibrate_heads: true`.
 
 **Query Parameters:**
+
 - `model`: Filter by model name (optional)
 - `head`: Filter by head name (optional)
 - `limit`: Max results (default: 50)
@@ -394,6 +410,8 @@ Query calibration run history. Requires `calibrate_heads: true`.
 
 ```json
 {
+  "status": "ok",
+  "count": 1,
   "runs": [
     {
       "id": 42,
@@ -401,24 +419,24 @@ Query calibration run history. Requires `calibrate_heads: true`.
       "head_name": "mood_happy",
       "version": 3,
       "file_count": 3500,
-      "timestamp": 1704067200.0,
+      "timestamp": 1704067200000,
       "p5": 0.12,
       "p95": 0.89,
       "range": 0.77,
       "reference_version": 2,
-      "is_stable": false,
-      "drift": {
-        "apd_p5": 0.023,
-        "apd_p95": 0.015,
-        "srd": 0.067,
-        "jsd": 0.142,
-        "median_drift": 0.031,
-        "iqr_drift": 0.089
-      }
+      "apd_p5": 0.023,
+      "apd_p95": 0.015,
+      "srd": 0.067,
+      "jsd": 0.142,
+      "median_drift": 0.031,
+      "iqr_drift": 0.089,
+      "is_stable": 0
     }
   ]
 }
 ```
+
+Note: `is_stable` is 0 (false) or 1 (true) in SQLite. `timestamp` is Unix milliseconds.
 
 ---
 
