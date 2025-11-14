@@ -429,9 +429,9 @@ class WorkerPoolDisplay:
     Shows overall progress, individual worker status, recent completions, and errors.
     """
 
-    def __init__(self, total_files: int, num_workers: int = 4):
+    def __init__(self, total_files: int, worker_count: int = 4):
         self.total_files = total_files
-        self.num_workers = num_workers
+        self.worker_count = worker_count
         self.files_completed = 0
         self.files_failed = 0
 
@@ -506,7 +506,7 @@ class WorkerPoolDisplay:
         self.overall_task = self.overall_progress.add_task("Files Processed", total=self.total_files, completed=0)
 
         # Worker tasks
-        for i in range(self.num_workers):
+        for i in range(self.worker_count):
             task_id = self.worker_progress.add_task(f"Worker {i}", total=100, completed=0, status="[dim]idle[/dim]")
             self.worker_tasks[i] = task_id
 

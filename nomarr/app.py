@@ -169,7 +169,7 @@ class Application:
 
         # Start processing coordinator
         logging.info(f"[Application] Starting ProcessingCoordinator with {WORKER_COUNT} workers...")
-        self.coordinator = ProcessingCoordinator(num_workers=WORKER_COUNT, event_broker=self.event_broker)
+        self.coordinator = ProcessingCoordinator(worker_count=WORKER_COUNT, event_broker=self.event_broker)
         self.coordinator.start()
 
         # Initialize services

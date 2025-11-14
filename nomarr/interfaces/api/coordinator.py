@@ -41,17 +41,22 @@ class ProcessingCoordinator:
     Does not manage models - each worker process loads independently.
     """
 
-    def __init__(self, num_workers: int = 1, event_broker=None):
-        self._num_workers = max(1, num_workers)
+    def __init__(self, worker_count: int = 1, event_broker=None):
+        self._worker_count = max(1, worker_count)
         self._pool: ProcessPoolExecutor | None = None
         self._shutdown = False  # Track shutdown state
         self._event_broker = event_broker  # Global SSE event broker
 
+    @property
+    def worker_count(self) -> int:
+        """Get the number of worker processes in the pool."""
+        return self._worker_count
+
     def start(self):
         """Start the process pool."""
         if self._pool is None:
-            self._pool = ProcessPoolExecutor(max_workers=self._num_workers, mp_context=mp.get_context("spawn"))
-            logging.info(f"[ProcessingCoordinator] Started process pool with {self._num_workers} workers")
+            self._pool = ProcessPoolExecutor(max_workers=self._worker_count, mp_context=mp.get_context("spawn"))
+            logging.info(f"[ProcessingCoordinator] Started process pool with {self._worker_count} workers")
 
     def _recreate_pool(self):
         """Recreate the process pool after a crash. Called when BrokenProcessPool is detected."""
