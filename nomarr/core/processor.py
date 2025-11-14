@@ -69,7 +69,13 @@ def _check_already_tagged(path: str, namespace: str, version_tag_key: str, curre
         return False
 
 
-def process_file(path: str, force: bool = False, progress_callback=None) -> dict[str, Any]:
+def process_file(
+    path: str,
+    force: bool = False,
+    progress_callback=None,
+    config: dict[str, Any] | None = None,
+    db_path: str | None = None,
+) -> dict[str, Any]:
     """
     Main entry point: tag an audio file using all available heads.
 
@@ -86,6 +92,8 @@ def process_file(path: str, force: bool = False, progress_callback=None) -> dict
         path: Path to audio file
         force: Ignore version/overwrite guards
         progress_callback: Optional callback(current, total, head_name, event) called during processing
+        config: Configuration dict (defaults to app.cfg if not provided)
+        db_path: Database path (defaults to app.DB_PATH if not provided)
     """
     from nomarr.ml.cache import check_and_evict_idle_cache, touch_cache
 
@@ -96,20 +104,26 @@ def process_file(path: str, force: bool = False, progress_callback=None) -> dict
     # Touch cache to update last access time
     touch_cache()
 
-    models_dir: str = app.cfg["models_dir"]
+    # Use injected config or fallback to app.cfg for backward compatibility
+    if config is None:
+        config = app.cfg
+    if db_path is None:
+        db_path = app.DB_PATH
+
+    models_dir: str = config["models_dir"]
 
     if not os.path.exists(path):
         raise RuntimeError(f"File not found: {path}")
     if not os.access(path, os.R_OK):
         raise RuntimeError(f"File not readable: {path}")
 
-    min_dur = int(app.cfg["min_duration_s"])
-    allow_short = bool(app.cfg["allow_short"])
-    batch_size = int(app.cfg.get("batch_size", 11))
-    overwrite = bool(app.cfg["overwrite_tags"])
-    ns = str(app.cfg["namespace"])
-    version_tag_key = str(app.cfg["version_tag"])
-    tagger_version = str(app.cfg["tagger_version"])
+    min_dur = int(config["min_duration_s"])
+    allow_short = bool(config["allow_short"])
+    batch_size = int(config.get("batch_size", 11))
+    overwrite = bool(config["overwrite_tags"])
+    ns = str(config["namespace"])
+    version_tag_key = str(config["version_tag"])
+    tagger_version = str(config["tagger_version"])
 
     # Skip if already tagged with current version (unless force=True)
     if not force and _check_already_tagged(path, ns, version_tag_key, tagger_version):
@@ -373,8 +387,8 @@ def process_file(path: str, force: bool = False, progress_callback=None) -> dict
     try:
         from nomarr.core.library_scanner import update_library_file_from_tags
 
-        if app.DB_PATH:
-            db = Database(app.DB_PATH)
+        if db_path:
+            db = Database(db_path)
             try:
                 update_library_file_from_tags(db, path, ns)
                 logging.info(f"[processor] Updated library database for {path}")

@@ -133,7 +133,7 @@ This file captures concise, actionable knowledge for coding agents to be product
   - Maintain backward-compatible config keys (flat + legacy nested aliases).
   - Preserve tag format and namespace; do not change key naming schemes lightly.
   - Do not create additional worker loops; the single `TaggerWorker` is authoritative.
-  - GPU environment variables (`TF_FORCE_GPU_ALLOW_GROWTH`, `TF_GPU_THREAD_MODE`) must be set before Essentia imports in `core/processor.py`.
+  - GPU environment variables (`TF_FORCE_GPU_ALLOW_GROWTH`, `TF_GPU_THREAD_MODE`) are set in Dockerfile and inherited by spawned worker processes (multiprocessing uses OS environment).
   - Worker slot cleanup must happen in `finally` blocks to prevent stuck "No workers available" errors.
   - SSE streaming endpoints must poll event queues while futures run (not after completion) for real-time updates.
   - After adding/removing/renaming public classes or functions, run `python scripts/generate_inits.py` to update `__init__.py` files.
@@ -226,7 +226,7 @@ Docker & Lidarr sideloading (Ubuntu server notes)
   - To temporarily stop automatic processing: set `worker_enabled: false` in `config/config.yaml` (or `/admin/worker/pause`) and use CLI `run` for debugging.
   - To remove stuck jobs: Use CLI `remove --all` or `remove --status error`. Admin endpoints also support removal by job ID.
   - If CLI warnings/errors aren't visible, ensure the ProgressDisplay logging bridge remains attached during runs (see `interfaces/cli/ui.py`).
-  - **GPU utilization issues**: Low GPU usage (~3%) with multiple workers suggests sequential processing. Verify `TF_FORCE_GPU_ALLOW_GROWTH=true` is set in `core/processor.py`. Check `nvidia-smi` for multiple processes using GPU. Sequential model loading is normal (disk I/O bottleneck on first file per worker).
+  - **GPU utilization issues**: Low GPU usage (~3%) with multiple workers suggests sequential processing. GPU environment variables are set in Dockerfile and inherited by all worker processes. Check `nvidia-smi` for multiple processes using GPU. Sequential model loading is normal (disk I/O bottleneck on first file per worker).
   - **"No workers available" errors**: Worker slots are released when processing completes or on client disconnect. If slots don't release, check API logs for `Released worker X` messages. Use CLI `admin-reset --stuck` to reset jobs stuck in "running" state.
   - **Ctrl+C behavior**: Canceling CLI commands closes the stream but lets background processing complete (prevents file corruption). Worker slots release when API detects closed connection. Re-running immediately should work.
   - **ProcessingService errors**: If you see "ProcessingCoordinator is not available", the API may not have initialized properly. Check API startup logs for coordinator initialization errors. Services fail-fast rather than degrading silently.
