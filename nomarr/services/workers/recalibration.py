@@ -107,9 +107,9 @@ class RecalibrationWorker(threading.Thread):
                     logging.info(f"[RecalibrationWorker] Completed: {file_path}")
 
                 except Exception as e:
-                    error_msg = str(e)
-                    self.db.fail_calibration_job(job_id, error_msg)
-                    logging.error(f"[RecalibrationWorker] Failed {file_path}: {error_msg}")
+                    error_message = str(e)
+                    self.db.fail_calibration_job(job_id, error_message)
+                    logging.error(f"[RecalibrationWorker] Failed {file_path}: {error_message}")
 
                 finally:
                     self._is_busy = False
