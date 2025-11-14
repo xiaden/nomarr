@@ -209,6 +209,8 @@ class Application:
                 library_path=LIBRARY_PATH,
                 namespace=cfg.get("namespace", "essentia"),
                 poll_interval=LIBRARY_SCAN_POLL_INTERVAL,
+                auto_tag=cfg.get("library_auto_tag", False),
+                ignore_patterns=cfg.get("library_ignore_patterns", ""),
             )
             self.library_scan_worker.start()
 

@@ -19,7 +19,15 @@ if TYPE_CHECKING:
 class LibraryScanWorker:
     """Background worker that performs library scans asynchronously."""
 
-    def __init__(self, db: Database, library_path: str, namespace: str = "essentia", poll_interval: int = 5):
+    def __init__(
+        self,
+        db: Database,
+        library_path: str,
+        namespace: str = "essentia",
+        poll_interval: int = 5,
+        auto_tag: bool = False,
+        ignore_patterns: str = "",
+    ):
         """
         Initialize library scan worker.
 
@@ -28,11 +36,15 @@ class LibraryScanWorker:
             library_path: Root path to scan
             namespace: Tag namespace for essentia tags
             poll_interval: Seconds between checking for new scan requests
+            auto_tag: Auto-enqueue untagged files for ML tagging
+            ignore_patterns: Comma-separated patterns to skip auto-tagging
         """
         self.db = db
         self.library_path = library_path
         self.namespace = namespace
         self.poll_interval = poll_interval
+        self.auto_tag = auto_tag
+        self.ignore_patterns = ignore_patterns
         self.running = False
         self.enabled = True
         self.thread: threading.Thread | None = None
@@ -160,6 +172,8 @@ class LibraryScanWorker:
                         self.namespace,
                         make_progress_callback(scan_id),
                         scan_id=scan_id,  # Pass scan_id so it updates the correct record
+                        auto_tag=self.auto_tag,  # Pass auto-tag config
+                        ignore_patterns=self.ignore_patterns,  # Pass ignore patterns
                     )
 
                     logging.info(

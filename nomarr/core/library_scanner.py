@@ -19,12 +19,52 @@ from mutagen.mp4 import MP4
 from nomarr.data.db import Database
 
 
+def _matches_ignore_pattern(file_path: str, patterns: str) -> bool:
+    """
+    Check if file path matches any ignore pattern.
+
+    Args:
+        file_path: Absolute file path
+        patterns: Comma-separated patterns (supports * wildcards and */ for directory matching)
+
+    Returns:
+        True if file should be ignored
+
+    Examples:
+        "*/Audiobooks/*" matches any file in Audiobooks directory
+        "*.wav" matches all WAV files
+    """
+    if not patterns:
+        return False
+
+    import fnmatch
+
+    # Normalize path separators
+    normalized_path = file_path.replace("\\", "/")
+
+    for pattern in patterns.split(","):
+        pattern = pattern.strip()
+        if not pattern:
+            continue
+
+        # Normalize pattern separators
+        pattern = pattern.replace("\\", "/")
+
+        # Check if pattern matches
+        if fnmatch.fnmatch(normalized_path, pattern):
+            return True
+
+    return False
+
+
 def scan_library(
     db: Database,
     library_path: str,
     namespace: str = "essentia",
     progress_callback: Callable[[int, int], None] | None = None,
     scan_id: int | None = None,
+    auto_tag: bool = False,
+    ignore_patterns: str = "",
 ) -> dict[str, Any]:
     """
     Scan a music library directory and update the database.
@@ -35,6 +75,8 @@ def scan_library(
         namespace: Tag namespace for essentia tags
         progress_callback: Optional callback(current, total)
         scan_id: Optional existing scan record ID (if None, creates new record)
+        auto_tag: Whether to automatically enqueue untagged files for tagging
+        ignore_patterns: Comma-separated path patterns to skip from auto-tagging
 
     Returns:
         Dict with scan statistics: files_scanned, files_added, files_updated, files_removed
@@ -91,6 +133,21 @@ def scan_library(
 
                 # Update library database with file metadata and tags
                 update_library_file_from_tags(db, file_path, namespace)
+
+                # Auto-enqueue for tagging if enabled and file not already tagged
+                if auto_tag:
+                    file_record = db.get_library_file(file_path)
+                    if file_record:
+                        # Check if file needs tagging (not tagged, not skipped, not ignored by pattern)
+                        needs_tag = (
+                            not file_record.get("tagged")
+                            and not file_record.get("skip_auto_tag")
+                            and not _matches_ignore_pattern(file_path, ignore_patterns)
+                        )
+                        if needs_tag:
+                            # Enqueue for tagging (don't force re-tag)
+                            db.enqueue(file_path, force=False)
+                            logging.info(f"[library_scanner] Auto-queued untagged file: {file_path}")
 
                 if existing_file:
                     stats["files_updated"] += 1
