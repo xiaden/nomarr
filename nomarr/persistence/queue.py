@@ -195,15 +195,3 @@ class Job:
             "error_message": self.error_message,
             "force": self.force,
         }
-
-
-# ----------------------------------------------------------------------
-#  Backwards Compatibility Import
-# ----------------------------------------------------------------------
-# TaggerWorker moved to services/workers/tagger.py
-# Import here for backwards compatibility with existing code
-try:
-    from nomarr.services.workers.base import BaseWorker as TaggerWorker  # noqa: F401
-except ImportError:
-    # If BaseWorker not available yet (during migration), skip
-    pass
