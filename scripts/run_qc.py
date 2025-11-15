@@ -2,6 +2,7 @@
 Automated QC (Quality Control) runner.
 
 Runs all automated code quality checks and generates a report.
+Includes: naming conventions, linting, type checking, security scanning, dead code detection.
 """
 
 import subprocess
@@ -75,15 +76,36 @@ def main():
     results.append(f"Exit code: {code}")
     results.append("")
 
-    # 4. Test discovery (count tests)
-    output, code = run_command([sys.executable, "-m", "pytest", "--collect-only", "-q"], "Test Discovery")
-    results.append("## 4. Test Discovery")
+    # 4. Type checking (mypy)
+    output, code = run_command(["mypy", "nomarr/", "--ignore-missing-imports"], "Type Checking (mypy)")
+    results.append("## 4. Type Checking (mypy)")
     results.append(output)
     results.append(f"Exit code: {code}")
     results.append("")
 
-    # 5. File statistics
-    results.append("## 5. Codebase Statistics")
+    # 5. Security scanning (bandit)
+    output, code = run_command(["bandit", "-r", "nomarr/", "-f", "txt"], "Security Scan (bandit)")
+    results.append("## 5. Security Scan (bandit)")
+    results.append(output)
+    results.append(f"Exit code: {code}")
+    results.append("")
+
+    # 6. Dead code detection (vulture)
+    output, code = run_command(["vulture", "nomarr/", "--min-confidence", "80"], "Dead Code Detection (vulture)")
+    results.append("## 6. Dead Code Detection (vulture)")
+    results.append(output)
+    results.append(f"Exit code: {code}")
+    results.append("")
+
+    # 7. Test discovery (count tests)
+    output, code = run_command([sys.executable, "-m", "pytest", "--collect-only", "-q"], "Test Discovery")
+    results.append("## 7. Test Discovery")
+    results.append(output)
+    results.append(f"Exit code: {code}")
+    results.append("")
+
+    # 8. File statistics
+    results.append("## 8. Codebase Statistics")
     py_files = list(Path("nomarr").rglob("*.py"))
     test_files = list(Path("tests").rglob("*.py"))
     results.append(f"Python files in nomarr/: {len(py_files)}")
@@ -103,6 +125,9 @@ def main():
     print("✅ Naming conventions check complete")
     print("✅ Linting check complete")
     print("✅ Import analysis complete")
+    print("✅ Type checking complete")
+    print("✅ Security scan complete")
+    print("✅ Dead code detection complete")
     print("✅ Test discovery complete")
     print("\nReview the full report for details.")
 

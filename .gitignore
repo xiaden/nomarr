@@ -12,6 +12,8 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+.venv/
+venv/
 
 # IDEs
 .vscode/
@@ -38,6 +40,9 @@ config/*.sqlite*
 .coverage
 htmlcov/
 .pytest_cache/
+
+# QC reports
+qc_reports/
 
 # Temp files
 *.tmp

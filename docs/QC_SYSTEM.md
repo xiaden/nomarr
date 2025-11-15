@@ -241,21 +241,72 @@ Track these over time:
 - **Open action items:** Target < 10
 - **Critical issues:** Target = 0
 
-## Tools to Add
+## Additional Tools (Optional)
 
-Potential tools for better QC:
+Tools that could enhance QC but have limitations:
 
-1. **mypy** - Static type checking
-2. **vulture** - Dead code detection
-3. **bandit** - Security issue scanner
-4. **radon** - Code complexity metrics
-5. **interrogate** - Docstring coverage
-6. **coverage** - Test coverage metrics
+### Available Now (No ML Dependencies)
 
-Install with:
+1. **ruff** - Linting and formatting ✅ (already using)
+2. **check_naming.py** - Naming conventions ✅ (already using)
+3. **radon** - Code complexity metrics
+4. **interrogate** - Docstring coverage checker
+
+Install these:
 
 ```bash
-pip install mypy vulture bandit radon interrogate coverage
+pip install radon interrogate
+```
+
+### Blocked by ML Dependencies
+
+These tools are blocked because essentia-tensorflow isn't available on Windows dev environment:
+
+1. **mypy** - Static type checking
+
+   - Problem: Needs essentia imports to resolve types
+   - Workaround: Run in Docker container where essentia is installed
+   - Command: `docker exec nomarr python3 -m mypy nomarr/`
+
+2. **vulture** - Dead code detection
+
+   - Problem: Needs to import modules (triggers essentia loading)
+   - Workaround: Manual review or run in container
+
+3. **bandit** - Security scanner
+   - Problem: Similar import issues
+   - Workaround: Run in container for security audits
+
+### Why Not Install Essentia on Windows Dev?
+
+Essentia-tensorflow + TensorFlow + models would trigger ML inference if code is executed, which:
+
+- Takes ~30-60s to load models
+- Uses GPU/VRAM (if available)
+- Slows down development workflow
+
+**Solution**: Keep dev environment lightweight, run ML-dependent tools in Docker.
+
+### Practical QC Workflow
+
+**On Windows Dev Machine:**
+
+```bash
+# Fast checks (no ML deps)
+python scripts/check_naming.py
+ruff check .
+python scripts/review_module.py nomarr/services/
+radon cc nomarr/ -s  # Complexity
+interrogate nomarr/  # Docstring coverage
+```
+
+**In Docker Container:**
+
+```bash
+# Full checks (with ML deps)
+docker exec nomarr python3 -m mypy nomarr/
+docker exec nomarr python3 -m bandit -r nomarr/
+docker exec nomarr python3 -m vulture nomarr/
 ```
 
 ## Next Steps
