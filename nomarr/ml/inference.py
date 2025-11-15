@@ -162,7 +162,8 @@ def make_predictor_uncached(head_info: HeadInfo) -> Callable[[np.ndarray, int], 
         if predictions.ndim > 1:
             predictions = predictions.reshape(-1)
 
-        return predictions
+        result: np.ndarray = predictions
+        return result
 
     return predict_fn
 

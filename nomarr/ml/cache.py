@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
-    from discovery import HeadInfo
+    from nomarr.ml.models.discovery import HeadInfo
 
 # Global predictor cache: {cache_key: predict_fn}
 # Cache key must be unique across backbones to avoid collisions
