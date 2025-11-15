@@ -5,8 +5,9 @@ include_external_packages = False
 # Enforce layered architecture
 # Rule: Lower layers cannot import from higher layers
 # Architecture stack (top to bottom):
-#   interfaces -> services -> core -> data
-#   ml (isolated namespace, can be imported by core/services)
+#   interfaces -> workflows -> services -> persistence
+#   ml (isolated namespace, can be imported by workflows/services)
+#   tagging (tag logic, can be imported by workflows)
 #   helpers (shared utilities, can be imported by any layer)
 
 [importlinter:contract:1]
@@ -16,26 +17,23 @@ source_modules =
     nomarr.services
 forbidden_modules =
     nomarr.interfaces
-ignore_imports =
-    # Type checking imports are allowed
-    nomarr.services.* -> nomarr.interfaces.* (TYPE_CHECKING)
 
 [importlinter:contract:2]
-name = Core cannot import from services or interfaces
+name = Workflows cannot import from services or interfaces
 type = forbidden
 source_modules =
-    nomarr.core
+    nomarr.workflows
 forbidden_modules =
     nomarr.services
     nomarr.interfaces
 
 [importlinter:contract:3]
-name = Data layer cannot import from core, services, or interfaces
+name = Persistence layer cannot import from workflows, services, or interfaces
 type = forbidden
 source_modules =
-    nomarr.data
+    nomarr.persistence
 forbidden_modules =
-    nomarr.core
+    nomarr.workflows
     nomarr.services
     nomarr.interfaces
 
@@ -47,19 +45,15 @@ source_modules =
 forbidden_modules =
     nomarr.services
     nomarr.interfaces
-ignore_imports =
-    # ML can import from data for database queries if needed
-    nomarr.ml.* -> nomarr.data.*
+    nomarr.workflows
 
 [importlinter:contract:5]
-name = Interfaces should be thin (no business logic imports except services)
+name = Interfaces should be thin (no business logic imports)
 type = forbidden
 source_modules =
     nomarr.interfaces
 forbidden_modules =
-    nomarr.core
-    nomarr.data
+    nomarr.workflows
+    nomarr.persistence
     nomarr.ml
-ignore_imports =
-    # Interfaces can use services (proper layer)
-    nomarr.interfaces.* -> nomarr.services.*
+    nomarr.tagging
