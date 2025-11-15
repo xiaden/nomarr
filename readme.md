@@ -215,6 +215,7 @@ essentia:voice_instrumental = 0.2341
 - **[Deployment Guide](docs/DEPLOYMENT.md)** - Docker setup, configuration, and troubleshooting
 - **[Model Information](docs/modelsinfo.md)** - Details about Essentia ML models
 - **[Navidrome Integration](docs/NAVIDROME_INTEGRATION.md)** - Smart playlist generation and config export
+- **[Versioning Strategy](docs/VERSIONING.md)** - Semantic versioning and release process
 - **[Configuration Guide](docs/README.md)** - Advanced configuration and architecture overview
 
 ---
