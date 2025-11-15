@@ -5,7 +5,7 @@ db_path: /app/config/db/essentia.sqlite
 # Tag writing settings
 namespace: nom # Tag namespace prefix
 version_tag: nom_version # Version tracking tag name
-tagger_version: 0.1.0 # DEPRECATED: Version auto-loaded from nomarr/__version__.py (ignored if set)
+# Note: tagger_version is auto-loaded from nomarr/__version__.py (not configurable)
 
 # Audio processing rules
 min_duration_s: 7 # Minimum audio duration to process
