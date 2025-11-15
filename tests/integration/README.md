@@ -55,11 +55,13 @@ Tests the actual CLI commands (admin tools only):
 ### ⚠️ Important: CI Exclusion
 
 These tests are **automatically skipped in GitHub Actions CI** because they require:
+
 - GPU for ML inference (GitHub runners are CPU-only)
 - Real ML model files (~400MB per worker)
 - Docker container environment
 
 They are marked with:
+
 ```python
 @pytest.mark.gpu_required      # Needs GPU for fast inference
 @pytest.mark.container_only    # Designed for Docker container
@@ -101,6 +103,7 @@ pytest tests/integration/test_cli_integration.py -v
 ### Skip GPU Tests Locally
 
 If you want to run only non-GPU tests (like in CI):
+
 ```bash
 pytest tests/ -v -m "not gpu_required and not container_only"
 ```
