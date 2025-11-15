@@ -1,0 +1,65 @@
+[importlinter]
+root_package = nomarr
+include_external_packages = False
+
+# Enforce layered architecture
+# Rule: Lower layers cannot import from higher layers
+# Architecture stack (top to bottom):
+#   interfaces -> services -> core -> data
+#   ml (isolated namespace, can be imported by core/services)
+#   helpers (shared utilities, can be imported by any layer)
+
+[importlinter:contract:1]
+name = Services cannot import from interfaces
+type = forbidden
+source_modules =
+    nomarr.services
+forbidden_modules =
+    nomarr.interfaces
+ignore_imports =
+    # Type checking imports are allowed
+    nomarr.services.* -> nomarr.interfaces.* (TYPE_CHECKING)
+
+[importlinter:contract:2]
+name = Core cannot import from services or interfaces
+type = forbidden
+source_modules =
+    nomarr.core
+forbidden_modules =
+    nomarr.services
+    nomarr.interfaces
+
+[importlinter:contract:3]
+name = Data layer cannot import from core, services, or interfaces
+type = forbidden
+source_modules =
+    nomarr.data
+forbidden_modules =
+    nomarr.core
+    nomarr.services
+    nomarr.interfaces
+
+[importlinter:contract:4]
+name = ML namespace isolation
+type = forbidden
+source_modules =
+    nomarr.ml
+forbidden_modules =
+    nomarr.services
+    nomarr.interfaces
+ignore_imports =
+    # ML can import from data for database queries if needed
+    nomarr.ml.* -> nomarr.data.*
+
+[importlinter:contract:5]
+name = Interfaces should be thin (no business logic imports except services)
+type = forbidden
+source_modules =
+    nomarr.interfaces
+forbidden_modules =
+    nomarr.core
+    nomarr.data
+    nomarr.ml
+ignore_imports =
+    # Interfaces can use services (proper layer)
+    nomarr.interfaces.* -> nomarr.services.*
