@@ -8,7 +8,7 @@ version_tag: nom_version # Version tracking tag name
 # Note: tagger_version is auto-loaded from nomarr/__version__.py (not configurable)
 
 # Audio processing rules
-min_duration_s: 7 # Minimum audio duration to process
+min_duration_s: 60 # Minimum audio duration to process (avoid skits/interludes)
 allow_short: false # Whether to process files shorter than minimum
 overwrite_tags: true # Whether to overwrite existing tags
 

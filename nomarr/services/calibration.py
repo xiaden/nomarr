@@ -301,8 +301,7 @@ class CalibrationService:
 
         if not reference_file or not os.path.exists(reference_file):
             logger.warning(
-                f"[CalibrationService] Reference calibration file not found: {reference_file}. "
-                f"Treating as first run."
+                f"[CalibrationService] Reference calibration file not found: {reference_file}. Treating as first run."
             )
             # No reference file - treat as first calibration
             return {

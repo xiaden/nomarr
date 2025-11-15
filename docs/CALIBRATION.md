@@ -218,7 +218,7 @@ Generate calibration from all library files.
         "model_name": "effnet",
         "head_name": "mood_happy",
         "labels": {
-          "happy": {"p5": 0.1, "p95": 0.9, "method": "minmax"}
+          "happy": { "p5": 0.1, "p95": 0.9, "method": "minmax" }
         },
         "drift_metrics": {
           "apd_p5": 0.023,
