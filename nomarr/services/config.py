@@ -15,6 +15,7 @@ from typing import Any
 
 import yaml
 
+from nomarr.__version__ import __version__
 from nomarr.data.db import Database
 
 
@@ -155,7 +156,7 @@ class ConfigService:
             # Tag writing settings
             "namespace": "essentia",
             "version_tag": "essentia_at_version",
-            "tagger_version": "0.1.0",
+            "tagger_version": __version__,  # Version from nomarr.__version__
             # Audio processing rules
             "min_duration_s": 60,  # Skip tracks shorter than 60s
             "batch_size": 11,  # Batch size for head model inference (patches per batch)
