@@ -2,12 +2,28 @@
 Integration tests for production API endpoints.
 
 Tests the real API with real ML processing (not mocked).
+
+These tests require:
+- Running API server
+- ML models available
+- GPU for inference (or very slow on CPU)
+- Docker container environment preferred
+
+Skip in CI with: pytest -m "not gpu_required"
 """
 
 import os
 
 import pytest
 import requests
+
+# Mark all tests in this module
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.gpu_required,
+    pytest.mark.container_only,
+    pytest.mark.requires_ml,
+]
 
 # Test fixtures path
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "fixtures")

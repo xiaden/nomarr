@@ -93,7 +93,9 @@ jobs:
 
       - name: Run tests in container
         run: |
-          docker run --rm nomarr python3 -m pytest tests/ -v
+          # Skip GPU-required and container-only integration tests in CI
+          # These tests require GPU for ML inference and are designed for manual testing
+          docker run --rm nomarr python3 -m pytest tests/ -v -m "not gpu_required and not container_only"
 
       - name: Tag and push to GitHub Container Registry
         if: github.event_name == 'push' && steps.version_check.outputs.changed == 'true'

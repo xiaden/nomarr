@@ -2,11 +2,25 @@
 Integration tests for CLI commands.
 
 Tests the real CLI commands that exist (admin tools, not workflow commands).
+
+These tests require:
+- Running nomarr system (database, services)
+- Docker container environment preferred
+
+Skip in CI with: pytest -m "not container_only"
 """
 
 import os
 import subprocess
 import sys
+
+import pytest
+
+# Mark all tests in this module
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.container_only,
+]
 
 # Test fixtures
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "fixtures")
