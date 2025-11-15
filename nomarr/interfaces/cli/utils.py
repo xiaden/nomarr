@@ -10,7 +10,7 @@ from urllib import error as urlerror
 from urllib import request
 
 from nomarr.config import compose
-from nomarr.data.db import Database
+from nomarr.persistence.db import Database
 
 __all__ = [
     "api_call",
@@ -76,7 +76,7 @@ def get_avg_processing_time(db: Database) -> float:
 
     # Store for future use
     db.set_meta("avg_processing_time", str(avg))
-    return avg
+    return float(avg)
 
 
 def update_avg_processing_time(db: Database, job_elapsed: float):

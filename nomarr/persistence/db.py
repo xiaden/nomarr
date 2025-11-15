@@ -483,7 +483,7 @@ class Database:
     ):
         """Update library scan progress."""
         updates = []
-        params = []
+        params: list[str | int] = []
 
         if status:
             updates.append("status=?")
@@ -740,7 +740,7 @@ class Database:
         if is_multivalue:
             # For arrays (mood tags), fetch and parse JSON to count individual values
             cursor = self.conn.execute("SELECT tag_value FROM library_tags WHERE tag_key=? LIMIT 10000", (tag_key,))
-            value_counts = {}
+            value_counts: dict[str, int] = {}
 
             for row in cursor:
                 try:
@@ -759,7 +759,7 @@ class Database:
 
             # Sort by count descending
             sorted_values = sorted(value_counts.items(), key=lambda x: x[1], reverse=True)
-            summary = dict(sorted_values)
+            summary: dict[str, Any] | str = dict(sorted_values)
 
         elif detected_type in ("float", "int"):
             # Use SQL aggregation for numeric tags (much faster!)

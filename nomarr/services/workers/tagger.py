@@ -14,10 +14,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from nomarr.core.processor import process_file
-from nomarr.data.db import Database
-from nomarr.data.queue import ProcessingQueue
+from nomarr.persistence.db import Database
+from nomarr.persistence.queue import ProcessingQueue
+from nomarr.services.config import ConfigService
 from nomarr.services.workers.base import BaseWorker
+from nomarr.workflows.processor import process_file
 
 
 def create_tagger_worker(
@@ -40,10 +41,19 @@ def create_tagger_worker(
     Returns:
         BaseWorker instance configured for tagging operations
     """
+
+    # Adapter to match BaseWorker's expected signature: (path: str, force: bool) -> dict
+    def _process_adapter(path: str, force: bool) -> dict[str, Any]:
+        """Adapt process_file signature to match BaseWorker expectations."""
+        config_service = ConfigService()
+        config = config_service.make_processor_config()
+        # Note: force parameter is ignored - config comes from DB/YAML
+        return process_file(path, config, db)
+
     return BaseWorker(
         name="TaggerWorker",
         queue=queue,
-        process_fn=process_file,  # Inject ML processing logic
+        process_fn=_process_adapter,
         db=db,
         event_broker=event_broker,
         worker_id=worker_id,

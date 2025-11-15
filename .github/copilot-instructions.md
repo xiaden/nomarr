@@ -1,308 +1,314 @@
-## Nomarr — Copilot Instructions
+# Copilot Instructions
 
-This file captures concise, actionable knowledge for coding agents to be productive in this repository.
-
-- Quick entry points:
-
-  - `readme.md` — canonical overview, Docker/Lidarr setup, cache semantics, CLI vs API behavior, and links to deeper docs.
-  - `docs/NAMING_STANDARDS.md` — **CRITICAL**: Naming conventions for variables, functions, database columns, API fields. Review before adding new code.
-  - `docs/API_REFERENCE.md` — endpoint details, schemas, and Lidarr integration examples.
-  - `docs/NAVIDROME_INTEGRATION.md` — Navidrome custom tags config, Smart Playlist syntax, integration workflow. Reference when building playlist/tag export features.
-  - `nomarr/interfaces/api/app.py` — FastAPI app + lifecycle, shared TaggerWorker, auth, endpoints.
-  - `nomarr/interfaces/cli/main.py` — CLI command dispatcher.
-  - `nomarr/core/processor.py` — Core audio processing pipeline (domain logic).
-  - `nomarr/services/` — Business operations (ProcessingService, QueueService, LibraryService, WorkerService, HealthMonitor, analytics, Navidrome integration).
-  - `nomarr/data/` — `db.py` (SQLite), `queue.py` (JobQueue + TaggerWorker).
-  - `nomarr/ml/models/` — `discovery.py`, `embed.py`, `heads.py`, `writers.py` (ML model interfaces).
-  - `nomarr/ml/` — `inference.py` (ML inference), `cache.py` (model cache).
-  - `nomarr/tagging/` — `aggregation.py` (tag processing rules).
-  - `config/config.yaml` — runtime config; container-mounted at `/app/config/config.yaml` and loaded by `compose()`.
-  - `models/` — sidecars (`.json`) + graphs (`.pb`); both required.
-  - `scripts/generate_inits.py` — auto-generate `__init__.py` files with proper `__all__` exports (run after adding/removing public classes/functions).
-
-- Development tools:
-
-  - `ruff` — linter and formatter (**RUN AFTER MAJOR CHANGES**: `ruff check .` then `ruff check --fix .`)
-  - `scripts/discover_api.py` — **MANDATORY before writing tests**: Shows actual module API (classes, methods, signatures)
-  - `scripts/check_naming.py` — detect naming convention violations (optional)
-  - `scripts/generate_inits.py` — auto-generate `__init__.py` files; run with `python scripts/generate_inits.py` after adding/removing/renaming public exports
-
-- Codebase structure (semantic layered architecture):
-
-  ```
-  nomarr/
-  ├── interfaces/          # Presentation layer (all user-facing code)
-  │   ├── api/            # FastAPI HTTP (public + internal + web endpoints, auth, models, helpers, coordinator, event_broker, state)
-  │   ├── cli/            # Terminal CLI (commands, main.py dispatcher, ui.py with Rich components, utils)
-  │   └── web/            # Browser-based web UI (HTML/CSS/JS, session-based auth)
-  ├── services/           # Business operations & orchestration
-  │   ├── processing.py   # ProcessingService (wraps ProcessingCoordinator, enforces fail-fast)
-  │   ├── queue.py        # QueueService (job queue operations)
-  │   ├── library.py      # LibraryService (library file queries, tag operations)
-  │   ├── worker.py       # WorkerService (worker state management)
-  │   ├── health.py       # HealthMonitor (worker health tracking)
-  │   ├── analytics.py    # Tag analysis functions (frequencies, correlations, mood distributions)
-  │   ├── workers/        # Worker implementations
-  │   │   └── scanner.py  # LibraryScanWorker (background library scanning)
-  │   └── navidrome/      # Navidrome integration (config + playlist generation)
-  ├── core/               # Core domain logic (essential processing pipeline)
-  │   ├── processor.py    # process_file() - main audio processing orchestration
-  │   └── library_scanner.py  # scan_library(), update_library_file_from_tags()
-  ├── ml/                 # Machine learning (isolated namespace)
-  │   ├── inference.py    # ML model inference engine
-  │   ├── cache.py        # Model cache management
-  │   └── models/         # ML model interfaces
-  │       ├── discovery.py    # Model discovery and metadata
-  │       ├── embed.py        # Embedding models
-  │       ├── heads.py        # Classification head models
-  │       └── writers.py      # Model-to-tag writers
-  ├── tagging/            # Tag processing rules
-  │   └── aggregation.py  # aggregate_mood_tiers(), mood aggregation logic
-  ├── data/               # Persistence layer
-  │   ├── db.py           # Database (SQLite schema, queries)
-  │   └── queue.py        # JobQueue, TaggerWorker (queue worker)
-  ├── helpers/            # Shared utilities
-  │   └── (various helpers)
-  └── (root modules)      # config.py, rules.py, start.py
-  ```
-
-- High-level architecture (how pieces communicate):
-
-  - **Single unified API** (0.0.0.0:8356) serves public endpoints (for Lidarr), and web endpoints (for browser UI).
-  - **Two-layer authentication**:
-    - Public endpoints (`/api/v1/tag`, `/api/v1/queue`, etc.) use `api_key` authentication (for Lidarr/webhooks)
-    - Web endpoints (`/web/*`, `/web/api/*`) use session tokens from admin password login (for browser UI)
-  - Admin password: auto-generated on first run, stored as salted SHA-256 hash in DB, managed via `manage_password.py` CLI
-  - Sessions: write-through cache (in-memory for performance, DB for persistence), 24-hour expiry, survives container restarts
-  - API + TaggerWorker + LibraryScanWorker share a single SQLite DB (`config/db/essentia.sqlite`). The DB stores queue rows, library files, library scans, meta (api_key, admin_password_hash, worker_enabled, averages), results, session tokens.
-  - API starts on container boot via `start.py`. Model cache is **lazy-loaded** (models cached on first use, not at startup).
-  - **TaggerWorker**: Polls DB for pending tag jobs and calls `core/processor.py:process_file()`; DB mutations are under `queue.lock`. Long-running work happens outside the lock.
-  - **LibraryScanWorker**: Background thread (in `services/workers/scanner.py`) that scans music library directory, reads all tags from audio files, and updates `library_files` table. Configured via `library_path` in config.yaml. Runs independently from tagging operations.
-  - **CLI accesses services directly**: Uses `app.application.services` directly (no HTTP, runs in same process as API server).
-  - **Web UI** requires API to be running. Uses `/web/api/*` endpoints that access Application services.
-  - **Multi-worker parallelism**: ProcessingCoordinator (in `interfaces/api/coordinator.py`) uses ProcessPoolExecutor with configurable worker_count (default 1). Each worker process loads independent model cache (~400MB per worker). Note: Multiple workers can overwhelm consumer GPUs; adjust carefully.
-  - **GPU concurrency**: TensorFlow configured via environment variables (`TF_FORCE_GPU_ALLOW_GROWTH=true`, `TF_GPU_THREAD_MODE=gpu_private`) to enable multiple worker processes to use GPU simultaneously without pre-allocating all VRAM.
-  - **Service layer**: All business operations go through services (ProcessingService, QueueService, LibraryService, WorkerService, HealthMonitor). Services provide fail-fast behavior and proper error handling.
-
-- Important repository-specific conventions and patterns:
-
-  - Tag namespace: all tags are written under `essentia:<key>` (config `namespace`).
-  - Emit-all scores: multilabel/multiclass heads write base probabilities for all labels; tiers only for selected labels.
-  - Mood aggregation: `mood-strict`, `mood-regular`, `mood-loose` are native multi-value tags derived from `*_tier` tags. Mood terms come from head names (spaces or underscores handled). Per-model probabilities are available via individual label keys.
-  - DB concurrency: use `queue.lock` for DB mutations; do not hold the lock during file processing.
-  - Worker state via DB meta `worker_enabled` (and `config.yaml` defaults). Admin endpoints toggle the worker.
-  - API auth: API key in DB meta; enforced by `HTTPBearer`.
-  - Blocking: `blocking_mode`/`blocking_timeout` control `/tag` behavior. Defaults: blocking with a single timeout.
-  - Poll interval: prefer `poll_interval` (worker). Deprecated aliases are still accepted but may warn.
-  - **CLI commands**: Available commands are `run`, `queue`, `list`, `remove`, `info`, `show-tags`, `cleanup`, `cache-refresh`, `admin-reset`, `watch`. The `admin-reset` command has `--stuck` and `--errors` flags to target specific job states.
-
-- Data shapes and contracts (quick reference):
-
-  - POST /api/v1/tag: { path: string, force?: boolean } (public API, queues job)
-  - GET /api/v1/list?limit=50&offset=0&status=pending: list jobs with pagination and filtering (recommended)
-  - GET /api/v1/queue?limit=5: legacy job listing (use /list instead)
-  - POST /internal/process_direct: { path: string, force?: boolean } (internal API, synchronous)
-  - POST /internal/process_stream: { path: string, force?: boolean } (internal API, SSE streaming with real-time progress)
-  - POST /internal/batch_process: { paths: string[], force?: boolean } (internal API, multiple files)
-  - POST /web/auth/login: { password: string } (web API, returns session token)
-  - POST /web/auth/logout: (web API, invalidates session)
-  - POST /web/api/process: { path: string, force?: boolean } (web API proxy, SSE streaming)
-  - POST /web/api/batch-process: { paths: string[], force?: boolean } (web API proxy)
-  - GET /web/api/list?limit=50&offset=0&status=pending: (web API proxy for job listing)
-  - POST /web/api/queue/remove: { job_id: number } (web API proxy)
-  - POST /web/api/admin/worker/pause: (web API proxy)
-  - Job lifecycle: `pending` → `running` → `done|error`
-  - Queue/admin: `/list`, `/queue`, `/status/{id}`, `/admin/queue/*`, `/admin/cache/refresh`
-  - Errors: 404 (missing files), 403 (auth), 409 (invalid ops), 503 (no workers available)
-  - SSE events: `progress` (head updates), `complete` (result), `error`, `done` (stream end)
-
-- Integration and operational notes (useful for fixes/features):
-
-  - Models live under `/app/models`; ensure both `.json` and `.pb` exist for each head/embedding.
-  - API keys: `python3 -m nomarr.manage_key --show` (public key). Internal key is auto-generated and stored in DB.
-  - Admin password: `python3 -m nomarr.manage_password --show` (view), `--verify` (check), `--reset` (change). Auto-generated on first run and logged to container output.
-  - Quick smoke test: `python3 -m nomarr.interfaces.cli.main run /music/TestSong.mp3` (requires internal API running).
-  - Web UI access: Navigate to `http://<server>:8356/` and log in with admin password.
-  - Temporarily pause worker: `/admin/worker/pause`; resume: `/admin/worker/resume`.
-  - Refresh model cache after adding/removing models: `/admin/cache/refresh` or CLI `cache-refresh` command.
-  - All endpoints (public + internal + web) are on port 8356; different auth per layer.
-
-- Small decisions to respect when changing behavior:
-
-  - Never process audio while holding the DB lock.
-  - Maintain backward-compatible config keys (flat + legacy nested aliases).
-  - Preserve tag format and namespace; do not change key naming schemes lightly.
-  - Do not create additional worker loops; the single `TaggerWorker` is authoritative.
-  - GPU environment variables (`TF_FORCE_GPU_ALLOW_GROWTH`, `TF_GPU_THREAD_MODE`) are set in Dockerfile and inherited by spawned worker processes (multiprocessing uses OS environment).
-  - Worker slot cleanup must happen in `finally` blocks to prevent stuck "No workers available" errors.
-  - SSE streaming endpoints must poll event queues while futures run (not after completion) for real-time updates.
-  - After adding/removing/renaming public classes or functions, run `python scripts/generate_inits.py` to update `__init__.py` files.
-  - Services enforce fail-fast: ProcessingService raises RuntimeError if ProcessingCoordinator unavailable (no silent fallbacks).
-
-- Useful files to open for context when implementing a change:
-  - `nomarr/interfaces/api/app.py` — unified API (public + internal + web endpoints), worker lifecycle
-  - `nomarr/interfaces/api/auth.py` — authentication logic (API keys, admin password hashing, session management)
-  - `nomarr/interfaces/api/endpoints/web.py` — web UI endpoints (login/logout, proxy endpoints)
-  - `nomarr/interfaces/web/` — browser UI files (app.js, index.html, styles.css)
-  - `nomarr/start.py` — Application launcher (starts Application, then API server)
-  - `nomarr/manage_password.py` — admin password CLI tool
-  - `nomarr/interfaces/cli/main.py` — internal API client with local fallback
-  - `nomarr/core/processor.py` — orchestration of model inference and tag writing
-  - `nomarr/services/processing.py` — ProcessingService (wraps coordinator, fail-fast)
-  - `nomarr/services/queue.py` — QueueService (job queue operations)
-  - `nomarr/services/library.py` — LibraryService (library file queries)
-  - `nomarr/services/worker.py` — WorkerService (worker state)
-  - `nomarr/services/health.py` — HealthMonitor (worker health)
-  - `nomarr/services/analytics.py` — tag analysis functions
-  - `nomarr/services/navidrome/` — Navidrome integration
-  - `nomarr/ml/inference.py` — ML model inference engine
-  - `nomarr/ml/cache.py` — model cache management
-  - `nomarr/ml/models/` — ML model interfaces (discovery, embed, heads, writers)
-  - `nomarr/tagging/aggregation.py` — mood aggregation logic
-  - `nomarr/data/queue.py` / `nomarr/data/db.py` — queue locking and DB schema
-  - `readme.md` — deployment, Docker Compose example and workflows
-
-If anything here is unclear or you want the instructions to include run/debug commands for Windows devs or unit-test notes, tell me which details to add and I will iterate.
+These instructions guide Copilot to produce consistent, maintainable, idiomatic code that fits the Nomarr architecture. The goal is predictability, correctness, and clarity.
 
 ---
 
-Development & Deployment Architecture
+## 🛑 **Copilot — Hard Rules (Read First)**
 
-- **Development**: Code is developed on Windows (PowerShell environment).
-- **Deployment**: Docker container is built and run on a separate Ubuntu server.
-- **Workflow**: Make changes locally on Windows, commit/push, then rebuild container on Ubuntu server.
-- **Testing**: Cannot use `docker compose build` locally during development - container must be rebuilt on deployment server.
+**Never:**
 
----
+- write bare `import essentia` or `import essentia_tensorflow`
+- import Essentia in any top-level module
+- introduce global mutable state
+- create 300+ line functions
+- mix unrelated concerns (tagging + DB + workers)
 
-Docker & Lidarr sideloading (Ubuntu server notes)
+**Always:**
 
-- Purpose: this project is intended to run as a Docker sidecar alongside Lidarr so imported files (on shared volumes) can be tagged in-place.
+- follow the directory placement rules below
+- keep functions < ~50 lines unless structurally justified
+- prefer dependency injection (receive db, config, etc. from caller)
+- write mypy-friendly, fully type‑annotated code
+- keep imports local when optional or heavyweight
 
-- Networking & compose:
+A full Essentia backend module will exist at:
 
-  - Prefer a Docker Compose service in the same Docker network as Lidarr. Example service name `nomarr` is reachable by `http://nomarr:8356` from Lidarr when both are in the same compose network.
-  - Keep the default container port internal; no host port needs to be exposed when accessed from the same Docker network.
-
-- Volumes and permissions (critical):
-
-  - Mount your music library into the container at the same absolute path Lidarr uses (e.g., `/music`). Use a consistent mapping: host:/music -> container:/music.
-  - The container must be able to write audio files and the SQLite DB file. Ensure UID/GID used by the container matches or has write permission to the host-mounted paths. The existing `docker-compose` snippet uses `user: "1000:1000"` for this reason.
-  - The SQLite DB should be persisted on a volume: e.g., host `./config` -> container `/app/config` so `config/db/essentia.sqlite` survives restarts.
-
-- Lidarr integration (post-import):
-
-  - Use a post-import script (Lidarr's custom script or webhook) to call the tagger. Example cURL (from Lidarr server or from an entrypoint container on same network):
-
-    curl -X POST \
-     -H "Authorization: Bearer <API_KEY>" \
-     -H "Content-Type: application/json" \
-     -d '{"path":"/music/Album/Track.mp3"}' \
-     http://nomarr:8356/api/v1/tag
-
-  - If Lidarr runs on the host (not in the same docker network), call the container using the host IP and an exposed port, or create a docker network that both services join.
-
-- API key & testing inside container:
-
-  - The API key is persisted in DB meta. To show or regenerate it inside the container:
-
-    python3 -m nomarr.manage_key --show
-    python3 -m nomarr.manage_key --generate
-
-  - Quick smoke test inside the running container:
-
-    python3 -m nomarr.interfaces.cli.main run /music/TestSong.mp3
-
-- Common deployment checklist for Ubuntu servers:
-
-  1. Install Docker + Docker Compose (compose V2 CLI recommended).
-  2. Ensure host directories exist and are owned/writable by the container user (or use `user:` in compose to match host UID/GID).
-  3. Place models under `./models` and config under `./config` (which contains `db/essentia.sqlite`).
-  4. Start the service with `docker compose up -d` and confirm logs with `docker compose logs -f nomarr`.
-
-- Troubleshooting & recovery tips:
-  - If files are not being written, check file-system permissions first (container can read but not write).
-  - Check `docker compose logs nomarr` for exceptions from `core/processor.py` or worker messages in `interfaces/api/app.py`.
-  - To temporarily stop automatic processing: set `worker_enabled: false` in `config/config.yaml` (or `/admin/worker/pause`) and use CLI `run` for debugging.
-  - To remove stuck jobs: Use CLI `remove --all` or `remove --status error`. Admin endpoints also support removal by job ID.
-  - If CLI warnings/errors aren't visible, ensure the ProgressDisplay logging bridge remains attached during runs (see `interfaces/cli/ui.py`).
-  - **GPU utilization issues**: Low GPU usage (~3%) with multiple workers suggests sequential processing. GPU environment variables are set in Dockerfile and inherited by all worker processes. Check `nvidia-smi` for multiple processes using GPU. Sequential model loading is normal (disk I/O bottleneck on first file per worker).
-  - **"No workers available" errors**: Worker slots are released when processing completes or on client disconnect. If slots don't release, check API logs for `Released worker X` messages. Use CLI `admin-reset --stuck` to reset jobs stuck in "running" state.
-  - **Ctrl+C behavior**: Canceling CLI commands closes the stream but lets background processing complete (prevents file corruption). Worker slots release when API detects closed connection. Re-running immediately should work.
-  - **ProcessingService errors**: If you see "ProcessingCoordinator is not available", the API may not have initialized properly. Check API startup logs for coordinator initialization errors. Services fail-fast rather than degrading silently.
-
----
-
-## MANDATORY Development Workflows (For AI Agents)
-
-### Before Writing Tests or Using Any Module
-
-**ALWAYS run API discovery first** to see what actually exists:
-
-```bash
-# Discover module API before writing tests or using functions
-python scripts/discover_api.py nomarr.data.db
-python scripts/discover_api.py nomarr.data.queue
-python scripts/discover_api.py nomarr.interfaces.api.auth
-
-# Quick summary (just class/function names)
-python scripts/discover_api.py nomarr.data.queue --summary
+```
+ml/backend_essentia.py
 ```
 
-**DO NOT:**
+All Essentia use must follow this pattern:
 
-- ❌ Guess at function names (`add_job` vs `add`, `get_job` vs `get`)
-- ❌ Assume class structures (`SessionManager` when it's just functions)
-- ❌ Write tests without discovering actual signatures first
+```python
+try:
+    import essentia_tensorflow as essentia_tf
+except ImportError:  # pragma: no cover
+    essentia_tf = None
+```
 
-**DO:**
+---
 
-- ✅ Run `discover_api.py` to see actual method names and signatures
-- ✅ Copy exact signatures from discovery output
-- ✅ Verify parameter names match before using
+## 1. Project Philosophy
 
-### After Major Changes or at Checkpoints
+Nomarr is structured around **separation of concerns**, correctness, and predictability. All code must adhere to:
 
-**ALWAYS run linters** to check code quality:
+- **Pure ML code is isolated** (no DB, no HTTP, no workers)
+- **Workflows orchestrate**, but do not perform low‑level actions
+- **Services manage resources** (workers, queues, runtime)
+- **Tagging code only handles tag logic**
+- **Persistence is a thin access layer**
+- **Interfaces expose, but do not compute**
+
+Everything should be deterministic, explicit, and testable.
+
+### Pre‑Alpha Status
+
+Nomarr is currently **pre‑alpha**. This means:
+
+- There is **no legacy code**; only current code exists.
+- There is **no need for backward compatibility**.
+- Do **not** build migration systems, compatibility shims, versioned persistence layers, or upgrade paths.
+- Breaking changes are acceptable and expected.
+- Prefer **clean, forward‑looking architecture**, but avoid speculative future‑proofing (e.g., cluster support, distributed systems) unless explicitly required.
+
+Copilot: Plan for the future **when it clearly serves the current design**, but do not introduce complex abstractions for imaginary requirements.
+
+---
+
+## 2. Where New Code Should Go
+
+### **Quick Placement Guide (TL;DR)**
+
+```
+Contains domain logic, takes db/config, no HTTP/workers → workflows/
+Pure ML, embeddings, inference models → ml/
+Tag normalization, tiering, conflict rules, ID3 writes → tagging/
+Raw SQL or durability logic → persistence/
+Worker orchestration, queues, scheduling → services/
+API endpoints, Web UI, CLI commands → interfaces/
+Pure stateless utilities → helpers/
+```
+
+### workflows/
+
+High-level operations and orchestration. Receives db + config from callers. Never touches lower-level resources directly.
+
+### ml/
+
+Embedder/head models, ML inference, calibration logic. No DB. No HTTP. No workers.
+
+### tagging/
+
+Convert model outputs → normalized tags. Tiering, scoring, conflict resolution. Writes tags using writer module.
+
+### persistence/
+
+DB access layer, SQL models, migrations. No business logic.
+
+### services/
+
+Worker pools, queues, scheduling. Holds long‑running processes and side‑effects.
+
+### interfaces/
+
+HTTP REST API, CLI wrapper. Translates requests → workflow calls. No domain logic.
+
+### helpers/
+
+Pure, stateless utilities. Cannot import workflows/services/ml/tagging.
+
+---
+
+## 3. Architectural Rules
+
+### Dependency Direction
+
+```
+interfaces → workflows → tagging → ml
+                     ↓           ↓
+                 persistence    helpers
+                     ↓
+                 services (only for worker mgmt)
+```
+
+### Rules
+
+- ML must not import tagging, workflows, persistence, or services.
+- Tagging must not import workflows or services.
+- Workflows may import ML, tagging, or persistence.
+- Interfaces must call workflows only.
+- Services run workflows, never the inverse.
+
+---
+
+## 4. Code Style
+
+### Python
+
+- Fully type annotated
+- ruff formatting
+- short functions (<50 lines)
+- small modules (<300 lines)
+- prefer pure functions
+- prefer explicit over clever
+
+### JavaScript
+
+- Prettier formatting
+- ESLint rules enforced
+- Avoid global state
+
+### Error Handling
+
+- Use typed errors
+- No bare `except:`
+
+---
+
+## 5. Tooling (Copilot-aware summary)
+
+**Fast local tools (run constantly):**
 
 ```bash
-# Python: Check for issues
 ruff check .
-
-# Python: Auto-fix what's possible
 ruff check --fix .
-
-# Python: Format code
 ruff format .
-
-# JavaScript: Check web UI code
-npm run lint
-
-# JavaScript: Auto-fix formatting
-npm run lint:fix
+pytest
+mypy .
 ```
 
-**Run linters after:**
+**Deeper analysis (run periodically):**
 
-- Creating new files
-- Major refactors (like error_text → error_message)
-- Adding multiple functions/classes
-- Before committing changes
-- When you see linter warnings
+```bash
+bandit .
+vulture .
+radon cc -s nomarr
+radon mi -s nomarr
+flake8
+import-linter
+wily build
+```
 
-### Development Cycle (Standard Flow)
+Copilot should produce code _consistent_ with these tools.
 
-1. **Discover API** → `python scripts/discover_api.py <module>`
-2. **Write/modify code** using discovered API
-3. **Check quality** → `ruff check .`
-4. **Fix issues** → `ruff check --fix .`
-5. **Run tests** → `pytest tests/`
-6. **Check naming** → `python scripts/check_naming.py` (optional)
+---
 
-This prevents the cycle of:
+### 5.5 Development Scripts
 
-- Guess API → Write test → Test fails → Fix test → Repeat 10 times ❌
+The `scripts/` directory provides **structured development helpers**. These tools exist to keep the codebase predictable and consistent. Copilot should rely on them to avoid inventing APIs or drifting from project conventions.
 
-Instead:
+#### Purpose
 
-- Discover API → Write correct test → Test passes → Done ✅
+These scripts are the preferred way to:
+
+- confirm which APIs, classes, and functions actually exist,
+- keep naming and exports consistent,
+- generate boilerplate (tests, `__init__` files) in a predictable style,
+- identify high‑value refactor targets.
+
+#### Before Writing or Modifying Code
+
+Use these to understand what _actually exists_ before generating code.
+
+```bash
+# Inspect real module APIs, attributes, and callables
+python scripts/discover_api.py nomarr.workflows.processor
+python scripts/discover_api.py nomarr.persistence.db --summary
+```
+
+#### During Development
+
+Ensure new code matches project conventions and layout.
+
+```bash
+# Enforce naming rules across the project
+python scripts/check_naming.py
+
+# Auto-generate __init__.py exports to match actual module APIs
+python scripts/generate_inits.py
+
+# Create test scaffolds based on current module structure
+python scripts/generate_tests.py nomarr.services.queue --output tests/unit/services/test_queue.py
+```
+
+#### Targeted Quality & Refactor Triage
+
+Use this when you want to clean up **specific modules** or subsystems:
+
+```bash
+# Find complexity hotspots, architecture violations, and refactor opportunities (JSON + Markdown)
+python scripts/detect_slop.py nomarr/workflows/processor.py
+```
+
+Run `detect_slop.py` on **one file or one package at a time**, then:
+
+- let Copilot summarize the report,
+- agree on a small refactor plan,
+- apply changes iteratively.
+
+Do not expect Copilot to “fix the entire codebase from one giant report” — use this script as a triage tool, not a fully automated cleanup.
+
+**Copilot Rule:**
+Before writing or modifying code, **always** confirm APIs with `discover_api.py`. Never guess function names, signatures, or return types. Use these tools to align generated code with Nomarr’s architectural and stylistic rules.
+
+## 6. Configuration
+
+- Configuration must be strongly typed (Pydantic model)
+- Workers receive config from caller
+- No module-level reading of config files
+
+---
+
+## 7. Optional Dependencies
+
+Essentia is optional in development. All imports must be guarded. If essentia_tf is missing, raise a clear runtime error only when ML is invoked.
+
+Never block the app from starting if Essentia isn’t installed.
+
+---
+
+## 8. Folder Naming and Structure
+
+Current approved structure:
+
+```
+nomarr/
+  interfaces/
+  workflows/
+  services/
+  tagging/
+  ml/
+  persistence/
+  helpers/
+```
+
+---
+
+## 9. Performance Rules
+
+- No premature optimization
+- Cache expensive ML operations (when available)
+- Avoid reading audio from disk more than once per workflow
+- Avoid large in-memory structures in workers
+
+---
+
+## 10. File Length Guidance
+
+- Aim for <300 lines per module
+- Break up long functions with private helpers
+- Prefer composition over inheritance
+
+---
+
+## 11. Commit Expectations
+
+- All diffs must pass ruff + pytest
+- No commented-out code
+- No code with FIXME/TODO unless accompanied by GitHub issue ID
+
+---
+
+## 12. Summary (for Copilot)
+
+1. Keep code small, typed, and explicit.
+2. Use the directory placement rules.
+3. Do not import Essentia directly.
+4. Push logic downward (interfaces → workflows → tagging → ml).
+5. Write code that passes ruff, mypy, and pytest by default.
+6. Helpers must be pure and dependency-free.
+
+---
+
+End of instructions.

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from nomarr.data.db import Database
+from nomarr.persistence.db import Database
 
 if TYPE_CHECKING:
     pass

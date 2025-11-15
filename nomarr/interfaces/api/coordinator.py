@@ -10,7 +10,8 @@ import multiprocessing as mp
 from concurrent.futures import BrokenExecutor, ProcessPoolExecutor, TimeoutError
 from typing import Any
 
-from nomarr.core.processor import process_file
+from nomarr.workflows.processor import process_file
+from nomarr.services.file_validation import make_skip_result, should_skip_processing, validate_file_exists
 
 # Set multiprocessing start method to 'spawn' to avoid CUDA context issues
 mp.set_start_method("spawn", force=True)
@@ -20,6 +21,12 @@ def process_file_wrapper(path: str, force: bool) -> dict[str, Any]:
     """
     Wrapper for process_file that runs in a separate process.
     Each process loads its own model cache on first call.
+
+    This wrapper:
+    - Creates its own config (each process is independent)
+    - Validates the file
+    - Checks skip conditions
+    - Calls the core processor
     """
     import os
 
@@ -27,9 +34,33 @@ def process_file_wrapper(path: str, force: bool) -> dict[str, Any]:
     logging.info(f"[Worker PID {pid}] Starting processing: {path}")
 
     try:
-        result = process_file(path, force=force)
+        # Each worker process creates its own config
+        from nomarr.services.config import ConfigService
+
+        config_service = ConfigService()
+        processor_config = config_service.make_processor_config()
+
+        # Validate file exists and is readable
+        validate_file_exists(path)
+
+        # Check if we should skip processing
+        should_skip, skip_reason = should_skip_processing(
+            path=path,
+            force=force,
+            namespace=processor_config.namespace,
+            version_tag_key=processor_config.version_tag_key,
+            tagger_version=processor_config.tagger_version,
+        )
+
+        if should_skip:
+            logging.info(f"[Worker PID {pid}] Skipping {path}: {skip_reason}")
+            return make_skip_result(path, skip_reason or "unknown")
+
+        # Process the file (no db update - coordinator workers don't own database)
+        result = process_file(path, config=processor_config, db=None)
         logging.info(f"[Worker PID {pid}] Completed: {path}")
         return result
+
     except Exception as e:
         logging.error(f"[Worker PID {pid}] Error processing {path}: {e}")
         return {"error": str(e), "status": "error"}

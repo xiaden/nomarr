@@ -9,8 +9,8 @@ import threading
 import time
 from typing import TYPE_CHECKING
 
-from nomarr.core.library_scanner import scan_library
-from nomarr.data.db import Database
+from nomarr.persistence.db import Database
+from nomarr.workflows.library_scanner import scan_library
 
 if TYPE_CHECKING:
     pass

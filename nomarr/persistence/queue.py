@@ -14,7 +14,7 @@ import logging
 import threading
 from typing import Any
 
-from nomarr.data.db import Database
+from nomarr.persistence.db import Database
 
 
 # ----------------------------------------------------------------------
@@ -72,13 +72,13 @@ class ProcessingQueue:
         if status:
             query = "SELECT * FROM tag_queue WHERE status = ? ORDER BY id DESC LIMIT ? OFFSET ?"
             count_query = "SELECT COUNT(*) FROM tag_queue WHERE status = ?"
-            params = (status, limit, offset)
-            count_params = (status,)
+            params: tuple[str, int, int] = (status, limit, offset)
+            count_params: tuple[str] = (status,)
         else:
             query = "SELECT * FROM tag_queue ORDER BY id DESC LIMIT ? OFFSET ?"
             count_query = "SELECT COUNT(*) FROM tag_queue"
-            params = (limit, offset)
-            count_params = ()
+            params = (limit, offset)  # type: ignore[assignment]
+            count_params = ()  # type: ignore[assignment]
 
         # Get total count
         cur = self.db.conn.execute(count_query, count_params)
@@ -113,7 +113,7 @@ class ProcessingQueue:
         """Return number of pending/running jobs."""
         return self.db.queue_depth()
 
-    def delete_by_status(self, statuses: list[str]) -> int:
+    def delete_by_status(self, statuses: list[str]) -> int:  # type: ignore[valid-type]
         """
         Delete jobs by status.
 

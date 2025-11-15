@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from typing import Any
 
 import mutagen
 from fastapi import APIRouter, Depends, HTTPException
@@ -386,7 +387,7 @@ async def web_admin_clear_errors():
 @router.post("/api/admin/cleanup", dependencies=[Depends(verify_session)])
 async def web_admin_cleanup(max_age_hours: int = 168):
     """Remove old completed/error jobs (web UI proxy)."""
-    from nomarr.data.db import now_ms
+    from nomarr.persistence.db import now_ms
 
     s = get_state()
 
@@ -527,6 +528,33 @@ async def web_admin_restart():
 # ----------------------------------------------------------------------
 
 
+def _extract_mp3_tags(audio: Any, namespace: str) -> dict[str, Any]:
+    """Extract tags from MP3 (ID3v2) format."""
+    tags = {}
+    if hasattr(audio, "tags") and audio.tags:
+        for key in audio.tags:
+            if key.startswith("TXXX:"):
+                tag_name = key[5:]
+                if tag_name.startswith(f"{namespace}:"):
+                    clean_name = tag_name[len(namespace) + 1 :]
+                    values = audio.tags[key].text
+                    tags[clean_name] = values if len(values) > 1 else values[0]
+    return tags
+
+
+def _extract_mp4_tags(audio: Any, namespace: str) -> dict[str, Any]:
+    """Extract tags from MP4/M4A format."""
+    tags = {}
+    if hasattr(audio, "tags") and hasattr(audio.tags, "get"):
+        for key, value in audio.tags.items():
+            if key.startswith("----:com.apple.iTunes:"):
+                tag_name = key[22:]
+                if tag_name.startswith(f"{namespace}:"):
+                    clean_name = tag_name[len(namespace) + 1 :]
+                    tags[clean_name] = value[0].decode("utf-8") if isinstance(value[0], bytes) else str(value[0])
+    return tags
+
+
 @router.get("/api/show-tags", dependencies=[Depends(verify_session)])
 async def web_show_tags(path: str):
     """Read tags from an audio file (web UI proxy)."""
@@ -541,26 +569,10 @@ async def web_show_tags(path: str):
         if audio is None:
             raise HTTPException(status_code=400, detail="Unsupported audio format")
 
-        tags = {}
-
-        # MP3 (ID3v2)
-        if hasattr(audio, "tags") and audio.tags:
-            for key in audio.tags:
-                if key.startswith("TXXX:"):
-                    tag_name = key[5:]
-                    if tag_name.startswith(f"{namespace}:"):
-                        clean_name = tag_name[len(namespace) + 1 :]
-                        values = audio.tags[key].text
-                        tags[clean_name] = values if len(values) > 1 else values[0]
-
-        # MP4/M4A
-        elif hasattr(audio, "tags") and hasattr(audio.tags, "get"):
-            for key, value in audio.tags.items():
-                if key.startswith("----:com.apple.iTunes:"):
-                    tag_name = key[22:]
-                    if tag_name.startswith(f"{namespace}:"):
-                        clean_name = tag_name[len(namespace) + 1 :]
-                        tags[clean_name] = value[0].decode("utf-8") if isinstance(value[0], bytes) else str(value[0])
+        # Try MP3 format first, then MP4
+        tags = _extract_mp3_tags(audio, namespace)
+        if not tags:
+            tags = _extract_mp4_tags(audio, namespace)
 
         return {
             "path": path,

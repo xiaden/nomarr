@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from nomarr.data.db import Database
+from nomarr.persistence.db import Database
 from nomarr.ml.calibration import (
     generate_minmax_calibration,
     save_calibration_sidecars,

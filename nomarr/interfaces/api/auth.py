@@ -96,13 +96,15 @@ def invalidate_session(session_token: str):
 def cleanup_expired_sessions() -> int:
     if "keys" not in app.application.services:
         raise RuntimeError("KeyManagementService not initialized")
-    return app.application.services["keys"].cleanup_expired_sessions()
+    result: int = app.application.services["keys"].cleanup_expired_sessions()
+    return result
 
 
 def load_sessions_from_db() -> int:
     if "keys" not in app.application.services:
         raise RuntimeError("KeyManagementService not initialized")
-    return app.application.services["keys"].load_sessions_from_db()
+    result: int = app.application.services["keys"].load_sessions_from_db()
+    return result
 
 
 # Export session cache for backward compatibility with tests

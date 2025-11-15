@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 from nomarr.helpers.files import collect_audio_files
 
 if TYPE_CHECKING:
-    from nomarr.data.queue import ProcessingQueue
+    from nomarr.persistence.queue import ProcessingQueue
 
 
 class QueueService:

@@ -6,7 +6,7 @@ import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from nomarr.data.db import Database
+    from nomarr.persistence.db import Database
     from nomarr.services.workers.recalibration import RecalibrationWorker
 
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from nomarr.data.db import Database
+from nomarr.persistence.db import Database
 
 
 def generate_navidrome_config(db: Database, namespace: str = "nom") -> str:

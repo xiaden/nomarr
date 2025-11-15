@@ -23,31 +23,49 @@ except ImportError:
     HAVE_TF = False
     tf = None
 
+if TYPE_CHECKING:
+    from nomarr.ml.models.discovery import HeadInfo
+
 # TensorFlow logging and GPU settings (TF_CPP_MIN_LOG_LEVEL,
 # TF_FORCE_GPU_ALLOW_GROWTH, TF_GPU_THREAD_MODE) are set in Dockerfile
-from essentia.standard import TensorflowPredict2D
 
-# Suppress Essentia INFO messages (e.g., "MusicExtractorSVM: no classifier models...")
-try:
-    import essentia.log as eslog
+# All Essentia imports go through the backend module
+from nomarr.ml import backend_essentia
 
-    eslog.setLevel(eslog.WARNING)
-except (ImportError, AttributeError):
-    pass  # Older Essentia versions may not have log module
+# Check if Essentia is available, but don't fail at import time
+# Functions will call backend_essentia.require() when they actually need Essentia
+if backend_essentia.is_available():
+    # Access Essentia classes through the backend
+    TensorflowPredict2D = backend_essentia.essentia_tf.standard.TensorflowPredict2D
 
-try:
-    from essentia.standard import TensorflowPredictEffnetDiscogs
-except ImportError:
+    # Suppress Essentia INFO messages (e.g., "MusicExtractorSVM: no classifier models...")
+    try:
+        eslog = backend_essentia.essentia_tf.log
+        eslog.setLevel(eslog.WARNING)
+    except (ImportError, AttributeError):
+        pass  # Older Essentia versions may not have log module
+
+    # Optional specialized predictors (may not be available in all Essentia versions)
+    try:
+        TensorflowPredictEffnetDiscogs = backend_essentia.essentia_tf.standard.TensorflowPredictEffnetDiscogs
+    except AttributeError:
+        TensorflowPredictEffnetDiscogs = None
+
+    try:
+        TensorflowPredictMusiCNN = backend_essentia.essentia_tf.standard.TensorflowPredictMusiCNN
+    except AttributeError:
+        TensorflowPredictMusiCNN = None
+
+    try:
+        TensorflowPredictVGGish = backend_essentia.essentia_tf.standard.TensorflowPredictVGGish
+    except AttributeError:
+        TensorflowPredictVGGish = None
+else:
+    # Essentia not available - set placeholders
+    # Functions will fail with clear error when called
+    TensorflowPredict2D = None
     TensorflowPredictEffnetDiscogs = None
-
-try:
-    from essentia.standard import TensorflowPredictMusiCNN
-except ImportError:
     TensorflowPredictMusiCNN = None
-
-try:
-    from essentia.standard import TensorflowPredictVGGish
-except ImportError:
     TensorflowPredictVGGish = None
 
 if TYPE_CHECKING:
@@ -61,6 +79,9 @@ def make_predictor_uncached(head_info: HeadInfo) -> Callable[[np.ndarray, int], 
     Used by cache warmup to pre-load all predictors at startup.
     Uses folder structure to determine backbone and embedding graph.
     """
+    # Require Essentia at function call time (not module import time)
+    backend_essentia.require()
+
     from nomarr.ml.models.discovery import get_embedding_output_node, get_head_output_node
 
     backbone = head_info.backbone
@@ -96,9 +117,9 @@ def make_predictor_uncached(head_info: HeadInfo) -> Callable[[np.ndarray, int], 
     head_input = head_info.sidecar.head_input_name()
 
     if head_input:
-        head_predictor = TensorflowPredict2D(graphFilename=head_graph, input=head_input, output=head_output)
+        head_predictor = TensorflowPredict2D(graphFilename=head_graph, input=head_input, output=head_output)  # type: ignore[misc]
     else:
-        head_predictor = TensorflowPredict2D(graphFilename=head_graph, output=head_output)
+        head_predictor = TensorflowPredict2D(graphFilename=head_graph, output=head_output)  # type: ignore[misc]
 
     embed_dim = head_info.sidecar.input_dim()
 
@@ -166,6 +187,9 @@ def compute_embeddings_for_backbone(
     Returns: (embeddings_2d, duration) where embeddings_2d is (num_patches, embed_dim)
               num_patches depends on the backbone's internal patching (not our segment_s/hop_s)
     """
+    # Require Essentia at function call time (not module import time)
+    backend_essentia.require()
+
     from nomarr.helpers.audio import load_audio_mono, should_skip_short
     from nomarr.ml.models.discovery import get_embedding_output_node
 
@@ -258,6 +282,9 @@ def make_head_only_predictor_batched(
 
     Returns: Callable that returns [num_segments, num_classes] array
     """
+    # Require Essentia at function call time (not module import time)
+    backend_essentia.require()
+
     from nomarr.ml.models.discovery import get_head_output_node
 
     head_graph = head_info.sidecar.graph_abs("")
@@ -273,9 +300,9 @@ def make_head_only_predictor_batched(
 
     with device_context:
         if head_input:
-            head_predictor = TensorflowPredict2D(graphFilename=head_graph, input=head_input, output=head_output)
+            head_predictor = TensorflowPredict2D(graphFilename=head_graph, input=head_input, output=head_output)  # type: ignore[misc]
         else:
-            head_predictor = TensorflowPredict2D(graphFilename=head_graph, output=head_output)
+            head_predictor = TensorflowPredict2D(graphFilename=head_graph, output=head_output)  # type: ignore[misc]
 
     embed_dim = head_info.sidecar.input_dim()
 

@@ -15,7 +15,7 @@ from typing import Any
 
 import numpy as np
 
-from nomarr.data.db import Database
+from nomarr.persistence.db import Database
 
 
 def generate_minmax_calibration(
@@ -348,4 +348,5 @@ def apply_minmax_calibration(raw_score: float, calibration: dict[str, Any]) -> f
     scaled = (raw_score - p5) / (p95 - p5)
 
     # Clamp to [0, 1] range
-    return max(0.0, min(1.0, scaled))
+    clamped: float = max(0.0, min(1.0, scaled))
+    return clamped

@@ -26,7 +26,8 @@ def cmd_cleanup(args: argparse.Namespace) -> int:
 
         # Task to perform cleanup using service
         def _do_cleanup(service, hours: int) -> int:
-            return service.cleanup_old_jobs(max_age_hours=hours)
+            result: int = service.cleanup_old_jobs(max_age_hours=hours)
+            return result
 
         # Use service from running Application
         queue_service = app.application.services["queue"]

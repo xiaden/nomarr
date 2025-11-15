@@ -169,9 +169,11 @@ def pool_scores(
 
     # nan_policy == "propagate"
     if mode == "mean":
-        return np.mean(S, axis=0).astype(np.float32, copy=False)
+        result: np.ndarray = np.mean(S, axis=0).astype(np.float32, copy=False)
+        return result
     if mode == "median":
-        return np.median(S, axis=0).astype(np.float32, copy=False)
+        result = np.median(S, axis=0).astype(np.float32, copy=False)
+        return result
     if mode == "trimmed_mean":
         return _trimmed_mean(S, trim_perc, axis=0).astype(np.float32, copy=False)
     raise ValueError(f"Unknown pooling mode: {mode}")

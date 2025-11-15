@@ -180,7 +180,7 @@ def main():
     if len(sys.argv) < 2:
         print("Usage: python scripts/review_module.py <file_or_directory>")
         print("\nExamples:")
-        print("  python scripts/review_module.py nomarr/core/processor.py")
+        print("  python scripts/review_module.py nomarr/workflows/processor.py")
         print("  python scripts/review_module.py nomarr/services/")
         return 1
 

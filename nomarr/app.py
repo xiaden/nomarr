@@ -8,8 +8,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from nomarr.config import compose
-from nomarr.data.db import Database
-from nomarr.data.queue import ProcessingQueue
+from nomarr.persistence.db import Database
+from nomarr.persistence.queue import ProcessingQueue
 
 if TYPE_CHECKING:
     from nomarr.interfaces.api.coordinator import ProcessingCoordinator

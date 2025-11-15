@@ -5,7 +5,7 @@
 The following tools are now part of your QC suite:
 
 1. **radon** - Complexity metrics (cyclomatic, maintainability index)
-2. **import-linter** - Architecture violation detection  
+2. **import-linter** - Architecture violation detection
 3. **wily** - Track complexity trends over time (git history)
 4. **flake8** + plugins - Code smell detection:
    - `flake8-cognitive-complexity` - Understandability metrics
@@ -19,22 +19,23 @@ Running `python scripts/detect_slop.py` revealed these patterns in your codebase
 
 ### **Critical Complexity Issues** (Functions that are too complex)
 
-| File | Function | Complexity | Status |
-|------|----------|------------|--------|
-| `core/processor.py` | `process_file()` | **42** 😱 | Needs refactoring |
-| `core/library_scanner.py` | `_extract_metadata()` | **29** | Needs refactoring |
-| `core/library_scanner.py` | `scan_library()` | **20** | Needs refactoring |
-| `data/db.py` | `get_tag_summary()` | **21** | Needs refactoring |
+| File                      | Function              | Complexity | Status            |
+| ------------------------- | --------------------- | ---------- | ----------------- |
+| `core/processor.py`       | `process_file()`      | **42** 😱  | Needs refactoring |
+| `core/library_scanner.py` | `_extract_metadata()` | **29**     | Needs refactoring |
+| `core/library_scanner.py` | `scan_library()`      | **20**     | Needs refactoring |
+| `data/db.py`              | `get_tag_summary()`   | **21**     | Needs refactoring |
 
 **Target:** Cyclomatic complexity should be < 10 for maintainability.
 
 ### **AI Slop Patterns Found**
 
 #### 1. **Single-Letter Variables** (lazy AI naming)
+
 - `h` - appears in `processor.py`, `endpoints/admin.py`, `endpoints/public.py`  
   Likely means: "head" (ML model head)
 - `s` - appears throughout `endpoints/web.py` (30+ occurrences!)  
-  Likely means: "service" 
+  Likely means: "service"
 - `g` - appears in admin/public endpoints  
   Likely means: "g" global context (FastAPI dependency)
 - `j` - job
@@ -44,10 +45,12 @@ Running `python scripts/detect_slop.py` revealed these patterns in your codebase
 **Fix:** Use descriptive names: `head`, `service`, `job`, `audio_samples`
 
 #### 2. **Generic Variable Names**
+
 - `val` - Should be `tag_value`, `threshold`, `setting`, etc.
 - `file` - Shadows Python built-in, should be `file_path` or `audio_file`
 
 #### 3. **Commented-Out Code** (should be deleted)
+
 - `core/processor.py:155`
 - `interfaces/api/endpoints/public.py:166`
 - `interfaces/api/endpoints/web.py:546`
@@ -55,7 +58,9 @@ Running `python scripts/detect_slop.py` revealed these patterns in your codebase
 **Action:** Delete these or move to git history.
 
 #### 4. **Over-Complicated Exception Handling**
+
 Multiple places using:
+
 ```python
 try:
     value = float(tag)
@@ -64,6 +69,7 @@ except (ValueError, IndexError):
 ```
 
 **Should be:**
+
 ```python
 from contextlib import suppress
 
@@ -74,8 +80,9 @@ with suppress(ValueError, IndexError):
 ### **Architecture Violations**
 
 Import-linter failed to run (command issue), but will detect:
+
 - Services importing from interfaces ❌
-- Core importing from services ❌  
+- Core importing from services ❌
 - Data importing from business logic ❌
 
 **Status:** Need to fix command, see `.importlinter` config file.
@@ -90,6 +97,7 @@ Most files scored **A** (excellent maintainability), but watch these:
 ## 🚀 How to Use
 
 ### Run Full Detection
+
 ```bash
 # Activate venv
 .venv\Scripts\Activate.ps1
@@ -99,20 +107,24 @@ python scripts/detect_slop.py
 ```
 
 Output saved to:
+
 - `qc_reports/slop_detection_TIMESTAMP.txt` - Human-readable report
 - `qc_reports/slop_detection_TIMESTAMP.json` - Machine-readable data
 
 ### Check Single File Complexity
+
 ```bash
-radon cc nomarr/core/processor.py -s
+radon cc nomarr/workflows/processor.py -s
 ```
 
 ### Check Architecture Rules
+
 ```bash
 lint-imports
 ```
 
 ### Find Commented Code
+
 ```bash
 eradicate nomarr/ --recursive
 ```
@@ -122,26 +134,27 @@ eradicate nomarr/ --recursive
 Based on first run, here's what to tackle:
 
 ### **P0 - Critical** (Do First)
+
 1. **Refactor `process_file()`** in `core/processor.py`
    - Complexity 42 → Target < 10
    - Extract helper functions for each phase (load audio, run inference, write tags)
-   
 2. **Refactor `_extract_metadata()`** in `core/library_scanner.py`
    - Complexity 29 → Target < 10
    - Extract tag parsing logic to separate functions
 
 ### **P1 - High** (Do Soon)
+
 3. **Rename single-letter variables**
    - `h` → `head`
    - `s` → `service`
    - `g` → `state` or `context`
    - `j` → `job`
-   
 4. **Delete commented-out code** (3 locations found)
 
 5. **Fix import-linter command** so architecture checks work
 
 ### **P2 - Medium** (Do Eventually)
+
 6. **Simplify exception handling** with `contextlib.suppress()`
 7. **Refactor complex CLI commands** (`admin_reset`, `remove`)
 8. **Review `get_tag_summary()` complexity** in `db.py`
@@ -155,7 +168,7 @@ Use **wily** to track complexity trends:
 wily build
 
 # Check complexity diff
-wily diff nomarr/core/processor.py
+wily diff nomarr/workflows/processor.py
 
 # Report on trends
 wily report nomarr/
@@ -199,7 +212,7 @@ By running these tools regularly, you'll:
 
 1. ✅ Run `python scripts/detect_slop.py` (DONE - you just did this!)
 2. ⏳ Fix P0 issues (complexity refactoring)
-3. ⏳ Fix import-linter command  
+3. ⏳ Fix import-linter command
 4. ⏳ Add to CI pipeline (fail PR if complexity increases)
 5. ⏳ Set up wily for trend tracking
 6. ⏳ Create git pre-commit hook to block slop

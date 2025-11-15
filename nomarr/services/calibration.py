@@ -21,7 +21,7 @@ from nomarr.ml.calibration import generate_minmax_calibration, save_calibration_
 from nomarr.services.calibration_metrics import compare_calibrations
 
 if TYPE_CHECKING:
-    from nomarr.data.db import Database
+    from nomarr.persistence.db import Database
 
 
 logger = logging.getLogger(__name__)
@@ -100,7 +100,7 @@ class CalibrationService:
         logger.info(f"[CalibrationService] Generating calibration version {next_version} from {library_size} files")
 
         # Parse calibrations by head and track drift
-        head_results = {}
+        head_results: dict[str, Any] = {}
 
         for tag_key, calib_stats in calibrations.items():
             # Parse tag key to extract model_name and head_name
@@ -197,7 +197,7 @@ class CalibrationService:
         reference_updates = self._update_reference_files(head_results, next_version)
 
         # Generate summary
-        stable_count = sum(1 for h in head_results.values() if h["is_stable"])
+        stable_count: int = sum(1 for h in head_results.values() if h["is_stable"])
         unstable_count = len(head_results) - stable_count
 
         summary = {
@@ -237,7 +237,7 @@ class CalibrationService:
             return 1
 
         # Find max version
-        max_version = max(run["version"] for run in all_runs)
+        max_version: int = max(run["version"] for run in all_runs)
         return max_version + 1
 
     def _parse_tag_key(self, tag_key: str) -> tuple[str, str, str] | None:

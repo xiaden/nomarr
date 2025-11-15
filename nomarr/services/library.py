@@ -10,7 +10,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from nomarr.data.db import Database
+    from nomarr.persistence.db import Database
     from nomarr.services.workers.scanner import LibraryScanWorker
 
 
@@ -85,7 +85,7 @@ class LibraryService:
             return scan_id
         else:
             # CLI mode: run scan synchronously
-            from nomarr.core.library_scanner import scan_library
+            from nomarr.workflows.library_scanner import scan_library
 
             logging.info("[LibraryService] Starting synchronous library scan")
             stats = scan_library(
@@ -232,5 +232,5 @@ class LibraryService:
             True if a scan is in 'running' status
         """
         cur = self.db.conn.execute("SELECT COUNT(*) FROM library_queue WHERE status='running'")
-        count = cur.fetchone()[0]
+        count: int = cur.fetchone()[0]
         return count > 0

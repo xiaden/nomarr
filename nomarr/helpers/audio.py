@@ -3,18 +3,20 @@
 from __future__ import annotations
 
 import numpy as np
+from scipy.signal import resample_poly
+
+from nomarr.ml import backend_essentia
 
 # Use Essentia for audio loading (supports more formats via ffmpeg)
-try:
-    from essentia.standard import MonoLoader
+HAVE_ESSENTIA = backend_essentia.is_available()
 
-    HAVE_ESSENTIA = True
-except ImportError:
-    HAVE_ESSENTIA = False
-    # Fallback to soundfile
+if HAVE_ESSENTIA:
+    MonoLoader = backend_essentia.essentia_tf.standard.MonoLoader
+else:
+    # Fallback to soundfile if Essentia not available
     import soundfile as sf
 
-from scipy.signal import resample_poly
+    MonoLoader = None
 
 
 def load_audio_mono(path: str, target_sr: int = 16000) -> tuple[np.ndarray, int, float]:
@@ -27,7 +29,7 @@ def load_audio_mono(path: str, target_sr: int = 16000) -> tuple[np.ndarray, int,
     """
     if HAVE_ESSENTIA:
         # Essentia's MonoLoader handles resampling and format conversion automatically
-        loader = MonoLoader(filename=path, sampleRate=target_sr, resampleQuality=4)
+        loader = MonoLoader(filename=path, sampleRate=target_sr, resampleQuality=4)  # type: ignore[misc]
         # Suppress verbose Essentia logs during load
 
         y = loader()

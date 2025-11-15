@@ -6,7 +6,7 @@ Tests use REAL fixtures from conftest.py - no redundant mocks.
 
 import pytest
 
-from nomarr.data.db import (
+from nomarr.persistence.db import (
     now_ms,
 )
 

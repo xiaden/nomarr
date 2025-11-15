@@ -17,7 +17,7 @@ import time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from nomarr.data.db import Database
+    from nomarr.persistence.db import Database
 
 
 class RecalibrationWorker(threading.Thread):

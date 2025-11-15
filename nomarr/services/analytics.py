@@ -9,7 +9,7 @@ import logging
 from collections import Counter, defaultdict
 from typing import Any
 
-from nomarr.data.db import Database
+from nomarr.persistence.db import Database
 
 
 def get_tag_frequencies(db: Database, namespace: str = "nom", limit: int = 50) -> dict[str, Any]:

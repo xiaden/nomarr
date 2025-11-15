@@ -142,7 +142,7 @@ def temp_db() -> Generator[str, None, None]:
 @pytest.fixture
 def test_db(temp_db):
     """Provide a Database instance with initialized schema (real DB file)."""
-    from nomarr.data.db import Database
+    from nomarr.persistence.db import Database
 
     db = Database(temp_db)
     return db
@@ -151,7 +151,7 @@ def test_db(temp_db):
 @pytest.fixture
 def in_memory_db():
     """Provide an in-memory Database instance for fast unit tests."""
-    from nomarr.data.db import Database
+    from nomarr.persistence.db import Database
 
     db = Database(":memory:")
     return db
@@ -371,7 +371,7 @@ def real_queue_service(test_db):
     This uses a real Database and ProcessingQueue - not mocked.
     Use for service layer and integration tests.
     """
-    from nomarr.data.queue import ProcessingQueue
+    from nomarr.persistence.queue import ProcessingQueue
     from nomarr.services.queue import QueueService
 
     queue = ProcessingQueue(test_db)
@@ -402,7 +402,7 @@ def real_library_service(test_db, temp_music_library):
 @pytest.fixture
 def real_worker_service(test_db):
     """Provide a real WorkerService instance for testing."""
-    from nomarr.data.queue import ProcessingQueue
+    from nomarr.persistence.queue import ProcessingQueue
     from nomarr.services.worker import WorkerService
 
     queue = ProcessingQueue(test_db)
@@ -446,7 +446,7 @@ def mock_job_queue(test_db):
 
     This is a real queue for integration testing - uses actual database operations.
     """
-    from nomarr.data.queue import JobQueue
+    from nomarr.persistence.queue import JobQueue
 
     return JobQueue(test_db)
 

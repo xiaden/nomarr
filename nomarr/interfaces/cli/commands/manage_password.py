@@ -9,7 +9,7 @@ import getpass
 
 import nomarr.app as app
 from nomarr.config import compose
-from nomarr.data.db import Database
+from nomarr.persistence.db import Database
 from nomarr.interfaces.cli.ui import print_error, print_info, print_success
 from nomarr.services.keys import KeyManagementService
 

@@ -15,7 +15,7 @@ from rich import box
 from rich.console import Console, Group
 from rich.live import Live
 from rich.panel import Panel
-from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn, TimeRemainingColumn
+from rich.progress import BarColumn, Progress, TaskID, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 from rich.table import Table
 
 console = Console()
@@ -40,8 +40,8 @@ class ProgressDisplay:
         # Kept for compatibility with constructor calls (not actively used after start_heads())
         self.total_items = total_items
         self.item_unit = item_unit
-        self.recent_messages = deque(maxlen=5)
-        self.error_list = []
+        self.recent_messages: deque[str] = deque(maxlen=5)
+        self.error_list: list[str] = []
         # Files/heads accounting
         self.files_total: int = 0
         self.files_completed: int = 0
@@ -49,7 +49,7 @@ class ProgressDisplay:
         self.total_heads_overall: int = 0
 
         # Current file tags (for real-time tag display)
-        self.current_tags: dict = {}
+        self.current_tags: dict[str, Any] = {}
 
         # Overall progress
         # Overall: percent is based on heads, label shows files x/y
@@ -70,9 +70,9 @@ class ProgressDisplay:
             TimeElapsedColumn(),
         )
 
-        self.overall_task = None
-        self.item_task = None
-        self.live = None
+        self.overall_task: TaskID | None = None
+        self.item_task: TaskID | None = None
+        self.live: Live | None = None
 
     def _make_layout(self):
         """Generate the layout with progress, messages, tags, and errors."""
@@ -435,8 +435,8 @@ class WorkerPoolDisplay:
         self.files_completed = 0
         self.files_failed = 0
 
-        self.recent_completions = deque(maxlen=5)
-        self.error_list = []
+        self.recent_completions: deque[str] = deque(maxlen=5)
+        self.error_list: list[str] = []
 
         # Overall progress
         self.overall_progress = Progress(
@@ -446,7 +446,7 @@ class WorkerPoolDisplay:
             TextColumn("({task.completed}/{task.total} files)"),
             TimeRemainingColumn(),
         )
-        self.overall_task = None
+        self.overall_task: TaskID | None = None
 
         # Per-worker progress bars
         self.worker_progress = Progress(
@@ -455,9 +455,9 @@ class WorkerPoolDisplay:
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TextColumn("{task.fields[status]}"),
         )
-        self.worker_tasks = {}  # worker_id -> task_id
+        self.worker_tasks: dict[int, TaskID] = {}  # worker_id -> task_id
 
-        self.live = None
+        self.live: Live | None = None
 
     def _make_layout(self):
         """Generate the layout."""

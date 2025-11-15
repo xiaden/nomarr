@@ -44,14 +44,16 @@ def _normalize(v: np.ndarray) -> np.ndarray:
     s = np.sum(ex)
     if s <= 0:
         return np.zeros_like(v)
-    return ex / s
+    result: np.ndarray = ex / s
+    return result
 
 
 def _to_prob(v: np.ndarray, already_prob: bool) -> np.ndarray:
     if already_prob:
         return np.clip(v, 0.0, 1.0)
     # If not probabilities, but look like logits, convert per-dimension sigmoid for multilabel
-    return 1.0 / (1.0 + np.exp(-v))
+    result: np.ndarray = 1.0 / (1.0 + np.exp(-v))
+    return result
 
 
 # ----------------------------------------------------------------------
@@ -177,6 +179,48 @@ def decide_regression(values: np.ndarray, labels: list[str]) -> dict[str, float]
     return out
 
 
+def _find_counter_confidence(
+    label: str, label_idx: int, probs: np.ndarray, label_to_idx: dict[str, int], num_labels: int
+) -> float:
+    """
+    Find counter-confidence for a label.
+
+    Prefers explicit 'non_*' or 'not_*' variants; for binary heads uses the other label;
+    otherwise assumes no counterpart and returns 0.0.
+    """
+    # Try explicit negation labels first
+    non_name = f"non_{label}"
+    not_name = f"not_{label}"
+
+    if non_name in label_to_idx:
+        return float(probs[label_to_idx[non_name]])
+    if not_name in label_to_idx:
+        return float(probs[label_to_idx[not_name]])
+
+    # For binary heads, use the other label
+    if num_labels == 2:
+        other_idx = 1 - label_idx
+        if other_idx < len(probs):
+            return float(probs[other_idx])
+
+    # No counterpart found
+    return 0.0
+
+
+def _determine_tier(prob: float, ratio: float, gap: float, cascade: Cascade) -> str | None:
+    """
+    Determine tier (high/medium/low) based on cascade thresholds.
+    Returns None if no tier requirements are met.
+    """
+    if prob >= cascade.high and ratio >= cascade.ratio_high and gap >= cascade.gap_high:
+        return "high"
+    if prob >= cascade.medium and ratio >= cascade.ratio_medium and gap >= cascade.gap_medium:
+        return "medium"
+    if prob >= cascade.low and ratio >= cascade.ratio_low and gap >= cascade.gap_low:
+        return "low"
+    return None
+
+
 def decide_multilabel(scores: np.ndarray, spec: HeadSpec) -> dict[str, Any]:
     """
     Multilabel: select all labels with score >= (per-label threshold or cascade.low).
@@ -188,18 +232,16 @@ def decide_multilabel(scores: np.ndarray, spec: HeadSpec) -> dict[str, Any]:
     probs = _to_prob(scores, already_prob=spec.prob_input)
     out: dict[str, Any] = {}
     all_probs: dict[str, float] = {}
-
-    # Build quick lookup of label -> index
     label_to_idx = {lab: idx for idx, lab in enumerate(spec.labels)}
-
     eps = 1e-9
+
     for i, lab in enumerate(spec.labels):
         p = float(probs[i]) if i < len(probs) else 0.0
 
         # Store ALL raw probabilities regardless of thresholds
         all_probs[lab] = p
 
-        # Skip tier assignment if below minimum confidence
+        # Skip tier assignment if below minimum confidence or threshold
         if p < spec.min_conf:
             continue
 
@@ -207,37 +249,16 @@ def decide_multilabel(scores: np.ndarray, spec: HeadSpec) -> dict[str, Any]:
         if p < thr:
             continue
 
-        # Determine counter-confidence strictly from explicit labels (no 1-p fallback).
-        # Prefer explicit 'non_*' or 'not_*' variants; else for binary heads, use the other label;
-        # else assume no counterpart and use 0.0.
-        counter_p = None
-        non_name = f"non_{lab}"
-        not_name = f"not_{lab}"
-        if non_name in label_to_idx:
-            counter_p = float(probs[label_to_idx[non_name]])
-        elif not_name in label_to_idx:
-            counter_p = float(probs[label_to_idx[not_name]])
-        elif len(spec.labels) == 2:
-            other_idx = 1 - i
-            counter_p = float(probs[other_idx]) if other_idx < len(probs) else 0.0
-        else:
-            counter_p = 0.0
+        # Find counter-confidence using helper
+        counter_p = _find_counter_confidence(lab, i, probs, label_to_idx, len(spec.labels))
+        counter_p = max(0.0, min(1.0, counter_p))
 
-        # safety clamp
-        counter_p = max(0.0, min(1.0, float(counter_p))) if counter_p is not None else 0.0
-
-        # compute ratio and gap
+        # Compute ratio and gap
         ratio = p / max(counter_p, eps)
         gap = p - counter_p
 
-        # Decide tier requiring confidence, ratio and gap per cascade
-        tier = None
-        if p >= spec.cascade.high and ratio >= spec.cascade.ratio_high and gap >= spec.cascade.gap_high:
-            tier = "high"
-        elif p >= spec.cascade.medium and ratio >= spec.cascade.ratio_medium and gap >= spec.cascade.gap_medium:
-            tier = "medium"
-        elif p >= spec.cascade.low and ratio >= spec.cascade.ratio_low and gap >= spec.cascade.gap_low:
-            tier = "low"
+        # Determine tier using helper
+        tier = _determine_tier(p, ratio, gap, spec.cascade)
 
         # Debug logging for labels that don't meet thresholds
         if tier is None and p >= 0.1:  # Only log if there's some signal

@@ -14,7 +14,7 @@ import logging
 import secrets
 import time
 
-from nomarr.data.db import Database
+from nomarr.persistence.db import Database
 
 # Session timeout (24 hours)
 SESSION_TIMEOUT_SECONDS = 86400

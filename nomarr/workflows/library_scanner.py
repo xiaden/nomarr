@@ -16,7 +16,7 @@ from mutagen.easyid3 import EasyID3
 from mutagen.id3 import ID3
 from mutagen.mp4 import MP4
 
-from nomarr.data.db import Database
+from nomarr.persistence.db import Database
 
 
 def _matches_ignore_pattern(file_path: str, patterns: str) -> bool:
@@ -256,7 +256,7 @@ def update_library_file_from_tags(
 
         # Mark file as tagged if tagger version provided (called from processor)
         if tagged_version and file_record:
-            from nomarr.data.db import now_ms
+            from nomarr.persistence.db import now_ms
 
             db.conn.execute(
                 "UPDATE library_files SET tagged=1, tagged_version=?, last_tagged_at=? WHERE path=?",
@@ -318,24 +318,26 @@ def _extract_metadata(file_path: str, namespace: str) -> dict[str, Any]:
                 metadata["track_number"] = track[0]
 
             # Get all tags
-            metadata["all_tags"] = {k: str(v) for k, v in audio.tags.items()}
+            if audio.tags:
+                metadata["all_tags"] = {k: str(v) for k, v in audio.tags.items()}
 
             # Extract nom namespace tags (freeform) - store WITHOUT namespace prefix
-            nom_tags = {}
-            for key in audio.tags:
-                if key.startswith("----:com.apple.iTunes:"):
-                    tag_name = key.replace("----:com.apple.iTunes:", "")
-                    if tag_name.startswith(f"{namespace}:"):
-                        value = audio.tags[key]
-                        if value:
-                            # MP4FreeForm values are bytes - decode them properly
-                            raw_value = value[0]
-                            # Strip namespace prefix for storage
-                            tag_key = tag_name[len(namespace) + 1 :]
-                            if isinstance(raw_value, bytes):
-                                nom_tags[tag_key] = raw_value.decode("utf-8")
-                            else:
-                                nom_tags[tag_key] = str(raw_value)
+            nom_tags: dict[str, str] = {}
+            if audio.tags:
+                for key in audio.tags:
+                    if key.startswith("----:com.apple.iTunes:"):
+                        tag_name = key.replace("----:com.apple.iTunes:", "")
+                        if tag_name.startswith(f"{namespace}:"):
+                            value = audio.tags[key]
+                            if value:
+                                # MP4FreeForm values are bytes - decode them properly
+                                raw_value = value[0]
+                                # Strip namespace prefix for storage
+                                tag_key = tag_name[len(namespace) + 1 :]
+                                if isinstance(raw_value, bytes):
+                                    nom_tags[tag_key] = raw_value.decode("utf-8")
+                                else:
+                                    nom_tags[tag_key] = str(raw_value)
             metadata["nom_tags"] = nom_tags
 
         else:
@@ -415,7 +417,7 @@ def _parse_tag_values(tags: dict[str, str]) -> dict[str, Any]:
     Returns:
         Dict with parsed values (arrays as lists, numbers as float/int)
     """
-    parsed = {}
+    parsed: dict[str, Any] = {}
 
     for key, value in tags.items():
         if not value:

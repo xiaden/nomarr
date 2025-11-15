@@ -6,30 +6,20 @@ Coordinates model inference, tag aggregation, and file writing.
 
 from __future__ import annotations
 
-import contextlib
 import gc
 import logging
-import os
 import time
 from collections import defaultdict
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-# Get Essentia version for tag versioning
-try:
-    import essentia
-
-    ESSENTIA_VERSION = essentia.__version__
-except (ImportError, AttributeError):
-    ESSENTIA_VERSION = "unknown"
-
-import nomarr.app as app
-from nomarr.data.db import Database
+from nomarr.ml import backend_essentia
 from nomarr.ml.inference import compute_embeddings_for_backbone, make_head_only_predictor_batched
-from nomarr.ml.models.discovery import discover_heads
+from nomarr.ml.models.discovery import HeadInfo, discover_heads
 from nomarr.ml.models.embed import pool_scores
 from nomarr.ml.models.heads import run_head_decision
+from nomarr.persistence.db import Database
 from nomarr.tagging.aggregation import (
     add_regression_mood_tiers,
     aggregate_mood_tiers,
@@ -38,106 +28,69 @@ from nomarr.tagging.aggregation import (
 )
 from nomarr.tagging.writer import TagWriter
 
+# Get Essentia version for tag versioning
+ESSENTIA_VERSION = backend_essentia.get_version()
 
-def _check_already_tagged(path: str, namespace: str, version_tag_key: str, current_version: str) -> bool:
-    """Check if file already has correct version tag."""
-    try:
-        from mutagen import File as MutagenFile
-
-        audio = MutagenFile(path)
-        if not audio or not hasattr(audio, "tags") or not audio.tags:
-            return False
-
-        # Check for version tag in namespace
-        for key in audio.tags:
-            key_str = str(key)
-            # MP4/M4A format
-            if f"----:com.apple.iTunes:{namespace}:{version_tag_key}" in key_str:
-                values = audio.tags[key]
-                if values and hasattr(values[0], "decode"):
-                    existing_version = values[0].decode("utf-8", errors="replace")
-                    return existing_version == current_version
-            # MP3 format
-            elif key_str == f"TXXX:{namespace}:{version_tag_key}":
-                values = audio.tags[key]
-                if hasattr(values, "text") and values.text:
-                    return str(values.text[0]) == current_version
-
-        return False
-    except Exception as e:
-        logging.debug(f"[processor] Could not check version tag for {path}: {e}")
-        return False
+if TYPE_CHECKING:
+    from nomarr.workflows.processor_config import ProcessorConfig
 
 
 def process_file(
     path: str,
-    force: bool = False,
-    progress_callback=None,
-    config: dict[str, Any] | None = None,
-    db_path: str | None = None,
+    config: ProcessorConfig,
+    db: Database | None = None,
 ) -> dict[str, Any]:
     """
-    Main entry point: tag an audio file using all available heads.
+    Process an audio file: compute embeddings, run predictions, aggregate tags, write to file.
 
-    Architecture:
-        1. Group heads by backbone (yamnet, vggish, effnet)
-        2. For each backbone: compute embeddings ONCE (load → segment → embed)
-        3. For each head in backbone: reuse cached embeddings (embed → head predict → pool)
+    Responsibilities (what this function DOES):
+    - Discover and group models by backbone
+    - Compute embeddings for each backbone
+    - Run head predictions on embeddings
+    - Aggregate mood tiers
+    - Write tags to audio file
 
-    This avoids redundant embedding computation:
-        - Old: 17 heads × full pipeline = ~100s per file
-        - New: 3 backbones × embedding + 17 heads × head-only = ~30-50s per file
+    Responsibilities (what this function DOES NOT do):
+    - File validation (caller must ensure file exists/readable)
+    - Skip logic (caller decides whether to call this)
+    - Cache management (handled by cache module)
+    - Database updates (caller's responsibility or optional db parameter)
+    - Config loading (caller injects typed config)
 
     Args:
-        path: Path to audio file
-        force: Ignore version/overwrite guards
-        progress_callback: Optional callback(current, total, head_name, event) called during processing
-        config: Configuration dict (defaults to app.cfg if not provided)
-        db_path: Database path (defaults to app.DB_PATH if not provided)
+        path: Path to audio file (must exist and be readable)
+        config: Typed configuration for processing pipeline
+        db: Optional Database instance for updating library records
+
+    Returns:
+        Dict with processing results:
+        - file: str - path to processed file
+        - elapsed: float - processing time in seconds
+        - duration: float - audio duration in seconds
+        - heads_processed: int - number of heads that succeeded
+        - tags_written: int - number of tags written to file
+        - head_results: dict - per-head processing outcomes
+        - mood_aggregations: dict | None - mood tier counts if written
+        - tags: dict - all tags that were written
+
+    Raises:
+        RuntimeError: If no heads found, or all heads fail
     """
     from nomarr.ml.cache import check_and_evict_idle_cache, touch_cache
 
-    # Check if cache should be evicted due to inactivity before processing
-    if check_and_evict_idle_cache():
-        logging.info("[processor] Cache was evicted due to inactivity, will reload on demand")
-
-    # Touch cache to update last access time
+    # Cache management (module handles eviction policy)
+    check_and_evict_idle_cache()
     touch_cache()
 
-    # Use injected config or fallback to app.cfg for backward compatibility
-    if config is None:
-        config = app.cfg
-    if db_path is None:
-        db_path = app.DB_PATH
-
-    models_dir: str = config["models_dir"]
-
-    if not os.path.exists(path):
-        raise RuntimeError(f"File not found: {path}")
-    if not os.access(path, os.R_OK):
-        raise RuntimeError(f"File not readable: {path}")
-
-    min_dur = int(config["min_duration_s"])
-    allow_short = bool(config["allow_short"])
-    batch_size = int(config.get("batch_size", 11))
-    overwrite = bool(config["overwrite_tags"])
-    ns = str(config["namespace"])
-    version_tag_key = str(config["version_tag"])
-    tagger_version = str(config["tagger_version"])
-
-    # Skip if already tagged with current version (unless force=True)
-    if not force and _check_already_tagged(path, ns, version_tag_key, tagger_version):
-        logging.info(f"[processor] Skipping {path} - already tagged with version {tagger_version}")
-        return {
-            "file": path,
-            "elapsed": 0.0,
-            "duration": 0.0,
-            "heads_processed": 0,
-            "tags_written": 0,
-            "skipped": True,
-            "skip_reason": f"already_tagged_v{tagger_version}",
-            "tags": {},
-        }
+    # Extract config values
+    models_dir = config.models_dir
+    min_dur = config.min_duration_s
+    allow_short = config.allow_short
+    batch_size = config.batch_size
+    overwrite = config.overwrite_tags
+    ns = config.namespace
+    version_tag_key = config.version_tag_key
+    tagger_version = config.tagger_version
 
     heads = discover_heads(models_dir)
     if not heads:
@@ -169,42 +122,10 @@ def process_file(
         f"{ {k: len(v) for k, v in heads_by_backbone.items()} }"
     )
 
-    # Progress weighting: embeddings are ~60% of work, heads are ~40%
-    EMBEDDING_WEIGHT = 0.6
-    HEAD_WEIGHT = 0.4
-    num_backbones = len(heads_by_backbone)
-    num_heads = len(heads)
-
-    def report_progress(current_item: int, total_items: int, name: str, state: str, is_embedding: bool):
-        """Report weighted progress for embedding or head phase."""
-        if not progress_callback:
-            return
-
-        if is_embedding:
-            # Embedding phase: 0-60% of total progress
-            phase_progress = (current_item / total_items) if total_items > 0 else 0
-            overall_progress = phase_progress * EMBEDDING_WEIGHT
-            # Scale to percentage (0-100) and convert to "current/total" format
-            virtual_current = int(overall_progress * 100)
-            virtual_total = 100
-        else:
-            # Head phase: 60-100% of total progress
-            phase_progress = (current_item / total_items) if total_items > 0 else 0
-            overall_progress = EMBEDDING_WEIGHT + (phase_progress * HEAD_WEIGHT)
-            virtual_current = int(overall_progress * 100)
-            virtual_total = 100
-
-        try:
-            progress_callback(virtual_current, virtual_total, name, state)
-        except TypeError:
-            # Fallback for older callback signatures
-            with contextlib.suppress(Exception):
-                progress_callback(current_item, total_items, name)
-
     # Process each backbone group completely (embeddings → heads → drop) to minimize memory usage
     # This allows running more workers by not holding all backbone embeddings in memory simultaneously
 
-    for backbone_idx, (backbone, backbone_heads) in enumerate(heads_by_backbone.items(), 1):
+    for backbone, backbone_heads in heads_by_backbone.items():
         # Use the first head to determine SR and segmentation params
         # (all heads on same backbone should use same SR/segmentation)
         first_head = backbone_heads[0]
@@ -213,9 +134,6 @@ def process_file(
         emb_graph = first_head.embedding_graph
 
         # === STEP 1: Compute embeddings for this backbone ===
-        embed_name = f"computing {backbone} embeddings"
-        report_progress(backbone_idx - 1, num_backbones, embed_name, "start", is_embedding=True)
-
         logging.info(f"[processor] Computing embeddings for {backbone}: sr={target_sr} ({len(backbone_heads)} heads)")
 
         try:
@@ -238,26 +156,16 @@ def process_file(
                 f"shape={embeddings_2d.shape}"
             )
 
-            # Notify UI that embedding computation is complete
-            report_progress(backbone_idx, num_backbones, embed_name, "complete", is_embedding=True)
-
         except RuntimeError as e:
             logging.warning(f"[processor] Skipping backbone {backbone}: {e}")
-            # Notify UI that embedding computation failed
-            report_progress(backbone_idx, num_backbones, embed_name, "complete", is_embedding=True)
             # Mark all heads in this backbone as skipped
-            for h in backbone_heads:
-                head_results[h.name] = {"status": "skipped", "reason": str(e)}
+            for head in backbone_heads:
+                head_results[head.name] = {"status": "skipped", "reason": str(e)}
             continue
 
         # === STEP 2: Process all heads for this backbone using the cached embeddings ===
         for head_info in backbone_heads:
-            # Calculate head index in overall list for progress reporting
-            idx = heads.index(head_info) + 1
             head_name = head_info.name
-
-            # Notify UI that a head is starting
-            report_progress(idx - 1, num_heads, head_name, "start", is_embedding=False)
 
             try:
                 t_head = time.time()
@@ -266,15 +174,14 @@ def process_file(
                 head_predict_fn = make_head_only_predictor_batched(head_info, embeddings_2d, batch_size=batch_size)
 
                 # Run predictions for ALL segments (potentially in multiple batches)
-                S = head_predict_fn()  # Returns [num_segments, num_classes]
+                segment_scores = head_predict_fn()  # Returns [num_segments, num_classes]
 
                 # Pool segment predictions
-                pooled_vec = pool_scores(S, mode="trimmed_mean", trim_perc=0.1, nan_policy="omit")
+                pooled_vec = pool_scores(segment_scores, mode="trimmed_mean", trim_perc=0.1, nan_policy="omit")
 
             except Exception as e:
                 logging.error(f"[processor] Processing error for {head_name}: {e}", exc_info=True)
                 head_results[head_name] = {"status": "error", "error": str(e), "stage": "processing"}
-                report_progress(idx, num_heads, head_name, "complete", is_embedding=False)
                 continue
 
             try:
@@ -283,18 +190,20 @@ def process_file(
                 # Build versioned tag keys using runtime framework version and model metadata
                 # Normalize labels (non_happy -> not_happy) before building keys
                 # Capture head_info in closure to avoid late binding issue
-                head_tags = decision.as_tags(
-                    key_builder=lambda label, h=head_info: h.build_versioned_tag_key(
+
+                def _build_key(label: str, head: HeadInfo = head_info) -> str:
+                    return head.build_versioned_tag_key(
                         normalize_tag_label(label),
                         framework_version=ESSENTIA_VERSION,
                         calib_method="none",
                         calib_version=0,
                     )
-                )
+
+                head_tags = decision.as_tags(key_builder=_build_key)
 
                 # Combined log: processing complete + tags produced
                 logging.info(
-                    f"[processor] Head {head_name} complete: {len(S)} patches → {len(head_tags)} tags "
+                    f"[processor] Head {head_name} complete: {len(segment_scores)} patches → {len(head_tags)} tags "
                     f"in {time.time() - t_head:.1f}s"
                 )
 
@@ -307,11 +216,11 @@ def process_file(
                 # Capture raw segment predictions for regression heads (approachability, engagement)
                 # These will be used to generate mood tier tags with variance-based confidence
                 if head_info.head_type == "identity" and head_name.endswith("_regression"):
-                    # S is [num_segments, 1] for regression heads, extract first column
-                    if S.ndim == 2:
-                        raw_values = [float(x) for x in S[:, 0]]  # Extract first column as float list
+                    # segment_scores is [num_segments, 1] for regression heads, extract first column
+                    if segment_scores.ndim == 2:
+                        raw_values = [float(x) for x in segment_scores[:, 0]]  # Extract first column as float list
                     else:
-                        raw_values = [float(x) for x in S]  # Already 1D
+                        raw_values = [float(x) for x in segment_scores]  # Already 1D
                     regression_predictions[head_name] = raw_values
                     logging.debug(
                         f"[processor] Captured {len(raw_values)} segment predictions for {head_name} "
@@ -325,13 +234,9 @@ def process_file(
                     "decisions": len(decision.details),
                 }
 
-                # Report progress after successful head
-                report_progress(idx, num_heads, head_name, "complete", is_embedding=False)
-
             except Exception as e:
                 logging.error(f"[processor] Decision error for {head_name}: {e}", exc_info=True)
                 head_results[head_name] = {"status": "error", "error": str(e), "stage": "decision"}
-                report_progress(idx, num_heads, head_name, "complete", is_embedding=False)
                 continue
 
         # === STEP 3: Drop embeddings after processing all heads for this backbone ===
@@ -371,8 +276,7 @@ def process_file(
 
     # Load calibrations if available (conditional - gracefully handles missing files)
     # Use calibrate_heads flag from config to determine which calibration files to load
-    calibrate_heads = config.get("calibrate_heads", False)
-    calibrations = load_calibrations(models_dir, calibrate_heads=calibrate_heads)
+    calibrations = load_calibrations(models_dir, calibrate_heads=config.calibrate_heads)
     if calibrations:
         logging.info(f"[aggregation] Loaded calibrations for {len(calibrations)} labels")
     else:
@@ -385,21 +289,17 @@ def process_file(
     writer.write(path, tags_accum)
     logging.info("[processor] Tag write complete")
 
-    # Update library database with the newly written tags
-    try:
-        from nomarr.core.library_scanner import update_library_file_from_tags
+    # Update library database with the newly written tags (if db provided)
+    if db is not None:
+        try:
+            from nomarr.workflows.library_scanner import update_library_file_from_tags
 
-        if db_path:
-            db = Database(db_path)
-            try:
-                # Pass tagger_version so library scanner marks file as tagged
-                update_library_file_from_tags(db, path, ns, tagged_version=tagger_version)
-                logging.info(f"[processor] Updated library database for {path}")
-            finally:
-                db.close()
-    except Exception as e:
-        # Don't fail the entire processing if library update fails
-        logging.warning(f"[processor] Failed to update library database: {e}")
+            # Pass tagger_version so library scanner marks file as tagged
+            update_library_file_from_tags(db, path, ns, tagged_version=tagger_version)
+            logging.info(f"[processor] Updated library database for {path}")
+        except Exception as e:
+            # Don't fail the entire processing if library update fails
+            logging.warning(f"[processor] Failed to update library database: {e}")
 
     elapsed = round(time.time() - start_all, 2)
 

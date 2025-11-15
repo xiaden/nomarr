@@ -11,12 +11,15 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
 from nomarr.__version__ import __version__
-from nomarr.data.db import Database
+from nomarr.persistence.db import Database
+
+if TYPE_CHECKING:
+    from nomarr.workflows.processor_config import ProcessorConfig
 
 
 class ConfigService:
@@ -309,3 +312,29 @@ class ConfigService:
                     cfg[section][field.lower()] = val
             except Exception:
                 continue
+
+    def make_processor_config(self) -> ProcessorConfig:
+        """
+        Build a ProcessorConfig from the current configuration.
+
+        This is the boundary where we extract and validate processor-specific
+        settings from the raw config dict.
+
+        Returns:
+            ProcessorConfig instance ready for injection into process_file()
+        """
+        from nomarr.workflows.processor_config import ProcessorConfig
+
+        cfg = self.get_config()
+
+        return ProcessorConfig(
+            models_dir=str(cfg["models_dir"]),
+            min_duration_s=int(cfg["min_duration_s"]),
+            allow_short=bool(cfg["allow_short"]),
+            batch_size=int(cfg.get("batch_size", 11)),
+            overwrite_tags=bool(cfg["overwrite_tags"]),
+            namespace=str(cfg["namespace"]),
+            version_tag_key=str(cfg["version_tag"]),
+            tagger_version=str(cfg["tagger_version"]),
+            calibrate_heads=bool(cfg.get("calibrate_heads", False)),
+        )

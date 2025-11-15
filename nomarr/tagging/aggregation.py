@@ -26,7 +26,7 @@ def load_calibrations(models_dir: str, calibrate_heads: bool = False) -> dict[st
     Returns:
         Dictionary mapping tag keys to calibration parameters
     """
-    calibrations = {}
+    calibrations: dict[str, Any] = {}
 
     try:
         models_path = Path(models_dir)
@@ -336,7 +336,7 @@ def aggregate_mood_tiers(
         def get_best(keys):
             tier_order = {"high": 3, "strict": 3, "medium": 2, "norm": 2, "normal": 2, "low": 1}
             best = None
-            best_score = 0
+            best_score: float = 0
             for k in keys:
                 tier, prob = tier_map[k]
                 score = tier_order.get(tier, 0) * 100 + prob

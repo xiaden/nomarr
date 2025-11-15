@@ -9,8 +9,8 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from nomarr.data.db import Database
-    from nomarr.data.queue import ProcessingQueue
+    from nomarr.persistence.db import Database
+    from nomarr.persistence.queue import ProcessingQueue
     from nomarr.interfaces.api.coordinator import ProcessingCoordinator
     from nomarr.services.workers.base import BaseWorker
 
@@ -203,11 +203,37 @@ class WorkerService:
 
         # Create wrapper that uses the process pool
         def process_via_pool(path: str, force: bool) -> dict[str, Any]:
-            from nomarr.core.processor import process_file
+            from nomarr.workflows.processor import process_file
+            from nomarr.services.config import ConfigService
+            from nomarr.services.file_validation import (
+                make_skip_result,
+                should_skip_processing,
+                validate_file_exists,
+            )
 
             if self.processor_coord is None:
                 # Fallback: direct processing (shouldn't happen after startup)
-                return process_file(path, force)
+                # Create typed config
+                config_service = ConfigService()
+                processor_config = config_service.make_processor_config()
+
+                # Validate file
+                validate_file_exists(path)
+
+                # Check skip conditions
+                should_skip, skip_reason = should_skip_processing(
+                    path,
+                    force,
+                    processor_config.namespace,
+                    processor_config.version_tag_key,
+                    processor_config.tagger_version,
+                )
+
+                if should_skip:
+                    return make_skip_result(path, skip_reason or "unknown")
+
+                # Process with DB
+                return process_file(path, config=processor_config, db=self.db)
             try:
                 return self.processor_coord.submit(path, force)
             except Exception as e:

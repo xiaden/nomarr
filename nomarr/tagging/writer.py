@@ -70,7 +70,7 @@ class _MP3Writer:
             if not isinstance(frame, TXXX):
                 continue
             # TXXX(desc=...) holds our "<ns>:<key>"
-            if isinstance(frame.desc, str) and frame.desc.startswith(f"{self.ns_prefix}:"):
+            if isinstance(frame.desc, str) and frame.desc.startswith(f"{self.ns_prefix}:"):  # type: ignore[attr-defined]
                 to_delete.append(key)
         for k in to_delete:
             try:
@@ -153,10 +153,10 @@ class _MP4Writer:
                 atom_key = self._ff_key(ns_key)
                 # Multi-value support: list of strings -> multiple freeform atoms
                 if isinstance(v, list) and all(isinstance(x, str) for x in v):
-                    mp4.tags[atom_key] = [MP4FreeForm(x.encode("utf-8")) for x in v]
+                    mp4.tags[atom_key] = [MP4FreeForm(x.encode("utf-8")) for x in v]  # type: ignore[index]
                 else:
                     payload = _to_text_value(v).encode("utf-8")
-                    mp4.tags[atom_key] = [MP4FreeForm(payload)]
+                    mp4.tags[atom_key] = [MP4FreeForm(payload)]  # type: ignore[index]
 
             mp4.save()
         except MutagenError as e:
@@ -208,9 +208,9 @@ class _VorbisWriter:
             if ext == "flac":
                 vorbis_file = FLAC(path)
             elif ext == "ogg":
-                vorbis_file = OggVorbis(path)
+                vorbis_file = OggVorbis(path)  # type: ignore[assignment]
             elif ext == "opus":
-                vorbis_file = OggOpus(path)
+                vorbis_file = OggOpus(path)  # type: ignore[assignment]
             else:
                 raise RuntimeError(f"Unsupported Vorbis file type: .{ext}")
 
@@ -225,9 +225,9 @@ class _VorbisWriter:
 
                 # Vorbis natively supports multiple values - just assign a list
                 if isinstance(v, list) and all(isinstance(x, str) for x in v):
-                    vorbis_file.tags[vorbis_key] = v
+                    vorbis_file.tags[vorbis_key] = v  # type: ignore[index]
                 else:
-                    vorbis_file.tags[vorbis_key] = _to_text_value(v)
+                    vorbis_file.tags[vorbis_key] = _to_text_value(v)  # type: ignore[index]
 
             vorbis_file.save()
         except MutagenError as e:

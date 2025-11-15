@@ -19,8 +19,8 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from nomarr.data.db import Database
-from nomarr.data.queue import ProcessingQueue
+from nomarr.persistence.db import Database
+from nomarr.persistence.queue import ProcessingQueue
 
 
 # ----------------------------------------------------------------------
@@ -272,9 +272,10 @@ class BaseWorker(threading.Thread):
 
     def _update_avg_time(self, job_elapsed: float) -> None:
         """Update rolling average processing time."""
-        current_avg = self.db.get_meta("avg_processing_time")
-        if current_avg:
-            current_avg = float(current_avg)
+        current_avg_str = self.db.get_meta("avg_processing_time")
+        current_avg: float
+        if current_avg_str:
+            current_avg = float(current_avg_str)
         else:
             # Calculate from last 5 jobs if no stored average
             cur = self.db.conn.execute(

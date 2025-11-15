@@ -21,14 +21,14 @@ nomarr/
 - ✅ Clear separation from domain logic
 
 #### Option B: Extend existing low-level modules
-- `nomarr/data/db.py` - Add `db_session()` context manager
+- `nomarr/persistence/db.py` - Add `db_session()` context manager
 - `nomarr/config.py` - Add config caching
 
 ### Helpers to Create
 
 1. **`db_session()` context manager**
    ```python
-   # nomarr/util.py or nomarr/data/db.py
+   # nomarr/util.py or nomarr/persistence/db.py
    @contextmanager
    def db_session(db_path=None):
        """Auto-managed DB connection with cleanup."""
@@ -63,7 +63,7 @@ nomarr/
 
 ### Files to Refactor (in order)
 
-1. ✅ **DONE**: `nomarr/core/library_scanner.py` - Already DRY'd
+1. ✅ **DONE**: `nomarr/workflows/library_scanner.py` - Already DRY'd
 2. **Next**: `nomarr/interfaces/api/endpoints/web.py` (834 lines, 30+ endpoints)
    - Split into separate routers by resource:
      - `web_auth.py` - login/logout
@@ -74,7 +74,7 @@ nomarr/
      - `web_analytics.py` - analytics endpoints
      - `web_navidrome.py` - navidrome config
 3. **Then**: CLI commands (easy wins, just use `db_session()`)
-4. **Maybe**: `nomarr/data/db.py` (709 lines) - Split if methods group naturally
+4. **Maybe**: `nomarr/persistence/db.py` (709 lines) - Split if methods group naturally
 
 ### Success Metrics
 
@@ -94,5 +94,5 @@ nomarr/
 ---
 
 **Status**: Ready to implement  
-**Start with**: Create `db_session()` in `nomarr/data/db.py`  
+**Start with**: Create `db_session()` in `nomarr/persistence/db.py`  
 **Then**: Refactor one web.py router at a time

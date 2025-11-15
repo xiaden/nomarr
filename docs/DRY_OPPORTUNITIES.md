@@ -28,14 +28,14 @@ finally:
 ### Locations:
 - `nomarr/interfaces/api/endpoints/web.py` - **8 instances**
 - `nomarr/interfaces/cli/commands/*.py` - **12+ files**
-- `nomarr/core/processor.py` - 1 instance
+- `nomarr/workflows/processor.py` - 1 instance
 - `nomarr/config.py` - 1 instance
 - `nomarr/manage_key.py` - 1 instance
 - `nomarr/manage_password.py` - 1 instance
 
 ### Proposed (DRY):
 ```python
-# Add to nomarr/data/db.py or nomarr/util.py
+# Add to nomarr/persistence/db.py or nomarr/util.py
 from contextlib import contextmanager
 
 @contextmanager
@@ -73,7 +73,7 @@ def db_session(db_path: str | None = None):
 ### Current (WET):
 ```python
 # Repeated ~30 times in web.py alone
-from nomarr.data.db import Database
+from nomarr.persistence.db import Database
 
 config = compose()
 db_path = str(Path(config["db_path"]).resolve())
@@ -115,7 +115,7 @@ def get_db_and_config():
     """
     from pathlib import Path
     from nomarr.config import compose
-    from nomarr.data.db import Database
+    from nomarr.persistence.db import Database
     
     cfg = compose()
     db_path = str(Path(cfg["db_path"]).resolve())
@@ -218,7 +218,7 @@ async def endpoint(session: str = Depends(require_session)):
 
 ### Phase 1: Low-Hanging Fruit (Immediate)
 1. ✅ **DONE**: `update_library_file_from_tags()` helper (completed)
-2. **Add `db_session()` context manager** to `nomarr/data/db.py`
+2. **Add `db_session()` context manager** to `nomarr/persistence/db.py`
 3. **Add `get_db_and_config()` to web.py helpers**
 
 ### Phase 2: Refactor High-Traffic Code (Next)

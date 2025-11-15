@@ -138,7 +138,7 @@ For each Python file:
 
 1. **Core Processing**
 
-   - `nomarr/core/processor.py` - Main audio processing
+   - `nomarr/workflows/processor.py` - Main audio processing
    - `nomarr/ml/inference.py` - ML model execution
    - `nomarr/tagging/aggregation.py` - Tag rules
 
@@ -151,8 +151,8 @@ For each Python file:
 
 3. **Data Layer**
 
-   - `nomarr/data/db.py` - Database schema/queries
-   - `nomarr/data/queue.py` - Queue operations
+   - `nomarr/persistence/db.py` - Database schema/queries
+   - `nomarr/persistence/queue.py` - Queue operations
 
 4. **API Layer**
 

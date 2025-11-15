@@ -278,6 +278,7 @@ class PlaylistGenerator:
         # Build SQL condition
         sql_op = self.SQL_OPERATORS[operator]
 
+        params: list[str | float | int]
         if operator == "contains":
             # Case-insensitive LIKE
             sql_cond = "EXISTS (SELECT 1 FROM library_tags lt2 WHERE lt2.file_id = lt.file_id AND lt2.tag_key = ? AND LOWER(lt2.tag_value) LIKE LOWER(?))"
