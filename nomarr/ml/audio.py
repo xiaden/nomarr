@@ -1,4 +1,4 @@
-"""Audio validation and loading helpers."""
+"""Audio validation and loading for ML processing."""
 
 from __future__ import annotations
 

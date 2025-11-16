@@ -19,7 +19,7 @@ class TestDatabaseCleanupExpiredSessions:
         # Arrange
 
         # Act
-        result = test_db.cleanup_expired_sessions()
+        result = test_db.sessions.cleanup_expired()
 
         # Assert
         assert isinstance(result, int)
@@ -34,7 +34,7 @@ class TestDatabaseClearLibraryData:
         # Arrange
 
         # Act
-        test_db.clear_library_data()
+        test_db.library.clear_library_data()
 
         # Assert
         # TODO: Verify item was removed
@@ -49,7 +49,7 @@ class TestDatabaseClearOldJobs:
         # Arrange
 
         # Act
-        test_db.clear_old_jobs()
+        test_db.queue.clear_old_jobs()
 
         # Assert
         # TODO: Verify item was removed
@@ -77,7 +77,7 @@ class TestDatabaseCreateLibraryScan:
         # Arrange
 
         # Act
-        result = test_db.create_library_scan()
+        result = test_db.library.create_library_scan()
 
         # Assert
         assert isinstance(result, int)
@@ -97,31 +97,15 @@ class TestDatabaseCreateSession:
         expiry = time.time() + 3600  # 1 hour from now
 
         # Act
-        test_db.create_session(session_token="test_token", expiry=expiry)
+        test_db.sessions.create(session_token="test_token", expiry=expiry)
 
         # Assert
         # Method returns None - verify it completes without exception
         # Verify item was added by retrieving it
-        result = test_db.get_session(session_token="test_token")
+        result = test_db.sessions.get(session_token="test_token")
         assert result is not None
         assert isinstance(result, float)
         assert result == expiry
-
-
-class TestDatabaseCreateTagScanCacheTable:
-    """Test Database.create_tag_scan_cache_table() operations."""
-
-    def test_create_tag_scan_cache_table_success(self, test_db):
-        """Should successfully create tag scan cache table."""
-        # Arrange
-
-        # Act
-        test_db.create_tag_scan_cache_table()
-
-        # Assert
-        # Verify item was added
-        # TODO: Check item can be retrieved
-        # TODO: Verify count/depth increased
 
 
 class TestDatabaseDeleteLibraryFile:
@@ -132,7 +116,7 @@ class TestDatabaseDeleteLibraryFile:
         # Arrange
 
         # Act
-        test_db.delete_library_file(path=str(temp_audio_file))
+        test_db.library.delete_library_file(path=str(temp_audio_file))
 
         # Assert
         # TODO: Verify item was removed
@@ -145,7 +129,7 @@ class TestDatabaseDeleteLibraryFile:
 
         # Act & Assert
         with pytest.raises(FileNotFoundError):
-            test_db.delete_library_file(path="/nonexistent.mp3")
+            test_db.library.delete_library_file(path="/nonexistent.mp3")
 
 
 class TestDatabaseDeleteMeta:
@@ -156,7 +140,7 @@ class TestDatabaseDeleteMeta:
         # Arrange
 
         # Act
-        test_db.delete_meta(key="test_value")
+        test_db.meta.delete(key="test_value")
 
         # Assert
         # TODO: Verify item was removed
@@ -171,7 +155,7 @@ class TestDatabaseDeleteSession:
         # Arrange
 
         # Act
-        test_db.delete_session(session_token="test_value")
+        test_db.sessions.delete(session_token="test_value")
 
         # Assert
         # Method returns None - verify it completes without exception
@@ -187,7 +171,7 @@ class TestDatabaseEnqueue:
         # Arrange
 
         # Act
-        result = test_db.enqueue(path=str(temp_audio_file))
+        result = test_db.queue.enqueue(path=str(temp_audio_file))
 
         # Assert
         assert isinstance(result, int)
@@ -202,23 +186,7 @@ class TestDatabaseEnqueue:
 
         # Act & Assert
         with pytest.raises(FileNotFoundError):
-            test_db.enqueue(path="/nonexistent.mp3", force=True)
-
-
-class TestDatabaseGetAllTagScans:
-    """Test Database.get_all_tag_scans() operations."""
-
-    def test_get_all_tag_scans_success(self, test_db):
-        """Should successfully get all tag scans."""
-        # Arrange - create table first
-        test_db.create_tag_scan_cache_table()
-
-        # Act
-        result = test_db.get_all_tag_scans()
-
-        # Assert
-        assert isinstance(result, list)
-        assert len(result) >= 0
+            test_db.queue.enqueue(path="/nonexistent.mp3", force=True)
 
 
 class TestDatabaseGetFileTags:
@@ -229,7 +197,7 @@ class TestDatabaseGetFileTags:
         # Arrange
 
         # Act
-        result = test_db.get_file_tags(file_id=str(temp_audio_file))
+        result = test_db.tags.get_file_tags(file_id=str(temp_audio_file))
 
         # Assert
         assert isinstance(result, dict)
@@ -242,10 +210,10 @@ class TestDatabaseGetLibraryFile:
     def test_get_library_file_success(self, test_db, temp_audio_file):
         """Should successfully get library file."""
         # Arrange - create library file first
-        test_db.upsert_library_file(path=str(temp_audio_file), file_size=1024, modified_time=1234567890)
+        test_db.library.upsert_library_file(path=str(temp_audio_file), file_size=1024, modified_time=1234567890)
 
         # Act
-        result = test_db.get_library_file(path=str(temp_audio_file))
+        result = test_db.library.get_library_file(path=str(temp_audio_file))
 
         # Assert
         assert isinstance(result, dict)
@@ -256,7 +224,7 @@ class TestDatabaseGetLibraryFile:
         # Arrange
 
         # Act
-        result = test_db.get_library_file(path="/nonexistent/file.mp3")
+        result = test_db.library.get_library_file(path="/nonexistent/file.mp3")
 
         # Assert
         assert result is None
@@ -268,10 +236,10 @@ class TestDatabaseGetLibraryScan:
     def test_get_library_scan_success(self, test_db):
         """Should successfully get library scan."""
         # Arrange - create scan first
-        scan_id = test_db.create_library_scan()
+        scan_id = test_db.library.create_library_scan()
 
         # Act
-        result = test_db.get_library_scan(scan_id=scan_id)
+        result = test_db.library.get_library_scan(scan_id=scan_id)
 
         # Assert
         assert isinstance(result, dict)
@@ -282,7 +250,7 @@ class TestDatabaseGetLibraryScan:
         # Arrange
 
         # Act
-        result = test_db.get_library_scan(scan_id=99999)
+        result = test_db.library.get_library_scan(scan_id=99999)
 
         # Assert
         assert result is None
@@ -296,7 +264,7 @@ class TestDatabaseGetLibraryStats:
         # Arrange
 
         # Act
-        result = test_db.get_library_stats()
+        result = test_db.library.get_library_stats()
 
         # Assert
         assert isinstance(result, dict)
@@ -309,10 +277,10 @@ class TestDatabaseGetMeta:
     def test_get_meta_success(self, test_db):
         """Should successfully get meta."""
         # Arrange - set meta first
-        test_db.set_meta(key="test_key", value="test_value")
+        test_db.meta.set(key="test_key", value="test_value")
 
         # Act
-        result = test_db.get_meta(key="test_key")
+        result = test_db.meta.get(key="test_key")
 
         # Assert
         assert result == "test_value"
@@ -322,7 +290,7 @@ class TestDatabaseGetMeta:
         # Arrange
 
         # Act
-        result = test_db.get_meta(key="test_value")
+        result = test_db.meta.get(key="test_value")
 
         # Assert
         assert result is None
@@ -337,10 +305,10 @@ class TestDatabaseGetSession:
         import time
 
         expiry = time.time() + 3600  # 1 hour from now
-        test_db.create_session(session_token="test_token", expiry=expiry)
+        test_db.sessions.create(session_token="test_token", expiry=expiry)
 
         # Act
-        result = test_db.get_session(session_token="test_token")
+        result = test_db.sessions.get(session_token="test_token")
 
         # Assert
         assert isinstance(result, float)
@@ -351,7 +319,7 @@ class TestDatabaseGetSession:
         # Arrange
 
         # Act
-        result = test_db.get_session(session_token="test_value")
+        result = test_db.sessions.get(session_token="test_value")
 
         # Assert
         assert result is None
@@ -365,7 +333,7 @@ class TestDatabaseGetTagSummary:
         # Arrange
 
         # Act
-        result = test_db.get_tag_summary(tag_key="test_value")
+        result = test_db.tags.get_tag_summary(tag_key="test_value")
 
         # Assert
         assert isinstance(result, dict)
@@ -380,7 +348,7 @@ class TestDatabaseGetTagTypeStats:
         # Arrange
 
         # Act
-        result = test_db.get_tag_type_stats(tag_key="test_value")
+        result = test_db.tags.get_tag_type_stats(tag_key="test_value")
 
         # Assert
         assert isinstance(result, dict)
@@ -395,7 +363,7 @@ class TestDatabaseGetTagValues:
         # Arrange
 
         # Act
-        result = test_db.get_tag_values(tag_key="test_value")
+        result = test_db.tags.get_tag_values(tag_key="test_value")
 
         # Assert
         assert isinstance(result, list)
@@ -410,42 +378,11 @@ class TestDatabaseGetUniqueTagKeys:
         # Arrange
 
         # Act
-        result = test_db.get_unique_tag_keys()
+        result = test_db.tags.get_unique_tag_keys()
 
         # Assert
         assert isinstance(result, list)
         # TODO: Verify returned data is correct
-
-
-class TestDatabaseInsertOrUpdateTagScan:
-    """Test Database.insert_or_update_tag_scan() operations."""
-
-    def test_insert_or_update_tag_scan_success(self, test_db, temp_audio_file):
-        """Should successfully insert or update tag scan."""
-        # Arrange - create table first
-        test_db.create_tag_scan_cache_table()
-
-        # Act
-        test_db.insert_or_update_tag_scan(
-            path=str(temp_audio_file), version="1.0", tags_strict="{}", tags_regular="{}", tags_loose="{}"
-        )
-
-        # Assert
-        # Verify item was added - get_all_tag_scans returns list of tuples
-        result = test_db.get_all_tag_scans()
-        assert len(result) == 1
-        assert result[0][1] == str(temp_audio_file)  # path is at index 1
-
-    @pytest.mark.skip(reason="Method doesn't validate paths - no FileNotFoundError raised")
-    def test_insert_or_update_tag_scan_invalid_path_raises_error(self, test_db):
-        """Should raise error for invalid file path."""
-        # Arrange
-
-        # Act & Assert
-        with pytest.raises(FileNotFoundError):
-            test_db.insert_or_update_tag_scan(
-                path="/nonexistent.mp3", version=None, tags_strict=None, tags_regular=None, tags_loose=None
-            )
 
 
 class TestDatabaseJobStatus:
@@ -454,10 +391,10 @@ class TestDatabaseJobStatus:
     def test_job_status_success(self, test_db, temp_audio_file):
         """Should successfully job status."""
         # Arrange - enqueue job first
-        job_id = test_db.enqueue(path=str(temp_audio_file))
+        job_id = test_db.queue.enqueue(path=str(temp_audio_file))
 
         # Act
-        result = test_db.job_status(job_id=job_id)
+        result = test_db.queue.job_status(job_id=job_id)
 
         # Assert
         assert isinstance(result, dict)
@@ -472,7 +409,7 @@ class TestDatabaseListLibraryFiles:
         # Arrange
 
         # Act
-        test_db.list_library_files()
+        test_db.library.list_library_files()
 
         # Assert
         # TODO: Verify list contents
@@ -487,7 +424,7 @@ class TestDatabaseListLibraryScans:
         # Arrange
 
         # Act
-        result = test_db.list_library_scans()
+        result = test_db.library.list_library_scans()
 
         # Assert
         assert isinstance(result, list)
@@ -503,7 +440,7 @@ class TestDatabaseLoadAllSessions:
         # Arrange
 
         # Act
-        result = test_db.load_all_sessions()
+        result = test_db.sessions.load_all()
 
         # Assert
         assert isinstance(result, dict)
@@ -519,7 +456,7 @@ class TestDatabaseQueueDepth:
         # Arrange
 
         # Act
-        result = test_db.queue_depth()
+        result = test_db.queue.queue_depth()
 
         # Assert
         assert isinstance(result, int)
@@ -537,7 +474,7 @@ class TestDatabaseQueueStats:
         # Arrange
 
         # Act
-        result = test_db.queue_stats()
+        result = test_db.queue.queue_stats()
 
         # Assert
         assert isinstance(result, dict)
@@ -554,7 +491,7 @@ class TestDatabaseResetRunningLibraryScans:
         # Arrange
 
         # Act
-        result = test_db.reset_running_library_scans()
+        result = test_db.library.reset_running_library_scans()
 
         # Assert
         assert isinstance(result, int)
@@ -571,7 +508,7 @@ class TestDatabaseResetRunningToPending:
         # Arrange
 
         # Act
-        result = test_db.reset_running_to_pending()
+        result = test_db.queue.reset_running_to_pending()
 
         # Assert
         assert isinstance(result, int)
@@ -588,7 +525,7 @@ class TestDatabaseSetMeta:
         # Arrange
 
         # Act
-        test_db.set_meta(key="test_value", value="test_value")
+        test_db.meta.set(key="test_value", value="test_value")
 
         # Assert
         # TODO: Verify state changed
@@ -603,7 +540,7 @@ class TestDatabaseUpdateJob:
         # Arrange
 
         # Act
-        test_db.update_job(job_id=1, status="pending")
+        test_db.queue.update_job(job_id=1, status="pending")
 
         # Assert
         # TODO: Verify state changed
@@ -618,7 +555,7 @@ class TestDatabaseUpdateLibraryScan:
         # Arrange
 
         # Act
-        test_db.update_library_scan(scan_id=1)
+        test_db.library.update_library_scan(scan_id=1)
 
         # Assert
         # TODO: Verify state changed
@@ -631,7 +568,7 @@ class TestDatabaseUpdateLibraryScan:
 
         # Act & Assert
         with pytest.raises(FileNotFoundError):
-            test_db.update_library_scan(
+            test_db.library.update_library_scan(
                 scan_id=1,
                 status="pending",
                 files_scanned="/nonexistent.mp3",
@@ -648,13 +585,13 @@ class TestDatabaseUpsertFileTags:
     def test_upsert_file_tags_success(self, test_db, temp_audio_file):
         """Should successfully upsert file tags."""
         # Arrange - create library file first to get file_id
-        test_db.upsert_library_file(path=str(temp_audio_file), file_size=1024, modified_time=1234567890)
-        file_data = test_db.get_library_file(path=str(temp_audio_file))
+        test_db.library.upsert_library_file(path=str(temp_audio_file), file_size=1024, modified_time=1234567890)
+        file_data = test_db.library.get_library_file(path=str(temp_audio_file))
         file_id = file_data["id"]
         tags = {"mood": "happy", "genre": "rock"}
 
         # Act
-        test_db.upsert_file_tags(file_id=file_id, tags=tags)
+        test_db.tags.upsert_file_tags(file_id=file_id, tags=tags)
 
         # Assert
         # Method returns None - verify it completes without exception
@@ -668,7 +605,9 @@ class TestDatabaseUpsertLibraryFile:
         # Arrange
 
         # Act
-        result = test_db.upsert_library_file(path=str(temp_audio_file), file_size=str(temp_audio_file), modified_time=1)
+        result = test_db.library.upsert_library_file(
+            path=str(temp_audio_file), file_size=str(temp_audio_file), modified_time=1
+        )
 
         # Assert
         assert isinstance(result, int)

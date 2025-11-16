@@ -9,24 +9,13 @@ import json
 from urllib import error as urlerror
 from urllib import request
 
-from nomarr.config import compose
-from nomarr.persistence.db import Database
+from nomarr.app import application
 
 __all__ = [
     "api_call",
     "format_duration",
     "format_tag_summary",
-    "get_avg_processing_time",
-    "get_db",
-    "update_avg_processing_time",
 ]
-
-
-def get_db(cfg=None) -> Database:
-    """Get Database instance from config."""
-    if cfg is None:
-        cfg = compose({})
-    return Database(cfg["db_path"])
 
 
 def format_duration(seconds: float) -> str:
@@ -45,47 +34,6 @@ def format_duration(seconds: float) -> str:
         d = int(seconds / 86400)
         h = int((seconds % 86400) / 3600)
         return f"{d}d {h}h"
-
-
-def get_avg_processing_time(db: Database) -> float:
-    """Get average processing time from recent successful jobs."""
-    # Check if we have stored average
-    stored_avg = db.get_meta("avg_processing_time")
-    if stored_avg:
-        return float(stored_avg)
-
-    # Calculate from last 5 successful jobs
-    cur = db.conn.execute(
-        """
-        SELECT finished_at, started_at
-        FROM queue
-        WHERE status='done' AND finished_at IS NOT NULL AND started_at IS NOT NULL
-        ORDER BY finished_at DESC
-        LIMIT 5
-        """
-    )
-    rows = cur.fetchall()
-
-    if not rows:
-        # No history yet - use default estimate
-        return 100.0
-
-    # Calculate average from recent jobs
-    times = [(finished - started) / 1000.0 for finished, started in rows]
-    avg = sum(times) / len(times)
-
-    # Store for future use
-    db.set_meta("avg_processing_time", str(avg))
-    return float(avg)
-
-
-def update_avg_processing_time(db: Database, job_elapsed: float):
-    """Update rolling average processing time after job completion."""
-    current_avg = get_avg_processing_time(db)
-
-    # Weighted average: 80% old avg, 20% new job
-    new_avg = (current_avg * 0.8) + (job_elapsed * 0.2)
-    db.set_meta("avg_processing_time", str(new_avg))
 
 
 def format_tag_summary(tags: dict) -> str:
@@ -108,15 +56,14 @@ def format_tag_summary(tags: dict) -> str:
 
 def api_call(path: str, method: str = "GET", body: dict | None = None) -> dict:
     """Minimal HTTP helper to call the API using config + DB-stored API key."""
-    cfg = compose({})
-    host = cfg.get("host", "127.0.0.1")
-    port = int(cfg.get("port", 8356))
+    if not application.is_running():
+        raise RuntimeError("Application is not running. Start the server first.")
+
+    host = application.api_host
+    port = application.api_port
     url = f"http://{host}:{port}{path}"
-    db = get_db(cfg)
-    try:
-        api_key = db.get_meta("api_key") or ""
-    finally:
-        db.close()
+
+    api_key = application.db.meta.get("api_key") or ""
 
     headers = {
         "Authorization": f"Bearer {api_key}",

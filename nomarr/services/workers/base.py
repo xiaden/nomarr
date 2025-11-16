@@ -20,7 +20,7 @@ from collections.abc import Callable
 from typing import Any
 
 from nomarr.persistence.db import Database
-from nomarr.persistence.queue import ProcessingQueue
+from nomarr.services.queue import ProcessingQueue
 
 
 # ----------------------------------------------------------------------
@@ -173,7 +173,7 @@ class BaseWorker(threading.Thread):
             force = bool(force_int)
 
             # Mark job as running
-            self.db.update_job(job_id, "running")
+            self.db.queue.update_job(job_id, "running")
             logging.info(f"[{self.name}] Processing job {job_id}: {path} (force={force})")
 
             # Publish job start event
@@ -203,7 +203,7 @@ class BaseWorker(threading.Thread):
 
             # Mark job as done
             with self.queue.lock:
-                self.db.update_job(job_id, "done", results=summary)
+                self.db.queue.update_job(job_id, "done", results=summary)
                 self._update_avg_time(elapsed)
 
             # Publish completion event
@@ -215,7 +215,7 @@ class BaseWorker(threading.Thread):
         except KeyboardInterrupt:
             # Job was cancelled via cancel() - reset to pending
             with self.queue.lock:
-                self.db.update_job(job_id, "pending")
+                self.db.queue.update_job(job_id, "pending")
 
             self._publish_job_state(job_id, path, "pending")
             self._publish_queue_stats()
@@ -227,7 +227,7 @@ class BaseWorker(threading.Thread):
             # RuntimeError during shutdown - reset job to pending
             if self._shutdown or "shutting down" in str(e).lower():
                 with self.queue.lock:
-                    self.db.update_job(job_id, "pending")
+                    self.db.queue.update_job(job_id, "pending")
 
                 self._publish_job_state(job_id, path, "pending")
                 self._publish_queue_stats()
@@ -247,7 +247,7 @@ class BaseWorker(threading.Thread):
     def _mark_job_error(self, job_id: int, path: str, error_message: str) -> None:
         """Mark job as failed and publish error event."""
         with self.queue.lock:
-            self.db.update_job(job_id, "error", error_message=error_message)
+            self.db.queue.update_job(job_id, "error", error_message=error_message)
 
         self._publish_job_state(job_id, path, "error", error=error_message)
         self._publish_queue_stats()
@@ -258,7 +258,7 @@ class BaseWorker(threading.Thread):
 
     def _is_paused(self) -> bool:
         """Check if worker is paused via DB meta."""
-        meta = self.db.get_meta("worker_enabled")
+        meta = self.db.meta.get("worker_enabled")
         return meta == "false"
 
     def _check_cache_eviction(self) -> None:
@@ -272,7 +272,7 @@ class BaseWorker(threading.Thread):
 
     def _update_avg_time(self, job_elapsed: float) -> None:
         """Update rolling average processing time."""
-        current_avg_str = self.db.get_meta("avg_processing_time")
+        current_avg_str = self.db.meta.get("avg_processing_time")
         current_avg: float
         if current_avg_str:
             current_avg = float(current_avg_str)
@@ -296,7 +296,7 @@ class BaseWorker(threading.Thread):
 
         # Weighted average: 80% old, 20% new
         new_avg = (current_avg * 0.8) + (job_elapsed * 0.2)
-        self.db.set_meta("avg_processing_time", str(new_avg))
+        self.db.meta.set("avg_processing_time", str(new_avg))
 
     # ---------------------------- Event Publishing ----------------------------
 

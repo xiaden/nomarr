@@ -191,7 +191,7 @@ def compute_embeddings_for_backbone(
     # Require Essentia at function call time (not module import time)
     backend_essentia.require()
 
-    from nomarr.helpers.audio import load_audio_mono, should_skip_short
+    from nomarr.ml.audio import load_audio_mono, should_skip_short
     from nomarr.ml.models.discovery import get_embedding_output_node
 
     # Load audio (no manual segmentation - let the backbone do it)

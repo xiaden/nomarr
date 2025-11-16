@@ -85,10 +85,10 @@ class LibraryService:
             return scan_id
         else:
             # CLI mode: run scan synchronously
-            from nomarr.workflows.library_scanner import scan_library
+            from nomarr.workflows.scan_library import scan_library_workflow
 
             logging.info("[LibraryService] Starting synchronous library scan")
-            stats = scan_library(
+            stats = scan_library_workflow(
                 db=self.db,
                 library_path=self.library_path,
                 namespace=namespace if namespace is not None else "essentia",

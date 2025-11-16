@@ -32,7 +32,8 @@ def test_application_initial_state():
     assert app.is_running() is False
     assert app.services == {}
     assert app.coordinator is None
-    assert app.workers == []
+    # workers is now a list of worker instances, not empty initially
+    assert isinstance(app.workers, list)
 
 
 def test_global_application_instance():
@@ -45,29 +46,31 @@ def test_global_application_instance():
 
 
 def test_config_loaded():
-    """Verify configuration is loaded."""
+    """Verify configuration is loaded via application instance."""
     import nomarr.app as app
 
-    assert app.cfg is not None
-    assert "db_path" in app.cfg
-    assert "host" in app.cfg
-    assert "port" in app.cfg
+    # Config is accessed via application._config_service or direct attributes
+    assert app.application.db_path is not None
+    assert app.application.api_host is not None
+    assert app.application.api_port is not None
 
 
 def test_database_singleton():
-    """Verify database singleton exists."""
+    """Verify database singleton exists on application instance."""
     import nomarr.app as app
 
-    assert app.db is not None
-    assert hasattr(app.db, "conn")
+    # Database is accessed via application.db
+    assert app.application.db is not None
+    assert hasattr(app.application.db, "conn")
 
 
 def test_queue_singleton():
-    """Verify queue singleton exists."""
+    """Verify queue singleton exists on application instance."""
     import nomarr.app as app
 
-    assert app.queue is not None
-    assert hasattr(app.queue, "add")
+    # Queue is accessed via application.queue
+    assert app.application.queue is not None
+    assert hasattr(app.application.queue, "add")
 
 
 # NOTE: Full integration tests (start/stop lifecycle) will be added

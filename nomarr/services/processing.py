@@ -9,7 +9,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from nomarr.interfaces.api.coordinator import ProcessingCoordinator
+    from nomarr.services.coordinator import ProcessingCoordinator
 
 
 class ProcessingService:

@@ -10,7 +10,7 @@ import time
 from typing import TYPE_CHECKING
 
 from nomarr.persistence.db import Database
-from nomarr.workflows.library_scanner import scan_library
+from nomarr.workflows.scan_library import scan_library_workflow
 
 if TYPE_CHECKING:
     pass
@@ -87,7 +87,7 @@ class LibraryScanWorker:
         Returns:
             scan_id: ID of the created scan record
         """
-        scan_id = self.db.create_library_scan()
+        scan_id = self.db.library.create_library_scan()
         logging.info(f"[LibraryScanWorker] Scan requested: {scan_id}")
         return scan_id
 
@@ -106,7 +106,7 @@ class LibraryScanWorker:
         """
         progress = None
         if self.current_scan_id:
-            scan_record = self.db.get_library_scan(self.current_scan_id)
+            scan_record = self.db.library.get_library_scan(self.current_scan_id)
             if scan_record:
                 progress = {
                     "scan_id": self.current_scan_id,
@@ -146,7 +146,7 @@ class LibraryScanWorker:
                 self.cancel_requested = False
 
                 # Mark scan as 'running' now that we're actually processing it
-                self.db.update_library_scan(scan_id, status="running")
+                self.db.library.update_library_scan(scan_id, status="running")
 
                 logging.info(f"[LibraryScanWorker] Starting scan {scan_id}")
 
@@ -155,7 +155,7 @@ class LibraryScanWorker:
                     def make_progress_callback(scan_id: int):
                         def progress_callback(current: int, total: int):
                             # Update database periodically
-                            self.db.update_library_scan(
+                            self.db.library.update_library_scan(
                                 scan_id,
                                 files_scanned=current,
                             )
@@ -166,7 +166,7 @@ class LibraryScanWorker:
                         return progress_callback
 
                     # Run the scan
-                    stats = scan_library(
+                    stats = scan_library_workflow(
                         self.db,
                         self.library_path,
                         self.namespace,
@@ -185,7 +185,7 @@ class LibraryScanWorker:
                 except KeyboardInterrupt:
                     # Cancelled
                     logging.info(f"[LibraryScanWorker] Scan {scan_id} cancelled")
-                    self.db.update_library_scan(
+                    self.db.library.update_library_scan(
                         scan_id,
                         status="cancelled",
                         error_message="Cancelled by user",
@@ -194,7 +194,7 @@ class LibraryScanWorker:
                 except Exception as e:
                     # Error
                     logging.error(f"[LibraryScanWorker] Scan {scan_id} failed: {e}")
-                    self.db.update_library_scan(
+                    self.db.library.update_library_scan(
                         scan_id,
                         status="error",
                         error_message=str(e),
@@ -212,7 +212,7 @@ class LibraryScanWorker:
 
     def _get_pending_scan(self) -> dict | None:
         """Get the oldest pending scan request."""
-        scans = self.db.list_library_scans(limit=100)
+        scans = self.db.library.list_library_scans(limit=100)
         for scan in scans:
             # Skip scan if already being processed
             if scan.get("id") == self.current_scan_id:

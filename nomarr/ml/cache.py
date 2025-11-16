@@ -24,20 +24,8 @@ _PREDICTOR_CACHE: dict[str, Callable[[np.ndarray, int], np.ndarray]] = {}
 _CACHE_INITIALIZED = False
 _CACHE_LAST_ACCESS: float = 0.0
 _CACHE_LOCK = threading.Lock()
-
-
-def _get_cache_config() -> tuple[int, bool]:
-    """Get cache configuration from config file."""
-    try:
-        from nomarr.config import compose
-
-        cfg = compose({})
-        timeout = int(cfg.get("cache_idle_timeout", 300))
-        auto_evict = bool(cfg.get("cache_auto_evict", True))
-        return timeout, auto_evict
-    except Exception:
-        # Fallback to defaults if config unavailable
-        return 300, True
+_CACHE_TIMEOUT: int = 300  # seconds
+_CACHE_AUTO_EVICT: bool = True
 
 
 def cache_key(head_info: HeadInfo) -> str:
@@ -55,26 +43,33 @@ def get_cache_size() -> int:
     return len(_PREDICTOR_CACHE)
 
 
-def warmup_predictor_cache(models_dir: str | None = None) -> int:
+def warmup_predictor_cache(
+    models_dir: str,
+    cache_idle_timeout: int = 300,
+    cache_auto_evict: bool = True,
+) -> int:
     """
     Pre-load all model predictors into cache to avoid loading overhead during processing.
     Returns the number of predictors cached.
+
+    Args:
+        models_dir: Directory containing model files
+        cache_idle_timeout: Seconds before idle cache eviction (default: 300)
+        cache_auto_evict: Whether to auto-evict idle cache (default: True)
     """
     global _PREDICTOR_CACHE, _CACHE_INITIALIZED, _CACHE_LAST_ACCESS
+    global _CACHE_TIMEOUT, _CACHE_AUTO_EVICT
+
+    # Store cache config
+    _CACHE_TIMEOUT = cache_idle_timeout
+    _CACHE_AUTO_EVICT = cache_auto_evict
 
     if _CACHE_INITIALIZED:
         logging.info("[cache] Predictor cache already initialized")
         return len(_PREDICTOR_CACHE)
 
-    from nomarr.config import compose
     from nomarr.ml.inference import make_predictor_uncached
     from nomarr.ml.models.discovery import discover_heads
-
-    cfg = compose({})
-    if models_dir is None:
-        models_dir = cfg["models_dir"]
-    # Type guard for static analyzers
-    assert isinstance(models_dir, str)
 
     heads = discover_heads(models_dir)
     if not heads:
@@ -159,17 +154,15 @@ def check_and_evict_idle_cache() -> bool:
     Check if cache has been idle longer than timeout and evict if needed.
     Returns True if cache was evicted, False otherwise.
     """
-    timeout, auto_evict = _get_cache_config()
-
-    if not auto_evict:
+    if not _CACHE_AUTO_EVICT:
         return False
 
     if not _CACHE_INITIALIZED or len(_PREDICTOR_CACHE) == 0:
         return False
 
     idle_time = get_cache_idle_time()
-    if timeout > 0 and idle_time > timeout:
-        logging.info(f"[cache] Cache idle for {idle_time:.0f}s (>{timeout}s), evicting...")
+    if _CACHE_TIMEOUT > 0 and idle_time > _CACHE_TIMEOUT:
+        logging.info(f"[cache] Cache idle for {idle_time:.0f}s (>{_CACHE_TIMEOUT}s), evicting...")
         clear_predictor_cache()
         return True
 

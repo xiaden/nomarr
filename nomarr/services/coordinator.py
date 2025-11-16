@@ -10,8 +10,8 @@ import multiprocessing as mp
 from concurrent.futures import BrokenExecutor, ProcessPoolExecutor, TimeoutError
 from typing import Any
 
-from nomarr.workflows.processor import process_file
 from nomarr.services.file_validation import make_skip_result, should_skip_processing, validate_file_exists
+from nomarr.workflows.process_file import process_file_workflow
 
 # Set multiprocessing start method to 'spawn' to avoid CUDA context issues
 mp.set_start_method("spawn", force=True)
@@ -57,7 +57,7 @@ def process_file_wrapper(path: str, force: bool) -> dict[str, Any]:
             return make_skip_result(path, skip_reason or "unknown")
 
         # Process the file (no db update - coordinator workers don't own database)
-        result = process_file(path, config=processor_config, db=None)
+        result = process_file_workflow(path, config=processor_config, db=None)
         logging.info(f"[Worker PID {pid}] Completed: {path}")
         return result
 

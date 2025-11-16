@@ -47,7 +47,7 @@ def generate_minmax_calibration(
     offset = 0
 
     while True:
-        files, _total_count = db.list_library_files(limit=limit, offset=offset)
+        files, _total_count = db.library.list_library_files(limit=limit, offset=offset)
         all_files.extend(files)
         offset += limit
         if len(files) < limit:

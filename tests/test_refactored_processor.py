@@ -17,7 +17,7 @@ import pytest
 @pytest.fixture
 def mock_config():
     """Create a ProcessorConfig for testing."""
-    from nomarr.workflows.processor_config import ProcessorConfig
+    from nomarr.helpers.dataclasses import ProcessorConfig
 
     return ProcessorConfig(
         models_dir="/fake/models",
@@ -34,7 +34,7 @@ def mock_config():
 
 def test_processor_config_creation():
     """Test ProcessorConfig dataclass can be created."""
-    from nomarr.workflows.processor_config import ProcessorConfig
+    from nomarr.helpers.dataclasses import ProcessorConfig
 
     config = ProcessorConfig(
         models_dir="/fake/models",
@@ -67,7 +67,7 @@ def test_config_service_make_processor_config():
     config = service.make_processor_config()
 
     # Check it returns ProcessorConfig type
-    from nomarr.workflows.processor_config import ProcessorConfig
+    from nomarr.helpers.dataclasses import ProcessorConfig
 
     assert isinstance(config, ProcessorConfig)
 
@@ -140,13 +140,13 @@ def test_make_skip_result_format():
 
 
 def test_process_file_signature_accepts_config_and_db(mock_config):
-    """Test process_file accepts new signature (config + optional db)."""
+    """Test process_file_workflow accepts new signature (config + optional db)."""
     import inspect
 
-    from nomarr.workflows.processor import process_file
+    from nomarr.workflows.process_file import process_file_workflow
 
     # Check signature
-    sig = inspect.signature(process_file)
+    sig = inspect.signature(process_file_workflow)
     params = list(sig.parameters.keys())
 
     # New signature should have: path, config, db
@@ -165,8 +165,8 @@ def test_process_file_signature_accepts_config_and_db(mock_config):
 
 
 def test_process_file_no_longer_accepts_old_signature():
-    """Test process_file rejects old signature (path, force)."""
-    from nomarr.workflows.processor import process_file
+    """Test process_file_workflow rejects old signature (path, force)."""
+    from nomarr.workflows.process_file import process_file_workflow
 
     # Create temp file
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f:
@@ -175,6 +175,6 @@ def test_process_file_no_longer_accepts_old_signature():
     try:
         # Old signature should fail (no force parameter)
         with pytest.raises(TypeError):
-            process_file(temp_path, force=False)  # type: ignore
+            process_file_workflow(temp_path, force=False)  # type: ignore
     finally:
         os.unlink(temp_path)

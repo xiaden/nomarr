@@ -10,8 +10,8 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
-    from nomarr.persistence.queue import ProcessingQueue
-    from nomarr.interfaces.api.coordinator import ProcessingCoordinator
+    from nomarr.services.coordinator import ProcessingCoordinator
+    from nomarr.services.queue import ProcessingQueue
     from nomarr.services.workers.base import BaseWorker
 
 
@@ -58,7 +58,7 @@ class WorkerService:
         Returns:
             True if workers are enabled in DB meta or default config
         """
-        meta = self.db.get_meta("worker_enabled")
+        meta = self.db.meta.get("worker_enabled")
         if meta is None:
             return self.default_enabled
         return meta == "true"
@@ -67,7 +67,7 @@ class WorkerService:
         """
         Enable workers (sets DB meta flag).
         """
-        self.db.set_meta("worker_enabled", "true")
+        self.db.meta.set("worker_enabled", "true")
         logging.info("[WorkerService] Workers enabled")
 
     def disable(self) -> None:
@@ -81,7 +81,7 @@ class WorkerService:
 
         Blocks until all jobs complete or timeout (60s default).
         """
-        self.db.set_meta("worker_enabled", "false")
+        self.db.meta.set("worker_enabled", "false")
         logging.info("[WorkerService] Workers disabled, waiting for active jobs to complete...")
 
         # Wait for all running jobs to finish before stopping threads
@@ -162,7 +162,7 @@ class WorkerService:
             running_job_ids = [row[0] for row in cur.fetchall()]
 
             for job_id in running_job_ids:
-                self.db.update_job(job_id, "pending")
+                self.db.queue.update_job(job_id, "pending")
                 jobs_reset += 1
 
         if jobs_reset > 0:
@@ -203,13 +203,13 @@ class WorkerService:
 
         # Create wrapper that uses the process pool
         def process_via_pool(path: str, force: bool) -> dict[str, Any]:
-            from nomarr.workflows.processor import process_file
             from nomarr.services.config import ConfigService
             from nomarr.services.file_validation import (
                 make_skip_result,
                 should_skip_processing,
                 validate_file_exists,
             )
+            from nomarr.workflows.process_file import process_file_workflow
 
             if self.processor_coord is None:
                 # Fallback: direct processing (shouldn't happen after startup)
@@ -233,7 +233,7 @@ class WorkerService:
                     return make_skip_result(path, skip_reason or "unknown")
 
                 # Process with DB
-                return process_file(path, config=processor_config, db=self.db)
+                return process_file_workflow(path, config=processor_config, db=self.db)
             try:
                 return self.processor_coord.submit(path, force)
             except Exception as e:

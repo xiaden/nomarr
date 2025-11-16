@@ -2,13 +2,19 @@
 root_package = nomarr
 include_external_packages = False
 
-# Enforce layered architecture
-# Rule: Lower layers cannot import from higher layers
-# Architecture stack (top to bottom):
-#   interfaces -> workflows -> services -> persistence
-#   ml (isolated namespace, can be imported by workflows/services)
-#   tagging (tag logic, can be imported by workflows)
-#   helpers (shared utilities, can be imported by any layer)
+# Architecture stack:
+#   interfaces -> services -> workflows
+#   workflows/services -> (persistence, tagging, ml, analytics, helpers)
+#
+# Rules:
+# - interfaces may only talk to services (plus helpers).
+# - services may not import interfaces.
+# - workflows may not import services or interfaces.
+# - persistence is a low-level layer: no imports from workflows/services/interfaces.
+# - ml is an isolated namespace: no imports from workflows/services/interfaces.
+# - analytics is an isolated namespace: no imports from workflows/services/interfaces.
+# - helpers must be pure: no imports from any nomarr.* packages.
+# - only nomarr.persistence.* may import nomarr.persistence.database.*.
 
 [importlinter:contract:1]
 name = Services cannot import from interfaces
@@ -48,7 +54,17 @@ forbidden_modules =
     nomarr.workflows
 
 [importlinter:contract:5]
-name = Interfaces should be thin (no business logic imports)
+name = Analytics namespace isolation
+type = forbidden
+source_modules =
+    nomarr.analytics
+forbidden_modules =
+    nomarr.services
+    nomarr.interfaces
+    nomarr.workflows
+
+[importlinter:contract:6]
+name = Interfaces should be thin (no direct data/ML/tagging/analytics access)
 type = forbidden
 source_modules =
     nomarr.interfaces
@@ -57,3 +73,34 @@ forbidden_modules =
     nomarr.persistence
     nomarr.ml
     nomarr.tagging
+    nomarr.analytics
+allow_indirect_imports = True
+
+[importlinter:contract:7]
+name = Helpers must be pure (no upward dependencies)
+type = forbidden
+source_modules =
+    nomarr.helpers
+forbidden_modules =
+    nomarr.services
+    nomarr.workflows
+    nomarr.interfaces
+    nomarr.ml
+    nomarr.tagging
+    nomarr.analytics
+    nomarr.persistence
+
+[importlinter:contract:8]
+name = Only persistence package may import persistence.database
+type = forbidden
+source_modules =
+    nomarr.interfaces
+    nomarr.services
+    nomarr.workflows
+    nomarr.tagging
+    nomarr.ml
+    nomarr.analytics
+    nomarr.helpers
+forbidden_modules =
+    nomarr.persistence.database
+allow_indirect_imports = True

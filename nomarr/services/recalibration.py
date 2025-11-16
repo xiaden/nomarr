@@ -47,7 +47,7 @@ class RecalibrationService:
             raise RuntimeError("RecalibrationWorker is not available. Cannot queue recalibration jobs.")
 
         logger.info(f"Queuing recalibration for: {file_path}")
-        return self.db.enqueue_calibration(file_path)
+        return self.db.calibration.enqueue_calibration(file_path)
 
     def enqueue_library(self, paths: list[str]) -> int:
         """Queue multiple library files for recalibration.
@@ -73,7 +73,7 @@ class RecalibrationService:
         count = 0
         for path in paths:
             try:
-                self.db.enqueue_calibration(path)
+                self.db.calibration.enqueue_calibration(path)
                 count += 1
             except Exception as e:
                 logger.error(f"Failed to queue {path}: {e}")
@@ -87,7 +87,7 @@ class RecalibrationService:
         Returns:
             Dictionary with counts: pending, running, done, error
         """
-        return self.db.get_calibration_status()
+        return self.db.calibration.get_calibration_status()
 
     def clear_queue(self) -> int:
         """Clear all pending and completed recalibration jobs.
@@ -98,7 +98,7 @@ class RecalibrationService:
         Note:
             Running jobs will complete but be removed from queue
         """
-        count = self.db.clear_calibration_queue()
+        count = self.db.calibration.clear_calibration_queue()
         logger.info(f"Cleared {count} recalibration jobs from queue")
         return count
 

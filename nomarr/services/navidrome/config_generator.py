@@ -29,7 +29,7 @@ def generate_navidrome_config(db: Database, namespace: str = "nom") -> str:
     logging.info("[navidrome] Generating Navidrome config from library tags")
 
     # Get all unique tag keys
-    tag_keys = db.get_unique_tag_keys()
+    tag_keys = db.tags.get_unique_tag_keys()
 
     if not tag_keys:
         return "# No tags found in library. Run a library scan first.\n"
@@ -54,7 +54,7 @@ def generate_navidrome_config(db: Database, namespace: str = "nom") -> str:
 
     for tag_key in sorted(filtered_tags):
         # Get tag statistics
-        stats = db.get_tag_type_stats(tag_key)
+        stats = db.tags.get_tag_type_stats(tag_key)
 
         # Convert tag key to Navidrome field name
         # nom:mood-strict -> mood_strict
@@ -157,7 +157,7 @@ def preview_tag_stats(db: Database, namespace: str = "nom") -> dict[str, dict[st
     """
     import logging
 
-    tag_keys = db.get_unique_tag_keys()
+    tag_keys = db.tags.get_unique_tag_keys()
     namespace_prefix = f"{namespace}:"
     filtered_tags = [tag for tag in tag_keys if tag.startswith(namespace_prefix)]
 
@@ -170,7 +170,7 @@ def preview_tag_stats(db: Database, namespace: str = "nom") -> dict[str, dict[st
             if idx % 10 == 0:
                 logging.info(f"[navidrome] Progress: {idx}/{len(filtered_tags)} tags processed...")
 
-            summary = db.get_tag_summary(tag_key)
+            summary = db.tags.get_tag_summary(tag_key)
 
             stats_by_tag[tag_key] = {
                 "type": summary["type"],

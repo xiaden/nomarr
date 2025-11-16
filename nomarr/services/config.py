@@ -19,7 +19,7 @@ from nomarr.__version__ import __version__
 from nomarr.persistence.db import Database
 
 if TYPE_CHECKING:
-    from nomarr.workflows.processor_config import ProcessorConfig
+    from nomarr.helpers.dataclasses import ProcessorConfig
 
 
 class ConfigService:
@@ -323,7 +323,7 @@ class ConfigService:
         Returns:
             ProcessorConfig instance ready for injection into process_file()
         """
-        from nomarr.workflows.processor_config import ProcessorConfig
+        from nomarr.helpers.dataclasses import ProcessorConfig
 
         cfg = self.get_config()
 

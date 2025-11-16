@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-import nomarr.app as app
+from nomarr.app import application
 from nomarr.interfaces.api.endpoints import admin, library, public, web
 
 # ----------------------------------------------------------------------
@@ -25,14 +25,14 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logging.info(
     "Effective config: models_dir=%s db_path=%s api=%s:%s blocking_mode=%s "
     "blocking_timeout=%s worker_poll_interval=%s worker_count=%s",
-    app.cfg.get("paths", {}).get("models_dir"),
-    app.DB_PATH,
-    app.API_HOST,
-    app.API_PORT,
-    app.BLOCKING_MODE,
-    app.BLOCKING_TIMEOUT,
-    app.WORKER_POLL_INTERVAL,
-    app.WORKER_COUNT,
+    application.models_dir,
+    application.db_path,
+    application.api_host,
+    application.api_port,
+    application.blocking_mode,
+    application.blocking_timeout,
+    application.worker_poll_interval,
+    application.worker_count,
 )
 
 
@@ -40,7 +40,7 @@ logging.info(
 #  App lifecycle
 # ----------------------------------------------------------------------
 @asynccontextmanager
-async def lifespan(app_instance: FastAPI):
+async def lifespan(_app_instance: FastAPI):
     """
     FastAPI lifespan context manager.
 
@@ -54,7 +54,7 @@ async def lifespan(app_instance: FastAPI):
 
     # Shutdown: Stop the application
     logging.info("[API] FastAPI shutting down...")
-    app.application.stop()
+    application.stop()
     logging.info("[API] Shutdown complete")
 
 
@@ -94,6 +94,6 @@ if web_dir.exists():
             return FileResponse(str(index_path))
         return JSONResponse({"error": "Web UI not found"}, status_code=404)
 
-    logging.info(f"[API] Web UI enabled at http://{app.API_HOST}:{app.API_PORT}/")
+    logging.info(f"[API] Web UI enabled at http://{application.api_host}:{application.api_port}/")
 else:
     logging.warning("[API] Web UI directory not found, dashboard disabled")

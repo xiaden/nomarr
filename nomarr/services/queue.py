@@ -6,14 +6,154 @@ Shared business logic for queue operations across all interfaces (CLI, API, Web)
 from __future__ import annotations
 
 import logging
-import os
+import threading
 import time
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-from nomarr.helpers.files import collect_audio_files
+from nomarr.persistence.db import Database
+from nomarr.workflows.enqueue_files import enqueue_files_workflow
 
-if TYPE_CHECKING:
-    from nomarr.persistence.queue import ProcessingQueue
+
+# ----------------------------------------------------------------------
+#  Job Dataclass
+# ----------------------------------------------------------------------
+class Job:
+    """Represents a single job in the processing queue."""
+
+    def __init__(self, **row):
+        self.id = row.get("id")
+        self.path = row.get("path")
+        self.status = row.get("status", "pending")
+        self.created_at = row.get("created_at")
+        self.started_at = row.get("started_at")
+        self.finished_at = row.get("finished_at")
+        self.error_message = row.get("error_message")
+        self.force = bool(row.get("force", 0))
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert job to dictionary representation."""
+        return {
+            "id": self.id,
+            "path": self.path,
+            "status": self.status,
+            "created_at": self.created_at,
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
+            "error_message": self.error_message,
+            "force": self.force,
+        }
+
+
+# ----------------------------------------------------------------------
+#  ProcessingQueue - Data Access Layer
+# ----------------------------------------------------------------------
+class ProcessingQueue:
+    """
+    Thread-safe data access layer for the ML processing queue table.
+
+    Provides CRUD operations for queue jobs using QueueOperations.
+    Business logic should live in QueueService, not here.
+    """
+
+    def __init__(self, db: Database):
+        """Initialize queue with database connection and lock."""
+        self.db = db
+        self.lock = threading.Lock()
+
+    # ---------------------------- Basic CRUD Operations ----------------------------
+
+    def add(self, path: str, force: bool = False) -> int:
+        """Add a file to the processing queue."""
+        with self.lock:
+            job_id = self.db.queue.enqueue(path, force)
+            logging.debug(f"[ProcessingQueue] Added job {job_id} for {path}")
+            return job_id
+
+    def get(self, job_id: int) -> Job | None:
+        """Get job by ID."""
+        row = self.db.queue.job_status(job_id)
+        if not row:
+            return None
+        return Job(**row)
+
+    def delete(self, job_id: int) -> int:
+        """Delete a job by ID. Returns 1 if deleted, 0 if not found."""
+        with self.lock:
+            return self.db.queue.delete_job(job_id)
+
+    def list_jobs(self, limit: int = 25, offset: int = 0, status: str | None = None) -> tuple[list[Job], int]:
+        """
+        List jobs with pagination and optional status filter.
+
+        Args:
+            limit: Maximum number of jobs to return
+            offset: Number of jobs to skip (for pagination)
+            status: Filter by status (pending/running/done/error), or None for all
+
+        Returns:
+            Tuple of (jobs list, total count matching filter)
+        """
+        rows, total = self.db.queue.list_jobs(limit=limit, offset=offset, status=status)
+        jobs = [Job(**row) for row in rows]
+        return jobs, total
+
+    def update_status(self, job_id: int, status: str, **kwargs) -> None:
+        """Update job status and optional fields."""
+        with self.lock:
+            self.db.queue.update_job(job_id, status, **kwargs)
+
+    def start(self, job_id: int) -> None:
+        """Mark a job as running."""
+        self.update_status(job_id, "running")
+
+    def mark_done(self, job_id: int, results: dict[str, Any] | None = None) -> None:
+        """Mark a job as complete with optional results."""
+        self.update_status(job_id, "done", results=results)
+
+    def mark_error(self, job_id: int, error_message: str) -> None:
+        """Mark a job as failed."""
+        self.update_status(job_id, "error", error_message=error_message)
+
+    def depth(self) -> int:
+        """Return number of pending/running jobs."""
+        return self.db.queue.queue_depth()
+
+    def delete_by_status(self, statuses: list[str]) -> int:
+        """
+        Delete jobs by status.
+
+        Args:
+            statuses: List of statuses to delete
+
+        Returns:
+            Number of jobs deleted
+        """
+        with self.lock:
+            return self.db.queue.delete_jobs_by_status(statuses)
+
+    def reset_stuck_jobs(self) -> int:
+        """
+        Reset jobs stuck in 'running' state back to 'pending'.
+
+        Clears all state fields (started_at, error_message, finished_at).
+
+        Returns:
+            Number of jobs reset
+        """
+        with self.lock:
+            return self.db.queue.reset_stuck_jobs()
+
+    def reset_error_jobs(self) -> int:
+        """
+        Reset jobs in 'error' state back to 'pending'.
+
+        Clears error state fields (error_message, finished_at).
+
+        Returns:
+            Number of jobs reset
+        """
+        with self.lock:
+            return self.db.queue.reset_error_jobs()
 
 
 class QueueService:
@@ -40,6 +180,9 @@ class QueueService:
         Handles both single files and directories. Automatically discovers
         audio files in directories when recursive=True.
 
+        Delegates to workflows.queue_operations.enqueue_files_workflow for
+        the actual file discovery and enqueueing logic.
+
         Args:
             paths: Single path string or list of paths (files or directories)
             force: If True, reprocess files even if already tagged
@@ -55,45 +198,12 @@ class QueueService:
         Raises:
             ValueError: If no audio files found at given paths
         """
-        # Normalize paths to list
-        if isinstance(paths, str):
-            paths = [paths]
-
-        # Validate paths exist
-        for path in paths:
-            if not os.path.exists(path):
-                raise FileNotFoundError(f"Path not found: {path}")
-
-        # Collect audio files from all paths
-        audio_files = collect_audio_files(paths, recursive=recursive)
-
-        if not audio_files:
-            # Determine error message based on input type
-            if len(paths) == 1 and os.path.isdir(paths[0]):
-                raise ValueError(f"No audio files found in directory: {paths[0]}")
-            elif len(paths) == 1:
-                raise ValueError(f"Not an audio file: {paths[0]}")
-            else:
-                raise ValueError(f"No audio files found in provided paths: {paths}")
-
-        # Queue all files
-        job_ids = []
-        for file_path in audio_files:
-            job_id = self.queue.add(file_path, force)
-            job_ids.append(job_id)
-            logging.debug(f"[QueueService] Queued job {job_id} for {file_path}")
-
-        queue_depth = self.queue.depth()
-        logging.info(
-            f"[QueueService] Queued {len(job_ids)} files from {len(paths)} path(s) (queue depth={queue_depth})"
+        return enqueue_files_workflow(
+            db=self.queue.db,  # Service orchestrates: pass db to workflow
+            paths=paths,
+            force=force,
+            recursive=recursive,
         )
-
-        return {
-            "job_ids": job_ids,
-            "files_queued": len(job_ids),
-            "queue_depth": queue_depth,
-            "paths": paths,
-        }
 
     def remove_jobs(self, job_id: int | None = None, status: str | None = None, all: bool = False) -> int:
         """
@@ -150,7 +260,7 @@ class QueueService:
                 - completed: Successfully completed jobs
                 - errors: Jobs that failed with errors
         """
-        from nomarr.helpers.db import get_queue_stats
+        from nomarr.persistence.db import get_queue_stats
 
         return get_queue_stats(self.queue.db)
 
@@ -212,7 +322,7 @@ class QueueService:
         Returns:
             Number of jobs removed
         """
-        from nomarr.helpers.db import count_and_delete
+        from nomarr.persistence.db import count_and_delete
 
         # Calculate cutoff timestamp (milliseconds since epoch)
         cutoff_ms = int((time.time() - (max_age_hours * 3600)) * 1000)
@@ -249,7 +359,7 @@ class QueueService:
         if not event_broker:
             return
 
-        from nomarr.helpers.db import get_queue_stats
+        from nomarr.persistence.db import get_queue_stats
 
         stats = get_queue_stats(self.queue.db)
         event_broker.update_queue_state(**stats)

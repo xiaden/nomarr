@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 
-import nomarr.app as app
+from nomarr.app import application
 from nomarr.interfaces.api.auth import verify_key
 from nomarr.interfaces.api.models import FlushRequest, RemoveJobRequest
 from nomarr.ml.cache import warmup_predictor_cache
@@ -20,16 +20,16 @@ router = APIRouter(tags=["admin"], prefix="/admin")
 #  Dependency: get app globals
 # ----------------------------------------------------------------------
 def get_globals():
-    """Get global instances (db, queue, services, etc.) from app.application."""
+    """Get global instances (db, queue, services, etc.) from application."""
 
     return {
-        "db": app.db,
-        "queue": app.queue,
-        "queue_service": app.application.services["queue"],
-        "worker_service": app.application.services["worker"],
-        "worker_pool": app.application.workers,
-        "processor_coord": app.application.coordinator,
-        "event_broker": app.application.event_broker,
+        "db": application.db,
+        "queue": application.queue,
+        "queue_service": application.get_service("queue"),
+        "worker_service": application.get_service("worker"),
+        "worker_pool": application.workers,
+        "processor_coord": application.coordinator,
+        "event_broker": application.event_broker,
     }
 
 
@@ -60,9 +60,7 @@ async def admin_remove_job(payload: RemoveJobRequest):
         worker_service.enable()
         updated_pool = worker_service.start_workers()
         # Update application worker pool
-        import nomarr.app as app
-
-        app.application.workers = updated_pool
+        application.workers = updated_pool
 
     return {"status": "ok", "removed": job_id, "worker_enabled": True}
 
@@ -95,9 +93,7 @@ async def admin_flush_queue(payload: FlushRequest = Body(default=None)):
     if worker_service:
         worker_service.enable()
         updated_pool = worker_service.start_workers()
-        import nomarr.app as app
-
-        app.application.workers = updated_pool
+        application.workers = updated_pool
 
     return {"status": "ok", "flushed_statuses": statuses, "removed": total_removed, "worker_enabled": True}
 
@@ -132,7 +128,19 @@ async def admin_cleanup_queue(max_age_hours: int = 168):
 async def admin_cache_refresh():
     """Force rebuild of the predictor cache (discover heads and load missing)."""
     try:
-        num = warmup_predictor_cache()
+        g = get_globals()
+        config_service = g["config_service"]
+        cfg = config_service.get_config()
+
+        models_dir = str(cfg["models_dir"])
+        cache_idle_timeout = int(cfg.get("cache_idle_timeout", 300))
+        cache_auto_evict = bool(cfg.get("cache_auto_evict", True))
+
+        num = warmup_predictor_cache(
+            models_dir=models_dir,
+            cache_idle_timeout=cache_idle_timeout,
+            cache_auto_evict=cache_auto_evict,
+        )
         return {"status": "ok", "predictors": num}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Cache refresh failed: {e}") from e
@@ -171,9 +179,7 @@ async def admin_resume_worker():
     if worker_service:
         worker_service.enable()
         updated_pool = worker_service.start_workers(event_broker=event_broker)
-        import nomarr.app as app
-
-        app.application.workers = updated_pool
+        application.workers = updated_pool
 
     # Publish worker status update
     if event_broker:
@@ -202,7 +208,7 @@ async def admin_run_calibration():
     db = g["db"]
 
     # Check if calibrate_heads mode is enabled
-    calibrate_heads = app.cfg.get("calibrate_heads", False)
+    calibrate_heads = application.calibrate_heads
 
     if not calibrate_heads:
         raise HTTPException(
@@ -210,16 +216,20 @@ async def admin_run_calibration():
             detail="Calibration generation disabled. Set calibrate_heads: true in config to enable.",
         )
 
+    # Get config service for calibration thresholds
+    config_service = application.get_service("config")
+    config = config_service.get_config()
+
     # Get config values
-    models_dir = app.cfg.get("models_dir", "/app/models")
-    namespace = app.cfg.get("namespace", "nom")
+    models_dir = application.models_dir
+    namespace = application.namespace
     thresholds = {
-        "apd_p5": app.cfg.get("calibration_apd_threshold", 0.01),
-        "apd_p95": app.cfg.get("calibration_apd_threshold", 0.01),
-        "srd": app.cfg.get("calibration_srd_threshold", 0.05),
-        "jsd": app.cfg.get("calibration_jsd_threshold", 0.1),
-        "median": app.cfg.get("calibration_median_threshold", 0.05),
-        "iqr": app.cfg.get("calibration_iqr_threshold", 0.1),
+        "apd_p5": config.get("calibration_apd_threshold", 0.01),
+        "apd_p95": config.get("calibration_apd_threshold", 0.01),
+        "srd": config.get("calibration_srd_threshold", 0.05),
+        "jsd": config.get("calibration_jsd_threshold", 0.1),
+        "median": config.get("calibration_median_threshold", 0.05),
+        "iqr": config.get("calibration_iqr_threshold", 0.1),
     }
 
     # Run calibration service
@@ -252,7 +262,7 @@ async def admin_calibration_history(model: str | None = None, head: str | None =
     db = g["db"]
 
     # Check if calibrate_heads mode is enabled
-    calibrate_heads = app.cfg.get("calibrate_heads", False)
+    calibrate_heads = application.calibrate_heads
 
     if not calibrate_heads:
         raise HTTPException(
@@ -261,7 +271,7 @@ async def admin_calibration_history(model: str | None = None, head: str | None =
         )
 
     try:
-        runs = db.list_calibration_runs(model_name=model, head_name=head, limit=limit)
+        runs = db.calibration.list_calibration_runs(model_name=model, head_name=head, limit=limit)
         return {"status": "ok", "runs": runs, "count": len(runs)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to retrieve calibration history: {e!s}") from e
@@ -286,7 +296,7 @@ async def admin_retag_all():
     db = g["db"]
 
     # Check if calibrate_heads mode is enabled
-    calibrate_heads = app.cfg.get("calibrate_heads", False)
+    calibrate_heads = application.calibrate_heads
 
     if not calibrate_heads:
         raise HTTPException(
@@ -296,7 +306,7 @@ async def admin_retag_all():
 
     try:
         # Get all tagged files from library
-        all_files, total = db.list_library_files(limit=100000)  # Large limit to get all files
+        all_files, _ = db.list_library_files(limit=100000)  # Large limit to get all files
         tagged_files = [f for f in all_files if f.get("tagged")]
 
         if not tagged_files:

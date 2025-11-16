@@ -1,8 +1,25 @@
 """
-Data package.
+Persistence package.
 """
 
-from .db import SCHEMA, SCHEMA_VERSION, Database, now_ms
-from .queue import Job, ProcessingQueue
+from .db import (
+    SCHEMA,
+    SCHEMA_VERSION,
+    Database,
+    count_and_delete,
+    count_and_update,
+    get_queue_stats,
+    now_ms,
+    safe_count,
+)
 
-__all__ = ["SCHEMA", "SCHEMA_VERSION", "Database", "Job", "ProcessingQueue", "now_ms"]
+__all__ = [
+    "SCHEMA",
+    "SCHEMA_VERSION",
+    "Database",
+    "count_and_delete",
+    "count_and_update",
+    "get_queue_stats",
+    "now_ms",
+    "safe_count",
+]

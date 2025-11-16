@@ -3,10 +3,9 @@ RecalibrationWorker - Apply calibration to existing library tags.
 
 This worker:
 1. Polls calibration_queue for pending files
-2. Loads raw tag scores from library_tags table
-3. Applies calibration to scores
-4. Writes updated tier and mood tags to files
-5. Skips ML inference entirely (uses existing DB data)
+2. Delegates to recalibration workflow for processing
+3. Updates job status in database
+4. Skips ML inference entirely (workflow uses existing DB data)
 """
 
 from __future__ import annotations
@@ -15,6 +14,8 @@ import logging
 import threading
 import time
 from typing import TYPE_CHECKING
+
+from nomarr.workflows.recalibrate_file import recalibrate_file_workflow
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -82,7 +83,7 @@ class RecalibrationWorker(threading.Thread):
         logging.info(f"[RecalibrationWorker] Started (poll_interval={self.poll_interval}s)")
 
         # Reset any stuck running jobs on startup
-        reset_count = self.db.reset_running_calibration_jobs()
+        reset_count = self.db.calibration.reset_running_calibration_jobs()
         if reset_count > 0:
             logging.info(f"[RecalibrationWorker] Reset {reset_count} stuck running jobs to pending")
 
@@ -91,7 +92,7 @@ class RecalibrationWorker(threading.Thread):
                 self._heartbeat()
 
                 # Get next pending job
-                job = self.db.get_next_calibration_job()
+                job = self.db.calibration.get_next_calibration_job()
                 if not job:
                     # No jobs - sleep and continue
                     self._stop_event.wait(self.poll_interval)
@@ -103,12 +104,12 @@ class RecalibrationWorker(threading.Thread):
                 try:
                     # Process the recalibration job
                     self._recalibrate_file(job_id, file_path)
-                    self.db.complete_calibration_job(job_id)
+                    self.db.calibration.complete_calibration_job(job_id)
                     logging.info(f"[RecalibrationWorker] Completed: {file_path}")
 
                 except Exception as e:
                     error_message = str(e)
-                    self.db.fail_calibration_job(job_id, error_message)
+                    self.db.calibration.fail_calibration_job(job_id, error_message)
                     logging.error(f"[RecalibrationWorker] Failed {file_path}: {error_message}")
 
                 finally:
@@ -122,94 +123,22 @@ class RecalibrationWorker(threading.Thread):
 
     def _recalibrate_file(self, job_id: int, file_path: str) -> None:
         """
-        Recalibrate a single file.
-
-        Loads raw tags from DB, applies calibration, writes updated tags to file.
+        Recalibrate a single file by delegating to workflow.
 
         Args:
-            job_id: Calibration job ID
+            job_id: Calibration job ID (for logging/tracking)
             file_path: Absolute path to audio file
         """
-        import json
+        logging.debug(f"[RecalibrationWorker] Processing job {job_id}: {file_path}")
 
-        from nomarr.tagging.aggregation import aggregate_mood_tiers, load_calibrations
-        from nomarr.tagging.writer import TagWriter
-
-        logging.debug(f"[RecalibrationWorker] Processing {file_path}")
-
-        # Load calibrations from models directory
-        # Use versioned files in dev mode (calibrate_heads=True), reference files otherwise
-        calibrations = load_calibrations(self.models_dir, calibrate_heads=self.calibrate_heads)
-
-        # Get file from library
-        library_file = self.db.get_library_file(file_path)
-        if not library_file:
-            raise FileNotFoundError(f"File not in library: {file_path}")
-
-        file_id = library_file["id"]
-
-        # Get all raw tags for this file from library_tags
-        cursor = self.db.conn.execute(
-            "SELECT tag_key, tag_value, tag_type FROM library_tags WHERE file_id = ?",
-            (file_id,),
+        # Delegate to workflow
+        recalibrate_file_workflow(
+            db=self.db,
+            file_path=file_path,
+            models_dir=self.models_dir,
+            namespace=self.namespace,
+            calibrate_heads=self.calibrate_heads,
         )
-
-        raw_tags = {}
-        for tag_key, tag_value, tag_type in cursor.fetchall():
-            # Only process namespace tags
-            if not tag_key.startswith(f"{self.namespace}:"):
-                continue
-
-            # Parse value based on type
-            if tag_type == "array":
-                raw_tags[tag_key] = json.loads(tag_value)
-            elif tag_type == "float":
-                raw_tags[tag_key] = float(tag_value)
-            elif tag_type == "int":
-                raw_tags[tag_key] = int(tag_value)
-            else:
-                raw_tags[tag_key] = tag_value
-
-        if not raw_tags:
-            logging.warning(f"[RecalibrationWorker] No raw tags found for {file_path}")
-            return
-
-        # Apply calibration and regenerate mood tiers
-        # Note: aggregate_mood_tiers mutates tags dict in-place, doesn't return anything
-        aggregate_mood_tiers(raw_tags, calibrations=calibrations)
-
-        # Only update tier and mood aggregation tags in the file
-        # (Keep all raw score tags unchanged)
-        tier_and_mood_keys = {
-            f"{self.namespace}:mood-strict",
-            f"{self.namespace}:mood-regular",
-            f"{self.namespace}:mood-loose",
-        }
-
-        # Add all *_tier tags
-        for key in raw_tags:
-            if key.endswith("_tier"):
-                tier_and_mood_keys.add(key)
-
-        # Filter to only tier/mood tags
-        tags_to_update = {k: v for k, v in raw_tags.items() if k in tier_and_mood_keys}
-
-        if not tags_to_update:
-            logging.debug(f"[RecalibrationWorker] No tier tags to update for {file_path}")
-            return
-
-        # Strip namespace prefix from keys for TagWriter
-        # TagWriter expects keys without namespace (it adds it internally)
-        tags_without_namespace = {}
-        for key, value in tags_to_update.items():
-            # Remove 'namespace:' prefix
-            if key.startswith(f"{self.namespace}:"):
-                clean_key = key[len(self.namespace) + 1 :]
-                tags_without_namespace[clean_key] = value
-
-        # Write updated tags to file using TagWriter (handles all formats)
-        writer = TagWriter(overwrite=True, namespace=self.namespace)
-        writer.write(file_path, tags_without_namespace)
 
     def _heartbeat(self) -> None:
         """Update heartbeat timestamp."""

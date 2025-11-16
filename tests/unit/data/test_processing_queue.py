@@ -8,7 +8,7 @@ import tempfile
 import pytest
 
 from nomarr.persistence.db import Database
-from nomarr.persistence.queue import Job, ProcessingQueue
+from nomarr.services.queue import Job, ProcessingQueue
 
 
 @pytest.fixture
@@ -120,11 +120,11 @@ class TestProcessingQueueGet:
 
 
 class TestProcessingQueueList:
-    """Test ProcessingQueue.list() method."""
+    """Test ProcessingQueue.list_jobs() method."""
 
     def test_list_empty_queue(self, queue):
         """Test listing jobs from empty queue."""
-        jobs, total = queue.list()
+        jobs, total = queue.list_jobs()
         assert jobs == []
         assert total == 0
 
@@ -134,7 +134,7 @@ class TestProcessingQueueList:
         queue.add("/music/test2.mp3")
         queue.add("/music/test3.mp3")
 
-        jobs, total = queue.list(limit=10)
+        jobs, total = queue.list_jobs(limit=10)
         assert len(jobs) == 3
         assert total == 3
 
@@ -143,7 +143,7 @@ class TestProcessingQueueList:
         for i in range(5):
             queue.add(f"/music/test{i}.mp3")
 
-        jobs, total = queue.list(limit=2)
+        jobs, total = queue.list_jobs(limit=2)
         assert len(jobs) == 2
         assert total == 5
 
@@ -153,7 +153,7 @@ class TestProcessingQueueList:
         for i in range(5):
             ids.append(queue.add(f"/music/test{i}.mp3"))
 
-        jobs, total = queue.list(limit=10, offset=2)
+        jobs, total = queue.list_jobs(limit=10, offset=2)
         assert len(jobs) == 3
         assert total == 5
 
@@ -167,13 +167,13 @@ class TestProcessingQueueList:
         queue.mark_error(id2, "Test error")
 
         # List pending only
-        pending_jobs, pending_total = queue.list(status="pending")
+        pending_jobs, pending_total = queue.list_jobs(status="pending")
         assert len(pending_jobs) == 1
         assert pending_total == 1
         assert pending_jobs[0].id == id3
 
         # List done only
-        done_jobs, done_total = queue.list(status="done")
+        done_jobs, done_total = queue.list_jobs(status="done")
         assert len(done_jobs) == 1
         assert done_total == 1
         assert done_jobs[0].id == id1

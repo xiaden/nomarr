@@ -14,7 +14,7 @@ import mutagen
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-import nomarr.app as app
+from nomarr.app import application
 from nomarr.interfaces.api.auth import (
     create_session,
     get_admin_password_hash,
@@ -80,7 +80,7 @@ async def login(request: LoginRequest):
     The session token should be used for all subsequent /web/api/* requests.
     """
     try:
-        password_hash = get_admin_password_hash(app.db)
+        password_hash = get_admin_password_hash()
     except RuntimeError as e:
         logging.error(f"[Web UI] Admin password not initialized: {e}")
         raise HTTPException(status_code=500, detail="Admin authentication not configured") from None
@@ -151,23 +151,27 @@ def get_state():
     """
     from types import SimpleNamespace
 
-    import nomarr.app as app
+    from nomarr.app import application
+
+    # Get config via ConfigService
+    config_service = application.get_service("config")
+    config = config_service.get_config()
 
     return SimpleNamespace(
-        # Direct module-level references (singletons)
-        db=app.db,
-        queue=app.queue,
-        cfg=app.cfg,
-        # Application-owned references (via app.application)
-        queue_service=app.application.services.get("queue"),
-        worker_service=app.application.services.get("worker"),
-        library_service=app.application.services.get("library"),
-        key_service=app.application.services.get("keys"),
-        processor_coord=app.application.coordinator,
-        worker_pool=app.application.workers,
-        event_broker=app.application.event_broker,
-        health_monitor=app.application.health_monitor,
-        library_scan_worker=app.application.library_scan_worker,
+        # Direct references from application
+        db=application.db,
+        queue=application.queue,
+        cfg=config,
+        # Application-owned references (via application)
+        queue_service=application.services.get("queue"),
+        worker_service=application.services.get("worker"),
+        library_service=application.services.get("library"),
+        key_service=application.services.get("keys"),
+        processor_coord=application.coordinator,
+        worker_pool=application.workers,
+        event_broker=application.event_broker,
+        health_monitor=application.health_monitor,
+        library_scan_worker=application.library_scan_worker,
     )
 
 
@@ -264,7 +268,7 @@ async def web_list(limit: int = 50, offset: int = 0, status: str | None = None):
     s = get_state()
 
     # JobQueue.list() returns tuple: (list[Job], total_count)
-    jobs_list, total = s.queue.list(limit=limit, offset=offset, status=status)
+    jobs_list, total = s.queue.list_jobs(limit=limit, offset=offset, status=status)
 
     return {
         "jobs": [job.to_dict() for job in jobs_list],
@@ -414,7 +418,18 @@ async def web_admin_cache_refresh():
     from nomarr.ml.cache import warmup_predictor_cache
 
     try:
-        warmup_predictor_cache()
+        config_service = application.services["config"]
+        cfg = config_service.get_config()
+
+        models_dir = str(cfg["models_dir"])
+        cache_idle_timeout = int(cfg.get("cache_idle_timeout", 300))
+        cache_auto_evict = bool(cfg.get("cache_auto_evict", True))
+
+        warmup_predictor_cache(
+            models_dir=models_dir,
+            cache_idle_timeout=cache_idle_timeout,
+            cache_auto_evict=cache_auto_evict,
+        )
         return {"status": "ok", "message": "Model cache refreshed successfully"}
     except Exception as e:
         logging.exception("[Web API] Cache refresh failed")
@@ -699,8 +714,8 @@ async def web_navidrome_playlist_preview(request: dict):
 
         preview_limit = request.get("preview_limit", 10)
 
-        db_path = app.DB_PATH
-        namespace = app.cfg["namespace"]
+        db_path = application.db_path
+        namespace = application.namespace
 
         try:
             result = preview_playlist_query(db_path, query, namespace, preview_limit)
@@ -730,8 +745,8 @@ async def web_navidrome_playlist_generate(request: dict):
         limit = request.get("limit")
         sort = request.get("sort")
 
-        db_path = app.DB_PATH
-        namespace = app.cfg["namespace"]
+        db_path = application.db_path
+        namespace = application.namespace
 
         try:
             nsp_content = generate_nsp_playlist(
@@ -792,10 +807,11 @@ async def web_navidrome_templates_generate():
 async def web_analytics_tag_frequencies(limit: int = 50):
     """Get tag frequency statistics."""
     try:
-        from nomarr.services.analytics import get_tag_frequencies
+        from nomarr.services.analytics import AnalyticsService
 
-        namespace = app.cfg["namespace"]
-        result = get_tag_frequencies(app.db, namespace=namespace, limit=limit)
+        namespace = application.namespace
+        analytics_service = AnalyticsService(application.db)
+        result = analytics_service.get_tag_frequencies(namespace=namespace, limit=limit)
 
         # Transform to format expected by frontend
         # Backend returns: {"nom_tags": [(tag, count), ...], ...} (tags without namespace prefix)
@@ -817,10 +833,11 @@ async def web_analytics_tag_frequencies(limit: int = 50):
 async def web_analytics_mood_distribution():
     """Get mood tag distribution."""
     try:
-        from nomarr.services.analytics import get_mood_distribution
+        from nomarr.services.analytics import AnalyticsService
 
-        namespace = app.cfg["namespace"]
-        result = get_mood_distribution(app.db, namespace=namespace)
+        namespace = application.namespace
+        analytics_service = AnalyticsService(application.db)
+        result = analytics_service.get_mood_distribution(namespace=namespace)
 
         # Transform to format expected by frontend
         # Backend returns: {"top_moods": [(mood, count), ...], ...}
@@ -851,10 +868,11 @@ async def web_analytics_tag_correlations(top_n: int = 20):
     Returns mood-to-mood, mood-to-genre, and mood-to-tier correlations.
     """
     try:
-        from nomarr.services.analytics import get_tag_correlation_matrix
+        from nomarr.services.analytics import AnalyticsService
 
-        namespace = app.cfg["namespace"]
-        result = get_tag_correlation_matrix(app.db, namespace=namespace, top_n=top_n)
+        namespace = application.namespace
+        analytics_service = AnalyticsService(application.db)
+        result = analytics_service.get_tag_correlation_matrix(namespace=namespace, top_n=top_n)
         return result
 
     except Exception as e:
@@ -869,12 +887,13 @@ async def web_analytics_tag_co_occurrences(tag: str, limit: int = 10):
     Shows which moods appear together and what genres/artists correlate with a mood.
     """
     try:
-        from nomarr.services.analytics import get_mood_value_co_occurrences
+        from nomarr.services.analytics import AnalyticsService
 
-        namespace = app.cfg["namespace"]
+        namespace = application.namespace
+        analytics_service = AnalyticsService(application.db)
 
         # Mood value co-occurrence analysis
-        result = get_mood_value_co_occurrences(app.db, mood_value=tag, namespace=namespace, limit=limit)
+        result = analytics_service.get_mood_value_co_occurrences(mood_value=tag, namespace=namespace, limit=limit)
 
         # Transform to frontend format
         co_occurrences = [
@@ -908,7 +927,7 @@ async def web_library_stats():
     """Get library statistics (total files, artists, albums, duration)."""
     try:
         # Get basic library stats from library_files table
-        cursor = app.db.conn.execute(
+        cursor = application.db.conn.execute(
             """
             SELECT
                 COUNT(*) as total_files,
@@ -944,12 +963,12 @@ async def apply_calibration_to_library():
     This updates tier and mood tags by applying calibration to existing raw scores.
     """
     try:
-        recal_service = app.application.services.get("recalibration")
+        recal_service = application.services.get("recalibration")
         if not recal_service:
             raise HTTPException(status_code=503, detail="Recalibration service not available")
 
         # Get all library file paths
-        cursor = app.db.conn.execute("SELECT file_path FROM library_files")
+        cursor = application.db.conn.execute("SELECT file_path FROM library_files")
         paths = [row[0] for row in cursor.fetchall()]
 
         if not paths:
@@ -972,7 +991,7 @@ async def apply_calibration_to_library():
 async def get_calibration_status():
     """Get current recalibration queue status."""
     try:
-        recal_service = app.application.services.get("recalibration")
+        recal_service = application.services.get("recalibration")
         if not recal_service:
             raise HTTPException(status_code=503, detail="Recalibration service not available")
 
@@ -995,7 +1014,7 @@ async def get_calibration_status():
 async def clear_calibration_queue():
     """Clear all pending and completed recalibration jobs."""
     try:
-        recal_service = app.application.services.get("recalibration")
+        recal_service = application.services.get("recalibration")
         if not recal_service:
             raise HTTPException(status_code=503, detail="Recalibration service not available")
 
@@ -1024,11 +1043,13 @@ class ConfigUpdateRequest(BaseModel):
 def get_config(_session: dict = Depends(verify_session)):
     """Get current configuration values (user-editable subset)."""
     try:
-        config = app.cfg
+        config_service = application.get_service("config")
+
+        config = config_service.get_config()
 
         # Get user-editable config values
         # Some from DB meta, some from config dict
-        worker_enabled = app.db.get_meta("worker_enabled")
+        worker_enabled = application.db.meta.get("worker_enabled")
         if worker_enabled is None:
             worker_enabled = str(config.get("worker_enabled", True)).lower()
 
@@ -1097,11 +1118,11 @@ def update_config(request: ConfigUpdateRequest, _session: dict = Depends(verify_
 
         # Store in DB meta (prefixed with "config_")
         # The value will be parsed to correct type when loaded by compose()
-        app.db.set_meta(f"config_{key}", value)
+        application.db.meta.set(f"config_{key}", value)
 
         # Special handling for worker_enabled - also update runtime state
         if key == "worker_enabled":
-            app.db.set_meta("worker_enabled", value)
+            application.db.meta.set("worker_enabled", value)
 
         return {
             "success": True,
@@ -1236,13 +1257,13 @@ async def generate_calibration(request: CalibrationRequest):
             None,
             generate_minmax_calibration,
             s.db,
-            app.cfg.get("namespace", "nom"),
+            application.namespace,
         )
 
         # Optionally save sidecars
         save_result = None
         if request.save_sidecars:
-            models_dir = app.cfg.get("models_dir", "models")
+            models_dir = application.models_dir
             save_result = await loop.run_in_executor(
                 None,
                 save_calibration_sidecars,

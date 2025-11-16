@@ -1,7 +1,53 @@
 """
-High-level audio file processing orchestration.
+High-level audio file processing workflow.
 
-Coordinates model inference, tag aggregation, and file writing.
+This is a PURE WORKFLOW module that orchestrates the complete audio tagging pipeline:
+- Model discovery and backbone grouping
+- Embedding computation per backbone
+- Head prediction execution
+- Score pooling and decision logic
+- Mood tier aggregation (including regression-based tiers)
+- Calibration loading and application
+- Tag writing to audio files
+- Optional library database updates
+
+ARCHITECTURE:
+- This workflow is domain logic that coordinates ML, tagging, and persistence layers.
+- It does NOT import or use the DI container, services, or application object.
+- Callers (typically services) must provide all dependencies:
+  - File path
+  - ProcessorConfig with all processing parameters
+  - Optional Database instance for persistence updates
+
+EXPECTED DEPENDENCIES:
+- `config: ProcessorConfig` - Typed configuration with:
+  - models_dir: str
+  - min_duration_s, allow_short: float, bool
+  - batch_size: int
+  - overwrite_tags: bool
+  - namespace: str
+  - version_tag_key, tagger_version: str
+  - calibrate_heads: bool
+
+- `db: Database | None` - Optional database instance for library updates
+  - If provided, must support: db.library.*, db.tags.*, db.conn
+  - Used to update library_files and library_tags after successful tagging
+
+USAGE:
+    from nomarr.workflows.process_file import process_file_workflow
+    from nomarr.helpers.dataclasses import ProcessorConfig
+
+    config = ProcessorConfig(
+        models_dir="/app/models",
+        namespace="nom",
+        # ... other config values
+    )
+
+    result = process_file(
+        path="/path/to/audio.mp3",
+        config=config,
+        db=database_instance  # optional
+    )
 """
 
 from __future__ import annotations
@@ -19,7 +65,6 @@ from nomarr.ml.inference import compute_embeddings_for_backbone, make_head_only_
 from nomarr.ml.models.discovery import HeadInfo, discover_heads
 from nomarr.ml.models.embed import pool_scores
 from nomarr.ml.models.heads import run_head_decision
-from nomarr.persistence.db import Database
 from nomarr.tagging.aggregation import (
     add_regression_mood_tiers,
     aggregate_mood_tiers,
@@ -32,49 +77,84 @@ from nomarr.tagging.writer import TagWriter
 ESSENTIA_VERSION = backend_essentia.get_version()
 
 if TYPE_CHECKING:
-    from nomarr.workflows.processor_config import ProcessorConfig
+    from nomarr.helpers.dataclasses import ProcessorConfig
+    from nomarr.persistence.db import Database
 
 
-def process_file(
+def process_file_workflow(
     path: str,
     config: ProcessorConfig,
     db: Database | None = None,
 ) -> dict[str, Any]:
     """
-    Process an audio file: compute embeddings, run predictions, aggregate tags, write to file.
+    Process an audio file through the complete tagging pipeline.
 
-    Responsibilities (what this function DOES):
+    This is the main workflow entrypoint for audio file processing. It is a pure
+    function that orchestrates the entire tagging pipeline without any hidden
+    dependencies or side effects beyond file I/O and optional database updates.
+
+    WORKFLOW STEPS:
+    1. Discover head models and group by backbone
+    2. For each backbone group:
+       a. Compute embeddings (reused across heads)
+       b. Run all heads for that backbone
+       c. Release embeddings to minimize memory
+    3. Aggregate mood tiers (including regression-based tiers)
+    4. Load and apply calibrations if available
+    5. Write tags to audio file
+    6. Optionally update library database if db provided
+
+    PURE WORKFLOW GUARANTEES:
+    - No global state access (except ESSENTIA_VERSION constant)
+    - No DI container or service imports
+    - No config loading (caller provides ProcessorConfig)
+    - All dependencies explicit in parameters
+    - Callable from any context (services, tests, CLI)
+
+    RESPONSIBILITIES (what this function DOES):
     - Discover and group models by backbone
     - Compute embeddings for each backbone
     - Run head predictions on embeddings
-    - Aggregate mood tiers
-    - Write tags to audio file
+    - Pool segment predictions to file-level scores
+    - Aggregate mood tiers with calibrations
+    - Write tags to audio file via TagWriter
+    - Optionally update library database via db parameter
 
-    Responsibilities (what this function DOES NOT do):
+    RESPONSIBILITIES (what this function DOES NOT do):
     - File validation (caller must ensure file exists/readable)
-    - Skip logic (caller decides whether to call this)
-    - Cache management (handled by cache module)
-    - Database updates (caller's responsibility or optional db parameter)
-    - Config loading (caller injects typed config)
+    - Skip/force logic (caller decides whether to call this)
+    - Cache management internals (handled by cache module)
+    - Config loading or DI (caller injects typed config)
+    - Error recovery strategies (caller handles retries)
 
     Args:
-        path: Path to audio file (must exist and be readable)
-        config: Typed configuration for processing pipeline
-        db: Optional Database instance for updating library records
+        path: Absolute path to audio file (must exist and be readable)
+        config: Typed configuration for processing pipeline (ProcessorConfig)
+                Must include: models_dir, namespace, batch_size, tagger_version,
+                min_duration_s, allow_short, overwrite_tags, version_tag_key,
+                calibrate_heads
+        db: Optional Database instance for updating library_files and library_tags
+            after successful processing. If None, library updates are skipped.
 
     Returns:
         Dict with processing results:
         - file: str - path to processed file
-        - elapsed: float - processing time in seconds
+        - elapsed: float - total processing time in seconds
         - duration: float - audio duration in seconds
         - heads_processed: int - number of heads that succeeded
         - tags_written: int - number of tags written to file
-        - head_results: dict - per-head processing outcomes
-        - mood_aggregations: dict | None - mood tier counts if written
-        - tags: dict - all tags that were written
+        - head_results: dict[str, dict] - per-head processing outcomes
+        - mood_aggregations: dict[str, int] | None - mood tier counts if written
+        - tags: dict[str, Any] - all tags that were written to file
 
     Raises:
-        RuntimeError: If no heads found, or all heads fail
+        RuntimeError: If no heads found in models_dir, or all heads fail processing
+
+    Example:
+        >>> from nomarr.helpers.dataclasses import ProcessorConfig
+        >>> config = ProcessorConfig(models_dir="/app/models", namespace="nom", ...)
+        >>> result = process_file("/music/song.mp3", config, db=my_database)
+        >>> print(f"Processed {result['file']} in {result['elapsed']}s")
     """
     from nomarr.ml.cache import check_and_evict_idle_cache, touch_cache
 
@@ -292,7 +372,7 @@ def process_file(
     # Update library database with the newly written tags (if db provided)
     if db is not None:
         try:
-            from nomarr.workflows.library_scanner import update_library_file_from_tags
+            from nomarr.workflows.scan_library import update_library_file_from_tags
 
             # Pass tagger_version so library scanner marks file as tagged
             update_library_file_from_tags(db, path, ns, tagged_version=tagger_version)

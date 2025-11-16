@@ -1,8 +1,15 @@
 """
-Configuration dataclass for audio processing pipeline.
+Shared dataclasses used across multiple layers.
 
-This separates configuration from the core processing logic,
-enabling dependency injection and clearer testing.
+Rules:
+- Only put a dataclass here if it is imported from more than one top-level package
+  (e.g. services + workflows, workflows + interfaces, etc.).
+- Dataclasses here must be pure: no methods with behavior, no I/O, no config loading.
+- Only import standard library modules (e.g. dataclasses, typing).
+- Do NOT import from nomarr.services, nomarr.workflows, nomarr.ml, nomarr.tagging,
+  nomarr.persistence, or nomarr.interfaces.
+- If a dataclass is only imported from a single module or package, keep it local
+  to that layer instead of moving it here.
 """
 
 from __future__ import annotations

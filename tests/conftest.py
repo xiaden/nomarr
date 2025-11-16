@@ -18,6 +18,11 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
+# Add project root to path so tests can import nomarr package
+project_root = Path(__file__).parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
 # Set test environment variables before imports
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
@@ -371,8 +376,7 @@ def real_queue_service(test_db):
     This uses a real Database and ProcessingQueue - not mocked.
     Use for service layer and integration tests.
     """
-    from nomarr.persistence.queue import ProcessingQueue
-    from nomarr.services.queue import QueueService
+    from nomarr.services.queue import ProcessingQueue, QueueService
 
     queue = ProcessingQueue(test_db)
     return QueueService(queue)
@@ -402,7 +406,7 @@ def real_library_service(test_db, temp_music_library):
 @pytest.fixture
 def real_worker_service(test_db):
     """Provide a real WorkerService instance for testing."""
-    from nomarr.persistence.queue import ProcessingQueue
+    from nomarr.services.queue import ProcessingQueue
     from nomarr.services.worker import WorkerService
 
     queue = ProcessingQueue(test_db)
@@ -442,13 +446,13 @@ def mock_key_service(test_db):
 
 @pytest.fixture
 def mock_job_queue(test_db):
-    """Provide a JobQueue instance with real DB.
+    """Provide a ProcessingQueue instance with real DB.
 
     This is a real queue for integration testing - uses actual database operations.
     """
-    from nomarr.persistence.queue import JobQueue
+    from nomarr.services.queue import ProcessingQueue
 
-    return JobQueue(test_db)
+    return ProcessingQueue(test_db)
 
 
 # === AUTH/SECURITY FIXTURES ===
@@ -508,7 +512,6 @@ def test_client(test_application):
     Use for testing HTTP endpoints without running actual server.
     """
     from fastapi.testclient import TestClient
-
     from nomarr.interfaces.api.app import app as fastapi_app
 
     # Note: test_application must be started before creating client

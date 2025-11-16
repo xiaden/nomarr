@@ -8,7 +8,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 
-import nomarr.app as app
+from nomarr.app import application
 from nomarr.interfaces.api.auth import verify_session
 
 router = APIRouter(prefix="/web/api/library", tags=["library"])
@@ -22,11 +22,11 @@ async def start_library_scan(_session: dict = Depends(verify_session)):
     Returns:
         Dict with scan_id and status
     """
-    if not app.application.library_scan_worker:
+    if not application.library_scan_worker:
         raise HTTPException(status_code=503, detail="Library scanner not configured (no library_path)")
 
     try:
-        scan_id = app.application.library_scan_worker.request_scan()
+        scan_id = application.library_scan_worker.request_scan()
         return {
             "scan_id": scan_id,
             "status": "queued",
@@ -45,11 +45,11 @@ async def cancel_library_scan(_session: dict = Depends(verify_session)):
     Returns:
         Dict with success status
     """
-    if not app.application.library_scan_worker:
+    if not application.library_scan_worker:
         raise HTTPException(status_code=503, detail="Library scanner not configured")
 
     try:
-        app.application.library_scan_worker.cancel_scan()
+        application.library_scan_worker.cancel_scan()
         return {"success": True, "message": "Scan cancellation requested"}
     except Exception as e:
         logging.error(f"[API] Failed to cancel library scan: {e}")
@@ -64,7 +64,7 @@ async def get_library_scan_status(_session: dict = Depends(verify_session)):
     Returns:
         Dict with: configured, enabled, running, library_path, current_scan_id, current_progress
     """
-    if not app.application.library_scan_worker:
+    if not application.library_scan_worker:
         return {
             "configured": False,
             "enabled": False,
@@ -75,9 +75,9 @@ async def get_library_scan_status(_session: dict = Depends(verify_session)):
         }
 
     try:
-        status = app.application.library_scan_worker.get_status()
+        status = application.library_scan_worker.get_status()
         status["configured"] = True
-        status["library_path"] = app.LIBRARY_PATH
+        status["library_path"] = application.library_path
         return status
     except Exception as e:
         logging.error(f"[API] Failed to get library scan status: {e}")
@@ -96,7 +96,7 @@ async def get_library_scan_history(limit: int = 10, _session: dict = Depends(ver
         List of scan records
     """
     try:
-        scans = app.db.list_library_scans(limit=limit)
+        scans = application.db.library.list_library_scans(limit=limit)
         return {"scans": scans}
     except Exception as e:
         logging.error(f"[API] Failed to get library scan history: {e}")
@@ -111,11 +111,11 @@ async def pause_library_scanner(_session: dict = Depends(verify_session)):
     Returns:
         Dict with success status
     """
-    if not app.application.library_scan_worker:
+    if not application.library_scan_worker:
         raise HTTPException(status_code=503, detail="Library scanner not configured")
 
     try:
-        app.application.library_scan_worker.pause()
+        application.library_scan_worker.pause()
         return {"success": True, "message": "Library scanner paused"}
     except Exception as e:
         logging.error(f"[API] Failed to pause library scanner: {e}")
@@ -130,11 +130,11 @@ async def resume_library_scanner(_session: dict = Depends(verify_session)):
     Returns:
         Dict with success status
     """
-    if not app.application.library_scan_worker:
+    if not application.library_scan_worker:
         raise HTTPException(status_code=503, detail="Library scanner not configured")
 
     try:
-        app.application.library_scan_worker.resume()
+        application.library_scan_worker.resume()
         return {"success": True, "message": "Library scanner resumed"}
     except Exception as e:
         logging.error(f"[API] Failed to resume library scanner: {e}")
@@ -150,7 +150,7 @@ async def get_library_stats(_session: dict = Depends(verify_session)):
         Dict with library statistics
     """
     try:
-        stats = app.db.get_library_stats()
+        stats = application.db.library.get_library_stats()
         return stats
     except Exception as e:
         logging.error(f"[API] Failed to get library stats: {e}")
@@ -169,18 +169,18 @@ async def clear_library_data(_session: dict = Depends(verify_session)):
     Returns:
         Dict with success status
     """
-    if not app.application.library_scan_worker:
+    if not application.library_scan_worker:
         raise HTTPException(status_code=503, detail="Library scanner not configured")
 
     # Check if a scan is currently running
-    worker_status = app.application.library_scan_worker.get_status()
+    worker_status = application.library_scan_worker.get_status()
     if worker_status.get("current_scan_id") is not None:
         raise HTTPException(
             status_code=409, detail="Cannot clear library while a scan is running. Please cancel the scan first."
         )
 
     try:
-        app.db.clear_library_data()
+        application.db.library.clear_library_data()
         logging.info("[API] Library data cleared")
         return {"success": True, "message": "Library data cleared successfully"}
     except Exception as e:

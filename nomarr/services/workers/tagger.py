@@ -15,10 +15,10 @@ from __future__ import annotations
 from typing import Any
 
 from nomarr.persistence.db import Database
-from nomarr.persistence.queue import ProcessingQueue
 from nomarr.services.config import ConfigService
+from nomarr.services.queue import ProcessingQueue
 from nomarr.services.workers.base import BaseWorker
-from nomarr.workflows.processor import process_file
+from nomarr.workflows.process_file import process_file_workflow
 
 
 def create_tagger_worker(
@@ -48,7 +48,7 @@ def create_tagger_worker(
         config_service = ConfigService()
         config = config_service.make_processor_config()
         # Note: force parameter is ignored - config comes from DB/YAML
-        return process_file(path, config, db)
+        return process_file_workflow(path, config, db)
 
     return BaseWorker(
         name="TaggerWorker",

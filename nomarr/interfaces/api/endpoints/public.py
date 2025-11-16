@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
-import nomarr.app as app
+from nomarr.app import application
 from nomarr.interfaces.api.auth import verify_key
 from nomarr.interfaces.api.models import TagRequest
 
@@ -19,24 +19,26 @@ router = APIRouter(prefix="/api/v1", tags=["public"])
 #  Dependency: get app globals from parent scope
 # ----------------------------------------------------------------------
 def get_globals():
-    """Get global instances (db, queue, services, etc.) from app.application."""
+    """Get global instances (db, queue, services, etc.) from application."""
+    config_service = application.get_service("config")
+    config = config_service.get_config()
 
     return {
-        "db": app.db,
-        "queue": app.queue,
-        "queue_service": app.application.services["queue"],
-        "worker_service": app.application.services["worker"],
-        "worker_pool": app.application.workers,
-        "processor_coord": app.application.coordinator,
-        "BLOCKING_MODE": app.BLOCKING_MODE,
-        "BLOCKING_TIMEOUT": app.BLOCKING_TIMEOUT,
-        "WORKER_ENABLED_DEFAULT": app.WORKER_ENABLED_DEFAULT,
-        "WORKER_COUNT": app.WORKER_COUNT,
-        "WORKER_POLL_INTERVAL": app.WORKER_POLL_INTERVAL,
-        "cfg": app.cfg,
-        "DB_PATH": app.DB_PATH,
-        "API_HOST": app.API_HOST,
-        "API_PORT": app.API_PORT,
+        "db": application.db,
+        "queue": application.queue,
+        "queue_service": application.get_service("queue"),
+        "worker_service": application.get_service("worker"),
+        "worker_pool": application.workers,
+        "processor_coord": application.coordinator,
+        "BLOCKING_MODE": application.blocking_mode,
+        "BLOCKING_TIMEOUT": application.blocking_timeout,
+        "WORKER_ENABLED_DEFAULT": application.worker_enabled_default,
+        "WORKER_COUNT": application.worker_count,
+        "WORKER_POLL_INTERVAL": application.worker_poll_interval,
+        "cfg": config,
+        "DB_PATH": application.db_path,
+        "API_HOST": application.api_host,
+        "API_PORT": application.api_port,
     }
 
 

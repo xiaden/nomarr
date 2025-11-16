@@ -1,113 +1,149 @@
 """
-Global state management for the application.
-Centralized singleton instances for configuration, database, and services.
+Application composition root and dependency injection container.
+
+This module defines the Application class, which serves as the strict DI container
+and lifecycle manager for the Nomarr application. All services, workers, and infrastructure
+are owned and initialized by the Application instance.
+
+Architecture:
+- Application owns: config, db, queue, services, workers, coordinator, event broker, health monitor
+- All configuration values are instance attributes (no module-level config globals)
+- Services are registered via register_service() during start()
+- Access services via: application.get_service("name") or application.services["name"]
+- Do NOT construct services directly outside of this class
+
+The singleton instance is available as `application` at module level.
 """
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
-from nomarr.config import compose
-from nomarr.persistence.db import Database
-from nomarr.persistence.queue import ProcessingQueue
+from nomarr.ml.cache import warmup_predictor_cache
 
 if TYPE_CHECKING:
-    from nomarr.interfaces.api.coordinator import ProcessingCoordinator
-    from nomarr.services.keys import KeyManagementService
-    from nomarr.services.library import LibraryService
-    from nomarr.services.processing import ProcessingService
-    from nomarr.services.queue import QueueService
-    from nomarr.services.worker import WorkerService
-
-# ----------------------------------------------------------------------
-#  Configuration
-# ----------------------------------------------------------------------
-cfg = compose({})
-
-API_HOST: str = str(cfg["host"])
-API_PORT: int = int(cfg["port"])
-DB_PATH: str = str(cfg["db_path"])
-WORKER_ENABLED_DEFAULT: bool = bool(cfg["worker_enabled"])
-
-# Blocking / timeout
-api_cfg = cfg.get("api", {})
-worker_cfg = cfg.get("worker", {})
-
-BLOCKING_MODE: bool = bool(api_cfg.get("blocking_mode", True))
-if "blocking_timeout" in api_cfg:
-    BLOCKING_TIMEOUT = int(api_cfg.get("blocking_timeout"))
-else:
-    BLOCKING_TIMEOUT = int(worker_cfg.get("blocking_timeout", 3600))
-
-# Poll interval
-if "poll_interval" in worker_cfg:
-    WORKER_POLL_INTERVAL = int(worker_cfg.get("poll_interval", 2))
-elif "worker_poll_interval" in api_cfg:
-    WORKER_POLL_INTERVAL = int(api_cfg.get("worker_poll_interval", 2))
-else:
-    WORKER_POLL_INTERVAL = 2
-
-# Worker count
-WORKER_COUNT: int = max(1, min(8, int(cfg.get("worker_count", 1))))
-
-# Library scanner
-LIBRARY_PATH: str | None = cfg.get("library_path")
-LIBRARY_SCAN_POLL_INTERVAL: int = int(cfg.get("library_scan_poll_interval", 2))
-
-# ----------------------------------------------------------------------
-#  Global state instances
-# ----------------------------------------------------------------------
-db = Database(DB_PATH)
-queue = ProcessingQueue(db)
-
-# Legacy module-level references (kept for backward compatibility)
-# These are replaced by Application class - use app.application.services instead
-queue_service: QueueService | None = None
-library_service: LibraryService | None = None
-worker_service: WorkerService | None = None
-key_service: KeyManagementService | None = None  # Manages API keys, passwords, sessions
-
-# Legacy auth references (kept for backward compatibility)
-# Use app.application.api_key and app.application.admin_password instead
-API_KEY: str | None = None
-ADMIN_PASSWORD_PLAINTEXT: str | None = None
-
-# Legacy infrastructure references (kept for backward compatibility)
-# Use app.application.coordinator, app.application.workers, etc. instead
-processor_coord: ProcessingCoordinator | None = None
-processing_service: ProcessingService | None = None
-worker_pool: list = []
-library_scan_worker = None  # type: ignore
-event_broker = None  # type: ignore
-health_monitor = None  # type: ignore
+    from nomarr.interfaces.api.event_broker import StateBroker
+from nomarr.persistence.db import Database
+from nomarr.services.config import ConfigService
+from nomarr.services.coordinator import ProcessingCoordinator
+from nomarr.services.health_monitor import HealthMonitor
+from nomarr.services.keys import KeyManagementService
+from nomarr.services.library import LibraryService
+from nomarr.services.processing import ProcessingService
+from nomarr.services.queue import ProcessingQueue, QueueService
+from nomarr.services.recalibration import RecalibrationService
+from nomarr.services.worker import WorkerService
+from nomarr.services.workers.recalibration import RecalibrationWorker
+from nomarr.services.workers.scanner import LibraryScanWorker
 
 
 # ----------------------------------------------------------------------
-#  Application Class
+#  Application Class - Composition Root & DI Container
 # ----------------------------------------------------------------------
 class Application:
     """
-    Main application class - owns workers, services, and lifecycle management.
+    Application composition root and dependency injection container.
 
-    Initialized by start.py BEFORE the API server starts (container startup).
-    The Application starts first, then starts the API server as one of its interfaces.
-    Application lifecycle = container lifecycle (start.py manages the flow).
+    This class is the single source of truth for all application dependencies:
+    - Configuration values (extracted from ConfigService)
+    - Database and queue instances
+    - All services (keys, queue, worker, library, processing, recalibration, etc.)
+    - Workers and infrastructure (coordinator, health monitor, event broker)
+    - Lifecycle management (start/stop)
+
+    Architecture:
+    - Application owns all dependencies as instance attributes
+    - All config-derived values are computed in __init__
+    - Services are registered via register_service() during start()
+    - Access services via: application.get_service("name") or application.services["name"]
+    - Do NOT construct services directly outside of this class
+
+    Configuration Access:
+    - Raw config is PRIVATE (_config) and used only internally in Application
+    - External modules MUST NOT access application._config directly
+    - To access config outside app.py, use: application.get_service("config").get_config()
+    - Prefer using specific instance attributes (api_host, worker_count, etc.) over raw config
+
+    The singleton instance is available as `application` at module level.
     """
 
     def __init__(self):
-        """Initialize application with empty state. Call start() to initialize services."""
-        # Services (business logic layer)
+        """
+        Initialize application with core dependencies.
+
+        Loads configuration and creates database and queue immediately.
+        Services are initialized later during start().
+        """
+        # Load configuration (private - external access via ConfigService)
+        config_service = ConfigService()
+        self._config = config_service.get_config()
+
+        # Extract config-derived values as instance attributes
+        self.api_host: str = str(self._config["host"])
+        self.api_port: int = int(self._config["port"])
+        self.db_path: str = str(self._config["db_path"])
+        self.worker_enabled_default: bool = bool(self._config["worker_enabled"])
+
+        # Extract API and worker config sections
+        api_cfg = self._config.get("api", {})
+        worker_cfg = self._config.get("worker", {})
+
+        # Blocking / timeout
+        self.blocking_mode: bool = bool(api_cfg.get("blocking_mode", True))
+        if "blocking_timeout" in api_cfg:
+            self.blocking_timeout: int = int(api_cfg.get("blocking_timeout"))
+        else:
+            self.blocking_timeout = int(worker_cfg.get("blocking_timeout", 3600))
+
+        # Poll interval
+        if "poll_interval" in worker_cfg:
+            self.worker_poll_interval: int = int(worker_cfg.get("poll_interval", 2))
+        elif "worker_poll_interval" in api_cfg:
+            self.worker_poll_interval = int(api_cfg.get("worker_poll_interval", 2))
+        else:
+            self.worker_poll_interval = 2
+
+        # Worker count
+        self.worker_count: int = max(1, min(8, int(self._config.get("worker_count", 1))))
+
+        # Library scanner
+        self.library_path: str | None = self._config.get("library_path")
+        self.library_scan_poll_interval: int = int(self._config.get("library_scan_poll_interval", 2))
+
+        # ML / model settings
+        self.models_dir: str = str(self._config.get("models_dir", "/app/models"))
+        self.namespace: str = str(self._config.get("namespace", "essentia"))
+        self.cache_idle_timeout: int = int(self._config.get("cache_idle_timeout", 300))
+        self.cache_auto_evict: bool = bool(self._config.get("cache_auto_evict", True))
+        self.calibrate_heads: bool = bool(self._config.get("calibrate_heads", False))
+
+        # Library settings
+        self.library_auto_tag: bool = bool(self._config.get("library_auto_tag", False))
+        self.library_ignore_patterns: str = str(self._config.get("library_ignore_patterns", ""))
+
+        # Admin password
+        self.admin_password_config: str | None = self._config.get("admin_password")
+
+        # Core dependencies (owned by Application)
+        self.db = Database(self.db_path)
+        self.queue = ProcessingQueue(self.db)
+
+        # Config service for registration
+        self._config_service = config_service
+
+        # Services container (DI registry)
         self.services: dict[str, Any] = {}
 
         # Workers and processing
         self.coordinator: ProcessingCoordinator | None = None
-        self.workers: list = []
-        self.library_scan_worker = None
-        self.recalibration_worker = None
+        self.workers: list = [Any]
+        self.library_scan_worker: LibraryScanWorker | None = None
+        self.recalibration_worker: RecalibrationWorker | None = None
 
         # Infrastructure
-        self.event_broker = None
-        self.health_monitor = None
+        self.event_broker: StateBroker | None = None
+        self.health_monitor: HealthMonitor | None = None
 
         # Auth/keys
         self.api_key: str | None = None
@@ -116,81 +152,108 @@ class Application:
         # State tracking
         self._running = False
 
+    def register_service(self, name: str, service: Any) -> None:
+        """
+        Register a service in the DI container.
+
+        Args:
+            name: Service name for lookup
+            service: Service instance
+        """
+        self.services[name] = service
+
+    def get_service(self, name: str) -> Any:
+        """
+        Get a service from the DI container.
+
+        Args:
+            name: Service name
+
+        Returns:
+            Service instance
+
+        Raises:
+            KeyError: If service not found
+        """
+        if name not in self.services:
+            raise KeyError(f"Service '{name}' not found. Available services: {list(self.services.keys())}")
+        return self.services[name]
+
     def start(self):
         """
         Start the application - initialize all services, workers, and background tasks.
 
-        This replaces the initialization that was previously in api_app.py:lifespan().
+        This method:
+        1. Cleans up orphaned jobs and stuck scans from previous sessions
+        2. Initializes authentication (API keys, passwords, sessions)
+        3. Registers all services in self.services (DI container)
+        4. Starts workers, coordinator, health monitor, and event broker
+        5. Performs ML cache warmup
+
+        All dependencies are injected via constructors using instance attributes.
+        Services are registered via register_service() for access by interfaces.
         """
         if self._running:
-            import logging
-
             logging.warning("[Application] Already running, ignoring start() call")
             return
-
-        import logging
-
-        from nomarr.interfaces.api.coordinator import ProcessingCoordinator
-        from nomarr.interfaces.api.event_broker import StateBroker
-        from nomarr.ml.cache import warmup_predictor_cache
-        from nomarr.services.health_monitor import HealthMonitor
-        from nomarr.services.keys import KeyManagementService
-        from nomarr.services.library import LibraryService
-        from nomarr.services.processing import ProcessingService
-        from nomarr.services.queue import QueueService
-        from nomarr.services.worker import WorkerService
-        from nomarr.services.workers.scanner import LibraryScanWorker
 
         logging.info("[Application] Starting...")
 
         # Cleanup orphaned jobs from previous sessions
         logging.info("[Application] Checking for orphaned jobs...")
-        reset_count = queue.reset_stuck_jobs()
+        reset_count = self.queue.reset_stuck_jobs()
         if reset_count > 0:
             logging.info(f"[Application] Reset {reset_count} orphaned job(s) from 'running' to 'pending'")
 
         # Reset stuck library scans
         logging.info("[Application] Checking for stuck library scans...")
-        scan_reset_count = db.reset_running_library_scans()
+        scan_reset_count = self.db.library.reset_running_library_scans()
         if scan_reset_count > 0:
             logging.info(f"[Application] Reset {scan_reset_count} stuck library scan(s)")
 
-        # Initialize keys and authentication
+        # Initialize keys and authentication (DI: inject db)
         logging.info("[Application] Initializing authentication...")
-        key_service = KeyManagementService(db)
+        key_service = KeyManagementService(self.db)
         self.api_key = key_service.get_or_create_api_key()
-        self.admin_password = key_service.get_or_create_admin_password(cfg.get("admin_password"))
+        self.admin_password = key_service.get_or_create_admin_password(self.admin_password_config)
         key_service.load_sessions_from_db()
-        self.services["keys"] = key_service
+        self.register_service("keys", key_service)
+        self.register_service("config", self._config_service)
 
-        # Initialize event broker
+        # Initialize event broker (lazy import to avoid circular dependency)
         logging.info("[Application] Initializing event broker...")
+        from nomarr.interfaces.api.event_broker import StateBroker
+
         self.event_broker = StateBroker()
 
-        # Start processing coordinator
-        logging.info(f"[Application] Starting ProcessingCoordinator with {WORKER_COUNT} workers...")
-        self.coordinator = ProcessingCoordinator(worker_count=WORKER_COUNT, event_broker=self.event_broker)
+        # Start processing coordinator (DI: inject worker count and event broker)
+        logging.info(f"[Application] Starting ProcessingCoordinator with {self.worker_count} workers...")
+        self.coordinator = ProcessingCoordinator(worker_count=self.worker_count, event_broker=self.event_broker)
         self.coordinator.start()
 
-        # Initialize services
+        # Initialize services (DI: inject dependencies)
         logging.info("[Application] Initializing services...")
-        self.services["processing"] = ProcessingService(coordinator=self.coordinator)
-        self.services["queue"] = QueueService(queue)
+        self.register_service("processing", ProcessingService(coordinator=self.coordinator))
+        self.register_service("queue", QueueService(self.queue))
 
         worker_service = WorkerService(
-            db=db,
-            queue=queue,
+            db=self.db,
+            queue=self.queue,
             processor_coord=self.coordinator,
-            default_enabled=WORKER_ENABLED_DEFAULT,
-            worker_count=WORKER_COUNT,
-            poll_interval=WORKER_POLL_INTERVAL,
+            default_enabled=self.worker_enabled_default,
+            worker_count=self.worker_count,
+            poll_interval=self.worker_poll_interval,
         )
-        self.services["worker"] = worker_service
+        self.register_service("worker", worker_service)
 
         # Warm up predictor cache
         logging.info("[Application] Warming up predictor cache...")
         try:
-            warmup_predictor_cache()
+            warmup_predictor_cache(
+                models_dir=self.models_dir,
+                cache_idle_timeout=self.cache_idle_timeout,
+                cache_auto_evict=self.cache_auto_evict,
+            )
             logging.info("[Application] Predictor cache warmed successfully")
         except Exception as e:
             logging.error(f"[Application] Failed to warm predictor cache: {e}")
@@ -201,44 +264,47 @@ class Application:
         else:
             logging.info("[Application] Workers not started (worker_enabled=false)")
 
-        # Start library scan worker if configured
-        if LIBRARY_PATH:
-            logging.info(f"[Application] Starting LibraryScanWorker with library_path={LIBRARY_PATH}")
+        # Start library scan worker if configured (DI: inject db and config)
+        if self.library_path:
+            logging.info(f"[Application] Starting LibraryScanWorker with library_path={self.library_path}")
             self.library_scan_worker = LibraryScanWorker(
-                db=db,
-                library_path=LIBRARY_PATH,
-                namespace=cfg.get("namespace", "essentia"),
-                poll_interval=LIBRARY_SCAN_POLL_INTERVAL,
-                auto_tag=cfg.get("library_auto_tag", False),
-                ignore_patterns=cfg.get("library_ignore_patterns", ""),
+                db=self.db,
+                library_path=self.library_path,
+                namespace=self.namespace,
+                poll_interval=self.library_scan_poll_interval,
+                auto_tag=self.library_auto_tag,
+                ignore_patterns=self.library_ignore_patterns,
             )
             self.library_scan_worker.start()
 
-            self.services["library"] = LibraryService(
-                db=db,
-                library_path=LIBRARY_PATH,
-                worker=self.library_scan_worker,
+            self.register_service(
+                "library",
+                LibraryService(
+                    db=self.db,
+                    library_path=self.library_path,
+                    worker=self.library_scan_worker,
+                ),
             )
         else:
             logging.info("[Application] LibraryScanWorker not started (no library_path)")
 
-        # Start recalibration worker
+        # Start recalibration worker (DI: inject db and config)
         logging.info("[Application] Starting RecalibrationWorker...")
-        from nomarr.services.recalibration import RecalibrationService
-        from nomarr.services.workers.recalibration import RecalibrationWorker
-
         self.recalibration_worker = RecalibrationWorker(
-            db=db,
-            models_dir=cfg.get("models_dir", "/app/models"),
-            namespace=cfg.get("namespace", "essentia"),
+            db=self.db,
+            models_dir=self.models_dir,
+            namespace=self.namespace,
             poll_interval=2,
-            calibrate_heads=cfg.get("calibrate_heads", False),
+            calibrate_heads=self.calibrate_heads,
         )
         self.recalibration_worker.start()
 
-        self.services["recalibration"] = RecalibrationService(
-            database=db,
-            worker=self.recalibration_worker,
+        self.register_service(
+            "recalibration",
+            RecalibrationService(
+                database=self.db,
+                worker=self.recalibration_worker,
+            ),
         )
 
         # Start health monitor
@@ -275,8 +341,6 @@ class Application:
         if not self._running:
             return
 
-        import logging
-
         logging.info("[Application] Shutting down...")
 
         # Stop health monitor
@@ -310,6 +374,19 @@ class Application:
     def is_running(self) -> bool:
         """Check if application is running."""
         return self._running
+
+    def warmup_cache(self) -> None:
+        """
+        Warmup the ML predictor cache.
+
+        Interfaces should call this method rather than importing ml.cache directly.
+        Uses instance config attributes.
+        """
+        warmup_predictor_cache(
+            models_dir=self.models_dir,
+            cache_idle_timeout=self.cache_idle_timeout,
+            cache_auto_evict=self.cache_auto_evict,
+        )
 
 
 # ----------------------------------------------------------------------

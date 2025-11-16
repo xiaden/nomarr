@@ -1,164 +1,370 @@
-# Copilot Instructions
+# Copilot Instructions for Nomarr
 
-These instructions guide Copilot to produce consistent, maintainable, idiomatic code that fits the Nomarr architecture. The goal is predictability, correctness, and clarity.
+These instructions tell you how to write code that fits Nomarr’s architecture and does not fight the project’s direction.
+
+Nomarr is **pre-alpha** but already public and fully functional. That means:
+
+- There is **no backward compatibility guarantee**.
+- It is acceptable to **break schemas and APIs** while the design is still stabilizing.
+- Do **not** introduce migrations, legacy shims, or compatibility layers yet.
+- The priority is **clean architecture and predictability**, not preserving old data.
+
+You are here to help maintain that architecture, not invent a new one.
 
 ---
 
-## 🛑 **Copilot — Hard Rules (Read First)**
+## 0. Hard Rules (Read These First)
 
 **Never:**
 
-- write bare `import essentia` or `import essentia_tensorflow`
-- import Essentia in any top-level module
-- introduce global mutable state
-- create 300+ line functions
-- mix unrelated concerns (tagging + DB + workers)
+- import `essentia` or `essentia_tensorflow` anywhere except `ml/backend_essentia.py`
+- read config files or environment variables at module import time
+- create or mutate global state (except very narrow, explicitly approved cases)
+- make functions > ~60 lines unless there is a clear, structural reason
+- make modules > ~300 lines without strong justification
+- let workflows import `nomarr.services` or `nomarr.interfaces`
+- let persistence or ml import `nomarr.workflows`, `nomarr.services`, or `nomarr.interfaces`
+- let helpers import any `nomarr.*` modules
 
 **Always:**
 
-- follow the directory placement rules below
-- keep functions < ~50 lines unless structurally justified
-- prefer dependency injection (receive db, config, etc. from caller)
-- write mypy-friendly, fully type‑annotated code
-- keep imports local when optional or heavyweight
-
-A full Essentia backend module will exist at:
-
-```
-ml/backend_essentia.py
-```
-
-All Essentia use must follow this pattern:
-
-```python
-try:
-    import essentia_tensorflow as essentia_tf
-except ImportError:  # pragma: no cover
-    essentia_tf = None
-```
+- follow the layering rules and directory placement below
+- use dependency injection (receive `db`, config, ML backends, etc. as parameters or constructor deps)
+- keep imports local when they are optional or heavy (Essentia, ML backends, etc.)
+- write mypy-friendly, fully type-annotated Python
+- write code that passes `ruff`, `mypy`, and `pytest` without needing huge repairs
 
 ---
 
 ## 1. Project Philosophy
 
-Nomarr is structured around **separation of concerns**, correctness, and predictability. All code must adhere to:
+Nomarr is structured around:
 
-- **Pure ML code is isolated** (no DB, no HTTP, no workers)
-- **Workflows orchestrate**, but do not perform low‑level actions
-- **Services manage resources** (workers, queues, runtime)
-- **Tagging code only handles tag logic**
-- **Persistence is a thin access layer**
-- **Interfaces expose, but do not compute**
+- **Separation of concerns**
+- **Dependency injection (DI)** instead of global singletons
+- **Deterministic, explicit behavior**
+- **Testable building blocks**
 
-Everything should be deterministic, explicit, and testable.
+Responsibilities:
 
-### Pre‑Alpha Status
-
-Nomarr is currently **pre‑alpha**. This means:
-
-- There is **no legacy code**; only current code exists.
-- There is **no need for backward compatibility**.
-- Do **not** build migration systems, compatibility shims, versioned persistence layers, or upgrade paths.
-- Breaking changes are acceptable and expected.
-- Prefer **clean, forward‑looking architecture**, but avoid speculative future‑proofing (e.g., cluster support, distributed systems) unless explicitly required.
-
-Copilot: Plan for the future **when it clearly serves the current design**, but do not introduce complex abstractions for imaginary requirements.
+- **Interfaces** expose Nomarr to the outside world.
+- **Services** own runtime wiring and long-lived resources (config, DB, queues, workers).
+- **Workflows** implement core use cases ("what Nomarr does").
+- **Analytics** provides tag statistics, correlations, and co-occurrence analysis.
+- **Tagging** converts model outputs into tags.
+- **ML** is model/embedding/inference code.
+- **Persistence** is the DB/queue access layer.
+- **Helpers** are pure utilities and shared data types.
 
 ---
 
-## 2. Where New Code Should Go
+## 2. Architecture & Dependencies
 
-### **Quick Placement Guide (TL;DR)**
+### 2.1 High-Level Flow
 
-```
-Contains domain logic, takes db/config, no HTTP/workers → workflows/
-Pure ML, embeddings, inference models → ml/
-Tag normalization, tiering, conflict rules, ID3 writes → tagging/
-Raw SQL or durability logic → persistence/
-Worker orchestration, queues, scheduling → services/
-API endpoints, Web UI, CLI commands → interfaces/
-Pure stateless utilities → helpers/
+For any non-trivial operation:
+
+```text
+interfaces  →  services  →  workflows  →  (analytics / tagging / ml / persistence / helpers)
 ```
 
-### workflows/
+### 2.2 Allowed Dependencies (Direction)
 
-High-level operations and orchestration. Receives db + config from callers. Never touches lower-level resources directly.
+- `interfaces`:
 
-### ml/
+  - ✅ may import `nomarr.services`
+  - ✅ may import `nomarr.helpers`
+  - ❌ must NOT import `nomarr.workflows`, `nomarr.persistence`, `nomarr.ml`, `nomarr.tagging`, or `nomarr.analytics`
 
-Embedder/head models, ML inference, calibration logic. No DB. No HTTP. No workers.
+- `services`:
 
-### tagging/
+  - ✅ may import `nomarr.workflows`
+  - ✅ may import `nomarr.persistence`
+  - ✅ may import `nomarr.tagging`, `nomarr.ml`, and `nomarr.analytics` (through proper facades/caches)
+  - ✅ may import `nomarr.helpers`
+  - ❌ must NOT import `nomarr.interfaces`
 
-Convert model outputs → normalized tags. Tiering, scoring, conflict resolution. Writes tags using writer module.
+- `workflows`:
 
-### persistence/
+  - ✅ may import `nomarr.persistence`
+  - ✅ may import `nomarr.tagging`
+  - ✅ may import `nomarr.ml`
+  - ✅ may import `nomarr.analytics`
+  - ✅ may import `nomarr.helpers`
+  - ❌ must NOT import `nomarr.services` or `nomarr.interfaces`
 
-DB access layer, SQL models, migrations. No business logic.
+- `persistence`:
 
-### services/
+  - ✅ may import `nomarr.helpers`
+  - ❌ must NOT import `nomarr.workflows`, `nomarr.services`, or `nomarr.interfaces`
 
-Worker pools, queues, scheduling. Holds long‑running processes and side‑effects.
+- `ml`:
 
-### interfaces/
+  - ✅ may import `nomarr.helpers`
+  - ❌ must NOT import `nomarr.workflows`, `nomarr.services`, or `nomarr.interfaces`
 
-HTTP REST API, CLI wrapper. Translates requests → workflow calls. No domain logic.
+- `analytics`:
 
-### helpers/
+  - ✅ may import `nomarr.persistence` and `nomarr.helpers`
+  - ❌ must NOT import `nomarr.workflows`, `nomarr.services`, or `nomarr.interfaces`
 
-Pure, stateless utilities. Cannot import workflows/services/ml/tagging.
+- `tagging`:
+
+  - ✅ may import `nomarr.ml`, `nomarr.helpers`, and `nomarr.persistence`
+  - ❌ must NOT import `nomarr.interfaces` or `nomarr.services`
+
+- `helpers`:
+
+  - ❌ must NOT import any `nomarr.*` modules
+  - ✅ may import stdlib and third-party libraries only
+
+Use this rule of thumb:
+
+> Interfaces call **services**.
+> Services own **wiring and long-lived resources** and call **workflows**.
+> Workflows implement **use cases** and call **analytics / tagging / ml / persistence / helpers**.
+> Analytics, ML & persistence never know about higher layers.
+> Helpers never know about `nomarr.*`.
+
+Import-linter enforces this; follow it rather than fighting it.
 
 ---
 
-## 3. Architectural Rules
+## 3. Directory Placement Rules (Where Code Should Live)
 
-### Dependency Direction
+### Quick Decision Guide
 
+When adding new code, ask:
+
+- **Does it handle HTTP, CLI, or UI?** → `interfaces/`
+- **Does it manage config, DB, queues, workers, or background jobs?** → `services/`
+- **Does it implement a use case ("scan library", "process track", "recalibrate tags")?** → `workflows/`
+- **Does it compute tag statistics, correlations, or co-occurrences?** → `analytics/`
+- **Does it convert model outputs into tags, or aggregate/resolve tags?** → `tagging/`
+- **Does it compute embeddings, heads, or apply ML models?** → `ml/`
+- **Does it read/write DB tables or queues?** → `persistence/`
+- **Is it a stateless utility or shared data type used in many layers?** → `helpers/`
+
+### 3.1 `interfaces/` — How Nomarr is Exposed
+
+- HTTP routes (FastAPI), CLI commands, web handlers.
+- Thin: validate inputs, call a service, serialize outputs.
+- They must not know about DB schema, ML details, or tagging rules.
+
+**Example:**
+`interfaces/api/coordinator.py` → receives HTTP request, calls a service like `QueueService` or `ProcessingService`.
+
+### 3.2 `services/` — Runtime Wiring & Long-Lived Stuff
+
+- Owns:
+
+  - `ConfigService`
+  - `Database` construction (from `nomarr.persistence.db`)
+  - queues and queue abstractions (`QueueService`, `ProcessingQueue`)
+  - background workers and schedulers
+
+- Exposes methods like:
+
+  - `QueueService.enqueue_track(...)`
+  - `ProcessingService.process_file(...)`
+
+- These methods:
+
+  - gather dependencies (config, db, ML backends, tag writers, cache)
+  - call **workflows** to perform the actual work
+
+Services **should not** contain complicated business rules; push logic down into workflows when it grows.
+
+### 3.3 `workflows/` — Use Cases (What Nomarr Does)
+
+- Implements operations like:
+
+  - `process_file(...)`
+  - `scan_library(...)`
+  - `run_recalibration(...)`
+
+- Functions accept all dependencies as parameters:
+
+  - `ProcessorConfig` (from helpers/dataclasses)
+  - `Database` or narrower persistence objects
+  - ML predictor/embeddings interfaces
+  - tag writers / calibration helpers
+
+- No global config reading. No `ConfigService` imports.
+
+Workflows are where most "interesting logic" lives.
+
+### 3.4 `analytics/` — Tag Statistics & Correlations
+
+- Computes tag statistics, correlations, and co-occurrence analysis:
+
+  - tag frequency counts
+  - mood distribution analysis
+  - tag correlation matrices
+  - co-occurrence patterns
+
+- Operates on database queries via persistence layer.
+- Returns structured data for presentation layers.
+
+No HTTP, no services, no workflows imports.
+
+### 3.5 `tagging/` — Tags & Label Logic
+
+- Takes model outputs and produces tags:
+
+  - tiering (loose/medium/strict)
+  - conflict resolution (happy vs sad, etc.)
+  - aggregation across runs
+
+- Writes tags into files or DB via persistence.
+
+No HTTP, no services, no workers.
+
+### 3.6 `ml/` — Models, Embeddings, Inference
+
+- Encapsulate model loading, prediction, and calibration logic.
+- Examples:
+
+  - embedding extraction
+  - model confidence outputs
+  - calibration utilities
+
+- Only `ml/backend_essentia.py` is allowed to import Essentia.
+
+No knowledge of services, workflows, or interfaces.
+
+### 3.7 `persistence/` — Database & Queue Access
+
+Structure:
+
+```text
+nomarr/persistence/
+  db.py              # Database façade / connection owner
+  database/
+    queue.py         # QueueOperations for tag_queue table
+    library.py       # LibraryOperations
+    tags.py          # TagOperations
+    meta.py          # MetaOperations
+    sessions.py      # SessionOperations
+    calibration.py   # CalibrationOperations
 ```
-interfaces → workflows → tagging → ml
-                     ↓           ↓
-                 persistence    helpers
-                     ↓
-                 services (only for worker mgmt)
-```
 
-### Rules
+- `nomarr.persistence.database.*`:
 
-- ML must not import tagging, workflows, persistence, or services.
-- Tagging must not import workflows or services.
-- Workflows may import ML, tagging, or persistence.
-- Interfaces must call workflows only.
-- Services run workflows, never the inverse.
+  - each file defines one `*Operations` class per table or cohesive group of tables
+  - each class owns **all SQL** for that table/group
+
+- `nomarr.persistence.db.Database`:
+
+  - opens the DB connection
+  - ensures schema
+  - instantiates operations and hangs them as attributes:
+
+    ```python
+    self.meta = MetaOperations(self.conn)
+    self.queue = QueueOperations(self.conn)
+    self.library = LibraryOperations(self.conn)
+    self.tags = TagOperations(self.conn)
+    self.sessions = SessionOperations(self.conn)
+    self.calibration = CalibrationOperations(self.conn)
+    ```
+
+- All higher layers should access the DB as:
+
+  ```python
+  db.queue.enqueue(...)
+  db.tags.get_track_tags(...)
+  db.library.list_files(...)
+  db.meta.get_meta(...)
+  ```
+
+No external code should import `nomarr.persistence.database.*` directly. Only `nomarr.persistence.db` does that.
+
+### 3.8 `helpers/` — Pure Utilities & Shared Dataclasses
+
+- Pure utility functions (string helpers, path helpers, small math, etc.).
+- Shared dataclasses that are imported from multiple top-level packages go in `helpers/dataclasses.py`.
+
+Rules for `helpers/dataclasses.py`:
+
+- Only include dataclasses that are imported from more than one top-level package (e.g., `services` and `workflows`).
+- Must not import any `nomarr.*` modules.
+- Only import `dataclasses`, `typing`, and stdlib.
+- No methods with behavior beyond trivial `__str__` / formatting.
+
+If a dataclass is only used in one layer, keep it local to that layer’s module.
 
 ---
 
-## 4. Code Style
+## 4. Configuration & DI
 
-### Python
+### 4.1 No `nomarr.config` Globals
 
-- Fully type annotated
-- ruff formatting
-- short functions (<50 lines)
-- small modules (<300 lines)
-- prefer pure functions
-- prefer explicit over clever
+- Do **not** add new usages of `nomarr.config`.
+- Do **not** read config files or env vars at module import time.
+- Config should be loaded once by a **service** (e.g., `ConfigService`) and then passed into other structures via DI.
 
-### JavaScript
+### 4.2 How Configuration Should Flow
 
-- Prettier formatting
-- ESLint rules enforced
-- Avoid global state
+- `ConfigService` (in `services/config.py`):
 
-### Error Handling
+  - loads and validates config (Pydantic or similar)
+  - exposes typed config objects
 
-- Use typed errors
-- No bare `except:`
+- Services that need config receive it via constructor or method parameters.
+- Workflows that need config receive **typed config objects** as function parameters (e.g., `ProcessorConfig` from `helpers/dataclasses.py`).
+- No one re-reads raw config files in deeper layers.
 
 ---
 
-## 5. Tooling (Copilot-aware summary)
+## 5. Essentia & ML Backends
 
-**Fast local tools (run constantly):**
+Essentia is an optional dependency and must be isolated.
+
+- Only `ml/backend_essentia.py` may contain:
+
+  ```python
+  try:
+      import essentia_tensorflow as essentia_tf
+  except ImportError:  # pragma: no cover
+      essentia_tf = None
+  ```
+
+- All other code calls functions or classes in `ml/backend_essentia.py` and must not import Essentia directly.
+
+- If Essentia is missing, ML-related paths should raise **clear runtime errors** _only when those paths are executed_, not at app startup.
+
+---
+
+## 6. Code Style & Quality
+
+### 6.1 Python
+
+- Fully type-annotated
+- Follow `ruff` formatting and linting
+- Aim for:
+
+  - < 60 lines per function
+  - < 300 lines per module
+
+- Prefer:
+
+  - pure, testable functions
+  - explicit rather than clever
+  - clear naming (`error_message`, not `err_msg`)
+
+### 6.2 Error Handling
+
+- No bare `except:`; always catch specific exceptions.
+- Provide helpful messages on runtime errors (especially for missing dependencies like Essentia or bad config).
+
+---
+
+## 7. Tooling & QC
+
+Nomarr uses several tools. You should write code that works _with_ them, not against them.
+
+### 7.1 Core Tools (Run Often)
 
 ```bash
 ruff check .
@@ -168,7 +374,9 @@ pytest
 mypy .
 ```
 
-**Deeper analysis (run periodically):**
+Your code should be consistent with what these tools expect.
+
+### 7.2 Deeper Analysis (Run Periodically)
 
 ```bash
 bandit .
@@ -180,26 +388,24 @@ import-linter
 wily build
 ```
 
-Copilot should produce code _consistent_ with these tools.
+If these tools report issues, consider them **real signals**, not noise.
 
 ---
 
-### 5.5 Development Scripts
+## 8. Development Scripts (`scripts/`)
 
-The `scripts/` directory provides **structured development helpers**. These tools exist to keep the codebase predictable and consistent. Copilot should rely on them to avoid inventing APIs or drifting from project conventions.
+The `scripts/` directory contains helpers that you (and Copilot) should use instead of guessing.
 
-#### Purpose
+### 8.1 Purpose
 
-These scripts are the preferred way to:
+Use these scripts to:
 
-- confirm which APIs, classes, and functions actually exist,
-- keep naming and exports consistent,
-- generate boilerplate (tests, `__init__` files) in a predictable style,
-- identify high‑value refactor targets.
+- discover real APIs instead of inventing functions
+- enforce naming and structure conventions
+- generate boilerplate in a consistent style
+- identify complexity hotspots and refactor targets
 
-#### Before Writing or Modifying Code
-
-Use these to understand what _actually exists_ before generating code.
+### 8.2 Before Writing or Modifying Code
 
 ```bash
 # Inspect real module APIs, attributes, and callables
@@ -207,107 +413,86 @@ python scripts/discover_api.py nomarr.workflows.processor
 python scripts/discover_api.py nomarr.persistence.db --summary
 ```
 
-#### During Development
+> **Copilot rule:** Always use `discover_api.py` to verify APIs before calling them. Never guess function names, parameters, or return types.
 
-Ensure new code matches project conventions and layout.
+### 8.3 During Development
 
 ```bash
 # Enforce naming rules across the project
 python scripts/check_naming.py
 
-# Auto-generate __init__.py exports to match actual module APIs
+# Generate __init__.py exports to match actual module APIs
 python scripts/generate_inits.py
 
-# Create test scaffolds based on current module structure
+# Create test scaffolds from current module structure
 python scripts/generate_tests.py nomarr.services.queue --output tests/unit/services/test_queue.py
 ```
 
-#### Targeted Quality & Refactor Triage
-
-Use this when you want to clean up **specific modules** or subsystems:
+### 8.4 Targeted Quality & Refactor Triage
 
 ```bash
-# Find complexity hotspots, architecture violations, and refactor opportunities (JSON + Markdown)
+# Find complexity hotspots, architecture violations, and refactor opportunities
 python scripts/detect_slop.py nomarr/workflows/processor.py
 ```
 
-Run `detect_slop.py` on **one file or one package at a time**, then:
+Use `detect_slop.py` on **one file or one package at a time**:
 
-- let Copilot summarize the report,
-- agree on a small refactor plan,
+- summarize the report,
+- propose a small, focused refactor,
 - apply changes iteratively.
 
-Do not expect Copilot to “fix the entire codebase from one giant report” — use this script as a triage tool, not a fully automated cleanup.
-
-**Copilot Rule:**
-Before writing or modifying code, **always** confirm APIs with `discover_api.py`. Never guess function names, signatures, or return types. Use these tools to align generated code with Nomarr’s architectural and stylistic rules.
-
-## 6. Configuration
-
-- Configuration must be strongly typed (Pydantic model)
-- Workers receive config from caller
-- No module-level reading of config files
+Do **not** try to “fix the whole codebase” from one giant report.
 
 ---
 
-## 7. Optional Dependencies
+## 9. Pre-Alpha Policy (Important)
 
-Essentia is optional in development. All imports must be guarded. If essentia_tf is missing, raise a clear runtime error only when ML is invoked.
+Nomarr is **pre-alpha**. That means:
 
-Never block the app from starting if Essentia isn’t installed.
+- It is okay to:
 
----
+  - break schemas
+  - change APIs
+  - require users to rebuild their database or rescan their library
 
-## 8. Folder Naming and Structure
+- It is **not** okay to:
 
-Current approved structure:
+  - build migration frameworks
+  - introduce versioned compatibility layers
+  - pile up “legacy” code paths to support old formats
 
-```
-nomarr/
-  interfaces/
-  workflows/
-  services/
-  tagging/
-  ml/
-  persistence/
-  helpers/
-```
+Prefer clean, forward-looking changes over preserving old structures.
 
 ---
 
-## 9. Performance Rules
+## 10. Summary for Copilot
 
-- No premature optimization
-- Cache expensive ML operations (when available)
-- Avoid reading audio from disk more than once per workflow
-- Avoid large in-memory structures in workers
+1. **Follow the layering:**
+   `interfaces → services → workflows → (tagging / ml / persistence / helpers)`
+   Never let lower layers import higher ones.
 
----
+2. **Interfaces call services only.**
+   They never touch workflows, persistence, tagging, or ml directly.
 
-## 10. File Length Guidance
+3. **Services own wiring and long-lived resources.**
+   They construct config, DB, queues, workers, and call workflows.
 
-- Aim for <300 lines per module
-- Break up long functions with private helpers
-- Prefer composition over inheritance
+4. **Workflows implement use cases.**
+   They accept dependencies as parameters and call tagging/ml/persistence/helpers.
 
----
+5. **Persistence & ML are leaf layers.**
+   They never import workflows, services, or interfaces. All DB access goes through `persistence.db.Database` and its `*Operations` classes.
 
-## 11. Commit Expectations
+6. **Helpers are pure.**
+   They never import `nomarr.*` and contain only utilities and truly shared dataclasses.
 
-- All diffs must pass ruff + pytest
-- No commented-out code
-- No code with FIXME/TODO unless accompanied by GitHub issue ID
+7. **Do not introduce migrations, legacy shims, or backward-compat code paths.**
+   Pre-alpha means breaking changes are allowed.
 
----
+8. **Use `discover_api.py` instead of guessing.**
+   Never assume a function exists; check first.
 
-## 12. Summary (for Copilot)
-
-1. Keep code small, typed, and explicit.
-2. Use the directory placement rules.
-3. Do not import Essentia directly.
-4. Push logic downward (interfaces → workflows → tagging → ml).
-5. Write code that passes ruff, mypy, and pytest by default.
-6. Helpers must be pure and dependency-free.
+Your job is to write code that respects this architecture, passes the existing tools, and does not invent new patterns unless explicitly asked.
 
 ---
 

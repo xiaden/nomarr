@@ -8,102 +8,102 @@ from __future__ import annotations
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-import nomarr.app as app
+from nomarr.app import application
+from nomarr.services.keys import KeyManagementService
 
 auth_scheme = HTTPBearer(auto_error=False)
 
 
-def get_key_service():
-    if "keys" not in app.application.services:
+def get_key_service() -> KeyManagementService:
+    """Get the KeyManagementService singleton instance."""
+    if "keys" not in application.services:
         raise RuntimeError("KeyManagementService not initialized")
-    return app.application.services["keys"]
+    service = application.services["keys"]
+    if not isinstance(service, KeyManagementService):
+        raise RuntimeError("Invalid KeyManagementService instance")
+    return service
 
 
 async def verify_key(creds: HTTPAuthorizationCredentials = Depends(auth_scheme)):
     if creds is None:
         raise HTTPException(status_code=401, detail="Missing Authorization header")
     token = creds.credentials.strip()
-    if app.application.api_key is None:
+    if application.api_key is None:
         raise HTTPException(status_code=500, detail="API key not initialized")
-    if token != app.application.api_key:
+    if token != application.api_key:
         raise HTTPException(status_code=403, detail="Invalid API key")
 
 
 async def verify_session(creds: HTTPAuthorizationCredentials = Depends(auth_scheme)):
+    """Verify session token using the singleton KeyManagementService instance."""
     if creds is None:
         raise HTTPException(status_code=401, detail="Missing Authorization header")
     token = creds.credentials.strip()
-    from nomarr.services.keys import KeyManagementService
 
-    if not KeyManagementService.validate_session(token):
+    key_service = get_key_service()
+    if not key_service.validate_session(token):
         raise HTTPException(status_code=403, detail="Invalid or expired session")
 
 
 def hash_password(password: str) -> str:
+    """
+    Hash a password. Pure utility function - stateless.
+    """
     from nomarr.services.keys import KeyManagementService
 
     return KeyManagementService.hash_password(password)
 
 
 def verify_password(password: str, password_hash: str) -> bool:
+    """
+    Verify a password against a hash. Pure utility function - stateless.
+    """
     from nomarr.services.keys import KeyManagementService
 
     return KeyManagementService.verify_password(password, password_hash)
 
 
-def get_or_create_api_key(db):
-    from nomarr.services.keys import KeyManagementService
+def get_admin_password_hash() -> str:
+    """
+    Get admin password hash using the singleton KeyManagementService instance.
 
-    return KeyManagementService(db).get_or_create_api_key()
+    Returns:
+        Password hash string
 
-
-def get_or_create_admin_password(db, config_password=None):
-    from nomarr.services.keys import KeyManagementService
-
-    return KeyManagementService(db).get_or_create_admin_password(config_password)
-
-
-def get_api_key(db):
-    from nomarr.services.keys import KeyManagementService
-
-    return KeyManagementService(db).get_api_key()
+    Raises:
+        RuntimeError: If password not found or service not initialized
+    """
+    return get_key_service().get_admin_password_hash()
 
 
-def get_admin_password_hash(db):
-    from nomarr.services.keys import KeyManagementService
-
-    return KeyManagementService(db).get_admin_password_hash()
-
-
-def create_session():
-    if "keys" not in app.application.services:
-        raise RuntimeError("KeyManagementService not initialized")
-    return app.application.services["keys"].create_session()
+def create_session() -> str:
+    """Create a new session using the singleton KeyManagementService instance."""
+    return get_key_service().create_session()
 
 
 def validate_session(session_token: str) -> bool:
-    from nomarr.services.keys import KeyManagementService
+    """
+    Validate a session token using the singleton KeyManagementService instance.
 
-    return KeyManagementService.validate_session(session_token)
+    Note: Use the singleton service instance to maintain proper architecture.
+    """
+    return get_key_service().validate_session(session_token)
 
 
-def invalidate_session(session_token: str):
-    if "keys" not in app.application.services:
-        raise RuntimeError("KeyManagementService not initialized")
-    app.application.services["keys"].invalidate_session(session_token)
+def invalidate_session(session_token: str) -> None:
+    """Invalidate a session using the singleton KeyManagementService instance."""
+    get_key_service().invalidate_session(session_token)
 
 
 def cleanup_expired_sessions() -> int:
-    if "keys" not in app.application.services:
-        raise RuntimeError("KeyManagementService not initialized")
-    result: int = app.application.services["keys"].cleanup_expired_sessions()
-    return result
+    """Cleanup expired sessions using the singleton KeyManagementService instance."""
+    return get_key_service().cleanup_expired_sessions()
 
 
 def load_sessions_from_db() -> int:
-    if "keys" not in app.application.services:
+    if "keys" not in application.services:
         raise RuntimeError("KeyManagementService not initialized")
-    result: int = app.application.services["keys"].load_sessions_from_db()
+    result: int = application.services["keys"].load_sessions_from_db()
     return result
 
 

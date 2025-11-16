@@ -13,7 +13,7 @@ from dataclasses import dataclass
 import numpy as np
 
 # Local modules
-from nomarr.helpers.audio import load_audio_mono, should_skip_short
+from nomarr.ml.audio import load_audio_mono, should_skip_short
 
 
 # ----------------------------------------------------------------------

@@ -1,18 +1,16 @@
 """
-Database helper functions for common SQLite operations.
+SQLite utility functions that work around SQLite quirks.
 
-These helpers work around SQLite quirks (like unreliable cursor.rowcount)
-and provide consistent patterns for common operations.
+These functions handle SQLite's unreliable cursor.rowcount for DELETE/UPDATE
+operations by using a count-before-operation pattern.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from nomarr.persistence.db import Database
-
 if TYPE_CHECKING:
-    pass
+    from nomarr.persistence.db import Database
 
 
 def count_and_delete(db: Database, table: str, where_clause: str = "", params: tuple = ()) -> int:

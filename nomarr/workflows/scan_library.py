@@ -1,5 +1,41 @@
 """
-Library scanner for tracking music files and their metadata.
+Library scanner workflow for tracking music files and their metadata.
+
+This is a PURE WORKFLOW module that orchestrates:
+- Filesystem scanning for audio files
+- Database persistence (library_files, library_scans, library_tags)
+- Queue management (auto-enqueue untagged files)
+- Tag extraction and normalization
+
+ARCHITECTURE:
+- This workflow is domain logic that takes all dependencies as parameters.
+- It does NOT import or use the DI container, services, or application object.
+- Callers (typically services) must provide a Database instance and all config values.
+
+EXPECTED DATABASE INTERFACE:
+The `db` parameter must provide these methods:
+- db.library.create_library_scan() -> int
+- db.library.list_library_files(limit) -> tuple[list[dict], int]
+- db.library.get_library_file(path) -> dict | None
+- db.library.update_library_scan(scan_id, **kwargs) -> None
+- db.library.delete_library_file(path) -> None
+- db.library.upsert_library_file(path, **metadata) -> None
+- db.tags.upsert_file_tags(file_id, tags) -> None
+- db.queue.enqueue(path, force) -> None
+- db.conn (for raw SQL updates in update_library_file_from_tags)
+
+USAGE:
+    from nomarr.workflows.scan_library import scan_library_workflow
+
+    stats = scan_library(
+        db=database_instance,
+        library_path="/path/to/music",
+        namespace="nom",
+        progress_callback=my_progress_fn,
+        scan_id=None,  # or existing scan_id
+        auto_tag=True,
+        ignore_patterns="*/Audiobooks/*,*.wav"
+    )
 """
 
 from __future__ import annotations
@@ -9,14 +45,15 @@ import logging
 import os
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import mutagen
 from mutagen.easyid3 import EasyID3
 from mutagen.id3 import ID3
 from mutagen.mp4 import MP4
 
-from nomarr.persistence.db import Database
+if TYPE_CHECKING:
+    from nomarr.persistence.db import Database
 
 
 def _matches_ignore_pattern(file_path: str, patterns: str) -> bool:
@@ -57,7 +94,7 @@ def _matches_ignore_pattern(file_path: str, patterns: str) -> bool:
     return False
 
 
-def scan_library(
+def scan_library_workflow(
     db: Database,
     library_path: str,
     namespace: str = "essentia",
@@ -69,23 +106,38 @@ def scan_library(
     """
     Scan a music library directory and update the database.
 
+    This is the main workflow entrypoint for library scanning. It orchestrates:
+    1. Filesystem traversal to find audio files
+    2. Metadata extraction and database updates
+    3. Optional auto-enqueue of untagged files
+    4. Removal of deleted files from database
+    5. Progress tracking via scan record
+
     Args:
-        db: Database instance
-        library_path: Root path to scan
-        namespace: Tag namespace for essentia tags
-        progress_callback: Optional callback(current, total)
+        db: Database instance (must provide library, tags, and queue accessors)
+        library_path: Root path to scan for audio files
+        namespace: Tag namespace for essentia/nom tags (default: "essentia")
+        progress_callback: Optional callback(current, total) for progress updates
         scan_id: Optional existing scan record ID (if None, creates new record)
         auto_tag: Whether to automatically enqueue untagged files for tagging
         ignore_patterns: Comma-separated path patterns to skip from auto-tagging
+                        (supports * wildcards and */ for directory matching)
 
     Returns:
-        Dict with scan statistics: files_scanned, files_added, files_updated, files_removed
+        Dict with scan statistics:
+        - files_scanned: int
+        - files_added: int
+        - files_updated: int
+        - files_removed: int
+
+    Raises:
+        Exception: On scan failure (updates scan record with error status)
     """
     logging.info(f"[library_scanner] Starting library scan: {library_path}")
 
     # Use existing scan record or create new one
     if scan_id is None:
-        scan_id = db.create_library_scan()
+        scan_id = db.library.create_library_scan()
     else:
         logging.info(f"[library_scanner] Using existing scan record: {scan_id}")
 
@@ -98,7 +150,7 @@ def scan_library(
 
     try:
         # Get list of existing files in database
-        existing_files, _ = db.list_library_files(limit=1000000)  # Get all files
+        existing_files, _ = db.library.list_library_files(limit=1000000)  # Get all files
         existing_paths = {f["path"] for f in existing_files}
         seen_paths: set[str] = set()
 
@@ -124,7 +176,7 @@ def scan_library(
                 modified_time = int(file_stat.st_mtime * 1000)
 
                 # Check if file needs updating
-                existing_file = db.get_library_file(file_path)
+                existing_file = db.library.get_library_file(file_path)
                 if existing_file and existing_file["modified_time"] == modified_time:
                     # File hasn't changed, skip
                     stats["files_scanned"] += 1
@@ -136,7 +188,7 @@ def scan_library(
 
                 # Auto-enqueue for tagging if enabled and file not already tagged
                 if auto_tag:
-                    file_record = db.get_library_file(file_path)
+                    file_record = db.library.get_library_file(file_path)
                     if file_record:
                         # Check if file needs tagging (not tagged, not skipped, not ignored by pattern)
                         needs_tag = (
@@ -146,7 +198,7 @@ def scan_library(
                         )
                         if needs_tag:
                             # Enqueue for tagging (don't force re-tag)
-                            db.enqueue(file_path, force=False)
+                            db.queue.enqueue(file_path, force=False)
                             logging.info(f"[library_scanner] Auto-queued untagged file: {file_path}")
 
                 if existing_file:
@@ -167,7 +219,7 @@ def scan_library(
 
                 # Update DB stats periodically for real-time UI updates
                 if (idx + 1) % 10 == 0:
-                    db.update_library_scan(
+                    db.library.update_library_scan(
                         scan_id,
                         files_scanned=stats["files_scanned"],
                         files_added=stats["files_added"],
@@ -180,11 +232,11 @@ def scan_library(
         # Remove files that no longer exist
         removed_paths = existing_paths - seen_paths
         for path in removed_paths:
-            db.delete_library_file(path)
+            db.library.delete_library_file(path)
             stats["files_removed"] += 1
 
         # Update scan record
-        db.update_library_scan(
+        db.library.update_library_scan(
             scan_id,
             status="done",
             files_scanned=stats["files_scanned"],
@@ -202,7 +254,7 @@ def scan_library(
 
     except Exception as e:
         logging.error(f"[library_scanner] Scan failed: {e}")
-        db.update_library_scan(scan_id, status="error", error_message=str(e))
+        db.library.update_library_scan(scan_id, status="error", error_message=str(e))
         raise
 
 
@@ -215,11 +267,25 @@ def update_library_file_from_tags(
     This is the canonical way to sync a file's tags to the library database,
     used by both the library scanner and the processor after tagging.
 
+    This workflow function:
+    1. Extracts metadata from the audio file (duration, artist, album, etc.)
+    2. Extracts namespace-specific tags (e.g., nom:* tags)
+    3. Upserts to library_files table
+    4. Populates library_tags table with parsed tag values
+    5. Optionally marks file as tagged with tagger version
+
     Args:
-        db: Database instance
-        file_path: Path to audio file
+        db: Database instance (must provide library and tags accessors)
+        file_path: Absolute path to audio file
         namespace: Tag namespace (e.g., "nom" or "essentia")
         tagged_version: Optional tagger version to mark file as tagged
+                       (only set when called from processor after tagging)
+
+    Returns:
+        None (updates database in-place)
+
+    Raises:
+        Logs warnings on failure but does not raise exceptions
     """
     try:
         # Get file stats
@@ -231,7 +297,7 @@ def update_library_file_from_tags(
         metadata = _extract_metadata(file_path, namespace)
 
         # Upsert to library database
-        db.upsert_library_file(
+        db.library.upsert_library_file(
             path=file_path,
             file_size=file_size,
             modified_time=modified_time,
@@ -247,12 +313,12 @@ def update_library_file_from_tags(
         )
 
         # Get file ID and populate library_tags table
-        file_record = db.get_library_file(file_path)
+        file_record = db.library.get_library_file(file_path)
         if file_record and metadata.get("nom_tags"):
             nom_tags = metadata["nom_tags"]
             # Parse tag values to detect types
             parsed_tags = _parse_tag_values(nom_tags)
-            db.upsert_file_tags(file_record["id"], parsed_tags)
+            db.tags.upsert_file_tags(file_record["id"], parsed_tags)
 
         # Mark file as tagged if tagger version provided (called from processor)
         if tagged_version and file_record:
@@ -273,11 +339,32 @@ def _extract_metadata(file_path: str, namespace: str) -> dict[str, Any]:
     """
     Extract metadata and tags from an audio file.
 
-    Returns dict with:
-        - duration: float (seconds)
-        - artist, album, title, genre, year, track_number: str/int
-        - all_tags: dict of all tags
-        - nom_tags: dict of tags in the nom namespace (stored WITHOUT nom: prefix)
+    This is a pure helper function that reads audio file metadata using mutagen
+    and extracts both standard metadata (artist, album, etc.) and namespace-specific
+    tags (e.g., nom:* or essentia:* tags).
+
+    Namespace tags are stored WITHOUT the namespace prefix in the returned dict.
+    For example, "nom:mood-strict" becomes "mood-strict" in nom_tags.
+
+    Args:
+        file_path: Absolute path to audio file
+        namespace: Tag namespace to extract (e.g., "nom" or "essentia")
+
+    Returns:
+        Dict with:
+        - duration: float | None (seconds)
+        - artist: str | None
+        - album: str | None
+        - title: str | None
+        - genre: str | None
+        - year: int | None
+        - track_number: int | None
+        - all_tags: dict[str, str] (all tags as strings)
+        - nom_tags: dict[str, str] (namespace tags WITHOUT prefix)
+
+    Note:
+        Handles MP3 (ID3), M4A/MP4, and other mutagen-supported formats.
+        Multi-value tags in MP3 are stored as JSON array strings.
     """
     metadata: dict[str, Any] = {
         "duration": None,
@@ -395,7 +482,19 @@ def _extract_metadata(file_path: str, namespace: str) -> dict[str, Any]:
 
 
 def _get_first(tags: Any, key: str) -> str | None:
-    """Get first value from tag dictionary, handling various formats."""
+    """
+    Get first value from tag dictionary, handling various formats.
+
+    Pure helper for extracting single values from mutagen tag containers,
+    which may be lists, strings, or other types.
+
+    Args:
+        tags: Tag dictionary from mutagen (EasyID3, MP4, etc.)
+        key: Tag key to extract
+
+    Returns:
+        First value as string, or None if key not found
+    """
     if tags is None or key not in tags:
         return None
     value = tags[key]
@@ -409,13 +508,24 @@ def _get_first(tags: Any, key: str) -> str | None:
 def _parse_tag_values(tags: dict[str, str]) -> dict[str, Any]:
     """
     Parse tag values from strings to appropriate types.
-    Handles JSON arrays, floats, ints, and strings.
+
+    Pure helper that converts string tag values to their proper types:
+    - JSON arrays (e.g., "[\"value1\", \"value2\"]") -> list
+    - Floats (e.g., "0.95") -> float
+    - Integers (e.g., "120") -> int
+    - Everything else -> str
+
+    This is used when populating library_tags table with typed values.
 
     Args:
         tags: Dict of tag_key -> tag_value (as strings from file)
 
     Returns:
-        Dict with parsed values (arrays as lists, numbers as float/int)
+        Dict with parsed values (arrays as lists, numbers as float/int, rest as str)
+
+    Example:
+        >>> _parse_tag_values({"tempo": "120", "score": "0.95", "tags": '["pop", "upbeat"]'})
+        {"tempo": 120, "score": 0.95, "tags": ["pop", "upbeat"]}
     """
     parsed: dict[str, Any] = {}
 
