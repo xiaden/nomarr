@@ -158,6 +158,16 @@ class LibraryOperations:
 
         return files, total
 
+    def get_all_library_paths(self) -> list[str]:
+        """
+        Get all library file paths.
+
+        Returns:
+            List of file paths
+        """
+        cur = self.conn.execute("SELECT file_path FROM library_files")
+        return [row[0] for row in cur.fetchall()]
+
     def delete_library_file(self, path: str) -> None:
         """
         Remove a file from the library.

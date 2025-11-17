@@ -28,29 +28,6 @@ router = APIRouter(prefix="/web", tags=["Web UI"])
 
 
 # ----------------------------------------------------------------------
-# Helper functions
-# ----------------------------------------------------------------------
-
-
-def remove_jobs_by_filter(db, queue, job_id=None, status=None, remove_all=False):
-    """Remove jobs from queue using SQL (JobQueue.flush supports statuses list)."""
-    if job_id is not None:
-        # Remove single job
-        with queue.lock:
-            db.conn.execute("DELETE FROM queue WHERE id=?", (job_id,))
-            db.conn.commit()
-        return 1
-    elif remove_all:
-        # Remove all jobs (use flush)
-        return queue.flush()
-    elif status:
-        # Remove by status (use flush with single status)
-        return queue.flush(statuses=[status])
-    else:
-        return 0
-
-
-# ----------------------------------------------------------------------
 # Request/Response models
 # ----------------------------------------------------------------------
 
@@ -146,8 +123,17 @@ class AdminResetRequest(BaseModel):
 # Helper to get app state
 def get_state():
     """
-    Get global app state instances via Application.
-    Returns a simple namespace with references to services and infrastructure.
+    Get application state for web endpoints.
+
+    Returns SimpleNamespace with essential service references:
+    - db: Database instance (for persistence operations)
+    - queue: ProcessingQueue instance (for job queries)
+    - cfg: Config dict (for configuration access)
+    - queue_service: QueueService (for queue operations)
+    - worker_service: WorkerService (for worker control)
+    - processor_coord: ProcessingCoordinator (for direct job submission)
+    - worker_pool: Worker pool list (for worker management)
+    - event_broker: EventBroker (for SSE events)
     """
     from types import SimpleNamespace
 
@@ -158,20 +144,18 @@ def get_state():
     config = config_service.get_config()
 
     return SimpleNamespace(
-        # Direct references from application
+        # Infrastructure
         db=application.db,
         queue=application.queue,
         cfg=config,
-        # Application-owned references (via application)
+        # Services
         queue_service=application.services.get("queue"),
         worker_service=application.services.get("worker"),
-        library_service=application.services.get("library"),
-        key_service=application.services.get("keys"),
+        # Processing coordination
         processor_coord=application.coordinator,
         worker_pool=application.workers,
+        # Events
         event_broker=application.event_broker,
-        health_monitor=application.health_monitor,
-        library_scan_worker=application.library_scan_worker,
     )
 
 
@@ -267,27 +251,22 @@ async def web_list(limit: int = 50, offset: int = 0, status: str | None = None):
     """List jobs with pagination and filtering (web UI proxy)."""
     s = get_state()
 
-    # JobQueue.list() returns tuple: (list[Job], total_count)
-    jobs_list, total = s.queue.list_jobs(limit=limit, offset=offset, status=status)
-
-    return {
-        "jobs": [job.to_dict() for job in jobs_list],
-        "total": total,
-        "limit": limit,
-        "offset": offset,
-    }
+    # Use QueueService to list jobs
+    return s.queue_service.list_jobs(limit=limit, offset=offset, status=status)
 
 
 @router.get("/api/status/{job_id}", dependencies=[Depends(verify_session)])
 async def web_status(job_id: int):
     """Get status of a specific job (web UI proxy)."""
     s = get_state()
-    job = s.queue.get(job_id)
+
+    # Use QueueService to get job details
+    job = s.queue_service.get_job(job_id)
 
     if not job:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
 
-    return job.to_dict()
+    return job
 
 
 @router.get("/api/queue-depth", dependencies=[Depends(verify_session)])
@@ -295,16 +274,8 @@ async def web_queue_depth():
     """Get queue depth statistics (web UI proxy)."""
     s = get_state()
 
-    # Get counts by status using SQL (JobQueue doesn't have count_by_status method)
-    cur = s.db.conn.execute("SELECT status, COUNT(*) FROM queue GROUP BY status")
-    counts = {row[0]: row[1] for row in cur.fetchall()}
-
-    return {
-        "pending": counts.get("pending", 0),
-        "running": counts.get("running", 0),
-        "completed": counts.get("done", 0),
-        "errors": counts.get("error", 0),
-    }
+    # Use QueueService to get queue statistics
+    return s.queue_service.get_status()
 
 
 # ----------------------------------------------------------------------
@@ -317,8 +288,12 @@ async def web_admin_remove(request: RemoveRequest):
     """Remove jobs from queue (web UI proxy)."""
     s = get_state()
 
-    # Use helper function that works with actual JobQueue API
-    removed = remove_jobs_by_filter(s.db, s.queue, job_id=request.job_id, status=request.status, remove_all=request.all)
+    # Use QueueService to remove jobs
+    removed = s.queue_service.remove_jobs(
+        job_id=request.job_id,
+        status=request.status,
+        all=request.all,
+    )
 
     # Publish queue stats update
     s.queue_service.publish_queue_update(s.event_broker)
@@ -331,9 +306,9 @@ async def web_admin_flush():
     """Remove all completed/error jobs (web UI proxy)."""
     s = get_state()
 
-    # Use queue.flush() which actually exists
-    done_count = s.queue.flush(statuses=["done"])
-    error_count = s.queue.flush(statuses=["error"])
+    # Use QueueService to remove done and error jobs
+    done_count = s.queue_service.remove_jobs(status="done")
+    error_count = s.queue_service.remove_jobs(status="error")
     total_removed = done_count + error_count
 
     # Publish queue stats update
@@ -347,14 +322,8 @@ async def web_admin_clear_all():
     """Clear all jobs from queue including running ones (web UI)."""
     s = get_state()
 
-    # Get count before deleting
-    with s.queue.lock:
-        count_cur = s.db.conn.execute("SELECT COUNT(*) FROM queue")
-        removed = count_cur.fetchone()[0]
-
-        # Delete all jobs
-        s.db.conn.execute("DELETE FROM queue")
-        s.db.conn.commit()
+    # Use QueueService to remove all jobs (pending, done, error - not running)
+    removed = s.queue_service.remove_jobs(all=True)
 
     # Publish queue stats update
     s.queue_service.publish_queue_update(s.event_broker)
@@ -367,7 +336,7 @@ async def web_admin_clear_completed():
     """Clear completed jobs from queue (web UI)."""
     s = get_state()
 
-    removed = s.queue.flush(statuses=["done"])
+    removed = s.queue_service.remove_jobs(status="done")
 
     # Publish queue stats update
     s.queue_service.publish_queue_update(s.event_broker)
@@ -380,7 +349,7 @@ async def web_admin_clear_errors():
     """Clear error jobs from queue (web UI)."""
     s = get_state()
 
-    removed = s.queue.flush(statuses=["error"])
+    removed = s.queue_service.remove_jobs(status="error")
 
     # Publish queue stats update
     s.queue_service.publish_queue_update(s.event_broker)
@@ -391,20 +360,10 @@ async def web_admin_clear_errors():
 @router.post("/api/admin/cleanup", dependencies=[Depends(verify_session)])
 async def web_admin_cleanup(max_age_hours: int = 168):
     """Remove old completed/error jobs (web UI proxy)."""
-    from nomarr.persistence.db import now_ms
-
     s = get_state()
 
-    # Implement cleanup using SQL - created_at is in milliseconds
-    cutoff_ms = now_ms() - (max_age_hours * 3600 * 1000)
-
-    with s.queue.lock:
-        cur = s.db.conn.execute(
-            "DELETE FROM queue WHERE status IN ('done', 'error') AND created_at < ?",
-            (cutoff_ms,),
-        )
-        removed = cur.rowcount
-        s.db.conn.commit()
+    # Use QueueService to clean up old jobs
+    removed = s.queue_service.cleanup_old_jobs(max_age_hours=max_age_hours)
 
     # Publish queue stats update
     s.queue_service.publish_queue_update(s.event_broker)
@@ -444,26 +403,8 @@ async def web_admin_reset(request: AdminResetRequest):
     if not request.stuck and not request.errors:
         raise HTTPException(status_code=400, detail="Must specify --stuck or --errors")
 
-    reset_count = 0
-
-    if request.stuck:
-        # This method actually exists
-        count = s.queue.reset_running_to_pending()
-        reset_count += count
-        logging.info(f"[Web API] Reset {count} stuck job(s) from 'running' to 'pending'")
-
-    if request.errors:
-        # Reset error jobs to pending - count first, then update
-        with s.queue.lock:
-            count_cur = s.db.conn.execute("SELECT COUNT(*) FROM queue WHERE status='error'")
-            row = count_cur.fetchone()
-            count = row[0] if row else 0
-            s.db.conn.execute(
-                "UPDATE queue SET status='pending', error_message=NULL, finished_at=NULL WHERE status='error'"
-            )
-            s.db.conn.commit()
-        reset_count += count
-        logging.info(f"[Web API] Reset {count} error job(s) to 'pending'")
+    # Use QueueService to reset jobs
+    reset_count = s.queue_service.reset_jobs(stuck=request.stuck, errors=request.errors)
 
     # Publish queue stats update
     s.queue_service.publish_queue_update(s.event_broker)
@@ -479,7 +420,7 @@ async def web_admin_reset(request: AdminResetRequest):
 async def web_admin_worker_pause():
     """Pause the worker (web UI proxy)."""
     s = get_state()
-    s.db.set_meta("worker_enabled", "false")
+    s.db.meta.set("worker_enabled", "false")
 
     # Stop all workers
     for worker in s.worker_pool:
@@ -620,8 +561,8 @@ async def web_health():
     """Health check endpoint (web UI proxy)."""
     s = get_state()
 
-    # Get queue statistics
-    queue_stats = s.db.queue_stats()
+    # Get queue statistics via QueueService
+    queue_stats = s.queue_service.get_status()
 
     # Detect potential issues
     warnings = []
@@ -926,24 +867,14 @@ async def web_analytics_tag_co_occurrences(tag: str, limit: int = 10):
 async def web_library_stats():
     """Get library statistics (total files, artists, albums, duration)."""
     try:
-        # Get basic library stats from library_files table
-        cursor = application.db.conn.execute(
-            """
-            SELECT
-                COUNT(*) as total_files,
-                COUNT(DISTINCT artist) as unique_artists,
-                COUNT(DISTINCT album) as unique_albums,
-                SUM(duration_seconds) as total_duration_seconds
-            FROM library_files
-            """
-        )
-        row = cursor.fetchone()
+        # Use persistence layer to get library stats
+        stats = application.db.library.get_library_stats()
 
         return {
-            "total_files": row[0] or 0,
-            "unique_artists": row[1] or 0,
-            "unique_albums": row[2] or 0,
-            "total_duration_seconds": row[3] or 0,
+            "total_files": stats.get("total_files", 0) or 0,
+            "unique_artists": stats.get("total_artists", 0) or 0,
+            "unique_albums": stats.get("total_albums", 0) or 0,
+            "total_duration_seconds": stats.get("total_duration", 0) or 0,
         }
 
     except Exception as e:
@@ -967,9 +898,8 @@ async def apply_calibration_to_library():
         if not recal_service:
             raise HTTPException(status_code=503, detail="Recalibration service not available")
 
-        # Get all library file paths
-        cursor = application.db.conn.execute("SELECT file_path FROM library_files")
-        paths = [row[0] for row in cursor.fetchall()]
+        # Get all library file paths from persistence layer
+        paths = application.db.library.get_all_library_paths()
 
         if not paths:
             return {"queued": 0, "message": "No library files found"}

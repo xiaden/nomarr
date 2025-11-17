@@ -347,6 +347,31 @@ class QueueService:
         """
         return self.queue.depth()
 
+    def list_jobs(self, limit: int = 50, offset: int = 0, status: str | None = None) -> dict[str, Any]:
+        """
+        List jobs with pagination and filtering.
+
+        Args:
+            limit: Maximum number of jobs to return
+            offset: Number of jobs to skip
+            status: Filter by status (e.g., 'pending', 'running', 'done', 'error')
+
+        Returns:
+            Dict with:
+                - jobs: List of job dicts
+                - total: Total count of jobs matching filter
+                - limit: Limit used
+                - offset: Offset used
+        """
+        jobs_list, total = self.queue.list_jobs(limit=limit, offset=offset, status=status)
+
+        return {
+            "jobs": [job.to_dict() for job in jobs_list],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+
     def publish_queue_update(self, event_broker: Any | None) -> None:
         """
         Update queue state in event broker with current statistics.
