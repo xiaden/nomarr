@@ -192,26 +192,18 @@ def save_calibration_sidecars(
 
     calibrations = calibration_data.get("calibrations", {})
     for tag_key, calib_stats in calibrations.items():
-        # Parse tag key: label_framework_embedder_head_calib
-        # Example: happy_essentia21b6dev1389_yamnet20210604_happy20220825_none_0
+        # Parse tag key (NEW FORMAT - no calibration suffix):
+        # Format: label_framework_embedder{date}_head{date}
+        # Example: happy_essentia21b6dev1389_yamnet20210604_happy20220825
         parts = tag_key.split("_")
-        if len(parts) < 5:
+        if len(parts) < 4:
             logging.warning(f"[calibration] Cannot parse tag key: {tag_key}")
             continue
 
         # Extract components (work backwards from end)
-        # Format: label_framework_embedder{date}_label{date}_calib_version
-        # Example: happy_essentia21b6dev1389_yamnet20210604_happy20220825_none_0
-        # calib_version = parts[-1]  # Not needed for mapping
-        # calib_method = parts[-2]   # Not needed for mapping
-
-        # Find head part (contains label + 8-digit date like "happy20220825")
-        # It's always at index -3 (before calib method and version)
-        if len(parts) < 5:
-            logging.warning(f"[calibration] Tag key too short: {tag_key}")
-            continue
-
-        head_part = parts[-3]  # label{date} like "happy20220825"
+        # NEW FORMAT: label_framework_embedder{date}_head{date}
+        # head_part is at index -1 (last component)
+        head_part = parts[-1]  # label{date} like "happy20220825"
 
         # Extract head date (last 8 digits)
         if len(head_part) < 8 or not head_part[-8:].isdigit():
@@ -223,12 +215,12 @@ def save_calibration_sidecars(
         # Extract label from head part (everything before the date)
         label = head_part[:-8] if len(head_part) > 8 else parts[0]
 
-        # Embedder part is at index -4
-        if len(parts) < 5:
+        # Embedder part is at index -2
+        if len(parts) < 4:
             logging.warning(f"[calibration] Cannot find embedder in tag key: {tag_key}")
             continue
 
-        embedder_part = parts[-4]  # backbone{date} like "yamnet20210604"
+        embedder_part = parts[-2]  # backbone{date} like "yamnet20210604"
 
         # Extract backbone name (everything before the date)
         # Find where the date starts (first occurrence of "20" followed by 6 more digits)

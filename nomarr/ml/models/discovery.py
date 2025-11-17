@@ -120,12 +120,17 @@ class HeadInfo:
         framework_version: str,
         calib_method: str = "none",
         calib_version: int = 0,
-    ) -> str:
+    ) -> tuple[str, str]:
         """
         Build versioned tag key from model metadata and runtime framework version.
 
-        Format: {label}_{framework}{version}_{embedder}{date}_{head}{date}_{calib}_{version}
-        Example: happy_essentia21b6dev1389_yamnet20210604_happy20220825_platt_1
+        NEW FORMAT (calibration separate):
+        - model_key: {label}_{framework}{version}_{embedder}{date}_{head}{date}
+        - calibration_id: {calib_method}_{calib_version}
+
+        Example:
+        - model_key: "happy_essentia21b6dev1389_yamnet20210604_happy20220825"
+        - calibration_id: "platt_1"
 
         Args:
             label: Friendly label (e.g., "happy", "approachable")
@@ -134,7 +139,7 @@ class HeadInfo:
             calib_version: Calibration version number
 
         Returns:
-            Versioned tag key (without namespace prefix)
+            Tuple of (model_tag_key, calibration_id)
         """
         # Convert framework version to compact form: "2.1b6.dev1389" -> "21b6dev1389"
         # Keep full version including dev/patch suffixes (TF version changes matter)
@@ -158,10 +163,13 @@ class HeadInfo:
         # Build head name (label + date)
         head_part = f"{label}{head_date}"
 
-        # Build calibration suffix
-        calib_part = f"{calib_method}_{calib_version}"
+        # Build model key WITHOUT calibration suffix
+        model_key = f"{label}_{framework_part}_{embedder_part}_{head_part}"
 
-        return f"{label}_{framework_part}_{embedder_part}_{head_part}_{calib_part}"
+        # Build calibration ID separately
+        calibration_id = f"{calib_method}_{calib_version}"
+
+        return (model_key, calibration_id)
 
 
 def get_embedding_output_node(backbone: str) -> str:

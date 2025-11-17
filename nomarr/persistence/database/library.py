@@ -33,6 +33,7 @@ class LibraryOperations:
         track_number: int | None = None,
         tags_json: str | None = None,
         nom_tags: str | None = None,
+        calibration: str | None = None,
         last_tagged_at: int | None = None,
     ) -> int:
         """
@@ -51,6 +52,7 @@ class LibraryOperations:
             track_number: Track number
             tags_json: All tags as JSON
             nom_tags: Nomarr-specific tags as JSON
+            calibration: Calibration metadata as JSON (dict of model_key -> calibration_id)
             last_tagged_at: Last tagging timestamp
 
         Returns:
@@ -63,8 +65,8 @@ class LibraryOperations:
             INSERT INTO library_files(
                 path, file_size, modified_time, duration_seconds,
                 artist, album, title, genre, year, track_number,
-                tags_json, nom_tags, scanned_at, last_tagged_at
-            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                tags_json, nom_tags, calibration, scanned_at, last_tagged_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(path) DO UPDATE SET
                 file_size=excluded.file_size,
                 modified_time=excluded.modified_time,
@@ -77,6 +79,7 @@ class LibraryOperations:
                 track_number=excluded.track_number,
                 tags_json=excluded.tags_json,
                 nom_tags=excluded.nom_tags,
+                calibration=excluded.calibration,
                 scanned_at=excluded.scanned_at,
                 last_tagged_at=COALESCE(excluded.last_tagged_at, last_tagged_at)
             """,
@@ -93,6 +96,7 @@ class LibraryOperations:
                 track_number,
                 tags_json,
                 nom_tags,
+                calibration,
                 scanned_at,
                 last_tagged_at,
             ),
@@ -125,14 +129,28 @@ class LibraryOperations:
             path: File path
 
         Returns:
-            File dict or None if not found
+            File dict or None if not found. Calibration is parsed from JSON.
         """
+        import json
+
         cur = self.conn.execute("SELECT * FROM library_files WHERE path=?", (path,))
         row = cur.fetchone()
         if not row:
             return None
         columns = [desc[0] for desc in cur.description]
-        return dict(zip(columns, row, strict=False))
+        file_dict = dict(zip(columns, row, strict=False))
+
+        # Parse calibration JSON (default to empty dict if null/invalid)
+        calib_json = file_dict.get("calibration")
+        if calib_json:
+            try:
+                file_dict["calibration"] = json.loads(calib_json)
+            except Exception:
+                file_dict["calibration"] = {}
+        else:
+            file_dict["calibration"] = {}
+
+        return file_dict
 
     def list_library_files(
         self, limit: int = 100, offset: int = 0, artist: str | None = None, album: str | None = None
@@ -147,8 +165,10 @@ class LibraryOperations:
             album: Filter by album name
 
         Returns:
-            Tuple of (files list, total count)
+            Tuple of (files list, total count). Calibration is parsed from JSON for each file.
         """
+        import json
+
         where_clause = ""
         params: list[Any] = []
 
@@ -168,7 +188,19 @@ class LibraryOperations:
         params.extend([limit, offset])
         cur = self.conn.execute(query, params)
         columns = [desc[0] for desc in cur.description]
-        files = [dict(zip(columns, row, strict=False)) for row in cur.fetchall()]
+        files = []
+        for row in cur.fetchall():
+            file_dict = dict(zip(columns, row, strict=False))
+            # Parse calibration JSON (default to empty dict if null/invalid)
+            calib_json = file_dict.get("calibration")
+            if calib_json:
+                try:
+                    file_dict["calibration"] = json.loads(calib_json)
+                except Exception:
+                    file_dict["calibration"] = {}
+            else:
+                file_dict["calibration"] = {}
+            files.append(file_dict)
 
         return files, total
 

@@ -79,6 +79,7 @@ SCHEMA = [
         track_number INTEGER,
         tags_json TEXT,
         nom_tags TEXT,
+        calibration TEXT,
         scanned_at INTEGER,
         last_tagged_at INTEGER,
         tagged INTEGER DEFAULT 0,
@@ -181,7 +182,8 @@ SCHEMA = [
 ]
 
 # Schema version (pre-alpha, no migrations yet - just initial schema)
-SCHEMA_VERSION = 1
+# Version 2: Added calibration column to library_files
+SCHEMA_VERSION = 2
 
 
 # ----------------------------------------------------------------------

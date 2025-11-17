@@ -410,7 +410,7 @@ Use these scripts to:
 ```bash
 # Inspect real module APIs, attributes, and callables
 python scripts/discover_api.py nomarr.workflows.processor
-python scripts/discover_api.py nomarr.persistence.db --summary
+python scripts/discover_api.py nomarr.persistence.db
 ```
 
 > **Copilot rule:** Always use `discover_api.py` to verify APIs before calling them. Never guess function names, parameters, or return types.

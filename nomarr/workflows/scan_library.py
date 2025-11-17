@@ -259,7 +259,11 @@ def scan_library_workflow(
 
 
 def update_library_file_from_tags(
-    db: Database, file_path: str, namespace: str, tagged_version: str | None = None
+    db: Database,
+    file_path: str,
+    namespace: str,
+    tagged_version: str | None = None,
+    calibration: dict[str, str] | None = None,
 ) -> None:
     """
     Update library database with current file metadata and tags.
@@ -273,6 +277,7 @@ def update_library_file_from_tags(
     3. Upserts to library_files table
     4. Populates library_tags table with parsed tag values
     5. Optionally marks file as tagged with tagger version
+    6. Stores calibration metadata (model_key -> calibration_id mapping)
 
     Args:
         db: Database instance (must provide library and tags accessors)
@@ -280,6 +285,7 @@ def update_library_file_from_tags(
         namespace: Tag namespace (e.g., "nom" or "essentia")
         tagged_version: Optional tagger version to mark file as tagged
                        (only set when called from processor after tagging)
+        calibration: Optional calibration metadata dict (model_key -> calibration_id)
 
     Returns:
         None (updates database in-place)
@@ -296,6 +302,9 @@ def update_library_file_from_tags(
         # Extract metadata from file
         metadata = _extract_metadata(file_path, namespace)
 
+        # Serialize calibration metadata to JSON
+        calibration_json = json.dumps(calibration) if calibration else None
+
         # Upsert to library database
         db.library.upsert_library_file(
             path=file_path,
@@ -310,6 +319,7 @@ def update_library_file_from_tags(
             track_number=metadata.get("track_number"),
             tags_json=json.dumps(metadata.get("all_tags", {})),
             nom_tags=json.dumps(metadata.get("nom_tags", {})),
+            calibration=calibration_json,
         )
 
         # Get file ID and populate library_tags table

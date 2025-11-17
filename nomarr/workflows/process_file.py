@@ -270,14 +270,23 @@ def process_file_workflow(
                 # Build versioned tag keys using runtime framework version and model metadata
                 # Normalize labels (non_happy -> not_happy) before building keys
                 # Capture head_info in closure to avoid late binding issue
+                # Track calibration IDs for storage in database
 
-                def _build_key(label: str, head: HeadInfo = head_info) -> str:
-                    return head.build_versioned_tag_key(
+                # Initialize calibration map on tags_accum if not present
+                if not hasattr(tags_accum, "_calibration_map"):
+                    tags_accum._calibration_map = {}  # type: ignore
+
+                def _build_key(
+                    label: str, head: HeadInfo = head_info, calib_map: dict = tags_accum._calibration_map
+                ) -> str:  # type: ignore
+                    model_key, calibration_id = head.build_versioned_tag_key(
                         normalize_tag_label(label),
                         framework_version=ESSENTIA_VERSION,
                         calib_method="none",
                         calib_version=0,
                     )
+                    calib_map[model_key] = calibration_id
+                    return model_key
 
                 head_tags = decision.as_tags(key_builder=_build_key)
 
@@ -374,8 +383,11 @@ def process_file_workflow(
         try:
             from nomarr.workflows.scan_library import update_library_file_from_tags
 
+            # Extract calibration map if present
+            calibration_map = getattr(tags_accum, "_calibration_map", None)
+
             # Pass tagger_version so library scanner marks file as tagged
-            update_library_file_from_tags(db, path, ns, tagged_version=tagger_version)
+            update_library_file_from_tags(db, path, ns, tagged_version=tagger_version, calibration=calibration_map)
             logging.info(f"[processor] Updated library database for {path}")
         except Exception as e:
             # Don't fail the entire processing if library update fails

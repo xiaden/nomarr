@@ -1,37 +1,37 @@
 name: Prune Old Container Images
 
 on:
-  workflow_dispatch:
-    inputs:
-      keep_count:
-        description: 'Number of untagged images to keep'
-        required: false
-        default: '5'
-        type: string
-  schedule:
-    # Run weekly on Sundays at 2 AM UTC
-    - cron: '0 2 * * 0'
+    workflow_dispatch:
+        inputs:
+            keep_count:
+                description: "Number of untagged images to keep"
+                required: false
+                default: "5"
+                type: string
+    schedule:
+        # Run weekly on Sundays at 2 AM UTC
+        - cron: "0 2 * * 0"
 
 jobs:
-  prune:
-    runs-on: ubuntu-latest
-    permissions:
-      packages: write
-      contents: read
-    
-    steps:
-      - name: Delete old untagged container images
-        uses: actions/delete-package-versions@v5
-        with:
-          package-name: 'nomarr'
-          package-type: 'container'
-          min-versions-to-keep: ${{ github.event.inputs.keep_count || 5 }}
-          delete-only-untagged-versions: 'true'
-      
-      - name: Delete old nomarr-base untagged images
-        uses: actions/delete-package-versions@v5
-        with:
-          package-name: 'nomarr-base'
-          package-type: 'container'
-          min-versions-to-keep: 3
-          delete-only-untagged-versions: 'true'
+    prune:
+        runs-on: ubuntu-latest
+        permissions:
+            packages: write
+            contents: read
+
+        steps:
+            - name: Delete old untagged container images
+              uses: actions/delete-package-versions@v5
+              with:
+                  package-name: "nomarr"
+                  package-type: "container"
+                  min-versions-to-keep: ${{ github.event.inputs.keep_count || 5 }}
+                  delete-only-untagged-versions: "true"
+
+            - name: Delete old nomarr-base untagged images
+              uses: actions/delete-package-versions@v5
+              with:
+                  package-name: "nomarr-base"
+                  package-type: "container"
+                  min-versions-to-keep: 3
+                  delete-only-untagged-versions: "true"
