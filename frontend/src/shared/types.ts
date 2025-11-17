@@ -118,4 +118,18 @@ export interface ResetJobsResult {
   reset: number;
 }
 
+// ──────────────────────────────────────────────────────────────────────
+// Filesystem Types
+// ──────────────────────────────────────────────────────────────────────
+
+export interface FsEntry {
+  name: string;
+  is_dir: boolean;
+}
+
+export interface FsListResponse {
+  path: string; // Relative path from library root
+  entries: FsEntry[];
+}
+
 // Add more types as needed

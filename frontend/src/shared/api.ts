@@ -547,6 +547,36 @@ export const tags = {
 };
 
 // ──────────────────────────────────────────────────────────────────────
+// Filesystem API
+// ──────────────────────────────────────────────────────────────────────
+
+export const fs = {
+  /**
+   * List directory contents relative to library root.
+   *
+   * @param path - Relative path from library root (undefined or empty string for root)
+   * @returns Directory listing with entries (directories first, alphabetically sorted)
+   * @throws Error on invalid path, directory traversal, or path not found
+   */
+  listFs: async (
+    path?: string
+  ): Promise<{
+    path: string;
+    entries: Array<{ name: string; is_dir: boolean }>;
+  }> => {
+    const queryParams = new URLSearchParams();
+    if (path) {
+      queryParams.append("path", path);
+    }
+
+    const query = queryParams.toString();
+    const endpoint = query ? `/web/api/fs/list?${query}` : "/web/api/fs/list";
+
+    return request(endpoint);
+  },
+};
+
+// ──────────────────────────────────────────────────────────────────────
 // Export Combined API
 // ──────────────────────────────────────────────────────────────────────
 
@@ -559,4 +589,5 @@ export const api = {
   config,
   navidrome,
   tags,
+  fs,
 };

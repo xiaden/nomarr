@@ -5,10 +5,12 @@
  * - View tags from a specific audio file
  * - Display namespace and tag count
  * - Show all tags with their values
+ * - Browse filesystem to select file
  */
 
 import { useState } from "react";
 
+import { ServerFilePicker } from "../../components/ServerFilePicker";
 import { api } from "../../shared/api";
 
 interface TagsData {
@@ -23,6 +25,7 @@ export function InspectTagsPage() {
   const [tagsData, setTagsData] = useState<TagsData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showPicker, setShowPicker] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,10 +64,18 @@ export function InspectTagsPage() {
               type="text"
               value={filePath}
               onChange={(e) => setFilePath(e.target.value)}
-              placeholder="Enter full path to audio file"
+              placeholder="Enter relative path to audio file"
               style={styles.input}
               disabled={loading}
             />
+            <button
+              type="button"
+              onClick={() => setShowPicker(!showPicker)}
+              style={styles.browseButton}
+              disabled={loading}
+            >
+              {showPicker ? "Hide" : "Browse..."}
+            </button>
             <button
               type="submit"
               style={styles.button}
@@ -74,6 +85,19 @@ export function InspectTagsPage() {
             </button>
           </div>
         </form>
+        {showPicker && (
+          <div style={{ marginTop: "15px" }}>
+            <ServerFilePicker
+              value={filePath}
+              onChange={(newPath) => {
+                setFilePath(newPath);
+                setShowPicker(false);
+              }}
+              mode="file"
+              label="Select Audio File"
+            />
+          </div>
+        )}
       </section>
 
       {error && (
@@ -169,6 +193,15 @@ const styles = {
   button: {
     padding: "10px 20px",
     backgroundColor: "#4a9eff",
+    border: "none",
+    borderRadius: "4px",
+    color: "#fff",
+    fontSize: "1rem",
+    cursor: "pointer",
+  },
+  browseButton: {
+    padding: "10px 20px",
+    backgroundColor: "#6c757d",
     border: "none",
     borderRadius: "4px",
     color: "#fff",
