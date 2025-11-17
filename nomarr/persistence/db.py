@@ -183,7 +183,7 @@ SCHEMA = [
 
 # Schema version (pre-alpha, no migrations yet - just initial schema)
 # Version 2: Added calibration column to library_files
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 1
 
 
 # ----------------------------------------------------------------------

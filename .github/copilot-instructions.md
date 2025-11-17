@@ -414,6 +414,41 @@ python scripts/discover_api.py nomarr.persistence.db
 ```
 
 > **Copilot rule:** Always use `discover_api.py` to verify APIs before calling them. Never guess function names, parameters, or return types.
+> **note** `--summary` is currently useless, it will only give results like:
+
+```bash
+ python scripts/discover_api.py nomarr.ml.inference --summary
+
+nomarr.ml.inference:
+  Functions: compute_embeddings_for_backbone, make_head_only_predictor_batched, make_predictor_uncached
+  Constants: HAVE_TF, TYPE_CHECKING
+```
+
+while the full script will give:
+
+```bash
+python scripts/discover_api.py nomarr.ml.inference
+
+================================================================================
+Module: nomarr.ml.inference
+================================================================================
+
+🔧 FUNCTIONS:
+
+  def compute_embeddings_for_backbone(backbone: 'str', emb_graph: 'str', target_sr: 'int', segment_s: 'float', hop_s: 'float', path: 'str', min_duration_s: 'int', allow_short: 'bool') -> 'tuple[np.ndarray, float]':
+      Compute embeddings for an audio file using a specific backbo
+
+  def make_head_only_predictor_batched(head_info: 'HeadInfo', embeddings_2d: 'np.ndarray', batch_size: 'int' = 11) -> 'Callable[[], np.ndarray]':
+      Create a batched predictor that processes segments in fixed-
+
+  def make_predictor_uncached(head_info: 'HeadInfo') -> 'Callable[[np.ndarray, int], np.ndarray]':
+      Build full two-stage predictor (waveform -> embedding -> hea
+
+📌 CONSTANTS:
+
+  HAVE_TF = True
+  TYPE_CHECKING = False
+```
 
 ### 8.3 During Development
 

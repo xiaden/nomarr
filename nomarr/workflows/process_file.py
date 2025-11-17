@@ -177,6 +177,14 @@ def process_file_workflow(
         raise RuntimeError(f"No head models found under {models_dir}")
 
     logging.info(f"[processor] Discovered {len(heads)} heads")
+
+    # DEBUG: Log all heads by backbone and type
+    from collections import Counter
+    by_backbone = Counter(h.backbone for h in heads)
+    by_type = Counter(h.head_type for h in heads)
+    logging.info(f"[processor] Heads by backbone: {dict(by_backbone)}")
+    logging.info(f"[processor] Heads by type: {dict(by_type)}")
+
     for h in heads:
         logging.debug(f"[processor]   - {h.name} ({h.backbone}/{h.head_type}, {len(h.sidecar.labels)} labels)")
 
@@ -290,6 +298,14 @@ def process_file_workflow(
 
                 head_tags = decision.as_tags(key_builder=_build_key)
 
+                # DEBUG: Log tag generation details
+                logging.debug(
+                    f"[processor] Head {head_name} ({head_info.head_type}) produced {len(head_tags)} tags"
+                )
+                if head_tags:
+                    sample_keys = list(head_tags.keys())[:3]
+                    logging.debug(f"[processor]   Sample keys: {sample_keys}")
+
                 # Combined log: processing complete + tags produced
                 logging.info(
                     f"[processor] Head {head_name} complete: {len(segment_scores)} patches → {len(head_tags)} tags "
@@ -360,8 +376,18 @@ def process_file_workflow(
 
     logging.info(f"[processor] Derived mood terms from heads: {mood_terms}")
 
+    # DEBUG: Log tags before aggregation
+    logging.debug(f"[processor] Tags before mood aggregation: {len(tags_accum)} total")
+    tier_tags = [k for k in tags_accum if isinstance(k, str) and k.endswith("_tier")]
+    logging.debug(f"[processor]   {len(tier_tags)} tier tags found")
+    if tier_tags:
+        logging.debug(f"[processor]   Sample tier tags: {tier_tags[:5]}")
+
     # Convert regression head predictions (approachability, engagement) to mood tier tags
     add_regression_mood_tiers(tags_accum, regression_predictions)
+
+    # DEBUG: Log tags after regression tiers
+    logging.debug(f"[processor] Tags after regression tiers: {len(tags_accum)} total")
 
     # Load calibrations if available (conditional - gracefully handles missing files)
     # Use calibrate_heads flag from config to determine which calibration files to load
@@ -373,8 +399,22 @@ def process_file_workflow(
 
     aggregate_mood_tiers(tags_accum, mood_terms if mood_terms else None, calibrations)
 
+    # DEBUG: Log mood aggregation results
+    mood_keys = [k for k in tags_accum if isinstance(k, str) and k.startswith("mood-")]
+    logging.info(f"[processor] Mood aggregation produced {len(mood_keys)} mood- tags: {mood_keys}")
+    for mood_key in mood_keys:
+        val = tags_accum[mood_key]
+        if isinstance(val, list):
+            logging.debug(f"[processor]   {mood_key}: {len(val)} terms")
+
     tags_accum[version_tag_key] = tagger_version
     logging.info(f"[processor] Writing {len(tags_accum)} tags to file")
+
+    # DEBUG: Log calibration map
+    if hasattr(tags_accum, "_calibration_map"):
+        calib_map = tags_accum._calibration_map  # type: ignore
+        logging.debug(f"[processor] Calibration map has {len(calib_map)} entries")
+
     writer.write(path, tags_accum)
     logging.info("[processor] Tag write complete")
 

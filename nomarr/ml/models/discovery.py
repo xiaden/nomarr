@@ -211,7 +211,7 @@ def discover_heads(models_dir: str) -> list[HeadInfo]:
     Discover all classification/regression heads using folder structure.
 
     Structure expected:
-        models/<backbone>/embeddings/*.pb
+        models/<backbone>/embeddings/*.pb  (or embedding/*.pb for musicnn)
         models/<backbone>/heads/<type>/*.json
 
     Returns HeadInfo objects with backbone, head_type, and embedding graph resolved.
@@ -223,7 +223,12 @@ def discover_heads(models_dir: str) -> list[HeadInfo]:
             continue
 
         backbone = os.path.basename(backbone_dir)
+
+        # Try both "embeddings" (plural) and "embedding" (singular) for compatibility
         embeddings_dir = os.path.join(backbone_dir, "embeddings")
+        if not os.path.isdir(embeddings_dir):
+            embeddings_dir = os.path.join(backbone_dir, "embedding")
+
         heads_dir = os.path.join(backbone_dir, "heads")
 
         if not os.path.isdir(embeddings_dir) or not os.path.isdir(heads_dir):

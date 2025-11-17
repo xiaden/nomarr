@@ -249,6 +249,11 @@ def aggregate_mood_tiers(
         f"[aggregation] aggregate_mood_tiers called with mood_terms={mood_terms}, calibrations={calibrations is not None}"
     )
 
+    # DEBUG: Log input tags
+    total_tags = len([k for k in tags if isinstance(k, str)])
+    tier_tags_count = len([k for k in tags if isinstance(k, str) and k.endswith("_tier")])
+    logging.debug(f"[aggregation] Input: {total_tags} string keys, {tier_tags_count} tier tags")
+
     # Collect all tier tags with their probabilities
     tier_map: dict[str, tuple[str, float]] = {}  # base_key -> (tier, prob)
 
