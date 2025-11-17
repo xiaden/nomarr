@@ -400,7 +400,7 @@ def real_library_service(test_db, temp_music_library):
     """Provide a real LibraryService instance for testing with temp library path."""
     from nomarr.services.library import LibraryService
 
-    return LibraryService(test_db, library_path=str(temp_music_library))
+    return LibraryService(test_db, namespace="nom", library_path=str(temp_music_library))
 
 
 @pytest.fixture
