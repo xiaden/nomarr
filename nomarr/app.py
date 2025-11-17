@@ -88,6 +88,7 @@ class Application:
             INTERNAL_NAMESPACE,
             INTERNAL_POLL_INTERVAL,
             INTERNAL_PORT,
+            INTERNAL_VERSION_TAG,
             INTERNAL_WORKER_ENABLED,
         )
 
@@ -112,6 +113,7 @@ class Application:
         self.worker_poll_interval: int = INTERNAL_POLL_INTERVAL
         self.library_scan_poll_interval: int = INTERNAL_LIBRARY_SCAN_POLL_INTERVAL
         self.namespace: str = INTERNAL_NAMESPACE
+        self.version_tag_key: str = INTERNAL_VERSION_TAG
 
         # Admin password
         self.admin_password_config: str | None = self._config.get("admin_password")
@@ -271,6 +273,7 @@ class Application:
                 "library",
                 LibraryService(
                     db=self.db,
+                    namespace=self.namespace,
                     library_path=self.library_path,
                     worker=self.library_scan_worker,
                 ),
@@ -284,6 +287,7 @@ class Application:
             db=self.db,
             models_dir=self.models_dir,
             namespace=self.namespace,
+            version_tag_key=self.version_tag_key,
             poll_interval=2,
             calibrate_heads=self.calibrate_heads,
         )

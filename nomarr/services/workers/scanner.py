@@ -23,7 +23,7 @@ class LibraryScanWorker:
         self,
         db: Database,
         library_path: str,
-        namespace: str = "essentia",
+        namespace: str,
         poll_interval: int = 5,
         auto_tag: bool = False,
         ignore_patterns: str = "",
@@ -34,7 +34,7 @@ class LibraryScanWorker:
         Args:
             db: Database instance
             library_path: Root path to scan
-            namespace: Tag namespace for essentia tags
+            namespace: Tag namespace (must be provided by service)
             poll_interval: Seconds between checking for new scan requests
             auto_tag: Auto-enqueue untagged files for ML tagging
             ignore_patterns: Comma-separated patterns to skip auto-tagging

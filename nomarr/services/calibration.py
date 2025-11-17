@@ -32,7 +32,7 @@ class CalibrationService:
         self,
         db: Database,
         models_dir: str,
-        namespace: str = "nom",
+        namespace: str,
         thresholds: dict[str, float] | None = None,
     ):
         """
@@ -41,7 +41,7 @@ class CalibrationService:
         Args:
             db: Database instance
             models_dir: Path to models directory
-            namespace: Tag namespace (default "nom")
+            namespace: Tag namespace (must be provided by service)
             thresholds: Optional custom drift thresholds
         """
         self._db = db

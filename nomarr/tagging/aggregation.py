@@ -276,36 +276,35 @@ def add_regression_mood_tiers(
     return outputs
 
 
-def aggregate_mood_tiers(
-    head_outputs: list[Any],  # List of HeadOutput objects
-    calibrations: dict[str, dict[str, Any]] | None = None,
-) -> dict[str, Any]:
+# Opposing mood pairs with improved human-readable labels
+# Format: (pos_key_pattern, neg_key_pattern, pos_label, neg_label)
+LABEL_PAIRS = [
+    ("happy", "sad", "peppy", "sombre"),
+    ("aggressive", "relaxed", "aggressive", "relaxed"),
+    ("electronic", "acoustic", "synth-like", "acoustic-like"),
+    ("party", "not_party", "party-like", "not party-like"),
+    ("danceable", "not_danceable", "easy to dance to", "hard to dance to"),
+    ("bright", "dark", "bright timbre", "dark timbre"),
+    ("male", "female", "low-pitch vocal", "high-pitch vocal"),
+    ("tonal", "atonal", "tonal", "atonal"),
+    ("instrumental", "voice", "instrumental only", "has vocals"),
+]
+
+
+def _build_tier_map(
+    head_outputs: list[Any],
+    calibrations: dict[str, dict[str, Any]] | None,
+) -> dict[str, tuple[str, float]]:
     """
-    Aggregate HeadOutput objects into mood-strict, mood-regular, mood-loose collections.
-
-    Uses HeadOutput.tier to determine confidence level instead of parsing *_tier tags.
-
-    Optionally applies calibration to raw scores before tier assignment. If calibrations
-    are provided, raw scores are normalized using min-max scaling to make different models
-    comparable. If no calibration exists for a tag, the raw score is used unchanged.
-
-    Applies pair conflict suppression: if both sides of a pair (e.g., happy/sad,
-    aggressive/relaxed) have tiers, neither is emitted to avoid contradictory tags.
-
-    Also applies label improvements for better human readability.
+    Build tier map from HeadOutput objects, applying calibration when available.
 
     Args:
-        head_outputs: List of HeadOutput objects with tier information
+        head_outputs: List of HeadOutput objects
         calibrations: Optional calibration data (tag_key -> {p5, p95, method})
 
     Returns:
-        Dictionary containing mood-strict, mood-regular, mood-loose tags
+        Dictionary mapping model_key -> (tier, value)
     """
-    logging.debug(
-        f"[aggregation] aggregate_mood_tiers called with {len(head_outputs)} HeadOutput objects, "
-        f"calibrations={calibrations is not None}"
-    )
-
     # Filter to only mood-source heads with tiers
     mood_outputs = [ho for ho in head_outputs if ho.head.is_mood_source and ho.tier is not None]
     logging.debug(f"[aggregation] {len(mood_outputs)} mood outputs with tiers")
@@ -332,21 +331,23 @@ def aggregate_mood_tiers(
 
     logging.info(f"[aggregation] Tier map has {len(tier_map)} entries")
 
-    # Define opposing pairs with improved labels
-    # Format: (pos_key_pattern, neg_key_pattern, pos_label, neg_label)
-    label_pairs = [
-        ("happy", "sad", "peppy", "sombre"),
-        ("aggressive", "relaxed", "aggressive", "relaxed"),
-        ("electronic", "acoustic", "electronic production", "acoustic production"),
-        ("party", "not_party", "bass-forward", "bass-light"),
-        ("danceable", "not_danceable", "easy to dance to", "hard to dance to"),
-        ("bright", "dark", "majorish", "minorish"),
-        ("male", "female", "male vocal lead", "female vocal lead"),
-        ("tonal", "atonal", "tonal", "atonal"),
-        ("instrumental", "voice", "instrumental heavy", "vocal heavy"),
-    ]
+    return tier_map
 
-    # Track which keys to suppress due to conflicts
+
+def _compute_suppressed_keys(
+    tier_map: dict[str, tuple[str, float]],
+    label_pairs: list[tuple[str, str, str, str]],
+) -> set[str]:
+    """
+    Identify conflicting mood pairs and return keys to suppress.
+
+    Args:
+        tier_map: Dictionary mapping model_key -> (tier, value)
+        label_pairs: List of opposing mood pairs
+
+    Returns:
+        Set of model keys to suppress due to conflicts
+    """
     suppressed_keys: set[str] = set()
 
     # Check each pair for conflicts
@@ -398,12 +399,23 @@ def aggregate_mood_tiers(
                 f"[aggregation] Suppressing conflicting pair: {pos_key} ({pos_tier}) vs {neg_key} ({neg_tier})"
             )
 
-    # Build tier sets with improved labels, excluding suppressed keys
-    strict_terms: set[str] = set()
-    regular_terms: set[str] = set()
-    loose_terms: set[str] = set()
+    return suppressed_keys
 
-    # Build label_map using simplified keys
+
+def _build_label_map(
+    tier_map: dict[str, tuple[str, float]],
+    label_pairs: list[tuple[str, str, str, str]],
+) -> dict[str, str]:
+    """
+    Build label map for improved human-readable mood terms.
+
+    Args:
+        tier_map: Dictionary mapping model_key -> (tier, value)
+        label_pairs: List of opposing mood pairs with improved labels
+
+    Returns:
+        Dictionary mapping simplified keys to human-readable labels
+    """
     label_map = {}
     for pos_pat, neg_pat, pos_label, neg_label in label_pairs:
         for k in tier_map:
@@ -416,6 +428,29 @@ def aggregate_mood_tiers(
                 label_map[simplified] = neg_label
             if simplified == f"not {neg_pat}":
                 label_map[simplified] = f"not {neg_label}"
+
+    return label_map
+
+
+def _build_tier_term_sets(
+    tier_map: dict[str, tuple[str, float]],
+    suppressed_keys: set[str],
+    label_map: dict[str, str],
+) -> tuple[set[str], set[str], set[str]]:
+    """
+    Build strict, regular, and loose term sets from tier map.
+
+    Args:
+        tier_map: Dictionary mapping model_key -> (tier, value)
+        suppressed_keys: Set of keys to skip due to conflicts
+        label_map: Dictionary mapping simplified keys to human-readable labels
+
+    Returns:
+        Tuple of (strict_terms, regular_terms, loose_terms)
+    """
+    strict_terms: set[str] = set()
+    regular_terms: set[str] = set()
+    loose_terms: set[str] = set()
 
     for model_key, (tier, value) in tier_map.items():
         if model_key in suppressed_keys:
@@ -436,6 +471,27 @@ def aggregate_mood_tiers(
         f"[aggregation] Mood aggregation: strict={len(strict_terms)}, regular={len(regular_terms)}, loose={len(loose_terms)}"
     )
 
+    return strict_terms, regular_terms, loose_terms
+
+
+def _make_inclusive_mood_tags(
+    strict_terms: set[str],
+    regular_terms: set[str],
+    loose_terms: set[str],
+) -> dict[str, Any]:
+    """
+    Build final mood tag dictionary with inclusive tier expansion.
+
+    Implements: strict ⊂ regular ⊂ loose
+
+    Args:
+        strict_terms: Set of strict tier terms
+        regular_terms: Set of regular tier terms
+        loose_terms: Set of loose tier terms
+
+    Returns:
+        Dictionary containing mood-strict, mood-regular, mood-loose tags
+    """
     # Inclusive mood sets: strict ⊂ regular ⊂ loose
     if strict_terms:
         regular_terms |= strict_terms
@@ -453,3 +509,51 @@ def aggregate_mood_tiers(
         result["mood-loose"] = sorted(loose_terms)
 
     return result
+
+
+def aggregate_mood_tiers(
+    head_outputs: list[Any],  # List of HeadOutput objects
+    calibrations: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """
+    Aggregate HeadOutput objects into mood-strict, mood-regular, mood-loose collections.
+
+    Uses HeadOutput.tier to determine confidence level instead of parsing *_tier tags.
+
+    Optionally applies calibration to raw scores before tier assignment. If calibrations
+    are provided, raw scores are normalized using min-max scaling to make different models
+    comparable. If no calibration exists for a tag, the raw score is used unchanged.
+
+    Applies pair conflict suppression: if both sides of a pair (e.g., happy/sad,
+    aggressive/relaxed) have tiers, neither is emitted to avoid contradictory tags.
+
+    Also applies label improvements for better human readability.
+
+    Args:
+        head_outputs: List of HeadOutput objects with tier information
+        calibrations: Optional calibration data (tag_key -> {p5, p95, method})
+
+    Returns:
+        Dictionary containing mood-strict, mood-regular, mood-loose tags
+    """
+    logging.debug(
+        f"[aggregation] aggregate_mood_tiers called with {len(head_outputs)} HeadOutput objects, "
+        f"calibrations={calibrations is not None}"
+    )
+
+    # Build tier map with calibration applied
+    tier_map = _build_tier_map(head_outputs, calibrations)
+    if not tier_map:
+        return {}
+
+    # Compute conflicting pairs and suppress both sides
+    suppressed_keys = _compute_suppressed_keys(tier_map, LABEL_PAIRS)
+
+    # Build label map for improved human-readable terms
+    label_map = _build_label_map(tier_map, LABEL_PAIRS)
+
+    # Build tier term sets, excluding suppressed keys
+    strict_terms, regular_terms, loose_terms = _build_tier_term_sets(tier_map, suppressed_keys, label_map)
+
+    # Build final mood tags with inclusive expansion
+    return _make_inclusive_mood_tags(strict_terms, regular_terms, loose_terms)

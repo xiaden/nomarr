@@ -27,7 +27,7 @@ The `db` parameter must provide these methods:
 USAGE:
     from nomarr.workflows.scan_library import scan_library_workflow
 
-    stats = scan_library(
+    stats = scan_library_workflow(
         db=database_instance,
         library_path="/path/to/music",
         namespace="nom",
@@ -97,7 +97,7 @@ def _matches_ignore_pattern(file_path: str, patterns: str) -> bool:
 def scan_library_workflow(
     db: Database,
     library_path: str,
-    namespace: str = "essentia",
+    namespace: str,
     progress_callback: Callable[[int, int], None] | None = None,
     scan_id: int | None = None,
     auto_tag: bool = False,
@@ -116,7 +116,7 @@ def scan_library_workflow(
     Args:
         db: Database instance (must provide library, tags, and queue accessors)
         library_path: Root path to scan for audio files
-        namespace: Tag namespace for essentia/nom tags (default: "essentia")
+        namespace: Tag namespace for tag extraction and database tracking (must be provided by service)
         progress_callback: Optional callback(current, total) for progress updates
         scan_id: Optional existing scan record ID (if None, creates new record)
         auto_tag: Whether to automatically enqueue untagged files for tagging

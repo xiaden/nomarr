@@ -34,6 +34,7 @@ class RecalibrationWorker(threading.Thread):
         db: Database,
         models_dir: str,
         namespace: str = "nom",
+        version_tag_key: str = "nom_version",
         poll_interval: int = 2,
         calibrate_heads: bool = False,
     ):
@@ -44,6 +45,7 @@ class RecalibrationWorker(threading.Thread):
             db: Database instance
             models_dir: Path to models directory (for loading calibration sidecars)
             namespace: Tag namespace (default: "nom")
+            version_tag_key: Tag key used for version identification (default: "nom_version")
             poll_interval: Seconds between queue polls (default: 2)
             calibrate_heads: If True, use versioned calibration files (dev mode)
         """
@@ -51,6 +53,7 @@ class RecalibrationWorker(threading.Thread):
         self.db = db
         self.models_dir = models_dir
         self.namespace = namespace
+        self.version_tag_key = version_tag_key
         self.poll_interval = max(1, poll_interval)
         self.calibrate_heads = calibrate_heads
 
@@ -137,6 +140,7 @@ class RecalibrationWorker(threading.Thread):
             file_path=file_path,
             models_dir=self.models_dir,
             namespace=self.namespace,
+            version_tag_key=self.version_tag_key,
             calibrate_heads=self.calibrate_heads,
         )
 

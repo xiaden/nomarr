@@ -25,6 +25,7 @@ class LibraryService:
     def __init__(
         self,
         db: Database,
+        namespace: str,
         library_path: str | None = None,
         worker: LibraryScanWorker | None = None,
     ):
@@ -33,10 +34,12 @@ class LibraryService:
 
         Args:
             db: Database instance
+            namespace: Tag namespace for library operations (e.g., "nom")
             library_path: Path to music library directory
             worker: LibraryScanWorker instance (for background scans in API)
         """
         self.db = db
+        self.namespace = namespace
         self.library_path = library_path
         self.worker = worker
 
@@ -91,7 +94,7 @@ class LibraryService:
             stats = scan_library_workflow(
                 db=self.db,
                 library_path=self.library_path,
-                namespace=namespace if namespace is not None else "essentia",
+                namespace=namespace if namespace is not None else self.namespace,
                 progress_callback=progress_callback,
             )
 

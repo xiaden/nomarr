@@ -2,7 +2,7 @@
 
 **Intelligent audio auto-tagging for your music library using state-of-the-art machine learning.**
 
-Nomarr is a WIP PRE-ALPHA PROGRAM that analyzes your music files with Essentia's pre-trained ML models and writes rich metadata tags directly into MP3/M4A files. Perfect for organizing large libraries, discovering moods, and enriching metadata for music servers like Navidrome and Plex.
+Nomarr is a pre-alpha audio tagging system that analyzes your music files with Essentia's pre-trained ML models and writes rich metadata tags directly into MP3/M4A files. Perfect for organizing large libraries, discovering moods, and enriching metadata for music servers like Navidrome and Plex.
 
 ## WARNING
 
@@ -35,12 +35,12 @@ _Screenshot: CLI batch processing - coming soon_
 Nomarr automatically tags your audio files with:
 
 - **Mood & Emotion** - Happy, sad, aggressive, relaxed, party, etc.
-- **Genre Classification** - Electronic, rock, classical, jazz, and more
-- **Instruments** - Piano, guitar, strings, voice, percussion
-- **Acoustic Properties** - Danceability, energy, timbre
-- **Multi-value Tags** - Native support for complex metadata
+- **Acoustic Properties** - Danceability, energy, timbre, brightness
+- **Audio Characteristics** - Vocal presence, tonal/atonal classification
 
-All tags are written as native metadata (ID3v2 for MP3, iTunes atoms for M4A) - no external database required.
+All tags are written as native metadata (ID3v2 for MP3, iTunes atoms for M4A, Vorbis comments for OGG/FLAC/Opus) with the `nom:` namespace prefix - no external database required.
+
+**Note:** Nomarr comes with mood and acoustic property models. Additional models (genre, instruments, etc.) can be added by users but are not included by default.
 
 ---
 
@@ -48,14 +48,15 @@ All tags are written as native metadata (ID3v2 for MP3, iTunes atoms for M4A) - 
 
 - **🌐 Modern Web UI** - Browser interface for processing, monitoring, analytics, and configuration
 - **🔌 Lidarr Integration** - Drop-in Docker sidecar that auto-tags imports via webhooks
-- **📚 Library Scanner** - Automatic background scanning of your music library with tag analytics
-- **📊 Calibration System** - Normalize model outputs with min-max scaling for consistent scoring
+- **📚 Library Scanner** - Automatic background scanning with tag extraction and analytics
+- **📊 Calibration System** - Normalize model outputs with min-max scaling and drift tracking
 - **⚡ GPU Accelerated** - NVIDIA CUDA support for fast ML inference
 - **🎨 Rich Metadata** - Writes probabilities, tiers, and aggregated mood tags in native format (ID3v2/MP4)
 - **📊 Queue System** - Background processing with pause/resume, status tracking, and error recovery
 - **🎵 Navidrome Integration** - Smart playlist generation and config export
 - **🔐 Secure** - API key authentication for automation, session-based auth for web UI
 - **🐳 Docker Native** - Single container with NVIDIA GPU passthrough
+- **🏗️ Clean Architecture** - Dependency injection, pure workflows, and isolated ML layer
 
 ---
 
@@ -92,7 +93,7 @@ All tags are written as native metadata (ID3v2 for MP3, iTunes atoms for M4A) - 
          - ./config:/app/config
          - /path/to/music:/music # Must match Lidarr's path
        environment:
-         - NOMARR_DB=/app/config/db/essentia.sqlite
+         - NOMARR_DB=/app/config/db/nomarr.sqlite
        deploy:
          resources:
            reservations:
@@ -126,7 +127,7 @@ All tags are written as native metadata (ID3v2 for MP3, iTunes atoms for M4A) - 
    The API key is auto-generated and stored in the database. To retrieve it, query the database:
 
    ```bash
-   docker compose exec nomarr sqlite3 /app/config/db/essentia.sqlite \
+   docker compose exec nomarr sqlite3 /app/config/db/nomarr.sqlite \
      "SELECT value FROM meta WHERE key='api_key';"
    ```
 
@@ -193,18 +194,21 @@ curl -X POST \
 
 ## 🎵 Example Output
 
-Nomarr writes tags under the `essentia:` namespace:
+Nomarr writes tags using the `nom:` namespace prefix:
 
 ```
-essentia:danceability = 0.7234
-essentia:danceability_tier = medium
-essentia:aggressive = 0.1203
-essentia:aggressive_tier = low
-essentia:mood-strict = ["happy", "party", "not sad", "not aggressive"]
-essentia:mood-regular = ["happy", "party", "energetic", "not sad"]
-essentia:genre_electronic = 0.8941
-essentia:voice_instrumental = 0.2341
+nom:danceability_essentia21-beta6-dev_effnet20220217_danceability20220825 = 0.7234
+nom:aggressive_essentia21-beta6-dev_effnet20220217_aggressive20220825 = 0.1203
+nom:genre_electronic_essentia21-beta6-dev_effnet20220217_genre_electronic20220825 = 0.8941
+nom:voice_instrumental_essentia21-beta6-dev_effnet20220217_voice_instrumental20220825 = 0.2341
+nom:bright_essentia21-beta6-dev_effnet20220217_bright20220825 = 0.4514
+nom:mood-strict = ["peppy", "party-like", "synth-like", "bright timbre"]
+nom:mood-regular = ["peppy", "party-like", "synth-like", "bright timbre", "easy to dance to"]
+nom:mood-loose = ["peppy", "party-like", "synth-like", "bright timbre", "easy to dance to", "has vocals"]
+nom_version = 1.0.0
 ```
+
+Each numeric tag includes the full model head identifier (model version, backbone, head name, and date). Aggregated mood tags combine predictions across multiple heads using human-readable labels. The version tag tracks which tagger version processed each file.
 
 ---
 

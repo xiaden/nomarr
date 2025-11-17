@@ -42,49 +42,25 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-def recalibrate_file_workflow(
+def _load_library_state(
     db: Database,
     file_path: str,
-    models_dir: str,
-    namespace: str = "nom",
-    calibrate_heads: bool = False,
-) -> None:
+    namespace: str,
+) -> tuple[int, dict[str, Any], dict[str, str]]:
     """
-    Recalibrate a single file by applying calibration to existing numeric tags.
-
-    This workflow:
-    1. Loads numeric tags from DB (model_key -> value)
-    2. Loads calibration metadata from library_files.calibration
-    3. Discovers HeadInfo from models directory
-    4. Reconstructs HeadOutput objects from tags + calibration
-    5. Re-runs aggregation to compute mood-* tags
-    6. Updates mood-* tags in DB and file
-
-    This is much faster than retagging because it skips ML inference entirely,
-    reusing the numeric scores already stored in the database.
+    Load file metadata and tags from library database.
 
     Args:
-        db: Database instance (must provide library, tags accessors)
-        file_path: Absolute path to audio file to recalibrate
-        models_dir: Path to models directory containing calibration sidecars and head metadata
-        namespace: Tag namespace (default: "nom")
-        calibrate_heads: If True, use versioned calibration files (dev mode);
-                        if False, use reference calibration files (production)
+        db: Database instance
+        file_path: Path to audio file
+        namespace: Tag namespace
 
     Returns:
-        None (updates file tags in-place)
+        Tuple of (file_id, all_tags, calibration_map)
 
     Raises:
         FileNotFoundError: If file not found in library database
-        ValueError: If no heads discovered or no tags found
-
-    Example:
-        >>> recalibrate_file_workflow(
-        ...     db=my_db, file_path="/music/song.mp3", models_dir="/app/models", namespace="nom", calibrate_heads=False
-        ... )
     """
-    logging.debug(f"[recalibration] Processing {file_path}")
-
     # Get file from library
     library_file = db.library.get_library_file(file_path)
     if not library_file:
@@ -106,9 +82,34 @@ def recalibrate_file_workflow(
 
     if not all_tags:
         logging.warning(f"[recalibration] No tags found for {file_path}")
-        return
 
-    # Filter to numeric tags only (exclude mood-* and version tags)
+    return file_id, all_tags, calibration_map
+
+
+def _filter_numeric_tags(
+    all_tags: dict[str, Any],
+    version_tag_key: str,
+) -> dict[str, float | int]:
+    """
+    Filter to numeric tags only, excluding mood-* and version tags.
+
+    Args:
+        all_tags: All tags for the file
+        version_tag_key: Un-namespaced key for the tagger version tag (e.g., "nom_version")
+
+    Returns:
+        Dictionary of numeric tags only
+    """
+
+    def _is_version_key(key: str) -> bool:
+        if not isinstance(key, str):
+            return False
+        # Raw (no namespace)
+        if key == version_tag_key:
+            return True
+        # Namespaced form, e.g. "ns:nom_version"
+        return ":" in key and key.split(":", 1)[1] == version_tag_key
+
     numeric_tags = {
         k: v
         for k, v in all_tags.items()
@@ -116,22 +117,43 @@ def recalibrate_file_workflow(
         and not k.endswith(":mood-strict")
         and not k.endswith(":mood-regular")
         and not k.endswith(":mood-loose")
-        and not k.endswith(":nom_version")
+        and not _is_version_key(k)
     }
 
     if not numeric_tags:
-        logging.warning(f"[recalibration] No numeric tags found for {file_path}")
-        return
+        logging.warning("[recalibration] No numeric tags found")
 
     logging.debug(f"[recalibration] Found {len(numeric_tags)} numeric tags")
 
+    return numeric_tags
+
+
+def _discover_head_mappings(
+    models_dir: str,
+    namespace: str,
+    numeric_tags: dict[str, float | int],
+) -> dict[str, tuple[Any, str]]:
+    """
+    Discover heads and build mapping from tag keys to HeadInfo.
+
+    Args:
+        models_dir: Path to models directory
+        namespace: Tag namespace
+        numeric_tags: Numeric tags to match against heads
+
+    Returns:
+        Dictionary mapping tag_key -> (HeadInfo, label)
+
+    Raises:
+        ValueError: If no heads discovered
+    """
     # Discover HeadInfo from models directory to get metadata
     heads = discover_heads(models_dir)
     if not heads:
         raise ValueError(f"No heads discovered in {models_dir}")
 
     # Build lookup: model_key -> HeadInfo
-    head_by_model_key: dict[str, Any] = {}  # model_key -> (HeadInfo, label)
+    head_by_model_key: dict[str, tuple[Any, str]] = {}  # model_key -> (HeadInfo, label)
     for head in heads:
         for label in head.labels:
             # Try to match tags to heads by checking if label appears in tag key
@@ -145,12 +167,50 @@ def recalibrate_file_workflow(
 
     logging.debug(f"[recalibration] Matched {len(head_by_model_key)} tags to heads")
 
-    # Load calibration sidecars
+    return head_by_model_key
+
+
+def _load_calibrations(
+    models_dir: str,
+    calibrate_heads: bool,
+) -> dict[str, Any]:
+    """
+    Load calibration sidecars from models directory.
+
+    Args:
+        models_dir: Path to models directory
+        calibrate_heads: Whether to use versioned calibration files
+
+    Returns:
+        Dictionary of calibrations (may be empty)
+    """
     calibrations = load_calibrations(models_dir, calibrate_heads=calibrate_heads)
     if calibrations:
         logging.info(f"[recalibration] Loaded calibrations for {len(calibrations)} labels")
 
-    # Reconstruct HeadOutput objects from numeric tags
+    return calibrations
+
+
+def _reconstruct_head_outputs(
+    numeric_tags: dict[str, float | int],
+    head_by_model_key: dict[str, tuple[Any, str]],
+    calibration_map: dict[str, str],
+    namespace: str,
+    calibrations: dict[str, Any],
+) -> list[HeadOutput]:
+    """
+    Reconstruct HeadOutput objects from numeric tags and calibration data.
+
+    Args:
+        numeric_tags: Numeric tags from database
+        head_by_model_key: Mapping of tag_key -> (HeadInfo, label)
+        calibration_map: Mapping of model_key -> calibration_id
+        namespace: Tag namespace
+        calibrations: Calibration parameters
+
+    Returns:
+        List of HeadOutput objects
+    """
     head_outputs: list[HeadOutput] = []
     for tag_key, value in numeric_tags.items():
         if tag_key not in head_by_model_key:
@@ -195,21 +255,54 @@ def recalibrate_file_workflow(
         )
 
     if not head_outputs:
-        logging.warning(f"[recalibration] No HeadOutput objects reconstructed for {file_path}")
-        return
+        logging.warning("[recalibration] No HeadOutput objects reconstructed")
 
     logging.info(f"[recalibration] Reconstructed {len(head_outputs)} HeadOutput objects")
 
-    # Re-run aggregation to compute mood-* tags
+    return head_outputs
+
+
+def _compute_mood_tags(
+    head_outputs: list[HeadOutput],
+    calibrations: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Aggregate HeadOutput objects into mood-* tags.
+
+    Args:
+        head_outputs: List of HeadOutput objects
+        calibrations: Calibration parameters
+
+    Returns:
+        Dictionary of mood tags
+    """
     mood_tags = aggregate_mood_tiers(head_outputs, calibrations=calibrations)
 
     if not mood_tags:
-        logging.debug(f"[recalibration] No mood tags generated for {file_path}")
-        return
+        logging.debug("[recalibration] No mood tags generated")
+    else:
+        logging.info(f"[recalibration] Generated {len(mood_tags)} mood tags")
 
-    logging.info(f"[recalibration] Generated {len(mood_tags)} mood tags")
+    return mood_tags
 
-    # Update mood-* tags in database
+
+def _update_db_and_file(
+    db: Database,
+    file_id: int,
+    file_path: str,
+    namespace: str,
+    mood_tags: dict[str, Any],
+) -> None:
+    """
+    Update mood-* tags in database and file.
+
+    Args:
+        db: Database instance
+        file_id: File ID in library
+        file_path: Path to audio file
+        namespace: Tag namespace
+        mood_tags: Mood tags to write
+    """
     # Build namespaced tags for DB
     namespaced_mood_tags = {f"{namespace}:{k}": v for k, v in mood_tags.items()}
 
@@ -223,3 +316,87 @@ def recalibrate_file_workflow(
     writer.write(file_path, mood_tags)
 
     logging.info(f"[recalibration] Recalibration complete for {file_path}")
+
+
+def recalibrate_file_workflow(
+    db: Database,
+    file_path: str,
+    models_dir: str,
+    namespace: str,
+    version_tag_key: str,
+    calibrate_heads: bool = False,
+) -> None:
+    """
+    Recalibrate a single file by applying calibration to existing numeric tags.
+
+    This workflow:
+    1. Loads numeric tags from DB (model_key -> value)
+    2. Loads calibration metadata from library_files.calibration
+    3. Discovers HeadInfo from models directory
+    4. Reconstructs HeadOutput objects from tags + calibration
+    5. Re-runs aggregation to compute mood-* tags
+    6. Updates mood-* tags in DB and file
+
+    This is much faster than retagging because it skips ML inference entirely,
+    reusing the numeric scores already stored in the database.
+
+    Args:
+        db: Database instance (must provide library, tags accessors)
+        file_path: Absolute path to audio file to recalibrate
+        models_dir: Path to models directory containing calibration sidecars and head metadata
+        namespace: Tag namespace (e.g., "nom")
+        version_tag_key: Un-namespaced key for the tagger version tag (e.g., "nom_version")
+        calibrate_heads: If True, use versioned calibration files (dev mode);
+                        if False, use reference calibration files (production)
+
+    Returns:
+        None (updates file tags in-place)
+
+    Raises:
+        FileNotFoundError: If file not found in library database
+        ValueError: If no heads discovered or no tags found
+
+    Example:
+        >>> recalibrate_file_workflow(
+        ...     db=my_db,
+        ...     file_path="/music/song.mp3",
+        ...     models_dir="/app/models",
+        ...     namespace="nom",
+        ...     version_tag_key="nom_version",
+        ...     calibrate_heads=False,
+        ... )
+    """
+    logging.debug(f"[recalibration] Processing {file_path}")
+
+    # Step 1: Load library state (file metadata, tags, calibration)
+    file_id, all_tags, calibration_map = _load_library_state(db, file_path, namespace)
+
+    if not all_tags:
+        return
+
+    # Step 2: Filter to numeric tags only
+    numeric_tags = _filter_numeric_tags(all_tags, version_tag_key)
+
+    if not numeric_tags:
+        return
+
+    # Step 3: Discover heads and build tag-to-head mappings
+    head_by_model_key = _discover_head_mappings(models_dir, namespace, numeric_tags)
+
+    # Step 4: Load calibration sidecars
+    calibrations = _load_calibrations(models_dir, calibrate_heads)
+
+    # Step 5: Reconstruct HeadOutput objects from tags and calibration
+    head_outputs = _reconstruct_head_outputs(numeric_tags, head_by_model_key, calibration_map, namespace, calibrations)
+
+    if not head_outputs:
+        return
+
+    # Step 6: Re-run aggregation to compute mood-* tags
+    mood_tags = _compute_mood_tags(head_outputs, calibrations)
+
+    if not mood_tags:
+        return
+
+    # Step 7: Update mood-* tags in database and file
+    _update_db_and_file(db, file_id, file_path, namespace, mood_tags)

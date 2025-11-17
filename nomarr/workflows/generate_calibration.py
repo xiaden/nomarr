@@ -254,7 +254,7 @@ def _compare_calibrations(
 def generate_calibration_workflow(
     db: Database,
     models_dir: str,
-    namespace: str = "nom",
+    namespace: str,
     thresholds: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """
@@ -270,7 +270,7 @@ def generate_calibration_workflow(
     Args:
         db: Database instance (must provide calibration and library accessors)
         models_dir: Path to models directory for saving/loading calibrations
-        namespace: Tag namespace (default: "nom")
+        namespace: Tag namespace (must be provided by service)
         thresholds: Optional custom drift thresholds for stability detection
                    (e.g., {"apd_p5": 0.01, "apd_p95": 0.01, "srd": 0.05, ...})
 
