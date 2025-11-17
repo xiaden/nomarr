@@ -204,7 +204,7 @@ class ConfigService:
         """
         Base defaults for USER-CONFIGURABLE settings only.
 
-        These 11 keys are the only settings exposed to users via
+        These 12 keys are the only settings exposed to users via
         config.yaml, environment variables, or database overrides.
 
         All other operational parameters are internal constants
@@ -216,11 +216,13 @@ class ConfigService:
             "db_path": "/app/config/db/essentia.sqlite",
             "library_path": None,  # Optional: path to music library
             # Tag writing settings
-            "file_write_mode": "minimal",  # "none", "minimal", or "full"
+            "file_write_mode": "full",  # "none", "minimal", or "full"
             "overwrite_tags": True,
             # Library scanner settings
             "library_auto_tag": True,
             "library_ignore_patterns": "",
+            # Worker settings
+            "worker_count": 1,  # Number of parallel ML workers (controls VRAM usage)
             # Calibration settings
             "calibrate_heads": False,
             "calibration_repo": "https://github.com/xiaden/nom-cal",
@@ -280,6 +282,7 @@ class ConfigService:
             "overwrite_tags",
             "admin_password",
             "cache_idle_timeout",
+            "worker_count",
             "calibrate_heads",
             "calibration_repo",
         }
@@ -339,7 +342,7 @@ class ConfigService:
 
     def _apply_env_overrides(self, cfg: dict[str, Any]) -> None:
         """
-        Support environment overrides for the 11 user-configurable keys only.
+        Support environment overrides for the 12 user-configurable keys only.
 
         Supported formats:
           NOMARR_MODELS_DIR=/custom/path
@@ -351,6 +354,7 @@ class ConfigService:
           NOMARR_OVERWRITE_TAGS=false
           NOMARR_ADMIN_PASSWORD=secretpass
           NOMARR_CACHE_IDLE_TIMEOUT=600
+          NOMARR_WORKER_COUNT=4
           NOMARR_CALIBRATE_HEADS=true
           NOMARR_CALIBRATION_REPO=https://github.com/user/repo
 
@@ -367,6 +371,7 @@ class ConfigService:
             "overwrite_tags",
             "admin_password",
             "cache_idle_timeout",
+            "worker_count",
             "calibrate_heads",
             "calibration_repo",
         }

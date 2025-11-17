@@ -5,10 +5,11 @@
 # All other operational parameters are internal constants and cannot
 # be changed without modifying the source code.
 #
-# These 11 settings cover the essential user-facing configuration:
+# These 12 settings cover the essential user-facing configuration:
 # - Where files live (models, DB, library)
 # - How tags are written (file write mode, overwrite behavior)
 # - Library scanning (auto-tag, ignore patterns)
+# - Worker count (parallel processing, VRAM usage)
 # - Model cache behavior (idle timeout)
 # - Calibration (enable calibration mode, repo URL)
 # - Authentication (admin password)
@@ -25,7 +26,7 @@ library_path: # Path to music library (optional)
 # Tag Writing Behavior
 # ----------------------------------------------------------------------
 file_write_mode:
-  minimal # Tag writing mode:
+  full # Tag writing mode:
   #   "none"    - DB only, no file writes
   #   "minimal" - mood-* tags + summary only
   #   "full"    - numeric + mood-* tags
@@ -38,6 +39,13 @@ library_auto_tag: true # Auto-enqueue untagged files during scan
 library_ignore_patterns:
   "" # Comma-separated path patterns to skip
   # Example: "*/Audiobooks/*,*.wav"
+
+# ----------------------------------------------------------------------
+# Worker Settings
+# ----------------------------------------------------------------------
+worker_count:
+  1 # Number of parallel ML workers
+  # (1-8 recommended, controls VRAM usage)
 
 # ----------------------------------------------------------------------
 # Model Cache

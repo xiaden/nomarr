@@ -101,6 +101,7 @@ class Application:
         self.library_auto_tag: bool = bool(self._config.get("library_auto_tag", False))
         self.library_ignore_patterns: str = str(self._config.get("library_ignore_patterns", ""))
         self.admin_password_config: str | None = self._config.get("admin_password")
+        self.worker_count: int = max(1, min(8, int(self._config.get("worker_count", 1))))
 
         # Internal constants (not user-configurable)
         self.api_host: str = INTERNAL_HOST
@@ -111,9 +112,6 @@ class Application:
         self.worker_poll_interval: int = INTERNAL_POLL_INTERVAL
         self.library_scan_poll_interval: int = INTERNAL_LIBRARY_SCAN_POLL_INTERVAL
         self.namespace: str = INTERNAL_NAMESPACE
-
-        # Worker count (hardcoded, not configurable)
-        self.worker_count: int = 1
 
         # Admin password
         self.admin_password_config: str | None = self._config.get("admin_password")

@@ -70,6 +70,7 @@ def get_config(
             "overwrite_tags": config.get("overwrite_tags", True),
             "admin_password": config.get("admin_password", ""),
             "cache_idle_timeout": config.get("cache_idle_timeout", 300),
+            "worker_count": config.get("worker_count", 1),
             "calibrate_heads": config.get("calibrate_heads", False),
             "calibration_repo": config.get("calibration_repo", "https://github.com/xiaden/nom-cal"),
             # Internal constants (read-only, displayed for info)
@@ -99,7 +100,7 @@ def update_config(
     Update a configuration value in the database.
 
     Changes are stored in the DB meta table and will override YAML/env config on restart.
-    Only the 11 user-configurable keys can be updated.
+    Only the 12 user-configurable keys can be updated.
     """
     try:
         key = request.key
@@ -116,6 +117,7 @@ def update_config(
             "overwrite_tags",
             "admin_password",
             "cache_idle_timeout",
+            "worker_count",
             "calibrate_heads",
             "calibration_repo",
         }
