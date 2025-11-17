@@ -31,6 +31,18 @@ on:
       - "pytest.ini"
       - "ruff.toml"
       - ".github/workflows/ci.yml"
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: "Force Docker build and push (ignore version check)"
+        required: false
+        type: boolean
+        default: false
+      skip_tests:
+        description: "Skip tests and push anyway"
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   build-test:
@@ -55,6 +67,13 @@ jobs:
         id: version_check
         if: github.event_name == 'push'
         run: |
+          # Manual trigger can force build
+          if [ "${{ github.event.inputs.force_build }}" == "true" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "Force build requested via manual trigger."
+            exit 0
+          fi
+
           # Get version from previous commit
           git checkout HEAD~1 -- nomarr/__version__.py 2>/dev/null || echo "First commit"
           OLD_VERSION=$(python3 -c "exec(open('nomarr/__version__.py').read()); print(__version__)" 2>/dev/null || echo "0.0.0")
@@ -72,11 +91,11 @@ jobs:
           fi
 
       - name: Set up Docker Buildx
-        if: github.event_name == 'push' && steps.version_check.outputs.changed == 'true'
+        if: (github.event_name == 'push' && steps.version_check.outputs.changed == 'true') || github.event.inputs.force_build == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Set up Node.js
-        if: github.event_name == 'push' && steps.version_check.outputs.changed == 'true'
+        if: (github.event_name == 'push' && steps.version_check.outputs.changed == 'true') || github.event.inputs.force_build == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -84,19 +103,19 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install frontend dependencies
-        if: github.event_name == 'push' && steps.version_check.outputs.changed == 'true'
+        if: (github.event_name == 'push' && steps.version_check.outputs.changed == 'true') || github.event.inputs.force_build == 'true'
         run: |
           cd frontend
           npm ci
 
       - name: Build React frontend
-        if: github.event_name == 'push' && steps.version_check.outputs.changed == 'true'
+        if: (github.event_name == 'push' && steps.version_check.outputs.changed == 'true') || github.event.inputs.force_build == 'true'
         run: |
           cd frontend
           npm run build
 
       - name: Log in to GitHub Container Registry
-        if: github.event_name == 'push' && steps.version_check.outputs.changed == 'true'
+        if: (github.event_name == 'push' && steps.version_check.outputs.changed == 'true') || github.event.inputs.force_build == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -104,7 +123,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Docker image
-        if: github.event_name == 'push' && steps.version_check.outputs.changed == 'true'
+        if: (github.event_name == 'push' && steps.version_check.outputs.changed == 'true') || github.event.inputs.force_build == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -116,20 +135,18 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Run tests in container
-        if: github.event_name == 'push' && steps.version_check.outputs.changed == 'true'
+        if: ((github.event_name == 'push' && steps.version_check.outputs.changed == 'true') || github.event.inputs.force_build == 'true') && github.event.inputs.skip_tests != 'true'
         run: |
           # Skip GPU-required and container-only integration tests in CI
           # These tests require GPU for ML inference and are designed for manual testing
           docker run --rm nomarr python3 -m pytest tests/ -v -m "not gpu_required and not container_only"
 
       - name: Tag and push to GitHub Container Registry
-        if: github.event_name == 'push' && steps.version_check.outputs.changed == 'true'
+        if: ((github.event_name == 'push' && steps.version_check.outputs.changed == 'true') || github.event.inputs.force_build == 'true') && (success() || github.event.inputs.skip_tests == 'true')
         run: |
           docker tag nomarr ghcr.io/${{ github.repository_owner }}/nomarr:latest
           docker tag nomarr ghcr.io/${{ github.repository_owner }}/nomarr:v${{ steps.version.outputs.version }}
           docker tag nomarr ghcr.io/${{ github.repository_owner }}/nomarr:${{ github.sha }}
           docker push ghcr.io/${{ github.repository_owner }}/nomarr:latest
           docker push ghcr.io/${{ github.repository_owner }}/nomarr:v${{ steps.version.outputs.version }}
-          docker push ghcr.io/${{ github.repository_owner }}/nomarr:${{ github.sha }}
-          docker push ghcr.io/${{ github.repository_owner }}/nomarr:latest
           docker push ghcr.io/${{ github.repository_owner }}/nomarr:${{ github.sha }}
