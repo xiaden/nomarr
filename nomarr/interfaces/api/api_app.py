@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from nomarr.app import application
-from nomarr.interfaces.api.endpoints import admin, library, public, web
+from nomarr.interfaces.api.endpoints import admin, fs, library, public, web
 
 # ----------------------------------------------------------------------
 #  Configuration (imported from state module)
@@ -78,6 +78,7 @@ api_app.include_router(public.router)
 api_app.include_router(admin.router)
 api_app.include_router(web.router)  # Web UI auth + proxy + analytics endpoints
 api_app.include_router(library.router)  # Library scan endpoints
+api_app.include_router(fs.router)  # Filesystem browser endpoints
 
 # ----------------------------------------------------------------------
 #  Static files (Web UI)
