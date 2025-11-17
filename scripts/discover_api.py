@@ -159,14 +159,39 @@ def main():
     # Add current directory to path for imports
     sys.path.insert(0, str(Path.cwd()))
 
-    api = discover_module_api(args.module)
+    # Handle plural/singular module name variations
+    module_name = args.module
 
-    if not api:
+    # Common pluralization fixes: try both forms
+    if "nomarr.ml.model" in module_name and "nomarr.ml.models" not in module_name:
+        module_name = module_name.replace("nomarr.ml.model", "nomarr.ml.models")
+    elif module_name.rstrip("s") == "nomarr.persistence.database":
+        # Handle both 'database' and 'databases'
+        pass  # Already correct
+
+    api = discover_module_api(module_name)
+
+    # If import failed and we haven't tried the alternate form, try it
+    if not api and module_name != args.module:
+        # Already tried alternate, fail
         return 1
+    elif not api:
+        # Try alternate pluralization
+        if module_name.endswith("s"):
+            alt_module = module_name[:-1]  # Try singular
+        else:
+            alt_module = module_name + "s"  # Try plural
+
+        api = discover_module_api(alt_module)
+        if api:
+            module_name = alt_module
+            print(f"ℹ️  Note: Using '{alt_module}' (you typed '{args.module}')\n")
+        else:
+            return 1
 
     if args.summary:
         # Quick summary
-        print(f"\n{args.module}:")
+        print(f"\n{module_name}:")
         if api.get("classes"):
             print(f"  Classes: {', '.join(sorted(api['classes'].keys()))}")
         if api.get("functions"):
@@ -174,7 +199,7 @@ def main():
         if api.get("constants"):
             print(f"  Constants: {', '.join(sorted(api['constants'].keys()))}")
     else:
-        print_api(args.module, api)
+        print_api(module_name, api)
 
     return 0
 
