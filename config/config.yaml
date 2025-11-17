@@ -1,51 +1,59 @@
-# Filesystem paths
-models_dir: /app/models
-db_path: /app/config/db/essentia.sqlite
+# ======================================================================
+# Nomarr User Configuration
+# ======================================================================
+# This file contains the ONLY user-configurable settings for Nomarr.
+# All other operational parameters are internal constants and cannot
+# be changed without modifying the source code.
+#
+# These 11 settings cover the essential user-facing configuration:
+# - Where files live (models, DB, library)
+# - How tags are written (file write mode, overwrite behavior)
+# - Library scanning (auto-tag, ignore patterns)
+# - Model cache behavior (idle timeout)
+# - Calibration (enable calibration mode, repo URL)
+# - Authentication (admin password)
+# ======================================================================
 
-# Tag writing settings
-namespace: nom # Tag namespace prefix
-version_tag: nom_version # Version tracking tag name
-# Note: tagger_version is auto-loaded from nomarr/__version__.py (not configurable)
-file_write_mode: minimal # Tag file writing mode: "none" (DB only), "minimal" (mood-* + summary), "full" (numeric + mood-*)
+# ----------------------------------------------------------------------
+# Filesystem Paths
+# ----------------------------------------------------------------------
+models_dir: /app/models # Directory containing ML models
+db_path: /app/config/db/essentia.sqlite # SQLite database path
+library_path: # Path to music library (optional)
 
-# Audio processing rules
-min_duration_s: 60 # Minimum audio duration to process (avoid skits/interludes)
-allow_short: false # Whether to process files shorter than minimum
-overwrite_tags: true # Whether to overwrite existing tags
+# ----------------------------------------------------------------------
+# Tag Writing Behavior
+# ----------------------------------------------------------------------
+file_write_mode:
+  minimal # Tag writing mode:
+  #   "none"    - DB only, no file writes
+  #   "minimal" - mood-* tags + summary only
+  #   "full"    - numeric + mood-* tags
+overwrite_tags: true # Overwrite existing tags in files
 
-# API and worker settings
-host: 0.0.0.0 # API listen address
-port: 8356 # API listen port
-blocking_mode: true # If true, /api/v1/tag blocks until job complete
-blocking_timeout: 3600 # Max seconds for a blocking /api/v1/tag call
-poll_interval: 2 # Worker queue check interval (seconds)
-worker_enabled: true # Whether to start worker on startup
-worker_count: 1 # Number of parallel worker processes (1-8 recommended)
-cleanup_age_hours: 168 # Age threshold for job cleanup (default: 7 days)
+# ----------------------------------------------------------------------
+# Library Scanning
+# ----------------------------------------------------------------------
+library_auto_tag: true # Auto-enqueue untagged files during scan
+library_ignore_patterns:
+  "" # Comma-separated path patterns to skip
+  # Example: "*/Audiobooks/*,*.wav"
 
-# Model cache settings (GPU memory management)
-cache_idle_timeout: 300 # Seconds of inactivity before unloading models (default: 5 minutes, 0=never)
-cache_auto_evict: true # Automatically evict cache after idle timeout
+# ----------------------------------------------------------------------
+# Model Cache
+# ----------------------------------------------------------------------
+cache_idle_timeout:
+  300 # Seconds before unloading idle models
+  # (0 = never unload, useful for dev)
 
-# Library scanner settings
-library_path: # Path to music library directory (optional)
-library_scan_poll_interval: 10 # Library scanner poll interval (seconds)
-library_auto_tag: true # Automatically enqueue untagged files during scan
-library_ignore_patterns: "" # Comma-separated path patterns to skip (e.g., "*/Audiobooks/*,*.wav")
+# ----------------------------------------------------------------------
+# Calibration (Developer Feature)
+# ----------------------------------------------------------------------
+calibrate_heads: false # Enable calibration generation mode
+calibration_repo: "https://github.com/xiaden/nom-cal" # Calibration repo URL
 
-# Calibration settings
-calibrate_heads: false # Enable calibration generation mode (dev feature)
-calibration_repo: "https://github.com/xiaden/nom-cal" # GitHub repo for downloading calibration files
-calibration_auto_run: false # Automatically trigger calibration when thresholds met (requires calibrate_heads=true)
-calibration_min_files: 100 # Minimum tagged files before auto-calibration
-calibration_check_interval: 604800 # Seconds between calibration checks (default: 1 week)
-calibration_quality_threshold: 0.85 # Don't recalibrate if quality score above this
-# Calibration drift thresholds (tighter = more sensitive)
-calibration_apd_threshold: 0.01 # Max absolute percentile drift (1%)
-calibration_srd_threshold: 0.05 # Max scale range drift (5%)
-calibration_jsd_threshold: 0.1 # Max Jensen-Shannon divergence
-calibration_median_threshold: 0.05 # Max median drift (5%)
-calibration_iqr_threshold: 0.1 # Max IQR drift (10%)
-
-# Web UI authentication
-admin_password: # Admin password for web UI (optional; auto-generated if not set)
+# ----------------------------------------------------------------------
+# Authentication
+# ----------------------------------------------------------------------
+admin_password: # Admin password for web UI
+  # (auto-generated if not set)

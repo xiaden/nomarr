@@ -134,12 +134,10 @@ async def admin_cache_refresh():
 
         models_dir = str(cfg["models_dir"])
         cache_idle_timeout = int(cfg.get("cache_idle_timeout", 300))
-        cache_auto_evict = bool(cfg.get("cache_auto_evict", True))
 
         num = warmup_predictor_cache(
             models_dir=models_dir,
             cache_idle_timeout=cache_idle_timeout,
-            cache_auto_evict=cache_auto_evict,
         )
         return {"status": "ok", "predictors": num}
     except Exception as e:
@@ -217,19 +215,24 @@ async def admin_run_calibration():
         )
 
     # Get config service for calibration thresholds
-    config_service = application.get_service("config")
-    config = config_service.get_config()
+    from nomarr.services.config import (
+        INTERNAL_CALIBRATION_APD_THRESHOLD,
+        INTERNAL_CALIBRATION_IQR_THRESHOLD,
+        INTERNAL_CALIBRATION_JSD_THRESHOLD,
+        INTERNAL_CALIBRATION_MEDIAN_THRESHOLD,
+        INTERNAL_CALIBRATION_SRD_THRESHOLD,
+    )
 
     # Get config values
     models_dir = application.models_dir
     namespace = application.namespace
     thresholds = {
-        "apd_p5": config.get("calibration_apd_threshold", 0.01),
-        "apd_p95": config.get("calibration_apd_threshold", 0.01),
-        "srd": config.get("calibration_srd_threshold", 0.05),
-        "jsd": config.get("calibration_jsd_threshold", 0.1),
-        "median": config.get("calibration_median_threshold", 0.05),
-        "iqr": config.get("calibration_iqr_threshold", 0.1),
+        "apd_p5": INTERNAL_CALIBRATION_APD_THRESHOLD,
+        "apd_p95": INTERNAL_CALIBRATION_APD_THRESHOLD,
+        "srd": INTERNAL_CALIBRATION_SRD_THRESHOLD,
+        "jsd": INTERNAL_CALIBRATION_JSD_THRESHOLD,
+        "median": INTERNAL_CALIBRATION_MEDIAN_THRESHOLD,
+        "iqr": INTERNAL_CALIBRATION_IQR_THRESHOLD,
     }
 
     # Run calibration service

@@ -15,11 +15,64 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from nomarr.__version__ import __version__
 from nomarr.persistence.db import Database
 
 if TYPE_CHECKING:
     from nomarr.helpers.dataclasses import ProcessorConfig
+
+
+# ======================================================================
+# Nomarr Version (for tag versioning)
+# ======================================================================
+# Imported at module level so it's accessible as config.TAGGER_VERSION
+# without needing to load from __version__ at runtime
+try:
+    from nomarr.__version__ import __version__
+
+    TAGGER_VERSION: str = __version__
+except ImportError:  # pragma: no cover
+    TAGGER_VERSION = "unknown"
+
+
+# ======================================================================
+# Internal Constants (Not User-Configurable)
+# ======================================================================
+# These values control internal Nomarr behavior and are not exposed
+# in config.yaml or environment variables. They represent operational
+# parameters that users should not need to adjust.
+
+# Tag namespace and versioning
+INTERNAL_NAMESPACE = "nom"
+INTERNAL_VERSION_TAG = "nom_version"
+
+# Audio processing parameters
+INTERNAL_MIN_DURATION_S = 60  # Skip tracks shorter than 60s
+INTERNAL_BATCH_SIZE = 11  # Patches per batch for head inference
+INTERNAL_ALLOW_SHORT = False  # Don't process files < min_duration
+
+# API and worker settings
+INTERNAL_HOST = "0.0.0.0"
+INTERNAL_PORT = 8356
+INTERNAL_BLOCKING_MODE = True  # /api/v1/tag blocks until complete
+INTERNAL_BLOCKING_TIMEOUT = 3600  # Max seconds for blocking calls
+INTERNAL_POLL_INTERVAL = 2  # Worker queue check interval (seconds)
+INTERNAL_WORKER_ENABLED = True  # Start worker on startup
+
+# Library scanner settings
+INTERNAL_LIBRARY_SCAN_POLL_INTERVAL = 10  # Library scanner poll interval (seconds)
+
+# Calibration automation settings
+INTERNAL_CALIBRATION_AUTO_RUN = False  # Auto-trigger calibration
+INTERNAL_CALIBRATION_MIN_FILES = 100  # Min files before auto-calibration
+INTERNAL_CALIBRATION_CHECK_INTERVAL = 604800  # 1 week between checks
+INTERNAL_CALIBRATION_QUALITY_THRESHOLD = 0.85  # Don't recalibrate if quality > this
+
+# Calibration drift thresholds
+INTERNAL_CALIBRATION_APD_THRESHOLD = 0.01  # Max absolute percentile drift (1%)
+INTERNAL_CALIBRATION_SRD_THRESHOLD = 0.05  # Max scale range drift (5%)
+INTERNAL_CALIBRATION_JSD_THRESHOLD = 0.1  # Max Jensen-Shannon divergence
+INTERNAL_CALIBRATION_MEDIAN_THRESHOLD = 0.05  # Max median drift (5%)
+INTERNAL_CALIBRATION_IQR_THRESHOLD = 0.1  # Max IQR drift (10%)
 
 
 class ConfigService:
@@ -149,48 +202,32 @@ class ConfigService:
 
     def _default_config(self) -> dict[str, Any]:
         """
-        Base defaults; all fields present so no KeyErrors downstream.
+        Base defaults for USER-CONFIGURABLE settings only.
+
+        These 11 keys are the only settings exposed to users via
+        config.yaml, environment variables, or database overrides.
+
+        All other operational parameters are internal constants
+        defined at module level.
         """
         return {
             # Filesystem paths
             "models_dir": "/app/models",
             "db_path": "/app/config/db/essentia.sqlite",
-            "library_path": None,  # Optional: path to music library to scan/track
+            "library_path": None,  # Optional: path to music library
             # Tag writing settings
-            "namespace": "essentia",
-            "version_tag": "essentia_at_version",
-            "tagger_version": __version__,  # Version from nomarr.__version__
-            # Audio processing rules
-            "min_duration_s": 60,  # Skip tracks shorter than 60s
-            "batch_size": 11,  # Batch size for head model inference (patches per batch)
-            "allow_short": False,
+            "file_write_mode": "minimal",  # "none", "minimal", or "full"
             "overwrite_tags": True,
-            # API and worker settings
-            "host": "0.0.0.0",
-            "port": 8356,
-            "blocking_mode": True,
-            "blocking_timeout": 3600,
-            "poll_interval": 2,
-            "worker_enabled": True,
             # Library scanner settings
-            "library_scan_poll_interval": 10,
             "library_auto_tag": True,
             "library_ignore_patterns": "",
             # Calibration settings
             "calibrate_heads": False,
             "calibration_repo": "https://github.com/xiaden/nom-cal",
-            "calibration_auto_run": False,
-            "calibration_min_files": 100,
-            "calibration_check_interval": 604800,
-            "calibration_quality_threshold": 0.85,
-            # Calibration drift thresholds
-            "calibration_apd_threshold": 0.01,
-            "calibration_srd_threshold": 0.05,
-            "calibration_jsd_threshold": 0.1,
-            "calibration_median_threshold": 0.05,
-            "calibration_iqr_threshold": 0.1,
             # Web UI authentication
             "admin_password": None,  # Optional; auto-generated if not set
+            # Model cache settings
+            "cache_idle_timeout": 300,  # Seconds before unloading models (0=never)
         }
 
     def _deep_merge(self, a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
@@ -220,8 +257,9 @@ class ConfigService:
         """
         Load configuration overrides from database meta table.
 
-        Only loads operational config (worker_count, poll_interval, etc.).
-        Infrastructure config (db_path, host, port, models_dir) is YAML/env-only.
+        Only allows overrides for the 11 user-configurable keys.
+        All other config_* keys in the DB are ignored (internal constants
+        cannot be overridden at runtime).
 
         Graceful fallback if DB doesn't exist or is corrupted.
 
@@ -231,6 +269,21 @@ class ConfigService:
         Returns:
             dict: Config overrides from DB meta table (empty if unavailable)
         """
+        # Whitelist of allowed DB config overrides (matches user-facing config)
+        ALLOWED_DB_KEYS = {
+            "models_dir",
+            "db_path",
+            "library_path",
+            "library_auto_tag",
+            "library_ignore_patterns",
+            "file_write_mode",
+            "overwrite_tags",
+            "admin_password",
+            "cache_idle_timeout",
+            "calibrate_heads",
+            "calibration_repo",
+        }
+
         if not db_path:
             self._logger.debug("DB config skipped: no db_path provided")
             return {}
@@ -255,6 +308,11 @@ class ConfigService:
                     # Remove 'config_' prefix
                     config_key = key[7:]  # len('config_') == 7
 
+                    # Only allow whitelisted keys
+                    if config_key not in ALLOWED_DB_KEYS:
+                        self._logger.debug(f"Ignoring DB config for internal key: {config_key}")
+                        continue
+
                     # Parse value to correct type
                     if value.lower() in ("true", "false"):
                         parsed = value.lower() == "true"
@@ -267,7 +325,8 @@ class ConfigService:
 
                     config_overrides[config_key] = parsed
 
-                self._logger.info(f"Loaded {len(config_overrides)} config overrides from database")
+                if config_overrides:
+                    self._logger.info(f"Loaded {len(config_overrides)} config overrides from database")
                 return config_overrides
 
             finally:
@@ -280,35 +339,63 @@ class ConfigService:
 
     def _apply_env_overrides(self, cfg: dict[str, Any]) -> None:
         """
-        Support environment overrides of the form:
-          TAGGER_NAMESPACE=custom
-          TAGGER_VERSION_TAG=build_version
-          NOMARR_TAGGER_MIN_DURATION_S=5
+        Support environment overrides for the 11 user-configurable keys only.
+
+        Supported formats:
+          NOMARR_MODELS_DIR=/custom/path
+          NOMARR_DB_PATH=/custom/db.sqlite
+          NOMARR_LIBRARY_PATH=/music
+          NOMARR_LIBRARY_AUTO_TAG=true
+          NOMARR_LIBRARY_IGNORE_PATTERNS=*.wav,*/Audiobooks/*
+          NOMARR_FILE_WRITE_MODE=full
+          NOMARR_OVERWRITE_TAGS=false
+          NOMARR_ADMIN_PASSWORD=secretpass
+          NOMARR_CACHE_IDLE_TIMEOUT=600
+          NOMARR_CALIBRATE_HEADS=true
+          NOMARR_CALIBRATION_REPO=https://github.com/user/repo
+
+        Internal constants cannot be overridden via environment.
         """
+        # Whitelist of allowed env overrides
+        ALLOWED_ENV_KEYS = {
+            "models_dir",
+            "db_path",
+            "library_path",
+            "library_auto_tag",
+            "library_ignore_patterns",
+            "file_write_mode",
+            "overwrite_tags",
+            "admin_password",
+            "cache_idle_timeout",
+            "calibrate_heads",
+            "calibration_repo",
+        }
+
         for k, v in os.environ.items():
-            if not (k.startswith("TAGGER_") or k.startswith("NOMARR_TAGGER_") or k.startswith("AUTOTAG_")):
+            # Support NOMARR_* prefix (primary), TAGGER_* and AUTOTAG_* (legacy)
+            if not (k.startswith("NOMARR_") or k.startswith("TAGGER_") or k.startswith("AUTOTAG_")):
                 continue
 
-            # Normalize key path
-            key = k.replace("NOMARR_", "").replace("AUTOTAG_", "").lower()
-            parts = key.split("_", 1)
-            if len(parts) == 1:
+            # Normalize to lowercase key name
+            key = k.replace("NOMARR_", "").replace("TAGGER_", "").replace("AUTOTAG_", "").lower()
+
+            # Only allow whitelisted keys
+            if key not in ALLOWED_ENV_KEYS:
+                self._logger.debug(f"Ignoring environment override for internal key: {key}")
                 continue
-            section, field = parts
-            if section not in cfg:
-                # fallback: tagger-level only
-                section = "tagger"
 
             try:
-                # try to parse numeric/bool types
+                # Parse typed values
                 if v.lower() in ("true", "false"):
                     val: Any = v.lower() == "true"
                 elif v.isdigit():
                     val = int(v)
+                elif v.replace(".", "", 1).replace("-", "", 1).isdigit():
+                    val = float(v)
                 else:
                     val = v
-                if section in cfg and isinstance(cfg[section], dict):
-                    cfg[section][field.lower()] = val
+
+                cfg[key] = val
             except Exception:
                 continue
 
@@ -317,7 +404,8 @@ class ConfigService:
         Build a ProcessorConfig from the current configuration.
 
         This is the boundary where we extract and validate processor-specific
-        settings from the raw config dict.
+        settings from the raw config dict, combining user-configurable settings
+        with internal constants.
 
         Returns:
             ProcessorConfig instance ready for injection into process_file()
@@ -327,14 +415,16 @@ class ConfigService:
         cfg = self.get_config()
 
         return ProcessorConfig(
+            # User-configurable settings
             models_dir=str(cfg["models_dir"]),
-            min_duration_s=int(cfg["min_duration_s"]),
-            allow_short=bool(cfg["allow_short"]),
-            batch_size=int(cfg.get("batch_size", 11)),
             overwrite_tags=bool(cfg["overwrite_tags"]),
-            namespace=str(cfg["namespace"]),
-            version_tag_key=str(cfg["version_tag"]),
-            tagger_version=str(cfg["tagger_version"]),
-            calibrate_heads=bool(cfg.get("calibrate_heads", False)),
             file_write_mode=str(cfg.get("file_write_mode", "minimal")),  # type: ignore
+            calibrate_heads=bool(cfg.get("calibrate_heads", False)),
+            # Internal constants (not user-configurable)
+            min_duration_s=INTERNAL_MIN_DURATION_S,
+            allow_short=INTERNAL_ALLOW_SHORT,
+            batch_size=INTERNAL_BATCH_SIZE,
+            namespace=INTERNAL_NAMESPACE,
+            version_tag_key=INTERNAL_VERSION_TAG,
+            tagger_version=TAGGER_VERSION,
         )

@@ -79,48 +79,41 @@ class Application:
         config_service = ConfigService()
         self._config = config_service.get_config()
 
+        # Import internal constants
+        from nomarr.services.config import (
+            INTERNAL_BLOCKING_MODE,
+            INTERNAL_BLOCKING_TIMEOUT,
+            INTERNAL_HOST,
+            INTERNAL_LIBRARY_SCAN_POLL_INTERVAL,
+            INTERNAL_NAMESPACE,
+            INTERNAL_POLL_INTERVAL,
+            INTERNAL_PORT,
+            INTERNAL_WORKER_ENABLED,
+        )
+
         # Extract config-derived values as instance attributes
-        self.api_host: str = str(self._config["host"])
-        self.api_port: int = int(self._config["port"])
+        # User-configurable settings
         self.db_path: str = str(self._config["db_path"])
-        self.worker_enabled_default: bool = bool(self._config["worker_enabled"])
-
-        # Extract API and worker config sections
-        api_cfg = self._config.get("api", {})
-        worker_cfg = self._config.get("worker", {})
-
-        # Blocking / timeout
-        self.blocking_mode: bool = bool(api_cfg.get("blocking_mode", True))
-        if "blocking_timeout" in api_cfg:
-            self.blocking_timeout: int = int(api_cfg.get("blocking_timeout"))
-        else:
-            self.blocking_timeout = int(worker_cfg.get("blocking_timeout", 3600))
-
-        # Poll interval
-        if "poll_interval" in worker_cfg:
-            self.worker_poll_interval: int = int(worker_cfg.get("poll_interval", 2))
-        elif "worker_poll_interval" in api_cfg:
-            self.worker_poll_interval = int(api_cfg.get("worker_poll_interval", 2))
-        else:
-            self.worker_poll_interval = 2
-
-        # Worker count
-        self.worker_count: int = max(1, min(8, int(self._config.get("worker_count", 1))))
-
-        # Library scanner
         self.library_path: str | None = self._config.get("library_path")
-        self.library_scan_poll_interval: int = int(self._config.get("library_scan_poll_interval", 2))
-
-        # ML / model settings
         self.models_dir: str = str(self._config.get("models_dir", "/app/models"))
-        self.namespace: str = str(self._config.get("namespace", "essentia"))
         self.cache_idle_timeout: int = int(self._config.get("cache_idle_timeout", 300))
-        self.cache_auto_evict: bool = bool(self._config.get("cache_auto_evict", True))
         self.calibrate_heads: bool = bool(self._config.get("calibrate_heads", False))
-
-        # Library settings
         self.library_auto_tag: bool = bool(self._config.get("library_auto_tag", False))
         self.library_ignore_patterns: str = str(self._config.get("library_ignore_patterns", ""))
+        self.admin_password_config: str | None = self._config.get("admin_password")
+
+        # Internal constants (not user-configurable)
+        self.api_host: str = INTERNAL_HOST
+        self.api_port: int = INTERNAL_PORT
+        self.worker_enabled_default: bool = INTERNAL_WORKER_ENABLED
+        self.blocking_mode: bool = INTERNAL_BLOCKING_MODE
+        self.blocking_timeout: int = INTERNAL_BLOCKING_TIMEOUT
+        self.worker_poll_interval: int = INTERNAL_POLL_INTERVAL
+        self.library_scan_poll_interval: int = INTERNAL_LIBRARY_SCAN_POLL_INTERVAL
+        self.namespace: str = INTERNAL_NAMESPACE
+
+        # Worker count (hardcoded, not configurable)
+        self.worker_count: int = 1
 
         # Admin password
         self.admin_password_config: str | None = self._config.get("admin_password")
@@ -252,7 +245,6 @@ class Application:
             warmup_predictor_cache(
                 models_dir=self.models_dir,
                 cache_idle_timeout=self.cache_idle_timeout,
-                cache_auto_evict=self.cache_auto_evict,
             )
             logging.info("[Application] Predictor cache warmed successfully")
         except Exception as e:
@@ -385,7 +377,6 @@ class Application:
         warmup_predictor_cache(
             models_dir=self.models_dir,
             cache_idle_timeout=self.cache_idle_timeout,
-            cache_auto_evict=self.cache_auto_evict,
         )
 
 

@@ -24,8 +24,7 @@ _PREDICTOR_CACHE: dict[str, Callable[[np.ndarray, int], np.ndarray]] = {}
 _CACHE_INITIALIZED = False
 _CACHE_LAST_ACCESS: float = 0.0
 _CACHE_LOCK = threading.Lock()
-_CACHE_TIMEOUT: int = 300  # seconds
-_CACHE_AUTO_EVICT: bool = True
+_CACHE_TIMEOUT: int = 300  # seconds (0 = never evict)
 
 
 def cache_key(head_info: HeadInfo) -> str:
@@ -46,7 +45,6 @@ def get_cache_size() -> int:
 def warmup_predictor_cache(
     models_dir: str,
     cache_idle_timeout: int = 300,
-    cache_auto_evict: bool = True,
 ) -> int:
     """
     Pre-load all model predictors into cache to avoid loading overhead during processing.
@@ -54,15 +52,13 @@ def warmup_predictor_cache(
 
     Args:
         models_dir: Directory containing model files
-        cache_idle_timeout: Seconds before idle cache eviction (default: 300)
-        cache_auto_evict: Whether to auto-evict idle cache (default: True)
+        cache_idle_timeout: Seconds before idle cache eviction (0 = never evict, default: 300)
     """
     global _PREDICTOR_CACHE, _CACHE_INITIALIZED, _CACHE_LAST_ACCESS
-    global _CACHE_TIMEOUT, _CACHE_AUTO_EVICT
+    global _CACHE_TIMEOUT
 
     # Store cache config
     _CACHE_TIMEOUT = cache_idle_timeout
-    _CACHE_AUTO_EVICT = cache_auto_evict
 
     if _CACHE_INITIALIZED:
         logging.info("[cache] Predictor cache already initialized")
@@ -153,15 +149,17 @@ def check_and_evict_idle_cache() -> bool:
     """
     Check if cache has been idle longer than timeout and evict if needed.
     Returns True if cache was evicted, False otherwise.
+
+    If _CACHE_TIMEOUT is 0, cache is never evicted.
     """
-    if not _CACHE_AUTO_EVICT:
+    if _CACHE_TIMEOUT == 0:
         return False
 
     if not _CACHE_INITIALIZED or len(_PREDICTOR_CACHE) == 0:
         return False
 
     idle_time = get_cache_idle_time()
-    if _CACHE_TIMEOUT > 0 and idle_time > _CACHE_TIMEOUT:
+    if idle_time > _CACHE_TIMEOUT:
         logging.info(f"[cache] Cache idle for {idle_time:.0f}s (>{_CACHE_TIMEOUT}s), evicting...")
         clear_predictor_cache()
         return True
