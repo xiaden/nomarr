@@ -62,6 +62,7 @@ qc_reports/
 .ruff_cache/
 .import_linter_cache/
 radon_reports/
+radon
 
 # Temp files
 *.tmp
