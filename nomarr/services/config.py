@@ -336,4 +336,5 @@ class ConfigService:
             version_tag_key=str(cfg["version_tag"]),
             tagger_version=str(cfg["tagger_version"]),
             calibrate_heads=bool(cfg.get("calibrate_heads", False)),
+            file_write_mode=str(cfg.get("file_write_mode", "minimal")),  # type: ignore
         )

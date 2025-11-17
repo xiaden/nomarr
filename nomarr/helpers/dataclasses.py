@@ -15,6 +15,25 @@ Rules:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
+
+
+@dataclass
+class TagWriteProfile:
+    """
+    Controls what tags are written to media files vs stored only in DB.
+
+    Similar to a logging level - allows configuration-driven control over
+    tag verbosity in media files.
+
+    Attributes:
+        file_write_mode: Controls tag writing to media files:
+            - "none": No tags written to files (DB only)
+            - "minimal": Only high-level summary tags (mood-*, genre, etc.)
+            - "full": Rich tag set including numeric scores (but never *_tier or calibration)
+    """
+
+    file_write_mode: Literal["none", "minimal", "full"] = "minimal"
 
 
 @dataclass
@@ -52,3 +71,6 @@ class ProcessorConfig:
 
     # Whether to load calibration files
     calibrate_heads: bool
+
+    # File write mode: controls what tags go to media files
+    file_write_mode: Literal["none", "minimal", "full"] = "minimal"

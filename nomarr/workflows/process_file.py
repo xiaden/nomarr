@@ -81,6 +81,52 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
+def select_tags_for_file(all_tags: dict[str, Any], file_write_mode: str) -> dict[str, Any]:
+    """
+    Filter tags for file writing based on file_write_mode.
+
+    Args:
+        all_tags: Complete tag dict (includes numeric tags, mood-*, version, etc.)
+        file_write_mode: "none" | "minimal" | "full"
+
+    Returns:
+        Filtered dict of tags to write to media file
+
+    Rules:
+        - "none": Empty dict (no file writes)
+        - "minimal": Only mood-* tags and version tag
+        - "full": All numeric tags + mood-* + version (but never *_tier or calibration)
+        - Never write *_tier tags or calibration_id to files
+    """
+    if file_write_mode == "none":
+        return {}
+
+    if file_write_mode == "minimal":
+        # Only high-level summary tags
+        filtered = {}
+        for key, val in all_tags.items():
+            if not isinstance(key, str):
+                continue
+            # Include mood-* tags and version tag
+            if key.startswith("mood-") or key.endswith("_version") or "version" in key:
+                filtered[key] = val
+        return filtered
+
+    # "full" mode: Include numeric tags and mood-*, but exclude tiers and calibration
+    filtered = {}
+    for key, val in all_tags.items():
+        if not isinstance(key, str):
+            continue
+        # Exclude *_tier tags (internal use only)
+        if key.endswith("_tier"):
+            continue
+        # Exclude calibration-related keys
+        if "calibration" in key.lower():
+            continue
+        filtered[key] = val
+    return filtered
+
+
 def process_file_workflow(
     path: str,
     config: ProcessorConfig,
@@ -396,17 +442,41 @@ def process_file_workflow(
             logging.debug(f"[processor]   {mood_key}: {len(val)} terms")
 
     tags_accum[version_tag_key] = tagger_version
-    logging.info(f"[processor] Writing {len(tags_accum)} tags to file")
+
+    # Prepare tags for DB and file writing
+    # Remove *_tier tags from tags_accum - they are internal only
+    tier_tag_keys = [k for k in tags_accum if isinstance(k, str) and k.endswith("_tier")]
+    for tier_key in tier_tag_keys:
+        del tags_accum[tier_key]
+    logging.debug(f"[processor] Removed {len(tier_tag_keys)} internal *_tier tags before persisting")
+
+    # DB gets ALL tags (numeric scores + mood-*)
+    db_tags = dict(tags_accum)  # Copy for DB
+
+    # File writes are filtered based on file_write_mode config
+    file_write_mode = config.file_write_mode
+    file_tags = select_tags_for_file(db_tags, file_write_mode)
+
+    logging.info(
+        f"[processor] Tags prepared: {len(db_tags)} for DB, {len(file_tags)} for file (mode={file_write_mode})"
+    )
 
     # DEBUG: Log calibration map
     if hasattr(tags_accum, "_calibration_map"):
         calib_map = tags_accum._calibration_map  # type: ignore
         logging.debug(f"[processor] Calibration map has {len(calib_map)} entries")
 
-    writer.write(path, tags_accum)
-    logging.info("[processor] Tag write complete")
+    # Write filtered tags to file
+    if file_tags:
+        writer.write(path, file_tags)
+        logging.info(f"[processor] Wrote {len(file_tags)} tags to file")
+    else:
+        logging.info("[processor] No tags written to file (file_write_mode=none or empty filter result)")
 
-    # Update library database with the newly written tags (if db provided)
+    # Update library database with ALL tags (DB is canonical store)
+    # update_library_file_from_tags reads tags from file, so ensure file has what we want
+    # Actually, it reads from the file we just wrote, so DB will match file content
+    # We need a different approach - write full tags to file TEMPORARILY, update DB, then rewrite filtered
     if db is not None:
         try:
             from nomarr.workflows.scan_library import update_library_file_from_tags
@@ -414,9 +484,17 @@ def process_file_workflow(
             # Extract calibration map if present
             calibration_map = getattr(tags_accum, "_calibration_map", None)
 
+            # Write FULL tags to file temporarily for DB sync
+            writer.write(path, db_tags)
+
             # Pass tagger_version so library scanner marks file as tagged
             update_library_file_from_tags(db, path, ns, tagged_version=tagger_version, calibration=calibration_map)
-            logging.info(f"[processor] Updated library database for {path}")
+            logging.info(f"[processor] Updated library database for {path} with {len(db_tags)} tags")
+
+            # Now rewrite file with filtered tags if mode is not "full"
+            if file_write_mode != "full":
+                writer.write(path, file_tags)
+                logging.info(f"[processor] Rewrote file with filtered tags (mode={file_write_mode})")
         except Exception as e:
             # Don't fail the entire processing if library update fails
             logging.warning(f"[processor] Failed to update library database: {e}")
