@@ -94,6 +94,8 @@ class HeadInfo:
     """
     Container for a head model with its associated embedding model info.
     Derived purely from folder structure.
+
+    Structured metadata eliminates fragile substring matching in tag keys.
     """
 
     def __init__(
@@ -103,16 +105,40 @@ class HeadInfo:
         head_type: str,
         embedding_graph: str,
         embedding_sidecar: Sidecar | None = None,
+        is_mood_source: bool = False,
+        is_regression_mood_source: bool = False,
     ):
         self.sidecar = sidecar
         self.backbone = backbone
         self.head_type = head_type
         self.embedding_graph = embedding_graph
         self.embedding_sidecar = embedding_sidecar
+        # Structured metadata for tagging/aggregation logic
+        self.is_mood_source = is_mood_source  # Contributes to mood-* tags
+        self.is_regression_mood_source = is_regression_mood_source  # Regression head for mood tiers
 
     @property
     def name(self) -> str:
         return self.sidecar.name
+
+    @property
+    def kind(self) -> str:
+        """Return head kind: 'regression', 'multilabel', 'multiclass', or 'embedding'."""
+        # Derive from head_type (folder name: classification, multilabel, regression, etc.)
+        head_type_lower = self.head_type.lower()
+        if "regression" in head_type_lower:
+            return "regression"
+        if "multilabel" in head_type_lower:
+            return "multilabel"
+        if "multiclass" in head_type_lower or "classification" in head_type_lower:
+            return "multiclass"
+        # Default to multiclass for backward compatibility
+        return "multiclass"
+
+    @property
+    def labels(self) -> list[str]:
+        """Return labels from sidecar."""
+        return self.sidecar.labels
 
     def build_versioned_tag_key(
         self,
@@ -215,8 +241,12 @@ def discover_heads(models_dir: str) -> list[HeadInfo]:
         models/<backbone>/heads/<type>/*.json
 
     Returns HeadInfo objects with backbone, head_type, and embedding graph resolved.
+    Sets is_mood_source and is_regression_mood_source flags based on sidecar metadata.
     """
     heads: list[HeadInfo] = []
+
+    # Known regression heads that feed mood tiers
+    REGRESSION_MOOD_HEADS = {"approachability_regression", "engagement_regression"}
 
     for backbone_dir in glob.glob(os.path.join(models_dir, "*")):
         if not os.path.isdir(backbone_dir):
@@ -267,12 +297,24 @@ def discover_heads(models_dir: str) -> list[HeadInfo]:
                         continue
 
                     sidecar = Sidecar(json_path, data)
+                    head_name = sidecar.name
+
+                    # Determine if this head contributes to mood-* tags
+                    # Centralized logic: check for "mood_" in name (case-insensitive)
+                    name_normalized = head_name.replace(" ", "_").lower()
+                    is_mood_source = "mood_" in name_normalized
+
+                    # Check if this is a regression head that feeds mood tiers
+                    is_regression_mood_source = head_name in REGRESSION_MOOD_HEADS
+
                     head_info = HeadInfo(
                         sidecar=sidecar,
                         backbone=backbone,
                         head_type=head_type,
                         embedding_graph=embedding_graph,
                         embedding_sidecar=embedding_sidecar,
+                        is_mood_source=is_mood_source,
+                        is_regression_mood_source=is_regression_mood_source,
                     )
                     heads.append(head_info)
 

@@ -37,8 +37,14 @@ def temp_db():
             modified_time=1234567890,
             nom_tags=json.dumps(
                 {
-                    "happy_essentia21b6dev1389_yamnet20210604_happy20220825_none_0": random.random(),
-                    "sad_essentia21b6dev1389_yamnet20210604_sad20220825_none_0": random.random(),
+                    "happy_essentia21b6dev1389_yamnet20210604_happy20220825": random.random(),
+                    "sad_essentia21b6dev1389_yamnet20210604_sad20220825": random.random(),
+                }
+            ),
+            calibration=json.dumps(
+                {
+                    "happy_essentia21b6dev1389_yamnet20210604_happy20220825": "none_0",
+                    "sad_essentia21b6dev1389_yamnet20210604_sad20220825": "none_0",
                 }
             ),
         )
@@ -124,8 +130,8 @@ def test_generate_minmax_calibration(temp_db):
     calibrations = calibration_data["calibrations"]
     assert len(calibrations) == 2
 
-    # Check happy tag calibration
-    happy_key = "happy_essentia21b6dev1389_yamnet20210604_happy20220825_none_0"
+    # Check happy tag calibration (NEW FORMAT - no calibration suffix)
+    happy_key = "happy_essentia21b6dev1389_yamnet20210604_happy20220825"
     assert happy_key in calibrations
 
     happy_calib = calibrations[happy_key]

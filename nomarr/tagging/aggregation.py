@@ -118,9 +118,15 @@ def simplify_label(base_key: str) -> str:
     return s.replace("_", " ")
 
 
-def add_regression_mood_tiers(tags: dict[str, Any], predictions: dict[str, list[float]]) -> None:
+def add_regression_mood_tiers(
+    tags: dict[str, Any],
+    regression_heads: list[tuple[Any, list[float]]],  # List of (HeadInfo, segment_values)
+    framework_version: str,
+) -> None:
     """
     Convert regression head predictions (approachability, engagement) into mood tier tags.
+
+    Uses versioned tag keys from HeadInfo.build_versioned_tag_key() instead of hardcoded prefixes.
 
     Regression heads output INTENSITY values (0-1), not probabilities:
     - High values (>0.7) indicate STRONG presence of the attribute
@@ -132,9 +138,14 @@ def add_regression_mood_tiers(tags: dict[str, Any], predictions: dict[str, list[
     - High variance → no tier (unreliable measurement)
     - Low variance + extreme value → tier assigned based on confidence
 
-    Modifies tags dict in-place by adding synthetic <prefix>_<term> and <prefix>_<term>_tier tags.
+    Modifies tags dict in-place by adding synthetic versioned tags and tier tags.
+
+    Args:
+        tags: Dictionary to add tags to
+        regression_heads: List of (HeadInfo, segment_values) tuples for regression heads
+        framework_version: Runtime Essentia version (e.g., "2.1b6.dev1389")
     """
-    if not predictions:
+    if not regression_heads:
         return
 
     # Intensity thresholds (mean value indicates strength, not probability)
@@ -154,7 +165,14 @@ def add_regression_mood_tiers(tags: dict[str, Any], predictions: dict[str, list[
         "engagement_regression": ("engaging", "mellow"),  # high/low
     }
 
-    for head_name, segment_values in predictions.items():
+    # Get or create calibration map (if tags_accum has it, we can use it)
+    calib_map: dict[str, str] = {}
+    if hasattr(tags, "_calibration_map"):
+        calib_map = tags._calibration_map  # type: ignore
+
+    for head_info, segment_values in regression_heads:
+        head_name = head_info.name
+
         if not segment_values or head_name not in mood_mapping:
             continue
 
@@ -179,19 +197,28 @@ def add_regression_mood_tiers(tags: dict[str, Any], predictions: dict[str, list[
         else:
             # Neutral value - write both terms with the value
             # This preserves the raw data even when we can't confidently assign a direction
-            tag_base_high = f"effnet_{high_term}"
-            tag_base_low = f"effnet_{low_term}"
-            tags[tag_base_high] = mean_val
-            tags[tag_base_low] = 1.0 - mean_val  # Inverse for the opposite
+            model_key_high, calib_id_high = head_info.build_versioned_tag_key(
+                high_term, framework_version=framework_version, calib_method="none", calib_version=0
+            )
+            model_key_low, calib_id_low = head_info.build_versioned_tag_key(
+                low_term, framework_version=framework_version, calib_method="none", calib_version=0
+            )
+            tags[model_key_high] = mean_val
+            tags[model_key_low] = 1.0 - mean_val  # Inverse for the opposite
+            calib_map[model_key_high] = calib_id_high
+            calib_map[model_key_low] = calib_id_low
             logging.debug(
                 f"[aggregation] Regression neutral: {head_name} → both {high_term}/{low_term} "
                 f"(mean={mean_val:.3f}, std={std_val:.3f})"
             )
             continue
 
-        # Write base tag with clamped mean value
-        tag_base = f"effnet_{mood_term}"
-        tags[tag_base] = mean_val
+        # Write base tag with clamped mean value using versioned key
+        model_key, calibration_id = head_info.build_versioned_tag_key(
+            mood_term, framework_version=framework_version, calib_method="none", calib_version=0
+        )
+        tags[model_key] = mean_val
+        calib_map[model_key] = calibration_id
 
         # Only assign tier if variance is acceptable AND value is non-neutral
         if std_val >= ACCEPTABLE:
@@ -215,7 +242,7 @@ def add_regression_mood_tiers(tags: dict[str, Any], predictions: dict[str, list[
             # Acceptable variance OR moderate intensity → loose tier
             tier = "low"
 
-        tags[f"{tag_base}_tier"] = tier  # Tier for aggregation
+        tags[f"{model_key}_tier"] = tier  # Tier for aggregation
 
         logging.info(
             f"[aggregation] Regression mood: {head_name} → {mood_term} "
@@ -224,10 +251,14 @@ def add_regression_mood_tiers(tags: dict[str, Any], predictions: dict[str, list[
 
 
 def aggregate_mood_tiers(
-    tags: dict[str, Any], mood_terms: set[str] | None = None, calibrations: dict[str, dict[str, Any]] | None = None
+    tags: dict[str, Any],
+    mood_heads: list[Any] | None = None,  # List of HeadInfo with is_mood_source=True
+    calibrations: dict[str, dict[str, Any]] | None = None,
 ) -> None:
     """
     Aggregate mood-tier tags into mood-strict, mood-regular, mood-loose collections.
+
+    Uses HeadInfo metadata to identify mood tags instead of substring matching.
 
     Optionally applies calibration to raw scores before tier assignment. If calibrations
     are provided, raw scores are normalized using min-max scaling to make different models
@@ -242,12 +273,22 @@ def aggregate_mood_tiers(
 
     Args:
         tags: Dictionary of tag keys to values
-        mood_terms: Optional set of mood terms to filter
+        mood_heads: Optional list of HeadInfo objects with is_mood_source=True
         calibrations: Optional calibration data (tag_key -> {p5, p95, method})
     """
     logging.debug(
-        f"[aggregation] aggregate_mood_tiers called with mood_terms={mood_terms}, calibrations={calibrations is not None}"
+        f"[aggregation] aggregate_mood_tiers called with mood_heads={len(mood_heads) if mood_heads else 0}, "
+        f"calibrations={calibrations is not None}"
     )
+
+    # Build set of mood labels from mood_heads
+    mood_labels: set[str] = set()
+    if mood_heads:
+        for head_info in mood_heads:
+            for label in head_info.labels:
+                # Normalize label and add to set
+                mood_labels.add(label.lower().replace(" ", "_"))
+    logging.debug(f"[aggregation] Mood labels from heads: {mood_labels}")
 
     # DEBUG: Log input tags
     total_tags = len([k for k in tags if isinstance(k, str)])
@@ -264,13 +305,17 @@ def aggregate_mood_tiers(
         base_key = k[: -len("_tier")]
         tier = str(v).lower()
 
-        # Select only mood-related keys if mood_terms provided; else require 'mood' substring
-        if mood_terms is not None:
+        # If mood_heads provided, filter by checking if any mood label appears in base_key
+        # This allows versioned keys like "happy_essentia21b6dev1389_yamnet..." to match
+        if mood_heads is not None:
             base_l = base_key.lower()
-            if not any(term in base_l for term in mood_terms):
+            # Check if any mood label appears in the base_key
+            is_mood = any(label in base_l for label in mood_labels)
+            if not is_mood:
                 logging.debug(f"[aggregation] Skipping non-mood tier tag: {k} (base={base_key})")
                 continue
         else:
+            # Fallback: require 'mood' substring in key (for backward compatibility)
             if "mood" not in base_key.lower():
                 continue
 

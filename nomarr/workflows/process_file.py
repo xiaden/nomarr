@@ -180,6 +180,7 @@ def process_file_workflow(
 
     # DEBUG: Log all heads by backbone and type
     from collections import Counter
+
     by_backbone = Counter(h.backbone for h in heads)
     by_type = Counter(h.head_type for h in heads)
     logging.info(f"[processor] Heads by backbone: {dict(by_backbone)}")
@@ -193,8 +194,16 @@ def process_file_workflow(
     head_results: dict[str, Any] = {}  # Track per-head outcomes
 
     # Track regression head predictions for mood integration
-    # Format: {head_name: [segment_values]}
-    regression_predictions: dict[str, list[float]] = {}
+    # Format: [(HeadInfo, [segment_values])]
+    regression_heads: list[tuple[HeadInfo, list[float]]] = []
+
+    # Track mood heads for aggregation
+    mood_heads = [h for h in heads if h.is_mood_source or h.is_regression_mood_source]
+    logging.info(f"[processor] Mood heads: {len(mood_heads)} heads will contribute to mood-* tags")
+    for h in mood_heads:
+        logging.debug(
+            f"[processor]   - {h.name} (mood_source={h.is_mood_source}, regression_mood={h.is_regression_mood_source})"
+        )
 
     heads_succeeded = 0
     duration_final = None
@@ -299,9 +308,7 @@ def process_file_workflow(
                 head_tags = decision.as_tags(key_builder=_build_key)
 
                 # DEBUG: Log tag generation details
-                logging.debug(
-                    f"[processor] Head {head_name} ({head_info.head_type}) produced {len(head_tags)} tags"
-                )
+                logging.debug(f"[processor] Head {head_name} ({head_info.head_type}) produced {len(head_tags)} tags")
                 if head_tags:
                     sample_keys = list(head_tags.keys())[:3]
                     logging.debug(f"[processor]   Sample keys: {sample_keys}")
@@ -320,13 +327,13 @@ def process_file_workflow(
 
                 # Capture raw segment predictions for regression heads (approachability, engagement)
                 # These will be used to generate mood tier tags with variance-based confidence
-                if head_info.head_type == "identity" and head_name.endswith("_regression"):
+                if head_info.is_regression_mood_source:
                     # segment_scores is [num_segments, 1] for regression heads, extract first column
                     if segment_scores.ndim == 2:
                         raw_values = [float(x) for x in segment_scores[:, 0]]  # Extract first column as float list
                     else:
                         raw_values = [float(x) for x in segment_scores]  # Already 1D
-                    regression_predictions[head_name] = raw_values
+                    regression_heads.append((head_info, raw_values))
                     logging.debug(
                         f"[processor] Captured {len(raw_values)} segment predictions for {head_name} "
                         f"(mean={np.mean(raw_values):.3f}, std={np.std(raw_values):.3f})"
@@ -356,26 +363,6 @@ def process_file_workflow(
     if heads_succeeded == 0:
         raise RuntimeError("No heads produced decisions; refusing to write tags")
 
-    # Derive mood terms from discovered heads (e.g., "mood relaxed" or "mood_relaxed" -> 'relaxed')
-    mood_terms: set[str] = set()
-    for h in heads:
-        name = getattr(h, "name", "") or ""
-        # Normalize spaces to underscores for consistent pattern matching
-        name_normalized = name.replace(" ", "_")
-        # Head names might look like "mood relaxed" or "mood_relaxed-audioset-yamnet-1"
-        if "mood_" in name_normalized.lower():
-            # Split on hyphen first to isolate the base name
-            base = name_normalized.split("-", 1)[0]
-            try:
-                term = base.split("mood_", 1)[1]
-                if term:
-                    mood_terms.add(term.lower())
-                    logging.debug(f"[processor] Extracted mood term '{term.lower()}' from head '{name}'")
-            except Exception:
-                pass
-
-    logging.info(f"[processor] Derived mood terms from heads: {mood_terms}")
-
     # DEBUG: Log tags before aggregation
     logging.debug(f"[processor] Tags before mood aggregation: {len(tags_accum)} total")
     tier_tags = [k for k in tags_accum if isinstance(k, str) and k.endswith("_tier")]
@@ -384,7 +371,7 @@ def process_file_workflow(
         logging.debug(f"[processor]   Sample tier tags: {tier_tags[:5]}")
 
     # Convert regression head predictions (approachability, engagement) to mood tier tags
-    add_regression_mood_tiers(tags_accum, regression_predictions)
+    add_regression_mood_tiers(tags_accum, regression_heads, framework_version=ESSENTIA_VERSION)
 
     # DEBUG: Log tags after regression tiers
     logging.debug(f"[processor] Tags after regression tiers: {len(tags_accum)} total")
@@ -397,7 +384,8 @@ def process_file_workflow(
     else:
         logging.debug("[aggregation] No calibrations found, using raw scores")
 
-    aggregate_mood_tiers(tags_accum, mood_terms if mood_terms else None, calibrations)
+    # Use HeadInfo metadata instead of derived mood_terms for aggregation
+    aggregate_mood_tiers(tags_accum, mood_heads=mood_heads, calibrations=calibrations)
 
     # DEBUG: Log mood aggregation results
     mood_keys = [k for k in tags_accum if isinstance(k, str) and k.startswith("mood-")]
