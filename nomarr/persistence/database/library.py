@@ -103,6 +103,20 @@ class LibraryOperations:
             raise RuntimeError("Failed to upsert library file - no row ID returned")
         return file_id
 
+    def mark_file_tagged(self, path: str, tagged_version: str) -> None:
+        """
+        Mark a file as tagged with the given version.
+
+        Args:
+            path: File path
+            tagged_version: Version string of the tagger
+        """
+        self.conn.execute(
+            "UPDATE library_files SET tagged=1, tagged_version=?, last_tagged_at=? WHERE path=?",
+            (tagged_version, now_ms(), path),
+        )
+        self.conn.commit()
+
     def get_library_file(self, path: str) -> dict[str, Any] | None:
         """
         Get library file by path.
@@ -226,6 +240,85 @@ class LibraryOperations:
         if scan_id is None:
             raise RuntimeError("Failed to create library scan - no row ID returned")
         return scan_id
+
+    def get_latest_scan_id(self) -> int | None:
+        """
+        Get the ID of the most recent library scan.
+
+        Returns:
+            Scan ID or None if no scans exist
+        """
+        cur = self.conn.execute("SELECT id FROM library_queue ORDER BY started_at DESC LIMIT 1")
+        row = cur.fetchone()
+        return row[0] if row else None
+
+    def get_scan_by_id(self, scan_id: int) -> dict[str, Any] | None:
+        """
+        Get library scan by ID.
+
+        Args:
+            scan_id: Scan ID to look up
+
+        Returns:
+            Scan dict or None if not found
+        """
+        cur = self.conn.execute("SELECT * FROM library_queue WHERE id=?", (scan_id,))
+        row = cur.fetchone()
+        if not row:
+            return None
+        columns = [desc[0] for desc in cur.description]
+        return dict(zip(columns, row, strict=False))
+
+    def count_running_scans(self) -> int:
+        """
+        Count library scans currently in 'running' status.
+
+        Returns:
+            Number of running scans
+        """
+        cur = self.conn.execute("SELECT COUNT(*) FROM library_queue WHERE status='running'")
+        row = cur.fetchone()
+        return row[0] if row else 0
+
+    def get_running_scan(self) -> dict[str, Any] | None:
+        """
+        Get the currently running library scan (if any).
+
+        Returns:
+            Scan dict or None if no scan is running
+        """
+        cur = self.conn.execute(
+            """SELECT * FROM library_queue
+               WHERE status='running'
+               ORDER BY started_at DESC
+               LIMIT 1"""
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        columns = [desc[0] for desc in cur.description]
+        return dict(zip(columns, row, strict=False))
+
+    def list_scans(self, limit: int = 10) -> list[dict[str, Any]]:
+        """
+        Get recent library scans with details.
+
+        Args:
+            limit: Maximum number of scans to return
+
+        Returns:
+            List of scan dicts
+        """
+        cur = self.conn.execute(
+            """SELECT id, status, started_at, finished_at,
+                      files_scanned, files_added, files_updated, files_removed, error_message
+               FROM library_queue
+               ORDER BY started_at DESC
+               LIMIT ?""",
+            (limit,),
+        )
+        columns = [desc[0] for desc in cur.description]
+        return [dict(zip(columns, row, strict=False)) for row in cur.fetchall()]
 
     def update_library_scan(
         self,

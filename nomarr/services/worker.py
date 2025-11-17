@@ -122,9 +122,7 @@ class WorkerService:
             any_busy = any(w.is_busy() for w in self.worker_pool if w.is_alive())
 
             # Check if any jobs are currently running in DB
-            cur = self.db.conn.execute("SELECT COUNT(*) FROM tag_queue WHERE status='running'")
-            row = cur.fetchone()
-            running_count = row[0] if row else 0
+            running_count = self.db.queue.queue_stats().get("running", 0)
 
             # Both checks must be idle
             if not any_busy and running_count == 0:
@@ -158,8 +156,7 @@ class WorkerService:
         """
         jobs_reset = 0
         with self.queue.lock:
-            cur = self.db.conn.execute("SELECT id FROM tag_queue WHERE status='running'")
-            running_job_ids = [row[0] for row in cur.fetchall()]
+            running_job_ids = self.db.queue.get_running_job_ids()
 
             for job_id in running_job_ids:
                 self.db.queue.update_job(job_id, "pending")

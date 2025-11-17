@@ -142,6 +142,74 @@ class QueueOperations:
         self.conn.commit()
         return count
 
+    def get_running_job_ids(self) -> list[int]:
+        """
+        Get all job IDs currently in 'running' state.
+
+        Returns:
+            List of job IDs
+        """
+        cur = self.conn.execute("SELECT id FROM tag_queue WHERE status='running'")
+        return [row[0] for row in cur.fetchall()]
+
+    def get_next_pending_job(self) -> dict[str, Any] | None:
+        """
+        Get the next pending job (oldest first).
+
+        Returns:
+            Job dict with id, path, force or None if no pending jobs
+        """
+        cur = self.conn.execute("SELECT id, path, force FROM tag_queue WHERE status='pending' ORDER BY id ASC LIMIT 1")
+        row = cur.fetchone()
+        if not row:
+            return None
+        return {"id": row[0], "path": row[1], "force": bool(row[2])}
+
+    def get_recent_done_jobs_timing(self, limit: int = 5) -> list[tuple[int, int]]:
+        """
+        Get timing data for recently completed jobs.
+
+        Args:
+            limit: Number of recent jobs to fetch
+
+        Returns:
+            List of (finished_at, started_at) tuples in milliseconds
+        """
+        cur = self.conn.execute(
+            """
+            SELECT finished_at, started_at
+            FROM tag_queue
+            WHERE status='done' AND finished_at IS NOT NULL AND started_at IS NOT NULL
+            ORDER BY finished_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+        return [(row[0], row[1]) for row in cur.fetchall()]
+
+    def get_active_jobs(self, limit: int = 50) -> list[dict[str, Any]]:
+        """
+        Get currently active (pending or running) jobs.
+
+        Args:
+            limit: Maximum number of jobs to return
+
+        Returns:
+            List of job dicts with id, path, status, created_at, started_at
+        """
+        cur = self.conn.execute(
+            """
+            SELECT id, path, status, created_at, started_at
+            FROM tag_queue
+            WHERE status IN ('pending', 'running')
+            ORDER BY id ASC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+        columns = ["id", "path", "status", "created_at", "started_at"]
+        return [dict(zip(columns, row, strict=False)) for row in cur.fetchall()]
+
     def delete_job(self, job_id: int) -> int:
         """
         Delete a job by ID.

@@ -96,9 +96,7 @@ class LibraryService:
             )
 
             # Get the scan_id from the most recent scan
-            cur = self.db.conn.execute("SELECT id FROM library_queue ORDER BY started_at DESC LIMIT 1")
-            row = cur.fetchone()
-            scan_id = row[0] if row else 0
+            scan_id = self.db.library.get_latest_scan_id() or 0
 
             logging.info(
                 f"[LibraryService] Scan {scan_id} complete: "
@@ -162,20 +160,13 @@ class LibraryService:
         current_progress = None
 
         if running:
-            cur = self.db.conn.execute(
-                """SELECT id, files_processed, total_files, current_file
-                   FROM library_queue
-                   WHERE status='running'
-                   ORDER BY started_at DESC
-                   LIMIT 1"""
-            )
-            row = cur.fetchone()
-            if row:
-                current_scan_id = row[0]
+            scan = self.db.library.get_running_scan()
+            if scan:
+                current_scan_id = scan["id"]
                 current_progress = {
-                    "files_processed": row[1] or 0,
-                    "total_files": row[2] or 0,
-                    "current_file": row[3],
+                    "files_processed": scan.get("files_processed") or 0,
+                    "total_files": scan.get("total_files") or 0,
+                    "current_file": scan.get("current_file"),
                 }
 
         return {
@@ -197,32 +188,7 @@ class LibraryService:
         Returns:
             List of scan dicts with id, status, started_at, finished_at, files_scanned, etc.
         """
-        cur = self.db.conn.execute(
-            """SELECT id, status, started_at, finished_at,
-                      files_scanned, files_added, files_updated, files_removed, error_message
-               FROM library_queue
-               ORDER BY started_at DESC
-               LIMIT ?""",
-            (limit,),
-        )
-
-        scans = []
-        for row in cur.fetchall():
-            scans.append(
-                {
-                    "id": row[0],
-                    "status": row[1],
-                    "started_at": row[2],
-                    "finished_at": row[3],
-                    "files_scanned": row[4],
-                    "files_added": row[5],
-                    "files_updated": row[6],
-                    "files_removed": row[7],
-                    "error_message": row[8],
-                }
-            )
-
-        return scans
+        return self.db.library.list_scans(limit=limit)
 
     def _is_scan_running(self) -> bool:
         """
@@ -231,6 +197,5 @@ class LibraryService:
         Returns:
             True if a scan is in 'running' status
         """
-        cur = self.db.conn.execute("SELECT COUNT(*) FROM library_queue WHERE status='running'")
-        count: int = cur.fetchone()[0]
+        count = self.db.library.count_running_scans()
         return count > 0

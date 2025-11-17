@@ -74,9 +74,8 @@ async def list_jobs(limit: int = 50, offset: int = 0, status: str | None = None)
             status_code=400, detail=f"Invalid status '{status}'. Must be one of: pending, running, done, error"
         )
 
-    # Get status counts
-    cur = db.conn.execute("SELECT status, COUNT(*) FROM queue GROUP BY status")
-    counts = {row[0]: row[1] for row in cur.fetchall()}
+    # Get status counts from persistence layer
+    counts = db.queue.queue_stats()
 
     # Get jobs with pagination
     jobs_list, total = queue.list(limit=limit, offset=offset, status=status)
@@ -207,9 +206,8 @@ async def get_info():
     BLOCKING_MODE = g["BLOCKING_MODE"]
     BLOCKING_TIMEOUT = g["BLOCKING_TIMEOUT"]
 
-    # Get queue stats
-    cur = db.conn.execute("SELECT status, COUNT(*) FROM queue GROUP BY status")
-    counts = {row[0]: row[1] for row in cur.fetchall()}
+    # Get queue stats from persistence layer
+    counts = db.queue.queue_stats()
     q_depth = queue.depth()
 
     # Worker status

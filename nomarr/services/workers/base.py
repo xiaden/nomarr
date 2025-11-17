@@ -162,15 +162,13 @@ class BaseWorker(threading.Thread):
             Job dict with keys: id, path, force, or None if no jobs available
         """
         with self.queue.lock:
-            cur = self.db.conn.execute(
-                "SELECT id, path, force FROM tag_queue WHERE status='pending' ORDER BY id ASC LIMIT 1"
-            )
-            row = cur.fetchone()
-            if not row:
+            job = self.db.queue.get_next_pending_job()
+            if not job:
                 return None
 
-            job_id, path, force_int = row
-            force = bool(force_int)
+            job_id = job["id"]
+            path = job["path"]
+            force = job["force"]
 
             # Mark job as running
             self.db.queue.update_job(job_id, "running")
@@ -278,16 +276,7 @@ class BaseWorker(threading.Thread):
             current_avg = float(current_avg_str)
         else:
             # Calculate from last 5 jobs if no stored average
-            cur = self.db.conn.execute(
-                """
-                SELECT finished_at, started_at
-                FROM tag_queue
-                WHERE status='done' AND finished_at IS NOT NULL AND started_at IS NOT NULL
-                ORDER BY finished_at DESC
-                LIMIT 5
-                """
-            )
-            rows = cur.fetchall()
+            rows = self.db.queue.get_recent_done_jobs_timing(limit=5)
             if rows:
                 times = [(finished - started) / 1000.0 for finished, started in rows]
                 current_avg = sum(times) / len(times)
@@ -323,40 +312,11 @@ class BaseWorker(threading.Thread):
     def _publish_queue_stats(self) -> None:
         """Publish queue statistics to event broker."""
         try:
-            # Get current queue stats
-            cur = self.db.conn.execute(
-                """
-                SELECT
-                    SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) as pending,
-                    SUM(CASE WHEN status='running' THEN 1 ELSE 0 END) as running,
-                    SUM(CASE WHEN status='done' THEN 1 ELSE 0 END) as completed
-                FROM tag_queue
-                """
-            )
-            row = cur.fetchone()
-            stats = {"pending": row[0] or 0, "running": row[1] or 0, "completed": row[2] or 0}
+            # Get current queue stats from persistence layer
+            stats = self.db.queue.queue_stats()
 
-            # Get active jobs (pending + running)
-            cur = self.db.conn.execute(
-                """
-                SELECT id, path, status, created_at, started_at
-                FROM tag_queue
-                WHERE status IN ('pending', 'running')
-                ORDER BY id ASC
-                LIMIT 50
-                """
-            )
-            jobs = []
-            for row in cur.fetchall():
-                jobs.append(
-                    {
-                        "id": row[0],
-                        "path": row[1],
-                        "status": row[2],
-                        "created_at": row[3],
-                        "started_at": row[4],
-                    }
-                )
+            # Get active jobs (pending + running) from persistence layer
+            jobs = self.db.queue.get_active_jobs(limit=50)
 
             queue_state = {"stats": stats, "jobs": jobs}
             self._event_broker.update_queue_state(**queue_state)

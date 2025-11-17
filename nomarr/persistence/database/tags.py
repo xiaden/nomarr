@@ -92,6 +92,38 @@ class TagOperations:
 
         return tags
 
+    def get_file_tags_by_prefix(self, file_id: int, prefix: str) -> dict[str, Any]:
+        """
+        Get all tags for a specific file matching a key prefix (e.g., namespace).
+
+        Args:
+            file_id: Library file ID
+            prefix: Key prefix to filter by (e.g., 'essentia:')
+
+        Returns:
+            Dict of tag_key -> tag_value (with arrays parsed from JSON)
+        """
+        cursor = self.conn.execute(
+            "SELECT tag_key, tag_value, tag_type FROM library_tags WHERE file_id=? AND tag_key LIKE ?",
+            (file_id, f"{prefix}%"),
+        )
+
+        tags = {}
+        for tag_key, tag_value, tag_type in cursor.fetchall():
+            if tag_type == "array":
+                try:
+                    tags[tag_key] = json.loads(tag_value)
+                except json.JSONDecodeError:
+                    tags[tag_key] = tag_value
+            elif tag_type == "float":
+                tags[tag_key] = float(tag_value)
+            elif tag_type == "int":
+                tags[tag_key] = int(tag_value)
+            else:
+                tags[tag_key] = tag_value
+
+        return tags
+
     def get_tag_type_stats(self, tag_key: str) -> dict[str, Any]:
         """
         Get statistics about a tag's type usage.

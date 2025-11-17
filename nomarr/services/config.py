@@ -243,16 +243,15 @@ class ConfigService:
 
             db = Database(db_path)
             try:
-                # Query all config_* keys from meta table
-                cursor = db.conn.execute("SELECT key, value FROM meta WHERE key LIKE 'config_%'")
-                rows = cursor.fetchall()
+                # Query all config_* keys from meta table via persistence layer
+                meta_dict = db.meta.get_by_prefix("config_")
 
-                if not rows:
+                if not meta_dict:
                     self._logger.debug("DB config skipped: no config_* keys in meta table")
                     return {}
 
                 config_overrides = {}
-                for key, value in rows:
+                for key, value in meta_dict.items():
                     # Remove 'config_' prefix
                     config_key = key[7:]  # len('config_') == 7
 

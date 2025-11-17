@@ -24,3 +24,16 @@ class MetaOperations:
         """Delete a metadata key-value pair."""
         self.conn.execute("DELETE FROM meta WHERE key=?", (key,))
         self.conn.commit()
+
+    def get_by_prefix(self, prefix: str) -> dict[str, str]:
+        """
+        Get all metadata keys matching a prefix.
+
+        Args:
+            prefix: Key prefix to match (e.g., 'config_')
+
+        Returns:
+            Dict of {key: value} for all matching keys
+        """
+        cur = self.conn.execute("SELECT key, value FROM meta WHERE key LIKE ?", (f"{prefix}%",))
+        return {row[0]: row[1] for row in cur.fetchall()}

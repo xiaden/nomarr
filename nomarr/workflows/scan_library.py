@@ -322,13 +322,7 @@ def update_library_file_from_tags(
 
         # Mark file as tagged if tagger version provided (called from processor)
         if tagged_version and file_record:
-            from nomarr.persistence.db import now_ms
-
-            db.conn.execute(
-                "UPDATE library_files SET tagged=1, tagged_version=?, last_tagged_at=? WHERE path=?",
-                (tagged_version, now_ms(), file_path),
-            )
-            db.conn.commit()
+            db.library.mark_file_tagged(file_path, tagged_version)
 
         logging.debug(f"[library_scanner] Updated library for {file_path}")
     except Exception as e:

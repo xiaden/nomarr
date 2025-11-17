@@ -30,7 +30,6 @@ USAGE:
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import TYPE_CHECKING
 
@@ -93,27 +92,8 @@ def recalibrate_file_workflow(
 
     file_id = library_file["id"]
 
-    # Get all raw tags for this file from library_tags
-    cursor = db.conn.execute(
-        "SELECT tag_key, tag_value, tag_type FROM library_tags WHERE file_id = ?",
-        (file_id,),
-    )
-
-    raw_tags = {}
-    for tag_key, tag_value, tag_type in cursor.fetchall():
-        # Only process namespace tags
-        if not tag_key.startswith(f"{namespace}:"):
-            continue
-
-        # Parse value based on type
-        if tag_type == "array":
-            raw_tags[tag_key] = json.loads(tag_value)
-        elif tag_type == "float":
-            raw_tags[tag_key] = float(tag_value)
-        elif tag_type == "int":
-            raw_tags[tag_key] = int(tag_value)
-        else:
-            raw_tags[tag_key] = tag_value
+    # Get all raw tags for this file from library_tags (filtered by namespace)
+    raw_tags = db.tags.get_file_tags_by_prefix(file_id, f"{namespace}:")
 
     if not raw_tags:
         logging.warning(f"[recalibration_workflow] No raw tags found for {file_path}")
