@@ -50,6 +50,11 @@ def recalibrate_file_workflow(
     """
     Recalibrate a single file by applying calibration to existing raw tags.
 
+    ⚠️ NOTE: This workflow is currently BROKEN after the HeadOutput refactor.
+    It expects *_tier tags to exist in the database, but the new pipeline no longer
+    writes them. This function needs to be rewritten to work with HeadOutput objects
+    or removed entirely if recalibration without re-inference is not needed.
+
     This workflow:
     1. Loads calibrations from models directory (versioned or reference)
     2. Retrieves raw tag scores from library_tags table
@@ -73,12 +78,18 @@ def recalibrate_file_workflow(
     Raises:
         FileNotFoundError: If file not found in library database
         Exception: On calibration load or tag write failure
+        NotImplementedError: Currently raises this due to broken implementation
 
     Example:
         >>> recalibrate_file_workflow(
         ...     db=my_db, file_path="/music/song.mp3", models_dir="/app/models", namespace="nom", calibrate_heads=False
         ... )
     """
+    raise NotImplementedError(
+        "recalibrate_file_workflow is broken after HeadOutput refactor. "
+        "It expects *_tier tags in DB, but we no longer write them. "
+        "Rewrite this to work with HeadOutput objects or use full re-tagging instead."
+    )
     logging.debug(f"[recalibration_workflow] Processing {file_path}")
 
     # Load calibrations from models directory

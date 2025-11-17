@@ -337,9 +337,10 @@ class HeadDecision:
 
     def as_tags(self, prefix: str = "", key_builder: Callable[[str], str] | None = None) -> dict[str, Any]:
         """
-        Produce a flat tag dict:
-          - regression: { "<name>/<label>": value }
-          - multilabel/multiclass: { "<name>/<label>": probability, "<name>/<label>_tier": tier }
+        Produce a flat tag dict with numeric values only.
+
+        Tier information is preserved in self.details but not emitted as *_tier tags.
+        Use HeadOutput objects to access tier information for aggregation.
 
         Args:
             prefix: Legacy simple prefix (e.g., "yamnet_")
@@ -354,11 +355,9 @@ class HeadDecision:
             return tags
 
         # details is {label: {"p": float, "tier": str}}
-        # For multiclass adaptive heads we avoid emitting *_tier keys so
-        # they won't be aggregated into mood-tier collections. Only
-        # multilabel heads produce the tier keys used for mood aggregation.
+        # Emit only probability values - tier is accessed via HeadDecision.details or HeadOutput
         if head_is_multiclass(self.head):
-            # Emit selected classes as before
+            # Emit selected classes
             for k, v in self.details.items():
                 tag_key = key_builder(k) if key_builder else f"{prefix}{k}"
                 tags[tag_key] = float(v.get("p", 0.0))
@@ -369,16 +368,103 @@ class HeadDecision:
                     tags[tag_key] = float(p)
             return tags
 
+        # Multilabel heads: emit probability values only (no *_tier tags)
         for k, v in self.details.items():
             tag_key = key_builder(k) if key_builder else f"{prefix}{k}"
             tags[tag_key] = float(v.get("p", 0.0))
-            tags[f"{tag_key}_tier"] = v.get("tier", "low")
-        # Also emit probabilities for non-selected labels if available (without tiers)
+        # Also emit probabilities for non-selected labels if available
         for lab, p in (self.all_probs or {}).items():
-            tag_key = key_builder(lab) if key_builder else f"{prefix}{lab}"
-            if tag_key not in tags:  # don't override ones with tiers
+            tag_key = key_builder(k) if key_builder else f"{prefix}{lab}"
+            if tag_key not in tags:
                 tags[tag_key] = float(p)
         return tags
+
+    def to_head_outputs(
+        self,
+        head_info: Any,  # HeadInfo from discovery
+        framework_version: str,
+        prefix: str = "",
+        key_builder: Callable[[str], str] | None = None,
+    ) -> list[Any]:  # Returns list[HeadOutput]
+        """
+        Convert HeadDecision to list of HeadOutput objects.
+
+        For multilabel heads, creates one HeadOutput per selected label with tier information.
+        For multiclass heads, creates HeadOutput objects for all emitted labels (no tiers).
+        For regression heads, this should not be called (regression uses add_regression_mood_tiers).
+
+        Args:
+            head_info: HeadInfo object from discovery
+            framework_version: Runtime Essentia version
+            prefix: Legacy simple prefix (fallback)
+            key_builder: Optional function(label) -> versioned_key
+
+        Returns:
+            List of HeadOutput objects
+        """
+        from nomarr.ml.models.discovery import HeadOutput  # Late import to avoid circular dependency
+
+        outputs: list[HeadOutput] = []
+
+        if head_is_regression(self.head):
+            # Regression heads should use add_regression_mood_tiers instead
+            return outputs
+
+        # For multilabel/multiclass: create HeadOutput for each label
+        for label, value in self.details.items():
+            # Build versioned tag key
+            if key_builder:
+                tag_key = key_builder(label)
+                # Extract calibration_id from head_info if available
+                calibration_id = getattr(head_info, "calibration_id", None)
+            else:
+                tag_key = f"{prefix}{label}"
+                calibration_id = None
+
+            # Extract probability and tier
+            if isinstance(value, dict):
+                prob = float(value.get("p", 0.0))
+                tier = value.get("tier") if not head_is_multiclass(self.head) else None
+            else:
+                prob = float(value)
+                tier = None
+
+            outputs.append(
+                HeadOutput(
+                    head=head_info,
+                    model_key=tag_key,
+                    label=label,
+                    value=prob,
+                    tier=tier,
+                    calibration_id=calibration_id,
+                )
+            )
+
+        # Also include non-selected labels if available
+        for label, prob in self.all_probs.items():
+            # Skip if already in details
+            if label in self.details:
+                continue
+
+            if key_builder:
+                tag_key = key_builder(label)
+                calibration_id = getattr(head_info, "calibration_id", None)
+            else:
+                tag_key = f"{prefix}{label}"
+                calibration_id = None
+
+            outputs.append(
+                HeadOutput(
+                    head=head_info,
+                    model_key=tag_key,
+                    label=label,
+                    value=float(prob),
+                    tier=None,  # Non-selected labels don't get tiers
+                    calibration_id=calibration_id,
+                )
+            )
+
+        return outputs
 
 
 def head_is_regression(spec: HeadSpec) -> bool:

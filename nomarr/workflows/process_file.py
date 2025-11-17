@@ -243,6 +243,9 @@ def process_file_workflow(
     # Format: [(HeadInfo, [segment_values])]
     regression_heads: list[tuple[HeadInfo, list[float]]] = []
 
+    # Collect all HeadOutput objects for aggregation (replaces *_tier tags)
+    all_head_outputs: list[Any] = []  # List[HeadOutput]
+
     # Track mood heads for aggregation
     mood_heads = [h for h in heads if h.is_mood_source or h.is_regression_mood_source]
     logging.info(f"[processor] Mood heads: {len(mood_heads)} heads will contribute to mood-* tags")
@@ -351,6 +354,15 @@ def process_file_workflow(
                     calib_map[model_key] = calibration_id
                     return model_key
 
+                # Convert HeadDecision to HeadOutput objects for aggregation
+                head_outputs = decision.to_head_outputs(
+                    head_info=head_info,
+                    framework_version=ESSENTIA_VERSION,
+                    key_builder=_build_key,
+                )
+                all_head_outputs.extend(head_outputs)
+
+                # Get numeric tags (no *_tier tags emitted)
                 head_tags = decision.as_tags(key_builder=_build_key)
 
                 # DEBUG: Log tag generation details
@@ -409,18 +421,11 @@ def process_file_workflow(
     if heads_succeeded == 0:
         raise RuntimeError("No heads produced decisions; refusing to write tags")
 
-    # DEBUG: Log tags before aggregation
-    logging.debug(f"[processor] Tags before mood aggregation: {len(tags_accum)} total")
-    tier_tags = [k for k in tags_accum if isinstance(k, str) and k.endswith("_tier")]
-    logging.debug(f"[processor]   {len(tier_tags)} tier tags found")
-    if tier_tags:
-        logging.debug(f"[processor]   Sample tier tags: {tier_tags[:5]}")
+    # Convert regression head predictions to HeadOutput objects with tier information
+    regression_outputs = add_regression_mood_tiers(regression_heads, framework_version=ESSENTIA_VERSION)
+    all_head_outputs.extend(regression_outputs)
 
-    # Convert regression head predictions (approachability, engagement) to mood tier tags
-    add_regression_mood_tiers(tags_accum, regression_heads, framework_version=ESSENTIA_VERSION)
-
-    # DEBUG: Log tags after regression tiers
-    logging.debug(f"[processor] Tags after regression tiers: {len(tags_accum)} total")
+    logging.debug(f"[processor] Total HeadOutput objects: {len(all_head_outputs)}")
 
     # Load calibrations if available (conditional - gracefully handles missing files)
     # Use calibrate_heads flag from config to determine which calibration files to load
@@ -430,8 +435,9 @@ def process_file_workflow(
     else:
         logging.debug("[aggregation] No calibrations found, using raw scores")
 
-    # Use HeadInfo metadata instead of derived mood_terms for aggregation
-    aggregate_mood_tiers(tags_accum, mood_heads=mood_heads, calibrations=calibrations)
+    # Aggregate HeadOutput objects into mood-* tags
+    mood_tags = aggregate_mood_tiers(all_head_outputs, calibrations=calibrations)
+    tags_accum.update(mood_tags)
 
     # DEBUG: Log mood aggregation results
     mood_keys = [k for k in tags_accum if isinstance(k, str) and k.startswith("mood-")]
@@ -444,12 +450,7 @@ def process_file_workflow(
     tags_accum[version_tag_key] = tagger_version
 
     # Prepare tags for DB and file writing
-    # Remove *_tier tags from tags_accum - they are internal only
-    tier_tag_keys = [k for k in tags_accum if isinstance(k, str) and k.endswith("_tier")]
-    for tier_key in tier_tag_keys:
-        del tags_accum[tier_key]
-    logging.debug(f"[processor] Removed {len(tier_tag_keys)} internal *_tier tags before persisting")
-
+    # No need to remove *_tier tags - they're never created now!
     # DB gets ALL tags (numeric scores + mood-*)
     db_tags = dict(tags_accum)  # Copy for DB
 
