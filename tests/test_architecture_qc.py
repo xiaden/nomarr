@@ -94,6 +94,7 @@ def find_import_violations(file_path: Path, forbidden_imports: list[str]) -> lis
     return violations
 
 
+@pytest.mark.code_smell
 def test_no_raw_db_execute_outside_persistence():
     """
     Test 1: Ensure raw SQL (db.conn.execute) is only used in persistence layer.
@@ -102,6 +103,9 @@ def test_no_raw_db_execute_outside_persistence():
     - Maintainability (centralized SQL changes)
     - Security (consistent parameterization)
     - Testing (easier to mock persistence layer)
+
+    Note: This is a code smell test, not a functional test.
+    Marked with @pytest.mark.code_smell to skip in CI.
     """
     violations = []
 

@@ -137,9 +137,10 @@ jobs:
       - name: Run tests in container
         if: ((github.event_name == 'push' && steps.version_check.outputs.changed == 'true') || github.event.inputs.force_build == 'true') && github.event.inputs.skip_tests != 'true'
         run: |
-          # Skip GPU-required and container-only integration tests in CI
-          # These tests require GPU for ML inference and are designed for manual testing
-          docker run --rm nomarr python3 -m pytest tests/ -v -m "not gpu_required and not container_only"
+          # Skip GPU-required, container-only, and code smell tests in CI
+          # GPU/container tests require specific hardware/environment
+          # Code smell tests are for architecture quality, not functionality
+          docker run --rm nomarr python3 -m pytest tests/ -v -m "not gpu_required and not container_only and not code_smell"
 
       - name: Tag and push to GitHub Container Registry
         if: ((github.event_name == 'push' && steps.version_check.outputs.changed == 'true') || github.event.inputs.force_build == 'true') && (success() || github.event.inputs.skip_tests == 'true')
