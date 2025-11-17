@@ -14,6 +14,8 @@ dist/
 build/
 .venv/
 venv/
+*.py[cod]
+*$py.class
 
 # IDEs
 .vscode/
@@ -21,17 +23,25 @@ venv/
 *.swp
 *.swo
 *~
+.vscode-test/
 
 # OS
 .DS_Store
 Thumbs.db
+*.bak
+.Spotlight-V100
+.Trashes
 
 # Logs
 *.log
+logs/
 
 # Config & Data (don't commit local config/db)
 config/db/
 config/*.sqlite*
+*.db
+*.sqlite
+*.sqlite3
 
 # Docker
 .dockerignore
@@ -40,10 +50,65 @@ config/*.sqlite*
 .coverage
 htmlcov/
 .pytest_cache/
+coverage.xml
+*.cover
+.hypothesis/
+.tox/
 
-# QC reports
+# QC reports & analysis
 qc_reports/
+.wily/
+.mypy_cache/
+.ruff_cache/
+.import_linter_cache/
+radon_reports/
 
 # Temp files
 *.tmp
 *.bak
+*.swp
+*.swo
+*~
+
+# Build outputs
+dist/
+build/
+*.spec
+frontend/dist/
+frontend/build/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Package manager locks (optional - some teams commit these)
+# package-lock.json
+# poetry.lock
+
+# Models and large files
+models_old/
+*.ckpt
+*.pb
+*.pth
+*.h5
+*.model
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# macOS
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
+.Trash-*
