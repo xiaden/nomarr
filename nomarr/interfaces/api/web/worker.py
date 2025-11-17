@@ -1,0 +1,99 @@
+"""Worker management endpoints for web UI."""
+
+import asyncio
+import logging
+import os
+from typing import Any
+
+from fastapi import APIRouter, Depends
+
+from nomarr.interfaces.api.auth import verify_session
+from nomarr.interfaces.api.web.dependencies import (
+    get_database,
+    get_event_broker,
+    get_worker_pool,
+    get_worker_service,
+)
+from nomarr.persistence.db import Database
+
+router = APIRouter(prefix="/api/admin/worker", tags=["Worker"])
+
+
+# Background task storage for restart
+_RESTART_TASKS: set = set()
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Worker Control Endpoints
+# ──────────────────────────────────────────────────────────────────────
+
+
+@router.post("/pause", dependencies=[Depends(verify_session)])
+async def web_admin_worker_pause(
+    db: Database = Depends(get_database),
+    worker_pool: list[Any] = Depends(get_worker_pool),
+    event_broker: Any | None = Depends(get_event_broker),
+) -> dict[str, str]:
+    """Pause the worker (web UI proxy)."""
+    db.meta.set("worker_enabled", "false")
+
+    # Stop all workers
+    for worker in worker_pool:
+        worker.stop()
+    worker_pool.clear()
+
+    # Publish worker state update
+    if event_broker:
+        event_broker.update_worker_state("main", {"enabled": False})
+
+    return {"status": "paused", "message": "Worker paused successfully"}
+
+
+@router.post("/resume", dependencies=[Depends(verify_session)])
+async def web_admin_worker_resume(
+    worker_service: Any | None = Depends(get_worker_service),
+    worker_pool: list[Any] = Depends(get_worker_pool),
+    event_broker: Any | None = Depends(get_event_broker),
+) -> dict[str, str]:
+    """Resume the worker (web UI proxy)."""
+    # Use WorkerService to resume workers
+    if worker_service:
+        worker_service.enable()
+        new_workers = worker_service.start_workers(event_broker=event_broker)
+        worker_pool.clear()
+        worker_pool.extend(new_workers)
+
+    # Publish worker state update
+    if event_broker:
+        event_broker.update_worker_state("main", {"enabled": True})
+
+    return {"status": "resumed", "message": "Worker resumed successfully"}
+
+
+# ──────────────────────────────────────────────────────────────────────
+# System Control Endpoints
+# ──────────────────────────────────────────────────────────────────────
+
+
+@router.post("/../restart", dependencies=[Depends(verify_session)])
+async def web_admin_restart() -> dict[str, str]:
+    """Restart the API server (useful after config changes)."""
+    import sys
+
+    logging.info("[Web API] Restart requested - restarting server...")
+
+    # Use a background task to allow the response to be sent before restart
+    async def do_restart():
+        await asyncio.sleep(1)  # Give time for response to be sent
+        logging.info("[Web API] Executing restart now")
+        os.execv(sys.executable, [sys.executable, *sys.argv])
+
+    # Store task to prevent garbage collection
+    task = asyncio.create_task(do_restart())
+    _RESTART_TASKS.add(task)
+    task.add_done_callback(_RESTART_TASKS.discard)
+
+    return {
+        "status": "restarting",
+        "message": "API server is restarting... Please refresh the page in a few seconds.",
+    }
