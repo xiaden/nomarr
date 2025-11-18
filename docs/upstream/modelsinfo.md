@@ -1,4 +1,23 @@
-Essentia models
+# Essentia Models Reference
+
+> **⚠️ Upstream Reference Documentation**
+>
+> This document is provided as-is from the Essentia project for reference purposes only.
+> It is NOT canonical Nomarr documentation. The content below describes upstream Essentia
+> models and may not reflect Nomarr's actual implementation, configuration, or model usage.
+>
+> **For Nomarr-specific model information**, see:
+>
+> - [Architecture Overview](../architecture/overview.md) for how models are integrated
+> - [Workflows](../architecture/workflows.md) for how models are invoked
+> - [Calibration System](../calibration/index.md) for model output tuning
+>
+> This reference is maintained for convenience when cross-referencing Essentia documentation.
+
+---
+
+## Essentia Models (Upstream Documentation)
+
 This page provides a list of pre-trained models available in Essentia for various music and audio analysis tasks. To use Essentia with TensorFlow support refer to the guide on Using machine learning models. Click on the models below to access the weights (.pb) and metadata (.json) files, as well as example code snippets.
 
 Additional legacy models are available in our model repository. Some models are also available in TensorFlow.js (tfjs.zip) and ONNX (.onnx) formats. As this is an ongoing project, we expect to keep adding new models and improved versions of the existing ones. These changes are tracked in this CHANGELOG.
@@ -10,10 +29,10 @@ Follow this link to see interactive demos of some of the models. Some of our mod
 If you use any of the models in your research, please cite the following paper:
 
 @inproceedings{alonso2020tensorflow,
-  title={Tensorflow Audio Models in {Essentia}},
-  author={Alonso-Jim{\'e}nez, Pablo and Bogdanov, Dmitry and Pons, Jordi and Serra, Xavier},
-  booktitle={International Conference on Acoustics, Speech and Signal Processing ({ICASSP})},
-  year={2020}
+title={Tensorflow Audio Models in {Essentia}},
+author={Alonso-Jim{\'e}nez, Pablo and Bogdanov, Dmitry and Pons, Jordi and Serra, Xavier},
+booktitle={International Conference on Acoustics, Speech and Signal Processing ({ICASSP})},
+year={2020}
 }
 Feature extractors
 AudioSet-VGGish
@@ -1216,7 +1235,7 @@ Music classification by mood with the MIREX Audio Mood Classification Dataset (5
 3. literate, poignant, wistful, bittersweet, autumnal, brooding
 4. humorous, silly, campy, quirky, whimsical, witty, wry
 5. aggressive, fiery, tense/anxious, intense, volatile, visceral
-Models:
+   Models:
 
 ⬇️ moods_mirex-msd-musicnn
 
@@ -2333,16 +2352,19 @@ from essentia import Pool
 import numpy as np
 
 # Input should be audio @41kHz.
+
 audio, sr, _, _, _, _ = AudioLoader(filename="audio.wav")()
 
 pool = Pool()
+
 # The input needs to have 4 dimensions so that it is interpreted as an Essentia tensor.
+
 pool.set("waveform", audio[..., np.newaxis, np.newaxis])
 
 model = TensorflowPredict(
-    graphFilename="spleeter-2s-3.pb",
-    inputs=["waveform"],
-    outputs=["waveform_vocals", "waveform_accompaniment"]
+graphFilename="spleeter-2s-3.pb",
+inputs=["waveform"],
+outputs=["waveform_vocals", "waveform_accompaniment"]
 )
 
 out_pool = model(pool)
@@ -2359,16 +2381,19 @@ from essentia import Pool
 import numpy as np
 
 # Input should be audio @41kHz.
+
 audio, sr, _, _, _, _ = AudioLoader(filename="audio.wav")()
 
 pool = Pool()
+
 # The input needs to have 4 dimensions so that it is interpreted as an Essentia tensor.
+
 pool.set("waveform", audio[..., np.newaxis, np.newaxis])
 
 model = TensorflowPredict(
-    graphFilename="spleeter-4s-3.pb",
-    inputs=["waveform"],
-    outputs=["waveform_vocals", "waveform_drums", "waveform_bass", "waveform_other"]
+graphFilename="spleeter-4s-3.pb",
+inputs=["waveform"],
+outputs=["waveform_vocals", "waveform_drums", "waveform_bass", "waveform_other"]
 )
 
 out_pool = model(pool)
@@ -2387,16 +2412,19 @@ from essentia import Pool
 import numpy as np
 
 # Input should be audio @41kHz.
+
 audio, sr, _, _, _, _ = AudioLoader(filename="audio.wav")()
 
 pool = Pool()
+
 # The input needs to have 4 dimensions so that it is interpreted as an Essentia tensor.
+
 pool.set("waveform", audio[..., np.newaxis, np.newaxis])
 
 model = TensorflowPredict(
-    graphFilename="spleeter-5s-3.pb",
-    inputs=["waveform"],
-    outputs=["waveform_vocals", "waveform_drums", "waveform_bass", "waveform_piano", "waveform_other"]
+graphFilename="spleeter-5s-3.pb",
+inputs=["waveform"],
+outputs=["waveform_vocals", "waveform_drums", "waveform_bass", "waveform_piano", "waveform_other"]
 )
 
 out_pool = model(pool)
