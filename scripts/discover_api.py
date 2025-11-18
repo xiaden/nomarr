@@ -35,6 +35,7 @@ def discover_module_api(module_name: str, *, silent: bool = False) -> dict[str, 
         - error: (optional) error message if import failed
     """
     # Mock Docker-only dependencies for discovery
+    # Only mock what's NOT available in dev environment (essentia-tensorflow)
     import sys
     from unittest.mock import MagicMock
 
@@ -45,9 +46,6 @@ def discover_module_api(module_name: str, *, silent: bool = False) -> dict[str, 
         "tensorflow.lite",
         "tensorflow.lite.python",
         "tensorflow.lite.python.interpreter",
-        "scipy",
-        "scipy.stats",
-        "scipy.signal",
     ]
     for mock_module in mock_modules:
         if mock_module not in sys.modules:
