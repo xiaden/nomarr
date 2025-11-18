@@ -13,27 +13,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from nomarr.app import application
 from nomarr.interfaces.api.endpoints import admin, fs, library, public, web
-
-# ----------------------------------------------------------------------
-#  Configuration (imported from state module)
-# ----------------------------------------------------------------------
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-
-# Startup informational log
-logging.info(
-    "Effective config: models_dir=%s db_path=%s api=%s:%s blocking_mode=%s "
-    "blocking_timeout=%s worker_poll_interval=%s worker_count=%s",
-    application.models_dir,
-    application.db_path,
-    application.api_host,
-    application.api_port,
-    application.blocking_mode,
-    application.blocking_timeout,
-    application.worker_poll_interval,
-    application.worker_count,
-)
 
 
 # ----------------------------------------------------------------------
@@ -47,15 +27,18 @@ async def lifespan(_app_instance: FastAPI):
     Note: Application.start() is called by start.py BEFORE uvicorn runs.
     This lifespan is minimal - just handles cleanup on API shutdown.
     """
-    # Application already started by start.py
+    # Import application only when lifespan runs (not at module import time)
+    from nomarr.app import application
+
     logging.info("[API] FastAPI starting (Application already initialized)")
 
-    yield
-
-    # Shutdown: Stop the application
-    logging.info("[API] FastAPI shutting down...")
-    application.stop()
-    logging.info("[API] Shutdown complete")
+    try:
+        yield
+    finally:
+        # Shutdown: Stop the application
+        logging.info("[API] FastAPI shutting down...")
+        application.stop()
+        logging.info("[API] Shutdown complete")
 
 
 # ----------------------------------------------------------------------
@@ -94,7 +77,3 @@ if web_dir.exists():
         if index_path.exists():
             return FileResponse(str(index_path))
         return JSONResponse({"error": "Web UI not found"}, status_code=404)
-
-    logging.info(f"[API] Web UI enabled at http://{application.api_host}:{application.api_port}/")
-else:
-    logging.warning("[API] Web UI directory not found, dashboard disabled")

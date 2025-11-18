@@ -12,7 +12,11 @@ import uvicorn
 
 from nomarr.app import application
 
-logging.basicConfig(level=logging.INFO)
+# Configure logging once for the whole process
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 
 
 def shutdown_handler(signum, frame):
@@ -23,18 +27,30 @@ def shutdown_handler(signum, frame):
 
 
 if __name__ == "__main__":
+    # Log effective configuration
+    logging.info(
+        "Effective config: models_dir=%s db_path=%s api=%s:%d blocking_mode=%s "
+        "blocking_timeout=%d worker_poll_interval=%d worker_count=%d",
+        application.models_dir,
+        application.db_path,
+        application.api_host,
+        application.api_port,
+        application.blocking_mode,
+        application.blocking_timeout,
+        application.worker_poll_interval,
+        application.worker_count,
+    )
+
     # Register signal handlers for graceful shutdown
     signal.signal(signal.SIGTERM, shutdown_handler)
     signal.signal(signal.SIGINT, shutdown_handler)
 
     # Start the Application (workers, services, coordinator, etc.)
-    logging.info("Starting Nomarr Application...")
+    logging.info("[Application] Starting Nomarr Application...")
     application.start()
 
-    # Start the API server (blocking)
-    logging.info(f"Starting API server on {application.api_host}:{application.api_port}...")
-    logging.info("  - Public endpoints: /api/v1/tag, /api/v1/list, /api/v1/status/*, etc.")
-    logging.info(f"  - Web UI: http://{application.api_host}:{application.api_port}/ (login with admin password)")
+    # Log Web UI URL
+    logging.info("[API] Web UI enabled at http://%s:%d/", application.api_host, application.api_port)
 
     try:
         uvicorn.run(
