@@ -42,6 +42,12 @@ class PlaylistQueryError(Exception):
 class PlaylistGenerator:
     """Generates Navidrome Smart Playlists (.nsp) from query syntax."""
 
+    # Maximum query length to prevent ReDoS attacks
+    MAX_QUERY_LENGTH: ClassVar[int] = 4096
+
+    # Maximum limit for playlist size
+    MAX_LIMIT: ClassVar[int] = 10000
+
     # Operator mappings to SQL (for preview)
     SQL_OPERATORS: ClassVar[dict[str, str]] = {
         ">": ">",
@@ -64,6 +70,9 @@ class PlaylistGenerator:
         "contains": "contains",
     }
 
+    # Whitelisted ORDER BY columns
+    VALID_ORDER_COLUMNS: ClassVar[set[str]] = {"path", "title", "artist", "album", "random()"}
+
     def __init__(self, db_path: str, namespace: str = "nom"):
         """
         Initialize playlist generator.
@@ -74,6 +83,52 @@ class PlaylistGenerator:
         """
         self.db_path = db_path
         self.namespace = namespace
+
+    @staticmethod
+    def _tokenize_query(query: str) -> tuple[list[str], list[str]]:
+        """
+        Tokenize query into conditions and logic operators using linear-time algorithm.
+
+        This replaces re.split() to avoid ReDoS vulnerabilities from nested quantifiers.
+
+        Args:
+            query: Query string with AND/OR operators
+
+        Returns:
+            Tuple of (conditions, operators) where:
+                - conditions: List of condition strings
+                - operators: List of "AND"/"OR" operators (uppercase)
+
+        Example:
+            >>> _tokenize_query("tag:a > 1 AND tag:b < 2 OR tag:c = 3")
+            (["tag:a > 1", "tag:b < 2", "tag:c = 3"], ["AND", "OR"])
+        """
+        conditions = []
+        operators = []
+
+        # Use regex finditer for linear-time tokenization
+        # \b ensures word boundaries (prevents matching "BAND", "FORK", etc.)
+        import re
+
+        pattern = re.compile(r"\b(AND|OR)\b", re.IGNORECASE)
+
+        last_pos = 0
+        for match in pattern.finditer(query):
+            # Extract condition between last position and current match
+            condition = query[last_pos : match.start()].strip()
+            if condition:
+                conditions.append(condition)
+
+            # Extract operator and normalize to uppercase
+            operators.append(match.group(1).upper())
+            last_pos = match.end()
+
+        # Extract final condition after last operator
+        final_condition = query[last_pos:].strip()
+        if final_condition:
+            conditions.append(final_condition)
+
+        return conditions, operators
 
     def parse_query_to_nsp(self, query: str) -> dict[str, Any]:
         """
@@ -86,28 +141,34 @@ class PlaylistGenerator:
             Dictionary representing .nsp rules (without name/comment/sort/limit)
 
         Raises:
-            PlaylistQueryError: If query syntax is invalid
+            PlaylistQueryError: If query syntax is invalid or too long
         """
         if not query or not query.strip():
             raise PlaylistQueryError("Query cannot be empty")
 
+        # Enforce query length limit to prevent ReDoS attacks
+        if len(query) > self.MAX_QUERY_LENGTH:
+            raise PlaylistQueryError(f"Query too long (max {self.MAX_QUERY_LENGTH} characters)")
+
         # Normalize whitespace
         query = " ".join(query.split())
 
-        # Split by AND/OR (case-insensitive)
-        parts = re.split(r"\s+(AND|OR)\s+", query, flags=re.IGNORECASE)
+        # Use linear-time tokenizer instead of re.split
+        condition_strings, operators = self._tokenize_query(query)
+
+        if not condition_strings:
+            raise PlaylistQueryError("No valid conditions found in query")
 
         conditions = []
-        current_logic = None
 
-        for part in parts:
-            part_upper = part.upper()
-            if part_upper in ("AND", "OR"):
-                current_logic = part_upper
-            else:
-                # Parse individual condition
-                nsp_rule = self._parse_condition_to_nsp(part)
-                conditions.append((nsp_rule, current_logic))
+        for i, cond_str in enumerate(condition_strings):
+            # Parse individual condition: tag:KEY OPERATOR VALUE
+            nsp_cond = self._parse_condition_to_nsp(cond_str)
+
+            # Determine logic operator for this condition
+            # First condition has no logic operator
+            logic = operators[i - 1] if i > 0 else None
+            conditions.append((nsp_cond, logic))
 
         if not conditions:
             raise PlaylistQueryError("No valid conditions found in query")
@@ -195,38 +256,41 @@ class PlaylistGenerator:
             Tuple of (sql_where_clause, parameters)
 
         Raises:
-            PlaylistQueryError: If query syntax is invalid
+            PlaylistQueryError: If query syntax is invalid or too long
         """
         if not query or not query.strip():
             raise PlaylistQueryError("Query cannot be empty")
 
+        # Enforce query length limit to prevent ReDoS attacks
+        if len(query) > self.MAX_QUERY_LENGTH:
+            raise PlaylistQueryError(f"Query too long (max {self.MAX_QUERY_LENGTH} characters)")
+
         # Normalize whitespace
         query = " ".join(query.split())
 
-        # Split by AND/OR (case-insensitive)
-        parts = re.split(r"\s+(AND|OR)\s+", query, flags=re.IGNORECASE)
+        # Use linear-time tokenizer instead of re.split
+        condition_strings, operators = self._tokenize_query(query)
+
+        if not condition_strings:
+            raise PlaylistQueryError("No valid conditions found in query")
 
         conditions = []
         parameters = []
-        logic_ops = []
 
-        for part in parts:
-            part_upper = part.upper()
-            if part_upper in ("AND", "OR"):
-                logic_ops.append(part_upper)
-            else:
-                # Parse individual condition: tag:KEY OPERATOR VALUE
-                sql_cond, params = self._parse_condition_to_sql(part)
-                conditions.append(sql_cond)
-                parameters.extend(params)
+        for cond_str in condition_strings:
+            # Parse individual condition: tag:KEY OPERATOR VALUE
+            sql_cond, params = self._parse_condition_to_sql(cond_str)
+            conditions.append(sql_cond)
+            parameters.extend(params)
 
         if not conditions:
             raise PlaylistQueryError("No valid conditions found in query")
 
-        # Build SQL WHERE clause
+        # Build SQL WHERE clause using validated operators
         where_clause = conditions[0]
-        for i, logic_op in enumerate(logic_ops):
+        for i, logic_op in enumerate(operators):
             if i + 1 < len(conditions):
+                # Operators are already uppercase from tokenizer
                 where_clause += f" {logic_op} {conditions[i + 1]}"
 
         return where_clause, parameters
@@ -300,31 +364,25 @@ class PlaylistGenerator:
 
         Args:
             query: Smart Playlist query string
-            limit: Maximum number of tracks (default: no limit)
-            order_by: SQL ORDER BY clause (default: random)
-                     Only allows whitelisted columns: path, title, artist, album
+            limit: Maximum number of tracks (default: no limit, max: MAX_LIMIT)
+            order_by: ORDER BY clause with whitelisted column + optional ASC/DESC
+                     Valid columns: path, title, artist, album, random()
 
         Returns:
             List of track dictionaries with keys: file_path, title, artist, album
 
         Raises:
-            PlaylistQueryError: If query is invalid
+            PlaylistQueryError: If query is invalid or parameters are unsafe
         """
         where_clause, parameters = self.parse_query_to_sql(query)
 
-        # Whitelist valid ORDER BY columns to prevent SQL injection
-        valid_order_columns = {"path", "title", "artist", "album", "random()"}
-        if order_by:
-            # Normalize and validate order_by
-            order_by_normalized = order_by.strip().lower()
-            # Check if it's one of the valid columns (with optional ASC/DESC)
-            base_column = order_by_normalized.split()[0]
-            if base_column not in valid_order_columns:
-                raise PlaylistQueryError(
-                    f"Invalid ORDER BY column: {order_by}. Must be one of: {', '.join(valid_order_columns)}"
-                )
+        # Validate and sanitize ORDER BY clause
+        validated_order_by = self._validate_order_by(order_by)
 
-        # Build SQL query
+        # Validate LIMIT
+        validated_limit = self._validate_limit(limit)
+
+        # Build SQL query with parameterized WHERE clause
         sql = f"""
             SELECT DISTINCT
                 lf.path,
@@ -336,17 +394,17 @@ class PlaylistGenerator:
             WHERE {where_clause}
         """
 
-        # Add ordering
-        if order_by:
-            sql += f" ORDER BY {order_by}"
+        # Add validated ordering (safe from SQL injection)
+        if validated_order_by:
+            sql += f" ORDER BY {validated_order_by}"
         else:
             sql += " ORDER BY RANDOM()"
 
-        # Add limit
-        if limit and limit > 0:
-            sql += f" LIMIT {limit}"
+        # Add validated limit (integer, not user string)
+        if validated_limit:
+            sql += f" LIMIT {validated_limit}"
 
-        # Execute query
+        # Execute query with parameterized values
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
@@ -367,6 +425,82 @@ class PlaylistGenerator:
                 return results
         except sqlite3.Error as e:
             raise PlaylistQueryError(f"Database error: {e}") from e
+
+    def _validate_order_by(self, order_by: str | None) -> str | None:
+        """
+        Validate and sanitize ORDER BY clause against whitelist.
+
+        Args:
+            order_by: Raw ORDER BY string from user
+
+        Returns:
+            Validated ORDER BY string safe for SQL, or None
+
+        Raises:
+            PlaylistQueryError: If order_by contains invalid column or syntax
+        """
+        if not order_by:
+            return None
+
+        # Normalize whitespace and case
+        order_by = " ".join(order_by.strip().split())
+        parts = order_by.split()
+
+        if not parts:
+            return None
+
+        # Extract base column (first part)
+        base_column = parts[0].lower()
+
+        # Validate against whitelist
+        if base_column not in self.VALID_ORDER_COLUMNS:
+            raise PlaylistQueryError(
+                f"Invalid ORDER BY column: {base_column}. Must be one of: {', '.join(sorted(self.VALID_ORDER_COLUMNS))}"
+            )
+
+        # Validate optional ASC/DESC (second part)
+        direction = ""
+        if len(parts) > 1:
+            dir_normalized = parts[1].upper()
+            if dir_normalized not in ("ASC", "DESC"):
+                raise PlaylistQueryError(f"Invalid ORDER BY direction: {parts[1]}. Must be ASC or DESC")
+            direction = f" {dir_normalized}"
+
+        # Reject any additional parts (prevents injection of additional clauses)
+        if len(parts) > 2:
+            raise PlaylistQueryError("Invalid ORDER BY syntax: too many parts")
+
+        # Return validated string (base_column is from whitelist, direction is validated)
+        return f"{base_column}{direction}"
+
+    def _validate_limit(self, limit: int | None) -> int | None:
+        """
+        Validate LIMIT parameter.
+
+        Args:
+            limit: Raw limit value from user
+
+        Returns:
+            Validated integer limit, or None
+
+        Raises:
+            PlaylistQueryError: If limit is invalid
+        """
+        if limit is None:
+            return None
+
+        # Ensure it's an integer
+        if not isinstance(limit, int):
+            raise PlaylistQueryError("LIMIT must be an integer")
+
+        # Enforce bounds
+        if limit <= 0:
+            raise PlaylistQueryError("LIMIT must be positive")
+
+        if limit > self.MAX_LIMIT:
+            raise PlaylistQueryError(f"LIMIT too large (max {self.MAX_LIMIT})")
+
+        return limit
 
     def generate_nsp(
         self,

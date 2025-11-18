@@ -14,6 +14,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from nomarr.app import application
+from nomarr.helpers.security import resolve_library_path
 from nomarr.interfaces.api.auth import verify_session
 
 router = APIRouter(prefix="/web/api/fs", tags=["filesystem"])
@@ -59,43 +60,20 @@ async def list_directory(
         )
 
     try:
-        # Get library root and resolve it to canonical absolute path
+        # Securely resolve and validate the requested directory path
+        # This handles all security checks: path traversal, symlinks, boundary validation
+        requested_path = resolve_library_path(
+            library_root=application.library_path,
+            user_path=path,
+            must_exist=True,
+            must_be_file=False,  # Must be a directory
+        )
+
+        # Get library root for computing relative paths in response
         library_root = Path(application.library_path).resolve()
 
-        # Construct requested path (join library_root with relative path)
-        # This handles empty string correctly (returns library_root)
-        requested_path = (library_root / path).resolve()
-
-        # Security check: ensure resolved path is under library_root
-        # This prevents directory traversal attacks (../, symlinks, etc.)
-        try:
-            requested_path.relative_to(library_root)
-        except ValueError as e:
-            logging.warning(
-                f"[FS Browser] Directory traversal attempt blocked: "
-                f"path={path!r} resolved to {requested_path} (outside {library_root})"
-            )
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid path: directory traversal not allowed",
-            ) from e
-
-        # Check if path exists
-        if not requested_path.exists():
-            raise HTTPException(
-                status_code=404,
-                detail=f"Path not found: {path}",
-            )
-
-        # Check if path is a directory
-        if not requested_path.is_dir():
-            raise HTTPException(
-                status_code=400,
-                detail="Path is not a directory",
-            )
-
         # List directory contents
-        entries = []
+        entries: list[dict[str, str | bool]] = []
         for item in requested_path.iterdir():
             try:
                 entries.append(
@@ -110,7 +88,7 @@ async def list_directory(
                 continue
 
         # Sort entries: directories first, then files, both alphabetically
-        entries.sort(key=lambda x: (not x["is_dir"], x["name"].lower()))
+        entries.sort(key=lambda x: (not x["is_dir"], str(x["name"]).lower()))
 
         # Compute relative path for response (empty string for root)
         relative_path = str(requested_path.relative_to(library_root))
@@ -121,6 +99,25 @@ async def list_directory(
             "path": relative_path,
             "entries": entries,
         }
+
+    except ValueError as e:
+        # Security helper raises ValueError with generic messages
+        # Map these to appropriate HTTP error codes
+        error_msg = str(e)
+        if "not configured" in error_msg:
+            status_code = 503
+        elif "not found" in error_msg.lower():
+            status_code = 404
+        elif "not a directory" in error_msg.lower():
+            status_code = 400
+            error_msg = "Path is not a directory"
+        else:
+            # Generic security error (traversal attempt, etc.)
+            status_code = 400
+            error_msg = "Invalid path: directory traversal not allowed"
+
+        logging.warning(f"[FS Browser] Path validation failed for {path!r}: {e}")
+        raise HTTPException(status_code=status_code, detail=error_msg) from e
 
     except HTTPException:
         # Re-raise HTTP exceptions as-is

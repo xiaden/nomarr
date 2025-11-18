@@ -73,6 +73,83 @@ def validate_library_path(file_path: str, library_path: str) -> str:
     return str(target)
 
 
+def resolve_library_path(
+    library_root: str | Path,
+    user_path: str | Path,
+    must_exist: bool = True,
+    must_be_file: bool | None = None,
+) -> Path:
+    """
+    Safely resolve and validate a path within the library root.
+
+    This function prevents path traversal attacks and validates path properties:
+    1. Resolves library_root to absolute, canonical path
+    2. Joins user_path to library_root and resolves (handling .., symlinks)
+    3. Ensures result is within library_root boundary
+    4. Optionally validates existence and file/directory type
+
+    Args:
+        library_root: Configured library root directory
+        user_path: User-provided path (relative or absolute)
+        must_exist: If True, require path to exist (default: True)
+        must_be_file: If True, require file; if False, require directory; if None, allow either
+
+    Returns:
+        Resolved absolute Path within library root
+
+    Raises:
+        ValueError: If path validation fails (generic message, no info leakage)
+
+    Examples:
+        >>> resolve_library_path("/music", "album/song.mp3", must_be_file=True)
+        Path("/music/album/song.mp3")
+
+        >>> resolve_library_path("/music", "../../../etc/passwd")
+        ValueError: Access denied
+
+        >>> resolve_library_path("/music", "album", must_be_file=False)
+        Path("/music/album")
+    """
+    if not library_root:
+        raise ValueError("Library root not configured")
+
+    # Resolve library root to absolute path
+    try:
+        lib_root = Path(library_root).resolve()
+    except (OSError, RuntimeError) as e:
+        logger.warning(f"[security] Failed to resolve library root {library_root!r}: {e}")
+        raise ValueError("Invalid library configuration") from e
+
+    # Construct candidate path by joining library_root with user_path
+    try:
+        candidate = (lib_root / user_path).resolve()
+    except (OSError, RuntimeError) as e:
+        logger.warning(f"[security] Failed to resolve user path {user_path!r}: {e}")
+        raise ValueError("Access denied") from e
+
+    # Ensure candidate is within library_root boundary
+    try:
+        candidate.relative_to(lib_root)
+    except ValueError as e:
+        logger.warning(f"[security] Path traversal attempt: {user_path!r} resolved outside library {library_root!r}")
+        raise ValueError("Access denied") from e
+
+    # Validate existence if required
+    if must_exist and not candidate.exists():
+        logger.debug(f"[security] Path does not exist: {candidate}")
+        raise ValueError("Path not found")
+
+    # Validate file/directory type if specified
+    if must_be_file is True and not candidate.is_file():
+        logger.debug(f"[security] Path is not a file: {candidate}")
+        raise ValueError("Path is not a file")
+    elif must_be_file is False and not candidate.is_dir():
+        logger.debug(f"[security] Path is not a directory: {candidate}")
+        raise ValueError("Path is not a directory")
+
+    return candidate
+
+
 def sanitize_exception_message(e: Exception, safe_message: str = "An error occurred") -> str:
     """
     Sanitize exception message for user display.
