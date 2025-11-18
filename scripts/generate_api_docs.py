@@ -15,6 +15,53 @@ from pathlib import Path
 from typing import Any
 
 
+def enumerate_modules(root_module: str) -> list[str]:
+    """
+    Enumerate all Python modules under a root package.
+
+    Does NOT import nomarr.*; uses filesystem introspection only.
+
+    Args:
+        root_module: e.g. "nomarr.workflows"
+
+    Returns:
+        Sorted list of module names, e.g.:
+        ["nomarr.workflows", "nomarr.workflows.processor", ...]
+    """
+    # Convert module name to filesystem path
+    # e.g. "nomarr.workflows" -> "nomarr/workflows"
+    parts = root_module.split(".")
+    root_path = Path.cwd() / Path(*parts)
+
+    if not root_path.exists():
+        return []
+
+    modules = []
+
+    # Walk all .py files under the root
+    for py_file in sorted(root_path.rglob("*.py")):
+        # Skip __pycache__ and other special dirs
+        if "__pycache__" in py_file.parts:
+            continue
+
+        # Build module name from relative path
+        rel_path = py_file.relative_to(Path.cwd())
+        module_parts = list(rel_path.parts[:-1])  # All dirs
+
+        if py_file.name == "__init__.py":
+            # Package module: use parent directory as module name
+            if module_parts:
+                module_name = ".".join(module_parts)
+                modules.append(module_name)
+        else:
+            # Regular module: add filename without .py extension
+            module_parts.append(py_file.stem)
+            module_name = ".".join(module_parts)
+            modules.append(module_name)
+
+    return sorted(modules)
+
+
 def discover_module(module_name: str) -> dict[str, Any] | None:
     """
     Run discover_api.py with --summary and parse JSON output.
@@ -31,12 +78,25 @@ def discover_module(module_name: str) -> dict[str, Any] | None:
             check=False,
         )
 
+        # With resilient discover_api, returncode should always be 0
+        # But check anyway for backward compat
         if result.returncode != 0:
-            print(f"⚠️  Skipping {module_name}: discovery failed")
+            stderr_line = result.stderr.strip().split("\n")[0] if result.stderr.strip() else "Unknown error"
+            print(f"⚠️  Skipping {module_name}: discovery subprocess failed")
+            print(f"    Reason: {stderr_line}")
             return None
 
         # Parse JSON output
-        return json.loads(result.stdout)
+        api: dict[str, Any] = json.loads(result.stdout)
+
+        # Check for error field in JSON
+        if "error" in api:
+            print(f"⚠️  {module_name}: import/discovery failed")
+            print(f"    Error: {api['error']}")
+            # Return None to skip this module (no API to document)
+            return None
+
+        return api
 
     except (subprocess.SubprocessError, json.JSONDecodeError) as e:
         print(f"⚠️  Skipping {module_name}: {e}")
@@ -103,7 +163,7 @@ def render_markdown(api: dict[str, Any]) -> str:
 
             # Docstring (first line only)
             doc = func_info.get("doc", "").strip()
-            if doc and doc != "No docstring":
+            if doc:
                 first_line = doc.split("\n")[0]
                 lines.append(first_line)
             else:
@@ -183,15 +243,28 @@ def main() -> int:
     output_dir = Path("docs/api/modules")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"Generating API documentation for {len(LAYERS)} layers...\n")
+    print(f"Generating API documentation for {len(LAYERS)} layer roots...\n")
 
-    # Generate docs for each layer
+    # Generate docs for all modules under each layer root
     success_count = 0
-    for module_name in LAYERS:
-        if generate_docs_for_module(module_name, output_dir):
-            success_count += 1
+    total_count = 0
 
-    print(f"\n✅ Generated {success_count}/{len(LAYERS)} module docs")
+    for root_module in LAYERS:
+        print(f"📦 Enumerating modules under {root_module}...")
+        modules = enumerate_modules(root_module)
+
+        if not modules:
+            print(f"   ⚠️  No modules found under {root_module}")
+            continue
+
+        print(f"   Found {len(modules)} module(s)")
+
+        for module_name in modules:
+            total_count += 1
+            if generate_docs_for_module(module_name, output_dir):
+                success_count += 1
+
+    print(f"\n✅ Generated {success_count}/{total_count} module docs")
     print(f"📁 Output directory: {output_dir}")
 
     return 0

@@ -20,14 +20,19 @@ from pathlib import Path
 from typing import Any
 
 
-def discover_module_api(module_name: str) -> dict[str, Any]:
+def discover_module_api(module_name: str, *, silent: bool = False) -> dict[str, Any]:
     """
     Discover the public API of a module.
+
+    Args:
+        module_name: Fully qualified module name
+        silent: If True, suppress error messages (for --summary mode)
 
     Returns dict with:
         - classes: list of class names and their public methods
         - functions: list of function names and signatures
         - constants: list of module-level constants
+        - error: (optional) error message if import failed
     """
     # Mock Docker-only dependencies for discovery
     import sys
@@ -51,10 +56,12 @@ def discover_module_api(module_name: str) -> dict[str, Any]:
     try:
         module = importlib.import_module(module_name)
     except ImportError as e:
-        print(f"❌ Failed to import {module_name}: {e}")
-        return {}
+        if not silent:
+            print(f"❌ Failed to import {module_name}: {e}")
+        # Return dict with error field instead of empty dict
+        return {"classes": {}, "functions": {}, "constants": {}, "error": str(e)}
 
-    api = {"classes": {}, "functions": {}, "constants": {}}
+    api: dict[str, Any] = {"classes": {}, "functions": {}, "constants": {}}
 
     # Get all public members (not starting with _)
     for name in dir(module):
@@ -74,19 +81,17 @@ def discover_module_api(module_name: str) -> dict[str, Any]:
                 continue
 
             methods = {}
-            for method_name in dir(obj):
-                if method_name.startswith("_") and method_name != "__init__":
-                    continue
-
-                method = getattr(obj, method_name)
-                if callable(method):
+            # Only include methods defined directly on this class
+            for method_name, method_obj in obj.__dict__.items():
+                # Include __init__ and public methods only
+                if method_name == "__init__" or (not method_name.startswith("_") and callable(method_obj)):
                     try:
-                        sig = inspect.signature(method)
+                        sig = inspect.signature(method_obj)
                         methods[method_name] = str(sig)
                     except (ValueError, TypeError):
                         methods[method_name] = "(...)"
 
-            api["classes"][name] = {"methods": methods, "doc": inspect.getdoc(obj) or "No docstring"}
+            api["classes"][name] = {"methods": methods, "doc": inspect.getdoc(obj) or ""}
 
         # Functions
         elif inspect.isfunction(obj):
@@ -95,9 +100,9 @@ def discover_module_api(module_name: str) -> dict[str, Any]:
 
             try:
                 sig = inspect.signature(obj)
-                api["functions"][name] = {"signature": str(sig), "doc": inspect.getdoc(obj) or "No docstring"}
+                api["functions"][name] = {"signature": str(sig), "doc": inspect.getdoc(obj) or ""}
             except (ValueError, TypeError):
-                api["functions"][name] = {"signature": "(...)", "doc": inspect.getdoc(obj) or "No docstring"}
+                api["functions"][name] = {"signature": "(...)", "doc": inspect.getdoc(obj) or ""}
 
         # Constants (uppercase variables)
         elif name.isupper() and not callable(obj):
@@ -114,6 +119,9 @@ def print_json_summary(module_name: str, api: dict[str, Any]) -> None:
         "functions": api.get("functions", {}),
         "constants": api.get("constants", {}),
     }
+    # Include error field if present
+    if "error" in api:
+        summary["error"] = api["error"]
     print(json.dumps(summary, indent=2, sort_keys=True))
 
 
@@ -185,6 +193,45 @@ def main():
         # Handle both 'database' and 'databases'
         pass  # Already correct
 
+    # In summary mode, wrap everything in try/except to always return valid JSON
+    if args.summary:
+        try:
+            api = discover_module_api(module_name, silent=True)
+
+            # Check if import failed (api has error field)
+            if "error" in api:
+                # Try alternate pluralization
+                if module_name.endswith("s"):
+                    alt_module = module_name[:-1]  # Try singular
+                else:
+                    alt_module = module_name + "s"  # Try plural
+
+                alt_api = discover_module_api(alt_module, silent=True)
+                if "error" not in alt_api:
+                    # Alternate worked!
+                    module_name = alt_module
+                    api = alt_api
+                else:
+                    # Both failed, combine error messages
+                    api["error"] = f"{api['error']} (also tried {alt_module})"
+
+            # Print summary (with or without error field)
+            print_json_summary(module_name, api)
+            return 0
+
+        except Exception as e:
+            # Catch any other unexpected errors
+            error_json = {
+                "module": module_name,
+                "classes": {},
+                "functions": {},
+                "constants": {},
+                "error": str(e),
+            }
+            print(json.dumps(error_json, indent=2, sort_keys=True))
+            return 0  # Exit with 0 so downstream tooling can parse JSON
+
+    # Non-summary mode: preserve existing behavior
     api = discover_module_api(module_name)
 
     # If import failed and we haven't tried the alternate form, try it
@@ -205,11 +252,7 @@ def main():
         else:
             return 1
 
-    if args.summary:
-        print_json_summary(module_name, api)
-    else:
-        print_api(module_name, api)
-
+    print_api(module_name, api)
     return 0
 
 
