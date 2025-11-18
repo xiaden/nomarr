@@ -34,6 +34,7 @@ RUN python3 -m pip install --upgrade pip \
     "uvicorn==0.30.6" \
     "rich==13.7.1" \
     "requests==2.32.3" \
+    "bcrypt==4.2.1" \
     "pytest==8.3.3" \
     "pytest-cov==5.0.0"
 
