@@ -14,6 +14,7 @@ Usage:
 import argparse
 import importlib
 import inspect
+import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -105,6 +106,17 @@ def discover_module_api(module_name: str) -> dict[str, Any]:
     return api
 
 
+def print_json_summary(module_name: str, api: dict[str, Any]) -> None:
+    """Print machine-readable JSON summary."""
+    summary = {
+        "module": module_name,
+        "classes": api.get("classes", {}),
+        "functions": api.get("functions", {}),
+        "constants": api.get("constants", {}),
+    }
+    print(json.dumps(summary, indent=2, sort_keys=True))
+
+
 def print_api(module_name: str, api: dict[str, Any]):
     """Pretty print the API."""
     print(f"\n{'=' * 80}")
@@ -152,7 +164,11 @@ def print_api(module_name: str, api: dict[str, Any]):
 def main():
     parser = argparse.ArgumentParser(description="Discover module API")
     parser.add_argument("module", help="Module name (e.g., nomarr.data.db)")
-    parser.add_argument("--summary", action="store_true", help="Show only names, no signatures")
+    parser.add_argument(
+        "--summary",
+        action="store_true",
+        help="Print machine-readable JSON summary instead of formatted text",
+    )
 
     args = parser.parse_args()
 
@@ -190,14 +206,7 @@ def main():
             return 1
 
     if args.summary:
-        # Quick summary
-        print(f"\n{module_name}:")
-        if api.get("classes"):
-            print(f"  Classes: {', '.join(sorted(api['classes'].keys()))}")
-        if api.get("functions"):
-            print(f"  Functions: {', '.join(sorted(api['functions'].keys()))}")
-        if api.get("constants"):
-            print(f"  Constants: {', '.join(sorted(api['constants'].keys()))}")
+        print_json_summary(module_name, api)
     else:
         print_api(module_name, api)
 
