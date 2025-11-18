@@ -30,6 +30,7 @@ Before installing Nomarr, ensure you have:
 ### GPU Requirements
 
 The effnet embedding model requires **9GB of VRAM** and provides significant performance benefits:
+
 - **With GPU:** ~2 seconds per track
 - **Without GPU:** ~40 seconds per track
 
@@ -62,12 +63,12 @@ services:
     container_name: nomarr
     user: "1000:1000"
     networks:
-      - lidarr_network  # Optional: for Lidarr integration
+      - lidarr_network # Optional: for Lidarr integration
     ports:
       - "8356:8356"
     volumes:
       - ./config:/app/config
-      - /path/to/your/music:/music  # Must match Lidarr's path if using integration
+      - /path/to/your/music:/music # Must match Lidarr's path if using integration
     environment:
       - NOMARR_DB=/app/config/db/nomarr.sqlite
       - NOMARR_CONFIG=/app/config/config.yaml
@@ -91,6 +92,7 @@ docker compose up -d
 ```
 
 On first startup, Nomarr will:
+
 - Initialize the database
 - Generate an admin password
 - Load ML models into GPU memory
@@ -105,6 +107,7 @@ docker compose logs nomarr | grep "Admin password"
 ```
 
 You should see output like:
+
 ```
 [KeyManagement] AUTO-GENERATED ADMIN PASSWORD:
 [KeyManagement]   Xk8pL2mN9qR5tV3w
@@ -135,8 +138,8 @@ models_dir: /app/models
 database_path: /app/config/db/nomarr.sqlite
 
 # Processing options
-batch_size: 11  # Segments per GPU batch
-cache_idle_timeout: 300  # Model cache timeout (seconds)
+batch_size: 11 # Segments per GPU batch
+cache_idle_timeout: 300 # Model cache timeout (seconds)
 
 # Admin password (optional - uses auto-generated if not set)
 # admin_password: your_password_here
@@ -167,6 +170,7 @@ The web interface provides:
 ### Processing Your First File
 
 1. **Via Web UI:**
+
    - Click "Process Files" tab
    - Enter a file path or directory path
    - Click "Process" or "Batch Process"
@@ -182,12 +186,14 @@ The web interface provides:
 Nomarr writes tags with the configured namespace prefix (default `nom:`):
 
 **Individual model outputs:**
+
 ```
 nom:danceability_essentia21-beta6-dev_effnet20220217_danceability20220825 = 0.7234
 nom:aggressive_essentia21-beta6-dev_effnet20220217_aggressive20220825 = 0.1203
 ```
 
 **Aggregated mood tags:**
+
 ```
 nom:mood-strict = ["peppy", "party-like", "synth-like"]
 nom:mood-regular = ["peppy", "party-like", "synth-like", "easy to dance to"]
@@ -195,6 +201,7 @@ nom:mood-loose = ["peppy", "party-like", "synth-like", "easy to dance to", "has 
 ```
 
 Each tag includes:
+
 - **Namespace prefix** - Configurable (default: `nom`)
 - **Model identifier** - Essentia version, backbone, head name, date
 - **Value** - Probability (0.0 to 1.0) or aggregated labels
@@ -229,6 +236,7 @@ curl -X POST \
 ```
 
 Make it executable:
+
 ```bash
 chmod +x lidarr-nomarr-tag.sh
 ```
@@ -236,6 +244,7 @@ chmod +x lidarr-nomarr-tag.sh
 ### 3. Configure Lidarr
 
 In Lidarr:
+
 1. Go to Settings → Connect
 2. Add "Custom Script"
 3. Name: "Nomarr Auto-Tag"
@@ -299,6 +308,7 @@ See [Calibration System](../calibration/index.md) for details.
 ### Viewing Tag Analytics
 
 The Web UI provides analytics:
+
 - **Tag frequencies** - Most common tags in your library
 - **Mood distribution** - Breakdown of aggregated moods
 - **Correlations** - Which tags appear together
@@ -319,11 +329,13 @@ Access via Web UI → Library → Analytics tab.
 ### Container Won't Start
 
 Check logs for errors:
+
 ```bash
 docker compose logs nomarr
 ```
 
 Common issues:
+
 - GPU not accessible - verify NVIDIA Container Toolkit
 - Port 8356 already in use - change port in docker-compose.yml
 - Volume mount permissions - ensure user 1000:1000 has access
@@ -331,6 +343,7 @@ Common issues:
 ### No Tags Written
 
 Check:
+
 1. File format is supported (MP3, M4A, OGG, FLAC, Opus)
 2. File path is accessible from container
 3. Queue shows job as "done" not "error"

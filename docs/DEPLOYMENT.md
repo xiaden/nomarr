@@ -1,110 +1,83 @@
 # Deployment Guide
 
+Complete guide for deploying Nomarr in production or development environments.
+
+See also:
+
+- [Getting Started](getting_started.md) - Initial installation and configuration
+- [API Reference](api/endpoints.md) - Full HTTP and CLI API documentation
+- [Navidrome Integration](integration/navidrome.md) - Smart playlist generation
+
+---
+
 ## Quick Start
 
 ```bash
-# Build the image
+# Clone and start
+git clone https://github.com/yourusername/nomarr.git
+cd nomarr
 docker compose build
-
-# Start the container
 docker compose up -d
 
-# Check logs
+# Verify running
+docker compose ps
 docker compose logs -f nomarr
-
-# You should see:
-# - "Starting Application..."
-# - "Starting Nomarr API on 0.0.0.0:8356..."
-# - "Public endpoints: /api/v1/tag, /api/v1/queue, /api/v1/status/*, etc."
-# - "Web endpoints: /web/* (requires session token)"
-# - "Generated admin password: <password>" (first run only)
 ```
+
+The API will be available at `http://localhost:8356`.
+
+---
 
 ## Architecture
 
-### Single Unified API
+### Unified API Design
 
-The container runs **one FastAPI app** via `start.py` on port 8356:
+Nomarr uses a **single FastAPI application** (`nomarr.app:app`) that serves three distinct endpoint groups:
 
-**Endpoints**:
+| Endpoint Group | Auth Requirement       | Purpose                                            |
+| -------------- | ---------------------- | -------------------------------------------------- |
+| `/api/v1/*`    | API key (Bearer token) | Public API for Lidarr webhooks, CLI access         |
+| `/admin/*`     | API key (Bearer token) | Admin operations (cache refresh, queue management) |
+| `/web/*`       | Session token (login)  | Web UI endpoints (dashboard, queue, tags)          |
 
-- **Public API** (`/api/v1/*`) - requires `api_key` (for Lidarr/webhooks)
-- **Admin API** (`/admin/*`) - requires `api_key` (for queue/worker management)
-- **Web UI** (`/web/*`, `/web/api/*`) - requires session token from admin password login (for browser)
+**Key Characteristics:**
+
+- Single FastAPI app on port 8356
+- Shared `Application` instance across all interfaces
+- Shared model cache (lazy-loaded)
+- CLI accesses `Application` services directly (no HTTP overhead)
 
 ### Security Model
 
-- **Two-layer authentication**:
-  - `api_key` - for Lidarr webhooks and admin operations, user-managed via `manage_key.py`
-  - `admin_password` - for web UI login (web endpoints), auto-generated or set in config
-- All keys/passwords are stored in the database
-- Web UI uses session tokens (24-hour expiry) after password login
-- CLI accesses Application services directly (no HTTP authentication needed)
+**Two-Layer Authentication:**
 
-### Admin Password Setup
+1. **API Key (Bearer Token)**
 
-**On first startup**, an admin password is auto-generated and logged:
+   - Used for `/api/v1/*` and `/admin/*` endpoints
+   - Auto-generated on first startup and stored in DB
+   - Retrieve with: `docker exec nomarr python3 -m nomarr.manage_key --show`
+   - Used by Lidarr webhooks and programmatic access
 
-```bash
-docker compose logs nomarr | grep "Admin password"
-# Output: Generated admin password: abc123xyz789
-```
-
-**View current password:**
-
-```bash
-docker exec nomarr python3 -m nomarr.manage_password --show
-```
-
-**Verify a password:**
-
-```bash
-docker exec nomarr python3 -m nomarr.manage_password --verify
-# Enter password when prompted
-```
-
-**Reset to new password:**
-
-```bash
-docker exec nomarr python3 -m nomarr.manage_password --reset
-# Enter new password twice for confirmation
-```
-
-**Set password in config** (alternative to auto-generation):
-
-```yaml
-# config/config.yaml
-admin_password: your_secure_password
-```
-
-If set in config, this password will be used instead of auto-generating one.
-
-### Web UI Access
-
-1. Open browser to `http://<server-ip>:8356/` (or `http://nomarr:8356/` from same Docker network)
-2. Enter admin password (retrieve from logs or `manage_password.py --show`)
-3. Session token stored in browser localStorage (24-hour expiry)
-4. All web API calls use session token authentication
-
-**Features:**
-
-- Process files with real-time streaming progress
-- View and manage queue (pause, resume, remove jobs)
-- Admin controls (worker pause/resume, cache refresh, cleanup)
-- System info and health monitoring
-- Library management and scanning
+2. **Admin Password (Session-Based)**
+   - Used for `/web/*` UI endpoints
+   - Auto-generated on first startup or set via `admin_password` in config
+   - Retrieve with: `docker exec nomarr python3 -m nomarr.manage_password --show`
+   - Web UI login at `http://localhost:8356/web/login`
 
 ### Cache Strategy
 
-- **Lazy-loaded on first use**: Models are cached when first needed (not at startup)
-- **Shared across all processing**: CLI and web UI access the same Application instance and model cache
-- **No HTTP overhead for CLI**: CLI calls Application services directly (no API calls)
+- **Lazy-loaded**: Models load on first use, not at startup
+- **Shared**: CLI and web UI access the same `Application` instance and model cache
+- **Persistent**: Cache remains in memory across requests
+- **No HTTP overhead for CLI**: CLI calls `Application` services directly
+
+---
 
 ## CLI Usage
 
 ### Inside Container
 
-The CLI runs inside the container and accesses Application services directly:
+The CLI runs inside the container and accesses `Application` services directly:
 
 ```bash
 # Process files directly (no HTTP, uses Application services)
@@ -133,7 +106,7 @@ docker exec nomarr nom show-tags /music/Track.mp3
 
 Create a shell alias for convenience:
 
-```bash
+````bash
 # Add to ~/.bashrc or ~/.zshrc
 alias nom='docker exec nomarr nom'
 
@@ -142,8 +115,8 @@ nom run /music/NewAlbum --recursive
 nom list
 nom show-tags /music/Track.mp3
 nom admin-reset --stuck
-nom cleanup --hours 168
-```
+
+---
 
 ## Lidarr Integration
 
@@ -169,9 +142,13 @@ if [ "$lidarr_eventtype" = "Download" ]; then
             "$API_URL/api/v1/tag"
     done
 fi
-```
+````
 
 Make executable: `chmod +x /path/to/lidarr-nomarr.sh`
+
+For detailed setup and troubleshooting, see [Lidarr Integration Guide](integration/lidarr.md).
+
+---
 
 ## Network Configuration
 
@@ -205,11 +182,13 @@ services:
       - "8356:8356" # Public and web endpoints
 ```
 
+---
+
 ## Troubleshooting
 
 ### CLI Issues
 
-The CLI accesses Application services directly (no HTTP). If you see errors:
+The CLI accesses `Application` services directly (no HTTP). If you see errors:
 
 ```bash
 # Check if Application is running
@@ -253,6 +232,8 @@ curl -X POST \
   http://localhost:8356/admin/cache/refresh
 ```
 
+---
+
 ## Monitoring
 
 ### Health Checks
@@ -276,6 +257,8 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
   http://localhost:8356/api/v1/list
 ```
 
+---
+
 ## Security Checklist
 
 ✅ API key authentication for public/admin endpoints  
@@ -284,12 +267,16 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
 ✅ API key auto-generated and stored in DB  
 ✅ CLI accesses services directly (no network exposure)
 
+---
+
 ## Performance
 
 - **First processing after startup**: ~2-10s model load (lazy-loaded on demand)
 - **Subsequent processing**: Instant (models cached in memory)
 - **Lidarr webhook processing**: ~2-5s per file (queue-based by default)
 - **Multi-worker parallelism**: Configurable worker count (default: 1, increases VRAM usage)
+
+---
 
 ## Upgrading
 

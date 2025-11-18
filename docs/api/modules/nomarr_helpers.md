@@ -9,7 +9,7 @@ API reference for `nomarr.helpers`.
 ### AUDIO_EXTENSIONS
 
 ```python
-AUDIO_EXTENSIONS = {'.mp4', '.wma', '.wav', '.aac', '.opus', '.ogg', '.mp3', '.flac', '.m4a'}
+AUDIO_EXTENSIONS = {'.aac', '.wma', '.ogg', '.opus', '.mp4', '.wav', '.mp3', '.flac', '.m4a'}
 ```
 
 ---
