@@ -15,7 +15,6 @@ Architecture Notes:
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import secrets
 import time
@@ -111,35 +110,41 @@ class KeyManagementService:
     @staticmethod
     def hash_password(password: str) -> str:
         """
-        Hash a password using SHA-256 with salt.
+        Hash a password using bcrypt (secure password hashing).
 
         Args:
             password: Plaintext password
 
         Returns:
-            Hashed password in format "salt:hash"
+            Bcrypt password hash
         """
-        salt = secrets.token_hex(16)
-        pwd_hash = hashlib.sha256((password + salt).encode()).hexdigest()
-        return f"{salt}:{pwd_hash}"
+        import bcrypt
+
+        # bcrypt handles salt generation internally
+        pwd_bytes = password.encode("utf-8")
+        salt = bcrypt.gensalt(rounds=12)  # 2^12 iterations
+        pwd_hash = bcrypt.hashpw(pwd_bytes, salt)
+        return pwd_hash.decode("utf-8")
 
     @staticmethod
     def verify_password(password: str, password_hash: str) -> bool:
         """
-        Verify a password against a stored hash.
+        Verify a password against a stored bcrypt hash.
 
         Args:
             password: Plaintext password to verify
-            password_hash: Stored hash in format "salt:hash"
+            password_hash: Stored bcrypt hash
 
         Returns:
             True if password matches, False otherwise
         """
         try:
-            salt, pwd_hash = password_hash.split(":", 1)
-            computed = hashlib.sha256((password + salt).encode()).hexdigest()
-            return computed == pwd_hash
-        except (ValueError, AttributeError):
+            import bcrypt
+
+            pwd_bytes = password.encode("utf-8")
+            hash_bytes = password_hash.encode("utf-8")
+            return bcrypt.checkpw(pwd_bytes, hash_bytes)
+        except (ValueError, AttributeError, ImportError):
             return False
 
     def get_admin_password_hash(self) -> str:

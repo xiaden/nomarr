@@ -7,6 +7,7 @@ from typing import Any
 import mutagen
 from fastapi import APIRouter, Depends, HTTPException
 
+from nomarr.helpers.security import validate_library_path
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import get_config
 
@@ -57,6 +58,10 @@ async def web_show_tags(
 ) -> dict[str, Any]:
     """Read tags from an audio file (web UI proxy)."""
     namespace = cfg.get("namespace", "essentia")
+    library_path = cfg.get("library_path", "")
+
+    # Validate path to prevent directory traversal
+    validate_library_path(path, library_path)
 
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail=f"File not found: {path}")

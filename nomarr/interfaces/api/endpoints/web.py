@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from nomarr.app import application
+from nomarr.helpers.security import sanitize_exception_message, validate_library_path
 from nomarr.interfaces.api.auth import (
     create_session,
     get_admin_password_hash,
@@ -235,7 +236,9 @@ async def web_batch_process(request: BatchProcessRequest):
             results.append({"path": path, "status": "error", "message": e.detail})
             errors += 1
         except Exception as e:
-            results.append({"path": path, "status": "error", "message": str(e)})
+            # Sanitize exception to avoid leaking sensitive information
+            safe_msg = sanitize_exception_message(e, "Failed to process file")
+            results.append({"path": path, "status": "error", "message": safe_msg})
             errors += 1
 
     return {"queued": queued, "skipped": 0, "errors": errors, "results": results}
@@ -516,6 +519,10 @@ async def web_show_tags(path: str):
     """Read tags from an audio file (web UI proxy)."""
     s = get_state()
     namespace = s.cfg.get("namespace", "essentia")
+    library_path = s.cfg.get("library_path", "")
+
+    # Validate path to prevent directory traversal
+    validate_library_path(path, library_path)
 
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail=f"File not found: {path}")

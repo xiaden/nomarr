@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from nomarr.helpers.security import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import (
     get_processor_coordinator,
@@ -115,7 +116,9 @@ async def web_batch_process(
             results.append({"path": path, "status": "error", "message": e.detail})
             errors += 1
         except Exception as e:
-            results.append({"path": path, "status": "error", "message": str(e)})
+            # Sanitize exception to avoid leaking sensitive information
+            safe_msg = sanitize_exception_message(e, "Failed to process path")
+            results.append({"path": path, "status": "error", "message": safe_msg})
             errors += 1
 
     return {"queued": queued, "skipped": 0, "errors": errors, "results": results}

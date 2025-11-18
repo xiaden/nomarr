@@ -144,7 +144,8 @@ class PlaylistGenerator:
             PlaylistQueryError: If condition syntax is invalid
         """
         # Pattern: tag:KEY OPERATOR VALUE
-        pattern = r"^tag:(\S+)\s+(>=|<=|!=|>|<|=|contains)\s+(.+)$"
+        # Use [^\s].* instead of .+ to prevent ReDoS (catastrophic backtracking)
+        pattern = r"^tag:(\S+)\s+(>=|<=|!=|>|<|=|contains)\s+([^\s].*)$"
         match = re.match(pattern, condition.strip(), re.IGNORECASE)
 
         if not match:
@@ -244,7 +245,8 @@ class PlaylistGenerator:
             PlaylistQueryError: If condition syntax is invalid
         """
         # Pattern: tag:KEY OPERATOR VALUE
-        pattern = r"^tag:(\S+)\s+(>=|<=|!=|>|<|=|contains)\s+(.+)$"
+        # Use [^\s].* instead of .+ to prevent ReDoS (catastrophic backtracking)
+        pattern = r"^tag:(\S+)\s+(>=|<=|!=|>|<|=|contains)\s+([^\s].*)$"
         match = re.match(pattern, condition.strip(), re.IGNORECASE)
 
         if not match:
@@ -300,6 +302,7 @@ class PlaylistGenerator:
             query: Smart Playlist query string
             limit: Maximum number of tracks (default: no limit)
             order_by: SQL ORDER BY clause (default: random)
+                     Only allows whitelisted columns: path, title, artist, album
 
         Returns:
             List of track dictionaries with keys: file_path, title, artist, album
@@ -308,6 +311,18 @@ class PlaylistGenerator:
             PlaylistQueryError: If query is invalid
         """
         where_clause, parameters = self.parse_query_to_sql(query)
+
+        # Whitelist valid ORDER BY columns to prevent SQL injection
+        valid_order_columns = {"path", "title", "artist", "album", "random()"}
+        if order_by:
+            # Normalize and validate order_by
+            order_by_normalized = order_by.strip().lower()
+            # Check if it's one of the valid columns (with optional ASC/DESC)
+            base_column = order_by_normalized.split()[0]
+            if base_column not in valid_order_columns:
+                raise PlaylistQueryError(
+                    f"Invalid ORDER BY column: {order_by}. Must be one of: {', '.join(valid_order_columns)}"
+                )
 
         # Build SQL query
         sql = f"""
