@@ -115,9 +115,6 @@ class Application:
         self.namespace: str = INTERNAL_NAMESPACE
         self.version_tag_key: str = INTERNAL_VERSION_TAG
 
-        # Admin password
-        self.admin_password_config: str | None = self._config.get("admin_password")
-
         # Core dependencies (owned by Application)
         self.db = Database(self.db_path)
         self.queue = ProcessingQueue(self.db)

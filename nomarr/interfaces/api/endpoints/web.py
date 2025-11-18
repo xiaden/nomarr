@@ -385,12 +385,10 @@ async def web_admin_cache_refresh():
 
         models_dir = str(cfg["models_dir"])
         cache_idle_timeout = int(cfg.get("cache_idle_timeout", 300))
-        cache_auto_evict = bool(cfg.get("cache_auto_evict", True))
 
         warmup_predictor_cache(
             models_dir=models_dir,
             cache_idle_timeout=cache_idle_timeout,
-            cache_auto_evict=cache_auto_evict,
         )
         return {"status": "ok", "message": "Model cache refreshed successfully"}
     except Exception as e:

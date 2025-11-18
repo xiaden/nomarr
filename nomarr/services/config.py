@@ -317,6 +317,7 @@ class ConfigService:
                         continue
 
                     # Parse value to correct type
+                    parsed: bool | int | float | str
                     if value.lower() in ("true", "false"):
                         parsed = value.lower() == "true"
                     elif value.isdigit():

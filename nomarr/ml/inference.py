@@ -238,6 +238,7 @@ def compute_embeddings_for_backbone(
     )
 
     # Normalize output to 2D (num_patches, embed_dim)
+    embeddings_2d: np.ndarray
     if emb.ndim == 1:
         # Already pooled to 1D - expand to (1, embed_dim)
         logging.info("[inference] Backbone returned 1D embedding (already pooled)")

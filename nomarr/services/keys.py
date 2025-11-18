@@ -124,7 +124,7 @@ class KeyManagementService:
         pwd_bytes = password.encode("utf-8")
         salt = bcrypt.gensalt(rounds=12)  # 2^12 iterations
         pwd_hash = bcrypt.hashpw(pwd_bytes, salt)
-        return pwd_hash.decode("utf-8")
+        return str(pwd_hash.decode("utf-8"))
 
     @staticmethod
     def verify_password(password: str, password_hash: str) -> bool:
@@ -143,7 +143,7 @@ class KeyManagementService:
 
             pwd_bytes = password.encode("utf-8")
             hash_bytes = password_hash.encode("utf-8")
-            return bcrypt.checkpw(pwd_bytes, hash_bytes)
+            return bool(bcrypt.checkpw(pwd_bytes, hash_bytes))
         except (ValueError, AttributeError, ImportError):
             return False
 
