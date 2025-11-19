@@ -174,11 +174,11 @@ def resolve_library_path(
     # Ensure symlinks don't escape the root
     try:
         resolved_candidate.relative_to(resolved_base)
-    except ValueError:
+    except ValueError as e:
         logger.warning(
             f"[security] Symlink traversal detected: {resolved_candidate!r} is outside library {resolved_base!r}"
         )
-        raise ValueError("Access denied")
+        raise ValueError("Access denied") from e
 
     # Validate existence if required
     if must_exist and not resolved_candidate.exists():
