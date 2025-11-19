@@ -21,6 +21,8 @@ Usage:
 
 import argparse
 import json
+import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -53,50 +55,113 @@ class AnalysisResult:
 
 
 # ──────────────────────────────────────────────────────────────────────
+# Utility Functions
+# ──────────────────────────────────────────────────────────────────────
+
+
+def strip_ansi_codes(text: str) -> str:
+    """Remove ANSI color codes from text.
+
+    Args:
+        text: Text potentially containing ANSI escape sequences
+
+    Returns:
+        Clean text with all ANSI codes removed
+    """
+    # Pattern matches ANSI escape sequences like \x1b[31m, \x1b[0m, etc.
+    ansi_pattern = re.compile(r"\x1b\[[0-9;]*m")
+    return ansi_pattern.sub("", text)
+
+
+# ──────────────────────────────────────────────────────────────────────
 # Tool Output Normalizers (Parse raw output → structured issues)
 # ──────────────────────────────────────────────────────────────────────
 
 
 def normalize_radon_cc(stdout: str) -> tuple[list[str], str]:
-    """Parse radon cc output to extract complex functions."""
+    """Parse radon cc output to extract complex functions and errors.
+
+    Args:
+        stdout: Raw stdout from radon cc command
+
+    Returns:
+        Tuple of (issues list, summary string)
+    """
     issues = []
+    error_count = 0
+    complexity_count = 0
     lines = stdout.strip().split("\n")
 
     for line in lines:
-        # Match pattern like: "    M 85:4 ClassName.method_name - C (15)"
-        if " - " in line and any(grade in line for grade in [" - C ", " - D ", " - E ", " - F "]):
+        # Capture radon analysis errors
+        if "ERROR:" in line:
             issues.append(line.strip())
+            error_count += 1
+        # Match pattern like: "    M 85:4 ClassName.method_name - C (15)"
+        elif " - " in line and any(grade in line for grade in [" - C ", " - D ", " - E ", " - F "]):
+            issues.append(line.strip())
+            complexity_count += 1
 
     if not issues:
         return [], "No complexity issues found"
 
-    return issues, f"Found {len(issues)} complex function(s)"
+    # Build summary based on what we found
+    parts = []
+    if complexity_count > 0:
+        parts.append(f"{complexity_count} complex function(s)")
+    if error_count > 0:
+        parts.append(f"{error_count} radon analysis error(s)")
+
+    summary = "Found " + " and ".join(parts)
+    return issues, summary
 
 
 def normalize_radon_mi(stdout: str) -> tuple[list[str], str]:
-    """Parse radon mi output to extract low maintainability files."""
+    """Parse radon mi output to extract low maintainability files and errors.
+
+    Args:
+        stdout: Raw stdout from radon mi command
+
+    Returns:
+        Tuple of (issues list, summary string)
+    """
     import re
 
     issues = []
+    error_count = 0
+    mi_count = 0
     lines = stdout.strip().split("\n")
 
     for line in lines:
-        # Match pattern like: "nomarr/file.py - C (12.34)"
-        if re.search(r" - [CDF] \([\d.]+\)", line):
+        # Capture radon analysis errors
+        if "ERROR:" in line:
             issues.append(line.strip())
+            error_count += 1
+        # Match pattern like: "nomarr/file.py - C (12.34)"
+        elif re.search(r" - [CDF] \([\d.]+\)", line):
+            issues.append(line.strip())
+            mi_count += 1
 
     if not issues:
         return [], "All files have good maintainability"
 
-    return issues, f"Found {len(issues)} file(s) with maintainability issues"
+    # Build summary based on what we found
+    parts = []
+    if mi_count > 0:
+        parts.append(f"{mi_count} file(s) with maintainability issues")
+    if error_count > 0:
+        parts.append(f"{error_count} radon analysis error(s)")
+
+    summary = "Found " + " and ".join(parts)
+    return issues, summary
 
 
 def normalize_import_linter(stdout: str, stderr: str) -> tuple[list[str], str]:
     """Parse import-linter output to extract violations."""
     issues = []
 
-    # Check both stdout and stderr for violations
-    content = stdout + "\n" + stderr
+    # Strip ANSI color codes from the content
+    content = strip_ansi_codes(stdout + "\n" + stderr)
     lines = content.split("\n")
 
     in_violation_section = False
@@ -117,8 +182,32 @@ def normalize_import_linter(stdout: str, stderr: str) -> tuple[list[str], str]:
     return issues[:20], f"Found {len(issues)} architecture violation(s)"  # Limit to 20
 
 
-def normalize_flake8(stdout: str) -> tuple[list[str], str]:
-    """Parse flake8 output to extract code smell issues."""
+def normalize_flake8(stdout: str, stderr: str, returncode: int) -> tuple[list[str], str]:
+    """Parse flake8 output to extract code smell issues or tool failures.
+
+    Args:
+        stdout: Raw stdout from flake8 command
+        stderr: Raw stderr from flake8 command
+        returncode: Exit code from flake8 command
+
+    Returns:
+        Tuple of (issues list, summary string)
+    """
+    # Handle tool failures (plugin errors, config issues, etc.)
+    if returncode != 0 and not stdout.strip():
+        # Tool failed without producing normal output - likely a crash or config error
+        issues = []
+        stderr_clean = strip_ansi_codes(stderr)
+        stderr_lines = [line.strip() for line in stderr_clean.split("\n") if line.strip()]
+
+        # Extract last ~15 lines of stderr (traceback or error message)
+        if stderr_lines:
+            issues = stderr_lines[-15:]
+
+        summary = f"Flake8 failed with exit code {returncode}; no results. Likely plugin or config error - see stderr."
+        return issues, summary
+
+    # Normal flake8 output - parse code smells
     issues = []
     lines = stdout.strip().split("\n")
 
@@ -350,12 +439,12 @@ def render_html(results: list[AnalysisResult], timestamp: str, target: str) -> s
 
                 <details>
                     <summary>Raw Output (STDOUT)</summary>
-                    <pre>{html_module.escape(result.stdout) if result.stdout.strip() else "(empty)"}</pre>
+                    <pre>{html_module.escape(strip_ansi_codes(result.stdout)) if result.stdout.strip() else "(empty)"}</pre>
                 </details>
 
                 <details>
                     <summary>Raw Output (STDERR)</summary>
-                    <pre>{html_module.escape(result.stderr) if result.stderr.strip() else "(empty)"}</pre>
+                    <pre>{html_module.escape(strip_ansi_codes(result.stderr)) if result.stderr.strip() else "(empty)"}</pre>
                 </details>
             </div>
         </details>
@@ -418,9 +507,9 @@ def render_markdown(results: list[AnalysisResult], timestamp: str, target: str) 
 
         md_content += "\n<details>\n<summary>Raw Output</summary>\n\n"
         md_content += "**STDOUT:**\n```\n"
-        md_content += result.stdout if result.stdout.strip() else "(empty)"
+        md_content += strip_ansi_codes(result.stdout) if result.stdout.strip() else "(empty)"
         md_content += "\n```\n\n**STDERR:**\n```\n"
-        md_content += result.stderr if result.stderr.strip() else "(empty)"
+        md_content += strip_ansi_codes(result.stderr) if result.stderr.strip() else "(empty)"
         md_content += "\n```\n</details>\n\n"
 
     return md_content
@@ -446,8 +535,8 @@ def render_json(results: list[AnalysisResult], timestamp: str, target: str) -> s
                 "summary": r.summary,
                 "issue_count": len(r.issues),
                 "issues": r.issues,
-                "stdout": r.stdout,
-                "stderr": r.stderr,
+                "stdout": strip_ansi_codes(r.stdout),
+                "stderr": strip_ansi_codes(r.stderr),
             }
             for r in results
         ],
@@ -491,17 +580,41 @@ def print_summary_table(results: list[AnalysisResult]) -> None:
 # ──────────────────────────────────────────────────────────────────────
 
 
-def run_command(cmd: list[str], description: str) -> dict[str, Any]:
-    """Run a command and capture output."""
+def run_command(cmd: list[str], description: str, tool_id: str = "") -> dict[str, Any]:
+    """Run a command and capture output.
+
+    Args:
+        cmd: Command and arguments to execute
+        description: Human-readable description of what the command does
+        tool_id: Stable identifier for tool-specific parsing (e.g., "radon_cc", "flake8")
+
+    Returns:
+        Dictionary with command results and metadata
+    """
     print(f"\n{'=' * 60}")
     print(f"Running: {description}")
     print(f"Command: {' '.join(cmd)}")
     print(f"{'=' * 60}\n")
 
+    # Force UTF-8 encoding for subprocess output
+    env = os.environ.copy()
+    env["PYTHONUTF8"] = "1"  # Enable Python UTF-8 mode for child processes (Python 3.7+)
+    env["PYTHONIOENCODING"] = "utf-8"
+
     try:
-        result = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, timeout=120)
+        result = subprocess.run(
+            cmd,
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+            timeout=120,
+        )
 
         return {
+            "tool": tool_id,
             "description": description,
             "command": " ".join(cmd),
             "returncode": result.returncode,
@@ -511,6 +624,7 @@ def run_command(cmd: list[str], description: str) -> dict[str, Any]:
         }
     except subprocess.TimeoutExpired:
         return {
+            "tool": tool_id,
             "description": description,
             "command": " ".join(cmd),
             "returncode": -1,
@@ -520,6 +634,7 @@ def run_command(cmd: list[str], description: str) -> dict[str, Any]:
         }
     except Exception as e:
         return {
+            "tool": tool_id,
             "description": description,
             "command": " ".join(cmd),
             "returncode": -1,
@@ -587,6 +702,7 @@ def main():
         run_command(
             [sys.executable, "-m", "radon", "cc", str(target_path), "-a", "-s"],
             "Radon: Cyclomatic Complexity",
+            tool_id="radon_cc",
         )
     )
 
@@ -595,6 +711,7 @@ def main():
         run_command(
             [sys.executable, "-m", "radon", "mi", str(target_path), "-s"],
             "Radon: Maintainability Index",
+            tool_id="radon_mi",
         )
     )
 
@@ -603,6 +720,7 @@ def main():
         run_command(
             [sys.executable, "-m", "radon", "raw", str(target_path), "-s"],
             "Radon: Raw Metrics",
+            tool_id="radon_raw",
         )
     )
 
@@ -612,6 +730,7 @@ def main():
             run_command(
                 ["lint-imports"],
                 "Import Linter: Architecture violations",
+                tool_id="import_linter",
             )
         )
 
@@ -631,6 +750,7 @@ def main():
                 "E501,W503,E203",
             ],
             "Flake8: Code smells",
+            tool_id="flake8",
         )
     )
 
@@ -652,6 +772,7 @@ def main():
                 "E501,W503,E203",
             ],
             "Flake8: Strict complexity check",
+            tool_id="flake8_strict",
         )
     )
 
@@ -662,6 +783,7 @@ def main():
             if target_path.is_dir()
             else [sys.executable, "-m", "eradicate", str(target_path)],
             "Eradicate: Commented-out code",
+            tool_id="eradicate",
         )
     )
 
@@ -669,24 +791,25 @@ def main():
     analyzed_results: list[AnalysisResult] = []
 
     for raw in raw_results:
+        tool = raw.get("tool", "")
         name = raw["description"]
         stdout = raw["stdout"]
         stderr = raw["stderr"]
         returncode = raw["returncode"]
 
-        # Apply tool-specific normalizers
-        if "radon cc" in name.lower():
+        # Dispatch on stable tool identifier instead of fuzzy name matching
+        if tool == "radon_cc":
             issues, summary = normalize_radon_cc(stdout)
-        elif "radon mi" in name.lower():
+        elif tool == "radon_mi":
             issues, summary = normalize_radon_mi(stdout)
-        elif "radon raw" in name.lower():
+        elif tool == "radon_raw":
             # Raw metrics - just informational, no issues
             issues, summary = [], "Raw code metrics (informational)"
-        elif "import linter" in name.lower():
+        elif tool == "import_linter":
             issues, summary = normalize_import_linter(stdout, stderr)
-        elif "flake8" in name.lower():
-            issues, summary = normalize_flake8(stdout)
-        elif "eradicate" in name.lower():
+        elif tool == "flake8" or tool == "flake8_strict":
+            issues, summary = normalize_flake8(stdout, stderr, returncode)
+        elif tool == "eradicate":
             issues, summary = normalize_eradicate(stdout)
         else:
             # Unknown tool - generic handling
@@ -694,6 +817,11 @@ def main():
 
         # Calculate severity
         severity = calculate_severity(name, issues, returncode)
+
+        # Override severity for flake8 tool failures - these are high priority
+        # because they indicate the quality signal is completely missing
+        if (tool == "flake8" or tool == "flake8_strict") and returncode != 0 and not stdout.strip():
+            severity = "high"
 
         analyzed_results.append(
             AnalysisResult(
