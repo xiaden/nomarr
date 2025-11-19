@@ -10,7 +10,6 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from nomarr.app import application
 from nomarr.interfaces.api.auth import verify_key
 from nomarr.interfaces.api.models import FlushRequest, RemoveJobRequest
-from nomarr.ml.cache import warmup_predictor_cache
 
 # Router instance (will be included in main app)
 router = APIRouter(tags=["admin"], prefix="/admin")
@@ -129,16 +128,10 @@ async def admin_cache_refresh():
     """Force rebuild of the predictor cache (discover heads and load missing)."""
     try:
         g = get_globals()
-        config_service = g["config_service"]
-        cfg = config_service.get_config()
+        ml_service = application.services["ml"]
 
-        models_dir = str(cfg["models_dir"])
-        cache_idle_timeout = int(cfg.get("cache_idle_timeout", 300))
+        num = ml_service.warmup_cache()
 
-        num = warmup_predictor_cache(
-            models_dir=models_dir,
-            cache_idle_timeout=cache_idle_timeout,
-        )
         return {"status": "ok", "predictors": num}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Cache refresh failed: {e}") from e

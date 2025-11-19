@@ -1,13 +1,15 @@
 """Analytics endpoints for web UI."""
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import get_database
-from nomarr.persistence.db import Database
+
+if TYPE_CHECKING:
+    from nomarr.persistence.db import Database
 
 router = APIRouter(prefix="/api/analytics", tags=["Analytics"])
 

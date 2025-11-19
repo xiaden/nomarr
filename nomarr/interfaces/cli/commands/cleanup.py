@@ -7,7 +7,6 @@ from __future__ import annotations
 import argparse
 
 import nomarr.app as app
-from nomarr.config import compose
 from nomarr.interfaces.cli.ui import InfoPanel, print_error, print_info, show_spinner
 
 
@@ -21,12 +20,13 @@ def cmd_cleanup(args: argparse.Namespace) -> int:
         return 1
 
     try:
-        cfg = compose({})
-        max_age_hours = args.hours if args.hours is not None else int(cfg.get("cleanup_age_hours", 168))
+        # Get max age from args (default 168 hours = 1 week)
+        max_age_hours = args.hours if args.hours is not None else 168
 
         # Task to perform cleanup using service
         def _do_cleanup(service, hours: int) -> int:
-            return service.cleanup_old_jobs(max_age_hours=hours)
+            result: int = service.cleanup_old_jobs(max_age_hours=hours)
+            return result
 
         # Use service from running Application
         queue_service = app.application.services["queue"]

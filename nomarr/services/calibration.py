@@ -71,3 +71,34 @@ class CalibrationService:
             namespace=self._namespace,
             thresholds=self._thresholds,
         )
+
+    def generate_minmax_calibration(self) -> dict[str, Any]:
+        """
+        Generate minmax calibration data from database tags.
+
+        Returns:
+            Calibration data dictionary with min/max values per head
+        """
+        from nomarr.ml.calibration import generate_minmax_calibration
+
+        return generate_minmax_calibration(
+            db=self._db,
+            namespace=self._namespace,
+        )
+
+    def save_calibration_sidecars(self, calibration_data: dict[str, Any]) -> dict[str, Any]:
+        """
+        Save calibration data as JSON sidecar files next to model files.
+
+        Args:
+            calibration_data: Calibration data from generate_minmax_calibration()
+
+        Returns:
+            Dictionary with save results and paths
+        """
+        from nomarr.ml.calibration import save_calibration_sidecars
+
+        return save_calibration_sidecars(
+            calibration_data=calibration_data,
+            models_dir=self._models_dir,
+        )

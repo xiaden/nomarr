@@ -2,14 +2,16 @@
 
 import asyncio
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import get_database
-from nomarr.persistence.db import Database
+
+if TYPE_CHECKING:
+    from nomarr.persistence.db import Database
 
 router = APIRouter(prefix="/api/calibration", tags=["Calibration"])
 
@@ -123,32 +125,30 @@ async def generate_calibration(
     If save_sidecars=True, writes calibration JSON files next to model files.
     """
     from nomarr.app import application
+    from nomarr.services.calibration import CalibrationService
 
     try:
-        from nomarr.ml.calibration import (
-            generate_minmax_calibration,
-            save_calibration_sidecars,
+        # Create service with dependencies
+        calibration_service = CalibrationService(
+            db=db,
+            models_dir=str(application.models_dir),
+            namespace=application.namespace,
         )
 
         # Run calibration in background thread (can take time with 18k songs)
         loop = asyncio.get_event_loop()
         calibration_data = await loop.run_in_executor(
             None,
-            generate_minmax_calibration,
-            db,
-            application.namespace,
+            calibration_service.generate_minmax_calibration,
         )
 
         # Optionally save sidecars
         save_result = None
         if request.save_sidecars:
-            models_dir = application.models_dir
             save_result = await loop.run_in_executor(
                 None,
-                save_calibration_sidecars,
+                calibration_service.save_calibration_sidecars,
                 calibration_data,
-                models_dir,
-                1,  # version
             )
 
         return {

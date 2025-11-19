@@ -167,20 +167,12 @@ async def web_admin_cleanup(
 async def web_admin_cache_refresh() -> dict[str, str]:
     """Refresh model cache (web UI proxy)."""
     from nomarr.app import application
-    from nomarr.ml.cache import warmup_predictor_cache
 
     try:
-        config_service = application.services["config"]
-        cfg = config_service.get_config()
+        ml_service = application.services["ml"]
+        count = ml_service.warmup_cache()
 
-        models_dir = str(cfg["models_dir"])
-        cache_idle_timeout = int(cfg.get("cache_idle_timeout", 300))
-
-        warmup_predictor_cache(
-            models_dir=models_dir,
-            cache_idle_timeout=cache_idle_timeout,
-        )
-        return {"status": "ok", "message": "Model cache refreshed successfully"}
+        return {"status": "ok", "message": f"Model cache refreshed successfully ({count} predictors)"}
     except Exception as e:
         logging.exception("[Web API] Cache refresh failed")
         raise HTTPException(status_code=500, detail=f"Cache refresh failed: {e}") from e

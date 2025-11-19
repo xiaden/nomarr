@@ -8,7 +8,6 @@ import argparse
 
 import nomarr.app as app
 from nomarr.interfaces.cli.ui import InfoPanel, print_error
-from nomarr.ml.cache import warmup_predictor_cache
 
 
 def cmd_cache_refresh(args: argparse.Namespace) -> int:
@@ -19,10 +18,11 @@ def cmd_cache_refresh(args: argparse.Namespace) -> int:
         return 1
 
     try:
-        # Warmup the predictor cache
-        warmup_predictor_cache()
+        # Use ML service from running Application
+        ml_service = app.application.services["ml"]
+        count = ml_service.warmup_cache()
 
-        InfoPanel.show("Cache Refresh", "Cache warmed successfully", "green")
+        InfoPanel.show("Cache Refresh", f"Warmed {count} predictors successfully", "green")
 
         return 0
     except Exception as e:

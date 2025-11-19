@@ -20,8 +20,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from nomarr.ml.cache import warmup_predictor_cache
-
 if TYPE_CHECKING:
     from nomarr.interfaces.api.event_broker import StateBroker
 from nomarr.persistence.db import Database
@@ -236,13 +234,16 @@ class Application:
         )
         self.register_service("worker", worker_service)
 
+        # Register ML service
+        from nomarr.services.ml import MLService
+
+        ml_service = MLService(models_dir=self.models_dir, cache_idle_timeout=self.cache_idle_timeout)
+        self.register_service("ml", ml_service)
+
         # Warm up predictor cache
         logging.info("[Application] Warming up predictor cache...")
         try:
-            warmup_predictor_cache(
-                models_dir=self.models_dir,
-                cache_idle_timeout=self.cache_idle_timeout,
-            )
+            ml_service.warmup_cache()
             logging.info("[Application] Predictor cache warmed successfully")
         except Exception as e:
             logging.error(f"[Application] Failed to warm predictor cache: {e}")
@@ -373,10 +374,10 @@ class Application:
         Interfaces should call this method rather than importing ml.cache directly.
         Uses instance config attributes.
         """
-        warmup_predictor_cache(
-            models_dir=self.models_dir,
-            cache_idle_timeout=self.cache_idle_timeout,
-        )
+        ml_service = self.services.get("ml")
+        if ml_service is None:
+            raise RuntimeError("ML service not initialized")
+        ml_service.warmup_cache()
 
 
 # ----------------------------------------------------------------------

@@ -217,16 +217,14 @@ async def get_info():
     last_hb = max((w.last_heartbeat() for w in worker_pool if w.is_alive()), default=None) if worker_enabled else None
 
     # Get model/head breakdown (matching CLI info)
-    from nomarr.ml.models.discovery import discover_heads
-
-    models_dir = cfg.get("paths", {}).get("models_dir", cfg.get("models_dir"))
-    heads = discover_heads(models_dir)
+    ml_service = application.services["ml"]
+    heads = ml_service.discover_heads()
     embeddings = sorted({h.backbone for h in heads})
 
     return {
         "config": {
             "db_path": DB_PATH,
-            "models_dir": models_dir,
+            "models_dir": ml_service.models_dir,
             "namespace": cfg.get("tagger", {}).get("namespace", cfg.get("namespace", "essentia")),
             "api_host": API_HOST,
             "api_port": API_PORT,

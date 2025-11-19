@@ -377,20 +377,11 @@ async def web_admin_cleanup(max_age_hours: int = 168):
 @router.post("/api/admin/cache-refresh", dependencies=[Depends(verify_session)])
 async def web_admin_cache_refresh():
     """Refresh model cache (web UI proxy)."""
-    from nomarr.ml.cache import warmup_predictor_cache
-
     try:
-        config_service = application.services["config"]
-        cfg = config_service.get_config()
+        ml_service = application.services["ml"]
+        count = ml_service.warmup_cache()
 
-        models_dir = str(cfg["models_dir"])
-        cache_idle_timeout = int(cfg.get("cache_idle_timeout", 300))
-
-        warmup_predictor_cache(
-            models_dir=models_dir,
-            cache_idle_timeout=cache_idle_timeout,
-        )
-        return {"status": "ok", "message": "Model cache refreshed successfully"}
+        return {"status": "ok", "message": f"Model cache refreshed successfully ({count} predictors)"}
     except Exception as e:
         logging.exception("[Web API] Cache refresh failed")
         raise HTTPException(status_code=500, detail=f"Cache refresh failed: {e}") from e
@@ -1181,30 +1172,29 @@ async def generate_calibration(request: CalibrationRequest):
     s = get_state()
 
     try:
-        from nomarr.ml.calibration import (
-            generate_minmax_calibration,
-            save_calibration_sidecars,
+        from nomarr.services.calibration import CalibrationService
+
+        # Create service with dependencies
+        calibration_service = CalibrationService(
+            db=s.db,
+            models_dir=str(application.models_dir),
+            namespace=application.namespace,
         )
 
         # Run calibration in background thread (can take time with 18k songs)
         loop = asyncio.get_event_loop()
         calibration_data = await loop.run_in_executor(
             None,
-            generate_minmax_calibration,
-            s.db,
-            application.namespace,
+            calibration_service.generate_minmax_calibration,
         )
 
         # Optionally save sidecars
         save_result = None
         if request.save_sidecars:
-            models_dir = application.models_dir
             save_result = await loop.run_in_executor(
                 None,
-                save_calibration_sidecars,
+                calibration_service.save_calibration_sidecars,
                 calibration_data,
-                models_dir,
-                1,  # version
             )
 
         return {

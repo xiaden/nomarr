@@ -6,12 +6,13 @@ from __future__ import annotations
 
 import argparse
 import getpass
+from typing import TYPE_CHECKING
 
 import nomarr.app as app
-from nomarr.config import compose
-from nomarr.data.db import Database
 from nomarr.interfaces.cli.ui import print_error, print_info, print_success
-from nomarr.services.keys import KeyManagementService
+
+if TYPE_CHECKING:
+    from nomarr.services.keys import KeyManagementService
 
 
 def cmd_manage_password(args: argparse.Namespace) -> int:
@@ -29,32 +30,23 @@ def cmd_manage_password(args: argparse.Namespace) -> int:
     Returns:
         Exit code (0 = success)
     """
-    # Try to use running Application's service, fall back to direct DB access
-    if app.application.is_running():
-        service = app.application.services["keys"]
-        db = None  # Don't need to close it, Application owns it
+    # Check if Application is running
+    if not app.application.is_running():
+        print_error("Application is not running. Start the server first.")
+        return 1
+
+    # Use service from running Application
+    service = app.application.services["keys"]
+
+    if args.password_cmd == "show":
+        return _show_password(service)
+    elif args.password_cmd == "verify":
+        return _verify_password(service)
+    elif args.password_cmd == "reset":
+        return _reset_password(service)
     else:
-        # Application not running - create our own instances
-        config = compose()
-        db_path = config["db_path"]
-        db = Database(db_path)
-        service = KeyManagementService(db)
-
-    try:
-        if args.password_cmd == "show":
-            return _show_password(service)
-        elif args.password_cmd == "verify":
-            return _verify_password(service)
-        elif args.password_cmd == "reset":
-            return _reset_password(service)
-        else:
-            print_error(f"Unknown password command: {args.password_cmd}")
-            return 1
-
-    finally:
-        # Only close DB if we created it ourselves
-        if db is not None:
-            db.close()
+        print_error(f"Unknown password command: {args.password_cmd}")
+        return 1
 
 
 def _show_password(service: KeyManagementService) -> int:
@@ -114,7 +106,7 @@ def _reset_password(service: KeyManagementService) -> int:
 
     # Hash and store
     password_hash = service.hash_password(password1)
-    service.db.set_meta("admin_password_hash", password_hash)
+    service._db.meta.set("admin_password_hash", password_hash)
 
     print()
     print_success("✓ Admin password updated successfully")

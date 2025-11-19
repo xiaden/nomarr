@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends
 
@@ -14,7 +14,9 @@ from nomarr.interfaces.api.web.dependencies import (
     get_worker_pool,
     get_worker_service,
 )
-from nomarr.persistence.db import Database
+
+if TYPE_CHECKING:
+    from nomarr.persistence.db import Database
 
 router = APIRouter(prefix="/api/admin/worker", tags=["Worker"])
 
