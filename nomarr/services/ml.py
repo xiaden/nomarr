@@ -8,12 +8,21 @@ warming up predictors without exposing ml layer details to interfaces.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class MLConfig:
+    """Configuration for MLService."""
+
+    models_dir: str
+    cache_idle_timeout: int
 
 
 class MLService:
@@ -24,16 +33,14 @@ class MLService:
     interfaces to import from nomarr.ml directly.
     """
 
-    def __init__(self, models_dir: str, cache_idle_timeout: int = 300):
+    def __init__(self, cfg: MLConfig):
         """
         Initialize ML service.
 
         Args:
-            models_dir: Directory containing model files
-            cache_idle_timeout: Seconds before idle cache eviction (0 = never evict)
+            cfg: ML configuration
         """
-        self.models_dir = models_dir
-        self.cache_idle_timeout = cache_idle_timeout
+        self.cfg = cfg
 
     def warmup_cache(self) -> int:
         """
@@ -49,8 +56,8 @@ class MLService:
 
         try:
             count = warmup_predictor_cache(
-                models_dir=self.models_dir,
-                cache_idle_timeout=self.cache_idle_timeout,
+                models_dir=self.cfg.models_dir,
+                cache_idle_timeout=self.cfg.cache_idle_timeout,
             )
             logger.info(f"[MLService] Warmed up {count} predictors")
             return count
@@ -93,7 +100,7 @@ class MLService:
         from nomarr.ml.models.discovery import discover_heads
 
         try:
-            heads = discover_heads(self.models_dir)
+            heads = discover_heads(self.cfg.models_dir)
             logger.info(f"[MLService] Discovered {len(heads)} model heads")
             return heads
         except Exception as e:

@@ -219,7 +219,13 @@ class Application:
 
         # Start processing coordinator (DI: inject worker count and event broker)
         logging.info(f"[Application] Starting ProcessingCoordinator with {self.worker_count} workers...")
-        self.coordinator = ProcessingCoordinator(worker_count=self.worker_count, event_broker=self.event_broker)
+        from nomarr.services.coordinator import CoordinatorConfig
+
+        coordinator_cfg = CoordinatorConfig(
+            worker_count=self.worker_count,
+            event_broker=self.event_broker,
+        )
+        self.coordinator = ProcessingCoordinator(cfg=coordinator_cfg)
         self.coordinator.start()
 
         # Initialize services (DI: inject dependencies)
@@ -227,20 +233,29 @@ class Application:
         self.register_service("processing", ProcessingService(coordinator=self.coordinator))
         self.register_service("queue", QueueService(self.queue))
 
-        worker_service = WorkerService(
-            db=self.db,
-            queue=self.queue,
-            processor_coord=self.coordinator,
+        from nomarr.services.worker import WorkerConfig
+
+        worker_cfg = WorkerConfig(
             default_enabled=self.worker_enabled_default,
             worker_count=self.worker_count,
             poll_interval=self.worker_poll_interval,
         )
+        worker_service = WorkerService(
+            db=self.db,
+            queue=self.queue,
+            cfg=worker_cfg,
+            processor_coord=self.coordinator,
+        )
         self.register_service("worker", worker_service)
 
         # Register ML service
-        from nomarr.services.ml import MLService
+        from nomarr.services.ml import MLConfig, MLService
 
-        ml_service = MLService(models_dir=self.models_dir, cache_idle_timeout=self.cache_idle_timeout)
+        ml_cfg = MLConfig(
+            models_dir=str(self.models_dir),
+            cache_idle_timeout=self.cache_idle_timeout,
+        )
+        ml_service = MLService(cfg=ml_cfg)
         self.register_service("ml", ml_service)
 
         # Warm up predictor cache
@@ -253,21 +268,29 @@ class Application:
 
         # Register Analytics service (DI: inject db, namespace)
         logging.info("[Application] Initializing AnalyticsService...")
-        analytics_service = AnalyticsService(db=self.db, namespace=self.namespace)
+        from nomarr.services.analytics import AnalyticsConfig
+
+        analytics_cfg = AnalyticsConfig(namespace=self.namespace)
+        analytics_service = AnalyticsService(db=self.db, cfg=analytics_cfg)
         self.register_service("analytics", analytics_service)
 
         # Register Calibration service (DI: inject db, models_dir, namespace)
         logging.info("[Application] Initializing CalibrationService...")
-        calibration_service = CalibrationService(
-            db=self.db,
+        from nomarr.services.calibration import CalibrationConfig
+
+        calibration_cfg = CalibrationConfig(
             models_dir=str(self.models_dir),
             namespace=self.namespace,
         )
+        calibration_service = CalibrationService(db=self.db, cfg=calibration_cfg)
         self.register_service("calibration", calibration_service)
 
         # Register Navidrome service (DI: inject db, namespace)
         logging.info("[Application] Initializing NavidromeService...")
-        navidrome_service = NavidromeService(db=self.db, namespace=self.namespace)
+        from nomarr.services.navidrome_service import NavidromeConfig
+
+        navidrome_cfg = NavidromeConfig(namespace=self.namespace)
+        navidrome_service = NavidromeService(db=self.db, cfg=navidrome_cfg)
         self.register_service("navidrome", navidrome_service)
 
         # Start workers if enabled
@@ -289,12 +312,17 @@ class Application:
             )
             self.library_scan_worker.start()
 
+            from nomarr.services.library import LibraryConfig
+
+            library_cfg = LibraryConfig(
+                namespace=self.namespace,
+                library_path=self.library_path,
+            )
             self.register_service(
                 "library",
                 LibraryService(
                     db=self.db,
-                    namespace=self.namespace,
-                    library_path=self.library_path,
+                    cfg=library_cfg,
                     worker=self.library_scan_worker,
                 ),
             )
@@ -323,7 +351,10 @@ class Application:
 
         # Start health monitor
         logging.info("[Application] Starting health monitor...")
-        self.health_monitor = HealthMonitor(check_interval=10)
+        from nomarr.services.health_monitor import HealthMonitorConfig
+
+        health_monitor_cfg = HealthMonitorConfig(check_interval=10)
+        self.health_monitor = HealthMonitor(cfg=health_monitor_cfg)
 
         # Register tagger workers
         def cleanup_orphaned_jobs():

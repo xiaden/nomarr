@@ -7,11 +7,20 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
     from nomarr.services.workers.scanner import LibraryScanWorker
+
+
+@dataclass
+class LibraryConfig:
+    """Configuration for LibraryService."""
+
+    namespace: str
+    library_path: str | None
 
 
 class LibraryService:
@@ -25,8 +34,7 @@ class LibraryService:
     def __init__(
         self,
         db: Database,
-        namespace: str,
-        library_path: str | None = None,
+        cfg: LibraryConfig,
         worker: LibraryScanWorker | None = None,
     ):
         """
@@ -34,13 +42,11 @@ class LibraryService:
 
         Args:
             db: Database instance
-            namespace: Tag namespace for library operations (e.g., "nom")
-            library_path: Path to music library directory
+            cfg: Library configuration
             worker: LibraryScanWorker instance (for background scans in API)
         """
         self.db = db
-        self.namespace = namespace
-        self.library_path = library_path
+        self.cfg = cfg
         self.worker = worker
 
     def is_configured(self) -> bool:
@@ -50,7 +56,7 @@ class LibraryService:
         Returns:
             True if library_path is set
         """
-        return self.library_path is not None
+        return self.cfg.library_path is not None
 
     def start_scan(
         self,
@@ -73,7 +79,7 @@ class LibraryService:
             ValueError: If library not configured
             RuntimeError: If scan already running
         """
-        if not self.library_path:
+        if not self.cfg.library_path:
             raise ValueError("Library scanning not configured (no library_path)")
 
         # Check if scan already running (across CLI + API)
@@ -93,8 +99,8 @@ class LibraryService:
             logging.info("[LibraryService] Starting synchronous library scan")
             stats = scan_library_workflow(
                 db=self.db,
-                library_path=self.library_path,
-                namespace=namespace if namespace is not None else self.namespace,
+                library_path=self.cfg.library_path,
+                namespace=namespace if namespace is not None else self.cfg.namespace,
                 progress_callback=progress_callback,
             )
 
@@ -117,7 +123,7 @@ class LibraryService:
         Raises:
             ValueError: If library not configured
         """
-        if not self.library_path:
+        if not self.cfg.library_path:
             raise ValueError("Library scanning not configured")
 
         if self.worker:
@@ -144,7 +150,7 @@ class LibraryService:
                 - current_scan_id: int | None
                 - current_progress: dict | None
         """
-        if not self.library_path:
+        if not self.cfg.library_path:
             return {
                 "configured": False,
                 "library_path": None,
@@ -174,7 +180,7 @@ class LibraryService:
 
         return {
             "configured": True,
-            "library_path": self.library_path,
+            "library_path": self.cfg.library_path,
             "enabled": enabled,
             "running": running,
             "current_scan_id": current_scan_id,
@@ -220,3 +226,64 @@ class LibraryService:
         """
         count = self.db.library.count_running_scans()
         return count > 0
+
+    def pause(self) -> bool:
+        """
+        Pause the library scanner worker.
+
+        Returns:
+            True if paused successfully
+
+        Raises:
+            ValueError: If library not configured or worker not available
+        """
+        if not self.cfg.library_path:
+            raise ValueError("Library scanning not configured")
+
+        if not self.worker:
+            raise ValueError("Library scan worker not available")
+
+        self.worker.pause()
+        logging.info("[LibraryService] Library scanner paused")
+        return True
+
+    def resume(self) -> bool:
+        """
+        Resume the library scanner worker.
+
+        Returns:
+            True if resumed successfully
+
+        Raises:
+            ValueError: If library not configured or worker not available
+        """
+        if not self.cfg.library_path:
+            raise ValueError("Library scanning not configured")
+
+        if not self.worker:
+            raise ValueError("Library scan worker not available")
+
+        self.worker.resume()
+        logging.info("[LibraryService] Library scanner resumed")
+        return True
+
+    def clear_library_data(self) -> None:
+        """
+        Clear all library data (files, tags, scans).
+
+        This forces a fresh rescan by removing all existing library state.
+        Does not affect the job queue or system metadata.
+
+        Raises:
+            ValueError: If library not configured
+            RuntimeError: If a scan is currently running
+        """
+        if not self.cfg.library_path:
+            raise ValueError("Library scanning not configured")
+
+        # Check if scan is running
+        if self._is_scan_running():
+            raise RuntimeError("Cannot clear library while a scan is running. Cancel the scan first.")
+
+        self.db.library.clear_library_data()
+        logging.info("[LibraryService] Library data cleared")

@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 import multiprocessing as mp
 from concurrent.futures import BrokenExecutor, ProcessPoolExecutor, TimeoutError
+from dataclasses import dataclass
 from typing import Any
 
 from nomarr.services.file_validation import make_skip_result, should_skip_processing, validate_file_exists
@@ -15,6 +16,14 @@ from nomarr.workflows.process_file import process_file_workflow
 
 # Set multiprocessing start method to 'spawn' to avoid CUDA context issues
 mp.set_start_method("spawn", force=True)
+
+
+@dataclass
+class CoordinatorConfig:
+    """Configuration for ProcessingCoordinator."""
+
+    worker_count: int
+    event_broker: Any | None
 
 
 def process_file_wrapper(path: str, force: bool) -> dict[str, Any]:
@@ -72,22 +81,21 @@ class ProcessingCoordinator:
     Does not manage models - each worker process loads independently.
     """
 
-    def __init__(self, worker_count: int = 1, event_broker=None):
-        self._worker_count = max(1, worker_count)
+    def __init__(self, cfg: CoordinatorConfig):
+        self.cfg = cfg
         self._pool: ProcessPoolExecutor | None = None
         self._shutdown = False  # Track shutdown state
-        self._event_broker = event_broker  # Global SSE event broker
 
     @property
     def worker_count(self) -> int:
         """Get the number of worker processes in the pool."""
-        return self._worker_count
+        return self.cfg.worker_count
 
     def start(self):
         """Start the process pool."""
         if self._pool is None:
-            self._pool = ProcessPoolExecutor(max_workers=self._worker_count, mp_context=mp.get_context("spawn"))
-            logging.info(f"[ProcessingCoordinator] Started process pool with {self._worker_count} workers")
+            self._pool = ProcessPoolExecutor(max_workers=self.cfg.worker_count, mp_context=mp.get_context("spawn"))
+            logging.info(f"[ProcessingCoordinator] Started process pool with {self.cfg.worker_count} workers")
 
     def _recreate_pool(self):
         """Recreate the process pool after a crash. Called when BrokenProcessPool is detected."""
@@ -112,8 +120,8 @@ class ProcessingCoordinator:
             topic: Event topic (e.g., "queue:jobs", "worker:0:progress")
             event_data: Event payload
         """
-        if self._event_broker is not None:
-            self._event_broker.publish(topic, event_data)
+        if self.cfg.event_broker is not None:
+            self.cfg.event_broker.publish(topic, event_data)
 
     def submit(self, path: str, force: bool) -> dict[str, Any]:
         """

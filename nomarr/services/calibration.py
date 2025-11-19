@@ -9,6 +9,7 @@ context to the pure workflow function.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from nomarr.workflows.generate_calibration import generate_calibration_workflow
@@ -18,6 +19,15 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class CalibrationConfig:
+    """Configuration for CalibrationService."""
+
+    models_dir: str
+    namespace: str
+    thresholds: dict[str, float] = field(default_factory=dict)
 
 
 class CalibrationService:
@@ -31,23 +41,17 @@ class CalibrationService:
     def __init__(
         self,
         db: Database,
-        models_dir: str,
-        namespace: str,
-        thresholds: dict[str, float] | None = None,
+        cfg: CalibrationConfig,
     ):
         """
         Initialize calibration service.
 
         Args:
             db: Database instance
-            models_dir: Path to models directory
-            namespace: Tag namespace (must be provided by service)
-            thresholds: Optional custom drift thresholds
+            cfg: Calibration configuration
         """
         self._db = db
-        self._models_dir = models_dir
-        self._namespace = namespace
-        self._thresholds = thresholds or {}
+        self.cfg = cfg
 
     def generate_calibration_with_tracking(self) -> dict[str, Any]:
         """
@@ -67,9 +71,9 @@ class CalibrationService:
 
         return generate_calibration_workflow(
             db=self._db,
-            models_dir=self._models_dir,
-            namespace=self._namespace,
-            thresholds=self._thresholds,
+            models_dir=self.cfg.models_dir,
+            namespace=self.cfg.namespace,
+            thresholds=self.cfg.thresholds,
         )
 
     def generate_minmax_calibration(self) -> dict[str, Any]:
@@ -83,7 +87,7 @@ class CalibrationService:
 
         return generate_minmax_calibration(
             db=self._db,
-            namespace=self._namespace,
+            namespace=self.cfg.namespace,
         )
 
     def save_calibration_sidecars(self, calibration_data: dict[str, Any]) -> dict[str, Any]:
@@ -100,5 +104,28 @@ class CalibrationService:
 
         return save_calibration_sidecars(
             calibration_data=calibration_data,
-            models_dir=self._models_dir,
+            models_dir=self.cfg.models_dir,
+        )
+
+    def get_calibration_history(
+        self,
+        model_name: str | None = None,
+        head_name: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """
+        Get calibration history with drift metrics.
+
+        Args:
+            model_name: Filter by model name (optional)
+            head_name: Filter by head name (optional)
+            limit: Maximum number of results
+
+        Returns:
+            List of calibration run dictionaries
+        """
+        return self._db.calibration.list_calibration_runs(
+            model_name=model_name,
+            head_name=head_name,
+            limit=limit,
         )

@@ -6,6 +6,7 @@ Shared business logic for worker management across all interfaces.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -13,6 +14,15 @@ if TYPE_CHECKING:
     from nomarr.services.coordinator import ProcessingCoordinator
     from nomarr.services.queue import ProcessingQueue
     from nomarr.services.workers.base import BaseWorker
+
+
+@dataclass
+class WorkerConfig:
+    """Configuration for WorkerService."""
+
+    default_enabled: bool
+    worker_count: int
+    poll_interval: int
 
 
 class WorkerService:
@@ -27,10 +37,8 @@ class WorkerService:
         self,
         db: Database,
         queue: ProcessingQueue,
+        cfg: WorkerConfig,
         processor_coord: ProcessingCoordinator | None = None,
-        default_enabled: bool = True,
-        worker_count: int = 1,
-        poll_interval: int = 2,
     ):
         """
         Initialize worker service.
@@ -38,17 +46,13 @@ class WorkerService:
         Args:
             db: Database instance
             queue: Job queue instance
+            cfg: Worker configuration
             processor_coord: ProcessingCoordinator for parallel processing
-            default_enabled: Default worker enabled state
-            worker_count: Maximum number of workers to run
-            poll_interval: Worker poll interval in seconds
         """
         self.db = db
         self.queue = queue
+        self.cfg = cfg
         self.processor_coord = processor_coord
-        self.default_enabled = default_enabled
-        self.worker_count = worker_count
-        self.poll_interval = poll_interval
         self.worker_pool: list[BaseWorker] = []
 
     def is_enabled(self) -> bool:
@@ -60,7 +64,7 @@ class WorkerService:
         """
         meta = self.db.meta.get("worker_enabled")
         if meta is None:
-            return self.default_enabled
+            return self.cfg.default_enabled
         return meta == "true"
 
     def enable(self) -> None:
@@ -183,7 +187,7 @@ class WorkerService:
 
         # Check if we already have enough workers
         current_count = len([w for w in self.worker_pool if w.is_alive()])
-        if current_count >= self.worker_count:
+        if current_count >= self.cfg.worker_count:
             return self.worker_pool
 
         self._start_new_workers(current_count, event_broker)
@@ -249,7 +253,7 @@ class WorkerService:
                     raise
 
         # Start new workers up to worker_count
-        for i in range(current_count, self.worker_count):
+        for i in range(current_count, self.cfg.worker_count):
             from nomarr.services.workers.tagger import create_tagger_worker
 
             # Ensure event_broker is provided (required for BaseWorker)
@@ -260,14 +264,14 @@ class WorkerService:
                 db=self.db,
                 queue=self.queue,
                 event_broker=event_broker,
-                interval=self.poll_interval,
+                interval=self.cfg.poll_interval,
                 worker_id=i,
             )
             # Override process_fn to use process pool
             worker.process_fn = process_via_pool
             worker.start()
             self.worker_pool.append(worker)
-            logging.info(f"[WorkerService] Started worker {i + 1}/{self.worker_count}")
+            logging.info(f"[WorkerService] Started worker {i + 1}/{self.cfg.worker_count}")
 
         running_count = len([w for w in self.worker_pool if w.is_alive()])
         logging.info(f"[WorkerService] {running_count} worker(s) running")
@@ -319,7 +323,7 @@ class WorkerService:
 
         return {
             "enabled": enabled,
-            "worker_count": self.worker_count,
+            "worker_count": self.cfg.worker_count,
             "running": running,
             "workers": workers,
         }

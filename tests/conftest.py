@@ -398,28 +398,31 @@ def real_processing_service(test_db):
 @pytest.fixture
 def real_library_service(test_db, temp_music_library):
     """Provide a real LibraryService instance for testing with temp library path."""
-    from nomarr.services.library import LibraryService
+    from nomarr.services.library import LibraryConfig, LibraryService
 
-    return LibraryService(test_db, namespace="nom", library_path=str(temp_music_library))
+    cfg = LibraryConfig(namespace="nom", library_path=str(temp_music_library))
+    return LibraryService(test_db, cfg)
 
 
 @pytest.fixture
 def real_worker_service(test_db):
     """Provide a real WorkerService instance for testing."""
     from nomarr.services.queue import ProcessingQueue
-    from nomarr.services.worker import WorkerService
+    from nomarr.services.worker import WorkerConfig, WorkerService
 
     queue = ProcessingQueue(test_db)
     # Disable workers by default for tests (avoids event_broker requirement)
-    return WorkerService(test_db, queue, default_enabled=False)
+    cfg = WorkerConfig(default_enabled=False, worker_count=1, poll_interval=1)
+    return WorkerService(test_db, queue, cfg)
 
 
 @pytest.fixture
 def real_health_monitor(test_db):
     """Provide a real HealthMonitor instance for testing."""
-    from nomarr.services.health_monitor import HealthMonitor
+    from nomarr.services.health_monitor import HealthMonitor, HealthMonitorConfig
 
-    return HealthMonitor(check_interval=1)
+    cfg = HealthMonitorConfig(check_interval=1)
+    return HealthMonitor(cfg)
 
 
 @pytest.fixture

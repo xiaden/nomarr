@@ -8,7 +8,6 @@ from __future__ import annotations
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from nomarr.app import application
 from nomarr.services.keys import KeyManagementService
 
 auth_scheme = HTTPBearer(auto_error=False)
@@ -16,6 +15,8 @@ auth_scheme = HTTPBearer(auto_error=False)
 
 def get_key_service() -> KeyManagementService:
     """Get the KeyManagementService singleton instance."""
+    from nomarr.app import application
+
     if "keys" not in application.services:
         raise RuntimeError("KeyManagementService not initialized")
     service = application.services["keys"]
@@ -25,12 +26,17 @@ def get_key_service() -> KeyManagementService:
 
 
 async def verify_key(creds: HTTPAuthorizationCredentials = Depends(auth_scheme)):
+    """Verify API key using KeyManagementService."""
     if creds is None:
         raise HTTPException(status_code=401, detail="Missing Authorization header")
     token = creds.credentials.strip()
-    if application.api_key is None:
+
+    key_service = get_key_service()
+    api_key = key_service.get_api_key()
+
+    if api_key is None:
         raise HTTPException(status_code=500, detail="API key not initialized")
-    if token != application.api_key:
+    if token != api_key:
         raise HTTPException(status_code=403, detail="Invalid API key")
 
 
@@ -101,10 +107,8 @@ def cleanup_expired_sessions() -> int:
 
 
 def load_sessions_from_db() -> int:
-    if "keys" not in application.services:
-        raise RuntimeError("KeyManagementService not initialized")
-    result: int = application.services["keys"].load_sessions_from_db()
-    return result
+    """Load sessions from database using KeyManagementService."""
+    return get_key_service().load_sessions_from_db()
 
 
 # Export session cache for backward compatibility with tests

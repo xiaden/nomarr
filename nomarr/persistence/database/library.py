@@ -214,6 +214,16 @@ class LibraryOperations:
         cur = self.conn.execute("SELECT file_path FROM library_files")
         return [row[0] for row in cur.fetchall()]
 
+    def get_tagged_file_paths(self) -> list[str]:
+        """
+        Get all file paths that have been tagged (tagged=1).
+
+        Returns:
+            List of file paths that have been tagged
+        """
+        cur = self.conn.execute("SELECT file_path FROM library_files WHERE tagged = 1")
+        return [row[0] for row in cur.fetchall()]
+
     def delete_library_file(self, path: str) -> None:
         """
         Remove a file from the library.

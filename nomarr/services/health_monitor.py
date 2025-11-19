@@ -9,10 +9,18 @@ import logging
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     pass
+
+
+@dataclass
+class HealthMonitorConfig:
+    """Configuration for HealthMonitor."""
+
+    check_interval: int
 
 
 class HealthMonitor:
@@ -24,14 +32,14 @@ class HealthMonitor:
     `.thread.is_alive()` attribute.
     """
 
-    def __init__(self, check_interval: int = 10):
+    def __init__(self, cfg: HealthMonitorConfig):
         """
         Initialize health monitor.
 
         Args:
-            check_interval: Seconds between health checks (default: 10)
+            cfg: Health monitor configuration
         """
-        self.check_interval = check_interval
+        self.cfg = cfg
         self.workers: list[dict[str, Any]] = []
         self.thread: threading.Thread | None = None
         self._stop_requested = False
@@ -63,7 +71,7 @@ class HealthMonitor:
         self._stop_requested = False
         self.thread = threading.Thread(target=self._monitor_loop, daemon=True, name="HealthMonitor")
         self.thread.start()
-        logging.info(f"[HealthMonitor] Started (checking every {self.check_interval}s)")
+        logging.info(f"[HealthMonitor] Started (checking every {self.cfg.check_interval}s)")
 
     def stop(self) -> None:
         """Stop health monitoring background thread."""
@@ -84,7 +92,7 @@ class HealthMonitor:
                 logging.error(f"[HealthMonitor] Health check failed: {e}")
 
             # Sleep in 1s intervals for faster shutdown response
-            for _ in range(self.check_interval):
+            for _ in range(self.cfg.check_interval):
                 if self._stop_requested:
                     break
                 time.sleep(1)

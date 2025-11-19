@@ -56,20 +56,17 @@ class KeyManagementService:
     # Public API Key Management
     # ----------------------------------------------------------------------
 
-    def get_api_key(self) -> str:
+    def get_api_key(self) -> str | None:
         """
-        Get the public API key (raises if not found).
+        Get the public API key (returns None if not found).
 
         Returns:
-            API key string
+            API key string if it exists, None otherwise
 
-        Raises:
-            RuntimeError: If API key not found in database
+        Note:
+            Use this for validation. Use get_or_create_api_key() during initialization.
         """
-        key = self._db.meta.get("api_key")
-        if not key:
-            raise RuntimeError("API key not found in DB. Key should be generated during initialization.")
-        return key
+        return self._db.meta.get("api_key")
 
     def get_or_create_api_key(self) -> str:
         """

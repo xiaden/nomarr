@@ -7,41 +7,37 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 
-from nomarr.app import application
 from nomarr.interfaces.api.auth import verify_key
 from nomarr.interfaces.api.models import FlushRequest, RemoveJobRequest
+from nomarr.interfaces.api.web.dependencies import (
+    get_calibration_service,
+    get_config,
+    get_event_broker,
+    get_ml_service,
+    get_queue_service,
+    get_worker_pool,
+    get_worker_service,
+)
+from nomarr.services.calibration import CalibrationService
+from nomarr.services.ml import MLService
+from nomarr.services.queue import QueueService
+from nomarr.services.worker import WorkerService
 
 # Router instance (will be included in main app)
 router = APIRouter(tags=["admin"], prefix="/admin")
 
 
 # ----------------------------------------------------------------------
-#  Dependency: get app globals
-# ----------------------------------------------------------------------
-def get_globals():
-    """Get global instances (db, queue, services, etc.) from application."""
-
-    return {
-        "db": application.db,
-        "queue": application.queue,
-        "queue_service": application.get_service("queue"),
-        "worker_service": application.get_service("worker"),
-        "worker_pool": application.workers,
-        "processor_coord": application.coordinator,
-        "event_broker": application.event_broker,
-    }
-
-
-# ----------------------------------------------------------------------
 #  POST /admin/queue/remove
 # ----------------------------------------------------------------------
 @router.post("/queue/remove", dependencies=[Depends(verify_key)])
-async def admin_remove_job(payload: RemoveJobRequest):
+async def admin_remove_job(
+    payload: RemoveJobRequest,
+    queue_service: QueueService = Depends(get_queue_service),
+    worker_service: WorkerService = Depends(get_worker_service),
+    worker_pool: list = Depends(get_worker_pool),
+):
     """Remove a single job by ID (cannot remove if running)."""
-    g = get_globals()
-    queue_service = g["queue_service"]
-    worker_service = g["worker_service"]
-
     job_id = int(payload.job_id)
 
     # Check if job exists and is not running
@@ -58,8 +54,9 @@ async def admin_remove_job(payload: RemoveJobRequest):
     if worker_service:
         worker_service.enable()
         updated_pool = worker_service.start_workers()
-        # Update application worker pool
-        application.workers = updated_pool
+        # Update worker pool in place
+        worker_pool.clear()
+        worker_pool.extend(updated_pool)
 
     return {"status": "ok", "removed": job_id, "worker_enabled": True}
 
@@ -68,12 +65,13 @@ async def admin_remove_job(payload: RemoveJobRequest):
 #  POST /admin/queue/flush
 # ----------------------------------------------------------------------
 @router.post("/queue/flush", dependencies=[Depends(verify_key)])
-async def admin_flush_queue(payload: FlushRequest = Body(default=None)):
+async def admin_flush_queue(
+    payload: FlushRequest = Body(default=None),
+    queue_service: QueueService = Depends(get_queue_service),
+    worker_service: WorkerService = Depends(get_worker_service),
+    worker_pool: list = Depends(get_worker_pool),
+):
     """Flush jobs by status (default: pending + error). Cannot flush running jobs."""
-    g = get_globals()
-    queue_service = g["queue_service"]
-    worker_service = g["worker_service"]
-
     statuses = payload.statuses if payload and payload.statuses else ["pending", "error"]
     valid = {"pending", "running", "done", "error"}
     bad = [s for s in statuses if s not in valid]
@@ -92,7 +90,8 @@ async def admin_flush_queue(payload: FlushRequest = Body(default=None)):
     if worker_service:
         worker_service.enable()
         updated_pool = worker_service.start_workers()
-        application.workers = updated_pool
+        worker_pool.clear()
+        worker_pool.extend(updated_pool)
 
     return {"status": "ok", "flushed_statuses": statuses, "removed": total_removed, "worker_enabled": True}
 
@@ -101,15 +100,15 @@ async def admin_flush_queue(payload: FlushRequest = Body(default=None)):
 #  POST /admin/queue/cleanup
 # ----------------------------------------------------------------------
 @router.post("/queue/cleanup", dependencies=[Depends(verify_key)])
-async def admin_cleanup_queue(max_age_hours: int = 168):
+async def admin_cleanup_queue(
+    max_age_hours: int = 168,
+    queue_service: QueueService = Depends(get_queue_service),
+):
     """
     Remove old finished jobs from the queue (done/error status).
     Matches CLI cleanup command behavior.
     Default: 168 hours (7 days).
     """
-    g = get_globals()
-    queue_service = g["queue_service"]
-
     # Use service to cleanup old jobs
     removed = queue_service.cleanup_old_jobs(max_age_hours=max_age_hours)
 
@@ -124,14 +123,12 @@ async def admin_cleanup_queue(max_age_hours: int = 168):
 #  POST /admin/cache/refresh
 # ----------------------------------------------------------------------
 @router.post("/cache/refresh", dependencies=[Depends(verify_key)])
-async def admin_cache_refresh():
+async def admin_cache_refresh(
+    ml_service: MLService = Depends(get_ml_service),
+):
     """Force rebuild of the predictor cache (discover heads and load missing)."""
     try:
-        g = get_globals()
-        ml_service = application.services["ml"]
-
         num = ml_service.warmup_cache()
-
         return {"status": "ok", "predictors": num}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Cache refresh failed: {e}") from e
@@ -141,12 +138,11 @@ async def admin_cache_refresh():
 #  POST /admin/worker/pause
 # ----------------------------------------------------------------------
 @router.post("/worker/pause", dependencies=[Depends(verify_key)])
-async def admin_pause_worker():
+async def admin_pause_worker(
+    worker_service: WorkerService = Depends(get_worker_service),
+    event_broker=Depends(get_event_broker),
+):
     """Pause the background worker (stops processing new jobs)."""
-    g = get_globals()
-    worker_service = g["worker_service"]
-    event_broker = g.get("event_broker")
-
     if worker_service:
         worker_service.disable()
 
@@ -161,16 +157,17 @@ async def admin_pause_worker():
 #  POST /admin/worker/resume
 # ----------------------------------------------------------------------
 @router.post("/worker/resume", dependencies=[Depends(verify_key)])
-async def admin_resume_worker():
+async def admin_resume_worker(
+    worker_service: WorkerService = Depends(get_worker_service),
+    worker_pool: list = Depends(get_worker_pool),
+    event_broker=Depends(get_event_broker),
+):
     """Resume the background worker (starts processing again)."""
-    g = get_globals()
-    worker_service = g["worker_service"]
-    event_broker = g.get("event_broker")
-
     if worker_service:
         worker_service.enable()
         updated_pool = worker_service.start_workers(event_broker=event_broker)
-        application.workers = updated_pool
+        worker_pool.clear()
+        worker_pool.extend(updated_pool)
 
     # Publish worker status update
     if event_broker:
@@ -183,7 +180,10 @@ async def admin_resume_worker():
 #  POST /admin/calibration/run
 # ----------------------------------------------------------------------
 @router.post("/calibration/run", dependencies=[Depends(verify_key)])
-async def admin_run_calibration():
+async def admin_run_calibration(
+    calibration_service: CalibrationService = Depends(get_calibration_service),
+    config: dict = Depends(get_config),
+):
     """
     Generate calibrations with drift tracking (requires calibrate_heads=true).
 
@@ -193,13 +193,8 @@ async def admin_run_calibration():
     Returns:
         Calibration summary with drift metrics per head
     """
-    from nomarr.services.calibration import CalibrationService
-
-    g = get_globals()
-    db = g["db"]
-
     # Check if calibrate_heads mode is enabled
-    calibrate_heads = application.calibrate_heads
+    calibrate_heads = config.get("general", {}).get("calibrate_heads", False)
 
     if not calibrate_heads:
         raise HTTPException(
@@ -207,32 +202,8 @@ async def admin_run_calibration():
             detail="Calibration generation disabled. Set calibrate_heads: true in config to enable.",
         )
 
-    # Get config service for calibration thresholds
-    from nomarr.services.config import (
-        INTERNAL_CALIBRATION_APD_THRESHOLD,
-        INTERNAL_CALIBRATION_IQR_THRESHOLD,
-        INTERNAL_CALIBRATION_JSD_THRESHOLD,
-        INTERNAL_CALIBRATION_MEDIAN_THRESHOLD,
-        INTERNAL_CALIBRATION_SRD_THRESHOLD,
-    )
-
-    # Get config values
-    models_dir = application.models_dir
-    namespace = application.namespace
-    thresholds = {
-        "apd_p5": INTERNAL_CALIBRATION_APD_THRESHOLD,
-        "apd_p95": INTERNAL_CALIBRATION_APD_THRESHOLD,
-        "srd": INTERNAL_CALIBRATION_SRD_THRESHOLD,
-        "jsd": INTERNAL_CALIBRATION_JSD_THRESHOLD,
-        "median": INTERNAL_CALIBRATION_MEDIAN_THRESHOLD,
-        "iqr": INTERNAL_CALIBRATION_IQR_THRESHOLD,
-    }
-
-    # Run calibration service
-    service = CalibrationService(db=db, models_dir=models_dir, namespace=namespace, thresholds=thresholds)
-
     try:
-        result = service.generate_calibration_with_tracking()
+        result = calibration_service.generate_calibration_with_tracking()
         return {"status": "ok", "calibration": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Calibration generation failed: {e!s}") from e
@@ -242,7 +213,13 @@ async def admin_run_calibration():
 #  GET /admin/calibration/history
 # ----------------------------------------------------------------------
 @router.get("/calibration/history", dependencies=[Depends(verify_key)])
-async def admin_calibration_history(model: str | None = None, head: str | None = None, limit: int = 100):
+async def admin_calibration_history(
+    calibration_service: CalibrationService = Depends(get_calibration_service),
+    config: dict = Depends(get_config),
+    model: str | None = None,
+    head: str | None = None,
+    limit: int = 100,
+):
     """
     Get calibration history with drift metrics.
 
@@ -254,11 +231,8 @@ async def admin_calibration_history(model: str | None = None, head: str | None =
     Returns:
         List of calibration runs with drift metrics
     """
-    g = get_globals()
-    db = g["db"]
-
     # Check if calibrate_heads mode is enabled
-    calibrate_heads = application.calibrate_heads
+    calibrate_heads = config.get("general", {}).get("calibrate_heads", False)
 
     if not calibrate_heads:
         raise HTTPException(
@@ -267,7 +241,7 @@ async def admin_calibration_history(model: str | None = None, head: str | None =
         )
 
     try:
-        runs = db.calibration.list_calibration_runs(model_name=model, head_name=head, limit=limit)
+        runs = calibration_service.get_calibration_history(model_name=model, head_name=head, limit=limit)
         return {"status": "ok", "runs": runs, "count": len(runs)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to retrieve calibration history: {e!s}") from e
@@ -277,7 +251,10 @@ async def admin_calibration_history(model: str | None = None, head: str | None =
 #  POST /admin/calibration/retag-all
 # ----------------------------------------------------------------------
 @router.post("/calibration/retag-all", dependencies=[Depends(verify_key)])
-async def admin_retag_all():
+async def admin_retag_all(
+    queue_service: QueueService = Depends(get_queue_service),
+    config: dict = Depends(get_config),
+):
     """
     Mark all tagged files for re-tagging (requires calibrate_heads=true).
 
@@ -288,11 +265,8 @@ async def admin_retag_all():
     Returns:
         Number of files enqueued
     """
-    g = get_globals()
-    db = g["db"]
-
     # Check if calibrate_heads mode is enabled
-    calibrate_heads = application.calibrate_heads
+    calibrate_heads = config.get("general", {}).get("calibrate_heads", False)
 
     if not calibrate_heads:
         raise HTTPException(
@@ -301,23 +275,11 @@ async def admin_retag_all():
         )
 
     try:
-        # Get all tagged files from library
-        all_files, _ = db.list_library_files(limit=100000)  # Large limit to get all files
-        tagged_files = [f for f in all_files if f.get("tagged")]
+        # Use queue service to get and enqueue all tagged files
+        count = queue_service.enqueue_all_tagged_files()
 
-        if not tagged_files:
+        if count == 0:
             return {"status": "ok", "message": "No tagged files found", "enqueued": 0}
-
-        # Enqueue all tagged files for re-tagging
-        count = 0
-        for file in tagged_files:
-            try:
-                db.enqueue(file["path"], force=True)  # Force re-tag even if already tagged
-                count += 1
-            except Exception as e:
-                import logging
-
-                logging.error(f"Failed to enqueue {file['path']}: {e}")
 
         return {"status": "ok", "message": f"Enqueued {count} files for re-tagging", "enqueued": count}
 

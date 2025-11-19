@@ -12,6 +12,7 @@ while properly separating persistence (SQL) from computation (analytics).
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from nomarr.analytics.analytics import (
@@ -33,6 +34,13 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
+@dataclass
+class AnalyticsConfig:
+    """Configuration for AnalyticsService."""
+
+    namespace: str
+
+
 class AnalyticsService:
     """
     Service for tag analytics and statistics.
@@ -40,16 +48,16 @@ class AnalyticsService:
     Orchestrates data flow: persistence (SQL) → analytics (computation) → API-ready results.
     """
 
-    def __init__(self, db: Database, namespace: str = "nom") -> None:
+    def __init__(self, db: Database, cfg: AnalyticsConfig) -> None:
         """
         Initialize analytics service.
 
         Args:
             db: Database instance for accessing persistence layer
-            namespace: Tag namespace for analysis (e.g., "nom")
+            cfg: Analytics configuration
         """
         self._db = db
-        self._namespace = namespace
+        self.cfg = cfg
 
     def get_tag_frequencies(self, limit: int = 50) -> list[dict[str, Any]]:
         """
@@ -61,8 +69,8 @@ class AnalyticsService:
         Returns:
             List of dicts with tag_key, total_count, unique_values for frontend
         """
-        namespace_prefix = f"{self._namespace}:"
-        data = fetch_tag_frequencies_data(db=self._db, namespace=self._namespace, limit=limit)
+        namespace_prefix = f"{self.cfg.namespace}:"
+        data = fetch_tag_frequencies_data(db=self._db, namespace=self.cfg.namespace, limit=limit)
         result = compute_tag_frequencies(
             namespace_prefix=namespace_prefix,
             total_files=data["total_files"],
@@ -74,7 +82,7 @@ class AnalyticsService:
 
         # Transform to API-ready format (add namespace prefix back for display)
         tag_frequencies = [
-            {"tag_key": f"{self._namespace}:{tag}", "total_count": count, "unique_values": count}
+            {"tag_key": f"{self.cfg.namespace}:{tag}", "total_count": count, "unique_values": count}
             for tag, count in result.get("nom_tags", [])
         ]
         return tag_frequencies
@@ -89,9 +97,9 @@ class AnalyticsService:
         Returns:
             dict with mood_correlations, mood_genre_correlations, mood_tier_correlations
         """
-        data = fetch_tag_correlation_data(db=self._db, namespace=self._namespace, top_n=top_n)
+        data = fetch_tag_correlation_data(db=self._db, namespace=self.cfg.namespace, top_n=top_n)
         return compute_tag_correlation_matrix(
-            namespace=self._namespace,
+            namespace=self.cfg.namespace,
             top_n=top_n,
             mood_tag_rows=data["mood_tag_rows"],
             tier_tag_keys=data["tier_tag_keys"],
@@ -105,7 +113,7 @@ class AnalyticsService:
         Returns:
             List of dicts with mood, count, percentage for frontend
         """
-        mood_rows = fetch_mood_distribution_data(db=self._db, namespace=self._namespace)
+        mood_rows = fetch_mood_distribution_data(db=self._db, namespace=self.cfg.namespace)
         result = compute_mood_distribution(mood_rows=mood_rows)
 
         # Transform to API-ready format
@@ -133,8 +141,8 @@ class AnalyticsService:
         Returns:
             dict with artist, file_count, top_tags, moods, avg_tags_per_file
         """
-        namespace_prefix = f"{self._namespace}:"
-        data = fetch_artist_tag_profile_data(db=self._db, artist=artist, namespace=self._namespace)
+        namespace_prefix = f"{self.cfg.namespace}:"
+        data = fetch_artist_tag_profile_data(db=self._db, artist=artist, namespace=self.cfg.namespace)
         return compute_artist_tag_profile(
             artist=artist,
             file_count=data["file_count"],
@@ -154,7 +162,7 @@ class AnalyticsService:
         Returns:
             dict with tag, total_occurrences, co_occurrences, top_artists, top_genres
         """
-        data = fetch_mood_value_co_occurrence_data(db=self._db, mood_value=mood_value, namespace=self._namespace)
+        data = fetch_mood_value_co_occurrence_data(db=self._db, mood_value=mood_value, namespace=self.cfg.namespace)
         result = compute_mood_value_co_occurrences(
             mood_value=mood_value,
             matching_file_ids=data["matching_file_ids"],
@@ -163,3 +171,4 @@ class AnalyticsService:
             artist_rows=data["artist_rows"],
             limit=limit,
         )
+        return result

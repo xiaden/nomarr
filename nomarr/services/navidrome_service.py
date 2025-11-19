@@ -7,10 +7,18 @@ Navidrome config/playlist generation without exposing DB to interfaces.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
+
+
+@dataclass
+class NavidromeConfig:
+    """Configuration for NavidromeService."""
+
+    namespace: str
 
 
 class NavidromeService:
@@ -20,28 +28,28 @@ class NavidromeService:
     Wraps utility functions from services/navidrome/* to hide DB dependency.
     """
 
-    def __init__(self, db: Database, namespace: str) -> None:
+    def __init__(self, db: Database, cfg: NavidromeConfig) -> None:
         """
         Initialize Navidrome service.
 
         Args:
             db: Database instance
-            namespace: Tag namespace (e.g., "nom")
+            cfg: Navidrome configuration
         """
         self._db = db
-        self._namespace = namespace
+        self.cfg = cfg
 
     def preview_tag_stats(self) -> dict[str, dict[str, Any]]:
         """Get preview of tags for Navidrome config generation."""
         from nomarr.services.navidrome.config_generator import preview_tag_stats
 
-        return preview_tag_stats(self._db, namespace=self._namespace)
+        return preview_tag_stats(self._db, namespace=self.cfg.namespace)
 
     def generate_navidrome_config(self, format: str = "toml") -> str:
         """Generate Navidrome config file content."""
         from nomarr.services.navidrome.config_generator import generate_navidrome_config
 
-        return generate_navidrome_config(self._db, namespace=self._namespace, format=format)
+        return generate_navidrome_config(self._db, namespace=self.cfg.namespace, format=format)
 
     def preview_playlist(
         self,
@@ -59,7 +67,7 @@ class NavidromeService:
             query_rules=rules,
             name=name,
             max_tracks=max_tracks,
-            namespace=self._namespace,
+            namespace=self.cfg.namespace,
         )
 
     def generate_playlists(
@@ -76,7 +84,7 @@ class NavidromeService:
             playlist_configs=playlist_configs,
             output_dir=output_dir,
             format=format,
-            namespace=self._namespace,
+            namespace=self.cfg.namespace,
         )
 
     def get_template_summary(self) -> list[dict[str, Any]]:
@@ -97,5 +105,5 @@ class NavidromeService:
             db=self._db,
             template_id=template_id,
             output_dir=output_dir,
-            namespace=self._namespace,
+            namespace=self.cfg.namespace,
         )

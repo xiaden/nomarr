@@ -13,9 +13,9 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from nomarr.app import application
 from nomarr.helpers.files import resolve_library_path
 from nomarr.interfaces.api.auth import verify_session
+from nomarr.interfaces.api.web.dependencies import get_config
 
 router = APIRouter(prefix="/web/api/fs", tags=["filesystem"])
 
@@ -23,6 +23,7 @@ router = APIRouter(prefix="/web/api/fs", tags=["filesystem"])
 @router.get("/list")
 async def list_directory(
     path: str = Query("", description="Relative path from library root"),
+    config: dict = Depends(get_config),
     _session: dict = Depends(verify_session),
 ) -> dict[str, Any]:
     """
@@ -53,7 +54,8 @@ async def list_directory(
         404: Path does not exist
     """
     # Check if library_path is configured
-    if not application.library_path:
+    library_path = config.get("library", {}).get("library_path")
+    if not library_path:
         raise HTTPException(
             status_code=503,
             detail="Library path not configured. Set library_path in config.yaml",
@@ -63,14 +65,14 @@ async def list_directory(
         # Securely resolve and validate the requested directory path
         # This handles all security checks: path traversal, symlinks, boundary validation
         requested_path = resolve_library_path(
-            library_root=application.library_path,
+            library_root=library_path,
             user_path=path,
             must_exist=True,
             must_be_file=False,  # Must be a directory
         )
 
         # Get library root for computing relative paths in response
-        library_root = Path(application.library_path).resolve()
+        library_root = Path(library_path).resolve()
 
         # List directory contents
         entries: list[dict[str, str | bool]] = []

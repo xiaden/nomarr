@@ -249,20 +249,24 @@ class QueueService:
         else:
             raise ValueError("Must specify job_id, status, or all=True")
 
-    def get_status(self) -> dict[str, int]:
+    def get_status(self) -> dict[str, Any]:
         """
-        Get queue statistics.
+        Get queue statistics including depth and counts.
 
         Returns:
-            Dict with job counts by status:
-                - pending: Jobs waiting to be processed
-                - running: Jobs currently being processed
-                - completed: Successfully completed jobs
-                - errors: Jobs that failed with errors
+            Dict with:
+                - depth: Total number of pending/running jobs
+                - counts: Job counts by status (pending, running, done, error)
         """
         from nomarr.persistence.db import get_queue_stats
 
-        return get_queue_stats(self.queue.db)
+        counts = get_queue_stats(self.queue.db)
+        depth = self.queue.depth()
+
+        return {
+            "depth": depth,
+            "counts": counts,
+        }
 
     def get_job(self, job_id: int) -> dict[str, Any] | None:
         """
@@ -432,3 +436,35 @@ class QueueService:
             return job_dict
 
         raise HTTPException(status_code=404, detail=f"Job {job_id} disappeared during wait")
+
+    def enqueue_all_tagged_files(self, force: bool = True) -> int:
+        """
+        Enqueue all library files that have been tagged for re-processing.
+
+        This is typically used after calibration updates to re-tag the entire
+        library with new thresholds.
+
+        Args:
+            force: If True, reprocess files even if already tagged (default: True)
+
+        Returns:
+            Number of files enqueued
+        """
+        # Get all tagged file paths from persistence layer
+        tagged_paths = self.queue.db.library.get_tagged_file_paths()
+
+        if not tagged_paths:
+            logging.info("[QueueService] No tagged files found to enqueue")
+            return 0
+
+        # Enqueue all tagged files using the database queue operations
+        count = 0
+        for path in tagged_paths:
+            try:
+                self.queue.db.queue.enqueue(path, force=force)
+                count += 1
+            except Exception as e:
+                logging.error(f"[QueueService] Failed to enqueue {path}: {e}")
+
+        logging.info(f"[QueueService] Enqueued {count} tagged files for re-processing")
+        return count

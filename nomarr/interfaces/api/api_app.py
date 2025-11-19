@@ -13,7 +13,8 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from nomarr.interfaces.api.endpoints import admin, fs, library, public, web
+from nomarr.interfaces.api import web  # Split web router (replaces endpoints/web.py monolith)
+from nomarr.interfaces.api.endpoints import admin, fs, library, public
 
 
 # ----------------------------------------------------------------------

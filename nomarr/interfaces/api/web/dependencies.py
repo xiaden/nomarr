@@ -1,8 +1,13 @@
 """
 FastAPI dependency injection helpers for web endpoints.
 
-These functions provide clean dependency injection for services and infrastructure,
+These functions provide clean dependency injection for services,
 replacing the old get_state() service locator pattern.
+
+ARCHITECTURE:
+- Endpoints should ONLY inject services, never Database or raw infrastructure
+- Services encapsulate all business logic and data access
+- Endpoints are thin presentation layers that call services and format responses
 """
 
 from __future__ import annotations
@@ -10,7 +15,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from nomarr.persistence.db import Database
     from nomarr.services.analytics import AnalyticsService
     from nomarr.services.calibration import CalibrationService
     from nomarr.services.config import ConfigService
@@ -21,22 +25,8 @@ if TYPE_CHECKING:
     from nomarr.services.worker import WorkerService
 
 
-def get_database() -> Database:
-    """Get Database instance."""
-    from nomarr.app import application
-
-    return application.db
-
-
-def get_queue() -> Any:
-    """Get ProcessingQueue instance."""
-    from nomarr.app import application
-
-    return application.queue
-
-
 def get_config() -> dict[str, Any]:
-    """Get configuration dict."""
+    """Get configuration dict from ConfigService."""
     from nomarr.app import application
 
     config_service = application.get_service("config")
