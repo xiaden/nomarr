@@ -7,12 +7,15 @@ Extracted from processor.py to separate concerns:
 - Path normalization
 
 This lives in the service layer so the processor can focus on ML logic.
+
+NOTE: Functions in this module operate on library file paths that are stored
+in the database. These paths should be validated before being stored in the DB.
 """
 
 from __future__ import annotations
 
 import logging
-import os
+from pathlib import Path
 from typing import Any
 
 
@@ -20,14 +23,24 @@ def validate_file_exists(path: str) -> None:
     """
     Check if file exists and is readable.
 
+    This function operates on paths that are already in the processing queue/database.
+    For user-supplied paths, validate through helpers.files first.
+
     Args:
-        path: Path to audio file
+        path: Path to audio file (from database/queue)
 
     Raises:
         RuntimeError: If file doesn't exist or isn't readable
     """
-    if not os.path.exists(path):
+    # Use Path for safer filesystem checks
+    file_path = Path(path)
+    if not file_path.exists():
         raise RuntimeError(f"File not found: {path}")
+    if not file_path.is_file():
+        raise RuntimeError(f"Not a file: {path}")
+    # Check readability using os.access for platform compatibility
+    import os
+
     if not os.access(path, os.R_OK):
         raise RuntimeError(f"File not readable: {path}")
 

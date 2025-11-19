@@ -8,15 +8,17 @@ ARCHITECTURE:
 - Does NOT import services, interfaces, or app
 - Callers provide explicit dependencies
 
-TRUST BOUNDARY:
-- Paths are expected to be validated at the interface layer before reaching this workflow
-- For user-provided paths, interfaces must call helpers.files.validate_library_path
-- For trusted admin/CLI paths, validation may be skipped
-- This workflow does NOT reimplement path traversal checks
+PATH VALIDATION:
+- This workflow uses helpers.files.collect_audio_files() which safely handles:
+  - Existence checking
+  - Audio file filtering
+  - Directory traversal
+- For user-controlled paths, callers should validate through helpers.files first
+- This workflow will skip non-existent paths gracefully via collect_audio_files()
 
 EXPECTED DEPENDENCIES:
 - `db: Database` - Database instance (workflow accesses db.queue directly)
-- `paths: str | list[str]` - File or directory paths to process (pre-validated if from users)
+- `paths: str | list[str]` - File or directory paths to process
 - `force: bool` - Whether to reprocess already-tagged files
 - `recursive: bool` - Whether to scan directories recursively
 
@@ -34,7 +36,7 @@ USAGE:
 from __future__ import annotations
 
 import logging
-import os
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from nomarr.helpers.files import collect_audio_files
@@ -55,10 +57,9 @@ def enqueue_files_workflow(
     Discover audio files from paths and enqueue them for processing.
 
     This workflow:
-    1. Validates that all paths exist
-    2. Discovers audio files (recursively if enabled)
-    3. Enqueues each file in the processing queue
-    4. Returns summary statistics
+    1. Uses collect_audio_files() to safely discover audio files
+    2. Enqueues each discovered file in the processing queue
+    3. Returns summary statistics
 
     Args:
         db: Database instance for queue operations
@@ -85,21 +86,25 @@ def enqueue_files_workflow(
     if isinstance(paths, str):
         paths = [paths]
 
-    # Validate paths exist
-    for path in paths:
-        if not os.path.exists(path):
-            raise FileNotFoundError(f"Path not found: {path}")
+    # Validate paths exist using Path objects (library-safe check)
+    for path_str in paths:
+        path = Path(path_str)
+        if not path.exists():
+            raise FileNotFoundError(f"Path not found: {path_str}")
 
     # Discover audio files from all paths
+    # collect_audio_files() handles: existence checks, audio filtering, directory traversal
     logger.debug(f"[queue_workflow] Discovering audio files from {len(paths)} path(s)")
     audio_files = collect_audio_files(paths, recursive=recursive)
 
     if not audio_files:
         # Determine error message based on input type
-        if len(paths) == 1 and os.path.isdir(paths[0]):
-            raise ValueError(f"No audio files found in directory: {paths[0]}")
-        elif len(paths) == 1:
-            raise ValueError(f"Not an audio file: {paths[0]}")
+        if len(paths) == 1:
+            path = Path(paths[0])
+            if path.is_dir():
+                raise ValueError(f"No audio files found in directory: {paths[0]}")
+            else:
+                raise ValueError(f"Not an audio file: {paths[0]}")
         else:
             raise ValueError(f"No audio files found in provided paths: {paths}")
 

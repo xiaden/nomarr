@@ -511,14 +511,11 @@ async def web_show_tags(path: str):
     namespace = s.cfg.get("namespace", "essentia")
     library_path = s.cfg.get("library_path", "")
 
-    # Validate path to prevent directory traversal
-    validate_library_path(path, library_path)
-
-    if not os.path.exists(path):
-        raise HTTPException(status_code=404, detail=f"File not found: {path}")
+    # Validate path to prevent directory traversal (includes existence check)
+    validated_path = validate_library_path(path, library_path)
 
     try:
-        audio = mutagen.File(path)
+        audio = mutagen.File(validated_path)
         if audio is None:
             raise HTTPException(status_code=400, detail="Unsupported audio format")
 
@@ -528,7 +525,7 @@ async def web_show_tags(path: str):
             tags = _extract_mp4_tags(audio, namespace)
 
         return {
-            "path": path,
+            "path": validated_path,
             "namespace": namespace,
             "tags": tags,
             "count": len(tags),

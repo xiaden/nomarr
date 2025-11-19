@@ -44,7 +44,6 @@ import json
 import logging
 import os
 from collections.abc import Callable
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import mutagen
@@ -154,16 +153,10 @@ def scan_library_workflow(
         existing_paths = {f["path"] for f in existing_files}
         seen_paths: set[str] = set()
 
-        # Scan directory recursively
-        audio_extensions = {".mp3", ".m4a", ".flac", ".ogg", ".opus"}
-        files_to_scan = []
+        # Discover all audio files using helpers.files (secure, handles existence/filtering/traversal)
+        from nomarr.helpers.files import collect_audio_files
 
-        for root, _dirs, files in os.walk(library_path):
-            for file in files:
-                ext = Path(file).suffix.lower()
-                if ext in audio_extensions:
-                    file_path = os.path.join(root, file)
-                    files_to_scan.append(file_path)
+        files_to_scan = collect_audio_files(library_path, recursive=True)
 
         total_files = len(files_to_scan)
         logging.info(f"[library_scanner] Found {total_files} audio files to scan")
