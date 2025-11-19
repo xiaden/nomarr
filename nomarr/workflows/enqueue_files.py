@@ -90,7 +90,7 @@ def enqueue_files_workflow(
     for path_str in paths:
         path = Path(path_str)
         if not path.exists():
-            raise FileNotFoundError(f"Path not found: {path_str}")
+            raise FileNotFoundError(f"Path not found: {path}")
 
     # Discover audio files from all paths
     # collect_audio_files() handles: existence checks, audio filtering, directory traversal
@@ -102,9 +102,9 @@ def enqueue_files_workflow(
         if len(paths) == 1:
             path = Path(paths[0])
             if path.is_dir():
-                raise ValueError(f"No audio files found in directory: {paths[0]}")
+                raise ValueError(f"No audio files found in directory: {path}")
             else:
-                raise ValueError(f"Not an audio file: {paths[0]}")
+                raise ValueError(f"Not an audio file: {path}")
         else:
             raise ValueError(f"No audio files found in provided paths: {paths}")
 
