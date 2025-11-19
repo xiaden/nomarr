@@ -62,17 +62,26 @@ def resolve_library_path(
     """
     Safely resolve and validate a path within the library root.
 
-    This function prevents path traversal attacks using CodeQL's recommended pattern:
+    This function prevents path traversal attacks using CodeQL's recommended pattern
+    with structural validation (no character whitelists - supports Unicode/kanji):
     1. Convert library_root to absolute path string using os.path.abspath()
-    2. Reject absolute user paths with os.path.isabs()
+    2. Structural pre-validation using pathlib.PurePath (before join):
+       - Reject absolute paths
+       - Reject ".." in any path component
+       - Reject NUL bytes
     3. Join and normalize with os.path.normpath(os.path.join(base, user_path))
     4. Verify result is within base with prefix check (fullpath.startswith(base + os.sep))
     5. Convert to Path after validation for type checks
     6. Optionally validate existence and file/directory type
 
+    Structural blacklist (no character restrictions):
+    - Absolute paths (PurePath.is_absolute())
+    - Parent directory traversal (any ".." in PurePath.parts)
+    - NUL bytes (\x00)
+
     Args:
         library_root: Configured library root directory
-        user_path: User-provided path (must be relative)
+        user_path: User-provided path (must be relative, no traversal)
         must_exist: If True, require path to exist (default: True)
         must_be_file: If True, require file; if False, require directory; if None, allow either
 
@@ -86,6 +95,9 @@ def resolve_library_path(
         >>> resolve_library_path("/music", "album/song.mp3", must_be_file=True)
         Path("/music/album/song.mp3")
 
+        >>> resolve_library_path("/music", "アーティスト/曲.mp3", must_be_file=True)
+        Path("/music/アーティスト/曲.mp3")
+
         >>> resolve_library_path("/music", "../../../etc/passwd")
         ValueError: Access denied
 
@@ -93,6 +105,7 @@ def resolve_library_path(
         Path("/music/album")
     """
     import os
+    from pathlib import PurePath
 
     if not library_root:
         raise ValueError("Library root not configured")
@@ -107,19 +120,40 @@ def resolve_library_path(
     # Step 2: Convert user_path to string
     user_path_string = str(user_path)
 
-    # Step 3: Reject absolute user paths (CodeQL requirement)
-    if os.path.isabs(user_path_string):
+    # Step 2a: STRUCTURAL PRE-JOIN VALIDATION
+    # Use PurePath for structural analysis without filesystem access
+    # This satisfies CodeQL's requirement to validate BEFORE filesystem operations
+
+    # Reject NUL bytes (can cause issues with filesystem operations)
+    if "\x00" in user_path_string:
+        logger.warning(f"[security] NUL byte detected in path: {user_path_string!r}")
+        raise ValueError("Access denied")
+
+    # Build PurePath for structural validation (platform-independent)
+    try:
+        pure_path = PurePath(user_path_string)
+    except (ValueError, TypeError) as e:
+        logger.warning(f"[security] Invalid path structure: {user_path_string!r}: {e}")
+        raise ValueError("Access denied") from e
+
+    # Reject absolute paths
+    if pure_path.is_absolute():
         logger.warning(f"[security] Absolute path rejected: {user_path_string!r}")
         raise ValueError("Access denied")
 
-    # Step 4: Join and normalize (CodeQL pattern)
+    # Reject any path component that is exactly ".."
+    if ".." in pure_path.parts:
+        logger.warning(f"[security] Path traversal component '..' detected in: {user_path_string!r}")
+        raise ValueError("Access denied")
+
+    # Step 3: Join and normalize (CodeQL pattern)
     try:
         fullpath = os.path.normpath(os.path.join(base, user_path_string))
     except (OSError, ValueError) as e:
         logger.warning(f"[security] Failed to join paths {base!r} + {user_path_string!r}: {e}")
         raise ValueError("Access denied") from e
 
-    # Step 5: Verify fullpath is within base boundary (CodeQL pattern)
+    # Step 4: Verify fullpath is within base boundary (CodeQL pattern)
     # Must check: fullpath == base OR fullpath.startswith(base + os.sep)
     if fullpath != base and not fullpath.startswith(base + os.sep):
         logger.warning(
