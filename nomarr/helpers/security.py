@@ -161,23 +161,39 @@ def resolve_library_path(
         )
         raise ValueError("Access denied")
 
-    # Step 6: Convert to Path after validation for existence/type checks
+    # Step 6: Convert to Path and resolve symlinks for canonical path validation
     candidate = Path(fullpath)
+    # Canonicalize both base and candidate by resolving symlinks
+    try:
+        resolved_base = Path(base).resolve(strict=True)
+        resolved_candidate = candidate.resolve(strict=must_exist)
+    except (OSError, RuntimeError) as e:
+        logger.warning(f"[security] Failed to resolve symlink for {candidate!r}: {e}")
+        raise ValueError("Access denied") from e
+
+    # Ensure symlinks don't escape the root
+    try:
+        resolved_candidate.relative_to(resolved_base)
+    except ValueError:
+        logger.warning(
+            f"[security] Symlink traversal detected: {resolved_candidate!r} is outside library {resolved_base!r}"
+        )
+        raise ValueError("Access denied")
 
     # Validate existence if required
-    if must_exist and not candidate.exists():
-        logger.debug(f"[security] Path does not exist: {candidate}")
+    if must_exist and not resolved_candidate.exists():
+        logger.debug(f"[security] Path does not exist: {resolved_candidate}")
         raise ValueError("Access denied")
 
     # Validate file/directory type if specified
-    if must_be_file is True and not candidate.is_file():
-        logger.debug(f"[security] Path is not a file: {candidate}")
+    if must_be_file is True and not resolved_candidate.is_file():
+        logger.debug(f"[security] Path is not a file: {resolved_candidate}")
         raise ValueError("Access denied")
-    elif must_be_file is False and not candidate.is_dir():
-        logger.debug(f"[security] Path is not a directory: {candidate}")
+    elif must_be_file is False and not resolved_candidate.is_dir():
+        logger.debug(f"[security] Path is not a directory: {resolved_candidate}")
         raise ValueError("Access denied")
 
-    return candidate
+    return resolved_candidate
 
 
 def sanitize_exception_message(e: Exception, safe_message: str = "An error occurred") -> str:
