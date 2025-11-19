@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from nomarr.interfaces.api.auth import verify_session
-from nomarr.interfaces.api.web.dependencies import get_event_broker, get_queue_service
+from nomarr.interfaces.api.web.dependencies import get_event_broker, get_ml_service, get_queue_service
 from nomarr.services.queue import QueueService
 
 router = APIRouter(prefix="/api", tags=["Queue"])
@@ -164,12 +164,11 @@ async def web_admin_cleanup(
 
 
 @router.post("/admin/cache-refresh", dependencies=[Depends(verify_session)])
-async def web_admin_cache_refresh() -> dict[str, str]:
+async def web_admin_cache_refresh(
+    ml_service: Any = Depends(get_ml_service),
+) -> dict[str, str]:
     """Refresh model cache (web UI proxy)."""
-    from nomarr.app import application
-
     try:
-        ml_service = application.services["ml"]
         count = ml_service.warmup_cache()
 
         return {"status": "ok", "message": f"Model cache refreshed successfully ({count} predictors)"}

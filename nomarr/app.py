@@ -23,11 +23,14 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from nomarr.interfaces.api.event_broker import StateBroker
 from nomarr.persistence.db import Database
+from nomarr.services.analytics import AnalyticsService
+from nomarr.services.calibration import CalibrationService
 from nomarr.services.config import ConfigService
 from nomarr.services.coordinator import ProcessingCoordinator
 from nomarr.services.health_monitor import HealthMonitor
 from nomarr.services.keys import KeyManagementService
 from nomarr.services.library import LibraryService
+from nomarr.services.navidrome_service import NavidromeService
 from nomarr.services.processing import ProcessingService
 from nomarr.services.queue import ProcessingQueue, QueueService
 from nomarr.services.recalibration import RecalibrationService
@@ -247,6 +250,25 @@ class Application:
             logging.info("[Application] Predictor cache warmed successfully")
         except Exception as e:
             logging.error(f"[Application] Failed to warm predictor cache: {e}")
+
+        # Register Analytics service (DI: inject db, namespace)
+        logging.info("[Application] Initializing AnalyticsService...")
+        analytics_service = AnalyticsService(db=self.db, namespace=self.namespace)
+        self.register_service("analytics", analytics_service)
+
+        # Register Calibration service (DI: inject db, models_dir, namespace)
+        logging.info("[Application] Initializing CalibrationService...")
+        calibration_service = CalibrationService(
+            db=self.db,
+            models_dir=str(self.models_dir),
+            namespace=self.namespace,
+        )
+        self.register_service("calibration", calibration_service)
+
+        # Register Navidrome service (DI: inject db, namespace)
+        logging.info("[Application] Initializing NavidromeService...")
+        navidrome_service = NavidromeService(db=self.db, namespace=self.namespace)
+        self.register_service("navidrome", navidrome_service)
 
         # Start workers if enabled
         if worker_service.is_enabled():

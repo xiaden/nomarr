@@ -132,6 +132,33 @@ class ConfigService:
             node = node[part]
         return node
 
+    def set_config_value(self, key: str, value: str, db_path: str | None = None) -> None:
+        """
+        Store a user-editable config value in DB meta.
+
+        This persists configuration changes made via web UI. The value is stored
+        with a 'config_' prefix and will be picked up on next reload/restart.
+
+        Args:
+            key: Config key (without 'config_' prefix)
+            value: String value to store
+            db_path: Path to database (if None, uses current config's db_path)
+
+        Note:
+            Changes take effect after reload() or application restart.
+            Caller is responsible for validating that key is editable.
+        """
+        if db_path is None:
+            db_path = self.get("db_path")
+
+        if not db_path:
+            raise ValueError("Cannot set config value: no db_path available")
+
+        # Create temporary DB connection for write
+        db = Database(db_path)
+        db.meta.set(f"config_{key}", value)
+        self._logger.info(f"[ConfigService] Set config_{key} = {value}")
+
     def reload(self) -> dict[str, Any]:
         """
         Force reload configuration from all sources.

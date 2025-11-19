@@ -7,10 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from nomarr.interfaces.api.auth import verify_session
-from nomarr.interfaces.api.web.dependencies import get_database
+from nomarr.interfaces.api.web.dependencies import get_config_service, get_worker_service
 
 if TYPE_CHECKING:
-    from nomarr.persistence.db import Database
+    from nomarr.services.config import ConfigService
 
 router = APIRouter(prefix="/api/config", tags=["Config"])
 
@@ -35,11 +35,10 @@ class ConfigUpdateRequest(BaseModel):
 @router.get("")
 def get_config(
     _session: dict = Depends(verify_session),
-    db: Database = Depends(get_database),
+    config_service: Any = Depends(get_config_service),
+    worker_service: Any | None = Depends(get_worker_service),
 ) -> dict[str, Any]:
     """Get current configuration values (user-editable subset)."""
-    from nomarr.app import application
-
     try:
         from nomarr.services.config import (
             INTERNAL_ALLOW_SHORT,
@@ -53,13 +52,10 @@ def get_config(
             INTERNAL_WORKER_ENABLED,
         )
 
-        config_service = application.get_service("config")
         config = config_service.get_config()
 
         # User-editable config from DB or config dict
-        worker_enabled = db.meta.get("worker_enabled")
-        if worker_enabled is None:
-            worker_enabled = str(INTERNAL_WORKER_ENABLED).lower()
+        worker_enabled = worker_service.is_enabled() if worker_service else INTERNAL_WORKER_ENABLED
 
         return {
             # User-configurable settings
@@ -80,7 +76,7 @@ def get_config(
             "version_tag": INTERNAL_VERSION_TAG,
             "min_duration_s": INTERNAL_MIN_DURATION_S,
             "allow_short": INTERNAL_ALLOW_SHORT,
-            "worker_enabled": worker_enabled == "true",
+            "worker_enabled": worker_enabled,
             "poll_interval": INTERNAL_POLL_INTERVAL,
             "blocking_mode": INTERNAL_BLOCKING_MODE,
             "blocking_timeout": INTERNAL_BLOCKING_TIMEOUT,
@@ -96,7 +92,7 @@ def get_config(
 def update_config(
     request: ConfigUpdateRequest,
     _session: dict = Depends(verify_session),
-    db: Database = Depends(get_database),
+    config_service: ConfigService = Depends(get_config_service),
 ) -> dict[str, Any]:
     """
     Update a configuration value in the database.
@@ -127,13 +123,8 @@ def update_config(
         if key not in editable_keys:
             raise HTTPException(status_code=400, detail=f"Config key '{key}' is not editable (internal constant)")
 
-        # Store in DB meta (prefixed with "config_")
-        # The value will be parsed to correct type when loaded by compose()
-        db.meta.set(f"config_{key}", value)
-
-        # Special handling for worker_enabled - also update runtime state
-        if key == "worker_enabled":
-            db.meta.set("worker_enabled", value)
+        # Store in DB meta via ConfigService
+        config_service.set_config_value(key, value)
 
         return {
             "success": True,

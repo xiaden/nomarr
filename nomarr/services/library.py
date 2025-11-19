@@ -193,6 +193,24 @@ class LibraryService:
         """
         return self.db.library.list_scans(limit=limit)
 
+    def get_library_stats(self) -> dict[str, Any]:
+        """
+        Get library statistics (total files, total duration, etc.).
+
+        Returns:
+            Dictionary with library statistics
+        """
+        return self.db.library.get_library_stats()
+
+    def get_all_library_paths(self) -> list[str]:
+        """
+        Get all file paths in the library.
+
+        Returns:
+            List of absolute file paths
+        """
+        return self.db.library.get_all_library_paths()
+
     def _is_scan_running(self) -> bool:
         """
         Check if any scan is currently running (from CLI or API).

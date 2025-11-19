@@ -11,8 +11,14 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
+    from nomarr.services.analytics import AnalyticsService
+    from nomarr.services.calibration import CalibrationService
+    from nomarr.services.config import ConfigService
     from nomarr.services.coordinator import ProcessingCoordinator
+    from nomarr.services.library import LibraryService
+    from nomarr.services.navidrome_service import NavidromeService
     from nomarr.services.queue import QueueService
+    from nomarr.services.worker import WorkerService
 
 
 def get_database() -> Database:
@@ -49,11 +55,16 @@ def get_queue_service() -> QueueService:
     return service  # type: ignore[no-any-return]
 
 
-def get_worker_service() -> Any | None:
-    """Get WorkerService instance (may be None)."""
+def get_worker_service() -> WorkerService:
+    """Get WorkerService instance."""
+    from fastapi import HTTPException
+
     from nomarr.app import application
 
-    return application.services.get("worker")
+    service = application.services.get("worker")
+    if service is None:
+        raise HTTPException(status_code=503, detail="Worker service not available")
+    return service  # type: ignore[no-any-return]
 
 
 def get_processor_coordinator() -> ProcessingCoordinator | None:
@@ -75,3 +86,87 @@ def get_worker_pool() -> list[Any]:
     from nomarr.app import application
 
     return application.workers
+
+
+def get_library_service() -> LibraryService:
+    """Get LibraryService instance."""
+    from nomarr.app import application
+
+    service = application.services.get("library")
+    if not service:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=503, detail="Library service not available")
+    return service  # type: ignore[no-any-return]
+
+
+def get_analytics_service() -> AnalyticsService:
+    """Get AnalyticsService instance."""
+    from fastapi import HTTPException
+
+    from nomarr.app import application
+
+    service = application.services.get("analytics")
+    if not service:
+        raise HTTPException(status_code=503, detail="Analytics service not available")
+    return service  # type: ignore[no-any-return]
+
+
+def get_calibration_service() -> CalibrationService:
+    """Get CalibrationService instance."""
+    from fastapi import HTTPException
+
+    from nomarr.app import application
+
+    service = application.services.get("calibration")
+    if not service:
+        raise HTTPException(status_code=503, detail="Calibration service not available")
+    return service  # type: ignore[no-any-return]
+
+
+def get_config_service() -> ConfigService:
+    """Get ConfigService instance."""
+    from fastapi import HTTPException
+
+    from nomarr.app import application
+
+    service = application.services.get("config")
+    if not service:
+        raise HTTPException(status_code=503, detail="Config service not available")
+    return service  # type: ignore[no-any-return]
+
+
+def get_navidrome_service() -> NavidromeService:
+    """Get NavidromeService instance."""
+    from fastapi import HTTPException
+
+    from nomarr.app import application
+
+    service = application.services.get("navidrome")
+    if not service:
+        raise HTTPException(status_code=503, detail="Navidrome service not available")
+    return service  # type: ignore[no-any-return]
+
+
+def get_ml_service() -> Any:
+    """Get ML service instance."""
+    from fastapi import HTTPException
+
+    from nomarr.app import application
+
+    service = application.services.get("ml")
+    if not service:
+        raise HTTPException(status_code=503, detail="ML service not available")
+    return service
+
+
+def get_recalibration_service() -> Any:
+    """Get recalibration service instance."""
+    from fastapi import HTTPException
+
+    from nomarr.app import application
+
+    service = application.services.get("recalibration")
+    if not service:
+        raise HTTPException(status_code=503, detail="Recalibration service not available")
+    return service

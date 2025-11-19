@@ -37,32 +37,33 @@ class AnalyticsService:
     """
     Service for tag analytics and statistics.
 
-    Orchestrates data flow: persistence (SQL) → analytics (computation) → results.
+    Orchestrates data flow: persistence (SQL) → analytics (computation) → API-ready results.
     """
 
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, namespace: str = "nom") -> None:
         """
         Initialize analytics service.
 
         Args:
             db: Database instance for accessing persistence layer
+            namespace: Tag namespace for analysis (e.g., "nom")
         """
         self._db = db
+        self._namespace = namespace
 
-    def get_tag_frequencies(self, namespace: str = "nom", limit: int = 50) -> dict[str, Any]:
+    def get_tag_frequencies(self, limit: int = 50) -> list[dict[str, Any]]:
         """
-        Get frequency counts for all tags in the library.
+        Get frequency counts for all tags in the library (API-ready format).
 
         Args:
-            namespace: Tag namespace to analyze (default: "nom")
             limit: Max results per category
 
         Returns:
-            dict with nom_tags, standard_tags (artists/genres/albums), total_files
+            List of dicts with tag_key, total_count, unique_values for frontend
         """
-        namespace_prefix = f"{namespace}:"
-        data = fetch_tag_frequencies_data(db=self._db, namespace=namespace, limit=limit)
-        return compute_tag_frequencies(
+        namespace_prefix = f"{self._namespace}:"
+        data = fetch_tag_frequencies_data(db=self._db, namespace=self._namespace, limit=limit)
+        result = compute_tag_frequencies(
             namespace_prefix=namespace_prefix,
             total_files=data["total_files"],
             nom_tag_rows=data["nom_tag_rows"],
@@ -71,53 +72,69 @@ class AnalyticsService:
             album_rows=data["album_rows"],
         )
 
-    def get_tag_correlation_matrix(self, namespace: str = "nom", top_n: int = 20) -> dict[str, Any]:
+        # Transform to API-ready format (add namespace prefix back for display)
+        tag_frequencies = [
+            {"tag_key": f"{self._namespace}:{tag}", "total_count": count, "unique_values": count}
+            for tag, count in result.get("nom_tags", [])
+        ]
+        return tag_frequencies
+
+    def get_tag_correlation_matrix(self, top_n: int = 20) -> dict[str, Any]:
         """
-        Compute VALUE-based correlation matrix for mood tags.
+        Compute VALUE-based correlation matrix for mood tags (API-ready format).
 
         Args:
-            namespace: Tag namespace (default: "nom")
             top_n: Number of top moods to analyze
 
         Returns:
             dict with mood_correlations, mood_genre_correlations, mood_tier_correlations
         """
-        data = fetch_tag_correlation_data(db=self._db, namespace=namespace, top_n=top_n)
+        data = fetch_tag_correlation_data(db=self._db, namespace=self._namespace, top_n=top_n)
         return compute_tag_correlation_matrix(
-            namespace=namespace,
+            namespace=self._namespace,
             top_n=top_n,
             mood_tag_rows=data["mood_tag_rows"],
             tier_tag_keys=data["tier_tag_keys"],
             tier_tag_rows=data["tier_tag_rows"],
         )
 
-    def get_mood_distribution(self, namespace: str = "nom") -> dict[str, Any]:
+    def get_mood_distribution(self) -> list[dict[str, Any]]:
         """
-        Get mood distribution across all tiers.
-
-        Args:
-            namespace: Tag namespace (default: "nom")
+        Get mood distribution across all tiers (API-ready format).
 
         Returns:
-            dict with mood_strict, mood_regular, mood_loose, top_moods
+            List of dicts with mood, count, percentage for frontend
         """
-        mood_rows = fetch_mood_distribution_data(db=self._db, namespace=namespace)
-        return compute_mood_distribution(mood_rows=mood_rows)
+        mood_rows = fetch_mood_distribution_data(db=self._db, namespace=self._namespace)
+        result = compute_mood_distribution(mood_rows=mood_rows)
 
-    def get_artist_tag_profile(self, artist: str, namespace: str = "nom", limit: int = 20) -> dict[str, Any]:
+        # Transform to API-ready format
+        top_moods = result.get("top_moods", [])
+        total_moods = sum(count for _, count in top_moods)
+
+        mood_distribution = [
+            {
+                "mood": mood,
+                "count": count,
+                "percentage": round((count / total_moods * 100), 2) if total_moods > 0 else 0,
+            }
+            for mood, count in top_moods
+        ]
+        return mood_distribution
+
+    def get_artist_tag_profile(self, artist: str, limit: int = 20) -> dict[str, Any]:
         """
         Get tag profile for a specific artist.
 
         Args:
             artist: Artist name
-            namespace: Tag namespace (default: "nom")
             limit: Max number of top tags to return
 
         Returns:
             dict with artist, file_count, top_tags, moods, avg_tags_per_file
         """
-        namespace_prefix = f"{namespace}:"
-        data = fetch_artist_tag_profile_data(db=self._db, artist=artist, namespace=namespace)
+        namespace_prefix = f"{self._namespace}:"
+        data = fetch_artist_tag_profile_data(db=self._db, artist=artist, namespace=self._namespace)
         return compute_artist_tag_profile(
             artist=artist,
             file_count=data["file_count"],
@@ -126,21 +143,19 @@ class AnalyticsService:
             limit=limit,
         )
 
-    def get_mood_value_co_occurrences(self, mood_value: str, namespace: str = "nom", limit: int = 20) -> dict[str, Any]:
+    def get_mood_value_co_occurrences(self, mood_value: str, limit: int = 10) -> dict[str, Any]:
         """
-        Get co-occurrence statistics for a specific mood value.
+        Get co-occurrence statistics for a specific mood value (API-ready format).
 
         Args:
             mood_value: The mood value to analyze
-            namespace: Tag namespace (default: "nom")
             limit: Max results per category
 
         Returns:
-            dict with mood_value, total_occurrences, mood_co_occurrences,
-                 genre_distribution, artist_distribution
+            dict with tag, total_occurrences, co_occurrences, top_artists, top_genres
         """
-        data = fetch_mood_value_co_occurrence_data(db=self._db, mood_value=mood_value, namespace=namespace)
-        return compute_mood_value_co_occurrences(
+        data = fetch_mood_value_co_occurrence_data(db=self._db, mood_value=mood_value, namespace=self._namespace)
+        result = compute_mood_value_co_occurrences(
             mood_value=mood_value,
             matching_file_ids=data["matching_file_ids"],
             mood_tag_rows=data["mood_tag_rows"],

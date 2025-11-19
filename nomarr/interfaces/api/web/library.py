@@ -6,10 +6,10 @@ from typing import TYPE_CHECKING, Any
 from fastapi import APIRouter, Depends, HTTPException
 
 from nomarr.interfaces.api.auth import verify_session
-from nomarr.interfaces.api.web.dependencies import get_database
+from nomarr.interfaces.api.web.dependencies import get_library_service
 
 if TYPE_CHECKING:
-    from nomarr.persistence.db import Database
+    from nomarr.services.library import LibraryService
 
 router = APIRouter(prefix="/api/library", tags=["Library"])
 
@@ -21,12 +21,12 @@ router = APIRouter(prefix="/api/library", tags=["Library"])
 
 @router.get("/stats", dependencies=[Depends(verify_session)])
 async def web_library_stats(
-    db: Database = Depends(get_database),
+    library_service: LibraryService = Depends(get_library_service),
 ) -> dict[str, Any]:
     """Get library statistics (total files, artists, albums, duration)."""
     try:
-        # Use persistence layer to get library stats
-        stats = db.library.get_library_stats()
+        # Use service layer to get library stats
+        stats = library_service.get_library_stats()
 
         return {
             "total_files": stats.get("total_files", 0) or 0,

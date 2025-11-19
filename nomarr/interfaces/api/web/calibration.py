@@ -8,10 +8,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from nomarr.interfaces.api.auth import verify_session
-from nomarr.interfaces.api.web.dependencies import get_database
+from nomarr.interfaces.api.web.dependencies import (
+    get_calibration_service,
+    get_library_service,
+    get_recalibration_service,
+)
 
 if TYPE_CHECKING:
-    from nomarr.persistence.db import Database
+    from nomarr.services.calibration import CalibrationService
+    from nomarr.services.library import LibraryService
 
 router = APIRouter(prefix="/api/calibration", tags=["Calibration"])
 
@@ -33,20 +38,17 @@ class CalibrationRequest(BaseModel):
 
 
 @router.post("/apply", dependencies=[Depends(verify_session)])
-async def apply_calibration_to_library() -> dict[str, Any]:
+async def apply_calibration_to_library(
+    library_service: LibraryService = Depends(get_library_service),
+    recal_service: Any = Depends(get_recalibration_service),
+) -> dict[str, Any]:
     """
     Queue all library files for recalibration.
     This updates tier and mood tags by applying calibration to existing raw scores.
     """
-    from nomarr.app import application
-
     try:
-        recal_service = application.services.get("recalibration")
-        if not recal_service:
-            raise HTTPException(status_code=503, detail="Recalibration service not available")
-
-        # Get all library file paths from persistence layer
-        paths = application.db.library.get_all_library_paths()
+        # Get all library file paths from service layer
+        paths = library_service.get_all_library_paths()
 
         if not paths:
             return {"queued": 0, "message": "No library files found"}
@@ -65,15 +67,11 @@ async def apply_calibration_to_library() -> dict[str, Any]:
 
 
 @router.get("/status", dependencies=[Depends(verify_session)])
-async def get_calibration_status() -> dict[str, Any]:
+async def get_calibration_status(
+    recal_service: Any = Depends(get_recalibration_service),
+) -> dict[str, Any]:
     """Get current recalibration queue status."""
-    from nomarr.app import application
-
     try:
-        recal_service = application.services.get("recalibration")
-        if not recal_service:
-            raise HTTPException(status_code=503, detail="Recalibration service not available")
-
         status = recal_service.get_status()
         worker_alive = recal_service.is_worker_alive()
         worker_busy = recal_service.is_worker_busy()
@@ -90,15 +88,11 @@ async def get_calibration_status() -> dict[str, Any]:
 
 
 @router.post("/clear", dependencies=[Depends(verify_session)])
-async def clear_calibration_queue() -> dict[str, Any]:
+async def clear_calibration_queue(
+    recal_service: Any = Depends(get_recalibration_service),
+) -> dict[str, Any]:
     """Clear all pending and completed recalibration jobs."""
-    from nomarr.app import application
-
     try:
-        recal_service = application.services.get("recalibration")
-        if not recal_service:
-            raise HTTPException(status_code=503, detail="Recalibration service not available")
-
         count = recal_service.clear_queue()
 
         return {"cleared": count, "message": f"Cleared {count} jobs from calibration queue"}
@@ -111,7 +105,7 @@ async def clear_calibration_queue() -> dict[str, Any]:
 @router.post("/generate", dependencies=[Depends(verify_session)])
 async def generate_calibration(
     request: CalibrationRequest,
-    db: Database = Depends(get_database),
+    calibration_service: CalibrationService = Depends(get_calibration_service),
 ) -> dict[str, Any]:
     """
     Generate min-max scale calibration from library tags.
@@ -124,17 +118,7 @@ async def generate_calibration(
 
     If save_sidecars=True, writes calibration JSON files next to model files.
     """
-    from nomarr.app import application
-    from nomarr.services.calibration import CalibrationService
-
     try:
-        # Create service with dependencies
-        calibration_service = CalibrationService(
-            db=db,
-            models_dir=str(application.models_dir),
-            namespace=application.namespace,
-        )
-
         # Run calibration in background thread (can take time with 18k songs)
         loop = asyncio.get_event_loop()
         calibration_data = await loop.run_in_executor(

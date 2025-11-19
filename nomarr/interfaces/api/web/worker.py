@@ -3,22 +3,18 @@
 import asyncio
 import logging
 import os
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from fastapi import APIRouter, Depends
 
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import (
-    get_database,
     get_event_broker,
     get_worker_pool,
     get_worker_service,
 )
 
-if TYPE_CHECKING:
-    from nomarr.persistence.db import Database
-
-router = APIRouter(prefix="/api/admin/worker", tags=["Worker"])
+router = APIRouter(prefix="/worker", tags=["worker"])
 
 
 # Background task storage for restart
@@ -32,17 +28,13 @@ _RESTART_TASKS: set = set()
 
 @router.post("/pause", dependencies=[Depends(verify_session)])
 async def web_admin_worker_pause(
-    db: Database = Depends(get_database),
-    worker_pool: list[Any] = Depends(get_worker_pool),
+    worker_service: Any | None = Depends(get_worker_service),
     event_broker: Any | None = Depends(get_event_broker),
 ) -> dict[str, str]:
     """Pause the worker (web UI proxy)."""
-    db.meta.set("worker_enabled", "false")
-
-    # Stop all workers
-    for worker in worker_pool:
-        worker.stop()
-    worker_pool.clear()
+    # Use WorkerService to disable workers (handles meta, idle wait, and stopping)
+    if worker_service:
+        worker_service.disable()
 
     # Publish worker state update
     if event_broker:
