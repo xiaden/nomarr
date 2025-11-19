@@ -10,7 +10,7 @@ ARCHITECTURE:
 
 TRUST BOUNDARY:
 - Paths are expected to be validated at the interface layer before reaching this workflow
-- For user-provided paths, interfaces must call helpers.security.validate_library_path
+- For user-provided paths, interfaces must call helpers.files.validate_library_path
 - For trusted admin/CLI paths, validation may be skipped
 - This workflow does NOT reimplement path traversal checks
 

@@ -15,7 +15,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from nomarr.app import application
-from nomarr.helpers.security import sanitize_exception_message, validate_library_path
+from nomarr.helpers.files import validate_library_path
+from nomarr.helpers.logging import sanitize_exception_message
 from nomarr.interfaces.api.auth import (
     create_session,
     get_admin_password_hash,

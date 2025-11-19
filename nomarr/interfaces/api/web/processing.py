@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from nomarr.helpers.security import sanitize_exception_message
+from nomarr.helpers.logging import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import (
     get_processor_coordinator,

@@ -7,7 +7,7 @@ from typing import Any
 import mutagen
 from fastapi import APIRouter, Depends, HTTPException
 
-from nomarr.helpers.security import validate_library_path
+from nomarr.helpers.files import validate_library_path
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import get_config
 
