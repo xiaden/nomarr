@@ -25,7 +25,7 @@ vulture>=2.10            # Dead code detection
 pydub>=0.25.1            # Audio file generation for tests (requires ffmpeg)
 
 # Complexity & Architecture Analysis
-radon>=6.0.1             # Cyclomatic complexity, maintainability index
+radon>=5.1.0,<5.2        # Cyclomatic complexity, maintainability index (constrained by wily)
 import-linter>=2.0       # Enforce layered architecture rules
 wily>=1.25.0             # Track complexity trends over time
 
