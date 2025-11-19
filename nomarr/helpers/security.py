@@ -19,10 +19,9 @@ def validate_library_path(file_path: str, library_path: str) -> str:
     """
     Validate that a file path is within the configured library directory.
 
-    This function prevents path traversal attacks by:
-    1. Resolving both paths to absolute, normalized forms
-    2. Checking that the target is within the library boundary
-    3. Verifying the target exists and is a file
+    This is a thin wrapper around resolve_library_path that ensures:
+    1. Path is within library boundary (prevents traversal attacks)
+    2. Path exists as a file
 
     Args:
         file_path: User-provided file path (absolute or relative)
@@ -39,38 +38,19 @@ def validate_library_path(file_path: str, library_path: str) -> str:
         "/music/song.mp3"
 
         >>> validate_library_path("../../etc/passwd", "/music")
-        ValueError: Access denied: path outside library
+        ValueError: Access denied
 
         >>> validate_library_path("/music/../etc/passwd", "/music")
-        ValueError: Access denied: path outside library
+        ValueError: Access denied
     """
-    if not library_path:
-        raise ValueError("Library path not configured")
-
-    # Resolve to absolute paths and normalize (resolves .., symlinks, etc.)
-    try:
-        library = Path(library_path).resolve()
-        target = Path(file_path).resolve()
-    except (OSError, RuntimeError) as e:
-        logger.warning(f"[security] Path resolution failed for {file_path}: {e}")
-        raise ValueError("Invalid file path") from e
-
-    # Check if target is within library boundary
-    try:
-        target.relative_to(library)
-    except ValueError as e:
-        logger.warning(f"[security] Path traversal attempt: {file_path} outside {library_path}")
-        raise ValueError("Access denied: path outside library") from e
-
-    # Verify file exists
-    if not target.exists():
-        raise ValueError("File not found")
-
-    # Verify it's a file (not a directory or special file)
-    if not target.is_file():
-        raise ValueError("Not a valid file")
-
-    return str(target)
+    # Delegate to resolve_library_path for consistent validation
+    resolved = resolve_library_path(
+        library_root=library_path,
+        user_path=file_path,
+        must_exist=True,
+        must_be_file=True,
+    )
+    return str(resolved)
 
 
 def resolve_library_path(
@@ -82,15 +62,17 @@ def resolve_library_path(
     """
     Safely resolve and validate a path within the library root.
 
-    This function prevents path traversal attacks and validates path properties:
-    1. Resolves library_root to absolute, canonical path
-    2. Joins user_path to library_root and resolves (handling .., symlinks)
-    3. Ensures result is within library_root boundary
-    4. Optionally validates existence and file/directory type
+    This function prevents path traversal attacks using CodeQL's recommended pattern:
+    1. Convert library_root to absolute path string using os.path.abspath()
+    2. Reject absolute user paths with os.path.isabs()
+    3. Join and normalize with os.path.normpath(os.path.join(base, user_path))
+    4. Verify result is within base with prefix check (fullpath.startswith(base + os.sep))
+    5. Convert to Path after validation for type checks
+    6. Optionally validate existence and file/directory type
 
     Args:
         library_root: Configured library root directory
-        user_path: User-provided path (relative or absolute)
+        user_path: User-provided path (must be relative)
         must_exist: If True, require path to exist (default: True)
         must_be_file: If True, require file; if False, require directory; if None, allow either
 
@@ -98,7 +80,7 @@ def resolve_library_path(
         Resolved absolute Path within library root
 
     Raises:
-        ValueError: If path validation fails (generic message, no info leakage)
+        ValueError: If path validation fails (generic message to prevent info leakage)
 
     Examples:
         >>> resolve_library_path("/music", "album/song.mp3", must_be_file=True)
@@ -110,42 +92,56 @@ def resolve_library_path(
         >>> resolve_library_path("/music", "album", must_be_file=False)
         Path("/music/album")
     """
+    import os
+
     if not library_root:
         raise ValueError("Library root not configured")
 
-    # Resolve library root to absolute path
+    # Step 1: Convert library_root to absolute path string (CodeQL pattern)
     try:
-        lib_root = Path(library_root).resolve()
-    except (OSError, RuntimeError) as e:
+        base = os.path.abspath(str(library_root))
+    except (OSError, ValueError) as e:
         logger.warning(f"[security] Failed to resolve library root {library_root!r}: {e}")
         raise ValueError("Invalid library configuration") from e
 
-    # Construct candidate path by joining library_root with user_path
+    # Step 2: Convert user_path to string
+    user_path_string = str(user_path)
+
+    # Step 3: Reject absolute user paths (CodeQL requirement)
+    if os.path.isabs(user_path_string):
+        logger.warning(f"[security] Absolute path rejected: {user_path_string!r}")
+        raise ValueError("Access denied")
+
+    # Step 4: Join and normalize (CodeQL pattern)
     try:
-        candidate = (lib_root / user_path).resolve()
-    except (OSError, RuntimeError) as e:
-        logger.warning(f"[security] Failed to resolve user path {user_path!r}: {e}")
+        fullpath = os.path.normpath(os.path.join(base, user_path_string))
+    except (OSError, ValueError) as e:
+        logger.warning(f"[security] Failed to join paths {base!r} + {user_path_string!r}: {e}")
         raise ValueError("Access denied") from e
 
-    # Ensure candidate is within library_root boundary
-    try:
-        candidate.relative_to(lib_root)
-    except ValueError as e:
-        logger.warning(f"[security] Path traversal attempt: {user_path!r} resolved outside library {library_root!r}")
-        raise ValueError("Access denied") from e
+    # Step 5: Verify fullpath is within base boundary (CodeQL pattern)
+    # Must check: fullpath == base OR fullpath.startswith(base + os.sep)
+    if fullpath != base and not fullpath.startswith(base + os.sep):
+        logger.warning(
+            f"[security] Path traversal attempt: {user_path_string!r} resolved outside library {library_root!r}"
+        )
+        raise ValueError("Access denied")
+
+    # Step 6: Convert to Path after validation for existence/type checks
+    candidate = Path(fullpath)
 
     # Validate existence if required
     if must_exist and not candidate.exists():
         logger.debug(f"[security] Path does not exist: {candidate}")
-        raise ValueError("Path not found")
+        raise ValueError("Access denied")
 
     # Validate file/directory type if specified
     if must_be_file is True and not candidate.is_file():
         logger.debug(f"[security] Path is not a file: {candidate}")
-        raise ValueError("Path is not a file")
+        raise ValueError("Access denied")
     elif must_be_file is False and not candidate.is_dir():
         logger.debug(f"[security] Path is not a directory: {candidate}")
-        raise ValueError("Path is not a directory")
+        raise ValueError("Access denied")
 
     return candidate
 

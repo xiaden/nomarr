@@ -1,5 +1,16 @@
 """
 File system helpers for audio file operations.
+
+TRUST BOUNDARY:
+These functions operate on paths that have already been validated at the interface layer
+(via helpers.security.validate_library_path or resolve_library_path), or are from trusted
+admin/CLI inputs. They do NOT perform path traversal validation themselves.
+
+SECURITY:
+- Path validation must happen at interface boundaries (API, CLI, Web)
+- Use helpers.security for all user-controlled path validation
+- Do not reimplement traversal checks here
+
 Shared across all interfaces (CLI, API, Web) and core functionality.
 """
 
@@ -15,8 +26,12 @@ def collect_audio_files(paths: list[str] | str, recursive: bool = True) -> list[
     """
     Collect audio files from one or more paths (files or directories).
 
+    SECURITY: This function operates on paths that have been validated at the
+    interface layer. It does NOT perform path traversal validation. Callers must
+    validate user-provided paths using helpers.security before calling this.
+
     Args:
-        paths: Single path string or list of path strings
+        paths: Single path string or list of path strings (pre-validated)
         recursive: If True, recursively scan directories. If False, only immediate children.
 
     Returns:

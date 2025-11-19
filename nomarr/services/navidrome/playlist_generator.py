@@ -249,11 +249,22 @@ class PlaylistGenerator:
         """
         Parse Smart Playlist query into SQL WHERE clause for preview.
 
+        SQL SANITIZATION:
+        This function is a sanitizer that constructs WHERE clauses ONLY from:
+        - Fixed SQL templates (EXISTS subqueries, CAST, LIKE patterns)
+        - Whitelisted operators from SQL_OPERATORS dictionary
+        - Parameterized placeholders ("?") for all user-controlled values
+
+        User-controlled data (tag keys and tag values) are NEVER interpolated into
+        SQL strings. They are passed as parameters to prevent SQL injection.
+
         Args:
             query: Smart Playlist query string
 
         Returns:
             Tuple of (sql_where_clause, parameters)
+            - sql_where_clause: SQL string with "?" placeholders
+            - parameters: List of values to bind to placeholders
 
         Raises:
             PlaylistQueryError: If query syntax is invalid or too long
@@ -299,14 +310,23 @@ class PlaylistGenerator:
         """
         Parse a single condition into SQL for preview queries.
 
+        SQL SANITIZATION:
+        - Extracts tag_key and value from condition using regex parsing
+        - Validates operator against SQL_OPERATORS whitelist
+        - Builds SQL using fixed templates (EXISTS subquery, CAST, LIKE)
+        - Returns tag_key and value as parameters (never interpolated into SQL)
+        - SQL string contains only "?" placeholders for user data
+
         Args:
             condition: Single condition string (e.g., "tag:mood_happy > 0.7")
 
         Returns:
             Tuple of (sql_condition, parameters)
+            - sql_condition: SQL string with "?" placeholders
+            - parameters: List of [tag_key, value] to bind
 
         Raises:
-            PlaylistQueryError: If condition syntax is invalid
+            PlaylistQueryError: If condition syntax is invalid or operator not whitelisted
         """
         # Pattern: tag:KEY OPERATOR VALUE
         # Use [^\s].* instead of .+ to prevent ReDoS (catastrophic backtracking)
@@ -430,14 +450,20 @@ class PlaylistGenerator:
         """
         Validate and sanitize ORDER BY clause against whitelist.
 
+        SQL INJECTION PREVENTION:
+        - Validates column name against VALID_ORDER_COLUMNS whitelist only
+        - Validates direction against literal "ASC"/"DESC" only
+        - Rejects any additional parts or SQL beyond these tokens
+        - Returns validated string safe for direct SQL inclusion (no user data interpolated)
+
         Args:
-            order_by: Raw ORDER BY string from user
+            order_by: Raw ORDER BY string from user (e.g., "title ASC", "random()")
 
         Returns:
-            Validated ORDER BY string safe for SQL, or None
+            Validated ORDER BY string safe for SQL, or None if not provided
 
         Raises:
-            PlaylistQueryError: If order_by contains invalid column or syntax
+            PlaylistQueryError: If order_by contains invalid column, direction, or extra clauses
         """
         if not order_by:
             return None
@@ -477,14 +503,19 @@ class PlaylistGenerator:
         """
         Validate LIMIT parameter.
 
+        SQL INJECTION PREVENTION:
+        - Ensures limit is an integer (not a string that could contain SQL)
+        - Validates bounds (positive, <= MAX_LIMIT)
+        - Returns validated integer for safe direct SQL inclusion
+
         Args:
             limit: Raw limit value from user
 
         Returns:
-            Validated integer limit, or None
+            Validated integer limit, or None if not provided
 
         Raises:
-            PlaylistQueryError: If limit is invalid
+            PlaylistQueryError: If limit is not an integer or out of bounds
         """
         if limit is None:
             return None

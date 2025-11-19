@@ -8,9 +8,15 @@ ARCHITECTURE:
 - Does NOT import services, interfaces, or app
 - Callers provide explicit dependencies
 
+TRUST BOUNDARY:
+- Paths are expected to be validated at the interface layer before reaching this workflow
+- For user-provided paths, interfaces must call helpers.security.validate_library_path
+- For trusted admin/CLI paths, validation may be skipped
+- This workflow does NOT reimplement path traversal checks
+
 EXPECTED DEPENDENCIES:
 - `db: Database` - Database instance (workflow accesses db.queue directly)
-- `paths: str | list[str]` - File or directory paths to process
+- `paths: str | list[str]` - File or directory paths to process (pre-validated if from users)
 - `force: bool` - Whether to reprocess already-tagged files
 - `recursive: bool` - Whether to scan directories recursively
 
