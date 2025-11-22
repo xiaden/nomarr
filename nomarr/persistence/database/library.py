@@ -267,158 +267,151 @@ class LibraryOperations:
 
     # ---------------------------- Library Scan Queue ----------------------------
 
-    def create_library_scan(self) -> int:
+    def enqueue_scan(self, file_path: str, force: bool = False) -> int:
         """
-        Start a new library scan.
-
-        Returns:
-            Scan ID
-        """
-        cur = self.conn.cursor()
-        # Create scan in 'pending' status - worker will mark it 'running' when it starts
-        cur.execute("INSERT INTO library_queue(started_at, status) VALUES(?, 'pending')", (now_ms(),))
-        self.conn.commit()
-        scan_id = cur.lastrowid
-        if scan_id is None:
-            raise RuntimeError("Failed to create library scan - no row ID returned")
-        return scan_id
-
-    def get_latest_scan_id(self) -> int | None:
-        """
-        Get the ID of the most recent library scan.
-
-        Returns:
-            Scan ID or None if no scans exist
-        """
-        cur = self.conn.execute("SELECT id FROM library_queue ORDER BY started_at DESC LIMIT 1")
-        row = cur.fetchone()
-        return row[0] if row else None
-
-    def get_scan_by_id(self, scan_id: int) -> dict[str, Any] | None:
-        """
-        Get library scan by ID.
+        Enqueue a file for library scanning.
 
         Args:
-            scan_id: Scan ID to look up
+            file_path: Path to the file to scan
+            force: Whether to force rescan even if file hasn't changed
 
         Returns:
-            Scan dict or None if not found
+            Job ID
         """
-        cur = self.conn.execute("SELECT * FROM library_queue WHERE id=?", (scan_id,))
-        row = cur.fetchone()
-        if not row:
-            return None
-        columns = [desc[0] for desc in cur.description]
-        return dict(zip(columns, row, strict=False))
+        cur = self.conn.cursor()
+        cur.execute(
+            "INSERT INTO library_queue(file_path, status, force, started_at) VALUES(?, 'pending', ?, NULL)",
+            (file_path, 1 if force else 0),
+        )
+        self.conn.commit()
+        job_id = cur.lastrowid
+        if job_id is None:
+            raise RuntimeError("Failed to enqueue scan job - no row ID returned")
+        return job_id
 
-    def count_running_scans(self) -> int:
+    def dequeue_scan(self) -> tuple[int, str, bool] | None:
         """
-        Count library scans currently in 'running' status.
-
-        Returns:
-            Number of running scans
-        """
-        cur = self.conn.execute("SELECT COUNT(*) FROM library_queue WHERE status='running'")
-        row = cur.fetchone()
-        return row[0] if row else 0
-
-    def get_running_scan(self) -> dict[str, Any] | None:
-        """
-        Get the currently running library scan (if any).
+        Get next pending scan job and mark it as running.
 
         Returns:
-            Scan dict or None if no scan is running
+            Tuple of (job_id, file_path, force) or None if no pending jobs
         """
         cur = self.conn.execute(
-            """SELECT * FROM library_queue
-               WHERE status='running'
-               ORDER BY started_at DESC
-               LIMIT 1"""
+            "SELECT id, file_path, force FROM library_queue WHERE status='pending' ORDER BY id LIMIT 1"
         )
         row = cur.fetchone()
         if not row:
             return None
-        columns = [desc[0] for desc in cur.description]
-        return dict(zip(columns, row, strict=False))
 
-    def list_scans(self, limit: int = 10) -> list[dict[str, Any]]:
+        job_id, file_path, force = row
+        self.conn.execute("UPDATE library_queue SET status='running', started_at=? WHERE id=?", (now_ms(), job_id))
+        self.conn.commit()
+
+        return (job_id, file_path, bool(force))
+
+    def mark_scan_complete(self, job_id: int) -> None:
         """
-        Get recent library scans with details.
+        Mark a scan job as complete.
 
         Args:
-            limit: Maximum number of scans to return
+            job_id: Job ID to mark complete
+        """
+        self.conn.execute(
+            "UPDATE library_queue SET status='done', completed_at=? WHERE id=?",
+            (now_ms(), job_id),
+        )
+        self.conn.commit()
+
+    def mark_scan_error(self, job_id: int, error: str) -> None:
+        """
+        Mark a scan job as failed.
+
+        Args:
+            job_id: Job ID to mark as failed
+            error: Error message
+        """
+        self.conn.execute(
+            "UPDATE library_queue SET status='error', completed_at=?, error_message=? WHERE id=?",
+            (now_ms(), error, job_id),
+        )
+        self.conn.commit()
+
+    def list_scan_jobs(self, limit: int = 100) -> list[dict[str, Any]]:
+        """
+        List recent scan jobs.
+
+        Args:
+            limit: Maximum number of jobs to return
 
         Returns:
-            List of scan dicts
+            List of job dicts
         """
         cur = self.conn.execute(
-            """SELECT id, status, started_at, finished_at,
-                      files_scanned, files_added, files_updated, files_removed, error_message
-               FROM library_queue
-               ORDER BY started_at DESC
-               LIMIT ?""",
+            "SELECT id, file_path, status, force, started_at, completed_at, error_message "
+            "FROM library_queue ORDER BY id DESC LIMIT ?",
             (limit,),
         )
         columns = [desc[0] for desc in cur.description]
         return [dict(zip(columns, row, strict=False)) for row in cur.fetchall()]
 
-    def update_library_scan(
-        self,
-        scan_id: int,
-        status: str | None = None,
-        files_scanned: int | None = None,
-        files_added: int | None = None,
-        files_updated: int | None = None,
-        files_removed: int | None = None,
-        error_message: str | None = None,
-    ) -> None:
+    def count_pending_scans(self) -> int:
         """
-        Update library scan progress.
+        Count pending scan jobs.
 
-        Args:
-            scan_id: Scan ID to update
-            status: New status ('pending', 'running', 'done', 'error')
-            files_scanned: Total files scanned
-            files_added: Files added
-            files_updated: Files updated
-            files_removed: Files removed
-            error_message: Error message if status is 'error'
+        Returns:
+            Number of pending jobs
         """
-        updates = []
-        params: list[str | int] = []
+        cur = self.conn.execute("SELECT COUNT(*) FROM library_queue WHERE status='pending'")
+        row = cur.fetchone()
+        return row[0] if row else 0
 
-        if status:
-            updates.append("status=?")
-            params.append(status)
-            if status in ("done", "error"):
-                updates.append("finished_at=?")
-                params.append(now_ms())
+    def clear_scan_queue(self) -> int:
+        """
+        Clear all pending scan jobs.
 
-        if files_scanned is not None:
-            updates.append("files_scanned=?")
-            params.append(files_scanned)
-        if files_added is not None:
-            updates.append("files_added=?")
-            params.append(files_added)
-        if files_updated is not None:
-            updates.append("files_updated=?")
-            params.append(files_updated)
-        if files_removed is not None:
-            updates.append("files_removed=?")
-            params.append(files_removed)
-        if error_message:
-            updates.append("error_message=?")
-            params.append(error_message)
+        Returns:
+            Number of jobs cleared
+        """
+        cur = self.conn.execute("DELETE FROM library_queue WHERE status='pending'")
+        self.conn.commit()
+        return cur.rowcount
 
-        if updates:
-            params.append(scan_id)
-            query = f"UPDATE library_queue SET {', '.join(updates)} WHERE id=?"
-            self.conn.execute(query, params)
-            self.conn.commit()
+    def reset_running_scans(self) -> int:
+        """
+        Reset any scan jobs stuck in 'running' state back to 'pending'.
+        This handles container restarts where a scan was interrupted mid-processing.
+
+        Returns:
+            Number of jobs reset
+        """
+        cur = self.conn.execute("UPDATE library_queue SET status='pending', started_at=NULL WHERE status='running'")
+        self.conn.commit()
+        return cur.rowcount
+
+    # ---------------------------- Library Queue Statistics ----------------------------
+
+    def get_scan_queue_stats(self) -> dict[str, Any]:
+        """
+        Get statistics about the scan queue.
+
+        Returns:
+            Dict with pending, running, done, error counts
+        """
+        cur = self.conn.execute(
+            """SELECT status, COUNT(*) as count
+               FROM library_queue
+               GROUP BY status"""
+        )
+        stats = {"pending": 0, "running": 0, "done": 0, "error": 0, "total": 0}
+        for row in cur.fetchall():
+            status, count = row
+            stats[status] = count
+            stats["total"] += count
+        return stats
 
     def get_library_scan(self, scan_id: int) -> dict[str, Any] | None:
         """
-        Get library scan by ID.
+        Get library scan job by ID.
 
         Args:
             scan_id: Scan ID to look up

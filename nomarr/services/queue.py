@@ -295,49 +295,38 @@ class ScanQueue(BaseQueue):
     Queue interface for library_queue table.
 
     Wraps library_queue operations to match BaseQueue interface
-    expected by BaseWorker.
+    expected by BaseWorker. Each job represents ONE file to scan.
     """
 
     def dequeue(self) -> tuple[int, str, bool] | None:
         """
-        Dequeue next pending scan.
+        Dequeue next pending scan job.
 
         Returns:
-            Tuple of (scan_id, library_path_placeholder, force) or None if no pending scans
-
-        Note: library_path comes from worker config, not queue.
-        We return scan_id as int, empty path placeholder, force=False.
+            Tuple of (job_id, file_path, force) or None if no pending jobs
         """
-        scans = self.db.library.list_library_scans(limit=100)
-        for scan in scans:
-            if scan.get("status") == "pending":
-                scan_id = scan["id"]
-                # Mark as running
-                self.db.library.update_library_scan(scan_id, status="running")
-                # Return scan_id, empty path placeholder, force=False
-                return (scan_id, "", False)
-        return None
+        return self.db.library.dequeue_scan()
 
     def mark_complete(self, job_id: int) -> None:
-        """Mark scan as complete."""
-        self.db.library.update_library_scan(job_id, status="done")
+        """Mark scan job as complete."""
+        self.db.library.mark_scan_complete(job_id)
 
     def mark_error(self, job_id: int, error: str) -> None:
-        """Mark scan as failed."""
-        self.db.library.update_library_scan(job_id, status="error", error_message=error)
+        """Mark scan job as failed."""
+        self.db.library.mark_scan_error(job_id, error)
 
-    def enqueue(self, path: str = "", force: bool = False) -> int:
+    def enqueue(self, path: str, force: bool = False) -> int:
         """
-        Enqueue a new scan request.
+        Enqueue a file for library scanning.
 
         Args:
-            path: Ignored (library_path comes from worker config)
-            force: Ignored (scans always process entire library)
+            path: File path to scan
+            force: Whether to force rescan even if file hasn't changed
 
         Returns:
-            scan_id of created scan
+            Job ID of enqueued scan
         """
-        return self.db.library.create_library_scan()
+        return self.db.library.enqueue_scan(path, force)
 
 
 class QueueService:

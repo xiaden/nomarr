@@ -302,11 +302,10 @@ class Application:
 
         # Start library scan worker if configured (DI: inject db and config)
         if self.library_path:
-            logging.info(f"[Application] Starting LibraryScanWorker with library_path={self.library_path}")
+            logging.info(f"[Application] Starting LibraryScanWorker with namespace={self.namespace}")
             self.library_scan_worker = LibraryScanWorker(
                 db=self.db,
                 event_broker=self.event_broker,
-                library_path=self.library_path,
                 namespace=self.namespace,
                 interval=self.library_scan_poll_interval,
                 auto_tag=self.library_auto_tag,

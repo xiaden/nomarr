@@ -6,7 +6,6 @@ Shared business logic for library scanning across all interfaces.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -60,65 +59,67 @@ class LibraryService:
 
     def start_scan(
         self,
-        namespace: str | None = None,
-        progress_callback: Callable[[int, int], None] | None = None,
-        background: bool = False,
-    ) -> int:
+        paths: list[str] | None = None,
+        recursive: bool = True,
+        force: bool = False,
+        clean_missing: bool = True,
+    ) -> dict[str, Any]:
         """
-        Start a library scan.
+        Start a library scan by discovering files and enqueueing them.
+
+        This uses the new per-file scanning approach:
+        1. Discovers audio files in specified paths
+        2. Enqueues each file to library_queue
+        3. LibraryScanWorker processes files in background
 
         Args:
-            namespace: Optional tag namespace to filter by
-            progress_callback: Optional callback for progress updates (file_num, total)
-            background: If True, queue scan in worker (API). If False, run synchronously (CLI)
+            paths: List of paths to scan (defaults to configured library_path)
+            recursive: Whether to scan subdirectories recursively
+            force: Whether to force rescan even if files haven't changed
+            clean_missing: Whether to remove deleted files from database
 
         Returns:
-            Scan ID
+            Dict with scan statistics from start_library_scan_workflow
 
         Raises:
             ValueError: If library not configured
-            RuntimeError: If scan already running
         """
         if not self.cfg.library_path:
             raise ValueError("Library scanning not configured (no library_path)")
 
-        # Check if scan already running (across CLI + API)
-        if self._is_scan_running():
-            raise RuntimeError("A library scan is already running")
+        # Default to configured library_path if no paths provided
+        if paths is None:
+            paths = [self.cfg.library_path]
 
-        if background and self.worker:
-            # API mode: queue scan in background worker
-            # Note: LibraryScanWorker uses its own configured namespace
-            scan_id = self.worker.request_scan()
-            logging.info(f"[LibraryService] Queued background scan {scan_id}")
-            return scan_id
-        else:
-            # CLI mode: run scan synchronously
-            from nomarr.workflows.scan_library import scan_library_workflow
+        from nomarr.workflows.start_library_scan import start_library_scan_workflow
 
-            logging.info("[LibraryService] Starting synchronous library scan")
-            stats = scan_library_workflow(
-                db=self.db,
-                library_path=self.cfg.library_path,
-                namespace=namespace if namespace is not None else self.cfg.namespace,
-                progress_callback=progress_callback,
-            )
+        logging.info(f"[LibraryService] Starting library scan for {len(paths)} path(s)")
+        stats = start_library_scan_workflow(
+            db=self.db,
+            root_paths=paths,
+            recursive=recursive,
+            force=force,
+            auto_tag=False,  # Auto-tagging is handled by LibraryScanWorker per file
+            ignore_patterns="",
+            clean_missing=clean_missing,
+        )
 
-            # Get the scan_id from the most recent scan
-            scan_id = self.db.library.get_latest_scan_id() or 0
-
-            logging.info(
-                f"[LibraryService] Scan {scan_id} complete: "
-                f"{stats['files_processed']} files, {stats['files_updated']} updated"
-            )
-            return scan_id
+        logging.info(
+            f"[LibraryService] Scan planned: "
+            f"discovered={stats['files_discovered']}, queued={stats['files_queued']}, "
+            f"skipped={stats['files_skipped']}, removed={stats['files_removed']}"
+        )
+        return stats
 
     def cancel_scan(self) -> bool:
         """
         Cancel the currently running scan.
 
+        Note: With per-file scanning, this clears the pending queue.
+        Files currently being processed will complete.
+
         Returns:
-            True if cancellation requested, False if no scan running
+            Number of pending jobs cancelled
 
         Raises:
             ValueError: If library not configured
@@ -126,16 +127,10 @@ class LibraryService:
         if not self.cfg.library_path:
             raise ValueError("Library scanning not configured")
 
-        if self.worker:
-            # API mode: cancel via worker
-            self.worker.cancel_scan()
-            logging.info("[LibraryService] Cancellation requested via worker")
-            return True
-        else:
-            # CLI mode: cancellation handled by scan_library() checking a flag
-            # (would need to implement cancellation mechanism in core/library_scanner.py)
-            logging.warning("[LibraryService] CLI scan cancellation not yet implemented")
-            return False
+        # Clear pending scan jobs from queue
+        cleared = self.db.library.clear_scan_queue()
+        logging.info(f"[LibraryService] Cleared {cleared} pending scan jobs")
+        return cleared > 0
 
     def get_status(self) -> dict[str, Any]:
         """
@@ -146,58 +141,45 @@ class LibraryService:
                 - configured: bool
                 - library_path: str | None
                 - enabled: bool (worker running)
-                - running: bool (scan in progress)
-                - current_scan_id: int | None
-                - current_progress: dict | None
+                - pending_jobs: int (files waiting to be scanned)
+                - running_jobs: int (files currently being scanned)
         """
         if not self.cfg.library_path:
             return {
                 "configured": False,
                 "library_path": None,
                 "enabled": False,
-                "running": False,
-                "current_scan_id": None,
-                "current_progress": None,
+                "pending_jobs": 0,
+                "running_jobs": 0,
             }
 
         # Check if worker is available
         enabled = self.worker is not None
 
-        # Check database for running scans
-        running = self._is_scan_running()
-        current_scan_id = None
-        current_progress = None
-
-        if running:
-            scan = self.db.library.get_running_scan()
-            if scan:
-                current_scan_id = scan["id"]
-                current_progress = {
-                    "files_processed": scan.get("files_processed") or 0,
-                    "total_files": scan.get("total_files") or 0,
-                    "current_file": scan.get("current_file"),
-                }
+        # Count jobs by status
+        pending_jobs = self.db.library.count_pending_scans()
+        jobs = self.db.library.list_scan_jobs(limit=1000)
+        running_jobs = sum(1 for job in jobs if job["status"] == "running")
 
         return {
             "configured": True,
             "library_path": self.cfg.library_path,
             "enabled": enabled,
-            "running": running,
-            "current_scan_id": current_scan_id,
-            "current_progress": current_progress,
+            "pending_jobs": pending_jobs,
+            "running_jobs": running_jobs,
         }
 
-    def get_scan_history(self, limit: int = 10) -> list[dict[str, Any]]:
+    def get_scan_history(self, limit: int = 100) -> list[dict[str, Any]]:
         """
-        Get recent library scan history.
+        Get recent library scan jobs.
 
         Args:
-            limit: Maximum number of scans to return
+            limit: Maximum number of jobs to return
 
         Returns:
-            List of scan dicts with id, status, started_at, finished_at, files_scanned, etc.
+            List of job dicts with id, file_path, status, started_at, completed_at, etc.
         """
-        return self.db.library.list_scans(limit=limit)
+        return self.db.library.list_scan_jobs(limit=limit)
 
     def get_library_stats(self) -> dict[str, Any]:
         """
@@ -219,13 +201,14 @@ class LibraryService:
 
     def _is_scan_running(self) -> bool:
         """
-        Check if any scan is currently running (from CLI or API).
+        Check if any scan jobs are currently being processed.
 
         Returns:
-            True if a scan is in 'running' status
+            True if any jobs are in 'running' status
         """
-        count = self.db.library.count_running_scans()
-        return count > 0
+        # Query for any running scan jobs
+        jobs = self.db.library.list_scan_jobs(limit=1000)
+        return any(job["status"] == "running" for job in jobs)
 
     def pause(self) -> bool:
         """
@@ -235,16 +218,14 @@ class LibraryService:
             True if paused successfully
 
         Raises:
-            ValueError: If library not configured or worker not available
+            ValueError: If library not configured
         """
         if not self.cfg.library_path:
             raise ValueError("Library scanning not configured")
 
-        if not self.worker:
-            raise ValueError("Library scan worker not available")
-
-        self.worker.pause()
-        logging.info("[LibraryService] Library scanner paused")
+        # Set worker_enabled=false in database meta
+        self.db.meta.set_meta("worker_enabled", "false")
+        logging.info("[LibraryService] Library scanner paused via worker_enabled flag")
         return True
 
     def resume(self) -> bool:
@@ -255,35 +236,33 @@ class LibraryService:
             True if resumed successfully
 
         Raises:
-            ValueError: If library not configured or worker not available
+            ValueError: If library not configured
         """
         if not self.cfg.library_path:
             raise ValueError("Library scanning not configured")
 
-        if not self.worker:
-            raise ValueError("Library scan worker not available")
-
-        self.worker.resume()
-        logging.info("[LibraryService] Library scanner resumed")
+        # Set worker_enabled=true in database meta
+        self.db.meta.set_meta("worker_enabled", "true")
+        logging.info("[LibraryService] Library scanner resumed via worker_enabled flag")
         return True
 
     def clear_library_data(self) -> None:
         """
-        Clear all library data (files, tags, scans).
+        Clear all library data (files, tags, scan queue).
 
         This forces a fresh rescan by removing all existing library state.
-        Does not affect the job queue or system metadata.
+        Does not affect the ML tagging queue or system metadata.
 
         Raises:
             ValueError: If library not configured
-            RuntimeError: If a scan is currently running
+            RuntimeError: If scan jobs are currently running
         """
         if not self.cfg.library_path:
             raise ValueError("Library scanning not configured")
 
-        # Check if scan is running
+        # Check if any jobs are running
         if self._is_scan_running():
-            raise RuntimeError("Cannot clear library while a scan is running. Cancel the scan first.")
+            raise RuntimeError("Cannot clear library while scan jobs are running. Cancel scans first.")
 
         self.db.library.clear_library_data()
         logging.info("[LibraryService] Library data cleared")

@@ -6,13 +6,14 @@ scanner.py
 ──────────
 LibraryScanWorker class for queue-based library scanning.
 
-Extends BaseWorker to provide systematic library scanning using the
-library_queue table. Scans are requested via enqueue and processed
-in order like other workers.
+Extends BaseWorker to provide per-file library scanning using the
+library_queue table. Files are enqueued by start_library_scan_workflow
+and processed one at a time by this worker.
 
-Note: Unlike file processing workers (TaggerWorker, RecalibrationWorker),
-scanner processes scan_id integers (not file paths) since a scan covers
-the entire library in one operation.
+Each job processes ONE file:
+- Extracts metadata and tags
+- Updates library_files table
+- Optionally enqueues for ML tagging
 """
 # ======================================================================
 
@@ -22,7 +23,7 @@ from typing import TYPE_CHECKING, Any
 
 from nomarr.services.queue import ScanQueue
 from nomarr.services.workers.base import BaseWorker
-from nomarr.workflows.scan_library import scan_library_workflow
+from nomarr.workflows.scan_single_file import scan_single_file_workflow
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -32,9 +33,8 @@ class LibraryScanWorker(BaseWorker):
     """
     Background worker for library scanning operations.
 
-    Polls library_queue for pending scan requests and executes them
-    via scan_library_workflow. Follows the same pattern as TaggerWorker
-    and RecalibrationWorker.
+    Polls library_queue for pending scan jobs and executes them
+    via scan_single_file_workflow. Each job processes ONE file.
 
     Inherits queue polling, state management, and worker lifecycle from BaseWorker.
     """
@@ -43,7 +43,6 @@ class LibraryScanWorker(BaseWorker):
         self,
         db: Database,
         event_broker: Any,
-        library_path: str,
         namespace: str,
         interval: int = 5,
         worker_id: int = 0,
@@ -56,7 +55,6 @@ class LibraryScanWorker(BaseWorker):
         Args:
             db: Database instance
             event_broker: Event broker for SSE state updates (required)
-            library_path: Root path to scan
             namespace: Tag namespace for tag extraction
             interval: Polling interval in seconds (default: 5)
             worker_id: Unique worker ID (for multi-worker setups)
@@ -77,45 +75,26 @@ class LibraryScanWorker(BaseWorker):
             interval=interval,
         )
         self.db = db
-        self.library_path = library_path
         self.namespace = namespace
         self.auto_tag = auto_tag
         self.ignore_patterns = ignore_patterns
 
     def _process(self, path: str, force: bool) -> dict[str, Any]:
         """
-        Process a library scan.
+        Process a single file scan job.
 
         Args:
-            path: Unused (placeholder from BaseWorker interface)
-            force: Unused (scans always process entire library)
+            path: File path to scan
+            force: Whether to force rescan even if file hasn't changed
 
         Returns:
-            Dict with scan statistics
-
-        Note: Accesses scan_id via self._current_job_id from BaseWorker
+            Dict with scan results from workflow
         """
-        scan_id = self._current_job_id
-        if scan_id is None:
-            raise RuntimeError("No scan_id available - _process called outside job context")
-
-        # Progress callback for workflow
-        def progress_callback(current: int, total: int) -> None:
-            """Update scan progress in database."""
-            self.db.library.update_library_scan(
-                scan_id,
-                files_scanned=current,
-            )
-
-        # Run scan workflow
-        stats = scan_library_workflow(
-            self.db,
-            self.library_path,
-            self.namespace,
-            progress_callback,
-            scan_id=scan_id,
+        return scan_single_file_workflow(
+            db=self.db,
+            file_path=path,
+            namespace=self.namespace,
+            force=force,
             auto_tag=self.auto_tag,
             ignore_patterns=self.ignore_patterns,
         )
-
-        return stats

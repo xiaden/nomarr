@@ -88,18 +88,21 @@ SCHEMA = [
     );
     """,
     # Library scan queue - tracks library scanning jobs (read existing tags from files)
+    # Each row represents ONE file to scan
     """
     CREATE TABLE IF NOT EXISTS library_queue (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        file_path TEXT NOT NULL,
+        status TEXT DEFAULT 'pending',
+        force INTEGER DEFAULT 0,
         started_at INTEGER,
-        finished_at INTEGER,
-        files_scanned INTEGER DEFAULT 0,
-        files_added INTEGER DEFAULT 0,
-        files_updated INTEGER DEFAULT 0,
-        files_removed INTEGER DEFAULT 0,
-        status TEXT DEFAULT 'running',
+        completed_at INTEGER,
         error_message TEXT
     );
+    """,
+    # Index for fast library queue queries
+    """
+    CREATE INDEX IF NOT EXISTS idx_library_queue_status ON library_queue(status);
     """,
     # Calibration queue - tracks recalibration jobs (apply calibration to existing tags)
     """

@@ -69,23 +69,6 @@ class TestDatabaseClose:
         # Assert
 
 
-class TestDatabaseCreateLibraryScan:
-    """Test Database.create_library_scan() operations."""
-
-    def test_create_library_scan_success(self, test_db):
-        """Should successfully create library scan."""
-        # Arrange
-
-        # Act
-        result = test_db.library.create_library_scan()
-
-        # Assert
-        assert isinstance(result, int)
-        # Verify item was added
-        # TODO: Check item can be retrieved
-        # TODO: Verify count/depth increased
-
-
 class TestDatabaseCreateSession:
     """Test Database.create_session() operations."""
 
@@ -234,16 +217,17 @@ class TestDatabaseGetLibraryScan:
     """Test Database.get_library_scan() operations."""
 
     def test_get_library_scan_success(self, test_db):
-        """Should successfully get library scan."""
-        # Arrange - create scan first
-        scan_id = test_db.library.create_library_scan()
+        """Should successfully get library scan job."""
+        # Arrange - enqueue a scan job
+        job_id = test_db.library.enqueue_scan(file_path="/music/test.flac", force=False)
 
         # Act
-        result = test_db.library.get_library_scan(scan_id=scan_id)
+        result = test_db.library.get_library_scan(scan_id=job_id)
 
         # Assert
         assert isinstance(result, dict)
-        assert result["id"] == scan_id
+        assert result["id"] == job_id
+        assert result["file_path"] == "/music/test.flac"
 
     def test_get_library_scan_not_found(self, test_db):
         """Should return None when item not found."""
@@ -545,38 +529,6 @@ class TestDatabaseUpdateJob:
         # Assert
         # TODO: Verify state changed
         # TODO: Verify get() reflects new state
-
-
-class TestDatabaseUpdateLibraryScan:
-    """Test Database.update_library_scan() operations."""
-
-    def test_update_library_scan_success(self, test_db):
-        """Should successfully update library scan."""
-        # Arrange
-
-        # Act
-        test_db.library.update_library_scan(scan_id=1)
-
-        # Assert
-        # TODO: Verify state changed
-        # TODO: Verify get() reflects new state
-
-    @pytest.mark.skip(reason="Method doesn't validate paths - no FileNotFoundError raised")
-    def test_update_library_scan_invalid_path_raises_error(self, test_db):
-        """Should raise error for invalid file path."""
-        # Arrange
-
-        # Act & Assert
-        with pytest.raises(FileNotFoundError):
-            test_db.library.update_library_scan(
-                scan_id=1,
-                status="pending",
-                files_scanned="/nonexistent.mp3",
-                files_added="/nonexistent.mp3",
-                files_updated="/nonexistent.mp3",
-                files_removed="/nonexistent.mp3",
-                error_message="test_value",
-            )
 
 
 class TestDatabaseUpsertFileTags:

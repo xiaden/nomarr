@@ -21,22 +21,20 @@ async def start_library_scan(
     _session: dict = Depends(verify_session),
 ):
     """
-    Start a new library scan (queues it for background processing).
+    Start a new library scan (discovers files and enqueues them for background processing).
 
     Returns:
-        Dict with scan_id and status
+        Dict with scan statistics
     """
     try:
-        scan_id = library_service.start_scan(background=True)
+        stats = library_service.start_scan()
         return {
-            "scan_id": scan_id,
             "status": "queued",
-            "message": "Library scan queued successfully",
+            "message": f"Library scan started: {stats['files_queued']} files queued",
+            "stats": stats,
         }
     except ValueError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
-    except RuntimeError as e:
-        raise HTTPException(status_code=409, detail=str(e)) from e
     except Exception as e:
         logging.error(f"[API] Failed to start library scan: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to start scan: {e}") from e
