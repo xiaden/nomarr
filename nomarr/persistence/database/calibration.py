@@ -21,12 +21,12 @@ class CalibrationOperations:
 
     # ---------------------------- Calibration Queue ----------------------------
 
-    def enqueue_calibration(self, file_path: str) -> int:
+    def enqueue_calibration(self, path: str) -> int:
         """Add file to calibration queue. Returns calibration job ID."""
         cur = self.conn.cursor()
         cur.execute(
-            "INSERT INTO calibration_queue(file_path, status, started_at) VALUES(?, 'pending', ?)",
-            (file_path, now_ms()),
+            "INSERT INTO calibration_queue(path, status, started_at) VALUES(?, 'pending', ?)",
+            (path, now_ms()),
         )
         self.conn.commit()
         job_id = cur.lastrowid
@@ -39,22 +39,20 @@ class CalibrationOperations:
         Get next pending calibration job and mark it running.
 
         Returns:
-            (job_id, file_path) or None if no jobs pending
+            (job_id, path) or None if no jobs pending
         """
-        cur = self.conn.execute(
-            "SELECT id, file_path FROM calibration_queue WHERE status='pending' ORDER BY id LIMIT 1"
-        )
+        cur = self.conn.execute("SELECT id, path FROM calibration_queue WHERE status='pending' ORDER BY id LIMIT 1")
         row = cur.fetchone()
         if not row:
             return None
 
-        job_id, file_path = row
+        job_id, path = row
         self.conn.execute(
             "UPDATE calibration_queue SET status='running' WHERE id=?",
             (job_id,),
         )
         self.conn.commit()
-        return (job_id, file_path)
+        return (job_id, path)
 
     def complete_calibration_job(self, job_id: int) -> None:
         """Mark calibration job as completed."""

@@ -260,13 +260,13 @@ class RecalibrationQueue(BaseQueue):
         Dequeue next pending recalibration job.
 
         Returns:
-            Tuple of (job_id, file_path, force=False) or None if no jobs available
+            Tuple of (job_id, path, force=False) or None if no jobs available
         """
         job = self.db.calibration.get_next_calibration_job()
         if not job:
             return None
-        job_id, file_path = job
-        return (job_id, file_path, False)
+        job_id, path = job
+        return (job_id, path, False)
 
     def mark_complete(self, job_id: int) -> None:
         """Mark recalibration job as complete."""
@@ -303,7 +303,7 @@ class ScanQueue(BaseQueue):
         Dequeue next pending scan job.
 
         Returns:
-            Tuple of (job_id, file_path, force) or None if no pending jobs
+            Tuple of (job_id, path, force) or None if no pending jobs
         """
         return self.db.library.dequeue_scan()
 

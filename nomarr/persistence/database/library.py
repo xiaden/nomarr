@@ -267,12 +267,12 @@ class LibraryOperations:
 
     # ---------------------------- Library Scan Queue ----------------------------
 
-    def enqueue_scan(self, file_path: str, force: bool = False) -> int:
+    def enqueue_scan(self, path: str, force: bool = False) -> int:
         """
         Enqueue a file for library scanning.
 
         Args:
-            file_path: Path to the file to scan
+            path: Path to the file to scan
             force: Whether to force rescan even if file hasn't changed
 
         Returns:
@@ -280,8 +280,8 @@ class LibraryOperations:
         """
         cur = self.conn.cursor()
         cur.execute(
-            "INSERT INTO library_queue(file_path, status, force, started_at) VALUES(?, 'pending', ?, NULL)",
-            (file_path, 1 if force else 0),
+            "INSERT INTO library_queue(path, status, force, started_at) VALUES(?, 'pending', ?, NULL)",
+            (path, 1 if force else 0),
         )
         self.conn.commit()
         job_id = cur.lastrowid
@@ -294,20 +294,18 @@ class LibraryOperations:
         Get next pending scan job and mark it as running.
 
         Returns:
-            Tuple of (job_id, file_path, force) or None if no pending jobs
+            Tuple of (job_id, path, force) or None if no pending jobs
         """
-        cur = self.conn.execute(
-            "SELECT id, file_path, force FROM library_queue WHERE status='pending' ORDER BY id LIMIT 1"
-        )
+        cur = self.conn.execute("SELECT id, path, force FROM library_queue WHERE status='pending' ORDER BY id LIMIT 1")
         row = cur.fetchone()
         if not row:
             return None
 
-        job_id, file_path, force = row
+        job_id, path, force = row
         self.conn.execute("UPDATE library_queue SET status='running', started_at=? WHERE id=?", (now_ms(), job_id))
         self.conn.commit()
 
-        return (job_id, file_path, bool(force))
+        return (job_id, path, bool(force))
 
     def mark_scan_complete(self, job_id: int) -> None:
         """
@@ -347,7 +345,7 @@ class LibraryOperations:
             List of job dicts
         """
         cur = self.conn.execute(
-            "SELECT id, file_path, status, force, started_at, completed_at, error_message "
+            "SELECT id, path, status, force, started_at, completed_at, error_message "
             "FROM library_queue ORDER BY id DESC LIMIT ?",
             (limit,),
         )

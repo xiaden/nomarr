@@ -219,7 +219,7 @@ class TestDatabaseGetLibraryScan:
     def test_get_library_scan_success(self, test_db):
         """Should successfully get library scan job."""
         # Arrange - enqueue a scan job
-        job_id = test_db.library.enqueue_scan(file_path="/music/test.flac", force=False)
+        job_id = test_db.library.enqueue_scan(path="/music/test.flac", force=False)
 
         # Act
         result = test_db.library.get_library_scan(scan_id=job_id)
@@ -227,7 +227,7 @@ class TestDatabaseGetLibraryScan:
         # Assert
         assert isinstance(result, dict)
         assert result["id"] == job_id
-        assert result["file_path"] == "/music/test.flac"
+        assert result["path"] == "/music/test.flac"
 
     def test_get_library_scan_not_found(self, test_db):
         """Should return None when item not found."""

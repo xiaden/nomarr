@@ -50,6 +50,9 @@ config/*.sqlite*
 .coverage
 htmlcov/
 .pytest_cache/
+
+# Project overview (for GPT/AI assistants)
+tree.txt
 coverage.xml
 *.cover
 .hypothesis/

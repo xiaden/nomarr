@@ -92,7 +92,7 @@ SCHEMA = [
     """
     CREATE TABLE IF NOT EXISTS library_queue (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        file_path TEXT NOT NULL,
+        path TEXT NOT NULL,
         status TEXT DEFAULT 'pending',
         force INTEGER DEFAULT 0,
         started_at INTEGER,
@@ -108,7 +108,7 @@ SCHEMA = [
     """
     CREATE TABLE IF NOT EXISTS calibration_queue (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        file_path TEXT NOT NULL,
+        path TEXT NOT NULL,
         status TEXT DEFAULT 'pending',
         started_at INTEGER,
         completed_at INTEGER,

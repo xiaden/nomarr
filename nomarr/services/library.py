@@ -177,7 +177,7 @@ class LibraryService:
             limit: Maximum number of jobs to return
 
         Returns:
-            List of job dicts with id, file_path, status, started_at, completed_at, etc.
+            List of job dicts with id, path, status, started_at, completed_at, etc.
         """
         return self.db.library.list_scan_jobs(limit=limit)
 
