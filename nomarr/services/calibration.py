@@ -28,6 +28,7 @@ class CalibrationConfig:
     models_dir: str
     namespace: str
     thresholds: dict[str, float] = field(default_factory=dict)
+    calibrate_heads: bool = False  # Whether calibration features are enabled
 
 
 class CalibrationService:

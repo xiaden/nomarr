@@ -34,31 +34,14 @@ router = APIRouter(tags=["admin"], prefix="/admin")
 async def admin_remove_job(
     payload: RemoveJobRequest,
     queue_service: QueueService = Depends(get_queue_service),
-    worker_service: WorkerService = Depends(get_worker_service),
-    worker_pool: list = Depends(get_worker_pool),
 ):
     """Remove a single job by ID (cannot remove if running)."""
-    job_id = int(payload.job_id)
-
-    # Check if job exists and is not running
-    job = queue_service.get_job(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    if job["status"] == "running":
-        raise HTTPException(status_code=409, detail="Cannot remove a running job")
-
-    # Remove job using service
-    queue_service.remove_jobs(job_id=job_id)
-
-    # Auto-resume worker after removing jobs
-    if worker_service:
-        worker_service.enable()
-        updated_pool = worker_service.start_workers()
-        # Update worker pool in place
-        worker_pool.clear()
-        worker_pool.extend(updated_pool)
-
-    return {"status": "ok", "removed": job_id, "worker_enabled": True}
+    try:
+        queue_service.remove_jobs(job_id=int(payload.job_id))
+        return {"status": "ok", "removed": int(payload.job_id)}
+    except ValueError as e:
+        status_code = 404 if "not found" in str(e).lower() else 409
+        raise HTTPException(status_code=status_code, detail=str(e)) from e
 
 
 # ----------------------------------------------------------------------
@@ -68,32 +51,16 @@ async def admin_remove_job(
 async def admin_flush_queue(
     payload: FlushRequest = Body(default=None),
     queue_service: QueueService = Depends(get_queue_service),
-    worker_service: WorkerService = Depends(get_worker_service),
-    worker_pool: list = Depends(get_worker_pool),
 ):
     """Flush jobs by status (default: pending + error). Cannot flush running jobs."""
     statuses = payload.statuses if payload and payload.statuses else ["pending", "error"]
-    valid = {"pending", "running", "done", "error"}
-    bad = [s for s in statuses if s not in valid]
-    if bad:
-        raise HTTPException(status_code=400, detail=f"Invalid statuses: {bad}")
-    if "running" in statuses:
-        raise HTTPException(status_code=409, detail="Refusing to flush 'running' jobs")
 
-    # Remove jobs by status using service
-    total_removed = 0
-    for status in statuses:
-        removed = queue_service.remove_jobs(status=status)
-        total_removed += removed
-
-    # Auto-resume worker after flushing
-    if worker_service:
-        worker_service.enable()
-        updated_pool = worker_service.start_workers()
-        worker_pool.clear()
-        worker_pool.extend(updated_pool)
-
-    return {"status": "ok", "flushed_statuses": statuses, "removed": total_removed, "worker_enabled": True}
+    try:
+        result = queue_service.flush_by_statuses(statuses)
+        return {"status": "ok", **result}
+    except ValueError as e:
+        status_code = 400 if "Invalid" in str(e) else 409
+        raise HTTPException(status_code=status_code, detail=str(e)) from e
 
 
 # ----------------------------------------------------------------------
@@ -109,14 +76,8 @@ async def admin_cleanup_queue(
     Matches CLI cleanup command behavior.
     Default: 168 hours (7 days).
     """
-    # Use service to cleanup old jobs
-    removed = queue_service.cleanup_old_jobs(max_age_hours=max_age_hours)
-
-    return {
-        "status": "ok",
-        "max_age_hours": max_age_hours,
-        "jobs_removed": removed,
-    }
+    removed = queue_service.cleanup_old_jobs(max_age_hours)
+    return {"status": "ok", "max_age_hours": max_age_hours, "jobs_removed": removed}
 
 
 # ----------------------------------------------------------------------
@@ -131,7 +92,7 @@ async def admin_cache_refresh(
         num = ml_service.warmup_cache()
         return {"status": "ok", "predictors": num}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Cache refresh failed: {e}") from e
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 # ----------------------------------------------------------------------
@@ -143,14 +104,8 @@ async def admin_pause_worker(
     event_broker=Depends(get_event_broker),
 ):
     """Pause the background worker (stops processing new jobs)."""
-    if worker_service:
-        worker_service.disable()
-
-    # Publish worker status update
-    if event_broker:
-        event_broker.update_worker_state({"enabled": False})
-
-    return {"status": "ok", "worker_enabled": False}
+    result = worker_service.pause_workers(event_broker)
+    return {"status": "ok", **result}
 
 
 # ----------------------------------------------------------------------
@@ -163,17 +118,8 @@ async def admin_resume_worker(
     event_broker=Depends(get_event_broker),
 ):
     """Resume the background worker (starts processing again)."""
-    if worker_service:
-        worker_service.enable()
-        updated_pool = worker_service.start_workers(event_broker=event_broker)
-        worker_pool.clear()
-        worker_pool.extend(updated_pool)
-
-    # Publish worker status update
-    if event_broker:
-        event_broker.update_worker_state({"enabled": True})
-
-    return {"status": "ok", "worker_enabled": True}
+    result = worker_service.resume_workers(worker_pool, event_broker)
+    return {"status": "ok", **result}
 
 
 # ----------------------------------------------------------------------

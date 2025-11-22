@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
-    from nomarr.services.workers.recalibration import RecalibrationWorker
+    from nomarr.services.workers.base import BaseWorker
 
 
 logger = logging.getLogger(__name__)
@@ -21,12 +21,12 @@ class RecalibrationService:
     to raw scores already stored in the database, without re-running ML inference.
     """
 
-    def __init__(self, database: Database, worker: RecalibrationWorker | None = None):
+    def __init__(self, database: Database, worker: BaseWorker | None = None):
         """Initialize the recalibration service.
 
         Args:
             database: Database instance for queue operations
-            worker: RecalibrationWorker instance (optional, for worker checks)
+            worker: RecalibrationWorker (BaseWorker) instance (optional, for worker checks)
         """
         self.db = database
         self.worker = worker

@@ -1,61 +1,79 @@
 #!/usr/bin/env python3
 # ======================================================================
-#  Essentia Autotag - Tagger Worker Factory
+#  Essentia Autotag - Tagger Worker
 """
 tagger.py
 ──────────
-Factory function for creating TaggerWorker instances.
+TaggerWorker class for ML-based audio file tagging.
 
-Creates a BaseWorker configured for audio file tagging using ML models.
+Extends BaseWorker to provide queue-based processing of audio files
+using ML models for automatic tag generation.
 """
 # ======================================================================
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from nomarr.persistence.db import Database
 from nomarr.services.config import ConfigService
-from nomarr.services.queue import ProcessingQueue
 from nomarr.services.workers.base import BaseWorker
 from nomarr.workflows.process_file import process_file_workflow
 
+if TYPE_CHECKING:
+    from nomarr.persistence.db import Database
+    from nomarr.services.queue import ProcessingQueue
 
-def create_tagger_worker(
-    db: Database,
-    queue: ProcessingQueue,
-    event_broker: Any,
-    interval: int = 2,
-    worker_id: int = 0,
-) -> BaseWorker:
+
+class TaggerWorker(BaseWorker):
     """
-    Create a TaggerWorker for ML-based audio file tagging.
+    Background worker for ML-based audio file tagging.
 
-    Args:
-        db: Database instance for meta operations
-        queue: ProcessingQueue instance for job operations
-        event_broker: Event broker for SSE state updates (required)
-        interval: Polling interval in seconds (default: 2)
-        worker_id: Unique worker ID (for multi-worker setups)
-
-    Returns:
-        BaseWorker instance configured for tagging operations
+    Polls the processing queue for pending files and tags them using
+    ML models. Inherits queue polling, state management, and worker
+    lifecycle from BaseWorker.
     """
 
-    # Adapter to match BaseWorker's expected signature: (path: str, force: bool) -> dict
-    def _process_adapter(path: str, force: bool) -> dict[str, Any]:
-        """Adapt process_file signature to match BaseWorker expectations."""
-        config_service = ConfigService()
-        config = config_service.make_processor_config()
-        # Note: force parameter is ignored - config comes from DB/YAML
-        return process_file_workflow(path, config, db)
+    def __init__(
+        self,
+        db: Database,
+        queue: ProcessingQueue,
+        event_broker: Any,
+        interval: int = 2,
+        worker_id: int = 0,
+    ):
+        """
+        Initialize TaggerWorker.
 
-    return BaseWorker(
-        name="TaggerWorker",
-        queue=queue,
-        process_fn=_process_adapter,
-        db=db,
-        event_broker=event_broker,
-        worker_id=worker_id,
-        interval=interval,
-    )
+        Args:
+            db: Database instance for meta operations
+            queue: ProcessingQueue instance for job operations
+            event_broker: Event broker for SSE state updates (required)
+            interval: Polling interval in seconds (default: 2)
+            worker_id: Unique worker ID (for multi-worker setups)
+        """
+        # Initialize parent BaseWorker
+        super().__init__(
+            name="TaggerWorker",
+            queue=queue,
+            process_fn=self._process,
+            db=db,
+            event_broker=event_broker,
+            worker_id=worker_id,
+            interval=interval,
+        )
+        self.db = db
+        self.config_service = ConfigService()
+
+    def _process(self, path: str, force: bool) -> dict[str, Any]:
+        """
+        Process a single audio file with ML tagging.
+
+        Args:
+            path: Absolute path to audio file
+            force: Whether to force reprocessing (ignored, uses config)
+
+        Returns:
+            Dict with processing results
+        """
+        config = self.config_service.make_processor_config()
+        return process_file_workflow(path, config, self.db)

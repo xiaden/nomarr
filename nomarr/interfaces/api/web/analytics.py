@@ -22,7 +22,7 @@ router = APIRouter(prefix="/api/analytics", tags=["Analytics"])
 @router.get("/tag-frequencies", dependencies=[Depends(verify_session)])
 async def web_analytics_tag_frequencies(
     limit: int = 50,
-    analytics_service: AnalyticsService = Depends(get_analytics_service),
+    analytics_service: "AnalyticsService" = Depends(get_analytics_service),
 ) -> dict[str, Any]:
     """Get tag frequency statistics."""
     try:
@@ -35,7 +35,7 @@ async def web_analytics_tag_frequencies(
 
 @router.get("/mood-distribution", dependencies=[Depends(verify_session)])
 async def web_analytics_mood_distribution(
-    analytics_service: AnalyticsService = Depends(get_analytics_service),
+    analytics_service: "AnalyticsService" = Depends(get_analytics_service),
 ) -> dict[str, Any]:
     """Get mood tag distribution."""
     try:
@@ -49,7 +49,7 @@ async def web_analytics_mood_distribution(
 @router.get("/tag-correlations", dependencies=[Depends(verify_session)])
 async def web_analytics_tag_correlations(
     top_n: int = 20,
-    analytics_service: AnalyticsService = Depends(get_analytics_service),
+    analytics_service: "AnalyticsService" = Depends(get_analytics_service),
 ) -> dict[str, Any]:
     """
     Get VALUE-based correlation matrix for mood values, genres, and attributes.
@@ -67,7 +67,7 @@ async def web_analytics_tag_correlations(
 async def web_analytics_tag_co_occurrences(
     tag: str,
     limit: int = 10,
-    analytics_service: AnalyticsService = Depends(get_analytics_service),
+    analytics_service: "AnalyticsService" = Depends(get_analytics_service),
 ) -> dict[str, Any]:
     """
     Get mood value co-occurrences and genre/artist relationships.

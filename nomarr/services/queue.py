@@ -8,10 +8,62 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from abc import ABC, abstractmethod
 from typing import Any
 
 from nomarr.persistence.db import Database
 from nomarr.workflows.enqueue_files import enqueue_files_workflow
+
+
+# ----------------------------------------------------------------------
+#  BaseQueue - Abstract Queue Interface
+# ----------------------------------------------------------------------
+class BaseQueue(ABC):
+    """
+    Abstract base class for all queue implementations.
+
+    Defines the common interface expected by BaseWorker for queue polling
+    and job state management. Each concrete queue wraps a specific DB table.
+    """
+
+    def __init__(self, db: Database):
+        """Initialize queue with database connection."""
+        self.db = db
+        self.lock = threading.Lock()
+
+    @abstractmethod
+    def dequeue(self) -> tuple[int, str, bool] | None:
+        """
+        Dequeue next pending job.
+
+        Returns:
+            Tuple of (job_id, path, force) or None if no jobs available
+        """
+        ...
+
+    @abstractmethod
+    def mark_complete(self, job_id: int) -> None:
+        """Mark job as complete."""
+        ...
+
+    @abstractmethod
+    def mark_error(self, job_id: int, error: str) -> None:
+        """Mark job as failed."""
+        ...
+
+    @abstractmethod
+    def enqueue(self, path: str, force: bool = False) -> int:
+        """
+        Enqueue a new job.
+
+        Args:
+            path: File path or identifier
+            force: Whether to force reprocessing
+
+        Returns:
+            job_id of created job
+        """
+        ...
 
 
 # ----------------------------------------------------------------------
@@ -45,22 +97,65 @@ class Job:
 
 
 # ----------------------------------------------------------------------
-#  ProcessingQueue - Data Access Layer
+#  ProcessingQueue - Data Access Layer for tag_queue table
 # ----------------------------------------------------------------------
-class ProcessingQueue:
+class ProcessingQueue(BaseQueue):
     """
-    Thread-safe data access layer for the ML processing queue table.
+    Thread-safe data access layer for the ML processing queue (tag_queue table).
 
-    Provides CRUD operations for queue jobs using QueueOperations.
+    Provides CRUD operations for tagging jobs using QueueOperations.
     Business logic should live in QueueService, not here.
     """
 
-    def __init__(self, db: Database):
-        """Initialize queue with database connection and lock."""
-        self.db = db
-        self.lock = threading.Lock()
+    def dequeue(self) -> tuple[int, str, bool] | None:
+        """
+        Dequeue next pending tagging job.
 
-    # ---------------------------- Basic CRUD Operations ----------------------------
+        Returns:
+            Tuple of (job_id, path, force) or None if no jobs available
+        """
+        with self.lock:
+            job = self.db.queue.get_next_pending_job()
+            if not job:
+                return None
+
+            job_id = job["id"]
+            path = job["path"]
+            force = job["force"]
+
+            # Mark job as running
+            self.db.queue.update_job(job_id, "running")
+            logging.debug(f"[ProcessingQueue] Dequeued job {job_id}: {path}")
+
+            return (job_id, path, force)
+
+    def mark_complete(self, job_id: int) -> None:
+        """Mark tagging job as complete."""
+        with self.lock:
+            self.db.queue.update_job(job_id, "done")
+
+    def mark_error(self, job_id: int, error: str) -> None:
+        """Mark tagging job as failed."""
+        with self.lock:
+            self.db.queue.update_job(job_id, "error", error_message=error)
+
+    def enqueue(self, path: str, force: bool = False) -> int:
+        """
+        Enqueue a file for ML tagging.
+
+        Args:
+            path: File path to tag
+            force: Whether to force reprocessing
+
+        Returns:
+            job_id of created job
+        """
+        with self.lock:
+            job_id = self.db.queue.enqueue(path, force)
+            logging.debug(f"[ProcessingQueue] Enqueued job {job_id} for {path}")
+            return job_id
+
+    # ---------------------------- Legacy Methods (keep for compatibility) ----------------------------
 
     def add(self, path: str, force: bool = False) -> int:
         """Add a file to the processing queue."""
@@ -110,10 +205,6 @@ class ProcessingQueue:
         """Mark a job as complete with optional results."""
         self.update_status(job_id, "done", results=results)
 
-    def mark_error(self, job_id: int, error_message: str) -> None:
-        """Mark a job as failed."""
-        self.update_status(job_id, "error", error_message=error_message)
-
     def depth(self) -> int:
         """Return number of pending/running jobs."""
         return self.db.queue.queue_depth()
@@ -154,6 +245,99 @@ class ProcessingQueue:
         """
         with self.lock:
             return self.db.queue.reset_error_jobs()
+
+
+class RecalibrationQueue(BaseQueue):
+    """
+    Queue interface for calibration_queue table.
+
+    Wraps calibration queue operations to match BaseQueue interface
+    expected by BaseWorker.
+    """
+
+    def dequeue(self) -> tuple[int, str, bool] | None:
+        """
+        Dequeue next pending recalibration job.
+
+        Returns:
+            Tuple of (job_id, file_path, force=False) or None if no jobs available
+        """
+        job = self.db.calibration.get_next_calibration_job()
+        if not job:
+            return None
+        job_id, file_path = job
+        return (job_id, file_path, False)
+
+    def mark_complete(self, job_id: int) -> None:
+        """Mark recalibration job as complete."""
+        self.db.calibration.complete_calibration_job(job_id)
+
+    def mark_error(self, job_id: int, error: str) -> None:
+        """Mark recalibration job as failed."""
+        self.db.calibration.fail_calibration_job(job_id, error)
+
+    def enqueue(self, path: str, force: bool = False) -> int:
+        """
+        Enqueue a file for recalibration.
+
+        Args:
+            path: File path to recalibrate
+            force: Ignored (recalibration always runs)
+
+        Returns:
+            job_id of created job
+        """
+        return self.db.calibration.enqueue_calibration(path)
+
+
+class ScanQueue(BaseQueue):
+    """
+    Queue interface for library_queue table.
+
+    Wraps library_queue operations to match BaseQueue interface
+    expected by BaseWorker.
+    """
+
+    def dequeue(self) -> tuple[int, str, bool] | None:
+        """
+        Dequeue next pending scan.
+
+        Returns:
+            Tuple of (scan_id, library_path_placeholder, force) or None if no pending scans
+
+        Note: library_path comes from worker config, not queue.
+        We return scan_id as int, empty path placeholder, force=False.
+        """
+        scans = self.db.library.list_library_scans(limit=100)
+        for scan in scans:
+            if scan.get("status") == "pending":
+                scan_id = scan["id"]
+                # Mark as running
+                self.db.library.update_library_scan(scan_id, status="running")
+                # Return scan_id, empty path placeholder, force=False
+                return (scan_id, "", False)
+        return None
+
+    def mark_complete(self, job_id: int) -> None:
+        """Mark scan as complete."""
+        self.db.library.update_library_scan(job_id, status="done")
+
+    def mark_error(self, job_id: int, error: str) -> None:
+        """Mark scan as failed."""
+        self.db.library.update_library_scan(job_id, status="error", error_message=error)
+
+    def enqueue(self, path: str = "", force: bool = False) -> int:
+        """
+        Enqueue a new scan request.
+
+        Args:
+            path: Ignored (library_path comes from worker config)
+            force: Ignored (scans always process entire library)
+
+        Returns:
+            scan_id of created scan
+        """
+        return self.db.library.create_library_scan()
 
 
 class QueueService:
@@ -218,10 +402,16 @@ class QueueService:
             Number of jobs removed
 
         Raises:
-            ValueError: If no removal criteria specified or invalid combination
+            ValueError: If no removal criteria specified, invalid combination, job not found, or attempting to remove running job
         """
         if job_id is not None:
-            # Remove single job by ID
+            # Remove single job by ID - validate first
+            job = self.get_job(job_id)
+            if not job:
+                raise ValueError(f"Job {job_id} not found")
+            if job["status"] == "running":
+                raise ValueError("Cannot remove running job")
+
             removed = self.queue.delete(job_id)
             logging.info(f"[QueueService] Removed job {job_id}")
             return removed
@@ -236,7 +426,7 @@ class QueueService:
         elif status:
             # Remove jobs by status
             # Business logic: validate status
-            valid_statuses = {"pending", "done", "error"}
+            valid_statuses = {"pending", "running", "done", "error"}
             if status not in valid_statuses:
                 raise ValueError(f"Invalid status: {status}")
             if status == "running":
@@ -248,6 +438,36 @@ class QueueService:
 
         else:
             raise ValueError("Must specify job_id, status, or all=True")
+
+    def flush_by_statuses(self, statuses: list[str]) -> dict[str, Any]:
+        """
+        Remove jobs for multiple statuses at once.
+
+        Args:
+            statuses: List of statuses to flush
+
+        Returns:
+            Dict with flushed_statuses and total removed count
+
+        Raises:
+            ValueError: If invalid status or attempting to flush running jobs
+        """
+        # Validate all statuses first
+        valid = {"pending", "running", "done", "error"}
+        invalid = [s for s in statuses if s not in valid]
+        if invalid:
+            raise ValueError(f"Invalid statuses: {invalid}")
+        if "running" in statuses:
+            raise ValueError("Cannot flush running jobs")
+
+        # Remove jobs by each status
+        total_removed = 0
+        for status in statuses:
+            removed = self.remove_jobs(status=status)
+            total_removed += removed
+
+        logging.info(f"[QueueService] Flushed {total_removed} jobs with statuses {statuses}")
+        return {"flushed_statuses": statuses, "removed": total_removed}
 
     def get_status(self) -> dict[str, Any]:
         """
@@ -341,15 +561,6 @@ class QueueService:
 
         logging.info(f"[QueueService] Cleaned up {removed} old job(s) (>{max_age_hours}h)")
         return removed
-
-    def get_depth(self) -> int:
-        """
-        Get number of pending jobs in queue.
-
-        Returns:
-            Count of jobs with status='pending'
-        """
-        return self.queue.depth()
 
     def list_jobs(self, limit: int = 50, offset: int = 0, status: str | None = None) -> dict[str, Any]:
         """

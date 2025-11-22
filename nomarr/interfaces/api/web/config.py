@@ -92,7 +92,7 @@ def get_config(
 def update_config(
     request: ConfigUpdateRequest,
     _session: dict = Depends(verify_session),
-    config_service: ConfigService = Depends(get_config_service),
+    config_service: "ConfigService" = Depends(get_config_service),
 ) -> dict[str, Any]:
     """
     Update a configuration value in the database.

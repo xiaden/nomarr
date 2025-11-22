@@ -32,9 +32,10 @@ from nomarr.services.keys import KeyManagementService
 from nomarr.services.library import LibraryService
 from nomarr.services.navidrome_service import NavidromeService
 from nomarr.services.processing import ProcessingService
-from nomarr.services.queue import ProcessingQueue, QueueService
+from nomarr.services.queue import ProcessingQueue, QueueService, RecalibrationQueue
 from nomarr.services.recalibration import RecalibrationService
 from nomarr.services.worker import WorkerService
+from nomarr.services.workers.base import BaseWorker
 from nomarr.services.workers.recalibration import RecalibrationWorker
 from nomarr.services.workers.scanner import LibraryScanWorker
 
@@ -130,7 +131,7 @@ class Application:
         self.coordinator: ProcessingCoordinator | None = None
         self.workers: list = [Any]
         self.library_scan_worker: LibraryScanWorker | None = None
-        self.recalibration_worker: RecalibrationWorker | None = None
+        self.recalibration_worker: BaseWorker | None = None
 
         # Infrastructure
         self.event_broker: StateBroker | None = None
@@ -304,9 +305,10 @@ class Application:
             logging.info(f"[Application] Starting LibraryScanWorker with library_path={self.library_path}")
             self.library_scan_worker = LibraryScanWorker(
                 db=self.db,
+                event_broker=self.event_broker,
                 library_path=self.library_path,
                 namespace=self.namespace,
-                poll_interval=self.library_scan_poll_interval,
+                interval=self.library_scan_poll_interval,
                 auto_tag=self.library_auto_tag,
                 ignore_patterns=self.library_ignore_patterns,
             )
@@ -329,14 +331,18 @@ class Application:
         else:
             logging.info("[Application] LibraryScanWorker not started (no library_path)")
 
-        # Start recalibration worker (DI: inject db and config)
+        # Start recalibration worker (DI: inject db, queue, and config)
         logging.info("[Application] Starting RecalibrationWorker...")
+        recalibration_queue = RecalibrationQueue(self.db)
         self.recalibration_worker = RecalibrationWorker(
             db=self.db,
+            queue=recalibration_queue,
+            event_broker=self.event_broker,
             models_dir=self.models_dir,
             namespace=self.namespace,
             version_tag_key=self.version_tag_key,
-            poll_interval=2,
+            interval=2,
+            worker_id=0,
             calibrate_heads=self.calibrate_heads,
         )
         self.recalibration_worker.start()

@@ -95,6 +95,44 @@ class WorkerService:
         self.stop_all_workers()
         logging.info("[WorkerService] All workers stopped")
 
+    def pause_workers(self, event_broker: Any | None = None) -> dict[str, Any]:
+        """
+        Pause workers (disable new job processing).
+
+        Args:
+            event_broker: Optional event broker for SSE updates
+
+        Returns:
+            Dict with worker_enabled status
+        """
+        self.disable()
+
+        if event_broker:
+            event_broker.update_worker_state({"enabled": False})
+
+        return {"worker_enabled": False}
+
+    def resume_workers(self, worker_pool: list, event_broker: Any | None = None) -> dict[str, Any]:
+        """
+        Resume workers (enable job processing and start workers).
+
+        Args:
+            worker_pool: Worker pool list to update
+            event_broker: Optional event broker for SSE updates
+
+        Returns:
+            Dict with worker_enabled status
+        """
+        self.enable()
+        updated_pool = self.start_workers(event_broker=event_broker)
+        worker_pool.clear()
+        worker_pool.extend(updated_pool)
+
+        if event_broker:
+            event_broker.update_worker_state({"enabled": True})
+
+        return {"worker_enabled": True}
+
     def wait_until_idle(self, timeout: int = 60, poll_interval: float = 0.5) -> bool:
         """
         Wait for all running jobs to complete (workers to become idle).

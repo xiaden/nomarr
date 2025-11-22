@@ -6,6 +6,7 @@
 	],
 	"settings": {
 		"python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+		"python.terminal.activateEnvironment": true,
 		"python.testing.pytestEnabled": true,
 		"python.testing.unittestEnabled": false,
 		"python.testing.pytestArgs": [
@@ -16,7 +17,7 @@
 			"**/*.pyc": true,
 			"**/.pytest_cache": true
 		},
-		"editor.formatOnSave": true,
+		"editor.formatOnSave": false,
 		"editor.codeActionsOnSave": {
 			"source.organizeImports": "explicit"
 		},
@@ -26,13 +27,46 @@
 		},
 		"ruff.enable": true,
 		"ruff.lint.enable": true,
-		"ruff.format.enable": true
+		"ruff.format.enable": true,
+		"diffEditor.experimental.showMoves": true,
+		"diffEditor.hideUnchangedRegions.enabled": true,
+		"task.autoDetect": "on"
 	},
 	"extensions": {
 		"recommendations": [
 			"charliermarsh.ruff",
 			"ms-python.python",
 			"ms-python.vscode-pylance"
+		]
+	},
+	"tasks": {
+		"version": "2.0.0",
+		"tasks": [
+			{
+				"label": "Setup Python Environment",
+				"type": "shell",
+				"windows": {
+					"command": "if (-not (Test-Path '.venv')) { python -m venv .venv; Write-Host 'Created virtual environment'; } else { Write-Host 'Virtual environment already exists'; }; .venv\\Scripts\\python.exe -m pip install --upgrade pip; .venv\\Scripts\\python.exe -m pip install -r requirements.txt; Write-Host 'Dependencies installed successfully'"
+				},
+				"linux": {
+					"command": "if [ ! -d '.venv' ]; then python3 -m venv .venv && echo 'Created virtual environment'; else echo 'Virtual environment already exists'; fi && .venv/bin/python -m pip install --upgrade pip && .venv/bin/python -m pip install -r requirements.txt && echo 'Dependencies installed successfully'"
+				},
+				"osx": {
+					"command": "if [ ! -d '.venv' ]; then python3 -m venv .venv && echo 'Created virtual environment'; else echo 'Virtual environment already exists'; fi && .venv/bin/python -m pip install --upgrade pip && .venv/bin/python -m pip install -r requirements.txt && echo 'Dependencies installed successfully'"
+				},
+				"problemMatcher": [],
+				"presentation": {
+					"echo": true,
+					"reveal": "always",
+					"focus": false,
+					"panel": "shared",
+					"showReuseMessage": false,
+					"clear": false
+				},
+				"runOptions": {
+					"runOn": "folderOpen"
+				}
+			}
 		]
 	}
 }

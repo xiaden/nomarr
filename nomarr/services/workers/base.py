@@ -17,10 +17,12 @@ import logging
 import threading
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from nomarr.persistence.db import Database
-from nomarr.services.queue import ProcessingQueue
+
+if TYPE_CHECKING:
+    from nomarr.services.queue import BaseQueue
 
 
 # ----------------------------------------------------------------------
@@ -55,7 +57,7 @@ class BaseWorker(threading.Thread):
     def __init__(
         self,
         name: str,
-        queue: ProcessingQueue,
+        queue: BaseQueue,
         process_fn: Callable[[str, bool], dict[str, Any]],
         db: Database,
         event_broker: Any,
@@ -67,7 +69,7 @@ class BaseWorker(threading.Thread):
 
         Args:
             name: Worker thread name (e.g., "TaggerWorker")
-            queue: ProcessingQueue instance for job operations
+            queue: BaseQueue instance for job operations
             process_fn: Function to process jobs, signature: (path: str, force: bool) -> dict
             db: Database instance for meta operations
             event_broker: Event broker for SSE state updates (required)
@@ -156,29 +158,24 @@ class BaseWorker(threading.Thread):
 
     def _get_next_job(self) -> dict[str, Any] | None:
         """
-        Get next pending job from tag queue.
+        Get next pending job from queue.
 
         Returns:
             Job dict with keys: id, path, force, or None if no jobs available
         """
-        with self.queue.lock:
-            job = self.db.queue.get_next_pending_job()
-            if not job:
-                return None
+        result = self.queue.dequeue()
+        if not result:
+            return None
 
-            job_id = job["id"]
-            path = job["path"]
-            force = job["force"]
+        job_id, path, force = result
 
-            # Mark job as running
-            self.db.queue.update_job(job_id, "running")
-            logging.info(f"[{self.name}] Processing job {job_id}: {path} (force={force})")
+        logging.info(f"[{self.name}] Processing job {job_id}: {path} (force={force})")
 
-            # Publish job start event
-            self._publish_job_state(job_id, path, "running")
-            self._publish_queue_stats()
+        # Publish job start event
+        self._publish_job_state(job_id, path, "running")
+        self._publish_queue_stats()
 
-            return {"id": job_id, "path": path, "force": force}
+        return {"id": job_id, "path": path, "force": force}
 
     def _process_job(self, job: dict[str, Any]) -> None:
         """
@@ -200,9 +197,8 @@ class BaseWorker(threading.Thread):
             elapsed = round(time.time() - t0, 2)
 
             # Mark job as done
-            with self.queue.lock:
-                self.db.queue.update_job(job_id, "done", results=summary)
-                self._update_avg_time(elapsed)
+            self.queue.mark_complete(job_id)
+            self._update_avg_time(elapsed)
 
             # Publish completion event
             self._publish_job_state(job_id, path, "done", results=summary)
@@ -211,26 +207,24 @@ class BaseWorker(threading.Thread):
             logging.info(f"[{self.name}] ✅ Job {job_id} done in {elapsed}s")
 
         except KeyboardInterrupt:
-            # Job was cancelled via cancel() - reset to pending
-            with self.queue.lock:
-                self.db.queue.update_job(job_id, "pending")
+            # Job was cancelled via cancel() - mark as error with cancellation message
+            self.queue.mark_error(job_id, "Cancelled by user")
 
-            self._publish_job_state(job_id, path, "pending")
+            self._publish_job_state(job_id, path, "error", error="Cancelled by user")
             self._publish_queue_stats()
 
-            logging.info(f"[{self.name}] 🔄 Job {job_id} cancelled, reset to pending")
+            logging.info(f"[{self.name}] 🔄 Job {job_id} cancelled")
             self._cancel_requested = False  # Reset flag
 
         except RuntimeError as e:
-            # RuntimeError during shutdown - reset job to pending
+            # RuntimeError during shutdown - mark as error
             if self._shutdown or "shutting down" in str(e).lower():
-                with self.queue.lock:
-                    self.db.queue.update_job(job_id, "pending")
+                self.queue.mark_error(job_id, "Shutdown requested")
 
-                self._publish_job_state(job_id, path, "pending")
+                self._publish_job_state(job_id, path, "error", error="Shutdown requested")
                 self._publish_queue_stats()
 
-                logging.info(f"[{self.name}] 🔄 Job {job_id} reset to pending (shutdown)")
+                logging.info(f"[{self.name}] 🔄 Job {job_id} marked error (shutdown)")
             else:
                 # Other RuntimeError - mark as error
                 self._mark_job_error(job_id, path, str(e))
@@ -244,8 +238,7 @@ class BaseWorker(threading.Thread):
 
     def _mark_job_error(self, job_id: int, path: str, error_message: str) -> None:
         """Mark job as failed and publish error event."""
-        with self.queue.lock:
-            self.db.queue.update_job(job_id, "error", error_message=error_message)
+        self.queue.mark_error(job_id, error_message)
 
         self._publish_job_state(job_id, path, "error", error=error_message)
         self._publish_queue_stats()

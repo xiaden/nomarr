@@ -1,223 +1,121 @@
+#!/usr/bin/env python3
+# ======================================================================
+#  Essentia Autotag - Library Scanner Worker
 """
-Background library scanner worker.
+scanner.py
+──────────
+LibraryScanWorker class for queue-based library scanning.
+
+Extends BaseWorker to provide systematic library scanning using the
+library_queue table. Scans are requested via enqueue and processed
+in order like other workers.
+
+Note: Unlike file processing workers (TaggerWorker, RecalibrationWorker),
+scanner processes scan_id integers (not file paths) since a scan covers
+the entire library in one operation.
 """
+# ======================================================================
 
 from __future__ import annotations
 
-import logging
-import threading
-import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from nomarr.persistence.db import Database
+from nomarr.services.queue import ScanQueue
+from nomarr.services.workers.base import BaseWorker
 from nomarr.workflows.scan_library import scan_library_workflow
 
 if TYPE_CHECKING:
-    pass
+    from nomarr.persistence.db import Database
 
 
-class LibraryScanWorker:
-    """Background worker that performs library scans asynchronously."""
+class LibraryScanWorker(BaseWorker):
+    """
+    Background worker for library scanning operations.
+
+    Polls library_queue for pending scan requests and executes them
+    via scan_library_workflow. Follows the same pattern as TaggerWorker
+    and RecalibrationWorker.
+
+    Inherits queue polling, state management, and worker lifecycle from BaseWorker.
+    """
 
     def __init__(
         self,
         db: Database,
+        event_broker: Any,
         library_path: str,
         namespace: str,
-        poll_interval: int = 5,
+        interval: int = 5,
+        worker_id: int = 0,
         auto_tag: bool = False,
         ignore_patterns: str = "",
     ):
         """
-        Initialize library scan worker.
+        Initialize LibraryScanWorker.
 
         Args:
             db: Database instance
+            event_broker: Event broker for SSE state updates (required)
             library_path: Root path to scan
-            namespace: Tag namespace (must be provided by service)
-            poll_interval: Seconds between checking for new scan requests
-            auto_tag: Auto-enqueue untagged files for ML tagging
-            ignore_patterns: Comma-separated patterns to skip auto-tagging
+            namespace: Tag namespace for tag extraction
+            interval: Polling interval in seconds (default: 5)
+            worker_id: Unique worker ID (for multi-worker setups)
+            auto_tag: Auto-enqueue untagged files for ML tagging (default: False)
+            ignore_patterns: Comma-separated patterns to skip auto-tagging (default: "")
         """
+        # Create scan queue wrapper
+        scan_queue = ScanQueue(db)
+
+        # Initialize parent BaseWorker
+        super().__init__(
+            name="LibraryScanWorker",
+            queue=scan_queue,
+            process_fn=self._process,
+            db=db,
+            event_broker=event_broker,
+            worker_id=worker_id,
+            interval=interval,
+        )
         self.db = db
         self.library_path = library_path
         self.namespace = namespace
-        self.poll_interval = poll_interval
         self.auto_tag = auto_tag
         self.ignore_patterns = ignore_patterns
-        self.running = False
-        self.enabled = True
-        self.thread: threading.Thread | None = None
-        self.current_scan_id: int | None = None
-        self.cancel_requested = False
 
-    def start(self):
-        """Start the worker thread."""
-        if self.thread and self.thread.is_alive():
-            logging.warning("[LibraryScanWorker] Already running")
-            return
-
-        self.running = True
-        self.thread = threading.Thread(target=self._worker_loop, daemon=True, name="LibraryScanWorker")
-        self.thread.start()
-        logging.info("[LibraryScanWorker] Started")
-
-    def stop(self):
-        """Stop the worker thread."""
-        logging.info("[LibraryScanWorker] Stopping...")
-        self.running = False
-        if self.thread:
-            self.thread.join(timeout=10)
-        logging.info("[LibraryScanWorker] Stopped")
-
-    def pause(self):
-        """Pause the worker (stop processing new scans)."""
-        self.enabled = False
-        logging.info("[LibraryScanWorker] Paused")
-
-    def resume(self):
-        """Resume the worker."""
-        self.enabled = True
-        logging.info("[LibraryScanWorker] Resumed")
-
-    def request_scan(self) -> int:
+    def _process(self, path: str, force: bool) -> dict[str, Any]:
         """
-        Request a new library scan.
+        Process a library scan.
+
+        Args:
+            path: Unused (placeholder from BaseWorker interface)
+            force: Unused (scans always process entire library)
 
         Returns:
-            scan_id: ID of the created scan record
+            Dict with scan statistics
+
+        Note: Accesses scan_id via self._current_job_id from BaseWorker
         """
-        scan_id = self.db.library.create_library_scan()
-        logging.info(f"[LibraryScanWorker] Scan requested: {scan_id}")
-        return scan_id
+        scan_id = self._current_job_id
+        if scan_id is None:
+            raise RuntimeError("No scan_id available - _process called outside job context")
 
-    def cancel_scan(self):
-        """Cancel the currently running scan."""
-        if self.current_scan_id:
-            self.cancel_requested = True
-            logging.info(f"[LibraryScanWorker] Cancel requested for scan {self.current_scan_id}")
+        # Progress callback for workflow
+        def progress_callback(current: int, total: int) -> None:
+            """Update scan progress in database."""
+            self.db.library.update_library_scan(
+                scan_id,
+                files_scanned=current,
+            )
 
-    def get_status(self) -> dict:
-        """
-        Get current worker status.
+        # Run scan workflow
+        stats = scan_library_workflow(
+            self.db,
+            self.library_path,
+            self.namespace,
+            progress_callback,
+            scan_id=scan_id,
+            auto_tag=self.auto_tag,
+            ignore_patterns=self.ignore_patterns,
+        )
 
-        Returns:
-            Dict with: enabled, running, current_scan_id, current_progress
-        """
-        progress = None
-        if self.current_scan_id:
-            scan_record = self.db.library.get_library_scan(self.current_scan_id)
-            if scan_record:
-                progress = {
-                    "scan_id": self.current_scan_id,
-                    "started_at": scan_record.get("started_at"),
-                    "files_scanned": scan_record.get("files_scanned", 0),
-                    "files_added": scan_record.get("files_added", 0),
-                    "files_updated": scan_record.get("files_updated", 0),
-                    "files_removed": scan_record.get("files_removed", 0),
-                }
-
-        return {
-            "enabled": self.enabled,
-            "running": self.running,
-            "current_scan_id": self.current_scan_id,
-            "current_progress": progress,
-        }
-
-    def _worker_loop(self):
-        """Main worker loop - polls for pending scans and executes them."""
-        logging.info("[LibraryScanWorker] Worker loop started")
-
-        while self.running:
-            try:
-                if not self.enabled:
-                    time.sleep(self.poll_interval)
-                    continue
-
-                # Check for pending scans
-                pending = self._get_pending_scan()
-                if not pending:
-                    time.sleep(self.poll_interval)
-                    continue
-
-                # Execute the scan
-                scan_id = pending["id"]
-                self.current_scan_id = scan_id
-                self.cancel_requested = False
-
-                # Mark scan as 'running' now that we're actually processing it
-                self.db.library.update_library_scan(scan_id, status="running")
-
-                logging.info(f"[LibraryScanWorker] Starting scan {scan_id}")
-
-                try:
-                    # Progress tracking with proper closure binding
-                    def make_progress_callback(scan_id: int):
-                        def progress_callback(current: int, total: int):
-                            # Update database periodically
-                            self.db.library.update_library_scan(
-                                scan_id,
-                                files_scanned=current,
-                            )
-                            # Check for cancel request
-                            if self.cancel_requested:
-                                raise KeyboardInterrupt("Scan cancelled by user")
-
-                        return progress_callback
-
-                    # Run the scan
-                    stats = scan_library_workflow(
-                        self.db,
-                        self.library_path,
-                        self.namespace,
-                        make_progress_callback(scan_id),
-                        scan_id=scan_id,  # Pass scan_id so it updates the correct record
-                        auto_tag=self.auto_tag,  # Pass auto-tag config
-                        ignore_patterns=self.ignore_patterns,  # Pass ignore patterns
-                    )
-
-                    logging.info(
-                        f"[LibraryScanWorker] Scan {scan_id} complete: "
-                        f"scanned={stats['files_scanned']}, added={stats['files_added']}, "
-                        f"updated={stats['files_updated']}, removed={stats['files_removed']}"
-                    )
-
-                except KeyboardInterrupt:
-                    # Cancelled
-                    logging.info(f"[LibraryScanWorker] Scan {scan_id} cancelled")
-                    self.db.library.update_library_scan(
-                        scan_id,
-                        status="cancelled",
-                        error_message="Cancelled by user",
-                    )
-
-                except Exception as e:
-                    # Error
-                    logging.error(f"[LibraryScanWorker] Scan {scan_id} failed: {e}")
-                    self.db.library.update_library_scan(
-                        scan_id,
-                        status="error",
-                        error_message=str(e),
-                    )
-
-                finally:
-                    self.current_scan_id = None
-                    self.cancel_requested = False
-
-            except Exception as e:
-                logging.error(f"[LibraryScanWorker] Worker loop error: {e}")
-                time.sleep(self.poll_interval)
-
-        logging.info("[LibraryScanWorker] Worker loop ended")
-
-    def _get_pending_scan(self) -> dict | None:
-        """Get the oldest pending scan request."""
-        scans = self.db.library.list_library_scans(limit=100)
-        for scan in scans:
-            # Skip scan if already being processed
-            if scan.get("id") == self.current_scan_id:
-                continue
-            # Look for scans that are pending (not yet started)
-            if scan.get("status") == "pending":
-                return scan
-        return None
+        return stats

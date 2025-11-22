@@ -93,6 +93,7 @@ def compute_tag_correlation_matrix(
                 for mood in moods:
                     mood_counter[str(mood).strip()] += 1
             except json.JSONDecodeError:
+                # TODO [LOGGING]
                 pass
         else:
             mood_counter[str(tag_value).strip()] += 1
@@ -118,6 +119,7 @@ def compute_tag_correlation_matrix(
                     if mood_str in mood_file_sets:
                         mood_file_sets[mood_str].add(file_id)
             except json.JSONDecodeError:
+                # TODO [LOGGING]
                 pass
         else:
             mood_str = str(tag_value).strip()
@@ -271,6 +273,7 @@ def compute_artist_tag_profile(
                     for mood in moods:
                         mood_counts[str(mood).strip()] += 1
                 except json.JSONDecodeError:
+                    # TODO [LOGGING]
                     pass
             else:
                 mood_counts[tag_value.strip()] += 1
@@ -351,6 +354,7 @@ def compute_mood_value_co_occurrences(
                     if mood_str != mood_value:
                         mood_counter[mood_str] += 1
             except json.JSONDecodeError:
+                # TODO [LOGGING]
                 pass
         else:
             mood_str = str(tag_value).strip()

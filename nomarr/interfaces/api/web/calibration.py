@@ -39,7 +39,7 @@ class CalibrationRequest(BaseModel):
 
 @router.post("/apply", dependencies=[Depends(verify_session)])
 async def apply_calibration_to_library(
-    library_service: LibraryService = Depends(get_library_service),
+    library_service: "LibraryService" = Depends(get_library_service),
     recal_service: Any = Depends(get_recalibration_service),
 ) -> dict[str, Any]:
     """
@@ -105,7 +105,7 @@ async def clear_calibration_queue(
 @router.post("/generate", dependencies=[Depends(verify_session)])
 async def generate_calibration(
     request: CalibrationRequest,
-    calibration_service: CalibrationService = Depends(get_calibration_service),
+    calibration_service: "CalibrationService" = Depends(get_calibration_service),
 ) -> dict[str, Any]:
     """
     Generate min-max scale calibration from library tags.

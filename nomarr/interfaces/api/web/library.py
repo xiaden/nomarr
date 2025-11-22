@@ -21,7 +21,7 @@ router = APIRouter(prefix="/api/library", tags=["Library"])
 
 @router.get("/stats", dependencies=[Depends(verify_session)])
 async def web_library_stats(
-    library_service: LibraryService = Depends(get_library_service),
+    library_service: "LibraryService" = Depends(get_library_service),
 ) -> dict[str, Any]:
     """Get library statistics (total files, artists, albums, duration)."""
     try:

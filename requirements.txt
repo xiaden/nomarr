@@ -3,7 +3,7 @@
 # For dev: Skip essentia, most QC tools work without it
 # essentia-tensorflow==2.1b6.dev1389
 numpy==1.26.4
-scipy==1.13.1
+scipy>=1.13.1  # Unpinned for Windows dev (needs pre-built wheels for newer Python versions)
 soundfile
 mutagen==1.47.0
 pyyaml==6.0.2
