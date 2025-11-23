@@ -157,10 +157,8 @@ def extract_imports_from_file(file_path: Path, current_module: str) -> list[str]
 
     for node in ast.walk(tree):
         # Skip TYPE_CHECKING blocks (they're not runtime imports)
-        if isinstance(node, ast.If):
-            # Check if this is TYPE_CHECKING guard
-            if isinstance(node.test, ast.Name) and node.test.id == "TYPE_CHECKING":
-                continue
+        if isinstance(node, ast.If) and isinstance(node.test, ast.Name) and node.test.id == "TYPE_CHECKING":
+            continue
 
         if isinstance(node, ast.ImportFrom):
             if node.module:
@@ -250,7 +248,7 @@ def discover_import_chains(
         # Check for violation
         violation = check_violation(root_module, imported_module)
 
-        new_chain = chain + [imported_module]
+        new_chain = [*chain, imported_module]
         result["chains"].append(new_chain)
 
         if violation:

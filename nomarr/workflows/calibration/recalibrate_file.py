@@ -113,7 +113,7 @@ def _filter_numeric_tags(
     numeric_tags = {
         k: v
         for k, v in all_tags.items()
-        if isinstance(v, (int, float))
+        if isinstance(v, int | float)
         and not k.endswith(":mood-strict")
         and not k.endswith(":mood-regular")
         and not k.endswith(":mood-loose")

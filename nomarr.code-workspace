@@ -46,13 +46,13 @@
 				"label": "Setup Python Environment",
 				"type": "shell",
 				"windows": {
-					"command": "if (-not (Test-Path '.venv')) { python -m venv .venv; Write-Host 'Created virtual environment'; } else { Write-Host 'Virtual environment already exists'; }; .venv\\Scripts\\python.exe -m pip install --upgrade pip; .venv\\Scripts\\python.exe -m pip install -r requirements.txt; Write-Host 'Dependencies installed successfully'"
+					"command": "if (-not (Test-Path '.venv')) { ${config:python.defaultInterpreterPath} -m venv .venv; Write-Host 'Created virtual environment'; } else { Write-Host 'Virtual environment already exists'; }; .\\.venv\\Scripts\\python.exe -m pip install --upgrade pip; .\\.venv\\Scripts\\python.exe -m pip install -r requirements.txt; Write-Host 'Dependencies installed successfully';"
 				},
 				"linux": {
-					"command": "if [ ! -d '.venv' ]; then python3 -m venv .venv && echo 'Created virtual environment'; else echo 'Virtual environment already exists'; fi && .venv/bin/python -m pip install --upgrade pip && .venv/bin/python -m pip install -r requirements.txt && echo 'Dependencies installed successfully'"
+					"command": "if [ ! -d '.venv' ]; then ${config:python.defaultInterpreterPath} -m venv .venv && echo 'Created virtual environment'; else echo 'Virtual environment already exists'; fi && ./.venv/bin/python -m pip install --upgrade pip && ./.venv/bin/python -m pip install -r requirements.txt && echo 'Dependencies installed successfully'"
 				},
 				"osx": {
-					"command": "if [ ! -d '.venv' ]; then python3 -m venv .venv && echo 'Created virtual environment'; else echo 'Virtual environment already exists'; fi && .venv/bin/python -m pip install --upgrade pip && .venv/bin/python -m pip install -r requirements.txt && echo 'Dependencies installed successfully'"
+					"command": "if [ ! -d '.venv' ]; then ${config:python.defaultInterpreterPath} -m venv .venv && echo 'Created virtual environment'; else echo 'Virtual environment already exists'; fi && ./.venv/bin/python -m pip install --upgrade pip && ./.venv/bin/python -m pip install -r requirements.txt && echo 'Dependencies installed successfully'"
 				},
 				"problemMatcher": [],
 				"presentation": {
