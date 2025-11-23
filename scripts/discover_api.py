@@ -211,7 +211,7 @@ def main():
             module_name = alt_module
             api = alt_api
             if output_format == "text":
-                print(f"ℹ️  Note: Using '{alt_module}' (you typed '{args.module}')\n")
+                print(f"[i] Note: Using '{alt_module}' (you typed '{args.module}')\n")
         else:
             # Both failed - handle error based on format
             if output_format == "json":
