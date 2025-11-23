@@ -74,41 +74,41 @@ interfaces  →  services  →  workflows  →  components  →  (persistence / 
 
 - `interfaces`:
 
-  - ✅ may import `nomarr.services`
-  - ✅ may import `nomarr.helpers`
-  - ❌ must NOT import `nomarr.workflows`, `nomarr.components`, or `nomarr.persistence`
+  - Allowed: may import `nomarr.services`
+  - Allowed: may import `nomarr.helpers`
+  - Do not: import `nomarr.workflows`, `nomarr.components`, or `nomarr.persistence`
 
 - `services`:
 
-  - ✅ may import `nomarr.workflows`
-  - ✅ may import `nomarr.persistence`
-  - ✅ may import `nomarr.components.*` (analytics, tagging, ml)
-  - ✅ may import `nomarr.helpers`
-  - ❌ must NOT import `nomarr.interfaces`
+  - Allowed: may import `nomarr.workflows`
+  - Allowed: may import `nomarr.persistence`
+  - Allowed: may import `nomarr.components.*` (analytics, tagging, ml)
+  - Allowed: may import `nomarr.helpers`
+  - Do not: import `nomarr.interfaces`
 
 - `workflows`:
 
-  - ✅ may import `nomarr.persistence`
-  - ✅ may import `nomarr.components.*` (analytics, tagging, ml)
-  - ✅ may import `nomarr.helpers`
-  - ❌ must NOT import `nomarr.services` or `nomarr.interfaces`
+  - Allowed: may import `nomarr.persistence`
+  - Allowed: may import `nomarr.components.*` (analytics, tagging, ml)
+  - Allowed: may import `nomarr.helpers`
+  - Do not: import `nomarr.services` or `nomarr.interfaces`
 
 - `components/*` (analytics, tagging, ml):
 
-  - ✅ may import `nomarr.persistence`
-  - ✅ may import `nomarr.helpers`
-  - ✅ may import other `nomarr.components.*` modules
-  - ❌ must NOT import `nomarr.workflows`, `nomarr.services`, or `nomarr.interfaces`
+  - Allowed: may import `nomarr.persistence`
+  - Allowed: may import `nomarr.helpers`
+  - Allowed: may import other `nomarr.components.*` modules
+  - Do not: import `nomarr.workflows`, `nomarr.services`, or `nomarr.interfaces`
 
 - `persistence`:
 
-  - ✅ may import `nomarr.helpers`
-  - ❌ must NOT import `nomarr.workflows`, `nomarr.components`, `nomarr.services`, or `nomarr.interfaces`
+  - Allowed: may import `nomarr.helpers`
+  - Do not: import `nomarr.workflows`, `nomarr.components`, `nomarr.services`, or `nomarr.interfaces`
 
 - `helpers`:
 
-  - ❌ must NOT import any `nomarr.*` modules
-  - ✅ may import stdlib and third-party libraries only
+  - Do not: import any `nomarr.*` modules
+  - Allowed: may import stdlib and third-party libraries only
 
 Use this rule of thumb:
 
@@ -137,154 +137,67 @@ When adding new code, ask:
 - **Does it read/write DB tables or queues?** → `persistence/`
 - **Is it a stateless utility or shared data type used in many layers?** → `helpers/`
 
-### 3.1 `interfaces/` — How Nomarr is Exposed
+### 3.1 `interfaces/` — API, CLI, and Web UI
 
-- HTTP routes (FastAPI), CLI commands, web handlers.
-- Thin: validate inputs, call a service, serialize outputs.
-- They must not know about DB schema, ML details, or tagging rules.
+Contains: `api/`, `cli/`, `web/`
 
-**Example:**
-`interfaces/api/coordinator.py` → receives HTTP request, calls a service like `QueueService` or `ProcessingService`.
+- HTTP routes (FastAPI), CLI commands, web handlers
+- Thin: validate inputs, call a service, serialize outputs
+- Must not know about DB schema, ML details, or tagging rules
+- See Section 2.2 for allowed imports
 
-### 3.2 `services/` — Runtime Wiring & Long-Lived Stuff
+### 3.2 `services/` — Runtime Wiring & Long-Lived Resources
 
-- Owns:
+Contains: `*_service.py` files (e.g., `config_service.py`, `processing_service.py`, `queue_service.py`, `worker_service.py`)
 
-  - `ConfigService`
-  - `Database` construction (from `nomarr.persistence.db`)
-  - queues and queue abstractions (`QueueService`, `ProcessingQueue`)
-  - background workers and schedulers
+- Own `ConfigService`, `Database` construction, queues, background workers
+- Gather dependencies (config, db, ML backends, tag writers) and call workflows
+- Should not contain complicated business rules; push logic to workflows
+- See Section 2.2 for allowed imports
 
-- Exposes methods like:
+### 3.3 `workflows/` — Use Cases
 
-  - `QueueService.enqueue_track(...)`
-  - `ProcessingService.process_file(...)`
+Contains: workflow modules organized by domain (e.g., `processing/`, `library/`, `calibration/`, `queue/`, `navidrome/`)
 
-- These methods:
+- Implement operations like `process_file()`, `scan_library()`, `run_recalibration()`
+- Accept all dependencies as parameters (no global config reading)
+- Call components and persistence to perform work
+- This is where most "interesting logic" lives
+- See Section 2.2 for allowed imports
 
-  - gather dependencies (config, db, ML backends, tag writers, cache)
-  - call **workflows** to perform the actual work
+### 3.4 `components/` — Domain Logic
 
-Services **should not** contain complicated business rules; push logic down into workflows when it grows.
+Contains: `analytics/`, `ml/`, `tagging/`
 
-### 3.3 `workflows/` — Use Cases (What Nomarr Does)
+- **`analytics/`**: Compute tag statistics, correlations, co-occurrence analysis
+- **`ml/`**: Model loading, embeddings, inference, calibration. Only `ml/backend_essentia.py` may import Essentia
+- **`tagging/`**: Convert model outputs to tags, tiering, conflict resolution, aggregation
 
-- Implements operations like:
+All components:
+- Operate on data via persistence layer
+- Must not import services, workflows, or interfaces
+- See Section 2.2 for allowed imports
 
-  - `process_file(...)`
-  - `scan_library(...)`
-  - `run_recalibration(...)`
+### 3.5 `persistence/` — Database & Queue Access
 
-- Functions accept all dependencies as parameters:
+Contains: `db.py`, `queue.py`, `analytics_queries.py`, `database/` (with `*Operations` classes)
 
-  - `ProcessorConfig` (from helpers/dataclasses)
-  - `Database` or narrower persistence objects
-  - ML predictor/embeddings interfaces
-  - tag writers / calibration helpers
+- `db.py` owns `Database` class (connection owner)
+- `database/` contains one `*Operations` class per table or related group
+- Each `*Operations` class owns all SQL for that table
+- Access pattern: `db.queue.enqueue()`, `db.tags.get_track_tags()`, etc.
+- External code must not import `persistence.database.*` directly
+- See Section 2.2 for allowed imports
 
-- No global config reading. No `ConfigService` imports.
+### 3.6 `helpers/` — Pure Utilities
 
-Workflows are where most "interesting logic" lives.
+Contains: `audio.py`, `files.py`, `dataclasses.py`, `logging.py`, `navidrome_templates.py`, etc.
 
-### 3.4 `components/analytics/` — Tag Statistics & Correlations
-
-- Computes tag statistics, correlations, and co-occurrence analysis:
-
-  - tag frequency counts
-  - mood distribution analysis
-  - tag correlation matrices
-  - co-occurrence patterns
-
-- Operates on database queries via persistence layer.
-- Returns structured data for presentation layers.
-
-No HTTP, no services, no workflows imports.
-
-### 3.5 `components/tagging/` — Tags & Label Logic
-
-- Takes model outputs and produces tags:
-
-  - tiering (loose/medium/strict)
-  - conflict resolution (happy vs sad, etc.)
-  - aggregation across runs
-
-- Writes tags into files or DB via persistence.
-
-No HTTP, no services, no workers.
-
-### 3.6 `components/ml/` — Models, Embeddings, Inference
-
-- Encapsulate model loading, prediction, and calibration logic.
-- Examples:
-
-  - embedding extraction
-  - model confidence outputs
-  - calibration utilities
-
-- Only `components/ml/backend_essentia.py` is allowed to import Essentia.
-
-No knowledge of services, workflows, or interfaces.
-
-### 3.7 `persistence/` — Database & Queue Access
-
-Structure:
-
-```text
-nomarr/persistence/
-  db.py              # Database façade / connection owner
-  database/
-    queue.py         # QueueOperations for tag_queue table
-    library.py       # LibraryOperations
-    tags.py          # TagOperations
-    meta.py          # MetaOperations
-    sessions.py      # SessionOperations
-    calibration.py   # CalibrationOperations
-```
-
-- `nomarr.persistence.database.*`:
-
-  - each file defines one `*Operations` class per table or cohesive group of tables
-  - each class owns **all SQL** for that table/group
-
-- `nomarr.persistence.db.Database`:
-
-  - opens the DB connection
-  - ensures schema
-  - instantiates operations and hangs them as attributes:
-
-    ```python
-    self.meta = MetaOperations(self.conn)
-    self.queue = QueueOperations(self.conn)
-    self.library = LibraryOperations(self.conn)
-    self.tags = TagOperations(self.conn)
-    self.sessions = SessionOperations(self.conn)
-    self.calibration = CalibrationOperations(self.conn)
-    ```
-
-- All higher layers should access the DB as:
-
-  ```python
-  db.queue.enqueue(...)
-  db.tags.get_track_tags(...)
-  db.library.list_files(...)
-  db.meta.get_meta(...)
-  ```
-
-No external code should import `nomarr.persistence.database.*` directly. Only `nomarr.persistence.db` does that.
-
-### 3.8 `helpers/` — Pure Utilities & Shared Dataclasses
-
-- Pure utility functions (string helpers, path helpers, small math, etc.).
-- Shared dataclasses that are imported from multiple top-level packages go in `helpers/dataclasses.py`.
-
-Rules for `helpers/dataclasses.py`:
-
-- Only include dataclasses that are imported from more than one top-level package (e.g., `services` and `workflows`).
-- Must not import any `nomarr.*` modules.
-- Only import `dataclasses`, `typing`, and stdlib.
-- No methods with behavior beyond trivial `__str__` / formatting.
-
-If a dataclass is only used in one layer, keep it local to that layer’s module.
+- Pure utility functions (audio helpers, path helpers, file validation, etc.)
+- `dataclasses.py` contains dataclasses used by multiple top-level packages
+- Must not import any `nomarr.*` modules (only stdlib and third-party)
+- No business logic; just reusable utilities
+- See Section 2.2 for allowed imports
 
 ---
 
@@ -334,6 +247,7 @@ Essentia is an optional dependency and must be isolated.
 
 - Fully type-annotated
 - Follow `ruff` formatting and linting
+- Follow ruff's import sorting: stdlib imports first, then third-party packages, then local `nomarr.*` imports. Do not merge unrelated imports into single lines.
 - Aim for:
 
   - < 60 lines per function
@@ -349,6 +263,14 @@ Essentia is an optional dependency and must be isolated.
 
 - No bare `except:`; always catch specific exceptions.
 - Provide helpful messages on runtime errors (especially for missing dependencies like Essentia or bad config).
+
+### 6.3 Testing Guidelines
+
+- Unit tests live in `tests/unit/` mirroring module structure.
+- Integration tests live in `tests/integration/`.
+- Prefer testing through public services or workflows rather than deep internals.
+- Mock heavy dependencies (DB, Essentia, ML predictors, queues).
+- Use pytest fixtures for DI patterns.
 
 ---
 
