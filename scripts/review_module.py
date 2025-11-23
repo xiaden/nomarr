@@ -107,7 +107,7 @@ def print_report(metrics: dict):
     print("=" * 80)
 
     # Basic stats
-    print("\n📊 Basic Statistics:")
+    print("\nBasic Statistics:")
     print(f"  Lines of code: {metrics['line_count']}")
     print(f"  Functions: {len(metrics['functions'])}")
     print(f"  Classes: {len(metrics['classes'])}")
@@ -209,7 +209,7 @@ def main():
     # Summary
     if len(files) > 1:
         print("\n" + "=" * 80)
-        print("📊 SUMMARY")
+        print("SUMMARY")
         print("=" * 80)
 
         total_funcs = sum(len(m["functions"]) for m in all_metrics)

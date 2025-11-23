@@ -55,7 +55,7 @@ def discover_module_api(module_name: str, *, silent: bool = False) -> dict[str, 
         module = importlib.import_module(module_name)
     except ImportError as e:
         if not silent:
-            print(f"❌ Failed to import {module_name}: {e}")
+            print(f"[ERROR] Failed to import {module_name}: {e}")
         # Return dict with error field instead of empty dict
         return {"classes": {}, "functions": {}, "constants": {}, "error": str(e)}
 
