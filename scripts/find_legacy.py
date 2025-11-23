@@ -89,7 +89,7 @@ def find_legacy_references(search_paths: list[str] | None = None):
                             )
 
             except Exception as e:
-                print(f"⚠️  Error reading {file_path}: {e}")
+                print(f"[!] Error reading {file_path}: {e}")
 
     return violations
 
@@ -105,7 +105,7 @@ def format_text_output(violations: list[dict]) -> str:
     lines.append("")
 
     if not violations:
-        lines.append("✅ No legacy code references found!")
+        lines.append("[OK] No legacy code references found!")
         return "\n".join(lines)
 
     # Group by file
@@ -116,11 +116,11 @@ def format_text_output(violations: list[dict]) -> str:
             files_with_violations[file_path] = []
         files_with_violations[file_path].append(violation)
 
-    lines.append(f"❌ Found {len(violations)} legacy references in {len(files_with_violations)} files:")
+    lines.append(f"[!] Found {len(violations)} legacy references in {len(files_with_violations)} files:")
     lines.append("")
 
     for file_path in sorted(files_with_violations.keys()):
-        lines.append(f"📄 {file_path}")
+        lines.append(f"File: {file_path}")
         for violation in files_with_violations[file_path]:
             lines.append(f"   Line {violation['line']:4d}: [{violation['pattern']}] {violation['content']}")
         lines.append("")
@@ -131,9 +131,9 @@ def format_text_output(violations: list[dict]) -> str:
     lines.append(f"Total violations: {len(violations)}")
     lines.append(f"Files affected: {len(files_with_violations)}")
     lines.append("")
-    lines.append("⚠️  PRE-ALPHA SOFTWARE SHOULD NOT HAVE LEGACY CODE!")
-    lines.append("   Remove all legacy endpoints, backwards compatibility layers,")
-    lines.append("   and deprecated code before accumulating technical debt.")
+    lines.append("[!] PRE-ALPHA SOFTWARE SHOULD NOT HAVE LEGACY CODE!")
+    lines.append("    Remove all legacy endpoints, backwards compatibility layers,")
+    lines.append("    and deprecated code before accumulating technical debt.")
     lines.append("")
 
     return "\n".join(lines)
