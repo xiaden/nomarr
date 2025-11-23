@@ -24,7 +24,7 @@ def preview_tag_stats_workflow(db: Database, namespace: str = "nom") -> dict[str
     Returns:
         Dict of tag_key -> stats dict (type, is_multivalue, summary, count)
     """
-    tag_keys = db.library_tags.get_unique_tag_keys()
+    tag_keys = db.file_tags.get_unique_tag_keys()
     namespace_prefix = f"{namespace}:"
     filtered_tags = [tag for tag in tag_keys if tag.startswith(namespace_prefix)]
 
@@ -37,7 +37,7 @@ def preview_tag_stats_workflow(db: Database, namespace: str = "nom") -> dict[str
             if idx % 10 == 0:
                 logging.info(f"[navidrome] Progress: {idx}/{len(filtered_tags)} tags processed...")
 
-            summary = db.library_tags.get_tag_summary(tag_key)
+            summary = db.file_tags.get_tag_summary(tag_key)
 
             stats_by_tag[tag_key] = {
                 "type": summary["type"],

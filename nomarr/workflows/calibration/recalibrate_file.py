@@ -77,8 +77,8 @@ def _load_library_state(
         except Exception as e:
             logging.warning(f"[recalibration] Failed to parse calibration metadata: {e}")
 
-    # Get all numeric tags for this file from library_tags
-    all_tags = db.library_tags.get_file_tags_by_prefix(file_id, f"{namespace}:")
+    # Get all numeric tags for this file from file_tags
+    all_tags = db.file_tags.get_file_tags_by_prefix(file_id, f"{namespace}:")
 
     if not all_tags:
         logging.warning(f"[recalibration] No tags found for {file_path}")
@@ -306,8 +306,8 @@ def _update_db_and_file(
     # Build namespaced tags for DB
     namespaced_mood_tags = {f"{namespace}:{k}": v for k, v in mood_tags.items()}
 
-    # Upsert mood tags in DB
-    db.library_tags.upsert_file_tags(file_id, namespaced_mood_tags)
+    # Upsert mood tags in DB (these are Nomarr-generated tags)
+    db.file_tags.upsert_file_tags(file_id, namespaced_mood_tags, is_nomarr_tag=True)
 
     logging.debug(f"[recalibration] Updated {len(namespaced_mood_tags)} mood tags in DB")
 

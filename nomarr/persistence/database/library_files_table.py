@@ -30,8 +30,6 @@ class LibraryFilesOperations:
         genre: str | None = None,
         year: int | None = None,
         track_number: int | None = None,
-        tags_json: str | None = None,
-        nom_tags: str | None = None,
         calibration: str | None = None,
         last_tagged_at: int | None = None,
     ) -> int:
@@ -50,8 +48,6 @@ class LibraryFilesOperations:
             genre: Genre
             year: Release year
             track_number: Track number
-            tags_json: All tags as JSON
-            nom_tags: Nomarr-specific tags as JSON
             calibration: Calibration metadata as JSON (dict of model_key -> calibration_id)
             last_tagged_at: Last tagging timestamp
 
@@ -65,8 +61,8 @@ class LibraryFilesOperations:
             INSERT INTO library_files(
                 path, library_id, file_size, modified_time, duration_seconds,
                 artist, album, title, genre, year, track_number,
-                tags_json, nom_tags, calibration, scanned_at, last_tagged_at
-            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                calibration, scanned_at, last_tagged_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(path) DO UPDATE SET
                 library_id=excluded.library_id,
                 file_size=excluded.file_size,
@@ -78,8 +74,6 @@ class LibraryFilesOperations:
                 genre=excluded.genre,
                 year=excluded.year,
                 track_number=excluded.track_number,
-                tags_json=excluded.tags_json,
-                nom_tags=excluded.nom_tags,
                 calibration=excluded.calibration,
                 scanned_at=excluded.scanned_at,
                 last_tagged_at=COALESCE(excluded.last_tagged_at, last_tagged_at)
@@ -96,8 +90,6 @@ class LibraryFilesOperations:
                 genre,
                 year,
                 track_number,
-                tags_json,
-                nom_tags,
                 calibration,
                 scanned_at,
                 last_tagged_at,
@@ -265,11 +257,11 @@ class LibraryFilesOperations:
         Clear all library files, tags, and scans (keeps tag_queue and meta).
 
         WARNING: This is a cross-table operation that deletes from:
-        - library_tags
+        - file_tags
         - library_files
         - library_queue
         """
-        self.conn.execute("DELETE FROM library_tags")
+        self.conn.execute("DELETE FROM file_tags")
         self.conn.execute("DELETE FROM library_files")
         self.conn.execute("DELETE FROM library_queue")
         self.conn.commit()

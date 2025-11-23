@@ -30,8 +30,8 @@ EXPECTED DEPENDENCIES:
   - calibrate_heads: bool
 
 - `db: Database | None` - Optional database instance for library updates
-  - If provided, must support: db.library_files.*, db.library_tags.*, db.conn
-  - Used to update library_files and library_tags after successful tagging
+  - If provided, must support: db.library_files.*, db.file_tags.*, db.conn
+  - Used to update library_files and file_tags after successful tagging
 
 USAGE:
     from nomarr.workflows.processing.process_file import process_file_workflow

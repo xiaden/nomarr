@@ -3,7 +3,7 @@ Library scanner workflow for tracking music files and their metadata.
 
 This is a PURE WORKFLOW module that orchestrates:
 - Filesystem scanning for audio files
-- Database persistence (library_files, library_scans, library_tags)
+- Database persistence (library_files, file_tags)
 - Queue management (auto-enqueue untagged files)
 - Tag extraction and normalization
 
@@ -19,7 +19,7 @@ The `db` parameter must provide these methods:
 - db.library_files.delete_library_file(path) -> None
 - db.library_files.upsert_library_file(path, **metadata) -> None
 - db.library_files.mark_file_tagged(path, version) -> None
-- db.library_tags.upsert_file_tags(file_id, tags) -> None
+- db.file_tags.upsert_file_tags_mixed(file_id, external_tags, nomarr_tags) -> None
 - db.tag_queue.enqueue(path, force) -> None
 - db.conn (for raw SQL updates in update_library_file_from_tags)
 
@@ -236,9 +236,11 @@ def update_library_file_from_tags(
 
     This workflow function:
     1. Extracts metadata from the audio file (duration, artist, album, etc.)
-    2. Extracts namespace-specific tags (e.g., nom:* tags)
+    2. Extracts all tags and namespace-specific tags (e.g., nom:* tags)
     3. Upserts to library_files table
-    4. Populates library_tags table with parsed tag values
+    4. Populates file_tags table with parsed tag values:
+       - External tags (from file metadata) with is_nomarr_tag=False
+       - Nomarr-generated tags (nom:*) with is_nomarr_tag=True
     5. Optionally marks file as tagged with tagger version
     6. Stores calibration metadata (model_key -> calibration_id mapping)
 
@@ -293,18 +295,25 @@ def update_library_file_from_tags(
             genre=metadata.get("genre"),
             year=metadata.get("year"),
             track_number=metadata.get("track_number"),
-            tags_json=json.dumps(metadata.get("all_tags", {})),
-            nom_tags=json.dumps(metadata.get("nom_tags", {})),
             calibration=calibration_json,
         )
 
-        # Get file ID and populate library_tags table
+        # Get file ID and populate file_tags table
         file_record = db.library_files.get_library_file(file_path)
-        if file_record and metadata.get("nom_tags"):
-            nom_tags = metadata["nom_tags"]
-            # Parse tag values to detect types
-            parsed_tags = _parse_tag_values(nom_tags)
-            db.library_tags.upsert_file_tags(file_record["id"], parsed_tags)
+        if file_record:
+            # Parse all_tags (external metadata) and nom_tags (Nomarr-generated)
+            all_tags = metadata.get("all_tags", {})
+            nom_tags = metadata.get("nom_tags", {})
+
+            parsed_all_tags = _parse_tag_values(all_tags) if all_tags else {}
+            parsed_nom_tags = _parse_tag_values(nom_tags) if nom_tags else {}
+
+            # Insert both sets of tags with appropriate is_nomarr_tag flags
+            db.file_tags.upsert_file_tags_mixed(
+                file_record["id"],
+                external_tags=parsed_all_tags,
+                nomarr_tags=parsed_nom_tags,
+            )
 
         # Mark file as tagged if tagger version provided (called from processor)
         if tagged_version and file_record:

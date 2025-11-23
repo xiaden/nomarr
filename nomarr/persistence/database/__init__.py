@@ -8,9 +8,9 @@ joined_queries.py owns multi-table JOIN queries.
 
 from .calibration_queue_table import CalibrationQueueOperations
 from .calibration_runs_table import CalibrationRunsOperations
+from .file_tags_table import FileTagOperations
 from .library_files_table import LibraryFilesOperations
 from .library_queue_table import LibraryQueueOperations
-from .library_tags_table import TagOperations
 from .meta_table import MetaOperations
 from .sessions_table import SessionOperations
 from .tag_queue_table import QueueOperations
@@ -21,12 +21,12 @@ from .utils import count_and_delete, count_and_update, get_queue_stats, safe_cou
 __all__ = [
     "CalibrationQueueOperations",
     "CalibrationRunsOperations",
+    "FileTagOperations",
     "LibraryFilesOperations",
     "LibraryQueueOperations",
     "MetaOperations",
     "QueueOperations",
     "SessionOperations",
-    "TagOperations",
     "count_and_delete",
     "count_and_update",
     "get_queue_stats",

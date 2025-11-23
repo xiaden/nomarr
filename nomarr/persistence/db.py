@@ -5,10 +5,10 @@ import time
 # Import table-specific operation classes
 from nomarr.persistence.database.calibration_queue_table import CalibrationQueueOperations
 from nomarr.persistence.database.calibration_runs_table import CalibrationRunsOperations
+from nomarr.persistence.database.file_tags_table import FileTagOperations
 from nomarr.persistence.database.libraries_table import LibrariesOperations
 from nomarr.persistence.database.library_files_table import LibraryFilesOperations
 from nomarr.persistence.database.library_queue_table import LibraryQueueOperations
-from nomarr.persistence.database.library_tags_table import TagOperations
 from nomarr.persistence.database.meta_table import MetaOperations
 from nomarr.persistence.database.sessions_table import SessionOperations
 from nomarr.persistence.database.tag_queue_table import QueueOperations
@@ -82,7 +82,7 @@ SCHEMA = [
     """
     CREATE INDEX IF NOT EXISTS idx_libraries_default ON libraries(is_default);
     """,
-    # Library files - tracks music library with metadata and tags
+    # Library files - tracks music library with metadata
     """
     CREATE TABLE IF NOT EXISTS library_files (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -97,8 +97,6 @@ SCHEMA = [
         genre TEXT,
         year INTEGER,
         track_number INTEGER,
-        tags_json TEXT,
-        nom_tags TEXT,
         calibration TEXT,
         scanned_at INTEGER,
         last_tagged_at INTEGER,
@@ -144,26 +142,30 @@ SCHEMA = [
     """
     CREATE INDEX IF NOT EXISTS idx_calibration_queue_status ON calibration_queue(status);
     """,
-    # Library tags - normalized tag storage for fast queries
+    # File tags - normalized tag storage for fast queries
     """
-    CREATE TABLE IF NOT EXISTS library_tags (
+    CREATE TABLE IF NOT EXISTS file_tags (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         file_id INTEGER NOT NULL,
         tag_key TEXT NOT NULL,
         tag_value TEXT,
         tag_type TEXT DEFAULT 'string',
+        is_nomarr_tag INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY (file_id) REFERENCES library_files(id) ON DELETE CASCADE
     );
     """,
     # Indexes for fast tag queries
     """
-    CREATE INDEX IF NOT EXISTS idx_library_tags_file_id ON library_tags(file_id);
+    CREATE INDEX IF NOT EXISTS idx_file_tags_file_id ON file_tags(file_id);
     """,
     """
-    CREATE INDEX IF NOT EXISTS idx_library_tags_key ON library_tags(tag_key);
+    CREATE INDEX IF NOT EXISTS idx_file_tags_key ON file_tags(tag_key);
     """,
     """
-    CREATE INDEX IF NOT EXISTS idx_library_tags_key_value ON library_tags(tag_key, tag_value);
+    CREATE INDEX IF NOT EXISTS idx_file_tags_key_value ON file_tags(tag_key, tag_value);
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_file_tags_nomarr ON file_tags(is_nomarr_tag);
     """,
     # Sessions - persistent session storage for web UI
     """
@@ -253,7 +255,7 @@ class Database:
         self.tag_queue = QueueOperations(self.conn)
         self.library_files = LibraryFilesOperations(self.conn)
         self.library_queue = LibraryQueueOperations(self.conn)
-        self.library_tags = TagOperations(self.conn)
+        self.file_tags = FileTagOperations(self.conn)
         self.sessions = SessionOperations(self.conn)
         self.calibration_queue = CalibrationQueueOperations(self.conn)
         self.calibration_runs = CalibrationRunsOperations(self.conn)

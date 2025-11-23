@@ -1,7 +1,7 @@
 """
 Navidrome configuration generation workflow.
 
-Generates navidrome.toml custom tag configuration from library_tags data.
+Generates navidrome.toml custom tag configuration from file_tags data.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ def generate_navidrome_config_workflow(db: Database, namespace: str = "nom") -> 
     """
     Generate Navidrome TOML configuration for custom tags.
 
-    Queries the library_tags table to discover all tags, detects their types,
+    Queries the file_tags table to discover all tags, detects their types,
     and generates proper TOML configuration with all three tag format aliases.
 
     Args:
@@ -36,7 +36,7 @@ def generate_navidrome_config_workflow(db: Database, namespace: str = "nom") -> 
     logging.info("[navidrome] Generating Navidrome config from library tags")
 
     # Get all unique tag keys
-    tag_keys = db.library_tags.get_unique_tag_keys()
+    tag_keys = db.file_tags.get_unique_tag_keys()
 
     if not tag_keys:
         return "# No tags found in library. Run a library scan first.\n"
@@ -61,7 +61,7 @@ def generate_navidrome_config_workflow(db: Database, namespace: str = "nom") -> 
 
     for tag_key in sorted(filtered_tags):
         # Get tag statistics
-        stats = db.library_tags.get_tag_type_stats(tag_key)
+        stats = db.file_tags.get_tag_type_stats(tag_key)
 
         # Convert tag key to Navidrome field name
         # nom:mood-strict -> mood_strict

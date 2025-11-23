@@ -41,12 +41,12 @@ def fetch_tag_frequencies_data(
     # Get total file count
     _, total_count = db.library_files.list_library_files(limit=1)
 
-    # Count tags using library_tags table
+    # Count tags using file_tags table
     namespace_prefix = f"{namespace}:"
     cursor = db.conn.execute(
         """
         SELECT tag_key, COUNT(DISTINCT file_id) as tag_count
-        FROM library_tags
+        FROM file_tags
         WHERE tag_key LIKE ?
         GROUP BY tag_key
         ORDER BY tag_count DESC
@@ -133,14 +133,14 @@ def fetch_tag_correlation_data(
     mood_tag_rows = []
     for tag_key in mood_tag_keys:
         cursor = db.conn.execute(
-            "SELECT file_id, tag_value, tag_type FROM library_tags WHERE tag_key = ?",
+            "SELECT file_id, tag_value, tag_type FROM file_tags WHERE tag_key = ?",
             (tag_key,),
         )
         mood_tag_rows.extend(cursor.fetchall())
 
     # Get all *_tier tag keys
     tier_cursor = db.conn.execute(
-        "SELECT DISTINCT tag_key FROM library_tags WHERE tag_key LIKE ? AND tag_key LIKE ?",
+        "SELECT DISTINCT tag_key FROM file_tags WHERE tag_key LIKE ? AND tag_key LIKE ?",
         (f"{namespace}:%", "%_tier"),
     )
     tier_tag_keys = [row[0] for row in tier_cursor.fetchall()]
@@ -150,7 +150,7 @@ def fetch_tag_correlation_data(
     tier_tag_rows = {}
     for tier_tag_key in tier_tag_keys:
         cursor = db.conn.execute(
-            "SELECT file_id, tag_value FROM library_tags WHERE tag_key = ?",
+            "SELECT file_id, tag_value FROM file_tags WHERE tag_key = ?",
             (tier_tag_key,),
         )
         tier_tag_rows[tier_tag_key] = cursor.fetchall()
@@ -179,7 +179,7 @@ def fetch_mood_distribution_data(
     for mood_type in ["mood-strict", "mood-regular", "mood-loose"]:
         tag_key = f"{namespace}:{mood_type}"
         cursor = db.conn.execute(
-            "SELECT tag_value, tag_type FROM library_tags WHERE tag_key = ?",
+            "SELECT tag_value, tag_type FROM file_tags WHERE tag_key = ?",
             (tag_key,),
         )
         for tag_value, tag_type in cursor.fetchall():
@@ -227,7 +227,7 @@ def fetch_artist_tag_profile_data(
         cursor = db.conn.execute(
             f"""
             SELECT tag_key, tag_value, tag_type
-            FROM library_tags
+            FROM file_tags
             WHERE file_id IN ({placeholders})
               AND tag_key LIKE ?
             """,
@@ -271,7 +271,7 @@ def fetch_mood_value_co_occurrence_data(
 
     for tag_key in mood_tag_keys:
         cursor = db.conn.execute(
-            "SELECT file_id, tag_value, tag_type FROM library_tags WHERE tag_key = ?",
+            "SELECT file_id, tag_value, tag_type FROM file_tags WHERE tag_key = ?",
             (tag_key,),
         )
 

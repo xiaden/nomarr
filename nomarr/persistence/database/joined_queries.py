@@ -68,7 +68,7 @@ class JoinedQueryOperations:
                 lf.artist,
                 lf.album
             FROM library_files lf
-            INNER JOIN library_tags lt ON lf.id = lt.file_id
+            INNER JOIN file_tags lt ON lf.id = lt.file_id
             WHERE {where_clause}
             {order_clause}
             {limit_clause}
@@ -109,7 +109,7 @@ class JoinedQueryOperations:
         sql = f"""
             SELECT COUNT(DISTINCT lf.id)
             FROM library_files lf
-            INNER JOIN library_tags lt ON lf.id = lt.file_id
+            INNER JOIN file_tags lt ON lf.id = lt.file_id
             WHERE {where_clause}
         """
 
@@ -192,7 +192,7 @@ class JoinedQueryOperations:
             # Case-insensitive string contains
             sql_cond = """
                 EXISTS (
-                    SELECT 1 FROM library_tags lt2
+                    SELECT 1 FROM file_tags lt2
                     WHERE lt2.file_id = lt.file_id
                     AND lt2.tag_key = ?
                     AND LOWER(lt2.tag_value) LIKE LOWER(?)
@@ -204,7 +204,7 @@ class JoinedQueryOperations:
             sql_operator = self._map_operator_to_sql(operator)
             sql_cond = f"""
                 EXISTS (
-                    SELECT 1 FROM library_tags lt2
+                    SELECT 1 FROM file_tags lt2
                     WHERE lt2.file_id = lt.file_id
                     AND lt2.tag_key = ?
                     AND CAST(lt2.tag_value AS REAL) {sql_operator} ?

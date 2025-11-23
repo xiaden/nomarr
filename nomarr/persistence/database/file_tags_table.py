@@ -1,17 +1,17 @@
-"""Library tags operations for normalized tag storage."""
+"""File tags operations for normalized tag storage."""
 
 import json
 import sqlite3
 from typing import Any
 
 
-class TagOperations:
-    """Operations for the library_tags table (normalized tag storage)."""
+class FileTagOperations:
+    """Operations for the file_tags table (normalized tag storage)."""
 
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
 
-    def upsert_file_tags(self, file_id: int, tags: dict[str, Any]) -> None:
+    def upsert_file_tags(self, file_id: int, tags: dict[str, Any], is_nomarr_tag: bool = False) -> None:
         """
         Replace all tags for a file with new tags.
         Deletes existing tags and inserts new ones.
@@ -19,9 +19,10 @@ class TagOperations:
         Args:
             file_id: Library file ID
             tags: Dict of tag_key -> tag_value
+            is_nomarr_tag: True if these are Nomarr-generated tags, False for external tags
         """
         # Delete existing tags for this file
-        self.conn.execute("DELETE FROM library_tags WHERE file_id=?", (file_id,))
+        self.conn.execute("DELETE FROM file_tags WHERE file_id=?", (file_id,))
 
         # Insert new tags
         for tag_key, tag_value in tags.items():
@@ -42,17 +43,72 @@ class TagOperations:
 
             self.conn.execute(
                 """
-                INSERT INTO library_tags (file_id, tag_key, tag_value, tag_type)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO file_tags (file_id, tag_key, tag_value, tag_type, is_nomarr_tag)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                (file_id, tag_key, tag_value_str, tag_type),
+                (file_id, tag_key, tag_value_str, tag_type, 1 if is_nomarr_tag else 0),
             )
 
         self.conn.commit()
 
-    def get_unique_tag_keys(self) -> list[str]:
-        """Get all unique tag keys across the library."""
-        cursor = self.conn.execute("SELECT DISTINCT tag_key FROM library_tags ORDER BY tag_key")
+    def upsert_file_tags_mixed(
+        self,
+        file_id: int,
+        external_tags: dict[str, Any],
+        nomarr_tags: dict[str, Any],
+    ) -> None:
+        """
+        Replace all tags for a file with a mix of external and Nomarr tags.
+        Deletes existing tags and inserts new ones with appropriate flags.
+
+        Args:
+            file_id: Library file ID
+            external_tags: Dict of tag_key -> tag_value for external tags (is_nomarr_tag=False)
+            nomarr_tags: Dict of tag_key -> tag_value for Nomarr tags (is_nomarr_tag=True)
+        """
+        # Delete existing tags for this file
+        self.conn.execute("DELETE FROM file_tags WHERE file_id=?", (file_id,))
+
+        # Insert external tags
+        for tag_key, tag_value in external_tags.items():
+            tag_type, tag_value_str = self._detect_tag_type_and_serialize(tag_value)
+            self.conn.execute(
+                "INSERT INTO file_tags (file_id, tag_key, tag_value, tag_type, is_nomarr_tag) VALUES (?, ?, ?, ?, ?)",
+                (file_id, tag_key, tag_value_str, tag_type, 0),
+            )
+
+        # Insert Nomarr tags
+        for tag_key, tag_value in nomarr_tags.items():
+            tag_type, tag_value_str = self._detect_tag_type_and_serialize(tag_value)
+            self.conn.execute(
+                "INSERT INTO file_tags (file_id, tag_key, tag_value, tag_type, is_nomarr_tag) VALUES (?, ?, ?, ?, ?)",
+                (file_id, tag_key, tag_value_str, tag_type, 1),
+            )
+
+        self.conn.commit()
+
+    def _detect_tag_type_and_serialize(self, tag_value: Any) -> tuple[str, str]:
+        """Helper to detect tag type and serialize value."""
+        if isinstance(tag_value, list):
+            return "array", json.dumps(tag_value, ensure_ascii=False)
+        elif isinstance(tag_value, float):
+            return "float", str(tag_value)
+        elif isinstance(tag_value, int):
+            return "int", str(tag_value)
+        else:
+            return "string", str(tag_value)
+
+    def get_unique_tag_keys(self, nomarr_only: bool = False) -> list[str]:
+        """
+        Get all unique tag keys across the library.
+
+        Args:
+            nomarr_only: If True, only return Nomarr-generated tags
+        """
+        if nomarr_only:
+            cursor = self.conn.execute("SELECT DISTINCT tag_key FROM file_tags WHERE is_nomarr_tag=1 ORDER BY tag_key")
+        else:
+            cursor = self.conn.execute("SELECT DISTINCT tag_key FROM file_tags ORDER BY tag_key")
         return [row[0] for row in cursor.fetchall()]
 
     def get_tag_values(self, tag_key: str, limit: int = 1000) -> list[tuple[str, str]]:
@@ -63,18 +119,28 @@ class TagOperations:
             List of (tag_value, tag_type) tuples
         """
         cursor = self.conn.execute(
-            "SELECT tag_value, tag_type FROM library_tags WHERE tag_key=? LIMIT ?", (tag_key, limit)
+            "SELECT tag_value, tag_type FROM file_tags WHERE tag_key=? LIMIT ?", (tag_key, limit)
         )
         return cursor.fetchall()
 
-    def get_file_tags(self, file_id: int) -> dict[str, Any]:
+    def get_file_tags(self, file_id: int, nomarr_only: bool = False) -> dict[str, Any]:
         """
         Get all tags for a specific file.
+
+        Args:
+            file_id: Library file ID
+            nomarr_only: If True, only return Nomarr-generated tags
 
         Returns:
             Dict of tag_key -> tag_value (with arrays parsed from JSON)
         """
-        cursor = self.conn.execute("SELECT tag_key, tag_value, tag_type FROM library_tags WHERE file_id=?", (file_id,))
+        if nomarr_only:
+            cursor = self.conn.execute(
+                "SELECT tag_key, tag_value, tag_type FROM file_tags WHERE file_id=? AND is_nomarr_tag=1",
+                (file_id,),
+            )
+        else:
+            cursor = self.conn.execute("SELECT tag_key, tag_value, tag_type FROM file_tags WHERE file_id=?", (file_id,))
 
         tags = {}
         for tag_key, tag_value, tag_type in cursor.fetchall():
@@ -104,7 +170,7 @@ class TagOperations:
             Dict of tag_key -> tag_value (with arrays parsed from JSON)
         """
         cursor = self.conn.execute(
-            "SELECT tag_key, tag_value, tag_type FROM library_tags WHERE file_id=? AND tag_key LIKE ?",
+            "SELECT tag_key, tag_value, tag_type FROM file_tags WHERE file_id=? AND tag_key LIKE ?",
             (file_id, f"{prefix}%"),
         )
 
@@ -131,7 +197,7 @@ class TagOperations:
         Returns:
             Dict with: is_multivalue (bool), sample_values (list), total_count (int)
         """
-        cursor = self.conn.execute("SELECT tag_value, tag_type FROM library_tags WHERE tag_key=? LIMIT 100", (tag_key,))
+        cursor = self.conn.execute("SELECT tag_value, tag_type FROM file_tags WHERE tag_key=? LIMIT 100", (tag_key,))
 
         rows = cursor.fetchall()
         if not rows:
@@ -142,7 +208,7 @@ class TagOperations:
         sample_values = [row[0] for row in rows[:10]]
 
         # Get total count
-        count_cursor = self.conn.execute("SELECT COUNT(*) FROM library_tags WHERE tag_key=?", (tag_key,))
+        count_cursor = self.conn.execute("SELECT COUNT(*) FROM file_tags WHERE tag_key=?", (tag_key,))
         total_count = count_cursor.fetchone()[0]
 
         return {"is_multivalue": is_multivalue, "sample_values": sample_values, "total_count": total_count}
@@ -159,16 +225,14 @@ class TagOperations:
             Dict with: type, is_multivalue, summary (str or dict), total_count (int)
         """
         # Get total count and detect type from sample
-        count_cursor = self.conn.execute("SELECT COUNT(*) FROM library_tags WHERE tag_key=?", (tag_key,))
+        count_cursor = self.conn.execute("SELECT COUNT(*) FROM file_tags WHERE tag_key=?", (tag_key,))
         total_count = count_cursor.fetchone()[0]
 
         if total_count == 0:
             return {"type": "string", "is_multivalue": False, "summary": "No data", "total_count": 0}
 
         # Detect type from sample
-        type_cursor = self.conn.execute(
-            "SELECT DISTINCT tag_type FROM library_tags WHERE tag_key=? LIMIT 10", (tag_key,)
-        )
+        type_cursor = self.conn.execute("SELECT DISTINCT tag_type FROM file_tags WHERE tag_key=? LIMIT 10", (tag_key,))
         types = {row[0] for row in type_cursor}
         is_multivalue = "array" in types
         detected_type = "float" if "float" in types else "int" if "int" in types else "string"
@@ -176,7 +240,7 @@ class TagOperations:
         # Generate summary based on type (using efficient SQL queries)
         if is_multivalue:
             # For arrays (mood tags), fetch and parse JSON to count individual values
-            cursor = self.conn.execute("SELECT tag_value FROM library_tags WHERE tag_key=? LIMIT 10000", (tag_key,))
+            cursor = self.conn.execute("SELECT tag_value FROM file_tags WHERE tag_key=? LIMIT 10000", (tag_key,))
             value_counts: dict[str, int] = {}
 
             for row in cursor:
@@ -206,7 +270,7 @@ class TagOperations:
                     MIN(CAST(tag_value AS REAL)) as min_val,
                     MAX(CAST(tag_value AS REAL)) as max_val,
                     AVG(CAST(tag_value AS REAL)) as avg_val
-                FROM library_tags
+                FROM file_tags
                 WHERE tag_key=?
                 """,
                 (tag_key,),
@@ -223,7 +287,7 @@ class TagOperations:
             cursor = self.conn.execute(
                 """
                 SELECT tag_value, COUNT(*) as count
-                FROM library_tags
+                FROM file_tags
                 WHERE tag_key=?
                 GROUP BY tag_value COLLATE NOCASE
                 ORDER BY count DESC
