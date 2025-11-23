@@ -1,0 +1,3 @@
+# This directory contains the built frontend from frontend/
+# Vite builds directly to this directory (see frontend/vite.config.ts)
+# Contents are generated and should not be committed

@@ -4,5 +4,9 @@ import { defineConfig } from "vite";
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
-  base: "/static/",
+  base: "/",
+  build: {
+    outDir: "../nomarr/public_html",
+    emptyOutDir: true,
+  },
 });

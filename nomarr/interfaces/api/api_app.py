@@ -67,14 +67,17 @@ api_app.include_router(fs.router)  # Filesystem browser endpoints
 # ----------------------------------------------------------------------
 #  Static files (Web UI)
 # ----------------------------------------------------------------------
-web_dir = Path(__file__).parent.parent / "web"
-if web_dir.exists():
-    api_app.mount("/static", StaticFiles(directory=str(web_dir)), name="static")
+public_html_dir = Path(__file__).parent.parent / "public_html"
+if public_html_dir.exists():
+    # Serve static assets (JS, CSS, images) from /assets/
+    assets_dir = public_html_dir / "assets"
+    if assets_dir.exists():
+        api_app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
 
     @api_app.get("/")
     async def serve_dashboard():
-        """Serve the web dashboard."""
-        index_path = web_dir / "index.html"
+        """Serve the web dashboard SPA."""
+        index_path = public_html_dir / "index.html"
         if index_path.exists():
             return FileResponse(str(index_path))
         return JSONResponse({"error": "Web UI not found"}, status_code=404)

@@ -28,8 +28,8 @@ COPY readme.md /app/readme.md
 COPY docker/cleanup-cron.sh /app/cleanup-cron.sh
 COPY docker/nom-cli.sh /usr/local/bin/nom
 
-# Copy built React frontend (must run `npm run build` in frontend/ first)
-COPY frontend/dist/ /app/nomarr/interfaces/web/
+# Note: Frontend is built separately (npm run build in frontend/)
+# Vite builds directly to nomarr/public_html/, which is copied above
 
 RUN chmod +x /app/cleanup-cron.sh /usr/local/bin/nom
 RUN echo "0 3 * * * /app/cleanup-cron.sh" > /etc/cron.d/nomarr-cleanup
