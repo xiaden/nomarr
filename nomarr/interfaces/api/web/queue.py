@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from nomarr.interfaces.api.auth import verify_session
+from nomarr.interfaces.api.types_queue import JobRemovalResult, OperationResult, QueueJobItem, QueueStatusResponse
 from nomarr.interfaces.api.web.dependencies import get_event_broker, get_ml_service, get_queue_service
 from nomarr.services.queue_service import QueueService
 
@@ -42,7 +43,7 @@ class AdminResetRequest(BaseModel):
 async def web_status(
     job_id: int,
     queue_service: QueueService = Depends(get_queue_service),
-) -> dict[str, Any]:
+) -> QueueJobItem:
     """Get status of a specific job (web UI proxy)."""
     # Use QueueService to get job details
     job = queue_service.get_job(job_id)
@@ -50,16 +51,37 @@ async def web_status(
     if not job:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
 
-    return job
+    # Map service response to QueueJobItem
+    return QueueJobItem(
+        id=job["id"],
+        path=job["path"],
+        status=job["status"],
+        created_at=job["created_at"],
+        started_at=job.get("started_at"),
+        finished_at=job.get("finished_at"),
+        error_message=job.get("error_message"),
+        force=job.get("force", False),
+        queue_type="processing",  # This is the processing queue
+        attempts=job.get("attempts", 0),
+    )
 
 
 @router.get("/queue-depth", dependencies=[Depends(verify_session)])
 async def web_queue_depth(
     queue_service: QueueService = Depends(get_queue_service),
-) -> dict[str, Any]:
+) -> QueueStatusResponse:
     """Get queue depth statistics (web UI proxy)."""
     # Use QueueService to get queue statistics
-    return queue_service.get_status()
+    stats = queue_service.get_status()
+
+    # Map service response to QueueStatusResponse
+    return QueueStatusResponse(
+        pending=stats["pending"],
+        processing=stats["processing"],
+        done=stats["done"],
+        error=stats["error"],
+        total=stats["total"],
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -72,7 +94,7 @@ async def web_admin_remove(
     request: RemoveRequest,
     queue_service: QueueService = Depends(get_queue_service),
     event_broker: Any | None = Depends(get_event_broker),
-) -> dict[str, Any]:
+) -> JobRemovalResult:
     """Remove jobs from queue (web UI proxy)."""
     # Use QueueService to remove jobs
     removed = queue_service.remove_jobs(
@@ -84,14 +106,17 @@ async def web_admin_remove(
     # Publish queue stats update
     queue_service.publish_queue_update(event_broker)
 
-    return {"removed": removed, "status": "ok"}
+    return JobRemovalResult(
+        removed=removed,
+        message=f"Removed {removed} job(s)" if removed > 0 else "No jobs removed",
+    )
 
 
 @router.post("/admin/flush", dependencies=[Depends(verify_session)])
 async def web_admin_flush(
     queue_service: QueueService = Depends(get_queue_service),
     event_broker: Any | None = Depends(get_event_broker),
-) -> dict[str, Any]:
+) -> JobRemovalResult:
     """Remove all completed/error jobs (web UI proxy)."""
     # Use QueueService to remove done and error jobs
     done_count = queue_service.remove_jobs(status="done")
@@ -101,14 +126,17 @@ async def web_admin_flush(
     # Publish queue stats update
     queue_service.publish_queue_update(event_broker)
 
-    return {"removed": total_removed, "done": done_count, "errors": error_count, "status": "ok"}
+    return JobRemovalResult(
+        removed=total_removed,
+        message=f"Removed {done_count} completed and {error_count} error jobs",
+    )
 
 
 @router.post("/admin/queue/clear-all", dependencies=[Depends(verify_session)])
 async def web_admin_clear_all(
     queue_service: QueueService = Depends(get_queue_service),
     event_broker: Any | None = Depends(get_event_broker),
-) -> dict[str, Any]:
+) -> JobRemovalResult:
     """Clear all jobs from queue including running ones (web UI)."""
     # Use QueueService to remove all jobs (pending, done, error - not running)
     removed = queue_service.remove_jobs(all=True)
@@ -116,35 +144,44 @@ async def web_admin_clear_all(
     # Publish queue stats update
     queue_service.publish_queue_update(event_broker)
 
-    return {"removed": removed, "status": "ok"}
+    return JobRemovalResult(
+        removed=removed,
+        message=f"Cleared all jobs ({removed} removed)",
+    )
 
 
 @router.post("/admin/queue/clear-completed", dependencies=[Depends(verify_session)])
 async def web_admin_clear_completed(
     queue_service: QueueService = Depends(get_queue_service),
     event_broker: Any | None = Depends(get_event_broker),
-) -> dict[str, Any]:
+) -> JobRemovalResult:
     """Clear completed jobs from queue (web UI)."""
     removed = queue_service.remove_jobs(status="done")
 
     # Publish queue stats update
     queue_service.publish_queue_update(event_broker)
 
-    return {"removed": removed, "status": "ok"}
+    return JobRemovalResult(
+        removed=removed,
+        message=f"Cleared {removed} completed job(s)",
+    )
 
 
 @router.post("/admin/queue/clear-errors", dependencies=[Depends(verify_session)])
 async def web_admin_clear_errors(
     queue_service: QueueService = Depends(get_queue_service),
     event_broker: Any | None = Depends(get_event_broker),
-) -> dict[str, Any]:
+) -> JobRemovalResult:
     """Clear error jobs from queue (web UI)."""
     removed = queue_service.remove_jobs(status="error")
 
     # Publish queue stats update
     queue_service.publish_queue_update(event_broker)
 
-    return {"removed": removed, "status": "ok"}
+    return JobRemovalResult(
+        removed=removed,
+        message=f"Cleared {removed} error job(s)",
+    )
 
 
 @router.post("/admin/cleanup", dependencies=[Depends(verify_session)])
@@ -152,7 +189,7 @@ async def web_admin_cleanup(
     max_age_hours: int = 168,
     queue_service: QueueService = Depends(get_queue_service),
     event_broker: Any | None = Depends(get_event_broker),
-) -> dict[str, Any]:
+) -> JobRemovalResult:
     """Remove old completed/error jobs (web UI proxy)."""
     # Use QueueService to clean up old jobs
     removed = queue_service.cleanup_old_jobs(max_age_hours=max_age_hours)
@@ -160,18 +197,24 @@ async def web_admin_cleanup(
     # Publish queue stats update
     queue_service.publish_queue_update(event_broker)
 
-    return {"removed": removed, "max_age_hours": max_age_hours, "status": "ok"}
+    return JobRemovalResult(
+        removed=removed,
+        message=f"Cleaned up {removed} jobs older than {max_age_hours} hours",
+    )
 
 
 @router.post("/admin/cache-refresh", dependencies=[Depends(verify_session)])
 async def web_admin_cache_refresh(
     ml_service: Any = Depends(get_ml_service),
-) -> dict[str, str]:
+) -> OperationResult:
     """Refresh model cache (web UI proxy)."""
     try:
         count = ml_service.warmup_cache()
 
-        return {"status": "ok", "message": f"Model cache refreshed successfully ({count} predictors)"}
+        return OperationResult(
+            status="success",
+            message=f"Model cache refreshed successfully ({count} predictors)",
+        )
     except Exception as e:
         logging.exception("[Web API] Cache refresh failed")
         raise HTTPException(status_code=500, detail=f"Cache refresh failed: {e}") from e
@@ -182,7 +225,7 @@ async def web_admin_reset(
     request: AdminResetRequest,
     queue_service: QueueService = Depends(get_queue_service),
     event_broker: Any | None = Depends(get_event_broker),
-) -> dict[str, Any]:
+) -> OperationResult:
     """Reset stuck/error jobs to pending (web UI proxy)."""
     if not request.stuck and not request.errors:
         raise HTTPException(status_code=400, detail="Must specify --stuck or --errors")
@@ -193,8 +236,7 @@ async def web_admin_reset(
     # Publish queue stats update
     queue_service.publish_queue_update(event_broker)
 
-    return {
-        "status": "ok",
-        "message": f"Reset {reset_count} job(s) to pending",
-        "reset": reset_count,
-    }
+    return OperationResult(
+        status="success",
+        message=f"Reset {reset_count} job(s) to pending",
+    )

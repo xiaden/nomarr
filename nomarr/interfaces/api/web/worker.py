@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Depends
 
 from nomarr.interfaces.api.auth import verify_session
+from nomarr.interfaces.api.types_queue import OperationResult
 from nomarr.interfaces.api.web.dependencies import (
     get_event_broker,
     get_worker_pool,
@@ -30,7 +31,7 @@ _RESTART_TASKS: set = set()
 async def web_admin_worker_pause(
     worker_service: Any | None = Depends(get_worker_service),
     event_broker: Any | None = Depends(get_event_broker),
-) -> dict[str, str]:
+) -> OperationResult:
     """Pause the worker (web UI proxy)."""
     # Use WorkerService to disable workers (handles meta, idle wait, and stopping)
     if worker_service:
@@ -40,7 +41,10 @@ async def web_admin_worker_pause(
     if event_broker:
         event_broker.update_worker_state("main", {"enabled": False})
 
-    return {"status": "paused", "message": "Worker paused successfully"}
+    return OperationResult(
+        status="success",
+        message="Worker paused successfully",
+    )
 
 
 @router.post("/resume", dependencies=[Depends(verify_session)])
@@ -48,7 +52,7 @@ async def web_admin_worker_resume(
     worker_service: Any | None = Depends(get_worker_service),
     worker_pool: list[Any] = Depends(get_worker_pool),
     event_broker: Any | None = Depends(get_event_broker),
-) -> dict[str, str]:
+) -> OperationResult:
     """Resume the worker (web UI proxy)."""
     # Use WorkerService to resume workers
     if worker_service:
@@ -61,7 +65,10 @@ async def web_admin_worker_resume(
     if event_broker:
         event_broker.update_worker_state("main", {"enabled": True})
 
-    return {"status": "resumed", "message": "Worker resumed successfully"}
+    return OperationResult(
+        status="success",
+        message="Worker resumed successfully",
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -70,7 +77,7 @@ async def web_admin_worker_resume(
 
 
 @router.post("/../restart", dependencies=[Depends(verify_session)])
-async def web_admin_restart() -> dict[str, str]:
+async def web_admin_restart() -> OperationResult:
     """Restart the API server (useful after config changes)."""
     import sys
 
@@ -87,7 +94,7 @@ async def web_admin_restart() -> dict[str, str]:
     _RESTART_TASKS.add(task)
     task.add_done_callback(_RESTART_TASKS.discard)
 
-    return {
-        "status": "restarting",
-        "message": "API server is restarting... Please refresh the page in a few seconds.",
-    }
+    return OperationResult(
+        status="success",
+        message="API server is restarting... Please refresh the page in a few seconds.",
+    )
