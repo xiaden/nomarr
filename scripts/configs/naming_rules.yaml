@@ -1,0 +1,74 @@
+# Naming convention rules for check_naming.py
+#
+# Each rule has:
+#   - pattern: regex pattern to match (word boundaries recommended)
+#   - fix: suggested replacement
+#   - description: human-readable explanation
+#
+# These rules enforce consistent naming across the codebase.
+
+rules:
+  # Error message naming
+  - pattern: '\berror_text\b'
+    fix: error_message
+    description: Use error_message instead of error_text
+
+  - pattern: '\berror_msg\b'
+    fix: error_message
+    description: Use error_message instead of error_msg
+
+  - pattern: '\berr_msg\b'
+    fix: error_message
+    description: Use error_message instead of err_msg
+
+  - pattern: '\berr_text\b'
+    fix: error_message
+    description: Use error_message instead of err_text
+
+  # Count/quantity naming
+  - pattern: '\bnum_workers\b'
+    fix: worker_count
+    description: Use worker_count instead of num_workers
+
+  - pattern: '\bfile_cnt\b'
+    fix: file_count
+    description: Use file_count instead of file_cnt
+
+  - pattern: '\bworker_cnt\b'
+    fix: worker_count
+    description: Use worker_count instead of worker_cnt
+
+  # API consistency
+  - pattern: '\bmax_results\b'
+    fix: limit
+    description: Use limit for consistency with API parameters
+
+# Acceptable abbreviations (DO NOT add to rules above):
+# - cur, cursor (database cursors - industry standard)
+# - cfg, config (configuration - widely accepted)
+# - args (argparse arguments - Python convention)
+# - req, resp (HTTP request/response - web standard)
+# - db, conn (database/connection - very common)
+# - idx (loop index - math/CS convention)
+# - num_*, max_*, min_* (mathematical/ML contexts - descriptive enough)
+# - embed_dim, num_classes, etc. (ML terminology - standard in field)
+
+# Exclusion patterns (paths to skip)
+# Use simple prefix matching for deterministic behavior
+exclude:
+  - '.git'
+  - '.pytest_cache'
+  - '__pycache__'
+  - '.venv'
+  - 'venv'
+  - 'node_modules'
+  - 'tests/'
+  - 'docs/'
+  - 'scripts/check_naming.py'
+  - 'docs/NAMING_STANDARDS.md'
+
+# File extension patterns to exclude
+exclude_extensions:
+  - '.pyc'
+  - '.backup'
+  - '.bak'
