@@ -19,7 +19,7 @@ PATH VALIDATION:
 
 EXPECTED DEPENDENCIES:
 - `queue: QueueProtocol` - Any queue object with enqueue(path, force) -> int method
-  Examples: ProcessingQueue, ScanQueue, RecalibrationQueue from services.queue
+  Examples: ProcessingQueue, ScanQueue, RecalibrationQueue from services.queue_service
   Or raw DB facades: db.tag_queue, db.library_queue, db.calibration_queue (if wrapped)
 - `paths: str | list[str]` - File or directory paths to process
 - `force: bool` - Whether to reprocess already-processed files
@@ -27,11 +27,13 @@ EXPECTED DEPENDENCIES:
 
 USAGE:
     from nomarr.workflows.queue.enqueue_files import enqueue_files_workflow
-    from nomarr.services.queue_service import ProcessingQueue
+    # Queue is passed in by caller (services layer)
+    # Example (from services layer):
+    #   queue = ProcessingQueue(db)
+    #   result = enqueue_files_workflow(queue, paths, force, recursive)
 
-    queue = ProcessingQueue(db)
     result = enqueue_files_workflow(
-        queue=queue,
+        queue=queue,  # Injected by caller
         paths=["/music/album1", "/music/single.mp3"],
         force=False,
         recursive=True
@@ -103,8 +105,8 @@ def enqueue_files_workflow(
         ValueError: If no audio files found at given paths
 
     Example:
-        >>> from nomarr.services.queue_service import ProcessingQueue
-        >>> queue = ProcessingQueue(db)
+        >>> # Queue object is passed in by caller (services layer)
+        >>> # e.g., queue = ProcessingQueue(db)
         >>> result = enqueue_files_workflow(queue=queue, paths="/music/library", force=False, recursive=True)
         >>> print(f"Queued {result['files_queued']} files")
     """
