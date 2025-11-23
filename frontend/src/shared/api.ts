@@ -9,7 +9,16 @@
 import { clearSessionToken, getSessionToken, setSessionToken } from "./auth";
 import type { QueueJob, QueueSummary } from "./types";
 
-export const API_BASE_URL = "http://localhost:8356";
+/**
+ * API base URL.
+ *
+ * In production (Docker), the frontend is served from the same origin as the API,
+ * so we use a relative path (empty string = same origin).
+ *
+ * In development, we explicitly connect to localhost:8356 where the backend runs.
+ */
+export const API_BASE_URL =
+  import.meta.env.MODE === "production" ? "" : "http://localhost:8356";
 
 // ──────────────────────────────────────────────────────────────────────
 // HTTP Helper
@@ -410,7 +419,7 @@ export const admin = {
    * Pause the worker.
    */
   pauseWorker: async (): Promise<{ status: string; message: string }> => {
-    return request("/web/api/admin/worker/pause", {
+    return request("/web/worker/pause", {
       method: "POST",
     });
   },
@@ -419,7 +428,7 @@ export const admin = {
    * Resume the worker.
    */
   resumeWorker: async (): Promise<{ status: string; message: string }> => {
-    return request("/web/api/admin/worker/resume", {
+    return request("/web/worker/resume", {
       method: "POST",
     });
   },
@@ -428,7 +437,7 @@ export const admin = {
    * Restart the API server.
    */
   restart: async (): Promise<{ status: string; message: string }> => {
-    return request("/web/api/admin/restart", {
+    return request("/web/restart", {
       method: "POST",
     });
   },
