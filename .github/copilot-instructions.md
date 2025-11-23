@@ -25,6 +25,7 @@ You are here to help maintain that architecture, not invent a new one.
 - let workflows import `nomarr.services` or `nomarr.interfaces`
 - let persistence or ml import `nomarr.workflows`, `nomarr.services`, or `nomarr.interfaces`
 - let helpers import any `nomarr.*` modules
+- invent modules, imports, attributes, or function names (use `scripts/discover_api.py` to confirm real APIs)
 
 **Always:**
 
@@ -33,6 +34,7 @@ You are here to help maintain that architecture, not invent a new one.
 - keep imports local when they are optional or heavy (Essentia, ML backends, etc.)
 - write mypy-friendly, fully type-annotated Python
 - write code that passes `ruff`, `mypy`, and `pytest` without needing huge repairs
+- prefer minimal diffs unless explicitly instructed otherwise
 
 ---
 
@@ -395,26 +397,22 @@ Use these scripts to:
 - generate boilerplate in a consistent style
 - identify complexity hotspots and refactor targets
 
+When modifying or creating scripts, ensure they output ASCII-only text and support `--format=text` and `--format=json`.
+
 ### 8.2 Before Writing or Modifying Code
 
 ```bash
 # Inspect real module APIs, attributes, and callables
 python scripts/discover_api.py nomarr.workflows.processor
 python scripts/discover_api.py nomarr.persistence.db
+
+# Use JSON format for machine-readable output
+python scripts/discover_api.py nomarr.ml.inference --format=json
 ```
 
 > **Copilot rule:** Always use `discover_api.py` to verify APIs before calling them. Never guess function names, parameters, or return types.
-> **note** `--summary` is currently useless, it will only give results like:
 
-```bash
- python scripts/discover_api.py nomarr.ml.inference --summary
-
-nomarr.ml.inference:
-  Functions: compute_embeddings_for_backbone, make_head_only_predictor_batched, make_predictor_uncached
-  Constants: HAVE_TF, TYPE_CHECKING
-```
-
-while the full script will give:
+Example text output:
 
 ```bash
 python scripts/discover_api.py nomarr.ml.inference
@@ -423,7 +421,7 @@ python scripts/discover_api.py nomarr.ml.inference
 Module: nomarr.ml.inference
 ================================================================================
 
-🔧 FUNCTIONS:
+FUNCTIONS:
 
   def compute_embeddings_for_backbone(backbone: 'str', emb_graph: 'str', target_sr: 'int', segment_s: 'float', hop_s: 'float', path: 'str', min_duration_s: 'int', allow_short: 'bool') -> 'tuple[np.ndarray, float]':
       Compute embeddings for an audio file using a specific backbo
@@ -434,7 +432,7 @@ Module: nomarr.ml.inference
   def make_predictor_uncached(head_info: 'HeadInfo') -> 'Callable[[np.ndarray, int], np.ndarray]':
       Build full two-stage predictor (waveform -> embedding -> hea
 
-📌 CONSTANTS:
+CONSTANTS:
 
   HAVE_TF = True
   TYPE_CHECKING = False
@@ -496,25 +494,16 @@ Prefer clean, forward-looking changes over preserving old structures.
    `interfaces → services → workflows → (tagging / ml / persistence / helpers)`
    Never let lower layers import higher ones.
 
-2. **Interfaces call services only.**
-   They never touch workflows, persistence, tagging, or ml directly.
-
-3. **Services own wiring and long-lived resources.**
+2. **Services own wiring and long-lived resources.**
    They construct config, DB, queues, workers, and call workflows.
 
-4. **Workflows implement use cases.**
+3. **Workflows implement use cases.**
    They accept dependencies as parameters and call tagging/ml/persistence/helpers.
 
-5. **Persistence & ML are leaf layers.**
-   They never import workflows, services, or interfaces. All DB access goes through `persistence.db.Database` and its `*Operations` classes.
-
-6. **Helpers are pure.**
-   They never import `nomarr.*` and contain only utilities and truly shared dataclasses.
-
-7. **Do not introduce migrations, legacy shims, or backward-compat code paths.**
+4. **Do not introduce migrations, legacy shims, or backward-compat code paths.**
    Pre-alpha means breaking changes are allowed.
 
-8. **Use `discover_api.py` instead of guessing.**
+5. **Use `discover_api.py` instead of guessing.**
    Never assume a function exists; check first.
 
 Your job is to write code that respects this architecture, passes the existing tools, and does not invent new patterns unless explicitly asked.
