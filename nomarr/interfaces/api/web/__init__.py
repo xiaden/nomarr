@@ -2,6 +2,7 @@
 Web package.
 """
 
+# Import combined router for FastAPI app
 from .analytics import (
     web_analytics_mood_distribution,
     web_analytics_tag_co_occurrences,
@@ -57,6 +58,7 @@ from .queue import (
     web_queue_depth,
     web_status,
 )
+from .router import router
 from .sse import web_sse_status
 from .tags import web_show_tags
 from .worker import web_admin_restart, web_admin_worker_pause, web_admin_worker_resume
@@ -90,6 +92,7 @@ __all__ = [
     "get_worker_service",
     "login",
     "logout",
+    "router",
     "update_config",
     "web_admin_cache_refresh",
     "web_admin_cleanup",
