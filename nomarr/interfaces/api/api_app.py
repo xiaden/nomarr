@@ -80,7 +80,12 @@ api_app.include_router(web.router)
 # ----------------------------------------------------------------------
 #  Static files (Web UI)
 # ----------------------------------------------------------------------
-public_html_dir = Path(__file__).parent.parent.parent / "public_html"
+# Use package-relative import to find public_html directory
+# This file is at: nomarr/interfaces/api/api_app.py
+# We want: nomarr/public_html/
+import nomarr
+
+public_html_dir = Path(nomarr.__file__).parent / "public_html"
 
 
 # Serve static assets (JS, CSS, images) from /assets/
