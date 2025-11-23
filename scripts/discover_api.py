@@ -7,7 +7,7 @@ in a module without guessing or reading full source files.
 
 Usage:
     python scripts/discover_api.py nomarr.data.db
-    python scripts/discover_api.py nomarr.data.queue
+    python scripts/discover_api.py nomarr.data.queue --format=json
     python scripts/discover_api.py nomarr.interfaces.api.auth
 """
 
@@ -171,12 +171,15 @@ def main():
     parser = argparse.ArgumentParser(description="Discover module API")
     parser.add_argument("module", help="Module name (e.g., nomarr.data.db)")
     parser.add_argument(
-        "--summary",
-        action="store_true",
-        help="Print machine-readable JSON summary instead of formatted text",
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format: text (human-readable) or json (machine-readable)",
     )
 
     args = parser.parse_args()
+
+    output_format = args.format
 
     # Add current directory to path for imports
     sys.path.insert(0, str(Path.cwd()))
@@ -191,66 +194,42 @@ def main():
         # Handle both 'database' and 'databases'
         pass  # Already correct
 
-    # In summary mode, wrap everything in try/except to always return valid JSON
-    if args.summary:
-        try:
-            api = discover_module_api(module_name, silent=True)
+    # Discover the API
+    api = discover_module_api(module_name, silent=(output_format == "json"))
 
-            # Check if import failed (api has error field)
-            if "error" in api:
-                # Try alternate pluralization
-                if module_name.endswith("s"):
-                    alt_module = module_name[:-1]  # Try singular
-                else:
-                    alt_module = module_name + "s"  # Try plural
-
-                alt_api = discover_module_api(alt_module, silent=True)
-                if "error" not in alt_api:
-                    # Alternate worked!
-                    module_name = alt_module
-                    api = alt_api
-                else:
-                    # Both failed, combine error messages
-                    api["error"] = f"{api['error']} (also tried {alt_module})"
-
-            # Print summary (with or without error field)
-            print_json_summary(module_name, api)
-            return 0
-
-        except Exception as e:
-            # Catch any other unexpected errors
-            error_json = {
-                "module": module_name,
-                "classes": {},
-                "functions": {},
-                "constants": {},
-                "error": str(e),
-            }
-            print(json.dumps(error_json, indent=2, sort_keys=True))
-            return 0  # Exit with 0 so downstream tooling can parse JSON
-
-    # Non-summary mode: preserve existing behavior
-    api = discover_module_api(module_name)
-
-    # If import failed and we haven't tried the alternate form, try it
-    if not api and module_name != args.module:
-        # Already tried alternate, fail
-        return 1
-    elif not api:
+    # Check if import failed (api has error field)
+    if "error" in api:
         # Try alternate pluralization
         if module_name.endswith("s"):
             alt_module = module_name[:-1]  # Try singular
         else:
             alt_module = module_name + "s"  # Try plural
 
-        api = discover_module_api(alt_module)
-        if api:
+        alt_api = discover_module_api(alt_module, silent=(output_format == "json"))
+        if "error" not in alt_api:
+            # Alternate worked!
             module_name = alt_module
-            print(f"ℹ️  Note: Using '{alt_module}' (you typed '{args.module}')\n")
+            api = alt_api
+            if output_format == "text":
+                print(f"ℹ️  Note: Using '{alt_module}' (you typed '{args.module}')\n")
         else:
-            return 1
+            # Both failed - handle error based on format
+            if output_format == "json":
+                # Combine error messages and emit JSON
+                api["error"] = f"{api['error']} (also tried {alt_module})"
+                print_json_summary(module_name, api)
+                return 1
+            else:
+                # Text mode: already printed error in discover_module_api
+                print(f"❌ Also tried '{alt_module}' but import failed")
+                return 1
 
-    print_api(module_name, api)
+    # Output based on format
+    if output_format == "json":
+        print_json_summary(module_name, api)
+    else:
+        print_api(module_name, api)
+
     return 0
 
 
