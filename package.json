@@ -4,8 +4,8 @@
   "description": "Web UI for Essentia Autotag",
   "private": true,
   "scripts": {
-    "lint": "eslint nomarr/interfaces/web/**/*.js",
-    "lint:fix": "eslint nomarr/interfaces/web/**/*.js --fix"
+    "lint": "cd frontend && npm run lint",
+    "lint:fix": "cd frontend && npm run lint -- --fix"
   },
   "devDependencies": {
     "eslint": "^8.57.0"

@@ -1,5 +1,7 @@
 # Navidrome Integration - Web UI Implementation
 
+> **Note:** This document describes the legacy hand-written JavaScript UI that has been replaced by the TypeScript/React frontend in `frontend/`. The Navidrome integration features described here are being migrated to the new UI.
+
 ## Summary
 
 Added a complete Navidrome configuration tab to the Web UI with tag preview and TOML config generation.
@@ -20,14 +22,18 @@ Added two new endpoints:
   - Response: `{namespace, config: "TOML string"}`
   - Uses session authentication
 
-### 2. Frontend UI (`nomarr/interfaces/web/index.html`)
+### 2. Frontend UI (LEGACY - Removed)
+
+**The legacy hand-written HTML/JS UI described below has been removed and replaced with the TypeScript/React frontend in `frontend/`.**
+
+Previous implementation details (for historical reference):
 
 - Added "Navidrome" tab to navigation (between Library and Analytics)
 - Added tab content with two main cards:
   - **Tag Preview Card**: Shows all tags available in library with statistics
   - **Config Generator Card**: Generates and displays navidrome.toml configuration
 
-### 3. JavaScript Manager (`nomarr/interfaces/web/js/navidrome.js`)
+### 3. JavaScript Manager (LEGACY - Removed)
 
 Created NavidromeManager class with methods:
 
