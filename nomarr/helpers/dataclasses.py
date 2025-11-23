@@ -15,7 +15,6 @@ Rules:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Literal
 
 
@@ -75,45 +74,3 @@ class ProcessorConfig:
 
     # File write mode: controls what tags go to media files
     file_write_mode: Literal["none", "minimal", "full"] = "minimal"
-
-
-@dataclass(frozen=True)
-class LibraryPath:
-    """
-    Represents a file path with library context.
-
-    Provides clean separation between absolute paths (for operations),
-    library association (for ownership), and relative paths (for display).
-
-    All paths are normalized and resolved to canonical form.
-
-    Attributes:
-        absolute: Absolute filesystem path (canonical, normalized)
-        library_id: ID of owning library
-        library_root: Absolute path to library root
-
-    Examples:
-        >>> lp = LibraryPath(absolute="/music/rock/song.mp3", library_id=1, library_root="/music")
-        >>> lp.relative
-        'rock/song.mp3'
-    """
-
-    absolute: str
-    library_id: int
-    library_root: str
-
-    @property
-    def relative(self) -> str:
-        """Get path relative to library root for display/UI purposes."""
-        return str(Path(self.absolute).relative_to(self.library_root))
-
-    def __post_init__(self) -> None:
-        """Validate that absolute path is within library_root."""
-        abs_path = Path(self.absolute)
-        root_path = Path(self.library_root)
-
-        # Ensure absolute is actually within library_root
-        try:
-            abs_path.relative_to(root_path)
-        except ValueError as e:
-            raise ValueError(f"Path {self.absolute} is not within library root {self.library_root}") from e
