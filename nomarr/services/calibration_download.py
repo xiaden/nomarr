@@ -84,7 +84,7 @@ def check_missing_calibrations(models_dir: str) -> list[dict[str, str]]:
             ...
         ]
     """
-    from nomarr.ml.models.discovery import discover_heads
+    from nomarr.components.ml.models.discovery import discover_heads
 
     logger.info(f"[calibration_download] Scanning for heads in {models_dir}")
 

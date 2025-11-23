@@ -16,7 +16,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from nomarr.services.workers.base import BaseWorker
-from nomarr.workflows.recalibrate_file import recalibrate_file_workflow
+from nomarr.workflows.calibration.recalibrate_file import recalibrate_file_workflow
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database

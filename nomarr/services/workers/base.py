@@ -255,7 +255,7 @@ class BaseWorker(threading.Thread):
     def _check_cache_eviction(self) -> None:
         """Periodically check and evict idle ML model cache."""
         try:
-            from nomarr.ml.cache import check_and_evict_idle_cache
+            from nomarr.components.ml.cache import check_and_evict_idle_cache
 
             check_and_evict_idle_cache()
         except Exception as e:
@@ -269,7 +269,7 @@ class BaseWorker(threading.Thread):
             current_avg = float(current_avg_str)
         else:
             # Calculate from last 5 jobs if no stored average
-            rows = self.db.queue.get_recent_done_jobs_timing(limit=5)
+            rows = self.db.tag_queue.get_recent_done_jobs_timing(limit=5)
             if rows:
                 times = [(finished - started) / 1000.0 for finished, started in rows]
                 current_avg = sum(times) / len(times)
@@ -306,10 +306,10 @@ class BaseWorker(threading.Thread):
         """Publish queue statistics to event broker."""
         try:
             # Get current queue stats from persistence layer
-            stats = self.db.queue.queue_stats()
+            stats = self.db.tag_queue.queue_stats()
 
             # Get active jobs (pending + running) from persistence layer
-            jobs = self.db.queue.get_active_jobs(limit=50)
+            jobs = self.db.tag_queue.get_active_jobs(limit=50)
 
             queue_state = {"stats": stats, "jobs": jobs}
             self._event_broker.update_queue_state(**queue_state)

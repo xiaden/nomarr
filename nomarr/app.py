@@ -199,7 +199,7 @@ class Application:
 
         # Reset stuck library scans
         logging.info("[Application] Checking for stuck library scans...")
-        scan_reset_count = self.db.library.reset_running_library_scans()
+        scan_reset_count = self.db.library_queue.reset_running_library_scans()
         if scan_reset_count > 0:
             logging.info(f"[Application] Reset {scan_reset_count} stuck library scan(s)")
 

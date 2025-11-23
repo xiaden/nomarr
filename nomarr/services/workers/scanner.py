@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any
 
 from nomarr.services.queue import ScanQueue
 from nomarr.services.workers.base import BaseWorker
-from nomarr.workflows.scan_single_file import scan_single_file_workflow
+from nomarr.workflows.library.scan_single_file import scan_single_file_workflow
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database

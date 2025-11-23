@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any
 
 from nomarr.services.config import ConfigService
 from nomarr.services.workers.base import BaseWorker
-from nomarr.workflows.process_file import process_file_workflow
+from nomarr.workflows.processing.process_file import process_file_workflow
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database

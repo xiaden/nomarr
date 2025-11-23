@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from nomarr.analytics.analytics import (
+from nomarr.components.analytics.analytics import (
     compute_artist_tag_profile,
     compute_mood_distribution,
     compute_mood_value_co_occurrences,

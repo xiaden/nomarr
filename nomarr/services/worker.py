@@ -164,7 +164,7 @@ class WorkerService:
             any_busy = any(w.is_busy() for w in self.worker_pool if w.is_alive())
 
             # Check if any jobs are currently running in DB
-            running_count = self.db.queue.queue_stats().get("running", 0)
+            running_count = self.db.tag_queue.queue_stats().get("running", 0)
 
             # Both checks must be idle
             if not any_busy and running_count == 0:
@@ -198,10 +198,10 @@ class WorkerService:
         """
         jobs_reset = 0
         with self.queue.lock:
-            running_job_ids = self.db.queue.get_running_job_ids()
+            running_job_ids = self.db.tag_queue.get_running_job_ids()
 
             for job_id in running_job_ids:
-                self.db.queue.update_job(job_id, "pending")
+                self.db.tag_queue.update_job(job_id, "pending")
                 jobs_reset += 1
 
         if jobs_reset > 0:
@@ -242,13 +242,13 @@ class WorkerService:
 
         # Create wrapper that uses the process pool
         def process_via_pool(path: str, force: bool) -> dict[str, Any]:
-            from nomarr.services.config import ConfigService
-            from nomarr.services.file_validation import (
+            from nomarr.helpers.file_validation import (
                 make_skip_result,
                 should_skip_processing,
                 validate_file_exists,
             )
-            from nomarr.workflows.process_file import process_file_workflow
+            from nomarr.services.config import ConfigService
+            from nomarr.workflows.processing.process_file import process_file_workflow
 
             if self.processor_coord is None:
                 # Fallback: direct processing (shouldn't happen after startup)
@@ -292,13 +292,13 @@ class WorkerService:
 
         # Start new workers up to worker_count
         for i in range(current_count, self.cfg.worker_count):
-            from nomarr.services.workers.tagger import create_tagger_worker
+            from nomarr.services.workers.tagger import TaggerWorker
 
             # Ensure event_broker is provided (required for BaseWorker)
             if not event_broker:
                 raise RuntimeError("event_broker is required for workers")
 
-            worker = create_tagger_worker(
+            worker = TaggerWorker(
                 db=self.db,
                 queue=self.queue,
                 event_broker=event_broker,

@@ -39,7 +39,7 @@ def fetch_tag_frequencies_data(
         }
     """
     # Get total file count
-    _, total_count = db.library.list_library_files(limit=1)
+    _, total_count = db.library_files.list_library_files(limit=1)
 
     # Count tags using library_tags table
     namespace_prefix = f"{namespace}:"
@@ -204,7 +204,7 @@ def fetch_artist_tag_profile_data(
         }
     """
     # Get files for this artist
-    files, file_count = db.library.list_library_files(artist=artist, limit=1000000)
+    files, file_count = db.library_files.list_library_files(artist=artist, limit=1000000)
 
     if file_count == 0:
         return {

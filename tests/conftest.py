@@ -60,6 +60,10 @@ def _check_scipy():
 
 
 # Check availability
+ESSENTIA_AVAILABLE: bool
+TENSORFLOW_AVAILABLE: bool
+SCIPY_AVAILABLE: bool
+
 ESSENTIA_AVAILABLE, ESSENTIA_MODULE = _check_essentia()
 TENSORFLOW_AVAILABLE, TENSORFLOW_MODULE = _check_tensorflow()
 SCIPY_AVAILABLE, SCIPY_MODULE = _check_scipy()
@@ -267,7 +271,7 @@ def mock_audio_data() -> np.ndarray:
     duration = 5
     # Generate simple sine wave
     t = np.linspace(0, duration, sample_rate * duration, dtype=np.float32)
-    audio = np.sin(2 * np.pi * 440 * t)  # 440 Hz tone
+    audio: np.ndarray = np.sin(2 * np.pi * 440 * t)  # 440 Hz tone
     return audio
 
 
@@ -426,25 +430,16 @@ def real_health_monitor(test_db):
 
 
 @pytest.fixture
-def mock_key_service(test_db):
-    """Provide a KeyManagementService instance with real DB.
+def real_key_service(test_db):
+    """Provide a real KeyManagementService for integration testing.
 
     This is a real service instance for integration testing.
     """
-    import nomarr.app as app
     from nomarr.services.keys import KeyManagementService
 
-    # Create service
+    # Create and return service directly - tests should use this fixture
     service = KeyManagementService(test_db)
-
-    # Set in state for tests that use state.key_service
-    original_service = app.key_service
-    app.key_service = service
-
-    yield service
-
-    # Restore original state
-    app.key_service = original_service
+    return service
 
 
 @pytest.fixture
@@ -492,19 +487,27 @@ def test_application(test_db, mock_config):
     This creates a minimal Application with real services but test database.
     Use for API endpoint tests and CLI integration tests.
     """
+    import os
+
     from nomarr.app import Application
 
-    # Override config to use test database
-    test_config = mock_config.copy()
-    test_config["db_path"] = test_db.db_path
+    # Override config environment to use test database
+    original_db_path = os.environ.get("NOMARR_DB_PATH")
+    os.environ["NOMARR_DB_PATH"] = test_db.db_path
 
-    app = Application(test_config)
+    app = Application()
     app.start()
 
     yield app
 
     # Cleanup
     app.stop()
+
+    # Restore original environment
+    if original_db_path is not None:
+        os.environ["NOMARR_DB_PATH"] = original_db_path
+    elif "NOMARR_DB_PATH" in os.environ:
+        del os.environ["NOMARR_DB_PATH"]
 
 
 @pytest.fixture
@@ -515,7 +518,8 @@ def test_client(test_application):
     Use for testing HTTP endpoints without running actual server.
     """
     from fastapi.testclient import TestClient
-    from nomarr.interfaces.api.app import app as fastapi_app
+
+    from nomarr.interfaces.api import api_app as fastapi_app
 
     # Note: test_application must be started before creating client
     return TestClient(fastapi_app)
@@ -544,7 +548,7 @@ def reset_cache():
     yield
     # Clear cache after each test
     try:
-        from nomarr.ml.cache import clear_predictor_cache
+        from nomarr.components.ml.cache import clear_predictor_cache
 
         clear_predictor_cache()
     except Exception:

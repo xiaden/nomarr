@@ -6,7 +6,7 @@ Tests use REAL fixtures from conftest.py - no redundant mocks.
 
 import pytest
 
-from nomarr.ml.cache import (
+from nomarr.components.ml.cache import (
     check_and_evict_idle_cache,
     clear_predictor_cache,
     get_cache_idle_time,
@@ -101,9 +101,8 @@ def test_touch_cache():
 def test_warmup_predictor_cache():
     """Pre-load all model predictors into cache to avoid loading overhead during processing."""
     # Arrange
-    models_dir = "models"  # Mock directory
+    models_dir = "/fake/models"
     cache_idle_timeout = 300
-    cache_auto_evict = True
 
     # Act
     # Note: Will fail if models_dir doesn't exist, but tests function signature
@@ -111,7 +110,6 @@ def test_warmup_predictor_cache():
         warmup_predictor_cache(
             models_dir=models_dir,
             cache_idle_timeout=cache_idle_timeout,
-            cache_auto_evict=cache_auto_evict,
         )
     except Exception:
         pass  # Expected to fail without real models

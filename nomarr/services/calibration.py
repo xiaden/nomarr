@@ -12,7 +12,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from nomarr.workflows.generate_calibration import generate_calibration_workflow
+from nomarr.workflows.calibration.generate_calibration import generate_calibration_workflow
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -84,7 +84,7 @@ class CalibrationService:
         Returns:
             Calibration data dictionary with min/max values per head
         """
-        from nomarr.ml.calibration import generate_minmax_calibration
+        from nomarr.components.ml.calibration import generate_minmax_calibration
 
         return generate_minmax_calibration(
             db=self._db,
@@ -101,7 +101,7 @@ class CalibrationService:
         Returns:
             Dictionary with save results and paths
         """
-        from nomarr.ml.calibration import save_calibration_sidecars
+        from nomarr.components.ml.calibration import save_calibration_sidecars
 
         return save_calibration_sidecars(
             calibration_data=calibration_data,
@@ -125,7 +125,7 @@ class CalibrationService:
         Returns:
             List of calibration run dictionaries
         """
-        return self._db.calibration.list_calibration_runs(
+        return self._db.calibration_runs.list_calibration_runs(
             model_name=model_name,
             head_name=head_name,
             limit=limit,

@@ -139,8 +139,8 @@ Direct Imports:
 From Imports:
   from pathlib import Path
   from nomarr.persistence.db import Database
-  from nomarr.ml.inference import compute_embeddings_for_backbone
-  from nomarr.tagging.aggregation import aggregate_tags
+  from nomarr.components.ml.inference import compute_embeddings_for_backbone
+  from nomarr.components.tagging.aggregation import aggregate_tags
 
 Function Calls:
   - compute_embeddings_for_backbone

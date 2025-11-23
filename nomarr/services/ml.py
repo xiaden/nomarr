@@ -30,7 +30,7 @@ class MLService:
     Service for managing ML model cache and predictor operations.
 
     Provides a clean interface for cache warmup without requiring
-    interfaces to import from nomarr.ml directly.
+    interfaces to import from nomarr.components.ml directly.
     """
 
     def __init__(self, cfg: MLConfig):
@@ -52,7 +52,7 @@ class MLService:
         Raises:
             RuntimeError: If cache warmup fails
         """
-        from nomarr.ml.cache import warmup_predictor_cache
+        from nomarr.components.ml.cache import warmup_predictor_cache
 
         try:
             count = warmup_predictor_cache(
@@ -71,7 +71,7 @@ class MLService:
 
         This forces models to be reloaded on next use.
         """
-        from nomarr.ml.cache import clear_predictor_cache
+        from nomarr.components.ml.cache import clear_predictor_cache
 
         clear_predictor_cache()
         logger.info("[MLService] Cleared predictor cache")
@@ -83,7 +83,7 @@ class MLService:
         Returns:
             Number of cached predictors
         """
-        from nomarr.ml.cache import get_cache_size
+        from nomarr.components.ml.cache import get_cache_size
 
         return get_cache_size()
 
@@ -97,7 +97,7 @@ class MLService:
         Raises:
             RuntimeError: If model discovery fails
         """
-        from nomarr.ml.models.discovery import discover_heads
+        from nomarr.components.ml.models.discovery import discover_heads
 
         try:
             heads = discover_heads(self.cfg.models_dir)

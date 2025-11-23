@@ -221,7 +221,7 @@ docker exec nomarr ls -lh /app/models
 
 # Verify model discovery
 docker exec nomarr python3 -c "
-from nomarr.ml.models.discovery import discover_heads
+from nomarr.components.ml.models.discovery import discover_heads
 heads = discover_heads('/app/models')
 print(f'Found {len(heads)} heads')
 "

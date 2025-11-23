@@ -1,0 +1,153 @@
+"""
+Workflow for scanning a single file and updating library database.
+
+This workflow handles the EXECUTION phase of library scanning:
+- Extracts metadata from a single audio file
+- Updates library_files table
+- Optionally enqueues file for ML tagging if needed
+
+This is called by LibraryScanWorker for each file in the queue.
+
+ARCHITECTURE:
+- This is a PURE WORKFLOW that takes all dependencies as parameters
+- Does NOT import or use services, DI container, or application object
+- Callers (typically workers) must provide Database instance and config values
+
+EXPECTED DATABASE INTERFACE:
+The `db` parameter must provide:
+- db.library_files.upsert_library_file(path, **metadata) -> int
+- db.library_files.get_library_file(path) -> dict | None
+- db.tag_queue.enqueue(path, force) -> int
+- db.library_tags.upsert_file_tags(file_id, tags) -> None
+
+USAGE:
+    from nomarr.workflows.library.scan_single_file import scan_single_file_workflow
+
+    result = scan_single_file_workflow(
+        db=database_instance,
+        file_path="/path/to/file.flac",
+        namespace="nom",
+        force=False,
+        auto_tag=True,
+        ignore_patterns="*/Audiobooks/*"
+    )
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from nomarr.persistence.db import Database
+
+
+def scan_single_file_workflow(
+    db: Database,
+    file_path: str,
+    namespace: str,
+    force: bool = False,
+    auto_tag: bool = False,
+    ignore_patterns: str = "",
+) -> dict[str, Any]:
+    """
+    Scan a single audio file and update library database.
+
+    This workflow:
+    1. Extracts metadata from the file
+    2. Updates library_files table with current metadata
+    3. Optionally enqueues file for ML tagging if untagged
+
+    Args:
+        db: Database instance (must provide library, tags, and queue accessors)
+        file_path: Absolute path to audio file to scan
+        namespace: Tag namespace for tag extraction (e.g., "nom")
+        force: Whether to force rescan even if file hasn't changed
+        auto_tag: Whether to auto-enqueue untagged files for ML tagging
+        ignore_patterns: Comma-separated patterns to skip from auto-tagging
+
+    Returns:
+        Dict with scan results:
+        - success: bool
+        - file_path: str
+        - action: str ("added", "updated", "skipped", "error")
+        - error: str | None (error message if action="error")
+        - auto_tagged: bool (whether file was enqueued for tagging)
+
+    Raises:
+        Exception: On scan failure (caller should handle and mark job as error)
+    """
+    logging.debug(f"[scan_single_file] Scanning {file_path}")
+
+    result: dict[str, Any] = {
+        "success": False,
+        "file_path": file_path,
+        "action": "skipped",
+        "error": None,
+        "auto_tagged": False,
+    }
+
+    try:
+        # Import workflow function for updating library file from tags
+        import os
+
+        from nomarr.workflows.library.scan_library import update_library_file_from_tags
+
+        # Check if file exists
+        if not os.path.exists(file_path):
+            result["action"] = "error"
+            result["error"] = "File not found"
+            return result
+
+        # Get file modification time
+        file_stat = os.stat(file_path)
+        modified_time = int(file_stat.st_mtime * 1000)
+
+        # Check if file needs scanning (unless force=True)
+        if not force:
+            existing_file = db.library_files.get_library_file(file_path)
+            if existing_file and existing_file["modified_time"] == modified_time:
+                # File hasn't changed, skip
+                result["action"] = "skipped"
+                result["success"] = True
+                return result
+
+        # Get existing file record to determine if this is add or update
+        existing_file = db.library_files.get_library_file(file_path)
+        is_new = existing_file is None
+
+        # Update library database with file metadata and tags
+        update_library_file_from_tags(db, file_path, namespace)
+
+        result["action"] = "added" if is_new else "updated"
+        result["success"] = True
+
+        # Auto-enqueue for tagging if enabled
+        if auto_tag:
+            file_record = db.library_files.get_library_file(file_path)
+            if file_record:
+                # Check if file needs tagging
+                needs_tag = not file_record.get("tagged") and not file_record.get("skip_auto_tag")
+
+                # Apply ignore patterns
+                if needs_tag and ignore_patterns:
+                    from nomarr.workflows.library.start_library_scan import _matches_ignore_pattern
+
+                    if _matches_ignore_pattern(file_path, ignore_patterns):
+                        needs_tag = False
+
+                if needs_tag:
+                    # Enqueue for ML tagging (don't force)
+                    db.tag_queue.enqueue(file_path, force=False)
+                    result["auto_tagged"] = True
+                    logging.debug(f"[scan_single_file] Auto-queued untagged file: {file_path}")
+
+        logging.debug(f"[scan_single_file] Completed {file_path}: {result['action']}")
+        return result
+
+    except Exception as e:
+        logging.error(f"[scan_single_file] Failed to scan {file_path}: {e}")
+        result["action"] = "error"
+        result["error"] = str(e)
+        result["success"] = False
+        raise  # Re-raise so worker can mark job as error

@@ -50,14 +50,11 @@ Responsibilities:
 - **Interfaces** expose Nomarr to the outside world.
 - **Services** own runtime wiring and long-lived resources (config, DB, queues, workers).
 - **Workflows** implement core use cases ("what Nomarr does").
-- **Analytics** provides tag statistics, correlations, and co-occurrence analysis.
-- **Tagging** converts model outputs into tags.
-- **ML** is model/embedding/inference code.
+- **Components** contain heavy, domain-specific logic (analytics, tagging, ML).
 - **Persistence** is the DB/queue access layer.
 - **Helpers** are pure utilities and shared data types.
 
 ---
-
 ## 2. Architecture & Dependencies
 
 ### 2.1 High-Level Flow
@@ -65,7 +62,10 @@ Responsibilities:
 For any non-trivial operation:
 
 ```text
-interfaces  →  services  →  workflows  →  (analytics / tagging / ml / persistence / helpers)
+interfaces  →  services  →  workflows  →  components  →  (persistence / helpers)
+                                            ├─ analytics
+                                            ├─ tagging
+                                            └─ ml
 ```
 
 ### 2.2 Allowed Dependencies (Direction)
@@ -74,44 +74,34 @@ interfaces  →  services  →  workflows  →  (analytics / tagging / ml / pers
 
   - ✅ may import `nomarr.services`
   - ✅ may import `nomarr.helpers`
-  - ❌ must NOT import `nomarr.workflows`, `nomarr.persistence`, `nomarr.ml`, `nomarr.tagging`, or `nomarr.analytics`
+  - ❌ must NOT import `nomarr.workflows`, `nomarr.components`, or `nomarr.persistence`
 
 - `services`:
 
   - ✅ may import `nomarr.workflows`
   - ✅ may import `nomarr.persistence`
-  - ✅ may import `nomarr.tagging`, `nomarr.ml`, and `nomarr.analytics` (through proper facades/caches)
+  - ✅ may import `nomarr.components.*` (analytics, tagging, ml)
   - ✅ may import `nomarr.helpers`
   - ❌ must NOT import `nomarr.interfaces`
 
 - `workflows`:
 
   - ✅ may import `nomarr.persistence`
-  - ✅ may import `nomarr.tagging`
-  - ✅ may import `nomarr.ml`
-  - ✅ may import `nomarr.analytics`
+  - ✅ may import `nomarr.components.*` (analytics, tagging, ml)
   - ✅ may import `nomarr.helpers`
   - ❌ must NOT import `nomarr.services` or `nomarr.interfaces`
+
+- `components/*` (analytics, tagging, ml):
+
+  - ✅ may import `nomarr.persistence`
+  - ✅ may import `nomarr.helpers`
+  - ✅ may import other `nomarr.components.*` modules
+  - ❌ must NOT import `nomarr.workflows`, `nomarr.services`, or `nomarr.interfaces`
 
 - `persistence`:
 
   - ✅ may import `nomarr.helpers`
-  - ❌ must NOT import `nomarr.workflows`, `nomarr.services`, or `nomarr.interfaces`
-
-- `ml`:
-
-  - ✅ may import `nomarr.helpers`
-  - ❌ must NOT import `nomarr.workflows`, `nomarr.services`, or `nomarr.interfaces`
-
-- `analytics`:
-
-  - ✅ may import `nomarr.persistence` and `nomarr.helpers`
-  - ❌ must NOT import `nomarr.workflows`, `nomarr.services`, or `nomarr.interfaces`
-
-- `tagging`:
-
-  - ✅ may import `nomarr.ml`, `nomarr.helpers`, and `nomarr.persistence`
-  - ❌ must NOT import `nomarr.interfaces` or `nomarr.services`
+  - ❌ must NOT import `nomarr.workflows`, `nomarr.components`, `nomarr.services`, or `nomarr.interfaces`
 
 - `helpers`:
 
@@ -122,9 +112,9 @@ Use this rule of thumb:
 
 > Interfaces call **services**.
 > Services own **wiring and long-lived resources** and call **workflows**.
-> Workflows implement **use cases** and call **analytics / tagging / ml / persistence / helpers**.
-> Analytics, ML & persistence never know about higher layers.
-> Helpers never know about `nomarr.*`.
+> Workflows implement **use cases** and call **components** (analytics / tagging / ml).
+> Components contain **heavy domain logic** and call **persistence / helpers**.
+> Persistence & helpers never know about higher layers.
 
 Import-linter enforces this; follow it rather than fighting it.
 
@@ -139,9 +129,9 @@ When adding new code, ask:
 - **Does it handle HTTP, CLI, or UI?** → `interfaces/`
 - **Does it manage config, DB, queues, workers, or background jobs?** → `services/`
 - **Does it implement a use case ("scan library", "process track", "recalibrate tags")?** → `workflows/`
-- **Does it compute tag statistics, correlations, or co-occurrences?** → `analytics/`
-- **Does it convert model outputs into tags, or aggregate/resolve tags?** → `tagging/`
-- **Does it compute embeddings, heads, or apply ML models?** → `ml/`
+- **Does it compute tag statistics, correlations, or co-occurrences?** → `components/analytics/`
+- **Does it convert model outputs into tags, or aggregate/resolve tags?** → `components/tagging/`
+- **Does it compute embeddings, heads, or apply ML models?** → `components/ml/`
 - **Does it read/write DB tables or queues?** → `persistence/`
 - **Is it a stateless utility or shared data type used in many layers?** → `helpers/`
 
@@ -194,7 +184,7 @@ Services **should not** contain complicated business rules; push logic down into
 
 Workflows are where most "interesting logic" lives.
 
-### 3.4 `analytics/` — Tag Statistics & Correlations
+### 3.4 `components/analytics/` — Tag Statistics & Correlations
 
 - Computes tag statistics, correlations, and co-occurrence analysis:
 
@@ -208,7 +198,7 @@ Workflows are where most "interesting logic" lives.
 
 No HTTP, no services, no workflows imports.
 
-### 3.5 `tagging/` — Tags & Label Logic
+### 3.5 `components/tagging/` — Tags & Label Logic
 
 - Takes model outputs and produces tags:
 
@@ -220,7 +210,7 @@ No HTTP, no services, no workflows imports.
 
 No HTTP, no services, no workers.
 
-### 3.6 `ml/` — Models, Embeddings, Inference
+### 3.6 `components/ml/` — Models, Embeddings, Inference
 
 - Encapsulate model loading, prediction, and calibration logic.
 - Examples:
@@ -229,7 +219,7 @@ No HTTP, no services, no workers.
   - model confidence outputs
   - calibration utilities
 
-- Only `ml/backend_essentia.py` is allowed to import Essentia.
+- Only `components/ml/backend_essentia.py` is allowed to import Essentia.
 
 No knowledge of services, workflows, or interfaces.
 

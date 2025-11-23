@@ -91,7 +91,7 @@ class LibraryService:
         if paths is None:
             paths = [self.cfg.library_path]
 
-        from nomarr.workflows.start_library_scan import start_library_scan_workflow
+        from nomarr.workflows.library.start_library_scan import start_library_scan_workflow
 
         logging.info(f"[LibraryService] Starting library scan for {len(paths)} path(s)")
         stats = start_library_scan_workflow(
@@ -109,7 +109,8 @@ class LibraryService:
             f"discovered={stats['files_discovered']}, queued={stats['files_queued']}, "
             f"skipped={stats['files_skipped']}, removed={stats['files_removed']}"
         )
-        return stats
+        # TypedDict is compatible with dict[str, Any] at runtime
+        return dict(stats)  # type: ignore[return-value]
 
     def cancel_scan(self) -> bool:
         """
@@ -128,7 +129,7 @@ class LibraryService:
             raise ValueError("Library scanning not configured")
 
         # Clear pending scan jobs from queue
-        cleared = self.db.library.clear_scan_queue()
+        cleared = self.db.library_queue.clear_scan_queue()
         logging.info(f"[LibraryService] Cleared {cleared} pending scan jobs")
         return cleared > 0
 
@@ -157,8 +158,8 @@ class LibraryService:
         enabled = self.worker is not None
 
         # Count jobs by status
-        pending_jobs = self.db.library.count_pending_scans()
-        jobs = self.db.library.list_scan_jobs(limit=1000)
+        pending_jobs = self.db.library_queue.count_pending_scans()
+        jobs = self.db.library_queue.list_scan_jobs(limit=1000)
         running_jobs = sum(1 for job in jobs if job["status"] == "running")
 
         return {
@@ -179,7 +180,7 @@ class LibraryService:
         Returns:
             List of job dicts with id, path, status, started_at, completed_at, etc.
         """
-        return self.db.library.list_scan_jobs(limit=limit)
+        return self.db.library_queue.list_scan_jobs(limit=limit)
 
     def get_library_stats(self) -> dict[str, Any]:
         """
@@ -188,7 +189,7 @@ class LibraryService:
         Returns:
             Dictionary with library statistics
         """
-        return self.db.library.get_library_stats()
+        return self.db.library_files.get_library_stats()
 
     def get_all_library_paths(self) -> list[str]:
         """
@@ -197,7 +198,7 @@ class LibraryService:
         Returns:
             List of absolute file paths
         """
-        return self.db.library.get_all_library_paths()
+        return self.db.library_files.get_all_library_paths()
 
     def _is_scan_running(self) -> bool:
         """
@@ -207,7 +208,7 @@ class LibraryService:
             True if any jobs are in 'running' status
         """
         # Query for any running scan jobs
-        jobs = self.db.library.list_scan_jobs(limit=1000)
+        jobs = self.db.library_queue.list_scan_jobs(limit=1000)
         return any(job["status"] == "running" for job in jobs)
 
     def pause(self) -> bool:
@@ -224,7 +225,7 @@ class LibraryService:
             raise ValueError("Library scanning not configured")
 
         # Set worker_enabled=false in database meta
-        self.db.meta.set_meta("worker_enabled", "false")
+        self.db.meta.set("worker_enabled", "false")
         logging.info("[LibraryService] Library scanner paused via worker_enabled flag")
         return True
 
@@ -242,7 +243,7 @@ class LibraryService:
             raise ValueError("Library scanning not configured")
 
         # Set worker_enabled=true in database meta
-        self.db.meta.set_meta("worker_enabled", "true")
+        self.db.meta.set("worker_enabled", "true")
         logging.info("[LibraryService] Library scanner resumed via worker_enabled flag")
         return True
 
@@ -264,5 +265,5 @@ class LibraryService:
         if self._is_scan_running():
             raise RuntimeError("Cannot clear library while scan jobs are running. Cancel scans first.")
 
-        self.db.library.clear_library_data()
+        self.db.library_files.clear_library_data()
         logging.info("[LibraryService] Library data cleared")

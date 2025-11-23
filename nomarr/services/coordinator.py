@@ -11,8 +11,8 @@ from concurrent.futures import BrokenExecutor, ProcessPoolExecutor, TimeoutError
 from dataclasses import dataclass
 from typing import Any
 
-from nomarr.services.file_validation import make_skip_result, should_skip_processing, validate_file_exists
-from nomarr.workflows.process_file import process_file_workflow
+from nomarr.helpers.file_validation import make_skip_result, should_skip_processing, validate_file_exists
+from nomarr.workflows.processing.process_file import process_file_workflow
 
 # Set multiprocessing start method to 'spawn' to avoid CUDA context issues
 mp.set_start_method("spawn", force=True)

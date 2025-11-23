@@ -5,8 +5,10 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from nomarr.app import application
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import get_navidrome_service
+from nomarr.workflows.navidrome.parse_smart_playlist_query import PlaylistQueryError
 
 if TYPE_CHECKING:
     pass
@@ -77,8 +79,8 @@ async def web_navidrome_playlist_preview(
     # This endpoint currently bypasses the service to maintain functionality.
     # Fix NavidromeService methods to match utility function signatures.
     try:
-        from nomarr.services.navidrome.playlist_generator import (
-            PlaylistQueryError,
+        from nomarr.workflows.navidrome.preview_smart_playlist import (
+            preview_smart_playlist_workflow,
         )
 
         query = request.get("query", "").strip()
@@ -88,13 +90,12 @@ async def web_navidrome_playlist_preview(
         preview_limit = request.get("preview_limit", 10)
 
         try:
-            # NOTE: Temporarily calling utility directly until service method signatures are fixed
-            # Service method has wrong signature: preview_playlist(name, rules, max_tracks)
-            # But utility needs: preview_playlist_query(db_path, query, namespace, preview_limit)
-            result = navidrome_service.preview_playlist(
-                name="preview",
-                rules=query,
-                max_tracks=preview_limit,
+            # Call workflow directly
+            result = preview_smart_playlist_workflow(
+                db=application.db,
+                query=query,
+                namespace=navidrome_service.cfg.namespace,
+                preview_limit=preview_limit,
             )
             return result
         except PlaylistQueryError as e:
@@ -110,14 +111,13 @@ async def web_navidrome_playlist_preview(
 @router.post("/playlists/generate", dependencies=[Depends(verify_session)])
 async def web_navidrome_playlist_generate(request: dict) -> dict[str, Any]:
     """Generate Navidrome Smart Playlist (.nsp) from query."""
-    from nomarr.app import application
+    from nomarr.workflows.navidrome.generate_smart_playlist import (
+        generate_smart_playlist_workflow,
+    )
+
+    navidrome_service = get_navidrome_service()
 
     try:
-        from nomarr.services.navidrome.playlist_generator import (
-            PlaylistQueryError,
-            generate_nsp_playlist,
-        )
-
         query = request.get("query", "").strip()
         if not query:
             raise HTTPException(status_code=400, detail="Query is required")
@@ -127,29 +127,26 @@ async def web_navidrome_playlist_generate(request: dict) -> dict[str, Any]:
         limit = request.get("limit")
         sort = request.get("sort")
 
-        db_path = application.db_path
-        namespace = application.namespace
+        # Call workflow directly
+        nsp_content = generate_smart_playlist_workflow(
+            db=application.db,
+            query=query,
+            playlist_name=playlist_name,
+            comment=comment,
+            namespace=navidrome_service.cfg.namespace,
+            sort=sort,
+            limit=limit,
+        )
 
-        try:
-            nsp_content = generate_nsp_playlist(
-                db_path,
-                query,
-                playlist_name,
-                comment,
-                namespace,
-                sort,
-                limit,
-            )
+        return {
+            "playlist_name": playlist_name,
+            "query": query,
+            "content": nsp_content,
+            "format": "nsp",
+        }
 
-            return {
-                "playlist_name": playlist_name,
-                "query": query,
-                "content": nsp_content,
-                "format": "nsp",
-            }
-        except PlaylistQueryError as e:
-            raise HTTPException(status_code=400, detail=f"Invalid query: {e}") from e
-
+    except PlaylistQueryError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid query: {e}") from e
     except HTTPException:
         raise
     except Exception as e:
@@ -161,7 +158,7 @@ async def web_navidrome_playlist_generate(request: dict) -> dict[str, Any]:
 async def web_navidrome_templates_list() -> dict[str, Any]:
     """Get list of all available playlist templates."""
     try:
-        from nomarr.services.navidrome.templates import get_template_summary
+        from nomarr.helpers.navidrome_templates import get_template_summary
 
         templates = get_template_summary()
         return {"templates": templates, "total_count": len(templates)}
@@ -175,7 +172,7 @@ async def web_navidrome_templates_list() -> dict[str, Any]:
 async def web_navidrome_templates_generate() -> dict[str, Any]:
     """Generate all playlist templates as a batch."""
     try:
-        from nomarr.services.navidrome.templates import generate_template_files
+        from nomarr.helpers.navidrome_templates import generate_template_files
 
         templates = generate_template_files()
         return {"templates": templates, "total_count": len(templates)}

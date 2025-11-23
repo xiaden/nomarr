@@ -2,13 +2,16 @@ import os
 import sqlite3
 import time
 
-# Import operation classes
-from nomarr.persistence.database.calibration import CalibrationOperations
-from nomarr.persistence.database.library import LibraryOperations
-from nomarr.persistence.database.meta import MetaOperations
-from nomarr.persistence.database.queue import QueueOperations
-from nomarr.persistence.database.sessions import SessionOperations
-from nomarr.persistence.database.tags import TagOperations
+# Import table-specific operation classes
+from nomarr.persistence.database.calibration_queue_table import CalibrationQueueOperations
+from nomarr.persistence.database.calibration_runs_table import CalibrationRunsOperations
+from nomarr.persistence.database.library_files_table import LibraryFilesOperations
+from nomarr.persistence.database.library_queue_table import LibraryQueueOperations
+from nomarr.persistence.database.library_tags_table import TagOperations
+from nomarr.persistence.database.meta_table import MetaOperations
+from nomarr.persistence.database.navidrome_smart_playlists import NavidromeSmartPlaylistsOperations
+from nomarr.persistence.database.sessions_table import SessionOperations
+from nomarr.persistence.database.tag_queue_table import QueueOperations
 
 # Re-export SQLite utility functions
 from nomarr.persistence.database.utils import (
@@ -223,13 +226,16 @@ class Database:
             self.conn.execute(ddl)
         self.conn.commit()
 
-        # Initialize operation classes
+        # Initialize operation classes - one per table (exact table names)
         self.meta = MetaOperations(self.conn)
-        self.queue = QueueOperations(self.conn)
-        self.library = LibraryOperations(self.conn)
-        self.tags = TagOperations(self.conn)
+        self.tag_queue = QueueOperations(self.conn)
+        self.library_files = LibraryFilesOperations(self.conn)
+        self.library_queue = LibraryQueueOperations(self.conn)
+        self.library_tags = TagOperations(self.conn)
         self.sessions = SessionOperations(self.conn)
-        self.calibration = CalibrationOperations(self.conn)
+        self.calibration_queue = CalibrationQueueOperations(self.conn)
+        self.calibration_runs = CalibrationRunsOperations(self.conn)
+        self.navidrome_smart_playlists = NavidromeSmartPlaylistsOperations(self.conn)
 
         # Store schema version for reference (pre-alpha: no migrations, just delete DB on schema changes)
         current_version = self.meta.get("schema_version")

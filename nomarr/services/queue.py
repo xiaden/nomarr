@@ -12,7 +12,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from nomarr.persistence.db import Database
-from nomarr.workflows.enqueue_files import enqueue_files_workflow
+from nomarr.workflows.queue.enqueue_files import enqueue_files_workflow
 
 
 # ----------------------------------------------------------------------
@@ -115,7 +115,7 @@ class ProcessingQueue(BaseQueue):
             Tuple of (job_id, path, force) or None if no jobs available
         """
         with self.lock:
-            job = self.db.queue.get_next_pending_job()
+            job = self.db.tag_queue.get_next_pending_job()
             if not job:
                 return None
 
@@ -124,7 +124,7 @@ class ProcessingQueue(BaseQueue):
             force = job["force"]
 
             # Mark job as running
-            self.db.queue.update_job(job_id, "running")
+            self.db.tag_queue.update_job(job_id, "running")
             logging.debug(f"[ProcessingQueue] Dequeued job {job_id}: {path}")
 
             return (job_id, path, force)
@@ -132,12 +132,12 @@ class ProcessingQueue(BaseQueue):
     def mark_complete(self, job_id: int) -> None:
         """Mark tagging job as complete."""
         with self.lock:
-            self.db.queue.update_job(job_id, "done")
+            self.db.tag_queue.update_job(job_id, "done")
 
     def mark_error(self, job_id: int, error: str) -> None:
         """Mark tagging job as failed."""
         with self.lock:
-            self.db.queue.update_job(job_id, "error", error_message=error)
+            self.db.tag_queue.update_job(job_id, "error", error_message=error)
 
     def enqueue(self, path: str, force: bool = False) -> int:
         """
@@ -151,7 +151,7 @@ class ProcessingQueue(BaseQueue):
             job_id of created job
         """
         with self.lock:
-            job_id = self.db.queue.enqueue(path, force)
+            job_id = self.db.tag_queue.enqueue(path, force)
             logging.debug(f"[ProcessingQueue] Enqueued job {job_id} for {path}")
             return job_id
 
@@ -160,13 +160,13 @@ class ProcessingQueue(BaseQueue):
     def add(self, path: str, force: bool = False) -> int:
         """Add a file to the processing queue."""
         with self.lock:
-            job_id = self.db.queue.enqueue(path, force)
+            job_id = self.db.tag_queue.enqueue(path, force)
             logging.debug(f"[ProcessingQueue] Added job {job_id} for {path}")
             return job_id
 
     def get(self, job_id: int) -> Job | None:
         """Get job by ID."""
-        row = self.db.queue.job_status(job_id)
+        row = self.db.tag_queue.job_status(job_id)
         if not row:
             return None
         return Job(**row)
@@ -174,7 +174,7 @@ class ProcessingQueue(BaseQueue):
     def delete(self, job_id: int) -> int:
         """Delete a job by ID. Returns 1 if deleted, 0 if not found."""
         with self.lock:
-            return self.db.queue.delete_job(job_id)
+            return self.db.tag_queue.delete_job(job_id)
 
     def list_jobs(self, limit: int = 25, offset: int = 0, status: str | None = None) -> tuple[list[Job], int]:
         """
@@ -188,14 +188,14 @@ class ProcessingQueue(BaseQueue):
         Returns:
             Tuple of (jobs list, total count matching filter)
         """
-        rows, total = self.db.queue.list_jobs(limit=limit, offset=offset, status=status)
+        rows, total = self.db.tag_queue.list_jobs(limit=limit, offset=offset, status=status)
         jobs = [Job(**row) for row in rows]
         return jobs, total
 
     def update_status(self, job_id: int, status: str, **kwargs) -> None:
         """Update job status and optional fields."""
         with self.lock:
-            self.db.queue.update_job(job_id, status, **kwargs)
+            self.db.tag_queue.update_job(job_id, status, **kwargs)
 
     def start(self, job_id: int) -> None:
         """Mark a job as running."""
@@ -207,7 +207,7 @@ class ProcessingQueue(BaseQueue):
 
     def depth(self) -> int:
         """Return number of pending/running jobs."""
-        return self.db.queue.queue_depth()
+        return self.db.tag_queue.queue_depth()
 
     def delete_by_status(self, statuses: list[str]) -> int:
         """
@@ -220,7 +220,7 @@ class ProcessingQueue(BaseQueue):
             Number of jobs deleted
         """
         with self.lock:
-            return self.db.queue.delete_jobs_by_status(statuses)
+            return self.db.tag_queue.delete_jobs_by_status(statuses)
 
     def reset_stuck_jobs(self) -> int:
         """
@@ -232,7 +232,7 @@ class ProcessingQueue(BaseQueue):
             Number of jobs reset
         """
         with self.lock:
-            return self.db.queue.reset_stuck_jobs()
+            return self.db.tag_queue.reset_stuck_jobs()
 
     def reset_error_jobs(self) -> int:
         """
@@ -244,7 +244,7 @@ class ProcessingQueue(BaseQueue):
             Number of jobs reset
         """
         with self.lock:
-            return self.db.queue.reset_error_jobs()
+            return self.db.tag_queue.reset_error_jobs()
 
 
 class RecalibrationQueue(BaseQueue):
@@ -262,7 +262,7 @@ class RecalibrationQueue(BaseQueue):
         Returns:
             Tuple of (job_id, path, force=False) or None if no jobs available
         """
-        job = self.db.calibration.get_next_calibration_job()
+        job = self.db.calibration_queue.get_next_calibration_job()
         if not job:
             return None
         job_id, path = job
@@ -270,11 +270,11 @@ class RecalibrationQueue(BaseQueue):
 
     def mark_complete(self, job_id: int) -> None:
         """Mark recalibration job as complete."""
-        self.db.calibration.complete_calibration_job(job_id)
+        self.db.calibration_queue.complete_calibration_job(job_id)
 
     def mark_error(self, job_id: int, error: str) -> None:
         """Mark recalibration job as failed."""
-        self.db.calibration.fail_calibration_job(job_id, error)
+        self.db.calibration_queue.fail_calibration_job(job_id, error)
 
     def enqueue(self, path: str, force: bool = False) -> int:
         """
@@ -287,7 +287,7 @@ class RecalibrationQueue(BaseQueue):
         Returns:
             job_id of created job
         """
-        return self.db.calibration.enqueue_calibration(path)
+        return self.db.calibration_queue.enqueue_calibration(path)
 
 
 class ScanQueue(BaseQueue):
@@ -305,15 +305,15 @@ class ScanQueue(BaseQueue):
         Returns:
             Tuple of (job_id, path, force) or None if no pending jobs
         """
-        return self.db.library.dequeue_scan()
+        return self.db.library_queue.dequeue_scan()
 
     def mark_complete(self, job_id: int) -> None:
         """Mark scan job as complete."""
-        self.db.library.mark_scan_complete(job_id)
+        self.db.library_queue.mark_scan_complete(job_id)
 
     def mark_error(self, job_id: int, error: str) -> None:
         """Mark scan job as failed."""
-        self.db.library.mark_scan_error(job_id, error)
+        self.db.library_queue.mark_scan_error(job_id, error)
 
     def enqueue(self, path: str, force: bool = False) -> int:
         """
@@ -326,7 +326,7 @@ class ScanQueue(BaseQueue):
         Returns:
             Job ID of enqueued scan
         """
-        return self.db.library.enqueue_scan(path, force)
+        return self.db.library_queue.enqueue_scan(path, force)
 
 
 class QueueService:
@@ -372,7 +372,7 @@ class QueueService:
             ValueError: If no audio files found at given paths
         """
         return enqueue_files_workflow(
-            db=self.queue.db,  # Service orchestrates: pass db to workflow
+            queue=self.queue,  # Pass the ProcessingQueue instance
             paths=paths,
             force=force,
             recursive=recursive,
@@ -651,7 +651,7 @@ class QueueService:
             Number of files enqueued
         """
         # Get all tagged file paths from persistence layer
-        tagged_paths = self.queue.db.library.get_tagged_file_paths()
+        tagged_paths = self.queue.db.library_files.get_tagged_file_paths()
 
         if not tagged_paths:
             logging.info("[QueueService] No tagged files found to enqueue")
@@ -661,7 +661,7 @@ class QueueService:
         count = 0
         for path in tagged_paths:
             try:
-                self.queue.db.queue.enqueue(path, force=force)
+                self.queue.db.tag_queue.enqueue(path, force=force)
                 count += 1
             except Exception as e:
                 logging.error(f"[QueueService] Failed to enqueue {path}: {e}")

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from nomarr.ml.calibration import (
+from nomarr.components.ml.calibration import (
     generate_minmax_calibration,
     save_calibration_sidecars,
 )
@@ -31,7 +31,7 @@ def temp_db():
     random.seed(42)  # Reproducible test data
 
     for i in range(1100):
-        db.library.upsert_library_file(
+        db.library_files.upsert_library_file(
             path=f"/music/song{i}.mp3",
             file_size=1024,
             modified_time=1234567890,
@@ -204,7 +204,7 @@ def test_calibration_min_samples_filter():
 
     # Add only 3 files (well below 1000 minimum)
     for i in range(3):
-        db.library.upsert_library_file(
+        db.library_files.upsert_library_file(
             path=f"/music/song{i}.mp3",
             file_size=1024,
             modified_time=1234567890,
