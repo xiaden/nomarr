@@ -87,6 +87,7 @@ SCHEMA = [
     CREATE TABLE IF NOT EXISTS library_files (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         path TEXT UNIQUE NOT NULL,
+        library_id INTEGER NOT NULL,
         file_size INTEGER,
         modified_time INTEGER,
         duration_seconds REAL,
@@ -103,8 +104,13 @@ SCHEMA = [
         last_tagged_at INTEGER,
         tagged INTEGER DEFAULT 0,
         tagged_version TEXT,
-        skip_auto_tag INTEGER DEFAULT 0
+        skip_auto_tag INTEGER DEFAULT 0,
+        FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE
     );
+    """,
+    # Index for fast library file queries by library
+    """
+    CREATE INDEX IF NOT EXISTS idx_library_files_library_id ON library_files(library_id);
     """,
     # Library scan queue - tracks library scanning jobs (read existing tags from files)
     # Each row represents ONE file to scan

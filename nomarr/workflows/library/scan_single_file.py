@@ -49,6 +49,7 @@ def scan_single_file_workflow(
     force: bool = False,
     auto_tag: bool = False,
     ignore_patterns: str = "",
+    library_id: int | None = None,
 ) -> dict[str, Any]:
     """
     Scan a single audio file and update library database.
@@ -65,6 +66,7 @@ def scan_single_file_workflow(
         force: Whether to force rescan even if file hasn't changed
         auto_tag: Whether to auto-enqueue untagged files for ML tagging
         ignore_patterns: Comma-separated patterns to skip from auto-tagging
+        library_id: Library ID (if None, will be auto-determined from file path)
 
     Returns:
         Dict with scan results:
@@ -93,6 +95,17 @@ def scan_single_file_workflow(
 
         from nomarr.workflows.library.scan_library import update_library_file_from_tags
 
+        # Determine library_id if not provided
+        if library_id is None:
+            library = db.libraries.find_library_containing_path(file_path)
+            if not library:
+                result["action"] = "error"
+                result["error"] = "File path not in any configured library"
+                logging.error(f"[scan_single_file] Path not in any library: {file_path}")
+                return result
+            library_id = library["id"]
+            logging.debug(f"[scan_single_file] Auto-detected library_id={library_id} for {file_path}")
+
         # Check if file exists
         if not os.path.exists(file_path):
             result["action"] = "error"
@@ -117,7 +130,7 @@ def scan_single_file_workflow(
         is_new = existing_file is None
 
         # Update library database with file metadata and tags
-        update_library_file_from_tags(db, file_path, namespace)
+        update_library_file_from_tags(db, file_path, namespace, library_id=library_id)
 
         result["action"] = "added" if is_new else "updated"
         result["success"] = True

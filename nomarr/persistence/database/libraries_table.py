@@ -301,3 +301,61 @@ class LibrariesOperations:
         cursor = self.conn.execute("SELECT COUNT(*) FROM libraries")
         row = cursor.fetchone()
         return int(row[0]) if row else 0
+
+    def find_library_containing_path(self, file_path: str) -> dict[str, Any] | None:
+        """
+        Find the library that contains the given file path.
+
+        Uses path prefix matching to determine which library owns a file.
+        Returns the most specific (longest) matching library root.
+
+        Args:
+            file_path: Absolute file path to check
+
+        Returns:
+            Library dict if found, None otherwise
+
+        Example:
+            >>> ops.find_library_containing_path("/music/rock/song.mp3")
+            {"id": 1, "name": "My Music", "root_path": "/music", ...}
+        """
+        from pathlib import Path
+
+        # Normalize the input path
+        try:
+            normalized_path = Path(file_path).resolve()
+        except (ValueError, OSError):
+            return None
+
+        # Get all libraries ordered by root_path length (longest first)
+        # This ensures we match the most specific library
+        cursor = self.conn.execute(
+            """
+            SELECT id, name, root_path, is_enabled, is_default, created_at, updated_at,
+                   LENGTH(root_path) as path_len
+            FROM libraries
+            ORDER BY path_len DESC
+            """
+        )
+
+        for row in cursor.fetchall():
+            library_root = Path(row[2]).resolve()
+
+            # Check if file_path is within this library's root
+            try:
+                normalized_path.relative_to(library_root)
+                # Success - this library contains the file
+                return {
+                    "id": row[0],
+                    "name": row[1],
+                    "root_path": str(library_root),
+                    "is_enabled": bool(row[3]),
+                    "is_default": bool(row[4]),
+                    "created_at": row[5],
+                    "updated_at": row[6],
+                }
+            except ValueError:
+                # Not a subpath, continue to next library
+                continue
+
+        return None

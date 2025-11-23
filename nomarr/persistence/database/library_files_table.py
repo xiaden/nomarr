@@ -20,6 +20,7 @@ class LibraryFilesOperations:
     def upsert_library_file(
         self,
         path: str,
+        library_id: int,
         file_size: int,
         modified_time: int,
         duration_seconds: float | None = None,
@@ -39,6 +40,7 @@ class LibraryFilesOperations:
 
         Args:
             path: File path
+            library_id: ID of owning library
             file_size: File size in bytes
             modified_time: Last modified timestamp
             duration_seconds: Audio duration
@@ -61,11 +63,12 @@ class LibraryFilesOperations:
         cur.execute(
             """
             INSERT INTO library_files(
-                path, file_size, modified_time, duration_seconds,
+                path, library_id, file_size, modified_time, duration_seconds,
                 artist, album, title, genre, year, track_number,
                 tags_json, nom_tags, calibration, scanned_at, last_tagged_at
-            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(path) DO UPDATE SET
+                library_id=excluded.library_id,
                 file_size=excluded.file_size,
                 modified_time=excluded.modified_time,
                 duration_seconds=excluded.duration_seconds,
@@ -83,6 +86,7 @@ class LibraryFilesOperations:
             """,
             (
                 path,
+                library_id,
                 file_size,
                 modified_time,
                 duration_seconds,

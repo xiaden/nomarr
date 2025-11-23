@@ -226,6 +226,7 @@ def update_library_file_from_tags(
     namespace: str,
     tagged_version: str | None = None,
     calibration: dict[str, str] | None = None,
+    library_id: int | None = None,
 ) -> None:
     """
     Update library database with current file metadata and tags.
@@ -248,6 +249,7 @@ def update_library_file_from_tags(
         tagged_version: Optional tagger version to mark file as tagged
                        (only set when called from processor after tagging)
         calibration: Optional calibration metadata dict (model_key -> calibration_id)
+        library_id: Library ID (if None, will be auto-determined from file path)
 
     Returns:
         None (updates database in-place)
@@ -256,6 +258,17 @@ def update_library_file_from_tags(
         Logs warnings on failure but does not raise exceptions
     """
     try:
+        # Determine library_id if not provided
+        if library_id is None:
+            library = db.libraries.find_library_containing_path(file_path)
+            if not library:
+                logging.warning(f"[update_library_file_from_tags] File path not in any library: {file_path}")
+                return
+            library_id = library["id"]
+
+        # At this point library_id is guaranteed to be int
+        assert library_id is not None  # Type narrowing for mypy
+
         # Get file stats
         file_stat = os.stat(file_path)
         file_size = file_stat.st_size
@@ -270,6 +283,7 @@ def update_library_file_from_tags(
         # Upsert to library database
         db.library_files.upsert_library_file(
             path=file_path,
+            library_id=library_id,
             file_size=file_size,
             modified_time=modified_time,
             duration_seconds=metadata.get("duration"),
