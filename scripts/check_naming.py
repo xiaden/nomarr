@@ -95,7 +95,14 @@ def check_file(
 
 
 def find_python_files(root: Path, exclude_prefixes: list[str], exclude_extensions: list[str]) -> list[Path]:
-    """Find all Python files in the repository."""
+    """Find all Python files in the repository or return single file if root is a file."""
+    # If root is a file, return it directly (if it's a Python file)
+    if root.is_file():
+        if root.suffix == ".py" and not should_exclude(root, exclude_prefixes, exclude_extensions):
+            return [root]
+        return []
+
+    # If root is a directory, search recursively
     return [p for p in root.rglob("*.py") if not should_exclude(p, exclude_prefixes, exclude_extensions)]
 
 
