@@ -11,8 +11,8 @@ from nomarr.interfaces.api.web.dependencies import (
     get_queue_service,
     get_worker_service,
 )
-from nomarr.services.coordinator import ProcessingCoordinator
-from nomarr.services.queue import QueueService
+from nomarr.services.coordinator_service import CoordinatorService
+from nomarr.services.queue_service import QueueService
 
 router = APIRouter(prefix="/api", tags=["Info"])
 
@@ -40,7 +40,7 @@ async def web_info(
 @router.get("/health", dependencies=[Depends(verify_session)])
 async def web_health(
     queue_service: QueueService = Depends(get_queue_service),
-    processor_coord: ProcessingCoordinator | None = Depends(get_processor_coordinator),
+    processor_coord: CoordinatorService | None = Depends(get_processor_coordinator),
 ) -> dict[str, Any]:
     """Health check endpoint (web UI proxy)."""
     # Get queue statistics via QueueService

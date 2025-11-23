@@ -15,8 +15,8 @@ from nomarr.interfaces.api.web.dependencies import (
 )
 
 if TYPE_CHECKING:
-    from nomarr.services.calibration import CalibrationService
-    from nomarr.services.library import LibraryService
+    from nomarr.services.calibration_service import CalibrationService
+    from nomarr.services.library_service import LibraryService
 
 router = APIRouter(prefix="/api/calibration", tags=["Calibration"])
 

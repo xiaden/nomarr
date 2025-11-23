@@ -13,8 +13,8 @@ from nomarr.interfaces.api.web.dependencies import (
     get_processor_coordinator,
     get_queue_service,
 )
-from nomarr.services.coordinator import ProcessingCoordinator
-from nomarr.services.queue import QueueService
+from nomarr.services.coordinator_service import CoordinatorService
+from nomarr.services.queue_service import QueueService
 
 router = APIRouter(prefix="/api", tags=["Processing"])
 
@@ -46,7 +46,7 @@ class BatchProcessRequest(BaseModel):
 @router.post("/process", dependencies=[Depends(verify_session)])
 async def web_process(
     request: ProcessRequest,
-    processor_coord: ProcessingCoordinator | None = Depends(get_processor_coordinator),
+    processor_coord: CoordinatorService | None = Depends(get_processor_coordinator),
 ) -> dict[str, Any]:
     """Process a single file synchronously (web UI proxy)."""
     # Check if coordinator is available

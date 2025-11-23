@@ -10,7 +10,7 @@ from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import get_config_service, get_worker_service
 
 if TYPE_CHECKING:
-    from nomarr.services.config import ConfigService
+    from nomarr.services.config_service import ConfigService
 
 router = APIRouter(prefix="/api/config", tags=["Config"])
 
@@ -40,7 +40,7 @@ def get_config(
 ) -> dict[str, Any]:
     """Get current configuration values (user-editable subset)."""
     try:
-        from nomarr.services.config import (
+        from nomarr.services.config_service import (
             INTERNAL_ALLOW_SHORT,
             INTERNAL_BLOCKING_MODE,
             INTERNAL_BLOCKING_TIMEOUT,

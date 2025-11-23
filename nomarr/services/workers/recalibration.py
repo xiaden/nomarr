@@ -20,7 +20,7 @@ from nomarr.workflows.calibration.recalibrate_file import recalibrate_file_workf
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
-    from nomarr.services.queue import RecalibrationQueue
+    from nomarr.services.queue_service import RecalibrationQueue
 
 
 class RecalibrationWorker(BaseWorker):

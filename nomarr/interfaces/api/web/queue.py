@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import get_event_broker, get_ml_service, get_queue_service
-from nomarr.services.queue import QueueService
+from nomarr.services.queue_service import QueueService
 
 router = APIRouter(prefix="/api", tags=["Queue"])
 

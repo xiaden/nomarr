@@ -9,7 +9,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from nomarr.services.coordinator import ProcessingCoordinator
+    from nomarr.services.coordinator_service import CoordinatorService
 
 
 class ProcessingService:
@@ -21,12 +21,12 @@ class ProcessingService:
     the orchestration code.
     """
 
-    def __init__(self, coordinator: ProcessingCoordinator | None = None):
+    def __init__(self, coordinator: CoordinatorService | None = None):
         """
         Initialize processing service.
 
         Args:
-            coordinator: ProcessingCoordinator instance for parallel processing
+            coordinator: CoordinatorService instance for parallel processing
                         If None, falls back to direct processing
         """
         self.coordinator = coordinator

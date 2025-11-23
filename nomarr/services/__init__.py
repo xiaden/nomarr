@@ -2,23 +2,23 @@
 Services package.
 """
 
-from .calibration import CalibrationService
-from .calibration_download import check_missing_calibrations, download_calibrations, ensure_calibrations_exist
-from .config import ConfigService
+from .calibration_download_service import check_missing_calibrations, download_calibrations, ensure_calibrations_exist
+from .calibration_service import CalibrationService
+from .config_service import ConfigService
 from .file_validation import check_already_tagged, make_skip_result, should_skip_processing, validate_file_exists
-from .health_monitor import HealthMonitor
-from .keys import SESSION_TIMEOUT_SECONDS, KeyManagementService
-from .library import LibraryService
-from .processing import ProcessingService
-from .queue import QueueService
-from .recalibration import RecalibrationService
-from .worker import WorkerService
+from .health_monitor_service import HealthMonitorService
+from .keys_service import SESSION_TIMEOUT_SECONDS, KeyManagementService
+from .library_service import LibraryService
+from .processing_service import ProcessingService
+from .queue_service import QueueService
+from .recalibration_service import RecalibrationService
+from .worker_service import WorkerService
 
 __all__ = [
     "SESSION_TIMEOUT_SECONDS",
     "CalibrationService",
     "ConfigService",
-    "HealthMonitor",
+    "HealthMonitorService",
     "KeyManagementService",
     "LibraryService",
     "ProcessingService",

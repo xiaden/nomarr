@@ -9,7 +9,7 @@ from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import get_analytics_service
 
 if TYPE_CHECKING:
-    from nomarr.services.analytics import AnalyticsService
+    from nomarr.services.analytics_service import AnalyticsService
 
 router = APIRouter(prefix="/api/analytics", tags=["Analytics"])
 

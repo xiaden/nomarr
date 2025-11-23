@@ -61,7 +61,7 @@ def test_processor_config_creation():
 
 def test_config_service_make_processor_config():
     """Test ConfigService can create ProcessorConfig."""
-    from nomarr.services.config import ConfigService
+    from nomarr.services.config_service import ConfigService
 
     service = ConfigService()
     config = service.make_processor_config()

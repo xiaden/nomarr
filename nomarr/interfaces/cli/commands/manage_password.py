@@ -12,7 +12,7 @@ import nomarr.app as app
 from nomarr.interfaces.cli.ui import print_error, print_info, print_success
 
 if TYPE_CHECKING:
-    from nomarr.services.keys import KeyManagementService
+    from nomarr.services.keys_service import KeyManagementService
 
 
 def cmd_manage_password(args: argparse.Namespace) -> int:

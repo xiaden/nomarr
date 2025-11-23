@@ -11,8 +11,8 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
-    from nomarr.services.coordinator import ProcessingCoordinator
-    from nomarr.services.queue import ProcessingQueue
+    from nomarr.services.coordinator_service import CoordinatorService
+    from nomarr.services.queue_service import ProcessingQueue
     from nomarr.services.workers.base import BaseWorker
 
 
@@ -38,7 +38,7 @@ class WorkerService:
         db: Database,
         queue: ProcessingQueue,
         cfg: WorkerConfig,
-        processor_coord: ProcessingCoordinator | None = None,
+        processor_coord: CoordinatorService | None = None,
     ):
         """
         Initialize worker service.
@@ -47,7 +47,7 @@ class WorkerService:
             db: Database instance
             queue: Job queue instance
             cfg: Worker configuration
-            processor_coord: ProcessingCoordinator for parallel processing
+            processor_coord: CoordinatorService for parallel processing
         """
         self.db = db
         self.queue = queue
@@ -247,7 +247,7 @@ class WorkerService:
                 should_skip_processing,
                 validate_file_exists,
             )
-            from nomarr.services.config import ConfigService
+            from nomarr.services.config_service import ConfigService
             from nomarr.workflows.processing.process_file import process_file_workflow
 
             if self.processor_coord is None:

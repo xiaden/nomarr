@@ -27,7 +27,7 @@ EXPECTED DEPENDENCIES:
 
 USAGE:
     from nomarr.workflows.queue.enqueue_files import enqueue_files_workflow
-    from nomarr.services.queue import ProcessingQueue
+    from nomarr.services.queue_service import ProcessingQueue
 
     queue = ProcessingQueue(db)
     result = enqueue_files_workflow(
@@ -103,7 +103,7 @@ def enqueue_files_workflow(
         ValueError: If no audio files found at given paths
 
     Example:
-        >>> from nomarr.services.queue import ProcessingQueue
+        >>> from nomarr.services.queue_service import ProcessingQueue
         >>> queue = ProcessingQueue(db)
         >>> result = enqueue_files_workflow(queue=queue, paths="/music/library", force=False, recursive=True)
         >>> print(f"Queued {result['files_queued']} files")

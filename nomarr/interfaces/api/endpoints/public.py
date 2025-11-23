@@ -21,8 +21,8 @@ from nomarr.interfaces.api.web.dependencies import (
     get_worker_pool,
     get_worker_service,
 )
-from nomarr.services.queue import QueueService
-from nomarr.services.worker import WorkerService
+from nomarr.services.queue_service import QueueService
+from nomarr.services.worker_service import WorkerService
 
 # Router instance (will be included in main app)
 router = APIRouter(prefix="/api/v1", tags=["public"])

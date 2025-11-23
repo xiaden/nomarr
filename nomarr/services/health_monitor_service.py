@@ -18,12 +18,12 @@ if TYPE_CHECKING:
 
 @dataclass
 class HealthMonitorConfig:
-    """Configuration for HealthMonitor."""
+    """Configuration for HealthMonitorService."""
 
     check_interval: int
 
 
-class HealthMonitor:
+class HealthMonitorService:
     """
     Universal worker health monitor.
 

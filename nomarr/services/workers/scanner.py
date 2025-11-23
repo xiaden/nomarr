@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from nomarr.services.queue import ScanQueue
+from nomarr.services.queue_service import ScanQueue
 from nomarr.services.workers.base import BaseWorker
 from nomarr.workflows.library.scan_single_file import scan_single_file_workflow
 

@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any
 from nomarr.persistence.db import Database
 
 if TYPE_CHECKING:
-    from nomarr.services.queue import BaseQueue
+    from nomarr.services.queue_service import BaseQueue
 
 
 # ----------------------------------------------------------------------

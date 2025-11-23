@@ -15,14 +15,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from nomarr.services.analytics import AnalyticsService
-    from nomarr.services.calibration import CalibrationService
-    from nomarr.services.config import ConfigService
-    from nomarr.services.coordinator import ProcessingCoordinator
-    from nomarr.services.library import LibraryService
+    from nomarr.services.analytics_service import AnalyticsService
+    from nomarr.services.calibration_service import CalibrationService
+    from nomarr.services.config_service import ConfigService
+    from nomarr.services.coordinator_service import CoordinatorService
+    from nomarr.services.library_service import LibraryService
     from nomarr.services.navidrome_service import NavidromeService
-    from nomarr.services.queue import QueueService
-    from nomarr.services.worker import WorkerService
+    from nomarr.services.queue_service import QueueService
+    from nomarr.services.worker_service import WorkerService
 
 
 def get_config() -> dict[str, Any]:
@@ -57,8 +57,8 @@ def get_worker_service() -> WorkerService:
     return service  # type: ignore[no-any-return]
 
 
-def get_processor_coordinator() -> ProcessingCoordinator | None:
-    """Get ProcessingCoordinator instance (may be None)."""
+def get_processor_coordinator() -> CoordinatorService | None:
+    """Get CoordinatorService instance (may be None)."""
     from nomarr.app import application
 
     return application.coordinator

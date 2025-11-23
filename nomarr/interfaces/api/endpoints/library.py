@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import get_library_service
-from nomarr.services.library import LibraryService
+from nomarr.services.library_service import LibraryService
 
 router = APIRouter(prefix="/web/api/library", tags=["library"])
 

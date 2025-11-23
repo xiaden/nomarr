@@ -44,7 +44,7 @@ def process_file_wrapper(path: str, force: bool) -> dict[str, Any]:
 
     try:
         # Each worker process creates its own config
-        from nomarr.services.config import ConfigService
+        from nomarr.services.config_service import ConfigService
 
         config_service = ConfigService()
         processor_config = config_service.make_processor_config()
@@ -75,7 +75,7 @@ def process_file_wrapper(path: str, force: bool) -> dict[str, Any]:
         return {"error": str(e), "status": "error"}
 
 
-class ProcessingCoordinator:
+class CoordinatorService:
     """
     Coordinates job submission to the process pool.
     Does not manage models - each worker process loads independently.
