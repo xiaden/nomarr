@@ -24,17 +24,17 @@ Usage:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 # Single guarded import point for Essentia
 try:
-    import essentia_tensorflow as essentia_tf
+    import essentia.standard as essentia_tf  # type: ignore[import-not-found]
 except ImportError:  # pragma: no cover
     essentia_tf = None  # type: ignore[assignment]
 
 if TYPE_CHECKING:
     # Type hints for when Essentia is available
-    import essentia_tensorflow  # noqa: F401
+    essentia_tf: Any  # essentia.standard module
 
 
 def is_available() -> bool:
