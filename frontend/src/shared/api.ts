@@ -7,7 +7,7 @@
  */
 
 import { clearSessionToken, getSessionToken, setSessionToken } from "./auth";
-import type { QueueJob, QueueSummary } from "./types";
+import type { Library, QueueJob, QueueSummary, ScanResult } from "./types";
 
 /**
  * API base URL.
@@ -278,7 +278,233 @@ export const library = {
     unique_albums: number;
     total_duration_seconds: number;
   }> => {
-    return request("/web/api/library/stats");
+    return request("/api/library/stats");
+  },
+
+  /**
+   * List all libraries.
+   */
+  list: async (enabledOnly = false): Promise<Library[]> => {
+    const query = enabledOnly ? "?enabled_only=true" : "";
+    const response = await request<
+      Array<{
+        id: number;
+        name: string;
+        root_path: string;
+        is_enabled: boolean;
+        is_default: boolean;
+        created_at?: string;
+        updated_at?: string;
+      }>
+    >(`/api/library/libraries${query}`);
+
+    // Convert snake_case to camelCase
+    return response.map((lib) => ({
+      id: lib.id,
+      name: lib.name,
+      rootPath: lib.root_path,
+      isEnabled: lib.is_enabled,
+      isDefault: lib.is_default,
+      createdAt: lib.created_at,
+      updatedAt: lib.updated_at,
+    }));
+  },
+
+  /**
+   * Get a specific library by ID.
+   */
+  get: async (id: number): Promise<Library> => {
+    const response = await request<{
+      id: number;
+      name: string;
+      root_path: string;
+      is_enabled: boolean;
+      is_default: boolean;
+      created_at?: string;
+      updated_at?: string;
+    }>(`/api/library/libraries/${id}`);
+
+    return {
+      id: response.id,
+      name: response.name,
+      rootPath: response.root_path,
+      isEnabled: response.is_enabled,
+      isDefault: response.is_default,
+      createdAt: response.created_at,
+      updatedAt: response.updated_at,
+    };
+  },
+
+  /**
+   * Get the default library.
+   */
+  getDefault: async (): Promise<Library | null> => {
+    try {
+      const response = await request<{
+        id: number;
+        name: string;
+        root_path: string;
+        is_enabled: boolean;
+        is_default: boolean;
+        created_at?: string;
+        updated_at?: string;
+      }>("/api/library/libraries/default");
+
+      return {
+        id: response.id,
+        name: response.name,
+        rootPath: response.root_path,
+        isEnabled: response.is_enabled,
+        isDefault: response.is_default,
+        createdAt: response.created_at,
+        updatedAt: response.updated_at,
+      };
+    } catch {
+      return null;
+    }
+  },
+
+  /**
+   * Create a new library.
+   */
+  create: async (payload: {
+    name: string;
+    rootPath: string;
+    isEnabled?: boolean;
+    isDefault?: boolean;
+  }): Promise<Library> => {
+    const response = await request<{
+      id: number;
+      name: string;
+      root_path: string;
+      is_enabled: boolean;
+      is_default: boolean;
+      created_at?: string;
+      updated_at?: string;
+    }>("/api/library/libraries", {
+      method: "POST",
+      body: JSON.stringify({
+        name: payload.name,
+        root_path: payload.rootPath,
+        is_enabled: payload.isEnabled ?? true,
+        is_default: payload.isDefault ?? false,
+      }),
+    });
+
+    return {
+      id: response.id,
+      name: response.name,
+      rootPath: response.root_path,
+      isEnabled: response.is_enabled,
+      isDefault: response.is_default,
+      createdAt: response.created_at,
+      updatedAt: response.updated_at,
+    };
+  },
+
+  /**
+   * Update a library's properties.
+   */
+  update: async (
+    id: number,
+    payload: {
+      name?: string;
+      rootPath?: string;
+      isEnabled?: boolean;
+      isDefault?: boolean;
+    }
+  ): Promise<Library> => {
+    const body: Record<string, unknown> = {};
+    if (payload.name !== undefined) body.name = payload.name;
+    if (payload.rootPath !== undefined) body.root_path = payload.rootPath;
+    if (payload.isEnabled !== undefined) body.is_enabled = payload.isEnabled;
+    if (payload.isDefault !== undefined) body.is_default = payload.isDefault;
+
+    const response = await request<{
+      id: number;
+      name: string;
+      root_path: string;
+      is_enabled: boolean;
+      is_default: boolean;
+      created_at?: string;
+      updated_at?: string;
+    }>(`/api/library/libraries/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+
+    return {
+      id: response.id,
+      name: response.name,
+      rootPath: response.root_path,
+      isEnabled: response.is_enabled,
+      isDefault: response.is_default,
+      createdAt: response.created_at,
+      updatedAt: response.updated_at,
+    };
+  },
+
+  /**
+   * Set a library as the default.
+   */
+  setDefault: async (id: number): Promise<Library> => {
+    const response = await request<{
+      id: number;
+      name: string;
+      root_path: string;
+      is_enabled: boolean;
+      is_default: boolean;
+      created_at?: string;
+      updated_at?: string;
+    }>(`/api/library/libraries/${id}/set-default`, {
+      method: "POST",
+    });
+
+    return {
+      id: response.id,
+      name: response.name,
+      rootPath: response.root_path,
+      isEnabled: response.is_enabled,
+      isDefault: response.is_default,
+      createdAt: response.created_at,
+      updatedAt: response.updated_at,
+    };
+  },
+
+  /**
+   * Scan a specific library.
+   */
+  scan: async (
+    id: number,
+    options?: {
+      paths?: string[];
+      recursive?: boolean;
+      force?: boolean;
+      cleanMissing?: boolean;
+    }
+  ): Promise<ScanResult> => {
+    const body: Record<string, unknown> = {
+      recursive: options?.recursive ?? true,
+      force: options?.force ?? false,
+      clean_missing: options?.cleanMissing ?? true,
+    };
+    if (options?.paths) {
+      body.paths = options.paths;
+    }
+
+    return request<ScanResult>(`/api/library/libraries/${id}/scan`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  },
+
+  /**
+   * Scan the default library.
+   */
+  scanDefault: async (): Promise<ScanResult> => {
+    return request<ScanResult>("/web/api/library/scan/start", {
+      method: "POST",
+    });
   },
 };
 

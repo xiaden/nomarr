@@ -14,7 +14,7 @@
  * - label: Optional label to display above picker
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { api } from "../shared/api";
 import type { FsEntry } from "../shared/types";
@@ -33,6 +33,13 @@ export interface ServerFilePickerProps {
 
   /** Optional label to display above picker */
   label?: string;
+
+  /**
+   * Optional library root path to enforce as boundary.
+   * If provided, navigation is restricted to this path and its subdirectories.
+   * Paths are resolved server-side.
+   */
+  libraryRoot?: string;
 }
 
 /**
@@ -54,6 +61,7 @@ export function ServerFilePicker({
   onChange,
   mode = "directory",
   label,
+  libraryRoot,
 }: ServerFilePickerProps) {
   const effectiveMode = mode ?? "directory";
 
@@ -62,30 +70,40 @@ export function ServerFilePicker({
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load directory on mount and when currentPath changes
-  useEffect(() => {
-    loadDirectory(currentPath);
-  }, [currentPath]);
-
   /**
    * Load directory contents from server
    */
-  const loadDirectory = async (path: string) => {
-    setLoading(true);
-    setError(null);
+  const loadDirectory = useCallback(
+    async (path: string) => {
+      setLoading(true);
+      setError(null);
 
-    try {
-      const response = await api.fs.listFs(path || undefined);
-      setEntries(response.entries);
-    } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Failed to load directory";
-      setError(errorMessage);
-      setEntries([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+      try {
+        // If libraryRoot is set, prepend it to the path for the API call
+        const apiPath = libraryRoot
+          ? path
+            ? `${libraryRoot}/${path}`
+            : libraryRoot
+          : path || undefined;
+
+        const response = await api.fs.listFs(apiPath);
+        setEntries(response.entries);
+      } catch (err) {
+        const errorMessage =
+          err instanceof Error ? err.message : "Failed to load directory";
+        setError(errorMessage);
+        setEntries([]);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [libraryRoot]
+  );
+
+  // Load directory on mount and when currentPath changes
+  useEffect(() => {
+    loadDirectory(currentPath);
+  }, [currentPath, loadDirectory]);
 
   /**
    * Navigate into a subdirectory

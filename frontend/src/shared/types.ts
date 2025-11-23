@@ -75,11 +75,30 @@ export interface WorkerStatusData {
 // Library Types
 // ──────────────────────────────────────────────────────────────────────
 
+export interface Library {
+  id: number;
+  name: string;
+  rootPath: string; // maps to backend root_path
+  isEnabled: boolean;
+  isDefault: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface LibraryStats {
   total_files: number;
   unique_artists: number;
   unique_albums: number;
   total_duration_seconds: number;
+}
+
+export interface ScanResult {
+  status: string;
+  message: string;
+  stats: {
+    files_queued?: number;
+    [key: string]: unknown;
+  };
 }
 
 export interface LibraryFile {

@@ -67,7 +67,7 @@ export function ConfigPage() {
 
   const isPathField = (key: string): boolean => {
     const pathKeys = [
-      "library_path",
+      "library_root",
       "models_dir",
       "db_path",
       "calibration_repo",

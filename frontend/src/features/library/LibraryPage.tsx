@@ -3,12 +3,15 @@
  *
  * Features:
  * - Library statistics
- * - Real-time updates via SSE
+ * - Library CRUD operations
+ * - Per-library scanning
  */
 
 import { useEffect, useState } from "react";
 
 import { api } from "../../shared/api";
+
+import { LibraryManagement } from "./LibraryManagement";
 
 interface LibraryStats {
   total_files: number;
@@ -86,13 +89,9 @@ export function LibraryPage() {
             </div>
           </section>
 
-          {/* Placeholder for future scanner controls */}
+          {/* Library Management */}
           <section style={styles.section}>
-            <h2 style={styles.sectionTitle}>Scanner Controls</h2>
-            <p style={{ color: "#888", fontStyle: "italic" }}>
-              Scanner controls will be implemented when scanner service is
-              available.
-            </p>
+            <LibraryManagement />
           </section>
         </div>
       )}
