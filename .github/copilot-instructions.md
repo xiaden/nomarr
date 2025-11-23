@@ -144,7 +144,6 @@ Contains: `api/`, `cli/`, `web/`
 - HTTP routes (FastAPI), CLI commands, web handlers
 - Thin: validate inputs, call a service, serialize outputs
 - Must not know about DB schema, ML details, or tagging rules
-- See Section 2.2 for allowed imports
 
 ### 3.2 `services/` — Runtime Wiring & Long-Lived Resources
 
@@ -153,7 +152,6 @@ Contains: `*_service.py` files (e.g., `config_service.py`, `processing_service.p
 - Own `ConfigService`, `Database` construction, queues, background workers
 - Gather dependencies (config, db, ML backends, tag writers) and call workflows
 - Should not contain complicated business rules; push logic to workflows
-- See Section 2.2 for allowed imports
 
 ### 3.3 `workflows/` — Use Cases
 
@@ -163,7 +161,6 @@ Contains: workflow modules organized by domain (e.g., `processing/`, `library/`,
 - Accept all dependencies as parameters (no global config reading)
 - Call components and persistence to perform work
 - This is where most "interesting logic" lives
-- See Section 2.2 for allowed imports
 
 ### 3.4 `components/` — Domain Logic
 
@@ -176,7 +173,6 @@ Contains: `analytics/`, `ml/`, `tagging/`
 All components:
 - Operate on data via persistence layer
 - Must not import services, workflows, or interfaces
-- See Section 2.2 for allowed imports
 
 ### 3.5 `persistence/` — Database & Queue Access
 
@@ -187,7 +183,6 @@ Contains: `db.py`, `queue.py`, `analytics_queries.py`, `database/` (with `*Opera
 - Each `*Operations` class owns all SQL for that table
 - Access pattern: `db.queue.enqueue()`, `db.tags.get_track_tags()`, etc.
 - External code must not import `persistence.database.*` directly
-- See Section 2.2 for allowed imports
 
 ### 3.6 `helpers/` — Pure Utilities
 
@@ -197,7 +192,6 @@ Contains: `audio.py`, `files.py`, `dataclasses.py`, `logging.py`, `navidrome_tem
 - `dataclasses.py` contains dataclasses used by multiple top-level packages
 - Must not import any `nomarr.*` modules (only stdlib and third-party)
 - No business logic; just reusable utilities
-- See Section 2.2 for allowed imports
 
 ---
 
