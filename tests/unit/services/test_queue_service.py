@@ -47,20 +47,23 @@ class TestQueueServiceCleanupOldJobs:
         assert result >= 0  # Non-negative count
 
 
-class TestQueueServiceGetDepth:
-    """Test QueueService.get_depth() operations."""
+class TestQueueServiceGetStatus:
+    """Test QueueService.get_status() operations."""
 
-    def test_get_depth_success(self, real_queue_service):
-        """Should successfully get depth."""
+    def test_get_status_success(self, real_queue_service):
+        """Should successfully get queue status with depth and counts."""
         # Arrange
 
         # Act
-        result = real_queue_service.get_depth()
+        result = real_queue_service.get_status()
 
         # Assert
-        assert isinstance(result, int)
-        assert result >= 0  # Non-negative count
-        # TODO: Verify returned data is correct
+        assert isinstance(result, dict)
+        assert "depth" in result
+        assert "counts" in result
+        assert isinstance(result["depth"], int)
+        assert result["depth"] >= 0  # Non-negative count
+        assert isinstance(result["counts"], dict)
 
 
 class TestQueueServiceGetJob:
@@ -92,22 +95,7 @@ class TestQueueServiceGetJob:
         assert result is None
 
 
-class TestQueueServiceGetStatus:
-    """Test QueueService.get_status() operations."""
-
-    def test_get_status_success(self, real_queue_service):
-        """Should successfully get status."""
-        # Arrange
-
-        # Act
-        result = real_queue_service.get_status()
-
-        # Assert
-        assert isinstance(result, dict)
-        # TODO: Verify returned data is correct
-
-
-class TestQueueServicePublishQueueUpdate:
+class TestQueueServiceListJobs:
     """Test QueueService.publish_queue_update() operations."""
 
     def test_publish_queue_update_success(self, real_queue_service):
