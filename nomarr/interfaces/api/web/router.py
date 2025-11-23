@@ -22,8 +22,8 @@ from nomarr.interfaces.api.web import (
     worker,
 )
 
-# Create combined router
-router = APIRouter()
+# Create combined router with /web prefix to avoid collisions with SPA routes
+router = APIRouter(prefix="/web")
 
 # Include all web UI routers
 router.include_router(auth.router)
