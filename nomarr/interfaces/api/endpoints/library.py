@@ -21,7 +21,10 @@ async def start_library_scan(
     _session: dict = Depends(verify_session),
 ):
     """
-    Start a new library scan (discovers files and enqueues them for background processing).
+    Start a new library scan for the default library.
+
+    This discovers files in the default library and enqueues them for background processing.
+    To scan a specific library, use POST /api/library/libraries/{library_id}/scan instead.
 
     Returns:
         Dict with scan statistics
@@ -70,7 +73,7 @@ async def get_library_scan_status(
     Get current library scan worker status.
 
     Returns:
-        Dict with: configured, enabled, running, library_path, current_scan_id, current_progress
+        Dict with: configured, enabled, running, library_root, current_scan_id, current_progress
     """
     try:
         status = library_service.get_status()

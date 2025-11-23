@@ -32,7 +32,7 @@ from .config_service import (
 from .coordinator_service import CoordinatorConfig, CoordinatorService, process_file_wrapper
 from .health_monitor_service import HealthMonitorConfig, HealthMonitorService
 from .keys_service import SESSION_TIMEOUT_SECONDS, KeyManagementService
-from .library_service import LibraryConfig, LibraryService
+from .library_service import LibraryRootConfig, LibraryService
 from .ml_service import MLConfig, MLService
 from .navidrome_service import NavidromeConfig, NavidromeService
 from .processing_service import ProcessingService
@@ -75,7 +75,7 @@ __all__ = [
     "HealthMonitorService",
     "Job",
     "KeyManagementService",
-    "LibraryConfig",
+    "LibraryRootConfig",
     "LibraryService",
     "MLConfig",
     "MLService",

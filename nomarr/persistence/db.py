@@ -5,6 +5,7 @@ import time
 # Import table-specific operation classes
 from nomarr.persistence.database.calibration_queue_table import CalibrationQueueOperations
 from nomarr.persistence.database.calibration_runs_table import CalibrationRunsOperations
+from nomarr.persistence.database.libraries_table import LibrariesOperations
 from nomarr.persistence.database.library_files_table import LibraryFilesOperations
 from nomarr.persistence.database.library_queue_table import LibraryQueueOperations
 from nomarr.persistence.database.library_tags_table import TagOperations
@@ -64,6 +65,22 @@ SCHEMA = [
         key TEXT PRIMARY KEY,
         value TEXT
     );
+    """,
+    # Libraries - defines multiple library roots that can be scanned independently
+    """
+    CREATE TABLE IF NOT EXISTS libraries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL,
+        root_path TEXT NOT NULL,
+        is_enabled INTEGER DEFAULT 1 NOT NULL,
+        is_default INTEGER DEFAULT 0 NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+    );
+    """,
+    # Index for fast library queries
+    """
+    CREATE INDEX IF NOT EXISTS idx_libraries_default ON libraries(is_default);
     """,
     # Library files - tracks music library with metadata and tags
     """
@@ -187,7 +204,6 @@ SCHEMA = [
 ]
 
 # Schema version (pre-alpha, no migrations yet - just initial schema)
-# Version 2: Added calibration column to library_files
 SCHEMA_VERSION = 1
 
 
@@ -227,6 +243,7 @@ class Database:
 
         # Initialize operation classes - one per table (exact table names)
         self.meta = MetaOperations(self.conn)
+        self.libraries = LibrariesOperations(self.conn)
         self.tag_queue = QueueOperations(self.conn)
         self.library_files = LibraryFilesOperations(self.conn)
         self.library_queue = LibraryQueueOperations(self.conn)

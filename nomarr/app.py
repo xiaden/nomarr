@@ -29,7 +29,7 @@ from nomarr.services.config_service import ConfigService
 from nomarr.services.coordinator_service import CoordinatorService
 from nomarr.services.health_monitor_service import HealthMonitorService
 from nomarr.services.keys_service import KeyManagementService
-from nomarr.services.library_service import LibraryService
+from nomarr.services.library_service import LibraryRootConfig, LibraryService
 from nomarr.services.navidrome_service import NavidromeService
 from nomarr.services.processing_service import ProcessingService
 from nomarr.services.queue_service import ProcessingQueue, QueueService, RecalibrationQueue
@@ -97,7 +97,7 @@ class Application:
         # Extract config-derived values as instance attributes
         # User-configurable settings
         self.db_path: str = str(self._config["db_path"])
-        self.library_path: str | None = self._config.get("library_path")
+        self.library_root: str | None = self._config.get("library_root")
         self.models_dir: str = str(self._config.get("models_dir", "/app/models"))
         self.cache_idle_timeout: int = int(self._config.get("cache_idle_timeout", 300))
         self.calibrate_heads: bool = bool(self._config.get("calibrate_heads", False))
@@ -301,7 +301,7 @@ class Application:
             logging.info("[Application] Workers not started (worker_enabled=false)")
 
         # Start library scan worker if configured (DI: inject db and config)
-        if self.library_path:
+        if self.library_root:
             logging.info(f"[Application] Starting LibraryScanWorker with namespace={self.namespace}")
             self.library_scan_worker = LibraryScanWorker(
                 db=self.db,
@@ -313,22 +313,20 @@ class Application:
             )
             self.library_scan_worker.start()
 
-            from nomarr.services.library_service import LibraryConfig
-
-            library_cfg = LibraryConfig(
+            library_cfg = LibraryRootConfig(
                 namespace=self.namespace,
-                library_path=self.library_path,
+                library_root=self.library_root,
             )
-            self.register_service(
-                "library",
-                LibraryService(
-                    db=self.db,
-                    cfg=library_cfg,
-                    worker=self.library_scan_worker,
-                ),
+            library_service = LibraryService(
+                db=self.db,
+                cfg=library_cfg,
+                worker=self.library_scan_worker,
             )
+            # Ensure at least one library exists (migrate from single library_root config)
+            library_service.ensure_default_library_exists()
+            self.register_service("library", library_service)
         else:
-            logging.info("[Application] LibraryScanWorker not started (no library_path)")
+            logging.info("[Application] LibraryScanWorker not started (no library_root)")
 
         # Start recalibration worker (DI: inject db, queue, and config)
         logging.info("[Application] Starting RecalibrationWorker...")

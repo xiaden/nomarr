@@ -401,10 +401,10 @@ def real_processing_service(test_db):
 
 @pytest.fixture
 def real_library_service(test_db, temp_music_library):
-    """Provide a real LibraryService instance for testing with temp library path."""
-    from nomarr.services.library_service import LibraryConfig, LibraryService
+    """Provide a real LibraryService instance for testing with temp library root."""
+    from nomarr.services.library_service import LibraryRootConfig, LibraryService
 
-    cfg = LibraryConfig(namespace="nom", library_path=str(temp_music_library))
+    cfg = LibraryRootConfig(namespace="nom", library_root=str(temp_music_library))
     return LibraryService(test_db, cfg)
 
 

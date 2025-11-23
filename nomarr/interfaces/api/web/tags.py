@@ -57,10 +57,10 @@ async def web_show_tags(
 ) -> dict[str, Any]:
     """Read tags from an audio file (web UI proxy)."""
     namespace = cfg.get("namespace", "essentia")
-    library_path = cfg.get("library_path", "")
+    library_root = cfg.get("library_root", "")
 
     # Validate path to prevent directory traversal (includes existence check)
-    validated_path = validate_library_path(path, library_path)
+    validated_path = validate_library_path(path, library_root)
 
     try:
         audio = mutagen.File(validated_path)

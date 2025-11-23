@@ -61,7 +61,7 @@ def get_config(
             # User-configurable settings
             "models_dir": config.get("models_dir", "/app/models"),
             "db_path": config.get("db_path", ""),
-            "library_path": config.get("library_path", ""),
+            "library_root": config.get("library_root", ""),
             "library_auto_tag": config.get("library_auto_tag", True),
             "library_ignore_patterns": config.get("library_ignore_patterns", ""),
             "file_write_mode": config.get("file_write_mode", "minimal"),
@@ -98,17 +98,18 @@ def update_config(
     Update a configuration value in the database.
 
     Changes are stored in the DB meta table and will override YAML/env config on restart.
-    Only the 12 user-configurable keys can be updated.
+    Only user-configurable keys can be updated.
+    Note: library_root is infrastructure-level config, use /api/library/libraries endpoints instead.
     """
     try:
         key = request.key
         value = request.value
 
         # Whitelist of user-editable keys (matches config surface)
+        # Note: library_root excluded - use libraries API for multi-library management
         editable_keys = {
             "models_dir",
             "db_path",
-            "library_path",
             "library_auto_tag",
             "library_ignore_patterns",
             "file_write_mode",
@@ -136,3 +137,4 @@ def update_config(
     except Exception as e:
         logging.exception("[Web API] Error updating config")
         raise HTTPException(status_code=500, detail=f"Error updating config: {e}") from e
+

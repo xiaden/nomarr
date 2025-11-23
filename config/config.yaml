@@ -20,7 +20,7 @@
 # ----------------------------------------------------------------------
 models_dir: /app/models # Directory containing ML models
 db_path: /app/config/db/essentia.sqlite # SQLite database path
-library_path: # Path to music library (optional)
+library_root: # Path to music library root (optional)
 
 # ----------------------------------------------------------------------
 # Tag Writing Behavior

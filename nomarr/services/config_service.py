@@ -241,7 +241,7 @@ class ConfigService:
             # Filesystem paths
             "models_dir": "/app/models",
             "db_path": "/app/config/db/essentia.sqlite",
-            "library_path": None,  # Optional: path to music library
+            "library_root": None,  # Optional: top-level root for all libraries
             # Tag writing settings
             "file_write_mode": "full",  # "none", "minimal", or "full"
             "overwrite_tags": True,
@@ -302,7 +302,7 @@ class ConfigService:
         ALLOWED_DB_KEYS = {
             "models_dir",
             "db_path",
-            "library_path",
+            "library_root",
             "library_auto_tag",
             "library_ignore_patterns",
             "file_write_mode",
@@ -375,7 +375,7 @@ class ConfigService:
         Supported formats:
           NOMARR_MODELS_DIR=/custom/path
           NOMARR_DB_PATH=/custom/db.sqlite
-          NOMARR_LIBRARY_PATH=/music
+          NOMARR_LIBRARY_ROOT=/music
           NOMARR_LIBRARY_AUTO_TAG=true
           NOMARR_LIBRARY_IGNORE_PATTERNS=*.wav,*/Audiobooks/*
           NOMARR_FILE_WRITE_MODE=full
@@ -392,7 +392,7 @@ class ConfigService:
         ALLOWED_ENV_KEYS = {
             "models_dir",
             "db_path",
-            "library_path",
+            "library_root",
             "library_auto_tag",
             "library_ignore_patterns",
             "file_write_mode",

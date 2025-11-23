@@ -30,7 +30,7 @@ async def list_directory(
     List contents of a directory within the music library.
 
     Security features:
-    - All paths are resolved and validated against library_path root
+    - All paths are resolved and validated against library_root root
     - Directory traversal attempts (.., symlinks) are rejected
     - Only returns relative paths, never absolute container paths
     - Read-only: no write/delete/move operations
@@ -53,26 +53,26 @@ async def list_directory(
         400: Invalid path or directory traversal attempt
         404: Path does not exist
     """
-    # Check if library_path is configured
-    library_path = config.get("library", {}).get("library_path")
-    if not library_path:
+    # Check if library_root is configured
+    library_root = config.get("library", {}).get("library_root")
+    if not library_root:
         raise HTTPException(
             status_code=503,
-            detail="Library path not configured. Set library_path in config.yaml",
+            detail="Library path not configured. Set library_root in config.yaml",
         )
 
     try:
         # Securely resolve and validate the requested directory path
         # This handles all security checks: path traversal, symlinks, boundary validation
         requested_path = resolve_library_path(
-            library_root=library_path,
+            library_root=library_root,
             user_path=path,
             must_exist=True,
             must_be_file=False,  # Must be a directory
         )
 
         # Get library root for computing relative paths in response
-        library_root = Path(library_path).resolve()
+        library_root = Path(library_root).resolve()
 
         # List directory contents
         entries: list[dict[str, str | bool]] = []
