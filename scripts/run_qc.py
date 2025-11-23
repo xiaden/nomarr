@@ -122,13 +122,13 @@ def main():
 
     # Summary
     print("\n## QC Summary")
-    print("✅ Naming conventions check complete")
-    print("✅ Linting check complete")
-    print("✅ Import analysis complete")
-    print("✅ Type checking complete")
-    print("✅ Security scan complete")
-    print("✅ Dead code detection complete")
-    print("✅ Test discovery complete")
+    print("[OK] Naming conventions check complete")
+    print("[OK] Linting check complete")
+    print("[OK] Import analysis complete")
+    print("[OK] Type checking complete")
+    print("[OK] Security scan complete")
+    print("[OK] Dead code detection complete")
+    print("[OK] Test discovery complete")
     print("\nReview the full report for details.")
 
     return 0

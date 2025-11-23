@@ -79,7 +79,7 @@ def main():
         results.append("")
     else:
         results.append("## 1. Type Checking (mypy)")
-        results.append("⚠️  mypy not installed. Install with: pip install mypy")
+        results.append("[WARNING] mypy not installed. Install with: pip install mypy")
         results.append("")
 
     # 2. Security scanning with bandit
@@ -93,7 +93,7 @@ def main():
         results.append("")
     else:
         results.append("## 2. Security Scanning (bandit)")
-        results.append("⚠️  bandit not installed. Install with: pip install bandit")
+        results.append("[WARNING] bandit not installed. Install with: pip install bandit")
         results.append("")
 
     # 3. Dead code detection with vulture
@@ -107,7 +107,7 @@ def main():
         results.append("")
     else:
         results.append("## 3. Dead Code Detection (vulture)")
-        results.append("⚠️  vulture not installed. Install with: pip install vulture")
+        results.append("[WARNING] vulture not installed. Install with: pip install vulture")
         results.append("")
 
     # 4. Test coverage

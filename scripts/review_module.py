@@ -113,42 +113,42 @@ def print_report(metrics: dict):
     print(f"  Classes: {len(metrics['classes'])}")
 
     # Docstring coverage
-    print("\n📝 Documentation:")
+    print("\nDocumentation:")
     if metrics["has_module_docstring"]:
-        print("  ✅ Module docstring present")
+        print("  [OK] Module docstring present")
     else:
-        print("  ❌ Missing module docstring")
+        print("  [!] Missing module docstring")
 
     if metrics["missing_docstrings"]:
-        print(f"  ❌ Missing docstrings ({len(metrics['missing_docstrings'])}):")
+        print(f"  [!] Missing docstrings ({len(metrics['missing_docstrings'])}):")
         for item in metrics["missing_docstrings"]:
             print(f"     - {item}")
     else:
-        print("  ✅ All public functions/classes documented")
+        print("  [OK] All public functions/classes documented")
 
     # Type hints
-    print("\n🔤 Type Hints:")
+    print("\nType Hints:")
     if metrics["missing_type_hints"]:
-        print(f"  ⚠️  Missing type hints ({len(metrics['missing_type_hints'])}):")
+        print(f"  [WARNING] Missing type hints ({len(metrics['missing_type_hints'])}):")
         for item in metrics["missing_type_hints"]:
             print(f"     - {item}")
     else:
-        print("  ✅ All public functions have type hints")
+        print("  [OK] All public functions have type hints")
 
     # Code quality flags
-    print("\n⚡ Code Quality:")
+    print("\nCode Quality:")
     if metrics["has_todos"]:
-        print("  ⚠️  Contains TODO comments")
+        print("  [WARNING] Contains TODO comments")
     if metrics["has_fixmes"]:
-        print("  ⚠️  Contains FIXME comments")
+        print("  [WARNING] Contains FIXME comments")
     if metrics["has_print_statements"]:
-        print("  ⚠️  Contains print() statements (should use logging)")
+        print("  [WARNING] Contains print() statements (should use logging)")
 
     if not any([metrics["has_todos"], metrics["has_fixmes"], metrics["has_print_statements"]]):
-        print("  ✅ No quality flags")
+        print("  [OK] No quality flags")
 
     # Overall score
-    print("\n📈 QC Score:")
+    print("\nQC Score:")
     score = 0
     max_score = 5
 
@@ -166,13 +166,13 @@ def print_report(metrics: dict):
     print(f"  Score: {score}/{max_score} ({int(score / max_score * 100)}%)")
 
     if score == max_score:
-        print("  ✅ Excellent quality!")
+        print("  [OK] Excellent quality!")
     elif score >= 4:
-        print("  👍 Good quality")
+        print("  [OK] Good quality")
     elif score >= 3:
-        print("  ⚠️  Needs improvement")
+        print("  [WARNING] Needs improvement")
     else:
-        print("  ❌ Requires attention")
+        print("  [!] Requires attention")
 
 
 def main():

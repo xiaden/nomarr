@@ -82,7 +82,7 @@ def discover_module(module_name: str) -> dict[str, Any] | None:
         # But check anyway for backward compat
         if result.returncode != 0:
             stderr_line = result.stderr.strip().split("\n")[0] if result.stderr.strip() else "Unknown error"
-            print(f"⚠️  Skipping {module_name}: discovery subprocess failed")
+            print(f"[!] Skipping {module_name}: discovery subprocess failed")
             print(f"    Reason: {stderr_line}")
             return None
 
@@ -91,7 +91,7 @@ def discover_module(module_name: str) -> dict[str, Any] | None:
 
         # Check for error field in JSON
         if "error" in api:
-            print(f"⚠️  {module_name}: import/discovery failed")
+            print(f"[!] {module_name}: import/discovery failed")
             print(f"    Error: {api['error']}")
             # Return None to skip this module (no API to document)
             return None
@@ -99,7 +99,7 @@ def discover_module(module_name: str) -> dict[str, Any] | None:
         return api
 
     except (subprocess.SubprocessError, json.JSONDecodeError) as e:
-        print(f"⚠️  Skipping {module_name}: {e}")
+        print(f"[!] Skipping {module_name}: {e}")
         return None
 
 
@@ -200,7 +200,7 @@ def generate_docs_for_module(module_name: str, output_dir: Path) -> bool:
     Writes to output_dir/<module_name_with_underscores>.md
     Returns True if successful, False otherwise.
     """
-    print(f"📄 Generating docs for {module_name}...")
+    print(f"Generating docs for {module_name}...")
 
     # Discover API
     api = discover_module(module_name)
@@ -209,7 +209,7 @@ def generate_docs_for_module(module_name: str, output_dir: Path) -> bool:
 
     # Skip if module has no public API
     if not any([api.get("classes"), api.get("functions"), api.get("constants")]):
-        print("   ℹ️  No public API found, skipping")
+        print("   [i] No public API found, skipping")
         return False
 
     # Render Markdown
@@ -220,7 +220,7 @@ def generate_docs_for_module(module_name: str, output_dir: Path) -> bool:
     output_path = output_dir / filename
     output_path.write_text(markdown, encoding="utf-8")
 
-    print(f"   ✅ Written to {output_path}")
+    print(f"   [OK] Written to {output_path}")
     return True
 
 
@@ -235,7 +235,7 @@ def main() -> int:
         sys.path.insert(0, str(Path.cwd()))
         from architecture_manifest import LAYERS
     except ImportError as e:
-        print(f"❌ Failed to import architecture_manifest: {e}")
+        print(f"[ERROR] Failed to import architecture_manifest: {e}")
         print("   Make sure you're running from the project root.")
         return 1
 
@@ -250,11 +250,11 @@ def main() -> int:
     total_count = 0
 
     for root_module in LAYERS:
-        print(f"📦 Enumerating modules under {root_module}...")
+        print(f"Enumerating modules under {root_module}...")
         modules = enumerate_modules(root_module)
 
         if not modules:
-            print(f"   ⚠️  No modules found under {root_module}")
+            print(f"   [!] No modules found under {root_module}")
             continue
 
         print(f"   Found {len(modules)} module(s)")
@@ -264,8 +264,8 @@ def main() -> int:
             if generate_docs_for_module(module_name, output_dir):
                 success_count += 1
 
-    print(f"\n✅ Generated {success_count}/{total_count} module docs")
-    print(f"📁 Output directory: {output_dir}")
+    print(f"\n[OK] Generated {success_count}/{total_count} module docs")
+    print(f"Output directory: {output_dir}")
 
     return 0
 

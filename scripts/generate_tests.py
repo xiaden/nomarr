@@ -50,7 +50,7 @@ def discover_module_api(module_name: str) -> dict[str, Any]:
     try:
         module = importlib.import_module(module_name)
     except ImportError as e:
-        print(f"❌ Failed to import {module_name}: {e}")
+        print(f"[ERROR] Failed to import {module_name}: {e}")
         return {}
 
     api = {"classes": {}, "functions": {}}
@@ -659,16 +659,16 @@ def main():
     # Add current directory to path
     sys.path.insert(0, str(Path.cwd()))
 
-    print(f"🔍 Discovering API for {args.module}...")
+    print(f"Discovering API for {args.module}...")
     api = discover_module_api(args.module)
 
     if not api or (not api.get("classes") and not api.get("functions")):
-        print(f"❌ No public API found in {args.module}")
+        print(f"[ERROR] No public API found in {args.module}")
         return 1
 
-    print(f"✅ Found {len(api.get('classes', {}))} classes, {len(api.get('functions', {}))} functions")
+    print(f"[OK] Found {len(api.get('classes', {}))} classes, {len(api.get('functions', {}))} functions")
 
-    print("🧪 Generating tests...")
+    print("Generating tests...")
     test_content = generate_test_file(args.module, api, args.layer)
 
     if args.preview:
@@ -692,8 +692,8 @@ def main():
 
     # Write file
     output_path.write_text(test_content, encoding="utf-8")
-    print(f"✅ Generated test file: {output_path}")
-    print("📝 Review and enhance with domain-specific assertions!")
+    print(f"[OK] Generated test file: {output_path}")
+    print("Review and enhance with domain-specific assertions!")
 
     return 0
 

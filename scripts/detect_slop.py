@@ -503,7 +503,7 @@ def render_markdown(results: list[AnalysisResult], timestamp: str, target: str) 
             if len(result.issues) > 20:
                 md_content += f"\n... and {len(result.issues) - 20} more\n"
         else:
-            md_content += "✅ **No issues found**\n"
+            md_content += "[OK] **No issues found**\n"
 
         md_content += "\n<details>\n<summary>Raw Output</summary>\n\n"
         md_content += "**STDOUT:**\n```\n"
@@ -672,7 +672,7 @@ def main():
         if not target_path.is_absolute():
             target_path = ROOT / target_path
         if not target_path.exists():
-            print(f"❌ Error: Target does not exist: {target_path}")
+            print(f"[ERROR] Error: Target does not exist: {target_path}")
             return 1
     else:
         target_path = NOMARR_DIR
@@ -879,7 +879,7 @@ def main():
             f.write(output_content)
 
         print(f"\n{'=' * 80}")
-        print(f"✅ Report saved to: {report_file}")
+        print(f"[OK] Report saved to: {report_file}")
         print(f"{'=' * 80}\n")
 
         # Print summary
