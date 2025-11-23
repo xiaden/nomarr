@@ -199,7 +199,7 @@ def resolve_library_path(
 
 
 # Supported audio file extensions
-AUDIO_EXTENSIONS = {".mp3", ".m4a", ".mp4", ".flac", ".ogg", ".wav", ".aac", ".opus", ".wma"}
+AUDIO_EXTENSIONS = {".mp3", ".m4a", ".mp4", ".flac", ".ogg", ".wav", ".aac", ".opus"}
 
 
 def collect_audio_files(paths: list[str] | str, recursive: bool = True) -> list[str]:
