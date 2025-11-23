@@ -2,24 +2,23 @@
 Persistence package.
 """
 
-from .db import (
-    SCHEMA,
-    SCHEMA_VERSION,
-    Database,
-    count_and_delete,
-    count_and_update,
-    get_queue_stats,
-    now_ms,
-    safe_count,
+from .analytics_queries import (
+    fetch_artist_tag_profile_data,
+    fetch_mood_distribution_data,
+    fetch_mood_value_co_occurrence_data,
+    fetch_tag_correlation_data,
+    fetch_tag_frequencies_data,
 )
+from .db import SCHEMA, SCHEMA_VERSION, Database, now_ms
 
 __all__ = [
     "SCHEMA",
     "SCHEMA_VERSION",
     "Database",
-    "count_and_delete",
-    "count_and_update",
-    "get_queue_stats",
+    "fetch_artist_tag_profile_data",
+    "fetch_mood_distribution_data",
+    "fetch_mood_value_co_occurrence_data",
+    "fetch_tag_correlation_data",
+    "fetch_tag_frequencies_data",
     "now_ms",
-    "safe_count",
 ]

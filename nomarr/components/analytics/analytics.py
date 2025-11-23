@@ -21,7 +21,57 @@ import json
 import logging
 from collections import Counter, defaultdict
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any
+
+# ──────────────────────────────────────────────────────────────────────
+# Domain Data Types (Pure Domain Results, Not HTTP Envelopes)
+# ──────────────────────────────────────────────────────────────────────
+
+
+@dataclass
+class TagCorrelationData:
+    """Domain result for tag correlation analysis."""
+
+    mood_correlations: dict[str, dict[str, float]]
+    mood_tier_correlations: dict[str, dict[str, float]]
+
+
+@dataclass
+class MoodDistributionData:
+    """Domain result for mood distribution analysis."""
+
+    mood_strict: dict[str, int]
+    mood_regular: dict[str, int]
+    mood_loose: dict[str, int]
+    top_moods: list[tuple[str, int]]
+
+
+@dataclass
+class ArtistTagProfile:
+    """Domain result for artist tag profile."""
+
+    artist: str
+    file_count: int
+    top_tags: list[tuple[str, int, float]]  # (tag, count, avg_value)
+    moods: list[tuple[str, int]]
+    avg_tags_per_file: float
+
+
+@dataclass
+class MoodCoOccurrenceData:
+    """Domain result for mood co-occurrence analysis."""
+
+    mood_value: str
+    total_occurrences: int
+    mood_co_occurrences: list[tuple[str, int, float]]  # (mood, count, percentage)
+    genre_distribution: list[tuple[str, int, float]]  # (genre, count, percentage)
+    artist_distribution: list[tuple[str, int, float]]  # (artist, count, percentage)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Analytics Computation Functions
+# ──────────────────────────────────────────────────────────────────────
 
 
 def compute_tag_frequencies(
@@ -68,7 +118,7 @@ def compute_tag_correlation_matrix(
     mood_tag_rows: Sequence[tuple[int, str, str]],
     tier_tag_keys: Sequence[str],
     tier_tag_rows: dict[str, Sequence[tuple[int, str]]],
-) -> dict[str, Any]:
+) -> TagCorrelationData:
     """
     Compute VALUE-based correlation matrix from raw tag data.
 
@@ -80,7 +130,7 @@ def compute_tag_correlation_matrix(
         tier_tag_rows: Dict mapping tier_tag_key to list of (file_id, tag_value) tuples
 
     Returns:
-        dict with mood_correlations, mood_genre_correlations, mood_tier_correlations
+        TagCorrelationData with mood-to-mood and mood-to-tier correlations
     """
     logging.info(f"[analytics] Computing VALUE-based correlation matrix (top {top_n} moods)")
 
@@ -101,11 +151,10 @@ def compute_tag_correlation_matrix(
     top_moods = [mood for mood, _ in mood_counter.most_common(top_n)]
 
     if not top_moods:
-        return {
-            "mood_correlations": {},
-            "mood_genre_correlations": {},
-            "mood_tier_correlations": {},
-        }
+        return TagCorrelationData(
+            mood_correlations={},
+            mood_tier_correlations={},
+        )
 
     # Build file sets for each mood value
     mood_file_sets: dict[str, set[int]] = {mood: set() for mood in top_moods}
@@ -169,16 +218,15 @@ def compute_tag_correlation_matrix(
         top_tiers = sorted(tier_correlations.items(), key=lambda x: x[1], reverse=True)[:10]
         mood_tier_correlations[mood] = dict(top_tiers)
 
-    return {
-        "mood_correlations": mood_correlations,
-        "mood_genre_correlations": {},
-        "mood_tier_correlations": mood_tier_correlations,
-    }
+    return TagCorrelationData(
+        mood_correlations=mood_correlations,
+        mood_tier_correlations=mood_tier_correlations,
+    )
 
 
 def compute_mood_distribution(
     mood_rows: Sequence[tuple[str, str, str]],
-) -> dict[str, Any]:
+) -> MoodDistributionData:
     """
     Compute mood distribution from raw mood tag data.
 
@@ -186,7 +234,7 @@ def compute_mood_distribution(
         mood_rows: List of (mood_type, tag_value, tag_type) tuples
 
     Returns:
-        dict with mood_strict, mood_regular, mood_loose, top_moods
+        MoodDistributionData with mood tier distributions and top moods
     """
     logging.info("[analytics] Computing mood distribution")
 
@@ -220,12 +268,12 @@ def compute_mood_distribution(
     all_moods.update(mood_regular_counts)
     all_moods.update(mood_loose_counts)
 
-    return {
-        "mood_strict": dict(mood_strict_counts.most_common(20)),
-        "mood_regular": dict(mood_regular_counts.most_common(20)),
-        "mood_loose": dict(mood_loose_counts.most_common(20)),
-        "top_moods": all_moods.most_common(30),
-    }
+    return MoodDistributionData(
+        mood_strict=dict(mood_strict_counts.most_common(20)),
+        mood_regular=dict(mood_regular_counts.most_common(20)),
+        mood_loose=dict(mood_loose_counts.most_common(20)),
+        top_moods=all_moods.most_common(30),
+    )
 
 
 def compute_artist_tag_profile(
@@ -234,7 +282,7 @@ def compute_artist_tag_profile(
     namespace_prefix: str,
     tag_rows: Sequence[tuple[str, str, str]],
     limit: int = 20,
-) -> dict[str, Any]:
+) -> ArtistTagProfile:
     """
     Compute tag profile for an artist from raw tag data.
 
@@ -246,18 +294,18 @@ def compute_artist_tag_profile(
         limit: Max number of top tags to return
 
     Returns:
-        dict with artist, file_count, top_tags, moods, avg_tags_per_file
+        ArtistTagProfile with artist info, top tags, and mood statistics
     """
     logging.info(f"[analytics] Computing tag profile for artist: {artist}")
 
     if file_count == 0:
-        return {
-            "artist": artist,
-            "file_count": 0,
-            "top_tags": [],
-            "moods": [],
-            "avg_tags_per_file": 0.0,
-        }
+        return ArtistTagProfile(
+            artist=artist,
+            file_count=0,
+            top_tags=[],
+            moods=[],
+            avg_tags_per_file=0.0,
+        )
 
     tag_counts: Counter = Counter()
     tag_values: dict[str, list[float]] = defaultdict(list)
@@ -296,13 +344,13 @@ def compute_artist_tag_profile(
         count for tag, count in tag_counts.items() if tag not in ["mood-strict", "mood-regular", "mood-loose"]
     )
 
-    return {
-        "artist": artist,
-        "file_count": file_count,
-        "top_tags": top_tags,
-        "moods": mood_counts.most_common(15),
-        "avg_tags_per_file": total_non_mood_tags / file_count if file_count else 0.0,
-    }
+    return ArtistTagProfile(
+        artist=artist,
+        file_count=file_count,
+        top_tags=top_tags,
+        moods=mood_counts.most_common(15),
+        avg_tags_per_file=total_non_mood_tags / file_count if file_count else 0.0,
+    )
 
 
 def compute_mood_value_co_occurrences(
@@ -312,7 +360,7 @@ def compute_mood_value_co_occurrences(
     genre_rows: Sequence[tuple[str, int]],
     artist_rows: Sequence[tuple[str, int]],
     limit: int = 20,
-) -> dict[str, Any]:
+) -> MoodCoOccurrenceData:
     """
     Compute mood value co-occurrence statistics from raw data.
 
@@ -325,20 +373,20 @@ def compute_mood_value_co_occurrences(
         limit: Max results per category
 
     Returns:
-        dict with mood_value, total_occurrences, co-occurrences, distributions
+        MoodCoOccurrenceData with co-occurrence patterns and distributions
     """
     logging.info(f"[analytics] Computing mood value co-occurrences for: {mood_value}")
 
     total_occurrences = len(matching_file_ids)
 
     if total_occurrences == 0:
-        return {
-            "mood_value": mood_value,
-            "total_occurrences": 0,
-            "mood_co_occurrences": [],
-            "genre_distribution": [],
-            "artist_distribution": [],
-        }
+        return MoodCoOccurrenceData(
+            mood_value=mood_value,
+            total_occurrences=0,
+            mood_co_occurrences=[],
+            genre_distribution=[],
+            artist_distribution=[],
+        )
 
     mood_counter: Counter = Counter()
 
@@ -373,10 +421,10 @@ def compute_mood_value_co_occurrences(
         (artist, count, round((count / total_occurrences) * 100, 1)) for artist, count in artist_rows[:limit]
     ]
 
-    return {
-        "mood_value": mood_value,
-        "total_occurrences": total_occurrences,
-        "mood_co_occurrences": mood_co_occurrences,
-        "genre_distribution": genre_distribution,
-        "artist_distribution": artist_distribution,
-    }
+    return MoodCoOccurrenceData(
+        mood_value=mood_value,
+        total_occurrences=total_occurrences,
+        mood_co_occurrences=mood_co_occurrences,
+        genre_distribution=genre_distribution,
+        artist_distribution=artist_distribution,
+    )

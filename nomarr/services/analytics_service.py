@@ -16,6 +16,9 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.analytics.analytics import (
+    ArtistTagProfile,
+    MoodCoOccurrenceData,
+    TagCorrelationData,
     compute_artist_tag_profile,
     compute_mood_distribution,
     compute_mood_value_co_occurrences,
@@ -87,15 +90,15 @@ class AnalyticsService:
         ]
         return tag_frequencies
 
-    def get_tag_correlation_matrix(self, top_n: int = 20) -> dict[str, Any]:
+    def get_tag_correlation_matrix(self, top_n: int = 20) -> TagCorrelationData:
         """
-        Compute VALUE-based correlation matrix for mood tags (API-ready format).
+        Compute VALUE-based correlation matrix for mood tags.
 
         Args:
             top_n: Number of top moods to analyze
 
         Returns:
-            dict with mood_correlations, mood_genre_correlations, mood_tier_correlations
+            TagCorrelationData with mood-to-mood and mood-to-tier correlations
         """
         data = fetch_tag_correlation_data(db=self._db, namespace=self.cfg.namespace, top_n=top_n)
         return compute_tag_correlation_matrix(
@@ -108,16 +111,16 @@ class AnalyticsService:
 
     def get_mood_distribution(self) -> list[dict[str, Any]]:
         """
-        Get mood distribution across all tiers (API-ready format).
+        Get mood distribution across all tiers.
 
         Returns:
-            List of dicts with mood, count, percentage for frontend
+            List of mood distribution entries (mood, count, percentage)
         """
         mood_rows = fetch_mood_distribution_data(db=self._db, namespace=self.cfg.namespace)
         result = compute_mood_distribution(mood_rows=mood_rows)
 
-        # Transform to API-ready format
-        top_moods = result.get("top_moods", [])
+        # Transform to list format with percentages
+        top_moods = result.top_moods
         total_moods = sum(count for _, count in top_moods)
 
         mood_distribution = [
@@ -130,7 +133,7 @@ class AnalyticsService:
         ]
         return mood_distribution
 
-    def get_artist_tag_profile(self, artist: str, limit: int = 20) -> dict[str, Any]:
+    def get_artist_tag_profile(self, artist: str, limit: int = 20) -> ArtistTagProfile:
         """
         Get tag profile for a specific artist.
 
@@ -139,7 +142,7 @@ class AnalyticsService:
             limit: Max number of top tags to return
 
         Returns:
-            dict with artist, file_count, top_tags, moods, avg_tags_per_file
+            ArtistTagProfile with artist info, top tags, and mood statistics
         """
         namespace_prefix = f"{self.cfg.namespace}:"
         data = fetch_artist_tag_profile_data(db=self._db, artist=artist, namespace=self.cfg.namespace)
@@ -151,16 +154,16 @@ class AnalyticsService:
             limit=limit,
         )
 
-    def get_mood_value_co_occurrences(self, mood_value: str, limit: int = 10) -> dict[str, Any]:
+    def get_mood_value_co_occurrences(self, mood_value: str, limit: int = 10) -> MoodCoOccurrenceData:
         """
-        Get co-occurrence statistics for a specific mood value (API-ready format).
+        Get co-occurrence statistics for a specific mood value.
 
         Args:
             mood_value: The mood value to analyze
             limit: Max results per category
 
         Returns:
-            dict with tag, total_occurrences, co_occurrences, top_artists, top_genres
+            MoodCoOccurrenceData with co-occurrence patterns and distributions
         """
         data = fetch_mood_value_co_occurrence_data(db=self._db, mood_value=mood_value, namespace=self.cfg.namespace)
         result = compute_mood_value_co_occurrences(

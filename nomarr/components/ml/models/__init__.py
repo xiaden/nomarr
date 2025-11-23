@@ -2,7 +2,7 @@
 Models package.
 """
 
-from .discovery import HeadInfo, Sidecar, discover_heads, get_embedding_output_node, get_head_output_node
+from .discovery import HeadInfo, HeadOutput, Sidecar, discover_heads, get_embedding_output_node, get_head_output_node
 from .embed import Segments, analyze_with_segments, pool_scores, score_segments, segment_waveform
 from .heads import (
     Cascade,
@@ -21,6 +21,7 @@ __all__ = [
     "Cascade",
     "HeadDecision",
     "HeadInfo",
+    "HeadOutput",
     "HeadSpec",
     "Segments",
     "Sidecar",
