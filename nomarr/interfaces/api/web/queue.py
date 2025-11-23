@@ -11,7 +11,7 @@ from nomarr.interfaces.api.types_queue import JobRemovalResult, OperationResult,
 from nomarr.interfaces.api.web.dependencies import get_event_broker, get_ml_service, get_queue_service
 from nomarr.services.queue_service import QueueService
 
-router = APIRouter(prefix="/api", tags=["Queue"])
+router = APIRouter(prefix="/queue", tags=["Queue"])
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -132,7 +132,7 @@ async def web_admin_flush(
     )
 
 
-@router.post("/admin/queue/clear-all", dependencies=[Depends(verify_session)])
+@router.post("/admin/clear-all", dependencies=[Depends(verify_session)])
 async def web_admin_clear_all(
     queue_service: QueueService = Depends(get_queue_service),
     event_broker: Any | None = Depends(get_event_broker),
@@ -150,7 +150,7 @@ async def web_admin_clear_all(
     )
 
 
-@router.post("/admin/queue/clear-completed", dependencies=[Depends(verify_session)])
+@router.post("/admin/clear-completed", dependencies=[Depends(verify_session)])
 async def web_admin_clear_completed(
     queue_service: QueueService = Depends(get_queue_service),
     event_broker: Any | None = Depends(get_event_broker),
@@ -167,7 +167,7 @@ async def web_admin_clear_completed(
     )
 
 
-@router.post("/admin/queue/clear-errors", dependencies=[Depends(verify_session)])
+@router.post("/admin/clear-errors", dependencies=[Depends(verify_session)])
 async def web_admin_clear_errors(
     queue_service: QueueService = Depends(get_queue_service),
     event_broker: Any | None = Depends(get_event_broker),

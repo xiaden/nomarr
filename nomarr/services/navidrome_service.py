@@ -53,18 +53,59 @@ class NavidromeService:
 
     def preview_playlist(
         self,
-        name: str,
-        rules: str,
-        max_tracks: int = 50,
+        query: str,
+        preview_limit: int = 10,
     ) -> dict[str, Any]:
-        """Preview playlist query results."""
+        """
+        Preview Smart Playlist query results.
+
+        Args:
+            query: Smart playlist query string
+            preview_limit: Maximum number of tracks to return
+
+        Returns:
+            Dict with preview results and track information
+        """
         from nomarr.workflows.navidrome import preview_smart_playlist_workflow
 
         return preview_smart_playlist_workflow(
             db=self._db,
-            query=rules,
+            query=query,
             namespace=self.cfg.namespace,
-            preview_limit=max_tracks,
+            preview_limit=preview_limit,
+        )
+
+    def generate_playlist(
+        self,
+        query: str,
+        playlist_name: str,
+        comment: str = "",
+        sort: str | None = None,
+        limit: int | None = None,
+    ) -> dict[str, Any]:
+        """
+        Generate Navidrome Smart Playlist (.nsp) structure.
+
+        Args:
+            query: Smart playlist query string
+            playlist_name: Name for the playlist
+            comment: Optional comment/description
+            sort: Optional sort parameter
+            limit: Optional limit on number of tracks
+
+        Returns:
+            Dict with .nsp structure (name, rules, sort, limit, etc.)
+        """
+        from nomarr.workflows.navidrome import generate_smart_playlist_workflow
+
+        return generate_smart_playlist_workflow(
+            db=self._db,
+            query=query,
+            playlist_name=playlist_name,
+            comment=comment,
+            namespace=self.cfg.namespace,
+            sort=sort,
+            limit=limit,
         )
 
     def get_template_summary(self) -> list[dict[str, Any]]:

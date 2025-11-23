@@ -12,7 +12,7 @@ from nomarr.interfaces.api.web.dependencies import get_analytics_service
 if TYPE_CHECKING:
     from nomarr.services.analytics_service import AnalyticsService
 
-router = APIRouter(prefix="/api/analytics", tags=["Analytics"])
+router = APIRouter(prefix="/analytics", tags=["Analytics"])
 
 
 # ──────────────────────────────────────────────────────────────────────

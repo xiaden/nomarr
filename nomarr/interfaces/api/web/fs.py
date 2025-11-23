@@ -17,7 +17,7 @@ from nomarr.helpers.files import resolve_library_path
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import get_config
 
-router = APIRouter(prefix="/web/api/fs", tags=["filesystem"])
+router = APIRouter(prefix="/fs", tags=["filesystem"])
 
 
 @router.get("/list")

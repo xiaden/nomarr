@@ -14,7 +14,7 @@ services:
       # Required: Config and database persistence
       - ./config:/app/config
       # Required: Music library (must match Lidarr's volume mapping)
-      - /your/music/location/as/per/lidar/volume/mapping:/same/as/lidarr
+      - /media:/media
       # Optional: Custom models (only if not using packaged models)
       # - ./models:/app/models
     environment:

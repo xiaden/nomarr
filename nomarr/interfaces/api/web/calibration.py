@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from nomarr.services.calibration_service import CalibrationService
     from nomarr.services.library_service import LibraryService
 
-router = APIRouter(prefix="/api/calibration", tags=["Calibration"])
+router = APIRouter(prefix="/calibration", tags=["Calibration"])
 
 
 # ──────────────────────────────────────────────────────────────────────

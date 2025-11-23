@@ -19,8 +19,8 @@
 # Filesystem Paths
 # ----------------------------------------------------------------------
 models_dir: /app/models # Directory containing ML models
-db_path: /app/config/db/essentia.sqlite # SQLite database path
-library_root: # Path to music library root (optional)
+db_path: /app/config/db/nomarr.db # SQLite database path
+library_root: /media # Path to music library root
 
 # ----------------------------------------------------------------------
 # Tag Writing Behavior

@@ -1,6 +1,13 @@
 """
 FastAPI application setup and configuration.
 Main entry point for the Nomarr API service.
+
+Architecture:
+- Two API realms:
+  - /api/v1 (integration APIs using API key auth)
+  - /api/web (web UI APIs using session auth)
+- All routes must be under one of these two prefixes
+- No bare paths that don't start with /api
 """
 
 from __future__ import annotations
@@ -9,12 +16,12 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from nomarr.interfaces.api import web  # Split web router (replaces endpoints/web.py monolith)
-from nomarr.interfaces.api.endpoints import admin, fs, library, public
+from nomarr.interfaces.api import web  # Web UI router
+from nomarr.interfaces.api.endpoints import admin, public
 
 
 # ----------------------------------------------------------------------
@@ -56,13 +63,19 @@ async def exception_handler(request, exc: Exception):
 
 
 # ----------------------------------------------------------------------
-#  Include routers
+#  API Realms - Two top-level routers
 # ----------------------------------------------------------------------
-api_app.include_router(public.router)
-api_app.include_router(admin.router)
-api_app.include_router(web.router)  # Web UI auth + proxy + analytics endpoints
-api_app.include_router(library.router)  # Library scan endpoints
-api_app.include_router(fs.router)  # Filesystem browser endpoints
+
+# Integration APIs (API key auth) - /api/v1 prefix
+# Public and admin routers define their own sub-paths under /v1
+integration_router = APIRouter(prefix="/api")
+integration_router.include_router(public.router, tags=["Integration: Public"])
+integration_router.include_router(admin.router, tags=["Integration: Admin"])
+
+# Web UI APIs (session auth) - /api/web prefix
+# Web router already has /api/web prefix configured in web/router.py
+api_app.include_router(integration_router)
+api_app.include_router(web.router)
 
 # ----------------------------------------------------------------------
 #  Static files (Web UI)

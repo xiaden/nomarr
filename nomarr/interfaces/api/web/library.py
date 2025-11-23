@@ -12,7 +12,7 @@ from nomarr.interfaces.api.web.dependencies import get_library_service
 if TYPE_CHECKING:
     from nomarr.services.library_service import LibraryService
 
-router = APIRouter(prefix="/api/library", tags=["Library"])
+router = APIRouter(prefix="/libraries", tags=["Library"])
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -78,7 +78,7 @@ async def web_library_stats(
 # ──────────────────────────────────────────────────────────────────────
 
 
-@router.get("/libraries", dependencies=[Depends(verify_session)])
+@router.get("", dependencies=[Depends(verify_session)])
 async def list_libraries(
     enabled_only: bool = False,
     library_service: "LibraryService" = Depends(get_library_service),
@@ -91,7 +91,7 @@ async def list_libraries(
         raise HTTPException(status_code=500, detail=f"Error listing libraries: {e}") from e
 
 
-@router.get("/libraries/default", dependencies=[Depends(verify_session)])
+@router.get("/default", dependencies=[Depends(verify_session)])
 async def get_default_library(
     library_service: "LibraryService" = Depends(get_library_service),
 ) -> dict[str, Any]:
@@ -108,7 +108,7 @@ async def get_default_library(
         raise HTTPException(status_code=500, detail=f"Error getting default library: {e}") from e
 
 
-@router.get("/libraries/{library_id}", dependencies=[Depends(verify_session)])
+@router.get("/{library_id}", dependencies=[Depends(verify_session)])
 async def get_library(
     library_id: int,
     library_service: "LibraryService" = Depends(get_library_service),
@@ -123,7 +123,7 @@ async def get_library(
         raise HTTPException(status_code=500, detail=f"Error getting library: {e}") from e
 
 
-@router.post("/libraries", dependencies=[Depends(verify_session)])
+@router.post("", dependencies=[Depends(verify_session)])
 async def create_library(
     request: CreateLibraryRequest,
     library_service: "LibraryService" = Depends(get_library_service),
@@ -143,7 +143,7 @@ async def create_library(
         raise HTTPException(status_code=500, detail=f"Error creating library: {e}") from e
 
 
-@router.patch("/libraries/{library_id}", dependencies=[Depends(verify_session)])
+@router.patch("/{library_id}", dependencies=[Depends(verify_session)])
 async def update_library(
     library_id: int,
     request: UpdateLibraryRequest,
@@ -179,7 +179,7 @@ async def update_library(
         raise HTTPException(status_code=500, detail=f"Error updating library: {e}") from e
 
 
-@router.post("/libraries/{library_id}/set-default", dependencies=[Depends(verify_session)])
+@router.post("/{library_id}/set-default", dependencies=[Depends(verify_session)])
 async def set_default_library(
     library_id: int,
     library_service: "LibraryService" = Depends(get_library_service),
@@ -194,7 +194,7 @@ async def set_default_library(
         raise HTTPException(status_code=500, detail=f"Error setting default library: {e}") from e
 
 
-@router.post("/libraries/{library_id}/scan", dependencies=[Depends(verify_session)])
+@router.post("/{library_id}/scan", dependencies=[Depends(verify_session)])
 async def scan_library(
     library_id: int,
     request: ScanRequest,

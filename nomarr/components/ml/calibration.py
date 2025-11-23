@@ -70,20 +70,19 @@ def generate_minmax_calibration(
     tag_values: dict[str, list[float]] = {}
 
     for file in all_files:
-        # Get nom_tags column (framework-agnostic Nomarr-generated tags)
-        # Tags stored without namespace prefix in DB
-        tags_json = file.get("nom_tags")
-        if not tags_json:
+        # Get file ID to query tags from file_tags table
+        file_id = file.get("id")
+        if not file_id:
             continue
 
-        try:
-            tags = json.loads(tags_json)
-        except json.JSONDecodeError:
+        # Query Nomarr-generated tags from file_tags table
+        tags = db.file_tags.get_file_tags(file_id=file_id, nomarr_only=True)
+        if not tags:
             continue
 
         # Extract versioned tags (skip mood-strict/regular/loose and tier tags)
         for key, value in tags.items():
-            # Tags in nom_tags are stored without namespace prefix
+            # Tags in file_tags are stored without namespace prefix
             tag_key = key
 
             # Skip aggregated mood tags and tier suffixes

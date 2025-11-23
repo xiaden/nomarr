@@ -2,8 +2,7 @@
  * API client for Nomarr backend.
  *
  * Provides typed methods for all backend endpoints under:
- * - /web/auth/* (authentication)
- * - /web/api/* (queue, library, workers, etc.)
+ * - /api/web/* (web UI endpoints: auth, queue, library, analytics, etc.)
  */
 
 import { clearSessionToken, getSessionToken, setSessionToken } from "./auth";
@@ -100,7 +99,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 /**
  * Login with admin password.
  *
- * Sends credentials to /web/auth/login and stores the returned session token.
+ * Sends credentials to /api/web/auth/login and stores the returned session token.
  *
  * @param password - Admin password
  * @throws Error if login fails or response is invalid
@@ -111,7 +110,7 @@ export async function login(password: string): Promise<void> {
     expires_in: number;
   }
 
-  const response = await request<LoginResponse>("/web/auth/login", {
+  const response = await request<LoginResponse>("/api/web/auth/login", {
     method: "POST",
     body: JSON.stringify({ password }),
   });
@@ -130,7 +129,7 @@ export async function login(password: string): Promise<void> {
  */
 export async function logout(): Promise<void> {
   try {
-    await request("/web/auth/logout", {
+    await request("/api/web/auth/logout", {
       method: "POST",
     });
   } catch (error) {
@@ -174,7 +173,7 @@ export const queue = {
     if (params?.offset) queryParams.append("offset", params.offset.toString());
 
     const query = queryParams.toString();
-    const path = query ? `/web/api/list?${query}` : "/web/api/list";
+    const path = query ? `/api/web/queue/list?${query}` : "/api/web/queue/list";
 
     return request(path);
   },
@@ -183,14 +182,14 @@ export const queue = {
    * Get queue statistics (counts by status).
    */
   getStatus: async (): Promise<QueueSummary> => {
-    return request<QueueSummary>("/web/api/queue-depth");
+    return request<QueueSummary>("/api/web/queue/queue-depth");
   },
 
   /**
    * Get a specific job by ID.
    */
   getJob: async (jobId: number): Promise<QueueJob> => {
-    return request<QueueJob>(`/web/api/status/${jobId}`);
+    return request<QueueJob>(`/api/web/queue/status/${jobId}`);
   },
 
   /**
@@ -203,7 +202,7 @@ export const queue = {
     status?: string;
     all?: boolean;
   }): Promise<{ removed: number; status: string }> => {
-    return request("/web/api/admin/remove", {
+    return request("/api/web/queue/admin/remove", {
       method: "POST",
       body: JSON.stringify(options),
     });
@@ -218,7 +217,7 @@ export const queue = {
     errors: number;
     status: string;
   }> => {
-    return request("/web/api/admin/flush", {
+    return request("/api/web/queue/admin/flush", {
       method: "POST",
     });
   },
@@ -227,7 +226,7 @@ export const queue = {
    * Clear all jobs (except running).
    */
   clearAll: async (): Promise<{ removed: number; status: string }> => {
-    return request("/web/api/admin/queue/clear-all", {
+    return request("/api/web/queue/admin/clear-all", {
       method: "POST",
     });
   },
@@ -236,7 +235,7 @@ export const queue = {
    * Clear only completed jobs.
    */
   clearCompleted: async (): Promise<{ removed: number; status: string }> => {
-    return request("/web/api/admin/queue/clear-completed", {
+    return request("/api/web/queue/admin/clear-completed", {
       method: "POST",
     });
   },
@@ -245,7 +244,7 @@ export const queue = {
    * Clear only error jobs.
    */
   clearErrors: async (): Promise<{ removed: number; status: string }> => {
-    return request("/web/api/admin/queue/clear-errors", {
+    return request("/api/web/queue/admin/clear-errors", {
       method: "POST",
     });
   },
@@ -257,7 +256,7 @@ export const queue = {
     stuck?: boolean;
     errors?: boolean;
   }): Promise<{ status: string; message: string; reset: number }> => {
-    return request("/web/api/admin/reset", {
+    return request("/api/web/queue/admin/reset", {
       method: "POST",
       body: JSON.stringify(options),
     });
@@ -278,7 +277,7 @@ export const library = {
     unique_albums: number;
     total_duration_seconds: number;
   }> => {
-    return request("/api/library/stats");
+    return request("/api/web/libraries/stats");
   },
 
   /**
@@ -296,7 +295,7 @@ export const library = {
         created_at?: string;
         updated_at?: string;
       }>
-    >(`/api/library/libraries${query}`);
+    >(`/api/web/libraries${query}`);
 
     // Convert snake_case to camelCase
     return response.map((lib) => ({
@@ -322,7 +321,7 @@ export const library = {
       is_default: boolean;
       created_at?: string;
       updated_at?: string;
-    }>(`/api/library/libraries/${id}`);
+    }>(`/api/web/libraries/${id}`);
 
     return {
       id: response.id,
@@ -348,7 +347,7 @@ export const library = {
         is_default: boolean;
         created_at?: string;
         updated_at?: string;
-      }>("/api/library/libraries/default");
+      }>("/api/web/libraries/default");
 
       return {
         id: response.id,
@@ -381,7 +380,7 @@ export const library = {
       is_default: boolean;
       created_at?: string;
       updated_at?: string;
-    }>("/api/library/libraries", {
+    }>("/api/web/libraries", {
       method: "POST",
       body: JSON.stringify({
         name: payload.name,
@@ -428,7 +427,7 @@ export const library = {
       is_default: boolean;
       created_at?: string;
       updated_at?: string;
-    }>(`/api/library/libraries/${id}`, {
+    }>(`/api/web/libraries/${id}`, {
       method: "PATCH",
       body: JSON.stringify(body),
     });
@@ -456,7 +455,7 @@ export const library = {
       is_default: boolean;
       created_at?: string;
       updated_at?: string;
-    }>(`/api/library/libraries/${id}/set-default`, {
+    }>(`/api/web/libraries/${id}/set-default`, {
       method: "POST",
     });
 
@@ -492,18 +491,9 @@ export const library = {
       body.paths = options.paths;
     }
 
-    return request<ScanResult>(`/api/library/libraries/${id}/scan`, {
+    return request<ScanResult>(`/api/web/libraries/${id}/scan`, {
       method: "POST",
       body: JSON.stringify(body),
-    });
-  },
-
-  /**
-   * Scan the default library.
-   */
-  scanDefault: async (): Promise<ScanResult> => {
-    return request<ScanResult>("/web/api/library/scan/start", {
-      method: "POST",
     });
   },
 };
@@ -525,7 +515,7 @@ export const analytics = {
       unique_values: number;
     }>;
   }> => {
-    return request(`/web/api/analytics/tag-frequencies?limit=${limit}`);
+    return request(`/api/web/analytics/tag-frequencies?limit=${limit}`);
   },
 
   /**
@@ -538,14 +528,14 @@ export const analytics = {
       percentage: number;
     }>;
   }> => {
-    return request("/web/api/analytics/mood-distribution");
+    return request("/api/web/analytics/mood-distribution");
   },
 
   /**
    * Get tag correlations matrix.
    */
   getTagCorrelations: async (topN = 20): Promise<Record<string, unknown>> => {
-    return request(`/web/api/analytics/tag-correlations?top_n=${topN}`);
+    return request(`/api/web/analytics/tag-correlations?top_n=${topN}`);
   },
 
   /**
@@ -575,7 +565,7 @@ export const analytics = {
     limit: number;
   }> => {
     return request(
-      `/web/api/analytics/tag-co-occurrences/${encodeURIComponent(
+      `/api/web/analytics/tag-co-occurrences/${encodeURIComponent(
         tag
       )}?limit=${limit}`
     );
@@ -597,7 +587,7 @@ export const calibration = {
     data: Record<string, unknown>;
     saved_files: unknown;
   }> => {
-    return request("/web/api/calibration/generate", {
+    return request("/api/web/calibration/generate", {
       method: "POST",
       body: JSON.stringify({ save_sidecars: saveSidecars }),
     });
@@ -607,7 +597,7 @@ export const calibration = {
    * Apply calibration to entire library (queue recalibration jobs).
    */
   apply: async (): Promise<{ queued: number; message: string }> => {
-    return request("/web/api/calibration/apply", {
+    return request("/api/web/calibration/apply", {
       method: "POST",
     });
   },
@@ -623,14 +613,14 @@ export const calibration = {
     worker_alive: boolean;
     worker_busy: boolean;
   }> => {
-    return request("/web/api/calibration/status");
+    return request("/api/web/calibration/status");
   },
 
   /**
    * Clear calibration queue.
    */
   clear: async (): Promise<{ cleared: number; message: string }> => {
-    return request("/web/api/calibration/clear", {
+    return request("/api/web/calibration/clear", {
       method: "POST",
     });
   },
@@ -645,7 +635,7 @@ export const admin = {
    * Pause the worker.
    */
   pauseWorker: async (): Promise<{ status: string; message: string }> => {
-    return request("/web/worker/pause", {
+    return request("/api/web/worker/pause", {
       method: "POST",
     });
   },
@@ -654,7 +644,7 @@ export const admin = {
    * Resume the worker.
    */
   resumeWorker: async (): Promise<{ status: string; message: string }> => {
-    return request("/web/worker/resume", {
+    return request("/api/web/worker/resume", {
       method: "POST",
     });
   },
@@ -663,7 +653,7 @@ export const admin = {
    * Restart the API server.
    */
   restart: async (): Promise<{ status: string; message: string }> => {
-    return request("/web/restart", {
+    return request("/api/web/worker/restart", {
       method: "POST",
     });
   },
@@ -678,7 +668,7 @@ export const config = {
    * Get current configuration.
    */
   get: async (): Promise<Record<string, unknown>> => {
-    return request("/web/api/config");
+    return request("/api/web/config");
   },
 
   /**
@@ -688,7 +678,7 @@ export const config = {
     key: string,
     value: string
   ): Promise<{ success: boolean; message: string }> => {
-    return request("/web/api/config", {
+    return request("/api/web/config", {
       method: "POST",
       body: JSON.stringify({ key, value }),
     });
@@ -714,7 +704,7 @@ export const navidrome = {
       total_count: number;
     }>;
   }> => {
-    return request("/web/api/navidrome/preview");
+    return request("/api/web/navidrome/preview");
   },
 
   /**
@@ -724,7 +714,7 @@ export const navidrome = {
     namespace: string;
     config: string;
   }> => {
-    return request("/web/api/navidrome/config");
+    return request("/api/web/navidrome/config");
   },
 
   /**
@@ -734,7 +724,7 @@ export const navidrome = {
     query: string,
     previewLimit = 10
   ): Promise<Record<string, unknown>> => {
-    return request("/web/api/navidrome/playlists/preview", {
+    return request("/api/web/navidrome/playlists/preview", {
       method: "POST",
       body: JSON.stringify({ query, preview_limit: previewLimit }),
     });
@@ -754,9 +744,43 @@ export const navidrome = {
     query: string;
     content: string;
   }> => {
-    return request("/web/api/navidrome/playlists/generate", {
+    return request("/api/web/navidrome/playlists/generate", {
       method: "POST",
       body: JSON.stringify(params),
+    });
+  },
+
+  /**
+   * Get list of all available playlist templates.
+   */
+  getTemplates: async (): Promise<{
+    templates: Array<{
+      id: string;
+      name: string;
+      description: string;
+      query: string;
+      category?: string;
+    }>;
+    total_count: number;
+  }> => {
+    return request("/api/web/navidrome/templates");
+  },
+
+  /**
+   * Generate all playlist templates as a batch.
+   */
+  generateTemplates: async (): Promise<{
+    templates: Array<{
+      id: string;
+      name: string;
+      filename: string;
+      success: boolean;
+      error?: string;
+    }>;
+    total_count: number;
+  }> => {
+    return request("/api/web/navidrome/templates", {
+      method: "POST",
     });
   },
 };
@@ -777,7 +801,7 @@ export const tags = {
     tags: Record<string, unknown>;
     count: number;
   }> => {
-    return request(`/web/api/show-tags?path=${encodeURIComponent(path)}`);
+    return request(`/api/web/tags/show-tags?path=${encodeURIComponent(path)}`);
   },
 };
 
@@ -805,7 +829,7 @@ export const fs = {
     }
 
     const query = queryParams.toString();
-    const endpoint = query ? `/web/api/fs/list?${query}` : "/web/api/fs/list";
+    const endpoint = query ? `/api/web/fs/list?${query}` : "/api/web/fs/list";
 
     return request(endpoint);
   },

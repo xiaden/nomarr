@@ -12,6 +12,7 @@ from nomarr.interfaces.api.web import (
     auth,
     calibration,
     config,
+    fs,
     info,
     library,
     navidrome,
@@ -22,14 +23,15 @@ from nomarr.interfaces.api.web import (
     worker,
 )
 
-# Create combined router with /web prefix to avoid collisions with SPA routes
-router = APIRouter(prefix="/web")
+# Create combined router with /api/web prefix for all browser-facing endpoints
+router = APIRouter(prefix="/api/web")
 
 # Include all web UI routers
 router.include_router(auth.router)
 router.include_router(analytics.router)
 router.include_router(calibration.router)
 router.include_router(config.router)
+router.include_router(fs.router)
 router.include_router(info.router)
 router.include_router(library.router)
 router.include_router(navidrome.router)

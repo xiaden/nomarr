@@ -24,6 +24,9 @@ def temp_db():
 
     db = Database(db_path)
 
+    # Create a default library first
+    library_id = db.libraries.create_library(name="Test Library", root_path="/music", is_default=True)
+
     # Add 1000+ test library files with versioned tags to meet calibration minimum
     # Tags stored WITHOUT namespace prefix in nom_tags column
     import random
@@ -31,22 +34,26 @@ def temp_db():
     random.seed(42)  # Reproducible test data
 
     for i in range(1100):
-        db.library_files.upsert_library_file(
+        file_id = db.library_files.upsert_library_file(
             path=f"/music/song{i}.mp3",
+            library_id=library_id,
             file_size=1024,
             modified_time=1234567890,
-            nom_tags=json.dumps(
-                {
-                    "happy_essentia21b6dev1389_yamnet20210604_happy20220825": random.random(),
-                    "sad_essentia21b6dev1389_yamnet20210604_sad20220825": random.random(),
-                }
-            ),
             calibration=json.dumps(
                 {
                     "happy_essentia21b6dev1389_yamnet20210604_happy20220825": "none_0",
                     "sad_essentia21b6dev1389_yamnet20210604_sad20220825": "none_0",
                 }
             ),
+        )
+        # Insert tags separately
+        db.file_tags.upsert_file_tags(
+            file_id=file_id,
+            tags={
+                "happy_essentia21b6dev1389_yamnet20210604_happy20220825": random.random(),
+                "sad_essentia21b6dev1389_yamnet20210604_sad20220825": random.random(),
+            },
+            is_nomarr_tag=True,
         )
 
     yield db
@@ -202,18 +209,25 @@ def test_calibration_min_samples_filter():
 
     db = Database(db_path)
 
+    # Create a default library first
+    library_id = db.libraries.create_library(name="Test Library", root_path="/music", is_default=True)
+
     # Add only 3 files (well below 1000 minimum)
     for i in range(3):
-        db.library_files.upsert_library_file(
+        file_id = db.library_files.upsert_library_file(
             path=f"/music/song{i}.mp3",
+            library_id=library_id,
             file_size=1024,
             modified_time=1234567890,
-            nom_tags=json.dumps(
-                {
-                    "happy_essentia21b6dev1389_yamnet20210604_happy20220825_none_0": 0.5,
-                    "sad_essentia21b6dev1389_yamnet20210604_sad20220825_none_0": 0.5,
-                }
-            ),
+        )
+        # Insert tags separately
+        db.file_tags.upsert_file_tags(
+            file_id=file_id,
+            tags={
+                "happy_essentia21b6dev1389_yamnet20210604_happy20220825_none_0": 0.5,
+                "sad_essentia21b6dev1389_yamnet20210604_sad20220825_none_0": 0.5,
+            },
+            is_nomarr_tag=True,
         )
 
     calibration_data = generate_minmax_calibration(

@@ -76,7 +76,7 @@ async def web_admin_worker_resume(
 # ──────────────────────────────────────────────────────────────────────
 
 
-@router.post("/../restart", dependencies=[Depends(verify_session)])
+@router.post("/restart", dependencies=[Depends(verify_session)])
 async def web_admin_restart() -> OperationResult:
     """Restart the API server (useful after config changes)."""
     import sys

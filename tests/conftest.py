@@ -158,6 +158,18 @@ def test_db(temp_db):
 
 
 @pytest.fixture
+def default_library(test_db):
+    """Provide a default library ID for testing."""
+    library_id = test_db.libraries.create_library(
+        name="Test Library",
+        root_path="/music",
+        is_enabled=True,
+        is_default=True,
+    )
+    return library_id
+
+
+@pytest.fixture
 def in_memory_db():
     """Provide an in-memory Database instance for fast unit tests."""
     from nomarr.persistence.db import Database

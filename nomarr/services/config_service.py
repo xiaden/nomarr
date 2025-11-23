@@ -169,6 +169,28 @@ class ConfigService:
         self._logger.info("Reloading configuration from all sources")
         return self.get_config(force_reload=True)
 
+    def get_internal_info(self) -> dict[str, Any]:
+        """
+        Get internal (read-only) configuration constants.
+
+        These are operational parameters that are not user-configurable.
+        Returned as a dict for API consumption.
+
+        Returns:
+            Dict with internal constant values
+        """
+        return {
+            "namespace": INTERNAL_NAMESPACE,
+            "version_tag": INTERNAL_VERSION_TAG,
+            "min_duration_s": INTERNAL_MIN_DURATION_S,
+            "allow_short": INTERNAL_ALLOW_SHORT,
+            "poll_interval": INTERNAL_POLL_INTERVAL,
+            "blocking_mode": INTERNAL_BLOCKING_MODE,
+            "blocking_timeout": INTERNAL_BLOCKING_TIMEOUT,
+            "library_scan_poll_interval": INTERNAL_LIBRARY_SCAN_POLL_INTERVAL,
+            "worker_enabled": INTERNAL_WORKER_ENABLED,
+        }
+
     # ----------------------------------------------------------------------
     # Private composition logic
     # ----------------------------------------------------------------------
@@ -240,8 +262,8 @@ class ConfigService:
         return {
             # Filesystem paths
             "models_dir": "/app/models",
-            "db_path": "/app/config/db/essentia.sqlite",
-            "library_root": None,  # Optional: top-level root for all libraries
+            "db_path": "/app/config/db/nomarr.db",
+            "library_root": "/media",  # Required: music library root for security
             # Tag writing settings
             "file_write_mode": "full",  # "none", "minimal", or "full"
             "overwrite_tags": True,

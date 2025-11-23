@@ -14,7 +14,7 @@ from nomarr.interfaces.api.web.dependencies import (
 from nomarr.services.coordinator_service import CoordinatorService
 from nomarr.services.queue_service import QueueService
 
-router = APIRouter(prefix="/api", tags=["Info"])
+router = APIRouter(prefix="", tags=["Info"])
 
 
 # ──────────────────────────────────────────────────────────────────────

@@ -5,15 +5,14 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from nomarr.app import application
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import get_navidrome_service
 from nomarr.workflows.navidrome.parse_smart_playlist_query import PlaylistQueryError
 
 if TYPE_CHECKING:
-    pass
+    from nomarr.services.navidrome_service import NavidromeService
 
-router = APIRouter(prefix="/api/navidrome", tags=["Navidrome"])
+router = APIRouter(prefix="/navidrome", tags=["Navidrome"])
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -23,7 +22,7 @@ router = APIRouter(prefix="/api/navidrome", tags=["Navidrome"])
 
 @router.get("/preview", dependencies=[Depends(verify_session)])
 async def web_navidrome_preview(
-    navidrome_service: Any = Depends(get_navidrome_service),
+    navidrome_service: "NavidromeService" = Depends(get_navidrome_service),
 ) -> dict[str, Any]:
     """Get preview of tags for Navidrome config generation (web UI proxy)."""
     try:
@@ -54,11 +53,11 @@ async def web_navidrome_preview(
 
 @router.get("/config", dependencies=[Depends(verify_session)])
 async def web_navidrome_config(
-    navidrome_service: Any = Depends(get_navidrome_service),
+    navidrome_service: "NavidromeService" = Depends(get_navidrome_service),
 ) -> dict[str, Any]:
     """Generate Navidrome TOML configuration (web UI proxy)."""
     try:
-        toml_config = navidrome_service.generate_navidrome_config(format="toml")
+        toml_config = navidrome_service.generate_navidrome_config()
 
         return {
             "config": toml_config,
@@ -72,35 +71,22 @@ async def web_navidrome_config(
 @router.post("/playlists/preview", dependencies=[Depends(verify_session)])
 async def web_navidrome_playlist_preview(
     request: dict,
-    navidrome_service: Any = Depends(get_navidrome_service),
+    navidrome_service: "NavidromeService" = Depends(get_navidrome_service),
 ) -> dict[str, Any]:
     """Preview Smart Playlist query results."""
-    # TODO: NavidromeService.preview_playlist method signature doesn't match utility function
-    # This endpoint currently bypasses the service to maintain functionality.
-    # Fix NavidromeService methods to match utility function signatures.
     try:
-        from nomarr.workflows.navidrome.preview_smart_playlist import (
-            preview_smart_playlist_workflow,
-        )
-
         query = request.get("query", "").strip()
         if not query:
             raise HTTPException(status_code=400, detail="Query is required")
 
         preview_limit = request.get("preview_limit", 10)
 
-        try:
-            # Call workflow directly
-            result = preview_smart_playlist_workflow(
-                db=application.db,
-                query=query,
-                namespace=navidrome_service.cfg.namespace,
-                preview_limit=preview_limit,
-            )
-            return result
-        except PlaylistQueryError as e:
-            raise HTTPException(status_code=400, detail=f"Invalid query: {e}") from e
+        # Call service method instead of workflow directly
+        result = navidrome_service.preview_playlist(query=query, preview_limit=preview_limit)
+        return result
 
+    except PlaylistQueryError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid query: {e}") from e
     except HTTPException:
         raise
     except Exception as e:
@@ -109,14 +95,11 @@ async def web_navidrome_playlist_preview(
 
 
 @router.post("/playlists/generate", dependencies=[Depends(verify_session)])
-async def web_navidrome_playlist_generate(request: dict) -> dict[str, Any]:
+async def web_navidrome_playlist_generate(
+    request: dict,
+    navidrome_service: "NavidromeService" = Depends(get_navidrome_service),
+) -> dict[str, Any]:
     """Generate Navidrome Smart Playlist (.nsp) from query."""
-    from nomarr.workflows.navidrome.generate_smart_playlist import (
-        generate_smart_playlist_workflow,
-    )
-
-    navidrome_service = get_navidrome_service()
-
     try:
         query = request.get("query", "").strip()
         if not query:
@@ -127,21 +110,24 @@ async def web_navidrome_playlist_generate(request: dict) -> dict[str, Any]:
         limit = request.get("limit")
         sort = request.get("sort")
 
-        # Call workflow directly
-        nsp_content = generate_smart_playlist_workflow(
-            db=application.db,
+        # Call service method instead of workflow directly
+        nsp_structure = navidrome_service.generate_playlist(
             query=query,
             playlist_name=playlist_name,
             comment=comment,
-            namespace=navidrome_service.cfg.namespace,
             sort=sort,
             limit=limit,
         )
 
+        # Service returns the .nsp structure dict
+        # Frontend expects: playlist_name, query, content, format
+        # Convert dict to JSON string for "content" field
+        import json
+
         return {
             "playlist_name": playlist_name,
             "query": query,
-            "content": nsp_content,
+            "content": json.dumps(nsp_structure, indent=2),
             "format": "nsp",
         }
 
@@ -154,7 +140,7 @@ async def web_navidrome_playlist_generate(request: dict) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"Error generating playlist: {e}") from e
 
 
-@router.get("/templates/list", dependencies=[Depends(verify_session)])
+@router.get("/templates", dependencies=[Depends(verify_session)])
 async def web_navidrome_templates_list() -> dict[str, Any]:
     """Get list of all available playlist templates."""
     try:
@@ -168,7 +154,7 @@ async def web_navidrome_templates_list() -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"Error listing templates: {e}") from e
 
 
-@router.post("/templates/generate", dependencies=[Depends(verify_session)])
+@router.post("/templates", dependencies=[Depends(verify_session)])
 async def web_navidrome_templates_generate() -> dict[str, Any]:
     """Generate all playlist templates as a batch."""
     try:

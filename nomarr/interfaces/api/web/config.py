@@ -12,7 +12,7 @@ from nomarr.interfaces.api.web.dependencies import get_config_service, get_worke
 if TYPE_CHECKING:
     from nomarr.services.config_service import ConfigService
 
-router = APIRouter(prefix="/api/config", tags=["Config"])
+router = APIRouter(prefix="/config", tags=["Config"])
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -40,22 +40,13 @@ def get_config(
 ) -> dict[str, Any]:
     """Get current configuration values (user-editable subset)."""
     try:
-        from nomarr.services.config_service import (
-            INTERNAL_ALLOW_SHORT,
-            INTERNAL_BLOCKING_MODE,
-            INTERNAL_BLOCKING_TIMEOUT,
-            INTERNAL_LIBRARY_SCAN_POLL_INTERVAL,
-            INTERNAL_MIN_DURATION_S,
-            INTERNAL_NAMESPACE,
-            INTERNAL_POLL_INTERVAL,
-            INTERNAL_VERSION_TAG,
-            INTERNAL_WORKER_ENABLED,
-        )
+        # Get internal constants from service
+        internal_info = config_service.get_internal_info()
 
         config = config_service.get_config()
 
         # User-editable config from DB or config dict
-        worker_enabled = worker_service.is_enabled() if worker_service else INTERNAL_WORKER_ENABLED
+        worker_enabled = worker_service.is_enabled() if worker_service else internal_info["worker_enabled"]
 
         return {
             # User-configurable settings
@@ -72,15 +63,15 @@ def get_config(
             "calibrate_heads": config.get("calibrate_heads", False),
             "calibration_repo": config.get("calibration_repo", "https://github.com/xiaden/nom-cal"),
             # Internal constants (read-only, displayed for info)
-            "namespace": INTERNAL_NAMESPACE,
-            "version_tag": INTERNAL_VERSION_TAG,
-            "min_duration_s": INTERNAL_MIN_DURATION_S,
-            "allow_short": INTERNAL_ALLOW_SHORT,
+            "namespace": internal_info["namespace"],
+            "version_tag": internal_info["version_tag"],
+            "min_duration_s": internal_info["min_duration_s"],
+            "allow_short": internal_info["allow_short"],
             "worker_enabled": worker_enabled,
-            "poll_interval": INTERNAL_POLL_INTERVAL,
-            "blocking_mode": INTERNAL_BLOCKING_MODE,
-            "blocking_timeout": INTERNAL_BLOCKING_TIMEOUT,
-            "library_scan_poll_interval": INTERNAL_LIBRARY_SCAN_POLL_INTERVAL,
+            "poll_interval": internal_info["poll_interval"],
+            "blocking_mode": internal_info["blocking_mode"],
+            "blocking_timeout": internal_info["blocking_timeout"],
+            "library_scan_poll_interval": internal_info["library_scan_poll_interval"],
         }
 
     except Exception as e:
@@ -137,4 +128,3 @@ def update_config(
     except Exception as e:
         logging.exception("[Web API] Error updating config")
         raise HTTPException(status_code=500, detail=f"Error updating config: {e}") from e
-

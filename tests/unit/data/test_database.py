@@ -180,7 +180,7 @@ class TestDatabaseGetFileTags:
         # Arrange
 
         # Act
-        result = test_db.library_tags.get_file_tags(file_id=str(temp_audio_file))
+        result = test_db.file_tags.get_file_tags(file_id=str(temp_audio_file))
 
         # Assert
         assert isinstance(result, dict)
@@ -190,10 +190,12 @@ class TestDatabaseGetFileTags:
 class TestDatabaseGetLibraryFile:
     """Test Database.get_library_file() operations."""
 
-    def test_get_library_file_success(self, test_db, temp_audio_file):
+    def test_get_library_file_success(self, test_db, temp_audio_file, default_library):
         """Should successfully get library file."""
         # Arrange - create library file first
-        test_db.library_files.upsert_library_file(path=str(temp_audio_file), file_size=1024, modified_time=1234567890)
+        test_db.library_files.upsert_library_file(
+            path=str(temp_audio_file), library_id=default_library, file_size=1024, modified_time=1234567890
+        )
 
         # Act
         result = test_db.library_files.get_library_file(path=str(temp_audio_file))
@@ -317,7 +319,7 @@ class TestDatabaseGetTagSummary:
         # Arrange
 
         # Act
-        result = test_db.library_tags.get_tag_summary(tag_key="test_value")
+        result = test_db.file_tags.get_tag_summary(tag_key="test_value")
 
         # Assert
         assert isinstance(result, dict)
@@ -332,7 +334,7 @@ class TestDatabaseGetTagTypeStats:
         # Arrange
 
         # Act
-        result = test_db.library_tags.get_tag_type_stats(tag_key="test_value")
+        result = test_db.file_tags.get_tag_type_stats(tag_key="test_value")
 
         # Assert
         assert isinstance(result, dict)
@@ -347,7 +349,7 @@ class TestDatabaseGetTagValues:
         # Arrange
 
         # Act
-        result = test_db.library_tags.get_tag_values(tag_key="test_value")
+        result = test_db.file_tags.get_tag_values(tag_key="test_value")
 
         # Assert
         assert isinstance(result, list)
@@ -362,7 +364,7 @@ class TestDatabaseGetUniqueTagKeys:
         # Arrange
 
         # Act
-        result = test_db.library_tags.get_unique_tag_keys()
+        result = test_db.file_tags.get_unique_tag_keys()
 
         # Assert
         assert isinstance(result, list)
@@ -534,16 +536,16 @@ class TestDatabaseUpdateJob:
 class TestDatabaseUpsertFileTags:
     """Test Database.upsert_file_tags() operations."""
 
-    def test_upsert_file_tags_success(self, test_db, temp_audio_file):
+    def test_upsert_file_tags_success(self, test_db, temp_audio_file, default_library):
         """Should successfully upsert file tags."""
         # Arrange - create library file first to get file_id
-        test_db.library_files.upsert_library_file(path=str(temp_audio_file), file_size=1024, modified_time=1234567890)
-        file_data = test_db.library_files.get_library_file(path=str(temp_audio_file))
-        file_id = file_data["id"]
+        file_id = test_db.library_files.upsert_library_file(
+            path=str(temp_audio_file), library_id=default_library, file_size=1024, modified_time=1234567890
+        )
         tags = {"mood": "happy", "genre": "rock"}
 
         # Act
-        test_db.library_tags.upsert_file_tags(file_id=file_id, tags=tags)
+        test_db.file_tags.upsert_file_tags(file_id=file_id, tags=tags)
 
         # Assert
         # Method returns None - verify it completes without exception
@@ -552,13 +554,13 @@ class TestDatabaseUpsertFileTags:
 class TestDatabaseUpsertLibraryFile:
     """Test Database.upsert_library_file() operations."""
 
-    def test_upsert_library_file_success(self, test_db, temp_audio_file):
+    def test_upsert_library_file_success(self, test_db, temp_audio_file, default_library):
         """Should successfully upsert library file."""
         # Arrange
 
         # Act
         result = test_db.library_files.upsert_library_file(
-            path=str(temp_audio_file), file_size=str(temp_audio_file), modified_time=1
+            path=str(temp_audio_file), library_id=default_library, file_size=1024, modified_time=1
         )
 
         # Assert

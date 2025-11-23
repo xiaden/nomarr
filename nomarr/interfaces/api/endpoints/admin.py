@@ -1,6 +1,8 @@
 """
 Admin API endpoints for queue management and system control.
-Routes: /admin/queue/*, /admin/cache/*, /admin/worker/*
+Routes: /v1/admin/queue/*, /v1/admin/cache/*, /v1/admin/worker/*
+
+These routes will be mounted under /api/v1/admin via the integration router.
 """
 
 from __future__ import annotations
@@ -23,8 +25,8 @@ from nomarr.services.ml_service import MLService
 from nomarr.services.queue_service import QueueService
 from nomarr.services.worker_service import WorkerService
 
-# Router instance (will be included in main app)
-router = APIRouter(tags=["admin"], prefix="/admin")
+# Router instance (will be included under /api/v1/admin)
+router = APIRouter(tags=["admin"], prefix="/v1/admin")
 
 
 # ----------------------------------------------------------------------

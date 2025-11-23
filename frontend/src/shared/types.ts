@@ -2,9 +2,7 @@
  * Shared TypeScript types for Nomarr.
  *
  * These types match the backend API responses from:
- * - /web/auth/* (authentication)
- * - /web/api/* (queue, library, workers, etc.)
- * - /web/events/status (SSE updates)
+ * - /api/web/* (web UI endpoints: auth, queue, library, analytics, etc.)
  */
 
 // ──────────────────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 /**
  * Server-Sent Events (SSE) utilities.
  *
- * Provides helpers for connecting to the /web/events/status endpoint
+ * Provides helpers for connecting to the /api/web/events/status endpoint
  * to receive real-time updates for:
  * - Queue statistics (pending/running/completed counts)
  * - Active job state
@@ -30,7 +30,7 @@ export function createStatusEventSource(
     throw new Error("Cannot create EventSource: not authenticated");
   }
 
-  const url = `${API_BASE_URL}/web/events/status?token=${encodeURIComponent(
+  const url = `${API_BASE_URL}/api/web/events/status?token=${encodeURIComponent(
     token
   )}`;
   const eventSource = new EventSource(url);
