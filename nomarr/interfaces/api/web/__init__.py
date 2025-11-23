@@ -2,8 +2,16 @@
 Web package.
 """
 
-# Import combined router for FastAPI app
 from .analytics import (
+    ArtistDistribution,
+    GenreDistribution,
+    MoodCoOccurrence,
+    MoodDistributionItem,
+    MoodDistributionResponse,
+    TagCoOccurrencesResponse,
+    TagCorrelationsResponse,
+    TagFrequenciesResponse,
+    TagFrequencyItem,
     web_analytics_mood_distribution,
     web_analytics_tag_co_occurrences,
     web_analytics_tag_correlations,
@@ -21,7 +29,6 @@ from .config import ConfigUpdateRequest, get_config, update_config
 from .dependencies import (
     get_analytics_service,
     get_calibration_service,
-    get_config,
     get_config_service,
     get_event_broker,
     get_library_service,
@@ -65,14 +72,23 @@ from .worker import web_admin_restart, web_admin_worker_pause, web_admin_worker_
 
 __all__ = [
     "AdminResetRequest",
+    "ArtistDistribution",
     "BatchProcessRequest",
     "CalibrationRequest",
     "ConfigUpdateRequest",
+    "GenreDistribution",
     "LoginRequest",
     "LoginResponse",
     "LogoutResponse",
+    "MoodCoOccurrence",
+    "MoodDistributionItem",
+    "MoodDistributionResponse",
     "ProcessRequest",
     "RemoveRequest",
+    "TagCoOccurrencesResponse",
+    "TagCorrelationsResponse",
+    "TagFrequenciesResponse",
+    "TagFrequencyItem",
     "apply_calibration_to_library",
     "clear_calibration_queue",
     "generate_calibration",

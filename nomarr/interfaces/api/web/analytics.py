@@ -1,9 +1,10 @@
 """Analytics endpoints for web UI."""
 
 import logging
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException
+from typing_extensions import TypedDict
 
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import get_analytics_service
@@ -100,7 +101,16 @@ async def web_analytics_tag_frequencies(
 ) -> TagFrequenciesResponse:
     """Get tag frequency statistics."""
     try:
-        tag_frequencies = analytics_service.get_tag_frequencies(limit=limit)
+        tag_frequencies_data = analytics_service.get_tag_frequencies(limit=limit)
+        # Convert to typed response
+        tag_frequencies: list[TagFrequencyItem] = [
+            TagFrequencyItem(
+                tag_key=item["tag_key"],
+                total_count=item["total_count"],
+                unique_values=item["unique_values"],
+            )
+            for item in tag_frequencies_data
+        ]
         response: TagFrequenciesResponse = {"tag_frequencies": tag_frequencies}
         return response
     except Exception as e:

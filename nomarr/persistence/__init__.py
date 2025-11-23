@@ -10,11 +10,14 @@ from .analytics_queries import (
     fetch_tag_frequencies_data,
 )
 from .db import SCHEMA, SCHEMA_VERSION, Database, now_ms
+from .queue import Job, ProcessingQueue
 
 __all__ = [
     "SCHEMA",
     "SCHEMA_VERSION",
     "Database",
+    "Job",
+    "ProcessingQueue",
     "fetch_artist_tag_profile_data",
     "fetch_mood_distribution_data",
     "fetch_mood_value_co_occurrence_data",

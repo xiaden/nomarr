@@ -8,7 +8,9 @@ These types are owned by the interface layer and represent HTTP/JSON shapes.
 Services and lower layers should NOT import from this module.
 """
 
-from typing import Literal, TypedDict
+from typing import Literal
+
+from typing_extensions import TypedDict
 
 # ──────────────────────────────────────────────────────────────────────
 # Queue Job Types

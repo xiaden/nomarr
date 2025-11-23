@@ -3,6 +3,10 @@ Analytics package.
 """
 
 from .analytics import (
+    ArtistTagProfile,
+    MoodCoOccurrenceData,
+    MoodDistributionData,
+    TagCorrelationData,
     compute_artist_tag_profile,
     compute_mood_distribution,
     compute_mood_value_co_occurrences,
@@ -11,6 +15,10 @@ from .analytics import (
 )
 
 __all__ = [
+    "ArtistTagProfile",
+    "MoodCoOccurrenceData",
+    "MoodDistributionData",
+    "TagCorrelationData",
     "compute_artist_tag_profile",
     "compute_mood_distribution",
     "compute_mood_value_co_occurrences",
