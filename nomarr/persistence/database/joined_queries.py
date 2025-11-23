@@ -1,7 +1,8 @@
 """
-Navidrome Smart Playlists persistence operations.
+Multi-table JOIN queries.
 
-Handles SQL queries for smart playlist track selection.
+Contains operations that query across multiple tables (JOINs).
+Single-table operations belong in their respective *_table.py files.
 ALL SQL string literals live in this module.
 """
 
@@ -13,11 +14,12 @@ from typing import Any, Literal
 from nomarr.workflows.navidrome.parse_smart_playlist_query import SmartPlaylistFilter, TagCondition
 
 
-class NavidromeSmartPlaylistsOperations:
+class JoinedQueryOperations:
     """
-    Persistence operations for Navidrome smart playlist queries.
+    Multi-table JOIN query operations.
 
-    Owns all SQL for executing smart playlist filters against library_tags and library_files.
+    Contains queries that span multiple tables. Single-table queries
+    should live in their respective table-specific operations classes.
     """
 
     def __init__(self, conn: sqlite3.Connection) -> None:

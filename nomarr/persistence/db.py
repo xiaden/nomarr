@@ -235,10 +235,10 @@ class Database:
         self.calibration_queue = CalibrationQueueOperations(self.conn)
         self.calibration_runs = CalibrationRunsOperations(self.conn)
 
-        # Lazy import to avoid circular dependency (navidrome_smart_playlists imports from workflows)
-        from nomarr.persistence.database.navidrome_smart_playlists import NavidromeSmartPlaylistsOperations
+        # Lazy import to avoid circular dependency (joined_queries imports from workflows)
+        from nomarr.persistence.database.joined_queries import JoinedQueryOperations
 
-        self.navidrome_smart_playlists = NavidromeSmartPlaylistsOperations(self.conn)
+        self.joined_queries = JoinedQueryOperations(self.conn)
 
         # Store schema version for reference (pre-alpha: no migrations, just delete DB on schema changes)
         current_version = self.meta.get("schema_version")

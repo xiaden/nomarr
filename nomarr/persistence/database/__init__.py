@@ -1,39 +1,34 @@
 """
-Database package.
+Database operations package.
+
+Contains table-specific operations classes (one per table) and joined query operations.
+Each *_table.py file owns all SQL for that specific table.
+joined_queries.py owns multi-table JOIN queries.
 """
 
-from .calibration import CalibrationOperations, now_ms
-from .calibration_queue_table import CalibrationQueueOperations, now_ms
-from .calibration_runs_table import CalibrationRunsOperations, now_ms
-from .library import LibraryOperations, now_ms
-from .library_files_table import LibraryFilesOperations, now_ms
-from .library_queue_table import LibraryQueueOperations, now_ms
+from .calibration_queue_table import CalibrationQueueOperations
+from .calibration_runs_table import CalibrationRunsOperations
+from .library_files_table import LibraryFilesOperations
+from .library_queue_table import LibraryQueueOperations
 from .library_tags_table import TagOperations
-from .meta import MetaOperations
 from .meta_table import MetaOperations
-
-# from .navidrome_smart_playlists import NavidromeSmartPlaylistsOperations  # Circular import - import directly
-from .queue import QueueOperations, now_ms
 from .sessions_table import SessionOperations
-from .tag_queue_table import QueueOperations, now_ms
-from .tags import TagOperations
+from .tag_queue_table import QueueOperations
 from .utils import count_and_delete, count_and_update, get_queue_stats, safe_count
 
+# JoinedQueryOperations has circular import with workflows - imported directly in db.py
+
 __all__ = [
-    "CalibrationOperations",
     "CalibrationQueueOperations",
     "CalibrationRunsOperations",
     "LibraryFilesOperations",
-    "LibraryOperations",
     "LibraryQueueOperations",
     "MetaOperations",
-    "NavidromeSmartPlaylistsOperations",
     "QueueOperations",
     "SessionOperations",
     "TagOperations",
     "count_and_delete",
     "count_and_update",
     "get_queue_stats",
-    "now_ms",
     "safe_count",
 ]

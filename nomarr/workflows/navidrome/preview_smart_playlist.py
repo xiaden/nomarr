@@ -42,10 +42,10 @@ def preview_smart_playlist_workflow(
     playlist_filter = parse_smart_playlist_query(query, namespace)
 
     # Count total matching tracks
-    total_count = db.navidrome_smart_playlists.count_tracks_for_smart_playlist(playlist_filter)
+    total_count = db.joined_queries.count_tracks_for_smart_playlist(playlist_filter)
 
     # Fetch sample tracks
-    sample_tracks = db.navidrome_smart_playlists.select_tracks_for_smart_playlist(
+    sample_tracks = db.joined_queries.select_tracks_for_smart_playlist(
         filter=playlist_filter, order_by=None, limit=preview_limit
     )
 
