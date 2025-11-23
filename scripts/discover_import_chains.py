@@ -288,7 +288,7 @@ def format_text_output(root_module: str, result: dict[str, Any]) -> str:
 
     # Violations
     if result["violations"]:
-        lines.append(f"❌ ARCHITECTURE VIOLATIONS ({len(result['violations'])}):")
+        lines.append(f"[!] ARCHITECTURE VIOLATIONS ({len(result['violations'])}):")
         lines.append("")
 
         for violation in result["violations"]:
@@ -298,13 +298,13 @@ def format_text_output(root_module: str, result: dict[str, Any]) -> str:
             lines.append(f"  Chain: {' → '.join(violation['chain'])}")
             lines.append("")
     else:
-        lines.append("✅ No architecture violations found")
+        lines.append("[OK] No architecture violations found")
         lines.append("")
 
     # Import chains summary
     unique_chains = list({tuple(chain) for chain in result["chains"]})
     if unique_chains:
-        lines.append(f"📦 IMPORT CHAINS ({len(unique_chains)} unique):")
+        lines.append(f"IMPORT CHAINS ({len(unique_chains)} unique):")
         lines.append("")
 
         # Show first 20 chains

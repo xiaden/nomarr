@@ -131,7 +131,7 @@ def print_api(module_name: str, api: dict[str, Any]):
 
     # Classes
     if api.get("classes"):
-        print("📦 CLASSES:\n")
+        print("CLASSES:\n")
         for class_name, class_info in sorted(api["classes"].items()):
             print(f"  class {class_name}:")
             doc = class_info["doc"].split("\n")[0][:60]
@@ -147,7 +147,7 @@ def print_api(module_name: str, api: dict[str, Any]):
 
     # Functions
     if api.get("functions"):
-        print("🔧 FUNCTIONS:\n")
+        print("FUNCTIONS:\n")
         for func_name, func_info in sorted(api["functions"].items()):
             sig = func_info["signature"]
             print(f"  def {func_name}{sig}:")
@@ -158,7 +158,7 @@ def print_api(module_name: str, api: dict[str, Any]):
 
     # Constants
     if api.get("constants"):
-        print("📌 CONSTANTS:\n")
+        print("CONSTANTS:\n")
         for const_name, const_value in sorted(api["constants"].items()):
             print(f"  {const_name} = {const_value}")
         print()
@@ -221,7 +221,7 @@ def main():
                 return 1
             else:
                 # Text mode: already printed error in discover_module_api
-                print(f"❌ Also tried '{alt_module}' but import failed")
+                print(f"[!] Also tried '{alt_module}' but import failed")
                 return 1
 
     # Output based on format
