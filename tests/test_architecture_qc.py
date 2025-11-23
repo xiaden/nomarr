@@ -259,10 +259,10 @@ def test_leaf_slices_do_not_depend_on_higher_layers():
 
 def test_no_essentia_imports_outside_backend():
     """
-    Test 5: Ensure Essentia is ONLY imported in ml/backend_essentia.py.
+    Test 5: Ensure Essentia is ONLY imported in components/ml/backend_essentia.py.
 
     Essentia is an optional dependency and must be completely isolated:
-    - ONLY ml/backend_essentia.py may import essentia/essentia_tensorflow
+    - ONLY components/ml/backend_essentia.py may import essentia/essentia_tensorflow
     - All other code must use the backend module's interface
     - Dependencies are passed via function parameters (dependency injection)
 
@@ -273,7 +273,7 @@ def test_no_essentia_imports_outside_backend():
     - No scattered try/except blocks throughout codebase
     """
     violations = []
-    backend_file = NOMARR_DIR / "ml" / "backend_essentia.py"
+    backend_file = NOMARR_DIR / "components" / "ml" / "backend_essentia.py"
 
     for py_file in find_python_files(NOMARR_DIR):
         # Skip test files and the dedicated backend module
@@ -299,9 +299,9 @@ def test_no_essentia_imports_outside_backend():
 
     if violations:
         msg = (
-            "Found Essentia imports outside ml/backend_essentia.py.\n\n"
+            "Found Essentia imports outside components/ml/backend_essentia.py.\n\n"
             "Essentia must ONLY be imported in the dedicated backend module:\n"
-            "  - ml/backend_essentia.py is the ONLY file allowed to import Essentia\n"
+            "  - components/ml/backend_essentia.py is the ONLY file allowed to import Essentia\n"
             "  - All other code must use backend_essentia.py's interface\n"
             "  - Pass dependencies via parameters (dependency injection)\n\n"
             "This maintains a single integration point and clear boundaries.\n\n"
