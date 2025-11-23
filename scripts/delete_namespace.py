@@ -15,8 +15,12 @@ import argparse
 import logging
 from pathlib import Path
 
+from mutagen.flac import FLAC
 from mutagen.id3 import ID3
 from mutagen.mp4 import MP4
+
+# Import Nomarr's canonical audio extension list
+from nomarr.helpers import AUDIO_EXTENSIONS
 
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 
@@ -53,11 +57,15 @@ def delete_m4a_namespace(file_path: str, namespace: str) -> int:
     """Delete all freeform tags from specified namespace in M4A file."""
     try:
         m4a = MP4(file_path)
+
+        if m4a.tags is None:
+            return 0
+
         deleted = 0
 
         # Collect keys to delete
         keys_to_delete = []
-        for key in m4a.tags:
+        for key in m4a.tags:  # type: ignore[union-attr]
             if key.startswith(f"----:com.apple.iTunes:{namespace}:"):
                 keys_to_delete.append(key)
                 deleted += 1
@@ -67,9 +75,53 @@ def delete_m4a_namespace(file_path: str, namespace: str) -> int:
 
         # Delete collected keys
         for key in keys_to_delete:
-            del m4a.tags[key]
+            del m4a.tags[key]  # type: ignore[union-attr]
 
         m4a.save()
+        return deleted
+
+    except Exception as e:
+        logging.error(f"Failed to process {file_path}: {e}")
+        return 0
+
+
+def delete_flac_namespace(file_path: str, namespace: str) -> int:
+    """
+    Delete all tags with the given namespace prefix from a FLAC file.
+
+    FLAC uses Vorbis comments where each key maps to a list of strings.
+    We delete any keys that start with the namespace prefix (case-insensitive).
+
+    Args:
+        file_path: Path to the FLAC file
+        namespace: Namespace prefix to delete (e.g., "essentia")
+
+    Returns:
+        Number of tags deleted
+    """
+    try:
+        audio = FLAC(file_path)
+
+        if audio.tags is None:
+            return 0
+
+        deleted = 0
+        namespace_lower = namespace.lower()
+
+        # Collect keys to delete (can't modify dict during iteration)
+        # VorbisComment is dict-like, iterate over keys
+        keys_to_delete = []
+        for key in audio.tags:  # type: ignore[union-attr]
+            if key.lower().startswith(f"{namespace_lower}:"):
+                keys_to_delete.append(key)
+
+        for key in keys_to_delete:
+            del audio.tags[key]  # type: ignore[union-attr]
+            deleted += 1
+
+        if deleted > 0:
+            audio.save()
+
         return deleted
 
     except Exception as e:
@@ -86,7 +138,6 @@ def scan_and_delete(music_dir: str, namespace: str, dry_run: bool = False) -> di
     """
     stats = {"files_processed": 0, "files_modified": 0, "tags_deleted": 0, "files_skipped": 0}
 
-    audio_extensions = {".mp3", ".m4a", ".flac"}
     music_path = Path(music_dir)
 
     if not music_path.exists():
@@ -95,7 +146,7 @@ def scan_and_delete(music_dir: str, namespace: str, dry_run: bool = False) -> di
 
     logging.info(f"Scanning {music_dir}...")
     all_files = list(music_path.rglob("*"))
-    audio_files = [f for f in all_files if f.suffix.lower() in audio_extensions]
+    audio_files = [f for f in all_files if f.suffix.lower() in AUDIO_EXTENSIONS]
 
     logging.info(f"Found {len(audio_files)} audio files")
 
@@ -115,6 +166,8 @@ def scan_and_delete(music_dir: str, namespace: str, dry_run: bool = False) -> di
                 deleted = delete_mp3_namespace(str(file_path), namespace)
             elif file_path.suffix.lower() == ".m4a":
                 deleted = delete_m4a_namespace(str(file_path), namespace)
+            elif file_path.suffix.lower() == ".flac":
+                deleted = delete_flac_namespace(str(file_path), namespace)
 
             if deleted > 0:
                 stats["files_modified"] += 1
