@@ -12,13 +12,13 @@ import type { QueueJob, QueueSummary } from "./types";
 /**
  * API base URL.
  *
- * In production (Docker), the frontend is served from the same origin as the API,
- * so we use a relative path (empty string = same origin).
+ * In production build (served from Docker/same origin), use relative path.
+ * In dev server (npm run dev), Vite's dev mode allows localhost backend calls.
  *
- * In development, we explicitly connect to localhost:8356 where the backend runs.
+ * Since we always build for production (committed build), this is always empty string.
+ * Dev server uses Vite's proxy or CORS to talk to localhost:8356 backend.
  */
-export const API_BASE_URL =
-  import.meta.env.MODE === "production" ? "" : "http://localhost:8356";
+export const API_BASE_URL = "";
 
 // ──────────────────────────────────────────────────────────────────────
 // HTTP Helper
