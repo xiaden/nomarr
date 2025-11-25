@@ -1,5 +1,11 @@
 """
 Command: manage_password — Manage admin password.
+
+Architecture:
+- Uses CLI bootstrap service to get KeyManagementService instance
+- Does NOT depend on running Application (separate process)
+- Does NOT access Database or persistence internals directly
+- Calls service methods for all password operations
 """
 
 from __future__ import annotations
@@ -8,8 +14,8 @@ import argparse
 import getpass
 from typing import TYPE_CHECKING
 
-import nomarr.app as app
 from nomarr.interfaces.cli.ui import print_error, print_info, print_success
+from nomarr.services.cli_bootstrap_service import get_keys_service
 
 if TYPE_CHECKING:
     from nomarr.services.keys_service import KeyManagementService
@@ -29,14 +35,13 @@ def cmd_manage_password(args: argparse.Namespace) -> int:
 
     Returns:
         Exit code (0 = success)
-    """
-    # Check if Application is running
-    if not app.application.is_running():
-        print_error("Application is not running. Start the server first.")
-        return 1
 
-    # Use service from running Application
-    service = app.application.services["keys"]
+    Note:
+        This command runs in a separate process from the server and uses
+        CLI bootstrap to get a standalone KeyManagementService instance.
+    """
+    # Get standalone service instance (no running Application required)
+    service = get_keys_service()
 
     if args.password_cmd == "show":
         return _show_password(service)
@@ -51,9 +56,10 @@ def cmd_manage_password(args: argparse.Namespace) -> int:
 
 def _show_password(service: KeyManagementService) -> int:
     """Show current password hash."""
-    password_hash = service.get_admin_password_hash()
-
-    if not password_hash:
+    try:
+        password_hash = service.get_admin_password_hash()
+    except RuntimeError:
+        # Password not found in DB
         print_info("No admin password set")
         print_info("A password will be auto-generated on first application startup")
         return 0
@@ -61,16 +67,17 @@ def _show_password(service: KeyManagementService) -> int:
     print_info("Current admin password hash:")
     print(password_hash)
     print()
-    print_info("Password is stored as salted SHA-256 hash")
+    print_info("Password is stored as bcrypt hash")
     print_info("To view the actual password, check container logs on first startup")
     return 0
 
 
 def _verify_password(service: KeyManagementService) -> int:
     """Verify if a password is correct."""
-    password_hash = service.get_admin_password_hash()
-
-    if not password_hash:
+    try:
+        password_hash = service.get_admin_password_hash()
+    except RuntimeError:
+        # Password not found in DB
         print_error("No admin password set yet")
         return 1
 
@@ -85,7 +92,7 @@ def _verify_password(service: KeyManagementService) -> int:
 
 
 def _reset_password(service: KeyManagementService) -> int:
-    """Reset admin password."""
+    """Reset admin password using service method (no direct DB access)."""
     print_info("Reset admin password for web UI")
     print()
 
@@ -104,9 +111,8 @@ def _reset_password(service: KeyManagementService) -> int:
 
         break
 
-    # Hash and store
-    password_hash = service.hash_password(password1)
-    service._db.meta.set("admin_password_hash", password_hash)
+    # Use service method to reset password (hashes and stores internally)
+    service.reset_admin_password(password1)
 
     print()
     print_success("✓ Admin password updated successfully")

@@ -3,16 +3,15 @@ root_package = nomarr
 include_external_packages = False
 
 # Architecture stack:
-#   interfaces -> services -> workflows
-#   workflows/services -> (persistence, tagging, ml, analytics, helpers)
+#   interfaces -> services -> workflows -> components
+#   workflows/services/components -> (persistence, helpers)
 #
 # Rules:
 # - interfaces may only talk to services (plus helpers).
 # - services may not import interfaces.
 # - workflows may not import services or interfaces.
-# - persistence is a low-level layer: no imports from workflows/services/interfaces.
-# - ml is an isolated namespace: no imports from workflows/services/interfaces.
-# - analytics is an isolated namespace: no imports from workflows/services/interfaces.
+# - components are isolated: no imports from workflows/services/interfaces.
+# - persistence is a low-level layer: no imports from workflows/services/interfaces/components.
 # - helpers must be pure: no imports from any nomarr.* packages.
 # - only nomarr.persistence.* may import nomarr.persistence.database.*.
 
@@ -34,7 +33,7 @@ forbidden_modules =
     nomarr.interfaces
 
 [importlinter:contract:3]
-name = Persistence layer cannot import from workflows, services, or interfaces
+name = Persistence layer cannot import from workflows, services, interfaces, or components
 type = forbidden
 source_modules =
     nomarr.persistence
@@ -42,41 +41,30 @@ forbidden_modules =
     nomarr.workflows
     nomarr.services
     nomarr.interfaces
+    nomarr.components
 
 [importlinter:contract:4]
-name = ML namespace isolation
+name = Components are isolated (no imports from workflows, services, or interfaces)
 type = forbidden
 source_modules =
-    nomarr.ml
+    nomarr.components
 forbidden_modules =
     nomarr.services
     nomarr.interfaces
     nomarr.workflows
 
 [importlinter:contract:5]
-name = Analytics namespace isolation
-type = forbidden
-source_modules =
-    nomarr.analytics
-forbidden_modules =
-    nomarr.services
-    nomarr.interfaces
-    nomarr.workflows
-
-[importlinter:contract:6]
-name = Interfaces should be thin (no direct data/ML/tagging/analytics access)
+name = Interfaces should be thin (only services + helpers)
 type = forbidden
 source_modules =
     nomarr.interfaces
 forbidden_modules =
     nomarr.workflows
     nomarr.persistence
-    nomarr.ml
-    nomarr.tagging
-    nomarr.analytics
+    nomarr.components
 allow_indirect_imports = True
 
-[importlinter:contract:7]
+[importlinter:contract:6]
 name = Helpers must be pure (no upward dependencies)
 type = forbidden
 source_modules =
@@ -85,22 +73,25 @@ forbidden_modules =
     nomarr.services
     nomarr.workflows
     nomarr.interfaces
-    nomarr.ml
-    nomarr.tagging
-    nomarr.analytics
+    nomarr.components
     nomarr.persistence
 
-[importlinter:contract:8]
+[importlinter:contract:7]
 name = Only persistence package may import persistence.database
 type = forbidden
 source_modules =
     nomarr.interfaces
     nomarr.services
     nomarr.workflows
-    nomarr.tagging
-    nomarr.ml
-    nomarr.analytics
+    nomarr.components
     nomarr.helpers
 forbidden_modules =
     nomarr.persistence.database
 allow_indirect_imports = True
+
+[importlinter:contract:8]
+name = CLI bootstrap service is only for CLI commands
+type = layers
+layers =
+    nomarr.interfaces.cli
+    nomarr.services.cli_bootstrap_service

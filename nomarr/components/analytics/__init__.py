@@ -2,11 +2,15 @@
 Analytics package.
 """
 
-from .analytics import (
+# Re-export DTOs from helpers/dto for backward compatibility
+from nomarr.helpers.dto.analytics import (
     ArtistTagProfile,
     MoodCoOccurrenceData,
     MoodDistributionData,
     TagCorrelationData,
+)
+
+from .analytics import (
     compute_artist_tag_profile,
     compute_mood_distribution,
     compute_mood_value_co_occurrences,

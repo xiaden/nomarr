@@ -105,21 +105,21 @@ async def list_directory(
     except ValueError as e:
         # Security helper raises ValueError with generic messages
         # Map these to appropriate HTTP error codes
-        error_msg = str(e)
-        if "not configured" in error_msg:
+        error_message = str(e)
+        if "not configured" in error_message:
             status_code = 503
-        elif "not found" in error_msg.lower():
+        elif "not found" in error_message.lower():
             status_code = 404
-        elif "not a directory" in error_msg.lower():
+        elif "not a directory" in error_message.lower():
             status_code = 400
-            error_msg = "Path is not a directory"
+            error_message = "Path is not a directory"
         else:
             # Generic security error (traversal attempt, etc.)
             status_code = 400
-            error_msg = "Invalid path: directory traversal not allowed"
+            error_message = "Invalid path: directory traversal not allowed"
 
         logging.warning(f"[FS Browser] Path validation failed for {path!r}: {e}")
-        raise HTTPException(status_code=status_code, detail=error_msg) from e
+        raise HTTPException(status_code=status_code, detail=error_message) from e
 
     except HTTPException:
         # Re-raise HTTP exceptions as-is

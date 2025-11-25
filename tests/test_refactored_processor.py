@@ -17,7 +17,7 @@ import pytest
 @pytest.fixture
 def mock_config():
     """Create a ProcessorConfig for testing."""
-    from nomarr.helpers.dataclasses import ProcessorConfig
+    from nomarr.helpers.dto.processing import ProcessorConfig
 
     return ProcessorConfig(
         models_dir="/fake/models",
@@ -34,7 +34,7 @@ def mock_config():
 
 def test_processor_config_creation():
     """Test ProcessorConfig dataclass can be created."""
-    from nomarr.helpers.dataclasses import ProcessorConfig
+    from nomarr.helpers.dto.processing import ProcessorConfig
 
     config = ProcessorConfig(
         models_dir="/fake/models",
@@ -67,7 +67,7 @@ def test_config_service_make_processor_config():
     config = service.make_processor_config()
 
     # Check it returns ProcessorConfig type
-    from nomarr.helpers.dataclasses import ProcessorConfig
+    from nomarr.helpers.dto.processing import ProcessorConfig
 
     assert isinstance(config, ProcessorConfig)
 

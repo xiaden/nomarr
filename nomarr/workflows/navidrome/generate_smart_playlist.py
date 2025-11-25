@@ -11,10 +11,10 @@ No SQL or sqlite3 imports here - all DB access via Database façade.
 
 from typing import Any
 
+from nomarr.helpers.dto.navidrome import SmartPlaylistFilter, TagCondition
+from nomarr.helpers.exceptions import PlaylistQueryError
 from nomarr.persistence.db import Database
 from nomarr.workflows.navidrome.parse_smart_playlist_query import (
-    SmartPlaylistFilter,
-    TagCondition,
     parse_smart_playlist_query,
 )
 
@@ -70,10 +70,10 @@ def generate_smart_playlist_workflow(
             - limit: (optional) max tracks
 
     Raises:
-        ValueError: If query is invalid or sort parameter is unsafe
+        PlaylistQueryError: If query is invalid, sort parameter is unsafe, or limit too large
     """
     if not query or not query.strip():
-        raise ValueError("Query cannot be empty")
+        raise PlaylistQueryError("Query cannot be empty")
 
     # Parse query into structured filter
     playlist_filter = parse_smart_playlist_query(query, namespace)
@@ -96,7 +96,7 @@ def generate_smart_playlist_workflow(
     # Add optional limit
     if limit is not None and limit > 0:
         if limit > 10000:  # MAX_LIMIT safeguard
-            raise ValueError("LIMIT too large (max 10000)")
+            raise PlaylistQueryError("Limit too large (max 10000)")
         nsp["limit"] = limit
 
     return nsp
@@ -166,7 +166,7 @@ def _validate_sort_parameter(sort: str) -> None:
         sort: Sort string like "-rating,title" or "random"
 
     Raises:
-        ValueError: If sort contains invalid columns
+        PlaylistQueryError: If sort contains invalid columns
     """
     if not sort or not sort.strip():
         return
@@ -183,4 +183,6 @@ def _validate_sort_parameter(sort: str) -> None:
 
         # Validate against whitelist
         if column.lower() not in VALID_SORT_COLUMNS:
-            raise ValueError(f"Invalid sort column: {column}. Allowed columns: {', '.join(sorted(VALID_SORT_COLUMNS))}")
+            raise PlaylistQueryError(
+                f"Invalid sort column: {column}. Allowed columns: {', '.join(sorted(VALID_SORT_COLUMNS))}"
+            )

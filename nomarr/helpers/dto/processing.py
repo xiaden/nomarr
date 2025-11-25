@@ -1,0 +1,73 @@
+"""
+Processing domain DTOs.
+
+Data transfer objects for audio processing configuration and tag writing.
+These form cross-layer contracts between interfaces, services, and workflows.
+
+Rules:
+- Import only stdlib and typing (no nomarr.* imports)
+- Pure data structures only (no I/O, no DB access, no business logic)
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Literal
+
+
+@dataclass
+class TagWriteProfile:
+    """
+    Controls what tags are written to media files vs stored only in DB.
+
+    Similar to a logging level - allows configuration-driven control over
+    tag verbosity in media files.
+
+    Attributes:
+        file_write_mode: Controls tag writing to media files:
+            - "none": No tags written to files (DB only)
+            - "minimal": Only high-level summary tags (mood-*, genre, etc.)
+            - "full": Rich tag set including numeric scores (but never *_tier or calibration)
+    """
+
+    file_write_mode: Literal["none", "minimal", "full"] = "minimal"
+
+
+@dataclass
+class ProcessorConfig:
+    """
+    Configuration for the audio processing pipeline.
+
+    All fields are required to ensure explicit configuration.
+    Validation should happen at the service layer when constructing this.
+    """
+
+    # Path to models directory containing embeddings and heads
+    models_dir: str
+
+    # Minimum audio duration in seconds
+    min_duration_s: int
+
+    # Allow processing files shorter than min_duration_s
+    allow_short: bool
+
+    # Batch size for head prediction (VRAM control)
+    batch_size: int
+
+    # Whether to overwrite existing tags
+    overwrite_tags: bool
+
+    # Tag namespace (e.g., "essentia")
+    namespace: str
+
+    # Key name for the version tag
+    version_tag_key: str
+
+    # Current tagger version string
+    tagger_version: str
+
+    # Whether to load calibration files
+    calibrate_heads: bool
+
+    # File write mode: controls what tags go to media files
+    file_write_mode: Literal["none", "minimal", "full"] = "minimal"

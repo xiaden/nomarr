@@ -4,15 +4,38 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 
+from nomarr.helpers.exceptions import PlaylistQueryError
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import get_navidrome_service
-from nomarr.workflows.navidrome.parse_smart_playlist_query import PlaylistQueryError
 
 if TYPE_CHECKING:
     from nomarr.services.navidrome_service import NavidromeService
 
 router = APIRouter(prefix="/navidrome", tags=["Navidrome"])
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Request Models
+# ──────────────────────────────────────────────────────────────────────
+
+
+class PlaylistPreviewRequest(BaseModel):
+    """Request model for playlist preview."""
+
+    query: str = Field(..., min_length=1, description="Smart playlist query string")
+    preview_limit: int = Field(10, ge=1, le=100, description="Number of sample tracks to return")
+
+
+class PlaylistGenerateRequest(BaseModel):
+    """Request model for playlist generation."""
+
+    query: str = Field(..., min_length=1, description="Smart playlist query string")
+    playlist_name: str = Field("Playlist", description="Name for the generated playlist")
+    comment: str = Field("", description="Optional comment/description")
+    sort: str | None = Field(None, description="Sort parameter (e.g., 'title', '-rating')")
+    limit: int | None = Field(None, ge=1, le=10000, description="Maximum number of tracks")
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -70,20 +93,20 @@ async def web_navidrome_config(
 
 @router.post("/playlists/preview", dependencies=[Depends(verify_session)])
 async def web_navidrome_playlist_preview(
-    request: dict,
+    request: PlaylistPreviewRequest,
     navidrome_service: "NavidromeService" = Depends(get_navidrome_service),
 ) -> dict[str, Any]:
     """Preview Smart Playlist query results."""
     try:
-        query = request.get("query", "").strip()
-        if not query:
-            raise HTTPException(status_code=400, detail="Query is required")
+        # Call service method with validated request data
+        result = navidrome_service.preview_playlist(query=request.query, preview_limit=request.preview_limit)
 
-        preview_limit = request.get("preview_limit", 10)
-
-        # Call service method instead of workflow directly
-        result = navidrome_service.preview_playlist(query=query, preview_limit=preview_limit)
-        return result
+        # Convert result dataclass to dict for JSON response
+        return {
+            "total_count": result.total_count,
+            "sample_tracks": result.sample_tracks,
+            "query": result.query,
+        }
 
     except PlaylistQueryError as e:
         raise HTTPException(status_code=400, detail=f"Invalid query: {e}") from e
@@ -96,27 +119,18 @@ async def web_navidrome_playlist_preview(
 
 @router.post("/playlists/generate", dependencies=[Depends(verify_session)])
 async def web_navidrome_playlist_generate(
-    request: dict,
+    request: PlaylistGenerateRequest,
     navidrome_service: "NavidromeService" = Depends(get_navidrome_service),
 ) -> dict[str, Any]:
     """Generate Navidrome Smart Playlist (.nsp) from query."""
     try:
-        query = request.get("query", "").strip()
-        if not query:
-            raise HTTPException(status_code=400, detail="Query is required")
-
-        playlist_name = request.get("playlist_name", "Playlist")
-        comment = request.get("comment", "")
-        limit = request.get("limit")
-        sort = request.get("sort")
-
-        # Call service method instead of workflow directly
+        # Call service method with validated request data
         nsp_structure = navidrome_service.generate_playlist(
-            query=query,
-            playlist_name=playlist_name,
-            comment=comment,
-            sort=sort,
-            limit=limit,
+            query=request.query,
+            playlist_name=request.playlist_name,
+            comment=request.comment,
+            sort=request.sort,
+            limit=request.limit,
         )
 
         # Service returns the .nsp structure dict
@@ -125,8 +139,8 @@ async def web_navidrome_playlist_generate(
         import json
 
         return {
-            "playlist_name": playlist_name,
-            "query": query,
+            "playlist_name": request.playlist_name,
+            "query": request.query,
             "content": json.dumps(nsp_structure, indent=2),
             "format": "nsp",
         }

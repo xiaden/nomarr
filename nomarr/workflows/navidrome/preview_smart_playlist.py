@@ -3,11 +3,20 @@ Preview smart playlist query results workflow.
 
 This workflow previews tracks matching a smart playlist query without generating
 the full .nsp file.
+
+Flow:
+1. API receives request → validates with Pydantic model
+2. Service injects database and config → calls this workflow
+3. Workflow validates query → parses into filter tree
+4. Filter engine executes each condition → Python set operations combine results
+5. Persistence fetches track metadata for sample
+6. Return typed PlaylistPreviewResult → API serializes to JSON
 """
 
-from typing import Any
-
+from nomarr.helpers.dto.navidrome import PlaylistPreviewResult
+from nomarr.helpers.exceptions import PlaylistQueryError
 from nomarr.persistence.db import Database
+from nomarr.workflows.navidrome.filter_engine import execute_smart_playlist_filter
 from nomarr.workflows.navidrome.parse_smart_playlist_query import (
     parse_smart_playlist_query,
 )
@@ -19,7 +28,7 @@ def preview_smart_playlist_workflow(
     *,
     namespace: str = "nom",
     preview_limit: int = 10,
-) -> dict[str, Any]:
+) -> PlaylistPreviewResult:
     """
     Preview tracks matching a smart playlist query.
 
@@ -27,26 +36,31 @@ def preview_smart_playlist_workflow(
         db: Database instance
         query: Smart Playlist query string
         namespace: Tag namespace
-        preview_limit: Number of sample tracks to return
+        preview_limit: Number of sample tracks to return (validated at API: 1-100)
 
     Returns:
-        Dictionary with keys:
-            - total_count: Total matching tracks
-            - sample_tracks: List of sample track dicts
-            - query: Original query string
+        PlaylistPreviewResult with total count, sample tracks, and original query
+
+    Raises:
+        PlaylistQueryError: If query is invalid or empty
     """
     if not query or not query.strip():
-        raise ValueError("Query cannot be empty")
+        raise PlaylistQueryError("Query cannot be empty")
 
-    # Parse query
+    # Parse query into filter tree
     playlist_filter = parse_smart_playlist_query(query, namespace)
 
-    # Count total matching tracks
-    total_count = db.joined_queries.count_tracks_for_smart_playlist(playlist_filter)
+    # Execute filter to get matching file IDs
+    file_ids = execute_smart_playlist_filter(db, playlist_filter)
 
-    # Fetch sample tracks
-    sample_tracks = db.joined_queries.select_tracks_for_smart_playlist(
-        filter=playlist_filter, order_by=None, limit=preview_limit
+    # Count total matches
+    total_count = len(file_ids)
+
+    # Fetch sample tracks (limit already validated at API layer: 1-100)
+    sample_tracks = db.joined_queries.get_tracks_by_file_ids(
+        file_ids=file_ids,
+        order_by=None,  # Random order for preview
+        limit=preview_limit,
     )
 
-    return {"total_count": total_count, "sample_tracks": sample_tracks, "query": query}
+    return PlaylistPreviewResult(total_count=total_count, sample_tracks=sample_tracks, query=query)

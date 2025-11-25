@@ -16,14 +16,16 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.analytics.analytics import (
-    ArtistTagProfile,
-    MoodCoOccurrenceData,
-    TagCorrelationData,
     compute_artist_tag_profile,
     compute_mood_distribution,
     compute_mood_value_co_occurrences,
     compute_tag_correlation_matrix,
     compute_tag_frequencies,
+)
+from nomarr.helpers.dto.analytics import (
+    ArtistTagProfile,
+    MoodCoOccurrenceData,
+    TagCorrelationData,
 )
 from nomarr.persistence.analytics_queries import (
     fetch_artist_tag_profile_data,

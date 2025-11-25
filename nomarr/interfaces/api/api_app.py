@@ -20,6 +20,7 @@ from fastapi import APIRouter, FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+import nomarr
 from nomarr.interfaces.api import web  # Web UI router
 from nomarr.interfaces.api.endpoints import admin, public
 
@@ -83,7 +84,6 @@ api_app.include_router(web.router)
 # Use package-relative import to find public_html directory
 # This file is at: nomarr/interfaces/api/api_app.py
 # We want: nomarr/public_html/
-import nomarr
 
 public_html_dir = Path(nomarr.__file__).parent / "public_html"
 

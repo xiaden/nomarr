@@ -16,69 +16,26 @@ Operators:
     !=  - Not equals
     contains - String contains (case-insensitive)
 
+Logic Operators:
+    AND - All conditions must match (intersection)
+    OR  - Any condition can match (union)
+
+    Note: Mixing AND and OR in the same query is NOT supported.
+    Use either all AND or all OR. Mixed queries will be rejected with PlaylistQueryError.
+
 Examples:
     tag:mood_happy > 0.7
     tag:mood_happy > 0.7 AND tag:energy > 0.6
-    tag:genre = Rock
-    tag:artist contains Beatles
+    tag:genre = Rock OR tag:genre = Metal
     tag:bpm > 120 AND tag:danceability > 0.8
 """
 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
-from typing import Literal
 
-
-class PlaylistQueryError(Exception):
-    """Raised when a playlist query is invalid."""
-
-    pass
-
-
-@dataclass
-class TagCondition:
-    """
-    A single tag condition in a smart playlist query.
-
-    Represents: tag:KEY OPERATOR VALUE
-    """
-
-    tag_key: str
-    """Full tag key with namespace (e.g., "nom:mood_happy")"""
-
-    operator: Literal[">", "<", ">=", "<=", "=", "!=", "contains"]
-    """Comparison operator"""
-
-    value: float | int | str
-    """Value to compare against (typed)"""
-
-
-@dataclass
-class SmartPlaylistFilter:
-    """
-    Structured filter representing a smart playlist query.
-
-    Contains conditions grouped by logic operators (AND/OR).
-    """
-
-    all_conditions: list[TagCondition]
-    """Conditions joined by AND (all must match)"""
-
-    any_conditions: list[TagCondition]
-    """Conditions joined by OR (any must match)"""
-
-    @property
-    def is_simple_and(self) -> bool:
-        """True if all conditions are AND (no OR)."""
-        return len(self.all_conditions) > 0 and len(self.any_conditions) == 0
-
-    @property
-    def is_simple_or(self) -> bool:
-        """True if all conditions are OR (no AND)."""
-        return len(self.any_conditions) > 0 and len(self.all_conditions) == 0
-
+from nomarr.helpers.dto.navidrome import SmartPlaylistFilter, TagCondition
+from nomarr.helpers.exceptions import PlaylistQueryError
 
 # Maximum query length to prevent ReDoS attacks
 MAX_QUERY_LENGTH = 4096
@@ -140,18 +97,19 @@ def parse_smart_playlist_query(query: str, namespace: str = "nom") -> SmartPlayl
     logic_types = {logic for _, logic in conditions[1:] if logic}
 
     if not logic_types or logic_types == {"AND"}:
-        # All AND conditions
+        # All AND conditions - must match all
         all_conds = [cond for cond, _ in conditions]
         any_conds = []
     elif logic_types == {"OR"}:
-        # All OR conditions
+        # All OR conditions - must match any
         all_conds = []
         any_conds = [cond for cond, _ in conditions]
     else:
-        # Mixed logic - default to all for safety (Navidrome limitation)
-        # TODO: Support complex nested logic when Navidrome supports it
-        all_conds = [cond for cond, _ in conditions]
-        any_conds = []
+        # Mixed AND/OR logic is not supported
+        # Reject with clear error message
+        raise PlaylistQueryError(
+            "Mixed AND/OR operators are not supported. Use either all AND or all OR in your query."
+        )
 
     return SmartPlaylistFilter(all_conditions=all_conds, any_conditions=any_conds)
 

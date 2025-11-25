@@ -11,6 +11,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dto.navidrome import PlaylistPreviewResult
+    from nomarr.persistence.db import Database
+
+if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
@@ -55,7 +59,7 @@ class NavidromeService:
         self,
         query: str,
         preview_limit: int = 10,
-    ) -> dict[str, Any]:
+    ) -> PlaylistPreviewResult:
         """
         Preview Smart Playlist query results.
 
@@ -64,7 +68,7 @@ class NavidromeService:
             preview_limit: Maximum number of tracks to return
 
         Returns:
-            Dict with preview results and track information
+            PlaylistPreviewResult with track info and query metadata
         """
         from nomarr.workflows.navidrome import preview_smart_playlist_workflow
 

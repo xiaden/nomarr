@@ -18,7 +18,7 @@ import yaml
 from nomarr.persistence.db import Database
 
 if TYPE_CHECKING:
-    from nomarr.helpers.dataclasses import ProcessorConfig
+    from nomarr.helpers.dto.processing import ProcessorConfig
 
 
 # ======================================================================
@@ -465,7 +465,7 @@ class ConfigService:
         Returns:
             ProcessorConfig instance ready for injection into process_file()
         """
-        from nomarr.helpers.dataclasses import ProcessorConfig
+        from nomarr.helpers.dto.processing import ProcessorConfig
 
         cfg = self.get_config()
 

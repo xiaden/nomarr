@@ -35,7 +35,7 @@ EXPECTED DEPENDENCIES:
 
 USAGE:
     from nomarr.workflows.processing.process_file import process_file_workflow
-    from nomarr.helpers.dataclasses import ProcessorConfig
+    from nomarr.helpers.dto.processing import ProcessorConfig
 
     config = ProcessorConfig(
         models_dir="/app/models",
@@ -77,7 +77,7 @@ from nomarr.components.tagging.writer import TagWriter
 ESSENTIA_VERSION = backend_essentia.get_version()
 
 if TYPE_CHECKING:
-    from nomarr.helpers.dataclasses import ProcessorConfig
+    from nomarr.helpers.dto.processing import ProcessorConfig
     from nomarr.persistence.db import Database
 
 
@@ -548,7 +548,7 @@ def process_file_workflow(
         RuntimeError: If no heads found in models_dir, or all heads fail processing
 
     Example:
-        >>> from nomarr.helpers.dataclasses import ProcessorConfig
+        >>> from nomarr.helpers.dto.processing import ProcessorConfig
         >>> config = ProcessorConfig(models_dir="/app/models", namespace="nom", ...)
         >>> result = process_file_workflow("/music/song.mp3", config, db=my_database)
         >>> print(f"Processed {result['file']} in {result['elapsed']}s")
