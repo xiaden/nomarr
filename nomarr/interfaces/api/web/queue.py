@@ -51,18 +51,18 @@ async def web_status(
     if not job:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
 
-    # Map service response to QueueJobItem
+    # Map JobDict DTO to QueueJobItem response model
     return QueueJobItem(
-        id=job["id"],
-        path=job["path"],
-        status=job["status"],
-        created_at=job["created_at"],
-        started_at=job.get("started_at"),
-        finished_at=job.get("finished_at"),
-        error_message=job.get("error_message"),
-        force=job.get("force", False),
+        id=job.id,
+        path=job.path,
+        status=job.status,
+        created_at=job.created_at,
+        started_at=job.started_at,
+        finished_at=job.finished_at,
+        error_message=job.error_message,
+        force=job.force,
         queue_type="processing",  # This is the processing queue
-        attempts=job.get("attempts", 0),
+        attempts=0,  # Not tracked in JobDict
     )
 
 
@@ -74,13 +74,14 @@ async def web_queue_depth(
     # Use QueueService to get queue statistics
     stats = queue_service.get_status()
 
-    # Map service response to QueueStatusResponse
+    # Map QueueStatus DTO to QueueStatusResponse
+    counts = stats.counts
     return QueueStatusResponse(
-        pending=stats["pending"],
-        processing=stats["processing"],
-        done=stats["done"],
-        error=stats["error"],
-        total=stats["total"],
+        pending=counts.get("pending", 0),
+        processing=counts.get("processing", 0) + counts.get("running", 0),  # running = processing
+        done=counts.get("done", 0),
+        error=counts.get("error", 0),
+        total=sum(counts.values()),
     )
 
 

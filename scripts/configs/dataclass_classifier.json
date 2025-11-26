@@ -1,0 +1,107 @@
+{
+  "layer_map": {
+    "nomarr.interfaces": "interfaces",
+    "nomarr.services": "services",
+    "nomarr.app": "services",
+    "nomarr.workflows": "workflows",
+    "nomarr.components": "components",
+    "nomarr.persistence": "persistence",
+    "nomarr.helpers": "helpers",
+    "tests": "tests"
+  },
+
+  "ignore_prefixes": [
+    "tests",
+    "scripts",
+    "nomarr.app",
+    "nomarr.interfaces.cli"
+  ],
+
+  "domain_map": {
+    "nomarr.workflows.navidrome": "navidrome",
+    "nomarr.helpers.dto.navidrome": "navidrome",
+    "nomarr.services.navidrome_service": "navidrome",
+    "nomarr.interfaces.api.web.navidrome": "navidrome",
+
+    "nomarr.workflows.processing": "processing",
+    "nomarr.helpers.dto.processing": "processing",
+    "nomarr.services.processing_service": "processing",
+    "nomarr.services.worker_service": "processing",
+    "nomarr.services.coordinator_service": "processing",
+    "nomarr.services.workers": "processing",
+    "nomarr.interfaces.api.web.processing": "processing",
+
+    "nomarr.components.analytics": "analytics",
+    "nomarr.helpers.dto.analytics": "analytics",
+    "nomarr.services.analytics_service": "analytics",
+    "nomarr.interfaces.api.web.analytics": "analytics",
+    "nomarr.persistence.analytics_queries": "analytics",
+
+    "nomarr.workflows.calibration": "calibration",
+    "nomarr.services.calibration_service": "calibration",
+    "nomarr.services.calibration_download_service": "calibration",
+    "nomarr.services.recalibration_service": "calibration",
+    "nomarr.interfaces.api.web.calibration": "calibration",
+    "nomarr.persistence.database.calibration_runs_table": "calibration",
+    "nomarr.persistence.database.calibration_queue_table": "calibration",
+
+    "nomarr.workflows.library": "library",
+    "nomarr.services.library_service": "library",
+    "nomarr.interfaces.api.web.library": "library",
+    "nomarr.persistence.database.libraries_table": "library",
+    "nomarr.persistence.database.library_files_table": "library",
+    "nomarr.persistence.database.library_queue_table": "library",
+
+    "nomarr.workflows.queue": "queue",
+    "nomarr.services.queue_service": "queue",
+    "nomarr.interfaces.api.web.queue": "queue",
+    "nomarr.interfaces.api.types_queue": "queue",
+    "nomarr.persistence.database.tag_queue_table": "queue",
+
+    "nomarr.components.ml": "ml",
+    "nomarr.services.ml_service": "ml",
+
+    "nomarr.components.tagging": "tagging",
+    "nomarr.interfaces.api.web.tags": "tagging",
+    "nomarr.persistence.database.file_tags_table": "tagging",
+
+    "nomarr.services.health_monitor_service": "health_monitor",
+
+    "nomarr.services.config_service": "config",
+    "nomarr.interfaces.api.web.config": "config",
+
+    "nomarr.services.keys_service": "auth",
+    "nomarr.interfaces.api.auth": "auth",
+    "nomarr.interfaces.api.web.auth": "auth",
+    "nomarr.persistence.database.sessions_table": "auth",
+
+    "nomarr.services.cli_bootstrap_service": "cli",
+    "nomarr.interfaces.cli": "cli",
+
+    "nomarr.interfaces.api.web.worker": "workers",
+    "nomarr.interfaces.api.web.info": "info",
+    "nomarr.interfaces.api.web.fs": "fs",
+    "nomarr.interfaces.api.web.sse": "sse",
+
+    "nomarr.persistence.database.joined_queries": "persistence",
+    "nomarr.persistence.database.meta_table": "persistence",
+    "nomarr.persistence.database.utils": "persistence"
+  },
+
+  "allowed_imports": [
+    ["interfaces", "services"],
+    ["interfaces", "helpers"],
+    ["services", "workflows"],
+    ["services", "components"],
+    ["services", "persistence"],
+    ["services", "helpers"],
+    ["workflows", "components"],
+    ["workflows", "persistence"],
+    ["workflows", "helpers"],
+    ["components", "persistence"],
+    ["components", "helpers"],
+    ["persistence", "helpers"],
+    ["components", "components"],
+    ["helpers", "helpers"]
+  ]
+}

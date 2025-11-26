@@ -262,8 +262,6 @@ def mock_config() -> dict:
         "namespace": "essentia",
         "worker_enabled": False,  # Disabled for tests
         "poll_interval": 2,
-        "blocking_mode": True,
-        "blocking_timeout": 300,
         "cache_idle_timeout": 300,
         "cache_auto_evict": True,
         "library_path": "/music",

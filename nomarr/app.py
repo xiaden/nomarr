@@ -83,8 +83,6 @@ class Application:
 
         # Import internal constants
         from nomarr.services.config_service import (
-            INTERNAL_BLOCKING_MODE,
-            INTERNAL_BLOCKING_TIMEOUT,
             INTERNAL_HOST,
             INTERNAL_LIBRARY_SCAN_POLL_INTERVAL,
             INTERNAL_NAMESPACE,
@@ -110,8 +108,6 @@ class Application:
         self.api_host: str = INTERNAL_HOST
         self.api_port: int = INTERNAL_PORT
         self.worker_enabled_default: bool = INTERNAL_WORKER_ENABLED
-        self.blocking_mode: bool = INTERNAL_BLOCKING_MODE
-        self.blocking_timeout: int = INTERNAL_BLOCKING_TIMEOUT
         self.worker_poll_interval: int = INTERNAL_POLL_INTERVAL
         self.library_scan_poll_interval: int = INTERNAL_LIBRARY_SCAN_POLL_INTERVAL
         self.namespace: str = INTERNAL_NAMESPACE

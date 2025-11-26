@@ -11,6 +11,7 @@ Rules:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 
@@ -52,3 +53,68 @@ class MoodCoOccurrenceData:
     mood_co_occurrences: list[tuple[str, int, float]]  # (mood, count, percentage)
     genre_distribution: list[tuple[str, int, float]]  # (genre, count, percentage)
     artist_distribution: list[tuple[str, int, float]]  # (artist, count, percentage)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Parameter DTOs (for simplifying function signatures)
+# ──────────────────────────────────────────────────────────────────────
+
+
+@dataclass
+class ComputeTagCorrelationMatrixParams:
+    """Parameters for compute_tag_correlation_matrix."""
+
+    namespace: str
+    top_n: int
+    mood_tag_rows: Sequence[tuple[int, str, str]]
+    tier_tag_keys: Sequence[str]
+    tier_tag_rows: dict[str, Sequence[tuple[int, str]]]
+
+
+@dataclass
+class ComputeTagFrequenciesParams:
+    """Parameters for compute_tag_frequencies."""
+
+    namespace_prefix: str
+    total_files: int
+    nom_tag_rows: Sequence[tuple[str, int]]
+    artist_rows: Sequence[tuple[str, int]]
+    genre_rows: Sequence[tuple[str, int]]
+    album_rows: Sequence[tuple[str, int]]
+
+
+@dataclass
+class ComputeArtistTagProfileParams:
+    """Parameters for compute_artist_tag_profile."""
+
+    artist: str
+    file_count: int
+    namespace_prefix: str
+    tag_rows: Sequence[tuple[str, str, str]]
+    limit: int
+
+
+@dataclass
+class ComputeMoodValueCoOccurrencesParams:
+    """Parameters for compute_mood_value_co_occurrences."""
+
+    mood_value: str
+    matching_file_ids: set[int]
+    mood_tag_rows: Sequence[tuple[int, str, str]]
+    genre_rows: Sequence[tuple[str, int]]
+    artist_rows: Sequence[tuple[str, int]]
+    limit: int
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Result DTOs
+# ──────────────────────────────────────────────────────────────────────
+
+
+@dataclass
+class ComputeTagFrequenciesResult:
+    """Result from compute_tag_frequencies."""
+
+    nom_tags: list[tuple[str, int]]  # (tag, count)
+    standard_tags: dict[str, list[tuple[str, int]]]  # {category: [(name, count)]}
+    total_files: int

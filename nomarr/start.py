@@ -29,14 +29,11 @@ def shutdown_handler(signum, frame):
 if __name__ == "__main__":
     # Log effective configuration
     logging.info(
-        "Effective config: models_dir=%s db_path=%s api=%s:%d blocking_mode=%s "
-        "blocking_timeout=%d worker_poll_interval=%d worker_count=%d",
+        "Effective config: models_dir=%s db_path=%s api=%s:%d worker_poll_interval=%d worker_count=%d",
         application.models_dir,
         application.db_path,
         application.api_host,
         application.api_port,
-        application.blocking_mode,
-        application.blocking_timeout,
         application.worker_poll_interval,
         application.worker_count,
     )

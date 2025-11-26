@@ -58,12 +58,12 @@ class TestQueueServiceGetStatus:
         result = real_queue_service.get_status()
 
         # Assert
-        assert isinstance(result, dict)
-        assert "depth" in result
-        assert "counts" in result
-        assert isinstance(result["depth"], int)
-        assert result["depth"] >= 0  # Non-negative count
-        assert isinstance(result["counts"], dict)
+        from nomarr.services.queue_service import QueueStatus
+
+        assert isinstance(result, QueueStatus)
+        assert isinstance(result.depth, int)
+        assert result.depth >= 0  # Non-negative count
+        assert isinstance(result.counts, dict)
 
 
 class TestQueueServiceGetJob:
@@ -79,10 +79,12 @@ class TestQueueServiceGetJob:
         result = real_queue_service.get_job(job_id=job_id)
 
         # Assert
-        assert isinstance(result, dict)
-        assert result["id"] == job_id
-        assert "status" in result
-        assert "path" in result
+        from nomarr.helpers.dto.queue import JobDict
+
+        assert isinstance(result, JobDict)
+        assert result.id == job_id
+        assert result.status is not None
+        assert result.path is not None
 
     def test_get_job_not_found(self, real_queue_service):
         """Should return None when item not found."""
@@ -141,20 +143,4 @@ class TestQueueServiceResetJobs:
         assert result >= 0  # Non-negative count
         # TODO: Verify state changed
         # TODO: Verify get() reflects new state
-
-
-class TestQueueServiceWaitForJobCompletion:
-    """Test QueueService.wait_for_job_completion() operations."""
-
-    @pytest.mark.skip(reason="Async method - needs async test setup")
-    def test_wait_for_job_completion_success(self, real_queue_service):
-        """Should successfully wait for job completion."""
-        # TODO: Convert to async test with pytest-asyncio
-        # Arrange
-
-        # Act
-        # result = await real_queue_service.wait_for_job_completion(job_id=1, timeout=30)
-
-        # Assert
-        # assert isinstance(result, dict)
         pass

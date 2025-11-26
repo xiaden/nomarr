@@ -38,7 +38,7 @@ def cmd_remove(args: argparse.Namespace) -> int:
             if hasattr(args, "all") and args.all:
                 # Get count before removal
                 stats = queue_service.get_status()
-                count = stats.get("pending", 0) + stats.get("completed", 0) + stats.get("errors", 0)
+                count = stats.counts.get("pending", 0) + stats.counts.get("done", 0) + stats.counts.get("error", 0)
 
                 if count == 0:
                     print_warning("No jobs to remove")
@@ -69,8 +69,8 @@ def cmd_remove(args: argparse.Namespace) -> int:
                 total_count = 0
                 for status in statuses:
                     stats = queue_service.get_status()
-                    status_key = {"pending": "pending", "done": "completed", "error": "errors"}.get(status, status)
-                    total_count += stats.get(status_key, 0)
+                    # Map status name to counts key
+                    total_count += stats.counts.get(status, 0)
 
                 if total_count == 0:
                     print_warning(f"No jobs found with status: {', '.join(statuses)}")
@@ -98,18 +98,18 @@ def cmd_remove(args: argparse.Namespace) -> int:
             if not job_data:
                 print_error(f"Job {args.job_id} not found")
                 return 1
-            if job_data["status"] == "running":
+            if job_data.status == "running":
                 print_error("Cannot remove running job")
                 return 2
 
             # Show job details before removal
             status_color = {"pending": "yellow", "running": "blue", "done": "green", "error": "red"}.get(
-                job_data["status"], "white"
+                job_data.status, "white"
             )
 
-            content = f"""[bold]Path:[/bold] {job_data["file_path"]}
-[bold]Status:[/bold] [{status_color}]{job_data["status"]}[/{status_color}]
-[bold]Created:[/bold] {job_data.get("created_at") or "N/A"}"""
+            content = f"""[bold]Path:[/bold] {job_data.path}
+[bold]Status:[/bold] [{status_color}]{job_data.status}[/{status_color}]
+[bold]Created:[/bold] {job_data.created_at or "N/A"}"""
 
             InfoPanel.show(f"Removing Job {args.job_id}", content, "red")
 

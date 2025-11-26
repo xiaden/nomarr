@@ -9,10 +9,32 @@ import logging
 import threading
 import time
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Any
 
+from nomarr.helpers.dto.queue import DequeueResult, JobDict, ListJobsResult
 from nomarr.persistence.db import Database
 from nomarr.workflows.queue.enqueue_files import enqueue_files_workflow
+
+# ----------------------------------------------------------------------
+#  Service-Local DTOs (used only by QueueService + interfaces)
+# ----------------------------------------------------------------------
+
+
+@dataclass
+class FlushResult:
+    """Result from queue_service.flush_by_statuses."""
+
+    flushed_statuses: list[str]
+    removed: int
+
+
+@dataclass
+class QueueStatus:
+    """Result from queue_service.get_status."""
+
+    depth: int
+    counts: dict[str, int]
 
 
 # ----------------------------------------------------------------------
@@ -32,12 +54,12 @@ class BaseQueue(ABC):
         self.lock = threading.Lock()
 
     @abstractmethod
-    def dequeue(self) -> tuple[int, str, bool] | None:
+    def dequeue(self) -> DequeueResult | None:
         """
         Dequeue next pending job.
 
         Returns:
-            Tuple of (job_id, path, force) or None if no jobs available
+            DequeueResult with (job_id, file_path, force) or None if no jobs available
         """
         ...
 
@@ -82,18 +104,18 @@ class Job:
         self.error_message = row.get("error_message")
         self.force = bool(row.get("force", 0))
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> JobDict:
         """Convert job to dictionary representation."""
-        return {
-            "id": self.id,
-            "path": self.path,
-            "status": self.status,
-            "created_at": self.created_at,
-            "started_at": self.started_at,
-            "finished_at": self.finished_at,
-            "error_message": self.error_message,
-            "force": self.force,
-        }
+        return JobDict(
+            id=self.id,
+            path=self.path,
+            status=self.status,
+            created_at=self.created_at,
+            started_at=self.started_at,
+            finished_at=self.finished_at,
+            error_message=self.error_message,
+            force=self.force,
+        )
 
 
 # ----------------------------------------------------------------------
@@ -107,12 +129,12 @@ class ProcessingQueue(BaseQueue):
     Business logic should live in QueueService, not here.
     """
 
-    def dequeue(self) -> tuple[int, str, bool] | None:
+    def dequeue(self) -> DequeueResult | None:
         """
         Dequeue next pending tagging job.
 
         Returns:
-            Tuple of (job_id, path, force) or None if no jobs available
+            DequeueResult with (job_id, file_path, force) or None if no jobs available
         """
         with self.lock:
             job = self.db.tag_queue.get_next_pending_job()
@@ -127,7 +149,7 @@ class ProcessingQueue(BaseQueue):
             self.db.tag_queue.update_job(job_id, "running")
             logging.debug(f"[ProcessingQueue] Dequeued job {job_id}: {path}")
 
-            return (job_id, path, force)
+            return DequeueResult(job_id=job_id, file_path=path, force=force)
 
     def mark_complete(self, job_id: int) -> None:
         """Mark tagging job as complete."""
@@ -255,18 +277,18 @@ class RecalibrationQueue(BaseQueue):
     expected by BaseWorker.
     """
 
-    def dequeue(self) -> tuple[int, str, bool] | None:
+    def dequeue(self) -> DequeueResult | None:
         """
         Dequeue next pending recalibration job.
 
         Returns:
-            Tuple of (job_id, path, force=False) or None if no jobs available
+            DequeueResult with (job_id, file_path, force=False) or None if no jobs available
         """
         job = self.db.calibration_queue.get_next_calibration_job()
         if not job:
             return None
         job_id, path = job
-        return (job_id, path, False)
+        return DequeueResult(job_id=job_id, file_path=path, force=False)
 
     def mark_complete(self, job_id: int) -> None:
         """Mark recalibration job as complete."""
@@ -298,14 +320,18 @@ class ScanQueue(BaseQueue):
     expected by BaseWorker. Each job represents ONE file to scan.
     """
 
-    def dequeue(self) -> tuple[int, str, bool] | None:
+    def dequeue(self) -> DequeueResult | None:
         """
         Dequeue next pending scan job.
 
         Returns:
-            Tuple of (job_id, path, force) or None if no pending jobs
+            DequeueResult with (job_id, file_path, force) or None if no pending jobs
         """
-        return self.db.library_queue.dequeue_scan()
+        result = self.db.library_queue.dequeue_scan()
+        if not result:
+            return None
+        job_id, path, force = result
+        return DequeueResult(job_id=job_id, file_path=path, force=force)
 
     def mark_complete(self, job_id: int) -> None:
         """Mark scan job as complete."""
@@ -398,7 +424,7 @@ class QueueService:
             job = self.get_job(job_id)
             if not job:
                 raise ValueError(f"Job {job_id} not found")
-            if job["status"] == "running":
+            if job.status == "running":
                 raise ValueError("Cannot remove running job")
 
             removed = self.queue.delete(job_id)
@@ -428,7 +454,7 @@ class QueueService:
         else:
             raise ValueError("Must specify job_id, status, or all=True")
 
-    def flush_by_statuses(self, statuses: list[str]) -> dict[str, Any]:
+    def flush_by_statuses(self, statuses: list[str]) -> FlushResult:
         """
         Remove jobs for multiple statuses at once.
 
@@ -436,7 +462,7 @@ class QueueService:
             statuses: List of statuses to flush
 
         Returns:
-            Dict with flushed_statuses and total removed count
+            FlushResult with flushed_statuses list and total removed count
 
         Raises:
             ValueError: If invalid status or attempting to flush running jobs
@@ -456,28 +482,23 @@ class QueueService:
             total_removed += removed
 
         logging.info(f"[QueueService] Flushed {total_removed} jobs with statuses {statuses}")
-        return {"flushed_statuses": statuses, "removed": total_removed}
+        return FlushResult(flushed_statuses=statuses, removed=total_removed)
 
-    def get_status(self) -> dict[str, Any]:
+    def get_status(self) -> QueueStatus:
         """
         Get queue statistics including depth and counts.
 
         Returns:
-            Dict with:
-                - depth: Total number of pending/running jobs
-                - counts: Job counts by status (pending, running, done, error)
+            QueueStatus with depth and job counts by status
         """
         from nomarr.persistence.db import get_queue_stats
 
         counts = get_queue_stats(self.queue.db)
         depth = self.queue.depth()
 
-        return {
-            "depth": depth,
-            "counts": counts,
-        }
+        return QueueStatus(depth=depth, counts=counts)
 
-    def get_job(self, job_id: int) -> dict[str, Any] | None:
+    def get_job(self, job_id: int) -> JobDict | None:
         """
         Get job details by ID.
 
@@ -485,7 +506,7 @@ class QueueService:
             job_id: Job ID to retrieve
 
         Returns:
-            Job details dict or None if not found
+            JobDict or None if not found
         """
         job = self.queue.get(job_id)
         if job:
@@ -551,7 +572,7 @@ class QueueService:
         logging.info(f"[QueueService] Cleaned up {removed} old job(s) (>{max_age_hours}h)")
         return removed
 
-    def list_jobs(self, limit: int = 50, offset: int = 0, status: str | None = None) -> dict[str, Any]:
+    def list_jobs(self, limit: int = 50, offset: int = 0, status: str | None = None) -> ListJobsResult:
         """
         List jobs with pagination and filtering.
 
@@ -561,7 +582,7 @@ class QueueService:
             status: Filter by status (e.g., 'pending', 'running', 'done', 'error')
 
         Returns:
-            Dict with:
+            ListJobsResult with:
                 - jobs: List of job dicts
                 - total: Total count of jobs matching filter
                 - limit: Limit used
@@ -569,12 +590,12 @@ class QueueService:
         """
         jobs_list, total = self.queue.list_jobs(limit=limit, offset=offset, status=status)
 
-        return {
-            "jobs": [job.to_dict() for job in jobs_list],
-            "total": total,
-            "limit": limit,
-            "offset": offset,
-        }
+        return ListJobsResult(
+            jobs=[job.to_dict() for job in jobs_list],
+            total=total,
+            limit=limit,
+            offset=offset,
+        )
 
     def publish_queue_update(self, event_broker: Any | None) -> None:
         """
@@ -593,49 +614,6 @@ class QueueService:
         stats = get_queue_stats(self.queue.db)
         event_broker.update_queue_state(**stats)
         logging.debug(f"[QueueService] Published queue update: {stats}")
-
-    async def wait_for_job_completion(self, job_id: int, timeout: int) -> dict[str, Any]:
-        """
-        Wait for job to complete (async polling with timeout).
-
-        Polls job status until it reaches terminal state (done/error) or timeout.
-
-        Args:
-            job_id: Job ID to wait for
-            timeout: Maximum seconds to wait
-
-        Returns:
-            Final job details dict
-
-        Raises:
-            HTTPException: If job not found or timeout exceeded
-        """
-        import asyncio
-        import time
-
-        from fastapi import HTTPException
-
-        start = time.time()
-        poll_interval = 0.5  # seconds
-
-        while (time.time() - start) < timeout:
-            job = self.queue.get(job_id)
-            if not job:
-                raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
-
-            if job.status in ("done", "error"):
-                return job.to_dict()
-
-            await asyncio.sleep(poll_interval)
-
-        # Timeout - return current state
-        job = self.queue.get(job_id)
-        if job:
-            job_dict = job.to_dict()
-            job_dict["timeout"] = True
-            return job_dict
-
-        raise HTTPException(status_code=404, detail=f"Job {job_id} disappeared during wait")
 
     def enqueue_all_tagged_files(self, force: bool = True) -> int:
         """

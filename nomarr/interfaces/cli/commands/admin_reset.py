@@ -28,7 +28,7 @@ def cmd_admin_reset(args: argparse.Namespace) -> int:
         if hasattr(args, "stuck") and args.stuck:
             # Get count of stuck jobs
             stats = queue_service.get_status()
-            count = stats.get("running", 0)
+            count = stats.counts.get("running", 0)
 
             if count == 0:
                 print_info("No running jobs found")
@@ -55,7 +55,7 @@ This should only be used if jobs are stuck (e.g., after a crash).
         elif hasattr(args, "errors") and args.errors:
             # Get count of error jobs
             stats = queue_service.get_status()
-            count = stats.get("errors", 0)
+            count = stats.counts.get("error", 0)
 
             if count == 0:
                 print_info("No error jobs found")

@@ -21,10 +21,14 @@ import json
 import logging
 from collections import Counter, defaultdict
 from collections.abc import Sequence
-from typing import Any
 
 from nomarr.helpers.dto.analytics import (
     ArtistTagProfile,
+    ComputeArtistTagProfileParams,
+    ComputeMoodValueCoOccurrencesParams,
+    ComputeTagCorrelationMatrixParams,
+    ComputeTagFrequenciesParams,
+    ComputeTagFrequenciesResult,
     MoodCoOccurrenceData,
     MoodDistributionData,
     TagCorrelationData,
@@ -36,68 +40,50 @@ from nomarr.helpers.dto.analytics import (
 
 
 def compute_tag_frequencies(
-    namespace_prefix: str,
-    total_files: int,
-    nom_tag_rows: Sequence[tuple[str, int]],
-    artist_rows: Sequence[tuple[str, int]],
-    genre_rows: Sequence[tuple[str, int]],
-    album_rows: Sequence[tuple[str, int]],
-) -> dict[str, Any]:
+    params: ComputeTagFrequenciesParams,
+) -> ComputeTagFrequenciesResult:
     """
     Compute frequency counts from raw tag data.
 
     Args:
-        namespace_prefix: Namespace prefix to strip (e.g., "nom:")
-        total_files: Total number of files in library
-        nom_tag_rows: List of (tag_key, count) tuples for namespace tags
-        artist_rows: List of (artist, count) tuples
-        genre_rows: List of (genre, count) tuples
-        album_rows: List of (album, count) tuples
+        params: Input parameters with namespace prefix, file count, and tag rows
 
     Returns:
-        dict with nom_tags, standard_tags, total_files
+        ComputeTagFrequenciesResult with nom_tags, standard_tags, total_files
     """
     logging.info("[analytics] Computing tag frequencies")
 
     # Format results (remove namespace prefix)
-    nom_tag_counts = [(tag_key.replace(namespace_prefix, ""), count) for tag_key, count in nom_tag_rows]
+    nom_tag_counts = [(tag_key.replace(params.namespace_prefix, ""), count) for tag_key, count in params.nom_tag_rows]
 
-    return {
-        "nom_tags": nom_tag_counts,
-        "standard_tags": {
-            "artists": list(artist_rows),
-            "genres": list(genre_rows),
-            "albums": list(album_rows),
+    return ComputeTagFrequenciesResult(
+        nom_tags=nom_tag_counts,
+        standard_tags={
+            "artists": list(params.artist_rows),
+            "genres": list(params.genre_rows),
+            "albums": list(params.album_rows),
         },
-        "total_files": total_files,
-    }
+        total_files=params.total_files,
+    )
 
 
 def compute_tag_correlation_matrix(
-    namespace: str,
-    top_n: int,
-    mood_tag_rows: Sequence[tuple[int, str, str]],
-    tier_tag_keys: Sequence[str],
-    tier_tag_rows: dict[str, Sequence[tuple[int, str]]],
+    params: ComputeTagCorrelationMatrixParams,
 ) -> TagCorrelationData:
     """
     Compute VALUE-based correlation matrix from raw tag data.
 
     Args:
-        namespace: Tag namespace (e.g., "nom")
-        top_n: Number of top moods to analyze
-        mood_tag_rows: All mood tag data as (file_id, tag_value, tag_type) tuples
-        tier_tag_keys: List of all *_tier tag keys
-        tier_tag_rows: Dict mapping tier_tag_key to list of (file_id, tag_value) tuples
+        params: Parameters containing namespace, top_n, and tag data
 
     Returns:
         TagCorrelationData with mood-to-mood and mood-to-tier correlations
     """
-    logging.info(f"[analytics] Computing VALUE-based correlation matrix (top {top_n} moods)")
+    logging.info(f"[analytics] Computing VALUE-based correlation matrix (top {params.top_n} moods)")
 
     # Extract mood values and count occurrences
     mood_counter: Counter = Counter()
-    for _file_id, tag_value, tag_type in mood_tag_rows:
+    for _file_id, tag_value, tag_type in params.mood_tag_rows:
         if tag_type == "array":
             try:
                 moods = json.loads(tag_value)
@@ -109,7 +95,7 @@ def compute_tag_correlation_matrix(
         else:
             mood_counter[str(tag_value).strip()] += 1
 
-    top_moods = [mood for mood, _ in mood_counter.most_common(top_n)]
+    top_moods = [mood for mood, _ in mood_counter.most_common(params.top_n)]
 
     if not top_moods:
         return TagCorrelationData(
@@ -120,7 +106,7 @@ def compute_tag_correlation_matrix(
     # Build file sets for each mood value
     mood_file_sets: dict[str, set[int]] = {mood: set() for mood in top_moods}
 
-    for file_id, tag_value, tag_type in mood_tag_rows:
+    for file_id, tag_value, tag_type in params.mood_tag_rows:
         if tag_type == "array":
             try:
                 moods = json.loads(tag_value)
@@ -165,10 +151,10 @@ def compute_tag_correlation_matrix(
 
         tier_correlations: dict[str, float] = {}
 
-        for tier_tag_key in tier_tag_keys:
-            tier_name = tier_tag_key.replace(f"{namespace}:", "").replace("_tier", "").split("_")[-1]
+        for tier_tag_key in params.tier_tag_keys:
+            tier_name = tier_tag_key.replace(f"{params.namespace}:", "").replace("_tier", "").split("_")[-1]
             tier_value_counts: Counter = Counter()
-            for file_id, tier_value in tier_tag_rows.get(tier_tag_key, []):
+            for file_id, tier_value in params.tier_tag_rows.get(tier_tag_key, []):
                 if file_id in mood_files:
                     tier_value_counts[tier_value] += 1
 
@@ -238,30 +224,22 @@ def compute_mood_distribution(
 
 
 def compute_artist_tag_profile(
-    artist: str,
-    file_count: int,
-    namespace_prefix: str,
-    tag_rows: Sequence[tuple[str, str, str]],
-    limit: int = 20,
+    params: ComputeArtistTagProfileParams,
 ) -> ArtistTagProfile:
     """
     Compute tag profile for an artist from raw tag data.
 
     Args:
-        artist: Artist name
-        file_count: Number of files for this artist
-        namespace_prefix: Namespace prefix to strip (e.g., "nom:")
-        tag_rows: List of (tag_key, tag_value, tag_type) tuples
-        limit: Max number of top tags to return
+        params: Parameters containing artist info, namespace, and tag data
 
     Returns:
         ArtistTagProfile with artist info, top tags, and mood statistics
     """
-    logging.info(f"[analytics] Computing tag profile for artist: {artist}")
+    logging.info(f"[analytics] Computing tag profile for artist: {params.artist}")
 
-    if file_count == 0:
+    if params.file_count == 0:
         return ArtistTagProfile(
-            artist=artist,
+            artist=params.artist,
             file_count=0,
             top_tags=[],
             moods=[],
@@ -272,8 +250,8 @@ def compute_artist_tag_profile(
     tag_values: dict[str, list[float]] = defaultdict(list)
     mood_counts: Counter = Counter()
 
-    for tag_key, tag_value, tag_type in tag_rows:
-        tag_name = tag_key.replace(namespace_prefix, "")
+    for tag_key, tag_value, tag_type in params.tag_rows:
+        tag_name = tag_key.replace(params.namespace_prefix, "")
 
         if tag_name in ["mood-strict", "mood-regular", "mood-loose"]:
             if tag_type == "array":
@@ -296,7 +274,7 @@ def compute_artist_tag_profile(
                     pass
 
     top_tags = []
-    for tag, count in tag_counts.most_common(limit):
+    for tag, count in tag_counts.most_common(params.limit):
         values = tag_values.get(tag)
         avg_value = sum(values) / len(values) if values else 0.0
         top_tags.append((tag, count, avg_value))
@@ -306,43 +284,33 @@ def compute_artist_tag_profile(
     )
 
     return ArtistTagProfile(
-        artist=artist,
-        file_count=file_count,
+        artist=params.artist,
+        file_count=params.file_count,
         top_tags=top_tags,
         moods=mood_counts.most_common(15),
-        avg_tags_per_file=total_non_mood_tags / file_count if file_count else 0.0,
+        avg_tags_per_file=total_non_mood_tags / params.file_count if params.file_count else 0.0,
     )
 
 
 def compute_mood_value_co_occurrences(
-    mood_value: str,
-    matching_file_ids: set[int],
-    mood_tag_rows: Sequence[tuple[int, str, str]],
-    genre_rows: Sequence[tuple[str, int]],
-    artist_rows: Sequence[tuple[str, int]],
-    limit: int = 20,
+    params: ComputeMoodValueCoOccurrencesParams,
 ) -> MoodCoOccurrenceData:
     """
     Compute mood value co-occurrence statistics from raw data.
 
     Args:
-        mood_value: The mood value being analyzed
-        matching_file_ids: Set of file IDs that contain this mood value
-        mood_tag_rows: All mood tag data as (file_id, tag_value, tag_type) tuples
-        genre_rows: Genre distribution for matching files as (genre, count) tuples
-        artist_rows: Artist distribution for matching files as (artist, count) tuples
-        limit: Max results per category
+        params: Parameters containing mood value, file IDs, and distribution data
 
     Returns:
         MoodCoOccurrenceData with co-occurrence patterns and distributions
     """
-    logging.info(f"[analytics] Computing mood value co-occurrences for: {mood_value}")
+    logging.info(f"[analytics] Computing mood value co-occurrences for: {params.mood_value}")
 
-    total_occurrences = len(matching_file_ids)
+    total_occurrences = len(params.matching_file_ids)
 
     if total_occurrences == 0:
         return MoodCoOccurrenceData(
-            mood_value=mood_value,
+            mood_value=params.mood_value,
             total_occurrences=0,
             mood_co_occurrences=[],
             genre_distribution=[],
@@ -351,8 +319,8 @@ def compute_mood_value_co_occurrences(
 
     mood_counter: Counter = Counter()
 
-    for file_id, tag_value, tag_type in mood_tag_rows:
-        if file_id not in matching_file_ids:
+    for file_id, tag_value, tag_type in params.mood_tag_rows:
+        if file_id not in params.matching_file_ids:
             continue
 
         if tag_type == "array":
@@ -360,30 +328,33 @@ def compute_mood_value_co_occurrences(
                 moods = json.loads(tag_value)
                 for mood in moods:
                     mood_str = str(mood).strip()
-                    if mood_str != mood_value:
+                    if mood_str != params.mood_value:
                         mood_counter[mood_str] += 1
             except json.JSONDecodeError:
                 # TODO [LOGGING]
                 pass
         else:
             mood_str = str(tag_value).strip()
-            if mood_str != mood_value:
+            if mood_str != params.mood_value:
                 mood_counter[mood_str] += 1
 
     mood_co_occurrences = [
-        (mood, count, round((count / total_occurrences) * 100, 1)) for mood, count in mood_counter.most_common(limit)
+        (mood, count, round((count / total_occurrences) * 100, 1))
+        for mood, count in mood_counter.most_common(params.limit)
     ]
 
     genre_distribution = [
-        (genre, count, round((count / total_occurrences) * 100, 1)) for genre, count in genre_rows[:limit]
+        (genre, count, round((count / total_occurrences) * 100, 1))
+        for genre, count in params.genre_rows[: params.limit]
     ]
 
     artist_distribution = [
-        (artist, count, round((count / total_occurrences) * 100, 1)) for artist, count in artist_rows[:limit]
+        (artist, count, round((count / total_occurrences) * 100, 1))
+        for artist, count in params.artist_rows[: params.limit]
     ]
 
     return MoodCoOccurrenceData(
-        mood_value=mood_value,
+        mood_value=params.mood_value,
         total_occurrences=total_occurrences,
         mood_co_occurrences=mood_co_occurrences,
         genre_distribution=genre_distribution,

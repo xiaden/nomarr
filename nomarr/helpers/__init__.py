@@ -3,6 +3,7 @@ Helpers package.
 """
 
 from .dto.processing import ProcessorConfig, TagWriteProfile
+from .dto.queue import DequeueResult, JobDict, ListJobsResult
 from .file_validation import check_already_tagged, make_skip_result, should_skip_processing, validate_file_exists
 from .files import AUDIO_EXTENSIONS, collect_audio_files, is_audio_file, resolve_library_path, validate_library_path
 from .logging import sanitize_exception_message
@@ -18,6 +19,9 @@ from .navidrome_templates import (
 
 __all__ = [
     "AUDIO_EXTENSIONS",
+    "DequeueResult",
+    "JobDict",
+    "ListJobsResult",
     "ProcessorConfig",
     "TagWriteProfile",
     "check_already_tagged",

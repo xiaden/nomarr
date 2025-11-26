@@ -8,13 +8,6 @@ from pydantic import BaseModel
 
 
 # Public API request models
-class TagRequest(BaseModel):
-    """Request to tag a single audio file."""
-
-    path: str
-    force: bool | None = False
-
-
 class RemoveJobRequest(BaseModel):
     """Request to remove a specific job from the queue."""
 

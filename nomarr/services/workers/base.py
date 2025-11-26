@@ -19,6 +19,7 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
+from nomarr.helpers.dto.queue import DequeueResult
 from nomarr.persistence.db import Database
 
 if TYPE_CHECKING:
@@ -156,36 +157,34 @@ class BaseWorker(threading.Thread):
 
     # ---------------------------- Job Processing ----------------------------
 
-    def _get_next_job(self) -> dict[str, Any] | None:
+    def _get_next_job(self) -> DequeueResult | None:
         """
         Get next pending job from queue.
 
         Returns:
-            Job dict with keys: id, path, force, or None if no jobs available
+            DequeueResult or None if no jobs available
         """
         result = self.queue.dequeue()
         if not result:
             return None
 
-        job_id, path, force = result
-
-        logging.info(f"[{self.name}] Processing job {job_id}: {path} (force={force})")
+        logging.info(f"[{self.name}] Processing job {result.job_id}: {result.file_path} (force={result.force})")
 
         # Publish job start event
-        self._publish_job_state(job_id, path, "running")
+        self._publish_job_state(result.job_id, result.file_path, "running")
         self._publish_queue_stats()
 
-        return {"id": job_id, "path": path, "force": force}
+        return result
 
-    def _process_job(self, job: dict[str, Any]) -> None:
+    def _process_job(self, job: DequeueResult) -> None:
         """
         Process a single job using the injected process_fn.
 
         Handles success, failure, and shutdown scenarios.
         """
-        job_id = job["id"]
-        path = job["path"]
-        force = job["force"]
+        job_id = job.job_id
+        path = job.file_path
+        force = job.force
 
         try:
             self._is_busy = True

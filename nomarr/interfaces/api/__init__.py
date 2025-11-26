@@ -10,7 +10,6 @@ from nomarr.interfaces.api.models import (
     InternalBatchRequest,
     InternalProcessRequest,
     RemoveJobRequest,
-    TagRequest,
 )
 
 __all__ = [
@@ -18,7 +17,6 @@ __all__ = [
     "InternalBatchRequest",
     "InternalProcessRequest",
     "RemoveJobRequest",
-    "TagRequest",
     "api_app",
     "auth_scheme",
     "verify_key",

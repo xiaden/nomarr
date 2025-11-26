@@ -66,6 +66,7 @@ qc_reports/
 .import_linter_cache/
 radon_reports/
 radon
+classification_results.json
 
 # Temp files
 *.tmp

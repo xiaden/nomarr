@@ -15,13 +15,14 @@ from typing import Any
 
 import numpy as np
 
+from nomarr.helpers.dto.ml import GenerateMinmaxCalibrationResult, SaveCalibrationSidecarsResult
 from nomarr.persistence.db import Database
 
 
 def generate_minmax_calibration(
     db: Database,
     namespace: str = "nom",
-) -> dict[str, Any]:
+) -> GenerateMinmaxCalibrationResult:
     """
     Generate min-max scale calibration from library tags.
 
@@ -56,13 +57,13 @@ def generate_minmax_calibration(
     if not all_files:
         # Empty library - return empty calibration result (not error)
         logging.info("[calibration] No library files found")
-        return {
-            "method": "percentile",
-            "library_size": 0,
-            "min_samples": min_samples,
-            "calibrations": {},
-            "skipped_tags": 0,
-        }
+        return GenerateMinmaxCalibrationResult(
+            method="percentile",
+            library_size=0,
+            min_samples=min_samples,
+            calibrations={},
+            skipped_tags=0,
+        )
 
     logging.info(f"[calibration] Found {len(all_files)} library files")
 
@@ -136,20 +137,20 @@ def generate_minmax_calibration(
 
     logging.info(f"[calibration] Generated calibrations for {len(calibrations)} tags")
 
-    return {
-        "method": "minmax",
-        "library_size": len(all_files),
-        "min_samples": min_samples,
-        "calibrations": calibrations,
-        "skipped_tags": len(skipped_tags),
-    }
+    return GenerateMinmaxCalibrationResult(
+        method="minmax",
+        library_size=len(all_files),
+        min_samples=min_samples,
+        calibrations=calibrations,
+        skipped_tags=len(skipped_tags),
+    )
 
 
 def save_calibration_sidecars(
     calibration_data: dict[str, Any],
     models_dir: str,
     version: int = 1,
-) -> dict[str, Any]:
+) -> SaveCalibrationSidecarsResult:
     """
     Save calibration data as JSON sidecars next to model files.
 
@@ -298,11 +299,11 @@ def save_calibration_sidecars(
 
     logging.info(f"[calibration] Saved {len(saved_files)} calibration sidecars")
 
-    return {
-        "saved_files": saved_files,
-        "total_files": len(saved_files),
-        "total_labels": sum(f["label_count"] for f in saved_files.values()),
-    }
+    return SaveCalibrationSidecarsResult(
+        saved_files=saved_files,
+        total_files=len(saved_files),
+        total_labels=sum(f["label_count"] for f in saved_files.values()),
+    )
 
 
 def apply_minmax_calibration(raw_score: float, calibration: dict[str, Any]) -> float:

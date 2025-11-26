@@ -69,8 +69,6 @@ def get_config(
             "allow_short": internal_info["allow_short"],
             "worker_enabled": worker_enabled,
             "poll_interval": internal_info["poll_interval"],
-            "blocking_mode": internal_info["blocking_mode"],
-            "blocking_timeout": internal_info["blocking_timeout"],
             "library_scan_poll_interval": internal_info["library_scan_poll_interval"],
         }
 

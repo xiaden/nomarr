@@ -16,6 +16,28 @@ if TYPE_CHECKING:
     from nomarr.services.workers.base import BaseWorker
 
 
+# ----------------------------------------------------------------------
+#  Service-Local DTOs (used only by WorkerService + interfaces)
+# ----------------------------------------------------------------------
+
+
+@dataclass
+class WorkerEnabledResult:
+    """Result from pause_workers/resume_workers - simple enabled status."""
+
+    worker_enabled: bool
+
+
+@dataclass
+class WorkerStatusResult:
+    """Result from worker_service.get_status/pause/resume."""
+
+    enabled: bool
+    worker_count: int
+    running: int
+    workers: list[dict[str, Any]]
+
+
 @dataclass
 class WorkerConfig:
     """Configuration for WorkerService."""
@@ -95,7 +117,7 @@ class WorkerService:
         self.stop_all_workers()
         logging.info("[WorkerService] All workers stopped")
 
-    def pause_workers(self, event_broker: Any | None = None) -> dict[str, Any]:
+    def pause_workers(self, event_broker: Any | None = None) -> WorkerEnabledResult:
         """
         Pause workers (disable new job processing).
 
@@ -103,16 +125,16 @@ class WorkerService:
             event_broker: Optional event broker for SSE updates
 
         Returns:
-            Dict with worker_enabled status
+            WorkerEnabledResult with worker_enabled status
         """
         self.disable()
 
         if event_broker:
             event_broker.update_worker_state({"enabled": False})
 
-        return {"worker_enabled": False}
+        return WorkerEnabledResult(worker_enabled=False)
 
-    def resume_workers(self, worker_pool: list, event_broker: Any | None = None) -> dict[str, Any]:
+    def resume_workers(self, worker_pool: list, event_broker: Any | None = None) -> WorkerEnabledResult:
         """
         Resume workers (enable job processing and start workers).
 
@@ -121,7 +143,7 @@ class WorkerService:
             event_broker: Optional event broker for SSE updates
 
         Returns:
-            Dict with worker_enabled status
+            WorkerEnabledResult with worker_enabled status
         """
         self.enable()
         updated_pool = self.start_workers(event_broker=event_broker)
@@ -131,7 +153,7 @@ class WorkerService:
         if event_broker:
             event_broker.update_worker_state({"enabled": True})
 
-        return {"worker_enabled": True}
+        return WorkerEnabledResult(worker_enabled=True)
 
     def wait_until_idle(self, timeout: int = 60, poll_interval: float = 0.5) -> bool:
         """
@@ -332,16 +354,12 @@ class WorkerService:
         self.worker_pool = []
         logging.info("[WorkerService] All workers stopped")
 
-    def get_status(self) -> dict[str, Any]:
+    def get_status(self) -> WorkerStatusResult:
         """
         Get worker status information.
 
         Returns:
-            Dict with:
-                - enabled: bool (from DB meta)
-                - worker_count: int (configured max)
-                - running: int (currently active)
-                - workers: list of worker states
+            WorkerStatusResult with enabled status, counts, and worker details
         """
         enabled = self.is_enabled()
 
@@ -359,24 +377,24 @@ class WorkerService:
                 }
             )
 
-        return {
-            "enabled": enabled,
-            "worker_count": self.cfg.worker_count,
-            "running": running,
-            "workers": workers,
-        }
+        return WorkerStatusResult(
+            enabled=enabled,
+            worker_count=self.cfg.worker_count,
+            running=running,
+            workers=workers,
+        )
 
-    def pause(self) -> dict[str, Any]:
+    def pause(self) -> WorkerStatusResult:
         """
         Pause workers (disable and stop).
 
         Returns:
-            Status dict after pausing
+            WorkerStatusResult after pausing
         """
         self.disable()
         return self.get_status()
 
-    def resume(self, event_broker: Any | None = None) -> dict[str, Any]:
+    def resume(self, event_broker: Any | None = None) -> WorkerStatusResult:
         """
         Resume workers (enable and start).
 
@@ -384,7 +402,7 @@ class WorkerService:
             event_broker: Optional event broker for SSE updates
 
         Returns:
-            Status dict after resuming
+            WorkerStatusResult after resuming
         """
         self.enable()
         self.start_workers(event_broker=event_broker)

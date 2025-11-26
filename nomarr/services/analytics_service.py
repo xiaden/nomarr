@@ -24,6 +24,10 @@ from nomarr.components.analytics.analytics import (
 )
 from nomarr.helpers.dto.analytics import (
     ArtistTagProfile,
+    ComputeArtistTagProfileParams,
+    ComputeMoodValueCoOccurrencesParams,
+    ComputeTagCorrelationMatrixParams,
+    ComputeTagFrequenciesParams,
     MoodCoOccurrenceData,
     TagCorrelationData,
 )
@@ -76,7 +80,7 @@ class AnalyticsService:
         """
         namespace_prefix = f"{self.cfg.namespace}:"
         data = fetch_tag_frequencies_data(db=self._db, namespace=self.cfg.namespace, limit=limit)
-        result = compute_tag_frequencies(
+        params = ComputeTagFrequenciesParams(
             namespace_prefix=namespace_prefix,
             total_files=data["total_files"],
             nom_tag_rows=data["nom_tag_rows"],
@@ -84,11 +88,12 @@ class AnalyticsService:
             genre_rows=data["genre_rows"],
             album_rows=data["album_rows"],
         )
+        result = compute_tag_frequencies(params=params)
 
         # Transform to API-ready format (add namespace prefix back for display)
         tag_frequencies = [
             {"tag_key": f"{self.cfg.namespace}:{tag}", "total_count": count, "unique_values": count}
-            for tag, count in result.get("nom_tags", [])
+            for tag, count in result.nom_tags
         ]
         return tag_frequencies
 
@@ -103,13 +108,14 @@ class AnalyticsService:
             TagCorrelationData with mood-to-mood and mood-to-tier correlations
         """
         data = fetch_tag_correlation_data(db=self._db, namespace=self.cfg.namespace, top_n=top_n)
-        return compute_tag_correlation_matrix(
+        params = ComputeTagCorrelationMatrixParams(
             namespace=self.cfg.namespace,
             top_n=top_n,
             mood_tag_rows=data["mood_tag_rows"],
             tier_tag_keys=data["tier_tag_keys"],
             tier_tag_rows=data["tier_tag_rows"],
         )
+        return compute_tag_correlation_matrix(params=params)
 
     def get_mood_distribution(self) -> list[dict[str, Any]]:
         """
@@ -148,13 +154,14 @@ class AnalyticsService:
         """
         namespace_prefix = f"{self.cfg.namespace}:"
         data = fetch_artist_tag_profile_data(db=self._db, artist=artist, namespace=self.cfg.namespace)
-        return compute_artist_tag_profile(
+        params = ComputeArtistTagProfileParams(
             artist=artist,
             file_count=data["file_count"],
             namespace_prefix=namespace_prefix,
             tag_rows=data["tag_rows"],
             limit=limit,
         )
+        return compute_artist_tag_profile(params=params)
 
     def get_mood_value_co_occurrences(self, mood_value: str, limit: int = 10) -> MoodCoOccurrenceData:
         """
@@ -168,7 +175,7 @@ class AnalyticsService:
             MoodCoOccurrenceData with co-occurrence patterns and distributions
         """
         data = fetch_mood_value_co_occurrence_data(db=self._db, mood_value=mood_value, namespace=self.cfg.namespace)
-        result = compute_mood_value_co_occurrences(
+        params = ComputeMoodValueCoOccurrencesParams(
             mood_value=mood_value,
             matching_file_ids=data["matching_file_ids"],
             mood_tag_rows=data["mood_tag_rows"],
@@ -176,4 +183,4 @@ class AnalyticsService:
             artist_rows=data["artist_rows"],
             limit=limit,
         )
-        return result
+        return compute_mood_value_co_occurrences(params=params)

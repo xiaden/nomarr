@@ -1,0 +1,378 @@
+
+================================================================================
+DATACLASS CLASSIFICATION SUMMARY
+================================================================================
+
+Total dataclasses found: 37
+
+
+Cross-Layer DTO (17):
+--------------------------------------------------------------------------------
+
+  • ArtistTagProfile
+    Module: nomarr.helpers.dto.analytics
+    Used by: components, helpers, services
+    Suggested: nomarr.helpers.dto.analytics (already correct)
+    Notes: Imported by 3 packages: components, helpers, services
+
+  • ComputeArtistTagProfileParams
+    Module: nomarr.helpers.dto.analytics
+    Used by: components, services
+    Suggested: nomarr.helpers.dto.analytics (already correct)
+    Notes: Imported by 2 packages: components, services
+
+  • ComputeEmbeddingsForBackboneParams
+    Module: nomarr.helpers.dto.ml
+    Used by: components, helpers, workflows
+    Suggested: nomarr.helpers.dto.ml (already correct)
+    Notes: Imported by 3 packages: components, helpers, workflows
+
+  • ComputeMoodValueCoOccurrencesParams
+    Module: nomarr.helpers.dto.analytics
+    Used by: components, services
+    Suggested: nomarr.helpers.dto.analytics (already correct)
+    Notes: Imported by 2 packages: components, services
+
+  • ComputeTagCorrelationMatrixParams
+    Module: nomarr.helpers.dto.analytics
+    Used by: components, services
+    Suggested: nomarr.helpers.dto.analytics (already correct)
+    Notes: Imported by 2 packages: components, services
+
+  • ComputeTagFrequenciesParams
+    Module: nomarr.helpers.dto.analytics
+    Used by: components, services
+    Suggested: nomarr.helpers.dto.analytics (already correct)
+    Notes: Imported by 2 packages: components, services
+
+  • GenerateMinmaxCalibrationResult
+    Module: nomarr.helpers.dto.ml
+    Used by: components, helpers
+    Suggested: nomarr.helpers.dto.ml (already correct)
+    Notes: Imported by 2 packages: components, helpers
+
+  • HeadOutput
+    Module: nomarr.components.ml.models.discovery
+    Used by: components, workflows
+    Suggested: helpers/dto/ml.py
+    Notes: Currently in components/ but imported by: components, workflows. Should move to DTO.
+
+  • LoadAudioMonoResult
+    Module: nomarr.helpers.dto.ml
+    Used by: components, helpers
+    Suggested: nomarr.helpers.dto.ml (already correct)
+    Notes: Imported by 2 packages: components, helpers
+
+  • MoodCoOccurrenceData
+    Module: nomarr.helpers.dto.analytics
+    Used by: components, helpers, services
+    Suggested: nomarr.helpers.dto.analytics (already correct)
+    Notes: Imported by 3 packages: components, helpers, services
+
+  • MoodDistributionData
+    Module: nomarr.helpers.dto.analytics
+    Used by: components, helpers
+    Suggested: nomarr.helpers.dto.analytics (already correct)
+    Notes: Imported by 2 packages: components, helpers
+
+  • PlaylistPreviewResult
+    Module: nomarr.helpers.dto.navidrome
+    Used by: helpers, services, workflows
+    Suggested: nomarr.helpers.dto.navidrome (already correct)
+    Notes: Imported by 3 packages: helpers, services, workflows
+
+  • ProcessorConfig
+    Module: nomarr.helpers.dto.processing
+    Used by: helpers, services, workflows
+    (ignored 1 import(s) from config)
+    Suggested: nomarr.helpers.dto.processing (already correct)
+    Notes: Imported by 3 packages: helpers, services, workflows
+
+  • SaveCalibrationSidecarsResult
+    Module: nomarr.helpers.dto.ml
+    Used by: components, helpers
+    Suggested: nomarr.helpers.dto.ml (already correct)
+    Notes: Imported by 2 packages: components, helpers
+
+  • SmartPlaylistFilter
+    Module: nomarr.helpers.dto.navidrome
+    Used by: helpers, workflows
+    Suggested: nomarr.helpers.dto.navidrome (already correct)
+    Notes: Imported by 2 packages: helpers, workflows
+
+  • TagCondition
+    Module: nomarr.helpers.dto.navidrome
+    Used by: helpers, workflows
+    Suggested: nomarr.helpers.dto.navidrome (already correct)
+    Notes: Imported by 2 packages: helpers, workflows
+
+  • TagCorrelationData
+    Module: nomarr.helpers.dto.analytics
+    Used by: components, helpers, services
+    Suggested: nomarr.helpers.dto.analytics (already correct)
+    Notes: Imported by 3 packages: components, helpers, services
+
+Service-Local Config (8):
+--------------------------------------------------------------------------------
+
+  • AnalyticsConfig
+    Module: nomarr.services.analytics_service
+    Used by: (none - ignored 1 import(s) from config)
+    Suggested: nomarr.services.analytics_service (keep in place)
+    Notes: Only used within defining service module.
+
+  • CalibrationConfig
+    Module: nomarr.services.calibration_service
+    Used by: (none - ignored 1 import(s) from config)
+    Suggested: nomarr.services.calibration_service (keep in place)
+    Notes: Only used within defining service module.
+
+  • CoordinatorConfig
+    Module: nomarr.services.coordinator_service
+    Used by: (none - ignored 1 import(s) from config)
+    Suggested: nomarr.services.coordinator_service (keep in place)
+    Notes: Only used within defining service module.
+
+  • HealthMonitorConfig
+    Module: nomarr.services.health_monitor_service
+    Used by: (none - ignored 2 import(s) from config)
+    Suggested: nomarr.services.health_monitor_service (keep in place)
+    Notes: Only used within defining service module.
+
+  • LibraryRootConfig
+    Module: nomarr.services.library_service
+    Used by: (none - ignored 2 import(s) from config)
+    Suggested: nomarr.services.library_service (keep in place)
+    Notes: Only used within defining service module.
+
+  • MLConfig
+    Module: nomarr.services.ml_service
+    Used by: (none - ignored 1 import(s) from config)
+    Suggested: nomarr.services.ml_service (keep in place)
+    Notes: Only used within defining service module.
+
+  • NavidromeConfig
+    Module: nomarr.services.navidrome_service
+    Used by: (none - ignored 1 import(s) from config)
+    Suggested: nomarr.services.navidrome_service (keep in place)
+    Notes: Only used within defining service module.
+
+  • WorkerConfig
+    Module: nomarr.services.worker_service
+    Used by: (none - ignored 2 import(s) from config)
+    Suggested: nomarr.services.worker_service (keep in place)
+    Notes: Only used within defining service module.
+
+Domain-Internal Helper (12):
+--------------------------------------------------------------------------------
+
+  • AnalyzeWithSegmentsResult
+    Module: nomarr.helpers.dto.ml
+    Used by: helpers
+    Suggested: helpers/dto/unknown.py (may be misplaced if only used internally)
+    Notes: In DTO module but only used by one package; verify it's truly cross-layer.
+
+  • Cascade
+    Module: nomarr.components.ml.models.heads
+    Used by: (none - local only)
+    Suggested: components/ml/types.py
+    Notes: Only used within component domain.
+
+  • ComputeTagFrequenciesResult
+    Module: nomarr.helpers.dto.analytics
+    Used by: components
+    Suggested: helpers/dto/analytics.py (may be misplaced if only used internally)
+    Notes: In DTO module but only used by one package; verify it's truly cross-layer.
+
+  • DequeueResult
+    Module: nomarr.helpers.dto.queue
+    Used by: services
+    Suggested: helpers/dto/unknown.py (may be misplaced if only used internally)
+    Notes: In DTO module but only used by one package; verify it's truly cross-layer.
+
+  • GetInternalInfoResult
+    Module: nomarr.helpers.dto.config
+    Used by: services
+    Suggested: helpers/dto/config.py (may be misplaced if only used internally)
+    Notes: In DTO module but only used by one package; verify it's truly cross-layer.
+
+  • HeadSpec
+    Module: nomarr.components.ml.models.heads
+    Used by: (none - local only)
+    Suggested: components/ml/types.py
+    Notes: Only used within component domain.
+
+  • JobDict
+    Module: nomarr.helpers.dto.queue
+    Used by: services
+    Suggested: helpers/dto/queue.py (may be misplaced if only used internally)
+    Notes: In DTO module but only used by one package; verify it's truly cross-layer.
+
+  • ListJobsResult
+    Module: nomarr.helpers.dto.queue
+    Used by: services
+    Suggested: helpers/dto/queue.py (may be misplaced if only used internally)
+    Notes: In DTO module but only used by one package; verify it's truly cross-layer.
+
+  • SegmentWaveformParams
+    Module: nomarr.helpers.dto.ml
+    Used by: helpers
+    Suggested: helpers/dto/unknown.py (may be misplaced if only used internally)
+    Notes: In DTO module but only used by one package; verify it's truly cross-layer.
+
+  • Segments
+    Module: nomarr.components.ml.models.embed
+    Used by: (none - local only)
+    Suggested: components/ml/types.py
+    Notes: Only used within component domain.
+
+  • TagWriteProfile
+    Module: nomarr.helpers.dto.processing
+    Used by: helpers
+    Suggested: helpers/dto/processing.py (may be misplaced if only used internally)
+    Notes: In DTO module but only used by one package; verify it's truly cross-layer.
+
+  • WaitForJobResult
+    Module: nomarr.helpers.dto.queue
+    Used by: services
+    Suggested: helpers/dto/queue.py (may be misplaced if only used internally)
+    Notes: In DTO module but only used by one package; verify it's truly cross-layer.
+
+================================================================================
+SUSPECT IMPORTS
+================================================================================
+
+Suspect imports: none (or allowed_imports not configured)
+
+
+================================================================================
+MISSING DATACLASS / DTO CANDIDATES
+================================================================================
+
+Found 19 function(s) that might benefit from dataclasses:
+
+Public API suggestions (13):
+--------------------------------------------------------------------------------
+
+  • nomarr.components.ml.models.embed.segment_waveform
+    Layer: components, Domain: ml
+    Reason: Function has 5 parameters; consider a dataclass for input shape
+    Suggested: SegmentWaveformParams
+    Fields: y, sr, segment_s, hop_s, pad_final
+
+  • nomarr.components.ml.models.embed.analyze_with_segments
+    Layer: components, Domain: ml
+    Reason: Returns literal tuple with 3 elements
+    Suggested: AnalyzeWithSegmentsResult
+    Fields: field1, field2, field3
+
+  • nomarr.services.calibration_download_service.ensure_calibrations_exist
+    Layer: services, Domain: calibration
+    Reason: Returns literal dict with 4 fields
+    Suggested: EnsureCalibrationsExistResult
+    Fields: has_calibrations, missing_count, missing_heads, action_required
+
+  • nomarr.services.library_service.get_status
+    Layer: services, Domain: library
+    Reason: Returns literal dict with 5 fields
+    Suggested: GetStatusResult
+    Fields: configured, library_path, enabled, pending_jobs, running_jobs
+
+  • nomarr.services.worker_service.get_status
+    Layer: services, Domain: processing
+    Reason: Returns literal dict with 4 fields
+    Suggested: GetStatusResult
+    Fields: enabled, worker_count, running, workers
+
+  • nomarr.workflows.calibration.generate_calibration.generate_calibration_workflow
+    Layer: workflows, Domain: calibration
+    Reason: Returns literal dict with 5 fields
+    Suggested: GenerateCalibrationWorkflowResult
+    Fields: version, library_size, heads, saved_files, summary
+
+  • nomarr.workflows.calibration.recalibrate_file.recalibrate_file_workflow
+    Layer: workflows, Domain: calibration
+    Reason: Function has 6 parameters; consider a dataclass for input shape
+    Suggested: RecalibrateFileWorkflowParams
+    Fields: db, file_path, models_dir, namespace, version_tag_key, calibrate_heads
+
+  • nomarr.workflows.library.scan_library.scan_library_workflow
+    Layer: workflows, Domain: library
+    Reason: Function has 6 parameters; consider a dataclass for input shape
+    Suggested: ScanLibraryWorkflowParams
+    Fields: db, library_path, namespace, progress_callback, auto_tag, ignore_patterns
+
+  • nomarr.workflows.library.scan_library.update_library_file_from_tags
+    Layer: workflows, Domain: library
+    Reason: Function has 6 parameters; consider a dataclass for input shape
+    Suggested: UpdateLibraryFileFromTagsParams
+    Fields: db, file_path, namespace, tagged_version, calibration, library_id
+
+  • nomarr.workflows.library.scan_single_file.scan_single_file_workflow
+    Layer: workflows, Domain: library
+    Reason: Function has 7 parameters; consider a dataclass for input shape
+    Suggested: ScanSingleFileWorkflowParams
+    Fields: db, file_path, namespace, force, auto_tag, ignore_patterns, library_id
+
+  • nomarr.workflows.library.start_library_scan.start_library_scan_workflow
+    Layer: workflows, Domain: library
+    Reason: Function has 7 parameters; consider a dataclass for input shape
+    Suggested: StartLibraryScanWorkflowParams
+    Fields: db, root_paths, recursive, force, auto_tag, ignore_patterns, clean_missing
+
+  • nomarr.workflows.processing.process_file.process_file_workflow
+    Layer: workflows, Domain: processing
+    Reason: Returns literal dict with 8 fields
+    Suggested: ProcessFileWorkflowResult
+    Fields: file, elapsed, duration, heads_processed, tags_written, head_results, mood_aggregations, tags
+
+  • nomarr.workflows.queue.enqueue_files.enqueue_files_workflow
+    Layer: workflows, Domain: queue
+    Reason: Returns literal dict with 4 fields
+    Suggested: EnqueueFilesWorkflowResult
+    Fields: job_ids, files_queued, queue_depth, paths
+
+
+Private helper suggestions (6):
+--------------------------------------------------------------------------------
+
+  • nomarr.components.tagging.aggregation._build_tier_term_sets
+    Layer: components, Domain: tagging
+    Reason: Returns literal tuple with 3 elements
+    Suggested: BuildTierTermSetsResult
+    Fields: field1, field2, field3
+
+  • nomarr.workflows.calibration.generate_calibration._compare_calibrations
+    Layer: workflows, Domain: calibration
+    Reason: Returns literal dict with 8 fields
+    Suggested: CompareCalibrationsResult
+    Fields: apd_p5, apd_p95, srd, jsd, median_drift, iqr_drift, is_stable, failed_metrics
+
+  • nomarr.workflows.calibration.generate_calibration._parse_tag_key
+    Layer: workflows, Domain: calibration
+    Reason: Returns literal tuple with 3 elements
+    Suggested: ParseTagKeyResult
+    Fields: field1, field2, field3
+
+  • nomarr.workflows.calibration.generate_calibration._calculate_head_drift
+    Layer: workflows, Domain: calibration
+    Reason: Returns literal dict with 8 fields
+    Suggested: CalculateHeadDriftResult
+    Fields: apd_p5, apd_p95, srd, jsd, median_drift, iqr_drift, is_stable, failed_metrics
+
+  • nomarr.workflows.calibration.recalibrate_file._load_library_state
+    Layer: workflows, Domain: calibration
+    Reason: Returns literal tuple with 3 elements
+    Suggested: LoadLibraryStateResult
+    Fields: field1, field2, field3
+
+  • nomarr.workflows.processing.process_file._process_head_predictions
+    Layer: workflows, Domain: processing
+    Reason: Returns literal tuple with 4 elements
+    Suggested: ProcessHeadPredictionsResult
+    Fields: field1, field2, field3, field4
+
+================================================================================
+END OF SUMMARY
+================================================================================
+

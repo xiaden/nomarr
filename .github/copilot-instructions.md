@@ -216,7 +216,98 @@ Contains: `audio.py`, `files.py`, `dataclasses.py`, `logging.py`, `navidrome_tem
 
 ---
 
-## 5. Essentia & ML Backends
+## 5. Data Transfer Objects (DTOs)
+
+DTOs are the typed contracts for structured data flowing between layers.
+
+### 5.1 DTO Requirements for Services
+
+**Every public service method that returns non-trivial structured data must return a DTO.**
+
+- **Trivial returns** (bool, int, str, None, list of primitives) do NOT require a DTO.
+- **Private methods** (prefixed with `_`) do NOT require a DTO.
+- **Structured data** (dicts with multiple fields, complex nested data) MUST use a DTO.
+
+Examples:
+```python
+# ✅ Correct - trivial returns
+def is_enabled(self) -> bool: ...
+def get_count(self) -> int: ...
+def get_job_id(self) -> str | None: ...
+
+# ✅ Correct - private method
+def _internal_helper(self) -> dict[str, Any]: ...
+
+# ❌ Wrong - public method returning structured data without DTO
+def get_job(self, job_id: int) -> dict[str, Any]: ...
+
+# ✅ Correct - public method returns DTO
+def get_job(self, job_id: int) -> JobDict | None: ...
+```
+
+### 5.2 DTO Placement Rules
+
+**Single-service DTOs:**
+- Used only within one service module
+- Define at the top of the service file or in a nested `_models.py`
+- Do not export to `services/__init__.py`
+
+**Cross-layer DTOs:**
+- Used by multiple services OR used by interfaces/workflows
+- Must live in `helpers/dto/<domain>.py`
+- Grouped by domain: `queue.py`, `config.py`, `analytics.py`, etc.
+- Exported from `helpers/dto/__init__.py`
+
+**Decision rule:**
+```python
+# If you see this pattern:
+from nomarr.services.queue_service import QueueService
+result = queue_service.get_job(job_id)
+# And result is used in interfaces/workflows → DTO must be in helpers/dto/
+
+# If DTO is only used internally within one service:
+# Keep it local to that service file
+```
+
+### 5.3 Interface DTO Usage
+
+**Interfaces must import and use DTOs directly, never treat service outputs as dicts.**
+
+```python
+# ❌ Wrong - treating DTO as dict
+from nomarr.services import QueueService
+
+def get_job_api(job_id: int, queue_service: QueueService = Depends(...)):
+    result = queue_service.get_job(job_id)  # returns JobDict
+    return {"id": result["id"], "status": result["status"]}  # treating as dict
+
+# ✅ Correct - using DTO directly
+from nomarr.helpers.dto.queue import JobDict
+from nomarr.services import QueueService
+
+def get_job_api(job_id: int, queue_service: QueueService = Depends(...)) -> JobDict | None:
+    return queue_service.get_job(job_id)  # returns JobDict, passes through
+
+# ✅ Also correct - transforming DTO to response model
+from nomarr.helpers.dto.queue import JobDict
+from nomarr.interfaces.api.models import JobResponse
+
+def get_job_api(job_id: int, ...) -> JobResponse:
+    job = queue_service.get_job(job_id)  # JobDict
+    if not job:
+        raise HTTPException(404)
+    return JobResponse.from_dto(job)  # explicit transformation
+```
+
+**Why this matters:**
+1. Type safety - mypy catches misuse
+2. Detectability - tools can track cross-layer DTOs by imports
+3. Explicitness - no hidden dict mutations
+4. Refactorability - changing DTO fields shows all usage points
+
+---
+
+## 6. Essentia & ML Backends
 
 Essentia is an optional dependency and must be isolated.
 
@@ -235,9 +326,9 @@ Essentia is an optional dependency and must be isolated.
 
 ---
 
-## 6. Code Style & Quality
+## 7. Code Style & Quality
 
-### 6.1 Python
+### 7.1 Python
 
 - Fully type-annotated
 - Follow `ruff` formatting and linting
@@ -268,7 +359,7 @@ Essentia is an optional dependency and must be isolated.
 
 ---
 
-## 7. Tooling & QC
+## 8. Tooling & QC
 
 Nomarr uses several tools. You should write code that works _with_ them, not against them.
 
@@ -300,7 +391,7 @@ If these tools report issues, consider them **real signals**, not noise.
 
 ---
 
-## 8. Development Scripts (`scripts/`)
+## 9. Development Scripts (`scripts/`)
 
 The `scripts/` directory contains helpers that you (and Copilot) should use instead of guessing.
 
@@ -384,7 +475,7 @@ Do **not** try to “fix the whole codebase” from one giant report.
 
 ---
 
-## 9. Pre-Alpha Policy (Important)
+## 10. Pre-Alpha Policy (Important)
 
 Nomarr is **pre-alpha**. That means:
 
@@ -404,7 +495,7 @@ Prefer clean, forward-looking changes over preserving old structures.
 
 ---
 
-## 10. Summary for Copilot
+## 11. Summary for Copilot
 
 1. **Follow the layering:**
    `interfaces → services → workflows → (tagging / ml / persistence / helpers)`

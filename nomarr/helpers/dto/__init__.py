@@ -41,6 +41,14 @@ from nomarr.helpers.dto.analytics import (
     MoodDistributionData,
     TagCorrelationData,
 )
+from nomarr.helpers.dto.ml import (
+    AnalyzeWithSegmentsResult,
+    ComputeEmbeddingsForBackboneParams,
+    GenerateMinmaxCalibrationResult,
+    LoadAudioMonoResult,
+    SaveCalibrationSidecarsResult,
+    SegmentWaveformParams,
+)
 from nomarr.helpers.dto.navidrome import (
     PlaylistPreviewResult,
     SmartPlaylistFilter,

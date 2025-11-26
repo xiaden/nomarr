@@ -247,15 +247,17 @@ def analyze_with_segments(
     import time
 
     t0 = time.time()
-    y, sr, duration = load_audio_mono(path, target_sr=target_sr)
-    logging.debug(f"[embed] Audio loaded in {time.time() - t0:.2f}s ({duration:.1f}s duration)")
+    audio_result = load_audio_mono(path, target_sr=target_sr)
+    logging.debug(f"[embed] Audio loaded in {time.time() - t0:.2f}s ({audio_result.duration:.1f}s duration)")
 
     # FIX: correctly pass allow_short into should_skip_short
-    if should_skip_short(duration, min_duration_s, allow_short):
-        raise RuntimeError(f"audio too short ({duration:.2f}s < {min_duration_s}s)")
+    if should_skip_short(audio_result.duration, min_duration_s, allow_short):
+        raise RuntimeError(f"audio too short ({audio_result.duration:.2f}s < {min_duration_s}s)")
 
     t1 = time.time()
-    segs = segment_waveform(y, sr, segment_s=segment_s, hop_s=hop_s, pad_final=True)
+    segs = segment_waveform(
+        audio_result.waveform, audio_result.sample_rate, segment_s=segment_s, hop_s=hop_s, pad_final=True
+    )
     logging.debug(f"[embed] Segmented into {len(segs.waves)} segments in {time.time() - t1:.2f}s")
     if len(segs.waves) == 0:
         raise RuntimeError("no segments produced (possibly empty or invalid audio)")
@@ -268,4 +270,4 @@ def analyze_with_segments(
 
     pooled = pool_scores(S, mode=pool, trim_perc=trim_perc, nan_policy="omit")
     logging.debug(f"[embed] Total analyze time: {time.time() - t0:.2f}s")
-    return pooled, segs, duration
+    return pooled, segs, audio_result.duration

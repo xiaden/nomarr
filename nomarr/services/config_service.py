@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
+from nomarr.helpers.dto.config import GetInternalInfoResult
 from nomarr.persistence.db import Database
 
 if TYPE_CHECKING:
@@ -53,8 +54,6 @@ INTERNAL_ALLOW_SHORT = False  # Don't process files < min_duration
 # API and worker settings
 INTERNAL_HOST = "0.0.0.0"
 INTERNAL_PORT = 8356
-INTERNAL_BLOCKING_MODE = True  # /api/v1/tag blocks until complete
-INTERNAL_BLOCKING_TIMEOUT = 3600  # Max seconds for blocking calls
 INTERNAL_POLL_INTERVAL = 2  # Worker queue check interval (seconds)
 INTERNAL_WORKER_ENABLED = True  # Start worker on startup
 
@@ -169,27 +168,24 @@ class ConfigService:
         self._logger.info("Reloading configuration from all sources")
         return self.get_config(force_reload=True)
 
-    def get_internal_info(self) -> dict[str, Any]:
+    def get_internal_info(self) -> GetInternalInfoResult:
         """
         Get internal (read-only) configuration constants.
 
         These are operational parameters that are not user-configurable.
-        Returned as a dict for API consumption.
 
         Returns:
-            Dict with internal constant values
+            GetInternalInfoResult with internal constant values
         """
-        return {
-            "namespace": INTERNAL_NAMESPACE,
-            "version_tag": INTERNAL_VERSION_TAG,
-            "min_duration_s": INTERNAL_MIN_DURATION_S,
-            "allow_short": INTERNAL_ALLOW_SHORT,
-            "poll_interval": INTERNAL_POLL_INTERVAL,
-            "blocking_mode": INTERNAL_BLOCKING_MODE,
-            "blocking_timeout": INTERNAL_BLOCKING_TIMEOUT,
-            "library_scan_poll_interval": INTERNAL_LIBRARY_SCAN_POLL_INTERVAL,
-            "worker_enabled": INTERNAL_WORKER_ENABLED,
-        }
+        return GetInternalInfoResult(
+            namespace=INTERNAL_NAMESPACE,
+            version_tag=INTERNAL_VERSION_TAG,
+            min_duration_s=INTERNAL_MIN_DURATION_S,
+            allow_short=INTERNAL_ALLOW_SHORT,
+            poll_interval=INTERNAL_POLL_INTERVAL,
+            library_scan_poll_interval=INTERNAL_LIBRARY_SCAN_POLL_INTERVAL,
+            worker_enabled=INTERNAL_WORKER_ENABLED,
+        )
 
     # ----------------------------------------------------------------------
     # Private composition logic

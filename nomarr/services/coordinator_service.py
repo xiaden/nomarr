@@ -125,7 +125,7 @@ class CoordinatorService:
 
     def submit(self, path: str, force: bool) -> dict[str, Any]:
         """
-        Submit a job and wait for result (blocking).
+        Submit a job and return immediately.
 
         Args:
             path: File path to process

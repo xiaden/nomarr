@@ -6,6 +6,7 @@ import numpy as np
 from scipy.signal import resample_poly
 
 from nomarr.components.ml import backend_essentia
+from nomarr.helpers.dto.ml import LoadAudioMonoResult
 
 # Use Essentia for audio loading (supports more formats via ffmpeg)
 HAVE_ESSENTIA = backend_essentia.is_available()
@@ -19,10 +20,10 @@ else:
     MonoLoader = None
 
 
-def load_audio_mono(path: str, target_sr: int = 16000) -> tuple[np.ndarray, int, float]:
+def load_audio_mono(path: str, target_sr: int = 16000) -> LoadAudioMonoResult:
     """
     Load an audio file as mono float32 in [-1, 1] at target_sr.
-    Returns: (y, sr, duration_seconds)
+    Returns: LoadAudioMonoResult with waveform, sample_rate, duration
 
     Uses Essentia's MonoLoader for broad format support (M4A, MP3, FLAC, etc.).
     Falls back to soundfile if Essentia is not available.
@@ -36,7 +37,7 @@ def load_audio_mono(path: str, target_sr: int = 16000) -> tuple[np.ndarray, int,
         y = np.asarray(y, dtype=np.float32)
         sr = int(target_sr)
         duration = float(len(y)) / float(sr) if sr > 0 else 0.0
-        return y, sr, duration
+        return LoadAudioMonoResult(waveform=y, sample_rate=sr, duration=duration)
     else:
         # Fallback to soundfile (limited format support)
         y, sr = sf.read(path, always_2d=False)
@@ -54,7 +55,7 @@ def load_audio_mono(path: str, target_sr: int = 16000) -> tuple[np.ndarray, int,
             sr = int(target_sr)
 
         duration = float(len(y)) / float(sr) if sr > 0 else 0.0
-        return y, sr, duration
+        return LoadAudioMonoResult(waveform=y, sample_rate=sr, duration=duration)
 
 
 def should_skip_short(duration_s: float, min_duration_s: int, allow_short: bool) -> bool:

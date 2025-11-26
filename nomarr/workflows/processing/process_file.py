@@ -72,6 +72,7 @@ from nomarr.components.tagging.aggregation import (
     normalize_tag_label,
 )
 from nomarr.components.tagging.writer import TagWriter
+from nomarr.helpers.dto.ml import ComputeEmbeddingsForBackboneParams
 
 # Get Essentia version for tag versioning
 ESSENTIA_VERSION = backend_essentia.get_version()
@@ -152,7 +153,7 @@ def _compute_embeddings_for_backbone(
     logging.info(f"[processor] Computing embeddings for {backbone}: sr={target_sr}")
 
     t_emb = time.time()
-    embeddings_2d, duration = compute_embeddings_for_backbone(
+    params = ComputeEmbeddingsForBackboneParams(
         backbone=backbone,
         emb_graph=emb_graph,
         target_sr=target_sr,
@@ -162,6 +163,7 @@ def _compute_embeddings_for_backbone(
         min_duration_s=config.min_duration_s,
         allow_short=config.allow_short,
     )
+    embeddings_2d, duration = compute_embeddings_for_backbone(params=params)
 
     logging.info(
         f"[processor] Embeddings for {backbone} computed in {time.time() - t_emb:.1f}s: shape={embeddings_2d.shape}"
