@@ -12,9 +12,11 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from nomarr.helpers.dto.calibration_dto import CalibrationRunResult, GenerateCalibrationResult
 from nomarr.workflows.calibration.generate_calibration_wf import generate_calibration_workflow
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dto.ml_dto import GenerateMinmaxCalibrationResult, SaveCalibrationSidecarsResult
     from nomarr.persistence.db import Database
 
 
@@ -54,19 +56,14 @@ class CalibrationService:
         self._db = db
         self.cfg = cfg
 
-    def generate_calibration_with_tracking(self) -> dict[str, Any]:
+    def generate_calibration_with_tracking(self) -> GenerateCalibrationResult:
         """
         Generate calibrations for all heads and track drift metrics.
 
         Delegates to workflows.calibration_generation.generate_calibration_workflow.
 
         Returns:
-            Dict with:
-                - version: New calibration version number
-                - library_size: Number of files analyzed
-                - heads: Dict of head results with drift metrics
-                - saved_files: Paths to saved calibration files
-                - summary: Overall statistics
+            GenerateCalibrationResult DTO with version, library_size, heads, saved_files, reference_updates, summary
         """
         logger.debug("[CalibrationService] Delegating to calibration generation workflow")
 
@@ -77,12 +74,12 @@ class CalibrationService:
             thresholds=self.cfg.thresholds,
         )
 
-    def generate_minmax_calibration(self) -> dict[str, Any]:
+    def generate_minmax_calibration(self) -> GenerateMinmaxCalibrationResult:
         """
         Generate minmax calibration data from database tags.
 
         Returns:
-            Calibration data dictionary with min/max values per head
+            Calibration data DTO with min/max values per head
         """
         from nomarr.components.ml.ml_calibration_comp import generate_minmax_calibration
 
@@ -91,7 +88,9 @@ class CalibrationService:
             namespace=self.cfg.namespace,
         )
 
-    def save_calibration_sidecars(self, calibration_data: dict[str, Any]) -> dict[str, Any]:
+    def save_calibration_sidecars(
+        self, calibration_data: dict[str, Any]
+    ) -> SaveCalibrationSidecarsResult | dict[str, Any]:
         """
         Save calibration data as JSON sidecar files next to model files.
 
@@ -113,7 +112,7 @@ class CalibrationService:
         model_name: str | None = None,
         head_name: str | None = None,
         limit: int = 100,
-    ) -> list[dict[str, Any]]:
+    ) -> list[CalibrationRunResult]:
         """
         Get calibration history with drift metrics.
 
@@ -123,10 +122,32 @@ class CalibrationService:
             limit: Maximum number of results
 
         Returns:
-            List of calibration run dictionaries
+            List of CalibrationRunResult DTOs
         """
-        return self._db.calibration_runs.list_calibration_runs(
+        runs = self._db.calibration_runs.list_calibration_runs(
             model_name=model_name,
             head_name=head_name,
             limit=limit,
         )
+        return [
+            CalibrationRunResult(
+                id=run["id"],
+                model_name=run["model_name"],
+                head_name=run["head_name"],
+                version=run["version"],
+                file_count=run["file_count"],
+                timestamp=run["timestamp"],
+                p5=run["p5"],
+                p95=run["p95"],
+                range=run["range"],
+                reference_version=run["reference_version"],
+                apd_p5=run["apd_p5"],
+                apd_p95=run["apd_p95"],
+                srd=run["srd"],
+                jsd=run["jsd"],
+                median_drift=run["median_drift"],
+                iqr_drift=run["iqr_drift"],
+                is_stable=run["is_stable"],
+            )
+            for run in runs
+        ]

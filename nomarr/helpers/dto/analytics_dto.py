@@ -118,3 +118,26 @@ class ComputeTagFrequenciesResult:
     nom_tags: list[tuple[str, int]]  # (tag, count)
     standard_tags: dict[str, list[tuple[str, int]]]  # {category: [(name, count)]}
     total_files: int
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Service-layer DTOs for API responses
+# ──────────────────────────────────────────────────────────────────────
+
+
+@dataclass
+class TagFrequencyItem:
+    """Single tag frequency item from analytics_svc.get_tag_frequencies."""
+
+    tag_key: str
+    total_count: int
+    unique_values: int
+
+
+@dataclass
+class MoodDistributionItem:
+    """Single mood distribution item from analytics_svc.get_mood_distribution."""
+
+    mood: str
+    count: int
+    percentage: float

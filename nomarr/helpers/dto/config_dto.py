@@ -12,6 +12,7 @@ Rules:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass
@@ -25,3 +26,17 @@ class GetInternalInfoResult:
     poll_interval: int
     library_scan_poll_interval: int
     worker_enabled: bool
+
+
+@dataclass
+class GetConfigResult:
+    """Result from config_service.get_config - wraps configuration dict."""
+
+    config: dict[str, Any]
+
+
+@dataclass
+class ReloadResult:
+    """Result from config_service.reload - wraps reloaded configuration dict."""
+
+    config: dict[str, Any]

@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from nomarr.helpers.dto.tagging_dto import BuildTierTermSetsResult
+
 if TYPE_CHECKING:
     from nomarr.components.ml.ml_discovery_comp import HeadOutput
 
@@ -436,7 +438,7 @@ def _build_tier_term_sets(
     tier_map: dict[str, tuple[str, float]],
     suppressed_keys: set[str],
     label_map: dict[str, str],
-) -> tuple[set[str], set[str], set[str]]:
+) -> BuildTierTermSetsResult:
     """
     Build strict, regular, and loose term sets from tier map.
 
@@ -446,7 +448,7 @@ def _build_tier_term_sets(
         label_map: Dictionary mapping simplified keys to human-readable labels
 
     Returns:
-        Tuple of (strict_terms, regular_terms, loose_terms)
+        BuildTierTermSetsResult with strict_terms, regular_terms, loose_terms
     """
     strict_terms: set[str] = set()
     regular_terms: set[str] = set()
@@ -471,7 +473,11 @@ def _build_tier_term_sets(
         f"[aggregation] Mood aggregation: strict={len(strict_terms)}, regular={len(regular_terms)}, loose={len(loose_terms)}"
     )
 
-    return strict_terms, regular_terms, loose_terms
+    return BuildTierTermSetsResult(
+        strict_terms=strict_terms,
+        regular_terms=regular_terms,
+        loose_terms=loose_terms,
+    )
 
 
 def _make_inclusive_mood_tags(
@@ -553,7 +559,7 @@ def aggregate_mood_tiers(
     label_map = _build_label_map(tier_map, LABEL_PAIRS)
 
     # Build tier term sets, excluding suppressed keys
-    strict_terms, regular_terms, loose_terms = _build_tier_term_sets(tier_map, suppressed_keys, label_map)
+    tier_sets = _build_tier_term_sets(tier_map, suppressed_keys, label_map)
 
     # Build final mood tags with inclusive expansion
-    return _make_inclusive_mood_tags(strict_terms, regular_terms, loose_terms)
+    return _make_inclusive_mood_tags(tier_sets.strict_terms, tier_sets.regular_terms, tier_sets.loose_terms)

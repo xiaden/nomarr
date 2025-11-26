@@ -10,6 +10,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from nomarr.helpers.dto.library_dto import (
+    LibraryDict,
+    LibraryScanStatusResult,
+    LibraryStatsResult,
+    StartLibraryScanWorkflowParams,
+    StartScanResult,
+)
+from nomarr.helpers.dto.queue_dto import Job
 from nomarr.helpers.files_helper import resolve_library_path
 
 if TYPE_CHECKING:
@@ -310,7 +318,7 @@ class LibraryService:
         recursive: bool = True,
         force: bool = False,
         clean_missing: bool = True,
-    ) -> dict[str, Any]:
+    ) -> StartScanResult:
         """
         Start a library scan for a specific library.
 
@@ -332,7 +340,7 @@ class LibraryService:
             clean_missing: Whether to remove deleted files from database
 
         Returns:
-            Dict with scan statistics from start_library_scan_workflow
+            StartScanResult DTO with scan statistics
 
         Raises:
             ValueError: If library not found or paths are invalid
@@ -369,15 +377,15 @@ class LibraryService:
         # Call the global scanning workflow.
         # NOTE: library_id is NOT passed to the workflow - it only receives root_paths.
         # All discovered files are added to global library_files table without library_id.
-        stats = start_library_scan_workflow(
-            db=self.db,
+        params = StartLibraryScanWorkflowParams(
             root_paths=root_paths,
             recursive=recursive,
             force=force,
             auto_tag=False,  # Auto-tagging is handled by LibraryScanWorker per file
-            ignore_patterns="",
+            ignore_patterns="",  # Empty string - no patterns to ignore
             clean_missing=clean_missing,
         )
+        stats = start_library_scan_workflow(db=self.db, params=params)
 
         logging.info(
             f"[LibraryService] Scan planned for library {library_id}: "
@@ -385,8 +393,13 @@ class LibraryService:
             f"skipped={stats['files_skipped']}, removed={stats['files_removed']}"
         )
 
-        # TypedDict is compatible with dict[str, Any] at runtime
-        return dict(stats)  # type: ignore[return-value]
+        return StartScanResult(
+            files_discovered=stats["files_discovered"],
+            files_queued=stats["files_queued"],
+            files_skipped=stats["files_skipped"],
+            files_removed=stats["files_removed"],
+            job_ids=stats["job_ids"],
+        )
 
     def start_scan(
         self,
@@ -395,7 +408,7 @@ class LibraryService:
         recursive: bool = True,
         force: bool = False,
         clean_missing: bool = True,
-    ) -> dict[str, Any]:
+    ) -> StartScanResult:
         """
         Start a library scan.
 
@@ -414,7 +427,7 @@ class LibraryService:
             clean_missing: Whether to remove deleted files from database
 
         Returns:
-            Dict with scan statistics from start_library_scan_workflow
+            StartScanResult DTO with scan statistics
 
         Raises:
             ValueError: If library not found or no default library exists
@@ -461,26 +474,21 @@ class LibraryService:
         logging.info(f"[LibraryService] Cleared {cleared} pending scan jobs")
         return cleared > 0
 
-    def get_status(self) -> dict[str, Any]:
+    def get_status(self) -> LibraryScanStatusResult:
         """
         Get current library scan status.
 
         Returns:
-            Dict with:
-                - configured: bool
-                - library_path: str | None
-                - enabled: bool (worker running)
-                - pending_jobs: int (files waiting to be scanned)
-                - running_jobs: int (files currently being scanned)
+            LibraryScanStatusResult with configured, library_path, enabled, pending_jobs, running_jobs
         """
         if not self.cfg.library_root:
-            return {
-                "configured": False,
-                "library_path": None,
-                "enabled": False,
-                "pending_jobs": 0,
-                "running_jobs": 0,
-            }
+            return LibraryScanStatusResult(
+                configured=False,
+                library_path=None,
+                enabled=False,
+                pending_jobs=0,
+                running_jobs=0,
+            )
 
         # Check if worker is available
         enabled = self.worker is not None
@@ -490,15 +498,15 @@ class LibraryService:
         jobs = self.db.library_queue.list_scan_jobs(limit=1000)
         running_jobs = sum(1 for job in jobs if job["status"] == "running")
 
-        return {
-            "configured": True,
-            "library_path": self.cfg.library_root,
-            "enabled": enabled,
-            "pending_jobs": pending_jobs,
-            "running_jobs": running_jobs,
-        }
+        return LibraryScanStatusResult(
+            configured=True,
+            library_path=self.cfg.library_root,
+            enabled=enabled,
+            pending_jobs=pending_jobs,
+            running_jobs=running_jobs,
+        )
 
-    def get_scan_history(self, limit: int = 100) -> list[dict[str, Any]]:
+    def get_scan_history(self, limit: int = 100) -> list[Job]:
         """
         Get recent library scan jobs.
 
@@ -506,18 +514,38 @@ class LibraryService:
             limit: Maximum number of jobs to return
 
         Returns:
-            List of job dicts with id, path, status, started_at, completed_at, etc.
+            List of Job DTOs
         """
-        return self.db.library_queue.list_scan_jobs(limit=limit)
+        jobs = self.db.library_queue.list_scan_jobs(limit=limit)
+        return [
+            Job(
+                id=job["id"],
+                path=job["path"],
+                status=job["status"],
+                created_at=job["started_at"] or "",  # Library queue lacks created_at, use started_at
+                started_at=job["started_at"],
+                finished_at=job["completed_at"],  # Map completed_at → finished_at
+                error_message=job["error_message"],
+                force=job["force"],
+            )
+            for job in jobs
+        ]
 
-    def get_library_stats(self) -> dict[str, Any]:
+    def get_library_stats(self) -> LibraryStatsResult:
         """
         Get library statistics (total files, total duration, etc.).
 
         Returns:
-            Dictionary with library statistics
+            LibraryStatsResult DTO
         """
-        return self.db.library_files.get_library_stats()
+        stats = self.db.library_files.get_library_stats()
+        return LibraryStatsResult(
+            total_files=stats.get("total_files", 0),
+            total_artists=stats.get("total_artists", 0),
+            total_albums=stats.get("total_albums", 0),
+            total_duration=stats.get("total_duration"),
+            total_size=stats.get("total_size"),
+        )
 
     def get_all_library_paths(self) -> list[str]:
         """
@@ -604,7 +632,7 @@ class LibraryService:
     # All scan results remain global across all libraries.
     # ------------------------------------------------------------------
 
-    def list_libraries(self, enabled_only: bool = False) -> list[dict[str, Any]]:
+    def list_libraries(self, enabled_only: bool = False) -> list[LibraryDict]:
         """
         List all configured libraries.
 
@@ -612,11 +640,23 @@ class LibraryService:
             enabled_only: Only return enabled libraries
 
         Returns:
-            List of Library dicts
+            List of LibraryDict DTOs
         """
-        return self.db.libraries.list_libraries(enabled_only=enabled_only)
+        libraries = self.db.libraries.list_libraries(enabled_only=enabled_only)
+        return [
+            LibraryDict(
+                id=lib["id"],
+                name=lib["name"],
+                root_path=lib["root_path"],
+                is_enabled=lib["is_enabled"],
+                is_default=lib["is_default"],
+                created_at=lib["created_at"],
+                updated_at=lib["updated_at"],
+            )
+            for lib in libraries
+        ]
 
-    def get_library(self, library_id: int) -> dict[str, Any]:
+    def get_library(self, library_id: int) -> LibraryDict:
         """
         Get a library by ID.
 
@@ -624,7 +664,7 @@ class LibraryService:
             library_id: Library ID
 
         Returns:
-            Library dict
+            LibraryDict DTO
 
         Raises:
             ValueError: If library not found
@@ -632,7 +672,15 @@ class LibraryService:
         library = self.db.libraries.get_library(library_id)
         if not library:
             raise ValueError(f"Library not found: {library_id}")
-        return library
+        return LibraryDict(
+            id=library["id"],
+            name=library["name"],
+            root_path=library["root_path"],
+            is_enabled=library["is_enabled"],
+            is_default=library["is_default"],
+            created_at=library["created_at"],
+            updated_at=library["updated_at"],
+        )
 
     def get_default_library(self) -> dict[str, Any] | None:
         """
@@ -649,7 +697,7 @@ class LibraryService:
         root_path: str,
         is_enabled: bool = True,
         is_default: bool = False,
-    ) -> dict[str, Any]:
+    ) -> LibraryDict:
         """
         Create a new library.
 
@@ -664,7 +712,7 @@ class LibraryService:
             is_default: Whether this is the default library
 
         Returns:
-            Created library dict
+            Created library DTO
 
         Raises:
             ValueError: If name already exists or path is invalid
@@ -697,9 +745,9 @@ class LibraryService:
         library = self.db.libraries.get_library(library_id)
         if not library:
             raise RuntimeError("Failed to retrieve created library")
-        return library
+        return LibraryDict(**library)
 
-    def update_library_root(self, library_id: int, root_path: str) -> dict[str, Any]:
+    def update_library_root(self, library_id: int, root_path: str) -> LibraryDict:
         """
         Update a library's root path.
 
@@ -708,7 +756,7 @@ class LibraryService:
             root_path: New absolute path to library root
 
         Returns:
-            Updated Library dict
+            Updated Library DTO
 
         Raises:
             ValueError: If library not found or path is invalid
@@ -735,9 +783,9 @@ class LibraryService:
         updated = self.db.libraries.get_library(library_id)
         if not updated:
             raise RuntimeError("Failed to retrieve Updated library")
-        return updated
+        return LibraryDict(**updated)
 
-    def set_default_library(self, library_id: int) -> dict[str, Any]:
+    def set_default_library(self, library_id: int) -> LibraryDict:
         """
         Set a library as the default.
 
@@ -745,7 +793,7 @@ class LibraryService:
             library_id: Library ID
 
         Returns:
-            Updated Library dict
+            Updated Library DTO
 
         Raises:
             ValueError: If library not found
@@ -760,7 +808,7 @@ class LibraryService:
         library = self.db.libraries.get_library(library_id)
         if not library:
             raise RuntimeError("Failed to retrieve updated library")
-        return library
+        return LibraryDict(**library)
 
     def update_library_metadata(
         self,
@@ -768,7 +816,7 @@ class LibraryService:
         *,
         name: str | None = None,
         is_enabled: bool | None = None,
-    ) -> dict[str, Any]:
+    ) -> LibraryDict:
         """
         Update name and/or enabled status of a library.
 
@@ -781,7 +829,7 @@ class LibraryService:
             is_enabled: New enabled state (optional)
 
         Returns:
-            Updated library dict
+            Updated library DTO
 
         Raises:
             ValueError: If library not found or name conflicts
@@ -804,7 +852,7 @@ class LibraryService:
         updated = self.db.libraries.get_library(library_id)
         if not updated:
             raise RuntimeError("Failed to retrieve updated library")
-        return updated
+        return LibraryDict(**updated)
 
     def ensure_default_library_exists(self) -> None:
         """

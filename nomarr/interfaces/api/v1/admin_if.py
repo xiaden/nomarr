@@ -59,7 +59,8 @@ async def admin_flush_queue(
 
     try:
         result = queue_service.flush_by_statuses(statuses)
-        return {"status": "ok", **result}
+        # Return DTO fields inline rather than unpacking
+        return {"status": "ok", "flushed_statuses": result.flushed_statuses, "removed": result.removed}
     except ValueError as e:
         status_code = 400 if "Invalid" in str(e) else 409
         raise HTTPException(status_code=status_code, detail=str(e)) from e
@@ -107,7 +108,7 @@ async def admin_pause_worker(
 ):
     """Pause the background worker (stops processing new jobs)."""
     result = worker_service.pause_workers(event_broker)
-    return {"status": "ok", **result}
+    return {"status": "ok", "worker_enabled": result.worker_enabled}
 
 
 # ----------------------------------------------------------------------
@@ -121,7 +122,7 @@ async def admin_resume_worker(
 ):
     """Resume the background worker (starts processing again)."""
     result = worker_service.resume_workers(worker_pool, event_broker)
-    return {"status": "ok", **result}
+    return {"status": "ok", "worker_enabled": result.worker_enabled}
 
 
 # ----------------------------------------------------------------------

@@ -119,6 +119,8 @@ async def generate_calibration(
     If save_sidecars=True, writes calibration JSON files next to model files.
     """
     try:
+        from dataclasses import asdict
+
         # Run calibration in background thread (can take time with 18k songs)
         loop = asyncio.get_event_loop()
         calibration_data = await loop.run_in_executor(
@@ -126,19 +128,34 @@ async def generate_calibration(
             calibration_service.generate_minmax_calibration,
         )
 
-        # Optionally save sidecars
+        # Optionally save sidecars (service method accepts dict for backward compat)
         save_result = None
         if request.save_sidecars:
             save_result = await loop.run_in_executor(
                 None,
                 calibration_service.save_calibration_sidecars,
-                calibration_data,
+                asdict(calibration_data),
             )
 
+        # Return DTO fields inline for JSON serialization
         return {
             "status": "success",
-            "data": calibration_data,
-            "saved_files": save_result,
+            "data": {
+                "method": calibration_data.method,
+                "library_size": calibration_data.library_size,
+                "min_samples": calibration_data.min_samples,
+                "calibrations": calibration_data.calibrations,
+                "skipped_tags": calibration_data.skipped_tags,
+            },
+            "saved_files": (
+                {
+                    "saved_files": save_result.saved_files,
+                    "total_files": save_result.total_files,
+                    "total_labels": save_result.total_labels,
+                }
+                if save_result and not isinstance(save_result, dict)
+                else save_result
+            ),
         }
 
     except Exception as e:

@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
@@ -147,7 +147,7 @@ def generate_minmax_calibration(
 
 
 def save_calibration_sidecars(
-    calibration_data: dict[str, Any],
+    calibration_data: dict[str, Any] | GenerateMinmaxCalibrationResult,
     models_dir: str,
     version: int = 1,
 ) -> SaveCalibrationSidecarsResult:
@@ -158,7 +158,7 @@ def save_calibration_sidecars(
     then saves calibration data as <model>-calibration-v{version}.json sidecars.
 
     Args:
-        calibration_data: Output from generate_minmax_calibration()
+        calibration_data: Output from generate_minmax_calibration() (DTO or legacy dict)
         models_dir: Path to models directory
         version: Calibration version number
 
@@ -190,7 +190,12 @@ def save_calibration_sidecars(
     # Group calibrations by model
     model_calibrations: dict[str, dict[str, Any]] = {}
 
-    calibrations = calibration_data.get("calibrations", {})
+    # Support both DTO and legacy dict formats
+    if isinstance(calibration_data, GenerateMinmaxCalibrationResult):
+        calibrations = calibration_data.calibrations
+    else:
+        calibrations = calibration_data.get("calibrations", {})
+
     for tag_key, calib_stats in calibrations.items():
         # Parse tag key (NEW FORMAT - no calibration suffix):
         # Format: label_framework_embedder{date}_head{date}
@@ -270,12 +275,20 @@ def save_calibration_sidecars(
         calibration_filename = f"{model_base}-calibration-v{version}.json"
         calibration_path = os.path.join(model_dir, calibration_filename)
 
+        # Extract library_size and min_samples from calibration_data
+        if isinstance(calibration_data, GenerateMinmaxCalibrationResult):
+            library_size = calibration_data.library_size
+            min_samples = calibration_data.min_samples
+        else:
+            library_size = calibration_data["library_size"]
+            min_samples = calibration_data["min_samples"]
+
         # Build calibration sidecar
         sidecar = {
             "calibration_version": version,
             "calibration_method": "minmax",
-            "library_size": calibration_data["library_size"],
-            "min_samples": calibration_data["min_samples"],
+            "library_size": library_size,
+            "min_samples": min_samples,
             "model": calib_data["model"],
             "head_type": calib_data["head_type"],
             "backbone": calib_data["backbone"],
@@ -299,10 +312,16 @@ def save_calibration_sidecars(
 
     logging.info(f"[calibration] Saved {len(saved_files)} calibration sidecars")
 
+    # Sum label counts with explicit type handling
+    total_labels = 0
+    for file_data in saved_files.values():
+        label_count = file_data.get("label_count", 0)
+        total_labels += int(cast(int, label_count))
+
     return SaveCalibrationSidecarsResult(
         saved_files=saved_files,
         total_files=len(saved_files),
-        total_labels=sum(f["label_count"] for f in saved_files.values()),
+        total_labels=total_labels,
     )
 
 

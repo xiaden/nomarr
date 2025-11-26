@@ -249,7 +249,7 @@ class BaseWorker(threading.Thread):
     def _is_paused(self) -> bool:
         """Check if worker is paused via DB meta."""
         meta = self.db.meta.get("worker_enabled")
-        return meta == "false"
+        return bool(meta == "false")
 
     def _check_cache_eviction(self) -> None:
         """Periodically check and evict idle ML model cache."""

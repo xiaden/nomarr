@@ -133,4 +133,6 @@ async def web_list(
 ) -> dict[str, Any]:
     """List jobs with pagination and filtering (web UI proxy)."""
     # Use QueueService to list jobs
-    return queue_service.list_jobs(limit=limit, offset=offset, status=status)
+    result = queue_service.list_jobs(limit=limit, offset=offset, status=status)
+    # Return DTO fields inline for JSON serialization
+    return {"jobs": result.jobs, "total": result.total, "limit": result.limit, "offset": result.offset}

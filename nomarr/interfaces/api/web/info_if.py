@@ -49,7 +49,7 @@ async def web_health(
     # Detect potential issues
     warnings = []
     worker_count = processor_coord.worker_count if processor_coord else 0
-    running_jobs = queue_stats.get("running", 0)
+    running_jobs = queue_stats.counts.get("running", 0)
 
     # Check for more running jobs than workers (stuck jobs)
     if running_jobs > worker_count:

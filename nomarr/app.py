@@ -79,7 +79,7 @@ class Application:
         """
         # Load configuration (private - external access via ConfigService)
         config_service = ConfigService()
-        self._config = config_service.get_config()
+        self._config = config_service.get_config().config
 
         # Import internal constants
         from nomarr.services.config_svc import (

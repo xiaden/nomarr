@@ -38,18 +38,15 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from nomarr.helpers.dto.library_dto import ScanSingleFileWorkflowParams, UpdateLibraryFileFromTagsParams
+
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
 def scan_single_file_workflow(
     db: Database,
-    file_path: str,
-    namespace: str,
-    force: bool = False,
-    auto_tag: bool = False,
-    ignore_patterns: str = "",
-    library_id: int | None = None,
+    params: ScanSingleFileWorkflowParams,
 ) -> dict[str, Any]:
     """
     Scan a single audio file and update library database.
@@ -61,12 +58,7 @@ def scan_single_file_workflow(
 
     Args:
         db: Database instance (must provide library, tags, and queue accessors)
-        file_path: Absolute path to audio file to scan
-        namespace: Tag namespace for tag extraction (e.g., "nom")
-        force: Whether to force rescan even if file hasn't changed
-        auto_tag: Whether to auto-enqueue untagged files for ML tagging
-        ignore_patterns: Comma-separated patterns to skip from auto-tagging
-        library_id: Library ID (if None, will be auto-determined from file path)
+        params: ScanSingleFileWorkflowParams with file_path, namespace, force, auto_tag, ignore_patterns, library_id
 
     Returns:
         Dict with scan results:
@@ -79,6 +71,13 @@ def scan_single_file_workflow(
     Raises:
         Exception: On scan failure (caller should handle and mark job as error)
     """
+    # Extract parameters
+    file_path = params.file_path
+    namespace = params.namespace
+    force = params.force
+    auto_tag = params.auto_tag
+    ignore_patterns = params.ignore_patterns
+    library_id = params.library_id
     logging.debug(f"[scan_single_file] Scanning {file_path}")
 
     result: dict[str, Any] = {
@@ -130,7 +129,14 @@ def scan_single_file_workflow(
         is_new = existing_file is None
 
         # Update library database with file metadata and tags
-        update_library_file_from_tags(db, file_path, namespace, library_id=library_id)
+        params_update = UpdateLibraryFileFromTagsParams(
+            file_path=file_path,
+            namespace=namespace,
+            tagged_version=None,
+            calibration=None,
+            library_id=library_id,
+        )
+        update_library_file_from_tags(db, params_update)
 
         result["action"] = "added" if is_new else "updated"
         result["success"] = True

@@ -129,12 +129,12 @@ def test_generate_minmax_calibration(temp_db):
     )
 
     # Check structure
-    assert calibration_data["method"] == "minmax"
-    assert calibration_data["library_size"] == 1100
-    assert calibration_data["min_samples"] == 1000
+    assert calibration_data.method == "minmax"
+    assert calibration_data.library_size == 1100
+    assert calibration_data.min_samples == 1000
 
     # Should have calibrations for both tags (1100 samples each)
-    calibrations = calibration_data["calibrations"]
+    calibrations = calibration_data.calibrations
     assert len(calibrations) == 2
 
     # Check happy tag calibration (NEW FORMAT - no calibration suffix)
@@ -162,11 +162,11 @@ def test_save_calibration_sidecars(temp_db, temp_models_dir):
     save_result = save_calibration_sidecars(calibration_data=calibration_data, models_dir=temp_models_dir, version=1)
 
     # Check save result
-    assert save_result["total_files"] == 2  # happy and sad heads
-    assert save_result["total_labels"] == 2
+    assert save_result.total_files == 2  # happy and sad heads
+    assert save_result.total_labels == 2
 
     # Verify files exist
-    saved_files = save_result["saved_files"]
+    saved_files = save_result.saved_files
     assert len(saved_files) == 2
 
     # Check happy calibration file
@@ -236,8 +236,8 @@ def test_calibration_min_samples_filter():
     )
 
     # Should skip both tags (only 3 test samples < 1000 minimum)
-    assert len(calibration_data["calibrations"]) == 0
-    assert calibration_data["skipped_tags"] == 2
+    assert len(calibration_data.calibrations) == 0
+    assert calibration_data.skipped_tags == 2
 
     db.close()
     os.unlink(db_path)
@@ -252,9 +252,9 @@ def test_calibration_empty_library():
 
     calibration_data = generate_minmax_calibration(db=db, namespace="")
 
-    assert calibration_data["library_size"] == 0
-    assert len(calibration_data["calibrations"]) == 0
-    assert calibration_data["skipped_tags"] == 0
+    assert calibration_data.library_size == 0
+    assert len(calibration_data.calibrations) == 0
+    assert calibration_data.skipped_tags == 0
 
     db.close()
     os.unlink(db_path)

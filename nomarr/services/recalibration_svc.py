@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from nomarr.helpers.dto.recalibration_dto import GetStatusResult
+
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
     from nomarr.services.workers.base import BaseWorker
@@ -81,13 +83,19 @@ class RecalibrationService:
         logger.info(f"Successfully queued {count}/{len(paths)} files")
         return count
 
-    def get_status(self) -> dict[str, int]:
+    def get_status(self) -> GetStatusResult:
         """Get current recalibration queue status.
 
         Returns:
-            Dictionary with counts: pending, running, done, error
+            GetStatusResult with counts for pending, running, done, error
         """
-        return self.db.calibration_queue.get_calibration_status()
+        status_dict = self.db.calibration_queue.get_calibration_status()
+        return GetStatusResult(
+            pending=status_dict["pending"],
+            running=status_dict["running"],
+            done=status_dict["done"],
+            error=status_dict["error"],
+        )
 
     def clear_queue(self) -> int:
         """Clear all pending and completed recalibration jobs.

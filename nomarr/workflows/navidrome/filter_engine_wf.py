@@ -69,14 +69,16 @@ def _execute_single_condition(db: Database, condition: TagCondition) -> set[int]
     """
     if condition.operator == "contains":
         # String contains query
-        return db.joined_queries.get_file_ids_containing_tag(
+        result = db.joined_queries.get_file_ids_containing_tag(
             tag_key=condition.tag_key,
             substring=str(condition.value),
         )
+        return set(result) if not isinstance(result, set) else result
     else:
         # Numeric comparison query
-        return db.joined_queries.get_file_ids_matching_tag(
+        result = db.joined_queries.get_file_ids_matching_tag(
             tag_key=condition.tag_key,
             operator=condition.operator,
             value=condition.value,
         )
+        return set(result) if not isinstance(result, set) else result

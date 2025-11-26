@@ -73,6 +73,6 @@ class SegmentWaveformParams:
 class AnalyzeWithSegmentsResult:
     """Result from analyze_with_segments."""
 
-    embeddings: Any  # np.ndarray
-    sample_rate: int
-    num_segments: int
+    pooled_vector: Any  # np.ndarray - pooled embedding vector
+    segments: Any  # Segments object with waves and bounds
+    duration: float  # audio duration in seconds

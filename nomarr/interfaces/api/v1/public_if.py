@@ -116,8 +116,8 @@ async def get_info(
             "embeddings": embeddings,
         },
         "queue": {
-            "depth": queue_info["depth"],
-            "counts": queue_info["counts"],
+            "depth": queue_info.depth,
+            "counts": queue_info.counts,
         },
         "worker": {
             "enabled": worker_enabled,

@@ -13,7 +13,7 @@ while properly separating persistence (SQL) from computation (analytics).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, cast
 
 from nomarr.components.analytics.analytics_comp import (
     compute_artist_tag_profile,
@@ -29,7 +29,9 @@ from nomarr.helpers.dto.analytics_dto import (
     ComputeTagCorrelationMatrixParams,
     ComputeTagFrequenciesParams,
     MoodCoOccurrenceData,
+    MoodDistributionItem,
     TagCorrelationData,
+    TagFrequencyItem,
 )
 from nomarr.persistence.analytics_queries import (
     fetch_artist_tag_profile_data,
@@ -68,7 +70,7 @@ class AnalyticsService:
         self._db = db
         self.cfg = cfg
 
-    def get_tag_frequencies(self, limit: int = 50) -> list[dict[str, Any]]:
+    def get_tag_frequencies(self, limit: int = 50) -> list[TagFrequencyItem]:
         """
         Get frequency counts for all tags in the library (API-ready format).
 
@@ -76,7 +78,7 @@ class AnalyticsService:
             limit: Max results per category
 
         Returns:
-            List of dicts with tag_key, total_count, unique_values for frontend
+            List of TagFrequencyItem DTOs for frontend
         """
         namespace_prefix = f"{self.cfg.namespace}:"
         data = fetch_tag_frequencies_data(db=self._db, namespace=self.cfg.namespace, limit=limit)
@@ -91,11 +93,10 @@ class AnalyticsService:
         result = compute_tag_frequencies(params=params)
 
         # Transform to API-ready format (add namespace prefix back for display)
-        tag_frequencies = [
-            {"tag_key": f"{self.cfg.namespace}:{tag}", "total_count": count, "unique_values": count}
+        return [
+            TagFrequencyItem(tag_key=f"{self.cfg.namespace}:{tag}", total_count=count, unique_values=count)
             for tag, count in result.nom_tags
         ]
-        return tag_frequencies
 
     def get_tag_correlation_matrix(self, top_n: int = 20) -> TagCorrelationData:
         """
@@ -115,14 +116,14 @@ class AnalyticsService:
             tier_tag_keys=data["tier_tag_keys"],
             tier_tag_rows=data["tier_tag_rows"],
         )
-        return compute_tag_correlation_matrix(params=params)
+        return cast(TagCorrelationData, compute_tag_correlation_matrix(params=params))
 
-    def get_mood_distribution(self) -> list[dict[str, Any]]:
+    def get_mood_distribution(self) -> list[MoodDistributionItem]:
         """
         Get mood distribution across all tiers.
 
         Returns:
-            List of mood distribution entries (mood, count, percentage)
+            List of MoodDistributionItem DTOs
         """
         mood_rows = fetch_mood_distribution_data(db=self._db, namespace=self.cfg.namespace)
         result = compute_mood_distribution(mood_rows=mood_rows)
@@ -131,15 +132,14 @@ class AnalyticsService:
         top_moods = result.top_moods
         total_moods = sum(count for _, count in top_moods)
 
-        mood_distribution = [
-            {
-                "mood": mood,
-                "count": count,
-                "percentage": round((count / total_moods * 100), 2) if total_moods > 0 else 0,
-            }
+        return [
+            MoodDistributionItem(
+                mood=mood,
+                count=count,
+                percentage=round((count / total_moods * 100), 2) if total_moods > 0 else 0,
+            )
             for mood, count in top_moods
         ]
-        return mood_distribution
 
     def get_artist_tag_profile(self, artist: str, limit: int = 20) -> ArtistTagProfile:
         """
@@ -161,7 +161,7 @@ class AnalyticsService:
             tag_rows=data["tag_rows"],
             limit=limit,
         )
-        return compute_artist_tag_profile(params=params)
+        return cast(ArtistTagProfile, compute_artist_tag_profile(params=params))
 
     def get_mood_value_co_occurrences(self, mood_value: str, limit: int = 10) -> MoodCoOccurrenceData:
         """
@@ -183,4 +183,4 @@ class AnalyticsService:
             artist_rows=data["artist_rows"],
             limit=limit,
         )
-        return compute_mood_value_co_occurrences(params=params)
+        return cast(MoodCoOccurrenceData, compute_mood_value_co_occurrences(params=params))

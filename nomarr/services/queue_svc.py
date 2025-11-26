@@ -9,32 +9,18 @@ import logging
 import threading
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from typing import Any
 
-from nomarr.helpers.dto.queue_dto import DequeueResult, JobDict, ListJobsResult
+from nomarr.helpers.dto.queue_dto import (
+    DequeueResult,
+    EnqueueFilesResult,
+    FlushResult,
+    Job,
+    ListJobsResult,
+    QueueStatus,
+)
 from nomarr.persistence.db import Database
 from nomarr.workflows.queue.enqueue_files_wf import enqueue_files_workflow
-
-# ----------------------------------------------------------------------
-#  Service-Local DTOs (used only by QueueService + interfaces)
-# ----------------------------------------------------------------------
-
-
-@dataclass
-class FlushResult:
-    """Result from queue_service.flush_by_statuses."""
-
-    flushed_statuses: list[str]
-    removed: int
-
-
-@dataclass
-class QueueStatus:
-    """Result from queue_service.get_status."""
-
-    depth: int
-    counts: dict[str, int]
 
 
 # ----------------------------------------------------------------------
@@ -89,10 +75,10 @@ class BaseQueue(ABC):
 
 
 # ----------------------------------------------------------------------
-#  Job Dataclass
+#  QueueJob Dataclass (DB row wrapper)
 # ----------------------------------------------------------------------
-class Job:
-    """Represents a single job in the processing queue."""
+class QueueJob:
+    """Internal wrapper for a single job row from the database."""
 
     def __init__(self, **row):
         self.id = row.get("id")
@@ -104,9 +90,13 @@ class Job:
         self.error_message = row.get("error_message")
         self.force = bool(row.get("force", 0))
 
-    def to_dict(self) -> JobDict:
-        """Convert job to dictionary representation."""
-        return JobDict(
+    def to_dto(self) -> Job:
+        """Convert DB row wrapper to Job DTO."""
+        # Ensure required fields have values (should always be true from DB)
+        if self.id is None or self.path is None or self.created_at is None:
+            raise ValueError("Job missing required fields")
+
+        return Job(
             id=self.id,
             path=self.path,
             status=self.status,
@@ -186,19 +176,19 @@ class ProcessingQueue(BaseQueue):
             logging.debug(f"[ProcessingQueue] Added job {job_id} for {path}")
             return job_id
 
-    def get(self, job_id: int) -> Job | None:
-        """Get job by ID."""
+    def get(self, job_id: int) -> QueueJob | None:
+        """Get job by ID (returns internal QueueJob wrapper)."""
         row = self.db.tag_queue.job_status(job_id)
         if not row:
             return None
-        return Job(**row)
+        return QueueJob(**row)
 
     def delete(self, job_id: int) -> int:
         """Delete a job by ID. Returns 1 if deleted, 0 if not found."""
         with self.lock:
             return self.db.tag_queue.delete_job(job_id)
 
-    def list_jobs(self, limit: int = 25, offset: int = 0, status: str | None = None) -> tuple[list[Job], int]:
+    def list_jobs(self, limit: int = 25, offset: int = 0, status: str | None = None) -> ListJobsResult:
         """
         List jobs with pagination and optional status filter.
 
@@ -208,11 +198,16 @@ class ProcessingQueue(BaseQueue):
             status: Filter by status (pending/running/done/error), or None for all
 
         Returns:
-            Tuple of (jobs list, total count matching filter)
+            ListJobsResult with jobs list and total count
         """
         rows, total = self.db.tag_queue.list_jobs(limit=limit, offset=offset, status=status)
-        jobs = [Job(**row) for row in rows]
-        return jobs, total
+        jobs = [QueueJob(**row) for row in rows]
+        return ListJobsResult(
+            jobs=[job.to_dto() for job in jobs],
+            total=total,
+            limit=limit,
+            offset=offset,
+        )
 
     def update_status(self, job_id: int, status: str, **kwargs) -> None:
         """Update job status and optional fields."""
@@ -372,7 +367,7 @@ class QueueService:
         """
         self.queue = queue
 
-    def add_files(self, paths: str | list[str], force: bool = False, recursive: bool = True) -> dict[str, Any]:
+    def add_files(self, paths: str | list[str], force: bool = False, recursive: bool = True) -> EnqueueFilesResult:
         """
         Add audio files to the queue for processing.
 
@@ -388,7 +383,7 @@ class QueueService:
             recursive: If True, recursively scan directories for audio files
 
         Returns:
-            Dict with:
+            EnqueueFilesResult with:
                 - job_ids: List of created job IDs
                 - files_queued: Number of files added
                 - queue_depth: Total pending jobs after adding
@@ -498,7 +493,7 @@ class QueueService:
 
         return QueueStatus(depth=depth, counts=counts)
 
-    def get_job(self, job_id: int) -> JobDict | None:
+    def get_job(self, job_id: int) -> Job | None:
         """
         Get job details by ID.
 
@@ -506,11 +501,11 @@ class QueueService:
             job_id: Job ID to retrieve
 
         Returns:
-            JobDict or None if not found
+            Job DTO or None if not found
         """
         job = self.queue.get(job_id)
         if job:
-            return job.to_dict()
+            return job.to_dto()
         return None
 
     def reset_jobs(self, stuck: bool = False, errors: bool = False) -> int:
@@ -588,14 +583,8 @@ class QueueService:
                 - limit: Limit used
                 - offset: Offset used
         """
-        jobs_list, total = self.queue.list_jobs(limit=limit, offset=offset, status=status)
-
-        return ListJobsResult(
-            jobs=[job.to_dict() for job in jobs_list],
-            total=total,
-            limit=limit,
-            offset=offset,
-        )
+        result = self.queue.list_jobs(limit=limit, offset=offset, status=status)
+        return result
 
     def publish_queue_update(self, event_broker: Any | None) -> None:
         """

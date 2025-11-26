@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from nomarr.helpers.dto.config import GetInternalInfoResult
+from nomarr.helpers.dto.config_dto import GetConfigResult, GetInternalInfoResult, ReloadResult
 from nomarr.persistence.db import Database
 
 if TYPE_CHECKING:
@@ -92,7 +92,7 @@ class ConfigService:
         self._config: dict[str, Any] | None = None
         self._logger = logging.getLogger(__name__)
 
-    def get_config(self, force_reload: bool = False) -> dict[str, Any]:
+    def get_config(self, force_reload: bool = False) -> GetConfigResult:
         """
         Get the composed configuration.
 
@@ -100,11 +100,11 @@ class ConfigService:
             force_reload: If True, bypass cache and reload from sources
 
         Returns:
-            Complete configuration dict
+            GetConfigResult wrapping complete configuration dict
         """
         if self._config is None or force_reload:
             self._config = self._compose()
-        return self._config
+        return GetConfigResult(config=self._config)
 
     def get(self, key_path: str, default: Any = None) -> Any:
         """
@@ -124,7 +124,7 @@ class ConfigService:
             2
         """
         cfg = self.get_config()
-        node: Any = cfg
+        node: Any = cfg.config
         for part in key_path.split("."):
             if not isinstance(node, dict) or part not in node:
                 return default
@@ -158,15 +158,16 @@ class ConfigService:
         db.meta.set(f"config_{key}", value)
         self._logger.info(f"[ConfigService] Set config_{key} = {value}")
 
-    def reload(self) -> dict[str, Any]:
+    def reload(self) -> ReloadResult:
         """
         Force reload configuration from all sources.
 
         Returns:
-            Newly composed config
+            ReloadResult wrapping newly composed config
         """
         self._logger.info("Reloading configuration from all sources")
-        return self.get_config(force_reload=True)
+        result = self.get_config(force_reload=True)
+        return ReloadResult(config=result.config)
 
     def get_internal_info(self) -> GetInternalInfoResult:
         """
@@ -467,10 +468,10 @@ class ConfigService:
 
         return ProcessorConfig(
             # User-configurable settings
-            models_dir=str(cfg["models_dir"]),
-            overwrite_tags=bool(cfg["overwrite_tags"]),
-            file_write_mode=str(cfg.get("file_write_mode", "minimal")),  # type: ignore
-            calibrate_heads=bool(cfg.get("calibrate_heads", False)),
+            models_dir=str(cfg.config["models_dir"]),
+            overwrite_tags=bool(cfg.config["overwrite_tags"]),
+            file_write_mode=str(cfg.config.get("file_write_mode", "minimal")),  # type: ignore
+            calibrate_heads=bool(cfg.config.get("calibrate_heads", False)),
             # Internal constants (not user-configurable)
             min_duration_s=INTERNAL_MIN_DURATION_S,
             allow_short=INTERNAL_ALLOW_SHORT,

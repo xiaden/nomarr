@@ -44,8 +44,9 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Protocol
 
+from nomarr.helpers.dto.queue_dto import EnqueueFilesResult
 from nomarr.helpers.files_helper import collect_audio_files
 
 if TYPE_CHECKING:
@@ -77,7 +78,7 @@ def enqueue_files_workflow(
     paths: str | list[str],
     force: bool = False,
     recursive: bool = True,
-) -> dict[str, Any]:
+) -> EnqueueFilesResult:
     """
     Discover audio files from paths and enqueue them into the given queue.
 
@@ -94,7 +95,7 @@ def enqueue_files_workflow(
         recursive: If True, recursively scan directories for audio files
 
     Returns:
-        Dict with:
+        EnqueueFilesResult with:
             - job_ids: List of created job IDs
             - files_queued: Number of files added
             - queue_depth: Total pending jobs after adding
@@ -108,7 +109,7 @@ def enqueue_files_workflow(
         >>> # Queue object is passed in by caller (services layer)
         >>> # e.g., queue = ProcessingQueue(db)
         >>> result = enqueue_files_workflow(queue=queue, paths="/music/library", force=False, recursive=True)
-        >>> print(f"Queued {result['files_queued']} files")
+        >>> print(f"Queued {result.files_queued} files")
     """
     # Normalize paths to list
     if isinstance(paths, str):
@@ -148,9 +149,9 @@ def enqueue_files_workflow(
 
     logger.info(f"[queue_workflow] Queued {len(job_ids)} files from {len(paths)} path(s) (queue depth={queue_depth})")
 
-    return {
-        "job_ids": job_ids,
-        "files_queued": len(job_ids),
-        "queue_depth": queue_depth,
-        "paths": paths,
-    }
+    return EnqueueFilesResult(
+        job_ids=job_ids,
+        files_queued=len(job_ids),
+        queue_depth=queue_depth,
+        paths=paths,
+    )

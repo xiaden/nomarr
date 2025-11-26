@@ -75,3 +75,40 @@ class PlaylistPreviewResult:
 
     query: str
     """Original query string"""
+
+
+@dataclass
+class PreviewTagStatsResult:
+    """Result from navidrome_service.preview_tag_stats()."""
+
+    stats: dict[str, dict[str, str | int | float]]
+
+
+@dataclass
+class GeneratePlaylistResult:
+    """Result from navidrome_service.generate_playlist()."""
+
+    playlist_structure: dict[str, str | int | list[dict[str, str]]]
+
+
+@dataclass
+class TemplateSummaryItem:
+    """Single template item from get_template_summary()."""
+
+    id: str
+    name: str
+    description: str
+
+
+@dataclass
+class GetTemplateSummaryResult:
+    """Result from navidrome_service.get_template_summary()."""
+
+    templates: list[TemplateSummaryItem]
+
+
+@dataclass
+class GenerateTemplateFilesResult:
+    """Result from navidrome_service.generate_template_files()."""
+
+    files_generated: dict[str, str]

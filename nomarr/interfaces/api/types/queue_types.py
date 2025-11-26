@@ -19,7 +19,7 @@ from typing import Literal
 from pydantic import BaseModel
 from typing_extensions import Self
 
-from nomarr.helpers.dto.queue_dto import JobDict, ListJobsResult
+from nomarr.helpers.dto.queue_dto import ListJobsResult
 from nomarr.services.queue_svc import QueueStatus
 from nomarr.services.worker_svc import WorkerStatusResult
 

@@ -15,8 +15,13 @@ from dataclasses import dataclass
 
 
 @dataclass
-class JobDict:
-    """Result from queue_service.to_dict - represents a job as dict for API."""
+class Job:
+    """
+    Core queue job entity.
+
+    Represents a queued processing job with full lifecycle tracking.
+    Used across queue service, library service, and worker operations.
+    """
 
     id: int
     path: str
@@ -41,7 +46,33 @@ class DequeueResult:
 class ListJobsResult:
     """Result from queue_service.list_jobs."""
 
-    jobs: list[JobDict]
+    jobs: list[Job]
     total: int
     limit: int
     offset: int
+
+
+@dataclass
+class FlushResult:
+    """Result from queue_service.flush_by_statuses."""
+
+    flushed_statuses: list[str]
+    removed: int
+
+
+@dataclass
+class QueueStatus:
+    """Result from queue_service.get_status."""
+
+    depth: int
+    counts: dict[str, int]
+
+
+@dataclass
+class EnqueueFilesResult:
+    """Result from enqueue_files_workflow and queue_service.add_files."""
+
+    job_ids: list[int]
+    files_queued: int
+    queue_depth: int
+    paths: list[str]

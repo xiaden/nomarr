@@ -8,13 +8,17 @@ Navidrome config/playlist generation without exposing DB to interfaces.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
+
+from nomarr.helpers.dto.navidrome_dto import (
+    GeneratePlaylistResult,
+    GenerateTemplateFilesResult,
+    GetTemplateSummaryResult,
+    PreviewTagStatsResult,
+)
 
 if TYPE_CHECKING:
-    from nomarr.helpers.dto.navidrome import PlaylistPreviewResult
-    from nomarr.persistence.db import Database
-
-if TYPE_CHECKING:
+    from nomarr.helpers.dto.navidrome_dto import PlaylistPreviewResult
     from nomarr.persistence.db import Database
 
 
@@ -43,11 +47,12 @@ class NavidromeService:
         self._db = db
         self.cfg = cfg
 
-    def preview_tag_stats(self) -> dict[str, dict[str, Any]]:
+    def preview_tag_stats(self) -> PreviewTagStatsResult:
         """Get preview of tags for Navidrome config generation."""
         from nomarr.workflows.navidrome import preview_tag_stats_workflow
 
-        return preview_tag_stats_workflow(self._db, namespace=self.cfg.namespace)
+        stats = preview_tag_stats_workflow(self._db, namespace=self.cfg.namespace)
+        return PreviewTagStatsResult(stats=stats)
 
     def generate_navidrome_config(self) -> str:
         """Generate Navidrome config file content."""
@@ -86,7 +91,7 @@ class NavidromeService:
         comment: str = "",
         sort: str | None = None,
         limit: int | None = None,
-    ) -> dict[str, Any]:
+    ) -> GeneratePlaylistResult:
         """
         Generate Navidrome Smart Playlist (.nsp) structure.
 
@@ -98,11 +103,11 @@ class NavidromeService:
             limit: Optional limit on number of tracks
 
         Returns:
-            Dict with .nsp structure (name, rules, sort, limit, etc.)
+            GeneratePlaylistResult DTO with .nsp structure
         """
         from nomarr.workflows.navidrome import generate_smart_playlist_workflow
 
-        return generate_smart_playlist_workflow(
+        playlist_structure = generate_smart_playlist_workflow(
             db=self._db,
             query=query,
             playlist_name=playlist_name,
@@ -111,19 +116,25 @@ class NavidromeService:
             sort=sort,
             limit=limit,
         )
+        return GeneratePlaylistResult(playlist_structure=playlist_structure)
 
-    def get_template_summary(self) -> list[dict[str, Any]]:
+    def get_template_summary(self) -> GetTemplateSummaryResult:
         """Get list of available Navidrome templates."""
+        from nomarr.helpers.dto.navidrome_dto import TemplateSummaryItem
         from nomarr.helpers.navidrome_templates_helper import get_template_summary
 
-        return get_template_summary()
+        templates_list = get_template_summary()
+        # Convert list of dicts to list of TemplateSummaryItem DTOs
+        templates = [TemplateSummaryItem(**t) for t in templates_list]
+        return GetTemplateSummaryResult(templates=templates)
 
     def generate_template_files(
         self,
         template_id: str,
         output_dir: str,
-    ) -> dict[str, Any]:
+    ) -> GenerateTemplateFilesResult:
         """Generate files from a template."""
         from nomarr.helpers.navidrome_templates_helper import generate_template_files
 
-        return generate_template_files()
+        files_generated = generate_template_files()
+        return GenerateTemplateFilesResult(files_generated=files_generated)

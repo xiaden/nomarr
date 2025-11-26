@@ -18,6 +18,7 @@ EXPECTED DEPENDENCIES:
 
 USAGE:
     from nomarr.workflows.calibration.recalibrate_file_wf import recalibrate_file_workflow
+    from nomarr.helpers.dto.calibration_dto import LoadLibraryStateResult
 
     recalibrate_file_workflow(
         db=database_instance,
@@ -37,6 +38,8 @@ from typing import TYPE_CHECKING, Any
 from nomarr.components.ml.ml_discovery_comp import HeadOutput, discover_heads
 from nomarr.components.tagging.tagging_aggregation_comp import aggregate_mood_tiers, load_calibrations
 from nomarr.components.tagging.tagging_writer_comp import TagWriter
+from nomarr.helpers.dto.calibration_dto import LoadLibraryStateResult
+from nomarr.helpers.dto.library_dto import RecalibrateFileWorkflowParams
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -46,7 +49,7 @@ def _load_library_state(
     db: Database,
     file_path: str,
     namespace: str,
-) -> tuple[int, dict[str, Any], dict[str, str]]:
+) -> LoadLibraryStateResult:
     """
     Load file metadata and tags from library database.
 
@@ -56,11 +59,12 @@ def _load_library_state(
         namespace: Tag namespace
 
     Returns:
-        Tuple of (file_id, all_tags, calibration_map)
+        LoadLibraryStateResult with file_id, all_tags, calibration_map
 
     Raises:
         FileNotFoundError: If file not found in library database
     """
+
     # Get file from library
     library_file = db.library_files.get_library_file(file_path)
     if not library_file:
@@ -83,7 +87,11 @@ def _load_library_state(
     if not all_tags:
         logging.warning(f"[recalibration] No tags found for {file_path}")
 
-    return file_id, all_tags, calibration_map
+    return LoadLibraryStateResult(
+        file_id=file_id,
+        all_tags=all_tags,
+        calibration_map=calibration_map,
+    )
 
 
 def _filter_numeric_tags(
@@ -320,11 +328,7 @@ def _update_db_and_file(
 
 def recalibrate_file_workflow(
     db: Database,
-    file_path: str,
-    models_dir: str,
-    namespace: str,
-    version_tag_key: str,
-    calibrate_heads: bool = False,
+    params: RecalibrateFileWorkflowParams,
 ) -> None:
     """
     Recalibrate a single file by applying calibration to existing numeric tags.
@@ -366,10 +370,20 @@ def recalibrate_file_workflow(
         ...     calibrate_heads=False,
         ... )
     """
+    # Extract params for convenient access
+    file_path = params.file_path
+    models_dir = params.models_dir
+    namespace = params.namespace
+    version_tag_key = params.version_tag_key
+    calibrate_heads = params.calibrate_heads
+
     logging.debug(f"[recalibration] Processing {file_path}")
 
-    # Step 1: Load library state (file metadata, tags, calibration)
-    file_id, all_tags, calibration_map = _load_library_state(db, file_path, namespace)
+    # 1. Load library state (file ID, all tags, calibration metadata)
+    library_state = _load_library_state(db, file_path, namespace)
+    file_id = library_state.file_id
+    all_tags = library_state.all_tags
+    calibration_map = library_state.calibration_map
 
     if not all_tags:
         return

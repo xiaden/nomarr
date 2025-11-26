@@ -80,8 +80,7 @@ def path_to_module(file_path: Path, project_root: Path) -> str:
 
 def discover_all_dataclasses(
     project_root: Path,
-    nomarr_package: Path,
-    tests_package: Path,
+    search_paths: list[Path],
     layer_map: dict[str, str],
     domain_map: dict[str, str],
     ignore_prefixes: list[str],
@@ -91,8 +90,7 @@ def discover_all_dataclasses(
 
     Args:
         project_root: Root directory of the project
-        nomarr_package: Path to nomarr package directory
-        tests_package: Path to tests directory
+        search_paths: List of directory paths to search
         layer_map: Mapping of module prefixes to layer names
         domain_map: Mapping of module prefixes to domain names
         ignore_prefixes: List of module prefixes to ignore
@@ -101,9 +99,8 @@ def discover_all_dataclasses(
         List of DataclassInfo objects
     """
     dataclasses: list[DataclassInfo] = []
-    search_dirs = [nomarr_package, tests_package]
 
-    for search_dir in search_dirs:
+    for search_dir in search_paths:
         if not search_dir.exists():
             continue
 
@@ -174,8 +171,7 @@ def file_imports_name(file_path: Path, name: str, defining_module: str) -> bool:
 
 def find_imports_of_dataclass(
     project_root: Path,
-    nomarr_package: Path,
-    tests_package: Path,
+    search_paths: list[Path],
     dataclass_name: str,
     defining_module: str,
     layer_map: dict[str, str],
@@ -187,8 +183,7 @@ def find_imports_of_dataclass(
 
     Args:
         project_root: Root directory of the project
-        nomarr_package: Path to nomarr package directory
-        tests_package: Path to tests directory
+        search_paths: List of directory paths to search
         dataclass_name: Name of the dataclass
         defining_module: Module where dataclass is defined
         layer_map: Mapping of module prefixes to layer names
@@ -212,9 +207,7 @@ def find_imports_of_dataclass(
     import_edges: list[ImportEdge] = []
     ignored_count: int = 0
 
-    search_dirs = [nomarr_package, tests_package]
-
-    for search_dir in search_dirs:
+    for search_dir in search_paths:
         if not search_dir.exists():
             continue
 
@@ -268,8 +261,7 @@ def find_imports_of_dataclass(
 
 def analyze_usage(
     project_root: Path,
-    nomarr_package: Path,
-    tests_package: Path,
+    search_paths: list[Path],
     dataclasses: list[DataclassInfo],
     layer_map: dict[str, str],
     domain_map: dict[str, str],
@@ -280,8 +272,7 @@ def analyze_usage(
 
     Args:
         project_root: Root directory of the project
-        nomarr_package: Path to nomarr package directory
-        tests_package: Path to tests directory
+        search_paths: List of directory paths to search
         dataclasses: List of DataclassInfo objects to analyze
         layer_map: Mapping of module prefixes to layer names
         domain_map: Mapping of module prefixes to domain names
@@ -302,8 +293,7 @@ def analyze_usage(
             ignored_count,
         ) = find_imports_of_dataclass(
             project_root,
-            nomarr_package,
-            tests_package,
+            search_paths,
             dc.name,
             dc.defining_module,
             layer_map,
@@ -462,8 +452,7 @@ def _looks_like_structured_return_annotation(
 
 def discover_missing_dataclasses(
     project_root: Path,
-    nomarr_package: Path,
-    tests_package: Path,
+    search_paths: list[Path],
     layer_map: dict[str, str],
     domain_map: dict[str, str],
     ignore_prefixes: list[str],
@@ -481,8 +470,7 @@ def discover_missing_dataclasses(
 
     Args:
         project_root: Root directory of the project
-        nomarr_package: Path to nomarr package directory
-        tests_package: Path to tests directory (not used for this analysis)
+        search_paths: List of package directories to search for dataclasses
         layer_map: Mapping of module prefixes to layer names
         domain_map: Mapping of module prefixes to domain names
         ignore_prefixes: List of module prefixes to ignore
@@ -494,73 +482,140 @@ def discover_missing_dataclasses(
     seen: set[tuple[str, str]] = set()  # Track (module, function) pairs
     allowed_layers = {"services", "workflows", "components"}
 
-    if not nomarr_package.exists():
-        return candidates
-
-    for py_file in nomarr_package.rglob("*.py"):
-        module_path = path_to_module(py_file, project_root)
-
-        # Skip ignored modules
-        if is_ignored_module(module_path, ignore_prefixes):
+    for search_path in search_paths:
+        if not search_path.exists():
             continue
 
-        # Resolve layer and domain
-        layer = resolve_layer(module_path, layer_map)
-        domain = resolve_domain(module_path, domain_map)
+        for py_file in search_path.rglob("*.py"):
+            module_path = path_to_module(py_file, project_root)
 
-        # Skip if not in allowed layers
-        if layer not in allowed_layers:
-            continue
-
-        # Parse the file
-        try:
-            source = py_file.read_text(encoding="utf-8")
-            tree = ast.parse(source, filename=str(py_file))
-        except (SyntaxError, UnicodeDecodeError) as e:
-            print(f"Warning: Could not parse {py_file}: {e}", file=sys.stderr)
-            continue
-
-        # Build a set of functions that are methods (defined inside classes)
-        class_methods: set[str] = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ClassDef):
-                for item in node.body:
-                    if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                        class_methods.add(item.name)
-
-        # Walk all function definitions
-        for node in ast.walk(tree):
-            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            # Skip ignored modules
+            if is_ignored_module(module_path, ignore_prefixes):
                 continue
 
-            func_name = node.name
+            # Resolve layer and domain
+            layer = resolve_layer(module_path, layer_map)
+            domain = resolve_domain(module_path, domain_map)
 
-            # Always skip __init__
-            if func_name == "__init__":
+            # Skip if not in allowed layers
+            if layer not in allowed_layers:
                 continue
 
-            # Check for deduplication
-            key = (module_path, func_name)
-            if key in seen:
+            # Parse the file
+            try:
+                source = py_file.read_text(encoding="utf-8")
+                tree = ast.parse(source, filename=str(py_file))
+            except (SyntaxError, UnicodeDecodeError) as e:
+                print(f"Warning: Could not parse {py_file}: {e}", file=sys.stderr)
                 continue
 
-            # Determine if function is private and if it's a method
-            is_private = func_name.startswith("_")
-            is_method = func_name in class_methods
+            # Build a set of functions that are methods (defined inside classes)
+            class_methods: set[str] = set()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ClassDef):
+                    for item in node.body:
+                        if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                            class_methods.add(item.name)
 
-            # Skip ALL private methods - they are internal implementation details
-            if is_private and is_method:
-                continue
+            # Walk all function definitions
+            for node in ast.walk(tree):
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
 
-            # SPECIAL HANDLING FOR SERVICE METHODS
-            # Service methods should almost always return DTOs if they return structured data
-            is_service = layer == "services"
-            if is_service and is_method and not is_private:
-                # Check for dict return first
+                func_name = node.name
+
+                # Always skip __init__
+                if func_name == "__init__":
+                    continue
+
+                # Check for deduplication
+                key = (module_path, func_name)
+                if key in seen:
+                    continue
+
+                # Determine if function is private and if it's a method
+                is_private = func_name.startswith("_")
+                is_method = func_name in class_methods
+
+                # Skip ALL private methods - they are internal implementation details
+                if is_private and is_method:
+                    continue
+
+                # SPECIAL HANDLING FOR SERVICE METHODS
+                # Service methods should almost always return DTOs if they return structured data
+                is_service = layer == "services"
+                if is_service and is_method and not is_private:
+                    # Check for dict return first
+                    has_dict, dict_keys = _has_dict_return(node)
+                    if has_dict:
+                        suggested_name = _to_pascal_case(func_name) + "Result"
+                        reason = f"Service method return should be a DTO (currently returns literal dict with {len(dict_keys)} fields)"
+                        candidates.append(
+                            MissingDataclassCandidate(
+                                module=module_path,
+                                function=func_name,
+                                defining_file=py_file,
+                                layer=layer,
+                                domain=domain,
+                                reason=reason,
+                                fields=dict_keys,
+                                suggested_name=suggested_name,
+                                is_private=is_private,
+                            )
+                        )
+                        seen.add(key)
+                        continue
+
+                    # Check for tuple return
+                    has_tuple, tuple_count = _has_tuple_return(node)
+                    if has_tuple:
+                        suggested_name = _to_pascal_case(func_name) + "Result"
+                        reason = f"Service method return should be a DTO (currently returns literal tuple with {tuple_count} elements)"
+                        fields = [f"field{i + 1}" for i in range(tuple_count)]
+                        candidates.append(
+                            MissingDataclassCandidate(
+                                module=module_path,
+                                function=func_name,
+                                defining_file=py_file,
+                                layer=layer,
+                                domain=domain,
+                                reason=reason,
+                                fields=fields,
+                                suggested_name=suggested_name,
+                                is_private=is_private,
+                            )
+                        )
+                        seen.add(key)
+                        continue
+
+                    # Check for structured return annotation
+                    has_structured, type_desc = _looks_like_structured_return_annotation(node)
+                    if has_structured:
+                        suggested_name = _to_pascal_case(func_name) + "Result"
+                        reason = f"Service method return should be a DTO (currently returns {type_desc})"
+                        candidates.append(
+                            MissingDataclassCandidate(
+                                module=module_path,
+                                function=func_name,
+                                defining_file=py_file,
+                                layer=layer,
+                                domain=domain,
+                                reason=reason,
+                                fields=[],  # Can't infer fields from annotation alone
+                                suggested_name=suggested_name,
+                                is_private=is_private,
+                            )
+                        )
+                        seen.add(key)
+                        continue
+
+                # Priority 1: Dict return
+                # For private functions: only flag module-level helpers (not methods)
+                # For public functions/methods: flag both
                 has_dict, dict_keys = _has_dict_return(node)
                 if has_dict:
                     suggested_name = _to_pascal_case(func_name) + "Result"
-                    reason = f"Service method return should be a DTO (currently returns literal dict with {len(dict_keys)} fields)"
+                    reason = f"Returns literal dict with {len(dict_keys)} fields"
                     candidates.append(
                         MissingDataclassCandidate(
                             module=module_path,
@@ -575,13 +630,14 @@ def discover_missing_dataclasses(
                         )
                     )
                     seen.add(key)
-                    continue
+                    continue  # Only one candidate per function
 
-                # Check for tuple return
+                # Priority 2: Tuple return
+                # Same logic as dict: only module-level private helpers
                 has_tuple, tuple_count = _has_tuple_return(node)
                 if has_tuple:
                     suggested_name = _to_pascal_case(func_name) + "Result"
-                    reason = f"Service method return should be a DTO (currently returns literal tuple with {tuple_count} elements)"
+                    reason = f"Returns literal tuple with {tuple_count} elements"
                     fields = [f"field{i + 1}" for i in range(tuple_count)]
                     candidates.append(
                         MissingDataclassCandidate(
@@ -597,95 +653,28 @@ def discover_missing_dataclasses(
                         )
                     )
                     seen.add(key)
-                    continue
+                    continue  # Only one candidate per function
 
-                # Check for structured return annotation
-                has_structured, type_desc = _looks_like_structured_return_annotation(node)
-                if has_structured:
-                    suggested_name = _to_pascal_case(func_name) + "Result"
-                    reason = f"Service method return should be a DTO (currently returns {type_desc})"
-                    candidates.append(
-                        MissingDataclassCandidate(
-                            module=module_path,
-                            function=func_name,
-                            defining_file=py_file,
-                            layer=layer,
-                            domain=domain,
-                            reason=reason,
-                            fields=[],  # Can't infer fields from annotation alone
-                            suggested_name=suggested_name,
-                            is_private=is_private,
+                # Priority 3: Wide parameter list
+                # ONLY for PUBLIC top-level functions (not methods, not private)
+                if not is_method and not is_private:
+                    has_wide, param_names = _has_wide_params(node)
+                    if has_wide:
+                        suggested_name = _to_pascal_case(func_name) + "Params"
+                        reason = f"Function has {len(param_names)} parameters; consider a dataclass for input shape"
+                        candidates.append(
+                            MissingDataclassCandidate(
+                                module=module_path,
+                                function=func_name,
+                                defining_file=py_file,
+                                layer=layer,
+                                domain=domain,
+                                reason=reason,
+                                fields=param_names,
+                                suggested_name=suggested_name,
+                                is_private=is_private,
+                            )
                         )
-                    )
-                    seen.add(key)
-                    continue
-
-            # Priority 1: Dict return
-            # For private functions: only flag module-level helpers (not methods)
-            # For public functions/methods: flag both
-            has_dict, dict_keys = _has_dict_return(node)
-            if has_dict:
-                suggested_name = _to_pascal_case(func_name) + "Result"
-                reason = f"Returns literal dict with {len(dict_keys)} fields"
-                candidates.append(
-                    MissingDataclassCandidate(
-                        module=module_path,
-                        function=func_name,
-                        defining_file=py_file,
-                        layer=layer,
-                        domain=domain,
-                        reason=reason,
-                        fields=dict_keys,
-                        suggested_name=suggested_name,
-                        is_private=is_private,
-                    )
-                )
-                seen.add(key)
-                continue  # Only one candidate per function
-
-            # Priority 2: Tuple return
-            # Same logic as dict: only module-level private helpers
-            has_tuple, tuple_count = _has_tuple_return(node)
-            if has_tuple:
-                suggested_name = _to_pascal_case(func_name) + "Result"
-                reason = f"Returns literal tuple with {tuple_count} elements"
-                fields = [f"field{i + 1}" for i in range(tuple_count)]
-                candidates.append(
-                    MissingDataclassCandidate(
-                        module=module_path,
-                        function=func_name,
-                        defining_file=py_file,
-                        layer=layer,
-                        domain=domain,
-                        reason=reason,
-                        fields=fields,
-                        suggested_name=suggested_name,
-                        is_private=is_private,
-                    )
-                )
-                seen.add(key)
-                continue  # Only one candidate per function
-
-            # Priority 3: Wide parameter list
-            # ONLY for PUBLIC top-level functions (not methods, not private)
-            if not is_method and not is_private:
-                has_wide, param_names = _has_wide_params(node)
-                if has_wide:
-                    suggested_name = _to_pascal_case(func_name) + "Params"
-                    reason = f"Function has {len(param_names)} parameters; consider a dataclass for input shape"
-                    candidates.append(
-                        MissingDataclassCandidate(
-                            module=module_path,
-                            function=func_name,
-                            defining_file=py_file,
-                            layer=layer,
-                            domain=domain,
-                            reason=reason,
-                            fields=param_names,
-                            suggested_name=suggested_name,
-                            is_private=is_private,
-                        )
-                    )
-                    seen.add(key)
+                        seen.add(key)
 
     return candidates

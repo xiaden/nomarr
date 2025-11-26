@@ -9,6 +9,8 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from nomarr.helpers.dto.processing_dto import WorkerEnabledResult, WorkerStatusResult
+
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
     from nomarr.services.coordinator_svc import CoordinatorService
@@ -17,25 +19,8 @@ if TYPE_CHECKING:
 
 
 # ----------------------------------------------------------------------
-#  Service-Local DTOs (used only by WorkerService + interfaces)
+#  Service-Local Config (used only by WorkerService)
 # ----------------------------------------------------------------------
-
-
-@dataclass
-class WorkerEnabledResult:
-    """Result from pause_workers/resume_workers - simple enabled status."""
-
-    worker_enabled: bool
-
-
-@dataclass
-class WorkerStatusResult:
-    """Result from worker_service.get_status/pause/resume."""
-
-    enabled: bool
-    worker_count: int
-    running: int
-    workers: list[dict[str, Any]]
 
 
 @dataclass
@@ -87,7 +72,7 @@ class WorkerService:
         meta = self.db.meta.get("worker_enabled")
         if meta is None:
             return self.cfg.default_enabled
-        return meta == "true"
+        return bool(meta == "true")
 
     def enable(self) -> None:
         """

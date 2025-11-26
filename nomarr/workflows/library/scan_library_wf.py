@@ -41,13 +41,14 @@ from __future__ import annotations
 import json
 import logging
 import os
-from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import mutagen
 from mutagen.easyid3 import EasyID3
 from mutagen.id3 import ID3
 from mutagen.mp4 import MP4
+
+from nomarr.helpers.dto.library_dto import ScanLibraryWorkflowParams, UpdateLibraryFileFromTagsParams
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -93,11 +94,7 @@ def _matches_ignore_pattern(file_path: str, patterns: str) -> bool:
 
 def scan_library_workflow(
     db: Database,
-    library_path: str,
-    namespace: str,
-    progress_callback: Callable[[int, int], None] | None = None,
-    auto_tag: bool = False,
-    ignore_patterns: str = "",
+    params: ScanLibraryWorkflowParams,
 ) -> dict[str, Any]:
     """
     Scan a music library directory and update the database.
@@ -110,12 +107,7 @@ def scan_library_workflow(
 
     Args:
         db: Database instance (must provide library, tags, and queue accessors)
-        library_path: Root path to scan for audio files
-        namespace: Tag namespace for tag extraction and database tracking (must be provided by service)
-        progress_callback: Optional callback(current, total) for progress updates
-        auto_tag: Whether to automatically enqueue untagged files for tagging
-        ignore_patterns: Comma-separated path patterns to skip from auto-tagging
-                        (supports * wildcards and */ for directory matching)
+        params: ScanLibraryWorkflowParams with library_path, namespace, progress_callback, auto_tag, ignore_patterns
 
     Returns:
         Dict with scan statistics:
@@ -127,6 +119,13 @@ def scan_library_workflow(
     Raises:
         Exception: On scan failure
     """
+    # Extract parameters
+    library_path = params.library_path
+    namespace = params.namespace
+    progress_callback = params.progress_callback
+    auto_tag = params.auto_tag
+    ignore_patterns = params.ignore_patterns
+
     logging.info(f"[library_scanner] Starting library scan: {library_path}")
 
     stats = {
@@ -166,7 +165,14 @@ def scan_library_workflow(
                     continue
 
                 # Update library database with file metadata and tags
-                update_library_file_from_tags(db, file_path, namespace)
+                params_update = UpdateLibraryFileFromTagsParams(
+                    file_path=file_path,
+                    namespace=namespace,
+                    tagged_version=None,
+                    calibration=None,
+                    library_id=None,
+                )
+                update_library_file_from_tags(db, params_update)
 
                 # Auto-enqueue for tagging if enabled and file not already tagged
                 if auto_tag:
@@ -222,11 +228,7 @@ def scan_library_workflow(
 
 def update_library_file_from_tags(
     db: Database,
-    file_path: str,
-    namespace: str,
-    tagged_version: str | None = None,
-    calibration: dict[str, str] | None = None,
-    library_id: int | None = None,
+    params: UpdateLibraryFileFromTagsParams,
 ) -> None:
     """
     Update library database with current file metadata and tags.
@@ -246,12 +248,7 @@ def update_library_file_from_tags(
 
     Args:
         db: Database instance (must provide library and tags accessors)
-        file_path: Absolute path to audio file
-        namespace: Tag namespace (e.g., "nom" or "essentia")
-        tagged_version: Optional tagger version to mark file as tagged
-                       (only set when called from processor after tagging)
-        calibration: Optional calibration metadata dict (model_key -> calibration_id)
-        library_id: Library ID (if None, will be auto-determined from file path)
+        params: UpdateLibraryFileFromTagsParams with file_path, namespace, tagged_version, calibration, library_id
 
     Returns:
         None (updates database in-place)
@@ -259,6 +256,12 @@ def update_library_file_from_tags(
     Raises:
         Logs warnings on failure but does not raise exceptions
     """
+    # Extract parameters
+    file_path = params.file_path
+    namespace = params.namespace
+    tagged_version = params.tagged_version
+    calibration = params.calibration
+    library_id = params.library_id
     try:
         # Determine library_id if not provided
         if library_id is None:

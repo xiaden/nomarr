@@ -72,13 +72,14 @@ from nomarr.components.tagging.tagging_aggregation_comp import (
     normalize_tag_label,
 )
 from nomarr.components.tagging.tagging_writer_comp import TagWriter
+from nomarr.helpers.dto.library_dto import UpdateLibraryFileFromTagsParams
 from nomarr.helpers.dto.ml_dto import ComputeEmbeddingsForBackboneParams
+from nomarr.helpers.dto.processing_dto import ProcessFileResult, ProcessHeadPredictionsResult, ProcessorConfig
 
 # Get Essentia version for tag versioning
 ESSENTIA_VERSION = backend_essentia.get_version()
 
 if TYPE_CHECKING:
-    from nomarr.helpers.dto.processing_dto import ProcessorConfig
     from nomarr.persistence.db import Database
 
 
@@ -177,7 +178,7 @@ def _process_head_predictions(
     embeddings_2d: np.ndarray,
     config: ProcessorConfig,
     tags_accum: dict[str, Any],
-) -> tuple[int, dict[str, Any], list[tuple[HeadInfo, list[float]]], list[Any]]:
+) -> ProcessHeadPredictionsResult:
     """
     Process all head predictions for a single backbone using cached embeddings.
 
@@ -289,11 +290,16 @@ def _process_head_predictions(
             }
 
         except Exception as e:
-            logging.error(f"[processor] Decision error for {head_name}: {e}", exc_info=True)
-            head_results[head_name] = {"status": "error", "error": str(e), "stage": "decision"}
+            logging.error(f"[processor] Aggregation error for {head_name}: {e}", exc_info=True)
+            head_results[head_name] = {"status": "error", "error": str(e), "stage": "aggregation"}
             continue
 
-    return heads_succeeded, head_results, regression_heads, all_head_outputs
+    return ProcessHeadPredictionsResult(
+        heads_succeeded=heads_succeeded,
+        head_results=head_results,
+        regression_heads=regression_heads,
+        all_head_outputs=all_head_outputs,
+    )
 
 
 def _collect_mood_outputs(
@@ -422,7 +428,14 @@ def _sync_database(
         writer.write(path, db_tags)
 
         # Pass tagger_version so library scanner marks file as tagged
-        update_library_file_from_tags(db, path, namespace, tagged_version=tagger_version, calibration=calibration_map)
+        params_update = UpdateLibraryFileFromTagsParams(
+            file_path=path,
+            namespace=namespace,
+            tagged_version=tagger_version,
+            calibration=calibration_map,
+            library_id=None,
+        )
+        update_library_file_from_tags(db, params_update)
         logging.info(f"[processor] Updated library database for {path} with {len(db_tags)} tags")
 
         # Now rewrite file with filtered tags if mode is not "full"
@@ -484,7 +497,7 @@ def process_file_workflow(
     path: str,
     config: ProcessorConfig,
     db: Database | None = None,
-) -> dict[str, Any]:
+) -> ProcessFileResult:
     """
     Process an audio file through the complete tagging pipeline.
 
@@ -536,15 +549,15 @@ def process_file_workflow(
             after successful processing. If None, library updates are skipped.
 
     Returns:
-        Dict with processing results:
-        - file: str - path to processed file
-        - elapsed: float - total processing time in seconds
-        - duration: float - audio duration in seconds
-        - heads_processed: int - number of heads that succeeded
-        - tags_written: int - number of tags written to file
-        - head_results: dict[str, dict] - per-head processing outcomes
-        - mood_aggregations: dict[str, int] | None - mood tier counts if written
-        - tags: dict[str, Any] - all tags that were written to file
+        ProcessFileResult with:
+        - file: path to processed file
+        - elapsed: total processing time in seconds
+        - duration: audio duration in seconds
+        - heads_processed: number of heads that succeeded
+        - tags_written: number of tags written to file
+        - head_results: per-head processing outcomes
+        - mood_aggregations: mood tier counts if written
+        - tags: all tags that were written to file
 
     Raises:
         RuntimeError: If no heads found in models_dir, or all heads fail processing
@@ -553,7 +566,7 @@ def process_file_workflow(
         >>> from nomarr.helpers.dto.processing_dto import ProcessorConfig
         >>> config = ProcessorConfig(models_dir="/app/models", namespace="nom", ...)
         >>> result = process_file_workflow("/music/song.mp3", config, db=my_database)
-        >>> print(f"Processed {result['file']} in {result['elapsed']}s")
+        >>> print(f"Processed {result.file} in {result.elapsed}s")
     """
     from nomarr.components.ml.ml_cache_comp import check_and_evict_idle_cache, touch_cache
 
@@ -592,9 +605,11 @@ def process_file_workflow(
             continue
 
         # Process all heads for this backbone using cached embeddings
-        heads_succeeded, head_results, regression_outputs, head_outputs = _process_head_predictions(
-            backbone_heads, embeddings_2d, config, tags_accum
-        )
+        result = _process_head_predictions(backbone_heads, embeddings_2d, config, tags_accum)
+        heads_succeeded = result.heads_succeeded
+        head_results = result.head_results
+        regression_outputs = result.regression_heads
+        head_outputs = result.all_head_outputs
 
         total_heads_succeeded += heads_succeeded
         all_head_results.update(head_results)
@@ -654,13 +669,13 @@ def process_file_workflow(
             if isinstance(val, dict | list):
                 mood_info[key] = len(val)
 
-    return {
-        "file": path,
-        "elapsed": elapsed,
-        "duration": duration_final,
-        "heads_processed": total_heads_succeeded,
-        "tags_written": len(tags_accum),
-        "head_results": all_head_results,
-        "mood_aggregations": mood_info if mood_info else None,
-        "tags": dict(tags_accum),  # Include actual tags for CLI display
-    }
+    return ProcessFileResult(
+        file=path,
+        elapsed=elapsed,
+        duration=duration_final,
+        heads_processed=total_heads_succeeded,
+        tags_written=len(tags_accum),
+        head_results=all_head_results,
+        mood_aggregations=mood_info if mood_info else None,
+        tags=dict(tags_accum),  # Include actual tags for CLI display
+    )

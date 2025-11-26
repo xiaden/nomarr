@@ -11,6 +11,7 @@ from concurrent.futures import BrokenExecutor, ProcessPoolExecutor, TimeoutError
 from dataclasses import dataclass
 from typing import Any
 
+from nomarr.helpers.dto.processing_dto import ProcessFileResult
 from nomarr.helpers.file_validation_helper import make_skip_result, should_skip_processing, validate_file_exists
 from nomarr.workflows.processing.process_file_wf import process_file_workflow
 
@@ -26,7 +27,7 @@ class CoordinatorConfig:
     event_broker: Any | None
 
 
-def process_file_wrapper(path: str, force: bool) -> dict[str, Any]:
+def process_file_wrapper(path: str, force: bool) -> ProcessFileResult | dict[str, Any]:
     """
     Wrapper for process_file that runs in a separate process.
     Each process loads its own model cache on first call.
@@ -36,6 +37,9 @@ def process_file_wrapper(path: str, force: bool) -> dict[str, Any]:
     - Validates the file
     - Checks skip conditions
     - Calls the core processor
+
+    Returns:
+        ProcessFileResult on success, or dict with error/skip info
     """
     import os
 
@@ -123,7 +127,7 @@ class CoordinatorService:
         if self.cfg.event_broker is not None:
             self.cfg.event_broker.publish(topic, event_data)
 
-    def submit(self, path: str, force: bool) -> dict[str, Any]:
+    def submit(self, path: str, force: bool) -> ProcessFileResult | dict[str, Any]:
         """
         Submit a job and return immediately.
 
@@ -132,7 +136,7 @@ class CoordinatorService:
             force: Force reprocessing
 
         Returns:
-            Processing result dict
+            ProcessFileResult on success, or dict with error/skip info
 
         Raises:
             RuntimeError: If pool is not available or shutting down

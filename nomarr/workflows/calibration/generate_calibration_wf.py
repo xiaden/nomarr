@@ -43,6 +43,12 @@ from scipy.spatial.distance import jensenshannon
 from scipy.stats import iqr
 
 from nomarr.components.ml.ml_calibration_comp import generate_minmax_calibration, save_calibration_sidecars
+from nomarr.helpers.dto.calibration_dto import (
+    CalculateHeadDriftResult,
+    CompareCalibrationsResult,
+    GenerateCalibrationResult,
+    ParseTagKeyResult,
+)
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -179,7 +185,7 @@ def _compare_calibrations(
     old_scores: np.ndarray,
     new_scores: np.ndarray,
     thresholds: dict[str, float] | None = None,
-) -> dict:
+) -> CompareCalibrationsResult:
     """
     Compare two calibration runs and calculate all drift metrics.
 
@@ -239,16 +245,16 @@ def _compare_calibrations(
 
     is_stable = len(failed_metrics) == 0
 
-    return {
-        "apd_p5": apd_p5,
-        "apd_p95": apd_p95,
-        "srd": srd,
-        "jsd": jsd,
-        "median_drift": median_drift,
-        "iqr_drift": iqr_drift,
-        "is_stable": is_stable,
-        "failed_metrics": failed_metrics,
-    }
+    return CompareCalibrationsResult(
+        apd_p5=apd_p5,
+        apd_p95=apd_p95,
+        srd=srd,
+        jsd=jsd,
+        median_drift=median_drift,
+        iqr_drift=iqr_drift,
+        is_stable=is_stable,
+        failed_metrics=failed_metrics,
+    )
 
 
 def generate_calibration_workflow(
@@ -256,7 +262,7 @@ def generate_calibration_workflow(
     models_dir: str,
     namespace: str,
     thresholds: dict[str, float] | None = None,
-) -> dict[str, Any]:
+) -> GenerateCalibrationResult:
     """
     Generate calibrations for all heads and track drift metrics.
 
@@ -296,18 +302,19 @@ def generate_calibration_workflow(
     # Generate calibration data from library
     calibration_data = generate_minmax_calibration(db=db, namespace=namespace)
 
-    library_size = calibration_data.get("library_size", 0)
-    calibrations = calibration_data.get("calibrations", {})
+    library_size = calibration_data.library_size
+    calibrations = calibration_data.calibrations
 
     if not calibrations:
         logger.warning("[calibration_workflow] No calibrations generated (empty library or insufficient samples)")
-        return {
-            "version": None,
-            "library_size": library_size,
-            "heads": {},
-            "saved_files": {},
-            "summary": {"total_heads": 0, "stable_heads": 0, "unstable_heads": 0},
-        }
+        return GenerateCalibrationResult(
+            version=None,
+            library_size=library_size,
+            heads={},
+            saved_files={},
+            reference_updates={},
+            summary={"total_heads": 0, "stable_heads": 0, "unstable_heads": 0},
+        )
 
     # Determine next version number (global across all heads for this run)
     next_version = _get_next_version(db)
@@ -324,7 +331,9 @@ def generate_calibration_workflow(
             logger.warning(f"[calibration_workflow] Cannot parse tag key: {tag_key}")
             continue
 
-        model_name, head_name, label = parsed
+        model_name = parsed.model_name
+        head_name = parsed.head_name
+        label = parsed.label
 
         # Create unique key for this head
         head_key = f"{model_name}/{head_name}"
@@ -364,7 +373,7 @@ def generate_calibration_workflow(
                 thresholds=thresholds,
             )
             head_data["drift_metrics"] = drift_result
-            head_data["is_stable"] = drift_result["is_stable"]
+            head_data["is_stable"] = drift_result.is_stable
             head_data["reference_version"] = reference["version"]
         else:
             # First calibration - always stable (no comparison)
@@ -389,19 +398,19 @@ def generate_calibration_workflow(
             p95=avg_p95,
             range_val=avg_range,
             reference_version=head_data["reference_version"],
-            apd_p5=drift_result["apd_p5"] if drift_result else None,
-            apd_p95=drift_result["apd_p95"] if drift_result else None,
-            srd=drift_result["srd"] if drift_result else None,
-            jsd=drift_result["jsd"] if drift_result else None,
-            median_drift=drift_result["median_drift"] if drift_result else None,
-            iqr_drift=drift_result["iqr_drift"] if drift_result else None,
+            apd_p5=drift_result.apd_p5 if drift_result else None,
+            apd_p95=drift_result.apd_p95 if drift_result else None,
+            srd=drift_result.srd if drift_result else None,
+            jsd=drift_result.jsd if drift_result else None,
+            median_drift=drift_result.median_drift if drift_result else None,
+            iqr_drift=drift_result.iqr_drift if drift_result else None,
             is_stable=head_data["is_stable"],
         )
 
         # Log result
         if drift_result:
-            stability_str = "STABLE" if drift_result["is_stable"] else "UNSTABLE"
-            failed_metrics = drift_result.get("failed_metrics", [])
+            stability_str = "STABLE" if drift_result.is_stable else "UNSTABLE"
+            failed_metrics = drift_result.failed_metrics
             logger.info(
                 f"[calibration_workflow] {head_key} v{next_version}: {stability_str} "
                 f"(ref=v{head_data['reference_version']}, "
@@ -420,25 +429,23 @@ def generate_calibration_workflow(
     stable_count: int = sum(1 for h in head_results.values() if h["is_stable"])
     unstable_count = len(head_results) - stable_count
 
-    summary = {
-        "version": next_version,
-        "library_size": library_size,
-        "heads": head_results,
-        "saved_files": saved_files,
-        "reference_updates": reference_updates,
-        "summary": {
-            "total_heads": len(head_results),
-            "stable_heads": stable_count,
-            "unstable_heads": unstable_count,
-        },
-    }
-
     logger.info(
         f"[calibration_workflow] Calibration v{next_version} complete: "
         f"{stable_count} stable, {unstable_count} unstable (total {len(head_results)} heads)"
     )
 
-    return summary
+    return GenerateCalibrationResult(
+        version=next_version,
+        library_size=library_size,
+        heads=head_results,
+        saved_files=saved_files.saved_files,  # Unwrap SaveCalibrationSidecarsResult
+        reference_updates=reference_updates,
+        summary={
+            "total_heads": len(head_results),
+            "stable_heads": stable_count,
+            "unstable_heads": unstable_count,
+        },
+    )
 
 
 # ----------------------------------------------------------------------
@@ -468,7 +475,7 @@ def _get_next_version(db: Database) -> int:
     return max_version + 1
 
 
-def _parse_tag_key(tag_key: str) -> tuple[str, str, str] | None:
+def _parse_tag_key(tag_key: str) -> ParseTagKeyResult | None:
     """
     Parse tag key to extract model_name, head_name, and label.
 
@@ -509,7 +516,11 @@ def _parse_tag_key(tag_key: str) -> tuple[str, str, str] | None:
     # Label is the first part of the tag key
     label = parts[0]
 
-    return (model_name, head_name, label)
+    return ParseTagKeyResult(
+        model_name=model_name,
+        head_name=head_name,
+        label=label,
+    )
 
 
 def _calculate_head_drift(
@@ -519,7 +530,7 @@ def _calculate_head_drift(
     head_name: str,
     models_dir: str,
     thresholds: dict[str, float],
-) -> dict:
+) -> CalculateHeadDriftResult:
     """
     Calculate drift metrics for a head by comparing to reference calibration.
 
@@ -543,16 +554,16 @@ def _calculate_head_drift(
             f"[calibration_workflow] Reference calibration file not found: {reference_file}. Treating as first run."
         )
         # No reference file - treat as first calibration
-        return {
-            "apd_p5": 0.0,
-            "apd_p95": 0.0,
-            "srd": 0.0,
-            "jsd": 0.0,
-            "median_drift": 0.0,
-            "iqr_drift": 0.0,
-            "is_stable": True,
-            "failed_metrics": [],
-        }
+        return CalculateHeadDriftResult(
+            apd_p5=0.0,
+            apd_p95=0.0,
+            srd=0.0,
+            jsd=0.0,
+            median_drift=0.0,
+            iqr_drift=0.0,
+            is_stable=True,
+            failed_metrics=[],
+        )
 
     # Load old calibration data
     with open(reference_file, encoding="utf-8") as f:
@@ -575,7 +586,7 @@ def _calculate_head_drift(
     new_scores = _synthesize_distribution(labels)
 
     # Calculate drift metrics
-    drift_result = _compare_calibrations(
+    drift_metrics = _compare_calibrations(
         old_calibration=old_calibration,
         new_calibration=new_calibration,
         old_scores=old_scores,
@@ -583,7 +594,16 @@ def _calculate_head_drift(
         thresholds=thresholds,
     )
 
-    return drift_result
+    return CalculateHeadDriftResult(
+        apd_p5=drift_metrics.apd_p5,
+        apd_p95=drift_metrics.apd_p95,
+        srd=drift_metrics.srd,
+        jsd=drift_metrics.jsd,
+        median_drift=drift_metrics.median_drift,
+        iqr_drift=drift_metrics.iqr_drift,
+        is_stable=drift_metrics.is_stable,
+        failed_metrics=drift_metrics.failed_metrics,
+    )
 
 
 def _find_calibration_file(models_dir: str, model_name: str, head_name: str, version: int) -> str | None:

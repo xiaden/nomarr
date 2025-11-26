@@ -40,6 +40,8 @@ import logging
 import os
 from typing import TYPE_CHECKING, TypedDict
 
+from nomarr.helpers.dto.library_dto import StartLibraryScanWorkflowParams
+
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
@@ -94,12 +96,7 @@ def _matches_ignore_pattern(file_path: str, patterns: str) -> bool:
 
 def start_library_scan_workflow(
     db: Database,
-    root_paths: list[str],
-    recursive: bool = True,
-    force: bool = False,
-    auto_tag: bool = False,
-    ignore_patterns: str = "",
-    clean_missing: bool = True,
+    params: StartLibraryScanWorkflowParams,
 ) -> LibraryScanStats:
     """
     Plan a library scan by discovering files and enqueueing them.
@@ -113,12 +110,7 @@ def start_library_scan_workflow(
 
     Args:
         db: Database instance (must provide library accessor)
-        root_paths: List of root directories to scan for audio files
-        recursive: Whether to scan subdirectories recursively
-        force: Whether to force rescan even if file hasn't changed
-        auto_tag: Whether to auto-enqueue untagged files for ML tagging (passed to worker)
-        ignore_patterns: Comma-separated path patterns to skip from auto-tagging
-        clean_missing: Whether to remove deleted files from database
+        params: StartLibraryScanWorkflowParams with root_paths, recursive, force, auto_tag, ignore_patterns, clean_missing
 
     Returns:
         Dict with scan statistics:
@@ -132,6 +124,13 @@ def start_library_scan_workflow(
         This workflow only PLANS the scan by enqueueing jobs.
         LibraryScanWorker executes the actual scanning asynchronously.
     """
+    # Extract parameters (only the ones we use in this workflow)
+    root_paths = params.root_paths
+    recursive = params.recursive
+    force = params.force
+    clean_missing = params.clean_missing
+    # Note: auto_tag and ignore_patterns are passed to workers via queue, not used here
+
     logging.info(f"[start_library_scan] Planning library scan for {len(root_paths)} path(s)")
 
     stats: LibraryScanStats = {

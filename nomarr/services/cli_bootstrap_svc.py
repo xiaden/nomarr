@@ -35,7 +35,7 @@ def get_database() -> Database:
     """
     config_service = ConfigService()
     config = config_service.get_config()
-    db_path = str(config["db_path"])
+    db_path = str(config.config["db_path"])
     return Database(db_path)
 
 

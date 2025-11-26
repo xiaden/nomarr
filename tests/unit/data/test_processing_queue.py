@@ -62,11 +62,11 @@ class TestJobClass:
         job = Job(**row)
         job_dict = job.to_dict()
 
-        assert job_dict["id"] == 2
-        assert job_dict["path"] == "/music/another.mp3"
-        assert job_dict["status"] == "done"
-        assert "created_at" in job_dict
-        assert "finished_at" in job_dict
+        assert job_dict.id == 2
+        assert job_dict.path == "/music/another.mp3"
+        assert job_dict.status == "done"
+        assert job_dict.created_at is not None
+        assert job_dict.finished_at is not None
 
 
 class TestProcessingQueueAdd:

@@ -12,7 +12,7 @@ Rules:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 
 @dataclass
@@ -71,3 +71,44 @@ class ProcessorConfig:
 
     # File write mode: controls what tags go to media files
     file_write_mode: Literal["none", "minimal", "full"] = "minimal"
+
+
+@dataclass
+class WorkerEnabledResult:
+    """Result from worker_service pause_workers/resume_workers."""
+
+    worker_enabled: bool
+
+
+@dataclass
+class WorkerStatusResult:
+    """Result from worker_service.get_status/pause/resume."""
+
+    enabled: bool
+    worker_count: int
+    running: int
+    workers: list[dict[str, Any]]
+
+
+@dataclass
+class ProcessHeadPredictionsResult:
+    """Result from _process_head_predictions() private helper in process_file_wf."""
+
+    heads_succeeded: int
+    head_results: dict[str, Any]
+    regression_heads: list[tuple[Any, list[float]]]  # list[tuple[HeadInfo, list[float]]]
+    all_head_outputs: list[Any]  # list[HeadOutput]
+
+
+@dataclass
+class ProcessFileResult:
+    """Result from process_file_workflow."""
+
+    file: str
+    elapsed: float
+    duration: float | None
+    heads_processed: int
+    tags_written: int
+    head_results: dict[str, dict[str, Any]]
+    mood_aggregations: dict[str, int] | None
+    tags: dict[str, Any]

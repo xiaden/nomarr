@@ -18,7 +18,7 @@ def write_json_output(
     project_root: Path,
 ) -> None:
     """
-    Write classification results to JSON file.
+    Write classification results to JSON file and print to stdout.
 
     Args:
         dataclasses: List of classified DataclassInfo objects
@@ -46,8 +46,13 @@ def write_json_output(
 
     data["summary"]["by_classification"] = classification_counts  # type: ignore[index]
 
-    output_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    print(f"JSON output written to: {output_path}")
+    # Write to file
+    json_output = json.dumps(data, indent=2)
+    output_path.write_text(json_output, encoding="utf-8")
+
+    # Print to stdout
+    print(json_output)
+    print(f"\nJSON output written to: {output_path}", file=sys.stderr)
 
 
 def print_summary(
@@ -180,7 +185,7 @@ def write_text_output(
     output_path: Path,
 ) -> None:
     """
-    Write human-readable summary to text file.
+    Write human-readable summary to text file and print to stdout.
 
     Args:
         dataclasses: List of classified DataclassInfo objects
@@ -188,9 +193,13 @@ def write_text_output(
         missing_candidates: List of missing dataclass candidates
         output_path: Path to output text file
     """
+    # Print to stdout
+    print_summary(dataclasses, suspect_imports, missing_candidates)
+
+    # Also write to file
     original_stdout = sys.stdout
     with output_path.open("w", encoding="utf-8") as f:
         sys.stdout = f
         print_summary(dataclasses, suspect_imports, missing_candidates)
         sys.stdout = original_stdout
-    print(f"Text output written to: {output_path}")
+    print(f"\nText output written to: {output_path}", file=sys.stderr)

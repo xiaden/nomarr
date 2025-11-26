@@ -11,6 +11,8 @@ import logging
 import os
 from typing import Any
 
+from nomarr.helpers.dto.calibration_dto import EnsureCalibrationsExistResult
+
 logger = logging.getLogger(__name__)
 
 
@@ -122,7 +124,9 @@ def check_missing_calibrations(models_dir: str) -> list[dict[str, str]]:
     return missing
 
 
-def ensure_calibrations_exist(repo_url: str, models_dir: str, auto_download: bool = False) -> dict[str, Any]:
+def ensure_calibrations_exist(
+    repo_url: str, models_dir: str, auto_download: bool = False
+) -> EnsureCalibrationsExistResult:
     """
     Ensure calibration files exist, optionally downloading if missing.
 
@@ -135,20 +139,11 @@ def ensure_calibrations_exist(repo_url: str, models_dir: str, auto_download: boo
         auto_download: If True, automatically download missing files (not yet implemented)
 
     Returns:
-        Dict with status:
-            - has_calibrations: Boolean indicating if all heads have calibrations
-            - missing_count: Number of missing calibration files
-            - missing_heads: List of missing head info
-            - action_required: What user should do (if any)
+        EnsureCalibrationsExistResult DTO
 
     Example:
         >>> ensure_calibrations_exist("https://github.com/xiaden/nom-cal", "/app/models")
-        {
-            "has_calibrations": False,
-            "missing_count": 5,
-            "missing_heads": [...],
-            "action_required": "Download calibration files or enable calibrate_heads mode"
-        }
+        EnsureCalibrationsExistResult(has_calibrations=False, missing_count=5, ...)
     """
     logger.info("[calibration_download] Checking calibration availability")
 
@@ -156,12 +151,12 @@ def ensure_calibrations_exist(repo_url: str, models_dir: str, auto_download: boo
 
     if not missing:
         logger.info("[calibration_download] All heads have calibration files")
-        return {
-            "has_calibrations": True,
-            "missing_count": 0,
-            "missing_heads": [],
-            "action_required": None,
-        }
+        return EnsureCalibrationsExistResult(
+            has_calibrations=True,
+            missing_count=0,
+            missing_heads=[],
+            action_required=None,
+        )
 
     logger.warning(f"[calibration_download] {len(missing)} heads missing calibration files")
 
@@ -172,9 +167,9 @@ def ensure_calibrations_exist(repo_url: str, models_dir: str, auto_download: boo
         except NotImplementedError as e:
             logger.warning(f"[calibration_download] Auto-download not available: {e}")
 
-    return {
-        "has_calibrations": False,
-        "missing_count": len(missing),
-        "missing_heads": missing,
-        "action_required": (f"Download calibration files from {repo_url} or enable calibrate_heads mode in config"),
-    }
+    return EnsureCalibrationsExistResult(
+        has_calibrations=False,
+        missing_count=len(missing),
+        missing_heads=missing,
+        action_required=(f"Download calibration files from {repo_url} or enable calibrate_heads mode in config"),
+    )

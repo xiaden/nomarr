@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from nomarr.helpers.dto.library_dto import ScanSingleFileWorkflowParams
 from nomarr.services.queue_svc import ScanQueue
 from nomarr.services.workers.base import BaseWorker
 from nomarr.workflows.library.scan_single_file_wf import scan_single_file_workflow
@@ -90,11 +91,12 @@ class LibraryScanWorker(BaseWorker):
         Returns:
             Dict with scan results from workflow
         """
-        return scan_single_file_workflow(
-            db=self.db,
+        params = ScanSingleFileWorkflowParams(
             file_path=path,
             namespace=self.namespace,
             force=force,
             auto_tag=self.auto_tag,
             ignore_patterns=self.ignore_patterns,
+            library_id=None,  # Auto-determined from file path
         )
+        return scan_single_file_workflow(db=self.db, params=params)

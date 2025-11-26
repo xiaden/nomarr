@@ -8,8 +8,10 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from nomarr.helpers.dto.processing_dto import ProcessFileResult
+
 if TYPE_CHECKING:
-    from nomarr.services.coordinator_service import CoordinatorService
+    from nomarr.services.coordinator_svc import CoordinatorService
 
 
 class ProcessingService:
@@ -31,7 +33,7 @@ class ProcessingService:
         """
         self.coordinator = coordinator
 
-    def process_file(self, path: str, force: bool = False) -> dict[str, Any]:
+    def process_file(self, path: str, force: bool = False) -> ProcessFileResult | dict[str, Any]:
         """
         Process a single audio file with ML inference and tag writing.
 
@@ -40,12 +42,7 @@ class ProcessingService:
             force: If True, reprocess even if already tagged
 
         Returns:
-            Processing result dict with keys:
-                - status: 'success' or 'error'
-                - file_path: Path to processed file
-                - tags: Dict of written tags (on success)
-                - error: Error message (on error)
-                - duration_ms: Processing time in milliseconds
+            ProcessFileResult on success, or dict with error/skip info
 
         Raises:
             FileNotFoundError: If file doesn't exist
@@ -59,7 +56,7 @@ class ProcessingService:
         logging.debug(f"[ProcessingService] Submitting {path} to coordinator")
         return self.coordinator.submit(path, force)
 
-    def process_batch(self, paths: list[str], force: bool = False) -> list[dict[str, Any]]:
+    def process_batch(self, paths: list[str], force: bool = False) -> list[ProcessFileResult | dict[str, Any]]:
         """
         Process multiple audio files in parallel (if coordinator available).
 
@@ -68,7 +65,7 @@ class ProcessingService:
             force: If True, reprocess even if already tagged
 
         Returns:
-            List of processing result dicts (one per file)
+            List of ProcessFileResult or error dicts (one per file)
         """
         results = []
         for path in paths:

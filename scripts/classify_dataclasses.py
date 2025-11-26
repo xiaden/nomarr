@@ -57,8 +57,8 @@ Output files are written to scripts/outputs/:
 
     args = parser.parse_args()
 
-    # Get standard paths
-    project_root, nomarr_package, tests_package, outputs_dir, config_file = get_config_paths(SCRIPT_PATH)
+    # Get standard paths relative to script location
+    outputs_dir, config_file, script_dir = get_config_paths(SCRIPT_PATH)
 
     # Load configuration
     print("Loading configuration...")
@@ -68,18 +68,50 @@ Output files are written to scripts/outputs/:
     allowed_imports = config["allowed_imports"]
     ignore_prefixes = config.get("ignore_prefixes", [])
 
+    # Resolve project_root from config (relative to script_dir)
+    project_root_config = config.get("project_root", "../..")
+    project_root = Path(project_root_config)
+    if not project_root.is_absolute():
+        project_root = (script_dir / project_root).resolve()
+
+    if not project_root.exists():
+        print(
+            f"Error: Configured project_root '{project_root_config}' resolves to {project_root} which does not exist",
+            file=sys.stderr,
+        )
+        return 1
+
+    # Resolve search_paths from config (relative to project_root)
+    search_paths_config = config.get("search_paths", ["nomarr"])
+    search_paths = []
+    for path_str in search_paths_config:
+        search_path = Path(path_str)
+        if not search_path.is_absolute():
+            search_path = (project_root / search_path).resolve()
+
+        if search_path.exists():
+            search_paths.append(search_path)
+        else:
+            print(
+                f"Warning: Search path '{path_str}' resolves to {search_path} which does not exist, skipping",
+                file=sys.stderr,
+            )
+
+    if not search_paths:
+        print("Error: No valid search paths configured", file=sys.stderr)
+        return 1
+
+    print(f"Project root: {project_root}")
+    print(f"Searching in: {', '.join(str(p.relative_to(project_root)) for p in search_paths)}")
+
     # Discover all dataclasses
     print("Discovering dataclasses...")
-    dataclasses = discover_all_dataclasses(
-        project_root, nomarr_package, tests_package, layer_map, domain_map, ignore_prefixes
-    )
+    dataclasses = discover_all_dataclasses(project_root, search_paths, layer_map, domain_map, ignore_prefixes)
     print(f"Found {len(dataclasses)} dataclasses")
 
     # Analyze usage patterns
     print("Analyzing usage patterns...")
-    import_edges = analyze_usage(
-        project_root, nomarr_package, tests_package, dataclasses, layer_map, domain_map, ignore_prefixes
-    )
+    import_edges = analyze_usage(project_root, search_paths, dataclasses, layer_map, domain_map, ignore_prefixes)
 
     # Classify dataclasses
     print("Classifying dataclasses...")
@@ -96,7 +128,7 @@ Output files are written to scripts/outputs/:
     # Discover missing dataclass candidates
     print("Discovering missing dataclass candidates...")
     missing_candidates = discover_missing_dataclasses(
-        project_root, nomarr_package, tests_package, layer_map, domain_map, ignore_prefixes
+        project_root, search_paths, layer_map, domain_map, ignore_prefixes
     )
     if missing_candidates:
         print(f"Found {len(missing_candidates)} candidate(s)")
