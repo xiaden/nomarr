@@ -58,7 +58,7 @@ class TestQueueServiceGetStatus:
         result = real_queue_service.get_status()
 
         # Assert
-        from nomarr.services.queue_service import QueueStatus
+        from nomarr.services.queue_svc import QueueStatus
 
         assert isinstance(result, QueueStatus)
         assert isinstance(result.depth, int)
@@ -79,7 +79,7 @@ class TestQueueServiceGetJob:
         result = real_queue_service.get_job(job_id=job_id)
 
         # Assert
-        from nomarr.helpers.dto.queue import JobDict
+        from nomarr.helpers.dto.queue_dto import JobDict
 
         assert isinstance(result, JobDict)
         assert result.id == job_id

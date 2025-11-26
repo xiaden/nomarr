@@ -15,13 +15,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from nomarr.services.config_service import ConfigService
+from nomarr.services.config_svc import ConfigService
 from nomarr.services.workers.base import BaseWorker
-from nomarr.workflows.processing.process_file import process_file_workflow
+from nomarr.workflows.processing.process_file_wf import process_file_workflow
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
-    from nomarr.services.queue_service import ProcessingQueue
+    from nomarr.services.queue_svc import ProcessingQueue
 
 
 class TaggerWorker(BaseWorker):

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from nomarr.components.ml.calibration import (
+from nomarr.components.ml.ml_calibration_comp import (
     generate_minmax_calibration,
     save_calibration_sidecars,
 )

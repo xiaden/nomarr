@@ -16,11 +16,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from nomarr.services.workers.base import BaseWorker
-from nomarr.workflows.calibration.recalibrate_file import recalibrate_file_workflow
+from nomarr.workflows.calibration.recalibrate_file_wf import recalibrate_file_workflow
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
-    from nomarr.services.queue_service import RecalibrationQueue
+    from nomarr.services.queue_svc import RecalibrationQueue
 
 
 class RecalibrationWorker(BaseWorker):

@@ -21,20 +21,20 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from nomarr.interfaces.api.event_broker import StateBroker
+    from nomarr.components.events.event_broker_comp import StateBroker
 from nomarr.persistence.db import Database
-from nomarr.services.analytics_service import AnalyticsService
-from nomarr.services.calibration_service import CalibrationService
-from nomarr.services.config_service import ConfigService
-from nomarr.services.coordinator_service import CoordinatorService
-from nomarr.services.health_monitor_service import HealthMonitorService
-from nomarr.services.keys_service import KeyManagementService
-from nomarr.services.library_service import LibraryRootConfig, LibraryService
-from nomarr.services.navidrome_service import NavidromeService
-from nomarr.services.processing_service import ProcessingService
-from nomarr.services.queue_service import ProcessingQueue, QueueService, RecalibrationQueue
-from nomarr.services.recalibration_service import RecalibrationService
-from nomarr.services.worker_service import WorkerService
+from nomarr.services.analytics_svc import AnalyticsService
+from nomarr.services.calibration_svc import CalibrationService
+from nomarr.services.config_svc import ConfigService
+from nomarr.services.coordinator_svc import CoordinatorService
+from nomarr.services.health_monitor_svc import HealthMonitorService
+from nomarr.services.keys_svc import KeyManagementService
+from nomarr.services.library_svc import LibraryRootConfig, LibraryService
+from nomarr.services.navidrome_svc import NavidromeService
+from nomarr.services.processing_svc import ProcessingService
+from nomarr.services.queue_svc import ProcessingQueue, QueueService, RecalibrationQueue
+from nomarr.services.recalibration_svc import RecalibrationService
+from nomarr.services.worker_svc import WorkerService
 from nomarr.services.workers.base import BaseWorker
 from nomarr.services.workers.recalibration import RecalibrationWorker
 from nomarr.services.workers.scanner import LibraryScanWorker
@@ -82,7 +82,7 @@ class Application:
         self._config = config_service.get_config()
 
         # Import internal constants
-        from nomarr.services.config_service import (
+        from nomarr.services.config_svc import (
             INTERNAL_HOST,
             INTERNAL_LIBRARY_SCAN_POLL_INTERVAL,
             INTERNAL_NAMESPACE,
@@ -210,13 +210,13 @@ class Application:
 
         # Initialize event broker (lazy import to avoid circular dependency)
         logging.info("[Application] Initializing event broker...")
-        from nomarr.interfaces.api.event_broker import StateBroker
+        from nomarr.components.events.event_broker_comp import StateBroker
 
         self.event_broker = StateBroker()
 
         # Start processing coordinator (DI: inject worker count and event broker)
         logging.info(f"[Application] Starting CoordinatorService with {self.worker_count} workers...")
-        from nomarr.services.coordinator_service import CoordinatorConfig
+        from nomarr.services.coordinator_svc import CoordinatorConfig
 
         coordinator_cfg = CoordinatorConfig(
             worker_count=self.worker_count,
@@ -230,7 +230,7 @@ class Application:
         self.register_service("processing", ProcessingService(coordinator=self.coordinator))
         self.register_service("queue", QueueService(self.queue))
 
-        from nomarr.services.worker_service import WorkerConfig
+        from nomarr.services.worker_svc import WorkerConfig
 
         worker_cfg = WorkerConfig(
             default_enabled=self.worker_enabled_default,
@@ -246,7 +246,7 @@ class Application:
         self.register_service("worker", worker_service)
 
         # Register ML service
-        from nomarr.services.ml_service import MLConfig, MLService
+        from nomarr.services.ml_svc import MLConfig, MLService
 
         ml_cfg = MLConfig(
             models_dir=str(self.models_dir),
@@ -265,7 +265,7 @@ class Application:
 
         # Register Analytics service (DI: inject db, namespace)
         logging.info("[Application] Initializing AnalyticsService...")
-        from nomarr.services.analytics_service import AnalyticsConfig
+        from nomarr.services.analytics_svc import AnalyticsConfig
 
         analytics_cfg = AnalyticsConfig(namespace=self.namespace)
         analytics_service = AnalyticsService(db=self.db, cfg=analytics_cfg)
@@ -273,7 +273,7 @@ class Application:
 
         # Register Calibration service (DI: inject db, models_dir, namespace)
         logging.info("[Application] Initializing CalibrationService...")
-        from nomarr.services.calibration_service import CalibrationConfig
+        from nomarr.services.calibration_svc import CalibrationConfig
 
         calibration_cfg = CalibrationConfig(
             models_dir=str(self.models_dir),
@@ -284,7 +284,7 @@ class Application:
 
         # Register Navidrome service (DI: inject db, namespace)
         logging.info("[Application] Initializing NavidromeService...")
-        from nomarr.services.navidrome_service import NavidromeConfig
+        from nomarr.services.navidrome_svc import NavidromeConfig
 
         navidrome_cfg = NavidromeConfig(namespace=self.namespace)
         navidrome_service = NavidromeService(db=self.db, cfg=navidrome_cfg)
@@ -350,7 +350,7 @@ class Application:
 
         # Start health monitor
         logging.info("[Application] Starting health monitor...")
-        from nomarr.services.health_monitor_service import HealthMonitorConfig
+        from nomarr.services.health_monitor_svc import HealthMonitorConfig
 
         health_monitor_cfg = HealthMonitorConfig(check_interval=10)
         self.health_monitor = HealthMonitorService(cfg=health_monitor_cfg)

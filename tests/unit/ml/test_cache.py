@@ -6,7 +6,7 @@ Tests use REAL fixtures from conftest.py - no redundant mocks.
 
 import pytest
 
-from nomarr.components.ml.cache import (
+from nomarr.components.ml.ml_cache_comp import (
     check_and_evict_idle_cache,
     clear_predictor_cache,
     get_cache_idle_time,

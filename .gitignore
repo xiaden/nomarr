@@ -67,6 +67,7 @@ qc_reports/
 radon_reports/
 radon
 classification_results.json
+scripts/outputs/
 
 # Temp files
 *.tmp

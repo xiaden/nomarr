@@ -21,9 +21,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from nomarr.services.queue_service import ScanQueue
+from nomarr.services.queue_svc import ScanQueue
 from nomarr.services.workers.base import BaseWorker
-from nomarr.workflows.library.scan_single_file import scan_single_file_workflow
+from nomarr.workflows.library.scan_single_file_wf import scan_single_file_workflow
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database

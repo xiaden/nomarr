@@ -5,7 +5,7 @@ Exports FastAPI app, auth components, and models.
 
 from nomarr.interfaces.api.api_app import api_app
 from nomarr.interfaces.api.auth import auth_scheme, verify_key
-from nomarr.interfaces.api.models import (
+from nomarr.interfaces.api.types.queue_request_types import (
     FlushRequest,
     InternalBatchRequest,
     InternalProcessRequest,

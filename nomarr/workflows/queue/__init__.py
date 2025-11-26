@@ -2,7 +2,7 @@
 Queue package.
 """
 
-from .enqueue_files import QueueProtocol, enqueue_files_workflow
+from .enqueue_files_wf import QueueProtocol, enqueue_files_workflow
 
 __all__ = [
     "QueueProtocol",

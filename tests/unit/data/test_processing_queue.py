@@ -8,7 +8,7 @@ import tempfile
 import pytest
 
 from nomarr.persistence.db import Database
-from nomarr.services.queue_service import Job, ProcessingQueue
+from nomarr.services.queue_svc import Job, ProcessingQueue
 
 
 @pytest.fixture

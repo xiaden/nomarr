@@ -390,7 +390,7 @@ def real_queue_service(test_db):
     This uses a real Database and ProcessingQueue - not mocked.
     Use for service layer and integration tests.
     """
-    from nomarr.services.queue_service import ProcessingQueue, QueueService
+    from nomarr.services.queue_svc import ProcessingQueue, QueueService
 
     queue = ProcessingQueue(test_db)
     return QueueService(queue)
@@ -404,7 +404,7 @@ def real_processing_service(test_db):
     available in all test contexts. Tests using this should handle
     coordinator unavailability gracefully.
     """
-    from nomarr.services.processing_service import ProcessingService
+    from nomarr.services.processing_svc import ProcessingService
 
     return ProcessingService()
 
@@ -412,7 +412,7 @@ def real_processing_service(test_db):
 @pytest.fixture
 def real_library_service(test_db, temp_music_library):
     """Provide a real LibraryService instance for testing with temp library root."""
-    from nomarr.services.library_service import LibraryRootConfig, LibraryService
+    from nomarr.services.library_svc import LibraryRootConfig, LibraryService
 
     cfg = LibraryRootConfig(namespace="nom", library_root=str(temp_music_library))
     return LibraryService(test_db, cfg)
@@ -421,8 +421,8 @@ def real_library_service(test_db, temp_music_library):
 @pytest.fixture
 def real_worker_service(test_db):
     """Provide a real WorkerService instance for testing."""
-    from nomarr.services.queue_service import ProcessingQueue
-    from nomarr.services.worker_service import WorkerConfig, WorkerService
+    from nomarr.services.queue_svc import ProcessingQueue
+    from nomarr.services.worker_svc import WorkerConfig, WorkerService
 
     queue = ProcessingQueue(test_db)
     # Disable workers by default for tests (avoids event_broker requirement)
@@ -433,7 +433,7 @@ def real_worker_service(test_db):
 @pytest.fixture
 def real_health_monitor(test_db):
     """Provide a real HealthMonitorService instance for testing."""
-    from nomarr.services.health_monitor_service import HealthMonitorConfig, HealthMonitorService
+    from nomarr.services.health_monitor_svc import HealthMonitorConfig, HealthMonitorService
 
     cfg = HealthMonitorConfig(check_interval=1)
     return HealthMonitorService(cfg)
@@ -445,7 +445,7 @@ def real_key_service(test_db):
 
     This is a real service instance for integration testing.
     """
-    from nomarr.services.keys_service import KeyManagementService
+    from nomarr.services.keys_svc import KeyManagementService
 
     # Create and return service directly - tests should use this fixture
     service = KeyManagementService(test_db)
@@ -458,7 +458,7 @@ def mock_job_queue(test_db):
 
     This is a real queue for integration testing - uses actual database operations.
     """
-    from nomarr.services.queue_service import ProcessingQueue
+    from nomarr.services.queue_svc import ProcessingQueue
 
     return ProcessingQueue(test_db)
 
@@ -558,7 +558,7 @@ def reset_cache():
     yield
     # Clear cache after each test
     try:
-        from nomarr.components.ml.cache import clear_predictor_cache
+        from nomarr.components.ml.ml_cache_comp import clear_predictor_cache
 
         clear_predictor_cache()
     except Exception:

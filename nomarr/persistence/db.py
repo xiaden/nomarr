@@ -3,23 +3,23 @@ import sqlite3
 import time
 
 # Import table-specific operation classes
-from nomarr.persistence.database.calibration_queue_table import CalibrationQueueOperations
-from nomarr.persistence.database.calibration_runs_table import CalibrationRunsOperations
-from nomarr.persistence.database.file_tags_table import FileTagOperations
-from nomarr.persistence.database.libraries_table import LibrariesOperations
-from nomarr.persistence.database.library_files_table import LibraryFilesOperations
-from nomarr.persistence.database.library_queue_table import LibraryQueueOperations
-from nomarr.persistence.database.meta_table import MetaOperations
-from nomarr.persistence.database.sessions_table import SessionOperations
-from nomarr.persistence.database.tag_queue_table import QueueOperations
+from nomarr.persistence.database.calibration_queue_sql import CalibrationQueueOperations
+from nomarr.persistence.database.calibration_runs_sql import CalibrationRunsOperations
+from nomarr.persistence.database.file_tags_sql import FileTagOperations
+from nomarr.persistence.database.libraries_sql import LibrariesOperations
+from nomarr.persistence.database.library_files_sql import LibraryFilesOperations
+from nomarr.persistence.database.library_queue_sql import LibraryQueueOperations
+from nomarr.persistence.database.meta_sql import MetaOperations
+from nomarr.persistence.database.sessions_sql import SessionOperations
 
 # Re-export SQLite utility functions
-from nomarr.persistence.database.utils import (
+from nomarr.persistence.database.shared_sql import (
     count_and_delete,
     count_and_update,
     get_queue_stats,
     safe_count,
 )
+from nomarr.persistence.database.tag_queue_sql import QueueOperations
 
 __all__ = [
     "SCHEMA",
@@ -261,7 +261,7 @@ class Database:
         self.calibration_runs = CalibrationRunsOperations(self.conn)
 
         # Lazy import to avoid circular dependency (joined_queries imports from workflows)
-        from nomarr.persistence.database.joined_queries import JoinedQueryOperations
+        from nomarr.persistence.database.joined_queries_sql import JoinedQueryOperations
 
         self.joined_queries = JoinedQueryOperations(self.conn)
 

@@ -2,9 +2,9 @@
 Library package.
 """
 
-from .scan_library import scan_library_workflow, update_library_file_from_tags
-from .scan_single_file import scan_single_file_workflow
-from .start_library_scan import LibraryScanStats, start_library_scan_workflow
+from .scan_library_wf import scan_library_workflow, update_library_file_from_tags
+from .scan_single_file_wf import scan_single_file_workflow
+from .start_library_scan_wf import LibraryScanStats, start_library_scan_workflow
 
 __all__ = [
     "LibraryScanStats",

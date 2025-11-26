@@ -2,9 +2,9 @@
 Ml package.
 """
 
-from .audio import HAVE_ESSENTIA, load_audio_mono, should_skip_short
-from .backend_essentia import get_version, is_available, require
-from .cache import (
+from .ml_audio_comp import HAVE_ESSENTIA, load_audio_mono, should_skip_short
+from .ml_backend_essentia_comp import get_version, is_available, require
+from .ml_cache_comp import (
     cache_key,
     check_and_evict_idle_cache,
     clear_predictor_cache,
@@ -14,8 +14,12 @@ from .cache import (
     touch_cache,
     warmup_predictor_cache,
 )
-from .calibration import apply_minmax_calibration, generate_minmax_calibration, save_calibration_sidecars
-from .inference import compute_embeddings_for_backbone, make_head_only_predictor_batched, make_predictor_uncached
+from .ml_calibration_comp import apply_minmax_calibration, generate_minmax_calibration, save_calibration_sidecars
+from .ml_inference_comp import (
+    compute_embeddings_for_backbone,
+    make_head_only_predictor_batched,
+    make_predictor_uncached,
+)
 
 __all__ = [
     "HAVE_ESSENTIA",

@@ -2,10 +2,10 @@
 Services package.
 """
 
-from .analytics_service import AnalyticsConfig, AnalyticsService
-from .calibration_download_service import check_missing_calibrations, download_calibrations, ensure_calibrations_exist
-from .calibration_service import CalibrationConfig, CalibrationService
-from .config_service import (
+from .analytics_svc import AnalyticsConfig, AnalyticsService
+from .calibration_download_svc import check_missing_calibrations, download_calibrations, ensure_calibrations_exist
+from .calibration_svc import CalibrationConfig, CalibrationService
+from .config_svc import (
     INTERNAL_ALLOW_SHORT,
     INTERNAL_BATCH_SIZE,
     INTERNAL_CALIBRATION_APD_THRESHOLD,
@@ -27,16 +27,16 @@ from .config_service import (
     INTERNAL_WORKER_ENABLED,
     ConfigService,
 )
-from .coordinator_service import CoordinatorConfig, CoordinatorService, process_file_wrapper
-from .health_monitor_service import HealthMonitorConfig, HealthMonitorService
-from .keys_service import SESSION_TIMEOUT_SECONDS, KeyManagementService
-from .library_service import LibraryRootConfig, LibraryService
-from .ml_service import MLConfig, MLService
-from .navidrome_service import NavidromeConfig, NavidromeService
-from .processing_service import ProcessingService
-from .queue_service import BaseQueue, Job, ProcessingQueue, QueueService, RecalibrationQueue, ScanQueue
-from .recalibration_service import RecalibrationService
-from .worker_service import WorkerConfig, WorkerService
+from .coordinator_svc import CoordinatorConfig, CoordinatorService, process_file_wrapper
+from .health_monitor_svc import HealthMonitorConfig, HealthMonitorService
+from .keys_svc import SESSION_TIMEOUT_SECONDS, KeyManagementService
+from .library_svc import LibraryRootConfig, LibraryService
+from .ml_svc import MLConfig, MLService
+from .navidrome_svc import NavidromeConfig, NavidromeService
+from .processing_svc import ProcessingService
+from .queue_svc import BaseQueue, Job, ProcessingQueue, QueueService, RecalibrationQueue, ScanQueue
+from .recalibration_svc import RecalibrationService
+from .worker_svc import WorkerConfig, WorkerService
 
 __all__ = [
     "INTERNAL_ALLOW_SHORT",

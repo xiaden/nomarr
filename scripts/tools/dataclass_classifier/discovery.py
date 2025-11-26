@@ -391,6 +391,75 @@ def _has_wide_params(func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple
     return False, []
 
 
+def _looks_like_structured_return_annotation(
+    func_node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> tuple[bool, str]:
+    """
+    Check if function has a return annotation suggesting structured data.
+
+    Detects return types like:
+    - dict, Dict[...], Mapping[...]
+    - tuple[...]
+    - list[dict], list[Dict[...]], Sequence[dict]
+
+    Args:
+        func_node: Function AST node to inspect
+
+    Returns:
+        Tuple of (has_structured_return, description)
+        where description is a string like "dict[str, Any]" or "list[dict]"
+    """
+    if not func_node.returns:
+        return False, ""
+
+    returns = func_node.returns
+
+    # Helper to get annotation as string (simplified)
+    def annotation_to_string(node: ast.expr) -> str:
+        """Convert annotation node to readable string."""
+        if isinstance(node, ast.Name):
+            return node.id
+        elif isinstance(node, ast.Subscript):
+            base = annotation_to_string(node.value)
+            if isinstance(node.slice, ast.Tuple):
+                args = ", ".join(annotation_to_string(elt) for elt in node.slice.elts)
+            else:
+                args = annotation_to_string(node.slice)
+            return f"{base}[{args}]"
+        elif isinstance(node, ast.Attribute):
+            return node.attr
+        elif isinstance(node, ast.Constant):
+            return str(node.value)
+        else:
+            return "..."
+
+    # Check for dict-like returns
+    if isinstance(returns, ast.Name):
+        if returns.id in ("dict", "Dict", "Mapping"):
+            return True, returns.id
+    elif isinstance(returns, ast.Subscript):
+        base_name = annotation_to_string(returns.value)
+        if base_name in ("dict", "Dict", "Mapping"):
+            full_type = annotation_to_string(returns)
+            return True, full_type
+        # Check for list[dict] or Sequence[dict]
+        if base_name in ("list", "List", "Sequence"):
+            # Check if the element type is dict-like
+            if isinstance(returns.slice, ast.Name) and returns.slice.id in ("dict", "Dict"):
+                return True, f"{base_name}[dict]"
+            elif isinstance(returns.slice, ast.Subscript):
+                elem_base = annotation_to_string(returns.slice.value)
+                if elem_base in ("dict", "Dict"):
+                    full_type = annotation_to_string(returns)
+                    return True, full_type
+        # Check for tuple[...]
+        if base_name in ("tuple", "Tuple"):
+            full_type = annotation_to_string(returns)
+            return True, full_type
+
+    return False, ""
+
+
 def discover_missing_dataclasses(
     project_root: Path,
     nomarr_package: Path,
@@ -482,6 +551,74 @@ def discover_missing_dataclasses(
             # Skip ALL private methods - they are internal implementation details
             if is_private and is_method:
                 continue
+
+            # SPECIAL HANDLING FOR SERVICE METHODS
+            # Service methods should almost always return DTOs if they return structured data
+            is_service = layer == "services"
+            if is_service and is_method and not is_private:
+                # Check for dict return first
+                has_dict, dict_keys = _has_dict_return(node)
+                if has_dict:
+                    suggested_name = _to_pascal_case(func_name) + "Result"
+                    reason = f"Service method return should be a DTO (currently returns literal dict with {len(dict_keys)} fields)"
+                    candidates.append(
+                        MissingDataclassCandidate(
+                            module=module_path,
+                            function=func_name,
+                            defining_file=py_file,
+                            layer=layer,
+                            domain=domain,
+                            reason=reason,
+                            fields=dict_keys,
+                            suggested_name=suggested_name,
+                            is_private=is_private,
+                        )
+                    )
+                    seen.add(key)
+                    continue
+
+                # Check for tuple return
+                has_tuple, tuple_count = _has_tuple_return(node)
+                if has_tuple:
+                    suggested_name = _to_pascal_case(func_name) + "Result"
+                    reason = f"Service method return should be a DTO (currently returns literal tuple with {tuple_count} elements)"
+                    fields = [f"field{i + 1}" for i in range(tuple_count)]
+                    candidates.append(
+                        MissingDataclassCandidate(
+                            module=module_path,
+                            function=func_name,
+                            defining_file=py_file,
+                            layer=layer,
+                            domain=domain,
+                            reason=reason,
+                            fields=fields,
+                            suggested_name=suggested_name,
+                            is_private=is_private,
+                        )
+                    )
+                    seen.add(key)
+                    continue
+
+                # Check for structured return annotation
+                has_structured, type_desc = _looks_like_structured_return_annotation(node)
+                if has_structured:
+                    suggested_name = _to_pascal_case(func_name) + "Result"
+                    reason = f"Service method return should be a DTO (currently returns {type_desc})"
+                    candidates.append(
+                        MissingDataclassCandidate(
+                            module=module_path,
+                            function=func_name,
+                            defining_file=py_file,
+                            layer=layer,
+                            domain=domain,
+                            reason=reason,
+                            fields=[],  # Can't infer fields from annotation alone
+                            suggested_name=suggested_name,
+                            is_private=is_private,
+                        )
+                    )
+                    seen.add(key)
+                    continue
 
             # Priority 1: Dict return
             # For private functions: only flag module-level helpers (not methods)

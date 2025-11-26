@@ -17,7 +17,7 @@ import pytest
 @pytest.fixture
 def mock_config():
     """Create a ProcessorConfig for testing."""
-    from nomarr.helpers.dto.processing import ProcessorConfig
+    from nomarr.helpers.dto.processing_dto import ProcessorConfig
 
     return ProcessorConfig(
         models_dir="/fake/models",
@@ -61,13 +61,13 @@ def test_processor_config_creation():
 
 def test_config_service_make_processor_config():
     """Test ConfigService can create ProcessorConfig."""
-    from nomarr.services.config_service import ConfigService
+    from nomarr.services.config_svc import ConfigService
 
     service = ConfigService()
     config = service.make_processor_config()
 
     # Check it returns ProcessorConfig type
-    from nomarr.helpers.dto.processing import ProcessorConfig
+    from nomarr.helpers.dto.processing_dto import ProcessorConfig
 
     assert isinstance(config, ProcessorConfig)
 
@@ -79,7 +79,7 @@ def test_config_service_make_processor_config():
 
 def test_validate_file_exists_with_valid_file():
     """Test file validation succeeds for existing file."""
-    from nomarr.helpers.file_validation import validate_file_exists
+    from nomarr.helpers.file_validation_helper import validate_file_exists
 
     # Create temp file
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f:
@@ -94,7 +94,7 @@ def test_validate_file_exists_with_valid_file():
 
 def test_validate_file_exists_with_missing_file():
     """Test file validation raises for missing file."""
-    from nomarr.helpers.file_validation import validate_file_exists
+    from nomarr.helpers.file_validation_helper import validate_file_exists
 
     with pytest.raises(RuntimeError, match="File not found"):
         validate_file_exists("/fake/nonexistent/file.mp3")
@@ -102,7 +102,7 @@ def test_validate_file_exists_with_missing_file():
 
 def test_should_skip_processing_returns_tuple():
     """Test skip logic returns (should_skip, reason) tuple."""
-    from nomarr.helpers.file_validation import should_skip_processing
+    from nomarr.helpers.file_validation_helper import should_skip_processing
 
     # Create temp file without tags
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f:
@@ -126,7 +126,7 @@ def test_should_skip_processing_returns_tuple():
 
 def test_make_skip_result_format():
     """Test skip result matches process_file output format."""
-    from nomarr.helpers.file_validation import make_skip_result
+    from nomarr.helpers.file_validation_helper import make_skip_result
 
     result = make_skip_result("/test/path.mp3", "already_tagged")
 
@@ -143,7 +143,7 @@ def test_process_file_signature_accepts_config_and_db(mock_config):
     """Test process_file_workflow accepts new signature (config + optional db)."""
     import inspect
 
-    from nomarr.workflows.processing.process_file import process_file_workflow
+    from nomarr.workflows.processing.process_file_wf import process_file_workflow
 
     # Check signature
     sig = inspect.signature(process_file_workflow)
@@ -166,7 +166,7 @@ def test_process_file_signature_accepts_config_and_db(mock_config):
 
 def test_process_file_no_longer_accepts_old_signature():
     """Test process_file_workflow rejects old signature (path, force)."""
-    from nomarr.workflows.processing.process_file import process_file_workflow
+    from nomarr.workflows.processing.process_file_wf import process_file_workflow
 
     # Create temp file
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f:

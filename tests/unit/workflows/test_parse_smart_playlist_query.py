@@ -12,7 +12,7 @@ Tests cover:
 import pytest
 
 from nomarr.helpers.exceptions import PlaylistQueryError
-from nomarr.workflows.navidrome.parse_smart_playlist_query import (
+from nomarr.workflows.navidrome.parse_smart_playlist_query_wf import (
     parse_smart_playlist_query,
 )
 

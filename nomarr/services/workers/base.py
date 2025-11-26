@@ -19,11 +19,11 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from nomarr.helpers.dto.queue import DequeueResult
+from nomarr.helpers.dto.queue_dto import DequeueResult
 from nomarr.persistence.db import Database
 
 if TYPE_CHECKING:
-    from nomarr.services.queue_service import BaseQueue
+    from nomarr.services.queue_svc import BaseQueue
 
 
 # ----------------------------------------------------------------------
@@ -254,7 +254,7 @@ class BaseWorker(threading.Thread):
     def _check_cache_eviction(self) -> None:
         """Periodically check and evict idle ML model cache."""
         try:
-            from nomarr.components.ml.cache import check_and_evict_idle_cache
+            from nomarr.components.ml.ml_cache_comp import check_and_evict_idle_cache
 
             check_and_evict_idle_cache()
         except Exception as e:
