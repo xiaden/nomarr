@@ -11,6 +11,17 @@ from typing import Any
 
 
 @dataclass
+class RecalibrateFileWorkflowParams:
+    """Parameters for workflows/calibration/recalibrate_file_wf.py::recalibrate_file_workflow."""
+
+    file_path: str
+    models_dir: str
+    namespace: str
+    version_tag_key: str
+    calibrate_heads: bool
+
+
+@dataclass
 class EnsureCalibrationsExistResult:
     """Result from calibration_download_svc.ensure_calibrations_exist."""
 
@@ -53,49 +64,3 @@ class GenerateCalibrationResult:
     saved_files: dict[str, Any]
     reference_updates: dict[str, str]
     summary: dict[str, Any]
-
-
-@dataclass
-class LoadLibraryStateResult:
-    """Result from _load_library_state() private helper in recalibrate_file_wf."""
-
-    file_id: int
-    all_tags: dict[str, Any]
-    calibration_map: dict[str, str]
-
-
-@dataclass
-class CompareCalibrationsResult:
-    """Result from _compare_calibrations() private helper in generate_calibration_wf."""
-
-    apd_p5: float
-    apd_p95: float
-    srd: float
-    jsd: float
-    median_drift: float
-    iqr_drift: float
-    is_stable: bool
-    failed_metrics: list[str]
-
-
-@dataclass
-class ParseTagKeyResult:
-    """Result from _parse_tag_key() private helper in generate_calibration_wf."""
-
-    model_name: str
-    head_name: str
-    label: str
-
-
-@dataclass
-class CalculateHeadDriftResult:
-    """Result from _calculate_head_drift() private helper in generate_calibration_wf."""
-
-    apd_p5: float
-    apd_p95: float
-    srd: float
-    jsd: float
-    median_drift: float
-    iqr_drift: float
-    is_stable: bool
-    failed_metrics: list[str]

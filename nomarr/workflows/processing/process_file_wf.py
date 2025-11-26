@@ -56,6 +56,7 @@ import gc
 import logging
 import time
 from collections import defaultdict
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -74,13 +75,23 @@ from nomarr.components.tagging.tagging_aggregation_comp import (
 from nomarr.components.tagging.tagging_writer_comp import TagWriter
 from nomarr.helpers.dto.library_dto import UpdateLibraryFileFromTagsParams
 from nomarr.helpers.dto.ml_dto import ComputeEmbeddingsForBackboneParams
-from nomarr.helpers.dto.processing_dto import ProcessFileResult, ProcessHeadPredictionsResult, ProcessorConfig
+from nomarr.helpers.dto.processing_dto import ProcessFileResult, ProcessorConfig
 
 # Get Essentia version for tag versioning
 ESSENTIA_VERSION = backend_essentia.get_version()
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
+
+
+@dataclass
+class ProcessHeadPredictionsResult:
+    """Result from _process_head_predictions() private helper (workflow-internal)."""
+
+    heads_succeeded: int
+    head_results: dict[str, Any]
+    regression_heads: list[tuple[Any, list[float]]]  # list[tuple[HeadInfo, list[float]]]
+    all_head_outputs: list[Any]  # list[HeadOutput]
 
 
 def _discover_and_group_heads(models_dir: str) -> tuple[list[HeadInfo], dict[str, list[HeadInfo]]]:

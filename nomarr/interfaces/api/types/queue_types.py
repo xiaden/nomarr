@@ -19,7 +19,7 @@ from typing import Literal
 from pydantic import BaseModel
 from typing_extensions import Self
 
-from nomarr.helpers.dto.queue_dto import ListJobsResult
+from nomarr.helpers.dto.queue_dto import Job, ListJobsResult
 from nomarr.services.queue_svc import QueueStatus
 from nomarr.services.worker_svc import WorkerStatusResult
 
@@ -36,13 +36,12 @@ class QueueJobItem(BaseModel):
     """
     Unified queue job representation for API responses.
 
-    Extends internal JobDict with API-specific fields.
+    Extends internal Job DTO with API-specific fields.
     """
 
     id: int
     path: str
     status: str
-    created_at: str | int | float
     started_at: str | int | float | None = None
     finished_at: str | int | float | None = None
     error_message: str | None = None
@@ -51,9 +50,9 @@ class QueueJobItem(BaseModel):
     attempts: int = 0  # API-specific: retry count
 
     @classmethod
-    def from_dto(cls, job: JobDict, queue_type: str = "processing", attempts: int = 0) -> Self:
+    def from_dto(cls, job: Job, queue_type: str = "processing", attempts: int = 0) -> Self:
         """
-        Transform internal JobDict DTO to external API response.
+        Transform internal Job DTO to external API response.
 
         Args:
             job: Internal job DTO from service layer

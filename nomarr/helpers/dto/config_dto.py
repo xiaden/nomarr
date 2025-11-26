@@ -29,14 +29,7 @@ class GetInternalInfoResult:
 
 
 @dataclass
-class GetConfigResult:
-    """Result from config_service.get_config - wraps configuration dict."""
-
-    config: dict[str, Any]
-
-
-@dataclass
-class ReloadResult:
-    """Result from config_service.reload - wraps reloaded configuration dict."""
+class ConfigResult:
+    """Result from config_service.get_config and reload - wraps configuration dict."""
 
     config: dict[str, Any]

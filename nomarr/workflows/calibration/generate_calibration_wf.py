@@ -36,6 +36,7 @@ import json
 import logging
 import os
 import shutil
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -43,18 +44,55 @@ from scipy.spatial.distance import jensenshannon
 from scipy.stats import iqr
 
 from nomarr.components.ml.ml_calibration_comp import generate_minmax_calibration, save_calibration_sidecars
-from nomarr.helpers.dto.calibration_dto import (
-    CalculateHeadDriftResult,
-    CompareCalibrationsResult,
-    GenerateCalibrationResult,
-    ParseTagKeyResult,
-)
+from nomarr.helpers.dto.calibration_dto import GenerateCalibrationResult
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
 logger = logging.getLogger(__name__)
+
+
+# ----------------------------------------------------------------------
+# Workflow-Internal Helper DTOs
+# ----------------------------------------------------------------------
+
+
+@dataclass
+class ParseTagKeyResult:
+    """Result from _parse_tag_key() private helper (workflow-internal)."""
+
+    model_name: str
+    head_name: str
+    label: str
+
+
+@dataclass
+class CompareCalibrationsResult:
+    """Result from _compare_calibrations() private helper (workflow-internal)."""
+
+    apd_p5: float
+    apd_p95: float
+    srd: float
+    jsd: float
+    median_drift: float
+    iqr_drift: float
+    is_stable: bool
+    failed_metrics: list[str]
+
+
+@dataclass
+class CalculateHeadDriftResult:
+    """Result from _calculate_head_drift() private helper (workflow-internal)."""
+
+    apd_p5: float
+    apd_p95: float
+    srd: float
+    jsd: float
+    median_drift: float
+    iqr_drift: float
+    is_stable: bool
+    failed_metrics: list[str]
 
 
 # ----------------------------------------------------------------------

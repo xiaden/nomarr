@@ -33,16 +33,25 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.ml.ml_discovery_comp import HeadOutput, discover_heads
 from nomarr.components.tagging.tagging_aggregation_comp import aggregate_mood_tiers, load_calibrations
 from nomarr.components.tagging.tagging_writer_comp import TagWriter
-from nomarr.helpers.dto.calibration_dto import LoadLibraryStateResult
-from nomarr.helpers.dto.library_dto import RecalibrateFileWorkflowParams
+from nomarr.helpers.dto.calibration_dto import RecalibrateFileWorkflowParams
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
+
+
+@dataclass
+class LoadLibraryStateResult:
+    """Result from _load_library_state() private helper (workflow-internal)."""
+
+    file_id: int
+    all_tags: dict[str, Any]
+    calibration_map: dict[str, str]
 
 
 def _load_library_state(

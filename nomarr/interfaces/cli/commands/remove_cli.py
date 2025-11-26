@@ -7,7 +7,7 @@ from __future__ import annotations
 import argparse
 
 import nomarr.app as app
-from nomarr.interfaces.cli.ui import InfoPanel, print_error, print_info, print_success, print_warning
+from nomarr.interfaces.cli.cli_ui import InfoPanel, print_error, print_info, print_success, print_warning
 
 
 def cmd_remove(args: argparse.Namespace) -> int:
@@ -109,7 +109,7 @@ def cmd_remove(args: argparse.Namespace) -> int:
 
             content = f"""[bold]Path:[/bold] {job_data.path}
 [bold]Status:[/bold] [{status_color}]{job_data.status}[/{status_color}]
-[bold]Created:[/bold] {job_data.created_at or "N/A"}"""
+[bold]Started:[/bold] {job_data.started_at or "N/A"}"""
 
             InfoPanel.show(f"Removing Job {args.job_id}", content, "red")
 

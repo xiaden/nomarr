@@ -19,14 +19,13 @@ class Job:
     """
     Core queue job entity.
 
-    Represents a queued processing job with full lifecycle tracking.
+    Represents a queued processing job with lifecycle tracking.
     Used across queue service, library service, and worker operations.
     """
 
     id: int
     path: str
     status: str
-    created_at: str
     started_at: str | None
     finished_at: str | None
     error_message: str | None

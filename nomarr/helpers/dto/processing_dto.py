@@ -91,16 +91,6 @@ class WorkerStatusResult:
 
 
 @dataclass
-class ProcessHeadPredictionsResult:
-    """Result from _process_head_predictions() private helper in process_file_wf."""
-
-    heads_succeeded: int
-    head_results: dict[str, Any]
-    regression_heads: list[tuple[Any, list[float]]]  # list[tuple[HeadInfo, list[float]]]
-    all_head_outputs: list[Any]  # list[HeadOutput]
-
-
-@dataclass
 class ProcessFileResult:
     """Result from process_file_workflow."""
 

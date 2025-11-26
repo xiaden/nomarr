@@ -34,8 +34,8 @@ class QueueOperations:
         """
         cur = self.conn.cursor()
         cur.execute(
-            "INSERT INTO tag_queue(path, status, created_at, force) VALUES(?,?,?,?)",
-            (path, "pending", now_ms(), int(force)),
+            "INSERT INTO tag_queue(path, status, force) VALUES(?,?,?)",
+            (path, "pending", int(force)),
         )
         self.conn.commit()
 
@@ -195,11 +195,11 @@ class QueueOperations:
             limit: Maximum number of jobs to return
 
         Returns:
-            List of job dicts with id, path, status, created_at, started_at
+            List of job dicts with id, path, status, started_at
         """
         cur = self.conn.execute(
             """
-            SELECT id, path, status, created_at, started_at
+            SELECT id, path, status, started_at
             FROM tag_queue
             WHERE status IN ('pending', 'running')
             ORDER BY id ASC
@@ -207,7 +207,7 @@ class QueueOperations:
             """,
             (limit,),
         )
-        columns = ["id", "path", "status", "created_at", "started_at"]
+        columns = ["id", "path", "status", "started_at"]
         return [dict(zip(columns, row, strict=False)) for row in cur.fetchall()]
 
     def delete_job(self, job_id: int) -> int:

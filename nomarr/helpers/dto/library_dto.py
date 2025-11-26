@@ -22,19 +22,6 @@ class LibraryScanStatusResult:
 
 
 @dataclass
-class ScanJobResult:
-    """Single scan job from library_service.get_scan_history."""
-
-    id: int
-    path: str
-    status: str
-    force: bool
-    started_at: str | None
-    completed_at: str | None
-    error_message: str | None
-
-
-@dataclass
 class LibraryStatsResult:
     """Result from library_service.get_library_stats."""
 
@@ -67,17 +54,6 @@ class StartScanResult:
     files_skipped: int
     files_removed: int
     job_ids: list[int]
-
-
-@dataclass
-class RecalibrateFileWorkflowParams:
-    """Parameters for workflows/calibration/recalibrate_file_wf.py::recalibrate_file_workflow."""
-
-    file_path: str
-    models_dir: str
-    namespace: str
-    version_tag_key: str
-    calibrate_heads: bool
 
 
 @dataclass
@@ -130,8 +106,6 @@ __all__ = [
     "LibraryDict",
     "LibraryScanStatusResult",
     "LibraryStatsResult",
-    "RecalibrateFileWorkflowParams",
-    "ScanJobResult",
     "ScanLibraryWorkflowParams",
     "ScanSingleFileWorkflowParams",
     "StartLibraryScanWorkflowParams",

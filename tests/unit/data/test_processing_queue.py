@@ -8,7 +8,7 @@ import tempfile
 import pytest
 
 from nomarr.persistence.db import Database
-from nomarr.services.queue_svc import Job, ProcessingQueue
+from nomarr.services.queue_svc import ProcessingQueue, QueueJob
 
 
 @pytest.fixture
@@ -28,45 +28,43 @@ def queue(temp_db):
 
 
 class TestJobClass:
-    """Test the Job dataclass."""
+    """Test the QueueJob dataclass."""
 
     def test_job_creation_from_row(self):
-        """Test Job can be created from database row dict."""
+        """Test QueueJob can be created from database row dict."""
         row = {
             "id": 1,
             "path": "/music/test.mp3",
             "status": "pending",
-            "added_at": "2025-11-07 12:00:00",
             "started_at": None,
-            "done_at": None,
+            "finished_at": None,
             "error_message": None,
-            "results": None,
+            "force": False,
         }
-        job = Job(**row)
+        job = QueueJob(**row)
         assert job.id == 1
         assert job.path == "/music/test.mp3"
         assert job.status == "pending"
 
     def test_job_to_dict(self):
-        """Test Job.to_dict() returns correct dictionary."""
+        """Test Job.to_dto() returns correct Job DTO."""
         row = {
             "id": 2,
             "path": "/music/another.mp3",
             "status": "done",
-            "created_at": "2025-11-07 12:00:00",
             "started_at": "2025-11-07 12:01:00",
             "finished_at": "2025-11-07 12:02:00",
             "error_message": None,
             "force": True,
         }
-        job = Job(**row)
-        job_dict = job.to_dict()
+        job = QueueJob(**row)
+        job_dto = job.to_dto()
 
-        assert job_dict.id == 2
-        assert job_dict.path == "/music/another.mp3"
-        assert job_dict.status == "done"
-        assert job_dict.created_at is not None
-        assert job_dict.finished_at is not None
+        assert job_dto.id == 2
+        assert job_dto.path == "/music/another.mp3"
+        assert job_dto.status == "done"
+        assert job_dto.started_at is not None
+        assert job_dto.finished_at is not None
 
 
 class TestProcessingQueueAdd:

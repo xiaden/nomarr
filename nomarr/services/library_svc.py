@@ -522,7 +522,6 @@ class LibraryService:
                 id=job["id"],
                 path=job["path"],
                 status=job["status"],
-                created_at=job["started_at"] or "",  # Library queue lacks created_at, use started_at
                 started_at=job["started_at"],
                 finished_at=job["completed_at"],  # Map completed_at → finished_at
                 error_message=job["error_message"],

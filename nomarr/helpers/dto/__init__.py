@@ -56,7 +56,6 @@ from nomarr.helpers.dto.navidrome_dto import (
 )
 from nomarr.helpers.dto.processing_dto import (
     ProcessFileResult,
-    ProcessHeadPredictionsResult,
     ProcessorConfig,
     TagWriteProfile,
 )
@@ -71,7 +70,6 @@ __all__ = [
     "MoodDistributionData",
     "PlaylistPreviewResult",
     "ProcessFileResult",
-    "ProcessHeadPredictionsResult",
     "ProcessorConfig",
     "SaveCalibrationSidecarsResult",
     "SegmentWaveformParams",

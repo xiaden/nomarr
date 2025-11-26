@@ -51,7 +51,6 @@ SCHEMA = [
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         path TEXT,
         status TEXT DEFAULT 'pending',
-        created_at INTEGER,
         started_at INTEGER,
         finished_at INTEGER,
         error_message TEXT,

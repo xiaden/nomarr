@@ -346,7 +346,7 @@ class TableDisplay:
         table.add_column("ID", style=COLOR_INFO, width=8)
         table.add_column("Status", width=12)
         table.add_column("Path", overflow="fold")
-        table.add_column("Time", width=20)
+        table.add_column("Started", width=20)
 
         for job in jobs:
             # Color-code status
@@ -361,7 +361,7 @@ class TableDisplay:
                 str(job.id),
                 f"[{status_color}]{job.status}[/{status_color}]",
                 str(job.path) if job.path else "",
-                str(job.created_at) if job.created_at else "",
+                str(job.started_at) if job.started_at else "",
             )
 
         console.print(table)

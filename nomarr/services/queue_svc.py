@@ -84,7 +84,6 @@ class QueueJob:
         self.id = row.get("id")
         self.path = row.get("path")
         self.status = row.get("status", "pending")
-        self.created_at = row.get("created_at")
         self.started_at = row.get("started_at")
         self.finished_at = row.get("finished_at")
         self.error_message = row.get("error_message")
@@ -93,14 +92,13 @@ class QueueJob:
     def to_dto(self) -> Job:
         """Convert DB row wrapper to Job DTO."""
         # Ensure required fields have values (should always be true from DB)
-        if self.id is None or self.path is None or self.created_at is None:
+        if self.id is None or self.path is None:
             raise ValueError("Job missing required fields")
 
         return Job(
             id=self.id,
             path=self.path,
             status=self.status,
-            created_at=self.created_at,
             started_at=self.started_at,
             finished_at=self.finished_at,
             error_message=self.error_message,

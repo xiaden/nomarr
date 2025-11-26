@@ -15,11 +15,11 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from nomarr.helpers.dto.config_dto import GetConfigResult, GetInternalInfoResult, ReloadResult
+from nomarr.helpers.dto.config_dto import ConfigResult, GetInternalInfoResult
 from nomarr.persistence.db import Database
 
 if TYPE_CHECKING:
-    from nomarr.helpers.dto.processing import ProcessorConfig
+    from nomarr.helpers.dto.processing_dto import ProcessorConfig
 
 
 # ======================================================================
@@ -92,7 +92,7 @@ class ConfigService:
         self._config: dict[str, Any] | None = None
         self._logger = logging.getLogger(__name__)
 
-    def get_config(self, force_reload: bool = False) -> GetConfigResult:
+    def get_config(self, force_reload: bool = False) -> ConfigResult:
         """
         Get the composed configuration.
 
@@ -100,11 +100,11 @@ class ConfigService:
             force_reload: If True, bypass cache and reload from sources
 
         Returns:
-            GetConfigResult wrapping complete configuration dict
+            ConfigResult wrapping complete configuration dict
         """
         if self._config is None or force_reload:
             self._config = self._compose()
-        return GetConfigResult(config=self._config)
+        return ConfigResult(config=self._config)
 
     def get(self, key_path: str, default: Any = None) -> Any:
         """
@@ -158,16 +158,16 @@ class ConfigService:
         db.meta.set(f"config_{key}", value)
         self._logger.info(f"[ConfigService] Set config_{key} = {value}")
 
-    def reload(self) -> ReloadResult:
+    def reload(self) -> ConfigResult:
         """
         Force reload configuration from all sources.
 
         Returns:
-            ReloadResult wrapping newly composed config
+            ConfigResult wrapping newly composed config
         """
         self._logger.info("Reloading configuration from all sources")
         result = self.get_config(force_reload=True)
-        return ReloadResult(config=result.config)
+        return ConfigResult(config=result.config)
 
     def get_internal_info(self) -> GetInternalInfoResult:
         """
@@ -462,7 +462,7 @@ class ConfigService:
         Returns:
             ProcessorConfig instance ready for injection into process_file()
         """
-        from nomarr.helpers.dto.processing import ProcessorConfig
+        from nomarr.helpers.dto.processing_dto import ProcessorConfig
 
         cfg = self.get_config()
 
