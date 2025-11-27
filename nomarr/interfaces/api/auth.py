@@ -8,7 +8,7 @@ from __future__ import annotations
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from nomarr.services.keys_service import KeyManagementService
+from nomarr.services.keys_svc import KeyManagementService
 
 auth_scheme = HTTPBearer(auto_error=False)
 
@@ -51,20 +51,11 @@ async def verify_session(creds: HTTPAuthorizationCredentials = Depends(auth_sche
         raise HTTPException(status_code=403, detail="Invalid or expired session")
 
 
-def hash_password(password: str) -> str:
-    """
-    Hash a password. Pure utility function - stateless.
-    """
-    from nomarr.services.keys_service import KeyManagementService
-
-    return KeyManagementService.hash_password(password)
-
-
 def verify_password(password: str, password_hash: str) -> bool:
     """
     Verify a password against a hash. Pure utility function - stateless.
     """
-    from nomarr.services.keys_service import KeyManagementService
+    from nomarr.services.keys_svc import KeyManagementService
 
     return KeyManagementService.verify_password(password, password_hash)
 
@@ -99,11 +90,6 @@ def validate_session(session_token: str) -> bool:
 def invalidate_session(session_token: str) -> None:
     """Invalidate a session using the singleton KeyManagementService instance."""
     get_key_service().invalidate_session(session_token)
-
-
-def cleanup_expired_sessions() -> int:
-    """Cleanup expired sessions using the singleton KeyManagementService instance."""
-    return get_key_service().cleanup_expired_sessions()
 
 
 def load_sessions_from_db() -> int:

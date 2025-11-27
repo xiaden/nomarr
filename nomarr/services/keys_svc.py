@@ -84,22 +84,6 @@ class KeyManagementService:
         logging.info("[KeyManagement] Generated new API key on first run.")
         return new_key
 
-    def rotate_api_key(self) -> str:
-        """
-        Generate a new API key, replacing any existing one.
-
-        Returns:
-            New API key string
-
-        Warning:
-            This invalidates the old key immediately. All services using
-            the old key will need to be updated.
-        """
-        new_key = secrets.token_urlsafe(32)
-        self._db.meta.set("api_key", new_key)
-        logging.warning("[KeyManagement] API key rotated - old key invalidated")
-        return new_key
-
     # ----------------------------------------------------------------------
     # Admin Password Management
     # ----------------------------------------------------------------------

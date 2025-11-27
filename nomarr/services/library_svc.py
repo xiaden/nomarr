@@ -681,14 +681,26 @@ class LibraryService:
             updated_at=library["updated_at"],
         )
 
-    def get_default_library(self) -> dict[str, Any] | None:
+    def get_default_library(self) -> LibraryDict | None:
         """
         Get the default library.
 
         Returns:
-            Default Library dict or None if no default set
+            LibraryDict DTO or None if no default set
         """
-        return self.db.libraries.get_default_library()
+        library_dict = self.db.libraries.get_default_library()
+        if not library_dict:
+            return None
+
+        return LibraryDict(
+            id=library_dict["id"],
+            name=library_dict["name"],
+            root_path=library_dict["root_path"],
+            is_enabled=library_dict["is_enabled"],
+            is_default=library_dict["is_default"],
+            created_at=library_dict["created_at"],
+            updated_at=library_dict["updated_at"],
+        )
 
     def create_library(
         self,
@@ -783,6 +795,55 @@ class LibraryService:
         if not updated:
             raise RuntimeError("Failed to retrieve Updated library")
         return LibraryDict(**updated)
+
+    def update_library(
+        self,
+        library_id: int,
+        *,
+        name: str | None = None,
+        root_path: str | None = None,
+        is_enabled: bool | None = None,
+        is_default: bool | None = None,
+    ) -> LibraryDict:
+        """
+        Update library properties (consolidated method for all updates).
+
+        Handles conditional updates:
+        - root_path: Validates and normalizes path
+        - is_default: Sets as default library (unsets others)
+        - name/is_enabled: Updates metadata
+
+        Args:
+            library_id: Library ID
+            name: New name (optional)
+            root_path: New root path (optional)
+            is_enabled: New enabled state (optional)
+            is_default: Set as default library (optional)
+
+        Returns:
+            Updated Library DTO
+
+        Raises:
+            ValueError: If library not found or invalid parameters
+        """
+        # Update root_path if provided
+        if root_path is not None:
+            self.update_library_root(library_id, root_path)
+
+        # Update is_default if provided
+        if is_default is True:
+            self.set_default_library(library_id)
+
+        # Update name and/or is_enabled if provided
+        if name is not None or is_enabled is not None:
+            return self.update_library_metadata(
+                library_id,
+                name=name,
+                is_enabled=is_enabled,
+            )
+
+        # If only root_path or is_default was updated, fetch and return the updated library
+        return self.get_library(library_id)
 
     def set_default_library(self, library_id: int) -> LibraryDict:
         """

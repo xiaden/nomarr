@@ -13,59 +13,104 @@ Architecture:
 
 from __future__ import annotations
 
-from dataclasses import asdict
-from typing import Literal
-
 from pydantic import BaseModel
 from typing_extensions import Self
 
-from nomarr.helpers.dto.queue_dto import Job, ListJobsResult
-from nomarr.services.queue_svc import QueueStatus
-from nomarr.services.worker_svc import WorkerStatusResult
+from nomarr.helpers.dto import admin_dto
+from nomarr.helpers.dto.queue_dto import (
+    FlushResult,
+    Job,
+    ListJobsResult,
+    QueueStatus,
+)
 
 # ──────────────────────────────────────────────────────────────────────
-# Queue Job Types
+# Queue Request Types
 # ──────────────────────────────────────────────────────────────────────
 
 
-QueueType = Literal["scan", "processing", "recalibration"]
-JobStatus = Literal["pending", "processing", "done", "error"]
+class RemoveJobRequest(BaseModel):
+    """Request to remove a specific job from the queue."""
+
+    job_id: int
 
 
-class QueueJobItem(BaseModel):
+class FlushRequest(BaseModel):
+    """Request to flush jobs by status."""
+
+    statuses: list[str] | None = None  # e.g., ["pending","error"]; None => default
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Queue Response Types (DTO → Pydantic mappings)
+# ──────────────────────────────────────────────────────────────────────
+
+
+class QueueJobResponse(BaseModel):
     """
-    Unified queue job representation for API responses.
+    Single queue job response.
 
-    Extends internal Job DTO with API-specific fields.
+    Maps directly to Job DTO from helpers/dto/queue_dto.py
     """
 
     id: int
     path: str
     status: str
-    started_at: str | int | float | None = None
-    finished_at: str | int | float | None = None
-    error_message: str | None = None
-    force: bool = False
-    queue_type: str = "processing"  # API-specific: which queue
-    attempts: int = 0  # API-specific: retry count
+    started_at: str | None
+    finished_at: str | None
+    error_message: str | None
+    force: bool
 
     @classmethod
-    def from_dto(cls, job: Job, queue_type: str = "processing", attempts: int = 0) -> Self:
+    def from_dto(cls, job: Job) -> Self:
         """
         Transform internal Job DTO to external API response.
 
         Args:
             job: Internal job DTO from service layer
-            queue_type: Which queue this job belongs to (API-specific)
-            attempts: Number of processing attempts (API-specific)
 
         Returns:
             API response model
         """
         return cls(
-            **asdict(job),
-            queue_type=queue_type,
-            attempts=attempts,
+            id=job.id,
+            path=job.path,
+            status=job.status,
+            started_at=job.started_at,
+            finished_at=job.finished_at,
+            error_message=job.error_message,
+            force=job.force,
+        )
+
+
+class ListJobsResponse(BaseModel):
+    """
+    Response for list jobs endpoint.
+
+    Maps to ListJobsResult DTO from helpers/dto/queue_dto.py
+    """
+
+    jobs: list[QueueJobResponse]
+    total: int
+    limit: int
+    offset: int
+
+    @classmethod
+    def from_dto(cls, result: ListJobsResult) -> Self:
+        """
+        Transform internal ListJobsResult DTO to external API response.
+
+        Args:
+            result: Internal list result from service layer
+
+        Returns:
+            API response model with transformed job items
+        """
+        return cls(
+            jobs=[QueueJobResponse.from_dto(job) for job in result.jobs],
+            total=result.total,
+            limit=result.limit,
+            offset=result.offset,
         )
 
 
@@ -73,14 +118,11 @@ class QueueStatusResponse(BaseModel):
     """
     Response for queue status/depth endpoint.
 
-    Provides counts of jobs in different states.
+    Maps to QueueStatus DTO from helpers/dto/queue_dto.py
     """
 
-    pending: int
-    processing: int
-    done: int
-    error: int
-    total: int
+    depth: int
+    counts: dict[str, int]
 
     @classmethod
     def from_dto(cls, status: QueueStatus) -> Self:
@@ -91,105 +133,54 @@ class QueueStatusResponse(BaseModel):
             status: Internal queue status from service layer
 
         Returns:
-            API response model with normalized field names
+            API response model
         """
-        counts = status.counts
-        # Map internal status names to API names
         return cls(
-            pending=counts.get("pending", 0),
-            processing=counts.get("running", 0) + counts.get("processing", 0),
-            done=counts.get("done", 0),
-            error=counts.get("error", 0),
-            total=sum(counts.values()),
+            depth=status.depth,
+            counts=status.counts,
         )
 
 
-class QueueJobsResponse(BaseModel):
-    """Response wrapping a list of queue jobs."""
+class FlushResponse(BaseModel):
+    """
+    Response for flush operation.
 
-    jobs: list[QueueJobItem]
-    total: int = 0
-    limit: int = 50
-    offset: int = 0
+    Maps to FlushResult DTO from helpers/dto/queue_dto.py
+    """
+
+    flushed_statuses: list[str]
+    removed: int
 
     @classmethod
-    def from_dto(cls, result: ListJobsResult, queue_type: str = "processing") -> Self:
+    def from_dto(cls, result: FlushResult) -> Self:
         """
-        Transform internal ListJobsResult DTO to external API response.
+        Transform internal FlushResult DTO to external API response.
 
         Args:
-            result: Internal list result from service layer
-            queue_type: Which queue these jobs belong to
+            result: Internal flush result from service layer
 
         Returns:
-            API response model with transformed job items
+            API response model
         """
         return cls(
-            jobs=[QueueJobItem.from_dto(job, queue_type=queue_type) for job in result.jobs],
-            total=result.total,
-            limit=result.limit,
-            offset=result.offset,
+            flushed_statuses=result.flushed_statuses,
+            removed=result.removed,
         )
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Legacy Response Types (Kept for backward compatibility)
+# ──────────────────────────────────────────────────────────────────────
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Queue Job Types
+# ──────────────────────────────────────────────────────────────────────
 
 
 # ──────────────────────────────────────────────────────────────────────
 # Worker Status Types
 # ──────────────────────────────────────────────────────────────────────
-
-
-class WorkerStatusItem(BaseModel):
-    """
-    Status information for a single worker.
-
-    API representation of worker state.
-    """
-
-    name: str
-    worker_id: int | None = None
-    alive: bool = True
-    is_busy: bool = False
-    last_heartbeat: float | int | None = None
-    queue_type: str = "processing"
-
-
-class WorkersStatusResponse(BaseModel):
-    """Response for worker status listing."""
-
-    enabled: bool
-    worker_count: int
-    running: int
-    workers: list[WorkerStatusItem]
-
-    @classmethod
-    def from_dto(cls, status: WorkerStatusResult, queue_type: str = "processing") -> Self:
-        """
-        Transform internal WorkerStatusResult DTO to external API response.
-
-        Args:
-            status: Internal worker status from service layer
-            queue_type: Which queue these workers process
-
-        Returns:
-            API response model
-        """
-        # Transform worker dicts to WorkerStatusItem models
-        worker_items = [
-            WorkerStatusItem(
-                name=w.get("name", "unknown"),
-                worker_id=w.get("id"),
-                alive=w.get("alive", True),
-                is_busy=False,  # Not tracked in current worker dict
-                queue_type=queue_type,
-            )
-            for w in status.workers
-        ]
-
-        return cls(
-            enabled=status.enabled,
-            worker_count=status.worker_count,
-            running=status.running,
-            workers=worker_items,
-        )
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -203,9 +194,19 @@ class OperationResult(BaseModel):
     status: str
     message: str
 
+    @classmethod
+    def from_dto(cls, dto: admin_dto.WorkerOperationResult) -> OperationResult:
+        """Convert worker operation DTO to Pydantic response model."""
+        return cls(status=dto.status, message=dto.message)
+
 
 class JobRemovalResult(BaseModel):
     """Result of removing jobs from queue."""
 
     removed: int
     message: str
+
+    @classmethod
+    def from_dto(cls, dto: admin_dto.JobRemovalResult) -> JobRemovalResult:
+        """Convert admin DTO to Pydantic response model."""
+        return cls(removed=dto.removed, message=dto.message)

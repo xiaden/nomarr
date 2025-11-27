@@ -1,0 +1,479 @@
+"""AST utility functions for code graph builder."""
+
+from __future__ import annotations
+
+import ast
+
+from .models import CodeGraph, Edge
+
+
+def get_layer_from_module_path(module_id: str) -> str:
+    """
+    Extract layer from module path.
+
+    Examples:
+        "nomarr.interfaces.api.web.router" -> "interfaces"
+        "nomarr.services.queue_svc" -> "services"
+        "nomarr.workflows.queue.enqueue_files" -> "workflows"
+    """
+    parts = module_id.split(".")
+    if len(parts) < 2:
+        return "root"
+
+    # First part should be package name (e.g., "nomarr")
+    # Second part is the layer
+    layer_candidates = {"interfaces", "services", "workflows", "components", "persistence", "helpers"}
+
+    if parts[1] in layer_candidates:
+        return parts[1]
+
+    return "other"
+
+
+def get_docstring(node: ast.AST) -> str | None:
+    """Extract docstring from a node if present."""
+    if isinstance(node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
+        docstring = ast.get_docstring(node)
+        return docstring if docstring else None
+    return None
+
+
+def get_return_annotation(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str | None:
+    """Extract return annotation as a string."""
+    if node.returns:
+        return ast.unparse(node.returns)
+    return None
+
+
+def extract_return_var_names(node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
+    """
+    Extract variable names from return statements.
+
+    Handles:
+    - return some_var
+    - return self.attribute
+    - return result.data
+    - return (a, b, c)
+    """
+    var_names = []
+
+    for child in ast.walk(node):
+        if isinstance(child, ast.Return) and child.value:
+            var_names.extend(_extract_names_from_expr(child.value))
+
+    return list(dict.fromkeys(var_names))  # Deduplicate while preserving order
+
+
+def _extract_names_from_expr(expr: ast.expr) -> list[str]:
+    """Recursively extract Name and Attribute paths from an expression."""
+    names = []
+
+    if isinstance(expr, ast.Name):
+        names.append(expr.id)
+    elif isinstance(expr, ast.Attribute):
+        # Build dotted path like "result.data" or "self.tags"
+        path_parts: list[str] = []
+        current: ast.expr = expr
+        while isinstance(current, ast.Attribute):
+            path_parts.insert(0, current.attr)
+            current = current.value
+        if isinstance(current, ast.Name):
+            path_parts.insert(0, current.id)
+            names.append(".".join(path_parts))
+    elif isinstance(expr, ast.Tuple | ast.List):
+        for elt in expr.elts:
+            names.extend(_extract_names_from_expr(elt))
+
+    return names
+
+
+def extract_class_attributes(class_node: ast.ClassDef) -> list[str]:
+    """
+    Extract attribute names from a class.
+
+    Includes:
+    - Class-level assignments
+    - self.attribute assignments in methods
+    """
+    attributes = set()
+
+    # Class-level assignments
+    for stmt in class_node.body:
+        if isinstance(stmt, ast.Assign | ast.AnnAssign):
+            if isinstance(stmt, ast.Assign):
+                for target in stmt.targets:
+                    if isinstance(target, ast.Name):
+                        attributes.add(target.id)
+            elif isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
+                attributes.add(stmt.target.id)
+
+    # self.attribute assignments in methods
+    for stmt in class_node.body:
+        if isinstance(stmt, ast.FunctionDef | ast.AsyncFunctionDef):
+            for child in ast.walk(stmt):
+                if isinstance(child, ast.Assign | ast.AnnAssign):
+                    targets = child.targets if isinstance(child, ast.Assign) else [child.target]
+                    for target in targets:
+                        if (
+                            isinstance(target, ast.Attribute)
+                            and isinstance(target.value, ast.Name)
+                            and target.value.id == "self"
+                        ):
+                            attributes.add(target.attr)
+
+    return sorted(attributes)
+
+
+def extract_function_params(func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
+    """Extract parameter names from a function/method."""
+    params = []
+
+    args = func_node.args
+    # Regular args
+    for arg in args.args:
+        params.append(arg.arg)
+
+    # *args
+    if args.vararg:
+        params.append(f"*{args.vararg.arg}")
+
+    # Keyword-only args
+    for arg in args.kwonlyargs:
+        params.append(arg.arg)
+
+    # **kwargs
+    if args.kwarg:
+        params.append(f"**{args.kwarg.arg}")
+
+    return params
+
+
+def is_fastapi_route_decorator(decorator: ast.expr) -> bool:
+    """
+    Check if a decorator is a FastAPI route decorator.
+
+    Examples:
+        @router.get(...)
+        @router.post(...)
+        @app.get(...)
+    """
+    # Handle @router.get(...) or @router.get
+    if isinstance(decorator, ast.Attribute) and decorator.attr in {
+        "get",
+        "post",
+        "put",
+        "delete",
+        "patch",
+        "options",
+        "head",
+    }:
+        return True
+
+    # Handle @router.get("/path")
+    return (
+        isinstance(decorator, ast.Call)
+        and isinstance(decorator.func, ast.Attribute)
+        and decorator.func.attr in {"get", "post", "put", "delete", "patch", "options", "head"}
+    )
+
+
+def extract_type_names_from_annotation(annotation: ast.expr) -> list[str]:
+    """
+    Extract class/type names from a type annotation.
+
+    Handles:
+    - Simple: Foo
+    - Optional: Foo | None
+    - Generic: list[Foo], dict[str, Foo]
+    - Complex: list[Foo | Bar] | None
+
+    Returns a list of type names (e.g., ["Foo", "Bar"])
+    """
+    type_names: list[str] = []
+
+    if isinstance(annotation, ast.Name):
+        # Simple type: Foo
+        # Skip builtin types
+        if annotation.id not in {
+            "str",
+            "int",
+            "float",
+            "bool",
+            "dict",
+            "list",
+            "set",
+            "tuple",
+            "None",
+            "Any",
+        }:
+            type_names.append(annotation.id)
+
+    elif isinstance(annotation, ast.Subscript):
+        # Generic type: list[Foo], Optional[Foo], dict[str, Foo]
+        # Recursively extract from the subscript value
+        type_names.extend(extract_type_names_from_annotation(annotation.slice))
+
+    elif isinstance(annotation, ast.BinOp) and isinstance(annotation.op, ast.BitOr):
+        # Union type: Foo | Bar | None
+        type_names.extend(extract_type_names_from_annotation(annotation.left))
+        type_names.extend(extract_type_names_from_annotation(annotation.right))
+
+    elif isinstance(annotation, ast.Tuple):
+        # Tuple of types: tuple[Foo, Bar]
+        for elt in annotation.elts:
+            type_names.extend(extract_type_names_from_annotation(elt))
+
+    elif isinstance(annotation, ast.Attribute):
+        # Qualified name: module.ClassName
+        # Build the dotted path
+        parts: list[str] = []
+        current: ast.expr = annotation
+        while isinstance(current, ast.Attribute):
+            parts.insert(0, current.attr)
+            current = current.value
+        if isinstance(current, ast.Name):
+            parts.insert(0, current.id)
+            full_name = ".".join(parts)
+            # Only track if it looks like a custom type (starts with uppercase)
+            if parts[-1][0].isupper():
+                type_names.append(full_name)
+
+    elif isinstance(annotation, ast.Constant) and isinstance(annotation.value, str):
+        # String annotation: "Foo" (forward reference)
+        # Simple extraction: just get identifier-like words that start with uppercase
+        # This handles "Foo", "list[Foo]", "Foo | Bar", etc.
+        import re
+
+        identifiers = re.findall(r"\b([A-Z][a-zA-Z0-9_]*)\b", annotation.value)
+        type_names.extend(identifiers)
+
+    return type_names
+
+
+def extract_type_annotations_from_function(
+    func_node: ast.FunctionDef | ast.AsyncFunctionDef,
+    func_id: str,
+    module_id: str,
+    graph: CodeGraph,
+    callable_index: dict[str, list[str]] | None = None,
+) -> None:
+    """
+    Extract USES_TYPE edges from function type annotations.
+
+    Creates edges from the function to any classes used in:
+    - Parameter type hints
+    - Return type hints
+    """
+    type_names: set[str] = set()
+
+    # Extract from return annotation
+    if func_node.returns:
+        type_names.update(extract_type_names_from_annotation(func_node.returns))
+
+    # Extract from parameter annotations
+    for arg in func_node.args.args:
+        if arg.annotation:
+            type_names.update(extract_type_names_from_annotation(arg.annotation))
+
+    # Also check kwonly args
+    for arg in func_node.args.kwonlyargs:
+        if arg.annotation:
+            type_names.update(extract_type_names_from_annotation(arg.annotation))
+
+    # Resolve type names to full node IDs using callable index
+    if callable_index:
+        for type_name in type_names:
+            # Try to find the class in the callable index
+            # The type might be a simple name (Foo) or a qualified name (module.Foo)
+            candidates: list[str] = []
+
+            # Check if it's in the index directly
+            if type_name in callable_index:
+                candidates.extend(callable_index[type_name])
+            else:
+                # Try to find it as a class name anywhere
+                for node_ids in callable_index.values():
+                    for node_id in node_ids:
+                        if node_id.endswith(f".{type_name}"):
+                            candidates.append(node_id)
+
+            # Create USES_TYPE edges to all candidates
+            for target_id in candidates:
+                # Only create edge if target is a class (not function/method)
+                # We'll filter by checking if it looks like a class path
+                graph.edges.append(
+                    Edge(
+                        source_id=func_id,
+                        target_id=target_id,
+                        type="USES_TYPE",
+                        lineno=func_node.lineno,
+                    )
+                )
+
+
+def extract_decorator_targets(
+    func_node: ast.FunctionDef | ast.AsyncFunctionDef,
+    decorated_id: str,
+    module_id: str,
+    graph: CodeGraph,
+    callable_index: dict[str, list[str]] | None = None,
+) -> None:
+    """Extract CALLS edges from decorators that register the function.
+
+    For example:
+        @api_app.exception_handler(Exception)
+        async def exception_handler(...):
+            ...
+
+    This creates a CALLS edge from api_app.exception_handler to the decorated function,
+    because the decorator effectively calls/registers it.
+    """
+    for decorator in func_node.decorator_list:
+        # Case 1: @decorator_func or @decorator_func()
+        if isinstance(decorator, ast.Name | ast.Call):
+            # The decorator "calls" the function by wrapping/registering it
+            # Create reverse edge: module -> decorated_function (because decorators run at module load time)
+            graph.edges.append(
+                Edge(
+                    source_id=module_id,
+                    target_id=decorated_id,
+                    type="CALLS",
+                    lineno=decorator.lineno if hasattr(decorator, "lineno") else None,
+                    details="decorator_registration",
+                )
+            )
+
+
+def extract_imports_from_function(
+    func_node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> dict[str, str]:
+    """Extract local imports from a function body.
+
+    Returns a dict mapping {local_name: full_module_path}.
+    For example: {'process_file_workflow': 'nomarr.workflows.processing.process_file_wf.process_file_workflow'}
+    """
+    imports: dict[str, str] = {}
+
+    for node in ast.walk(func_node):
+        # from X import Y
+        if isinstance(node, ast.ImportFrom) and node.module:
+            for alias in node.names:
+                if alias.name != "*":
+                    local_name = alias.asname if alias.asname else alias.name
+                    full_path = f"{node.module}.{alias.name}"
+                    imports[local_name] = full_path
+
+        # import X or import X as Y
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                local_name = alias.asname if alias.asname else alias.name
+                imports[local_name] = alias.name
+
+    return imports
+
+
+def extract_calls_from_function(
+    func_node: ast.FunctionDef | ast.AsyncFunctionDef,
+    caller_id: str,
+    module_functions: dict[str, str],
+    class_methods: dict[str, str],
+    graph: CodeGraph,
+    callable_index: dict[str, list[str]] | None = None,
+) -> None:
+    """Extract CALLS edges from a function/method body.
+
+    Args:
+        callable_index: Optional global index of {method_name: [full_node_ids]}
+                       for resolving attribute calls across modules.
+    """
+    # Extract local imports from this function
+    local_imports = extract_imports_from_function(func_node)
+
+    # Walk both the function body AND function arguments (for Depends() in FastAPI)
+    nodes_to_check: list[ast.AST] = [func_node]
+
+    # Add default argument values (where Depends() typically appears)
+    for default in func_node.args.defaults:
+        nodes_to_check.append(default)
+    for kw_default in func_node.args.kw_defaults:
+        if kw_default:  # Can be None
+            nodes_to_check.append(kw_default)
+
+    # Walk all nodes
+    for root in nodes_to_check:
+        for node in ast.walk(root):
+            target_ids: list[str] = []
+
+            # Case A: Function/method call
+            if isinstance(node, ast.Call):
+                # Case 1: Direct function call (Name)
+                if isinstance(node.func, ast.Name):
+                    func_name = node.func.id
+
+                    # Case 1a: Class instantiation - mark __init__ as called
+                    # Check if this looks like a class name (CamelCase convention)
+                    if func_name[0].isupper() and callable_index:
+                        # Try to find the __init__ method in callable index
+                        for candidates in callable_index.values():
+                            for candidate in candidates:
+                                if candidate.endswith(f".{func_name}.__init__"):
+                                    target_ids.append(candidate)
+
+                    # Case 1b: Local import - resolve to full path
+                    if func_name in local_imports:
+                        imported_path = local_imports[func_name]
+                        # Try to find exact match in callable index
+                        if callable_index:
+                            # The imported_path might be the full node ID already
+                            if imported_path in callable_index:
+                                target_ids.extend(callable_index[imported_path])
+                            else:
+                                # Or it might be a partial path - try to match
+                                for candidates in callable_index.values():
+                                    for candidate in candidates:
+                                        if candidate == imported_path or candidate.endswith(f".{func_name}"):
+                                            target_ids.append(candidate)
+                                            break
+
+                    # Case 1c: Same-module function
+                    elif func_name in module_functions:
+                        target_ids.append(module_functions[func_name])
+
+                    # Case 1d: Try callable index by name
+                    elif callable_index and func_name in callable_index:
+                        target_ids.extend(callable_index[func_name])
+
+                # Case 2: Attribute call (obj.method_name)
+                elif isinstance(node.func, ast.Attribute):
+                    method_name = node.func.attr
+
+                    # Case 2a: self.method_name (intra-class call)
+                    if isinstance(node.func.value, ast.Name) and node.func.value.id == "self":
+                        if method_name in class_methods:
+                            target_ids.append(class_methods[method_name])
+
+                    # Case 2b: Any other attribute call - try global index
+                    elif callable_index and method_name in callable_index:
+                        # Add all possible targets (over-approximation)
+                        target_ids.extend(callable_index[method_name])
+
+            # Case B: Callable reference (Name node that could be a function reference)
+            # This handles cases like Depends(get_queue_service) where get_queue_service
+            # is passed as a callable, not called directly
+            elif isinstance(node, ast.Name) and callable_index:
+                name = node.id
+                # Only track if it's in our callable index (to avoid noise from variables)
+                if name in callable_index:
+                    target_ids.extend(callable_index[name])
+
+            # Create CALLS edges for all resolved targets
+            for target_id in target_ids:
+                lineno = getattr(node, "lineno", 0)
+                graph.edges.append(
+                    Edge(
+                        source_id=caller_id,
+                        target_id=target_id,
+                        type="CALLS",
+                        lineno=lineno,
+                    )
+                )

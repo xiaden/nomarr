@@ -124,37 +124,6 @@ class LibraryQueueOperations:
         self.conn.commit()
         return cur.rowcount
 
-    def reset_running_scans(self) -> int:
-        """
-        Reset any scan jobs stuck in 'running' state back to 'pending'.
-        This handles container restarts where a scan was interrupted mid-processing.
-
-        Returns:
-            Number of jobs reset
-        """
-        cur = self.conn.execute("UPDATE library_queue SET status='pending', started_at=NULL WHERE status='running'")
-        self.conn.commit()
-        return cur.rowcount
-
-    def get_scan_queue_stats(self) -> dict[str, Any]:
-        """
-        Get statistics about the scan queue.
-
-        Returns:
-            Dict with pending, running, done, error counts
-        """
-        cur = self.conn.execute(
-            """SELECT status, COUNT(*) as count
-               FROM library_queue
-               GROUP BY status"""
-        )
-        stats = {"pending": 0, "running": 0, "done": 0, "error": 0, "total": 0}
-        for row in cur.fetchall():
-            status, count = row
-            stats[status] = count
-            stats["total"] += count
-        return stats
-
     def get_library_scan(self, scan_id: int) -> dict[str, Any] | None:
         """
         Get library scan job by ID.

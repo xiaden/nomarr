@@ -56,47 +56,6 @@ class ProcessingService:
         logging.debug(f"[ProcessingService] Submitting {path} to coordinator")
         return self.coordinator.submit(path, force)
 
-    def process_batch(self, paths: list[str], force: bool = False) -> list[ProcessFileResult | dict[str, Any]]:
-        """
-        Process multiple audio files in parallel (if coordinator available).
-
-        Args:
-            paths: List of absolute paths to audio files
-            force: If True, reprocess even if already tagged
-
-        Returns:
-            List of ProcessFileResult or error dicts (one per file)
-        """
-        results = []
-        for path in paths:
-            try:
-                result = self.process_file(path, force)
-                results.append(result)
-            except Exception as e:
-                logging.error(f"[ProcessingService] Failed to process {path}: {e}")
-                results.append(
-                    {
-                        "status": "error",
-                        "file_path": path,
-                        "error": str(e),
-                    }
-                )
-
-        return results
-
-    def get_worker_count(self) -> int:
-        """
-        Get current worker process count.
-
-        Returns:
-            Number of active worker processes (0 if no coordinator)
-        """
-        if self.coordinator:
-            # Note: ProcessingCoordinator doesn't expose worker_count directly
-            # This would need to be added if we want this feature
-            return 1  # Placeholder: coordinator exists
-        return 0
-
     def is_available(self) -> bool:
         """
         Check if processing service is available.

@@ -33,3 +33,12 @@ class ConfigResult:
     """Result from config_service.get_config and reload - wraps configuration dict."""
 
     config: dict[str, Any]
+
+
+@dataclass
+class WebConfigResult:
+    """Result from config_service.get_config_for_web - complete config for web UI."""
+
+    config: dict[str, Any]  # User-editable config values
+    internal_info: GetInternalInfoResult  # Internal constants
+    worker_enabled: bool  # Live worker status

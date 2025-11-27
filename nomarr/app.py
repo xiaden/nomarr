@@ -228,7 +228,7 @@ class Application:
         # Initialize services (DI: inject dependencies)
         logging.info("[Application] Initializing services...")
         self.register_service("processing", ProcessingService(coordinator=self.coordinator))
-        self.register_service("queue", QueueService(self.queue))
+        self.register_service("queue", QueueService(self.queue, self._config, event_broker=self.event_broker))
 
         from nomarr.services.worker_svc import WorkerConfig
 
@@ -290,6 +290,31 @@ class Application:
         navidrome_service = NavidromeService(db=self.db, cfg=navidrome_cfg)
         self.register_service("navidrome", navidrome_service)
 
+        # Register Info service (DI: inject worker, queue, coordinator, ml services + config)
+        logging.info("[Application] Initializing InfoService...")
+        from nomarr.services.info_svc import InfoConfig, InfoService
+
+        info_cfg = InfoConfig(
+            version="1.2",
+            namespace=self.namespace,
+            models_dir=str(self.models_dir),
+            db_path=self.db_path,
+            api_host=self.api_host,
+            api_port=self.api_port,
+            worker_enabled_default=self.worker_enabled_default,
+            worker_count=self.worker_count,
+            poll_interval=float(self.worker_poll_interval),
+        )
+        info_service = InfoService(
+            cfg=info_cfg,
+            worker_service=self.services.get("worker"),
+            queue_service=self.services.get("queue"),
+            processor_coord=self.coordinator,
+            ml_service=self.services.get("ml"),
+            worker_pool=self.workers,
+        )
+        self.register_service("info", info_service)
+
         # Start workers if enabled
         if worker_service.is_enabled():
             self.workers = worker_service.start_workers(event_broker=self.event_broker)
@@ -345,6 +370,7 @@ class Application:
             RecalibrationService(
                 database=self.db,
                 worker=self.recalibration_worker,
+                library_service=self.services.get("library"),
             ),
         )
 

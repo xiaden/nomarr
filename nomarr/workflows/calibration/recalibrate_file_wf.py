@@ -13,20 +13,25 @@ ARCHITECTURE:
 EXPECTED DEPENDENCIES:
 - `db: Database` - Database instance with library and conn accessors
 - `models_dir: str` - Path to models directory (for loading calibration sidecars and head metadata)
-- `namespace: str` - Tag namespace (e.g., "nom")
-- `calibrate_heads: bool` - Whether to use versioned calibration files (dev mode)
+- `params: RecalibrateFileWorkflowParams` - Parameters containing:
+  - `file_path: str` - Path to audio file
+  - `models_dir: str` - Path to models directory
+  - `namespace: str` - Tag namespace (e.g., "nom")
+  - `version_tag_key: str` - Key for version tag in Navidrome
+  - `calibrate_heads: bool` - Whether to use versioned calibration files (dev mode)
 
 USAGE:
     from nomarr.workflows.calibration.recalibrate_file_wf import recalibrate_file_workflow
-    from nomarr.helpers.dto.calibration_dto import LoadLibraryStateResult
+    from nomarr.helpers.dto.calibration_dto import RecalibrateFileWorkflowParams
 
-    recalibrate_file_workflow(
-        db=database_instance,
+    params = RecalibrateFileWorkflowParams(
         file_path="/path/to/audio.mp3",
         models_dir="/app/models",
         namespace="nom",
+        version_tag_key="nom_version",
         calibrate_heads=False
     )
+    recalibrate_file_workflow(db=database_instance, params=params)
 """
 
 from __future__ import annotations
@@ -36,10 +41,11 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.ml.ml_discovery_comp import HeadOutput, discover_heads
+from nomarr.components.ml.ml_discovery_comp import discover_heads
 from nomarr.components.tagging.tagging_aggregation_comp import aggregate_mood_tiers, load_calibrations
 from nomarr.components.tagging.tagging_writer_comp import TagWriter
 from nomarr.helpers.dto.calibration_dto import RecalibrateFileWorkflowParams
+from nomarr.helpers.dto.ml_dto import HeadOutput
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -370,14 +376,14 @@ def recalibrate_file_workflow(
         ValueError: If no heads discovered or no tags found
 
     Example:
-        >>> recalibrate_file_workflow(
-        ...     db=my_db,
+        >>> params = RecalibrateFileWorkflowParams(
         ...     file_path="/music/song.mp3",
         ...     models_dir="/app/models",
         ...     namespace="nom",
         ...     version_tag_key="nom_version",
         ...     calibrate_heads=False,
         ... )
+        >>> recalibrate_file_workflow(db=my_db, params=params)
     """
     # Extract params for convenient access
     file_path = params.file_path

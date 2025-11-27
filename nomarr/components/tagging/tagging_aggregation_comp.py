@@ -14,7 +14,7 @@ import numpy as np
 from nomarr.helpers.dto.tagging_dto import BuildTierTermSetsResult
 
 if TYPE_CHECKING:
-    from nomarr.components.ml.ml_discovery_comp import HeadOutput
+    from nomarr.helpers.dto.ml_dto import HeadOutput
 
 
 def load_calibrations(models_dir: str, calibrate_heads: bool = False) -> dict[str, dict[str, Any]]:
@@ -152,7 +152,7 @@ def add_regression_mood_tiers(
     if not regression_heads:
         return []
 
-    from nomarr.components.ml.ml_discovery_comp import HeadOutput  # Late import to avoid circular dependency
+    from nomarr.helpers.dto.ml_dto import HeadOutput
 
     # Intensity thresholds (mean value indicates strength, not probability)
     STRONG_THRESHOLD = 0.7  # Strongly mainstream/engaging

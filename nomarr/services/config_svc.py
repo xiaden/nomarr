@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from nomarr.helpers.dto.config_dto import ConfigResult, GetInternalInfoResult
+from nomarr.helpers.dto.config_dto import ConfigResult, GetInternalInfoResult, WebConfigResult
 from nomarr.persistence.db import Database
 
 if TYPE_CHECKING:
@@ -186,6 +186,29 @@ class ConfigService:
             poll_interval=INTERNAL_POLL_INTERVAL,
             library_scan_poll_interval=INTERNAL_LIBRARY_SCAN_POLL_INTERVAL,
             worker_enabled=INTERNAL_WORKER_ENABLED,
+        )
+
+    def get_config_for_web(self, worker_service: Any | None = None) -> WebConfigResult:
+        """
+        Get complete configuration for web UI endpoint.
+
+        Combines user-editable config, internal constants, and live worker status.
+        This is a facade method for the web config endpoint.
+
+        Args:
+            worker_service: Optional WorkerService to check live worker status
+
+        Returns:
+            WebConfigResult with complete config info
+        """
+        config_dto = self.get_config()
+        internal_info = self.get_internal_info()
+        worker_enabled = worker_service.is_enabled() if worker_service else internal_info.worker_enabled
+
+        return WebConfigResult(
+            config=config_dto.config,
+            internal_info=internal_info,
+            worker_enabled=worker_enabled,
         )
 
     # ----------------------------------------------------------------------

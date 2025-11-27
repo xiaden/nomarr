@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from nomarr.helpers.files_helper import resolve_library_path
 from nomarr.interfaces.api.auth import verify_session
-from nomarr.interfaces.api.web.dependencies_if import get_config
+from nomarr.interfaces.api.web.dependencies import get_config
 
 router = APIRouter(prefix="/fs", tags=["filesystem"])
 

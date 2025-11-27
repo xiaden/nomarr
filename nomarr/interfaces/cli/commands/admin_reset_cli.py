@@ -7,7 +7,7 @@ from __future__ import annotations
 import argparse
 
 import nomarr.app as app
-from nomarr.interfaces.cli.ui import InfoPanel, print_error, print_info, print_success
+from nomarr.interfaces.cli.cli_ui import InfoPanel, print_error, print_info, print_success
 
 
 def cmd_admin_reset(args: argparse.Namespace) -> int:

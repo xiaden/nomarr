@@ -11,7 +11,9 @@ import time
 from abc import ABC, abstractmethod
 from typing import Any
 
+from nomarr.helpers.dto.admin_dto import JobRemovalResult, RetagAllResult, WorkerOperationResult
 from nomarr.helpers.dto.queue_dto import (
+    BatchEnqueueResult,
     DequeueResult,
     EnqueueFilesResult,
     FlushResult,
@@ -356,14 +358,18 @@ class QueueService:
     allowing CLI, API, and Web interfaces to be thin presentation layers.
     """
 
-    def __init__(self, queue: ProcessingQueue):
+    def __init__(self, queue: ProcessingQueue, config: dict[str, Any], event_broker: Any | None = None):
         """
         Initialize queue service.
 
         Args:
             queue: ProcessingQueue instance (data access layer)
+            config: Application configuration dict
+            event_broker: Optional StateBroker for SSE events
         """
         self.queue = queue
+        self.config = config
+        self.event_broker = event_broker
 
     def add_files(self, paths: str | list[str], force: bool = False, recursive: bool = True) -> EnqueueFilesResult:
         """
@@ -397,6 +403,71 @@ class QueueService:
             recursive=recursive,
         )
 
+    def batch_add_files(self, paths: list[str], force: bool = False) -> BatchEnqueueResult:
+        """
+        Add multiple paths to queue, returning detailed per-path results.
+
+        Each path is processed independently - failures don't stop processing
+        of remaining paths.
+
+        Args:
+            paths: List of file or directory paths
+            force: If True, reprocess files even if already tagged
+
+        Returns:
+            BatchEnqueueResult with per-path results and totals
+        """
+        from nomarr.helpers.dto.queue_dto import BatchEnqueuePathResult, BatchEnqueueResult
+
+        results = []
+        total_queued = 0
+        total_errors = 0
+
+        for path in paths:
+            try:
+                result = self.add_files(
+                    paths=[path],
+                    force=force,
+                    recursive=True,
+                )
+
+                files_count = result.files_queued
+                job_ids = result.job_ids
+
+                if files_count > 1:
+                    message = f"Added {files_count} files to queue (jobs {job_ids[0]}-{job_ids[-1]})"
+                else:
+                    message = f"Added to queue as job {job_ids[0]}"
+
+                results.append(
+                    BatchEnqueuePathResult(
+                        path=path,
+                        status="queued",
+                        message=message,
+                        files_queued=files_count,
+                        job_ids=job_ids,
+                    )
+                )
+                total_queued += files_count
+
+            except Exception as e:
+                results.append(
+                    BatchEnqueuePathResult(
+                        path=path,
+                        status="error",
+                        message=str(e),
+                        files_queued=0,
+                        job_ids=None,
+                    )
+                )
+                total_errors += 1
+
+        return BatchEnqueueResult(
+            total_queued=total_queued,
+            total_errors=total_errors,
+            results=results,
+        )
+
     def remove_jobs(self, job_id: int | None = None, status: str | None = None, all: bool = False) -> int:
         """
         Remove jobs from the queue.
@@ -422,6 +493,7 @@ class QueueService:
 
             removed = self.queue.delete(job_id)
             logging.info(f"[QueueService] Removed job {job_id}")
+            self.publish_queue_update(self.event_broker)
             return removed
 
         elif all:
@@ -429,6 +501,7 @@ class QueueService:
             # Business logic: don't remove running jobs
             removed = self.queue.delete_by_status(["pending", "done", "error"])
             logging.info(f"[QueueService] Removed all {removed} jobs from queue")
+            self.publish_queue_update(self.event_broker)
             return removed
 
         elif status:
@@ -442,10 +515,24 @@ class QueueService:
 
             removed = self.queue.delete_by_status([status])
             logging.info(f"[QueueService] Removed {removed} job(s) with status '{status}'")
+            self.publish_queue_update(self.event_broker)
             return removed
 
         else:
             raise ValueError("Must specify job_id, status, or all=True")
+
+    def flush_completed_and_errors(self) -> tuple[int, int]:
+        """
+        Remove all completed and error jobs in a single operation.
+
+        Returns:
+            Tuple of (done_count, error_count)
+        """
+        done_count = self.queue.delete_by_status(["done"])
+        error_count = self.queue.delete_by_status(["error"])
+        logging.info(f"[QueueService] Flushed {done_count} done and {error_count} error jobs")
+        self.publish_queue_update(self.event_broker)
+        return (done_count, error_count)
 
     def flush_by_statuses(self, statuses: list[str]) -> FlushResult:
         """
@@ -537,6 +624,7 @@ class QueueService:
             if count > 0:
                 logging.info(f"[QueueService] Reset {count} error job(s) to 'pending'")
 
+        self.publish_queue_update(self.event_broker)
         return reset_count
 
     def cleanup_old_jobs(self, max_age_hours: int = 24) -> int:
@@ -563,7 +651,43 @@ class QueueService:
         )
 
         logging.info(f"[QueueService] Cleaned up {removed} old job(s) (>{max_age_hours}h)")
+        self.publish_queue_update(self.event_broker)
         return removed
+
+    def remove_job_for_admin(self, job_id: int) -> JobRemovalResult:
+        """
+        Remove a single job by ID for admin operations.
+
+        Args:
+            job_id: Job ID to remove
+
+        Returns:
+            JobRemovalResult with removal count and message
+
+        Raises:
+            ValueError: If job not found or is running
+        """
+        removed_count = self.remove_jobs(job_id=job_id)
+        return JobRemovalResult(
+            removed=removed_count,
+            message=f"Removed job {job_id}",
+        )
+
+    def cleanup_old_jobs_for_admin(self, max_age_hours: int = 168) -> JobRemovalResult:
+        """
+        Remove old finished jobs with result message for admin operations.
+
+        Args:
+            max_age_hours: Remove jobs older than this many hours (default 7 days)
+
+        Returns:
+            JobRemovalResult with removal count and message
+        """
+        removed = self.cleanup_old_jobs(max_age_hours)
+        return JobRemovalResult(
+            removed=removed,
+            message=f"Cleaned up {removed} job(s) older than {max_age_hours} hours",
+        )
 
     def list_jobs(self, limit: int = 50, offset: int = 0, status: str | None = None) -> ListJobsResult:
         """
@@ -633,3 +757,128 @@ class QueueService:
 
         logging.info(f"[QueueService] Enqueued {count} tagged files for re-processing")
         return count
+
+    def retag_all_for_admin(self) -> RetagAllResult:
+        """
+        Enqueue all tagged files for re-tagging with admin-friendly error handling.
+
+        Checks if calibrate_heads is enabled in config before proceeding.
+
+        Returns:
+            RetagAllResult with status, message, and enqueued count
+
+        Raises:
+            ValueError: If calibrate_heads is disabled in config
+        """
+        # Read calibrate_heads from config internally
+        calibrate_heads = self.config.get("general", {}).get("calibrate_heads", False)
+
+        if not calibrate_heads:
+            raise ValueError("Bulk re-tagging not available. Set calibrate_heads: true in config to enable.")
+
+        count = self.enqueue_all_tagged_files()
+
+        if count == 0:
+            return RetagAllResult(status="ok", message="No tagged files found", enqueued=0)
+
+        return RetagAllResult(status="ok", message=f"Enqueued {count} files for re-tagging", enqueued=count)
+
+    def remove_jobs_for_admin(
+        self, job_id: int | None = None, status: str | None = None, all: bool = False
+    ) -> JobRemovalResult:
+        """
+        Remove jobs with admin-friendly messaging.
+
+        Args:
+            job_id: Optional job ID to remove
+            status: Optional status filter
+            all: Remove all jobs
+
+        Returns:
+            JobRemovalResult with count and message
+        """
+        removed = self.remove_jobs(job_id=job_id, status=status, all=all)
+
+        if removed == 0:
+            message = "No jobs removed"
+        else:
+            message = f"Removed {removed} job(s)"
+
+        return JobRemovalResult(removed=removed, message=message)
+
+    def flush_completed_and_errors_for_admin(self) -> JobRemovalResult:
+        """
+        Flush completed and error jobs with admin-friendly messaging.
+
+        Returns:
+            JobRemovalResult with count and message
+        """
+        done_count, error_count = self.flush_completed_and_errors()
+        total_removed = done_count + error_count
+
+        return JobRemovalResult(
+            removed=total_removed,
+            message=f"Removed {done_count} completed and {error_count} error jobs",
+        )
+
+    def clear_all_for_admin(self) -> JobRemovalResult:
+        """
+        Clear all jobs with admin-friendly messaging.
+
+        Returns:
+            JobRemovalResult with count and message
+        """
+        removed = self.remove_jobs(all=True)
+        return JobRemovalResult(
+            removed=removed,
+            message=f"Cleared all jobs ({removed} removed)",
+        )
+
+    def clear_completed_for_admin(self) -> JobRemovalResult:
+        """
+        Clear completed jobs with admin-friendly messaging.
+
+        Returns:
+            JobRemovalResult with count and message
+        """
+        removed = self.remove_jobs(status="done")
+        return JobRemovalResult(
+            removed=removed,
+            message=f"Cleared {removed} completed job(s)",
+        )
+
+    def clear_errors_for_admin(self) -> JobRemovalResult:
+        """
+        Clear error jobs with admin-friendly messaging.
+
+        Returns:
+            JobRemovalResult with count and message
+        """
+        removed = self.remove_jobs(status="error")
+        return JobRemovalResult(
+            removed=removed,
+            message=f"Cleared {removed} error job(s)",
+        )
+
+    def reset_jobs_for_admin(self, stuck: bool = False, errors: bool = False) -> WorkerOperationResult:
+        """
+        Reset jobs with admin-friendly messaging and validation.
+
+        Args:
+            stuck: Reset stuck running jobs
+            errors: Reset error jobs
+
+        Returns:
+            WorkerOperationResult with status and message
+
+        Raises:
+            ValueError: If neither stuck nor errors is True
+        """
+        if not stuck and not errors:
+            raise ValueError("Must specify --stuck or --errors")
+
+        reset_count = self.reset_jobs(stuck=stuck, errors=errors)
+        return WorkerOperationResult(
+            status="success",
+            message=f"Reset {reset_count} job(s) to pending",
+        )

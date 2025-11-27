@@ -16,6 +16,31 @@ from typing import Any
 
 
 @dataclass
+class HeadOutput:
+    """
+    In-memory representation of a head's output with tier information.
+
+    Tier is computed using calibration (if available) but never persisted
+    as a *_tier tag. It's only used for mood aggregation and conflict resolution.
+
+    Attributes:
+        head: The HeadInfo that produced this output
+        model_key: Versioned tag key (no calibration suffix)
+        label: Label name (e.g., "happy", "mainstream")
+        value: Numeric score (post-calibration if applied)
+        tier: Tier level ("low", "medium", "high", etc.) - internal only
+        calibration_id: Which calibration was applied (e.g., "none_0", "platt_1")
+    """
+
+    head: Any  # HeadInfo from components - use Any to avoid circular import
+    model_key: str
+    label: str
+    value: float
+    tier: str | None = None
+    calibration_id: str | None = None
+
+
+@dataclass
 class LoadAudioMonoResult:
     """Result from load_audio_mono."""
 

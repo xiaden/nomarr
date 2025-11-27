@@ -13,15 +13,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 
 from nomarr.interfaces.api.auth import verify_key
-from nomarr.interfaces.api.web.dependencies_if import (
-    get_config,
-    get_ml_service,
-    get_queue_service,
-    get_worker_pool,
-    get_worker_service,
-)
+from nomarr.interfaces.api.types.info_types import PublicInfoResponse
+from nomarr.interfaces.api.types.queue_types import ListJobsResponse
+from nomarr.interfaces.api.web.dependencies import get_info_service, get_queue_service
+from nomarr.services.info_svc import InfoService
 from nomarr.services.queue_svc import QueueService
-from nomarr.services.worker_svc import WorkerService
 
 # Router instance (will be included in main app under /api prefix)
 router = APIRouter(prefix="/v1", tags=["public"])
@@ -36,7 +32,7 @@ async def list_jobs(
     offset: int = 0,
     status: str | None = None,
     queue_service: QueueService = Depends(get_queue_service),
-):
+) -> ListJobsResponse:
     """
     List jobs with pagination and optional status filtering.
 
@@ -47,13 +43,7 @@ async def list_jobs(
         queue_service: Injected QueueService
 
     Returns:
-        {
-            "total": total count of jobs matching filter,
-            "jobs": [...],
-            "counts": {pending, running, done, error},
-            "limit": limit used,
-            "offset": offset used
-        }
+        ListJobsResponse with jobs, total count, limit, and offset
     """
     # Validate status parameter
     if status and status not in ("pending", "running", "done", "error"):
@@ -63,7 +53,7 @@ async def list_jobs(
 
     try:
         result = queue_service.list_jobs(limit=limit, offset=offset, status=status)
-        return result
+        return ListJobsResponse.from_dto(result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error listing jobs: {e}") from e
 
@@ -73,55 +63,11 @@ async def list_jobs(
 # ----------------------------------------------------------------------
 @router.get("/info")
 async def get_info(
-    config: dict = Depends(get_config),
-    queue_service: QueueService = Depends(get_queue_service),
-    worker_service: WorkerService = Depends(get_worker_service),
-    worker_pool: list = Depends(get_worker_pool),
-    ml_service=Depends(get_ml_service),
-):
+    info_service: InfoService = Depends(get_info_service),
+) -> PublicInfoResponse:
     """
     Get comprehensive system info: config, models, queue status, workers.
     Unified schema matching CLI info command.
     """
-    # Get queue stats
-    queue_info = queue_service.get_status()
-
-    # Worker status
-    worker_enabled = worker_service.is_enabled()
-    worker_alive = any(w.is_alive() for w in worker_pool) if worker_enabled else False
-    last_hb = max((w.last_heartbeat() for w in worker_pool if w.is_alive()), default=None) if worker_enabled else None
-
-    # Get model/head breakdown (matching CLI info)
-    heads = ml_service.discover_heads()
-    embeddings = sorted({h.backbone for h in heads})
-
-    # Extract relevant config values
-    api_config = config.get("api", {})
-    tagger_config = config.get("tagger", {})
-
-    return {
-        "config": {
-            "db_path": config.get("db_path"),
-            "models_dir": ml_service.cfg.models_dir,
-            "namespace": tagger_config.get("namespace", config.get("namespace", "nom")),
-            "api_host": api_config.get("host"),
-            "api_port": api_config.get("port"),
-            "worker_enabled": worker_enabled,
-            "worker_enabled_default": worker_service.cfg.default_enabled,
-            "worker_count": worker_service.cfg.worker_count,
-            "poll_interval": worker_service.cfg.poll_interval,
-        },
-        "models": {
-            "total_heads": len(heads),
-            "embeddings": embeddings,
-        },
-        "queue": {
-            "depth": queue_info.depth,
-            "counts": queue_info.counts,
-        },
-        "worker": {
-            "enabled": worker_enabled,
-            "alive": worker_alive,
-            "last_heartbeat": last_hb,
-        },
-    }
+    result = info_service.get_public_info_for_api()
+    return PublicInfoResponse.from_dto(result)

@@ -7,6 +7,7 @@ Cross-layer data contracts for recalibration service (used by services and inter
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass
@@ -17,3 +18,37 @@ class GetStatusResult:
     running: int
     done: int
     error: int
+
+
+@dataclass
+class ApplyCalibrationResult:
+    """Result from recalibration_service.apply_calibration_to_library()."""
+
+    queued: int
+    message: str
+
+
+@dataclass
+class ClearCalibrationQueueResult:
+    """Result from recalibration_service.clear_queue_with_result()."""
+
+    cleared: int
+    message: str
+
+
+@dataclass
+class GenerateCalibrationResult:
+    """Result from calibration_service.generate_calibration_with_sidecars().
+
+    Contains calibration data and optionally saved sidecar file information.
+    """
+
+    status: str
+    method: str
+    library_size: int
+    min_samples: int
+    calibrations: dict[str, Any]
+    skipped_tags: int
+    saved_files: dict[str, dict[str, Any]] | None
+    total_files: int | None
+    total_labels: int | None

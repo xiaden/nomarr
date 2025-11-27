@@ -70,7 +70,43 @@ interfaces  →  services  →  workflows  →  components  →  (persistence / 
                                             └─ ml
 ```
 
-### 2.2 Allowed Dependencies (Direction)
+### 2.2 Complexity & Clarity Guidelines
+
+Each layer has clarity-focused guidelines to enforce separation of concerns. **Judge complexity by readability and logic density, not strict line counts.**
+
+**See detailed layer-specific guidelines:**
+- `nomarr/interfaces/INTERFACES.md` - Interface layer patterns
+- `nomarr/services/SERVICES.md` - Service layer patterns
+- `nomarr/workflows/WORKFLOWS.md` - Workflow layer patterns
+- `nomarr/components/COMPONENTS.md` - Component layer patterns
+
+**Quick Reference:**
+
+- **`interfaces`**: **1 service call per route**
+  - Pattern: `auth() → service.method() → ResponseModel.from_dto(dto)`
+  - Only validate inputs, call service, serialize outputs
+  - No business logic, no direct DB/ML/tagging calls
+  - If you need > 1 service call → extract a service method that orchestrates them
+
+- **`services`**: **DI + orchestration only**
+  - Wire dependencies (config, db, queues, ML backends)
+  - Call workflows with dependencies injected
+  - Return DTOs
+  - If a method has noticeable logic (loops, branching, multiple steps) → extract to workflow
+
+- **`workflows`**: **Clear sequences of component calls**
+  - One public method per workflow file
+  - Unlimited calls to components and helpers (as long as they form a clear sequence)
+  - If a workflow starts doing non-trivial computation itself → move that into a component
+  - If a workflow becomes hard to read → split into smaller workflows or private workflow helpers
+  - Judge by clarity, not line count
+
+- **`components`**: **Heavy logic lives here**
+  - Domain logic (ML inference, analytics, tagging rules)
+  - If a function is unwieldy → break into `_private` helpers within the same file
+  - If `_private` helpers are reused across multiple modules → centralize them in a single component module for that domain
+
+### 2.3 Allowed Dependencies (Direction)
 
 - `interfaces`:
 

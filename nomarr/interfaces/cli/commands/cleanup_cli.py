@@ -7,7 +7,7 @@ from __future__ import annotations
 import argparse
 
 import nomarr.app as app
-from nomarr.interfaces.cli.ui import InfoPanel, print_error, print_info, show_spinner
+from nomarr.interfaces.cli.cli_ui import InfoPanel, print_error, print_info, show_spinner
 
 
 def cmd_cleanup(args: argparse.Namespace) -> int:

@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from nomarr.interfaces.api.auth import validate_session
-from nomarr.interfaces.api.web.dependencies_if import get_event_broker
+from nomarr.interfaces.api.web.dependencies import get_event_broker
 
 router = APIRouter(prefix="/events", tags=["SSE"])
 

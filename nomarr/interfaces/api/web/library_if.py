@@ -1,50 +1,26 @@
 """Library statistics and management endpoints for web UI."""
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 
 from nomarr.interfaces.api.auth import verify_session
-from nomarr.interfaces.api.web.dependencies_if import get_library_service
+from nomarr.interfaces.api.types.library_types import (
+    CreateLibraryRequest,
+    LibraryResponse,
+    LibraryStatsResponse,
+    ListLibrariesResponse,
+    ScanLibraryRequest,
+    StartScanWithStatusResponse,
+    UpdateLibraryRequest,
+)
+from nomarr.interfaces.api.web.dependencies import get_library_service
 
 if TYPE_CHECKING:
     from nomarr.services.library_svc import LibraryService
 
 router = APIRouter(prefix="/libraries", tags=["Library"])
-
-
-# ──────────────────────────────────────────────────────────────────────
-# Request/Response Models
-# ──────────────────────────────────────────────────────────────────────
-
-
-class CreateLibraryRequest(BaseModel):
-    """Request body for creating a library."""
-
-    name: str
-    root_path: str
-    is_enabled: bool = True
-    is_default: bool = False
-
-
-class UpdateLibraryRequest(BaseModel):
-    """Request body for updating a library."""
-
-    name: str | None = None
-    root_path: str | None = None
-    is_enabled: bool | None = None
-    is_default: bool | None = None
-
-
-class ScanRequest(BaseModel):
-    """Request body for starting a library scan."""
-
-    paths: list[str] | None = None
-    recursive: bool = True
-    force: bool = False
-    clean_missing: bool = True
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -55,18 +31,14 @@ class ScanRequest(BaseModel):
 @router.get("/stats", dependencies=[Depends(verify_session)])
 async def web_library_stats(
     library_service: "LibraryService" = Depends(get_library_service),
-) -> dict[str, Any]:
+) -> LibraryStatsResponse:
     """Get library statistics (total files, artists, albums, duration)."""
     try:
-        # Use service layer to get library stats
+        # Use service layer to get library stats (returns LibraryStatsResult DTO)
         stats = library_service.get_library_stats()
 
-        return {
-            "total_files": stats.get("total_files", 0) or 0,
-            "unique_artists": stats.get("total_artists", 0) or 0,
-            "unique_albums": stats.get("total_albums", 0) or 0,
-            "total_duration_seconds": stats.get("total_duration", 0) or 0,
-        }
+        # Transform DTO to Pydantic response
+        return LibraryStatsResponse.from_dto(stats)
 
     except Exception as e:
         logging.exception("[Web API] Error getting library stats")
@@ -82,10 +54,11 @@ async def web_library_stats(
 async def list_libraries(
     enabled_only: bool = False,
     library_service: "LibraryService" = Depends(get_library_service),
-) -> list[dict[str, Any]]:
+) -> ListLibrariesResponse:
     """List all configured libraries."""
     try:
-        return library_service.list_libraries(enabled_only=enabled_only)
+        libraries = library_service.list_libraries(enabled_only=enabled_only)
+        return ListLibrariesResponse.from_dto(libraries)
     except Exception as e:
         logging.exception("[Web API] Error listing libraries")
         raise HTTPException(status_code=500, detail=f"Error listing libraries: {e}") from e
@@ -94,13 +67,14 @@ async def list_libraries(
 @router.get("/default", dependencies=[Depends(verify_session)])
 async def get_default_library(
     library_service: "LibraryService" = Depends(get_library_service),
-) -> dict[str, Any]:
+) -> LibraryResponse:
     """Get the default library."""
     try:
         library = library_service.get_default_library()
         if not library:
             raise HTTPException(status_code=404, detail="No default library configured")
-        return library
+
+        return LibraryResponse.from_dto(library)
     except HTTPException:
         raise
     except Exception as e:
@@ -112,10 +86,11 @@ async def get_default_library(
 async def get_library(
     library_id: int,
     library_service: "LibraryService" = Depends(get_library_service),
-) -> dict[str, Any]:
+) -> LibraryResponse:
     """Get a library by ID."""
     try:
-        return library_service.get_library(library_id)
+        library = library_service.get_library(library_id)
+        return LibraryResponse.from_dto(library)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     except Exception as e:
@@ -127,15 +102,16 @@ async def get_library(
 async def create_library(
     request: CreateLibraryRequest,
     library_service: "LibraryService" = Depends(get_library_service),
-) -> dict[str, Any]:
+) -> LibraryResponse:
     """Create a new library."""
     try:
-        return library_service.create_library(
+        library = library_service.create_library(
             name=request.name,
             root_path=request.root_path,
             is_enabled=request.is_enabled,
             is_default=request.is_default,
         )
+        return LibraryResponse.from_dto(library)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
@@ -148,27 +124,17 @@ async def update_library(
     library_id: int,
     request: UpdateLibraryRequest,
     library_service: "LibraryService" = Depends(get_library_service),
-) -> dict[str, Any]:
+) -> LibraryResponse:
     """Update a library's properties."""
     try:
-        # Update root_path if provided
-        if request.root_path is not None:
-            library_service.update_library_root(library_id, request.root_path)
-
-        # Update is_default if provided
-        if request.is_default is True:
-            library_service.set_default_library(library_id)
-
-        # Update name and/or is_enabled if provided
-        if request.name is not None or request.is_enabled is not None:
-            return library_service.update_library_metadata(
-                library_id,
-                name=request.name,
-                is_enabled=request.is_enabled,
-            )
-
-        # If only root_path or is_default was updated, fetch and return the updated library
-        return library_service.get_library(library_id)
+        library = library_service.update_library(
+            library_id,
+            name=request.name,
+            root_path=request.root_path,
+            is_enabled=request.is_enabled,
+            is_default=request.is_default,
+        )
+        return LibraryResponse.from_dto(library)
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -183,10 +149,11 @@ async def update_library(
 async def set_default_library(
     library_id: int,
     library_service: "LibraryService" = Depends(get_library_service),
-) -> dict[str, Any]:
+) -> LibraryResponse:
     """Set a library as the default library."""
     try:
-        return library_service.set_default_library(library_id)
+        library = library_service.set_default_library(library_id)
+        return LibraryResponse.from_dto(library)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     except Exception as e:
@@ -197,9 +164,9 @@ async def set_default_library(
 @router.post("/{library_id}/scan", dependencies=[Depends(verify_session)])
 async def scan_library(
     library_id: int,
-    request: ScanRequest,
+    request: ScanLibraryRequest,
     library_service: "LibraryService" = Depends(get_library_service),
-) -> dict[str, Any]:
+) -> StartScanWithStatusResponse:
     """
     Start a scan for a specific library.
 
@@ -213,13 +180,13 @@ async def scan_library(
         library_service: LibraryService instance (injected)
 
     Returns:
-        Dict with scan statistics (files_queued, etc.)
+        StartScanWithStatusResponse with scan statistics and status message
 
     Raises:
         HTTPException: 404 if library not found, 500 for other errors
     """
     try:
-        # Call the service layer to start scan for this specific library
+        # Call the service layer to start scan for this specific library (returns StartScanResult DTO)
         stats = library_service.start_scan_for_library(
             library_id=library_id,
             paths=request.paths,
@@ -228,11 +195,8 @@ async def scan_library(
             clean_missing=request.clean_missing,
         )
 
-        return {
-            "status": "queued",
-            "message": f"Scan started for library {library_id}: {stats.get('files_queued', 0)} files queued",
-            "stats": stats,
-        }
+        # Transform DTO to wrapped Pydantic response
+        return StartScanWithStatusResponse.from_dto(stats, library_id)
 
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e

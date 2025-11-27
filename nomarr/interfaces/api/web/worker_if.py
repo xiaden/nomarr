@@ -5,11 +5,12 @@ import logging
 import os
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from nomarr.interfaces.api.auth import verify_session
+from nomarr.interfaces.api.types.admin_types import WorkerOperationResponse
 from nomarr.interfaces.api.types.queue_types import OperationResult
-from nomarr.interfaces.api.web.dependencies_if import (
+from nomarr.interfaces.api.web.dependencies import (
     get_event_broker,
     get_worker_pool,
     get_worker_service,
@@ -31,20 +32,13 @@ _RESTART_TASKS: set = set()
 async def web_admin_worker_pause(
     worker_service: Any | None = Depends(get_worker_service),
     event_broker: Any | None = Depends(get_event_broker),
-) -> OperationResult:
+) -> WorkerOperationResponse:
     """Pause the worker (web UI proxy)."""
-    # Use WorkerService to disable workers (handles meta, idle wait, and stopping)
-    if worker_service:
-        worker_service.disable()
+    if not worker_service:
+        raise HTTPException(status_code=503, detail="Worker service not available")
 
-    # Publish worker state update
-    if event_broker:
-        event_broker.update_worker_state("main", {"enabled": False})
-
-    return OperationResult(
-        status="success",
-        message="Worker paused successfully",
-    )
+    result = worker_service.pause_workers_for_admin(event_broker)
+    return WorkerOperationResponse.from_dto(result)
 
 
 @router.post("/resume", dependencies=[Depends(verify_session)])
@@ -52,23 +46,13 @@ async def web_admin_worker_resume(
     worker_service: Any | None = Depends(get_worker_service),
     worker_pool: list[Any] = Depends(get_worker_pool),
     event_broker: Any | None = Depends(get_event_broker),
-) -> OperationResult:
+) -> WorkerOperationResponse:
     """Resume the worker (web UI proxy)."""
-    # Use WorkerService to resume workers
-    if worker_service:
-        worker_service.enable()
-        new_workers = worker_service.start_workers(event_broker=event_broker)
-        worker_pool.clear()
-        worker_pool.extend(new_workers)
+    if not worker_service:
+        raise HTTPException(status_code=503, detail="Worker service not available")
 
-    # Publish worker state update
-    if event_broker:
-        event_broker.update_worker_state("main", {"enabled": True})
-
-    return OperationResult(
-        status="success",
-        message="Worker resumed successfully",
-    )
+    result = worker_service.resume_workers_for_admin(worker_pool, event_broker)
+    return WorkerOperationResponse.from_dto(result)
 
 
 # ──────────────────────────────────────────────────────────────────────

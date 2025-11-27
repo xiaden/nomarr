@@ -229,24 +229,3 @@ class StateBroker:
             True if topic matches any pattern
         """
         return any(fnmatch.fnmatch(topic, pattern) for pattern in patterns)
-
-    def get_client_count(self) -> int:
-        """Get number of active clients."""
-        with self._lock:
-            return len(self._clients)
-
-    def get_stats(self) -> dict[str, Any]:
-        """Get broker statistics."""
-        with self._lock:
-            return {
-                "active_clients": len(self._clients),
-                "clients": [
-                    {
-                        "id": client_id,
-                        "topics": info["topics"],
-                        "queue_size": info["queue"].qsize(),
-                        "connected_since": info["created_at"],
-                    }
-                    for client_id, info in self._clients.items()
-                ],
-            }

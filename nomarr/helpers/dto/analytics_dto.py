@@ -141,3 +141,17 @@ class MoodDistributionItem:
     mood: str
     count: int
     percentage: float
+
+
+@dataclass
+class TagFrequenciesResult:
+    """Wrapper result from analytics_svc.get_tag_frequencies_with_result."""
+
+    tag_frequencies: list[TagFrequencyItem]
+
+
+@dataclass
+class MoodDistributionResult:
+    """Wrapper result from analytics_svc.get_mood_distribution_with_result."""
+
+    mood_distribution: list[MoodDistributionItem]

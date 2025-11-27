@@ -402,7 +402,7 @@ class HeadDecision:
         Returns:
             List of HeadOutput objects
         """
-        from nomarr.components.ml.ml_discovery_comp import HeadOutput  # Late import to avoid circular dependency
+        from nomarr.helpers.dto.ml_dto import HeadOutput
 
         outputs: list[HeadOutput] = []
 
@@ -469,10 +469,6 @@ class HeadDecision:
 
 def head_is_regression(spec: HeadSpec) -> bool:
     return spec.kind.lower() == "regression"
-
-
-def head_is_multilabel(spec: HeadSpec) -> bool:
-    return spec.kind.lower() == "multilabel"
 
 
 def head_is_multiclass(spec: HeadSpec) -> bool:

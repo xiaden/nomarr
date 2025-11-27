@@ -85,9 +85,3 @@ class CalibrationQueueOperations:
         cur = self.conn.execute("DELETE FROM calibration_queue WHERE status IN ('done', 'error')")
         self.conn.commit()
         return cur.rowcount
-
-    def reset_running_calibration_jobs(self) -> int:
-        """Reset stuck 'running' calibration jobs back to 'pending'. Returns count reset."""
-        cur = self.conn.execute("UPDATE calibration_queue SET status='pending' WHERE status='running'")
-        self.conn.commit()
-        return cur.rowcount

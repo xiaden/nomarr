@@ -116,17 +116,6 @@ class CoordinatorService:
         self.start()
         logging.info("[ProcessingCoordinator] Process pool recreated successfully")
 
-    def publish_event(self, topic: str, event_data: dict[str, Any]):
-        """
-        Publish an event to the global event broker.
-
-        Args:
-            topic: Event topic (e.g., "queue:jobs", "worker:0:progress")
-            event_data: Event payload
-        """
-        if self.cfg.event_broker is not None:
-            self.cfg.event_broker.publish(topic, event_data)
-
     def submit(self, path: str, force: bool) -> ProcessFileResult | dict[str, Any]:
         """
         Submit a job and return immediately.

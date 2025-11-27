@@ -93,32 +93,6 @@ class CalibrationRunsOperations:
             raise RuntimeError("Failed to insert calibration run - no row ID returned")
         return row_id
 
-    def get_latest_calibration_run(self, model_name: str, head_name: str) -> dict[str, Any] | None:
-        """
-        Get the most recent calibration run for a model/head.
-
-        Args:
-            model_name: Model identifier
-            head_name: Head identifier
-
-        Returns:
-            Calibration run dict or None if no runs exist
-        """
-        cur = self.conn.execute(
-            """
-            SELECT * FROM calibration_runs
-            WHERE model_name=? AND head_name=?
-            ORDER BY version DESC
-            LIMIT 1
-            """,
-            (model_name, head_name),
-        )
-        row = cur.fetchone()
-        if not row:
-            return None
-        columns = [desc[0] for desc in cur.description]
-        return dict(zip(columns, row, strict=False))
-
     def get_reference_calibration_run(self, model_name: str, head_name: str) -> dict[str, Any] | None:
         """
         Get the current reference (stable) calibration run for a model/head.

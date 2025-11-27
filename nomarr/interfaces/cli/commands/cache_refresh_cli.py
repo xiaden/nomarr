@@ -7,7 +7,7 @@ from __future__ import annotations
 import argparse
 
 import nomarr.app as app
-from nomarr.interfaces.cli.ui import InfoPanel, print_error
+from nomarr.interfaces.cli.cli_ui import InfoPanel, print_error
 
 
 def cmd_cache_refresh(args: argparse.Namespace) -> int:

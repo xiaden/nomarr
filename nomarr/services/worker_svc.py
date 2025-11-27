@@ -9,6 +9,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from nomarr.helpers.dto.admin_dto import WorkerOperationResult
 from nomarr.helpers.dto.processing_dto import WorkerEnabledResult, WorkerStatusResult
 
 if TYPE_CHECKING:
@@ -139,6 +140,39 @@ class WorkerService:
             event_broker.update_worker_state({"enabled": True})
 
         return WorkerEnabledResult(worker_enabled=True)
+
+    # -------------------------------------------------------------------------
+    #  Admin Wrappers (for interfaces/api)
+    # -------------------------------------------------------------------------
+
+    def pause_workers_for_admin(self, event_broker: Any | None = None) -> WorkerOperationResult:
+        """
+        Pause workers with admin-friendly messaging.
+
+        Args:
+            event_broker: Optional event broker for SSE updates
+
+        Returns:
+            WorkerOperationResult with status message
+        """
+        result = self.pause_workers(event_broker)
+        message = "Worker paused" if not result.worker_enabled else "Worker already paused"
+        return WorkerOperationResult(status="success", message=message)
+
+    def resume_workers_for_admin(self, worker_pool: list, event_broker: Any | None = None) -> WorkerOperationResult:
+        """
+        Resume workers with admin-friendly messaging.
+
+        Args:
+            worker_pool: Worker pool list to update
+            event_broker: Optional event broker for SSE updates
+
+        Returns:
+            WorkerOperationResult with status message
+        """
+        result = self.resume_workers(worker_pool, event_broker)
+        message = "Worker resumed" if result.worker_enabled else "Worker failed to resume"
+        return WorkerOperationResult(status="success", message=message)
 
     def wait_until_idle(self, timeout: int = 60, poll_interval: float = 0.5) -> bool:
         """

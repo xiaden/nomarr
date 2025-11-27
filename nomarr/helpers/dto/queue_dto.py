@@ -75,3 +75,23 @@ class EnqueueFilesResult:
     files_queued: int
     queue_depth: int
     paths: list[str]
+
+
+@dataclass
+class BatchEnqueuePathResult:
+    """Result for a single path in a batch enqueue operation."""
+
+    path: str
+    status: str  # "queued" or "error"
+    message: str
+    files_queued: int = 0
+    job_ids: list[int] | None = None
+
+
+@dataclass
+class BatchEnqueueResult:
+    """Result from queue_service.batch_add_files."""
+
+    total_queued: int
+    total_errors: int
+    results: list[BatchEnqueuePathResult]

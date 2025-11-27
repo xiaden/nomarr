@@ -17,13 +17,17 @@ import logging
 import threading
 import time
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from nomarr.helpers.dto.queue_dto import DequeueResult
 from nomarr.persistence.db import Database
 
 if TYPE_CHECKING:
     from nomarr.services.queue_svc import BaseQueue
+
+
+# Type variable for worker result types
+TResult = TypeVar("TResult")
 
 
 # ----------------------------------------------------------------------
@@ -43,6 +47,9 @@ class BaseWorker(threading.Thread):
     - Idle cache eviction
     - Rolling average processing time
 
+    Type Parameters:
+        TResult: The result type returned by process_fn (e.g., ProcessFileResult, dict[str, Any])
+
     Usage:
         worker = BaseWorker(
             name="TaggerWorker",
@@ -59,7 +66,7 @@ class BaseWorker(threading.Thread):
         self,
         name: str,
         queue: BaseQueue,
-        process_fn: Callable[[str, bool], dict[str, Any]],
+        process_fn: Callable[[str, bool], TResult],
         db: Database,
         event_broker: Any,
         worker_id: int = 0,
@@ -71,7 +78,7 @@ class BaseWorker(threading.Thread):
         Args:
             name: Worker thread name (e.g., "TaggerWorker")
             queue: BaseQueue instance for job operations
-            process_fn: Function to process jobs, signature: (path: str, force: bool) -> dict
+            process_fn: Function to process jobs, signature: (path: str, force: bool) -> TResult
             db: Database instance for meta operations
             event_broker: Event broker for SSE state updates (required)
             worker_id: Unique worker ID (for multi-worker setups)
@@ -190,8 +197,8 @@ class BaseWorker(threading.Thread):
             self._is_busy = True
             t0 = time.time()
 
-            # Call injected processing function
-            summary = self.process_fn(path, force)
+            # Call injected processing function (can return DTO or dict)
+            result = self.process_fn(path, force)
 
             elapsed = round(time.time() - t0, 2)
 
@@ -199,8 +206,23 @@ class BaseWorker(threading.Thread):
             self.queue.mark_complete(job_id)
             self._update_avg_time(elapsed)
 
+            # Convert result to dict for event publishing
+            # Support both ProcessFileResult DTOs and plain dicts
+            if hasattr(result, "__dataclass_fields__"):
+                # It's a dataclass DTO - convert to dict
+                results_dict = {
+                    field: getattr(result, field)
+                    for field in result.__dataclass_fields__  # type: ignore[attr-defined]
+                }
+            elif isinstance(result, dict):
+                # It's already a dict
+                results_dict = result
+            else:
+                # Unknown type - convert to string representation
+                results_dict = {"result": str(result)}
+
             # Publish completion event
-            self._publish_job_state(job_id, path, "done", results=summary)
+            self._publish_job_state(job_id, path, "done", results=results_dict)
             self._publish_queue_stats()
 
             logging.info(f"[{self.name}] ✅ Job {job_id} done in {elapsed}s")

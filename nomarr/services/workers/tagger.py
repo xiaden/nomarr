@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from nomarr.helpers.dto.processing_dto import ProcessFileResult
 from nomarr.services.config_svc import ConfigService
 from nomarr.services.workers.base import BaseWorker
 from nomarr.workflows.processing.process_file_wf import process_file_workflow
@@ -64,7 +65,7 @@ class TaggerWorker(BaseWorker):
         self.db = db
         self.config_service = ConfigService()
 
-    def _process(self, path: str, force: bool) -> dict[str, Any]:
+    def _process(self, path: str, force: bool) -> ProcessFileResult:
         """
         Process a single audio file with ML tagging.
 
@@ -73,7 +74,7 @@ class TaggerWorker(BaseWorker):
             force: Whether to force reprocessing (ignored, uses config)
 
         Returns:
-            Dict with processing results
+            ProcessFileResult DTO with processing results
         """
         config = self.config_service.make_processor_config()
         return process_file_workflow(path, config, self.db)

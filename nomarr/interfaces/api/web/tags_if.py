@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from nomarr.helpers.files_helper import validate_library_path
 from nomarr.interfaces.api.auth import verify_session
-from nomarr.interfaces.api.web.dependencies_if import get_config
+from nomarr.interfaces.api.web.dependencies import get_config
 
 router = APIRouter(prefix="/tags", tags=["Tags"])
 

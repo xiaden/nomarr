@@ -160,3 +160,15 @@ def get_recalibration_service() -> Any:
     if not service:
         raise HTTPException(status_code=503, detail="Recalibration service not available")
     return service
+
+
+def get_info_service() -> Any:
+    """Get info service instance."""
+    from fastapi import HTTPException
+
+    from nomarr.app import application
+
+    service = application.services.get("info")
+    if not service:
+        raise HTTPException(status_code=503, detail="Info service not available")
+    return service

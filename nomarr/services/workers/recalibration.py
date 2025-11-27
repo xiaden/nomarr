@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from nomarr.helpers.dto.calibration_dto import RecalibrateFileWorkflowParams
 from nomarr.services.workers.base import BaseWorker
 from nomarr.workflows.calibration.recalibrate_file_wf import recalibrate_file_workflow
 
@@ -87,12 +88,16 @@ class RecalibrationWorker(BaseWorker):
         Returns:
             Dict with processing results
         """
-        recalibrate_file_workflow(
-            db=self.db,
+        # Construct params DTO for workflow
+        params = RecalibrateFileWorkflowParams(
             file_path=path,
             models_dir=self.models_dir,
             namespace=self.namespace,
             version_tag_key=self.version_tag_key,
             calibrate_heads=self.calibrate_heads,
         )
+
+        # Call workflow with DTO
+        recalibrate_file_workflow(db=self.db, params=params)
+
         return {"status": "success", "path": path}

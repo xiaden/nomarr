@@ -7,11 +7,11 @@ from __future__ import annotations
 
 import argparse
 
-from nomarr.interfaces.cli.commands.admin_reset import cmd_admin_reset
-from nomarr.interfaces.cli.commands.cache_refresh import cmd_cache_refresh
-from nomarr.interfaces.cli.commands.cleanup import cmd_cleanup
-from nomarr.interfaces.cli.commands.manage_password import cmd_manage_password
-from nomarr.interfaces.cli.commands.remove import cmd_remove
+from nomarr.interfaces.cli.commands.admin_reset_cli import cmd_admin_reset
+from nomarr.interfaces.cli.commands.cache_refresh_cli import cmd_cache_refresh
+from nomarr.interfaces.cli.commands.cleanup_cli import cmd_cleanup
+from nomarr.interfaces.cli.commands.manage_password_cli import cmd_manage_password
+from nomarr.interfaces.cli.commands.remove_cli import cmd_remove
 
 
 def build_parser() -> argparse.ArgumentParser:
