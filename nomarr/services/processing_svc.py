@@ -6,9 +6,7 @@ Shared business logic for audio file processing across all interfaces.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
-
-from nomarr.helpers.dto.processing_dto import ProcessFileResult
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from nomarr.services.coordinator_svc import CoordinatorService
@@ -32,29 +30,6 @@ class ProcessingService:
                         If None, falls back to direct processing
         """
         self.coordinator = coordinator
-
-    def process_file(self, path: str, force: bool = False) -> ProcessFileResult | dict[str, Any]:
-        """
-        Process a single audio file with ML inference and tag writing.
-
-        Args:
-            path: Absolute path to audio file
-            force: If True, reprocess even if already tagged
-
-        Returns:
-            ProcessFileResult on success, or dict with error/skip info
-
-        Raises:
-            FileNotFoundError: If file doesn't exist
-            RuntimeError: If coordinator is not available
-            Exception: If processing fails critically
-        """
-        if not self.coordinator:
-            raise RuntimeError("ProcessingCoordinator is not available - processing service is unavailable")
-
-        # Use process pool coordinator for parallel processing
-        logging.debug(f"[ProcessingService] Submitting {path} to coordinator")
-        return self.coordinator.submit(path, force)
 
     def is_available(self) -> bool:
         """

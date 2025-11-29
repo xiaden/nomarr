@@ -566,42 +566,6 @@ class LibraryService:
         jobs = self.db.library_queue.list_scan_jobs(limit=1000)
         return any(job["status"] == "running" for job in jobs)
 
-    def pause(self) -> bool:
-        """
-        Pause the library scanner worker.
-
-        Returns:
-            True if paused successfully
-
-        Raises:
-            ValueError: If library_root not configured
-        """
-        if not self.cfg.library_root:
-            raise ValueError("Library root not configured")
-
-        # Set scan_running=false in database meta
-        self.db.meta.set("worker_enabled", "false")
-        logging.info("[LibraryService] Library scanner paused via worker_enabled flag")
-        return True
-
-    def resume(self) -> bool:
-        """
-        Resume the library scanner worker.
-
-        Returns:
-            True if resumed successfully
-
-        Raises:
-            ValueError: If library_root not configured
-        """
-        if not self.cfg.library_root:
-            raise ValueError("Library root not configured")
-
-        # Set worker_enabled=true in database meta
-        self.db.meta.set("worker_enabled", "true")
-        logging.info("[LibraryService] Library scanner resumed via worker_enabled flag")
-        return True
-
     def clear_library_data(self) -> None:
         """
         Clear all library data (files, tags, scan queue).

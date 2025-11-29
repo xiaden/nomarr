@@ -158,17 +158,6 @@ class ConfigService:
         db.meta.set(f"config_{key}", value)
         self._logger.info(f"[ConfigService] Set config_{key} = {value}")
 
-    def reload(self) -> ConfigResult:
-        """
-        Force reload configuration from all sources.
-
-        Returns:
-            ConfigResult wrapping newly composed config
-        """
-        self._logger.info("Reloading configuration from all sources")
-        result = self.get_config(force_reload=True)
-        return ConfigResult(config=result.config)
-
     def get_internal_info(self) -> GetInternalInfoResult:
         """
         Get internal (read-only) configuration constants.

@@ -4,8 +4,6 @@ Unit tests for nomarr.services.worker module.
 Tests use REAL fixtures from conftest.py - no redundant mocks.
 """
 
-import pytest
-
 
 class TestWorkerServiceCleanupOrphanedJobs:
     """Test WorkerService.cleanup_orphaned_jobs() operations."""
@@ -77,35 +75,6 @@ class TestWorkerServiceIsEnabled:
 
         # Assert
         assert isinstance(result, bool)
-
-
-class TestWorkerServicePause:
-    """Test WorkerService.pause() operations."""
-
-    def test_pause_success(self, real_worker_service):
-        """Should successfully pause."""
-        # Arrange
-
-        # Act
-        result = real_worker_service.pause()
-
-        # Assert
-        assert isinstance(result, dict)
-
-
-class TestWorkerServiceResume:
-    """Test WorkerService.resume() operations."""
-
-    @pytest.mark.skip(reason="Requires event_broker mock - enable() then start_workers() needs event_broker")
-    def test_resume_success(self, real_worker_service):
-        """Should successfully resume."""
-        # Arrange
-
-        # Act
-        result = real_worker_service.resume(event_broker=None)
-
-        # Assert
-        assert isinstance(result, dict)
 
 
 class TestWorkerServiceStartWorkers:

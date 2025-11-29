@@ -12,6 +12,9 @@
 		"python.testing.pytestArgs": [
 			"tests"
 		],
+		"terminal.integrated.defaultProfile.windows": "PowerShell",
+		"terminal.integrated.windowsEnableConpty": true,
+		"terminal.integrated.windowsUseConptyDll": false,
 		"files.exclude": {
 			"**/__pycache__": true,
 			"**/*.pyc": true,
@@ -45,15 +48,10 @@
 			{
 				"label": "Setup Python Environment",
 				"type": "shell",
-				"windows": {
-					"command": "if (-not (Test-Path '.venv')) { ${config:python.defaultInterpreterPath} -m venv .venv; Write-Host 'Created virtual environment'; } else { Write-Host 'Virtual environment already exists'; }; .\\.venv\\Scripts\\python.exe -m pip install --upgrade pip; .\\.venv\\Scripts\\python.exe -m pip install -r requirements.txt; Write-Host 'Dependencies installed successfully';"
-				},
-				"linux": {
-					"command": "if [ ! -d '.venv' ]; then ${config:python.defaultInterpreterPath} -m venv .venv && echo 'Created virtual environment'; else echo 'Virtual environment already exists'; fi && ./.venv/bin/python -m pip install --upgrade pip && ./.venv/bin/python -m pip install -r requirements.txt && echo 'Dependencies installed successfully'"
-				},
-				"osx": {
-					"command": "if [ ! -d '.venv' ]; then ${config:python.defaultInterpreterPath} -m venv .venv && echo 'Created virtual environment'; else echo 'Virtual environment already exists'; fi && ./.venv/bin/python -m pip install --upgrade pip && ./.venv/bin/python -m pip install -r requirements.txt && echo 'Dependencies installed successfully'"
-				},
+				"command": "${config:python.defaultInterpreterPath}",
+				"args": [
+					"scripts/tools/ensure_venv.py"
+				],
 				"problemMatcher": [],
 				"presentation": {
 					"echo": true,

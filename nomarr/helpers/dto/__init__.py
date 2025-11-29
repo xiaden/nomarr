@@ -30,7 +30,6 @@ Dataclass Classification:
 
 - Category C (Component-internal helpers): Kept in component modules
   * ML: HeadOutput, HeadSpec, Cascade, Segments
-  * Paths: LibraryPath (unused)
 """
 
 from __future__ import annotations

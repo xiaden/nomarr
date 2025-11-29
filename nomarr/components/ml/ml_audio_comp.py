@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 from scipy.signal import resample_poly
 
-from nomarr.components.ml import backend_essentia
+from nomarr.components.ml import ml_backend_essentia_comp as backend_essentia
 from nomarr.helpers.dto.ml_dto import LoadAudioMonoResult
 
 # Use Essentia for audio loading (supports more formats via ffmpeg)

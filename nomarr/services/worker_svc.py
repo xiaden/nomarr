@@ -402,27 +402,3 @@ class WorkerService:
             running=running,
             workers=workers,
         )
-
-    def pause(self) -> WorkerStatusResult:
-        """
-        Pause workers (disable and stop).
-
-        Returns:
-            WorkerStatusResult after pausing
-        """
-        self.disable()
-        return self.get_status()
-
-    def resume(self, event_broker: Any | None = None) -> WorkerStatusResult:
-        """
-        Resume workers (enable and start).
-
-        Args:
-            event_broker: Optional event broker for SSE updates
-
-        Returns:
-            WorkerStatusResult after resuming
-        """
-        self.enable()
-        self.start_workers(event_broker=event_broker)
-        return self.get_status()

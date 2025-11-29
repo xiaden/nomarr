@@ -13,8 +13,7 @@ from dataclasses import dataclass
 import numpy as np
 
 # Local modules
-from nomarr.components.ml.ml_audio_comp import load_audio_mono, should_skip_short
-from nomarr.helpers.dto.ml_dto import AnalyzeWithSegmentsResult, SegmentWaveformParams
+from nomarr.helpers.dto.ml_dto import SegmentWaveformParams
 
 
 # ----------------------------------------------------------------------
@@ -220,71 +219,3 @@ def _trimmed_mean(S: np.ndarray, trim_perc: float, axis: int = 0) -> np.ndarray:
     if axis != 0:
         result = np.swapaxes(result, axis, 0)
     return result
-
-
-# ----------------------------------------------------------------------
-# High-level convenience: end-to-end scoring with guards
-# ----------------------------------------------------------------------
-def analyze_with_segments(
-    path: str,
-    *,
-    target_sr: int,
-    segment_s: float,
-    hop_s: float,
-    min_duration_s: int,
-    allow_short: bool,
-    predict_fn: Callable[[np.ndarray, int], np.ndarray],
-    pool: str = "trimmed_mean",
-    trim_perc: float = 0.1,
-) -> AnalyzeWithSegmentsResult:
-    """
-    Full flow for a single backbone/head:
-      1) load mono audio at target_sr
-      2) duration gating (skip short if not allowed)
-      3) segment
-      4) run predict_fn over segments → per-segment vectors
-      5) pool across segments
-
-    Returns:
-      AnalyzeWithSegmentsResult with pooled_vector, segments, duration
-
-    Raises:
-      RuntimeError with a clear message when skipping due to short audio.
-    """
-    import logging
-    import time
-
-    t0 = time.time()
-    audio_result = load_audio_mono(path, target_sr=target_sr)
-    logging.debug(f"[embed] Audio loaded in {time.time() - t0:.2f}s ({audio_result.duration:.1f}s duration)")
-
-    # FIX: correctly pass allow_short into should_skip_short
-    if should_skip_short(audio_result.duration, min_duration_s, allow_short):
-        raise RuntimeError(f"audio too short ({audio_result.duration:.2f}s < {min_duration_s}s)")
-
-    t1 = time.time()
-    params_seg = SegmentWaveformParams(
-        y=audio_result.waveform,
-        sr=audio_result.sample_rate,
-        segment_s=segment_s,
-        hop_s=hop_s,
-        pad_final=True,
-    )
-    segs = segment_waveform(params_seg)
-    logging.debug(f"[embed] Segmented into {len(segs.waves)} segments in {time.time() - t1:.2f}s")
-    if len(segs.waves) == 0:
-        raise RuntimeError("no segments produced (possibly empty or invalid audio)")
-
-    t2 = time.time()
-    S = score_segments(segs, predict_fn)  # (num_segments, dim)
-    logging.debug(f"[embed] Scored {len(segs.waves)} segments in {time.time() - t2:.2f}s")
-    if S.size == 0:
-        raise RuntimeError("predictor returned empty scores")
-
-    pooled = pool_scores(S, mode=pool, trim_perc=trim_perc, nan_policy="omit")
-    logging.debug(f"[embed] Total analyze time: {time.time() - t0:.2f}s")
-    return AnalyzeWithSegmentsResult(
-        pooled_vector=pooled,
-        segments=segs,
-        duration=audio_result.duration,
-    )
