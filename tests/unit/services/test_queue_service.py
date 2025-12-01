@@ -8,17 +8,20 @@ import pytest
 
 
 class TestQueueServiceAddFiles:
-    """Test QueueService.add_files() operations."""
+    """Test QueueService.enqueue_files_for_tagging() operations."""
 
     def test_add_files_success(self, real_queue_service, temp_audio_file):
-        """Should successfully add files."""
+        """Should successfully enqueue files for tagging."""
         # Arrange
+        from nomarr.helpers.dto.queue_dto import EnqueueFilesResult
 
         # Act
-        result = real_queue_service.add_files(paths=[str(temp_audio_file)])
+        result = real_queue_service.enqueue_files_for_tagging(paths=[str(temp_audio_file)])
 
         # Assert
-        assert isinstance(result, dict)
+        assert isinstance(result, EnqueueFilesResult)
+        assert result.files_queued == 1
+        assert len(result.job_ids) == 1
         # Verify item was added
         # TODO: Check item can be retrieved
         # TODO: Verify count/depth increased
@@ -29,7 +32,7 @@ class TestQueueServiceAddFiles:
 
         # Act & Assert
         with pytest.raises(FileNotFoundError):
-            real_queue_service.add_files(paths=["/nonexistent.mp3"], force=True, recursive=True)
+            real_queue_service.enqueue_files_for_tagging(paths=["/nonexistent.mp3"], force=True, recursive=True)
 
 
 class TestQueueServiceCleanupOldJobs:
@@ -72,16 +75,16 @@ class TestQueueServiceGetJob:
     def test_get_job_success(self, real_queue_service, temp_audio_file):
         """Should successfully get job."""
         # Arrange - add a job first
-        add_result = real_queue_service.add_files(paths=[str(temp_audio_file)])
-        job_id = add_result["job_ids"][0]  # Get first job ID from list
+        add_result = real_queue_service.enqueue_files_for_tagging(paths=[str(temp_audio_file)])
+        job_id = add_result.job_ids[0]  # Get first job ID from list
 
         # Act
         result = real_queue_service.get_job(job_id=job_id)
 
         # Assert
-        from nomarr.helpers.dto.queue_dto import JobDict
+        from nomarr.helpers.dto.queue_dto import Job
 
-        assert isinstance(result, JobDict)
+        assert isinstance(result, Job)
         assert result.id == job_id
         assert result.status is not None
         assert result.path is not None

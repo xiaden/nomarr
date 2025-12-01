@@ -21,7 +21,7 @@ async def web_info(
     info_service: Any = Depends(get_info_service),
 ) -> SystemInfoResponse:
     """Get system info (web UI proxy)."""
-    result = info_service.get_system_info_for_api()
+    result = info_service.get_system_info()
     return SystemInfoResponse.from_dto(result)
 
 

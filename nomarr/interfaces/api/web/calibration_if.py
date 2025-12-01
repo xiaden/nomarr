@@ -39,7 +39,7 @@ async def apply_calibration_to_library(
     This updates tier and mood tags by applying calibration to existing raw scores.
     """
     try:
-        result = recal_service.apply_calibration_to_library()
+        result = recal_service.queue_library_for_recalibration()
         return ApplyCalibrationResponse.from_dto(result)
 
     except RuntimeError as e:

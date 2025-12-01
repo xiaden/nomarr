@@ -4,6 +4,8 @@ Unit tests for nomarr.services.worker module.
 Tests use REAL fixtures from conftest.py - no redundant mocks.
 """
 
+from nomarr.helpers.dto.processing_dto import WorkerStatusResult
+
 
 class TestWorkerServiceCleanupOrphanedJobs:
     """Test WorkerService.cleanup_orphaned_jobs() operations."""
@@ -59,7 +61,7 @@ class TestWorkerServiceGetStatus:
         result = real_worker_service.get_status()
 
         # Assert
-        assert isinstance(result, dict)
+        assert isinstance(result, WorkerStatusResult)
         # TODO: Verify returned data is correct
 
 

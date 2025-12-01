@@ -3,7 +3,7 @@ Workflow for planning library scans by discovering files and enqueueing them.
 
 This workflow orchestrates the PLANNING phase of library scanning:
 - Discovers audio files in specified paths
-- Enqueues each file individually to the library_queue
+- Enqueues each file individually to the library_queue via queue components
 - Returns statistics about files queued
 
 The EXECUTION phase is handled by LibraryScanWorker, which processes
@@ -14,23 +14,16 @@ ARCHITECTURE:
 - Does NOT import or use services, DI container, or application object
 - Callers (typically services) must provide Database instance and config values
 
-EXPECTED DATABASE INTERFACE:
-The `db` parameter must provide:
-- db.library_queue.enqueue_scan(path, force) -> int
-- db.library_files.get_library_file(path) -> dict | None
-- db.library_files.list_library_files(limit) -> tuple[list[dict], int]
-- db.library_files.delete_library_file(path) -> None
+EXPECTED DEPENDENCIES:
+- db: Database instance (provides library_files accessor)
+- Queue components from nomarr.components.queue (for enqueueing)
 
 USAGE:
     from nomarr.workflows.library.start_library_scan_wf import start_library_scan_workflow
 
     stats = start_library_scan_workflow(
         db=database_instance,
-        root_paths=["/path/to/music"],
-        recursive=True,
-        force=False,
-        auto_tag=True,
-        ignore_patterns="*/Audiobooks/*,*.wav"
+        params=StartLibraryScanWorkflowParams(...)
     )
 """
 
@@ -40,6 +33,7 @@ import logging
 import os
 from typing import TYPE_CHECKING, TypedDict
 
+from nomarr.components.queue.queue_enqueue_comp import enqueue_file
 from nomarr.helpers.dto.library_dto import StartLibraryScanWorkflowParams
 
 if TYPE_CHECKING:
@@ -104,12 +98,12 @@ def start_library_scan_workflow(
     This workflow:
     1. Discovers audio files under root_paths
     2. Optionally checks if files need scanning (modification time check)
-    3. Enqueues each file to library_queue for worker processing
+    3. Enqueues files via db.library_queue
     4. Optionally removes deleted files from database
     5. Returns statistics about files queued
 
     Args:
-        db: Database instance (must provide library accessor)
+        db: Database instance (provides library_files and library_queue accessors)
         params: StartLibraryScanWorkflowParams with root_paths, recursive, force, auto_tag, ignore_patterns, clean_missing
 
     Returns:
@@ -172,9 +166,8 @@ def start_library_scan_workflow(
                     stats["files_skipped"] += 1
                     continue
 
-            # Enqueue file for scanning
-            job_id = db.library_queue.enqueue_scan(file_path, force)
-            stats["job_ids"].append(job_id)
+            # Enqueue file for scanning using queue component
+            enqueue_file(db, file_path, force=force, queue_type="library")
             stats["files_queued"] += 1
 
         except Exception as e:

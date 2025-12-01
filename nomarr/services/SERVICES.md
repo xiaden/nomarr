@@ -1,27 +1,53 @@
-# Services Layer
+## Services Layer
 
-This layer owns runtime wiring and long-lived resources (config, DB, queues, workers).
+The **services layer** owns runtime wiring and long-lived resources (config, DB, queues, workers) and exposes a clean, predictable surface for the rest of the application.
 
-## Purpose
+Services are:
 
-Services are **dependency coordinators** that:
-1. Wire dependencies (config, DB, ML backends, queues)
-2. Call workflows with injected dependencies
-3. Return DTOs
+- **Dependency coordinators** (wire config, DB, ML backends, queues, workers)
+- **Thin orchestrators** (call workflows, aggregate results)
+- **DTO providers** (shape data for interfaces and other callers)
 
-**No complex business logic lives here.**
+**No complex business logic lives here.** That belongs in workflows.
 
-## Structure
+---
+
+## 1. Purpose of Services
+
+A service answers the question:
+
+> “Given these dependencies, how do I perform this operation in this domain?”
+
+Concretely, a service method should:
+
+1. Gather dependencies (DB handles, config values, queue objects, ML backends, etc.).
+2. Call one or more workflows (or leaf helpers) with those dependencies.
+3. Return a DTO (or simple primitive) that callers can use directly.
+
+Services **do not**:
+- Know about HTTP or CLI specifics.
+- Embed Pydantic models.
+- Own domain rules or heavy branching logic.
+
+They are the **wiring hubs** between interfaces and workflows.
+
+---
+
+## 2. Structure of the Services Layer
+
+The services layer lives under `nomarr/services/` and is organized by domain.
+
+Typical layout:
 
 ```
 services/
-├── config_service.py
-├── processing_service.py
-├── queue_service.py
-├── worker_service.py
-├── library_service.py
-├── calibration_service.py
-├── analytics_service.py
+├── config_svc.py
+├── library_svc.py
+├── processing_svc.py
+├── queue_svc.py
+├── worker_pool_svc.py
+├── workers_coordinator_svc.py
+├── analytics_svc.py
 └── workers/
     ├── base.py
     ├── tagger.py
@@ -29,233 +55,178 @@ services/
     └── recalibration.py
 ```
 
-## Complexity Guidelines
+Guidelines:
+- One service per domain.
+- Workers under `services/workers/` as thin wrappers.
+- Global orchestration in coordinator services.
+
+---
+
+## 3. Service Method Naming & Surface
+
+Service methods are the primary programmable surface. They must be:
+
+- Predictable
+- Discoverable
+- Stable
+
+### 3.1. Verb–Noun Pattern
+
+All **public** service methods must use:
+
+```
+<verb>_<noun>
+```
+
+Example:
+- `get_library`
+- `list_libraries`
+- `scan_library`
+- `tag_file`
+- `queue_file_for_tagging`
+
+### 3.2. Allowed Verbs
+
+**Read:** get_, list_, exists_, count_, fetch_
+
+**Create/Update/Delete:** create_, update_, delete_, set_, rename_
+
+**Domain Ops:** scan_, tag_, recalibrate_, queue_, start_, stop_, sync_, reindex_, import_, export_
+
+**Boolean Toggles:** enable_, disable_, activate_, deactivate_
+
+**Command:** apply_, execute_
+
+### 3.3. Forbidden Name Patterns
+
+- No "api_", "web_", "cli_"
+- No "for_admin"
+- No HTTP or transport semantics
+
+---
+
+## 4. Responsibilities of Services
+
+### 4.1. Services
+
+- Accept Python types and DTOs
+- Orchestrate workflows
+- Own long-lived resources
+- Provide stable domain-centric methods
+
+They do **not**:
+- Parse HTTP
+- Raise HTTPException
+- Depend on FastAPI or Pydantic
+
+### 4.2. Workflows
+
+Workflows contain domain logic:
+- Loops
+- Branching
+- Transformations
+
+Services should delegate complex logic to workflows.
+
+### 4.3. Interfaces
+
+Interfaces:
+- Map transport → services
+- Apply auth, HTTP status codes
+
+---
+
+## 5. Complexity Guidelines
 
 ### Rule: DI + Orchestration Only
 
-Service methods should be **simple orchestrators**:
-- Gather dependencies
-- Call workflows
-- Return DTOs
+A service method should:
+- Collect dependencies
+- Call workflow(s)
+- Return result
 
-**If a method has noticeable logic (loops, branching, multiple steps), extract to a workflow.**
+Extract workflow when:
+- Multi-step logic
+- Loops
+- Branching
+- Transformations
 
-```python
-# ✅ Good - simple orchestration
-def process_file(self, file_path: str) -> ProcessFileResult:
-    return process_file_workflow(
-        db=self.db,
-        file_path=file_path,
-        models_dir=self.models_dir,
-        namespace=self.namespace,
-    )
+---
 
-# ✅ Good - gathering config and calling workflow
-def start_scan(self, library_id: int) -> StartScanResult:
-    library = self.db.libraries.get_by_id(library_id)
-    if not library:
-        raise ValueError(f"Library {library_id} not found")
-    
-    return scan_library_workflow(
-        db=self.db,
-        library_path=library.root_path,
-        queue_service=self.queue_service,
-    )
+## 6. DTO Policies
 
-# ❌ Bad - too much logic, extract to workflow
-def process_batch(self, file_paths: list[str]) -> BatchResult:
-    results = []
-    for path in file_paths:
-        if self._should_process(path):  # ← branching logic
-            result = self._run_ml(path)  # ← computation
-            results.append(result)
-    return self._aggregate(results)  # ← aggregation
-```
+### When DTOs Are Required
 
-### When to Extract
+Public methods must return DTOs when returning structured data.
 
-**Extract to a workflow if:**
-- You have loops over business entities
-- You have conditional branching based on domain rules
-- You're doing computation or data transformation
-- The method is hard to read at a glance
-
-```python
-# Service (before)
-def process_batch(self, file_paths: list[str]) -> BatchResult:
-    results = []
-    for path in file_paths:
-        if self._should_process(path):
-            result = self._run_ml(path)
-            results.append(result)
-    return self._aggregate(results)
-
-# Service (after) - orchestration only
-def process_batch(self, file_paths: list[str]) -> BatchResult:
-    return process_batch_workflow(
-        db=self.db,
-        file_paths=file_paths,
-        models_dir=self.models_dir,
-    )
-
-# Workflow (new)
-def process_batch_workflow(
-    db: Database,
-    file_paths: list[str],
-    models_dir: str,
-) -> BatchResult:
-    results = []
-    for path in file_paths:
-        if should_process_file(path, db):  # Component
-            result = run_ml_inference(path, models_dir)  # Component
-            results.append(result)
-    return aggregate_batch_results(results)  # Component
-```
-
-## Data Transfer Objects (DTOs)
-
-### DTO Requirements
-
-**Every public service method that returns non-trivial structured data must return a DTO.**
-
-- **Trivial returns** (bool, int, str, None, list of primitives) do NOT require a DTO
-- **Private methods** (`_prefixed`) do NOT require a DTO
-- **Structured data** (dicts with multiple fields, complex nested data) MUST use a DTO
-
-```python
-# ✅ Correct - trivial returns
-def is_enabled(self) -> bool: ...
-def get_count(self) -> int: ...
-def get_job_id(self) -> str | None: ...
-
-# ✅ Correct - private method
-def _internal_helper(self) -> dict[str, Any]: ...
-
-# ❌ Wrong - public method returning structured data without DTO
-def get_job(self, job_id: int) -> dict[str, Any]: ...
-
-# ✅ Correct - public method returns DTO
-def get_job(self, job_id: int) -> JobDict | None: ...
-```
+DTOs **not needed** for:
+- bool, int, float, str, None
+- Lists of primitives
 
 ### DTO Placement
 
-**Single-service DTOs:**
-- Used only within one service module
-- Define at top of service file or in nested `_models.py`
-- Do not export to `services/__init__.py`
+Service-local DTOs:
+- If used only within the service.
 
-**Cross-layer DTOs:**
-- Used by multiple services OR used by interfaces/workflows
-- Must live in `helpers/dto/<domain>.py`
-- Grouped by domain: `queue.py`, `config.py`, `analytics.py`
-- Exported from `helpers/dto/__init__.py`
+Cross-layer DTOs:
+- Must live under `helpers/dto/`.
 
-## Long-Lived Resources
+---
 
-Services own resources that persist across requests:
+## 7. Long-Lived Resources
 
-```python
-class ProcessingService:
-    def __init__(
-        self,
-        db: Database,
-        config: ProcessorConfig,
-        queue_service: QueueService,
-    ):
-        self.db = db
-        self.config = config
-        self.queue_service = queue_service
-        
-        # Services can own long-lived ML backends
-        self._ml_backend: MLBackend | None = None
-    
-    @property
-    def ml_backend(self) -> MLBackend:
-        """Lazy-load ML backend."""
-        if self._ml_backend is None:
-            self._ml_backend = load_ml_backend(self.config.models_dir)
-        return self._ml_backend
+Allowed to own:
+- DB connections
+- Config snapshots
+- ML model backends
+- Queues / workers
+
+Avoid globals.
+
+---
+
+## 8. Dependency Injection
+
+Use constructor injection:
+
 ```
-
-## Dependency Injection
-
-Services receive dependencies via constructor:
-
-```python
-# ✅ Good - dependencies injected
 class LibraryService:
     def __init__(self, db: Database, config: ConfigService):
-        self.db = db
-        self.config = config
-
-# ❌ Bad - global imports
-class LibraryService:
-    def __init__(self):
-        from nomarr.config import db  # ← No globals
-        self.db = db
+        ...
 ```
 
-## Allowed Imports
+Avoid runtime imports or globals.
 
-```python
-# ✅ Services can import:
-from nomarr.workflows import process_file_workflow
-from nomarr.persistence import Database
-from nomarr.components.ml import load_ml_backend
-from nomarr.helpers.dto import ProcessFileResult
+---
 
-# ❌ Services must NOT import:
-from nomarr.interfaces.api import router  # ← No interface imports
-from pydantic import BaseModel  # ← No Pydantic in services
-```
+## 9. Allowed Imports
 
-## Anti-Patterns
+### Allowed
 
-### ❌ Business Logic in Services
-```python
-# NEVER do this
-def process_file(self, file_path: str) -> ProcessFileResult:
-    # ❌ Computing embeddings in service
-    embeddings = compute_embeddings(file_path)
-    predictions = run_inference(embeddings)
-    tags = convert_to_tags(predictions)
-    return ProcessFileResult(tags=tags)
-```
+- Workflows
+- Persistence abstractions
+- DTOs
+- Helpers
 
-### ❌ Returning Raw Dicts
-```python
-# NEVER do this
-def get_library(self, library_id: int) -> dict[str, Any]:
-    return self.db.libraries.get_by_id(library_id)  # ← Return DTO
+### Forbidden
 
-# DO THIS
-def get_library(self, library_id: int) -> LibraryDict | None:
-    row = self.db.libraries.get_by_id(library_id)
-    if not row:
-        return None
-    return LibraryDict(
-        id=row["id"],
-        name=row["name"],
-        root_path=row["root_path"],
-        # ...
-    )
-```
+- FastAPI
+- HTTPException
+- Pydantic
+- Interface modules
 
-### ❌ Multiple Workflows Without Clear Purpose
-```python
-# NEVER do this - orchestration should happen in workflow
-def complex_operation(self, file_path: str) -> Result:
-    workflow1_result = workflow1(...)
-    if workflow1_result.success:
-        workflow2_result = workflow2(...)
-        # ... more branching
-```
+---
 
-## Summary
+## 10. Anti-Patterns
 
-**Services are wiring hubs:**
-- Own long-lived resources (DB, config, ML backends, queues)
-- Inject dependencies into workflows
-- Return DTOs to interfaces
-- No complex logic - extract to workflows
+### 10.1. Business Logic in Services
+
+Complex logic belongs in workflows.
+
+### 10.2. Returning Raw Dicts
+
+Use DTOs.
+
+### 10.3. API/Transport Logic in Services
+
+No status codes, HTTP semantics, or auth inside services.

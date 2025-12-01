@@ -122,9 +122,9 @@ class TestProcessingQueueList:
 
     def test_list_empty_queue(self, queue):
         """Test listing jobs from empty queue."""
-        jobs, total = queue.list_jobs()
-        assert jobs == []
-        assert total == 0
+        result = queue.list_jobs()
+        assert result.jobs == []
+        assert result.total == 0
 
     def test_list_all_jobs(self, queue):
         """Test listing all jobs without filters."""
@@ -132,18 +132,18 @@ class TestProcessingQueueList:
         queue.add("/music/test2.mp3")
         queue.add("/music/test3.mp3")
 
-        jobs, total = queue.list_jobs(limit=10)
-        assert len(jobs) == 3
-        assert total == 3
+        result = queue.list_jobs(limit=10)
+        assert len(result.jobs) == 3
+        assert result.total == 3
 
     def test_list_with_limit(self, queue):
         """Test listing jobs with limit."""
         for i in range(5):
             queue.add(f"/music/test{i}.mp3")
 
-        jobs, total = queue.list_jobs(limit=2)
-        assert len(jobs) == 2
-        assert total == 5
+        result = queue.list_jobs(limit=2)
+        assert len(result.jobs) == 2
+        assert result.total == 5
 
     def test_list_with_offset(self, queue):
         """Test listing jobs with offset."""
@@ -151,9 +151,9 @@ class TestProcessingQueueList:
         for i in range(5):
             ids.append(queue.add(f"/music/test{i}.mp3"))
 
-        jobs, total = queue.list_jobs(limit=10, offset=2)
-        assert len(jobs) == 3
-        assert total == 5
+        result = queue.list_jobs(limit=10, offset=2)
+        assert len(result.jobs) == 3
+        assert result.total == 5
 
     def test_list_filter_by_status(self, queue):
         """Test listing jobs filtered by status."""
@@ -165,16 +165,16 @@ class TestProcessingQueueList:
         queue.mark_error(id2, "Test error")
 
         # List pending only
-        pending_jobs, pending_total = queue.list_jobs(status="pending")
-        assert len(pending_jobs) == 1
-        assert pending_total == 1
-        assert pending_jobs[0].id == id3
+        pending_result = queue.list_jobs(status="pending")
+        assert len(pending_result.jobs) == 1
+        assert pending_result.total == 1
+        assert pending_result.jobs[0].id == id3
 
         # List done only
-        done_jobs, done_total = queue.list_jobs(status="done")
-        assert len(done_jobs) == 1
-        assert done_total == 1
-        assert done_jobs[0].id == id1
+        done_result = queue.list_jobs(status="done")
+        assert len(done_result.jobs) == 1
+        assert done_result.total == 1
+        assert done_result.jobs[0].id == id1
 
 
 class TestProcessingQueueStatusTransitions:

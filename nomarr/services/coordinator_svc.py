@@ -1,19 +1,19 @@
 """
 Processing coordinator for parallel file processing using multiprocessing.
 Manages a pool of worker processes, each with independent model caches.
+Generic coordinator that can run any ProcessingBackend in a process pool.
 """
 
 from __future__ import annotations
 
 import logging
 import multiprocessing as mp
+from collections.abc import Callable
 from concurrent.futures import BrokenExecutor, ProcessPoolExecutor, TimeoutError
 from dataclasses import dataclass
 from typing import Any
 
 from nomarr.helpers.dto.processing_dto import ProcessFileResult
-from nomarr.helpers.file_validation_helper import make_skip_result, should_skip_processing, validate_file_exists
-from nomarr.workflows.processing.process_file_wf import process_file_workflow
 
 # Set multiprocessing start method to 'spawn' to avoid CUDA context issues
 mp.set_start_method("spawn", force=True)
@@ -27,68 +27,29 @@ class CoordinatorConfig:
     event_broker: Any | None
 
 
-def process_file_wrapper(path: str, force: bool) -> ProcessFileResult | dict[str, Any]:
-    """
-    Wrapper for process_file that runs in a separate process.
-    Each process loads its own model cache on first call.
-
-    This wrapper:
-    - Creates its own config (each process is independent)
-    - Validates the file
-    - Checks skip conditions
-    - Calls the core processor
-
-    Returns:
-        ProcessFileResult on success, or dict with error/skip info
-    """
-    import os
-
-    pid = os.getpid()
-    logging.info(f"[Worker PID {pid}] Starting processing: {path}")
-
-    try:
-        # Each worker process creates its own config
-        from nomarr.services.config_svc import ConfigService
-
-        config_service = ConfigService()
-        processor_config = config_service.make_processor_config()
-
-        # Validate file exists and is readable
-        validate_file_exists(path)
-
-        # Check if we should skip processing
-        should_skip, skip_reason = should_skip_processing(
-            path=path,
-            force=force,
-            namespace=processor_config.namespace,
-            version_tag_key=processor_config.version_tag_key,
-            tagger_version=processor_config.tagger_version,
-        )
-
-        if should_skip:
-            logging.info(f"[Worker PID {pid}] Skipping {path}: {skip_reason}")
-            return make_skip_result(path, skip_reason or "unknown")
-
-        # Process the file (no db update - coordinator workers don't own database)
-        result = process_file_workflow(path, config=processor_config, db=None)
-        logging.info(f"[Worker PID {pid}] Completed: {path}")
-        return result
-
-    except Exception as e:
-        logging.error(f"[Worker PID {pid}] Error processing {path}: {e}")
-        return {"error": str(e), "status": "error"}
+# Type alias for processing backend callables
+ProcessingBackend = Callable[[str, bool], ProcessFileResult | dict[str, Any]]
 
 
 class CoordinatorService:
     """
     Coordinates job submission to the process pool.
+    Generic coordinator that runs a ProcessingBackend in a process pool.
     Does not manage models - each worker process loads independently.
     """
 
-    def __init__(self, cfg: CoordinatorConfig):
+    def __init__(self, cfg: CoordinatorConfig, processing_backend: ProcessingBackend):
+        """
+        Initialize coordinator with processing backend to execute.
+
+        Args:
+            cfg: Coordinator configuration
+            processing_backend: Callable with signature (path: str, force: bool) -> ProcessFileResult | dict
+        """
         self.cfg = cfg
         self._pool: ProcessPoolExecutor | None = None
         self._shutdown = False  # Track shutdown state
+        self._backend = processing_backend
 
     @property
     def worker_count(self) -> int:
@@ -136,7 +97,7 @@ class CoordinatorService:
             raise RuntimeError("ProcessingCoordinator is shutting down")
 
         try:
-            future = self._pool.submit(process_file_wrapper, path, force)
+            future = self._pool.submit(self._backend, path, force)
             # Add timeout to prevent jobs from hanging forever
             # Use a generous timeout (3600s = 1 hour per file)
             try:
@@ -152,7 +113,7 @@ class CoordinatorService:
                 try:
                     if self._pool is None:
                         raise RuntimeError("Failed to recreate process pool")
-                    future = self._pool.submit(process_file_wrapper, path, force)
+                    future = self._pool.submit(self._backend, path, force)
                     result = future.result(timeout=3600)
                 except Exception as retry_error:
                     logging.error(f"[ProcessingCoordinator] Retry failed for {path}: {retry_error}")
@@ -167,7 +128,7 @@ class CoordinatorService:
                     try:
                         if self._pool is None:
                             raise RuntimeError("Failed to recreate process pool")
-                        future = self._pool.submit(process_file_wrapper, path, force)
+                        future = self._pool.submit(self._backend, path, force)
                         result = future.result(timeout=3600)
                     except Exception as retry_error:
                         logging.error(f"[ProcessingCoordinator] Retry failed for {path}: {retry_error}")

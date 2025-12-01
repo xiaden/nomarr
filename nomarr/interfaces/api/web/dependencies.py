@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from nomarr.services.library_svc import LibraryService
     from nomarr.services.navidrome_svc import NavidromeService
     from nomarr.services.queue_svc import QueueService
-    from nomarr.services.worker_svc import WorkerService
+    from nomarr.services.workers_coordinator_svc import WorkersCoordinator
 
 
 def get_config() -> dict[str, Any]:
@@ -45,15 +45,15 @@ def get_queue_service() -> QueueService:
     return service  # type: ignore[no-any-return]
 
 
-def get_worker_service() -> WorkerService:
-    """Get WorkerService instance."""
+def get_workers_coordinator() -> WorkersCoordinator:
+    """Get WorkersCoordinator instance."""
     from fastapi import HTTPException
 
     from nomarr.app import application
 
-    service = application.services.get("worker")
-    if service is None:
-        raise HTTPException(status_code=503, detail="Worker service not available")
+    service = application.services.get("workers")
+    if not service:
+        raise HTTPException(status_code=503, detail="Workers coordinator not available")
     return service  # type: ignore[no-any-return]
 
 
@@ -61,7 +61,7 @@ def get_processor_coordinator() -> CoordinatorService | None:
     """Get CoordinatorService instance (may be None)."""
     from nomarr.app import application
 
-    return application.coordinator
+    return application.tagger_coordinator
 
 
 def get_event_broker() -> Any | None:
@@ -69,13 +69,6 @@ def get_event_broker() -> Any | None:
     from nomarr.app import application
 
     return application.event_broker
-
-
-def get_worker_pool() -> list[Any]:
-    """Get worker pool list."""
-    from nomarr.app import application
-
-    return application.workers
 
 
 def get_library_service() -> LibraryService:

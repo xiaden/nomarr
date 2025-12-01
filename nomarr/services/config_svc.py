@@ -11,7 +11,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import yaml
 
@@ -185,20 +185,67 @@ class ConfigService:
         This is a facade method for the web config endpoint.
 
         Args:
-            worker_service: Optional WorkerService to check live worker status
+            worker_service: Optional WorkersCoordinator to check live worker status
 
         Returns:
             WebConfigResult with complete config info
         """
         config_dto = self.get_config()
         internal_info = self.get_internal_info()
-        worker_enabled = worker_service.is_enabled() if worker_service else internal_info.worker_enabled
+        worker_enabled = worker_service.is_worker_system_enabled() if worker_service else internal_info.worker_enabled
 
         return WebConfigResult(
             config=config_dto.config,
             internal_info=internal_info,
             worker_enabled=worker_enabled,
         )
+
+    def get_worker_count(self, kind: Literal["tagger", "scanner", "recalibration"]) -> int:
+        """
+        Get worker count for a specific worker pool with fallback logic.
+
+        This method supports per-pool worker counts via flat config keys:
+        - tagger_worker_count
+        - scanner_worker_count
+        - recalibration_worker_count
+
+        Fallback order:
+        1. Check for pool-specific key (e.g., tagger_worker_count)
+        2. Fall back to global worker_count if pool-specific key missing
+        3. Default to 1 if neither exists (with warning)
+
+        Args:
+            kind: Worker pool type ("tagger", "scanner", or "recalibration")
+
+        Returns:
+            Worker count for the specified pool (constrained to 1-8)
+
+        Example:
+            >>> config_service.get_worker_count("tagger")
+            4  # from tagger_worker_count or worker_count
+            >>> config_service.get_worker_count("scanner")
+            2  # from scanner_worker_count
+        """
+        cfg = self.get_config().config
+
+        # Try pool-specific key first
+        pool_key = f"{kind}_worker_count"
+        if pool_key in cfg:
+            count = int(cfg[pool_key])
+            self._logger.debug(f"[ConfigService] Using {pool_key}={count}")
+            return max(1, min(8, count))
+
+        # Fall back to global worker_count
+        if "worker_count" in cfg:
+            count = int(cfg["worker_count"])
+            self._logger.debug(f"[ConfigService] Using global worker_count={count} for {kind} pool")
+            return max(1, min(8, count))
+
+        # Default to 1 with warning
+        self._logger.warning(
+            f"[ConfigService] No {pool_key} or global worker_count found, defaulting to 1 for {kind} pool"
+        )
+        return 1
 
     # ----------------------------------------------------------------------
     # Private composition logic

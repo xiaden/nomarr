@@ -1,6 +1,31 @@
 """
-Queue management service.
-Shared business logic for queue operations across all interfaces (CLI, API, Web).
+Queue management service - LEGACY CODE - MARK FOR DELETION
+
+TODO: DELETE THIS ENTIRE FILE
+All queue operations now use components/workflows pattern:
+- components/queue/*.py (enqueue, dequeue, status, cleanup components)
+- workflows/queue/*.py (queue workflows that orchestrate components)
+- Services call workflows, workers call components
+
+MIGRATION STATUS:
+✅ RecalibrationService - uses components/workflows
+✅ LibraryService - uses components/workflows
+✅ BaseWorker + all workers - use components
+✅ Library workflows - use components
+
+REMAINING WORK:
+⏳ Update interfaces (admin_if, public_if, queue_if, processing_if, web/dependencies)
+⏳ Update app.py DI to not pass queue objects to workers
+⏳ Update tests (conftest.py, test_queue_service.py, test_processing_queue.py)
+⏳ Delete this file once all imports are removed
+
+CLASSES IN THIS FILE (ALL LEGACY):
+- BaseQueue - Abstract base (unused, workers call components)
+- QueueJob - Simple dataclass (may need to keep or move to helpers/dto)
+- ProcessingQueue - Tag queue wrapper (unused, use components)
+- RecalibrationQueue - Calibration queue wrapper (unused, use components)
+- ScanQueue - Library queue wrapper (unused, use components)
+- QueueService - Admin service (unused, interfaces should call workflows)
 """
 
 from __future__ import annotations
@@ -72,6 +97,29 @@ class BaseQueue(ABC):
 
         Returns:
             job_id of created job
+        """
+        ...
+
+    @abstractmethod
+    def queue_stats(self) -> dict[str, int]:
+        """
+        Get queue statistics (counts by status).
+
+        Returns:
+            Dict with keys: 'pending', 'running', 'done', 'error'
+        """
+        ...
+
+    @abstractmethod
+    def get_active_jobs(self, limit: int = 50) -> list[dict[str, Any]]:
+        """
+        Get currently active (pending or running) jobs.
+
+        Args:
+            limit: Maximum number of jobs to return
+
+        Returns:
+            List of job dicts with id, path, status, and other relevant fields
         """
         ...
 
@@ -226,6 +274,27 @@ class ProcessingQueue(BaseQueue):
         """Return number of pending/running jobs."""
         return self.db.tag_queue.queue_depth()
 
+    def queue_stats(self) -> dict[str, int]:
+        """
+        Get queue statistics (counts by status).
+
+        Returns:
+            Dict with keys: 'pending', 'running', 'done', 'error'
+        """
+        return self.db.tag_queue.queue_stats()
+
+    def get_active_jobs(self, limit: int = 50) -> list[dict[str, Any]]:
+        """
+        Get currently active (pending or running) jobs.
+
+        Args:
+            limit: Maximum number of jobs to return
+
+        Returns:
+            List of job dicts with id, path, status, started_at
+        """
+        return self.db.tag_queue.get_active_jobs(limit=limit)
+
     def delete_by_status(self, statuses: list[str]) -> int:
         """
         Delete jobs by status.
@@ -306,6 +375,44 @@ class RecalibrationQueue(BaseQueue):
         """
         return self.db.calibration_queue.enqueue_calibration(path)
 
+    def queue_stats(self) -> dict[str, int]:
+        """
+        Get queue statistics (counts by status).
+
+        Returns:
+            Dict with keys: 'pending', 'running', 'done', 'error'
+        """
+        return self.db.calibration_queue.queue_stats()
+
+    def get_active_jobs(self, limit: int = 50) -> list[dict[str, Any]]:
+        """
+        Get currently active (pending or running) jobs.
+
+        Args:
+            limit: Maximum number of jobs to return
+
+        Returns:
+            List of job dicts with id, path, status, started_at
+        """
+        return self.db.calibration_queue.get_active_jobs(limit=limit)
+
+    def depth(self) -> int:
+        """Return number of pending jobs."""
+        stats = self.db.calibration_queue.queue_stats()
+        return stats.get("pending", 0)
+
+    def clear_queue(self) -> int:
+        """
+        Clear all pending and completed recalibration jobs.
+
+        Returns:
+            Number of jobs cleared
+
+        Note:
+            Running jobs will complete but be removed from queue
+        """
+        return self.db.calibration_queue.clear_calibration_queue()
+
 
 class ScanQueue(BaseQueue):
     """
@@ -349,6 +456,61 @@ class ScanQueue(BaseQueue):
         """
         return self.db.library_queue.enqueue_scan(path, force)
 
+    def queue_stats(self) -> dict[str, int]:
+        """
+        Get queue statistics (counts by status).
+
+        Returns:
+            Dict with keys: 'pending', 'running', 'done', 'error'
+        """
+        return self.db.library_queue.queue_stats()
+
+    def get_active_jobs(self, limit: int = 50) -> list[dict[str, Any]]:
+        """
+        Get currently active (pending or running) jobs.
+
+        Args:
+            limit: Maximum number of jobs to return
+
+        Returns:
+            List of job dicts with id, path, status, started_at
+        """
+        return self.db.library_queue.get_active_jobs(limit=limit)
+
+    def depth(self) -> int:
+        """Return number of pending jobs."""
+        return self.db.library_queue.count_pending_scans()
+
+    def clear_queue(self) -> int:
+        """
+        Clear all pending scan jobs.
+
+        Returns:
+            Number of jobs cleared
+        """
+        return self.db.library_queue.clear_scan_queue()
+
+    def list_jobs(self, limit: int = 100) -> list[dict[str, Any]]:
+        """
+        List recent scan jobs.
+
+        Args:
+            limit: Maximum number of jobs to return
+
+        Returns:
+            List of job dicts
+        """
+        return self.db.library_queue.list_scan_jobs(limit=limit)
+
+    def count_pending(self) -> int:
+        """
+        Count pending scan jobs.
+
+        Returns:
+            Number of pending jobs
+        """
+        return self.db.library_queue.count_pending_scans()
+
 
 class QueueService:
     """
@@ -371,9 +533,11 @@ class QueueService:
         self.config = config
         self.event_broker = event_broker
 
-    def add_files(self, paths: str | list[str], force: bool = False, recursive: bool = True) -> EnqueueFilesResult:
+    def enqueue_files_for_tagging(
+        self, paths: str | list[str], force: bool = False, recursive: bool = True
+    ) -> EnqueueFilesResult:
         """
-        Add audio files to the queue for processing.
+        Enqueue audio files for ML tagging.
 
         Handles both single files and directories. Automatically discovers
         audio files in directories when recursive=True.
@@ -425,7 +589,7 @@ class QueueService:
 
         for path in paths:
             try:
-                result = self.add_files(
+                result = self.enqueue_files_for_tagging(
                     paths=[path],
                     force=force,
                     recursive=True,
@@ -746,11 +910,11 @@ class QueueService:
             logging.info("[QueueService] No tagged files found to enqueue")
             return 0
 
-        # Enqueue all tagged files using the database queue operations
+        # Enqueue all tagged files using the queue interface
         count = 0
         for path in tagged_paths:
             try:
-                self.queue.db.tag_queue.enqueue(path, force=force)
+                self.queue.enqueue(path, force=force)
                 count += 1
             except Exception as e:
                 logging.error(f"[QueueService] Failed to enqueue {path}: {e}")

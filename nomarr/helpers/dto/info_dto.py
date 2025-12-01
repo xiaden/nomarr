@@ -79,7 +79,7 @@ class WorkerInfo:
 
 @dataclass
 class PublicInfoResult:
-    """Complete public info result from get_public_info_for_api."""
+    """Complete public info result from get_public_info."""
 
     config: ConfigInfo
     models: ModelsInfo

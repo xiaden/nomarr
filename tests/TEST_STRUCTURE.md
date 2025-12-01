@@ -335,8 +335,8 @@ pytest tests/ -v -m "not slow"
 ### Example
 
 ```python
-class TestQueueServiceAddFiles:
-    """Test QueueService.add_files() operations."""
+class TestQueueServiceEnqueueFiles:
+    """Test QueueService.enqueue_files_for_tagging() operations."""
 
     def test_add_single_file(self, queue_service):
         """Should add single file to queue successfully."""

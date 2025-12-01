@@ -17,23 +17,33 @@ import logging
 import threading
 import time
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar
 
+from nomarr.components.queue import (
+    get_active_jobs,
+    get_next_job,
+    get_queue_stats,
+    mark_job_complete,
+    mark_job_error,
+)
 from nomarr.helpers.dto.queue_dto import DequeueResult
 from nomarr.persistence.db import Database
 
 if TYPE_CHECKING:
-    from nomarr.services.queue_svc import BaseQueue
+    pass
 
 
-# Type variable for worker result types
-TResult = TypeVar("TResult")
+# Type variable for worker result types (covariant for return types)
+TResult = TypeVar("TResult", covariant=True)
+
+# Queue type literal for type safety
+QueueType = Literal["tag", "library", "calibration"]
 
 
 # ----------------------------------------------------------------------
 #  BaseWorker - Generic Background Worker
 # ----------------------------------------------------------------------
-class BaseWorker(threading.Thread):
+class BaseWorker(threading.Thread, Generic[TResult]):
     """
     Generic background worker for queue processing.
 
@@ -65,7 +75,7 @@ class BaseWorker(threading.Thread):
     def __init__(
         self,
         name: str,
-        queue: BaseQueue,
+        queue_type: QueueType,
         process_fn: Callable[[str, bool], TResult],
         db: Database,
         event_broker: Any,
@@ -77,15 +87,15 @@ class BaseWorker(threading.Thread):
 
         Args:
             name: Worker thread name (e.g., "TaggerWorker")
-            queue: BaseQueue instance for job operations
+            queue_type: Queue type - "tag", "library", or "calibration"
             process_fn: Function to process jobs, signature: (path: str, force: bool) -> TResult
-            db: Database instance for meta operations
+            db: Database instance for meta operations and queue access
             event_broker: Event broker for SSE state updates (required)
             worker_id: Unique worker ID (for multi-worker setups)
             interval: Polling interval in seconds (default: 2)
         """
         super().__init__(daemon=True, name=f"{name}-{worker_id}")
-        self.queue = queue
+        self.queue_type: QueueType = queue_type
         self.db = db
         self.process_fn = process_fn
         self.worker_id = worker_id
@@ -99,6 +109,31 @@ class BaseWorker(threading.Thread):
         self._last_heartbeat = 0
         self._event_broker = event_broker
         self._cancel_requested = False
+
+    # ---------------------------- Queue Operations (use components) ----------------------------
+
+    def _dequeue(self) -> DequeueResult | None:
+        """Dequeue next pending job using queue component."""
+        job = get_next_job(self.db, self.queue_type)
+        if not job:
+            return None
+        return DequeueResult(job_id=job["id"], file_path=job["path"], force=job["force"])
+
+    def _mark_complete(self, job_id: int) -> None:
+        """Mark job as complete using queue component."""
+        mark_job_complete(self.db, job_id, self.queue_type)
+
+    def _mark_error(self, job_id: int, error: str) -> None:
+        """Mark job as failed using queue component."""
+        mark_job_error(self.db, job_id, error, self.queue_type)
+
+    def _queue_stats(self) -> dict[str, int]:
+        """Get queue statistics using queue component."""
+        return get_queue_stats(self.db, self.queue_type)
+
+    def _get_active_jobs(self, limit: int = 50) -> list[dict[str, Any]]:
+        """Get active jobs using queue component."""
+        return get_active_jobs(self.db, self.queue_type, limit=limit)
 
     # ---------------------------- Control Methods ----------------------------
 
@@ -171,7 +206,7 @@ class BaseWorker(threading.Thread):
         Returns:
             DequeueResult or None if no jobs available
         """
-        result = self.queue.dequeue()
+        result = self._dequeue()
         if not result:
             return None
 
@@ -203,7 +238,7 @@ class BaseWorker(threading.Thread):
             elapsed = round(time.time() - t0, 2)
 
             # Mark job as done
-            self.queue.mark_complete(job_id)
+            self._mark_complete(job_id)
             self._update_avg_time(elapsed)
 
             # Convert result to dict for event publishing
@@ -229,7 +264,7 @@ class BaseWorker(threading.Thread):
 
         except KeyboardInterrupt:
             # Job was cancelled via cancel() - mark as error with cancellation message
-            self.queue.mark_error(job_id, "Cancelled by user")
+            self._mark_error(job_id, "Cancelled by user")
 
             self._publish_job_state(job_id, path, "error", error="Cancelled by user")
             self._publish_queue_stats()
@@ -240,7 +275,7 @@ class BaseWorker(threading.Thread):
         except RuntimeError as e:
             # RuntimeError during shutdown - mark as error
             if self._shutdown or "shutting down" in str(e).lower():
-                self.queue.mark_error(job_id, "Shutdown requested")
+                self._mark_error(job_id, "Shutdown requested")
 
                 self._publish_job_state(job_id, path, "error", error="Shutdown requested")
                 self._publish_queue_stats()
@@ -259,7 +294,7 @@ class BaseWorker(threading.Thread):
 
     def _mark_job_error(self, job_id: int, path: str, error_message: str) -> None:
         """Mark job as failed and publish error event."""
-        self.queue.mark_error(job_id, error_message)
+        self._mark_error(job_id, error_message)
 
         self._publish_job_state(job_id, path, "error", error=error_message)
         self._publish_queue_stats()
@@ -289,13 +324,8 @@ class BaseWorker(threading.Thread):
         if current_avg_str:
             current_avg = float(current_avg_str)
         else:
-            # Calculate from last 5 jobs if no stored average
-            rows = self.db.tag_queue.get_recent_done_jobs_timing(limit=5)
-            if rows:
-                times = [(finished - started) / 1000.0 for finished, started in rows]
-                current_avg = sum(times) / len(times)
-            else:
-                current_avg = 100.0  # Default estimate
+            # No stored average yet - use current job time as initial estimate
+            current_avg = job_elapsed
 
         # Weighted average: 80% old, 20% new
         new_avg = (current_avg * 0.8) + (job_elapsed * 0.2)
@@ -326,11 +356,11 @@ class BaseWorker(threading.Thread):
     def _publish_queue_stats(self) -> None:
         """Publish queue statistics to event broker."""
         try:
-            # Get current queue stats from persistence layer
-            stats = self.db.tag_queue.queue_stats()
+            # Get current queue stats from the queue interface
+            stats = self._queue_stats()
 
-            # Get active jobs (pending + running) from persistence layer
-            jobs = self.db.tag_queue.get_active_jobs(limit=50)
+            # Get active jobs (pending + running) from the queue interface
+            jobs = self._get_active_jobs(limit=50)
 
             queue_state = {"stats": stats, "jobs": jobs}
             self._event_broker.update_queue_state(**queue_state)

@@ -17,8 +17,10 @@ EXPECTED DATABASE INTERFACE:
 The `db` parameter must provide:
 - db.library_files.upsert_library_file(path, **metadata) -> int
 - db.library_files.get_library_file(path) -> dict | None
-- db.tag_queue.enqueue(path, force) -> int
 - db.library_tags.upsert_file_tags(file_id, tags) -> None
+
+EXPECTED COMPONENTS:
+- enqueue_file() from nomarr.components.queue (for auto-tagging untagged files)
 
 USAGE:
     from nomarr.workflows.library.scan_single_file_wf import scan_single_file_workflow
@@ -38,6 +40,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from nomarr.components.queue import enqueue_file
 from nomarr.helpers.dto.library_dto import ScanSingleFileWorkflowParams, UpdateLibraryFileFromTagsParams
 
 if TYPE_CHECKING:
@@ -156,8 +159,8 @@ def scan_single_file_workflow(
                         needs_tag = False
 
                 if needs_tag:
-                    # Enqueue for ML tagging (don't force)
-                    db.tag_queue.enqueue(file_path, force=False)
+                    # Enqueue for ML tagging (don't force) - use queue component
+                    enqueue_file(db, file_path, force=False, queue_type="tag")
                     result["auto_tagged"] = True
                     logging.debug(f"[scan_single_file] Auto-queued untagged file: {file_path}")
 

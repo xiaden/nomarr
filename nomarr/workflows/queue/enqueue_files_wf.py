@@ -1,39 +1,27 @@
 """
-Queue operations workflow.
+Queue enqueue workflow - discover and enqueue audio files.
 
 This workflow handles file discovery and batch enqueueing for audio processing.
 
 ARCHITECTURE:
-- Pure infrastructure workflow that orchestrates: filesystem discovery + queue operations
+- Pure workflow that orchestrates: filesystem discovery + queue component calls
 - Does NOT import services, interfaces, or app
-- Callers provide explicit dependencies
-- Queue-agnostic: works with any queue that has an enqueue(path, force) method
-
-PATH VALIDATION:
-- This workflow uses helpers.files.collect_audio_files() which safely handles:
-  - Existence checking
-  - Audio file filtering
-  - Directory traversal
-- For user-controlled paths, callers should validate through helpers.files first
-- This workflow will skip non-existent paths gracefully via collect_audio_files()
+- Callers provide db + queue_type + paths
+- Uses queue components for enqueue operations
 
 EXPECTED DEPENDENCIES:
-- `queue: QueueProtocol` - Any queue object with enqueue(path, force) -> int method
-  Examples: ProcessingQueue, ScanQueue, RecalibrationQueue from services.queue_svc
-  Or raw DB facades: db.tag_queue, db.library_queue, db.calibration_queue (if wrapped)
+- `db: Database` - Database instance
+- `queue_type: QueueType` - Which queue to use ("tag", "library", "calibration")
 - `paths: str | list[str]` - File or directory paths to process
 - `force: bool` - Whether to reprocess already-processed files
 - `recursive: bool` - Whether to scan directories recursively
 
 USAGE:
     from nomarr.workflows.queue.enqueue_files_wf import enqueue_files_workflow
-    # Queue is passed in by caller (services layer)
-    # Example (from services layer):
-    #   queue = ProcessingQueue(db)
-    #   result = enqueue_files_workflow(queue, paths, force, recursive)
 
     result = enqueue_files_workflow(
-        queue=queue,  # Injected by caller
+        db=database,
+        queue_type="tag",
         paths=["/music/album1", "/music/single.mp3"],
         force=False,
         recursive=True
@@ -44,52 +32,39 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Literal
 
+from nomarr.components.queue import check_file_needs_processing, enqueue_file, get_queue_depth
 from nomarr.helpers.dto.queue_dto import EnqueueFilesResult
 from nomarr.helpers.files_helper import collect_audio_files
 
 if TYPE_CHECKING:
-    pass
+    from nomarr.persistence.db import Database
 
-
-class QueueProtocol(Protocol):
-    """
-    Protocol for queue objects that can enqueue file paths.
-
-    Any object with an enqueue method matching this signature can be used
-    with enqueue_files_workflow.
-    """
-
-    def enqueue(self, path: str, force: bool = False) -> int:
-        """Enqueue a file path and return job ID."""
-        ...
-
-    def depth(self) -> int:
-        """Return number of pending jobs."""
-        ...
-
+QueueType = Literal["tag", "library", "calibration"]
 
 logger = logging.getLogger(__name__)
 
 
 def enqueue_files_workflow(
-    queue: QueueProtocol,
+    db: Database,
+    queue_type: QueueType,
     paths: str | list[str],
     force: bool = False,
     recursive: bool = True,
 ) -> EnqueueFilesResult:
     """
-    Discover audio files from paths and enqueue them into the given queue.
+    Discover audio files from paths and enqueue them into specified queue.
 
-    This is a generalized infrastructure workflow that:
+    This workflow:
     1. Uses collect_audio_files() to safely discover audio files
-    2. Enqueues each discovered file into the provided queue
-    3. Returns summary statistics
+    2. Checks each file if needs processing (unless force=True)
+    3. Enqueues files via queue components
+    4. Returns summary statistics
 
     Args:
-        queue: Queue object with enqueue(path, force) method
-               (e.g., ProcessingQueue, ScanQueue, RecalibrationQueue)
+        db: Database instance
+        queue_type: Which queue to use ("tag", "library", "calibration")
         paths: Single path or list of paths (files or directories)
         force: If True, reprocess files even if already processed
         recursive: If True, recursively scan directories for audio files
@@ -104,12 +79,6 @@ def enqueue_files_workflow(
     Raises:
         FileNotFoundError: If any path doesn't exist
         ValueError: If no audio files found at given paths
-
-    Example:
-        >>> # Queue object is passed in by caller (services layer)
-        >>> # e.g., queue = ProcessingQueue(db)
-        >>> result = enqueue_files_workflow(queue=queue, paths="/music/library", force=False, recursive=True)
-        >>> print(f"Queued {result.files_queued} files")
     """
     # Normalize paths to list
     if isinstance(paths, str):
@@ -122,8 +91,7 @@ def enqueue_files_workflow(
             raise FileNotFoundError(f"Path not found: {path}")
 
     # Discover audio files from all paths
-    # collect_audio_files() handles: existence checks, audio filtering, directory traversal
-    logger.debug(f"[queue_workflow] Discovering audio files from {len(paths)} path(s)")
+    logger.debug(f"[enqueue_files_wf] Discovering audio files from {len(paths)} path(s)")
     audio_files = collect_audio_files(paths, recursive=recursive)
 
     if not audio_files:
@@ -137,17 +105,26 @@ def enqueue_files_workflow(
         else:
             raise ValueError(f"No audio files found in provided paths: {paths}")
 
-    # Enqueue all discovered files into the provided queue
+    # Enqueue files using queue components
     job_ids = []
+    skipped = 0
     for file_path in audio_files:
-        job_id = queue.enqueue(file_path, force)
-        job_ids.append(job_id)
-        logger.debug(f"[queue_workflow] Queued job {job_id} for {file_path}")
+        # Check if file needs processing
+        if check_file_needs_processing(db, file_path, force, queue_type):
+            job_id = enqueue_file(db, file_path, force, queue_type)
+            job_ids.append(job_id)
+            logger.debug(f"[enqueue_files_wf] Queued job {job_id} for {file_path}")
+        else:
+            skipped += 1
+            logger.debug(f"[enqueue_files_wf] Skipped unchanged file: {file_path}")
 
     # Get final queue depth
-    queue_depth = queue.depth()
+    queue_depth = get_queue_depth(db, queue_type)
 
-    logger.info(f"[queue_workflow] Queued {len(job_ids)} files from {len(paths)} path(s) (queue depth={queue_depth})")
+    logger.info(
+        f"[enqueue_files_wf] Queued {len(job_ids)} files from {len(paths)} path(s) "
+        f"(skipped {skipped}, queue depth={queue_depth})"
+    )
 
     return EnqueueFilesResult(
         job_ids=job_ids,

@@ -6,6 +6,8 @@ Tests use REAL fixtures from conftest.py - no redundant mocks.
 
 import pytest
 
+from nomarr.helpers.dto.library_dto import LibraryScanStatusResult
+
 
 class TestLibraryServiceCancelScan:
     """Test LibraryService.cancel_scan() operations."""
@@ -47,7 +49,7 @@ class TestLibraryServiceGetStatus:
         result = real_library_service.get_status()
 
         # Assert
-        assert isinstance(result, dict)
+        assert isinstance(result, LibraryScanStatusResult)
         # TODO: Verify returned data is correct
 
 
@@ -104,13 +106,17 @@ class TestSublibraryOverlapDetection:
             "id": id,
             "name": "Library 2",
             "root_path": str(lib2_path),
+            "is_enabled": True,
+            "is_default": False,
+            "created_at": "2025-01-01T00:00:00",
+            "updated_at": "2025-01-01T00:00:00",
         }
 
         # Act - create second library with disjoint root
         result = real_library_service.create_library(name="Library 2", root_path=str(lib2_path))
 
         # Assert
-        assert result["name"] == "Library 2"
+        assert result.name == "Library 2"
 
     def test_create_sublibrary_nested_inside_existing_fails(self, real_library_service, tmp_path):
         """Should reject creating a library nested inside an existing one."""
@@ -172,6 +178,10 @@ class TestSublibraryOverlapDetection:
             "id": 1,
             "name": "Library 1",
             "root_path": str(lib1_path),
+            "is_enabled": True,
+            "is_default": False,
+            "created_at": "2025-01-01T00:00:00",
+            "updated_at": "2025-01-01T00:00:00",
         }
         real_library_service.db.libraries.list_libraries = lambda enabled_only=False: [
             {"id": 1, "name": "Library 1", "root_path": str(lib1_path)},
@@ -203,6 +213,10 @@ class TestSublibraryOverlapDetection:
             "id": 1,
             "name": "Library 1",
             "root_path": str(lib1_path),
+            "is_enabled": True,
+            "is_default": False,
+            "created_at": "2025-01-01T00:00:00",
+            "updated_at": "2025-01-01T00:00:00",
         }
         real_library_service.db.libraries.list_libraries = lambda enabled_only=False: [
             {"id": 1, "name": "Library 1", "root_path": str(lib1_path)},
@@ -227,6 +241,10 @@ class TestSublibraryOverlapDetection:
             "id": 1,
             "name": "Library 1",
             "root_path": str(lib1_path),
+            "is_enabled": True,
+            "is_default": False,
+            "created_at": "2025-01-01T00:00:00",
+            "updated_at": "2025-01-01T00:00:00",
         }
         real_library_service.db.libraries.list_libraries = lambda enabled_only=False: [
             {"id": 1, "name": "Library 1", "root_path": str(lib1_path)},

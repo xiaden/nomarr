@@ -22,7 +22,7 @@ import logging
 from collections import Counter, defaultdict
 from collections.abc import Sequence
 
-from nomarr.helpers.dto.analytics import (
+from nomarr.helpers.dto.analytics_dto import (
     ArtistTagProfile,
     ComputeArtistTagProfileParams,
     ComputeMoodValueCoOccurrencesParams,

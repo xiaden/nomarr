@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from nomarr.services.coordinator_svc import CoordinatorService
     from nomarr.services.ml_svc import MLService
     from nomarr.services.queue_svc import QueueService
-    from nomarr.services.worker_svc import WorkerService
+    from nomarr.services.workers_coordinator_svc import WorkersCoordinator
 
 
 logger = logging.getLogger(__name__)
@@ -56,39 +56,41 @@ class InfoService:
     def __init__(
         self,
         cfg: InfoConfig,
-        worker_service: WorkerService | None = None,
+        workers_coordinator: WorkersCoordinator | None = None,
         queue_service: QueueService | None = None,
         processor_coord: CoordinatorService | None = None,
         ml_service: MLService | None = None,
-        worker_pool: list | None = None,
     ):
         """
         Initialize info service.
 
         Args:
             cfg: Info configuration
-            worker_service: Worker service instance (optional)
+            workers_coordinator: Workers coordinator instance (optional)
             queue_service: Queue service instance (optional)
             processor_coord: Processor coordinator instance (optional)
             ml_service: ML service instance (optional)
-            worker_pool: Worker pool list (optional)
         """
         self.cfg = cfg
-        self.worker_service = worker_service
+        self.workers_coordinator = workers_coordinator
         self.queue_service = queue_service
         self.processor_coord = processor_coord
         self.ml_service = ml_service
-        self.worker_pool = worker_pool or []
 
-    def get_system_info_for_api(self) -> SystemInfoResult:
+    def get_system_info(self) -> SystemInfoResult:
         """
         Get system information for API endpoints.
 
         Returns:
             SystemInfoResult DTO with version, namespace, models_dir, worker status
         """
-        worker_enabled = self.worker_service.is_enabled() if self.worker_service else False
-        worker_count = self.worker_service.cfg.worker_count if self.worker_service else 0
+        worker_enabled = self.workers_coordinator.is_worker_system_enabled() if self.workers_coordinator else False
+        # For worker_count, we'll use the total from all pools
+        worker_count = 0
+        if self.workers_coordinator:
+            status = self.workers_coordinator.get_workers_status()
+            for pool_status in status["pools"].values():
+                worker_count += pool_status["worker_count"]
 
         return SystemInfoResult(
             version=self.cfg.version,
@@ -151,7 +153,7 @@ class InfoService:
             warnings=warnings,
         )
 
-    def get_public_info_for_api(self) -> PublicInfoResult:
+    def get_public_info(self) -> PublicInfoResult:
         """
         Get comprehensive public info for API endpoint.
 
@@ -165,13 +167,17 @@ class InfoService:
             PublicInfoResult DTO with config, models, queue, worker sections
         """
         # Worker status computation
-        worker_enabled = self.worker_service.is_enabled() if self.worker_service else False
-        worker_alive = any(w.is_alive() for w in self.worker_pool) if worker_enabled and self.worker_pool else False
-        last_hb = (
-            max((w.last_heartbeat() for w in self.worker_pool if w.is_alive()), default=None)
-            if worker_enabled and self.worker_pool
-            else None
-        )
+        worker_enabled = self.workers_coordinator.is_worker_system_enabled() if self.workers_coordinator else False
+        worker_alive = False
+        last_hb = None
+
+        if self.workers_coordinator and worker_enabled:
+            status = self.workers_coordinator.get_workers_status()
+            # Check if any pool has running workers
+            for pool_status in status["pools"].values():
+                if pool_status["running"]:
+                    worker_alive = True
+                    break
 
         # Queue info
         queue_stats = self.queue_service.get_status() if self.queue_service else None

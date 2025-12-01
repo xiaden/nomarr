@@ -30,6 +30,8 @@ You are here to help maintain that architecture, not invent a new one.
 **Always:**
 
 - follow the layering rules and directory placement below
+- follow naming standards in `docs/NAMING_STANDARDS.md`
+- consult layer-specific guidelines in each layer's base folder (e.g., `services/SERVICES.md`)
 - use dependency injection (receive `db`, config, ML backends, etc. as parameters or constructor deps)
 - keep imports local when they are optional or heavy (Essentia, ML backends, etc.)
 - write mypy-friendly, fully type-annotated Python
@@ -59,7 +61,20 @@ Responsibilities:
 ---
 ## 2. Architecture & Dependencies
 
-### 2.1 High-Level Flow
+### 2.1 Naming Standards
+
+**All code must follow the naming conventions in `docs/NAMING_STANDARDS.md`.**
+
+Key rules:
+- Services: `<Noun>Service` (e.g., `LibraryService`, `QueueService`)
+- Service methods: `<verb>_<noun>` (e.g., `get_library`, `scan_library`, `pause_workers`)
+- No transport prefixes (`api_`, `web_`, `cli_`)
+- No meaningless suffixes (`_for_admin`, `_internal`)
+- DTOs: `<Name>Result` or `<Name>DTO`
+
+See the full document for allowed verbs, forbidden patterns, and refactoring examples.
+
+### 2.2 High-Level Flow
 
 For any non-trivial operation:
 
@@ -70,7 +85,7 @@ interfaces  →  services  →  workflows  →  components  →  (persistence / 
                                             └─ ml
 ```
 
-### 2.2 Complexity & Clarity Guidelines
+### 2.3 Complexity & Clarity Guidelines
 
 Each layer has clarity-focused guidelines to enforce separation of concerns. **Judge complexity by readability and logic density, not strict line counts.**
 
@@ -106,7 +121,7 @@ Each layer has clarity-focused guidelines to enforce separation of concerns. **J
   - If a function is unwieldy → break into `_private` helpers within the same file
   - If `_private` helpers are reused across multiple modules → centralize them in a single component module for that domain
 
-### 2.3 Allowed Dependencies (Direction)
+### 2.4 Allowed Dependencies (Direction)
 
 - `interfaces`:
 

@@ -1,19 +1,36 @@
-# Components Layer
+## Components Layer
 
-This layer contains heavy, domain-specific logic (analytics, tagging, ML).
+The **components layer** contains heavy, domain-specific logic (analytics, tagging, ML, etc.). Components are the workhorses that do the real computational work of the system.
 
-## Purpose
+They are:
 
-Components are **domain logic modules** that:
-1. Implement complex computations
-2. Operate on data via persistence layer
-3. Provide reusable building blocks for workflows
+* **Domain logic modules** for a specific area (analytics, ML, tagging).
+* **Leaf modules** in the architecture (nothing depends *on them* except workflows and services).
+* **Reusable building blocks** used by workflows.
 
-**Heavy business logic lives here.**
+> **Rule:** Heavy business logic lives here. Wiring lives in services. Control flow composition lives in workflows.
 
-## Structure
+---
 
-```
+## 1. Position in the Architecture
+
+Layers:
+
+* **Interfaces** – HTTP/CLI/SSE, Pydantic, auth, HTTP status codes
+* **Services** – dependency wiring, thin orchestration, DTO boundaries
+* **Workflows** – domain flows, multi-step operations, control logic
+* **Components** – heavy computations, analytics, ML, tagging
+* **Persistence / Helpers** – DB access and generic utilities
+
+Components sit **below workflows** and **must not import** services or interfaces.
+
+---
+
+## 2. Directory Structure & Naming
+
+Components live under `nomarr/components/`, grouped by domain:
+
+```text
 components/
 ├── analytics/
 │   ├── tag_statistics.py
@@ -30,314 +47,312 @@ components/
     └── tag_resolution.py
 ```
 
-## Complexity Guidelines
+Naming rules:
 
-### Rule: Heavy Logic Lives Here
+* Modules: `snake_case` by domain (`tag_statistics.py`, `embeddings.py`).
+* Public functions: clear verb–noun names (`compute_embeddings`, `compute_tag_statistics`, `aggregate_mood_tags`).
+* Private helpers: `_prefix` (`_load_model`, `_format_tag_stats`).
 
-Components contain the **actual computational work**:
-- ML inference and embeddings
-- Statistical analysis
-- Tag aggregation and resolution
-- Complex data transformations
+Classes should be rare; prefer **stateless, pure functions** unless state is truly needed (e.g., caching inside a single call).
 
-**If a function is unwieldy, break into `_private` helpers within the same file.**
+---
 
-```python
-# ✅ Good - clear, focused component
-def compute_embeddings(
-    file_path: str,
-    models_dir: str,
-    backbone: str,
-) -> np.ndarray:
-    """Compute embeddings for an audio file."""
-    audio = _load_audio(file_path)
-    segments = _segment_audio(audio)
-    model = _load_model(models_dir, backbone)
-    
-    embeddings = []
-    for segment in segments:
-        emb = model.predict(segment)
-        embeddings.append(emb)
-    
-    return np.array(embeddings)
+## 3. What Belongs in Components
 
-def _load_audio(file_path: str) -> np.ndarray:
-    """Private helper - loads audio."""
-    ...
+Components implement **heavy or specialized domain logic**, for example:
 
-def _segment_audio(audio: np.ndarray) -> list[np.ndarray]:
-    """Private helper - segments audio."""
-    ...
+* ML inference and embeddings
+* Calibration logic and scoring
+* Tag aggregation and resolution
+* Complex statistical analysis
+* Non-trivial data transformations
 
-def _load_model(models_dir: str, backbone: str) -> Model:
-    """Private helper - loads ML model."""
-    ...
-```
-
-### When to Extract Private Helpers
-
-**Create `_private` helpers when:**
-- A function exceeds ~80 LOC
-- There's repeated logic within the module
-- The function has distinct, extractable steps
+Examples:
 
 ```python
-# Before - unwieldy function
-def compute_tag_statistics(db: Database, library_id: int) -> TagStats:
-    # 40 lines of querying
-    rows = db.execute(complex_query)
-    
-    # 40 lines of aggregation
-    stats = {}
-    for row in rows:
-        # complex aggregation logic
-    
-    # 40 lines of formatting
-    formatted = {}
-    for key, value in stats.items():
-        # complex formatting logic
-    
-    return TagStats(formatted)
+# Analytics example
 
-# After - extracted helpers
 def compute_tag_statistics(db: Database, library_id: int) -> TagStats:
     rows = _query_tag_data(db, library_id)
     stats = _aggregate_tag_stats(rows)
     formatted = _format_tag_stats(stats)
     return TagStats(formatted)
 
-def _query_tag_data(db: Database, library_id: int) -> list[dict]:
-    """Private helper - queries tag data."""
-    # 40 lines of querying
-    ...
 
-def _aggregate_tag_stats(rows: list[dict]) -> dict[str, int]:
-    """Private helper - aggregates statistics."""
-    # 40 lines of aggregation
-    ...
+# ML example
 
-def _format_tag_stats(stats: dict[str, int]) -> dict[str, Any]:
-    """Private helper - formats for output."""
-    # 40 lines of formatting
-    ...
-```
+def compute_embeddings(
+    file_path: str,
+    models_dir: str,
+    backbone: str,
+) -> np.ndarray:
+    audio = _load_audio(file_path)
+    segments = _segment_audio(audio)
+    model = _load_model(models_dir, backbone)
+    return np.stack([model.predict(seg) for seg in segments])
 
-### When to Centralize Helpers
 
-**If `_private` helpers are reused across multiple modules:**
+# Tagging example
 
-Consider centralizing them in a single component module for that domain.
-
-```python
-# Before - _load_model duplicated in 3 files
-# components/ml/embeddings.py
-def _load_model(models_dir: str, backbone: str) -> Model: ...
-
-# components/ml/inference.py
-def _load_model(models_dir: str, backbone: str) -> Model: ...
-
-# components/ml/calibration.py
-def _load_model(models_dir: str, backbone: str) -> Model: ...
-
-# After - centralized in model_loading.py
-# components/ml/model_loading.py
-def load_model(models_dir: str, backbone: str) -> Model:
-    """Public helper - loads ML model (used by multiple modules)."""
-    ...
-
-# Now other modules import it
-from nomarr.components.ml.model_loading import load_model
-```
-
-## Patterns
-
-### Pure Functions Where Possible
-
-Components should be **stateless** when possible:
-
-```python
-# ✅ Good - pure function
 def predictions_to_tags(
     predictions: dict[str, np.ndarray],
     namespace: str,
     threshold: float = 0.5,
 ) -> list[Tag]:
-    """Convert model predictions to tags."""
-    tags = []
+    tags: list[Tag] = []
     for head_name, scores in predictions.items():
         for idx, score in enumerate(scores):
             if score >= threshold:
-                tags.append(Tag(
-                    namespace=namespace,
-                    head=head_name,
-                    value=idx,
-                    score=score,
-                ))
+                tags.append(
+                    Tag(
+                        namespace=namespace,
+                        head=head_name,
+                        value=idx,
+                        score=score,
+                    )
+                )
     return tags
-
-# ❌ Bad - stateful component
-class TagConverter:
-    def __init__(self):
-        self.tags = []
-    
-    def convert(self, predictions: dict) -> None:
-        # Mutates internal state
-        self.tags.extend(...)
 ```
 
-### Database Access via Persistence
+If you are writing non-trivial domain math, statistics, ML, or transformations, it almost certainly belongs here.
 
-Components query/write via the persistence layer:
+---
 
-```python
-# ✅ Good - using persistence layer
-def compute_tag_frequencies(db: Database, library_id: int) -> dict[str, int]:
-    tags = db.tags.get_library_tags(library_id)
-    frequencies = {}
-    for tag in tags:
-        frequencies[tag.name] = frequencies.get(tag.name, 0) + 1
-    return frequencies
+## 4. Boundaries & Allowed Imports
 
-# ❌ Bad - raw SQL in component
-def compute_tag_frequencies(db: Database, library_id: int) -> dict[str, int]:
-    rows = db.execute_raw("SELECT tag, COUNT(*) FROM tags WHERE ...")  # ← Use persistence
-    ...
-```
+Components **may import**:
 
-### Return Simple Types or DTOs
+* Persistence abstractions (DB / repositories)
+* DTOs and simple domain types
+* Other component modules in the same domain (for reuse)
+* Helpers (filesystem, math utilities, etc.)
 
-Components return:
-- Simple types (int, str, list, dict, np.ndarray)
-- DTOs (dataclasses from `helpers/dto/`)
-- Domain objects (Tag, Prediction, etc.)
+Examples:
 
 ```python
-# ✅ Good - returns DTO
-def compute_embeddings(...) -> np.ndarray:
-    ...
-
-def run_inference(...) -> InferenceResult:  # DTO
-    ...
-
-# ❌ Bad - returns Pydantic
-from pydantic import BaseModel
-
-def compute_embeddings(...) -> BaseModel:  # ← No Pydantic in components
-    ...
-```
-
-## Domain-Specific Guidelines
-
-### Analytics Components
-
-```python
-# Analytics components compute statistics and relationships
-def compute_tag_correlations(
-    db: Database,
-    library_id: int,
-    min_co_occurrence: int = 10,
-) -> dict[tuple[str, str], float]:
-    """Compute correlation coefficients between tags."""
-    co_occurrences = _query_co_occurrences(db, library_id)
-    correlations = _compute_pearson_correlations(co_occurrences)
-    return _filter_by_threshold(correlations, min_co_occurrence)
-```
-
-### ML Components
-
-```python
-# ML components handle model loading, embeddings, inference
-def run_inference_for_head(
-    embeddings: np.ndarray,
-    head_path: str,
-) -> np.ndarray:
-    """Run inference for a single head model."""
-    model = _load_head_model(head_path)
-    predictions = model.predict(embeddings)
-    return _apply_softmax(predictions)
-```
-
-### Tagging Components
-
-```python
-# Tagging components convert predictions to tags, resolve conflicts
-def aggregate_mood_tags(
-    tags: list[Tag],
-    mood_mapping: dict[str, str],
-) -> dict[str, float]:
-    """Aggregate mood tags by category."""
-    mood_scores = {}
-    for tag in tags:
-        if tag.head in mood_mapping:
-            mood_category = mood_mapping[tag.head]
-            mood_scores[mood_category] = max(
-                mood_scores.get(mood_category, 0.0),
-                tag.score,
-            )
-    return mood_scores
-```
-
-## Allowed Imports
-
-```python
-# ✅ Components can import:
+# ✅ Allowed in components
 from nomarr.persistence import Database
 from nomarr.helpers.dto import ProcessFileResult
+from nomarr.components.ml.model_loading import load_model
 from nomarr.helpers.files_helper import discover_audio_files
-from nomarr.components.ml import load_model  # Cross-component imports OK
-
-# ❌ Components must NOT import:
-from nomarr.workflows import process_file_workflow  # ← No workflow imports
-from nomarr.services import ProcessingService  # ← No service imports
-from nomarr.interfaces.api import router  # ← No interface imports
-from pydantic import BaseModel  # ← No Pydantic
 ```
 
-## Anti-Patterns
+Components **must NOT import**:
 
-### ❌ Importing Workflows/Services
+* Services (`nomarr.services.*`)
+* Workflows (`nomarr.workflows.*`)
+* Interfaces or routers (`nomarr.interfaces.*`, FastAPI router, etc.)
+* Pydantic models
+* HTTP or CLI frameworks
+
 ```python
-# NEVER do this
-from nomarr.services import ProcessingService
-
-def compute_embeddings(...):
-    service = ProcessingService(...)  # ← Components don't call services
+# ❌ Not allowed
+from nomarr.services import ProcessingService        # no services
+from nomarr.workflows import process_file_workflow   # no workflows
+from nomarr.interfaces.api import router             # no interfaces
+from pydantic import BaseModel                       # no Pydantic
 ```
 
-### ❌ Pydantic in Components
+> **Rule:** Components are leaf domain modules. They never depend on higher layers.
+
+---
+
+## 5. Complexity & Private Helpers
+
+### 5.1. Heavy Logic Lives Here
+
+Components are where it is acceptable for functions to be large and complex **as long as they are well-structured**.
+
+Use `_private` helpers to keep public functions readable.
+
 ```python
-# NEVER do this
-from pydantic import BaseModel
+# Before – too large for a single function
 
-class EmbeddingResult(BaseModel):  # ← Use dataclasses, not Pydantic
-    embeddings: list[float]
-```
+def compute_tag_statistics(db: Database, library_id: int) -> TagStats:
+    # 40 lines of querying
+    rows = db.tags.get_stats_rows(library_id)
 
-### ❌ Global State
-```python
-# NEVER do this
-_MODEL_CACHE = {}  # ← No module-level mutable state
+    # 40 lines of aggregation
+    stats: dict[str, int] = {}
+    for row in rows:
+        ...
 
-def load_model(path: str):
-    if path not in _MODEL_CACHE:
-        _MODEL_CACHE[path] = ...
-```
+    # 40 lines of formatting
+    formatted = {}
+    for key, value in stats.items():
+        ...
 
-### ❌ Reading Config at Runtime
-```python
-# NEVER do this
-def compute_embeddings(file_path: str):
-    import os
-    models_dir = os.getenv("MODELS_DIR")  # ← Pass as parameter
+    return TagStats(formatted)
+
+
+# After – split into helpers
+
+def compute_tag_statistics(db: Database, library_id: int) -> TagStats:
+    rows = _query_tag_data(db, library_id)
+    stats = _aggregate_tag_stats(rows)
+    formatted = _format_tag_stats(stats)
+    return TagStats(formatted)
+
+
+def _query_tag_data(db: Database, library_id: int) -> list[dict[str, Any]]:
+    ...
+
+
+def _aggregate_tag_stats(rows: list[dict[str, Any]]) -> dict[str, int]:
+    ...
+
+
+def _format_tag_stats(stats: dict[str, int]) -> dict[str, Any]:
     ...
 ```
 
-## Summary
+Create `_private` helpers when:
 
-**Components are workhorses:**
-- Heavy domain logic lives here
-- Stateless, pure functions when possible
-- Access DB via persistence layer
-- Use `_private` helpers for unwieldy functions
-- Centralize reused helpers in domain modules
-- No Pydantic, no workflow/service imports
+* A public function exceeds ~80 LOC.
+* There are clearly distinct phases (query → aggregate → format).
+* Logic can be named and reused inside the module.
+
+### 5.2. Centralizing Shared Helpers
+
+If you find yourself copy-pasting the same `_load_model` or `_normalize_tags` across multiple modules, centralize it in a dedicated component helper.
+
+```python
+# components/ml/model_loading.py
+
+def load_model(models_dir: str, backbone: str) -> Model:
+    """Shared ML model loader for all ML components."""
+    ...
+
+# components/ml/embeddings.py
+from nomarr.components.ml.model_loading import load_model
+```
+
+---
+
+## 6. Purity & State
+
+Aim for **pure, stateless functions**:
+
+```python
+# ✅ Good – pure
+
+def aggregate_mood_tags(tags: list[Tag], mapping: dict[str, str]) -> dict[str, float]:
+    scores: dict[str, float] = {}
+    for tag in tags:
+        if tag.head in mapping:
+            key = mapping[tag.head]
+            scores[key] = max(scores.get(key, 0.0), tag.score)
+    return scores
+```
+
+Avoid:
+
+* Long-lived mutable globals (`_MODEL_CACHE = {}` at module level).
+* Classes whose primary job is to mutate internal state over time.
+
+If caching is required, prefer:
+
+* Explicit cache objects passed in as dependencies, or
+* Very limited, well-documented module-level caches with clear invalidation (and only if truly needed).
+
+---
+
+## 7. Persistence Usage
+
+Components may talk to the database **only through the persistence layer**.
+
+```python
+# ✅ Good – uses persistence abstraction
+
+def compute_tag_frequencies(db: Database, library_id: int) -> dict[str, int]:
+    tags = db.tags.get_library_tags(library_id)
+    freq: dict[str, int] = {}
+    for tag in tags:
+        freq[tag.name] = freq.get(tag.name, 0) + 1
+    return freq
+
+
+# ❌ Bad – raw SQL inside component
+
+def compute_tag_frequencies(db: Database, library_id: int) -> dict[str, int]:
+    rows = db.execute_raw("SELECT tag, COUNT(*) FROM tags WHERE ...")
+    ...
+```
+
+No raw SQL belongs here; put it in persistence and call that from the component.
+
+---
+
+## 8. Data & DTOs
+
+Components may return:
+
+* Primitive types (`int`, `float`, `str`, `bool`)
+* Collections (`list`, `dict`, `set`, `np.ndarray`, etc.)
+* DTOs from `helpers/dto/`
+* Domain objects such as `Tag`, `InferenceResult`, etc.
+
+They **must not** return Pydantic models.
+
+```python
+# ✅ OK
+
+def run_inference(...) -> InferenceResult:
+    ...
+
+
+# ❌ Not OK
+
+from pydantic import BaseModel
+
+class EmbeddingResult(BaseModel):
+    ...
+
+
+def compute_embeddings(...) -> EmbeddingResult:
+    ...
+```
+
+Pydantic is an interface concern, not a components concern.
+
+---
+
+## 9. Configuration & Environment
+
+Components must **not** read environment variables or global config directly.
+
+Bad:
+
+```python
+def compute_embeddings(path: str) -> np.ndarray:
+    import os
+    models_dir = os.getenv("MODELS_DIR")  # ❌ no env reads here
+    ...
+```
+
+Good:
+
+```python
+def compute_embeddings(path: str, models_dir: str) -> np.ndarray:
+    ...
+```
+
+Configuration is resolved in services and workflows, then passed into components as plain arguments.
+
+---
+
+## 10. Anti-Patterns
+
+Avoid these in components:
+
+* Importing services, workflows, or interfaces.
+* Raising HTTP or CLI-specific exceptions.
+* Returning Pydantic models.
+* Raw SQL or direct file/OS probing for config.
+* Hidden global state that changes over time.
+
+When in doubt:
+
+* If it’s **heavy domain logic**, it probably belongs here.
+* If it’s **wiring or resource management**, it belongs in services.
+* If it’s **control flow over multiple operations**, it belongs in workflows.

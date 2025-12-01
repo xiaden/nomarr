@@ -27,16 +27,15 @@ from .config_svc import (
     INTERNAL_WORKER_ENABLED,
     ConfigService,
 )
-from .coordinator_svc import CoordinatorConfig, CoordinatorService, process_file_wrapper
+from .coordinator_svc import CoordinatorConfig, CoordinatorService
 from .health_monitor_svc import HealthMonitorConfig, HealthMonitorService
 from .keys_svc import SESSION_TIMEOUT_SECONDS, KeyManagementService
 from .library_svc import LibraryRootConfig, LibraryService
 from .ml_svc import MLConfig, MLService
 from .navidrome_svc import NavidromeConfig, NavidromeService
-from .processing_svc import ProcessingService
 from .queue_svc import BaseQueue, Job, ProcessingQueue, QueueService, RecalibrationQueue, ScanQueue
 from .recalibration_svc import RecalibrationService
-from .worker_svc import WorkerConfig, WorkerService
+from .workers_coordinator_svc import WorkersCoordinator
 
 __all__ = [
     "INTERNAL_ALLOW_SHORT",
@@ -78,15 +77,12 @@ __all__ = [
     "NavidromeConfig",
     "NavidromeService",
     "ProcessingQueue",
-    "ProcessingService",
     "QueueService",
     "RecalibrationQueue",
     "RecalibrationService",
     "ScanQueue",
-    "WorkerConfig",
-    "WorkerService",
+    "WorkersCoordinator",
     "check_missing_calibrations",
     "download_calibrations",
     "ensure_calibrations_exist",
-    "process_file_wrapper",
 ]

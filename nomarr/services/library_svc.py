@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from nomarr.components.queue import get_queue_depth
+from nomarr.components.queue import list_jobs as list_jobs_component
 from nomarr.helpers.dto.library_dto import (
     LibraryDict,
     LibraryScanStatusResult,
@@ -19,6 +21,7 @@ from nomarr.helpers.dto.library_dto import (
 )
 from nomarr.helpers.dto.queue_dto import Job
 from nomarr.helpers.files_helper import resolve_library_path
+from nomarr.workflows.queue import clear_all_workflow
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -469,8 +472,8 @@ class LibraryService:
         if not self.cfg.library_root:
             raise ValueError("Library scanning not configured")
 
-        # Clear pending scan jobs from queue
-        cleared = self.db.library_queue.clear_scan_queue()
+        # Clear pending scan jobs from queue using workflow
+        cleared = clear_all_workflow(self.db, queue_type="library")
         logging.info(f"[LibraryService] Cleared {cleared} pending scan jobs")
         return cleared > 0
 
@@ -493,10 +496,10 @@ class LibraryService:
         # Check if worker is available
         enabled = self.worker is not None
 
-        # Count jobs by status
-        pending_jobs = self.db.library_queue.count_pending_scans()
-        jobs = self.db.library_queue.list_scan_jobs(limit=1000)
-        running_jobs = sum(1 for job in jobs if job["status"] == "running")
+        # Count jobs by status using components
+        pending_jobs = get_queue_depth(self.db, queue_type="library")
+        jobs_list, _ = list_jobs_component(self.db, queue_type="library", limit=1000)
+        running_jobs = sum(1 for job in jobs_list if job["status"] == "running")
 
         return LibraryScanStatusResult(
             configured=True,
@@ -516,18 +519,18 @@ class LibraryService:
         Returns:
             List of Job DTOs
         """
-        jobs = self.db.library_queue.list_scan_jobs(limit=limit)
+        jobs_list, _ = list_jobs_component(self.db, queue_type="library", limit=limit)
         return [
             Job(
                 id=job["id"],
                 path=job["path"],
                 status=job["status"],
                 started_at=job["started_at"],
-                finished_at=job["completed_at"],  # Map completed_at → finished_at
-                error_message=job["error_message"],
-                force=job["force"],
+                finished_at=job.get("completed_at"),  # Map completed_at → finished_at
+                error_message=job.get("error_message"),
+                force=job.get("force", False),
             )
-            for job in jobs
+            for job in jobs_list
         ]
 
     def get_library_stats(self) -> LibraryStatsResult:
@@ -562,9 +565,9 @@ class LibraryService:
         Returns:
             True if any jobs are in 'running' status
         """
-        # Query for any running scan jobs
-        jobs = self.db.library_queue.list_scan_jobs(limit=1000)
-        return any(job["status"] == "running" for job in jobs)
+        # Query for any running scan jobs using component
+        jobs_list, _ = list_jobs_component(self.db, queue_type="library", limit=1000)
+        return any(job["status"] == "running" for job in jobs_list)
 
     def clear_library_data(self) -> None:
         """

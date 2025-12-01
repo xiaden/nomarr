@@ -5,7 +5,9 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from nomarr.components.queue import enqueue_file, get_queue_stats
 from nomarr.helpers.dto.recalibration_dto import ApplyCalibrationResult, ClearCalibrationQueueResult, GetStatusResult
+from nomarr.workflows.queue import clear_all_workflow
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -38,7 +40,7 @@ class RecalibrationService:
         self.worker = worker
         self.library_service = library_service
 
-    def enqueue_file(self, file_path: str) -> int:
+    def enqueue_file_for_recalibration(self, file_path: str) -> int:
         """Queue a single file for recalibration.
 
         Args:
@@ -54,9 +56,9 @@ class RecalibrationService:
             raise RuntimeError("RecalibrationWorker is not available. Cannot queue recalibration jobs.")
 
         logger.info(f"Queuing recalibration for: {file_path}")
-        return self.db.calibration_queue.enqueue_calibration(file_path)
+        return enqueue_file(self.db, file_path, force=False, queue_type="calibration")
 
-    def enqueue_library(self, paths: list[str]) -> int:
+    def enqueue_library_for_recalibration(self, paths: list[str]) -> int:
         """Queue multiple library files for recalibration.
 
         Args:
@@ -77,16 +79,16 @@ class RecalibrationService:
 
         logger.info(f"Queuing {len(paths)} files for recalibration")
 
-        count = 0
-        for path in paths:
+        queued_count = 0
+        for file_path in paths:
             try:
-                self.db.calibration_queue.enqueue_calibration(path)
-                count += 1
+                enqueue_file(self.db, file_path, force=False, queue_type="calibration")
+                queued_count += 1
             except Exception as e:
-                logger.error(f"Failed to queue {path}: {e}")
+                logger.warning(f"Failed to enqueue {file_path}: {e}")
 
-        logger.info(f"Successfully queued {count}/{len(paths)} files")
-        return count
+        logger.info(f"Successfully queued {queued_count}/{len(paths)} files")
+        return queued_count
 
     def get_status(self) -> GetStatusResult:
         """Get current recalibration queue status.
@@ -94,7 +96,7 @@ class RecalibrationService:
         Returns:
             GetStatusResult with counts for pending, running, done, error
         """
-        status_dict = self.db.calibration_queue.get_calibration_status()
+        status_dict = get_queue_stats(self.db, queue_type="calibration")
         return GetStatusResult(
             pending=status_dict["pending"],
             running=status_dict["running"],
@@ -122,7 +124,7 @@ class RecalibrationService:
         Note:
             Running jobs will complete but be removed from queue
         """
-        count = self.db.calibration_queue.clear_calibration_queue()
+        count = clear_all_workflow(self.db, queue_type="calibration")
         logger.info(f"Cleared {count} recalibration jobs from queue")
         return count
 
@@ -157,7 +159,7 @@ class RecalibrationService:
         """
         return self.worker is not None and self.worker.is_busy()
 
-    def apply_calibration_to_library(self) -> ApplyCalibrationResult:
+    def queue_library_for_recalibration(self) -> ApplyCalibrationResult:
         """Queue all library files for recalibration.
 
         This is a consolidated service method that:
@@ -182,6 +184,6 @@ class RecalibrationService:
             return ApplyCalibrationResult(queued=0, message="No library files found")
 
         # Enqueue all files
-        count = self.enqueue_library(paths)
+        count = self.enqueue_library_for_recalibration(paths)
 
         return ApplyCalibrationResult(queued=count, message=f"Queued {count} files for recalibration")

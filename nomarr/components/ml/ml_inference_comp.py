@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 # TF_FORCE_GPU_ALLOW_GROWTH, TF_GPU_THREAD_MODE) are set in Dockerfile
 
 # All Essentia imports go through the backend module
-from nomarr.components.ml import backend_essentia
+from nomarr.components.ml import ml_backend_essentia_comp as backend_essentia
 from nomarr.helpers.dto.ml_dto import ComputeEmbeddingsForBackboneParams
 
 # Check if Essentia is available, but don't fail at import time

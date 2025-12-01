@@ -1,11 +1,21 @@
 """
-Library scanner workflow for tracking music files and their metadata.
+Library file update workflow for tracking music files and their metadata.
 
-This is a PURE WORKFLOW module that orchestrates:
-- Filesystem scanning for audio files
-- Database persistence (library_files, file_tags)
-- Queue management (auto-enqueue untagged files)
-- Tag extraction and normalization
+TODO: LEGACY CODE CLEANUP
+This file contains a legacy monolithic workflow `scan_library_workflow()` that is UNUSED.
+The current architecture uses:
+- start_library_scan_wf.py (PLANNING: discover files, enqueue to library_queue)
+- scan_single_file_wf.py (EXECUTION: process each file from queue)
+
+The only actively used function is `update_library_file_from_tags()`, which syncs
+a file's metadata and tags to the library database. It's called by:
+- scan_single_file_wf.py (after scanning)
+- process_file_wf.py (after tagging)
+
+REFACTOR PLAN:
+1. Extract `update_library_file_from_tags()` and helpers to a standalone module
+2. Delete the unused `scan_library_workflow()` and `_matches_ignore_pattern()`
+3. Update imports in scan_single_file_wf.py and process_file_wf.py
 
 ARCHITECTURE:
 - This workflow is domain logic that takes all dependencies as parameters.
@@ -14,26 +24,11 @@ ARCHITECTURE:
 
 EXPECTED DATABASE INTERFACE:
 The `db` parameter must provide these methods:
-- db.library_files.list_library_files(limit) -> tuple[list[dict], int]
 - db.library_files.get_library_file(path) -> dict | None
-- db.library_files.delete_library_file(path) -> None
 - db.library_files.upsert_library_file(path, **metadata) -> None
 - db.library_files.mark_file_tagged(path, version) -> None
 - db.file_tags.upsert_file_tags_mixed(file_id, external_tags, nomarr_tags) -> None
-- db.tag_queue.enqueue(path, force) -> None
-- db.conn (for raw SQL updates in update_library_file_from_tags)
-
-USAGE:
-    from nomarr.workflows.library.scan_library_wf import scan_library_workflow
-
-    stats = scan_library_workflow(
-        db=database_instance,
-        library_path="/path/to/music",
-        namespace="nom",
-        progress_callback=my_progress_fn,
-        auto_tag=True,
-        ignore_patterns="*/Audiobooks/*,*.wav"
-    )
+- db.libraries.find_library_containing_path(path) -> dict | None
 """
 
 from __future__ import annotations
@@ -43,187 +38,35 @@ import logging
 import os
 from typing import TYPE_CHECKING, Any
 
-import mutagen
+import mutagen  # type: ignore[import-untyped]
 from mutagen.easyid3 import EasyID3
 from mutagen.id3 import ID3
 from mutagen.mp4 import MP4
 
-from nomarr.helpers.dto.library_dto import ScanLibraryWorkflowParams, UpdateLibraryFileFromTagsParams
+from nomarr.helpers.dto.library_dto import UpdateLibraryFileFromTagsParams
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-def _matches_ignore_pattern(file_path: str, patterns: str) -> bool:
-    """
-    Check if file path matches any ignore pattern.
-
-    Args:
-        file_path: Absolute file path
-        patterns: Comma-separated patterns (supports * wildcards and */ for directory matching)
-
-    Returns:
-        True if file should be ignored
-
-    Examples:
-        "*/Audiobooks/*" matches any file in Audiobooks directory
-        "*.wav" matches all WAV files
-    """
-    if not patterns:
-        return False
-
-    import fnmatch
-
-    # Normalize path separators
-    normalized_path = file_path.replace("\\", "/")
-
-    for pattern in patterns.split(","):
-        pattern = pattern.strip()
-        if not pattern:
-            continue
-
-        # Normalize pattern separators
-        pattern = pattern.replace("\\", "/")
-
-        # Check if pattern matches
-        if fnmatch.fnmatch(normalized_path, pattern):
-            return True
-
-    return False
+# TODO: DELETE - Unused legacy function from monolithic scan_library_workflow
+# def _matches_ignore_pattern(file_path: str, patterns: str) -> bool:
+#     """Check if file path matches any ignore pattern."""
+#     ...
 
 
-def scan_library_workflow(
-    db: Database,
-    params: ScanLibraryWorkflowParams,
-) -> dict[str, Any]:
-    """
-    Scan a music library directory and update the database.
-
-    This is the main workflow entrypoint for library scanning. It orchestrates:
-    1. Filesystem traversal to find audio files
-    2. Metadata extraction and database updates
-    3. Optional auto-enqueue of untagged files
-    4. Removal of deleted files from database
-
-    Args:
-        db: Database instance (must provide library, tags, and queue accessors)
-        params: ScanLibraryWorkflowParams with library_path, namespace, progress_callback, auto_tag, ignore_patterns
-
-    Returns:
-        Dict with scan statistics:
-        - files_scanned: int
-        - files_added: int
-        - files_updated: int
-        - files_removed: int
-
-    Raises:
-        Exception: On scan failure
-    """
-    # Extract parameters
-    library_path = params.library_path
-    namespace = params.namespace
-    progress_callback = params.progress_callback
-    auto_tag = params.auto_tag
-    ignore_patterns = params.ignore_patterns
-
-    logging.info(f"[library_scanner] Starting library scan: {library_path}")
-
-    stats = {
-        "files_scanned": 0,
-        "files_added": 0,
-        "files_updated": 0,
-        "files_removed": 0,
-    }
-
-    try:
-        # Get list of existing files in database
-        existing_files, _ = db.library_files.list_library_files(limit=1000000)  # Get all files
-        existing_paths = {f["path"] for f in existing_files}
-        seen_paths: set[str] = set()
-
-        # Discover all audio files using helpers.files (secure, handles existence/filtering/traversal)
-        from nomarr.helpers.files_helper import collect_audio_files
-
-        files_to_scan = collect_audio_files(library_path, recursive=True)
-
-        total_files = len(files_to_scan)
-        logging.info(f"[library_scanner] Found {total_files} audio files to scan")
-
-        # Scan each file
-        for idx, file_path in enumerate(files_to_scan):
-            try:
-                # Get file stats for modification time check
-                file_stat = os.stat(file_path)
-                modified_time = int(file_stat.st_mtime * 1000)
-
-                # Check if file needs updating
-                existing_file = db.library_files.get_library_file(file_path)
-                if existing_file and existing_file["modified_time"] == modified_time:
-                    # File hasn't changed, skip
-                    stats["files_scanned"] += 1
-                    seen_paths.add(file_path)
-                    continue
-
-                # Update library database with file metadata and tags
-                params_update = UpdateLibraryFileFromTagsParams(
-                    file_path=file_path,
-                    namespace=namespace,
-                    tagged_version=None,
-                    calibration=None,
-                    library_id=None,
-                )
-                update_library_file_from_tags(db, params_update)
-
-                # Auto-enqueue for tagging if enabled and file not already tagged
-                if auto_tag:
-                    file_record = db.library_files.get_library_file(file_path)
-                    if file_record:
-                        # Check if file needs tagging (not tagged, not skipped, not ignored by pattern)
-                        needs_tag = (
-                            not file_record.get("tagged")
-                            and not file_record.get("skip_auto_tag")
-                            and not _matches_ignore_pattern(file_path, ignore_patterns)
-                        )
-                        if needs_tag:
-                            # Enqueue for tagging (don't force re-tag)
-                            db.tag_queue.enqueue(file_path, force=False)
-                            logging.info(f"[library_scanner] Auto-queued untagged file: {file_path}")
-
-                if existing_file:
-                    stats["files_updated"] += 1
-                else:
-                    stats["files_added"] += 1
-
-                stats["files_scanned"] += 1
-                seen_paths.add(file_path)
-
-                # Check for cancellation on every file for faster response
-                if progress_callback:
-                    try:
-                        # Call with 0 to just check for cancel without updating progress
-                        progress_callback(idx + 1, total_files)
-                    except KeyboardInterrupt:
-                        raise  # Re-raise to abort scan
-
-            except Exception as e:
-                logging.warning(f"[library_scanner] Failed to scan {file_path}: {e}")
-
-        # Remove files that no longer exist
-        removed_paths = existing_paths - seen_paths
-        for path in removed_paths:
-            db.library_files.delete_library_file(path)
-            stats["files_removed"] += 1
-
-        logging.info(
-            f"[library_scanner] Scan complete: scanned={stats['files_scanned']}, "
-            f"added={stats['files_added']}, updated={stats['files_updated']}, removed={stats['files_removed']}"
-        )
-
-        return stats
-
-    except Exception as e:
-        logging.error(f"[library_scanner] Scan failed: {e}")
-        raise
+# TODO: DELETE - Unused legacy monolithic workflow
+# The current architecture uses start_library_scan_wf.py + scan_single_file_wf.py instead
+# def scan_library_workflow(db: Database, params: ScanLibraryWorkflowParams) -> dict[str, Any]:
+#     """
+#     Legacy monolithic workflow - UNUSED - DELETE THIS
+#
+#     This was the original single-function approach that did both planning and execution.
+#     It has been replaced by:
+#     - start_library_scan_wf.py (PLANNING: discover files, enqueue to library_queue)
+#     - scan_single_file_wf.py (EXECUTION: process each file from queue)
+#     """
+#     ...
 
 
 def update_library_file_from_tags(

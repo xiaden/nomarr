@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from typing import Any
 
 
 def now_ms() -> int:
@@ -85,3 +86,46 @@ class CalibrationQueueOperations:
         cur = self.conn.execute("DELETE FROM calibration_queue WHERE status IN ('done', 'error')")
         self.conn.commit()
         return cur.rowcount
+
+    def queue_stats(self) -> dict[str, int]:
+        """
+        Get queue statistics (counts by status).
+
+        Returns:
+            Dict with keys: 'pending', 'running', 'done', 'error'
+        """
+        cur = self.conn.execute(
+            """
+            SELECT status, COUNT(*) as count
+            FROM calibration_queue
+            GROUP BY status
+            """
+        )
+        stats = {row[0]: row[1] for row in cur.fetchall()}
+        # Ensure all statuses are present (default to 0)
+        for status in ("pending", "running", "done", "error"):
+            stats.setdefault(status, 0)
+        return stats
+
+    def get_active_jobs(self, limit: int = 50) -> list[dict[str, Any]]:
+        """
+        Get currently active (pending or running) jobs.
+
+        Args:
+            limit: Maximum number of jobs to return
+
+        Returns:
+            List of job dicts with id, path, status, started_at
+        """
+        cur = self.conn.execute(
+            """
+            SELECT id, path, status, started_at
+            FROM calibration_queue
+            WHERE status IN ('pending', 'running')
+            ORDER BY id ASC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+        columns = ["id", "path", "status", "started_at"]
+        return [dict(zip(columns, row, strict=False)) for row in cur.fetchall()]

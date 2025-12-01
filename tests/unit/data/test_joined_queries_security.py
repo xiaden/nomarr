@@ -11,7 +11,7 @@ import sqlite3
 
 import pytest
 
-from nomarr.persistence.database.joined_queries import JoinedQueryOperations
+from nomarr.persistence.database.joined_queries_sql import JoinedQueryOperations
 
 
 class TestOperatorValidation:

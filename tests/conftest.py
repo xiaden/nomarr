@@ -393,20 +393,8 @@ def real_queue_service(test_db):
     from nomarr.services.queue_svc import ProcessingQueue, QueueService
 
     queue = ProcessingQueue(test_db)
-    return QueueService(queue)
-
-
-@pytest.fixture
-def real_processing_service(test_db):
-    """Provide a real ProcessingService instance for testing.
-
-    Note: This service requires ProcessingCoordinator which may not be
-    available in all test contexts. Tests using this should handle
-    coordinator unavailability gracefully.
-    """
-    from nomarr.services.processing_svc import ProcessingService
-
-    return ProcessingService()
+    config = {}  # Empty config dict for tests
+    return QueueService(queue, config)
 
 
 @pytest.fixture
@@ -421,13 +409,20 @@ def real_library_service(test_db, temp_music_library):
 @pytest.fixture
 def real_worker_service(test_db):
     """Provide a real WorkerService instance for testing."""
-    from nomarr.services.queue_svc import ProcessingQueue
+    from unittest.mock import Mock
+
     from nomarr.services.worker_svc import WorkerConfig, WorkerService
+
+    from nomarr.services.queue_svc import ProcessingQueue
 
     queue = ProcessingQueue(test_db)
     # Disable workers by default for tests (avoids event_broker requirement)
     cfg = WorkerConfig(default_enabled=False, worker_count=1, poll_interval=1)
-    return WorkerService(test_db, queue, cfg)
+
+    # Mock coordinator (required but not used in disabled worker tests)
+    mock_coordinator = Mock()
+
+    return WorkerService(test_db, queue, cfg, mock_coordinator)
 
 
 @pytest.fixture

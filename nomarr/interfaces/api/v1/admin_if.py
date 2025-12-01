@@ -24,13 +24,12 @@ from nomarr.interfaces.api.web.dependencies import (
     get_event_broker,
     get_ml_service,
     get_queue_service,
-    get_worker_pool,
-    get_worker_service,
+    get_workers_coordinator,
 )
 from nomarr.services.calibration_svc import CalibrationService
 from nomarr.services.ml_svc import MLService
 from nomarr.services.queue_svc import QueueService
-from nomarr.services.worker_svc import WorkerService
+from nomarr.services.workers_coordinator_svc import WorkersCoordinator
 
 # Router instance (will be included under /api/v1/admin)
 router = APIRouter(tags=["admin"], prefix="/v1/admin")
@@ -110,11 +109,11 @@ async def admin_cache_refresh(
 # ----------------------------------------------------------------------
 @router.post("/worker/pause", dependencies=[Depends(verify_key)])
 async def admin_pause_worker(
-    worker_service: WorkerService = Depends(get_worker_service),
+    workers_coordinator: WorkersCoordinator = Depends(get_workers_coordinator),
     event_broker=Depends(get_event_broker),
 ) -> WorkerOperationResponse:
-    """Pause the background worker (stops processing new jobs)."""
-    result = worker_service.pause_workers_for_admin(event_broker)
+    """Pause all background workers (stops processing new jobs)."""
+    result = workers_coordinator.pause_all_workers(event_broker)
     return WorkerOperationResponse.from_dto(result)
 
 
@@ -123,12 +122,11 @@ async def admin_pause_worker(
 # ----------------------------------------------------------------------
 @router.post("/worker/resume", dependencies=[Depends(verify_key)])
 async def admin_resume_worker(
-    worker_service: WorkerService = Depends(get_worker_service),
-    worker_pool: list = Depends(get_worker_pool),
+    workers_coordinator: WorkersCoordinator = Depends(get_workers_coordinator),
     event_broker=Depends(get_event_broker),
 ) -> WorkerOperationResponse:
-    """Resume the background worker (starts processing again)."""
-    result = worker_service.resume_workers_for_admin(worker_pool, event_broker)
+    """Resume all background workers (starts processing again)."""
+    result = workers_coordinator.resume_all_workers(event_broker)
     return WorkerOperationResponse.from_dto(result)
 
 

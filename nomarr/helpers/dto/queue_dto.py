@@ -69,7 +69,7 @@ class QueueStatus:
 
 @dataclass
 class EnqueueFilesResult:
-    """Result from enqueue_files_workflow and queue_service.add_files."""
+    """Result from enqueue_files_workflow and queue_service.enqueue_files_for_tagging."""
 
     job_ids: list[int]
     files_queued: int
