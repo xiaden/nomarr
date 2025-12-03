@@ -15,13 +15,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from nomarr.persistence.db import Database
     from nomarr.services.analytics_svc import AnalyticsService
     from nomarr.services.calibration_svc import CalibrationService
     from nomarr.services.config_svc import ConfigService
     from nomarr.services.coordinator_svc import CoordinatorService
     from nomarr.services.library_svc import LibraryService
     from nomarr.services.navidrome_svc import NavidromeService
-    from nomarr.services.queue_svc import QueueService
     from nomarr.services.workers_coordinator_svc import WorkersCoordinator
 
 
@@ -33,16 +33,15 @@ def get_config() -> dict[str, Any]:
     return config_service.get_config()  # type: ignore[no-any-return]
 
 
-def get_queue_service() -> QueueService:
-    """Get QueueService instance."""
+def get_database() -> Database:
+    """Get Database instance for direct component/workflow access."""
     from nomarr.app import application
 
-    service = application.services.get("queue")
-    if not service:
+    if not application.db:
         from fastapi import HTTPException
 
-        raise HTTPException(status_code=503, detail="Queue service not available")
-    return service  # type: ignore[no-any-return]
+        raise HTTPException(status_code=503, detail="Database not available")
+    return application.db
 
 
 def get_workers_coordinator() -> WorkersCoordinator:

@@ -4,7 +4,7 @@ Routes: /api/v1/list, /api/v1/info
 
 ARCHITECTURE:
 - These endpoints are thin HTTP boundaries
-- All business logic is delegated to services
+- All business logic is delegated to services or components
 - Services handle configuration, namespace, and data access
 """
 
@@ -12,12 +12,13 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from nomarr.components.queue import list_jobs as list_jobs_component
 from nomarr.interfaces.api.auth import verify_key
 from nomarr.interfaces.api.types.info_types import PublicInfoResponse
 from nomarr.interfaces.api.types.queue_types import ListJobsResponse
-from nomarr.interfaces.api.web.dependencies import get_info_service, get_queue_service
+from nomarr.interfaces.api.web.dependencies import get_database, get_info_service
+from nomarr.persistence.db import Database
 from nomarr.services.info_svc import InfoService
-from nomarr.services.queue_svc import QueueService
 
 # Router instance (will be included in main app under /api prefix)
 router = APIRouter(prefix="/v1", tags=["public"])
@@ -31,7 +32,7 @@ async def list_jobs(
     limit: int = 50,
     offset: int = 0,
     status: str | None = None,
-    queue_service: QueueService = Depends(get_queue_service),
+    db: Database = Depends(get_database),
 ) -> ListJobsResponse:
     """
     List jobs with pagination and optional status filtering.
@@ -40,7 +41,7 @@ async def list_jobs(
         limit: Maximum number of jobs to return (default 50)
         offset: Number of jobs to skip for pagination (default 0)
         status: Filter by status (pending/running/done/error), or None for all
-        queue_service: Injected QueueService
+        db: Injected Database
 
     Returns:
         ListJobsResponse with jobs, total count, limit, and offset
@@ -52,7 +53,7 @@ async def list_jobs(
         )
 
     try:
-        result = queue_service.list_jobs(limit=limit, offset=offset, status=status)
+        result = list_jobs_component(db, queue_type="tag", limit=limit, offset=offset, status=status)  # type: ignore[arg-type]
         return ListJobsResponse.from_dto(result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error listing jobs: {e}") from e

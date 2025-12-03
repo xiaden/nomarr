@@ -31,7 +31,6 @@ from nomarr.services.health_monitor_svc import HealthMonitorService
 from nomarr.services.keys_svc import KeyManagementService
 from nomarr.services.library_svc import LibraryRootConfig, LibraryService
 from nomarr.services.navidrome_svc import NavidromeService
-from nomarr.services.queue_svc import BaseQueue, ProcessingQueue, QueueService, RecalibrationQueue, ScanQueue
 from nomarr.services.recalibration_svc import RecalibrationService
 from nomarr.services.worker_pool_svc import WorkerPoolConfig, WorkerPoolService
 from nomarr.services.workers.recalibration import RecalibrationWorker
@@ -114,7 +113,7 @@ class Application:
 
         # Core dependencies (owned by Application)
         self.db = Database(self.db_path)
-        self.queue = ProcessingQueue(self.db)
+        # Queue operations now use components (no queue wrapper needed)
 
         # Config service for registration
         self._config_service = config_service
@@ -192,7 +191,9 @@ class Application:
 
         # Cleanup orphaned jobs from previous sessions
         logging.info("[Application] Checking for orphaned jobs...")
-        reset_count = self.queue.reset_stuck_jobs()
+        from nomarr.components.queue import reset_stuck_jobs
+
+        reset_count = reset_stuck_jobs(self.db, queue_type="tag")
         if reset_count > 0:
             logging.info(f"[Application] Reset {reset_count} orphaned job(s) from 'running' to 'pending'")
 
@@ -260,7 +261,7 @@ class Application:
 
         # Initialize services (DI: inject dependencies)
         logging.info("[Application] Initializing services...")
-        self.register_service("queue", QueueService(self.queue, self._config, event_broker=self.event_broker))
+        # QueueService removed - interfaces now call components/workflows directly
 
         # Register ML service
         from nomarr.services.ml_svc import MLConfig, MLService
@@ -342,7 +343,17 @@ class Application:
         )
 
         # Create three worker pools using WorkerPoolService
+        # TODO: Worker architecture refactor (Phase 3-5 from REFACTORING_PLAN_WORKERS.md)
+        # WorkerPoolService is legacy - will be replaced with WorkerSystemService
+        # that manages multiple Process-based workers per queue type
+        # For now, keep existing worker architecture while queue components are stabilizing
         logging.info("[Application] Setting up three worker pools (tagger, scanner, recalibration)...")
+
+        # Temporary: Create a ProcessingQueue for legacy WorkerPoolService
+        # Will be removed when workers are converted to use components directly
+        from nomarr.services.queue_svc import BaseQueue, ProcessingQueue, RecalibrationQueue, ScanQueue
+
+        legacy_queue = ProcessingQueue(self.db)
 
         # 1. Tagger worker pool
         tagger_pool_cfg = WorkerPoolConfig(
@@ -357,7 +368,7 @@ class Application:
 
         self.tagger_pool_service = WorkerPoolService(
             db=self.db,
-            queue=self.queue,
+            queue=legacy_queue,
             processing_backend=tagger_backend,
             event_broker=self.event_broker,
             cfg=tagger_pool_cfg,

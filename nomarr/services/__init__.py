@@ -33,7 +33,10 @@ from .keys_svc import SESSION_TIMEOUT_SECONDS, KeyManagementService
 from .library_svc import LibraryRootConfig, LibraryService
 from .ml_svc import MLConfig, MLService
 from .navidrome_svc import NavidromeConfig, NavidromeService
-from .queue_svc import BaseQueue, Job, ProcessingQueue, QueueService, RecalibrationQueue, ScanQueue
+
+# queue_svc imports kept temporarily for legacy WorkerPoolService
+# TODO: Remove when workers are converted to use components directly (Phase 3-5)
+from .queue_svc import BaseQueue, Job, ProcessingQueue, RecalibrationQueue, ScanQueue
 from .recalibration_svc import RecalibrationService
 from .workers_coordinator_svc import WorkersCoordinator
 
@@ -76,11 +79,10 @@ __all__ = [
     "MLService",
     "NavidromeConfig",
     "NavidromeService",
-    "ProcessingQueue",
-    "QueueService",
-    "RecalibrationQueue",
+    "ProcessingQueue",  # TODO: Remove when workers use components (Phase 3-5)
+    "RecalibrationQueue",  # TODO: Remove when workers use components (Phase 3-5)
     "RecalibrationService",
-    "ScanQueue",
+    "ScanQueue",  # TODO: Remove when workers use components (Phase 3-5)
     "WorkersCoordinator",
     "check_missing_calibrations",
     "download_calibrations",

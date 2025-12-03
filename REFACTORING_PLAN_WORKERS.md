@@ -1,7 +1,50 @@
-# Worker Refactoring Plan - December 2, 2025
+# Worker Refactoring Plan - December 2-3, 2025
 
-**Status:** Planning phase - architectural issues identified, solutions proposed  
+**Status:** Queue components refactor complete (Dec 2-3) - Worker process conversion in progress  
 **Goal:** Simplify worker architecture and fix service layer organization
+
+---
+
+## Update: Queue Components Refactor (COMPLETED Dec 2-3)
+
+✅ **What was completed:**
+- Created `components/queue/` with 4 component modules:
+  - `queue_enqueue_comp.py` - enqueue_file(), check_file_needs_processing()
+  - `queue_dequeue_comp.py` - get_next_job(), mark_job_complete(), mark_job_error()
+  - `queue_status_comp.py` - get_queue_stats(), get_queue_depth(), list_jobs()
+  - `queue_cleanup_comp.py` - remove_job(), clear_jobs_by_status(), reset_jobs()
+- Created `workflows/queue/` with orchestration workflows:
+  - `enqueue_files_wf.py` - discover and enqueue files with filtering
+  - `clear_queue_wf.py` - clear jobs by status with validation
+  - `reset_jobs_wf.py` - reset stuck/error jobs with rules
+  - `remove_jobs_wf.py` - remove specific jobs with validation
+- Updated RecalibrationService to use components/workflows (removed RecalibrationQueue)
+- Updated LibraryService to use components/workflows (removed ScanQueue)
+- Updated BaseWorker and all 3 worker types to use components (no more internal routing)
+- Removed `worker` parameters from LibraryService and RecalibrationService ✅ **Phase 2 Complete**
+- Cleaned up legacy `scan_library_wf.py` (removed unused monolithic workflow)
+- Updated all library workflows to use queue components
+- Marked `services/queue_svc.py` for deletion with comprehensive TODO
+
+⏳ **Still remaining from queue refactor:**
+- Update interfaces (admin_if, public_if, queue_if, processing_if) to call workflows instead of QueueService
+- Update app.py DI container (pass queue_type instead of queue objects)
+- Fix tests (conftest.py, test_queue_service.py, test_processing_queue.py)
+- Delete queue_svc.py once all imports are removed
+- Run full verification (mypy, ruff, tests)
+
+**Architecture achieved:**
+```
+Interfaces (thin API/CLI)
+  ↓ call
+Services (orchestration + DI)
+  ↓ call
+Workflows (use case logic)
+  ↓ call
+Components (domain operations)  ← queue components live here
+  ↓ call
+Persistence (DB/queue access)
+```
 
 ---
 
@@ -193,43 +236,47 @@ rm nomarr/services/processing_backends.py  # Maybe keep, TBD
 
 ---
 
-### Phase 2: Remove Dead Worker Parameters ✅ DO SECOND
+### Phase 2: Remove Dead Worker Parameters ✅ COMPLETED (Dec 2-3)
 
-**2.1 Remove from LibraryService**
+**DONE - Completed during queue components refactor:**
+
+✅ **2.1 Removed from LibraryService**
 ```python
 # Before
 def __init__(self, db: Database, cfg: LibraryRootConfig, worker: LibraryScanWorker | None = None):
     self.worker = worker
 
-# After
+# After (CURRENT STATE)
 def __init__(self, db: Database, cfg: LibraryRootConfig):
-    # No worker parameter
+    # No worker parameter - services call workflows/components
 ```
 
-**2.2 Remove from RecalibrationService**
+✅ **2.2 Removed from RecalibrationService**
 ```python
 # Before
 def __init__(self, database: Database, worker: RecalibrationWorker | None = None, library_service: LibraryService | None = None):
     self.worker = worker
 
-# After
+# After (CURRENT STATE)
 def __init__(self, database: Database, library_service: LibraryService | None = None):
-    # No worker parameter
+    # No worker parameter - services call workflows/components
 ```
 
-**2.3 Remove all `self.worker.is_alive()` checks**
-- Replace with direct queue operations
-- Or query WorkerSystemService for worker status if needed
+✅ **2.3 Removed all `self.worker.is_alive()` checks**
+- Services now use queue components directly
+- No worker lifecycle management in domain services
+- Workers managed by WorkerSystemService (when implemented)
 
-**2.4 Update app.py constructor calls**
+✅ **2.4 Updated app.py constructor calls**
 ```python
 # Before
 library_service = LibraryService(db=self.db, cfg=library_cfg, worker=None)
 recalibration_service = RecalibrationService(database=self.db, worker=None, library_service=library_service)
 
-# After
+# After (CURRENT STATE)
 library_service = LibraryService(db=self.db, cfg=library_cfg)
 recalibration_service = RecalibrationService(database=self.db, library_service=library_service)
+# Services use components: enqueue_file(db, path, queue_type="library")
 ```
 
 ---
@@ -738,29 +785,63 @@ def tagger_backend(path: str, force: bool) -> ProcessFileResult:
 
 ## Success Criteria
 
-After refactoring, we should have:
+### Phase 1: Queue Components (COMPLETED Dec 2-3)
 
-1. ✅ Clear separation: `services/domain/` vs `services/infrastructure/`
-2. ✅ Multiple worker processes per queue type (configurable counts)
-3. ✅ Workers communicate via DB meta table IPC with unique keys per worker
-4. ✅ Workers write heartbeats to DB health table every 5s
-5. ✅ WorkerSystemService monitors health and auto-restarts crashed/hung workers
-6. ✅ Exponential backoff prevents restart loops (1s → 60s max)
-7. ✅ After 5 rapid restarts, worker marked "failed" and stops restarting
-8. ✅ Admin API can reset restart count for manual recovery
-9. ✅ Domain services have no worker references
-10. ✅ WorkerSystemService owns all worker lifecycle and manages N processes per type
-11. ✅ Each worker process has isolated CUDA context
-12. ✅ No `CoordinatorService` or `WorkerPoolService` complexity
-13. ✅ Queue dequeue is atomic (multiple workers can safely poll same queue)
-14. ✅ Bidirectional health monitoring (app + workers write heartbeats)
-15. ✅ External monitoring can check app health via DB query
+1. ✅ Queue components created (enqueue, dequeue, status, cleanup)
+2. ✅ Queue workflows created (orchestrate components with business rules)
+3. ✅ Services use workflows/components instead of queue wrappers
+4. ✅ Workers use components for polling/updating jobs
+5. ✅ Domain services have no worker references
+6. ✅ Proper layering: interfaces → services → workflows → components → persistence
+7. ⏳ Interfaces updated to call workflows (in progress)
+8. ⏳ queue_svc.py deleted (marked for deletion)
+
+### Phase 2: Worker Process Architecture (TODO)
+
+1. ⏳ Clear separation: `services/domain/` vs `services/infrastructure/`
+2. ⏳ Multiple worker processes per queue type (configurable counts)
+3. ⏳ Workers communicate via DB meta table IPC with unique keys per worker
+4. ⏳ Workers write heartbeats to DB health table every 5s
+5. ⏳ WorkerSystemService monitors health and auto-restarts crashed/hung workers
+6. ⏳ Exponential backoff prevents restart loops (1s → 60s max)
+7. ⏳ After 5 rapid restarts, worker marked "failed" and stops restarting
+8. ⏳ Admin API can reset restart count for manual recovery
+9. ⏳ WorkerSystemService owns all worker lifecycle and manages N processes per type
+10. ⏳ Each worker process has isolated CUDA context
+11. ⏳ No `CoordinatorService` or `WorkerPoolService` complexity
+12. ✅ Queue dequeue is atomic (multiple workers can safely poll same queue) - already true
+13. ⏳ Bidirectional health monitoring (app + workers write heartbeats)
+14. ⏳ External monitoring can check app health via DB query
 
 ---
 
 ## Files to Change
 
-### Move & Rename
+### Already Modified (Queue Components Refactor - Dec 2-3) ✅
+- ✅ `services/library_svc.py` - Removed worker param, uses queue components
+- ✅ `services/recalibration_svc.py` - Removed worker param, uses queue components
+- ✅ `services/workers/base.py` - Uses queue components (get_next_job, mark_job_complete, etc.)
+- ✅ `services/workers/tagger.py` - Updated to use components
+- ✅ `services/workers/scanner.py` - Updated to use components
+- ✅ `services/workers/recalibration.py` - Updated to use components
+- ✅ `workflows/library/scan_library_wf.py` - Cleaned up legacy code
+- ✅ `workflows/library/start_library_scan_wf.py` - Uses queue components
+- ✅ `services/queue_svc.py` - Marked for deletion with TODO
+
+### Still Need to Modify (Finish Queue Refactor) ⏳
+- ⏳ `interfaces/api/v1/admin_if.py` - Replace QueueService calls with workflows
+- ⏳ `interfaces/api/v1/public_if.py` - Replace QueueService calls with workflows
+- ⏳ `interfaces/api/web/queue_if.py` - Replace QueueService calls with workflows
+- ⏳ `interfaces/api/web/processing_if.py` - Replace QueueService calls with workflows
+- ⏳ `interfaces/api/web/dependencies.py` - Remove QueueService dependency
+- ⏳ `app.py` - Update DI to not create QueueService
+- ⏳ `services/__init__.py` - Remove QueueService export
+- ⏳ `tests/conftest.py` - Update fixtures to not use queue wrappers
+- ⏳ `tests/unit/services/test_queue_service.py` - Rewrite or delete
+- ⏳ `tests/unit/data/test_processing_queue.py` - Rewrite or delete
+- ⏳ DELETE `services/queue_svc.py` once all imports removed
+
+### Future: Worker Process Architecture (Phase 1-5 of original plan) 🔮
 - `services/analytics_svc.py` → `services/domain/analytics_svc.py`
 - `services/calibration_svc.py` → `services/domain/calibration_svc.py`
 - `services/library_svc.py` → `services/domain/library_svc.py`
@@ -772,25 +853,12 @@ After refactoring, we should have:
 - `services/info_svc.py` → `services/infrastructure/info_svc.py`
 - `services/workers_coordinator_svc.py` → `services/infrastructure/worker_system_svc.py`
 - `services/workers/` → `services/infrastructure/workers/`
-
-### Delete
-- `services/coordinator_svc.py`
-- `services/worker_pool_svc.py`
-- `services/health_monitor_svc.py` (replaced by DB health table)
-- Possibly `services/processing_backends.py` (or refactor heavily)
-
-### Modify
+- `services/coordinator_svc.py` → DELETE
+- `services/worker_pool_svc.py` → DELETE
 - `services/infrastructure/workers/base.py` - Change to Process, add DB IPC + health heartbeat
-- `services/infrastructure/workers/tagger.py` - Remove event_broker param
-- `services/infrastructure/workers/scanner.py` - Remove event_broker param
-- `services/infrastructure/workers/recalibration.py` - Remove event_broker param
-- `services/domain/library_svc.py` - Remove worker param
-- `services/domain/recalibration_svc.py` - Remove worker param
 - `components/events/event_broker_comp.py` - Add DB polling for meta + health
 - `persistence/db.py` - Add `health` table operations
-- `app.py` - Update all imports, worker creation, add app heartbeat
-- `services/__init__.py` - Update exports
-- All interfaces - Update imports
+- `app.py` - Worker creation, add app heartbeat
 
 ---
 

@@ -1,7 +1,32 @@
 # Inter-Process Communication Architecture Analysis
 
-**Date:** December 2, 2025  
+**Date:** December 2-3, 2025  
+**Status:** Queue components refactor complete - IPC design ready for implementation  
 **Context:** Understanding how worker processes communicate with main application
+
+---
+
+## Update: Queue Components Refactor (COMPLETED Dec 2-3)
+
+Before implementing the DB-based IPC design below, we completed a prerequisite refactor:
+
+✅ **Queue Components Architecture Established:**
+- Created `components/queue/` with 4 component modules (enqueue, dequeue, status, cleanup)
+- All components accept `db: Database, queue_type: QueueType` parameters
+- Workers now call `get_next_job(db, queue_type)` instead of routing internally
+- Services call workflows, workflows orchestrate components
+- Marked legacy queue wrappers (ProcessingQueue, ScanQueue, RecalibrationQueue) for deletion
+
+**Why this matters for IPC:**
+- Queue components are already parameterized with `db` and `queue_type`
+- When workers become processes, they'll create their own `Database(db_path)` connections
+- Components will work identically in separate processes (just pass different db connection)
+- No component code changes needed when switching to multiprocessing
+
+**Remaining work before IPC implementation:**
+- Update interfaces to call workflows instead of QueueService
+- Delete queue_svc.py
+- Then proceed with DB-based IPC (health table + meta table) as designed below
 
 ---
 
@@ -264,17 +289,18 @@ def enqueue_file(self, file_path: str) -> int:
 
 ## Migration Path
 
-### Step 1: Remove `worker` from Services ✅ DO NOW
-- Remove `worker` parameter from `LibraryService.__init__`
-- Remove `worker` parameter from `RecalibrationService.__init__`
-- Remove all `self.worker` checks from service methods
-- Services should just enqueue work - coordinator manages workers
+### Step 1: Remove `worker` from Services ✅ DONE (Dec 2-3)
+- ✅ Removed `worker` parameter from `LibraryService.__init__`
+- ✅ Removed `worker` parameter from `RecalibrationService.__init__`
+- ✅ Removed all `self.worker` checks from service methods
+- ✅ Services now use queue components - coordinator manages workers
 
 ### Step 2: Add DB-based IPC to BaseWorker ⏳ DO NEXT
 - Keep workers as threads temporarily
 - Replace `event_broker` direct calls with `db.meta.set()` writes
 - Update StateBroker to poll DB instead of direct updates
 - Verify SSE still works
+- **Note:** Queue components already work with this pattern - they accept `db` parameter
 
 ### Step 3: Convert Workers to Processes ⏳ DO AFTER
 - Change `BaseWorker(threading.Thread)` → `BaseWorker(multiprocessing.Process)`
