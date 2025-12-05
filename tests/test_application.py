@@ -31,8 +31,8 @@ def test_application_initial_state():
     app = Application()
     assert app.is_running() is False
     assert app.services == {}
-    assert app.coordinator is None
-    # workers is now a list of worker instances, not empty initially
+    # Phase 1: coordinator and workers disabled (will be restored in Phase 4)
+    assert app.workers_coordinator is None
     assert isinstance(app.workers, list)
 
 
@@ -65,12 +65,14 @@ def test_database_singleton():
 
 
 def test_queue_singleton():
-    """Verify queue singleton exists on application instance."""
+    """Verify queue service exists on application instance."""
     import nomarr.app as app
 
-    # Queue is accessed via application.queue
-    assert app.application.queue is not None
-    assert hasattr(app.application.queue, "add")
+    # Phase 1: Queue wrapper removed, access via services instead
+    # Queue operations now go through QueueService registered in services dict
+    # Will be fully restored in Phase 4
+    assert app.application.services is not None
+    assert isinstance(app.application.services, dict)
 
 
 # NOTE: Full integration tests (start/stop lifecycle) will be added

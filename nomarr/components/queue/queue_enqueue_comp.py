@@ -54,7 +54,7 @@ def check_file_needs_processing(db: Database, path: str, force: bool, queue_type
     if queue_type == "tag":
         # Check if file has been tagged and modification time matches
         existing = db.library_files.get_library_file(path)
-        if existing and existing.get("modified_time") == modified_time:
+        if existing and existing.get("modified_time") == modified_time:  # noqa: SIM103
             # File unchanged since last tag
             return False
         return True
@@ -62,7 +62,7 @@ def check_file_needs_processing(db: Database, path: str, force: bool, queue_type
     elif queue_type == "library":
         # Check if file has been scanned and modification time matches
         existing = db.library_files.get_library_file(path)
-        if existing and existing.get("modified_time") == modified_time:
+        if existing and existing.get("modified_time") == modified_time:  # noqa: SIM103
             # File unchanged since last scan
             return False
         return True

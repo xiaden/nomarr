@@ -15,14 +15,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from nomarr.persistence.db import Database
-    from nomarr.services.analytics_svc import AnalyticsService
-    from nomarr.services.calibration_svc import CalibrationService
-    from nomarr.services.config_svc import ConfigService
-    from nomarr.services.coordinator_svc import CoordinatorService
-    from nomarr.services.library_svc import LibraryService
-    from nomarr.services.navidrome_svc import NavidromeService
-    from nomarr.services.workers_coordinator_svc import WorkersCoordinator
+    from nomarr.services.domain.analytics_svc import AnalyticsService
+    from nomarr.services.domain.calibration_svc import CalibrationService
+    from nomarr.services.domain.library_svc import LibraryService
+    from nomarr.services.domain.navidrome_svc import NavidromeService
+    from nomarr.services.infrastructure.config_svc import ConfigService
+    from nomarr.services.infrastructure.queue_svc import QueueService
+    from nomarr.services.infrastructure.worker_system_svc import WorkerSystemService
 
 
 def get_config() -> dict[str, Any]:
@@ -33,34 +32,28 @@ def get_config() -> dict[str, Any]:
     return config_service.get_config()  # type: ignore[no-any-return]
 
 
-def get_database() -> Database:
-    """Get Database instance for direct component/workflow access."""
+def get_queue_service() -> QueueService:
+    """Get QueueService instance."""
     from nomarr.app import application
 
-    if not application.db:
+    service = application.services.get("queue")
+    if not service:
         from fastapi import HTTPException
 
-        raise HTTPException(status_code=503, detail="Database not available")
-    return application.db
+        raise HTTPException(status_code=503, detail="Queue service not available")
+    return service  # type: ignore[no-any-return]
 
 
-def get_workers_coordinator() -> WorkersCoordinator:
-    """Get WorkersCoordinator instance."""
+def get_workers_coordinator() -> WorkerSystemService:
+    """Get WorkerSystemService instance."""
     from fastapi import HTTPException
 
     from nomarr.app import application
 
     service = application.services.get("workers")
     if not service:
-        raise HTTPException(status_code=503, detail="Workers coordinator not available")
+        raise HTTPException(status_code=503, detail="Worker system not available")
     return service  # type: ignore[no-any-return]
-
-
-def get_processor_coordinator() -> CoordinatorService | None:
-    """Get CoordinatorService instance (may be None)."""
-    from nomarr.app import application
-
-    return application.tagger_coordinator
 
 
 def get_event_broker() -> Any | None:

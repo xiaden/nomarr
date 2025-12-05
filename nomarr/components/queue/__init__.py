@@ -29,27 +29,27 @@ from nomarr.components.queue.queue_status_comp import (
 )
 
 __all__ = [
+    "check_file_needs_processing",
+    "cleanup_old_jobs",
+    "clear_all_jobs",
+    "clear_completed_jobs",
+    "clear_error_jobs",
+    "clear_jobs_by_status",
     # Enqueue operations
     "enqueue_file",
     "enqueue_file_checked",
-    "check_file_needs_processing",
+    "get_active_jobs",
+    "get_job",
     # Dequeue operations
     "get_next_job",
-    "mark_job_complete",
-    "mark_job_error",
+    "get_queue_depth",
     # Status operations
     "get_queue_stats",
-    "get_queue_depth",
-    "get_job",
     "list_jobs",
-    "get_active_jobs",
+    "mark_job_complete",
+    "mark_job_error",
     # Cleanup operations
     "remove_job",
-    "clear_jobs_by_status",
-    "clear_completed_jobs",
-    "clear_error_jobs",
-    "clear_all_jobs",
-    "reset_stuck_jobs",
     "reset_error_jobs",
-    "cleanup_old_jobs",
+    "reset_stuck_jobs",
 ]

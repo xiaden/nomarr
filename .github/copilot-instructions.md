@@ -30,7 +30,7 @@ You are here to help maintain that architecture, not invent a new one.
 **Always:**
 
 - follow the layering rules and directory placement below
-- follow naming standards in `docs/NAMING_STANDARDS.md`
+- follow naming standards in `docs/dev/naming.md`
 - consult layer-specific guidelines in each layer's base folder (e.g., `services/SERVICES.md`)
 - use dependency injection (receive `db`, config, ML backends, etc. as parameters or constructor deps)
 - keep imports local when they are optional or heavy (Essentia, ML backends, etc.)
@@ -63,7 +63,7 @@ Responsibilities:
 
 ### 2.1 Naming Standards
 
-**All code must follow the naming conventions in `docs/NAMING_STANDARDS.md`.**
+**All code must follow the naming conventions in `docs/dev/naming.md`.**
 
 Key rules:
 - Services: `<Noun>Service` (e.g., `LibraryService`, `QueueService`)

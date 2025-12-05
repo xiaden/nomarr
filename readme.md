@@ -214,13 +214,12 @@ Each numeric tag includes the full model head identifier (model version, backbon
 
 ## 📖 Documentation
 
-- **[API Reference](docs/API_REFERENCE.md)** - Complete endpoint documentation and Lidarr integration examples
-- **[Calibration System](docs/CALIBRATION.md)** - ML model calibration with drift tracking (dev feature)
-- **[Deployment Guide](docs/DEPLOYMENT.md)** - Docker setup, configuration, and troubleshooting
-- **[Model Information](docs/modelsinfo.md)** - Details about Essentia ML models
-- **[Navidrome Integration](docs/NAVIDROME_INTEGRATION.md)** - Smart playlist generation and config export
-- **[Versioning Strategy](docs/VERSIONING.md)** - Semantic versioning and release process
-- **[Configuration Guide](docs/README.md)** - Advanced configuration and architecture overview
+- **[Getting Started](docs/user/getting_started.md)** - Installation, setup, and first steps
+- **[API Reference](docs/user/api_reference.md)** - Complete endpoint documentation and examples
+- **[Deployment Guide](docs/user/deployment.md)** - Docker setup, configuration, and production best practices
+- **[Navidrome Integration](docs/user/navidrome.md)** - Smart playlist generation guide
+- **[Architecture](docs/dev/architecture.md)** - System design and component overview
+- **[Developer Documentation](docs/index.md)** - Complete documentation index
 
 ---
 

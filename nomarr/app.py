@@ -18,24 +18,28 @@ The singleton instance is available as `application` at module level.
 from __future__ import annotations
 
 import logging
+import os
+import threading
+import time
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from nomarr.components.events.event_broker_comp import StateBroker
 from nomarr.persistence.db import Database
-from nomarr.services.analytics_svc import AnalyticsService
-from nomarr.services.calibration_svc import CalibrationService
-from nomarr.services.config_svc import ConfigService
-from nomarr.services.coordinator_svc import CoordinatorService
-from nomarr.services.health_monitor_svc import HealthMonitorService
-from nomarr.services.keys_svc import KeyManagementService
-from nomarr.services.library_svc import LibraryRootConfig, LibraryService
-from nomarr.services.navidrome_svc import NavidromeService
-from nomarr.services.recalibration_svc import RecalibrationService
-from nomarr.services.worker_pool_svc import WorkerPoolConfig, WorkerPoolService
-from nomarr.services.workers.recalibration import RecalibrationWorker
-from nomarr.services.workers.scanner import LibraryScanWorker
-from nomarr.services.workers.tagger import TaggerWorker
+from nomarr.services.domain.analytics_svc import AnalyticsService
+from nomarr.services.domain.calibration_svc import CalibrationService
+from nomarr.services.domain.library_svc import LibraryRootConfig, LibraryService
+from nomarr.services.domain.navidrome_svc import NavidromeService
+from nomarr.services.domain.recalibration_svc import RecalibrationService
+from nomarr.services.infrastructure.config_svc import ConfigService
+
+# DELETED: from nomarr.services.coordinator_svc import CoordinatorService
+from nomarr.services.infrastructure.health_monitor_svc import HealthMonitorService
+from nomarr.services.infrastructure.keys_svc import KeyManagementService
+from nomarr.services.infrastructure.queue_svc import QueueService
+from nomarr.services.infrastructure.worker_system_svc import WorkerSystemService
+
+# DELETED: from nomarr.services.worker_pool_svc import WorkerPoolConfig, WorkerPoolService
 
 
 # ----------------------------------------------------------------------
@@ -80,7 +84,7 @@ class Application:
         self._config = config_service.get_config().config
 
         # Import internal constants
-        from nomarr.services.config_svc import (
+        from nomarr.services.infrastructure.config_svc import (
             INTERNAL_HOST,
             INTERNAL_LIBRARY_SCAN_POLL_INTERVAL,
             INTERNAL_NAMESPACE,
@@ -113,7 +117,6 @@ class Application:
 
         # Core dependencies (owned by Application)
         self.db = Database(self.db_path)
-        # Queue operations now use components (no queue wrapper needed)
 
         # Config service for registration
         self._config_service = config_service
@@ -121,19 +124,13 @@ class Application:
         # Services container (DI registry)
         self.services: dict[str, Any] = {}
 
-        # Workers and processing
-        self.tagger_coordinator: CoordinatorService | None = None
-        self.scanner_coordinator: CoordinatorService | None = None
-        self.recalibration_coordinator: CoordinatorService | None = None
-        self.workers: list = []
-        self.tagger_pool_service: WorkerPoolService | None = None
-        self.scanner_pool_service: WorkerPoolService | None = None
-        self.recalibration_pool_service: WorkerPoolService | None = None
-        self.workers_coordinator: Any = None  # Set during initialization to WorkersCoordinator
+        # Workers and processing (Phase 4: multiprocessing with health monitoring)
+        self.worker_system: WorkerSystemService | None = None
 
         # Infrastructure
         self.event_broker: StateBroker | None = None
         self.health_monitor: HealthMonitorService | None = None
+        self._heartbeat_thread: threading.Thread | None = None
 
         # Auth/keys
         self.api_key: str | None = None
@@ -169,6 +166,25 @@ class Application:
             raise KeyError(f"Service '{name}' not found. Available services: {list(self.services.keys())}")
         return self.services[name]
 
+    def _start_app_heartbeat(self) -> None:
+        """Start background thread to write app heartbeat (Phase 3: DB-based IPC)."""
+
+        def heartbeat_loop():
+            while self._running:
+                try:
+                    # Periodic heartbeat update (status="healthy" by default)
+                    self.db.health.update_heartbeat(
+                        component="app",
+                        status="healthy",
+                    )
+                except Exception as e:
+                    logging.error(f"[Application] Heartbeat error: {e}")
+                time.sleep(5)
+
+        self._heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True, name="AppHeartbeat")
+        self._heartbeat_thread.start()
+        logging.info("[Application] App heartbeat started")
+
     def start(self):
         """
         Start the application - initialize all services, workers, and background tasks.
@@ -189,15 +205,17 @@ class Application:
 
         logging.info("[Application] Starting...")
 
+        # Clean ephemeral state from previous runs (Phase 3: health monitoring)
+        logging.info("[Application] Cleaning ephemeral runtime state...")
+        self.db.health.clean_all()
+        # Delete worker/job meta keys using meta operations
+        self.db.conn.execute("DELETE FROM meta WHERE key LIKE 'worker:%' OR key LIKE 'job:%'")
+        self.db.conn.commit()
+
+        # Mark app as starting
+        self.db.health.mark_starting(component="app", pid=os.getpid())
+
         # Cleanup orphaned jobs from previous sessions
-        logging.info("[Application] Checking for orphaned jobs...")
-        from nomarr.components.queue import reset_stuck_jobs
-
-        reset_count = reset_stuck_jobs(self.db, queue_type="tag")
-        if reset_count > 0:
-            logging.info(f"[Application] Reset {reset_count} orphaned job(s) from 'running' to 'pending'")
-
-        # Reset stuck library scans
         logging.info("[Application] Checking for stuck library scans...")
         scan_reset_count = self.db.library_queue.reset_running_library_scans()
         if scan_reset_count > 0:
@@ -212,59 +230,21 @@ class Application:
         self.register_service("keys", key_service)
         self.register_service("config", self._config_service)
 
-        # Initialize event broker (lazy import to avoid circular dependency)
+        # Initialize event broker (Phase 3.6: DB polling for multiprocessing IPC)
         logging.info("[Application] Initializing event broker...")
         from nomarr.components.events.event_broker_comp import StateBroker
 
-        self.event_broker = StateBroker()
-
-        # Create processing backends for all three worker types
-        logging.info("[Application] Setting up processing backends...")
-        from nomarr.services import processing_backends
-
-        # Create three coordinators with pooled backends
-        logging.info(
-            f"[Application] Starting three CoordinatorService instances with {self.worker_count} workers each..."
-        )
-        from nomarr.services.coordinator_svc import CoordinatorConfig, CoordinatorService
-
-        coordinator_cfg = CoordinatorConfig(
-            worker_count=self.worker_count,
-            event_broker=self.event_broker,
-        )
-
-        # Tagger coordinator with pooled tagger backend
-        self.tagger_coordinator = CoordinatorService(
-            cfg=coordinator_cfg,
-            processing_backend=processing_backends.pooled_tagger_backend,
-        )
-        self.tagger_coordinator.start()
-
-        # Scanner coordinator with pooled scanner backend
-        self.scanner_coordinator = CoordinatorService(
-            cfg=coordinator_cfg,
-            processing_backend=processing_backends.pooled_scanner_backend,
-        )
-        self.scanner_coordinator.start()
-
-        # Recalibration coordinator with pooled recalibration backend
-        self.recalibration_coordinator = CoordinatorService(
-            cfg=coordinator_cfg,
-            processing_backend=processing_backends.pooled_recalibration_backend,
-        )
-        self.recalibration_coordinator.start()
-
-        # Wrap coordinators with coordinator backends (for workers)
-        tagger_backend = processing_backends.make_coordinator_backend(self.tagger_coordinator)
-        scanner_backend = processing_backends.make_coordinator_backend(self.scanner_coordinator)
-        recalibration_backend = processing_backends.make_coordinator_backend(self.recalibration_coordinator)
+        self.event_broker = StateBroker(db=self.db, poll_interval=0.5)
 
         # Initialize services (DI: inject dependencies)
         logging.info("[Application] Initializing services...")
-        # QueueService removed - interfaces now call components/workflows directly
+
+        # QueueService - TODO: Phase 4 - needs new signature
+        queue_service = QueueService(self.db, self._config, event_broker=self.event_broker)
+        self.register_service("queue", queue_service)
 
         # Register ML service
-        from nomarr.services.ml_svc import MLConfig, MLService
+        from nomarr.services.infrastructure.ml_svc import MLConfig, MLService
 
         ml_cfg = MLConfig(
             models_dir=str(self.models_dir),
@@ -283,7 +263,7 @@ class Application:
 
         # Register Analytics service (DI: inject db, namespace)
         logging.info("[Application] Initializing AnalyticsService...")
-        from nomarr.services.analytics_svc import AnalyticsConfig
+        from nomarr.services.domain.analytics_svc import AnalyticsConfig
 
         analytics_cfg = AnalyticsConfig(namespace=self.namespace)
         analytics_service = AnalyticsService(db=self.db, cfg=analytics_cfg)
@@ -291,7 +271,7 @@ class Application:
 
         # Register Calibration service (DI: inject db, models_dir, namespace)
         logging.info("[Application] Initializing CalibrationService...")
-        from nomarr.services.calibration_svc import CalibrationConfig
+        from nomarr.services.domain.calibration_svc import CalibrationConfig
 
         calibration_cfg = CalibrationConfig(
             models_dir=str(self.models_dir),
@@ -302,15 +282,15 @@ class Application:
 
         # Register Navidrome service (DI: inject db, namespace)
         logging.info("[Application] Initializing NavidromeService...")
-        from nomarr.services.navidrome_svc import NavidromeConfig
+        from nomarr.services.domain.navidrome_svc import NavidromeConfig
 
         navidrome_cfg = NavidromeConfig(namespace=self.namespace)
         navidrome_service = NavidromeService(db=self.db, cfg=navidrome_cfg)
         self.register_service("navidrome", navidrome_service)
 
-        # Register Info service (DI: inject worker, queue, coordinator, ml services + config)
-        logging.info("[Application] Initializing InfoService...")
-        from nomarr.services.info_svc import InfoConfig, InfoService
+        # Register Info service - TODO: Phase 4 - needs coordinators
+        # Mock minimal version for now
+        from nomarr.services.infrastructure.info_svc import InfoConfig, InfoService
 
         info_cfg = InfoConfig(
             version="1.2",
@@ -325,136 +305,20 @@ class Application:
         )
         info_service = InfoService(
             cfg=info_cfg,
-            workers_coordinator=self.workers_coordinator,
-            queue_service=self.services.get("queue"),
-            processor_coord=self.tagger_coordinator,
-            ml_service=self.services.get("ml"),
+            workers_coordinator=self.worker_system,  # Phase 4: WorkerSystemService
+            queue_service=queue_service,
+            ml_service=ml_service,
         )
         self.register_service("info", info_service)
-
-        # Get per-pool worker counts from ConfigService (with fallback to global worker_count)
-        tagger_worker_count = self._config_service.get_worker_count("tagger")
-        scanner_worker_count = self._config_service.get_worker_count("scanner")
-        recalibration_worker_count = self._config_service.get_worker_count("recalibration")
-
-        logging.info(
-            f"[Application] Worker counts: tagger={tagger_worker_count}, "
-            f"scanner={scanner_worker_count}, recalibration={recalibration_worker_count}"
-        )
-
-        # Create three worker pools using WorkerPoolService
-        # TODO: Worker architecture refactor (Phase 3-5 from REFACTORING_PLAN_WORKERS.md)
-        # WorkerPoolService is legacy - will be replaced with WorkerSystemService
-        # that manages multiple Process-based workers per queue type
-        # For now, keep existing worker architecture while queue components are stabilizing
-        logging.info("[Application] Setting up three worker pools (tagger, scanner, recalibration)...")
-
-        # Temporary: Create a ProcessingQueue for legacy WorkerPoolService
-        # Will be removed when workers are converted to use components directly
-        from nomarr.services.queue_svc import BaseQueue, ProcessingQueue, RecalibrationQueue, ScanQueue
-
-        legacy_queue = ProcessingQueue(self.db)
-
-        # 1. Tagger worker pool
-        tagger_pool_cfg = WorkerPoolConfig(
-            worker_count=tagger_worker_count,
-            poll_interval=self.worker_poll_interval,
-        )
-
-        def make_tagger_worker(
-            db: Database, queue: BaseQueue, backend: Any, broker: Any, interval: int, worker_id: int
-        ) -> TaggerWorker:
-            return TaggerWorker(db, queue, backend, broker, interval, worker_id)  # type: ignore[arg-type]
-
-        self.tagger_pool_service = WorkerPoolService(
-            db=self.db,
-            queue=legacy_queue,
-            processing_backend=tagger_backend,
-            event_broker=self.event_broker,
-            cfg=tagger_pool_cfg,
-            worker_factory=make_tagger_worker,
-            name="TaggerPool",
-        )
-
-        # 2. Scanner worker pool (only if library_root is configured)
-        self.scanner_pool_service = None
-        if self.library_root:
-            scan_queue = ScanQueue(self.db)
-
-            scanner_pool_cfg = WorkerPoolConfig(
-                worker_count=scanner_worker_count,
-                poll_interval=self.worker_poll_interval,
-            )
-
-            def make_scanner_worker(
-                db: Database, queue: BaseQueue, backend: Any, broker: Any, interval: int, worker_id: int
-            ) -> LibraryScanWorker:
-                return LibraryScanWorker(db, queue, backend, broker, interval, worker_id)  # type: ignore[arg-type]
-
-            self.scanner_pool_service = WorkerPoolService(
-                db=self.db,
-                queue=scan_queue,
-                processing_backend=scanner_backend,
-                event_broker=self.event_broker,
-                cfg=scanner_pool_cfg,
-                worker_factory=make_scanner_worker,
-                name="ScannerPool",
-            )
-
-        # 3. Recalibration worker pool
-        recalibration_queue = RecalibrationQueue(self.db)
-
-        recalibration_pool_cfg = WorkerPoolConfig(
-            worker_count=recalibration_worker_count,
-            poll_interval=self.worker_poll_interval,
-        )
-
-        def make_recalibration_worker(
-            db: Database, queue: BaseQueue, backend: Any, broker: Any, interval: int, worker_id: int
-        ) -> RecalibrationWorker:
-            return RecalibrationWorker(db, queue, backend, broker, interval, worker_id)  # type: ignore[arg-type]
-
-        self.recalibration_pool_service = WorkerPoolService(
-            db=self.db,
-            queue=recalibration_queue,
-            processing_backend=recalibration_backend,
-            event_broker=self.event_broker,
-            cfg=recalibration_pool_cfg,
-            worker_factory=make_recalibration_worker,
-            name="RecalibrationPool",
-        )
-
-        # Create WorkersCoordinator to manage all three pools
-        logging.info("[Application] Initializing WorkersCoordinator...")
-        from nomarr.services.workers_coordinator_svc import WorkersCoordinator
-
-        self.workers_coordinator = WorkersCoordinator(
-            db=self.db,
-            tagger_pool_service=self.tagger_pool_service,
-            scanner_pool_service=self.scanner_pool_service,
-            recalibration_pool_service=self.recalibration_pool_service,
-            default_enabled=self.worker_enabled_default,
-        )
-        self.register_service("workers", self.workers_coordinator)
-
-        # Start all worker pools via coordinator
-        self.workers_coordinator.start_all_worker_pools()
-        self.workers = self.tagger_pool_service.worker_pool  # For backward compat with health monitor
 
         # Register library service if library_root is configured
         if self.library_root:
             logging.info(f"[Application] Registering LibraryService with namespace={self.namespace}")
-
             library_cfg = LibraryRootConfig(
                 namespace=self.namespace,
                 library_root=self.library_root,
             )
-            library_service = LibraryService(
-                db=self.db,
-                cfg=library_cfg,
-                worker=None,  # LibraryService will use scanner_pool_service instead
-            )
-            # Ensure at least one library exists (migrate from single library_root config)
+            library_service = LibraryService(db=self.db, cfg=library_cfg)
             library_service.ensure_default_library_exists()
             self.register_service("library", library_service)
         else:
@@ -465,37 +329,90 @@ class Application:
             "recalibration",
             RecalibrationService(
                 database=self.db,
-                worker=None,  # RecalibrationService will use recalibration_pool_service instead
                 library_service=self.services.get("library"),
             ),
         )
 
-        # Start health monitor
-        logging.info("[Application] Starting health monitor...")
-        from nomarr.services.health_monitor_svc import HealthMonitorConfig
+        # Initialize WorkerSystemService (Phase 4: multiprocessing with health monitoring)
+        logging.info("[Application] Initializing worker system...")
 
-        health_monitor_cfg = HealthMonitorConfig(check_interval=10)
-        self.health_monitor = HealthMonitorService(cfg=health_monitor_cfg)
+        # Create processing backend functions (callable wrappers around workflows)
+        def tagger_backend(path: str, force: bool):
+            """Backend for TaggerWorker - runs process_file_workflow in worker process."""
+            from nomarr.helpers.dto.processing_dto import ProcessorConfig
+            from nomarr.workflows.processing.process_file_wf import process_file_workflow
 
-        # Register tagger workers with health monitor
-        for worker in self.workers:
-            self.health_monitor.register_worker(worker, name=f"TaggerWorker-{worker.worker_id}")
+            config = ProcessorConfig(
+                models_dir=self.models_dir,
+                namespace=self.namespace,
+                calibrate_heads=self.calibrate_heads,
+                overwrite_tags=force,
+                min_duration_s=10,
+                allow_short=False,
+                batch_size=11,
+                version_tag_key=self.version_tag_key,
+                tagger_version="1.2",
+            )
+            return process_file_workflow(path=path, config=config, db=None)
 
-        # Register scanner workers with health monitor
-        if self.scanner_pool_service:
-            for worker in self.scanner_pool_service.worker_pool:
-                self.health_monitor.register_worker(worker, name=f"ScannerWorker-{worker.worker_id}")
+        def scanner_backend(path: str, force: bool):
+            """Backend for LibraryScanWorker - scans library for new/changed files."""
+            from nomarr.helpers.dto.library_dto import ScanSingleFileWorkflowParams
+            from nomarr.workflows.library.scan_single_file_wf import scan_single_file_workflow
 
-        # Register recalibration workers with health monitor
-        for worker in self.recalibration_pool_service.worker_pool:
-            self.health_monitor.register_worker(worker, name=f"RecalibrationWorker-{worker.worker_id}")
+            params = ScanSingleFileWorkflowParams(
+                file_path=path,
+                namespace=self.namespace,
+                force=force,
+                auto_tag=True,  # Auto-enqueue discovered files for tagging
+                ignore_patterns="",
+                library_id=None,
+            )
+            return scan_single_file_workflow(db=self.db, params=params)
 
-        self.health_monitor.start()
+        def recalibration_backend(path: str, force: bool):
+            """Backend for RecalibrationWorker - applies recalibration to existing tags."""
+            from nomarr.helpers.dto.calibration_dto import RecalibrateFileWorkflowParams
+            from nomarr.workflows.calibration.recalibrate_file_wf import recalibrate_file_workflow
 
+            params = RecalibrateFileWorkflowParams(
+                file_path=path,
+                models_dir=self.models_dir,
+                namespace=self.namespace,
+                version_tag_key=self.version_tag_key,
+                calibrate_heads=self.calibrate_heads,
+            )
+            recalibrate_file_workflow(db=self.db, params=params)
+            return {"status": "success", "path": path}
+
+        # Create WorkerSystemService with backends
+        self.worker_system = WorkerSystemService(
+            db=self.db,
+            tagger_backend=tagger_backend,
+            scanner_backend=scanner_backend if self.library_root else None,
+            recalibration_backend=recalibration_backend,
+            event_broker=self.event_broker,
+            tagger_count=min(2, self.worker_count),  # ML heavy, max 2
+            scanner_count=min(10, self.worker_count * 5),  # I/O bound, more workers
+            recalibration_count=min(5, self.worker_count * 2),  # CPU light
+            default_enabled=self.worker_enabled_default,
+        )
+
+        # Start all worker processes
+        logging.info("[Application] Starting worker processes...")
+        self.worker_system.start_all_workers()
+        logging.info("[Application] Worker processes started")
+
+        # Start app heartbeat thread (Phase 3: DB-based IPC)
         self._running = True
-        logging.info("[Application] Started successfully")
+        self._start_app_heartbeat()
 
-    def stop(self):
+        # Mark app as fully healthy after all services/workers started
+        self.db.health.mark_healthy(component="app", pid=os.getpid())
+
+        logging.info("[Application] Started successfully - all workers operational")
+
+    def stop(self) -> None:
         """
         Stop the application - clean shutdown of all services and workers.
 
@@ -506,41 +423,33 @@ class Application:
 
         logging.info("[Application] Shutting down...")
 
+        # Stop worker processes (Phase 4: WorkerSystemService)
+        if self.worker_system:
+            logging.info("[Application] Stopping worker processes...")
+            self.worker_system.stop_all_workers()
+            logging.info("[Application] Worker processes stopped")
+
+        # Stop event broker polling thread (Phase 3.6: DB polling)
+        if self.event_broker:
+            logging.info("[Application] Stopping event broker...")
+            self.event_broker.stop()
+
         # Stop health monitor
-        if self.health_monitor:
+        if hasattr(self, "health_monitor") and self.health_monitor:
             logging.info("[Application] Stopping health monitor...")
             self.health_monitor.stop()
 
-        # Stop all three worker pools
-        logging.info("[Application] Stopping all worker pools...")
+        # Mark app as stopping
+        self.db.health.mark_stopping(component="app", exit_code=0)
 
-        if hasattr(self, "tagger_pool_service") and self.tagger_pool_service:
-            logging.info("[Application] Stopping tagger worker pool...")
-            self.tagger_pool_service.stop_all_workers()
-
-        if hasattr(self, "scanner_pool_service") and self.scanner_pool_service:
-            logging.info("[Application] Stopping scanner worker pool...")
-            self.scanner_pool_service.stop_all_workers()
-
-        if hasattr(self, "recalibration_pool_service") and self.recalibration_pool_service:
-            logging.info("[Application] Stopping recalibration worker pool...")
-            self.recalibration_pool_service.stop_all_workers()
-
-        # Stop three coordinators
-        if hasattr(self, "tagger_coordinator") and self.tagger_coordinator:
-            logging.info("[Application] Stopping tagger coordinator...")
-            self.tagger_coordinator.stop()
-
-        if hasattr(self, "scanner_coordinator") and self.scanner_coordinator:
-            logging.info("[Application] Stopping scanner coordinator...")
-            self.scanner_coordinator.stop()
-
-        if hasattr(self, "recalibration_coordinator") and self.recalibration_coordinator:
-            logging.info("[Application] Stopping recalibration coordinator...")
-            self.recalibration_coordinator.stop()
+        # Clean ephemeral state (Phase 3: health monitoring)
+        logging.info("[Application] Cleaning ephemeral runtime state...")
+        self.db.health.clean_all()
+        self.db.conn.execute("DELETE FROM meta WHERE key LIKE 'worker:%' OR key LIKE 'job:%'")
+        self.db.conn.commit()
 
         self._running = False
-        logging.info("[Application] Shutdown complete")
+        logging.info("[Application] Shutdown complete - all workers stopped")
 
     def is_running(self) -> bool:
         """Check if application is running."""

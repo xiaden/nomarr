@@ -40,6 +40,12 @@ from nomarr.helpers.dto.analytics_dto import (
     MoodDistributionData,
     TagCorrelationData,
 )
+from nomarr.helpers.dto.events_state_dto import (
+    JobState,
+    QueueState,
+    SystemHealthState,
+    WorkerState,
+)
 from nomarr.helpers.dto.ml_dto import (
     AnalyzeWithSegmentsResult,
     ComputeEmbeddingsForBackboneParams,
@@ -64,16 +70,20 @@ __all__ = [
     "ArtistTagProfile",
     "ComputeEmbeddingsForBackboneParams",
     "GenerateMinmaxCalibrationResult",
+    "JobState",
     "LoadAudioMonoResult",
     "MoodCoOccurrenceData",
     "MoodDistributionData",
     "PlaylistPreviewResult",
     "ProcessFileResult",
     "ProcessorConfig",
+    "QueueState",
     "SaveCalibrationSidecarsResult",
     "SegmentWaveformParams",
     "SmartPlaylistFilter",
+    "SystemHealthState",
     "TagCondition",
     "TagCorrelationData",
     "TagWriteProfile",
+    "WorkerState",
 ]

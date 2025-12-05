@@ -39,7 +39,10 @@ class TestQueueServiceCleanupOldJobs:
     """Test QueueService.cleanup_old_jobs() operations."""
 
     def test_cleanup_old_jobs_success(self, real_queue_service):
-        """Should successfully cleanup old jobs."""
+        """Should successfully cleanup old jobs.
+
+        NOTE: Returns -1 for tag queue (operation succeeded but count unavailable).
+        """
         # Arrange
 
         # Act
@@ -47,7 +50,7 @@ class TestQueueServiceCleanupOldJobs:
 
         # Assert
         assert isinstance(result, int)
-        assert result >= 0  # Non-negative count
+        assert result >= -1  # -1 means succeeded but count unavailable, >= 0 means count returned
 
 
 class TestQueueServiceGetStatus:
@@ -61,7 +64,7 @@ class TestQueueServiceGetStatus:
         result = real_queue_service.get_status()
 
         # Assert
-        from nomarr.services.queue_svc import QueueStatus
+        from nomarr.services.infrastructure.queue_svc import QueueStatus
 
         assert isinstance(result, QueueStatus)
         assert isinstance(result.depth, int)
@@ -107,8 +110,8 @@ class TestQueueServiceListJobs:
         """Should successfully publish queue update."""
         # Arrange
 
-        # Act
-        real_queue_service.publish_queue_update(event_broker=None)
+        # Act - method is now private and uses instance's event_broker
+        real_queue_service._publish_queue_update()
 
         # Assert
         # Method returns None - verify it completes without exception

@@ -15,17 +15,13 @@ from .reset_jobs_wf import (
 )
 
 __all__ = [
-    # Enqueue workflows
-    "enqueue_files_workflow",
-    # Clear workflows
-    "clear_queue_workflow",
+    "clear_all_workflow",
     "clear_completed_workflow",
     "clear_errors_workflow",
-    "clear_all_workflow",
-    # Reset workflows
+    "clear_queue_workflow",
+    "enqueue_files_workflow",
+    "remove_job_workflow",
+    "reset_errors_workflow",
     "reset_jobs_workflow",
     "reset_stuck_workflow",
-    "reset_errors_workflow",
-    # Remove workflows
-    "remove_job_workflow",
 ]

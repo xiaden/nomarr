@@ -15,7 +15,7 @@ from nomarr.interfaces.api.types.analytics_types import (
 from nomarr.interfaces.api.web.dependencies import get_analytics_service
 
 if TYPE_CHECKING:
-    from nomarr.services.analytics_svc import AnalyticsService
+    from nomarr.services.domain.analytics_svc import AnalyticsService
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
 

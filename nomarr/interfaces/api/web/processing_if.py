@@ -1,26 +1,19 @@
 """Processing endpoints for web UI."""
 
-import asyncio
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from nomarr.components.queue import list_jobs as list_jobs_component
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.types.processing_types import (
     BatchProcessRequest,
     BatchProcessResponse,
     ProcessFileRequest,
-    ProcessFileResponse,
 )
 from nomarr.interfaces.api.types.queue_types import ListJobsResponse
-from nomarr.interfaces.api.web.dependencies import (
-    get_database,
-    get_processor_coordinator,
-)
-from nomarr.persistence.db import Database
-from nomarr.services.coordinator_svc import CoordinatorService
-from nomarr.workflows.queue import enqueue_files_workflow
+from nomarr.interfaces.api.web.dependencies import get_queue_service
+from nomarr.services.infrastructure.queue_svc import QueueService
 
 router = APIRouter(prefix="/processing", tags=["Processing"])
 
@@ -33,26 +26,26 @@ router = APIRouter(prefix="/processing", tags=["Processing"])
 @router.post("/process", dependencies=[Depends(verify_session)])
 async def web_process(
     request: ProcessFileRequest,
-    processor_coord: CoordinatorService | None = Depends(get_processor_coordinator),
-) -> ProcessFileResponse:
-    """Process a single file synchronously (web UI proxy)."""
-    # Check if coordinator is available
-    if not processor_coord:
-        raise HTTPException(status_code=503, detail="Processing coordinator not initialized")
-
-    # Submit job and wait for result
+    queue_service: QueueService = Depends(get_queue_service),
+) -> dict[str, Any]:
+    """Process a single file by adding to queue (web UI proxy)."""
     try:
-        result = await asyncio.get_event_loop().run_in_executor(
-            None, lambda: processor_coord.submit(request.path, request.force)
+        # Enqueue file for tagging
+        result = queue_service.enqueue_files_for_tagging(
+            paths=request.path,
+            force=request.force,
+            recursive=False,
         )
 
-        # If result is a dict (error case), extract error message
-        if isinstance(result, dict):
-            error_msg = result.get("error", "Unknown error")
-            raise HTTPException(status_code=500, detail=error_msg)
+        if not result.job_ids:
+            raise HTTPException(status_code=400, detail="Failed to add file to queue")
 
-        # Transform DTO to Pydantic response
-        return ProcessFileResponse.from_dto(result)
+        # Return job info immediately (async processing)
+        return {
+            "job_id": result.job_ids[0],
+            "files_queued": result.files_queued,
+            "queue_depth": result.queue_depth,
+        }
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=f"File not found: {request.path}") from e
     except HTTPException:
@@ -65,18 +58,15 @@ async def web_process(
 @router.post("/batch-process", dependencies=[Depends(verify_session)])
 async def web_batch_process(
     request: BatchProcessRequest,
-    db: Database = Depends(get_database),
+    queue_service: QueueService = Depends(get_queue_service),
 ) -> BatchProcessResponse:
     """
     Add multiple paths to the database queue for processing (web UI proxy).
     Each path can be a file or directory - directories are recursively scanned for audio files.
     """
-    batch_result = enqueue_files_workflow(
-        db=db,
-        queue_type="tag",
+    batch_result = queue_service.batch_add_files(
         paths=request.paths,
         force=bool(request.force),
-        recursive=True,
     )
 
     return BatchProcessResponse.from_dto(batch_result)
@@ -87,11 +77,11 @@ async def web_list(
     limit: int = 50,
     offset: int = 0,
     status: str | None = None,
-    db: Database = Depends(get_database),
+    queue_service: QueueService = Depends(get_queue_service),
 ) -> ListJobsResponse:
     """List jobs with pagination and filtering (web UI proxy)."""
-    # Use queue component to list jobs (returns ListJobsResult DTO)
-    result = list_jobs_component(db, queue_type="tag", limit=limit, offset=offset, status=status)  # type: ignore[arg-type]
+    # Use QueueService to list jobs (returns ListJobsResult DTO)
+    result = queue_service.list_jobs(limit=limit, offset=offset, status=status)
 
     # Transform DTO to Pydantic response
     return ListJobsResponse.from_dto(result)

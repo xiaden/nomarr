@@ -118,11 +118,14 @@ class QueueStatusResponse(BaseModel):
     """
     Response for queue status/depth endpoint.
 
-    Maps to QueueStatus DTO from helpers/dto/queue_dto.py
+    Maps to QueueStatus DTO from helpers/dto/queue_dto.py.
+    Flattens the structure and renames fields for frontend compatibility.
     """
 
-    depth: int
-    counts: dict[str, int]
+    pending: int
+    running: int
+    completed: int
+    errors: int
 
     @classmethod
     def from_dto(cls, status: QueueStatus) -> Self:
@@ -133,11 +136,13 @@ class QueueStatusResponse(BaseModel):
             status: Internal queue status from service layer
 
         Returns:
-            API response model
+            API response model with flattened structure
         """
         return cls(
-            depth=status.depth,
-            counts=status.counts,
+            pending=status.counts.get("pending", 0),
+            running=status.counts.get("running", 0),
+            completed=status.counts.get("completed", 0),
+            errors=status.counts.get("error", 0),
         )
 
 

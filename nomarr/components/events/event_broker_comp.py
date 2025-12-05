@@ -3,16 +3,28 @@ State-based SSE broker for real-time system state synchronization.
 
 Maintains current state of queue, workers, and jobs. Sends state snapshots
 on subscription followed by incremental updates.
+
+Phase 3.6: DB Polling for Multiprocessing IPC
+- StateBroker polls DB meta table for worker updates
+- Workers write to DB meta table instead of calling broker methods
+- Enables proper IPC when workers are separate processes
 """
 
 from __future__ import annotations
 
 import fnmatch
+import json
 import logging
 import queue
 import threading
 import time
-from typing import Any
+from dataclasses import asdict
+from typing import TYPE_CHECKING, Any
+
+from nomarr.helpers.dto.events_state_dto import JobState, QueueState, SystemHealthState, WorkerState
+
+if TYPE_CHECKING:
+    from nomarr.persistence.db import Database
 
 
 class StateBroker:
@@ -22,41 +34,254 @@ class StateBroker:
     Maintains current system state and broadcasts updates to subscribed clients.
     Clients receive a state snapshot on connection, then incremental updates.
 
+    Phase 3.6: Polls DB meta table for updates from worker processes.
+
     State topics:
-    - queue:status - Queue statistics (pending/running/completed counts, ETA)
+    - queue:status - Global aggregated queue statistics (all queues)
+    - queue:{queue_type}:status - Per-queue statistics (tag/library/calibration)
+    - queue:*:status - All per-queue statistics
     - queue:jobs - All active jobs with current state
-    - worker:{id}:status - Specific worker state (current file, progress)
-    - worker:*:status - All worker states
+    - worker:{queue_type}:{id}:status - Specific worker state (includes queue type to avoid ID collisions)
+    - worker:{queue_type}:*:status - All workers for a specific queue type
+    - worker:*:status - All worker states (all queue types)
     - system:health - System health and errors
     """
 
-    def __init__(self):
+    def __init__(self, db: Database | None = None, poll_interval: float = 0.5):
+        """
+        Initialize StateBroker.
+
+        Args:
+            db: Database instance for polling worker state (Phase 3.6)
+            poll_interval: How often to poll DB for updates (seconds)
+        """
         self._lock = threading.Lock()
         self._clients: dict[str, dict[str, Any]] = {}  # client_id -> {queue, topics, created_at}
         self._next_client_id = 0
 
-        # System state
-        self._queue_state = {
-            "pending": 0,
-            "running": 0,
-            "completed": 0,
-            "avg_time": 0.0,
-            "eta": 0.0,
-        }
-        self._jobs_state: dict[int, dict[str, Any]] = {}  # job_id -> {path, status, progress, ...}
-        self._worker_state: dict[int, dict[str, Any]] = {}  # worker_id -> {current_file, progress, ...}
-        self._system_health = {"status": "healthy", "errors": []}
+        # System state using DTOs
+        # Per-queue state (keyed by queue_type: "tag", "library", "calibration")
+        self._queue_state_by_type: dict[str, QueueState] = {}
+
+        # Global aggregated queue state (derived from per-queue stats)
+        self._queue_state_global = QueueState(
+            queue_type=None,
+            pending=0,
+            running=0,
+            completed=0,
+            avg_time=0.0,
+            eta=0.0,
+        )
+
+        self._jobs_state: dict[int, JobState] = {}  # job_id -> JobState DTO
+
+        # Worker state keyed by full component ID to avoid collisions (e.g., "worker:tag:0")
+        self._worker_state: dict[str, WorkerState] = {}  # component -> WorkerState DTO
+
+        self._system_health = SystemHealthState(status="healthy", errors=[])
+
+        # Phase 3.6: DB polling for multiprocessing IPC
+        self._db = db
+        self._poll_interval = poll_interval
+        self._poll_thread: threading.Thread | None = None
+        self._shutdown = False
+
+        # Start polling thread if DB is provided
+        if self._db:
+            self._poll_thread = threading.Thread(target=self._poll_worker_state, daemon=True, name="StateBrokerPoller")
+            self._poll_thread.start()
+            logging.info("[StateBroker] Started DB polling thread for worker IPC")
+
+    def _poll_worker_state(self) -> None:
+        """
+        Poll DB meta table for worker state updates (Phase 3.6: multiprocessing IPC).
+
+        Runs in background thread, reads state written by worker processes,
+        and broadcasts to SSE clients via normal update methods.
+        """
+        if not self._db:
+            return
+
+        logging.info("[StateBroker] DB polling thread started")
+
+        while not self._shutdown:
+            try:
+                # Poll for all queue types (tag, library, calibration)
+                for queue_type in ["tag", "library", "calibration"]:
+                    # Get queue stats
+                    stats_json = self._db.meta.get(f"queue:{queue_type}:stats")
+                    if stats_json:
+                        try:
+                            stats = json.loads(stats_json)
+                            # Update per-queue state and broadcast to per-queue topic
+                            self.update_queue_state_for_type(queue_type, **stats)
+                        except json.JSONDecodeError:
+                            pass
+
+                # Poll health table for worker states
+                workers = self._db.health.get_all_workers()
+                for worker in workers:
+                    component = worker.get("component", "")
+                    if not isinstance(component, str) or not component.startswith("worker:"):
+                        continue
+
+                    # Parse worker component ID: "worker:tag:0"
+                    parts = component.split(":")
+                    if len(parts) == 3:
+                        queue_type, worker_id_str = parts[1], parts[2]
+                        try:
+                            worker_id = int(worker_id_str)
+
+                            # Get current job from health table
+                            current_job_id = worker.get("current_job")
+
+                            worker_state = {
+                                "id": worker_id,
+                                "queue_type": queue_type,
+                                "component": component,
+                                "status": worker.get("status", "unknown"),
+                                "pid": worker.get("pid"),
+                                "current_job": current_job_id,
+                            }
+
+                            # If worker has a current job, get job details from meta table
+                            if current_job_id and isinstance(current_job_id, int):
+                                job_status = self._db.meta.get(f"job:{current_job_id}:status")
+                                job_path = self._db.meta.get(f"job:{current_job_id}:path")
+                                job_error = self._db.meta.get(f"job:{current_job_id}:error")
+                                job_results_json = self._db.meta.get(f"job:{current_job_id}:results")
+
+                                if job_status:
+                                    job_update = {
+                                        "id": current_job_id,
+                                        "path": job_path,
+                                        "status": job_status,
+                                    }
+                                    if job_error:
+                                        job_update["error"] = job_error
+                                    if job_results_json:
+                                        try:
+                                            job_update["results"] = json.loads(job_results_json)
+                                        except json.JSONDecodeError:
+                                            pass
+
+                                    # Broadcast job update
+                                    self.update_job_state(current_job_id, **job_update)
+
+                            # Broadcast worker state update (using component as key)
+                            self.update_worker_state(component, **worker_state)
+
+                        except (ValueError, KeyError):
+                            pass
+
+            except Exception as e:
+                logging.error(f"[StateBroker] Error polling worker state: {e}")
+
+            time.sleep(self._poll_interval)
+
+        logging.info("[StateBroker] DB polling thread stopped")
+
+    def stop(self) -> None:
+        """Stop the StateBroker and polling thread."""
+        self._shutdown = True
+        if self._poll_thread:
+            self._poll_thread.join(timeout=2)
+
+    def update_queue_state_for_type(self, queue_type: str, **kwargs):
+        """
+        Update per-queue statistics and broadcast to per-queue topic.
+
+        Args:
+            queue_type: Queue type ("tag", "library", "calibration")
+            **kwargs: Queue state fields (pending, running, completed, avg_time, eta)
+        """
+        with self._lock:
+            # Update or create per-queue state DTO
+            if queue_type not in self._queue_state_by_type:
+                self._queue_state_by_type[queue_type] = QueueState(
+                    queue_type=queue_type,
+                    pending=0,
+                    running=0,
+                    completed=0,
+                    avg_time=0.0,
+                    eta=0.0,
+                )
+
+            # Update DTO fields from kwargs
+            state = self._queue_state_by_type[queue_type]
+            if "pending" in kwargs:
+                state.pending = kwargs["pending"]
+            if "running" in kwargs:
+                state.running = kwargs["running"]
+            if "completed" in kwargs:
+                state.completed = kwargs["completed"]
+            if "avg_time" in kwargs:
+                state.avg_time = kwargs["avg_time"]
+            if "eta" in kwargs:
+                state.eta = kwargs["eta"]
+
+            # Broadcast per-queue update (serialize DTO to dict)
+            self._broadcast_to_topic(
+                f"queue:{queue_type}:status",
+                {"type": "state_update", "state": asdict(state)},
+            )
+
+            # Recompute global aggregate and broadcast
+            self._recompute_global_queue_state()
+
+    def _recompute_global_queue_state(self):
+        """
+        Recompute global aggregated queue state from per-queue stats.
+        Must be called with self._lock held.
+        """
+        # Aggregate counts across all queues (working with QueueState DTOs)
+        total_pending = sum(q.pending for q in self._queue_state_by_type.values())
+        total_running = sum(q.running for q in self._queue_state_by_type.values())
+        total_completed = sum(q.completed for q in self._queue_state_by_type.values())
+
+        # Weighted average of avg_time (by number of completed jobs)
+        total_weighted_time = sum(q.avg_time * q.completed for q in self._queue_state_by_type.values())
+        avg_time = total_weighted_time / total_completed if total_completed > 0 else 0.0
+
+        # Total ETA is max of all queue ETAs (pessimistic estimate)
+        eta = max((q.eta for q in self._queue_state_by_type.values()), default=0.0)
+
+        # Update global state DTO
+        self._queue_state_global.pending = total_pending
+        self._queue_state_global.running = total_running
+        self._queue_state_global.completed = total_completed
+        self._queue_state_global.avg_time = avg_time
+        self._queue_state_global.eta = eta
+
+        # Broadcast global queue status (serialize DTO to dict)
+        self._broadcast_to_topic("queue:status", {"type": "state_update", "state": asdict(self._queue_state_global)})
 
     def update_queue_state(self, **kwargs):
         """
-        Update queue statistics and broadcast to subscribers.
+        Update global queue statistics and broadcast to subscribers.
+
+        DEPRECATED: Use update_queue_state_for_type() for per-queue updates.
+        This method is kept for backward compatibility.
 
         Args:
             **kwargs: Queue state fields (pending, running, completed, avg_time, eta)
         """
         with self._lock:
-            self._queue_state.update(kwargs)
-            self._broadcast_to_topic("queue:status", {"type": "state_update", "state": self._queue_state.copy()})
+            # Update global DTO fields from kwargs
+            if "pending" in kwargs:
+                self._queue_state_global.pending = kwargs["pending"]
+            if "running" in kwargs:
+                self._queue_state_global.running = kwargs["running"]
+            if "completed" in kwargs:
+                self._queue_state_global.completed = kwargs["completed"]
+            if "avg_time" in kwargs:
+                self._queue_state_global.avg_time = kwargs["avg_time"]
+            if "eta" in kwargs:
+                self._queue_state_global.eta = kwargs["eta"]
+
+            self._broadcast_to_topic(
+                "queue:status", {"type": "state_update", "state": asdict(self._queue_state_global)}
+            )
 
     def update_job_state(self, job_id: int, **kwargs):
         """
@@ -64,34 +289,88 @@ class StateBroker:
 
         Args:
             job_id: Job ID
-            **kwargs: Job state fields (path, status, progress, head, etc.)
+            **kwargs: Job state fields (path, status, error, results)
         """
         with self._lock:
             if job_id not in self._jobs_state:
-                self._jobs_state[job_id] = {"id": job_id}
-            self._jobs_state[job_id].update(kwargs)
+                self._jobs_state[job_id] = JobState(
+                    id=job_id,
+                    path=None,
+                    status="unknown",
+                    error=None,
+                    results=None,
+                )
 
-            # Broadcast job state update
-            self._broadcast_to_topic("queue:jobs", {"type": "job_update", "job": self._jobs_state[job_id].copy()})
+            # Update DTO fields from kwargs
+            job = self._jobs_state[job_id]
+            if "path" in kwargs:
+                job.path = kwargs["path"]
+            if "status" in kwargs:
+                job.status = kwargs["status"]
+            if "error" in kwargs:
+                job.error = kwargs["error"]
+            if "results" in kwargs:
+                job.results = kwargs["results"]
 
-    def update_worker_state(self, worker_id: int, **kwargs):
+            # Broadcast job state update (serialize DTO to dict)
+            self._broadcast_to_topic("queue:jobs", {"type": "job_update", "job": asdict(job)})
+
+    def update_worker_state(self, component: str, **kwargs):
         """
         Update worker state and broadcast to subscribers.
 
         Args:
-            worker_id: Worker ID
-            **kwargs: Worker state fields (current_file, progress, head, state, etc.)
+            component: Worker component ID (e.g., "worker:tag:0")
+            **kwargs: Worker state fields (id, queue_type, status, pid, current_job)
         """
         with self._lock:
-            if worker_id not in self._worker_state:
-                self._worker_state[worker_id] = {"id": worker_id}
-            self._worker_state[worker_id].update(kwargs)
+            if component not in self._worker_state:
+                # Parse component to extract id and queue_type if not provided
+                parts = component.split(":")
+                worker_id: int | None = None
+                queue_type: str | None = None
+                if len(parts) == 3:
+                    queue_type = parts[1]
+                    try:
+                        worker_id = int(parts[2])
+                    except ValueError:
+                        pass
 
-            # Broadcast to worker-specific and wildcard topics
-            self._broadcast_to_topic(
-                f"worker:{worker_id}:status",
-                {"type": "worker_update", "worker": self._worker_state[worker_id].copy()},
-            )
+                self._worker_state[component] = WorkerState(
+                    component=component,
+                    id=worker_id,
+                    queue_type=queue_type,
+                    status="unknown",
+                    pid=None,
+                    current_job=None,
+                )
+
+            # Update DTO fields from kwargs
+            worker = self._worker_state[component]
+            if "id" in kwargs:
+                worker.id = kwargs["id"]
+            if "queue_type" in kwargs:
+                worker.queue_type = kwargs["queue_type"]
+            if "status" in kwargs:
+                worker.status = kwargs["status"]
+            if "pid" in kwargs:
+                worker.pid = kwargs["pid"]
+            if "current_job" in kwargs:
+                worker.current_job = kwargs["current_job"]
+
+            # Extract queue_type and id from component for topic construction
+            # component format: "worker:{queue_type}:{id}"
+            parts = component.split(":")
+            if len(parts) == 3:
+                queue_type = parts[1]
+                worker_id_str = parts[2]
+                topic = f"worker:{queue_type}:{worker_id_str}:status"
+            else:
+                # Fallback if component format is unexpected
+                topic = f"{component}:status"
+
+            # Broadcast to worker-specific topic (serialize DTO to dict)
+            self._broadcast_to_topic(topic, {"type": "worker_update", "worker": asdict(worker)})
 
     def remove_job(self, job_id: int):
         """Remove job from state (when completed/cleaned up)."""
@@ -146,51 +425,87 @@ class StateBroker:
         """
         Get current state snapshot for a topic.
 
+        Supports:
+        - queue:status - Global aggregated queue stats
+        - queue:{queue_type}:status - Per-queue stats (tag/library/calibration)
+        - queue:*:status - All per-queue stats
+        - queue:jobs - All jobs
+        - worker:{queue_type}:{id}:status - Specific worker
+        - worker:{queue_type}:*:status - All workers for a queue type
+        - worker:*:status - All workers (all queue types)
+        - system:health - System health
+
         Args:
             topic: Topic pattern (may include wildcards)
 
         Returns:
             State snapshot event or None
         """
-        # Queue status snapshot
-        if fnmatch.fnmatch("queue:status", topic):
-            return {"topic": "queue:status", "type": "snapshot", "state": self._queue_state.copy()}
+        # Global queue status snapshot
+        if topic == "queue:status":
+            return {"topic": "queue:status", "type": "snapshot", "state": asdict(self._queue_state_global)}
 
-        # Queue jobs snapshot
-        if fnmatch.fnmatch("queue:jobs", topic):
+        # Per-queue status snapshots
+        if topic.startswith("queue:") and topic.endswith(":status"):
+            parts = topic.split(":")
+            if len(parts) == 3:
+                queue_type = parts[1]
+                if queue_type == "*":
+                    # All per-queue stats (serialize all QueueState DTOs)
+                    return {
+                        "topic": "queue:*:status",
+                        "type": "snapshot",
+                        "queues": {qt: asdict(state) for qt, state in self._queue_state_by_type.items()},
+                    }
+                elif queue_type in self._queue_state_by_type:
+                    # Specific queue type (serialize QueueState DTO)
+                    return {
+                        "topic": topic,
+                        "type": "snapshot",
+                        "state": asdict(self._queue_state_by_type[queue_type]),
+                    }
+
+        # Queue jobs snapshot (serialize all JobState DTOs)
+        if topic == "queue:jobs":
             return {
                 "topic": "queue:jobs",
                 "type": "snapshot",
-                "jobs": list(self._jobs_state.values()),
+                "jobs": [asdict(job) for job in self._jobs_state.values()],
             }
 
-        # Worker status snapshot
+        # Worker status snapshots (serialize WorkerState DTOs)
         if topic.startswith("worker:"):
+            parts = topic.split(":")
+
             if topic == "worker:*:status":
-                # All workers
+                # All workers (all queue types)
                 return {
                     "topic": "worker:*:status",
                     "type": "snapshot",
-                    "workers": list(self._worker_state.values()),
+                    "workers": [asdict(w) for w in self._worker_state.values()],
                 }
-            else:
-                # Specific worker
-                parts = topic.split(":")
-                if len(parts) == 3 and parts[2] == "status":
-                    try:
-                        worker_id = int(parts[1])
-                        if worker_id in self._worker_state:
-                            return {
-                                "topic": topic,
-                                "type": "snapshot",
-                                "worker": self._worker_state[worker_id].copy(),
-                            }
-                    except ValueError:
-                        pass
+            elif len(parts) == 4 and parts[2] == "*" and parts[3] == "status":
+                # All workers for specific queue type: worker:{queue_type}:*:status
+                queue_type = parts[1]
+                workers_for_type = [asdict(w) for w in self._worker_state.values() if w.queue_type == queue_type]
+                return {
+                    "topic": topic,
+                    "type": "snapshot",
+                    "workers": workers_for_type,
+                }
+            elif len(parts) == 4 and parts[3] == "status":
+                # Specific worker: worker:{queue_type}:{id}:status
+                component = f"worker:{parts[1]}:{parts[2]}"
+                if component in self._worker_state:
+                    return {
+                        "topic": topic,
+                        "type": "snapshot",
+                        "worker": asdict(self._worker_state[component]),
+                    }
 
-        # System health snapshot
-        if fnmatch.fnmatch("system:health", topic):
-            return {"topic": "system:health", "type": "snapshot", "health": self._system_health.copy()}
+        # System health snapshot (serialize SystemHealthState DTO)
+        if topic == "system:health":
+            return {"topic": "system:health", "type": "snapshot", "health": asdict(self._system_health)}
 
         return None
 

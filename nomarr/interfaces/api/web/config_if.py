@@ -11,10 +11,10 @@ from nomarr.interfaces.api.types.config_types import (
     ConfigUpdateRequest,
     ConfigUpdateResponse,
 )
-from nomarr.interfaces.api.web.dependencies import get_config_service, get_worker_service
+from nomarr.interfaces.api.web.dependencies import get_config_service
 
 if TYPE_CHECKING:
-    from nomarr.services.config_svc import ConfigService
+    from nomarr.services.infrastructure.config_svc import ConfigService
 
 router = APIRouter(prefix="/config", tags=["Config"])
 
@@ -28,11 +28,10 @@ router = APIRouter(prefix="/config", tags=["Config"])
 def get_config(
     _session: dict = Depends(verify_session),
     config_service: Any = Depends(get_config_service),
-    worker_service: Any | None = Depends(get_worker_service),
 ) -> ConfigResponse:
     """Get current configuration values (user-editable subset)."""
     try:
-        result = config_service.get_config_for_web(worker_service=worker_service)
+        result = config_service.get_config_for_web(worker_service=None)
         return ConfigResponse.from_dto(result)
     except Exception as e:
         logging.exception("[Web API] Error getting config")

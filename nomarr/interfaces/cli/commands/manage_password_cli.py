@@ -15,10 +15,10 @@ import getpass
 from typing import TYPE_CHECKING
 
 from nomarr.interfaces.cli.cli_ui import print_error, print_info, print_success
-from nomarr.services.cli_bootstrap_svc import get_keys_service
+from nomarr.services.infrastructure.cli_bootstrap_svc import get_keys_service
 
 if TYPE_CHECKING:
-    from nomarr.services.keys_svc import KeyManagementService
+    from nomarr.services.infrastructure.keys_svc import KeyManagementService
 
 
 def cmd_manage_password(args: argparse.Namespace) -> int:

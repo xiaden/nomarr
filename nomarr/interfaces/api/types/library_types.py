@@ -68,14 +68,14 @@ class LibraryStatsResponse(BaseModel):
     """
     Response for library statistics endpoint.
 
-    Maps to LibraryStatsResult DTO from helpers/dto/library_dto.py
+    Maps to LibraryStatsResult DTO from helpers/dto/library_dto.py.
+    Field names match frontend expectations.
     """
 
     total_files: int
-    total_artists: int
-    total_albums: int
-    total_duration: float | None
-    total_size: int | None
+    unique_artists: int
+    unique_albums: int
+    total_duration_seconds: float
 
     @classmethod
     def from_dto(cls, stats: LibraryStatsResult) -> Self:
@@ -86,14 +86,13 @@ class LibraryStatsResponse(BaseModel):
             stats: Internal library stats from service layer
 
         Returns:
-            API response model
+            API response model with frontend-compatible field names
         """
         return cls(
             total_files=stats.total_files,
-            total_artists=stats.total_artists,
-            total_albums=stats.total_albums,
-            total_duration=stats.total_duration,
-            total_size=stats.total_size,
+            unique_artists=stats.total_artists,
+            unique_albums=stats.total_albums,
+            total_duration_seconds=stats.total_duration or 0.0,
         )
 
 

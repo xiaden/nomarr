@@ -18,7 +18,7 @@ from nomarr.interfaces.api.types.library_types import (
 from nomarr.interfaces.api.web.dependencies import get_library_service
 
 if TYPE_CHECKING:
-    from nomarr.services.library_svc import LibraryService
+    from nomarr.services.domain.library_svc import LibraryService
 
 router = APIRouter(prefix="/libraries", tags=["Library"])
 

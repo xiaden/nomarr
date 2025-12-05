@@ -21,7 +21,7 @@ from nomarr.interfaces.api.types.navidrome_types import (
 from nomarr.interfaces.api.web.dependencies import get_navidrome_service
 
 if TYPE_CHECKING:
-    from nomarr.services.navidrome_svc import NavidromeService
+    from nomarr.services.domain.navidrome_svc import NavidromeService
 
 router = APIRouter(prefix="/navidrome", tags=["Navidrome"])
 

@@ -5,15 +5,14 @@ import logging
 import os
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.types.admin_types import WorkerOperationResponse
 from nomarr.interfaces.api.types.queue_types import OperationResult
 from nomarr.interfaces.api.web.dependencies import (
     get_event_broker,
-    get_worker_pool,
-    get_worker_service,
+    get_workers_coordinator,
 )
 
 router = APIRouter(prefix="/worker", tags=["worker"])
@@ -30,28 +29,21 @@ _RESTART_TASKS: set = set()
 
 @router.post("/pause", dependencies=[Depends(verify_session)])
 async def web_admin_worker_pause(
-    worker_service: Any | None = Depends(get_worker_service),
+    workers_coordinator=Depends(get_workers_coordinator),
     event_broker: Any | None = Depends(get_event_broker),
 ) -> WorkerOperationResponse:
-    """Pause the worker (web UI proxy)."""
-    if not worker_service:
-        raise HTTPException(status_code=503, detail="Worker service not available")
-
-    result = worker_service.pause_workers_for_admin(event_broker)
+    """Pause all workers (web UI proxy)."""
+    result = workers_coordinator.pause_all_workers(event_broker)
     return WorkerOperationResponse.from_dto(result)
 
 
 @router.post("/resume", dependencies=[Depends(verify_session)])
 async def web_admin_worker_resume(
-    worker_service: Any | None = Depends(get_worker_service),
-    worker_pool: list[Any] = Depends(get_worker_pool),
+    workers_coordinator=Depends(get_workers_coordinator),
     event_broker: Any | None = Depends(get_event_broker),
 ) -> WorkerOperationResponse:
-    """Resume the worker (web UI proxy)."""
-    if not worker_service:
-        raise HTTPException(status_code=503, detail="Worker service not available")
-
-    result = worker_service.resume_workers_for_admin(worker_pool, event_broker)
+    """Resume all workers (web UI proxy)."""
+    result = workers_coordinator.resume_all_workers(event_broker)
     return WorkerOperationResponse.from_dto(result)
 
 

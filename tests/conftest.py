@@ -387,20 +387,20 @@ def mock_tag_writer():
 def real_queue_service(test_db):
     """Provide a real QueueService instance for testing.
 
-    This uses a real Database and ProcessingQueue - not mocked.
+    This uses a real Database - not mocked.
     Use for service layer and integration tests.
     """
-    from nomarr.services.queue_svc import ProcessingQueue, QueueService
+    from nomarr.services.infrastructure.queue_svc import QueueService
 
-    queue = ProcessingQueue(test_db)
     config = {}  # Empty config dict for tests
-    return QueueService(queue, config)
+    event_broker = None  # Optional for tests
+    return QueueService(test_db, config, event_broker=event_broker)
 
 
 @pytest.fixture
 def real_library_service(test_db, temp_music_library):
     """Provide a real LibraryService instance for testing with temp library root."""
-    from nomarr.services.library_svc import LibraryRootConfig, LibraryService
+    from nomarr.services.domain.library_svc import LibraryRootConfig, LibraryService
 
     cfg = LibraryRootConfig(namespace="nom", library_root=str(temp_music_library))
     return LibraryService(test_db, cfg)
@@ -408,27 +408,36 @@ def real_library_service(test_db, temp_music_library):
 
 @pytest.fixture
 def real_worker_service(test_db):
-    """Provide a real WorkerService instance for testing."""
-    from unittest.mock import Mock
+    """Provide a real WorkerSystemService instance for testing."""
 
-    from nomarr.services.worker_svc import WorkerConfig, WorkerService
+    from nomarr.services.infrastructure.worker_system_svc import WorkerSystemService
 
-    from nomarr.services.queue_svc import ProcessingQueue
+    # Mock backends for testing
+    def mock_tagger_backend(path: str, force: bool):
+        return {"status": "success", "path": path}
 
-    queue = ProcessingQueue(test_db)
-    # Disable workers by default for tests (avoids event_broker requirement)
-    cfg = WorkerConfig(default_enabled=False, worker_count=1, poll_interval=1)
+    def mock_scanner_backend(path: str, force: bool):
+        return {"status": "success", "path": path}
 
-    # Mock coordinator (required but not used in disabled worker tests)
-    mock_coordinator = Mock()
+    def mock_recalibration_backend(path: str, force: bool):
+        return {"status": "success", "path": path}
 
-    return WorkerService(test_db, queue, cfg, mock_coordinator)
+    return WorkerSystemService(
+        db=test_db,
+        tagger_backend=mock_tagger_backend,
+        scanner_backend=mock_scanner_backend,
+        recalibration_backend=mock_recalibration_backend,
+        event_broker=None,
+        tagger_count=1,
+        scanner_count=1,
+        recalibration_count=1,
+    )
 
 
 @pytest.fixture
 def real_health_monitor(test_db):
     """Provide a real HealthMonitorService instance for testing."""
-    from nomarr.services.health_monitor_svc import HealthMonitorConfig, HealthMonitorService
+    from nomarr.services.infrastructure.health_monitor_svc import HealthMonitorConfig, HealthMonitorService
 
     cfg = HealthMonitorConfig(check_interval=1)
     return HealthMonitorService(cfg)
@@ -440,7 +449,7 @@ def real_key_service(test_db):
 
     This is a real service instance for integration testing.
     """
-    from nomarr.services.keys_svc import KeyManagementService
+    from nomarr.services.infrastructure.keys_svc import KeyManagementService
 
     # Create and return service directly - tests should use this fixture
     service = KeyManagementService(test_db)
@@ -453,7 +462,7 @@ def mock_job_queue(test_db):
 
     This is a real queue for integration testing - uses actual database operations.
     """
-    from nomarr.services.queue_svc import ProcessingQueue
+    from nomarr.services.infrastructure.queue_svc import ProcessingQueue
 
     return ProcessingQueue(test_db)
 

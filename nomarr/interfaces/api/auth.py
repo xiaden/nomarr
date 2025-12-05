@@ -8,7 +8,7 @@ from __future__ import annotations
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from nomarr.services.keys_svc import KeyManagementService
+from nomarr.services.infrastructure.keys_svc import KeyManagementService
 
 auth_scheme = HTTPBearer(auto_error=False)
 
@@ -55,7 +55,7 @@ def verify_password(password: str, password_hash: str) -> bool:
     """
     Verify a password against a hash. Pure utility function - stateless.
     """
-    from nomarr.services.keys_svc import KeyManagementService
+    from nomarr.services.infrastructure.keys_svc import KeyManagementService
 
     return KeyManagementService.verify_password(password, password_hash)
 

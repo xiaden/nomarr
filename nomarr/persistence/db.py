@@ -6,6 +6,7 @@ import time
 from nomarr.persistence.database.calibration_queue_sql import CalibrationQueueOperations
 from nomarr.persistence.database.calibration_runs_sql import CalibrationRunsOperations
 from nomarr.persistence.database.file_tags_sql import FileTagOperations
+from nomarr.persistence.database.health_sql import HealthOperations
 from nomarr.persistence.database.libraries_sql import LibrariesOperations
 from nomarr.persistence.database.library_files_sql import LibraryFilesOperations
 from nomarr.persistence.database.library_queue_sql import LibraryQueueOperations
@@ -201,6 +202,20 @@ SCHEMA = [
         UNIQUE(model_name, head_name, version)
     );
     """,
+    # Health monitoring table - tracks app and worker heartbeats (ephemeral)
+    """
+    CREATE TABLE IF NOT EXISTS health (
+        component TEXT PRIMARY KEY,           -- "app" or "worker:tag:0" (unique per component)
+        last_heartbeat INTEGER NOT NULL,      -- timestamp_ms
+        status TEXT NOT NULL,                 -- "healthy", "starting", "stopping", "crashed", "failed"
+        restart_count INTEGER DEFAULT 0,      -- how many times restarted
+        last_restart INTEGER,                 -- timestamp_ms of last restart
+        pid INTEGER,                          -- process ID
+        current_job INTEGER,                  -- current job_id (for workers)
+        exit_code INTEGER,                    -- process exit code if crashed
+        metadata TEXT                         -- JSON for extra info
+    );
+    """,
     # Index for fast calibration queries
     """
     CREATE INDEX IF NOT EXISTS idx_calibration_runs_model_head ON calibration_runs(model_name, head_name);
@@ -258,6 +273,7 @@ class Database:
         self.sessions = SessionOperations(self.conn)
         self.calibration_queue = CalibrationQueueOperations(self.conn)
         self.calibration_runs = CalibrationRunsOperations(self.conn)
+        self.health = HealthOperations(self.conn)
 
         # Lazy import to avoid circular dependency (joined_queries imports from workflows)
         from nomarr.persistence.database.joined_queries_sql import JoinedQueryOperations

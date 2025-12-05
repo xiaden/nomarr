@@ -1,53 +1,80 @@
 # Nomarr Documentation
 
-**Audience:** Users, administrators, and developers working with Nomarr.
+**Intelligent audio auto-tagging for your music library using state-of-the-art machine learning.**
 
-Nomarr is an AI-powered audio tagging system that automatically analyzes music files and writes mood, genre, and other descriptive tags. It integrates with music managers like Lidarr and Navidrome.
+Nomarr is a pre-alpha audio tagging system that analyzes your music files with Essentia's pre-trained ML models and writes rich metadata tags directly into MP3/M4A files. Perfect for organizing large libraries, discovering moods, and enriching metadata for music servers like Navidrome and Plex.
 
 > **⚠️ Pre-Alpha Software**  
-> Nomarr is under active development. APIs, schemas, and workflows may change without notice. See the main [README](../readme.md) for current status and roadmap.
+> Nomarr is under active development with daily breaking changes. No backward compatibility guarantees exist until version 1.0. Database schemas, APIs, and workflows may change without notice or migration paths.
+
+---
 
 ## Documentation Structure
 
-### Getting Started
+### 📘 User Documentation
 
-- **[Getting Started Guide](getting_started.md)** - Installation, configuration, and basic usage
-- **[Deployment Guide](deployment.md)** - Docker setup and production deployment
+Start here if you're installing or using Nomarr:
 
-### API Reference
+- **[Getting Started](user/getting_started.md)** - Installation, configuration, and first-time setup
+- **[Deployment Guide](user/deployment.md)** - Docker deployment, GPU setup, production configuration
+- **[API Reference](user/api_reference.md)** - HTTP endpoints for automation and integration
+- **[Navidrome Integration](user/navidrome.md)** - Smart playlists and web UI integration
 
-- **[API Overview](api/index.md)** - HTTP and CLI interfaces
-- **[HTTP Endpoints](api/endpoints.md)** - REST API reference
-- **[Lidarr Integration](integration/lidarr.md)** - Post-import hook setup
+### 🔧 Developer Documentation
 
-### Architecture
+Technical architecture and implementation details:
 
-- **[Architecture Overview](architecture/overview.md)** - System design and layer responsibilities
-- **[Workflows](architecture/workflows.md)** - Core processing workflows
-- **[Naming Conventions](architecture/naming_conventions.md)** - Code and tag naming standards
-- **[Versioning](architecture/versioning.md)** - Model and tag versioning system
+- **[Architecture Overview](dev/architecture.md)** - System design, layering, and dependency rules
+- **[Services Layer](dev/services.md)** - Service responsibilities and public APIs
+- **[Workers & Lifecycle](dev/workers.md)** - Worker processes, health system, and lifecycle semantics
+- **[Health System](dev/health.md)** - Health table invariants and state machine
+- **[StateBroker & SSE](dev/statebroker.md)** - Real-time state management and DTO contracts
+- **[Queue System](dev/queues.md)** - Queue normalization, DTOs, and processing flow
+- **[Naming Standards](dev/naming.md)** - Enforced naming conventions for services, methods, and DTOs
+- **[QC System](dev/qc.md)** - Quality control tools, linting, and architecture enforcement
+- **[Versioning](dev/versioning.md)** - Model and tag versioning strategy
 
-### Integration
+### 🎨 Design Documentation
 
-- **[Navidrome Integration](integration/navidrome.md)** - Smart playlists and web UI integration
-- **[Lidarr Integration](integration/lidarr.md)** - Automated tagging for new imports
+Roadmaps and research documents:
 
-### Calibration
+- **[Roadmap](design/roadmap.md)** - Feature planning and development priorities
+- **[AcousticBrainz 2.0](design/acousticbrainz.md)** - Research and design for community model sharing
 
-- **[Calibration System](calibration/index.md)** - Tag calibration and threshold tuning
+### 📚 Reference
 
-### Quality Control
+- **[Essentia Models (Upstream)](upstream/modelsinfo.md)** - Reference documentation from Essentia project (not canonical)
+- **[Calibration System](dev/calibration.md)** - Tag calibration and threshold tuning
 
-- **[QC System](qc/qc_system.md)** - Quality control framework
-- **[QC Tools](qc/tools.md)** - Scripts and utilities for code quality
+---
 
-### Developer Tools
+## Quick Links
 
-- **[API Discovery Tools](tools/api_discovery.md)** - Tools for exploring module APIs and imports
+**Getting Started:**
+- [Install with Docker](user/deployment.md#docker-setup)
+- [First Library Scan](user/getting_started.md#scanning-your-library)
+- [Web UI Overview](user/getting_started.md#web-interface)
 
-### Reference
+**Integration:**
+- [Lidarr Webhook Setup](user/api_reference.md#lidarr-integration)
+- [Navidrome Smart Playlists](user/navidrome.md#smart-playlists)
 
-- **[Essentia Models](upstream/modelsinfo.md)** - Upstream Essentia model documentation (reference only)
+**Development:**
+- [Architecture Principles](dev/architecture.md#core-principles)
+- [Worker Lifecycle](dev/workers.md#lifecycle-semantics)
+- [Adding a New Service](dev/services.md#creating-services)
+
+---
+
+## Contributing
+
+See the main [README.md](../readme.md) for:
+- Current development status
+- Pre-alpha warnings and limitations
+- GPU requirements and performance characteristics
+- How to report issues and submit pull requests
+
+All contributions undergo human review and may be refactored before merge.
 
 ## Quick Links
 

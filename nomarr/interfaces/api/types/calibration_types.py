@@ -37,8 +37,8 @@ class RecalibrationStatusResponse(BaseModel):
 
     pending: int = Field(..., description="Number of pending jobs")
     running: int = Field(..., description="Number of running jobs")
-    done: int = Field(..., description="Number of completed jobs")
-    error: int = Field(..., description="Number of failed jobs")
+    completed: int = Field(..., description="Number of completed jobs")
+    errors: int = Field(..., description="Number of failed jobs")
     worker_alive: bool = Field(..., description="Whether the recalibration worker is alive")
     worker_busy: bool = Field(..., description="Whether the recalibration worker is busy")
 
@@ -48,8 +48,8 @@ class RecalibrationStatusResponse(BaseModel):
         return cls(
             pending=dto.pending,
             running=dto.running,
-            done=dto.done,
-            error=dto.error,
+            completed=dto.done,
+            errors=dto.error,
             worker_alive=worker_alive,
             worker_busy=worker_busy,
         )

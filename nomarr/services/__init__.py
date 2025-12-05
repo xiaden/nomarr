@@ -1,11 +1,24 @@
 """
 Services package.
+
+Organized into domain (business logic) and infrastructure (runtime plumbing) services.
 """
 
-from .analytics_svc import AnalyticsConfig, AnalyticsService
-from .calibration_download_svc import check_missing_calibrations, download_calibrations, ensure_calibrations_exist
-from .calibration_svc import CalibrationConfig, CalibrationService
-from .config_svc import (
+# Domain services
+from .domain import (
+    AnalyticsConfig,
+    AnalyticsService,
+    CalibrationConfig,
+    CalibrationService,
+    LibraryRootConfig,
+    LibraryService,
+    NavidromeConfig,
+    NavidromeService,
+    RecalibrationService,
+)
+
+# Infrastructure services
+from .infrastructure import (
     INTERNAL_ALLOW_SHORT,
     INTERNAL_BATCH_SIZE,
     INTERNAL_CALIBRATION_APD_THRESHOLD,
@@ -25,20 +38,20 @@ from .config_svc import (
     INTERNAL_PORT,
     INTERNAL_VERSION_TAG,
     INTERNAL_WORKER_ENABLED,
+    SESSION_TIMEOUT_SECONDS,
     ConfigService,
+    HealthMonitorConfig,
+    HealthMonitorService,
+    InfoService,
+    KeyManagementService,
+    MLConfig,
+    MLService,
+    QueueService,
+    WorkerSystemService,
+    check_missing_calibrations,
+    download_calibrations,
+    ensure_calibrations_exist,
 )
-from .coordinator_svc import CoordinatorConfig, CoordinatorService
-from .health_monitor_svc import HealthMonitorConfig, HealthMonitorService
-from .keys_svc import SESSION_TIMEOUT_SECONDS, KeyManagementService
-from .library_svc import LibraryRootConfig, LibraryService
-from .ml_svc import MLConfig, MLService
-from .navidrome_svc import NavidromeConfig, NavidromeService
-
-# queue_svc imports kept temporarily for legacy WorkerPoolService
-# TODO: Remove when workers are converted to use components directly (Phase 3-5)
-from .queue_svc import BaseQueue, Job, ProcessingQueue, RecalibrationQueue, ScanQueue
-from .recalibration_svc import RecalibrationService
-from .workers_coordinator_svc import WorkersCoordinator
 
 __all__ = [
     "INTERNAL_ALLOW_SHORT",
@@ -63,15 +76,12 @@ __all__ = [
     "SESSION_TIMEOUT_SECONDS",
     "AnalyticsConfig",
     "AnalyticsService",
-    "BaseQueue",
     "CalibrationConfig",
     "CalibrationService",
     "ConfigService",
-    "CoordinatorConfig",
-    "CoordinatorService",
     "HealthMonitorConfig",
     "HealthMonitorService",
-    "Job",
+    "InfoService",
     "KeyManagementService",
     "LibraryRootConfig",
     "LibraryService",
@@ -79,11 +89,9 @@ __all__ = [
     "MLService",
     "NavidromeConfig",
     "NavidromeService",
-    "ProcessingQueue",  # TODO: Remove when workers use components (Phase 3-5)
-    "RecalibrationQueue",  # TODO: Remove when workers use components (Phase 3-5)
+    "QueueService",
     "RecalibrationService",
-    "ScanQueue",  # TODO: Remove when workers use components (Phase 3-5)
-    "WorkersCoordinator",
+    "WorkerSystemService",
     "check_missing_calibrations",
     "download_calibrations",
     "ensure_calibrations_exist",

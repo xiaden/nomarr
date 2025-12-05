@@ -8,9 +8,9 @@
 >
 > **For Nomarr-specific model information**, see:
 >
-> - [Architecture Overview](../architecture/overview.md) for how models are integrated
-> - [Workflows](../architecture/workflows.md) for how models are invoked
-> - [Calibration System](../calibration/index.md) for model output tuning
+> - [Architecture Overview](../dev/architecture.md) for how models are integrated
+> - [ML Components](../dev/architecture.md#ml-layer) for how models are invoked
+> - [Calibration System](../dev/calibration.md) for model output tuning
 >
 > This reference is maintained for convenience when cross-referencing Essentia documentation.
 

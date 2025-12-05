@@ -41,10 +41,18 @@ components/
 │   ├── inference.py
 │   ├── calibration.py
 │   └── backend_essentia.py
-└── tagging/
-    ├── predictions_to_tags.py
-    ├── mood_aggregation.py
-    └── tag_resolution.py
+├── tagging/
+│   ├── predictions_to_tags.py
+│   ├── mood_aggregation.py
+│   └── tag_resolution.py
+├── workers/
+│   ├── worker_crash_comp.py
+│   └── job_recovery_comp.py
+├── queue/
+│   ├── queue_cleanup_comp.py
+│   └── queue_dequeue_comp.py
+└── events/
+    └── event_broker_comp.py
 ```
 
 Naming rules:
@@ -112,6 +120,49 @@ def predictions_to_tags(
                     )
                 )
     return tags
+
+
+# Worker crash handling example
+
+def should_restart_worker(
+    restart_count: int,
+    last_restart_ms: int,
+) -> RestartDecision:
+    """
+    Decide whether to restart a crashed worker or mark it as failed.
+    
+    Uses two-tier limits:
+    - Rapid: 5 restarts in 5 minutes (catches OOM loops)
+    - Lifetime: 20 total restarts (catches slow thrashing)
+    """
+    now_ms = int(time.time() * 1000)
+    
+    # Check rapid restart limit
+    if restart_count >= 5 and (now_ms - last_restart_ms) < (5 * 60 * 1000):
+        return RestartDecision(
+            action="mark_failed",
+            reason="Exceeded 5 restarts in 5 minutes",
+            backoff_seconds=0,
+            failure_reason="Worker exceeded rapid restart limit (5 restarts in 5.0 minutes)..."
+        )
+    
+    # Check lifetime restart limit
+    if restart_count >= 20:
+        return RestartDecision(
+            action="mark_failed",
+            reason="Exceeded 20 lifetime restarts",
+            backoff_seconds=0,
+            failure_reason="Worker exceeded lifetime restart limit (20 total restarts)..."
+        )
+    
+    # Continue restarting with exponential backoff
+    backoff = calculate_backoff(restart_count)
+    return RestartDecision(
+        action="restart",
+        reason=f"Restart #{restart_count + 1} after {backoff}s backoff",
+        backoff_seconds=backoff,
+        failure_reason=None
+    )
 ```
 
 If you are writing non-trivial domain math, statistics, ML, or transformations, it almost certainly belongs here.
