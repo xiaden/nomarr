@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "../components/layout/AppShell";
 import { AdminPage } from "../pages/AdminPage";
 import { AnalyticsPage } from "../pages/AnalyticsPage";
+import { BrowseFilesPage } from "../pages/BrowseFilesPage";
 import { CalibrationPage } from "../pages/CalibrationPage";
 import { ConfigPage } from "../pages/ConfigPage";
 import { DashboardPage } from "../pages/DashboardPage";
@@ -61,6 +62,7 @@ export function AppRouter() {
                   <Route path="/" element={<DashboardPage />} />
                   <Route path="/queue" element={<QueuePage />} />
                   <Route path="/library" element={<LibraryPage />} />
+                  <Route path="/browse" element={<BrowseFilesPage />} />
                   <Route path="/analytics" element={<AnalyticsPage />} />
                   <Route path="/calibration" element={<CalibrationPage />} />
                   <Route path="/inspect" element={<InspectTagsPage />} />

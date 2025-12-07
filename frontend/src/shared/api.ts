@@ -471,6 +471,32 @@ export const library = {
   },
 
   /**
+   * Preview file count for a library path.
+   */
+  preview: async (
+    id: number,
+    options?: {
+      paths?: string[];
+      recursive?: boolean;
+    }
+  ): Promise<{ file_count: number }> => {
+    const body: Record<string, unknown> = {
+      recursive: options?.recursive ?? true,
+    };
+    if (options?.paths) {
+      body.paths = options.paths;
+    }
+
+    return request<{ file_count: number }>(
+      `/api/web/libraries/${id}/preview`,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+      }
+    );
+  },
+
+  /**
    * Scan a specific library.
    */
   scan: async (
@@ -806,6 +832,110 @@ export const tags = {
 };
 
 // ──────────────────────────────────────────────────────────────────────
+// Files/Browse API
+// ──────────────────────────────────────────────────────────────────────
+
+export const files = {
+  /**
+   * Search library files with optional filtering.
+   */
+  search: async (params?: {
+    q?: string;
+    artist?: string;
+    album?: string;
+    tagKey?: string;
+    tagValue?: string;
+    taggedOnly?: boolean;
+    limit?: number;
+    offset?: number;
+  }): Promise<{
+    files: Array<{
+      id: number;
+      path: string;
+      library_id: number;
+      file_size: number;
+      modified_time: number;
+      duration_seconds: number;
+      artist?: string;
+      album?: string;
+      title?: string;
+      genre?: string;
+      year?: number;
+      track_number?: number;
+      calibration?: string;
+      scanned_at?: number;
+      last_tagged_at?: number;
+      tagged: number;
+      tagged_version?: string;
+      skip_auto_tag: number;
+      tags: Array<{
+        key: string;
+        value: string;
+        type: string;
+        is_nomarr: boolean;
+      }>;
+    }>;
+    total: number;
+    limit: number;
+    offset: number;
+  }> => {
+    const queryParams = new URLSearchParams();
+    if (params?.q) queryParams.append("q", params.q);
+    if (params?.artist) queryParams.append("artist", params.artist);
+    if (params?.album) queryParams.append("album", params.album);
+    if (params?.tagKey) queryParams.append("tag_key", params.tagKey);
+    if (params?.tagValue) queryParams.append("tag_value", params.tagValue);
+    if (params?.taggedOnly) queryParams.append("tagged_only", "true");
+    if (params?.limit) queryParams.append("limit", params.limit.toString());
+    if (params?.offset) queryParams.append("offset", params.offset.toString());
+
+    const query = queryParams.toString();
+    const endpoint = query
+      ? `/api/web/libraries/files/search?${query}`
+      : "/api/web/libraries/files/search";
+
+    return request(endpoint);
+  },
+
+  /**
+   * Get unique tag keys for filtering.
+   */
+  getUniqueTagKeys: async (
+    nomarrOnly = false
+  ): Promise<{
+    tag_keys: string[];
+    count: number;
+  }> => {
+    const queryParams = new URLSearchParams();
+    if (nomarrOnly) queryParams.append("nomarr_only", "true");
+
+    const query = queryParams.toString();
+    const endpoint = query
+      ? `/api/web/libraries/files/tags/unique-keys?${query}`
+      : "/api/web/libraries/files/tags/unique-keys";
+
+    return request(endpoint);
+  },
+
+  /**
+   * Get unique values for a specific tag key.
+   */
+  getTagValues: async (
+    tagKey: string,
+    nomarrOnly = true
+  ): Promise<{
+    tag_keys: string[]; // Actually values, but backend reuses same DTO
+    count: number;
+  }> => {
+    const queryParams = new URLSearchParams();
+    queryParams.append("tag_key", tagKey);
+    if (nomarrOnly) queryParams.append("nomarr_only", "true");
+
+    return request(`/api/web/libraries/files/tags/values?${queryParams.toString()}`);
+  },
+};
+
+// ──────────────────────────────────────────────────────────────────────
 // Filesystem API
 // ──────────────────────────────────────────────────────────────────────
 
@@ -848,5 +978,6 @@ export const api = {
   config,
   navidrome,
   tags,
+  files,
   fs,
 };

@@ -13,11 +13,15 @@ from typing import TYPE_CHECKING, Any
 from nomarr.components.queue import get_queue_depth
 from nomarr.components.queue import list_jobs as list_jobs_component
 from nomarr.helpers.dto.library_dto import (
+    FileTag,
     LibraryDict,
+    LibraryFileWithTags,
     LibraryScanStatusResult,
     LibraryStatsResult,
+    SearchFilesResult,
     StartLibraryScanWorkflowParams,
     StartScanResult,
+    UniqueTagKeysResult,
 )
 from nomarr.helpers.dto.queue_dto import Job
 from nomarr.helpers.files_helper import resolve_library_path
@@ -928,3 +932,71 @@ class LibraryService:
             logging.info(f"[LibraryService] Created default library (ID {library_id}) from config: {root_path}")
         except Exception as e:
             logging.error(f"[LibraryService] Failed to create default library: {e}")
+
+    def search_files(
+        self,
+        q: str = "",
+        artist: str | None = None,
+        album: str | None = None,
+        tag_key: str | None = None,
+        tag_value: str | None = None,
+        tagged_only: bool = False,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> SearchFilesResult:
+        """Search library files with optional filters."""
+        from nomarr.components.library.search_files_comp import search_library_files
+
+        files, total = search_library_files(self.db, q, artist, album, tag_key, tag_value, tagged_only, limit, offset)
+
+        # Convert dicts to DTOs
+        files_with_tags = [
+            LibraryFileWithTags(
+                id=f["id"],
+                path=f["path"],
+                library_id=f["library_id"],
+                file_size=f.get("file_size"),
+                modified_time=f.get("modified_time"),
+                duration_seconds=f.get("duration_seconds"),
+                artist=f.get("artist"),
+                album=f.get("album"),
+                title=f.get("title"),
+                genre=f.get("genre"),
+                year=f.get("year"),
+                track_number=f.get("track_number"),
+                calibration=f.get("calibration"),
+                scanned_at=f.get("scanned_at"),
+                last_tagged_at=f.get("last_tagged_at"),
+                tagged=f["tagged"],
+                tagged_version=f.get("tagged_version"),
+                skip_auto_tag=f.get("skip_auto_tag", 0),
+                created_at=f.get("created_at"),
+                updated_at=f.get("updated_at"),
+                tags=[
+                    FileTag(
+                        key=t["key"],
+                        value=t["value"],
+                        type=t["type"],
+                        is_nomarr=t["is_nomarr"],
+                    )
+                    for t in f["tags"]
+                ],
+            )
+            for f in files
+        ]
+
+        return SearchFilesResult(files=files_with_tags, total=total, limit=limit, offset=offset)
+
+    def get_unique_tag_keys(self, nomarr_only: bool = False) -> UniqueTagKeysResult:
+        """Get all unique tag keys across the library."""
+        from nomarr.components.library.search_files_comp import get_unique_tag_keys
+
+        keys = get_unique_tag_keys(self.db, nomarr_only)
+        return UniqueTagKeysResult(tag_keys=keys, count=len(keys), calibration=None, library_id=None)
+
+    def get_unique_tag_values(self, tag_key: str, nomarr_only: bool = False) -> UniqueTagKeysResult:
+        """Get all unique values for a specific tag key."""
+        from nomarr.components.library.search_files_comp import get_unique_tag_values
+
+        values = get_unique_tag_values(self.db, tag_key, nomarr_only)
+        return UniqueTagKeysResult(tag_keys=values, count=len(values), calibration=None, library_id=None)

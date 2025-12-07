@@ -201,3 +201,91 @@ class ListLibrariesResponse(BaseModel):
     def from_dto(cls, libraries: list[LibraryDict]) -> ListLibrariesResponse:
         """Convert list of LibraryDict DTOs to response model."""
         return cls(libraries=[LibraryResponse.from_dto(lib) for lib in libraries])
+
+
+# ──────────────────────────────────────────────────────────────────────
+# File Search Response Types (DTO → Pydantic mappings)
+# ──────────────────────────────────────────────────────────────────────
+
+
+class FileTagResponse(BaseModel):
+    """Single tag on a file."""
+
+    key: str
+    value: str
+    type: str
+    is_nomarr: bool
+
+
+class LibraryFileWithTagsResponse(BaseModel):
+    """Single library file with its tags."""
+
+    id: int
+    path: str
+    library_id: int
+    artist: str | None
+    album: str | None
+    title: str | None
+    genre: str | None
+    year: int | None
+    tagged: bool
+    created_at: str | None
+    updated_at: str | None
+    tags: list[FileTagResponse]
+
+
+class SearchFilesResponse(BaseModel):
+    """Response for library file search."""
+
+    files: list[LibraryFileWithTagsResponse]
+    total: int
+    limit: int
+    offset: int
+
+    @classmethod
+    def from_dto(cls, result) -> SearchFilesResponse:
+        """Transform SearchFilesResult DTO to API response."""
+        from nomarr.helpers.dto.library_dto import SearchFilesResult
+
+        assert isinstance(result, SearchFilesResult)
+
+        return cls(
+            files=[
+                LibraryFileWithTagsResponse(
+                    id=f.id,
+                    path=f.path,
+                    library_id=f.library_id,
+                    artist=f.artist,
+                    album=f.album,
+                    title=f.title,
+                    genre=f.genre,
+                    year=f.year,
+                    tagged=bool(f.tagged),
+                    created_at=f.created_at,
+                    updated_at=f.updated_at,
+                    tags=[
+                        FileTagResponse(key=t.key, value=t.value, type=t.type, is_nomarr=t.is_nomarr) for t in f.tags
+                    ],
+                )
+                for f in result.files
+            ],
+            total=result.total,
+            limit=result.limit,
+            offset=result.offset,
+        )
+
+
+class UniqueTagKeysResponse(BaseModel):
+    """Response for unique tag keys endpoint."""
+
+    tag_keys: list[str]
+    count: int
+
+    @classmethod
+    def from_dto(cls, result) -> UniqueTagKeysResponse:
+        """Transform UniqueTagKeysResult DTO to API response."""
+        from nomarr.helpers.dto.library_dto import UniqueTagKeysResult
+
+        assert isinstance(result, UniqueTagKeysResult)
+
+        return cls(tag_keys=result.tag_keys, count=result.count)

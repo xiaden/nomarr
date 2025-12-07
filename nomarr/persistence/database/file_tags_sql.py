@@ -123,6 +123,29 @@ class FileTagOperations:
         )
         return cursor.fetchall()
 
+    def get_unique_tag_values(self, tag_key: str, nomarr_only: bool = False) -> list[str]:
+        """
+        Get distinct values for a specific tag key.
+
+        Args:
+            tag_key: The tag key to get values for
+            nomarr_only: If True, only return values from Nomarr-generated tags
+
+        Returns:
+            List of distinct tag values
+        """
+        if nomarr_only:
+            cursor = self.conn.execute(
+                "SELECT DISTINCT tag_value FROM file_tags WHERE tag_key = ? AND is_nomarr_tag = 1 ORDER BY tag_value",
+                (tag_key,),
+            )
+        else:
+            cursor = self.conn.execute(
+                "SELECT DISTINCT tag_value FROM file_tags WHERE tag_key = ? ORDER BY tag_value",
+                (tag_key,),
+            )
+        return [row[0] for row in cursor.fetchall()]
+
     def get_file_tags(self, file_id: int, nomarr_only: bool = False) -> dict[str, Any]:
         """
         Get all tags for a specific file.

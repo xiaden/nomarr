@@ -29,6 +29,8 @@ export function LibraryManagement() {
   const [formIsEnabled, setFormIsEnabled] = useState(true);
   const [formIsDefault, setFormIsDefault] = useState(false);
   const [showPathPicker, setShowPathPicker] = useState(false);
+  const [previewCount, setPreviewCount] = useState<number | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   const loadLibraries = async () => {
     try {
@@ -56,6 +58,8 @@ export function LibraryManagement() {
     setFormIsEnabled(true);
     setFormIsDefault(false);
     setShowPathPicker(false);
+    setPreviewCount(null);
+    setPreviewLoading(false);
     setIsCreating(false);
     setEditingId(null);
   };
@@ -72,6 +76,38 @@ export function LibraryManagement() {
     setFormIsDefault(library.isDefault);
     setEditingId(library.id);
     setIsCreating(false);
+    setPreviewCount(null);
+    setPreviewLoading(false);
+  };
+
+  const handlePreview = async () => {
+    if (!formRootPath.trim()) {
+      setError("Path is required for preview");
+      return;
+    }
+
+    // Need library ID for preview - only works when editing existing library
+    if (editingId === null) {
+      // For new libraries, we can't preview until they're created
+      setError("Create the library first to preview file count");
+      return;
+    }
+
+    try {
+      setError(null);
+      setPreviewLoading(true);
+      const result = await api.library.preview(editingId, {
+        paths: [formRootPath],
+        recursive: true,
+      });
+      setPreviewCount(result.file_count);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to preview library"
+      );
+    } finally {
+      setPreviewLoading(false);
+    }
   };
 
   const handleCreate = async () => {
@@ -137,6 +173,21 @@ export function LibraryManagement() {
     try {
       setError(null);
       setScanningId(id);
+
+      // Get preview first
+      const preview = await api.library.preview(id, {
+        recursive: true,
+      });
+
+      const confirmed = confirm(
+        `Found ${preview.file_count.toLocaleString()} audio files. Start scan?`
+      );
+
+      if (!confirmed) {
+        setScanningId(null);
+        return;
+      }
+
       const result = await api.library.scan(id, {
         recursive: true,
         force: false,
@@ -241,6 +292,33 @@ export function LibraryManagement() {
               Default Library
             </label>
           </div>
+
+          {/* Preview file count (only for existing libraries) */}
+          {editingId !== null && (
+            <div style={styles.formField}>
+              <button
+                style={styles.btnSecondary}
+                onClick={handlePreview}
+                disabled={!formRootPath.trim() || previewLoading}
+              >
+                {previewLoading ? "Checking..." : "Preview File Count"}
+              </button>
+              {previewCount !== null && (
+                <div
+                  style={{
+                    marginTop: "0.5rem",
+                    padding: "0.75rem",
+                    backgroundColor: "#1a1a1a",
+                    borderRadius: "4px",
+                    border: "1px solid #333",
+                  }}
+                >
+                  <strong>{previewCount.toLocaleString()}</strong> audio files
+                  found
+                </div>
+              )}
+            </div>
+          )}
 
           <div style={styles.formActions}>
             <button

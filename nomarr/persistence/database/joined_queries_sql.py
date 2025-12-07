@@ -201,3 +201,124 @@ class JoinedQueryOperations:
         from pathlib import Path
 
         return Path(path).stem
+
+    def search_library_files_with_tags(
+        self,
+        q: str = "",
+        artist: str | None = None,
+        album: str | None = None,
+        tag_key: str | None = None,
+        tag_value: str | None = None,
+        tagged_only: bool = False,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """
+        Search library files with optional filtering.
+
+        This is a joined query operation because it needs to efficiently
+        return files WITH their tags in a single result set.
+
+        Args:
+            q: Text search query for artist/album/title
+            artist: Filter by artist name
+            album: Filter by album name
+            tag_key: Filter by files that have this tag key
+            tag_value: Filter by files with this specific tag key=value (requires tag_key)
+            tagged_only: Only return tagged files
+            limit: Maximum number of results
+            offset: Pagination offset
+
+        Returns:
+            Tuple of (files list with tags, total count)
+        """
+        # Build WHERE clauses
+        where_clauses = []
+        params: list[Any] = []
+
+        # Filter by tag key and optionally value
+        if tag_key and tag_value:
+            where_clauses.append(
+                "library_files.id IN (SELECT file_id FROM file_tags WHERE tag_key = ? AND tag_value = ?)"
+            )
+            params.append(tag_key)
+            params.append(tag_value)
+        elif tag_key:
+            where_clauses.append("library_files.id IN (SELECT file_id FROM file_tags WHERE tag_key = ?)")
+            params.append(tag_key)
+
+        # Text search across artist/album/title
+        if q:
+            where_clauses.append(
+                "(library_files.artist LIKE ? OR library_files.album LIKE ? OR library_files.title LIKE ?)"
+            )
+            search_term = f"%{q}%"
+            params.extend([search_term, search_term, search_term])
+
+        # Filter by artist
+        if artist:
+            where_clauses.append("library_files.artist = ?")
+            params.append(artist)
+
+        # Filter by album
+        if album:
+            where_clauses.append("library_files.album = ?")
+            params.append(album)
+
+        # Tagged files only
+        if tagged_only:
+            where_clauses.append("library_files.tagged = 1")
+
+        where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
+        # Get total count
+        count_query = f"SELECT COUNT(*) FROM library_files {where_sql}"
+        total = int(self.conn.execute(count_query, params).fetchone()[0])
+
+        # Get paginated files with tags in a single query
+        # Use LEFT JOIN to include files even if they have no tags
+        files_query = f"""
+            SELECT
+                library_files.*,
+                file_tags.tag_key,
+                file_tags.tag_value,
+                file_tags.tag_type,
+                file_tags.is_nomarr_tag
+            FROM library_files
+            LEFT JOIN file_tags ON library_files.id = file_tags.file_id
+            {where_sql}
+            ORDER BY library_files.artist, library_files.album, library_files.track_number, file_tags.tag_key
+            LIMIT ? OFFSET ?
+        """
+        params_with_limit = [*params, limit, offset]
+
+        cur = self.conn.execute(files_query, params_with_limit)
+        columns = [desc[0] for desc in cur.description]
+
+        # Group rows by file (since LEFT JOIN creates multiple rows per file)
+        files_dict: dict[int, dict[str, Any]] = {}
+        for row in cur.fetchall():
+            row_dict = dict(zip(columns, row, strict=False))
+            file_id = row_dict["id"]
+
+            # First time seeing this file - add it
+            if file_id not in files_dict:
+                # Extract file fields (everything except tag fields)
+                file_data = {
+                    k: v for k, v in row_dict.items() if k not in ("tag_key", "tag_value", "tag_type", "is_nomarr_tag")
+                }
+                file_data["tags"] = []
+                files_dict[file_id] = file_data
+
+            # Add tag if present (LEFT JOIN may have NULL tags)
+            if row_dict["tag_key"] is not None:
+                files_dict[file_id]["tags"].append(
+                    {
+                        "key": row_dict["tag_key"],
+                        "value": row_dict["tag_value"],
+                        "type": row_dict["tag_type"],
+                        "is_nomarr": bool(row_dict["is_nomarr_tag"]),
+                    }
+                )
+
+        return list(files_dict.values()), total

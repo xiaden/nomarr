@@ -92,23 +92,85 @@ class ScanLibraryWorkflowParams:
 
 
 @dataclass
+@dataclass
 class UpdateLibraryFileFromTagsParams:
     """Parameters for workflows/library/scan_library_wf.py::update_library_file_from_tags."""
 
     file_path: str
     namespace: str
     tagged_version: str | None
+    calibration: dict[str, str] | None = None
+    library_id: int | None = None
+
+
+@dataclass
+class FileTag:
+    """Single tag for a library file."""
+
+    key: str
+    value: str
+    type: str
+    is_nomarr: bool
+
+
+@dataclass
+class LibraryFileWithTags:
+    """Library file with its tags."""
+
+    id: int
+    path: str
+    library_id: int
+    file_size: int | None
+    modified_time: int | None
+    duration_seconds: float | None
+    artist: str | None
+    album: str | None
+    title: str | None
+    genre: str | None
+    year: int | None
+    track_number: int | None
+    calibration: str | None
+    scanned_at: int | None
+    last_tagged_at: int | None
+    tagged: int
+    tagged_version: str | None
+    skip_auto_tag: int
+    created_at: str | None
+    updated_at: str | None
+    tags: list[FileTag]
+
+
+@dataclass
+class SearchFilesResult:
+    """Result from library_service.search_files."""
+
+    files: list[LibraryFileWithTags]
+    total: int
+    limit: int
+    offset: int
+
+
+@dataclass
+class UniqueTagKeysResult:
+    """Result from library_service.get_unique_tag_keys."""
+
+    tag_keys: list[str]
+    count: int
     calibration: dict[str, str] | None
     library_id: int | None
 
 
 __all__ = [
+    "FileTag",
     "LibraryDict",
+    "LibraryFileWithTags",
     "LibraryScanStatusResult",
     "LibraryStatsResult",
     "ScanLibraryWorkflowParams",
     "ScanSingleFileWorkflowParams",
+    "SearchFilesResult",
     "StartLibraryScanWorkflowParams",
     "StartScanResult",
+    "UniqueTagKeysResult",
     "UpdateLibraryFileFromTagsParams",
 ]

@@ -15,6 +15,7 @@ const navItems: NavItem[] = [
   { path: "/", label: "Dashboard" },
   { path: "/queue", label: "Queue" },
   { path: "/library", label: "Library" },
+  { path: "/browse", label: "Browse Files" },
   { path: "/analytics", label: "Analytics" },
   { path: "/calibration", label: "Calibration" },
   { path: "/inspect", label: "Inspect" },

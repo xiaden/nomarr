@@ -5,10 +5,18 @@
 # MINOR: New features, backward compatible
 # PATCH: Bug fixes, backward compatible
 
-__version__ = "0.1.3"
+__version__ = "0.1.4"
 __version_info__ = tuple(int(x) for x in __version__.split("."))
 
 # Version history:
+# 0.1.4 - Frontend improvements: Browse files and enhanced tag filtering
+#         - New Browse Files page with search and pagination
+#         - Two-step tag filtering: select key, then select value
+#         - Added /files/search endpoint with full-text search and tag filtering
+#         - Added /files/tags/values endpoint for dynamic value dropdowns
+#         - Dashboard SSE progress tracking and library file count preview
+#         - Fixed UpdateLibraryFileFromTagsParams missing fields (calibration, library_id)
+#         - All tag filtering logic properly layered (persistence → component → service → interface)
 # 0.1.3 - API routing refactor and database schema v2
 #         - Unified API structure: Integration (/api/v1) and Web UI (/api/web)
 #         - Multi-library support with library_id foreign keys
