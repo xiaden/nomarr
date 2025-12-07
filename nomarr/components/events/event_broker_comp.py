@@ -138,7 +138,6 @@ class StateBroker:
                             worker_state = {
                                 "id": worker_id,
                                 "queue_type": queue_type,
-                                "component": component,
                                 "status": worker.get("status", "unknown"),
                                 "pid": worker.get("pid"),
                                 "current_job": current_job_id,
