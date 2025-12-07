@@ -12,7 +12,7 @@ from nomarr.helpers.dto.ml_dto import LoadAudioMonoResult
 HAVE_ESSENTIA = backend_essentia.is_available()
 
 if HAVE_ESSENTIA:
-    MonoLoader = backend_essentia.essentia_tf.standard.MonoLoader
+    MonoLoader = backend_essentia.essentia_tf.MonoLoader
 else:
     # Fallback to soundfile if Essentia not available
     import soundfile as sf
