@@ -188,7 +188,7 @@ def main():
     # Exclude packages with custom __init__.py logic
     exclude = {
         "nomarr/interfaces/api",  # Has custom state re-exports
-        "nomarr/interfaces/api/endpoints",  # Just router registration
+        "nomarr/interfaces/api/v1",  # Just router registration
         "nomarr/interfaces/api/web",  # Manually curated with TypedDicts, router, dependencies
         "nomarr/interfaces/cli",  # Excludes main.py to prevent runpy warning
         "nomarr/services",  # Manually curated service exports
