@@ -21,8 +21,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 import nomarr
-from nomarr.interfaces.api import web  # Web UI router
-from nomarr.interfaces.api.endpoints import admin, public
+from nomarr.interfaces.api import web
+from nomarr.interfaces.api.v1 import admin_if, public_if
 
 
 # ----------------------------------------------------------------------
@@ -70,8 +70,8 @@ async def exception_handler(request, exc: Exception):
 # Integration APIs (API key auth) - /api/v1 prefix
 # Public and admin routers define their own sub-paths under /v1
 integration_router = APIRouter(prefix="/api")
-integration_router.include_router(public.router, tags=["Integration: Public"])
-integration_router.include_router(admin.router, tags=["Integration: Admin"])
+integration_router.include_router(public_if.router, tags=["Integration: Public"])
+integration_router.include_router(admin_if.router, tags=["Integration: Admin"])
 
 # Web UI APIs (session auth) - /api/web prefix
 # Web router already has /api/web prefix configured in web/router.py
