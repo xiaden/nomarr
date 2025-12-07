@@ -37,7 +37,7 @@ from nomarr.helpers.dto.ml_dto import ComputeEmbeddingsForBackboneParams
 # Functions will call backend_essentia.require() when they actually need Essentia
 if backend_essentia.is_available():
     # Access Essentia classes through the backend
-    TensorflowPredict2D = backend_essentia.essentia_tf.standard.TensorflowPredict2D
+    TensorflowPredict2D = backend_essentia.essentia_tf.TensorflowPredict2D
 
     # Suppress Essentia INFO messages (e.g., "MusicExtractorSVM: no classifier models...")
     try:
@@ -48,17 +48,17 @@ if backend_essentia.is_available():
 
     # Optional specialized predictors (may not be available in all Essentia versions)
     try:
-        TensorflowPredictEffnetDiscogs = backend_essentia.essentia_tf.standard.TensorflowPredictEffnetDiscogs
+        TensorflowPredictEffnetDiscogs = backend_essentia.essentia_tf.TensorflowPredictEffnetDiscogs
     except AttributeError:
         TensorflowPredictEffnetDiscogs = None
 
     try:
-        TensorflowPredictMusiCNN = backend_essentia.essentia_tf.standard.TensorflowPredictMusiCNN
+        TensorflowPredictMusiCNN = backend_essentia.essentia_tf.TensorflowPredictMusiCNN
     except AttributeError:
         TensorflowPredictMusiCNN = None
 
     try:
-        TensorflowPredictVGGish = backend_essentia.essentia_tf.standard.TensorflowPredictVGGish
+        TensorflowPredictVGGish = backend_essentia.essentia_tf.TensorflowPredictVGGish
     except AttributeError:
         TensorflowPredictVGGish = None
 else:
