@@ -9,14 +9,28 @@ __version__ = "0.1.4"
 __version_info__ = tuple(int(x) for x in __version__.split("."))
 
 # Version history:
-# 0.1.4 - Frontend improvements: Browse files and enhanced tag filtering
-#         - New Browse Files page with search and pagination
-#         - Two-step tag filtering: select key, then select value
-#         - Added /files/search endpoint with full-text search and tag filtering
-#         - Added /files/tags/values endpoint for dynamic value dropdowns
+# 0.1.4 - Frontend improvements and architecture refactoring
+#         Frontend:
+#         - New Browse Files page with search, pagination, and expandable file cards
+#         - Two-step tag filtering: select key → select value (replaces pointless key-only filter)
 #         - Dashboard SSE progress tracking and library file count preview
+#         Backend:
+#         - /files/search endpoint with full-text search (artist/album/title) and tag filtering
+#         - /files/tags/values endpoint for dynamic value dropdowns
+#         - search_library_files_with_tags() supports tag_key+tag_value filtering
+#         - get_unique_tag_values() for populating value dropdowns
 #         - Fixed UpdateLibraryFileFromTagsParams missing fields (calibration, library_id)
-#         - All tag filtering logic properly layered (persistence → component → service → interface)
+#         Architecture & Refactoring:
+#         - Worker crash handling and job recovery system
+#         - Queue refactor: interfaces now use queue components/workflows (not QueueService)
+#         - DTO consolidation: reduced from 71 to 64 DTOs (JobDict→Job, proper DTO rules)
+#         - Smart playlists refactored with SQL helpers and DTO reorganization
+#         - All tag filtering properly layered (persistence → component → service → interface)
+#         - Removed 22 dead code nodes across codebase
+#         Fixes:
+#         - Correct Essentia import path (essentia.standard, not essentia_tensorflow)
+#         - Package-relative path for public_html (not fragile __file__ traversal)
+#         - Public_html path resolution and root route registration
 # 0.1.3 - API routing refactor and database schema v2
 #         - Unified API structure: Integration (/api/v1) and Web UI (/api/web)
 #         - Multi-library support with library_id foreign keys
