@@ -34,7 +34,7 @@ def mock_config():
 
 def test_processor_config_creation():
     """Test ProcessorConfig dataclass can be created."""
-    from nomarr.helpers.dto.processing import ProcessorConfig
+    from nomarr.helpers.dto.processing_dto import ProcessorConfig
 
     config = ProcessorConfig(
         models_dir="/fake/models",

@@ -31,9 +31,8 @@ def test_application_initial_state():
     app = Application()
     assert app.is_running() is False
     assert app.services == {}
-    # Phase 1: coordinator and workers disabled (will be restored in Phase 4)
-    assert app.workers_coordinator is None
-    assert isinstance(app.workers, list)
+    # Core dependencies initialized in __init__
+    assert app.db is not None
 
 
 def test_global_application_instance():
