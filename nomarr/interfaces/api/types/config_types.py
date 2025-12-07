@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from nomarr.helpers.dto.config import WebConfigResult
+from nomarr.helpers.dto.config_dto import WebConfigResult
 
 # ──────────────────────────────────────────────────────────────────────
 # Response Models
