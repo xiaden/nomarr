@@ -168,18 +168,25 @@ class Application:
 
     def _start_app_heartbeat(self) -> None:
         """Start background thread to write app heartbeat (Phase 3: DB-based IPC)."""
+        from nomarr.persistence.db import Database
 
         def heartbeat_loop():
+            # Use dedicated DB connection for this thread to avoid transaction conflicts
+            heartbeat_db = Database(self.db_path)
+            
             while self._running:
                 try:
                     # Periodic heartbeat update (status="healthy" by default)
-                    self.db.health.update_heartbeat(
+                    heartbeat_db.health.update_heartbeat(
                         component="app",
                         status="healthy",
                     )
                 except Exception as e:
                     logging.error(f"[Application] Heartbeat error: {e}")
                 time.sleep(5)
+            
+            # Close connection when thread exits
+            heartbeat_db.close()
 
         self._heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True, name="AppHeartbeat")
         self._heartbeat_thread.start()
