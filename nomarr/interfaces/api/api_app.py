@@ -88,6 +88,13 @@ api_app.include_router(web.router)
 public_html_dir = Path(nomarr.__file__).parent / "public_html"
 
 
+# Health check endpoint (for Docker/monitoring)
+@api_app.get("/info")
+async def health_check():
+    """Simple health check endpoint."""
+    return {"status": "healthy", "service": "nomarr", "version": nomarr.__version__}
+
+
 # Serve static assets (JS, CSS, images) from /assets/
 @api_app.get("/")
 async def serve_dashboard():
