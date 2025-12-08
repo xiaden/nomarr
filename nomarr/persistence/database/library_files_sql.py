@@ -146,6 +146,16 @@ class LibraryFilesOperations:
 
         return file_dict
 
+    def get_file_modified_times(self) -> dict[str, int]:
+        """
+        Get all file paths and their modified times in one query.
+
+        Returns:
+            Dict mapping file path to modified_time (milliseconds)
+        """
+        cur = self.conn.execute("SELECT path, modified_time FROM library_files")
+        return {row[0]: row[1] for row in cur.fetchall()}
+
     def list_library_files(
         self, limit: int = 100, offset: int = 0, artist: str | None = None, album: str | None = None
     ) -> tuple[list[dict[str, Any]], int]:

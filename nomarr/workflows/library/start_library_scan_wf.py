@@ -150,26 +150,38 @@ def start_library_scan_workflow(
     stats["files_discovered"] = len(all_files)
     logging.info(f"[start_library_scan] Discovered {stats['files_discovered']} audio files")
 
-    # Enqueue each file for scanning
-    for file_path in all_files:
-        try:
-            # If not forcing, check if file needs scanning
-            if not force:
-                # Get file modification time
+    # Batch optimization: Load all existing file mtimes from DB in one query
+    files_to_enqueue = all_files
+    if not force:
+        logging.info("[start_library_scan] Batch-checking file changes...")
+        existing_mtimes = db.library_files.get_file_modified_times()
+        
+        files_to_check = []
+        for file_path in all_files:
+            try:
                 file_stat = os.stat(file_path)
-                modified_time = int(file_stat.st_mtime * 1000)
-
-                # Check database for existing record
-                existing_file = db.library_files.get_library_file(file_path)
-                if existing_file and existing_file["modified_time"] == modified_time:
-                    # File hasn't changed since last scan, skip
+                current_mtime = int(file_stat.st_mtime * 1000)
+                db_mtime = existing_mtimes.get(file_path)
+                
+                if db_mtime == current_mtime:
+                    # File unchanged, skip
                     stats["files_skipped"] += 1
-                    continue
+                else:
+                    # File new or changed, needs scanning
+                    files_to_check.append(file_path)
+            except Exception as e:
+                logging.warning(f"[start_library_scan] Failed to stat {file_path}: {e}")
+                # If we can't stat it, enqueue anyway (worker will handle error)
+                files_to_check.append(file_path)
+        
+        files_to_enqueue = set(files_to_check)
+        logging.info(f"[start_library_scan] Batch check complete: {len(files_to_enqueue)} files need scanning")
 
-            # Enqueue file for scanning using queue component
+    # Enqueue files that need scanning
+    for file_path in files_to_enqueue:
+        try:
             enqueue_file(db, file_path, force=force, queue_type="library")
             stats["files_queued"] += 1
-
         except Exception as e:
             logging.warning(f"[start_library_scan] Failed to enqueue {file_path}: {e}")
 

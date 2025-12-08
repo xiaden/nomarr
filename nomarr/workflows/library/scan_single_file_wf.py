@@ -131,38 +131,39 @@ def scan_single_file_workflow(
         existing_file = db.library_files.get_library_file(file_path)
         is_new = existing_file is None
 
-        # Update library database with file metadata and tags
-        params_update = UpdateLibraryFileFromTagsParams(
-            file_path=file_path,
-            namespace=namespace,
-            tagged_version=None,
-            calibration=None,
-            library_id=library_id,
-        )
-        update_library_file_from_tags(db, params_update)
-
-        result["action"] = "added" if is_new else "updated"
-        result["success"] = True
-
-        # Auto-enqueue for tagging if enabled
+        # Optimization: If auto-tagging is enabled and file needs tagging,
+        # skip metadata extraction here - the tagger will extract and write everything
+        needs_tagging = False
         if auto_tag:
-            file_record = db.library_files.get_library_file(file_path)
-            if file_record:
-                # Check if file needs tagging
-                needs_tag = not file_record.get("tagged") and not file_record.get("skip_auto_tag")
-
-                # Apply ignore patterns
-                if needs_tag and ignore_patterns:
-                    from nomarr.workflows.library.start_library_scan_wf import _matches_ignore_pattern
-
-                    if _matches_ignore_pattern(file_path, ignore_patterns):
-                        needs_tag = False
-
-                if needs_tag:
-                    # Enqueue for ML tagging (don't force) - use queue component
-                    enqueue_file(db, file_path, force=False, queue_type="tag")
-                    result["auto_tagged"] = True
-                    logging.debug(f"[scan_single_file] Auto-queued untagged file: {file_path}")
+            # Check if file needs tagging (new file or not yet tagged)
+            needs_tagging = is_new or (existing_file is not None and not existing_file.get("tagged") and not existing_file.get("skip_auto_tag"))
+            
+            # Apply ignore patterns
+            if needs_tagging and ignore_patterns:
+                from nomarr.workflows.library.start_library_scan_wf import _matches_ignore_pattern
+                if _matches_ignore_pattern(file_path, ignore_patterns):
+                    needs_tagging = False
+        
+        if needs_tagging:
+            # File needs tagging - skip metadata extraction, just enqueue for tagging
+            # The tagger will extract metadata and write tags in one pass
+            logging.debug(f"[scan_single_file] File needs tagging, skipping metadata extraction: {file_path}")
+            enqueue_file(db, file_path, force=False, queue_type="tag")
+            result["action"] = "queued_for_tagging"
+            result["success"] = True
+            result["auto_tagged"] = True
+        else:
+            # File doesn't need tagging - extract and update metadata now
+            params_update = UpdateLibraryFileFromTagsParams(
+                file_path=file_path,
+                namespace=namespace,
+                tagged_version=None,
+                calibration=None,
+                library_id=library_id,
+            )
+            update_library_file_from_tags(db, params_update)
+            result["action"] = "added" if is_new else "updated"
+            result["success"] = True
 
         logging.debug(f"[scan_single_file] Completed {file_path}: {result['action']}")
         return result
