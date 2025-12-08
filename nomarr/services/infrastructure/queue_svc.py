@@ -378,8 +378,8 @@ class QueueService:
                 id=j["id"],
                 path=j.get("file_path", j.get("path", "")),
                 status=j["status"],
-                started_at=j.get("started_at"),
-                finished_at=j.get("finished_at"),
+                started_at=str(j["started_at"]) if j.get("started_at") is not None else None,
+                finished_at=str(j["finished_at"]) if j.get("finished_at") is not None else None,
                 error_message=j.get("error_message"),
                 force=j.get("force", False),
             )
