@@ -27,7 +27,15 @@ def shutdown_handler(signum, frame):
 
 
 if __name__ == "__main__":
-    # Log effective configuration
+    # Register signal handlers for graceful shutdown
+    signal.signal(signal.SIGTERM, shutdown_handler)
+    signal.signal(signal.SIGINT, shutdown_handler)
+
+    # Start the Application (workers, services, coordinator, etc.)
+    logging.info("[Application] Starting Nomarr Application...")
+    application.start()
+
+    # Log effective configuration after services are initialized
     config_service = application.get_service("config")
     logging.info(
         "Effective config: models_dir=%s db_path=%s api=%s:%d worker_poll_interval=%d tagger=%d scanner=%d recal=%d",
@@ -40,14 +48,6 @@ if __name__ == "__main__":
         config_service.get_worker_count("scanner"),
         config_service.get_worker_count("recalibration"),
     )
-
-    # Register signal handlers for graceful shutdown
-    signal.signal(signal.SIGTERM, shutdown_handler)
-    signal.signal(signal.SIGINT, shutdown_handler)
-
-    # Start the Application (workers, services, coordinator, etc.)
-    logging.info("[Application] Starting Nomarr Application...")
-    application.start()
 
     # Log Web UI URL
     logging.info("[API] Web UI enabled at http://%s:%d/", application.api_host, application.api_port)
