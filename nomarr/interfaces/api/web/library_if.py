@@ -205,18 +205,20 @@ async def preview_library_scan(
         library = library_service.get_library(library_id)
 
         # Resolve paths to scan
-        root_paths = request.paths if request.paths else [library.root_path]
-
-        # Use service's path resolution to ensure paths are within library root
-        resolved_paths = []
-        for path in root_paths:
-            resolved = library_service._resolve_path_within_library(
-                library_root=library.root_path,
-                user_path=path,
-                must_exist=True,
-                must_be_file=False,
-            )
-            resolved_paths.append(str(resolved))
+        if request.paths:
+            # User specified sub-paths - validate they're within library root
+            resolved_paths = []
+            for path in request.paths:
+                resolved = library_service._resolve_path_within_library(
+                    library_root=library.root_path,
+                    user_path=path,
+                    must_exist=True,
+                    must_be_file=False,
+                )
+                resolved_paths.append(str(resolved))
+        else:
+            # No paths specified - scan entire library root (no need to resolve)
+            resolved_paths = [library.root_path]
 
         # Count files using helper
         all_files = []
