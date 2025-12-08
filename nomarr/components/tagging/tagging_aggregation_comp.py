@@ -296,7 +296,7 @@ LABEL_PAIRS = [
 def _build_tier_map(
     head_outputs: list[Any],
     calibrations: dict[str, dict[str, Any]] | None,
-) -> dict[str, tuple[str, float]]:
+) -> dict[str, tuple[str, float, str]]:
     """
     Build tier map from HeadOutput objects, applying calibration when available.
 
@@ -305,7 +305,7 @@ def _build_tier_map(
         calibrations: Optional calibration data (tag_key -> {p5, p95, method})
 
     Returns:
-        Dictionary mapping model_key -> (tier, value)
+        Dictionary mapping model_key -> (tier, value, label)
     """
     # Filter to only mood-source heads with tiers
     mood_outputs = [ho for ho in head_outputs if ho.head.is_mood_source and ho.tier is not None]
@@ -315,8 +315,8 @@ def _build_tier_map(
         logging.info("[aggregation] No mood outputs with tiers, returning empty mood tags")
         return {}
 
-    # Build tier map: model_key -> (tier, value)
-    tier_map: dict[str, tuple[str, float]] = {}
+    # Build tier map: model_key -> (tier, value, label)
+    tier_map: dict[str, tuple[str, float, str]] = {}
 
     for ho in mood_outputs:
         value = ho.value
@@ -329,7 +329,7 @@ def _build_tier_map(
             value = apply_minmax_calibration(value, calibrations[ho.model_key])
             logging.debug(f"[aggregation] Applied calibration to {ho.model_key}: {raw_value:.3f} → {value:.3f}")
 
-        tier_map[ho.model_key] = (ho.tier, value)
+        tier_map[ho.model_key] = (ho.tier, value, ho.label)
 
     logging.info(f"[aggregation] Tier map has {len(tier_map)} entries")
 
@@ -337,14 +337,14 @@ def _build_tier_map(
 
 
 def _compute_suppressed_keys(
-    tier_map: dict[str, tuple[str, float]],
+    tier_map: dict[str, tuple[str, float, str]],
     label_pairs: list[tuple[str, str, str, str]],
 ) -> set[str]:
     """
     Identify conflicting mood pairs and return keys to suppress.
 
     Args:
-        tier_map: Dictionary mapping model_key -> (tier, value)
+        tier_map: Dictionary mapping model_key -> (tier, value, label)
         label_pairs: List of opposing mood pairs
 
     Returns:
@@ -380,7 +380,7 @@ def _compute_suppressed_keys(
             best = None
             best_score: float = 0
             for k in keys:
-                tier, prob = tier_map[k]
+                tier, prob, _label = tier_map[k]
                 score = tier_order.get(tier, 0) * 100 + prob
                 if score > best_score:
                     best = k
@@ -391,8 +391,8 @@ def _compute_suppressed_keys(
         neg_key = get_best(neg_keys)
 
         if pos_key and neg_key:
-            pos_tier, _ = tier_map[pos_key]
-            neg_tier, _ = tier_map[neg_key]
+            pos_tier, _, _ = tier_map[pos_key]
+            neg_tier, _, _ = tier_map[neg_key]
 
             # Suppress both if conflict exists
             suppressed_keys.add(pos_key)
@@ -405,14 +405,14 @@ def _compute_suppressed_keys(
 
 
 def _build_label_map(
-    tier_map: dict[str, tuple[str, float]],
+    tier_map: dict[str, tuple[str, float, str]],
     label_pairs: list[tuple[str, str, str, str]],
 ) -> dict[str, str]:
     """
     Build label map for improved human-readable mood terms.
 
     Args:
-        tier_map: Dictionary mapping model_key -> (tier, value)
+        tier_map: Dictionary mapping model_key -> (tier, value, label)
         label_pairs: List of opposing mood pairs with improved labels
 
     Returns:
@@ -435,7 +435,7 @@ def _build_label_map(
 
 
 def _build_tier_term_sets(
-    tier_map: dict[str, tuple[str, float]],
+    tier_map: dict[str, tuple[str, float, str]],
     suppressed_keys: set[str],
     label_map: dict[str, str],
 ) -> BuildTierTermSetsResult:
@@ -443,7 +443,7 @@ def _build_tier_term_sets(
     Build strict, regular, and loose term sets from tier map.
 
     Args:
-        tier_map: Dictionary mapping model_key -> (tier, value)
+        tier_map: Dictionary mapping model_key -> (tier, value, label)
         suppressed_keys: Set of keys to skip due to conflicts
         label_map: Dictionary mapping simplified keys to human-readable labels
 
@@ -454,11 +454,11 @@ def _build_tier_term_sets(
     regular_terms: set[str] = set()
     loose_terms: set[str] = set()
 
-    for model_key, (tier, value) in tier_map.items():
+    for model_key, (tier, value, label) in tier_map.items():
         if model_key in suppressed_keys:
             continue
 
-        simplified = simplify_label(model_key)
+        simplified = simplify_label(label)
         term = label_map.get(simplified, simplified)
 
         logging.debug(f"[aggregation] Adding {model_key}={value:.3f} ({term}) to tier '{tier}'")
