@@ -18,9 +18,16 @@ WORKDIR /app
 # ----------------------------------------------------------------------
 #  Copy in project files (fast - no pip installs!)
 # ----------------------------------------------------------------------
-# Single COPY layer for all app files (7 dirs + 2 files = 1 layer instead of 10)
-COPY nomarr/ models/ config/ scripts/ docs/ tests/ /app/
-COPY pytest.ini readme.md docker/cleanup-cron.sh /app/
+# Copy directories preserving structure
+COPY nomarr/ /app/nomarr/
+COPY models/ /app/models/
+COPY config/ /app/config/
+COPY scripts/ /app/scripts/
+COPY docs/ /app/docs/
+COPY tests/ /app/tests/
+# Copy individual files in one layer
+COPY pytest.ini readme.md /app/
+COPY docker/cleanup-cron.sh /app/
 COPY docker/nom-cli.sh /usr/local/bin/nom
 
 # Note: Frontend is built separately (npm run build in frontend/)
