@@ -420,8 +420,8 @@ def _build_label_map(
     """
     label_map = {}
     for pos_pat, neg_pat, pos_label, neg_label in label_pairs:
-        for k in tier_map:
-            simplified = simplify_label(k)
+        for _model_key, (_tier, _value, label) in tier_map.items():
+            simplified = simplify_label(label)
             if simplified == pos_pat:
                 label_map[simplified] = pos_label
             if simplified == f"not {pos_pat}":
