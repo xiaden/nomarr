@@ -545,6 +545,7 @@ class LibraryService:
                 id=job["id"],
                 path=job["path"],
                 status=job["status"],
+                created_at=job.get("created_at", 0),
                 started_at=job["started_at"],
                 finished_at=job.get("completed_at"),  # Map completed_at → finished_at
                 error_message=job.get("error_message"),

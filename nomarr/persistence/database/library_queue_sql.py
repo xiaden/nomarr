@@ -29,9 +29,10 @@ class LibraryQueueOperations:
             Job ID
         """
         cur = self.conn.cursor()
+        ts = now_ms()
         cur.execute(
-            "INSERT INTO library_queue(path, status, force, started_at) VALUES(?, 'pending', ?, NULL)",
-            (path, 1 if force else 0),
+            "INSERT INTO library_queue(path, status, force, created_at, started_at) VALUES(?, 'pending', ?, ?, NULL)",
+            (path, 1 if force else 0, ts),
         )
         self.conn.commit()
         job_id = cur.lastrowid

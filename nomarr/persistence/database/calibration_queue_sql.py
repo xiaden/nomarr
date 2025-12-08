@@ -22,9 +22,10 @@ class CalibrationQueueOperations:
     def enqueue_calibration(self, path: str) -> int:
         """Add file to calibration queue. Returns calibration job ID."""
         cur = self.conn.cursor()
+        ts = now_ms()
         cur.execute(
-            "INSERT INTO calibration_queue(path, status, started_at) VALUES(?, 'pending', ?)",
-            (path, now_ms()),
+            "INSERT INTO calibration_queue(path, status, created_at, started_at) VALUES(?, 'pending', ?, NULL)",
+            (path, ts),
         )
         self.conn.commit()
         job_id = cur.lastrowid

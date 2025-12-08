@@ -56,8 +56,9 @@ class QueueJobResponse(BaseModel):
     id: int
     path: str
     status: str
-    started_at: str | None
-    finished_at: str | None
+    created_at: int
+    started_at: int | None
+    finished_at: int | None
     error_message: str | None
     force: bool
 
@@ -76,6 +77,7 @@ class QueueJobResponse(BaseModel):
             id=job.id,
             path=job.path,
             status=job.status,
+            created_at=job.created_at,
             started_at=job.started_at,
             finished_at=job.finished_at,
             error_message=job.error_message,

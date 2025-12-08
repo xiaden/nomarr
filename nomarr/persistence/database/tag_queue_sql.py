@@ -33,9 +33,10 @@ class QueueOperations:
             Job ID
         """
         cur = self.conn.cursor()
+        ts = now_ms()
         cur.execute(
-            "INSERT INTO tag_queue(path, status, force) VALUES(?,?,?)",
-            (path, "pending", int(force)),
+            "INSERT INTO tag_queue(path, status, created_at, force) VALUES(?,?,?,?)",
+            (path, "pending", ts, int(force)),
         )
         self.conn.commit()
 

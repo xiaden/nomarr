@@ -26,8 +26,9 @@ class Job:
     id: int
     path: str
     status: str
-    started_at: str | None
-    finished_at: str | None
+    created_at: int
+    started_at: int | None
+    finished_at: int | None
     error_message: str | None
     force: bool
 
