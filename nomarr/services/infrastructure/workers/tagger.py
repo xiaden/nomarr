@@ -61,7 +61,8 @@ def create_tagger_backend(
             version_tag_key=version_tag_key,
             tagger_version="1.2",
         )
-        return process_file_workflow(path=path, config=config, db=None)
+        # Pass db so library gets updated with tags after writing
+        return process_file_workflow(path=path, config=config, db=db)
 
     return tagger_backend
 
