@@ -154,10 +154,16 @@ class WorkerSystemService:
         Start all worker processes and health monitor.
 
         Only starts workers if worker_enabled=true in DB meta.
+        Stops any existing workers first to prevent duplicates.
         """
         if not self.is_worker_system_enabled():
             logging.info("[WorkerSystemService] Worker system disabled, not starting workers")
             return
+
+        # Stop existing workers first to prevent duplicates
+        if any(workers for workers in self._worker_groups.values()):
+            logging.info("[WorkerSystemService] Stopping existing workers before restart...")
+            self.stop_all_workers()
 
         logging.info("[WorkerSystemService] Starting all worker processes...")
 
