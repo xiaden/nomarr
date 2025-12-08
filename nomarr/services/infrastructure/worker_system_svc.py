@@ -154,20 +154,15 @@ class WorkerSystemService:
         Start all worker processes and health monitor.
 
         Only starts workers if worker_enabled=true in DB meta.
-        Stops any existing workers first to prevent duplicates.
+        Idempotent - only starts workers that aren't already running.
         """
         if not self.is_worker_system_enabled():
             logging.info("[WorkerSystemService] Worker system disabled, not starting workers")
             return
 
-        # Stop existing workers first to prevent duplicates
-        if any(workers for workers in self._worker_groups.values()):
-            logging.info("[WorkerSystemService] Stopping existing workers before restart...")
-            self.stop_all_workers()
+        logging.info("[WorkerSystemService] Starting worker processes...")
 
-        logging.info("[WorkerSystemService] Starting all worker processes...")
-
-        # Start tagger workers
+        # Start tagger workers (only starts missing workers)
         self._start_tagger_workers()
 
         # Start scanner workers (if backend configured)
@@ -180,7 +175,7 @@ class WorkerSystemService:
         # Start health monitor thread
         self._start_health_monitor()
 
-        logging.info("[WorkerSystemService] All worker processes started")
+        logging.info("[WorkerSystemService] Worker startup complete")
 
     def stop_all_workers(self) -> None:
         """
@@ -226,8 +221,18 @@ class WorkerSystemService:
         logging.info("[WorkerSystemService] All worker processes stopped")
 
     def _start_tagger_workers(self) -> None:
-        """Start N tagger worker processes."""
+        """Start N tagger worker processes (only starts missing workers)."""
+        existing_workers = self._worker_groups["tag"]
+        
+        # Remove dead workers from list
+        existing_workers[:] = [w for w in existing_workers if w.is_alive()]
+        
+        # Start missing workers
         for i in range(self.tagger_count):
+            # Check if worker with this ID already exists and is alive
+            if any(w.worker_id == i and w.is_alive() for w in existing_workers):
+                continue
+                
             worker = TaggerWorker(
                 db_path=str(self.db.path),
                 processing_backend=self.tagger_backend,
@@ -235,15 +240,25 @@ class WorkerSystemService:
                 interval=2,
             )
             worker.start()
-            self._worker_groups["tag"].append(worker)
+            existing_workers.append(worker)
             logging.info(f"[WorkerSystemService] Started TaggerWorker-{i} (PID: {worker.pid})")
 
     def _start_scanner_workers(self) -> None:
-        """Start N scanner worker processes."""
+        """Start N scanner worker processes (only starts missing workers)."""
         if not self.scanner_backend:
             return
 
+        existing_workers = self._worker_groups["library"]
+        
+        # Remove dead workers from list
+        existing_workers[:] = [w for w in existing_workers if w.is_alive()]
+        
+        # Start missing workers
         for i in range(self.scanner_count):
+            # Check if worker with this ID already exists and is alive
+            if any(w.worker_id == i and w.is_alive() for w in existing_workers):
+                continue
+                
             worker = LibraryScanWorker(
                 db_path=str(self.db.path),
                 processing_backend=self.scanner_backend,
@@ -251,12 +266,22 @@ class WorkerSystemService:
                 interval=5,
             )
             worker.start()
-            self._worker_groups["library"].append(worker)
+            existing_workers.append(worker)
             logging.info(f"[WorkerSystemService] Started LibraryScanWorker-{i} (PID: {worker.pid})")
 
     def _start_recalibration_workers(self) -> None:
-        """Start N recalibration worker processes."""
+        """Start N recalibration worker processes (only starts missing workers)."""
+        existing_workers = self._worker_groups["calibration"]
+        
+        # Remove dead workers from list
+        existing_workers[:] = [w for w in existing_workers if w.is_alive()]
+        
+        # Start missing workers
         for i in range(self.recalibration_count):
+            # Check if worker with this ID already exists and is alive
+            if any(w.worker_id == i and w.is_alive() for w in existing_workers):
+                continue
+                
             worker = RecalibrationWorker(
                 db_path=str(self.db.path),
                 processing_backend=self.recalibration_backend,
@@ -264,7 +289,7 @@ class WorkerSystemService:
                 interval=2,
             )
             worker.start()
-            self._worker_groups["calibration"].append(worker)
+            existing_workers.append(worker)
             logging.info(f"[WorkerSystemService] Started RecalibrationWorker-{i} (PID: {worker.pid})")
 
     # ---------------------------- Health Monitoring ----------------------------
