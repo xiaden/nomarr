@@ -5,12 +5,18 @@ Initializes the Application (workers, services, etc.) then starts the API server
 """
 
 import logging
+import multiprocessing
 import signal
 import sys
 
 import uvicorn
 
 from nomarr.app import application
+
+# CRITICAL: Set multiprocessing start method to 'spawn' before any other imports
+# This prevents CUDA context corruption when forking worker processes
+# (TensorFlow CUDA context doesn't survive fork() - must spawn fresh processes)
+multiprocessing.set_start_method("spawn", force=True)
 
 # Configure logging once for the whole process
 logging.basicConfig(

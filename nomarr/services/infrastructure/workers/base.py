@@ -224,9 +224,7 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
 
         # Start heartbeat thread (prevents blocking during heavy ML processing)
         self._heartbeat_thread = threading.Thread(
-            target=self._heartbeat_loop,
-            daemon=True,
-            name=f"{self.name}-Heartbeat"
+            target=self._heartbeat_loop, daemon=True, name=f"{self.name}-Heartbeat"
         )
         self._heartbeat_thread.start()
 
@@ -243,7 +241,7 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
             self._shutdown = True
             if self._heartbeat_thread and self._heartbeat_thread.is_alive():
                 self._heartbeat_thread.join(timeout=2)
-            
+
             # Mark worker as stopping
             if self.db:
                 self.db.health.mark_stopping(
