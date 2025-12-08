@@ -205,7 +205,7 @@ class InfoService:
             api_port=self.cfg.api_port,
             worker_enabled=worker_enabled,
             worker_enabled_default=self.cfg.worker_enabled_default,
-            worker_count=self.cfg.worker_count,
+            worker_count=self.cfg.tagger_worker_count + self.cfg.scanner_worker_count + self.cfg.recalibration_worker_count,
             poll_interval=self.cfg.poll_interval,
         )
 
