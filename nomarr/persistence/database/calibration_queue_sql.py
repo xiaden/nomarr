@@ -34,23 +34,30 @@ class CalibrationQueueOperations:
 
     def get_next_calibration_job(self) -> tuple[int, str] | None:
         """
-        Get next pending calibration job and mark it running.
+        Get next pending calibration job and atomically mark it running.
 
         Returns:
             (job_id, path) or None if no jobs pending
         """
-        cur = self.conn.execute("SELECT id, path FROM calibration_queue WHERE status='pending' ORDER BY id LIMIT 1")
+        # Atomic claim: UPDATE...RETURNING prevents race conditions
+        cur = self.conn.execute(
+            """
+            UPDATE calibration_queue
+            SET status='running'
+            WHERE id = (
+                SELECT id FROM calibration_queue
+                WHERE status='pending'
+                ORDER BY id
+                LIMIT 1
+            )
+            RETURNING id, path
+            """
+        )
         row = cur.fetchone()
+        self.conn.commit()
         if not row:
             return None
-
-        job_id, path = row
-        self.conn.execute(
-            "UPDATE calibration_queue SET status='running' WHERE id=?",
-            (job_id,),
-        )
-        self.conn.commit()
-        return (job_id, path)
+        return (row[0], row[1])
 
     def complete_calibration_job(self, job_id: int) -> None:
         """Mark calibration job as completed."""

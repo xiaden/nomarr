@@ -174,10 +174,15 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
     def _heartbeat_loop(self) -> None:
         """Background thread that continuously updates heartbeat (prevents blocking during heavy processing)."""
         logging.info(f"[{self.name}] Heartbeat thread started")
-        while not self._shutdown:
-            if self.db:
+        
+        # Create dedicated DB connection for heartbeat thread (SQLite connections are NOT thread-safe)
+        from nomarr.persistence.db import Database
+        heartbeat_db = Database(self.db_path)
+        
+        try:
+            while not self._shutdown:
                 try:
-                    self.db.health.update_heartbeat(
+                    heartbeat_db.health.update_heartbeat(
                         component=self.component_id,
                         status="healthy",
                         current_job=self._current_job_id,
@@ -185,8 +190,10 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
                     self._last_heartbeat = time.time()
                 except Exception as e:
                     logging.warning(f"[{self.name}] Heartbeat update failed: {e}")
-            time.sleep(self._heartbeat_interval)
-        logging.info(f"[{self.name}] Heartbeat thread stopped")
+                time.sleep(self._heartbeat_interval)
+        finally:
+            heartbeat_db.close()
+            logging.info(f"[{self.name}] Heartbeat thread stopped")
 
     def _clear_current_job(self) -> None:
         """Clear current job and update health table (single source of truth)."""

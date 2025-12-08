@@ -41,21 +41,32 @@ class LibraryQueueOperations:
 
     def dequeue_scan(self) -> tuple[int, str, bool] | None:
         """
-        Get next pending scan job and mark it as running.
+        Get next pending scan job and atomically mark it as running.
 
         Returns:
             Tuple of (job_id, path, force) or None if no pending jobs
         """
-        cur = self.conn.execute("SELECT id, path, force FROM library_queue WHERE status='pending' ORDER BY id LIMIT 1")
+        # Atomic claim: UPDATE...RETURNING prevents race conditions
+        cur = self.conn.execute(
+            """
+            UPDATE library_queue
+            SET status='running', started_at=?
+            WHERE id = (
+                SELECT id FROM library_queue
+                WHERE status='pending'
+                ORDER BY id
+                LIMIT 1
+            )
+            RETURNING id, path, force
+            """,
+            (now_ms(),),
+        )
         row = cur.fetchone()
+        self.conn.commit()
         if not row:
             return None
 
-        job_id, path, force = row
-        self.conn.execute("UPDATE library_queue SET status='running', started_at=? WHERE id=?", (now_ms(), job_id))
-        self.conn.commit()
-
-        return (job_id, path, bool(force))
+        return (row[0], row[1], bool(row[2]))
 
     def mark_scan_complete(self, job_id: int) -> None:
         """

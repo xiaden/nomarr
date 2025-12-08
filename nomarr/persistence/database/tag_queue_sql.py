@@ -154,13 +154,28 @@ class QueueOperations:
 
     def get_next_pending_job(self) -> dict[str, Any] | None:
         """
-        Get the next pending job (oldest first).
+        Get the next pending job (oldest first) and atomically mark it running.
 
         Returns:
             Job dict with id, path, force or None if no pending jobs
         """
-        cur = self.conn.execute("SELECT id, path, force FROM tag_queue WHERE status='pending' ORDER BY id ASC LIMIT 1")
+        # Atomic claim: UPDATE...RETURNING prevents race conditions
+        cur = self.conn.execute(
+            """
+            UPDATE tag_queue
+            SET status='running', started_at=?
+            WHERE id = (
+                SELECT id FROM tag_queue
+                WHERE status='pending'
+                ORDER BY id ASC
+                LIMIT 1
+            )
+            RETURNING id, path, force
+            """,
+            (now_ms(),),
+        )
         row = cur.fetchone()
+        self.conn.commit()
         if not row:
             return None
         return {"id": row[0], "path": row[1], "force": bool(row[2])}
