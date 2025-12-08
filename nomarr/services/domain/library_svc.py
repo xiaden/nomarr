@@ -1033,3 +1033,28 @@ class LibraryService:
 
         values = get_unique_tag_values(self.db, tag_key, nomarr_only)
         return UniqueTagKeysResult(tag_keys=values, count=len(values), calibration=None, library_id=None)
+
+    def read_file_tags(self, path: str) -> dict[str, Any]:
+        """
+        Read tags from an audio file.
+
+        Args:
+            path: Absolute file path (must be under library_root)
+
+        Returns:
+            Dictionary of tag_key -> value(s)
+
+        Raises:
+            ValueError: If path is outside library_root or invalid
+            RuntimeError: If file cannot be read
+        """
+        from nomarr.components.tagging.tagging_reader_comp import read_tags_from_file
+        from nomarr.helpers.files_helper import validate_library_path
+
+        # Security: validate path is under library_root
+        validated_path = validate_library_path(path, str(self._get_library_root()))
+
+        # Read tags using component
+        tags = read_tags_from_file(validated_path, self.cfg.namespace)
+
+        return tags
