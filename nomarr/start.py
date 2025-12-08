@@ -28,14 +28,17 @@ def shutdown_handler(signum, frame):
 
 if __name__ == "__main__":
     # Log effective configuration
+    config_service = application.get_service("config")
     logging.info(
-        "Effective config: models_dir=%s db_path=%s api=%s:%d worker_poll_interval=%d worker_count=%d",
+        "Effective config: models_dir=%s db_path=%s api=%s:%d worker_poll_interval=%d tagger=%d scanner=%d recal=%d",
         application.models_dir,
         application.db_path,
         application.api_host,
         application.api_port,
         application.worker_poll_interval,
-        application.worker_count,
+        config_service.get_worker_count("tagger"),
+        config_service.get_worker_count("scanner"),
+        config_service.get_worker_count("recalibration"),
     )
 
     # Register signal handlers for graceful shutdown

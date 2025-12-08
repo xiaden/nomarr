@@ -5,11 +5,11 @@
 # All other operational parameters are internal constants and cannot
 # be changed without modifying the source code.
 #
-# These 12 settings cover the essential user-facing configuration:
+# These settings cover the essential user-facing configuration:
 # - Where files live (models, DB, library)
 # - How tags are written (file write mode, overwrite behavior)
 # - Library scanning (auto-tag, ignore patterns)
-# - Worker count (parallel processing, VRAM usage)
+# - Worker counts (global and per-pool for parallel processing, VRAM usage)
 # - Model cache behavior (idle timeout)
 # - Calibration (enable calibration mode, repo URL)
 # - Authentication (admin password)
@@ -43,9 +43,11 @@ library_ignore_patterns:
 # ----------------------------------------------------------------------
 # Worker Settings
 # ----------------------------------------------------------------------
-worker_count:
-  1 # Number of parallel ML workers
-  # (1-8 recommended, controls VRAM usage)
+# Per-pool worker counts (1-8 recommended, controls VRAM usage)
+# Defaults to 1 if not specified
+tagger_worker_count: 1 # ML tagging workers
+scanner_worker_count: 1 # Library scanner workers
+recalibration_worker_count: 1 # Calibration workers
 
 # ----------------------------------------------------------------------
 # Model Cache

@@ -10,6 +10,7 @@ from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.types.admin_types import CacheRefreshResponse
 from nomarr.interfaces.api.types.queue_types import (
     JobRemovalResult,
+    ListJobsResponse,
     OperationResult,
     QueueJobResponse,
     QueueStatusResponse,
@@ -59,6 +60,18 @@ async def web_status(
 
     # Transform DTO to API response
     return QueueJobResponse.from_dto(job)
+
+
+@router.get("/list", dependencies=[Depends(verify_session)])
+async def web_list_jobs(
+    limit: int = 50,
+    offset: int = 0,
+    status: str | None = None,
+    queue_service: QueueService = Depends(get_queue_service),
+) -> ListJobsResponse:
+    """List jobs with pagination and filtering (web UI proxy)."""
+    result = queue_service.list_jobs(limit=limit, offset=offset, status=status)
+    return ListJobsResponse.from_dto(result)
 
 
 @router.get("/queue-depth", dependencies=[Depends(verify_session)])

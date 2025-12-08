@@ -313,8 +313,29 @@ export function QueuePage() {
       {/* Jobs table */}
       {!loading && !error && (
         <>
-          <div style={{ overflowX: "auto" }}>
-            <table style={tableStyle}>
+          {jobs.length === 0 && total === 0 ? (
+            <div
+              style={{
+                textAlign: "center",
+                padding: "60px 20px",
+                backgroundColor: "#1a1a1a",
+                borderRadius: "8px",
+                border: "1px solid #333",
+              }}
+            >
+              <p style={{ fontSize: "18px", color: "#888", marginBottom: "10px" }}>
+                No jobs in queue
+              </p>
+              <p style={{ fontSize: "14px", color: "#666" }}>
+                {statusFilter !== "all"
+                  ? `No ${statusFilter} jobs found`
+                  : "Queue is empty"}
+              </p>
+            </div>
+          ) : (
+            <>
+              <div style={{ overflowX: "auto" }}>
+                <table style={tableStyle}>
               <thead>
                 <tr>
                   <th style={thStyle}>ID</th>
@@ -409,6 +430,8 @@ export function QueuePage() {
                 Next →
               </button>
             </div>
+          )}
+            </>
           )}
         </>
       )}

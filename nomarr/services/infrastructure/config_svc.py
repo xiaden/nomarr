@@ -202,49 +202,35 @@ class ConfigService:
 
     def get_worker_count(self, kind: Literal["tagger", "scanner", "recalibration"]) -> int:
         """
-        Get worker count for a specific worker pool with fallback logic.
+        Get worker count for a specific worker pool.
 
         This method supports per-pool worker counts via flat config keys:
         - tagger_worker_count
         - scanner_worker_count
         - recalibration_worker_count
 
-        Fallback order:
-        1. Check for pool-specific key (e.g., tagger_worker_count)
-        2. Fall back to global worker_count if pool-specific key missing
-        3. Default to 1 if neither exists (with warning)
-
         Args:
             kind: Worker pool type ("tagger", "scanner", or "recalibration")
 
         Returns:
-            Worker count for the specified pool (constrained to 1-8)
+            Worker count for the specified pool (constrained to 1-8, defaults to 1)
 
         Example:
             >>> config_service.get_worker_count("tagger")
-            4  # from tagger_worker_count or worker_count
+            2  # from tagger_worker_count
             >>> config_service.get_worker_count("scanner")
-            2  # from scanner_worker_count
+            1  # from scanner_worker_count or default
         """
         cfg = self.get_config().config
 
-        # Try pool-specific key first
         pool_key = f"{kind}_worker_count"
-        if pool_key in cfg:
+        if pool_key in cfg and cfg[pool_key] is not None:
             count = int(cfg[pool_key])
             self._logger.debug(f"[ConfigService] Using {pool_key}={count}")
             return max(1, min(8, count))
 
-        # Fall back to global worker_count
-        if "worker_count" in cfg:
-            count = int(cfg["worker_count"])
-            self._logger.debug(f"[ConfigService] Using global worker_count={count} for {kind} pool")
-            return max(1, min(8, count))
-
-        # Default to 1 with warning
-        self._logger.warning(
-            f"[ConfigService] No {pool_key} or global worker_count found, defaulting to 1 for {kind} pool"
-        )
+        # Default to 1
+        self._logger.debug(f"[ConfigService] No {pool_key} configured, defaulting to 1 for {kind} pool")
         return 1
 
     # ----------------------------------------------------------------------
@@ -309,8 +295,8 @@ class ConfigService:
         """
         Base defaults for USER-CONFIGURABLE settings only.
 
-        These 12 keys are the only settings exposed to users via
-        config.yaml, environment variables, or database overrides.
+        These settings are exposed to users via config.yaml,
+        environment variables, or database overrides.
 
         All other operational parameters are internal constants
         defined at module level.
@@ -326,8 +312,10 @@ class ConfigService:
             # Library scanner settings
             "library_auto_tag": True,
             "library_ignore_patterns": "",
-            # Worker settings
-            "worker_count": 1,  # Number of parallel ML workers (controls VRAM usage)
+            # Worker settings (per-pool counts, defaults to 1)
+            "tagger_worker_count": None,  # ML tagging workers (1-8, controls VRAM usage)
+            "scanner_worker_count": None,  # Library scanner workers (1-8)
+            "recalibration_worker_count": None,  # Calibration workers (1-8)
             # Calibration settings
             "calibrate_heads": False,
             "calibration_repo": "https://github.com/xiaden/nom-cal",
@@ -387,7 +375,9 @@ class ConfigService:
             "overwrite_tags",
             "admin_password",
             "cache_idle_timeout",
-            "worker_count",
+            "tagger_worker_count",
+            "scanner_worker_count",
+            "recalibration_worker_count",
             "calibrate_heads",
             "calibration_repo",
         }

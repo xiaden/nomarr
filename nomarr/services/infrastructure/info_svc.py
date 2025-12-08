@@ -41,7 +41,9 @@ class InfoConfig:
     api_host: str | None = None
     api_port: int | None = None
     worker_enabled_default: bool = True
-    worker_count: int = 1
+    tagger_worker_count: int = 1
+    scanner_worker_count: int = 1
+    recalibration_worker_count: int = 1
     poll_interval: float = 1.0
 
 

@@ -44,7 +44,8 @@ export function NavTabs() {
             end={item.path === "/"}
             style={({ isActive }) => ({
               ...styles.navLink,
-              ...(isActive ? styles.navLinkActive : {}),
+              color: isActive ? "#fff" : "#aaa",
+              borderBottomColor: isActive ? "#4a9eff" : "transparent",
             })}
           >
             {item.label}
@@ -73,13 +74,8 @@ const styles = {
   navLink: {
     padding: "1rem",
     textDecoration: "none",
-    color: "#aaa",
     borderBottom: "2px solid transparent",
     transition: "color 0.2s, border-color 0.2s",
-  },
-  navLinkActive: {
-    color: "#fff",
-    borderBottomColor: "#4a9eff",
   },
   logoutButton: {
     padding: "0.5rem 1rem",

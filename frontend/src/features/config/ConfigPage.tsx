@@ -5,12 +5,10 @@
  * - View current configuration
  * - Update individual config values
  * - Restart server to apply changes
- * - Browse filesystem for path values
  */
 
 import { useEffect, useState } from "react";
 
-import { ServerFilePicker } from "../../components/ServerFilePicker";
 import { api } from "../../shared/api";
 
 export function ConfigPage() {
@@ -18,7 +16,6 @@ export function ConfigPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [updateLoading, setUpdateLoading] = useState(false);
-  const [showPicker, setShowPicker] = useState<Record<string, boolean>>({});
 
   const loadConfig = async () => {
     try {
@@ -61,29 +58,9 @@ export function ConfigPage() {
     handleUpdate(key, value);
   };
 
-  const togglePicker = (key: string) => {
-    setShowPicker((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
-
-  const isPathField = (key: string): boolean => {
-    const pathKeys = [
-      "library_root",
-      "models_dir",
-      "db_path",
-      "calibration_repo",
-    ];
-    return pathKeys.includes(key);
-  };
-
-  const getPickerMode = (key: string): "file" | "directory" | "either" => {
-    if (key === "db_path") return "file";
-    return "directory";
-  };
-
   const renderField = (key: string, value: unknown) => {
     const stringValue = String(value);
     const isBool = typeof value === "boolean";
-    const isPath = isPathField(key);
 
     return (
       <div key={key} style={styles.field}>
@@ -111,16 +88,6 @@ export function ConfigPage() {
                 style={styles.input}
                 disabled={updateLoading}
               />
-              {isPath && (
-                <button
-                  type="button"
-                  onClick={() => togglePicker(key)}
-                  style={styles.browseButton}
-                  disabled={updateLoading}
-                >
-                  {showPicker[key] ? "Hide" : "Browse..."}
-                </button>
-              )}
             </>
           )}
           <button
@@ -131,19 +98,6 @@ export function ConfigPage() {
             Save
           </button>
         </form>
-        {isPath && showPicker[key] && (
-          <div style={{ marginTop: "10px" }}>
-            <ServerFilePicker
-              value={stringValue}
-              onChange={(newPath) => {
-                handleChange(key, newPath);
-                setShowPicker((prev) => ({ ...prev, [key]: false }));
-              }}
-              mode={getPickerMode(key)}
-              label={`Browse ${key}`}
-            />
-          </div>
-        )}
       </div>
     );
   };

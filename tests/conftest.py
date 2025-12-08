@@ -266,7 +266,9 @@ def mock_config() -> dict:
         "cache_auto_evict": True,
         "library_path": "/music",
         "library_scan_poll_interval": 10,
-        "worker_count": 1,
+        "tagger_worker_count": 1,
+        "scanner_worker_count": 1,
+        "recalibration_worker_count": 1,
         "log_level": "ERROR",
     }
 

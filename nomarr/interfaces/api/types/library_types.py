@@ -53,14 +53,28 @@ class LibraryResponse(BaseModel):
         Returns:
             API response model
         """
+        # Convert timestamps: if int (ms), convert to ISO format; if already string, pass through
+        created_at = library.created_at
+        updated_at = library.updated_at
+
+        if isinstance(created_at, int):
+            from datetime import datetime, timezone
+
+            created_at = datetime.fromtimestamp(created_at / 1000, tz=timezone.utc).isoformat()
+
+        if isinstance(updated_at, int):
+            from datetime import datetime, timezone
+
+            updated_at = datetime.fromtimestamp(updated_at / 1000, tz=timezone.utc).isoformat()
+
         return cls(
             id=library.id,
             name=library.name,
             root_path=library.root_path,
             is_enabled=library.is_enabled,
             is_default=library.is_default,
-            created_at=library.created_at,
-            updated_at=library.updated_at,
+            created_at=created_at,
+            updated_at=updated_at,
         )
 
 

@@ -29,7 +29,8 @@ def get_config() -> dict[str, Any]:
     from nomarr.app import application
 
     config_service = application.get_service("config")
-    return config_service.get_config()  # type: ignore[no-any-return]
+    result = config_service.get_config()
+    return result.config  # type: ignore[no-any-return]
 
 
 def get_queue_service() -> QueueService:

@@ -41,8 +41,8 @@ class LibraryDict:
     root_path: str
     is_enabled: bool
     is_default: bool
-    created_at: str
-    updated_at: str
+    created_at: str | int  # Can be ISO string or Unix timestamp (ms)
+    updated_at: str | int  # Can be ISO string or Unix timestamp (ms)
 
 
 @dataclass

@@ -29,10 +29,39 @@ def get_config(
     _session: dict = Depends(verify_session),
     config_service: Any = Depends(get_config_service),
 ) -> ConfigResponse:
-    """Get current configuration values (user-editable subset)."""
+    """Get current configuration values (Web UI editable subset only)."""
     try:
         result = config_service.get_config_for_web(worker_service=None)
-        return ConfigResponse.from_dto(result)
+
+        # Only return Web UI appropriate config fields (runtime settings)
+        # Infrastructure paths excluded - must be set via config.yaml or env vars
+        editable_keys = {
+            "file_write_mode",
+            "overwrite_tags",
+            "library_auto_tag",
+            "library_ignore_patterns",
+            "tagger_worker_count",
+            "scanner_worker_count",
+            "recalibration_worker_count",
+            "cache_idle_timeout",
+            "calibrate_heads",
+            "calibration_repo",
+            "admin_password",
+        }
+
+        # Filter config dict to only editable keys
+        filtered_config = {k: v for k, v in result.config.items() if k in editable_keys}
+
+        # Create filtered result
+        from nomarr.helpers.dto.config_dto import WebConfigResult
+
+        filtered_result = WebConfigResult(
+            config=filtered_config,
+            internal_info=result.internal_info,
+            worker_enabled=result.worker_enabled,
+        )
+
+        return ConfigResponse.from_dto(filtered_result)
     except Exception as e:
         logging.exception("[Web API] Error getting config")
         raise HTTPException(status_code=500, detail=f"Error getting config: {e}") from e
@@ -48,31 +77,34 @@ def update_config(
     Update a configuration value in the database.
 
     Changes are stored in the DB meta table and will override YAML/env config on restart.
-    Only user-configurable keys can be updated.
-    Note: library_root is infrastructure-level config, use /api/library/libraries endpoints instead.
+    Only runtime settings appropriate for Web UI can be updated.
+    Infrastructure paths (models_dir, db_path, library_root) must be set via config file.
     """
     try:
         key = request.key
         value = request.value
 
-        # Whitelist of user-editable keys (matches config surface)
-        # Note: library_root excluded - use libraries API for multi-library management
+        # Whitelist of Web UI editable keys (runtime settings only)
+        # Infrastructure paths excluded - must be set via config.yaml or env vars
         editable_keys = {
-            "models_dir",
-            "db_path",
-            "library_auto_tag",
-            "library_ignore_patterns",
             "file_write_mode",
             "overwrite_tags",
-            "admin_password",
+            "library_auto_tag",
+            "library_ignore_patterns",
+            "tagger_worker_count",
+            "scanner_worker_count",
+            "recalibration_worker_count",
             "cache_idle_timeout",
-            "worker_count",
             "calibrate_heads",
             "calibration_repo",
+            "admin_password",
         }
 
         if key not in editable_keys:
-            raise HTTPException(status_code=400, detail=f"Config key '{key}' is not editable (internal constant)")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Config key '{key}' cannot be edited via Web UI (set via config file or environment)",
+            )
 
         # Store in DB meta via ConfigService
         config_service.set_config_value(key, value)

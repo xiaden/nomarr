@@ -67,7 +67,7 @@ class Application:
     - Raw config is PRIVATE (_config) and used only internally in Application
     - External modules MUST NOT access application._config directly
     - To access config outside app.py, use: application.get_service("config").get_config()
-    - Prefer using specific instance attributes (api_host, worker_count, etc.) over raw config
+    - Prefer using specific instance attributes (api_host, models_dir, etc.) over raw config
 
     The singleton instance is available as `application` at module level.
     """
@@ -104,7 +104,6 @@ class Application:
         self.library_auto_tag: bool = bool(self._config.get("library_auto_tag", False))
         self.library_ignore_patterns: str = str(self._config.get("library_ignore_patterns", ""))
         self.admin_password_config: str | None = self._config.get("admin_password")
-        self.worker_count: int = max(1, min(8, int(self._config.get("worker_count", 1))))
 
         # Internal constants (not user-configurable)
         self.api_host: str = INTERNAL_HOST
@@ -307,7 +306,9 @@ class Application:
             api_host=self.api_host,
             api_port=self.api_port,
             worker_enabled_default=self.worker_enabled_default,
-            worker_count=self.worker_count,
+            tagger_worker_count=config_service.get_worker_count("tagger"),
+            scanner_worker_count=config_service.get_worker_count("scanner"),
+            recalibration_worker_count=config_service.get_worker_count("recalibration"),
             poll_interval=float(self.worker_poll_interval),
         )
         info_service = InfoService(
@@ -392,6 +393,12 @@ class Application:
             recalibrate_file_workflow(db=self.db, params=params)
             return {"status": "success", "path": path}
 
+        # Get per-pool worker counts from config
+        config_service = self.get_service("config")
+        tagger_count = config_service.get_worker_count("tagger")
+        scanner_count = config_service.get_worker_count("scanner")
+        recalibration_count = config_service.get_worker_count("recalibration")
+
         # Create WorkerSystemService with backends
         self.worker_system = WorkerSystemService(
             db=self.db,
@@ -399,9 +406,9 @@ class Application:
             scanner_backend=scanner_backend if self.library_root else None,
             recalibration_backend=recalibration_backend,
             event_broker=self.event_broker,
-            tagger_count=min(2, self.worker_count),  # ML heavy, max 2
-            scanner_count=min(10, self.worker_count * 5),  # I/O bound, more workers
-            recalibration_count=min(5, self.worker_count * 2),  # CPU light
+            tagger_count=tagger_count,
+            scanner_count=scanner_count,
+            recalibration_count=recalibration_count,
             default_enabled=self.worker_enabled_default,
         )
 
