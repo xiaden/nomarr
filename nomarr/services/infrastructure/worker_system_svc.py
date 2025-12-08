@@ -21,18 +21,16 @@ import logging
 import os
 import threading
 import time
-from typing import TYPE_CHECKING, Any, Literal
+from collections.abc import Callable
+from typing import Any, Literal
 
 from nomarr.components.workers import requeue_crashed_job, should_restart_worker
 from nomarr.helpers.dto.admin_dto import WorkerOperationResult
+from nomarr.persistence.db import Database
+from nomarr.services.infrastructure.workers.base import BaseWorker
 from nomarr.services.infrastructure.workers.recalibration import RecalibrationWorker
 from nomarr.services.infrastructure.workers.scanner import LibraryScanWorker
 from nomarr.services.infrastructure.workers.tagger import TaggerWorker
-
-if TYPE_CHECKING:
-    from nomarr.persistence.db import Database
-    from nomarr.services.infrastructure.workers.base import BaseWorker
-    from nomarr.services.processing_backends import ProcessingBackend
 
 # Queue type literal (matches queue_svc.py)
 QueueType = Literal["tag", "library", "calibration"]
@@ -76,9 +74,9 @@ class WorkerSystemService:
     def __init__(
         self,
         db: Database,
-        tagger_backend: ProcessingBackend,
-        scanner_backend: ProcessingBackend | None,
-        recalibration_backend: ProcessingBackend,
+        tagger_backend: Callable[[Database, str, bool], Any],
+        scanner_backend: Callable[[Database, str, bool], Any] | None,
+        recalibration_backend: Callable[[Database, str, bool], Any],
         event_broker: Any,
         tagger_count: int = 2,
         scanner_count: int = 10,

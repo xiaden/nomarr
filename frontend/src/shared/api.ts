@@ -285,8 +285,8 @@ export const library = {
    */
   list: async (enabledOnly = false): Promise<Library[]> => {
     const query = enabledOnly ? "?enabled_only=true" : "";
-    const response = await request<
-      Array<{
+    const response = await request<{
+      libraries: Array<{
         id: number;
         name: string;
         root_path: string;
@@ -294,11 +294,11 @@ export const library = {
         is_default: boolean;
         created_at?: string;
         updated_at?: string;
-      }>
-    >(`/api/web/libraries${query}`);
+      }>;
+    }>(`/api/web/libraries${query}`);
 
     // Convert snake_case to camelCase
-    return response.map((lib) => ({
+    return response.libraries.map((lib) => ({
       id: lib.id,
       name: lib.name,
       rootPath: lib.root_path,

@@ -19,12 +19,50 @@ Each job processes ONE file:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from nomarr.services.infrastructure.workers.base import BaseWorker
 
 if TYPE_CHECKING:
-    from nomarr.services.processing_backends import ProcessingBackend
+    from nomarr.persistence.db import Database
+
+
+def create_scanner_backend(
+    namespace: str,
+) -> Callable[[Database, str, bool], dict[str, Any]]:
+    """
+    Create a scanner backend function with captured config.
+
+    This factory function creates a closure that captures application config
+    and calls the scan_single_file_workflow with appropriate settings.
+
+    The backend receives the worker's Database connection as its first parameter,
+    ensuring connection reuse across jobs instead of creating a new connection per job.
+
+    Args:
+        namespace: Tag namespace for scanned files
+
+    Returns:
+        Callable backend function for LibraryScanWorker that accepts (db, path, force)
+    """
+
+    def scanner_backend(db: Database, path: str, force: bool):
+        """Backend for LibraryScanWorker - scans library for new/changed files."""
+        from nomarr.helpers.dto.library_dto import ScanSingleFileWorkflowParams
+        from nomarr.workflows.library.scan_single_file_wf import scan_single_file_workflow
+
+        params = ScanSingleFileWorkflowParams(
+            file_path=path,
+            namespace=namespace,
+            force=force,
+            auto_tag=True,  # Auto-enqueue discovered files for tagging
+            ignore_patterns="",
+            library_id=None,
+        )
+        return scan_single_file_workflow(db=db, params=params)
+
+    return scanner_backend
 
 
 class LibraryScanWorker(BaseWorker):
@@ -40,9 +78,9 @@ class LibraryScanWorker(BaseWorker):
     def __init__(
         self,
         db_path: str,
-        processing_backend: ProcessingBackend,
+        processing_backend: Callable[[Database, str, bool], dict[str, Any]],
         event_broker: Any,
-        interval: int = 5,
+        interval: int = 2,
         worker_id: int = 0,
     ):
         """

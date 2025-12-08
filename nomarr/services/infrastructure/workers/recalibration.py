@@ -13,12 +13,57 @@ without re-running ML inference (uses existing numeric tags from DB).
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from nomarr.services.infrastructure.workers.base import BaseWorker
 
 if TYPE_CHECKING:
-    from nomarr.services.processing_backends import ProcessingBackend
+    from nomarr.persistence.db import Database
+
+
+def create_recalibration_backend(
+    models_dir: Path,
+    namespace: str,
+    version_tag_key: str,
+    calibrate_heads: bool,
+) -> Callable[[Database, str, bool], dict[str, Any]]:
+    """
+    Create a recalibration backend function with captured config.
+
+    This factory function creates a closure that captures application config
+    and calls the recalibrate_file_workflow with appropriate settings.
+
+    The backend receives the worker's Database connection as its first parameter,
+    ensuring connection reuse across jobs instead of creating a new connection per job.
+
+    Args:
+        models_dir: Path to ML models directory
+        namespace: Tag namespace for recalibrated tags
+        version_tag_key: Metadata key for tagger version tracking
+        calibrate_heads: Whether to apply calibration to model outputs
+
+    Returns:
+        Callable backend function for RecalibrationWorker that accepts (db, path, force)
+    """
+
+    def recalibration_backend(db: Database, path: str, force: bool):
+        """Backend for RecalibrationWorker - applies recalibration to existing tags."""
+        from nomarr.helpers.dto.calibration_dto import RecalibrateFileWorkflowParams
+        from nomarr.workflows.calibration.recalibrate_file_wf import recalibrate_file_workflow
+
+        params = RecalibrateFileWorkflowParams(
+            file_path=path,
+            models_dir=str(models_dir),
+            namespace=namespace,
+            version_tag_key=version_tag_key,
+            calibrate_heads=calibrate_heads,
+        )
+        recalibrate_file_workflow(db=db, params=params)
+        return {"status": "success", "path": path}
+
+    return recalibration_backend
 
 
 class RecalibrationWorker(BaseWorker):
@@ -37,7 +82,7 @@ class RecalibrationWorker(BaseWorker):
     def __init__(
         self,
         db_path: str,
-        processing_backend: ProcessingBackend,
+        processing_backend: Callable[[Database, str, bool], dict[str, Any]],
         event_broker: Any,
         interval: int = 2,
         worker_id: int = 0,

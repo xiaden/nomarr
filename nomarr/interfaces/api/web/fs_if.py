@@ -54,7 +54,7 @@ async def list_directory(
         404: Path does not exist
     """
     # Check if library_root is configured
-    library_root = config.get("library", {}).get("library_root")
+    library_root = config.get("library_root")
     if not library_root:
         raise HTTPException(
             status_code=503,

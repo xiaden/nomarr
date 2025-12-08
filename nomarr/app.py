@@ -21,6 +21,7 @@ import logging
 import os
 import threading
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -259,13 +260,14 @@ class Application:
         ml_service = MLService(cfg=ml_cfg)
         self.register_service("ml", ml_service)
 
-        # Warm up predictor cache
-        logging.info("[Application] Warming up predictor cache...")
-        try:
-            ml_service.warmup_cache()
-            logging.info("[Application] Predictor cache warmed successfully")
-        except Exception as e:
-            logging.error(f"[Application] Failed to warm predictor cache: {e}")
+        # Don't warm up cache here - CUDA doesn't survive multiprocessing fork!
+        # Workers will lazy-load models on first use
+        # logging.info("[Application] Warming up predictor cache...")
+        # try:
+        #     ml_service.warmup_cache()
+        #     logging.info("[Application] Predictor cache warmed successfully")
+        # except Exception as e:
+        #     logging.error(f"[Application] Failed to warm predictor cache: {e}")
 
         # Register Analytics service (DI: inject db, namespace)
         logging.info("[Application] Initializing AnalyticsService...")
@@ -344,54 +346,28 @@ class Application:
         # Initialize WorkerSystemService (Phase 4: multiprocessing with health monitoring)
         logging.info("[Application] Initializing worker system...")
 
-        # Create processing backend functions (callable wrappers around workflows)
-        def tagger_backend(path: str, force: bool):
-            """Backend for TaggerWorker - runs process_file_workflow in worker process."""
-            from nomarr.helpers.dto.processing_dto import ProcessorConfig
-            from nomarr.workflows.processing.process_file_wf import process_file_workflow
+        # Create processing backend functions using worker-specific factories
+        from nomarr.services.infrastructure.workers.recalibration import create_recalibration_backend
+        from nomarr.services.infrastructure.workers.scanner import create_scanner_backend
+        from nomarr.services.infrastructure.workers.tagger import create_tagger_backend
 
-            config = ProcessorConfig(
-                models_dir=self.models_dir,
-                namespace=self.namespace,
-                calibrate_heads=self.calibrate_heads,
-                overwrite_tags=force,
-                min_duration_s=10,
-                allow_short=False,
-                batch_size=11,
-                version_tag_key=self.version_tag_key,
-                tagger_version="1.2",
-            )
-            return process_file_workflow(path=path, config=config, db=None)
+        tagger_backend = create_tagger_backend(
+            models_dir=Path(self.models_dir),
+            namespace=self.namespace,
+            calibrate_heads=self.calibrate_heads,
+            version_tag_key=self.version_tag_key,
+        )
 
-        def scanner_backend(path: str, force: bool):
-            """Backend for LibraryScanWorker - scans library for new/changed files."""
-            from nomarr.helpers.dto.library_dto import ScanSingleFileWorkflowParams
-            from nomarr.workflows.library.scan_single_file_wf import scan_single_file_workflow
+        scanner_backend = create_scanner_backend(
+            namespace=self.namespace,
+        )
 
-            params = ScanSingleFileWorkflowParams(
-                file_path=path,
-                namespace=self.namespace,
-                force=force,
-                auto_tag=True,  # Auto-enqueue discovered files for tagging
-                ignore_patterns="",
-                library_id=None,
-            )
-            return scan_single_file_workflow(db=self.db, params=params)
-
-        def recalibration_backend(path: str, force: bool):
-            """Backend for RecalibrationWorker - applies recalibration to existing tags."""
-            from nomarr.helpers.dto.calibration_dto import RecalibrateFileWorkflowParams
-            from nomarr.workflows.calibration.recalibrate_file_wf import recalibrate_file_workflow
-
-            params = RecalibrateFileWorkflowParams(
-                file_path=path,
-                models_dir=self.models_dir,
-                namespace=self.namespace,
-                version_tag_key=self.version_tag_key,
-                calibrate_heads=self.calibrate_heads,
-            )
-            recalibrate_file_workflow(db=self.db, params=params)
-            return {"status": "success", "path": path}
+        recalibration_backend = create_recalibration_backend(
+            models_dir=Path(self.models_dir),
+            namespace=self.namespace,
+            version_tag_key=self.version_tag_key,
+            calibrate_heads=self.calibrate_heads,
+        )
 
         # Get per-pool worker counts from config
         config_service = self.get_service("config")

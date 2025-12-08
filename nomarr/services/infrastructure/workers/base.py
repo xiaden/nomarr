@@ -77,7 +77,7 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
         self,
         name: str,
         queue_type: QueueType,
-        process_fn: Callable[[str, bool], TResult],
+        process_fn: Callable[[Database, str, bool], TResult],
         db_path: str,
         event_broker: Any,
         worker_id: int = 0,
@@ -89,7 +89,7 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
         Args:
             name: Worker process name (e.g., "TaggerWorker")
             queue_type: Queue type - "tag", "library", or "calibration"
-            process_fn: Function to process jobs, signature: (path: str, force: bool) -> TResult
+            process_fn: Function to process jobs, signature: (db: Database, path: str, force: bool) -> TResult
             db_path: Path to database file (worker creates its own connection for multiprocessing safety)
             event_broker: Event broker for SSE state updates (required)
             worker_id: Unique worker ID (for multi-worker setups)
@@ -305,8 +305,8 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
             self._is_busy = True
             t0 = time.time()
 
-            # Call injected processing function (can return DTO or dict)
-            result = self.process_fn(path, force)
+            # Call injected processing function with worker's DB connection (can return DTO or dict)
+            result = self.process_fn(self.db, path, force)  # type: ignore[arg-type]
 
             elapsed = round(time.time() - t0, 2)
 

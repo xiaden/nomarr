@@ -13,13 +13,57 @@ using ML models for automatic tag generation.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from nomarr.helpers.dto.processing_dto import ProcessFileResult
+from nomarr.helpers.dto.processing_dto import ProcessFileResult, ProcessorConfig
 from nomarr.services.infrastructure.workers.base import BaseWorker
 
 if TYPE_CHECKING:
-    from nomarr.services.processing_backends import ProcessingBackend
+    from nomarr.persistence.db import Database
+
+
+def create_tagger_backend(
+    models_dir: Path,
+    namespace: str,
+    calibrate_heads: bool,
+    version_tag_key: str,
+) -> Callable[[Database, str, bool], ProcessFileResult | dict[str, Any]]:
+    """
+    Create a tagger backend function with captured config.
+
+    This factory function creates a closure that captures application config
+    and calls the process_file_workflow with appropriate settings.
+
+    Args:
+        models_dir: Path to ML models directory
+        namespace: Tag namespace for written tags
+        calibrate_heads: Whether to apply calibration to model outputs
+        version_tag_key: Metadata key for tagger version tracking
+
+    Returns:
+        Callable backend function for TaggerWorker that accepts (db, path, force)
+    """
+
+    def tagger_backend(db: Database, path: str, force: bool):
+        """Backend for TaggerWorker - runs process_file_workflow in worker process."""
+        from nomarr.workflows.processing.process_file_wf import process_file_workflow
+
+        config = ProcessorConfig(
+            models_dir=str(models_dir),
+            namespace=namespace,
+            calibrate_heads=calibrate_heads,
+            overwrite_tags=force,
+            min_duration_s=10,
+            allow_short=False,
+            batch_size=11,
+            version_tag_key=version_tag_key,
+            tagger_version="1.2",
+        )
+        return process_file_workflow(path=path, config=config, db=None)
+
+    return tagger_backend
 
 
 class TaggerWorker(BaseWorker[ProcessFileResult | dict[str, Any]]):
@@ -34,7 +78,7 @@ class TaggerWorker(BaseWorker[ProcessFileResult | dict[str, Any]]):
     def __init__(
         self,
         db_path: str,
-        processing_backend: ProcessingBackend,
+        processing_backend: Callable[[Database, str, bool], ProcessFileResult | dict[str, Any]],
         event_broker: Any,
         interval: int = 2,
         worker_id: int = 0,
