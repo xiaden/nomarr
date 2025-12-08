@@ -316,24 +316,24 @@ def _extract_metadata(file_path: str, namespace: str) -> dict[str, Any]:
     return metadata
 
 
-def _serialize_mutagen_value(value: Any) -> str | list[str]:
+def _serialize_mutagen_value(value: Any) -> str:
     """
-    Serialize a mutagen tag value to a string or list of strings.
+    Serialize a mutagen tag value to a string.
 
     Handles various mutagen types:
-    - MP4FreeForm: Extract bytes and decode (returns single value or list)
-    - Lists: Process all elements, return list if multiple values
+    - MP4FreeForm: Extract bytes and decode
+    - Lists: Process all elements, JSON-encode if multiple values
     - Bytes: Decode to UTF-8
     - Everything else: str()
 
-    Multi-value tags are returned as lists, which the persistence layer
-    will JSON-encode with type="array".
+    Multi-value tags are JSON-encoded as arrays. The _parse_tag_values()
+    function will parse them back to lists when storing in the database.
 
     Args:
         value: Mutagen tag value
 
     Returns:
-        Serialized string value or list of strings for multi-value tags
+        Serialized string value (JSON array string for multi-value tags)
     """
     # Handle MP4FreeForm objects (which are list-like)
     if hasattr(value, "__class__") and value.__class__.__name__ == "MP4FreeForm":
@@ -344,8 +344,10 @@ def _serialize_mutagen_value(value: Any) -> str | list[str]:
                 decoded_values.append(item.decode("utf-8", errors="replace"))
             else:
                 decoded_values.append(str(item))
-        # Return single value if only one, otherwise return list
-        return decoded_values[0] if len(decoded_values) == 1 else decoded_values
+        # Return single value if only one, otherwise JSON-encode array
+        if len(decoded_values) == 1:
+            return decoded_values[0]
+        return json.dumps(decoded_values, ensure_ascii=False)
 
     # Handle lists
     if isinstance(value, list):
@@ -358,8 +360,10 @@ def _serialize_mutagen_value(value: Any) -> str | list[str]:
                 decoded_values.append(item.decode("utf-8", errors="replace"))
             else:
                 decoded_values.append(str(item))
-        # Return single value if only one, otherwise return list
-        return decoded_values[0] if len(decoded_values) == 1 else decoded_values
+        # Return single value if only one, otherwise JSON-encode array
+        if len(decoded_values) == 1:
+            return decoded_values[0]
+        return json.dumps(decoded_values, ensure_ascii=False)
 
     # Handle bytes
     if isinstance(value, bytes):
