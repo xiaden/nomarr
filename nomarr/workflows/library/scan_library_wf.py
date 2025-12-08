@@ -241,7 +241,7 @@ def _extract_metadata(file_path: str, namespace: str) -> dict[str, Any]:
 
             # Get all tags
             if audio.tags:
-                metadata["all_tags"] = {k: str(v) for k, v in audio.tags.items()}
+                metadata["all_tags"] = {k: _serialize_mutagen_value(v) for k, v in audio.tags.items()}
 
             # Extract nom namespace tags (freeform) - store WITHOUT namespace prefix
             nom_tags: dict[str, str] = {}
@@ -289,7 +289,7 @@ def _extract_metadata(file_path: str, namespace: str) -> dict[str, Any]:
             # Get all tags including TXXX frames
             try:
                 id3 = ID3(file_path)
-                metadata["all_tags"] = {str(k): str(v) for k, v in id3.items()}
+                metadata["all_tags"] = {str(k): _serialize_mutagen_value(v) for k, v in id3.items()}
 
                 # Extract nom namespace tags from TXXX frames - store WITHOUT namespace prefix
                 nom_tags = {}
@@ -314,6 +314,47 @@ def _extract_metadata(file_path: str, namespace: str) -> dict[str, Any]:
         logging.debug(f"[library_scanner] Failed to extract metadata from {file_path}: {e}")
 
     return metadata
+
+
+def _serialize_mutagen_value(value: Any) -> str:
+    """
+    Serialize a mutagen tag value to a string.
+
+    Handles various mutagen types:
+    - MP4FreeForm: Extract bytes and decode
+    - Lists: Take first element
+    - Bytes: Decode to UTF-8
+    - Everything else: str()
+
+    Args:
+        value: Mutagen tag value
+
+    Returns:
+        Serialized string value
+    """
+    # Handle MP4FreeForm objects
+    if hasattr(value, "__class__") and value.__class__.__name__ == "MP4FreeForm":
+        # MP4FreeForm has a list of values, take first
+        if value and len(value) > 0:
+            raw = value[0]
+            if isinstance(raw, bytes):
+                return raw.decode("utf-8", errors="replace")
+            return str(raw)
+        return str(value)
+
+    # Handle lists
+    if isinstance(value, list) and len(value) > 0:
+        first = value[0]
+        if isinstance(first, bytes):
+            return first.decode("utf-8", errors="replace")
+        return str(first)
+
+    # Handle bytes
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+
+    # Everything else
+    return str(value)
 
 
 def _get_first(tags: Any, key: str) -> str | None:
