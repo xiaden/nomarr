@@ -48,12 +48,12 @@ export function LoginPage() {
         justifyContent: "center",
         alignItems: "center",
         minHeight: "100vh",
-        backgroundColor: "#f5f5f5",
+        backgroundColor: "#1a1a1a",
       }}
     >
       <div
         style={{
-          backgroundColor: "white",
+          backgroundColor: "#2a2a2a",
           padding: "2rem",
           borderRadius: "8px",
           boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
@@ -61,14 +61,14 @@ export function LoginPage() {
           maxWidth: "400px",
         }}
       >
-        <h1 style={{ marginBottom: "1.5rem", textAlign: "center" }}>
+        <h1 style={{ marginBottom: "1.5rem", textAlign: "center", color: "#fff" }}>
           Nomarr Login
         </h1>
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: "1rem" }}>
             <label
               htmlFor="password"
-              style={{ display: "block", marginBottom: "0.5rem" }}
+              style={{ display: "block", marginBottom: "0.5rem", color: "#ccc" }}
             >
               Password
             </label>
@@ -82,9 +82,11 @@ export function LoginPage() {
               style={{
                 width: "100%",
                 padding: "0.5rem",
-                border: "1px solid #ccc",
+                border: "1px solid #444",
                 borderRadius: "4px",
                 fontSize: "1rem",
+                backgroundColor: "#333",
+                color: "#fff",
               }}
             />
           </div>

@@ -173,7 +173,7 @@ class Application:
         def heartbeat_loop():
             # Use dedicated DB connection for this thread to avoid transaction conflicts
             heartbeat_db = Database(self.db_path)
-            
+
             while self._running:
                 try:
                     # Periodic heartbeat update (status="healthy" by default)
@@ -184,7 +184,7 @@ class Application:
                 except Exception as e:
                     logging.error(f"[Application] Heartbeat error: {e}")
                 time.sleep(5)
-            
+
             # Close connection when thread exits
             heartbeat_db.close()
 

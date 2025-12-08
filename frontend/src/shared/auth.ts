@@ -33,6 +33,13 @@ export function clearSessionToken(): void {
 }
 
 /**
+ * Logout the user (alias for clearSessionToken).
+ */
+export function logout(): void {
+  clearSessionToken();
+}
+
+/**
  * Check if user is authenticated.
  *
  * @returns True if session token exists

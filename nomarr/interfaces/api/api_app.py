@@ -109,3 +109,23 @@ async def serve_dashboard():
 assets_dir = public_html_dir / "assets"
 if assets_dir.exists():
     api_app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+
+
+# Catch-all route for SPA - serve index.html for all non-API routes
+# This must be last so it doesn't catch API routes
+@api_app.get("/{full_path:path}")
+async def serve_spa(full_path: str):
+    """
+    Catch-all route for SPA routing.
+
+    Serves index.html for all paths that aren't API endpoints or static assets.
+    This allows client-side React Router to handle routing.
+    """
+    # Don't catch API routes (already handled above)
+    if full_path.startswith("api/"):
+        return JSONResponse({"detail": "Not Found"}, status_code=404)
+
+    index_path = public_html_dir / "index.html"
+    if index_path.exists():
+        return FileResponse(str(index_path))
+    return JSONResponse({"error": f"Web UI not found at {index_path}"}, status_code=404)

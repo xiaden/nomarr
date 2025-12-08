@@ -1,4 +1,6 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
+
+import { logout } from "../../shared/auth";
 
 /**
  * Navigation tabs component.
@@ -25,21 +27,33 @@ const navItems: NavItem[] = [
 ];
 
 export function NavTabs() {
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate("/login", { replace: true });
+  };
+
   return (
     <nav style={styles.nav}>
-      {navItems.map((item) => (
-        <NavLink
-          key={item.path}
-          to={item.path}
-          end={item.path === "/"}
-          style={({ isActive }) => ({
-            ...styles.navLink,
-            ...(isActive ? styles.navLinkActive : {}),
-          })}
-        >
-          {item.label}
-        </NavLink>
-      ))}
+      <div style={styles.navLinks}>
+        {navItems.map((item) => (
+          <NavLink
+            key={item.path}
+            to={item.path}
+            end={item.path === "/"}
+            style={({ isActive }) => ({
+              ...styles.navLink,
+              ...(isActive ? styles.navLinkActive : {}),
+            })}
+          >
+            {item.label}
+          </NavLink>
+        ))}
+      </div>
+      <button onClick={handleLogout} style={styles.logoutButton}>
+        Logout
+      </button>
     </nav>
   );
 }
@@ -47,9 +61,14 @@ export function NavTabs() {
 const styles = {
   nav: {
     display: "flex",
-    gap: "1rem",
+    justifyContent: "space-between",
+    alignItems: "center",
     padding: "0 1rem",
     borderBottom: "1px solid #333",
+  },
+  navLinks: {
+    display: "flex",
+    gap: "1rem",
   },
   navLink: {
     padding: "1rem",
@@ -62,4 +81,14 @@ const styles = {
     color: "#fff",
     borderBottomColor: "#4a9eff",
   },
+  logoutButton: {
+    padding: "0.5rem 1rem",
+    backgroundColor: "#444",
+    color: "#fff",
+    border: "1px solid #666",
+    borderRadius: "4px",
+    cursor: "pointer",
+    fontSize: "0.9rem",
+    transition: "background-color 0.2s",
+  } as React.CSSProperties,
 };
