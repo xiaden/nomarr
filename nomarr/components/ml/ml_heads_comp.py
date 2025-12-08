@@ -374,7 +374,7 @@ class HeadDecision:
             tags[tag_key] = float(v.get("p", 0.0))
         # Also emit probabilities for non-selected labels if available
         for lab, p in (self.all_probs or {}).items():
-            tag_key = key_builder(k) if key_builder else f"{prefix}{lab}"
+            tag_key = key_builder(lab) if key_builder else f"{prefix}{lab}"
             if tag_key not in tags:
                 tags[tag_key] = float(p)
         return tags

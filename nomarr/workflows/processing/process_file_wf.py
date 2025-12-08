@@ -658,10 +658,9 @@ def process_file_workflow(
     # === STEP 4: Prepare tags for database and file writing ===
     db_tags, file_tags = _prepare_file_and_db_tags(tags_accum, config)
 
-    # === STEP 5: Write tags to file ===
-    _write_tags_to_file(writer, path, file_tags)
-
-    # === STEP 6: Sync database with full tags ===
+    # === STEP 5: Sync database and write tags to file ===
+    # NOTE: Database sync handles ALL file writing (writes db_tags, scans, then rewrites file_tags)
+    # No need to write file_tags before sync
     calibration_map = getattr(tags_accum, "_calibration_map", None)
     _sync_database(
         db,

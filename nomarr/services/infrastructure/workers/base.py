@@ -174,11 +174,12 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
     def _heartbeat_loop(self) -> None:
         """Background thread that continuously updates heartbeat (prevents blocking during heavy processing)."""
         logging.info(f"[{self.name}] Heartbeat thread started")
-        
+
         # Create dedicated DB connection for heartbeat thread (SQLite connections are NOT thread-safe)
         from nomarr.persistence.db import Database
+
         heartbeat_db = Database(self.db_path)
-        
+
         try:
             while not self._shutdown:
                 try:
@@ -446,6 +447,10 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
             return
 
         try:
+            # Ensure we're in a clean transaction state
+            if self.db.conn.in_transaction:
+                self.db.conn.commit()
+
             # Write to DB meta table - StateBroker will poll and broadcast to SSE
             self.db.meta.set(f"job:{job_id}:status", status)
             self.db.meta.set(f"job:{job_id}:path", path)
