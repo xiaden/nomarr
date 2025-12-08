@@ -276,19 +276,23 @@ class JoinedQueryOperations:
         total = int(self.conn.execute(count_query, params).fetchone()[0])
 
         # Get paginated files with tags in a single query
-        # Use LEFT JOIN to include files even if they have no tags
+        # Use subquery to limit files first, then LEFT JOIN tags
+        # This ensures LIMIT applies to files, not to file+tag rows
         files_query = f"""
             SELECT
-                library_files.*,
+                lf.*,
                 file_tags.tag_key,
                 file_tags.tag_value,
                 file_tags.tag_type,
                 file_tags.is_nomarr_tag
-            FROM library_files
-            LEFT JOIN file_tags ON library_files.id = file_tags.file_id
-            {where_sql}
-            ORDER BY library_files.artist, library_files.album, library_files.track_number, file_tags.tag_key
-            LIMIT ? OFFSET ?
+            FROM (
+                SELECT * FROM library_files
+                {where_sql}
+                ORDER BY artist, album, track_number
+                LIMIT ? OFFSET ?
+            ) AS lf
+            LEFT JOIN file_tags ON lf.id = file_tags.file_id
+            ORDER BY lf.artist, lf.album, lf.track_number, file_tags.tag_key
         """
         params_with_limit = [*params, limit, offset]
 
