@@ -77,11 +77,13 @@ from nomarr.helpers.dto.library_dto import UpdateLibraryFileFromTagsParams
 from nomarr.helpers.dto.ml_dto import ComputeEmbeddingsForBackboneParams
 from nomarr.helpers.dto.processing_dto import ProcessFileResult, ProcessorConfig
 
-# Get Essentia version for tag versioning
-ESSENTIA_VERSION = backend_essentia.get_version()
-
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
+
+
+def _get_essentia_version() -> str:
+    """Get Essentia version lazily (only when needed)."""
+    return backend_essentia.get_version()
 
 
 @dataclass
@@ -243,7 +245,7 @@ def _process_head_predictions(
             def _build_key(label: str, head: HeadInfo = head_info, calib_map: dict = calib_map) -> str:
                 model_key, calibration_id = head.build_versioned_tag_key(
                     normalize_tag_label(label),
-                    framework_version=ESSENTIA_VERSION,
+                    framework_version=_get_essentia_version(),
                     calib_method="none",
                     calib_version=0,
                 )
@@ -253,7 +255,7 @@ def _process_head_predictions(
             # Convert HeadDecision to HeadOutput objects for aggregation
             head_outputs = decision.to_head_outputs(
                 head_info=head_info,
-                framework_version=ESSENTIA_VERSION,
+                framework_version=_get_essentia_version(),
                 key_builder=_build_key,
             )
             all_head_outputs.extend(head_outputs)
@@ -332,7 +334,7 @@ def _collect_mood_outputs(
         Dict of mood-* tags
     """
     # Convert regression head predictions to HeadOutput objects with tier information
-    regression_outputs = add_regression_mood_tiers(regression_heads, framework_version=ESSENTIA_VERSION)
+    regression_outputs = add_regression_mood_tiers(regression_heads, framework_version=_get_essentia_version())
     all_head_outputs.extend(regression_outputs)
 
     logging.debug(f"[processor] Total HeadOutput objects: {len(all_head_outputs)}")

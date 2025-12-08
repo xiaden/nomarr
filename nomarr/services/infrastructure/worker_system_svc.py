@@ -223,16 +223,16 @@ class WorkerSystemService:
     def _start_tagger_workers(self) -> None:
         """Start N tagger worker processes (only starts missing workers)."""
         existing_workers = self._worker_groups["tag"]
-        
+
         # Remove dead workers from list
         existing_workers[:] = [w for w in existing_workers if w.is_alive()]
-        
+
         # Start missing workers
         for i in range(self.tagger_count):
             # Check if worker with this ID already exists and is alive
             if any(w.worker_id == i and w.is_alive() for w in existing_workers):
                 continue
-                
+
             worker = TaggerWorker(
                 db_path=str(self.db.path),
                 processing_backend=self.tagger_backend,
@@ -249,16 +249,16 @@ class WorkerSystemService:
             return
 
         existing_workers = self._worker_groups["library"]
-        
+
         # Remove dead workers from list
         existing_workers[:] = [w for w in existing_workers if w.is_alive()]
-        
+
         # Start missing workers
         for i in range(self.scanner_count):
             # Check if worker with this ID already exists and is alive
             if any(w.worker_id == i and w.is_alive() for w in existing_workers):
                 continue
-                
+
             worker = LibraryScanWorker(
                 db_path=str(self.db.path),
                 processing_backend=self.scanner_backend,
@@ -272,16 +272,16 @@ class WorkerSystemService:
     def _start_recalibration_workers(self) -> None:
         """Start N recalibration worker processes (only starts missing workers)."""
         existing_workers = self._worker_groups["calibration"]
-        
+
         # Remove dead workers from list
         existing_workers[:] = [w for w in existing_workers if w.is_alive()]
-        
+
         # Start missing workers
         for i in range(self.recalibration_count):
             # Check if worker with this ID already exists and is alive
             if any(w.worker_id == i and w.is_alive() for w in existing_workers):
                 continue
-                
+
             worker = RecalibrationWorker(
                 db_path=str(self.db.path),
                 processing_backend=self.recalibration_backend,
