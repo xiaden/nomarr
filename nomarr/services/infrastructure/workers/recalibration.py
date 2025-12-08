@@ -23,20 +23,53 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
+class RecalibrationBackend:
+    """
+    Picklable recalibration backend for spawn multiprocessing.
+
+    Stores config as instance attributes instead of closure,
+    making it picklable for multiprocessing.spawn().
+    """
+
+    def __init__(
+        self,
+        models_dir: str,
+        namespace: str,
+        version_tag_key: str,
+        calibrate_heads: bool,
+    ):
+        self.models_dir = models_dir
+        self.namespace = namespace
+        self.version_tag_key = version_tag_key
+        self.calibrate_heads = calibrate_heads
+
+    def __call__(self, db: Database, path: str, force: bool) -> dict[str, Any]:
+        """Apply recalibration to existing file tags."""
+        from nomarr.helpers.dto.calibration_dto import RecalibrateFileWorkflowParams
+        from nomarr.workflows.calibration.recalibrate_file_wf import recalibrate_file_workflow
+
+        params = RecalibrateFileWorkflowParams(
+            file_path=path,
+            models_dir=self.models_dir,
+            namespace=self.namespace,
+            version_tag_key=self.version_tag_key,
+            calibrate_heads=self.calibrate_heads,
+        )
+        recalibrate_file_workflow(db=db, params=params)
+        return {"status": "success", "path": path}
+
+
 def create_recalibration_backend(
     models_dir: Path,
     namespace: str,
     version_tag_key: str,
     calibrate_heads: bool,
-) -> Callable[[Database, str, bool], dict[str, Any]]:
+) -> RecalibrationBackend:
     """
-    Create a recalibration backend function with captured config.
+    Create a recalibration backend callable with captured config.
 
-    This factory function creates a closure that captures application config
-    and calls the recalibrate_file_workflow with appropriate settings.
-
-    The backend receives the worker's Database connection as its first parameter,
-    ensuring connection reuse across jobs instead of creating a new connection per job.
+    Returns a picklable class instance instead of a closure,
+    compatible with multiprocessing.spawn().
 
     Args:
         models_dir: Path to ML models directory
@@ -45,25 +78,14 @@ def create_recalibration_backend(
         calibrate_heads: Whether to apply calibration to model outputs
 
     Returns:
-        Callable backend function for RecalibrationWorker that accepts (db, path, force)
+        RecalibrationBackend instance that accepts (db, path, force)
     """
-
-    def recalibration_backend(db: Database, path: str, force: bool):
-        """Backend for RecalibrationWorker - applies recalibration to existing tags."""
-        from nomarr.helpers.dto.calibration_dto import RecalibrateFileWorkflowParams
-        from nomarr.workflows.calibration.recalibrate_file_wf import recalibrate_file_workflow
-
-        params = RecalibrateFileWorkflowParams(
-            file_path=path,
-            models_dir=str(models_dir),
-            namespace=namespace,
-            version_tag_key=version_tag_key,
-            calibrate_heads=calibrate_heads,
-        )
-        recalibrate_file_workflow(db=db, params=params)
-        return {"status": "success", "path": path}
-
-    return recalibration_backend
+    return RecalibrationBackend(
+        models_dir=str(models_dir),
+        namespace=namespace,
+        version_tag_key=version_tag_key,
+        calibrate_heads=calibrate_heads,
+    )
 
 
 class RecalibrationWorker(BaseWorker):

@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 class ScannerBackend:
     """
     Picklable scanner backend for spawn multiprocessing.
-    
+
     Stores config as instance attributes instead of closure,
     making it picklable for multiprocessing.spawn().
     """

@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 class TaggerBackend:
     """
     Picklable tagger backend for spawn multiprocessing.
-    
+
     Stores config as instance attributes instead of closure,
     making it picklable for multiprocessing.spawn().
     """
