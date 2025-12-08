@@ -49,6 +49,42 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
+# Standard music metadata tags to collect (excludes MusicBrainz/Picard metadata spam)
+# M4A/MP4 freeform keys and standard atoms
+ALLOWED_MP4_TAGS = {
+    "\xa9nam",  # Title
+    "\xa9ART",  # Artist
+    "\xa9alb",  # Album
+    "\xa9gen",  # Genre
+    "\xa9day",  # Year
+    "trkn",  # Track number
+    "disk",  # Disc number
+    "\xa9cmt",  # Comment
+    "\xa9lyr",  # Lyrics
+    "aART",  # Album artist
+    "\xa9wrt",  # Composer
+    "cprt",  # Copyright
+    "tmpo",  # BPM
+}
+
+# ID3 frame types for MP3 (standard music metadata only)
+ALLOWED_ID3_FRAMES = {
+    "TIT2",  # Title
+    "TPE1",  # Artist
+    "TALB",  # Album
+    "TCON",  # Genre
+    "TDRC",  # Year
+    "TRCK",  # Track number
+    "TPOS",  # Disc number
+    "COMM",  # Comment
+    "USLT",  # Lyrics
+    "TPE2",  # Album artist
+    "TCOM",  # Composer
+    "TCOP",  # Copyright
+    "TBPM",  # BPM
+}
+
+
 # TODO: DELETE - Unused legacy function from monolithic scan_library_workflow
 # def _matches_ignore_pattern(file_path: str, patterns: str) -> bool:
 #     """Check if file path matches any ignore pattern."""
@@ -239,9 +275,21 @@ def _extract_metadata(file_path: str, namespace: str) -> dict[str, Any]:
             if track and isinstance(track, tuple) and len(track) > 0:
                 metadata["track_number"] = track[0]
 
-            # Get all tags
+            # Get standard music tags only (filter out MusicBrainz/Picard spam)
             if audio.tags:
-                metadata["all_tags"] = {k: _serialize_mutagen_value(v) for k, v in audio.tags.items()}
+                # Include namespace tags (nom:*, ab:*, etc.) and standard music metadata
+                filtered_tags = {}
+                for k, v in audio.tags.items():
+                    # Always include namespace tags (----:com.apple.iTunes:nom:*, etc.)
+                    if isinstance(k, str) and k.startswith("----:com.apple.iTunes:"):
+                        tag_name = k.replace("----:com.apple.iTunes:", "")
+                        # Include if it's a namespace tag OR standard metadata
+                        if ":" in tag_name or k in ALLOWED_MP4_TAGS:
+                            filtered_tags[k] = v
+                    # Include standard music metadata atoms
+                    elif k in ALLOWED_MP4_TAGS:
+                        filtered_tags[k] = v
+                metadata["all_tags"] = {k: _serialize_mutagen_value(v) for k, v in filtered_tags.items()}
 
             # Extract nom namespace tags (freeform) - store WITHOUT namespace prefix
             nom_tags: dict[str, str] = {}
@@ -286,10 +334,18 @@ def _extract_metadata(file_path: str, namespace: str) -> dict[str, Any]:
             except Exception:
                 pass
 
-            # Get all tags including TXXX frames
+            # Get standard music tags only (filter out MusicBrainz/Picard spam)
             try:
                 id3 = ID3(file_path)
-                metadata["all_tags"] = {str(k): _serialize_mutagen_value(v) for k, v in id3.items()}
+                # Include namespace tags (TXXX:nom:*, TXXX:ab:*, etc.) and standard ID3 frames
+                filtered_tags = {}
+                for k, v in id3.items():
+                    # Always include TXXX frames with namespace prefixes
+                    if (k.startswith("TXXX:") and ":" in k[5:]) or k[
+                        :4
+                    ] in ALLOWED_ID3_FRAMES:  # TXXX:namespace:key format
+                        filtered_tags[k] = v
+                metadata["all_tags"] = {str(k): _serialize_mutagen_value(v) for k, v in filtered_tags.items()}
 
                 # Extract nom namespace tags from TXXX frames - store WITHOUT namespace prefix
                 nom_tags = {}
