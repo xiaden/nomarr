@@ -226,24 +226,20 @@ async def preview_library_scan(
                 resolved_paths.append(str(resolved))
         else:
             # No paths specified - validate library root against configured library_root
-            # Compute relative path from library_root to library.root_path
+            # Compute relative path from library_root to library.root_path to ensure it's within bounds
             library_root_path = Path(library_root).resolve()
             library_path = Path(library.root_path).resolve()
 
             try:
-                relative_library_path = library_path.relative_to(library_root_path)
-            except ValueError:
+                # This validates the library is within library_root
+                library_path.relative_to(library_root_path)
+            except ValueError as e:
                 # Library is outside library_root - security violation
-                raise HTTPException(status_code=403, detail="Library path is outside configured library_root")
+                raise HTTPException(status_code=403, detail="Library path is outside configured library_root") from e
 
-            # Validate the library's path through security helper
-            resolved = library_service._resolve_path_within_library(
-                library_root=library_root,
-                user_path=str(relative_library_path),
-                must_exist=True,
-                must_be_file=False,
-            )
-            resolved_paths = [str(resolved)]
+            # Library path is valid and within library_root - use it directly
+            # (it was already validated when the library was created)
+            resolved_paths = [str(library_path)]
 
         # Count files using helper
         all_files = []

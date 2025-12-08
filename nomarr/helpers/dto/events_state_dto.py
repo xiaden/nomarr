@@ -93,4 +93,3 @@ class SystemHealthState:
 
     status: str  # "healthy", "degraded", "error", etc.
     errors: list[str]
-

@@ -24,7 +24,7 @@ def get_next_job(db: Database, queue_type: QueueType) -> dict | None:
         queue_type: Which queue to poll ("tag", "library", "calibration")
 
     Returns:
-        Job dict with keys: id, path, force (if applicable), status
+        Job dict with keys: id, path, force (if applicable)
         Returns None if no pending jobs available
 
     Raises:
@@ -37,7 +37,6 @@ def get_next_job(db: Database, queue_type: QueueType) -> dict | None:
                 "id": job["id"],
                 "path": job["path"],
                 "force": job.get("force", False),
-                "status": job["status"],
             }
         return None
 
