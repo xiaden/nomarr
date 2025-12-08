@@ -592,9 +592,11 @@ def process_file_workflow(
 
     # Initialize state
     writer = TagWriter(overwrite=config.overwrite_tags, namespace=config.namespace)
+
     # Use a simple class to allow attribute storage (can't set attrs on built-in dict)
     class TagAccumulator(dict):
         pass
+
     tags_accum = TagAccumulator()
     tags_accum._calibration_map = {}  # type: ignore
     all_head_results: dict[str, Any] = {}

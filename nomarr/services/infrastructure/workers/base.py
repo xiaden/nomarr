@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import multiprocessing
 import os
+import threading
 import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar
@@ -116,6 +117,7 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
         self._event_broker = event_broker
         self._cancel_requested = False
         self._current_job_id: int | None = None
+        self._heartbeat_thread: threading.Thread | None = None
 
     # ---------------------------- Queue Operations (use components) ----------------------------
 
@@ -172,22 +174,22 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
         """Get timestamp of last heartbeat."""
         return int(self._last_heartbeat)
 
-    def _update_heartbeat(self) -> None:
-        """Write heartbeat to health table (Phase 3: DB-based IPC)."""
-        if not self.db:
-            return
-
-        import time
-
-        now = time.time()
-        if now - self._last_heartbeat >= self._heartbeat_interval:
-            # Periodic heartbeat update with current job
-            self.db.health.update_heartbeat(
-                component=self.component_id,
-                status="healthy",
-                current_job=self._current_job_id,
-            )
-            self._last_heartbeat = now
+    def _heartbeat_loop(self) -> None:
+        """Background thread that continuously updates heartbeat (prevents blocking during heavy processing)."""
+        logging.info(f"[{self.name}] Heartbeat thread started")
+        while not self._shutdown:
+            if self.db:
+                try:
+                    self.db.health.update_heartbeat(
+                        component=self.component_id,
+                        status="healthy",
+                        current_job=self._current_job_id,
+                    )
+                    self._last_heartbeat = time.time()
+                except Exception as e:
+                    logging.warning(f"[{self.name}] Heartbeat update failed: {e}")
+            time.sleep(self._heartbeat_interval)
+        logging.info(f"[{self.name}] Heartbeat thread stopped")
 
     def _clear_current_job(self) -> None:
         """Clear current job and update health table (single source of truth)."""
@@ -220,16 +222,28 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
             pid=os.getpid(),
         )
 
+        # Start heartbeat thread (prevents blocking during heavy ML processing)
+        self._heartbeat_thread = threading.Thread(
+            target=self._heartbeat_loop,
+            daemon=True,
+            name=f"{self.name}-Heartbeat"
+        )
+        self._heartbeat_thread.start()
+
         logging.info(f"[{self.name}] Background worker started")
         try:
             while not self._stop_event.is_set():
                 try:
-                    self._update_heartbeat()  # Phase 3: periodic heartbeat
                     self._tick()
                 except Exception:
                     logging.exception(f"[{self.name}] Worker loop error")
                 time.sleep(self.interval)
         finally:
+            # Stop heartbeat thread
+            self._shutdown = True
+            if self._heartbeat_thread and self._heartbeat_thread.is_alive():
+                self._heartbeat_thread.join(timeout=2)
+            
             # Mark worker as stopping
             if self.db:
                 self.db.health.mark_stopping(
