@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 import mutagen  # type: ignore[import-untyped]
@@ -32,25 +33,30 @@ def read_tags_from_file(path: str, namespace: str) -> dict[str, Any]:
         RuntimeError: If file cannot be read
     """
     try:
-        audio = mutagen.File(path)  # type: ignore[attr-defined]
-        if audio is None:
-            raise ValueError(f"Unsupported audio format: {path}")
+        # Infer format from file extension - faster than loading file
+        ext = Path(path).suffix.lower()
 
-        # Check specific types first (most specific to least specific)
-
-        # Vorbis comments (FLAC, OGG, Opus) - check FIRST before MP4
-        if isinstance(audio, (FLAC, OggVorbis, OggOpus)):
-            return _extract_vorbis_tags(audio, namespace)
-
-        # MP3 format (ID3v2)
-        if isinstance(audio, ID3) or (hasattr(audio, "tags") and hasattr(audio.tags, "getall")):
+        # Route to appropriate extractor based on extension
+        if ext == ".mp3":
+            audio = mutagen.File(path)  # type: ignore[attr-defined]
+            if audio is None:
+                raise ValueError(f"Failed to load MP3 file: {path}")
             return _extract_id3_tags(audio, namespace)
 
-        # MP4/M4A format (iTunes freeform)
-        if isinstance(audio, MP4):
+        elif ext in (".m4a", ".mp4", ".m4b", ".m4p"):
+            audio = mutagen.File(path)  # type: ignore[attr-defined]
+            if audio is None:
+                raise ValueError(f"Failed to load MP4 file: {path}")
             return _extract_mp4_tags(audio, namespace)
 
-        raise ValueError(f"No supported tag format found in: {path}")
+        elif ext in (".flac", ".ogg", ".opus"):
+            audio = mutagen.File(path)  # type: ignore[attr-defined]
+            if audio is None:
+                raise ValueError(f"Failed to load Vorbis file: {path}")
+            return _extract_vorbis_tags(audio, namespace)
+
+        else:
+            raise ValueError(f"Unsupported audio format: {ext}")
 
     except Exception as e:
         logger.exception(f"[TagReader] Failed to read tags from {path}")
