@@ -17,7 +17,7 @@ from nomarr.interfaces.api.types.library_types import (
     UniqueTagKeysResponse,
     UpdateLibraryRequest,
 )
-from nomarr.interfaces.api.web.dependencies import get_library_service
+from nomarr.interfaces.api.web.dependencies import get_config, get_library_service
 
 if TYPE_CHECKING:
     from nomarr.services.domain.library_svc import LibraryService
