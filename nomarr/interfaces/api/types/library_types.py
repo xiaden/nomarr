@@ -237,12 +237,21 @@ class LibraryFileWithTagsResponse(BaseModel):
     id: int
     path: str
     library_id: int
+    file_size: int | None
+    modified_time: int | None
+    duration_seconds: float | None
     artist: str | None
     album: str | None
     title: str | None
     genre: str | None
     year: int | None
-    tagged: bool
+    track_number: int | None
+    calibration: str | None
+    scanned_at: int | None
+    last_tagged_at: int | None
+    tagged: int
+    tagged_version: str | None
+    skip_auto_tag: int
     created_at: str | None
     updated_at: str | None
     tags: list[FileTagResponse]
@@ -269,12 +278,21 @@ class SearchFilesResponse(BaseModel):
                     id=f.id,
                     path=f.path,
                     library_id=f.library_id,
+                    file_size=f.file_size,
+                    modified_time=f.modified_time,
+                    duration_seconds=f.duration_seconds,
                     artist=f.artist,
                     album=f.album,
                     title=f.title,
                     genre=f.genre,
                     year=f.year,
-                    tagged=bool(f.tagged),
+                    track_number=f.track_number,
+                    calibration=f.calibration,
+                    scanned_at=f.scanned_at,
+                    last_tagged_at=f.last_tagged_at,
+                    tagged=f.tagged,
+                    tagged_version=f.tagged_version,
+                    skip_auto_tag=f.skip_auto_tag,
                     created_at=f.created_at,
                     updated_at=f.updated_at,
                     tags=[
