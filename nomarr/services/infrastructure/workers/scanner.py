@@ -28,33 +28,25 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-def create_scanner_backend(
-    namespace: str,
-) -> Callable[[Database, str, bool], dict[str, Any]]:
+class ScannerBackend:
     """
-    Create a scanner backend function with captured config.
-
-    This factory function creates a closure that captures application config
-    and calls the scan_single_file_workflow with appropriate settings.
-
-    The backend receives the worker's Database connection as its first parameter,
-    ensuring connection reuse across jobs instead of creating a new connection per job.
-
-    Args:
-        namespace: Tag namespace for scanned files
-
-    Returns:
-        Callable backend function for LibraryScanWorker that accepts (db, path, force)
+    Picklable scanner backend for spawn multiprocessing.
+    
+    Stores config as instance attributes instead of closure,
+    making it picklable for multiprocessing.spawn().
     """
 
-    def scanner_backend(db: Database, path: str, force: bool):
-        """Backend for LibraryScanWorker - scans library for new/changed files."""
+    def __init__(self, namespace: str):
+        self.namespace = namespace
+
+    def __call__(self, db: Database, path: str, force: bool) -> dict[str, Any]:
+        """Scan single file and update library database."""
         from nomarr.helpers.dto.library_dto import ScanSingleFileWorkflowParams
         from nomarr.workflows.library.scan_single_file_wf import scan_single_file_workflow
 
         params = ScanSingleFileWorkflowParams(
             file_path=path,
-            namespace=namespace,
+            namespace=self.namespace,
             force=force,
             auto_tag=True,  # Auto-enqueue discovered files for tagging
             ignore_patterns="",
@@ -62,7 +54,21 @@ def create_scanner_backend(
         )
         return scan_single_file_workflow(db=db, params=params)
 
-    return scanner_backend
+
+def create_scanner_backend(namespace: str) -> ScannerBackend:
+    """
+    Create a scanner backend callable with captured config.
+
+    Returns a picklable class instance instead of a closure,
+    compatible with multiprocessing.spawn().
+
+    Args:
+        namespace: Tag namespace for scanned files
+
+    Returns:
+        ScannerBackend instance that accepts (db, path, force)
+    """
+    return ScannerBackend(namespace=namespace)
 
 
 class LibraryScanWorker(BaseWorker):

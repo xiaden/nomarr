@@ -24,17 +24,55 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
+class TaggerBackend:
+    """
+    Picklable tagger backend for spawn multiprocessing.
+    
+    Stores config as instance attributes instead of closure,
+    making it picklable for multiprocessing.spawn().
+    """
+
+    def __init__(
+        self,
+        models_dir: str,
+        namespace: str,
+        calibrate_heads: bool,
+        version_tag_key: str,
+    ):
+        self.models_dir = models_dir
+        self.namespace = namespace
+        self.calibrate_heads = calibrate_heads
+        self.version_tag_key = version_tag_key
+
+    def __call__(self, db: Database, path: str, force: bool) -> ProcessFileResult | dict[str, Any]:
+        """Process file with ML tagging workflow."""
+        from nomarr.workflows.processing.process_file_wf import process_file_workflow
+
+        config = ProcessorConfig(
+            models_dir=self.models_dir,
+            namespace=self.namespace,
+            calibrate_heads=self.calibrate_heads,
+            overwrite_tags=force,
+            min_duration_s=10,
+            allow_short=False,
+            batch_size=11,
+            version_tag_key=self.version_tag_key,
+            tagger_version="1.2",
+        )
+        return process_file_workflow(path=path, config=config, db=db)
+
+
 def create_tagger_backend(
     models_dir: Path,
     namespace: str,
     calibrate_heads: bool,
     version_tag_key: str,
-) -> Callable[[Database, str, bool], ProcessFileResult | dict[str, Any]]:
+) -> TaggerBackend:
     """
-    Create a tagger backend function with captured config.
+    Create a tagger backend callable with captured config.
 
-    This factory function creates a closure that captures application config
-    and calls the process_file_workflow with appropriate settings.
+    Returns a picklable class instance instead of a closure,
+    compatible with multiprocessing.spawn().
 
     Args:
         models_dir: Path to ML models directory
@@ -43,28 +81,14 @@ def create_tagger_backend(
         version_tag_key: Metadata key for tagger version tracking
 
     Returns:
-        Callable backend function for TaggerWorker that accepts (db, path, force)
+        TaggerBackend instance that accepts (db, path, force)
     """
-
-    def tagger_backend(db: Database, path: str, force: bool):
-        """Backend for TaggerWorker - runs process_file_workflow in worker process."""
-        from nomarr.workflows.processing.process_file_wf import process_file_workflow
-
-        config = ProcessorConfig(
-            models_dir=str(models_dir),
-            namespace=namespace,
-            calibrate_heads=calibrate_heads,
-            overwrite_tags=force,
-            min_duration_s=10,
-            allow_short=False,
-            batch_size=11,
-            version_tag_key=version_tag_key,
-            tagger_version="1.2",
-        )
-        # Pass db so library gets updated with tags after writing
-        return process_file_workflow(path=path, config=config, db=db)
-
-    return tagger_backend
+    return TaggerBackend(
+        models_dir=str(models_dir),
+        namespace=namespace,
+        calibrate_heads=calibrate_heads,
+        version_tag_key=version_tag_key,
+    )
 
 
 class TaggerWorker(BaseWorker[ProcessFileResult | dict[str, Any]]):

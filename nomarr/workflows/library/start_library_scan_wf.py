@@ -155,14 +155,14 @@ def start_library_scan_workflow(
     if not force:
         logging.info("[start_library_scan] Batch-checking file changes...")
         existing_mtimes = db.library_files.get_file_modified_times()
-        
+
         files_to_check = []
         for file_path in all_files:
             try:
                 file_stat = os.stat(file_path)
                 current_mtime = int(file_stat.st_mtime * 1000)
                 db_mtime = existing_mtimes.get(file_path)
-                
+
                 if db_mtime == current_mtime:
                     # File unchanged, skip
                     stats["files_skipped"] += 1
@@ -173,7 +173,7 @@ def start_library_scan_workflow(
                 logging.warning(f"[start_library_scan] Failed to stat {file_path}: {e}")
                 # If we can't stat it, enqueue anyway (worker will handle error)
                 files_to_check.append(file_path)
-        
+
         files_to_enqueue = set(files_to_check)
         logging.info(f"[start_library_scan] Batch check complete: {len(files_to_enqueue)} files need scanning")
 

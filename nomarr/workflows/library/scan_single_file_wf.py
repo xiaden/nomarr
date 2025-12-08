@@ -136,14 +136,17 @@ def scan_single_file_workflow(
         needs_tagging = False
         if auto_tag:
             # Check if file needs tagging (new file or not yet tagged)
-            needs_tagging = is_new or (existing_file is not None and not existing_file.get("tagged") and not existing_file.get("skip_auto_tag"))
-            
+            needs_tagging = is_new or (
+                existing_file is not None and not existing_file.get("tagged") and not existing_file.get("skip_auto_tag")
+            )
+
             # Apply ignore patterns
             if needs_tagging and ignore_patterns:
                 from nomarr.workflows.library.start_library_scan_wf import _matches_ignore_pattern
+
                 if _matches_ignore_pattern(file_path, ignore_patterns):
                     needs_tagging = False
-        
+
         if needs_tagging:
             # File needs tagging - skip metadata extraction, just enqueue for tagging
             # The tagger will extract metadata and write tags in one pass
