@@ -76,13 +76,30 @@ export function QueuePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, offset]);
 
-  // SSE updates - throttled to avoid excessive reloads
+  // SSE updates - update summary directly from event data
   const { connected } = useSSE({
-    onMessage: () => {
-      // Throttle: only reload if not already loading
-      if (!loading) {
-        console.log("[Queue] SSE update received, reloading...");
-        loadQueue();
+    onMessage: (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        
+        // Handle queue:status updates (summary data)
+        if (data.topic === "queue:status" && data.state) {
+          setSummary({
+            pending: data.state.pending || 0,
+            running: data.state.running || 0,
+            completed: data.state.completed || 0,
+            errors: data.state.errors || 0,
+          });
+          console.log("[Queue] SSE: Updated summary from event", data.state);
+        }
+        
+        // Handle queue:jobs updates (job state changes) - reload to refresh job list
+        if (data.topic === "queue:jobs" && !loading) {
+          console.log("[Queue] SSE: Job update, reloading job list");
+          loadQueue();
+        }
+      } catch (err) {
+        console.warn("[Queue] Failed to parse SSE message:", err);
       }
     },
   });
