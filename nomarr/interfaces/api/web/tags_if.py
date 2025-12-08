@@ -40,3 +40,27 @@ async def web_show_tags(
         # File reading errors
         logging.exception(f"[Web API] Error reading tags from {path}")
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.delete("/remove-tags", dependencies=[Depends(verify_session)])
+async def web_remove_tags(
+    path: str,
+    library_service: LibraryService = Depends(get_library_service),
+) -> dict[str, Any]:
+    """Remove all namespaced tags from an audio file (web UI proxy)."""
+    try:
+        count = library_service.remove_file_tags(path)
+
+        return {
+            "path": path,
+            "namespace": library_service.cfg.namespace,
+            "removed": count,
+        }
+
+    except ValueError as e:
+        # Path validation errors (security)
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except RuntimeError as e:
+        # File modification errors
+        logging.exception(f"[Web API] Error removing tags from {path}")
+        raise HTTPException(status_code=500, detail=str(e)) from e

@@ -839,6 +839,21 @@ export const tags = {
   }> => {
     return request(`/api/web/tags/show-tags?path=${encodeURIComponent(path)}`);
   },
+
+  /**
+   * Remove all namespaced tags from an audio file.
+   */
+  removeTags: async (
+    path: string
+  ): Promise<{
+    path: string;
+    namespace: string;
+    removed: number;
+  }> => {
+    return request(`/api/web/tags/remove-tags?path=${encodeURIComponent(path)}`, {
+      method: "DELETE",
+    });
+  },
 };
 
 // ──────────────────────────────────────────────────────────────────────

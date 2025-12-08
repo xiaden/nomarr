@@ -26,6 +26,8 @@ export function InspectTagsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPicker, setShowPicker] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [removeSuccess, setRemoveSuccess] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,6 +36,7 @@ export function InspectTagsPage() {
     try {
       setLoading(true);
       setError(null);
+      setRemoveSuccess(null);
       const data = await api.tags.showTags(filePath);
       setTagsData(data);
     } catch (err) {
@@ -42,6 +45,27 @@ export function InspectTagsPage() {
       console.error("[Inspect] Load error:", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRemoveTags = async () => {
+    if (!filePath.trim()) return;
+    if (!confirm(`Remove all tags from ${filePath}?\n\nThis cannot be undone!`)) return;
+
+    try {
+      setRemoving(true);
+      setError(null);
+      setRemoveSuccess(null);
+      const result = await api.tags.removeTags(filePath);
+      setRemoveSuccess(`Removed ${result.removed} tag(s) from ${result.path}`);
+      // Refresh tags to show empty state
+      const data = await api.tags.showTags(filePath);
+      setTagsData(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to remove tags");
+      console.error("[Inspect] Remove error:", err);
+    } finally {
+      setRemoving(false);
     }
   };
 
@@ -106,11 +130,29 @@ export function InspectTagsPage() {
         </section>
       )}
 
+      {removeSuccess && (
+        <section style={{ ...styles.section, marginTop: "20px" }}>
+          <p style={{ color: "#4a9eff" }}>{removeSuccess}</p>
+        </section>
+      )}
+
       {tagsData && (
         <div style={{ display: "grid", gap: "20px", marginTop: "20px" }}>
           {/* Metadata */}
           <section style={styles.section}>
-            <h2 style={styles.sectionTitle}>File Metadata</h2>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "15px" }}>
+              <h2 style={{ ...styles.sectionTitle, marginBottom: 0 }}>File Metadata</h2>
+              {tagsData.count > 0 && (
+                <button
+                  onClick={handleRemoveTags}
+                  disabled={removing}
+                  style={styles.removeButton}
+                  title="Remove all tags from this file"
+                >
+                  {removing ? "Removing..." : "Remove All Tags"}
+                </button>
+              )}
+            </div>
             <div style={{ display: "grid", gap: "10px" }}>
               <div>
                 <span style={styles.label}>Path:</span>
@@ -207,6 +249,16 @@ const styles = {
     color: "#fff",
     fontSize: "1rem",
     cursor: "pointer",
+  },
+  removeButton: {
+    padding: "8px 16px",
+    backgroundColor: "#dc3545",
+    border: "none",
+    borderRadius: "4px",
+    color: "#fff",
+    fontSize: "0.9rem",
+    cursor: "pointer",
+    fontWeight: "bold" as const,
   },
   label: {
     fontWeight: "bold" as const,

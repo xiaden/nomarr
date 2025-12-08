@@ -392,7 +392,7 @@ class StateBroker:
             client_id = f"client_{self._next_client_id}"
             self._next_client_id += 1
 
-            client_queue: queue.Queue = queue.Queue(maxsize=1000)
+            client_queue: queue.Queue = queue.Queue(maxsize=10000)
             self._clients[client_id] = {
                 "queue": client_queue,
                 "topics": topics,

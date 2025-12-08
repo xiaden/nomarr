@@ -25,8 +25,7 @@ library_root: /media # Path to music library root
 # ----------------------------------------------------------------------
 # Tag Writing Behavior
 # ----------------------------------------------------------------------
-file_write_mode:
-  full # Tag writing mode:
+file_write_mode: full # Tag writing mode:
   #   "none"    - DB only, no file writes
   #   "minimal" - mood-* tags + summary only
   #   "full"    - numeric + mood-* tags
@@ -52,8 +51,7 @@ recalibration_worker_count: 1 # Calibration workers
 # ----------------------------------------------------------------------
 # Model Cache
 # ----------------------------------------------------------------------
-cache_idle_timeout:
-  300 # Seconds before unloading idle models
+cache_idle_timeout: 300 # Seconds before unloading idle models
   # (0 = never unload, useful for dev)
 
 # ----------------------------------------------------------------------

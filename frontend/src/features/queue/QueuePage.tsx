@@ -76,12 +76,14 @@ export function QueuePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, offset]);
 
-  // SSE updates
+  // SSE updates - throttled to avoid excessive reloads
   const { connected } = useSSE({
     onMessage: () => {
-      // Refetch on any SSE message for simplicity
-      console.log("[Queue] SSE update received, reloading...");
-      loadQueue();
+      // Throttle: only reload if not already loading
+      if (!loading) {
+        console.log("[Queue] SSE update received, reloading...");
+        loadQueue();
+      }
     },
   });
 

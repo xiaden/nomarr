@@ -7,11 +7,6 @@ from pathlib import Path
 from typing import Any
 
 import mutagen  # type: ignore[import-untyped]
-from mutagen.flac import FLAC
-from mutagen.id3 import ID3
-from mutagen.mp4 import MP4
-from mutagen.oggopus import OggOpus
-from mutagen.oggvorbis import OggVorbis
 
 logger = logging.getLogger(__name__)
 

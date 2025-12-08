@@ -1058,3 +1058,28 @@ class LibraryService:
         tags = read_tags_from_file(validated_path, self.cfg.namespace)
 
         return tags
+
+    def remove_file_tags(self, path: str) -> int:
+        """
+        Remove all namespaced tags from an audio file.
+
+        Args:
+            path: Absolute file path (must be under library_root)
+
+        Returns:
+            Number of tags removed
+
+        Raises:
+            ValueError: If path is outside library_root or invalid
+            RuntimeError: If file cannot be modified
+        """
+        from nomarr.components.tagging.tagging_remove_comp import remove_tags_from_file
+        from nomarr.helpers.files_helper import validate_library_path
+
+        # Security: validate path is under library_root
+        validated_path = validate_library_path(path, str(self._get_library_root()))
+
+        # Remove tags using component
+        count = remove_tags_from_file(validated_path, self.cfg.namespace)
+
+        return count
