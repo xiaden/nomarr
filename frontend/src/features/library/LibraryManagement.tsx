@@ -115,8 +115,8 @@ export function LibraryManagement() {
     try {
       setError(null);
       setPreviewLoading(true);
+      // Don't send paths - let backend use library's root_path directly
       const result = await api.library.preview(editingId, {
-        paths: [formRootPath],
         recursive: true,
       });
       setPreviewCount(result.file_count);
