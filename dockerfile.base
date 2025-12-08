@@ -12,18 +12,15 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LC_ALL=C.UTF-8 LANG=C.UTF-8
 
 # ----------------------------------------------------------------------
-#  Base system packages
+#  Install system packages and Python dependencies in single layer
 # ----------------------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-pip python3-venv cron \
-    libsndfile1 ffmpeg sox ca-certificates curl git tini sqlite3 \
-    && rm -rf /var/lib/apt/lists/*
-
-# ----------------------------------------------------------------------
-#  Python dependencies (the slow part)
-# ----------------------------------------------------------------------
-RUN python3 -m pip install --upgrade pip \
-    && python3 -m pip install \
+    python3 python3-pip cron \
+    libsndfile1 ffmpeg sox ca-certificates curl tini \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* \
+    # Install Python packages
+    && python3 -m pip install --upgrade pip \
+    && python3 -m pip install --no-cache-dir \
     "essentia-tensorflow==2.1b6.dev1389" \
     "numpy==1.26.4" \
     "scipy>=1.13.1" \
@@ -36,13 +33,10 @@ RUN python3 -m pip install --upgrade pip \
     "requests==2.32.3" \
     "bcrypt==4.2.1" \
     "pytest==8.3.3" \
-    "pytest-cov==5.0.0"
-
-# Sanity probe
-RUN python3 - <<'PY'
-import essentia
-from essentia.standard import TensorflowPredict2D
-print("Essentia:", essentia.__version__)
-PY
+    "pytest-cov==5.0.0" \
+    # Clean up pip cache and temp files
+    && rm -rf /root/.cache/pip /tmp/* /var/tmp/* \
+    # Sanity probe
+    && python3 -c "import essentia; from essentia.standard import TensorflowPredict2D; print('Essentia:', essentia.__version__)"
 
 WORKDIR /app

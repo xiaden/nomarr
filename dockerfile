@@ -18,25 +18,21 @@ WORKDIR /app
 # ----------------------------------------------------------------------
 #  Copy in project files (fast - no pip installs!)
 # ----------------------------------------------------------------------
-COPY nomarr/ /app/nomarr/
-COPY models/ /app/models/
-COPY config/ /app/config/
-COPY scripts/ /app/scripts/
-COPY docs/ /app/docs/
-COPY tests/ /app/tests/
-COPY readme.md /app/readme.md
-COPY docker/cleanup-cron.sh /app/cleanup-cron.sh
+# Single COPY layer for all app files (7 dirs + 2 files = 1 layer instead of 10)
+COPY nomarr/ models/ config/ scripts/ docs/ tests/ /app/
+COPY pytest.ini readme.md docker/cleanup-cron.sh /app/
 COPY docker/nom-cli.sh /usr/local/bin/nom
 
 # Note: Frontend is built separately (npm run build in frontend/)
 # Vite builds directly to nomarr/public_html/, which is copied above
 
-RUN chmod +x /app/cleanup-cron.sh /usr/local/bin/nom
-RUN echo "0 3 * * * /app/cleanup-cron.sh" > /etc/cron.d/nomarr-cleanup
-RUN chmod 0644 /etc/cron.d/nomarr-cleanup
-RUN crontab /etc/cron.d/nomarr-cleanup
-
-RUN mkdir -p /app/config/db && chown -R appuser:appuser /app
+# Combine RUN commands to reduce layers (4 commands = 1 layer instead of 4)
+RUN chmod +x /app/cleanup-cron.sh /usr/local/bin/nom && \
+    echo "0 3 * * * /app/cleanup-cron.sh" > /etc/cron.d/nomarr-cleanup && \
+    chmod 0644 /etc/cron.d/nomarr-cleanup && \
+    crontab /etc/cron.d/nomarr-cleanup && \
+    mkdir -p /app/config/db && \
+    chown -R appuser:appuser /app
 
 # ----------------------------------------------------------------------
 #  Environment variables
