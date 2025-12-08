@@ -316,38 +316,50 @@ def _extract_metadata(file_path: str, namespace: str) -> dict[str, Any]:
     return metadata
 
 
-def _serialize_mutagen_value(value: Any) -> str:
+def _serialize_mutagen_value(value: Any) -> str | list[str]:
     """
-    Serialize a mutagen tag value to a string.
+    Serialize a mutagen tag value to a string or list of strings.
 
     Handles various mutagen types:
-    - MP4FreeForm: Extract bytes and decode
-    - Lists: Take first element
+    - MP4FreeForm: Extract bytes and decode (returns single value or list)
+    - Lists: Process all elements, return list if multiple values
     - Bytes: Decode to UTF-8
     - Everything else: str()
+
+    Multi-value tags are returned as lists, which the persistence layer
+    will JSON-encode with type="array".
 
     Args:
         value: Mutagen tag value
 
     Returns:
-        Serialized string value
+        Serialized string value or list of strings for multi-value tags
     """
-    # Handle MP4FreeForm objects
+    # Handle MP4FreeForm objects (which are list-like)
     if hasattr(value, "__class__") and value.__class__.__name__ == "MP4FreeForm":
-        # MP4FreeForm has a list of values, take first
-        if value and len(value) > 0:
-            raw = value[0]
-            if isinstance(raw, bytes):
-                return raw.decode("utf-8", errors="replace")
-            return str(raw)
-        return str(value)
+        # MP4FreeForm is iterable, process all values
+        decoded_values = []
+        for item in value:
+            if isinstance(item, bytes):
+                decoded_values.append(item.decode("utf-8", errors="replace"))
+            else:
+                decoded_values.append(str(item))
+        # Return single value if only one, otherwise return list
+        return decoded_values[0] if len(decoded_values) == 1 else decoded_values
 
     # Handle lists
-    if isinstance(value, list) and len(value) > 0:
-        first = value[0]
-        if isinstance(first, bytes):
-            return first.decode("utf-8", errors="replace")
-        return str(first)
+    if isinstance(value, list):
+        if len(value) == 0:
+            return ""
+        # Decode each element
+        decoded_values = []
+        for item in value:
+            if isinstance(item, bytes):
+                decoded_values.append(item.decode("utf-8", errors="replace"))
+            else:
+                decoded_values.append(str(item))
+        # Return single value if only one, otherwise return list
+        return decoded_values[0] if len(decoded_values) == 1 else decoded_values
 
     # Handle bytes
     if isinstance(value, bytes):
