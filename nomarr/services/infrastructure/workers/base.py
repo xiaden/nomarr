@@ -80,7 +80,6 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
         queue_type: QueueType,
         process_fn: Callable[[Database, str, bool], TResult],
         db_path: str,
-        event_broker: Any,
         worker_id: int = 0,
         interval: int = 2,
     ):
@@ -92,7 +91,6 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
             queue_type: Queue type - "tag", "library", or "calibration"
             process_fn: Function to process jobs, signature: (db: Database, path: str, force: bool) -> TResult
             db_path: Path to database file (worker creates its own connection for multiprocessing safety)
-            event_broker: Event broker for SSE state updates (required)
             worker_id: Unique worker ID (for multi-worker setups)
             interval: Polling interval in seconds (default: 2)
         """
@@ -114,7 +112,6 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
         self._is_busy = False
         self._last_heartbeat = 0.0
         self._heartbeat_interval = 5  # seconds
-        self._event_broker = event_broker
         self._cancel_requested = False
         self._current_job_id: int | None = None
         self._heartbeat_thread: threading.Thread | None = None

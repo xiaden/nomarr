@@ -225,7 +225,6 @@ class WorkerSystemService:
             worker = TaggerWorker(
                 db_path=str(self.db.path),
                 processing_backend=self.tagger_backend,
-                event_broker=self.event_broker,
                 worker_id=i,
                 interval=2,
             )
@@ -242,7 +241,6 @@ class WorkerSystemService:
             worker = LibraryScanWorker(
                 db_path=str(self.db.path),
                 processing_backend=self.scanner_backend,
-                event_broker=self.event_broker,
                 worker_id=i,
                 interval=5,
             )
@@ -256,7 +254,6 @@ class WorkerSystemService:
             worker = RecalibrationWorker(
                 db_path=str(self.db.path),
                 processing_backend=self.recalibration_backend,
-                event_broker=self.event_broker,
                 worker_id=i,
                 interval=2,
             )
@@ -478,7 +475,6 @@ class WorkerSystemService:
             return TaggerWorker(
                 db_path=str(self.db.path),
                 processing_backend=self.tagger_backend,
-                event_broker=self.event_broker,
                 worker_id=worker_id,
                 interval=2,
             )
@@ -488,7 +484,6 @@ class WorkerSystemService:
             return LibraryScanWorker(
                 db_path=str(self.db.path),
                 processing_backend=self.scanner_backend,
-                event_broker=self.event_broker,
                 worker_id=worker_id,
                 interval=5,
             )
@@ -496,7 +491,6 @@ class WorkerSystemService:
             return RecalibrationWorker(
                 db_path=str(self.db.path),
                 processing_backend=self.recalibration_backend,
-                event_broker=self.event_broker,
                 worker_id=worker_id,
                 interval=2,
             )

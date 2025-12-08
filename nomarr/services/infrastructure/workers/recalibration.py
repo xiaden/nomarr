@@ -105,7 +105,6 @@ class RecalibrationWorker(BaseWorker):
         self,
         db_path: str,
         processing_backend: Callable[[Database, str, bool], dict[str, Any]],
-        event_broker: Any,
         interval: int = 2,
         worker_id: int = 0,
     ):
@@ -115,7 +114,6 @@ class RecalibrationWorker(BaseWorker):
         Args:
             db_path: Path to database file (worker creates its own connection)
             processing_backend: Backend function for processing files
-            event_broker: Event broker for SSE state updates (required)
             interval: Polling interval in seconds (default: 2)
             worker_id: Unique worker ID (for multi-worker setups)
         """
@@ -125,7 +123,6 @@ class RecalibrationWorker(BaseWorker):
             queue_type="calibration",
             process_fn=processing_backend,
             db_path=db_path,
-            event_broker=event_broker,
             worker_id=worker_id,
             interval=interval,
         )
