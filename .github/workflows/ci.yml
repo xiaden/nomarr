@@ -94,8 +94,20 @@ jobs:
         if: (github.event_name == 'push' && steps.version_check.outputs.changed == 'true') || github.event.inputs.force_build == 'true'
         uses: docker/setup-buildx-action@v3
 
-      - name: Set up Node.js
+      - name: Check if frontend changed
+        id: frontend_check
         if: (github.event_name == 'push' && steps.version_check.outputs.changed == 'true') || github.event.inputs.force_build == 'true'
+        run: |
+          # Check if any files in frontend/ changed
+          git diff --quiet HEAD~1 HEAD -- frontend/ && echo "changed=false" >> $GITHUB_OUTPUT || echo "changed=true" >> $GITHUB_OUTPUT
+          if [ "$(cat $GITHUB_OUTPUT | grep changed)" == "changed=true" ]; then
+            echo "Frontend files changed, will rebuild"
+          else
+            echo "Frontend unchanged, skipping build"
+          fi
+
+      - name: Set up Node.js
+        if: ((github.event_name == 'push' && steps.version_check.outputs.changed == 'true') || github.event.inputs.force_build == 'true') && steps.frontend_check.outputs.changed == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -103,13 +115,13 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install frontend dependencies
-        if: (github.event_name == 'push' && steps.version_check.outputs.changed == 'true') || github.event.inputs.force_build == 'true'
+        if: ((github.event_name == 'push' && steps.version_check.outputs.changed == 'true') || github.event.inputs.force_build == 'true') && steps.frontend_check.outputs.changed == 'true'
         run: |
           cd frontend
           npm ci
 
       - name: Build React frontend
-        if: (github.event_name == 'push' && steps.version_check.outputs.changed == 'true') || github.event.inputs.force_build == 'true'
+        if: ((github.event_name == 'push' && steps.version_check.outputs.changed == 'true') || github.event.inputs.force_build == 'true') && steps.frontend_check.outputs.changed == 'true'
         run: |
           cd frontend
           npm run build
