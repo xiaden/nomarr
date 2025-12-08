@@ -94,37 +94,33 @@ jobs:
         if: (github.event_name == 'push' && steps.version_check.outputs.changed == 'true') || github.event.inputs.force_build == 'true'
         uses: docker/setup-buildx-action@v3
 
-      - name: Check if frontend changed
-        id: frontend_check
-        if: (github.event_name == 'push' && steps.version_check.outputs.changed == 'true') || github.event.inputs.force_build == 'true'
+      - name: Verify frontend build is up-to-date
         run: |
-          # Check if any files in frontend/ changed
-          git diff --quiet HEAD~1 HEAD -- frontend/ && echo "changed=false" >> $GITHUB_OUTPUT || echo "changed=true" >> $GITHUB_OUTPUT
-          if [ "$(cat $GITHUB_OUTPUT | grep changed)" == "changed=true" ]; then
-            echo "Frontend files changed, will rebuild"
-          else
-            echo "Frontend unchanged, skipping build"
+          # Find newest file in frontend source
+          NEWEST_SOURCE=$(find frontend/src frontend/public frontend/index.html frontend/vite.config.ts frontend/tsconfig*.json -type f -printf '%T@\n' 2>/dev/null | sort -rn | head -1)
+          
+          # Find oldest file in build output
+          OLDEST_BUILD=$(find nomarr/public_html -type f -printf '%T@\n' 2>/dev/null | sort -n | head -1)
+          
+          if [ -z "$OLDEST_BUILD" ]; then
+            echo "❌ ERROR: No build artifacts found in nomarr/public_html/"
+            echo "Run: cd frontend && npm run build"
+            exit 1
           fi
-
-      - name: Set up Node.js
-        if: ((github.event_name == 'push' && steps.version_check.outputs.changed == 'true') || github.event.inputs.force_build == 'true') && steps.frontend_check.outputs.changed == 'true'
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install frontend dependencies
-        if: ((github.event_name == 'push' && steps.version_check.outputs.changed == 'true') || github.event.inputs.force_build == 'true') && steps.frontend_check.outputs.changed == 'true'
-        run: |
-          cd frontend
-          npm ci
-
-      - name: Build React frontend
-        if: ((github.event_name == 'push' && steps.version_check.outputs.changed == 'true') || github.event.inputs.force_build == 'true') && steps.frontend_check.outputs.changed == 'true'
-        run: |
-          cd frontend
-          npm run build
+          
+          if (( $(echo "$NEWEST_SOURCE > $OLDEST_BUILD" | bc -l) )); then
+            echo "❌ ERROR: Frontend source is newer than build artifacts!"
+            echo ""
+            echo "Frontend source has uncommitted changes or build is stale."
+            echo "Run these commands locally and commit:"
+            echo "  cd frontend"
+            echo "  npm run build"
+            echo "  git add ../nomarr/public_html/"
+            echo "  git commit -m 'build: rebuild frontend'"
+            exit 1
+          else
+            echo "✅ Frontend build artifacts are up-to-date"
+          fi
 
       - name: Log in to GitHub Container Registry
         if: (github.event_name == 'push' && steps.version_check.outputs.changed == 'true') || github.event.inputs.force_build == 'true'
