@@ -191,6 +191,7 @@ async def preview_library_scan(
     library_id: int,
     request: ScanLibraryRequest,
     library_service: "LibraryService" = Depends(get_library_service),
+    config: dict = Depends(get_config),
 ) -> dict[str, int]:
     """
     Preview file count for a library path without scanning.
@@ -199,10 +200,17 @@ async def preview_library_scan(
         Dictionary with file_count (total audio files found)
     """
     try:
+        from pathlib import Path
+
         from nomarr.helpers.files_helper import collect_audio_files
 
         # Get library to resolve root path
         library = library_service.get_library(library_id)
+
+        # Get configured library_root for security validation
+        library_root = config.get("library_root")
+        if not library_root:
+            raise HTTPException(status_code=503, detail="Library root not configured")
 
         # Resolve paths to scan
         if request.paths:
@@ -217,8 +225,28 @@ async def preview_library_scan(
                 )
                 resolved_paths.append(str(resolved))
         else:
-            # No paths specified - scan entire library root (no need to resolve)
-            resolved_paths = [library.root_path]
+            # No paths specified - validate library root against configured library_root
+            # Compute relative path from library_root to library.root_path
+            library_root_path = Path(library_root).resolve()
+            library_path = Path(library.root_path).resolve()
+            
+            try:
+                relative_library_path = library_path.relative_to(library_root_path)
+            except ValueError:
+                # Library is outside library_root - security violation
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Library path is outside configured library_root"
+                )
+            
+            # Validate the library's path through security helper
+            resolved = library_service._resolve_path_within_library(
+                library_root=library_root,
+                user_path=str(relative_library_path),
+                must_exist=True,
+                must_be_file=False,
+            )
+            resolved_paths = [str(resolved)]
 
         # Count files using helper
         all_files = []
