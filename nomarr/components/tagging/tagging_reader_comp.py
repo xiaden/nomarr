@@ -6,8 +6,11 @@ import logging
 from typing import Any
 
 import mutagen  # type: ignore[import-untyped]
+from mutagen.flac import FLAC
 from mutagen.id3 import ID3
 from mutagen.mp4 import MP4
+from mutagen.oggopus import OggOpus
+from mutagen.oggvorbis import OggVorbis
 
 logger = logging.getLogger(__name__)
 
@@ -33,17 +36,19 @@ def read_tags_from_file(path: str, namespace: str) -> dict[str, Any]:
         if audio is None:
             raise ValueError(f"Unsupported audio format: {path}")
 
-        # Try MP3 format first
+        # Check specific types first (most specific to least specific)
+
+        # Vorbis comments (FLAC, OGG, Opus) - check FIRST before MP4
+        if isinstance(audio, (FLAC, OggVorbis, OggOpus)):
+            return _extract_vorbis_tags(audio, namespace)
+
+        # MP3 format (ID3v2)
         if isinstance(audio, ID3) or (hasattr(audio, "tags") and hasattr(audio.tags, "getall")):
             return _extract_id3_tags(audio, namespace)
 
-        # Try MP4/M4A format
-        if isinstance(audio, MP4) or (hasattr(audio, "tags") and hasattr(audio.tags, "items")):
+        # MP4/M4A format (iTunes freeform)
+        if isinstance(audio, MP4):
             return _extract_mp4_tags(audio, namespace)
-
-        # Vorbis comments (FLAC, OGG, Opus)
-        if hasattr(audio, "tags") and hasattr(audio.tags, "get"):
-            return _extract_vorbis_tags(audio, namespace)
 
         raise ValueError(f"No supported tag format found in: {path}")
 
