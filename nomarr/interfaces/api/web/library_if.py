@@ -229,16 +229,13 @@ async def preview_library_scan(
             # Compute relative path from library_root to library.root_path
             library_root_path = Path(library_root).resolve()
             library_path = Path(library.root_path).resolve()
-            
+
             try:
                 relative_library_path = library_path.relative_to(library_root_path)
             except ValueError:
                 # Library is outside library_root - security violation
-                raise HTTPException(
-                    status_code=403,
-                    detail=f"Library path is outside configured library_root"
-                )
-            
+                raise HTTPException(status_code=403, detail="Library path is outside configured library_root")
+
             # Validate the library's path through security helper
             resolved = library_service._resolve_path_within_library(
                 library_root=library_root,

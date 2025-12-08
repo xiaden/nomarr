@@ -7,6 +7,12 @@ ensure paths remain within configured library boundaries.
 
 Path validation is built into this module - use these functions for all
 filesystem operations involving user-provided paths.
+
+SECURITY NOTE:
+CodeQL will flag path operations in this module as "Uncontrolled data used in path expression".
+These are false positives - this module IS the security validation layer.
+All external callers must pass paths through resolve_library_path() or validate_library_path()
+before filesystem operations. See .github/codeql/codeql-config.yml for suppression rationale.
 """
 
 from __future__ import annotations
