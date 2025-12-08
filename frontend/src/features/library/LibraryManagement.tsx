@@ -22,6 +22,7 @@ export function LibraryManagement() {
   const [isCreating, setIsCreating] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [scanningId, setScanningId] = useState<number | null>(null);
+  const [libraryRoot, setLibraryRoot] = useState<string | null>(null);
 
   // Create/edit form state
   const [formName, setFormName] = useState("");
@@ -48,9 +49,27 @@ export function LibraryManagement() {
     }
   };
 
+  const loadConfig = async () => {
+    try {
+      const config = await api.config.get();
+      setLibraryRoot(config.library_root as string || null);
+    } catch (err) {
+      console.error("[LibraryManagement] Failed to load config:", err);
+    }
+  };
+
   useEffect(() => {
     loadLibraries();
+    loadConfig();
   }, []);
+
+  const isOutsideLibraryRoot = (path: string): boolean => {
+    if (!libraryRoot) return false;
+    // Normalize paths for comparison (handle trailing slashes)
+    const normalizedRoot = libraryRoot.replace(/\/+$/, "");
+    const normalizedPath = path.replace(/\/+$/, "");
+    return !normalizedPath.startsWith(normalizedRoot);
+  };
 
   const resetForm = () => {
     setFormName("");
@@ -204,6 +223,27 @@ export function LibraryManagement() {
     }
   };
 
+  const handleDelete = async (id: number, name: string, isDefault: boolean) => {
+    if (isDefault) {
+      setError("Cannot delete the default library. Set another library as default first.");
+      return;
+    }
+
+    const confirmed = confirm(
+      `Delete library "${name}"?\n\nThis will remove the library entry but will NOT delete files on disk.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setError(null);
+      await api.library.delete(id);
+      await loadLibraries();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete library");
+    }
+  };
+
   const isFormMode = isCreating || editingId !== null;
 
   return (
@@ -354,8 +394,18 @@ export function LibraryManagement() {
                     {lib.isDefault && (
                       <span style={styles.badge}>Default</span>
                     )}
+                    {isOutsideLibraryRoot(lib.rootPath) && (
+                      <span style={{...styles.badge, backgroundColor: "#ff9800"}}>
+                        Outside library_root
+                      </span>
+                    )}
                   </h3>
                   <p style={styles.libraryPath}>{lib.rootPath}</p>
+                  {isOutsideLibraryRoot(lib.rootPath) && (
+                    <p style={{...styles.libraryPath, color: "#ff9800", fontSize: "0.85rem"}}>
+                      ⚠ This library is outside the configured library_root ({libraryRoot})
+                    </p>
+                  )}
                 </div>
                 <div style={styles.libraryStatus}>
                   <span
@@ -391,9 +441,28 @@ export function LibraryManagement() {
                     ...styles.btnScan,
                   }}
                   onClick={() => handleScan(lib.id)}
-                  disabled={!lib.isEnabled || scanningId === lib.id}
+                  disabled={
+                    !lib.isEnabled || 
+                    scanningId === lib.id || 
+                    isOutsideLibraryRoot(lib.rootPath)
+                  }
+                  title={
+                    isOutsideLibraryRoot(lib.rootPath)
+                      ? "Cannot scan: library is outside library_root"
+                      : undefined
+                  }
                 >
                   {scanningId === lib.id ? "Scanning..." : "Scan"}
+                </button>
+                <button
+                  style={{
+                    ...styles.btnSmall,
+                    backgroundColor: "#d32f2f",
+                  }}
+                  onClick={() => handleDelete(lib.id, lib.name, lib.isDefault)}
+                  disabled={scanningId === lib.id}
+                >
+                  Delete
                 </button>
               </div>
             </div>

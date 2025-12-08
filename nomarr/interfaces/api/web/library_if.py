@@ -163,6 +163,29 @@ async def set_default_library(
         raise HTTPException(status_code=500, detail=f"Error setting default library: {e}") from e
 
 
+@router.delete("/{library_id}", dependencies=[Depends(verify_session)])
+async def delete_library(
+    library_id: int,
+    library_service: "LibraryService" = Depends(get_library_service),
+) -> dict[str, str]:
+    """
+    Delete a library.
+
+    Removes the library entry but does NOT delete files on disk.
+    Cannot delete the default library - set another as default first.
+    """
+    try:
+        deleted = library_service.delete_library(library_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Library not found")
+        return {"status": "success", "message": f"Library {library_id} deleted"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logging.exception(f"[Web API] Error deleting library {library_id}")
+        raise HTTPException(status_code=500, detail=f"Error deleting library: {e}") from e
+
+
 @router.post("/{library_id}/preview", dependencies=[Depends(verify_session)])
 async def preview_library_scan(
     library_id: int,

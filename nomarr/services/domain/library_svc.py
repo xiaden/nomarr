@@ -857,6 +857,39 @@ class LibraryService:
             raise RuntimeError("Failed to retrieve updated library")
         return LibraryDict(**library)
 
+    def delete_library(self, library_id: int) -> bool:
+        """
+        Delete a library.
+
+        This removes the library entry but does NOT delete any files on disk.
+        Associated library_files and queue entries are cascade-deleted by DB constraints.
+
+        Args:
+            library_id: Library ID to delete
+
+        Returns:
+            True if library was deleted, False if not found
+
+        Raises:
+            ValueError: If trying to delete the default library
+        """
+        # Check if library exists
+        library = self.db.libraries.get_library(library_id)
+        if not library:
+            return False
+
+        # Prevent deleting default library
+        if library.get("is_default"):
+            raise ValueError("Cannot delete the default library. Set another library as default first.")
+
+        # Delete from database (cascade deletes library_files and queue entries)
+        deleted = self.db.libraries.delete_library(library_id)
+
+        if deleted:
+            logging.info(f"[LibraryService] Deleted library {library_id}: {library.get('name')}")
+
+        return deleted
+
     def update_library_metadata(
         self,
         library_id: int,

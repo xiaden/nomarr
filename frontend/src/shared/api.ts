@@ -471,6 +471,16 @@ export const library = {
   },
 
   /**
+   * Delete a library.
+   * Cannot delete the default library - set another as default first.
+   */
+  delete: async (id: number): Promise<void> => {
+    await request(`/api/web/libraries/${id}`, {
+      method: "DELETE",
+    });
+  },
+
+  /**
    * Preview file count for a library path.
    */
   preview: async (
