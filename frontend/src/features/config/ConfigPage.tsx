@@ -13,9 +13,11 @@ import { api } from "../../shared/api";
 
 export function ConfigPage() {
   const [config, setConfig] = useState<Record<string, unknown>>({});
+  const [originalConfig, setOriginalConfig] = useState<Record<string, unknown>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [updateLoading, setUpdateLoading] = useState(false);
+  const [saveLoading, setSaveLoading] = useState(false);
+  const [hasChanges, setHasChanges] = useState(false);
 
   const loadConfig = async () => {
     try {
@@ -23,6 +25,8 @@ export function ConfigPage() {
       setError(null);
       const data = await api.config.get();
       setConfig(data);
+      setOriginalConfig(data);
+      setHasChanges(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load config");
       console.error("[Config] Load error:", err);
@@ -35,16 +39,43 @@ export function ConfigPage() {
     loadConfig();
   }, []);
 
-  const handleUpdate = async (key: string, value: string) => {
+  useEffect(() => {
+    // Check if any values changed
+    const changed = Object.keys(config).some(
+      (key) => config[key] !== originalConfig[key]
+    );
+    setHasChanges(changed);
+  }, [config, originalConfig]);
+
+  const handleSaveAll = async () => {
     try {
-      setUpdateLoading(true);
-      const result = await api.config.update(key, value);
-      alert(result.message);
-      await loadConfig(); // Reload to show updated values
+      setSaveLoading(true);
+      const changes: string[] = [];
+      
+      // Update all changed keys (skip empty/null values)
+      for (const key of Object.keys(config)) {
+        if (config[key] !== originalConfig[key]) {
+          const value = config[key];
+          // Skip null, undefined, or empty string values
+          if (value === null || value === undefined || value === "") {
+            continue;
+          }
+          await api.config.update(key, String(value));
+          changes.push(key);
+        }
+      }
+      
+      if (changes.length === 0) {
+        alert("No changes to save");
+        return;
+      }
+      
+      alert(`Saved ${changes.length} config change(s). Use "Restart Server" in Admin page to apply.`);
+      await loadConfig(); // Reload to sync state
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to update config");
+      alert(err instanceof Error ? err.message : "Failed to save config");
     } finally {
-      setUpdateLoading(false);
+      setSaveLoading(false);
     }
   };
 
@@ -52,52 +83,35 @@ export function ConfigPage() {
     setConfig((prev) => ({ ...prev, [key]: value }));
   };
 
-  const handleSubmit = (e: React.FormEvent, key: string) => {
-    e.preventDefault();
-    const value = String(config[key]);
-    handleUpdate(key, value);
-  };
-
   const renderField = (key: string, value: unknown) => {
-    const stringValue = String(value);
+    // Convert null/undefined to empty string instead of "null"/"undefined"
+    const stringValue = value === null || value === undefined ? "" : String(value);
     const isBool = typeof value === "boolean";
 
     return (
       <div key={key} style={styles.field}>
         <label style={styles.label}>{key}</label>
-        <form
-          onSubmit={(e) => handleSubmit(e, key)}
-          style={{ display: "flex", gap: "10px", alignItems: "center" }}
-        >
+        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
           {isBool ? (
             <select
               value={stringValue}
               onChange={(e) => handleChange(key, e.target.value)}
               style={styles.input}
-              disabled={updateLoading}
+              disabled={saveLoading}
             >
               <option value="true">true</option>
               <option value="false">false</option>
             </select>
           ) : (
-            <>
-              <input
-                type="text"
-                value={stringValue}
-                onChange={(e) => handleChange(key, e.target.value)}
-                style={styles.input}
-                disabled={updateLoading}
-              />
-            </>
+            <input
+              type="text"
+              value={stringValue}
+              onChange={(e) => handleChange(key, e.target.value)}
+              style={styles.input}
+              disabled={saveLoading}
+            />
           )}
-          <button
-            type="submit"
-            style={styles.saveButton}
-            disabled={updateLoading}
-          >
-            Save
-          </button>
-        </form>
+        </div>
       </div>
     );
   };
@@ -126,6 +140,25 @@ export function ConfigPage() {
             <div style={{ display: "grid", gap: "15px" }}>
               {Object.entries(config).map(([key, value]) =>
                 renderField(key, value)
+              )}
+            </div>
+            
+            <div style={{ marginTop: "30px", display: "flex", gap: "10px", alignItems: "center" }}>
+              <button
+                onClick={handleSaveAll}
+                style={{
+                  ...styles.saveButton,
+                  opacity: hasChanges && !saveLoading ? 1 : 0.5,
+                  cursor: hasChanges && !saveLoading ? "pointer" : "not-allowed",
+                }}
+                disabled={!hasChanges || saveLoading}
+              >
+                {saveLoading ? "Saving..." : "Save All Changes"}
+              </button>
+              {hasChanges && (
+                <span style={{ color: "#ff9800", fontSize: "0.875rem" }}>
+                  Unsaved changes
+                </span>
               )}
             </div>
           </section>
