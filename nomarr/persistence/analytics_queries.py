@@ -316,20 +316,22 @@ def fetch_mood_value_co_occurrence_data(
     if matching_file_ids:
         placeholders = ",".join("?" * len(matching_file_ids))
 
-        # Genre distribution
+        # Genre distribution from tags
         genre_cursor = db.conn.execute(
             f"""
-            SELECT genre, COUNT(*) as count
-            FROM library_files
-            WHERE id IN ({placeholders}) AND genre IS NOT NULL
-            GROUP BY genre
+            SELECT lt.value, COUNT(*) as count
+            FROM file_tags ft
+            JOIN library_tags lt ON lt.id = ft.tag_id
+            WHERE ft.file_id IN ({placeholders})
+              AND lt.key = 'genre'
+            GROUP BY lt.value
             ORDER BY count DESC
             """,
             tuple(matching_file_ids),
         )
         genre_rows = genre_cursor.fetchall()
 
-        # Artist distribution
+        # Artist distribution (still in library_files for performance)
         artist_cursor = db.conn.execute(
             f"""
             SELECT artist, COUNT(*) as count

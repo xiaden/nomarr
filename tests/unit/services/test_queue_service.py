@@ -6,6 +6,9 @@ Tests use REAL fixtures from conftest.py - no redundant mocks.
 
 import pytest
 
+# Mark all tests in this module as unit tests
+pytestmark = pytest.mark.unit
+
 
 class TestQueueServiceAddFiles:
     """Test QueueService.enqueue_files_for_tagging() operations."""

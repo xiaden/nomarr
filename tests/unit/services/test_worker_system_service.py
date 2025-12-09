@@ -16,6 +16,9 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+# Mark all tests in this module as unit tests
+pytestmark = pytest.mark.unit
+
 from nomarr.services.infrastructure.worker_system_svc import (
     EXIT_CODE_HEARTBEAT_TIMEOUT,
     EXIT_CODE_INVALID_HEARTBEAT,

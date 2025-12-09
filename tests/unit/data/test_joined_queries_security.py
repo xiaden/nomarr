@@ -11,6 +11,9 @@ import sqlite3
 
 import pytest
 
+# Mark all tests in this module as unit tests
+pytestmark = pytest.mark.unit
+
 from nomarr.persistence.database.joined_queries_sql import JoinedQueryOperations
 
 

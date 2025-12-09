@@ -532,6 +532,55 @@ export const library = {
       body: JSON.stringify(body),
     });
   },
+
+  /**
+   * Clean up orphaned tags (tags not referenced by any file).
+   */
+  cleanupOrphanedTags: async (
+    dryRun = false
+  ): Promise<{
+    orphaned_count: number;
+    deleted_count: number;
+  }> => {
+    const queryParams = new URLSearchParams();
+    if (dryRun) queryParams.append("dry_run", "true");
+
+    const query = queryParams.toString();
+    const endpoint = query
+      ? `/api/web/libraries/cleanup-tags?${query}`
+      : "/api/web/libraries/cleanup-tags";
+
+    return request(endpoint, {
+      method: "POST",
+    });
+  },
+
+  /**
+   * Get all tags for a specific file.
+   */
+  getFileTags: async (
+    fileId: number,
+    nomarrOnly = false
+  ): Promise<{
+    file_id: number;
+    path: string;
+    tags: Array<{
+      key: string;
+      value: string;
+      type: string;
+      is_nomarr: boolean;
+    }>;
+  }> => {
+    const queryParams = new URLSearchParams();
+    if (nomarrOnly) queryParams.append("nomarr_only", "true");
+
+    const query = queryParams.toString();
+    const endpoint = query
+      ? `/api/web/libraries/files/${fileId}/tags?${query}`
+      : `/api/web/libraries/files/${fileId}/tags`;
+
+    return request(endpoint);
+  },
 };
 
 // ──────────────────────────────────────────────────────────────────────
@@ -884,9 +933,6 @@ export const files = {
       artist?: string;
       album?: string;
       title?: string;
-      genre?: string;
-      year?: number;
-      track_number?: number;
       calibration?: string;
       scanned_at?: number;
       last_tagged_at?: number;

@@ -315,3 +315,40 @@ class UniqueTagKeysResponse(BaseModel):
         assert isinstance(result, UniqueTagKeysResult)
 
         return cls(tag_keys=result.tag_keys, count=result.count)
+
+
+class TagCleanupResponse(BaseModel):
+    """Response for tag cleanup endpoint."""
+
+    orphaned_count: int
+    deleted_count: int
+
+    @classmethod
+    def from_dto(cls, result) -> TagCleanupResponse:
+        """Transform TagCleanupResult DTO to API response."""
+        from nomarr.helpers.dto.library_dto import TagCleanupResult
+
+        assert isinstance(result, TagCleanupResult)
+
+        return cls(orphaned_count=result.orphaned_count, deleted_count=result.deleted_count)
+
+
+class FileTagsResponse(BaseModel):
+    """Response for file tags endpoint."""
+
+    file_id: int
+    path: str
+    tags: list[FileTagResponse]
+
+    @classmethod
+    def from_dto(cls, result) -> FileTagsResponse:
+        """Transform FileTagsResult DTO to API response."""
+        from nomarr.helpers.dto.library_dto import FileTagsResult
+
+        assert isinstance(result, FileTagsResult)
+
+        return cls(
+            file_id=result.file_id,
+            path=result.path,
+            tags=[FileTagResponse(key=t.key, value=t.value, type=t.type, is_nomarr=t.is_nomarr) for t in result.tags],
+        )

@@ -157,8 +157,26 @@ class UniqueTagKeysResult:
     library_id: int | None
 
 
+@dataclass
+class TagCleanupResult:
+    """Result from library_service.cleanup_orphaned_tags."""
+
+    orphaned_count: int
+    deleted_count: int
+
+
+@dataclass
+class FileTagsResult:
+    """Result from library_service.get_file_tags."""
+
+    file_id: int
+    path: str
+    tags: list[FileTag]
+
+
 __all__ = [
     "FileTag",
+    "FileTagsResult",
     "LibraryDict",
     "LibraryFileWithTags",
     "LibraryScanStatusResult",
@@ -168,6 +186,7 @@ __all__ = [
     "SearchFilesResult",
     "StartLibraryScanWorkflowParams",
     "StartScanResult",
+    "TagCleanupResult",
     "UniqueTagKeysResult",
     "UpdateLibraryFileFromTagsParams",
 ]

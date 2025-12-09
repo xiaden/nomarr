@@ -103,6 +103,37 @@ class LibraryFilesOperations:
         )
         self.conn.commit()
 
+    def get_file_by_id(self, file_id: int) -> dict[str, Any] | None:
+        """
+        Get library file by ID.
+
+        Args:
+            file_id: File ID
+
+        Returns:
+            File dict or None if not found. Calibration is parsed from JSON.
+        """
+        import json
+
+        cur = self.conn.execute("SELECT * FROM library_files WHERE id=?", (file_id,))
+        row = cur.fetchone()
+        if not row:
+            return None
+        columns = [desc[0] for desc in cur.description]
+        file_dict = dict(zip(columns, row, strict=False))
+
+        # Parse calibration JSON (default to empty dict if null/invalid)
+        calib_json = file_dict.get("calibration")
+        if calib_json:
+            try:
+                file_dict["calibration"] = json.loads(calib_json)
+            except Exception:
+                file_dict["calibration"] = {}
+        else:
+            file_dict["calibration"] = {}
+
+        return file_dict
+
     def get_library_file(self, path: str) -> dict[str, Any] | None:
         """
         Get library file by path.

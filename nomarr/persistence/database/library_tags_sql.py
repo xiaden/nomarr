@@ -48,7 +48,7 @@ class LibraryTagOperations:
         row = cursor.fetchone()
 
         if row:
-            return row[0]
+            return int(row[0])
 
         # Create new tag
         cursor = self.conn.execute(
@@ -143,6 +143,23 @@ class LibraryTagOperations:
         )
         self.conn.commit()
         return cursor.rowcount
+
+    def get_orphaned_tag_count(self) -> int:
+        """
+        Count tags in library_tags that are not referenced by any file.
+
+        Returns:
+            Number of orphaned tags
+        """
+        cursor = self.conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM library_tags
+            WHERE id NOT IN (SELECT DISTINCT tag_id FROM file_tags)
+            """
+        )
+        result = cursor.fetchone()
+        return int(result[0]) if result else 0
 
     def get_tag_usage_count(self, tag_id: int) -> int:
         """

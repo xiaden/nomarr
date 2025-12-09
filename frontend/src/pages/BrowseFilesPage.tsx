@@ -26,8 +26,6 @@ interface LibraryFile {
   artist?: string;
   album?: string;
   title?: string;
-  genre?: string;
-  year?: number;
   duration_seconds: number;
   tagged: number;
   tags: FileTag[];
@@ -252,11 +250,15 @@ export function BrowseFilesPage() {
                   <div style={styles.fileArtist}>
                     {file.artist && <span>{file.artist}</span>}
                     {file.album && <span> • {file.album}</span>}
-                    {file.year && <span> ({file.year})</span>}
+                    {file.tags.find(t => t.key === "year") && (
+                      <span> ({file.tags.find(t => t.key === "year")?.value})</span>
+                    )}
                   </div>
                   <div style={styles.fileMeta}>
                     {formatDuration(file.duration_seconds)}
-                    {file.genre && <span> • {file.genre}</span>}
+                    {file.tags.find(t => t.key === "genre") && (
+                      <span> • {file.tags.find(t => t.key === "genre")?.value}</span>
+                    )}
                     {file.tagged === 1 && (
                       <span style={styles.taggedBadge}>Tagged</span>
                     )}

@@ -108,9 +108,6 @@ export interface LibraryFile {
   artist?: string;
   album?: string;
   title?: string;
-  genre?: string;
-  year?: number;
-  track_number?: number;
   tags_json?: string;
   nom_tags?: string;
   scanned_at?: number;
@@ -133,6 +130,28 @@ export interface ResetJobsResult {
   status: string;
   message: string;
   reset: number;
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Tags Types
+// ──────────────────────────────────────────────────────────────────────
+
+export interface FileTag {
+  key: string;
+  value: string;
+  type: string;
+  is_nomarr: boolean;
+}
+
+export interface TagCleanupResult {
+  orphaned_count: number;
+  deleted_count: number;
+}
+
+export interface FileTagsResult {
+  file_id: number;
+  path: string;
+  tags: FileTag[];
 }
 
 // ──────────────────────────────────────────────────────────────────────

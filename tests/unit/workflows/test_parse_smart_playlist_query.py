@@ -11,6 +11,9 @@ Tests cover:
 
 import pytest
 
+# Mark all tests in this module as unit tests
+pytestmark = pytest.mark.unit
+
 from nomarr.helpers.exceptions import PlaylistQueryError
 from nomarr.workflows.navidrome.parse_smart_playlist_query_wf import (
     parse_smart_playlist_query,

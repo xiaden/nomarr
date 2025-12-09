@@ -134,6 +134,56 @@ class FileTagOperations:
 
         return tags
 
+    def get_file_tags_with_metadata(self, file_id: int, nomarr_only: bool = False) -> list[dict[str, Any]]:
+        """
+        Get all tags for a file with full metadata (key, value, type, is_nomarr_tag).
+
+        Args:
+            file_id: Library file ID
+            nomarr_only: If True, only return Nomarr-generated tags
+
+        Returns:
+            List of dicts with keys: 'key', 'value', 'type', 'is_nomarr_tag'
+        """
+        if nomarr_only:
+            cursor = self.conn.execute(
+                """
+                SELECT lt.key, lt.value, lt.type, lt.is_nomarr_tag
+                FROM file_tags ft
+                JOIN library_tags lt ON lt.id = ft.tag_id
+                WHERE ft.file_id = ? AND lt.is_nomarr_tag = 1
+                """,
+                (file_id,),
+            )
+        else:
+            cursor = self.conn.execute(
+                """
+                SELECT lt.key, lt.value, lt.type, lt.is_nomarr_tag
+                FROM file_tags ft
+                JOIN library_tags lt ON lt.id = ft.tag_id
+                WHERE ft.file_id = ?
+                """,
+                (file_id,),
+            )
+
+        # Import here to avoid circular dependency
+        from nomarr.persistence.database.library_tags_sql import LibraryTagOperations
+
+        library_tags = LibraryTagOperations(self.conn)
+
+        tags = []
+        for key, value_str, tag_type, is_nomarr_tag in cursor.fetchall():
+            tags.append(
+                {
+                    "key": key,
+                    "value": library_tags._deserialize_value(value_str, tag_type),
+                    "type": tag_type,
+                    "is_nomarr_tag": bool(is_nomarr_tag),
+                }
+            )
+
+        return tags
+
     def get_file_tags_by_key(self, file_id: int, key: str) -> dict[str, Any]:
         """
         Get all tags for a file matching a specific key.
@@ -239,3 +289,158 @@ class FileTagOperations:
     ) -> None:
         """Deprecated: Use set_file_tags_mixed instead."""
         self.set_file_tags_mixed(file_id, external_tags, nomarr_tags)
+
+    def get_unique_tag_keys(self, nomarr_only: bool = False) -> list[str]:
+        """
+        Get list of all unique tag keys.
+
+        Args:
+            nomarr_only: If True, only return Nomarr tag keys
+
+        Returns:
+            List of unique tag keys
+        """
+        if nomarr_only:
+            cursor = self.conn.execute(
+                """
+                SELECT DISTINCT lt.key
+                FROM library_tags lt
+                WHERE lt.is_nomarr_tag = 1
+                ORDER BY lt.key
+                """
+            )
+        else:
+            cursor = self.conn.execute(
+                """
+                SELECT DISTINCT lt.key
+                FROM library_tags lt
+                ORDER BY lt.key
+                """
+            )
+        return [row[0] for row in cursor.fetchall()]
+
+    def get_unique_tag_values(self, tag_key: str, nomarr_only: bool = False) -> list[str]:
+        """
+        Get list of unique values for a specific tag key.
+
+        Args:
+            tag_key: Tag key to get values for
+            nomarr_only: If True, only return values from Nomarr tags
+
+        Returns:
+            List of unique tag values as strings
+        """
+        if nomarr_only:
+            cursor = self.conn.execute(
+                """
+                SELECT DISTINCT lt.value
+                FROM library_tags lt
+                WHERE lt.key = ? AND lt.is_nomarr_tag = 1
+                ORDER BY lt.value
+                """,
+                (tag_key,),
+            )
+        else:
+            cursor = self.conn.execute(
+                """
+                SELECT DISTINCT lt.value
+                FROM library_tags lt
+                WHERE lt.key = ?
+                ORDER BY lt.value
+                """,
+                (tag_key,),
+            )
+        return [row[0] for row in cursor.fetchall()]
+
+    def get_tag_summary(self, tag_key: str) -> dict[str, Any]:
+        """
+        Get summary statistics for a specific tag key.
+
+        Args:
+            tag_key: Tag key to summarize
+
+        Returns:
+            Dict with 'key', 'total_files', and 'unique_values' count
+        """
+        # Count files using this tag key
+        cursor = self.conn.execute(
+            """
+            SELECT COUNT(DISTINCT ft.file_id)
+            FROM file_tags ft
+            JOIN library_tags lt ON lt.id = ft.tag_id
+            WHERE lt.key = ?
+            """,
+            (tag_key,),
+        )
+        total_files = cursor.fetchone()[0] or 0
+
+        # Count unique values
+        cursor = self.conn.execute(
+            """
+            SELECT COUNT(DISTINCT lt.value)
+            FROM library_tags lt
+            WHERE lt.key = ?
+            """,
+            (tag_key,),
+        )
+        unique_values = cursor.fetchone()[0] or 0
+
+        return {
+            "key": tag_key,
+            "total_files": int(total_files),
+            "unique_values": int(unique_values),
+        }
+
+    def get_tag_type_stats(self, tag_key: str) -> dict[str, Any]:
+        """
+        Get type and usage statistics for a specific tag key.
+
+        Args:
+            tag_key: Tag key to analyze
+
+        Returns:
+            Dict with 'key', 'type', 'total_files', 'sample_values'
+        """
+        # Get type and count files
+        cursor = self.conn.execute(
+            """
+            SELECT lt.type, COUNT(DISTINCT ft.file_id)
+            FROM file_tags ft
+            JOIN library_tags lt ON lt.id = ft.tag_id
+            WHERE lt.key = ?
+            GROUP BY lt.type
+            LIMIT 1
+            """,
+            (tag_key,),
+        )
+        row = cursor.fetchone()
+
+        if not row:
+            return {
+                "key": tag_key,
+                "type": "unknown",
+                "total_files": 0,
+                "sample_values": [],
+            }
+
+        tag_type = row[0]
+        total_files = int(row[1])
+
+        # Get sample values (first 5)
+        cursor = self.conn.execute(
+            """
+            SELECT DISTINCT lt.value
+            FROM library_tags lt
+            WHERE lt.key = ?
+            LIMIT 5
+            """,
+            (tag_key,),
+        )
+        sample_values = [row[0] for row in cursor.fetchall()]
+
+        return {
+            "key": tag_key,
+            "type": tag_type,
+            "total_files": total_files,
+            "sample_values": sample_values,
+        }

@@ -8,12 +8,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.types.library_types import (
     CreateLibraryRequest,
+    FileTagsResponse,
     LibraryResponse,
     LibraryStatsResponse,
     ListLibrariesResponse,
     ScanLibraryRequest,
     SearchFilesResponse,
     StartScanWithStatusResponse,
+    TagCleanupResponse,
     UniqueTagKeysResponse,
     UpdateLibraryRequest,
 )
@@ -337,6 +339,74 @@ async def get_unique_tag_values(
     except Exception as e:
         logging.exception("[Web API] Error getting unique tag values")
         raise HTTPException(status_code=500, detail=f"Error getting tag values: {e}") from e
+
+
+@router.post("/cleanup-tags", dependencies=[Depends(verify_session)])
+async def cleanup_orphaned_tags(
+    dry_run: bool = Query(False, description="Preview orphaned tags without deleting"),
+    library_service: "LibraryService" = Depends(get_library_service),
+) -> TagCleanupResponse:
+    """
+    Clean up orphaned tags (tags not referenced by any file).
+
+    This endpoint identifies and removes tags from the library_tags table that are
+    no longer referenced by any file in file_tags. Useful for database maintenance
+    after deleting files or changing tag structures.
+
+    Args:
+        dry_run: If True, only count orphaned tags without deleting them
+        library_service: LibraryService instance (injected)
+
+    Returns:
+        TagCleanupResponse with orphaned_count and deleted_count
+    """
+    try:
+        # Call service layer to cleanup orphaned tags (returns TagCleanupResult DTO)
+        result = library_service.cleanup_orphaned_tags(dry_run=dry_run)
+
+        # Transform DTO to Pydantic response
+        return TagCleanupResponse.from_dto(result)
+
+    except Exception as e:
+        logging.exception("[Web API] Error cleaning up orphaned tags")
+        raise HTTPException(status_code=500, detail=f"Error cleaning up tags: {e}") from e
+
+
+@router.get("/files/{file_id}/tags", dependencies=[Depends(verify_session)])
+async def get_file_tags(
+    file_id: int,
+    nomarr_only: bool = Query(False, description="Only return Nomarr-generated tags"),
+    library_service: "LibraryService" = Depends(get_library_service),
+) -> FileTagsResponse:
+    """
+    Get all tags for a specific file.
+
+    Returns the complete tag data for a library file, including tag keys,
+    values, types, and whether they are Nomarr-generated tags.
+
+    Args:
+        file_id: Library file ID to get tags for
+        nomarr_only: If True, only return Nomarr-generated tags
+        library_service: LibraryService instance (injected)
+
+    Returns:
+        FileTagsResponse with file_id, path, and list of tags
+
+    Raises:
+        HTTPException: 404 if file not found, 500 for other errors
+    """
+    try:
+        # Call service layer to get file tags (returns FileTagsResult DTO)
+        result = library_service.get_file_tags(file_id=file_id, nomarr_only=nomarr_only)
+
+        # Transform DTO to Pydantic response
+        return FileTagsResponse.from_dto(result)
+
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except Exception as e:
+        logging.exception(f"[Web API] Error getting tags for file {file_id}")
+        raise HTTPException(status_code=500, detail=f"Error getting file tags: {e}") from e
 
 
 @router.post("/{library_id}/scan", dependencies=[Depends(verify_session)])

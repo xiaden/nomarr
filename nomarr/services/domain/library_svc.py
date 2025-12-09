@@ -14,6 +14,7 @@ from nomarr.components.queue import get_queue_depth
 from nomarr.components.queue import list_jobs as list_jobs_component
 from nomarr.helpers.dto.library_dto import (
     FileTag,
+    FileTagsResult,
     LibraryDict,
     LibraryFileWithTags,
     LibraryScanStatusResult,
@@ -21,6 +22,7 @@ from nomarr.helpers.dto.library_dto import (
     SearchFilesResult,
     StartLibraryScanWorkflowParams,
     StartScanResult,
+    TagCleanupResult,
     UniqueTagKeysResult,
 )
 from nomarr.helpers.dto.queue_dto import Job
@@ -1081,3 +1083,61 @@ class LibraryService:
         count = remove_tags_from_file(validated_path, self.cfg.namespace)
 
         return count
+
+    def cleanup_orphaned_tags(self, dry_run: bool = False) -> TagCleanupResult:
+        """
+        Clean up orphaned tags from the database.
+
+        Args:
+            dry_run: If True, count orphaned tags but don't delete them
+
+        Returns:
+            TagCleanupResult DTO with orphaned_count and deleted_count
+        """
+        from nomarr.helpers.dto.library_dto import TagCleanupResult
+        from nomarr.workflows.library.cleanup_orphaned_tags_wf import cleanup_orphaned_tags_workflow
+
+        result = cleanup_orphaned_tags_workflow(self.db, dry_run=dry_run)
+        return TagCleanupResult(
+            orphaned_count=result["orphaned_count"],
+            deleted_count=result["deleted_count"],
+        )
+
+    def get_file_tags(self, file_id: int, nomarr_only: bool = False) -> FileTagsResult:
+        """
+        Get all tags for a specific file.
+
+        Args:
+            file_id: Library file ID
+            nomarr_only: If True, only return Nomarr-generated tags
+
+        Returns:
+            FileTagsResult DTO with file info and tags
+
+        Raises:
+            ValueError: If file not found
+        """
+        from nomarr.components.library.file_tags_comp import get_file_tags_with_path
+        from nomarr.helpers.dto.library_dto import FileTag, FileTagsResult
+
+        # Get file and tags from component
+        result = get_file_tags_with_path(self.db, file_id, nomarr_only=nomarr_only)
+        if not result:
+            raise ValueError(f"File with ID {file_id} not found")
+
+        # Convert to FileTag DTOs
+        tags = [
+            FileTag(
+                key=tag["key"],
+                value=str(tag["value"]),
+                type=tag["type"],
+                is_nomarr=tag["is_nomarr_tag"],
+            )
+            for tag in result["tags"]
+        ]
+
+        return FileTagsResult(
+            file_id=file_id,
+            path=result["path"],
+            tags=tags,
+        )

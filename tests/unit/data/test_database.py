@@ -10,6 +10,9 @@ from nomarr.persistence.db import (
     now_ms,
 )
 
+# Mark all tests in this module as unit tests
+pytestmark = pytest.mark.unit
+
 
 class TestDatabaseCleanupExpiredSessions:
     """Test Database.cleanup_expired_sessions() operations."""
@@ -342,14 +345,14 @@ class TestDatabaseGetTagTypeStats:
 
 
 class TestDatabaseGetTagValues:
-    """Test Database.get_tag_values() operations."""
+    """Test Database.get_unique_tag_values() operations."""
 
     def test_get_tag_values_success(self, test_db):
-        """Should successfully get tag values."""
+        """Should successfully get unique tag values."""
         # Arrange
 
         # Act
-        result = test_db.file_tags.get_tag_values(tag_key="test_value")
+        result = test_db.file_tags.get_unique_tag_values(tag_key="test_value", nomarr_only=False)
 
         # Assert
         assert isinstance(result, list)
