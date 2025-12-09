@@ -243,9 +243,6 @@ class LibraryFileWithTagsResponse(BaseModel):
     artist: str | None
     album: str | None
     title: str | None
-    genre: str | None
-    year: int | None
-    track_number: int | None
     calibration: str | None
     scanned_at: int | None
     last_tagged_at: int | None
@@ -284,9 +281,6 @@ class SearchFilesResponse(BaseModel):
                     artist=f.artist,
                     album=f.album,
                     title=f.title,
-                    genre=f.genre,
-                    year=f.year,
-                    track_number=f.track_number,
                     calibration=f.calibration,
                     scanned_at=f.scanned_at,
                     last_tagged_at=f.last_tagged_at,

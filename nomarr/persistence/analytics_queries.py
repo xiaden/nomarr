@@ -41,18 +41,19 @@ def fetch_tag_frequencies_data(
     # Get total file count
     _, total_count = db.library_files.list_library_files(limit=1)
 
-    # Count tags using file_tags table
+    # Count Nomarr tags using normalized schema (file_tags -> library_tags join)
     namespace_prefix = f"{namespace}:"
     cursor = db.conn.execute(
         """
-        SELECT tag_key, COUNT(DISTINCT file_id) as tag_count
-        FROM file_tags
-        WHERE tag_key LIKE ?
-        GROUP BY tag_key
+        SELECT lt.key, COUNT(DISTINCT ft.file_id) as tag_count
+        FROM file_tags ft
+        JOIN library_tags lt ON lt.id = ft.tag_id
+        WHERE lt.is_nomarr_tag = 1
+        GROUP BY lt.key
         ORDER BY tag_count DESC
         LIMIT ?
         """,
-        (f"{namespace_prefix}%", limit),
+        (limit,),
     )
     nom_tag_rows = cursor.fetchall()
 
@@ -70,13 +71,14 @@ def fetch_tag_frequencies_data(
     )
     artist_rows = artist_cursor.fetchall()
 
-    # Count genres
+    # Count genres from library_tags (genre is now a tag)
     genre_cursor = db.conn.execute(
         """
-        SELECT genre, COUNT(*) as count
-        FROM library_files
-        WHERE genre IS NOT NULL
-        GROUP BY genre
+        SELECT lt.value, COUNT(DISTINCT ft.file_id) as count
+        FROM file_tags ft
+        JOIN library_tags lt ON lt.id = ft.tag_id
+        WHERE lt.key = 'genre' AND lt.is_nomarr_tag = 0
+        GROUP BY lt.value
         ORDER BY count DESC
         LIMIT ?
         """,
@@ -123,34 +125,44 @@ def fetch_tag_correlation_data(
             "tier_tag_rows": {tag_key: [(file_id, tag_value), ...], ...}  # Tier tag data per key
         }
     """
-    mood_tag_keys = [
-        f"{namespace}:mood-strict",
-        f"{namespace}:mood-regular",
-        f"{namespace}:mood-loose",
-    ]
+    # Fetch mood tag data using normalized schema
+    mood_tag_keys = ["mood-strict", "mood-regular", "mood-loose"]
 
-    # Fetch all mood tag data
+    # Fetch all mood tag data (join file_tags -> library_tags)
     mood_tag_rows = []
     for tag_key in mood_tag_keys:
         cursor = db.conn.execute(
-            "SELECT file_id, tag_value, tag_type FROM file_tags WHERE tag_key = ?",
+            """
+            SELECT ft.file_id, lt.value, lt.type
+            FROM file_tags ft
+            JOIN library_tags lt ON lt.id = ft.tag_id
+            WHERE lt.key = ? AND lt.is_nomarr_tag = 1
+            """,
             (tag_key,),
         )
         mood_tag_rows.extend(cursor.fetchall())
 
-    # Get all *_tier tag keys
+    # Get all *_tier tag keys (Nomarr tags only)
     tier_cursor = db.conn.execute(
-        "SELECT DISTINCT tag_key FROM file_tags WHERE tag_key LIKE ? AND tag_key LIKE ?",
-        (f"{namespace}:%", "%_tier"),
+        """
+        SELECT DISTINCT lt.key
+        FROM library_tags lt
+        WHERE lt.key LIKE ? AND lt.is_nomarr_tag = 1
+        """,
+        ("%_tier",),
     )
     tier_tag_keys = [row[0] for row in tier_cursor.fetchall()]
 
-    # Fetch tier tag data for each key (we'll need this for correlation calc)
-    # Return as dict to keep query results organized by key
+    # Fetch tier tag data for each key using normalized schema
     tier_tag_rows = {}
     for tier_tag_key in tier_tag_keys:
         cursor = db.conn.execute(
-            "SELECT file_id, tag_value FROM file_tags WHERE tag_key = ?",
+            """
+            SELECT ft.file_id, lt.value
+            FROM file_tags ft
+            JOIN library_tags lt ON lt.id = ft.tag_id
+            WHERE lt.key = ?
+            """,
             (tier_tag_key,),
         )
         tier_tag_rows[tier_tag_key] = cursor.fetchall()
@@ -176,11 +188,16 @@ def fetch_mood_distribution_data(
     """
     mood_rows = []
 
+    # Fetch mood data using normalized schema
     for mood_type in ["mood-strict", "mood-regular", "mood-loose"]:
-        tag_key = f"{namespace}:{mood_type}"
         cursor = db.conn.execute(
-            "SELECT tag_value, tag_type FROM file_tags WHERE tag_key = ?",
-            (tag_key,),
+            """
+            SELECT lt.value, lt.type
+            FROM file_tags ft
+            JOIN library_tags lt ON lt.id = ft.tag_id
+            WHERE lt.key = ? AND lt.is_nomarr_tag = 1
+            """,
+            (mood_type,),
         )
         for tag_value, tag_type in cursor.fetchall():
             mood_rows.append((mood_type, tag_value, tag_type))
@@ -226,12 +243,13 @@ def fetch_artist_tag_profile_data(
 
         cursor = db.conn.execute(
             f"""
-            SELECT tag_key, tag_value, tag_type
-            FROM file_tags
-            WHERE file_id IN ({placeholders})
-              AND tag_key LIKE ?
+            SELECT lt.key, lt.value, lt.type
+            FROM file_tags ft
+            JOIN library_tags lt ON lt.id = ft.tag_id
+            WHERE ft.file_id IN ({placeholders})
+              AND lt.is_nomarr_tag = 1
             """,
-            (*batch_ids, f"{namespace}:%"),
+            (*batch_ids,),
         )
         tag_rows.extend(cursor.fetchall())
 
@@ -259,11 +277,8 @@ def fetch_mood_value_co_occurrence_data(
             "matching_file_ids": set[int]  # File IDs that contain the mood_value
         }
     """
-    mood_tag_keys = [
-        f"{namespace}:mood-strict",
-        f"{namespace}:mood-regular",
-        f"{namespace}:mood-loose",
-    ]
+    # Fetch mood tag data using normalized schema
+    mood_tag_keys = ["mood-strict", "mood-regular", "mood-loose"]
 
     # Fetch all mood tag data and identify matching files
     mood_tag_rows = []
@@ -271,7 +286,12 @@ def fetch_mood_value_co_occurrence_data(
 
     for tag_key in mood_tag_keys:
         cursor = db.conn.execute(
-            "SELECT file_id, tag_value, tag_type FROM file_tags WHERE tag_key = ?",
+            """
+            SELECT ft.file_id, lt.value, lt.type
+            FROM file_tags ft
+            JOIN library_tags lt ON lt.id = ft.tag_id
+            WHERE lt.key = ? AND lt.is_nomarr_tag = 1
+            """,
             (tag_key,),
         )
 

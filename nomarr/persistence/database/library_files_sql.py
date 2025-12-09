@@ -27,9 +27,6 @@ class LibraryFilesOperations:
         artist: str | None = None,
         album: str | None = None,
         title: str | None = None,
-        genre: str | None = None,
-        year: int | None = None,
-        track_number: int | None = None,
         calibration: str | None = None,
         last_tagged_at: int | None = None,
     ) -> int:
@@ -45,9 +42,6 @@ class LibraryFilesOperations:
             artist: Artist name
             album: Album name
             title: Track title
-            genre: Genre
-            year: Release year
-            track_number: Track number
             calibration: Calibration metadata as JSON (dict of model_key -> calibration_id)
             last_tagged_at: Last tagging timestamp
 
@@ -60,9 +54,9 @@ class LibraryFilesOperations:
             """
             INSERT INTO library_files(
                 path, library_id, file_size, modified_time, duration_seconds,
-                artist, album, title, genre, year, track_number,
+                artist, album, title,
                 calibration, scanned_at, last_tagged_at
-            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(path) DO UPDATE SET
                 library_id=excluded.library_id,
                 file_size=excluded.file_size,
@@ -71,9 +65,6 @@ class LibraryFilesOperations:
                 artist=excluded.artist,
                 album=excluded.album,
                 title=excluded.title,
-                genre=excluded.genre,
-                year=excluded.year,
-                track_number=excluded.track_number,
                 calibration=excluded.calibration,
                 scanned_at=excluded.scanned_at,
                 last_tagged_at=COALESCE(excluded.last_tagged_at, last_tagged_at)
@@ -87,9 +78,6 @@ class LibraryFilesOperations:
                 artist,
                 album,
                 title,
-                genre,
-                year,
-                track_number,
                 calibration,
                 scanned_at,
                 last_tagged_at,
@@ -187,8 +175,8 @@ class LibraryFilesOperations:
         count_query = f"SELECT COUNT(*) FROM library_files {where_clause}"
         total = int(self.conn.execute(count_query, params).fetchone()[0])
 
-        # Get paginated results
-        query = f"SELECT * FROM library_files {where_clause} ORDER BY artist, album, track_number LIMIT ? OFFSET ?"
+        # Get paginated results (sort by artist, album, title since track_number moved to tags)
+        query = f"SELECT * FROM library_files {where_clause} ORDER BY artist, album, title LIMIT ? OFFSET ?"
         params.extend([limit, offset])
         cur = self.conn.execute(query, params)
         columns = [desc[0] for desc in cur.description]

@@ -126,9 +126,6 @@ class LibraryFileWithTags:
     artist: str | None
     album: str | None
     title: str | None
-    genre: str | None
-    year: int | None
-    track_number: int | None
     calibration: str | None
     scanned_at: int | None
     last_tagged_at: int | None

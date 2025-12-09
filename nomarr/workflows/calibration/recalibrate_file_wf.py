@@ -326,15 +326,13 @@ def _update_db_and_file(
         namespace: Tag namespace
         mood_tags: Mood tags to write
     """
-    # Build namespaced tags for DB
-    namespaced_mood_tags = {f"{namespace}:{k}": v for k, v in mood_tags.items()}
+    # Store mood tags in DB WITHOUT namespace prefix (is_nomarr_tag=True indicates these are Nomarr tags)
+    # The database schema uses is_nomarr_tag flag instead of namespace prefix
+    db.file_tags.upsert_file_tags(file_id, mood_tags, is_nomarr_tag=True)
 
-    # Upsert mood tags in DB (these are Nomarr-generated tags)
-    db.file_tags.upsert_file_tags(file_id, namespaced_mood_tags, is_nomarr_tag=True)
+    logging.debug(f"[recalibration] Updated {len(mood_tags)} mood tags in DB")
 
-    logging.debug(f"[recalibration] Updated {len(namespaced_mood_tags)} mood tags in DB")
-
-    # Write mood-* tags to file
+    # Write mood-* tags to file (TagWriter handles namespace prefix for file tags)
     writer = TagWriter(overwrite=True, namespace=namespace)
     writer.write(file_path, mood_tags)
 

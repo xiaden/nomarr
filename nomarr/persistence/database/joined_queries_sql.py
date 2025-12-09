@@ -288,11 +288,12 @@ class JoinedQueryOperations:
             FROM (
                 SELECT * FROM library_files
                 {where_sql}
-                ORDER BY artist, album, track_number
+                ORDER BY artist, album, title
                 LIMIT ? OFFSET ?
             ) AS lf
             LEFT JOIN file_tags ON lf.id = file_tags.file_id
-            ORDER BY lf.artist, lf.album, lf.track_number, file_tags.tag_key
+            LEFT JOIN library_tags ON library_tags.id = file_tags.tag_id
+            ORDER BY lf.artist, lf.album, lf.title, library_tags.key
         """
         params_with_limit = [*params, limit, offset]
 

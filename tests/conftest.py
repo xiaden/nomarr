@@ -72,18 +72,18 @@ SCIPY_AVAILABLE, SCIPY_MODULE = _check_scipy()
 if not ESSENTIA_AVAILABLE:
     sys.modules["essentia"] = MagicMock()
     sys.modules["essentia.standard"] = MagicMock()
-    print("⚠️  Essentia not available - using mocks")
+    print("  Essentia not available - using mocks")
 
 if not TENSORFLOW_AVAILABLE:
     sys.modules["tensorflow"] = MagicMock()
     sys.modules["tensorflow.python"] = MagicMock()
     sys.modules["tensorflow.python.eager"] = MagicMock()
-    print("⚠️  TensorFlow not available - using mocks")
+    print("  TensorFlow not available - using mocks")
 
 if not SCIPY_AVAILABLE:
     sys.modules["scipy"] = MagicMock()
     sys.modules["scipy.signal"] = MagicMock()
-    print("⚠️  SciPy not available - using mocks")
+    print("  SciPy not available - using mocks")
 
 
 # === DEPENDENCY AVAILABILITY FIXTURES ===

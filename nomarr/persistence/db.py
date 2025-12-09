@@ -10,6 +10,7 @@ from nomarr.persistence.database.health_sql import HealthOperations
 from nomarr.persistence.database.libraries_sql import LibrariesOperations
 from nomarr.persistence.database.library_files_sql import LibraryFilesOperations
 from nomarr.persistence.database.library_queue_sql import LibraryQueueOperations
+from nomarr.persistence.database.library_tags_sql import LibraryTagOperations
 from nomarr.persistence.database.meta_sql import MetaOperations
 from nomarr.persistence.database.sessions_sql import SessionOperations
 
@@ -83,7 +84,8 @@ SCHEMA = [
     """
     CREATE INDEX IF NOT EXISTS idx_libraries_default ON libraries(is_default);
     """,
-    # Library files - tracks music library with metadata
+    # Library files - tracks music library with core metadata
+    # Note: genre and track_number moved to library_tags for normalization
     """
     CREATE TABLE IF NOT EXISTS library_files (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -95,9 +97,6 @@ SCHEMA = [
         artist TEXT,
         album TEXT,
         title TEXT,
-        genre TEXT,
-        year INTEGER,
-        track_number INTEGER,
         calibration TEXT,
         scanned_at INTEGER,
         last_tagged_at INTEGER,
@@ -145,30 +144,40 @@ SCHEMA = [
     """
     CREATE INDEX IF NOT EXISTS idx_calibration_queue_status ON calibration_queue(status);
     """,
-    # File tags - normalized tag storage for fast queries
+    # Library tags - normalized unique tag definitions (deduplication)
     """
-    CREATE TABLE IF NOT EXISTS file_tags (
+    CREATE TABLE IF NOT EXISTS library_tags (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        file_id INTEGER NOT NULL,
-        tag_key TEXT NOT NULL,
-        tag_value TEXT,
-        tag_type TEXT DEFAULT 'string',
+        key TEXT NOT NULL,
+        value TEXT NOT NULL,
+        type TEXT NOT NULL DEFAULT 'string',
         is_nomarr_tag INTEGER NOT NULL DEFAULT 0,
-        FOREIGN KEY (file_id) REFERENCES library_files(id) ON DELETE CASCADE
+        UNIQUE(key, value, is_nomarr_tag)
     );
     """,
-    # Indexes for fast tag queries
+    # Indexes for fast tag lookups
     """
-    CREATE INDEX IF NOT EXISTS idx_file_tags_file_id ON file_tags(file_id);
+    CREATE INDEX IF NOT EXISTS idx_library_tags_key ON library_tags(key);
     """,
     """
-    CREATE INDEX IF NOT EXISTS idx_file_tags_key ON file_tags(tag_key);
+    CREATE INDEX IF NOT EXISTS idx_library_tags_key_value ON library_tags(key, value);
     """,
     """
-    CREATE INDEX IF NOT EXISTS idx_file_tags_key_value ON file_tags(tag_key, tag_value);
+    CREATE INDEX IF NOT EXISTS idx_library_tags_nomarr ON library_tags(is_nomarr_tag);
     """,
+    # File tags - many-to-many association between files and tags
     """
-    CREATE INDEX IF NOT EXISTS idx_file_tags_nomarr ON file_tags(is_nomarr_tag);
+    CREATE TABLE IF NOT EXISTS file_tags (
+        file_id INTEGER NOT NULL,
+        tag_id INTEGER NOT NULL,
+        PRIMARY KEY (file_id, tag_id),
+        FOREIGN KEY (file_id) REFERENCES library_files(id) ON DELETE CASCADE,
+        FOREIGN KEY (tag_id) REFERENCES library_tags(id) ON DELETE CASCADE
+    );
+    """,
+    # Index for reverse tag lookup (which files have this tag)
+    """
+    CREATE INDEX IF NOT EXISTS idx_file_tags_tag_id ON file_tags(tag_id);
     """,
     # Sessions - persistent session storage for web UI
     """
@@ -228,7 +237,7 @@ SCHEMA = [
     """,
 ]
 
-# Schema version (pre-alpha, no migrations yet - just initial schema)
+# Schema version (pre-alpha, no migrations - just delete DB on breaking changes)
 SCHEMA_VERSION = 1
 
 
@@ -272,6 +281,7 @@ class Database:
         self.tag_queue = QueueOperations(self.conn)
         self.library_files = LibraryFilesOperations(self.conn)
         self.library_queue = LibraryQueueOperations(self.conn)
+        self.library_tags = LibraryTagOperations(self.conn)
         self.file_tags = FileTagOperations(self.conn)
         self.sessions = SessionOperations(self.conn)
         self.calibration_queue = CalibrationQueueOperations(self.conn)

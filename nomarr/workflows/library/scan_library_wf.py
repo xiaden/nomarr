@@ -134,9 +134,6 @@ def update_library_file_from_tags(
             artist=metadata.get("artist"),
             album=metadata.get("album"),
             title=metadata.get("title"),
-            genre=metadata.get("genre"),
-            year=metadata.get("year"),
-            track_number=metadata.get("track_number"),
             calibration=calibration_json,
         )
 
@@ -146,6 +143,15 @@ def update_library_file_from_tags(
             # Parse all_tags (external metadata) and nom_tags (Nomarr-generated)
             all_tags = metadata.get("all_tags", {})
             nom_tags = metadata.get("nom_tags", {})
+
+            # Add genre, year, track_number to all_tags if they exist
+            # (these are now stored as tags instead of library_files columns)
+            if metadata.get("genre"):
+                all_tags["genre"] = metadata["genre"]
+            if metadata.get("year"):
+                all_tags["year"] = metadata["year"]
+            if metadata.get("track_number"):
+                all_tags["track_number"] = metadata["track_number"]
 
             parsed_all_tags = _parse_tag_values(all_tags) if all_tags else {}
             parsed_nom_tags = _parse_tag_values(nom_tags) if nom_tags else {}
