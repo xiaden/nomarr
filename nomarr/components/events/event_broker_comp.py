@@ -520,13 +520,21 @@ class StateBroker:
         event["timestamp"] = int(time.time() * 1000)
 
         matched_clients = 0
-        for client_id, client_info in self._clients.items():
+        for _client_id, client_info in self._clients.items():
             if self._topic_matches(topic, client_info["topics"]):
                 try:
                     client_info["queue"].put_nowait(event)
                     matched_clients += 1
                 except queue.Full:
-                    logging.warning(f"[StateBroker] Client {client_id} queue full, dropping event for topic {topic}")
+                    # Queue full (e.g., inactive browser tab)
+                    # Drop oldest event and add new one (state updates are idempotent)
+                    try:
+                        client_info["queue"].get_nowait()  # Remove oldest
+                        client_info["queue"].put_nowait(event)  # Add newest
+                        matched_clients += 1
+                    except (queue.Empty, queue.Full):
+                        # Race condition or still full - just drop this event
+                        pass
 
         if matched_clients > 0:
             logging.debug(f"[StateBroker] Broadcast {topic} to {matched_clients} clients")

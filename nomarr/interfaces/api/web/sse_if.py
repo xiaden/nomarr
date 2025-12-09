@@ -19,7 +19,10 @@ router = APIRouter(prefix="/events", tags=["SSE"])
 
 
 @router.get("/status")
-async def web_sse_status(token: str) -> StreamingResponse:
+async def web_sse_status(
+    token: str,
+    topics: str = "queue:status,queue:jobs,worker:tag:*:status",
+) -> StreamingResponse:
     """
     Server-Sent Events endpoint for real-time system status updates.
     Requires session token as query parameter for authentication.
@@ -28,6 +31,15 @@ async def web_sse_status(token: str) -> StreamingResponse:
     - Queue statistics (pending/running/completed counts)
     - Active job state (progress, current head being processed)
     - Worker state (files being processed, progress)
+
+    Args:
+        token: Session token for authentication
+        topics: Comma-separated list of topic patterns to subscribe to
+                Default: "queue:status,queue:jobs,worker:tag:*:status"
+                Examples:
+                - "queue:status,queue:jobs" - Only queue stats and jobs
+                - "worker:tag:*:status" - Only tag workers
+                - "worker:*:status" - All workers (all queue types)
     """
     # Verify session token
     if not validate_session(token):
@@ -39,8 +51,13 @@ async def web_sse_status(token: str) -> StreamingResponse:
     if not event_broker:
         raise HTTPException(status_code=503, detail="Event broker not available")
 
+    # Parse topics from query parameter
+    topic_list = [t.strip() for t in topics.split(",") if t.strip()]
+    if not topic_list:
+        topic_list = ["queue:status", "queue:jobs", "worker:tag:*:status"]
+
     # Subscribe to state broker
-    client_id, event_queue = event_broker.subscribe(["queue:status", "queue:jobs", "worker:*:status"])
+    client_id, event_queue = event_broker.subscribe(topic_list)
 
     async def event_generator():
         """Generate SSE events from state broker."""
