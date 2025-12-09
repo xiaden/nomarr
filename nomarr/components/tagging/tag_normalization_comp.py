@@ -2,172 +2,197 @@
 Tag normalization component for cross-format metadata standardization.
 
 Maps format-specific tag names (MP4 atoms, ID3 frames, Vorbis comments) to
-normalized common names that work across all audio formats.
+a small canonical set of normalized names.
 
-Example:
-    MP4 'aART', ID3 'TPE2', FLAC 'ALBUMARTIST' → all become 'album_artist'
+Canonical tag set:
+- title, artist, artists, album, album_artist
+- tracknumber, discnumber
+- date, year, genre
+- composer, lyricist, label, publisher
+- bpm
+- nom:* (namespaced Nomarr tags)
+
+Everything else is discarded.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-# Map MP4 atoms to normalized tag names
+# Canonical tag set - only these keys (plus nom:*) will be kept
+CANONICAL_TAGS = {
+    "title",
+    "artist",
+    "artists",
+    "album",
+    "album_artist",
+    "tracknumber",
+    "discnumber",
+    "date",
+    "year",
+    "genre",
+    "composer",
+    "lyricist",
+    "label",
+    "publisher",
+    "bpm",
+}
+
+# MP4 atoms to canonical tag names (ONLY canonical mappings)
 MP4_TAG_MAP: dict[str, str] = {
-    # Basic metadata
     "\xa9nam": "title",
     "\xa9ART": "artist",
     "\xa9alb": "album",
     "aART": "album_artist",
     "\xa9gen": "genre",
     "\xa9day": "date",
-    "\xa9cmt": "comment",
-    # Track/disc info
-    "trkn": "track",  # Note: MP4 track is tuple (track, total)
-    "disk": "disc",  # Note: MP4 disc is tuple (disc, total)
-    # Extended metadata
+    "trkn": "tracknumber",  # Note: MP4 track is tuple (track, total)
+    "disk": "discnumber",  # Note: MP4 disc is tuple (disc, total)
     "\xa9wrt": "composer",
-    "\xa9lyr": "lyrics",
-    "cprt": "copyright",
     "tmpo": "bpm",
-    # Sort order tags
-    "soar": "sort_artist",
-    "soaa": "sort_album_artist",
-    "soal": "sort_album",
-    "sonm": "sort_title",
-    "soco": "sort_composer",
-    # Additional iTunes tags
-    "covr": "cover_art",
-    "\xa9grp": "grouping",
-    "pcst": "podcast",
-    "catg": "category",
-    "desc": "description",
-    "ldes": "long_description",
-    # Ratings and playback
-    "rtng": "rating",
-    "\xa9too": "encoder",
-    # Compilation flag
-    "cpil": "compilation",
 }
 
-# Map ID3 frames to normalized tag names
+# MP4 freeform iTunes tags (----:com.apple.iTunes:*) - canonical only
+MP4_FREEFORM_MAP: dict[str, str] = {
+    "ARTISTS": "artists",
+    "LABEL": "label",
+    "originaldate": "date",
+    "originalyear": "year",
+}
+
+# Explicitly DROP these MP4 freeform tags (for documentation/clarity)
+MP4_FREEFORM_BLOCKLIST = {
+    "Acoustid Fingerprint",
+    "ASIN",
+    "BARCODE",
+    "CATALOGNUMBER",
+    "ENGINEER",
+    "MIXER",
+    "PRODUCER",
+    "LANGUAGE",
+    "MEDIA",
+    "SCRIPT",
+    "iTunNORM",
+    "iTunSMPB",
+    "initialkey",
+}
+
+# ID3 frames to canonical tag names (ONLY canonical mappings)
 ID3_TAG_MAP: dict[str, str] = {
-    # Basic metadata
     "TIT2": "title",
     "TPE1": "artist",
     "TALB": "album",
     "TPE2": "album_artist",
     "TCON": "genre",
     "TDRC": "date",  # Recording date
-    "TYER": "date",  # Year (legacy)
-    "COMM": "comment",
-    # Track/disc info
-    "TRCK": "track",  # Format: "5/12"
-    "TPOS": "disc",  # Format: "1/2"
-    # Extended metadata
+    "TYER": "year",  # Year (legacy)
+    "TRCK": "tracknumber",  # Format: "5/12"
+    "TPOS": "discnumber",  # Format: "1/2"
     "TCOM": "composer",
-    "USLT": "lyrics",
-    "TCOP": "copyright",
+    "TEXT": "lyricist",
+    "TPUB": "publisher",
     "TBPM": "bpm",
-    # Sort order tags
-    "TSOP": "sort_artist",
-    "TSO2": "sort_album_artist",
-    "TSOA": "sort_album",
-    "TSOT": "sort_title",
-    "TSOC": "sort_composer",
-    # Additional tags
-    "APIC": "cover_art",
-    "TIT1": "grouping",  # Content group
-    "PCST": "podcast",
-    "TCAT": "category",
-    "TDES": "description",
-    # Ratings and playback
-    "POPM": "rating",  # Popularimeter
-    "TENC": "encoder",
-    "TSSE": "encoder",  # Software/hardware settings
-    # Compilation flag
-    "TCMP": "compilation",
 }
 
-# Map Vorbis comment keys to normalized tag names (case-insensitive)
+# ID3 TXXX (user-defined) mappings - canonical only
+ID3_TXXX_MAP: dict[str, str] = {
+    "ARTISTS": "artists",
+    "artists": "artists",
+    "LABEL": "label",
+    "label": "label",
+}
+
+# Vorbis comment keys to canonical tag names (case-insensitive, ONLY canonical mappings)
 VORBIS_TAG_MAP: dict[str, str] = {
-    # Basic metadata
     "TITLE": "title",
     "ARTIST": "artist",
+    "ARTISTS": "artists",
     "ALBUM": "album",
     "ALBUMARTIST": "album_artist",
     "GENRE": "genre",
     "DATE": "date",
-    "COMMENT": "comment",
-    # Track/disc info
-    "TRACKNUMBER": "track",
-    "DISCNUMBER": "disc",
-    "TRACKTOTAL": "track_total",
-    "DISCTOTAL": "disc_total",
-    # Extended metadata
+    "YEAR": "year",
+    "TRACKNUMBER": "tracknumber",
+    "DISCNUMBER": "discnumber",
     "COMPOSER": "composer",
-    "LYRICS": "lyrics",
-    "COPYRIGHT": "copyright",
+    "LYRICIST": "lyricist",
+    "LABEL": "label",
+    "PUBLISHER": "publisher",
     "BPM": "bpm",
-    # Sort order tags (non-standard but used by some taggers)
-    "ARTISTSORT": "sort_artist",
-    "ALBUMARTISTSORT": "sort_album_artist",
-    "ALBUMSORT": "sort_album",
-    "TITLESORT": "sort_title",
-    "COMPOSERSORT": "sort_composer",
-    # Additional tags
-    "COVERART": "cover_art",
-    "METADATA_BLOCK_PICTURE": "cover_art",
-    "GROUPING": "grouping",
-    "PERFORMER": "performer",
-    "DESCRIPTION": "description",
-    # Ratings and encoding
-    "RATING": "rating",
-    "ENCODER": "encoder",
-    # Compilation flag
-    "COMPILATION": "compilation",
+    "TEMPO": "bpm",
 }
 
 
 def normalize_mp4_tags(tags: Any) -> dict[str, str]:
     """
-    Normalize MP4 tags to common tag names.
+    Normalize MP4 tags to canonical tag names only.
+
+    Only keeps canonical tags (title, artist, album, etc.) and nom:* namespaced tags.
+    Drops cover art, sort tags, iTunes metadata, Acoustid fingerprints, etc.
 
     Args:
         tags: MP4 tags dict-like object from mutagen
 
     Returns:
-        Dict with normalized tag names and serialized values
+        Dict with canonical tag names and serialized values (+ nom:* tags)
     """
     normalized: dict[str, str] = {}
 
     for key, value in tags.items():
+        # Skip cover art (binary data, don't serialize)
+        if key == "covr":
+            continue
+
         # Handle freeform iTunes tags (----:com.apple.iTunes:*)
         if isinstance(key, str) and key.startswith("----:com.apple.iTunes:"):
             tag_name = key.replace("----:com.apple.iTunes:", "")
-            # Only include namespace-prefixed tags (nom:, ab:, etc.)
-            if ":" in tag_name:
-                # Keep freeform tags with their original names (after prefix removal)
+
+            # Keep nom:* namespaced tags
+            if tag_name.startswith("nom:"):
                 normalized[tag_name] = _serialize_value(value)
+                continue
+
+            # Drop blocklisted tags (Acoustid, iTunNORM, etc.)
+            if tag_name in MP4_FREEFORM_BLOCKLIST:
+                continue
+
+            # Drop old auto-tagging noise (ab:*, z_*)
+            if tag_name.startswith(("ab:", "z_")):
+                continue
+
+            # Map canonical freeform tags (ARTISTS, LABEL, originaldate, etc.)
+            if tag_name in MP4_FREEFORM_MAP:
+                norm_key = MP4_FREEFORM_MAP[tag_name]
+                normalized[norm_key] = _serialize_value(value)
+
             continue
 
-        # Map standard atoms to normalized names
+        # Map standard atoms to canonical names
         if key in MP4_TAG_MAP:
             norm_key = MP4_TAG_MAP[key]
             normalized[norm_key] = _serialize_value(value)
 
-    return normalized
+    # Filter to only canonical tags + nom:*
+    filtered: dict[str, str] = {}
+    for key, value in normalized.items():
+        if key.startswith("nom:") or key in CANONICAL_TAGS:
+            filtered[key] = value
+
+    return filtered
 
 
 def normalize_id3_tags(tags: Any) -> dict[str, str]:
     """
-    Normalize ID3 tags to common tag names.
+    Normalize ID3 tags to canonical tag names only.
+
+    Only keeps canonical tags and nom:* namespaced tags.
+    Drops cover art (APIC), lyrics (USLT), and other non-canonical frames.
 
     Args:
         tags: ID3 tags dict-like object from mutagen
 
     Returns:
-        Dict with normalized tag names and serialized values
+        Dict with canonical tag names and serialized values (+ nom:* tags)
     """
     normalized: dict[str, str] = {}
 
@@ -175,30 +200,51 @@ def normalize_id3_tags(tags: Any) -> dict[str, str]:
         # Handle TXXX frames (user-defined text)
         if isinstance(key, str) and key.startswith("TXXX:"):
             tag_name = key[5:]  # Remove "TXXX:" prefix
-            # Only include namespace-prefixed tags (nom:, ab:, etc.)
-            if ":" in tag_name:
+
+            # Keep nom:* namespaced tags
+            if tag_name.startswith("nom:"):
                 normalized[tag_name] = _serialize_value(value)
+                continue
+
+            # Map canonical TXXX tags (case-insensitive check)
+            tag_name_upper = tag_name.upper()
+            if tag_name_upper in ID3_TXXX_MAP:
+                norm_key = ID3_TXXX_MAP[tag_name_upper]
+                normalized[norm_key] = _serialize_value(value)
+
             continue
 
-        # Map standard frames to normalized names
-        # Extract frame type (first 4 chars)
+        # Skip binary/picture frames (APIC, GEOB, etc.)
         frame_type = key[:4] if isinstance(key, str) and len(key) >= 4 else key
+        if frame_type in ("APIC", "GEOB", "USLT", "SYLT"):
+            continue
+
+        # Map standard frames to canonical names
         if frame_type in ID3_TAG_MAP:
             norm_key = ID3_TAG_MAP[frame_type]
             normalized[norm_key] = _serialize_value(value)
 
-    return normalized
+    # Filter to only canonical tags + nom:*
+    filtered: dict[str, str] = {}
+    for key, value in normalized.items():
+        if key.startswith("nom:") or key in CANONICAL_TAGS:
+            filtered[key] = value
+
+    return filtered
 
 
 def normalize_vorbis_tags(tags: Any) -> dict[str, str]:
     """
-    Normalize Vorbis comments to common tag names.
+    Normalize Vorbis comments to canonical tag names only.
+
+    Only keeps canonical tags and nom:* namespaced tags.
+    Drops cover art (METADATA_BLOCK_PICTURE), lyrics, and other non-canonical fields.
 
     Args:
         tags: Vorbis comments dict-like object from mutagen (FLAC, Ogg, etc.)
 
     Returns:
-        Dict with normalized tag names and serialized values
+        Dict with canonical tag names and serialized values (+ nom:* tags)
     """
     normalized: dict[str, str] = {}
 
@@ -206,18 +252,27 @@ def normalize_vorbis_tags(tags: Any) -> dict[str, str]:
         # Vorbis comments are case-insensitive
         key_upper = key.upper()
 
-        # Handle namespace-prefixed tags (nom:, ab:, etc.)
-        if ":" in key:
-            # Keep namespace tags with original casing
+        # Skip picture/cover art fields (binary data)
+        if key_upper in ("METADATA_BLOCK_PICTURE", "COVERART", "COVERARTMIME"):
+            continue
+
+        # Keep nom:* namespaced tags (preserve original casing)
+        if key.lower().startswith("nom:"):
             normalized[key] = _serialize_value(value)
             continue
 
-        # Map standard Vorbis fields to normalized names
+        # Map standard Vorbis fields to canonical names
         if key_upper in VORBIS_TAG_MAP:
             norm_key = VORBIS_TAG_MAP[key_upper]
             normalized[norm_key] = _serialize_value(value)
 
-    return normalized
+    # Filter to only canonical tags + nom:*
+    filtered: dict[str, str] = {}
+    for key, value in normalized.items():
+        if key.startswith("nom:") or key in CANONICAL_TAGS:
+            filtered[key] = value
+
+    return filtered
 
 
 def _serialize_value(value: Any) -> str:

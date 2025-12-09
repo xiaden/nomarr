@@ -13,7 +13,6 @@ import os
 from typing import Any
 
 import mutagen  # type: ignore[import-untyped]
-from mutagen.easyid3 import EasyID3
 from mutagen.flac import FLAC
 from mutagen.id3 import ID3
 from mutagen.mp4 import MP4
@@ -23,6 +22,67 @@ from nomarr.components.tagging.tag_normalization_comp import (
     normalize_mp4_tags,
     normalize_vorbis_tags,
 )
+
+
+def resolve_artists(all_tags: dict[str, str]) -> tuple[str | None, str | None]:
+    """
+    Resolve artist and artists tags with deduplication and fallback logic.
+
+    Resolution rules:
+    - If BOTH exist: Keep artist as single value, artists as multi-value list
+    - If ONLY artists exists: Extract first as artist, keep full list as artists
+    - If ONLY artist exists: Use same value for both
+    - If neither exists: Return (None, None)
+
+    Args:
+        all_tags: Dict of normalized tags (may contain "artist" and/or "artists")
+
+    Returns:
+        Tuple of (artist_value, artists_value) - both strings or None
+    """
+    artist_value = all_tags.get("artist")
+    artists_value = all_tags.get("artists")
+
+    # Neither exists - return None for both
+    if not artist_value and not artists_value:
+        return (None, None)
+
+    # Process artists field - split, deduplicate, rejoin
+    if artists_value:
+        # Split on common separators
+        artists_list = []
+        for sep in (";", ",", "/", " / "):
+            if sep in artists_value:
+                artists_list = [a.strip() for a in artists_value.split(sep)]
+                break
+        else:
+            # No separator found - single value
+            artists_list = [artists_value.strip()]
+
+        # Deduplicate while preserving order
+        seen = set()
+        deduplicated = []
+        for a in artists_list:
+            if a and a not in seen:
+                seen.add(a)
+                deduplicated.append(a)
+
+        artists_value = "; ".join(deduplicated) if deduplicated else None
+
+    # Case 1: Both exist - keep both as-is
+    if artist_value and artists_value:
+        return (artist_value, artists_value)
+
+    # Case 2: Only artists exists - extract first as artist
+    if artists_value:
+        first_artist = artists_value.split(";")[0].strip() if ";" in artists_value else artists_value
+        return (first_artist, artists_value)
+
+    # Case 3: Only artist exists - use for both
+    if artist_value:
+        return (artist_value, artist_value)
+
+    return (None, None)
 
 
 def extract_metadata(file_path: str, namespace: str = "nom") -> dict[str, Any]:
@@ -104,28 +164,44 @@ def _extract_mp4_metadata(audio: Any, metadata: dict[str, Any], namespace: str) 
     if not isinstance(audio, MP4) or not audio.tags:
         return
 
-    # Standard metadata (extract directly for library_files table)
-    metadata["artist"] = _get_first(audio.tags, "\xa9ART")
-    metadata["album"] = _get_first(audio.tags, "\xa9alb")
-    metadata["title"] = _get_first(audio.tags, "\xa9nam")
-    metadata["genre"] = _get_first(audio.tags, "\xa9gen")
-    year_str = _get_first(audio.tags, "\xa9day")
+    # Normalize ALL tags to canonical names first (for file_tags table)
+    metadata["all_tags"] = normalize_mp4_tags(audio.tags)
+
+    # Resolve artist/artists with deduplication
+    artist_value, artists_value = resolve_artists(metadata["all_tags"])
+
+    # Set standard metadata for library_files table
+    metadata["title"] = metadata["all_tags"].get("title")
+    metadata["artist"] = artist_value
+    metadata["album"] = metadata["all_tags"].get("album")
+    metadata["genre"] = metadata["all_tags"].get("genre")
+
+    # Parse year from date
+    year_str = metadata["all_tags"].get("year") or metadata["all_tags"].get("date")
     if year_str:
         try:
             metadata["year"] = int(year_str[:4])
         except (ValueError, IndexError):
             pass
-    track = _get_first(audio.tags, "trkn")
-    if track and isinstance(track, tuple) and len(track) > 0:
-        metadata["track_number"] = track[0]
 
-    # Normalize ALL tags to common names (for file_tags table)
-    metadata["all_tags"] = normalize_mp4_tags(audio.tags)
+    # Parse track number (may be "10/10" format from normalized tags)
+    track_str = metadata["all_tags"].get("tracknumber")
+    if track_str:
+        try:
+            metadata["track_number"] = int(track_str.split("/")[0])
+        except (ValueError, IndexError):
+            pass
 
-    # Extract namespace tags (nom:*, ab:*, etc.) - store WITHOUT namespace prefix
+    # Update all_tags with resolved artist/artists
+    if artist_value:
+        metadata["all_tags"]["artist"] = artist_value
+    if artists_value:
+        metadata["all_tags"]["artists"] = artists_value
+
+    # Extract namespace tags (nom:*) - store WITHOUT namespace prefix
     nom_tags: dict[str, str] = {}
     for key, value in metadata["all_tags"].items():
-        if ":" in key and key.startswith(f"{namespace}:"):
+        if key.startswith(f"{namespace}:"):
             tag_key = key[len(namespace) + 1 :]  # Remove "nom:" prefix
             nom_tags[tag_key] = value
     metadata["nom_tags"] = nom_tags
@@ -136,31 +212,44 @@ def _extract_flac_metadata(audio: Any, metadata: dict[str, Any], namespace: str)
     if not isinstance(audio, FLAC):
         return
 
-    # Standard metadata (extract directly for library_files table)
-    metadata["artist"] = _get_first(audio, "ARTIST")
-    metadata["album"] = _get_first(audio, "ALBUM")
-    metadata["title"] = _get_first(audio, "TITLE")
-    metadata["genre"] = _get_first(audio, "GENRE")
-    year_str = _get_first(audio, "DATE")
+    # Normalize ALL tags to canonical names first (for file_tags table)
+    metadata["all_tags"] = normalize_vorbis_tags(dict(audio))
+
+    # Resolve artist/artists with deduplication
+    artist_value, artists_value = resolve_artists(metadata["all_tags"])
+
+    # Set standard metadata for library_files table
+    metadata["title"] = metadata["all_tags"].get("title")
+    metadata["artist"] = artist_value
+    metadata["album"] = metadata["all_tags"].get("album")
+    metadata["genre"] = metadata["all_tags"].get("genre")
+
+    # Parse year from date
+    year_str = metadata["all_tags"].get("year") or metadata["all_tags"].get("date")
     if year_str:
         try:
             metadata["year"] = int(year_str[:4])
         except (ValueError, IndexError):
             pass
-    track_str = _get_first(audio, "TRACKNUMBER")
+
+    # Parse track number
+    track_str = metadata["all_tags"].get("tracknumber")
     if track_str:
         try:
             metadata["track_number"] = int(track_str.split("/")[0])
         except (ValueError, IndexError):
             pass
 
-    # Normalize ALL tags to common names (for file_tags table)
-    metadata["all_tags"] = normalize_vorbis_tags(dict(audio))
+    # Update all_tags with resolved artist/artists
+    if artist_value:
+        metadata["all_tags"]["artist"] = artist_value
+    if artists_value:
+        metadata["all_tags"]["artists"] = artists_value
 
-    # Extract namespace tags (nom:*, ab:*, etc.) - store WITHOUT namespace prefix
+    # Extract namespace tags (nom:*) - store WITHOUT namespace prefix
     nom_tags: dict[str, str] = {}
     for key, value in metadata["all_tags"].items():
-        if ":" in key and key.lower().startswith(f"{namespace.lower()}:"):
+        if key.lower().startswith(f"{namespace.lower()}:"):
             tag_key = key[len(namespace) + 1 :]  # Remove "nom:" prefix
             nom_tags[tag_key] = value
     metadata["nom_tags"] = nom_tags
@@ -168,37 +257,46 @@ def _extract_flac_metadata(audio: Any, metadata: dict[str, Any], namespace: str)
 
 def _extract_mp3_metadata(file_path: str, metadata: dict[str, Any], namespace: str) -> None:
     """Extract metadata from MP3 files using ID3 tags."""
-    # Try EasyID3 for standard metadata (for library_files table)
+    # Use ID3 for detailed tags - normalize to canonical names (for file_tags table)
     try:
-        easy = EasyID3(file_path)
-        metadata["artist"] = _get_first(easy, "artist")
-        metadata["album"] = _get_first(easy, "album")
-        metadata["title"] = _get_first(easy, "title")
-        metadata["genre"] = _get_first(easy, "genre")
-        year_str = _get_first(easy, "date")
+        id3 = ID3(file_path)
+        metadata["all_tags"] = normalize_id3_tags(dict(id3))
+
+        # Resolve artist/artists with deduplication
+        artist_value, artists_value = resolve_artists(metadata["all_tags"])
+
+        # Set standard metadata for library_files table
+        metadata["title"] = metadata["all_tags"].get("title")
+        metadata["artist"] = artist_value
+        metadata["album"] = metadata["all_tags"].get("album")
+        metadata["genre"] = metadata["all_tags"].get("genre")
+
+        # Parse year from date
+        year_str = metadata["all_tags"].get("year") or metadata["all_tags"].get("date")
         if year_str:
             try:
                 metadata["year"] = int(year_str[:4])
             except (ValueError, IndexError):
                 pass
-        track_str = _get_first(easy, "tracknumber")
+
+        # Parse track number
+        track_str = metadata["all_tags"].get("tracknumber")
         if track_str:
             try:
                 metadata["track_number"] = int(track_str.split("/")[0])
             except (ValueError, IndexError):
                 pass
-    except Exception:
-        pass
 
-    # Try ID3 for detailed tags - normalize ALL tags to common names (for file_tags table)
-    try:
-        id3 = ID3(file_path)
-        metadata["all_tags"] = normalize_id3_tags(dict(id3))
+        # Update all_tags with resolved artist/artists
+        if artist_value:
+            metadata["all_tags"]["artist"] = artist_value
+        if artists_value:
+            metadata["all_tags"]["artists"] = artists_value
 
-        # Extract namespace tags (nom:*, ab:*, etc.) - store WITHOUT namespace prefix
+        # Extract namespace tags (nom:*) - store WITHOUT namespace prefix
         nom_tags: dict[str, str] = {}
         for key, value in metadata["all_tags"].items():
-            if ":" in key and key.startswith(f"{namespace}:"):
+            if key.startswith(f"{namespace}:"):
                 tag_key = key[len(namespace) + 1 :]  # Remove "nom:" prefix
                 nom_tags[tag_key] = value
         metadata["nom_tags"] = nom_tags
