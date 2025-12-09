@@ -1,16 +1,17 @@
-"""Library components for file search and management."""
+"""
+Library package.
+"""
 
-from nomarr.components.library.metadata_extraction_comp import extract_metadata
-from nomarr.components.library.search_files_comp import (
+from .metadata_extraction_comp import extract_metadata
+from .search_files_comp import (
     get_unique_tag_keys,
+    get_unique_tag_values,
     search_library_files,
 )
 
 __all__ = [
     "extract_metadata",
     "get_unique_tag_keys",
-    "normalize_id3_tags",
-    "normalize_mp4_tags",
-    "normalize_vorbis_tags",
+    "get_unique_tag_values",
     "search_library_files",
 ]

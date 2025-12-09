@@ -1,4 +1,6 @@
-"""Domain services - business logic."""
+"""
+Domain package.
+"""
 
 from .analytics_svc import AnalyticsConfig, AnalyticsService
 from .calibration_svc import CalibrationConfig, CalibrationService

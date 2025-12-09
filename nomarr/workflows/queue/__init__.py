@@ -1,4 +1,6 @@
-"""Queue workflows - orchestrate queue operations using components."""
+"""
+Queue package.
+"""
 
 from .clear_queue_wf import (
     clear_all_workflow,

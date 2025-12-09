@@ -20,11 +20,9 @@ max_import_line_length: 88
 # Packages with custom __init__.py logic (excluded from auto-generation)
 # Paths are relative to the nomarr/ directory
 excluded_packages:
-  # Interface layer - custom routing and API structures
-  - nomarr/interfaces/api
-  - nomarr/interfaces/api/v1
-  - nomarr/interfaces/api/web
-  - nomarr/interfaces/cli
+  # Interface layer - only web has custom router logic (auto-detected via "from .router import")
+  - nomarr/interfaces/api  # Has custom selective exports
+  - nomarr/interfaces/cli  # Has custom CLI structure
   
   # Service layer - manually curated service exports
   - nomarr/services
