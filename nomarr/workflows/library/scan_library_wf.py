@@ -40,6 +40,7 @@ from typing import TYPE_CHECKING, Any
 
 import mutagen  # type: ignore[import-untyped]
 from mutagen.easyid3 import EasyID3
+from mutagen.flac import FLAC
 from mutagen.id3 import ID3
 from mutagen.mp4 import MP4
 
@@ -206,6 +207,166 @@ def update_library_file_from_tags(
         logging.warning(f"[library_scanner] Failed to update library for {file_path}: {e}")
 
 
+def _extract_mp4_metadata(audio: Any, metadata: dict[str, Any], namespace: str) -> None:
+    """Extract metadata from M4A/MP4 files using MP4 atoms."""
+    if not isinstance(audio, MP4) or not audio.tags:
+        return
+
+    # Standard metadata
+    metadata["artist"] = _get_first(audio.tags, "\xa9ART")
+    metadata["album"] = _get_first(audio.tags, "\xa9alb")
+    metadata["title"] = _get_first(audio.tags, "\xa9nam")
+    metadata["genre"] = _get_first(audio.tags, "\xa9gen")
+    year_str = _get_first(audio.tags, "\xa9day")
+    if year_str:
+        try:
+            metadata["year"] = int(year_str[:4])
+        except (ValueError, IndexError):
+            pass
+    track = _get_first(audio.tags, "trkn")
+    if track and isinstance(track, tuple) and len(track) > 0:
+        metadata["track_number"] = track[0]
+
+    # Filter tags (standard music metadata + namespace tags)
+    filtered_tags = {}
+    for k, v in audio.tags.items():
+        # Include namespace tags (----:com.apple.iTunes:nom:*, etc.)
+        if isinstance(k, str) and k.startswith("----:com.apple.iTunes:"):
+            tag_name = k.replace("----:com.apple.iTunes:", "")
+            if ":" in tag_name or k in ALLOWED_MP4_TAGS:
+                filtered_tags[k] = v
+        # Include standard music metadata atoms
+        elif k in ALLOWED_MP4_TAGS:
+            filtered_tags[k] = v
+    metadata["all_tags"] = {k: _serialize_mutagen_value(v) for k, v in filtered_tags.items()}
+
+    # Extract namespace tags (freeform) - store WITHOUT namespace prefix
+    nom_tags: dict[str, str] = {}
+    for key in audio.tags:
+        if key.startswith("----:com.apple.iTunes:"):
+            tag_name = key.replace("----:com.apple.iTunes:", "")
+            if tag_name.startswith(f"{namespace}:"):
+                value = audio.tags[key]
+                if value:
+                    raw_value = value[0]
+                    tag_key = tag_name[len(namespace) + 1 :]
+                    if isinstance(raw_value, bytes):
+                        nom_tags[tag_key] = raw_value.decode("utf-8")
+                    else:
+                        nom_tags[tag_key] = str(raw_value)
+    metadata["nom_tags"] = nom_tags
+
+
+def _extract_flac_metadata(audio: Any, metadata: dict[str, Any], namespace: str) -> None:
+    """Extract metadata from FLAC files using Vorbis comments."""
+    if not isinstance(audio, FLAC):
+        return
+
+    # Standard metadata (Vorbis comments use uppercase keys)
+    metadata["artist"] = _get_first(audio, "ARTIST")
+    metadata["album"] = _get_first(audio, "ALBUM")
+    metadata["title"] = _get_first(audio, "TITLE")
+    metadata["genre"] = _get_first(audio, "GENRE")
+    year_str = _get_first(audio, "DATE")
+    if year_str:
+        try:
+            metadata["year"] = int(year_str[:4])
+        except (ValueError, IndexError):
+            pass
+    track_str = _get_first(audio, "TRACKNUMBER")
+    if track_str:
+        try:
+            metadata["track_number"] = int(track_str.split("/")[0])
+        except (ValueError, IndexError):
+            pass
+
+    # FLAC stores all tags in Vorbis comment format (case-insensitive keys)
+    # Include namespace tags and standard metadata only
+    filtered_tags = {}
+    nom_tags: dict[str, str] = {}
+    for k, v in audio.items():
+        key_upper = k.upper()
+        # Namespace tags (nom:*, ab:*, etc.)
+        if ":" in k:
+            filtered_tags[k] = v
+            # Extract namespace tags - store WITHOUT namespace prefix
+            if k.lower().startswith(f"{namespace.lower()}:"):
+                tag_key = k[len(namespace) + 1 :]
+                # Vorbis values are lists
+                if isinstance(v, list) and len(v) > 0:
+                    if len(v) > 1:
+                        nom_tags[tag_key] = json.dumps(v, ensure_ascii=False)
+                    else:
+                        nom_tags[tag_key] = v[0]
+        # Standard music metadata (whitelist common Vorbis fields)
+        elif key_upper in {
+            "ARTIST",
+            "ALBUM",
+            "TITLE",
+            "GENRE",
+            "DATE",
+            "TRACKNUMBER",
+            "DISCNUMBER",
+            "ALBUMARTIST",
+            "COMPOSER",
+            "PERFORMER",
+        }:
+            filtered_tags[k] = v
+
+    metadata["all_tags"] = {k: _serialize_mutagen_value(v) for k, v in filtered_tags.items()}
+    metadata["nom_tags"] = nom_tags
+
+
+def _extract_mp3_metadata(file_path: str, metadata: dict[str, Any], namespace: str) -> None:
+    """Extract metadata from MP3 files using ID3 tags."""
+    # Try EasyID3 for standard metadata
+    try:
+        easy = EasyID3(file_path)
+        metadata["artist"] = _get_first(easy, "artist")
+        metadata["album"] = _get_first(easy, "album")
+        metadata["title"] = _get_first(easy, "title")
+        metadata["genre"] = _get_first(easy, "genre")
+        year_str = _get_first(easy, "date")
+        if year_str:
+            try:
+                metadata["year"] = int(year_str[:4])
+            except (ValueError, IndexError):
+                pass
+        track_str = _get_first(easy, "tracknumber")
+        if track_str:
+            try:
+                metadata["track_number"] = int(track_str.split("/")[0])
+            except (ValueError, IndexError):
+                pass
+    except Exception:
+        pass
+
+    # Try ID3 for detailed tags
+    try:
+        id3 = ID3(file_path)
+        # Filter tags (standard ID3 frames + TXXX namespace tags)
+        filtered_tags = {}
+        for k, v in id3.items():
+            if (k.startswith("TXXX:") and ":" in k[5:]) or k[:4] in ALLOWED_ID3_FRAMES:
+                filtered_tags[k] = v
+        metadata["all_tags"] = {str(k): _serialize_mutagen_value(v) for k, v in filtered_tags.items()}
+
+        # Extract namespace tags from TXXX frames - store WITHOUT namespace prefix
+        nom_tags = {}
+        for frame in id3.getall("TXXX"):
+            if frame.desc.startswith(f"{namespace}:"):
+                tag_key = frame.desc[len(namespace) + 1 :]
+                if len(frame.text) > 1:
+                    nom_tags[tag_key] = json.dumps(frame.text, ensure_ascii=False)
+                elif len(frame.text) == 1:
+                    nom_tags[tag_key] = frame.text[0]
+                else:
+                    nom_tags[tag_key] = ""
+        metadata["nom_tags"] = nom_tags
+    except Exception:
+        pass
+
+
 def _extract_metadata(file_path: str, namespace: str) -> dict[str, Any]:
     """
     Extract metadata and tags from an audio file.
@@ -234,8 +395,8 @@ def _extract_metadata(file_path: str, namespace: str) -> dict[str, Any]:
         - nom_tags: dict[str, str] (namespace tags WITHOUT prefix)
 
     Note:
-        Handles MP3 (ID3), M4A/MP4, and other mutagen-supported formats.
-        Multi-value tags in MP3 are stored as JSON array strings.
+        Handles MP3 (ID3), M4A/MP4, FLAC, and other mutagen-supported formats.
+        Multi-value tags in MP3/FLAC are stored as JSON array strings.
     """
     metadata: dict[str, Any] = {
         "duration": None,
@@ -249,122 +410,30 @@ def _extract_metadata(file_path: str, namespace: str) -> dict[str, Any]:
         "nom_tags": {},
     }
 
+    # Get file extension to determine tag format
+    file_ext = os.path.splitext(file_path)[1].lower()
+
     try:
         audio = mutagen.File(file_path)
         if audio is None:
             return metadata
 
-        # Get duration
+        # Get duration (format-agnostic)
         if hasattr(audio.info, "length"):
             metadata["duration"] = audio.info.length
 
-        # Extract standard tags
-        if isinstance(audio, MP4):
-            # M4A/MP4 files
-            metadata["artist"] = _get_first(audio.tags, "\xa9ART")
-            metadata["album"] = _get_first(audio.tags, "\xa9alb")
-            metadata["title"] = _get_first(audio.tags, "\xa9nam")
-            metadata["genre"] = _get_first(audio.tags, "\xa9gen")
-            year_str = _get_first(audio.tags, "\xa9day")
-            if year_str:
-                try:
-                    metadata["year"] = int(year_str[:4])
-                except (ValueError, IndexError):
-                    pass
-            track = _get_first(audio.tags, "trkn")
-            if track and isinstance(track, tuple) and len(track) > 0:
-                metadata["track_number"] = track[0]
+        # Extract tags based on file extension
+        if file_ext in (".m4a", ".mp4", ".m4p", ".m4b"):
+            # M4A/MP4 files - use MP4 atoms
+            _extract_mp4_metadata(audio, metadata, namespace)
 
-            # Get standard music tags only (filter out MusicBrainz/Picard spam)
-            if audio.tags:
-                # Include namespace tags (nom:*, ab:*, etc.) and standard music metadata
-                filtered_tags = {}
-                for k, v in audio.tags.items():
-                    # Always include namespace tags (----:com.apple.iTunes:nom:*, etc.)
-                    if isinstance(k, str) and k.startswith("----:com.apple.iTunes:"):
-                        tag_name = k.replace("----:com.apple.iTunes:", "")
-                        # Include if it's a namespace tag OR standard metadata
-                        if ":" in tag_name or k in ALLOWED_MP4_TAGS:
-                            filtered_tags[k] = v
-                    # Include standard music metadata atoms
-                    elif k in ALLOWED_MP4_TAGS:
-                        filtered_tags[k] = v
-                metadata["all_tags"] = {k: _serialize_mutagen_value(v) for k, v in filtered_tags.items()}
+        elif file_ext == ".flac":
+            # FLAC files - use Vorbis comments
+            _extract_flac_metadata(audio, metadata, namespace)
 
-            # Extract nom namespace tags (freeform) - store WITHOUT namespace prefix
-            nom_tags: dict[str, str] = {}
-            if audio.tags:
-                for key in audio.tags:
-                    if key.startswith("----:com.apple.iTunes:"):
-                        tag_name = key.replace("----:com.apple.iTunes:", "")
-                        if tag_name.startswith(f"{namespace}:"):
-                            value = audio.tags[key]
-                            if value:
-                                # MP4FreeForm values are bytes - decode them properly
-                                raw_value = value[0]
-                                # Strip namespace prefix for storage
-                                tag_key = tag_name[len(namespace) + 1 :]
-                                if isinstance(raw_value, bytes):
-                                    nom_tags[tag_key] = raw_value.decode("utf-8")
-                                else:
-                                    nom_tags[tag_key] = str(raw_value)
-            metadata["nom_tags"] = nom_tags
-
-        else:
-            # MP3 and other formats
-            try:
-                easy = EasyID3(file_path)
-                metadata["artist"] = _get_first(easy, "artist")
-                metadata["album"] = _get_first(easy, "album")
-                metadata["title"] = _get_first(easy, "title")
-                metadata["genre"] = _get_first(easy, "genre")
-                year_str = _get_first(easy, "date")
-                if year_str:
-                    try:
-                        metadata["year"] = int(year_str[:4])
-                    except (ValueError, IndexError):
-                        pass
-                track_str = _get_first(easy, "tracknumber")
-                if track_str:
-                    try:
-                        # Handle "1/12" format
-                        metadata["track_number"] = int(track_str.split("/")[0])
-                    except (ValueError, IndexError):
-                        pass
-            except Exception:
-                pass
-
-            # Get standard music tags only (filter out MusicBrainz/Picard spam)
-            try:
-                id3 = ID3(file_path)
-                # Include namespace tags (TXXX:nom:*, TXXX:ab:*, etc.) and standard ID3 frames
-                filtered_tags = {}
-                for k, v in id3.items():
-                    # Always include TXXX frames with namespace prefixes
-                    if (k.startswith("TXXX:") and ":" in k[5:]) or k[
-                        :4
-                    ] in ALLOWED_ID3_FRAMES:  # TXXX:namespace:key format
-                        filtered_tags[k] = v
-                metadata["all_tags"] = {str(k): _serialize_mutagen_value(v) for k, v in filtered_tags.items()}
-
-                # Extract nom namespace tags from TXXX frames - store WITHOUT namespace prefix
-                nom_tags = {}
-                for frame in id3.getall("TXXX"):
-                    if frame.desc.startswith(f"{namespace}:"):
-                        # Strip namespace prefix for storage
-                        tag_key = frame.desc[len(namespace) + 1 :]
-                        # Handle multi-value tags (frame.text is always a list)
-                        if len(frame.text) > 1:
-                            # Multi-value tag - store as JSON array string
-                            nom_tags[tag_key] = json.dumps(frame.text, ensure_ascii=False)
-                        elif len(frame.text) == 1:
-                            # Single value - store as string
-                            nom_tags[tag_key] = frame.text[0]
-                        else:
-                            nom_tags[tag_key] = ""
-                metadata["nom_tags"] = nom_tags
-            except Exception:
-                pass
+        elif file_ext in (".mp3", ".mp2", ".aac"):
+            # MP3 and similar - use ID3 tags
+            _extract_mp3_metadata(file_path, metadata, namespace)
 
     except Exception as e:
         logging.debug(f"[library_scanner] Failed to extract metadata from {file_path}: {e}")
