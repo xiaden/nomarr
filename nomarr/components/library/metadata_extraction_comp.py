@@ -18,7 +18,7 @@ from mutagen.flac import FLAC
 from mutagen.id3 import ID3
 from mutagen.mp4 import MP4
 
-from nomarr.components.library.tag_normalization_comp import (
+from nomarr.components.tagging.tag_normalization_comp import (
     normalize_id3_tags,
     normalize_mp4_tags,
     normalize_vorbis_tags,

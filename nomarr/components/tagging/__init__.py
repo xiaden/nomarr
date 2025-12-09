@@ -11,7 +11,12 @@ from .tagging_aggregation_comp import (
     normalize_tag_label,
     simplify_label,
 )
-from .tagging_writer_comp import TagWriter
+from .tagging_writer_comp import TagWriterfrom nomarr.components.tagging.tag_normalization_comp import (
+    normalize_id3_tags,
+    normalize_mp4_tags,
+    normalize_vorbis_tags,
+)
+
 
 __all__ = [
     "LABEL_PAIRS",
@@ -22,4 +27,7 @@ __all__ = [
     "load_calibrations",
     "normalize_tag_label",
     "simplify_label",
+    "normalize_mp4_tags",
+    "normalize_id3_tags",
+    "normalize_vorbis_tags",
 ]
