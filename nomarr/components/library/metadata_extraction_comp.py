@@ -18,40 +18,11 @@ from mutagen.flac import FLAC
 from mutagen.id3 import ID3
 from mutagen.mp4 import MP4
 
-# Standard MP4 atoms to include (filtering out MusicBrainz/Picard spam)
-ALLOWED_MP4_TAGS = {
-    "\xa9nam",  # Title
-    "\xa9ART",  # Artist
-    "\xa9alb",  # Album
-    "\xa9gen",  # Genre
-    "\xa9day",  # Year
-    "trkn",  # Track number
-    "disk",  # Disc number
-    "aART",  # Album artist
-    "\xa9wrt",  # Composer
-    "\xa9cmt",  # Comment
-    "cprt",  # Copyright
-    "\xa9lyr",  # Lyrics
-    "tmpo",  # BPM
-    "covr",  # Cover art
-}
-
-# Standard ID3 frames to include (filtering out MusicBrainz/Picard spam)
-ALLOWED_ID3_FRAMES = {
-    "TIT2",  # Title
-    "TPE1",  # Artist
-    "TALB",  # Album
-    "TCON",  # Genre
-    "TDRC",  # Year
-    "TRCK",  # Track number
-    "TPOS",  # Disc number
-    "TPE2",  # Album artist
-    "TCOM",  # Composer
-    "COMM",  # Comment
-    "USLT",  # Lyrics
-    "TBPM",  # BPM
-    "APIC",  # Cover art
-}
+from nomarr.components.library.tag_normalization_comp import (
+    normalize_id3_tags,
+    normalize_mp4_tags,
+    normalize_vorbis_tags,
+)
 
 
 def extract_metadata(file_path: str, namespace: str = "nom") -> dict[str, Any]:
@@ -133,7 +104,7 @@ def _extract_mp4_metadata(audio: Any, metadata: dict[str, Any], namespace: str) 
     if not isinstance(audio, MP4) or not audio.tags:
         return
 
-    # Standard metadata
+    # Standard metadata (extract directly for library_files table)
     metadata["artist"] = _get_first(audio.tags, "\xa9ART")
     metadata["album"] = _get_first(audio.tags, "\xa9alb")
     metadata["title"] = _get_first(audio.tags, "\xa9nam")
@@ -148,34 +119,15 @@ def _extract_mp4_metadata(audio: Any, metadata: dict[str, Any], namespace: str) 
     if track and isinstance(track, tuple) and len(track) > 0:
         metadata["track_number"] = track[0]
 
-    # Filter tags (standard music metadata + namespace tags)
-    filtered_tags = {}
-    for k, v in audio.tags.items():
-        # Include namespace tags (----:com.apple.iTunes:nom:*, etc.)
-        # Only include freeform tags if they have a namespace prefix (colon after prefix removal)
-        if isinstance(k, str) and k.startswith("----:com.apple.iTunes:"):
-            tag_name = k.replace("----:com.apple.iTunes:", "")
-            if ":" in tag_name:  # Must have namespace prefix (nom:, ab:, etc.)
-                filtered_tags[k] = v
-        # Include standard music metadata atoms from whitelist
-        elif k in ALLOWED_MP4_TAGS:
-            filtered_tags[k] = v
-    metadata["all_tags"] = {k: _serialize_mutagen_value(v) for k, v in filtered_tags.items()}
+    # Normalize ALL tags to common names (for file_tags table)
+    metadata["all_tags"] = normalize_mp4_tags(audio.tags)
 
-    # Extract namespace tags (freeform) - store WITHOUT namespace prefix
+    # Extract namespace tags (nom:*, ab:*, etc.) - store WITHOUT namespace prefix
     nom_tags: dict[str, str] = {}
-    for key in audio.tags:
-        if key.startswith("----:com.apple.iTunes:"):
-            tag_name = key.replace("----:com.apple.iTunes:", "")
-            if tag_name.startswith(f"{namespace}:"):
-                value = audio.tags[key]
-                if value:
-                    raw_value = value[0]
-                    tag_key = tag_name[len(namespace) + 1 :]
-                    if isinstance(raw_value, bytes):
-                        nom_tags[tag_key] = raw_value.decode("utf-8")
-                    else:
-                        nom_tags[tag_key] = str(raw_value)
+    for key, value in metadata["all_tags"].items():
+        if ":" in key and key.startswith(f"{namespace}:"):
+            tag_key = key[len(namespace) + 1 :]  # Remove "nom:" prefix
+            nom_tags[tag_key] = value
     metadata["nom_tags"] = nom_tags
 
 
@@ -184,7 +136,7 @@ def _extract_flac_metadata(audio: Any, metadata: dict[str, Any], namespace: str)
     if not isinstance(audio, FLAC):
         return
 
-    # Standard metadata (Vorbis comments use uppercase keys)
+    # Standard metadata (extract directly for library_files table)
     metadata["artist"] = _get_first(audio, "ARTIST")
     metadata["album"] = _get_first(audio, "ALBUM")
     metadata["title"] = _get_first(audio, "TITLE")
@@ -202,46 +154,21 @@ def _extract_flac_metadata(audio: Any, metadata: dict[str, Any], namespace: str)
         except (ValueError, IndexError):
             pass
 
-    # FLAC stores all tags in Vorbis comment format (case-insensitive keys)
-    # Include namespace tags and standard metadata only
-    filtered_tags = {}
-    nom_tags: dict[str, str] = {}
-    for k, v in audio.items():
-        key_upper = k.upper()
-        # Namespace tags (nom:*, ab:*, etc.)
-        if ":" in k:
-            filtered_tags[k] = v
-            # Extract namespace tags - store WITHOUT namespace prefix
-            if k.lower().startswith(f"{namespace.lower()}:"):
-                tag_key = k[len(namespace) + 1 :]
-                # Vorbis values are lists
-                if isinstance(v, list) and len(v) > 0:
-                    if len(v) > 1:
-                        nom_tags[tag_key] = json.dumps(v, ensure_ascii=False)
-                    else:
-                        nom_tags[tag_key] = v[0]
-        # Standard music metadata (whitelist common Vorbis fields)
-        elif key_upper in {
-            "ARTIST",
-            "ALBUM",
-            "TITLE",
-            "GENRE",
-            "DATE",
-            "TRACKNUMBER",
-            "DISCNUMBER",
-            "ALBUMARTIST",
-            "COMPOSER",
-            "PERFORMER",
-        }:
-            filtered_tags[k] = v
+    # Normalize ALL tags to common names (for file_tags table)
+    metadata["all_tags"] = normalize_vorbis_tags(dict(audio))
 
-    metadata["all_tags"] = {k: _serialize_mutagen_value(v) for k, v in filtered_tags.items()}
+    # Extract namespace tags (nom:*, ab:*, etc.) - store WITHOUT namespace prefix
+    nom_tags: dict[str, str] = {}
+    for key, value in metadata["all_tags"].items():
+        if ":" in key and key.lower().startswith(f"{namespace.lower()}:"):
+            tag_key = key[len(namespace) + 1 :]  # Remove "nom:" prefix
+            nom_tags[tag_key] = value
     metadata["nom_tags"] = nom_tags
 
 
 def _extract_mp3_metadata(file_path: str, metadata: dict[str, Any], namespace: str) -> None:
     """Extract metadata from MP3 files using ID3 tags."""
-    # Try EasyID3 for standard metadata
+    # Try EasyID3 for standard metadata (for library_files table)
     try:
         easy = EasyID3(file_path)
         metadata["artist"] = _get_first(easy, "artist")
@@ -263,27 +190,17 @@ def _extract_mp3_metadata(file_path: str, metadata: dict[str, Any], namespace: s
     except Exception:
         pass
 
-    # Try ID3 for detailed tags
+    # Try ID3 for detailed tags - normalize ALL tags to common names (for file_tags table)
     try:
         id3 = ID3(file_path)
-        # Filter tags (standard ID3 frames + TXXX namespace tags)
-        filtered_tags = {}
-        for k, v in id3.items():
-            if (k.startswith("TXXX:") and ":" in k[5:]) or k[:4] in ALLOWED_ID3_FRAMES:
-                filtered_tags[k] = v
-        metadata["all_tags"] = {str(k): _serialize_mutagen_value(v) for k, v in filtered_tags.items()}
+        metadata["all_tags"] = normalize_id3_tags(dict(id3))
 
-        # Extract namespace tags from TXXX frames - store WITHOUT namespace prefix
-        nom_tags = {}
-        for frame in id3.getall("TXXX"):
-            if frame.desc.startswith(f"{namespace}:"):
-                tag_key = frame.desc[len(namespace) + 1 :]
-                if len(frame.text) > 1:
-                    nom_tags[tag_key] = json.dumps(frame.text, ensure_ascii=False)
-                elif len(frame.text) == 1:
-                    nom_tags[tag_key] = frame.text[0]
-                else:
-                    nom_tags[tag_key] = ""
+        # Extract namespace tags (nom:*, ab:*, etc.) - store WITHOUT namespace prefix
+        nom_tags: dict[str, str] = {}
+        for key, value in metadata["all_tags"].items():
+            if ":" in key and key.startswith(f"{namespace}:"):
+                tag_key = key[len(namespace) + 1 :]  # Remove "nom:" prefix
+                nom_tags[tag_key] = value
         metadata["nom_tags"] = nom_tags
     except Exception:
         pass
