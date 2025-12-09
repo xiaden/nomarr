@@ -125,8 +125,18 @@ def _get_job_if_running(
     """
     if queue_type == "tag":
         job = db.tag_queue.job_status(job_id)
-        if job and job.get("status") == "running":
+        if job is None:
+            logger.warning(f"Job {job_id} not found in tag queue during crash recovery")
+            return None
+
+        status = job.get("status")
+        logger.debug(f"Job {job_id} current status: {status}")
+
+        if status == "running":
             return {"id": job_id, "status": "running", "path": job.get("path")}
+        else:
+            logger.debug(f"Job {job_id} not in running state (status={status}), skipping recovery")
+            return None
     elif queue_type == "library":
         # Library queue uses different schema - check if scan is in progress
         # For now, we assume library jobs don't need crash recovery (idempotent scans)

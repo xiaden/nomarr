@@ -302,6 +302,18 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
         # Track current job for heartbeat (Phase 3: DB-based IPC)
         self._current_job_id = result.job_id
 
+        # CRITICAL: Update health record IMMEDIATELY with current_job
+        # Don't wait for heartbeat thread (5s delay) - worker might crash before then
+        if self.db:
+            try:
+                self.db.health.update_heartbeat(
+                    component=self.component_id,
+                    status="healthy",
+                    current_job=self._current_job_id,
+                )
+            except Exception as e:
+                logging.warning(f"[{self.name}] Failed to set current_job in health immediately: {e}")
+
         # Publish job start event
         self._publish_job_state(result.job_id, result.file_path, "running")
         self._publish_queue_stats()
