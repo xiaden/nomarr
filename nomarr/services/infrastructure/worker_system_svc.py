@@ -39,7 +39,8 @@ QueueType = Literal["tag", "library", "calibration"]
 MAX_RESTARTS_IN_WINDOW = 5  # Maximum restarts before marking as failed
 RESTART_WINDOW_MS = 5 * 60 * 1000  # 5 minutes in milliseconds
 MAX_BACKOFF_SECONDS = 60  # Maximum exponential backoff delay
-HEARTBEAT_STALE_THRESHOLD_MS = 30 * 1000  # 30 seconds
+HEARTBEAT_STALE_THRESHOLD_MS = 30 * 1000  # 30 seconds (for healthy workers)
+STARTING_HEARTBEAT_GRACE_MS = 5 * 60 * 1000  # 5 minutes (for starting workers doing TF init)
 HEALTH_CHECK_INTERVAL_SECONDS = 10  # How often to check worker health
 WORKER_STOP_TIMEOUT_SECONDS = 10  # Timeout for graceful worker shutdown
 WORKER_TERMINATE_TIMEOUT_SECONDS = 2  # Timeout after terminate
@@ -50,6 +51,25 @@ PID_WAIT_POLL_MS = 10  # Poll interval for PID assignment
 EXIT_CODE_UNKNOWN_CRASH = -1
 EXIT_CODE_HEARTBEAT_TIMEOUT = -2
 EXIT_CODE_INVALID_HEARTBEAT = -3
+
+
+def _get_stale_threshold_for_status(status: str) -> int:
+    """
+    Get appropriate stale heartbeat threshold based on worker status.
+
+    Starting workers get a longer grace period (5 minutes) to complete
+    TensorFlow model initialization. Healthy workers use the normal
+    30-second threshold.
+
+    Args:
+        status: Worker status ("starting", "healthy", etc.)
+
+    Returns:
+        Stale threshold in milliseconds
+    """
+    if status == "starting":
+        return STARTING_HEARTBEAT_GRACE_MS
+    return HEARTBEAT_STALE_THRESHOLD_MS
 
 
 class WorkerSystemService:
@@ -310,7 +330,9 @@ class WorkerSystemService:
         Monitor worker heartbeats and restart if needed.
 
         Checks every HEALTH_CHECK_INTERVAL_SECONDS:
-        - Heartbeat age > HEARTBEAT_STALE_THRESHOLD_MS → stale, restart worker
+        - Heartbeat age > threshold → stale, restart worker
+          - "starting" workers: 5-minute grace period (TF cold start)
+          - "healthy" workers: 30-second threshold (normal operation)
         - Process not alive → restart worker
         - Restart with exponential backoff
         """
@@ -344,16 +366,26 @@ class WorkerSystemService:
                             continue
 
                         heartbeat_age = now_ms - last_heartbeat
-                        if heartbeat_age > HEARTBEAT_STALE_THRESHOLD_MS:
+
+                        # Choose threshold based on worker status
+                        # "starting" workers get 5 minutes for TF initialization
+                        # "healthy" workers use normal 30-second threshold
+                        status = health.get("status")
+                        if not isinstance(status, str):
+                            status = "healthy"  # Default if missing or invalid
+                        stale_threshold = _get_stale_threshold_for_status(status)
+
+                        if heartbeat_age > stale_threshold:
                             logging.warning(
                                 f"[WorkerSystemService] {component_id} heartbeat stale "
-                                f"({heartbeat_age}ms old), marking as crashed and restarting..."
+                                f"({heartbeat_age}ms old, threshold={stale_threshold}ms, status={status}), "
+                                f"marking as crashed and restarting..."
                             )
                             # Mark as crashed due to stale heartbeat
                             self.db.health.mark_crashed(
                                 component=component_id,
                                 exit_code=EXIT_CODE_HEARTBEAT_TIMEOUT,
-                                metadata=f"Heartbeat stale for {heartbeat_age}ms",
+                                metadata=f"Heartbeat stale for {heartbeat_age}ms (threshold={stale_threshold}ms, status={status})",
                             )
                             self._schedule_restart(worker, queue_type, component_id)
                             continue
