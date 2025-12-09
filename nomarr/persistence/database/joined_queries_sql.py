@@ -239,12 +239,24 @@ class JoinedQueryOperations:
         # Filter by tag key and optionally value
         if tag_key and tag_value:
             where_clauses.append(
-                "library_files.id IN (SELECT file_id FROM file_tags WHERE tag_key = ? AND tag_value = ?)"
+                """library_files.id IN (
+                    SELECT ft.file_id 
+                    FROM file_tags ft
+                    JOIN library_tags lt ON ft.tag_id = lt.id
+                    WHERE lt.key = ? AND lt.value = ?
+                )"""
             )
             params.append(tag_key)
             params.append(tag_value)
         elif tag_key:
-            where_clauses.append("library_files.id IN (SELECT file_id FROM file_tags WHERE tag_key = ?)")
+            where_clauses.append(
+                """library_files.id IN (
+                    SELECT ft.file_id 
+                    FROM file_tags ft
+                    JOIN library_tags lt ON ft.tag_id = lt.id
+                    WHERE lt.key = ?
+                )"""
+            )
             params.append(tag_key)
 
         # Text search across artist/album/title
@@ -281,19 +293,19 @@ class JoinedQueryOperations:
         files_query = f"""
             SELECT
                 lf.*,
-                file_tags.tag_key,
-                file_tags.tag_value,
-                file_tags.tag_type,
-                file_tags.is_nomarr_tag
+                lt.key as tag_key,
+                lt.value as tag_value,
+                lt.type as tag_type,
+                lt.is_nomarr_tag
             FROM (
                 SELECT * FROM library_files
                 {where_sql}
                 ORDER BY artist, album, title
                 LIMIT ? OFFSET ?
             ) AS lf
-            LEFT JOIN file_tags ON lf.id = file_tags.file_id
-            LEFT JOIN library_tags ON library_tags.id = file_tags.tag_id
-            ORDER BY lf.artist, lf.album, lf.title, library_tags.key
+            LEFT JOIN file_tags ft ON lf.id = ft.file_id
+            LEFT JOIN library_tags lt ON ft.tag_id = lt.id
+            ORDER BY lf.artist, lf.album, lf.title, lt.key
         """
         params_with_limit = [*params, limit, offset]
 
