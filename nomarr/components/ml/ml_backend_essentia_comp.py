@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 
 # Single guarded import point for Essentia
 try:
-    import essentia_tensorflow.standard as essentia_tf  # type: ignore[import-not-found,no-redef]
+    import essentia.standard as essentia_tf  # type: ignore[import-not-found,no-redef]
 except ImportError:  # pragma: no cover
     essentia_tf = None  # type: ignore[assignment]
 
