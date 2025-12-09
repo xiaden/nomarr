@@ -129,12 +129,12 @@ VORBIS_TAG_MAP: dict[str, str] = {
 }
 
 
-def normalize_mp4_tags(tags: dict[str, Any]) -> dict[str, str]:
+def normalize_mp4_tags(tags: Any) -> dict[str, str]:
     """
     Normalize MP4 tags to common tag names.
 
     Args:
-        tags: MP4 tags dict from mutagen
+        tags: MP4 tags dict-like object from mutagen
 
     Returns:
         Dict with normalized tag names and serialized values
@@ -159,12 +159,12 @@ def normalize_mp4_tags(tags: dict[str, Any]) -> dict[str, str]:
     return normalized
 
 
-def normalize_id3_tags(tags: dict[str, Any]) -> dict[str, str]:
+def normalize_id3_tags(tags: Any) -> dict[str, str]:
     """
     Normalize ID3 tags to common tag names.
 
     Args:
-        tags: ID3 tags dict from mutagen
+        tags: ID3 tags dict-like object from mutagen
 
     Returns:
         Dict with normalized tag names and serialized values
@@ -190,12 +190,12 @@ def normalize_id3_tags(tags: dict[str, Any]) -> dict[str, str]:
     return normalized
 
 
-def normalize_vorbis_tags(tags: dict[str, Any]) -> dict[str, str]:
+def normalize_vorbis_tags(tags: Any) -> dict[str, str]:
     """
     Normalize Vorbis comments to common tag names.
 
     Args:
-        tags: Vorbis comments dict from mutagen (FLAC, Ogg, etc.)
+        tags: Vorbis comments dict-like object from mutagen (FLAC, Ogg, etc.)
 
     Returns:
         Dict with normalized tag names and serialized values
@@ -260,8 +260,8 @@ def _serialize_value(value: Any) -> str:
     if isinstance(value, bytes):
         return value.decode("utf-8", errors="replace")
 
-    # Handle ID3 text frames (have .text attribute)
-    if hasattr(value, "text"):
+    # Handle ID3 text frames (have .text attribute) - exclude tuples
+    if not isinstance(value, tuple) and hasattr(value, "text"):
         text_value = value.text
         if isinstance(text_value, list):
             return "; ".join(str(t) for t in text_value) if text_value else ""

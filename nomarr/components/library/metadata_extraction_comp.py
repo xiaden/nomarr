@@ -72,7 +72,7 @@ def extract_metadata(file_path: str, namespace: str = "nom") -> dict[str, Any]:
     file_ext = os.path.splitext(file_path)[1].lower()
 
     try:
-        audio = mutagen.File(file_path)
+        audio = mutagen.File(file_path)  # type: ignore[attr-defined]
         if audio is None:
             return metadata
 
@@ -206,14 +206,14 @@ def _extract_mp3_metadata(file_path: str, metadata: dict[str, Any], namespace: s
         pass
 
 
-def _get_first(tags: dict, key: str) -> str | None:
+def _get_first(tags: Any, key: str) -> str | None:
     """
     Get first value from a tag dict.
 
     Handles both mutagen tag dicts (which store values as lists) and regular dicts.
 
     Args:
-        tags: Tag dictionary
+        tags: Tag dictionary (supports .get() method)
         key: Tag key
 
     Returns:
