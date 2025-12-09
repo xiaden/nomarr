@@ -152,11 +152,12 @@ def _extract_mp4_metadata(audio: Any, metadata: dict[str, Any], namespace: str) 
     filtered_tags = {}
     for k, v in audio.tags.items():
         # Include namespace tags (----:com.apple.iTunes:nom:*, etc.)
+        # Only include freeform tags if they have a namespace prefix (colon after prefix removal)
         if isinstance(k, str) and k.startswith("----:com.apple.iTunes:"):
             tag_name = k.replace("----:com.apple.iTunes:", "")
-            if ":" in tag_name or k in ALLOWED_MP4_TAGS:
+            if ":" in tag_name:  # Must have namespace prefix (nom:, ab:, etc.)
                 filtered_tags[k] = v
-        # Include standard music metadata atoms
+        # Include standard music metadata atoms from whitelist
         elif k in ALLOWED_MP4_TAGS:
             filtered_tags[k] = v
     metadata["all_tags"] = {k: _serialize_mutagen_value(v) for k, v in filtered_tags.items()}
