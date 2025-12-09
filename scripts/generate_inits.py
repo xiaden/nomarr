@@ -9,24 +9,18 @@ import subprocess
 import sys
 from pathlib import Path
 
-# ──────────────────────────────────────────────────────────────────────
-# Configuration
-# ──────────────────────────────────────────────────────────────────────
-
-# Names that should never be re-exported in generated __init__.py files
-BANNED_EXPORTS = {"get_config"}
-
-# Marker to detect manually-managed __init__.py files that should not be overwritten
-MANUAL_INIT_MARKER = "# MANUAL_INIT"
-
-# Indicators that an __init__.py is manually managed (router/API logic)
-MANUAL_INDICATORS = [MANUAL_INIT_MARKER, "APIRouter", "from .router import", "from . import router"]
-
-# Max line length for single-line imports (ruff/Black default is 88)
-MAX_IMPORT_LINE_LENGTH = 88
+import yaml
 
 
-def get_public_names(file_path: Path) -> set[str]:
+def load_config() -> dict:
+    """Load configuration from YAML file."""
+    config_path = Path(__file__).parent / "configs" / "generate_inits_config.yml"
+    with open(config_path, encoding="utf-8") as f:
+        config = yaml.safe_load(f)
+    return config
+
+
+def get_public_names(file_path: Path, banned_exports: set[str]) -> set[str]:
     """Extract public class/function names from a Python file (top-level only)."""
     try:
         with open(file_path, encoding="utf-8") as f:
@@ -48,15 +42,23 @@ def get_public_names(file_path: Path) -> set[str]:
                     names.add(target.id)
 
     # Filter out banned exports
-    names = {name for name in names if name not in BANNED_EXPORTS}
+    names = {name for name in names if name not in banned_exports}
 
     return names
 
 
-def generate_init_for_package(package_dir: Path, custom_exports: dict[str, list[str]] | None = None) -> str:
+def generate_init_for_package(
+    package_dir: Path, custom_exports: dict[str, list[str]] | None = None, config: dict | None = None
+) -> str:
     """Generate __init__.py content for a package directory."""
     custom_exports = custom_exports or {}
     module_name = package_dir.name
+
+    if config is None:
+        config = load_config()
+
+    banned_exports = set(config.get("banned_exports", []))
+    max_line_length = config.get("max_import_line_length", 88)
 
     # If custom exports defined, use them
     if str(package_dir.relative_to(Path.cwd())) in custom_exports:
@@ -81,7 +83,7 @@ def generate_init_for_package(package_dir: Path, custom_exports: dict[str, list[
     all_exports = {}
     for py_file in py_files:
         module_name_inner = py_file.stem
-        names = get_public_names(py_file)
+        names = get_public_names(py_file, banned_exports)
         if names:
             all_exports[module_name_inner] = sorted(names)
 
@@ -99,7 +101,7 @@ def generate_init_for_package(package_dir: Path, custom_exports: dict[str, list[
         import_line = f"from .{module} import {', '.join(names)}"
 
         # If short enough, use single line; otherwise use multi-line
-        if len(import_line) <= MAX_IMPORT_LINE_LENGTH:
+        if len(import_line) <= max_line_length:
             lines.append(import_line)
         else:
             # Multi-line import with parentheses (ruff/Black style)
@@ -109,12 +111,12 @@ def generate_init_for_package(package_dir: Path, custom_exports: dict[str, list[
             lines.append(")")
 
     # Build __all__ (sorted, filtered)
-    all_names = []
+    all_names: list[str] = []
     for names in all_exports.values():
         all_names.extend(names)
 
     # Remove duplicates, sort, and filter banned exports
-    all_names_sorted = sorted({name for name in all_names if name not in BANNED_EXPORTS})
+    all_names_sorted = sorted({name for name in all_names if name not in banned_exports})
 
     lines.append("")
     lines.append("__all__ = [")
@@ -125,15 +127,24 @@ def generate_init_for_package(package_dir: Path, custom_exports: dict[str, list[
     return "\n".join(lines) + "\n"
 
 
-def is_manually_managed(init_file: Path) -> bool:
+def is_manually_managed(init_file: Path, config: dict | None = None) -> bool:
     """Check if an __init__.py file is manually managed and should not be overwritten."""
     if not init_file.exists():
         return False
 
+    if config is None:
+        config = load_config()
+
+    manual_indicators = config.get("manual_indicators", [])
+    manual_marker = config.get("manual_init_marker", "# MANUAL_INIT")
+
+    # Combine marker with other indicators
+    all_indicators = [manual_marker, *manual_indicators]
+
     try:
         content = init_file.read_text(encoding="utf-8")
         # Check for any manual indicators
-        return any(indicator in content for indicator in MANUAL_INDICATORS)
+        return any(indicator in content for indicator in all_indicators)
     except Exception as e:
         print(f"Warning: Could not read {init_file}: {e}", file=sys.stderr)
         return False  # If we can't read it, assume it's safe to overwrite
@@ -178,6 +189,7 @@ def find_all_packages(root: Path, exclude: set[str] | None = None) -> list[Path]
 
 def main():
     """Generate __init__.py for all packages in nomarr/."""
+    config = load_config()
     base = Path.cwd()
     nomarr_root = base / "nomarr"
 
@@ -185,33 +197,21 @@ def main():
         print(f"Error: {nomarr_root} not found")
         return
 
-    # Exclude packages with custom __init__.py logic
-    exclude = {
-        "nomarr/interfaces/api",  # Has custom state re-exports
-        "nomarr/interfaces/api/v1",  # Just router registration
-        "nomarr/interfaces/api/web",  # Manually curated with TypedDicts, router, dependencies
-        "nomarr/interfaces/cli",  # Excludes main.py to prevent runpy warning
-        "nomarr/services",  # Manually curated service exports
-        "nomarr/persistence",  # Manually curated persistence exports
-        "nomarr/persistence/database",  # Has duplicate _table imports that need manual management
-        "nomarr/helpers",  # Manually curated helper exports
-        "nomarr/components/analytics",  # Exports domain dataclasses
-        "nomarr/components/ml",  # Manually managed ML exports
-        "nomarr/workflows",  # Top-level workflows __init__ is manually curated
-    }
+    # Get excluded packages from config
+    excluded_packages = set(config.get("excluded_packages", []))
 
-    packages = find_all_packages(nomarr_root, exclude)
+    packages = find_all_packages(nomarr_root, excluded_packages)
 
     for package_dir in packages:
         init_file = package_dir / "__init__.py"
 
         # Check if __init__.py is manually managed
-        if is_manually_managed(init_file):
+        if is_manually_managed(init_file, config):
             print(f"Skipping {init_file.relative_to(base)} (manually managed)")
             continue
 
         # Generate new content
-        content = generate_init_for_package(package_dir)
+        content = generate_init_for_package(package_dir, config=config)
 
         print(f"Generating {init_file.relative_to(base)}")
         with open(init_file, "w", encoding="utf-8") as f:

@@ -1,0 +1,46 @@
+# Configuration for generate_inits.py script
+# Controls which packages should be excluded from auto-generation and which names should never be exported
+
+# Names that should never be re-exported in generated __init__.py files
+banned_exports:
+  - get_config
+
+# Marker to detect manually-managed __init__.py files
+manual_init_marker: "# MANUAL_INIT"
+
+# Additional indicators that an __init__.py is manually managed
+manual_indicators:
+  - APIRouter
+  - "from .router import"
+  - "from . import router"
+
+# Max line length for single-line imports (ruff/Black default is 88)
+max_import_line_length: 88
+
+# Packages with custom __init__.py logic (excluded from auto-generation)
+# Paths are relative to the nomarr/ directory
+excluded_packages:
+  # Interface layer - custom routing and API structures
+  - nomarr/interfaces/api
+  - nomarr/interfaces/api/v1
+  - nomarr/interfaces/api/web
+  - nomarr/interfaces/cli
+  
+  # Service layer - manually curated service exports
+  - nomarr/services
+  - nomarr/services/infrastructure
+  
+  # Persistence layer - manually curated with operations classes
+  - nomarr/persistence
+  - nomarr/persistence/database
+  
+  # Helpers - manually curated helper exports
+  - nomarr/helpers
+  - nomarr/helpers/dto
+  
+  # Components - domain-specific manual curation
+  - nomarr/components/analytics
+  - nomarr/components/ml
+  
+  # Workflows - top-level workflows manually curated
+  - nomarr/workflows
