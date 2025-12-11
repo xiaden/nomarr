@@ -240,6 +240,9 @@ def normalize_vorbis_tags(tags: Any) -> dict[str, str]:
     Only keeps canonical tags and nom:* namespaced tags.
     Drops cover art (METADATA_BLOCK_PICTURE), lyrics, and other non-canonical fields.
 
+    Vorbis tags written as "nom:mood-strict" are stored as "NOM_MOOD_STRICT"
+    (uppercase with underscores). This function converts them back to "nom:mood-strict".
+
     Args:
         tags: Vorbis comments dict-like object from mutagen (FLAC, Ogg, etc.)
 
@@ -256,7 +259,15 @@ def normalize_vorbis_tags(tags: Any) -> dict[str, str]:
         if key_upper in ("METADATA_BLOCK_PICTURE", "COVERART", "COVERARTMIME"):
             continue
 
-        # Keep nom:* namespaced tags (preserve original casing)
+        # Check if this is a namespaced tag (e.g., "NOM_MOOD_STRICT")
+        # Convert back to "nom:mood-strict" format
+        if key_upper.startswith("NOM_"):
+            # Convert NOM_MOOD_STRICT -> nom:mood-strict
+            normalized_key = "nom:" + key[4:].lower().replace("_", "-")
+            normalized[normalized_key] = _serialize_value(value)
+            continue
+
+        # Keep nom:* namespaced tags if they're already in colon format (rare)
         if key.lower().startswith("nom:"):
             normalized[key] = _serialize_value(value)
             continue
