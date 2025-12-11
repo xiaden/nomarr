@@ -53,21 +53,21 @@ EXIT_CODE_HEARTBEAT_TIMEOUT = -2
 EXIT_CODE_INVALID_HEARTBEAT = -3
 
 
-def _get_stale_threshold_for_status(status: str) -> int:
+def _get_stale_threshold_for_cache_state(cache_loaded: bool) -> int:
     """
-    Get appropriate stale heartbeat threshold based on worker status.
+    Get appropriate stale heartbeat threshold based on cache state.
 
-    Starting workers get a longer grace period (5 minutes) to complete
-    TensorFlow model initialization. Healthy workers use the normal
-    30-second threshold.
+    Workers with unloaded cache get a longer grace period (5 minutes) to complete
+    TensorFlow model initialization on first job. Workers with loaded cache use
+    the normal 30-second threshold.
 
     Args:
-        status: Worker status ("starting", "healthy", etc.)
+        cache_loaded: True if worker's expensive cache (TF models) is loaded
 
     Returns:
         Stale threshold in milliseconds
     """
-    if status == "starting":
+    if not cache_loaded:
         return STARTING_HEARTBEAT_GRACE_MS
     return HEARTBEAT_STALE_THRESHOLD_MS
 
@@ -367,25 +367,33 @@ class WorkerSystemService:
 
                         heartbeat_age = now_ms - last_heartbeat
 
-                        # Choose threshold based on worker status
-                        # "starting" workers get 5 minutes for TF initialization
-                        # "healthy" workers use normal 30-second threshold
-                        status = health.get("status")
-                        if not isinstance(status, str):
-                            status = "healthy"  # Default if missing or invalid
-                        stale_threshold = _get_stale_threshold_for_status(status)
+                        # Choose threshold based on cache_loaded metadata
+                        # Workers with unloaded cache get 5 minutes for TF initialization
+                        # Workers with loaded cache use normal 30-second threshold
+                        cache_loaded = True  # Default: assume cache is loaded
+                        metadata_str = health.get("metadata")
+                        if isinstance(metadata_str, str):
+                            try:
+                                import json
+
+                                metadata = json.loads(metadata_str)
+                                cache_loaded = metadata.get("cache_loaded", True)
+                            except (json.JSONDecodeError, AttributeError):
+                                pass  # Use default if metadata invalid
+
+                        stale_threshold = _get_stale_threshold_for_cache_state(cache_loaded)
 
                         if heartbeat_age > stale_threshold:
                             logging.warning(
                                 f"[WorkerSystemService] {component_id} heartbeat stale "
-                                f"({heartbeat_age}ms old, threshold={stale_threshold}ms, status={status}), "
+                                f"({heartbeat_age}ms old, threshold={stale_threshold}ms, cache_loaded={cache_loaded}), "
                                 f"marking as crashed and restarting..."
                             )
                             # Mark as crashed due to stale heartbeat
                             self.db.health.mark_crashed(
                                 component=component_id,
                                 exit_code=EXIT_CODE_HEARTBEAT_TIMEOUT,
-                                metadata=f"Heartbeat stale for {heartbeat_age}ms (threshold={stale_threshold}ms, status={status})",
+                                metadata=f"Heartbeat stale for {heartbeat_age}ms (threshold={stale_threshold}ms, cache_loaded={cache_loaded})",
                             )
                             self._schedule_restart(worker, queue_type, component_id)
                             continue

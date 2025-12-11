@@ -115,6 +115,7 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
         self._cancel_requested = False
         self._current_job_id: int | None = None
         self._heartbeat_thread: threading.Thread | None = None
+        self._cache_loaded = True  # True for workers without expensive cache (scanner, recalibration)
 
     # ---------------------------- Queue Operations (use components) ----------------------------
 
@@ -183,10 +184,15 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
         try:
             while not self._shutdown:
                 try:
-                    heartbeat_db.health.update_heartbeat(
+                    # Update heartbeat with cache_loaded metadata
+                    import json
+
+                    metadata = json.dumps({"cache_loaded": self._cache_loaded})
+                    heartbeat_db.health.upsert_component(
                         component=self.component_id,
                         status="healthy",
                         current_job=self._current_job_id,
+                        metadata=metadata,
                     )
                     self._last_heartbeat = time.time()
                 except Exception as e:
@@ -201,10 +207,14 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
         self._current_job_id = None
         if self.db:
             try:
-                self.db.health.update_heartbeat(
+                import json
+
+                metadata = json.dumps({"cache_loaded": self._cache_loaded})
+                self.db.health.upsert_component(
                     component=self.component_id,
                     status="healthy",
                     current_job=None,
+                    metadata=metadata,
                 )
             except Exception as e:
                 logging.warning(f"[{self.name}] Failed to clear current_job in health: {e}")
@@ -221,10 +231,15 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
         # Create database connection in worker process (critical for multiprocessing safety)
         self.db = Database(self.db_path)
 
-        # Mark worker as starting
-        self.db.health.mark_starting(
+        # Mark worker as starting with cache_loaded metadata
+        import json
+
+        metadata = json.dumps({"cache_loaded": self._cache_loaded})
+        self.db.health.upsert_component(
             component=self.component_id,
+            status="starting",
             pid=os.getpid(),
+            metadata=metadata,
         )
 
         # Start heartbeat thread (prevents blocking during heavy ML processing)
@@ -364,6 +379,11 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
 
             # Clear current job (single source of truth: health table)
             self._clear_current_job()
+
+            # Mark cache as loaded after first successful job (for workers with expensive ML cache)
+            if not self._cache_loaded:
+                self._cache_loaded = True
+                logging.info(f"[{self.name}] Cache loaded (TF models initialized)")
 
             logging.info(f"[{self.name}] ✅ Job {job_id} done in {elapsed}s")
 

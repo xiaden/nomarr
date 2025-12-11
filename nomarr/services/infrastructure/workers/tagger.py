@@ -125,3 +125,6 @@ class TaggerWorker(BaseWorker[ProcessFileResult | dict[str, Any]]):
             worker_id=worker_id,
             interval=interval,
         )
+
+        # TaggerWorker has expensive TF cache that loads on first job
+        self._cache_loaded = False

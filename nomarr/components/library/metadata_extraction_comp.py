@@ -199,11 +199,19 @@ def _extract_mp4_metadata(audio: Any, metadata: dict[str, Any], namespace: str) 
         metadata["all_tags"]["artists"] = artists_value
 
     # Extract namespace tags (nom:*) - store WITHOUT namespace prefix
+    # and REMOVE from all_tags to prevent duplication
     nom_tags: dict[str, str] = {}
+    keys_to_remove = []
     for key, value in metadata["all_tags"].items():
-        if key.startswith(f"{namespace}:"):
+        if isinstance(key, str) and key.lower().startswith(f"{namespace.lower()}:"):
             tag_key = key[len(namespace) + 1 :]  # Remove "nom:" prefix
             nom_tags[tag_key] = value
+            keys_to_remove.append(key)
+
+    # Remove namespace tags from all_tags
+    for key in keys_to_remove:
+        del metadata["all_tags"][key]
+
     metadata["nom_tags"] = nom_tags
 
 
@@ -247,11 +255,19 @@ def _extract_flac_metadata(audio: Any, metadata: dict[str, Any], namespace: str)
         metadata["all_tags"]["artists"] = artists_value
 
     # Extract namespace tags (nom:*) - store WITHOUT namespace prefix
+    # and REMOVE from all_tags to prevent duplication
     nom_tags: dict[str, str] = {}
+    keys_to_remove = []
     for key, value in metadata["all_tags"].items():
-        if key.lower().startswith(f"{namespace.lower()}:"):
+        if isinstance(key, str) and key.lower().startswith(f"{namespace.lower()}:"):
             tag_key = key[len(namespace) + 1 :]  # Remove "nom:" prefix
             nom_tags[tag_key] = value
+            keys_to_remove.append(key)
+
+    # Remove namespace tags from all_tags
+    for key in keys_to_remove:
+        del metadata["all_tags"][key]
+
     metadata["nom_tags"] = nom_tags
 
 
@@ -294,11 +310,19 @@ def _extract_mp3_metadata(file_path: str, metadata: dict[str, Any], namespace: s
             metadata["all_tags"]["artists"] = artists_value
 
         # Extract namespace tags (nom:*) - store WITHOUT namespace prefix
+        # and REMOVE from all_tags to prevent duplication
         nom_tags: dict[str, str] = {}
+        keys_to_remove = []
         for key, value in metadata["all_tags"].items():
-            if key.startswith(f"{namespace}:"):
+            if isinstance(key, str) and key.lower().startswith(f"{namespace.lower()}:"):
                 tag_key = key[len(namespace) + 1 :]  # Remove "nom:" prefix
                 nom_tags[tag_key] = value
+                keys_to_remove.append(key)
+
+        # Remove namespace tags from all_tags
+        for key in keys_to_remove:
+            del metadata["all_tags"][key]
+
         metadata["nom_tags"] = nom_tags
     except Exception:
         pass
