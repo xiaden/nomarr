@@ -81,6 +81,8 @@ def scan_single_file_workflow(
     auto_tag = params.auto_tag
     ignore_patterns = params.ignore_patterns
     library_id = params.library_id
+    version_tag_key = params.version_tag_key
+    tagger_version = params.tagger_version
     logging.debug(f"[scan_single_file] Scanning {file_path}")
 
     result: dict[str, Any] = {
@@ -134,11 +136,18 @@ def scan_single_file_workflow(
         # Optimization: If auto-tagging is enabled and file needs tagging,
         # skip metadata extraction here - the tagger will extract and write everything
         needs_tagging = False
+        check_existing_version = False  # Track if we should check for existing version tag
+
         if auto_tag:
             # Check if file needs tagging (new file or not yet tagged)
             needs_tagging = is_new or (
                 existing_file is not None and not existing_file.get("tagged") and not existing_file.get("skip_auto_tag")
             )
+
+            # If file appears to need tagging and overwrite_tags=False, check if file already has our version tag
+            # This handles the case where DB was wiped but files still have tags
+            if needs_tagging and not force:
+                check_existing_version = True
 
             # Apply ignore patterns
             if needs_tagging and ignore_patterns:
@@ -146,6 +155,32 @@ def scan_single_file_workflow(
 
                 if _matches_ignore_pattern(file_path, ignore_patterns):
                     needs_tagging = False
+
+        if needs_tagging and check_existing_version:
+            # Extract metadata once to check version tag
+            from nomarr.components.library.metadata_extraction_comp import extract_metadata
+
+            file_metadata = extract_metadata(file_path, namespace=namespace)
+            existing_version = file_metadata.get("nom_tags", {}).get(version_tag_key)
+
+            if existing_version == tagger_version:
+                # File already tagged with correct version - import existing tags instead of retagging
+                logging.info(
+                    f"[scan_single_file] File already tagged with version {tagger_version}, importing tags: {file_path}"
+                )
+                needs_tagging = False
+
+                # Import existing tags to database (metadata already extracted above)
+                params_update = UpdateLibraryFileFromTagsParams(
+                    file_path=file_path,
+                    namespace=namespace,
+                    tagged_version=tagger_version,  # Mark as tagged
+                    calibration=None,
+                    library_id=library_id,
+                )
+                update_library_file_from_tags(db, params_update)
+                result["action"] = "added" if is_new else "updated"
+                result["success"] = True
 
         if needs_tagging:
             # File needs tagging - skip metadata extraction, just enqueue for tagging
@@ -155,12 +190,13 @@ def scan_single_file_workflow(
             result["action"] = "queued_for_tagging"
             result["success"] = True
             result["auto_tagged"] = True
-        else:
+        elif not check_existing_version or (check_existing_version and result.get("success") is not True):
             # File doesn't need tagging - extract and update metadata now
+            # Skip if we already handled it above (check_existing_version path)
             params_update = UpdateLibraryFileFromTagsParams(
                 file_path=file_path,
                 namespace=namespace,
-                tagged_version=None,
+                tagged_version=None,  # Not tagged by us
                 calibration=None,
                 library_id=library_id,
             )

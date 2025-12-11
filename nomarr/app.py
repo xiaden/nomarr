@@ -93,6 +93,7 @@ class Application:
             INTERNAL_PORT,
             INTERNAL_VERSION_TAG,
             INTERNAL_WORKER_ENABLED,
+            TAGGER_VERSION,
         )
 
         # Extract config-derived values as instance attributes
@@ -114,6 +115,7 @@ class Application:
         self.library_scan_poll_interval: int = INTERNAL_LIBRARY_SCAN_POLL_INTERVAL
         self.namespace: str = INTERNAL_NAMESPACE
         self.version_tag_key: str = INTERNAL_VERSION_TAG
+        self.tagger_version: str = TAGGER_VERSION
 
         # Core dependencies (owned by Application)
         self.db = Database(self.db_path)
@@ -360,6 +362,8 @@ class Application:
 
         scanner_backend = create_scanner_backend(
             namespace=self.namespace,
+            version_tag_key=self.version_tag_key,
+            tagger_version=self.tagger_version,
         )
 
         recalibration_backend = create_recalibration_backend(

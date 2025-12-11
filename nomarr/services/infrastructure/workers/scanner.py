@@ -36,8 +36,10 @@ class ScannerBackend:
     making it picklable for multiprocessing.spawn().
     """
 
-    def __init__(self, namespace: str):
+    def __init__(self, namespace: str, version_tag_key: str, tagger_version: str):
         self.namespace = namespace
+        self.version_tag_key = version_tag_key
+        self.tagger_version = tagger_version
 
     def __call__(self, db: Database, path: str, force: bool) -> dict[str, Any]:
         """Scan single file and update library database."""
@@ -51,11 +53,13 @@ class ScannerBackend:
             auto_tag=True,  # Auto-enqueue discovered files for tagging
             ignore_patterns="",
             library_id=None,
+            version_tag_key=self.version_tag_key,
+            tagger_version=self.tagger_version,
         )
         return scan_single_file_workflow(db=db, params=params)
 
 
-def create_scanner_backend(namespace: str) -> ScannerBackend:
+def create_scanner_backend(namespace: str, version_tag_key: str, tagger_version: str) -> ScannerBackend:
     """
     Create a scanner backend callable with captured config.
 
@@ -64,11 +68,13 @@ def create_scanner_backend(namespace: str) -> ScannerBackend:
 
     Args:
         namespace: Tag namespace for scanned files
+        version_tag_key: Key for version tag (e.g., "nomarr_version")
+        tagger_version: Current tagger version (e.g., "1.2")
 
     Returns:
         ScannerBackend instance that accepts (db, path, force)
     """
-    return ScannerBackend(namespace=namespace)
+    return ScannerBackend(namespace=namespace, version_tag_key=version_tag_key, tagger_version=tagger_version)
 
 
 class LibraryScanWorker(BaseWorker):

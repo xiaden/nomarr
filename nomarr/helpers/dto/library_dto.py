@@ -78,6 +78,8 @@ class ScanSingleFileWorkflowParams:
     auto_tag: bool
     ignore_patterns: str  # Comma-separated patterns like "*/Audiobooks/*,*.wav"
     library_id: int | None
+    version_tag_key: str  # Key for version tag (e.g., "nomarr_version")
+    tagger_version: str  # Current tagger version (e.g., "1.2")
 
 
 @dataclass
