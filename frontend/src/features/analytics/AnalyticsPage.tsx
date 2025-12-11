@@ -52,6 +52,7 @@ export function AnalyticsPage() {
 
   // Co-occurrence search
   const [searchTag, setSearchTag] = useState("");
+  const [totalOccurrences, setTotalOccurrences] = useState<number>(0);
   const [coOccurrences, setCoOccurrences] = useState<CoOccurrence[] | null>(
     null
   );
@@ -95,6 +96,7 @@ export function AnalyticsPage() {
       setCoOccurrenceError(null);
 
       const data = await api.analytics.getTagCoOccurrences(searchTag, 10);
+      setTotalOccurrences(data.total_occurrences);
       setCoOccurrences(data.co_occurrences);
       setTopArtists(data.top_artists);
       setTopGenres(data.top_genres);
@@ -163,7 +165,11 @@ export function AnalyticsPage() {
 
           {/* Co-occurrence Search */}
           <section style={styles.section}>
-            <h2 style={styles.sectionTitle}>Tag Co-occurrence Search</h2>
+            <h2 style={styles.sectionTitle}>Tag Value Co-occurrence Search</h2>
+            <p style={{ marginBottom: "15px", color: "#888", fontSize: "0.9rem" }}>
+              Search for any mood value (e.g., "happy", "dark", "energetic") to
+              see which other moods, genres, and artists co-occur with it.
+            </p>
             <form
               onSubmit={handleCoOccurrenceSearch}
               style={{ marginBottom: "15px" }}
@@ -173,7 +179,7 @@ export function AnalyticsPage() {
                   type="text"
                   value={searchTag}
                   onChange={(e) => setSearchTag(e.target.value)}
-                  placeholder="Enter tag (e.g., happy, dark, energetic)"
+                  placeholder="Enter mood value (e.g., happy, dark, energetic)"
                   style={styles.input}
                   disabled={coOccurrenceLoading}
                 />
@@ -195,18 +201,30 @@ export function AnalyticsPage() {
 
             {coOccurrences && (
               <div style={{ display: "grid", gap: "15px" }}>
-                <div>
-                  <h3 style={{ fontSize: "1rem", marginBottom: "10px" }}>
-                    Co-occurring Moods
-                  </h3>
-                  <ul style={styles.list}>
-                    {coOccurrences.map((co) => (
-                      <li key={co.tag}>
-                        {co.tag}: {co.count} ({co.percentage.toFixed(1)}%)
-                      </li>
-                    ))}
-                  </ul>
+                <div style={{ marginBottom: "10px", color: "#aaa" }}>
+                  <strong>Found {totalOccurrences} files</strong> with mood value "{searchTag}"
                 </div>
+                
+                {coOccurrences.length > 0 ? (
+                  <div>
+                    <h3 style={{ fontSize: "1rem", marginBottom: "10px" }}>
+                      Co-occurring Mood Values
+                    </h3>
+                    <ul style={styles.list}>
+                      {coOccurrences.map((co) => (
+                        <li key={co.tag}>
+                          {co.tag}: {co.count} files ({co.percentage.toFixed(1)}%)
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <p style={{ color: "#888" }}>
+                    {totalOccurrences > 0 
+                      ? "No other moods co-occur with this value." 
+                      : "No files found with this mood value."}
+                  </p>
+                )}
 
                 {topArtists && topArtists.length > 0 && (
                   <div>

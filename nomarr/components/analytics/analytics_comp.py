@@ -45,16 +45,20 @@ def compute_tag_frequencies(
     """
     Compute frequency counts from raw tag data.
 
+    Input tag rows are already in "key:value" format (e.g., "mood-strict:happy").
+    This function just passes them through with minimal processing.
+
     Args:
         params: Input parameters with namespace prefix, file count, and tag rows
 
     Returns:
-        ComputeTagFrequenciesResult with nom_tags, standard_tags, total_files
+        ComputeTagFrequenciesResult with nom_tags (as key:value), standard_tags, total_files
     """
     logging.info("[analytics] Computing tag frequencies")
 
-    # Format results (remove namespace prefix)
-    nom_tag_counts = [(tag_key.replace(params.namespace_prefix, ""), count) for tag_key, count in params.nom_tag_rows]
+    # Tag rows are already in "key:value" format from persistence layer
+    # Just convert to list format (no prefix stripping needed)
+    nom_tag_counts = list(params.nom_tag_rows)
 
     return ComputeTagFrequenciesResult(
         nom_tags=nom_tag_counts,
@@ -318,6 +322,7 @@ def compute_mood_value_co_occurrences(
         )
 
     mood_counter: Counter = Counter()
+    mood_value_lower = params.mood_value.lower().strip()
 
     for file_id, tag_value, tag_type in params.mood_tag_rows:
         if file_id not in params.matching_file_ids:
@@ -328,14 +333,16 @@ def compute_mood_value_co_occurrences(
                 moods = json.loads(tag_value)
                 for mood in moods:
                     mood_str = str(mood).strip()
-                    if mood_str != params.mood_value:
+                    # Case-insensitive comparison - don't count the searched mood itself
+                    if mood_str.lower() != mood_value_lower:
                         mood_counter[mood_str] += 1
             except json.JSONDecodeError:
                 # TODO [LOGGING]
                 pass
         else:
             mood_str = str(tag_value).strip()
-            if mood_str != params.mood_value:
+            # Case-insensitive comparison - don't count the searched mood itself
+            if mood_str.lower() != mood_value_lower:
                 mood_counter[mood_str] += 1
 
     mood_co_occurrences = [

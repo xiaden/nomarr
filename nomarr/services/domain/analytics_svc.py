@@ -70,7 +70,9 @@ class AnalyticsService:
 
     def get_tag_frequencies(self, limit: int = 50) -> list[TagFrequencyItem]:
         """
-        Get frequency counts for all tags in the library (API-ready format).
+        Get frequency counts for tag VALUES in the library (API-ready format).
+
+        Returns counts for mood values (e.g., "happy", "dark"), not tag keys.
 
         Args:
             limit: Max results per category
@@ -90,9 +92,14 @@ class AnalyticsService:
         )
         result = compute_tag_frequencies(params=params)
 
-        # Transform to API-ready format (add namespace prefix back for display)
+        # nom_tags now contains (tag_key:tag_value, count) tuples
+        # Return with namespace prefix for display
         return [
-            TagFrequencyItem(tag_key=f"{self.cfg.namespace}:{tag}", total_count=count, unique_values=count)
+            TagFrequencyItem(
+                tag_key=f"{self.cfg.namespace}:{tag}",  # tag is already "key:value"
+                total_count=count,
+                unique_values=1,  # Each entry is one unique value
+            )
             for tag, count in result.nom_tags
         ]
 

@@ -32,7 +32,7 @@ def fetch_tag_frequencies_data(
     Returns:
         {
             "total_files": int,
-            "nom_tag_rows": [(tag_key, count), ...],
+            "nom_tag_rows": [(tag_key:tag_value, count), ...],  # e.g., ("mood-strict:happy", 150)
             "artist_rows": [(artist, count), ...],
             "genre_rows": [(genre, count), ...],
             "album_rows": [(album, count), ...]
@@ -41,15 +41,21 @@ def fetch_tag_frequencies_data(
     # Get total file count
     _, total_count = db.library_files.list_library_files(limit=1)
 
-    # Count Nomarr tags using normalized schema (file_tags -> library_tags join)
+    # Count Nomarr tag VALUES (not keys) using normalized schema
+    # For array tags, we need to expand them
     namespace_prefix = f"{namespace}:"
+
+    # This query needs to handle both scalar and array tags
+    # For array tags (type='array'), we store JSON arrays like ["happy", "energetic"]
+    # We need to count frequency of each VALUE across all files
     cursor = db.conn.execute(
         """
-        SELECT lt.key, COUNT(DISTINCT ft.file_id) as tag_count
+        SELECT lt.key || ':' || lt.value as tag_key_value, COUNT(DISTINCT ft.file_id) as tag_count
         FROM file_tags ft
         JOIN library_tags lt ON lt.id = ft.tag_id
         WHERE lt.is_nomarr_tag = 1
-        GROUP BY lt.key
+          AND lt.type IN ('string', 'float', 'int')
+        GROUP BY lt.key, lt.value
         ORDER BY tag_count DESC
         LIMIT ?
         """,
@@ -284,6 +290,8 @@ def fetch_mood_value_co_occurrence_data(
     mood_tag_rows = []
     matching_file_ids = set()
 
+    mood_value_lower = mood_value.lower().strip()
+
     for tag_key in mood_tag_keys:
         cursor = db.conn.execute(
             """
@@ -298,15 +306,15 @@ def fetch_mood_value_co_occurrence_data(
         for file_id, tag_value, tag_type in cursor.fetchall():
             mood_tag_rows.append((file_id, tag_value, tag_type))
 
-            # Check if this file contains our mood_value
+            # Check if this file contains our mood_value (case-insensitive)
             if tag_type == "array":
                 try:
                     moods = json.loads(tag_value)
-                    if mood_value in [str(m).strip() for m in moods]:
+                    if mood_value_lower in [str(m).strip().lower() for m in moods]:
                         matching_file_ids.add(file_id)
                 except json.JSONDecodeError:
                     pass
-            elif str(tag_value).strip() == mood_value:
+            elif str(tag_value).strip().lower() == mood_value_lower:
                 matching_file_ids.add(file_id)
 
     # Fetch genre distribution for matching files
