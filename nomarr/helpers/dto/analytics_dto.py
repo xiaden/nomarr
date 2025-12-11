@@ -45,14 +45,20 @@ class ArtistTagProfile:
 
 
 @dataclass
-class MoodCoOccurrenceData:
-    """Domain result for mood co-occurrence analysis."""
+class TagSpec:
+    """Tag specification for co-occurrence queries."""
 
-    mood_value: str
-    total_occurrences: int
-    mood_co_occurrences: list[tuple[str, int, float]]  # (mood, count, percentage)
-    genre_distribution: list[tuple[str, int, float]]  # (genre, count, percentage)
-    artist_distribution: list[tuple[str, int, float]]  # (artist, count, percentage)
+    key: str  # e.g., "mood-strict", "genre", "artist"
+    value: str  # e.g., "happy", "rock", "Beatles"
+
+
+@dataclass
+class TagCoOccurrenceData:
+    """Domain result for generic tag co-occurrence analysis."""
+
+    x_tags: list[TagSpec]  # X-axis tags
+    y_tags: list[TagSpec]  # Y-axis tags
+    matrix: list[list[int]]  # matrix[j][i] = count of files with both x_tags[i] and y_tags[j]
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -95,15 +101,12 @@ class ComputeArtistTagProfileParams:
 
 
 @dataclass
-class ComputeMoodValueCoOccurrencesParams:
-    """Parameters for compute_mood_value_co_occurrences."""
+class ComputeTagCoOccurrenceParams:
+    """Parameters for compute_tag_co_occurrence."""
 
-    mood_value: str
-    matching_file_ids: set[int]
-    mood_tag_rows: Sequence[tuple[int, str, str]]
-    genre_rows: Sequence[tuple[str, int]]
-    artist_rows: Sequence[tuple[str, int]]
-    limit: int
+    x_tags: list[TagSpec]
+    y_tags: list[TagSpec]
+    tag_data: dict[tuple[str, str], set[int]]  # (key, value) -> set of file_ids
 
 
 # ──────────────────────────────────────────────────────────────────────

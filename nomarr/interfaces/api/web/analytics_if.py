@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.types.analytics_types import (
     MoodDistributionResponse,
+    TagCoOccurrenceRequest,
     TagCoOccurrencesResponse,
     TagCorrelationsResponse,
     TagFrequenciesResponse,
@@ -74,18 +75,33 @@ async def web_analytics_tag_correlations(
         raise HTTPException(status_code=500, detail=f"Error getting tag correlations: {e}") from e
 
 
-@router.get("/tag-co-occurrences/{tag}", dependencies=[Depends(verify_session)])
+@router.post("/tag-co-occurrences", dependencies=[Depends(verify_session)])
 async def web_analytics_tag_co_occurrences(
-    tag: str,
-    limit: int = 10,
+    request: TagCoOccurrenceRequest,
     analytics_service: "AnalyticsService" = Depends(get_analytics_service),
 ) -> TagCoOccurrencesResponse:
     """
-    Get mood value co-occurrences and genre/artist relationships.
-    Shows which moods appear together and what genres/artists correlate with a mood.
+    Get tag co-occurrence matrix for arbitrary tag sets.
+
+    Computes a matrix where matrix[j][i] = count of files having both x[i] and y[j].
+    Maximum 16x16 matrix size. Inputs exceeding limits are trimmed with warning.
     """
     try:
-        result_dto = analytics_service.get_mood_value_co_occurrences(mood_value=tag, limit=limit)
+        # Enforce 16x16 limit
+        x_tags = request.x[:16]
+        y_tags = request.y[:16]
+
+        if len(request.x) > 16 or len(request.y) > 16:
+            logging.warning(
+                f"[Web API] Tag co-occurrence request exceeded 16x16 limit. "
+                f"Trimmed from {len(request.x)}x{len(request.y)} to {len(x_tags)}x{len(y_tags)}"
+            )
+
+        # Convert Pydantic models to tuples for service
+        x_tuples = [(tag.key, tag.value) for tag in x_tags]
+        y_tuples = [(tag.key, tag.value) for tag in y_tags]
+
+        result_dto = analytics_service.get_tag_co_occurrence(x_tags=x_tuples, y_tags=y_tuples)
 
         # Transform DTO to Pydantic response
         return TagCoOccurrencesResponse.from_dto(result_dto)

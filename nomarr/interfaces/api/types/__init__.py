@@ -11,15 +11,14 @@ from .admin_types import (
     WorkerOperationResponse,
 )
 from .analytics_types import (
-    ArtistDistributionItemResponse,
-    GenreDistributionItemResponse,
-    MoodCoOccurrenceItemResponse,
     MoodDistributionItemResponse,
     MoodDistributionResponse,
+    TagCoOccurrenceRequest,
     TagCoOccurrencesResponse,
     TagCorrelationsResponse,
     TagFrequenciesResponse,
     TagFrequencyItemResponse,
+    TagSpecRequest,
 )
 from .calibration_types import (
     ApplyCalibrationResponse,
@@ -88,7 +87,6 @@ from .queue_types import (
 
 __all__ = [
     "ApplyCalibrationResponse",
-    "ArtistDistributionItemResponse",
     "BatchPathResult",
     "BatchProcessRequest",
     "BatchProcessResponse",
@@ -109,7 +107,6 @@ __all__ = [
     "GeneratePlaylistResponse",
     "GenerateTemplateFilesRequest",
     "GenerateTemplateFilesResponse",
-    "GenreDistributionItemResponse",
     "GetTemplateSummaryResponse",
     "HealthStatusResponse",
     "JobRemovalResponse",
@@ -120,7 +117,6 @@ __all__ = [
     "ListJobsResponse",
     "ListLibrariesResponse",
     "ModelsInfoResponse",
-    "MoodCoOccurrenceItemResponse",
     "MoodDistributionItemResponse",
     "MoodDistributionResponse",
     "NavidromeConfigResponse",
@@ -146,11 +142,13 @@ __all__ = [
     "StartScanResponse",
     "StartScanWithStatusResponse",
     "SystemInfoResponse",
+    "TagCoOccurrenceRequest",
     "TagCoOccurrencesResponse",
     "TagConditionResponse",
     "TagCorrelationsResponse",
     "TagFrequenciesResponse",
     "TagFrequencyItemResponse",
+    "TagSpecRequest",
     "TemplateSummaryItemResponse",
     "UniqueTagKeysResponse",
     "UpdateLibraryRequest",

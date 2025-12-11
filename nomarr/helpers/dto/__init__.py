@@ -36,9 +36,10 @@ from __future__ import annotations
 
 from nomarr.helpers.dto.analytics_dto import (
     ArtistTagProfile,
-    MoodCoOccurrenceData,
     MoodDistributionData,
+    TagCoOccurrenceData,
     TagCorrelationData,
+    TagSpec,
 )
 from nomarr.helpers.dto.events_state_dto import (
     JobState,
@@ -72,7 +73,6 @@ __all__ = [
     "GenerateMinmaxCalibrationResult",
     "JobState",
     "LoadAudioMonoResult",
-    "MoodCoOccurrenceData",
     "MoodDistributionData",
     "PlaylistPreviewResult",
     "ProcessFileResult",
@@ -83,7 +83,9 @@ __all__ = [
     "SmartPlaylistFilter",
     "SystemHealthState",
     "TagCondition",
+    "TagCoOccurrenceData",
     "TagCorrelationData",
+    "TagSpec",
     "TagWriteProfile",
     "WorkerState",
 ]

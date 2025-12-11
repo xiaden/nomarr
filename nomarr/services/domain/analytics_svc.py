@@ -17,24 +17,24 @@ from typing import TYPE_CHECKING, cast
 
 from nomarr.components.analytics.analytics_comp import (
     compute_mood_distribution,
-    compute_mood_value_co_occurrences,
+    compute_tag_co_occurrence,
     compute_tag_correlation_matrix,
     compute_tag_frequencies,
 )
 from nomarr.helpers.dto.analytics_dto import (
-    ComputeMoodValueCoOccurrencesParams,
+    ComputeTagCoOccurrenceParams,
     ComputeTagCorrelationMatrixParams,
     ComputeTagFrequenciesParams,
-    MoodCoOccurrenceData,
     MoodDistributionItem,
     MoodDistributionResult,
+    TagCoOccurrenceData,
     TagCorrelationData,
     TagFrequenciesResult,
     TagFrequencyItem,
 )
 from nomarr.persistence.analytics_queries import (
     fetch_mood_distribution_data,
-    fetch_mood_value_co_occurrence_data,
+    fetch_tag_co_occurrence_data,
     fetch_tag_correlation_data,
     fetch_tag_frequencies_data,
 )
@@ -169,24 +169,34 @@ class AnalyticsService:
         mood_distribution = self.get_mood_distribution()
         return MoodDistributionResult(mood_distribution=mood_distribution)
 
-    def get_mood_value_co_occurrences(self, mood_value: str, limit: int = 10) -> MoodCoOccurrenceData:
+    def get_tag_co_occurrence(
+        self,
+        x_tags: list[tuple[str, str]],
+        y_tags: list[tuple[str, str]],
+    ) -> TagCoOccurrenceData:
         """
-        Get co-occurrence statistics for a specific mood value.
+        Get co-occurrence matrix for two sets of tag specifications.
 
         Args:
-            mood_value: The mood value to analyze
-            limit: Max results per category
+            x_tags: List of (key, value) tuples for X-axis
+            y_tags: List of (key, value) tuples for Y-axis
 
         Returns:
-            MoodCoOccurrenceData with co-occurrence patterns and distributions
+            TagCoOccurrenceData with matrix where matrix[j][i] = count of files with both
         """
-        data = fetch_mood_value_co_occurrence_data(db=self._db, mood_value=mood_value, namespace=self.cfg.namespace)
-        params = ComputeMoodValueCoOccurrencesParams(
-            mood_value=mood_value,
-            matching_file_ids=data["matching_file_ids"],
-            mood_tag_rows=data["mood_tag_rows"],
-            genre_rows=data["genre_rows"],
-            artist_rows=data["artist_rows"],
-            limit=limit,
+        from nomarr.helpers.dto import TagSpec
+
+        # Convert tuples to TagSpec objects
+        x_tag_specs = [TagSpec(key=k, value=v) for k, v in x_tags]
+        y_tag_specs = [TagSpec(key=k, value=v) for k, v in y_tags]
+
+        # Fetch file ID mappings for all unique tags
+        all_specs = x_tags + y_tags
+        tag_data = fetch_tag_co_occurrence_data(db=self._db, tag_specs=all_specs)
+
+        params = ComputeTagCoOccurrenceParams(
+            x_tags=x_tag_specs,
+            y_tags=y_tag_specs,
+            tag_data=tag_data,
         )
-        return cast(MoodCoOccurrenceData, compute_mood_value_co_occurrences(params=params))
+        return cast(TagCoOccurrenceData, compute_tag_co_occurrence(params=params))

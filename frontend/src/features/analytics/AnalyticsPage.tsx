@@ -24,24 +24,6 @@ interface MoodDistribution {
   percentage: number;
 }
 
-interface CoOccurrence {
-  tag: string;
-  count: number;
-  percentage: number;
-}
-
-interface Artist {
-  name: string;
-  count: number;
-  percentage: number;
-}
-
-interface Genre {
-  name: string;
-  count: number;
-  percentage: number;
-}
-
 export function AnalyticsPage() {
   const [tagFrequencies, setTagFrequencies] = useState<TagFrequency[]>([]);
   const [moodDistribution, setMoodDistribution] = useState<MoodDistribution[]>(
@@ -50,18 +32,7 @@ export function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Co-occurrence search
-  const [searchTag, setSearchTag] = useState("");
-  const [totalOccurrences, setTotalOccurrences] = useState<number>(0);
-  const [coOccurrences, setCoOccurrences] = useState<CoOccurrence[] | null>(
-    null
-  );
-  const [topArtists, setTopArtists] = useState<Artist[] | null>(null);
-  const [topGenres, setTopGenres] = useState<Genre[] | null>(null);
-  const [coOccurrenceLoading, setCoOccurrenceLoading] = useState(false);
-  const [coOccurrenceError, setCoOccurrenceError] = useState<string | null>(
-    null
-  );
+
 
   const loadAnalytics = async () => {
     try {
@@ -87,28 +58,7 @@ export function AnalyticsPage() {
     loadAnalytics();
   }, []);
 
-  const handleCoOccurrenceSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!searchTag.trim()) return;
 
-    try {
-      setCoOccurrenceLoading(true);
-      setCoOccurrenceError(null);
-
-      const data = await api.analytics.getTagCoOccurrences(searchTag, 10);
-      setTotalOccurrences(data.total_occurrences);
-      setCoOccurrences(data.co_occurrences);
-      setTopArtists(data.top_artists);
-      setTopGenres(data.top_genres);
-    } catch (err) {
-      setCoOccurrenceError(
-        err instanceof Error ? err.message : "Failed to search co-occurrences"
-      );
-      console.error("[Analytics] Co-occurrence search error:", err);
-    } finally {
-      setCoOccurrenceLoading(false);
-    }
-  };
 
   return (
     <div style={{ padding: "20px" }}>
@@ -163,103 +113,7 @@ export function AnalyticsPage() {
             </div>
           </section>
 
-          {/* Co-occurrence Search */}
-          <section style={styles.section}>
-            <h2 style={styles.sectionTitle}>Tag Value Co-occurrence Search</h2>
-            <p style={{ marginBottom: "15px", color: "#888", fontSize: "0.9rem" }}>
-              Search for any mood value (e.g., "happy", "dark", "energetic") to
-              see which other moods, genres, and artists co-occur with it.
-            </p>
-            <form
-              onSubmit={handleCoOccurrenceSearch}
-              style={{ marginBottom: "15px" }}
-            >
-              <div style={{ display: "flex", gap: "10px" }}>
-                <input
-                  type="text"
-                  value={searchTag}
-                  onChange={(e) => setSearchTag(e.target.value)}
-                  placeholder="Enter mood value (e.g., happy, dark, energetic)"
-                  style={styles.input}
-                  disabled={coOccurrenceLoading}
-                />
-                <button
-                  type="submit"
-                  style={styles.button}
-                  disabled={coOccurrenceLoading}
-                >
-                  {coOccurrenceLoading ? "Searching..." : "Search"}
-                </button>
-              </div>
-            </form>
 
-            {coOccurrenceError && (
-              <p style={{ color: "var(--accent-red)" }}>
-                Error: {coOccurrenceError}
-              </p>
-            )}
-
-            {coOccurrences && (
-              <div style={{ display: "grid", gap: "15px" }}>
-                <div style={{ marginBottom: "10px", color: "#aaa" }}>
-                  <strong>Found {totalOccurrences} files</strong> with mood value "{searchTag}"
-                </div>
-                
-                {coOccurrences.length > 0 ? (
-                  <div>
-                    <h3 style={{ fontSize: "1rem", marginBottom: "10px" }}>
-                      Co-occurring Mood Values
-                    </h3>
-                    <ul style={styles.list}>
-                      {coOccurrences.map((co) => (
-                        <li key={co.tag}>
-                          {co.tag}: {co.count} files ({co.percentage.toFixed(1)}%)
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : (
-                  <p style={{ color: "#888" }}>
-                    {totalOccurrences > 0 
-                      ? "No other moods co-occur with this value." 
-                      : "No files found with this mood value."}
-                  </p>
-                )}
-
-                {topArtists && topArtists.length > 0 && (
-                  <div>
-                    <h3 style={{ fontSize: "1rem", marginBottom: "10px" }}>
-                      Top Artists
-                    </h3>
-                    <ul style={styles.list}>
-                      {topArtists.map((artist) => (
-                        <li key={artist.name}>
-                          {artist.name}: {artist.count} (
-                          {artist.percentage.toFixed(1)}%)
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {topGenres && topGenres.length > 0 && (
-                  <div>
-                    <h3 style={{ fontSize: "1rem", marginBottom: "10px" }}>
-                      Top Genres
-                    </h3>
-                    <ul style={styles.list}>
-                      {topGenres.map((genre) => (
-                        <li key={genre.name}>
-                          {genre.name}: {genre.count} (
-                          {genre.percentage.toFixed(1)}%)
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            )}
-          </section>
         </div>
       )}
     </div>

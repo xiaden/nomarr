@@ -267,95 +267,58 @@ def fetch_artist_tag_profile_data(
     }
 
 
-def fetch_mood_value_co_occurrence_data(
+def fetch_tag_co_occurrence_data(
     db: Database,
-    mood_value: str,
-    namespace: str,
-) -> dict[str, Any]:
+    tag_specs: list[tuple[str, str]],
+) -> dict[tuple[str, str], set[int]]:
     """
-    Fetch raw data for mood value co-occurrence analysis.
+    Fetch file IDs for each tag specification.
+
+    Args:
+        db: Database instance
+        tag_specs: List of (key, value) tuples to query
 
     Returns:
-        {
-            "mood_tag_rows": [(file_id, tag_value, tag_type), ...],  # All mood tags
-            "genre_rows": [(genre, count), ...],  # Genre distribution for matching files
-            "artist_rows": [(artist, count), ...],  # Artist distribution for matching files
-            "matching_file_ids": set[int]  # File IDs that contain the mood_value
-        }
+        Dict mapping (key, value) -> set of file_ids that have that tag
     """
-    # Fetch mood tag data using normalized schema
-    mood_tag_keys = ["mood-strict", "mood-regular", "mood-loose"]
+    result: dict[tuple[str, str], set[int]] = {}
 
-    # Fetch all mood tag data and identify matching files
-    mood_tag_rows = []
-    matching_file_ids = set()
+    for key, value in tag_specs:
+        file_ids: set[int] = set()
 
-    mood_value_lower = mood_value.lower().strip()
-
-    for tag_key in mood_tag_keys:
+        # Query for files with this specific tag key/value combination
         cursor = db.conn.execute(
             """
-            SELECT ft.file_id, lt.value, lt.type
+            SELECT ft.file_id
             FROM file_tags ft
             JOIN library_tags lt ON lt.id = ft.tag_id
-            WHERE lt.key = ? AND lt.is_nomarr_tag = 1
+            WHERE lt.key = ? AND lt.value = ?
             """,
-            (tag_key,),
+            (key, value),
         )
 
-        for file_id, tag_value, tag_type in cursor.fetchall():
-            mood_tag_rows.append((file_id, tag_value, tag_type))
+        for row in cursor.fetchall():
+            file_ids.add(row[0])
 
-            # Check if this file contains our mood_value (case-insensitive)
-            if tag_type == "array":
-                try:
-                    moods = json.loads(tag_value)
-                    if mood_value_lower in [str(m).strip().lower() for m in moods]:
-                        matching_file_ids.add(file_id)
-                except json.JSONDecodeError:
-                    pass
-            elif str(tag_value).strip().lower() == mood_value_lower:
-                matching_file_ids.add(file_id)
-
-    # Fetch genre distribution for matching files
-    genre_rows = []
-    artist_rows = []
-
-    if matching_file_ids:
-        placeholders = ",".join("?" * len(matching_file_ids))
-
-        # Genre distribution from tags
-        genre_cursor = db.conn.execute(
-            f"""
-            SELECT lt.value, COUNT(*) as count
+        # Also check for array-type tags where value might be in JSON array
+        cursor = db.conn.execute(
+            """
+            SELECT ft.file_id, lt.value
             FROM file_tags ft
             JOIN library_tags lt ON lt.id = ft.tag_id
-            WHERE ft.file_id IN ({placeholders})
-              AND lt.key = 'genre'
-            GROUP BY lt.value
-            ORDER BY count DESC
+            WHERE lt.key = ? AND lt.type = 'array'
             """,
-            tuple(matching_file_ids),
+            (key,),
         )
-        genre_rows = genre_cursor.fetchall()
 
-        # Artist distribution (still in library_files for performance)
-        artist_cursor = db.conn.execute(
-            f"""
-            SELECT artist, COUNT(*) as count
-            FROM library_files
-            WHERE id IN ({placeholders}) AND artist IS NOT NULL
-            GROUP BY artist
-            ORDER BY count DESC
-            """,
-            tuple(matching_file_ids),
-        )
-        artist_rows = artist_cursor.fetchall()
+        for file_id, json_value in cursor.fetchall():
+            try:
+                values = json.loads(json_value)
+                if value in values:
+                    file_ids.add(file_id)
+            except json.JSONDecodeError:
+                pass
 
-    return {
-        "mood_tag_rows": mood_tag_rows,
-        "genre_rows": genre_rows,
-        "artist_rows": artist_rows,
-        "matching_file_ids": matching_file_ids,
-        "mood_value": mood_value,
-    }
+        result[(key, value)] = file_ids
+
+    return result

@@ -25,12 +25,12 @@ from collections.abc import Sequence
 from nomarr.helpers.dto.analytics_dto import (
     ArtistTagProfile,
     ComputeArtistTagProfileParams,
-    ComputeMoodValueCoOccurrencesParams,
+    ComputeTagCoOccurrenceParams,
     ComputeTagCorrelationMatrixParams,
     ComputeTagFrequenciesParams,
     ComputeTagFrequenciesResult,
-    MoodCoOccurrenceData,
     MoodDistributionData,
+    TagCoOccurrenceData,
     TagCorrelationData,
 )
 
@@ -296,74 +296,42 @@ def compute_artist_tag_profile(
     )
 
 
-def compute_mood_value_co_occurrences(
-    params: ComputeMoodValueCoOccurrencesParams,
-) -> MoodCoOccurrenceData:
+def compute_tag_co_occurrence(
+    params: ComputeTagCoOccurrenceParams,
+) -> TagCoOccurrenceData:
     """
-    Compute mood value co-occurrence statistics from raw data.
+    Compute tag co-occurrence matrix from tag file sets.
+
+    Builds a matrix where matrix[j][i] = count of files having both x_tags[i] and y_tags[j].
 
     Args:
-        params: Parameters containing mood value, file IDs, and distribution data
+        params: Parameters containing X/Y tag specs and file ID mappings
 
     Returns:
-        MoodCoOccurrenceData with co-occurrence patterns and distributions
+        TagCoOccurrenceData with X/Y tags and co-occurrence matrix
     """
-    logging.info(f"[analytics] Computing mood value co-occurrences for: {params.mood_value}")
+    logging.info(f"[analytics] Computing tag co-occurrence matrix: {len(params.x_tags)}x{len(params.y_tags)}")
 
-    total_occurrences = len(params.matching_file_ids)
+    # Build the matrix: matrix[j][i] = intersection of y_tags[j] and x_tags[i] file sets
+    matrix: list[list[int]] = []
 
-    if total_occurrences == 0:
-        return MoodCoOccurrenceData(
-            mood_value=params.mood_value,
-            total_occurrences=0,
-            mood_co_occurrences=[],
-            genre_distribution=[],
-            artist_distribution=[],
-        )
+    for y_tag in params.y_tags:
+        row: list[int] = []
+        y_key = (y_tag.key, y_tag.value)
+        y_files = params.tag_data.get(y_key, set())
 
-    mood_counter: Counter = Counter()
-    mood_value_lower = params.mood_value.lower().strip()
+        for x_tag in params.x_tags:
+            x_key = (x_tag.key, x_tag.value)
+            x_files = params.tag_data.get(x_key, set())
 
-    for file_id, tag_value, tag_type in params.mood_tag_rows:
-        if file_id not in params.matching_file_ids:
-            continue
+            # Count files in both sets
+            intersection_count = len(y_files & x_files)
+            row.append(intersection_count)
 
-        if tag_type == "array":
-            try:
-                moods = json.loads(tag_value)
-                for mood in moods:
-                    mood_str = str(mood).strip()
-                    # Case-insensitive comparison - don't count the searched mood itself
-                    if mood_str.lower() != mood_value_lower:
-                        mood_counter[mood_str] += 1
-            except json.JSONDecodeError:
-                # TODO [LOGGING]
-                pass
-        else:
-            mood_str = str(tag_value).strip()
-            # Case-insensitive comparison - don't count the searched mood itself
-            if mood_str.lower() != mood_value_lower:
-                mood_counter[mood_str] += 1
+        matrix.append(row)
 
-    mood_co_occurrences = [
-        (mood, count, round((count / total_occurrences) * 100, 1))
-        for mood, count in mood_counter.most_common(params.limit)
-    ]
-
-    genre_distribution = [
-        (genre, count, round((count / total_occurrences) * 100, 1))
-        for genre, count in params.genre_rows[: params.limit]
-    ]
-
-    artist_distribution = [
-        (artist, count, round((count / total_occurrences) * 100, 1))
-        for artist, count in params.artist_rows[: params.limit]
-    ]
-
-    return MoodCoOccurrenceData(
-        mood_value=params.mood_value,
-        total_occurrences=total_occurrences,
-        mood_co_occurrences=mood_co_occurrences,
-        genre_distribution=genre_distribution,
-        artist_distribution=artist_distribution,
+    return TagCoOccurrenceData(
+        x_tags=params.x_tags,
+        y_tags=params.y_tags,
+        matrix=matrix,
     )

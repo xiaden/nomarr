@@ -15,9 +15,9 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from nomarr.helpers.dto.analytics_dto import (
-    MoodCoOccurrenceData,
     MoodDistributionItem,
     MoodDistributionResult,
+    TagCoOccurrenceData,
     TagCorrelationData,
     TagFrequenciesResult,
     TagFrequencyItem,
@@ -107,61 +107,32 @@ class TagCorrelationsResponse(BaseModel):
         )
 
 
-class MoodCoOccurrenceItemResponse(BaseModel):
-    """Single mood co-occurrence entry."""
+class TagSpecRequest(BaseModel):
+    """Tag specification for co-occurrence requests."""
 
-    mood: str = Field(..., description="Mood value")
-    count: int = Field(..., description="Co-occurrence count")
-    percentage: float = Field(..., description="Co-occurrence percentage")
-
-
-class GenreDistributionItemResponse(BaseModel):
-    """Single genre distribution entry."""
-
-    genre: str = Field(..., description="Genre name")
-    count: int = Field(..., description="Track count")
-    percentage: float = Field(..., description="Percentage")
+    key: str = Field(..., description="Tag key (e.g., 'mood-strict', 'genre')")
+    value: str = Field(..., description="Tag value (e.g., 'happy', 'rock')")
 
 
-class ArtistDistributionItemResponse(BaseModel):
-    """Single artist distribution entry."""
+class TagCoOccurrenceRequest(BaseModel):
+    """Request model for tag co-occurrence matrix."""
 
-    artist: str = Field(..., description="Artist name")
-    count: int = Field(..., description="Track count")
-    percentage: float = Field(..., description="Percentage")
+    x: list[TagSpecRequest] = Field(..., description="X-axis tags (max 16)", max_length=16)
+    y: list[TagSpecRequest] = Field(..., description="Y-axis tags (max 16)", max_length=16)
 
 
 class TagCoOccurrencesResponse(BaseModel):
-    """Pydantic model for MoodCoOccurrenceData DTO."""
+    """Response model for tag co-occurrence matrix."""
 
-    mood_value: str = Field(..., description="The mood value being analyzed")
-    total_occurrences: int = Field(..., description="Total number of occurrences")
-    mood_co_occurrences: list[MoodCoOccurrenceItemResponse] = Field(
-        default_factory=list, description="Co-occurring moods"
-    )
-    genre_distribution: list[GenreDistributionItemResponse] = Field(
-        default_factory=list, description="Genre distribution for this mood"
-    )
-    artist_distribution: list[ArtistDistributionItemResponse] = Field(
-        default_factory=list, description="Artist distribution for this mood"
-    )
+    x: list[TagSpecRequest] = Field(..., description="X-axis tags")
+    y: list[TagSpecRequest] = Field(..., description="Y-axis tags")
+    matrix: list[list[int]] = Field(..., description="Co-occurrence matrix where matrix[j][i] = count")
 
     @classmethod
-    def from_dto(cls, dto: MoodCoOccurrenceData) -> TagCoOccurrencesResponse:
-        """Convert MoodCoOccurrenceData DTO to Pydantic response model."""
+    def from_dto(cls, dto: TagCoOccurrenceData) -> TagCoOccurrencesResponse:
+        """Convert TagCoOccurrenceData DTO to Pydantic response model."""
         return cls(
-            mood_value=dto.mood_value,
-            total_occurrences=dto.total_occurrences,
-            mood_co_occurrences=[
-                MoodCoOccurrenceItemResponse(mood=mood, count=count, percentage=pct)
-                for mood, count, pct in dto.mood_co_occurrences
-            ],
-            genre_distribution=[
-                GenreDistributionItemResponse(genre=genre, count=count, percentage=pct)
-                for genre, count, pct in dto.genre_distribution
-            ],
-            artist_distribution=[
-                ArtistDistributionItemResponse(artist=artist, count=count, percentage=pct)
-                for artist, count, pct in dto.artist_distribution
-            ],
+            x=[TagSpecRequest(key=tag.key, value=tag.value) for tag in dto.x_tags],
+            y=[TagSpecRequest(key=tag.key, value=tag.value) for tag in dto.y_tags],
+            matrix=dto.matrix,
         )
