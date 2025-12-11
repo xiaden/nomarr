@@ -17,6 +17,7 @@ Everything else is discarded.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 # Canonical tag set - only these keys (plus nom:*) will be kept
@@ -292,7 +293,7 @@ def _serialize_value(value: Any) -> str:
 
     Handles various mutagen types:
     - MP4FreeForm: Extract bytes and decode
-    - Lists: Take first value or join multiple values
+    - Lists: Serialize as JSON array for structured data (moods, etc.)
     - Tuples (MP4 track/disc): Format as "N/total"
     - Bytes: Decode to UTF-8
     - Everything else: str()
@@ -301,7 +302,7 @@ def _serialize_value(value: Any) -> str:
         value: Tag value from mutagen
 
     Returns:
-        String representation
+        String representation (JSON for multi-value lists)
     """
     # Handle MP4 track/disc tuples: (track, total)
     if isinstance(value, tuple) and len(value) >= 2 and all(isinstance(x, int) for x in value[:2]):
@@ -317,10 +318,11 @@ def _serialize_value(value: Any) -> str:
             if isinstance(item, bytes):
                 return item.decode("utf-8", errors="replace")
             return str(item)
-        # For multi-value lists, join with semicolon
-        return "; ".join(
+        # For multi-value lists, serialize as JSON array (enables individual value tracking)
+        decoded_items = [
             item.decode("utf-8", errors="replace") if isinstance(item, bytes) else str(item) for item in value
-        )
+        ]
+        return json.dumps(decoded_items, ensure_ascii=False)
 
     # Handle bytes directly
     if isinstance(value, bytes):
