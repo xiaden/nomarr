@@ -312,7 +312,7 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
         if not result:
             return None
 
-        logging.info(f"[{self.name}] Processing job {result.job_id}: {result.file_path} (force={result.force})")
+        logging.debug(f"[{self.name}] Processing job {result.job_id}: {result.file_path} (force={result.force})")
 
         # Track current job for heartbeat (Phase 3: DB-based IPC)
         self._current_job_id = result.job_id
@@ -390,7 +390,7 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
                 self._cache_loaded = True
                 logging.info(f"[{self.name}] Cache loaded (TF models initialized)")
 
-            logging.info(f"[{self.name}] ✅ Job {job_id} done in {elapsed}s")
+            logging.debug(f"[{self.name}] ✅ Job {job_id} done in {elapsed}s")
 
         except KeyboardInterrupt:
             # Job was cancelled via cancel() - mark as error with cancellation message

@@ -35,14 +35,14 @@ from nomarr.helpers.dto.ml_dto import ComputeEmbeddingsForBackboneParams
 
 # Check if Essentia is available, but don't fail at import time
 # Functions will call backend_essentia.require() when they actually need Essentia
-if backend_essentia.is_available():
+if backend_essentia.essentia_tf is not None:
     # Access Essentia classes through the backend
     TensorflowPredict2D = backend_essentia.essentia_tf.TensorflowPredict2D
 
-    # Suppress Essentia INFO messages (e.g., "MusicExtractorSVM: no classifier models...")
+    # Suppress Essentia INFO messages (TensorflowPredict logs "Successfully loaded graph file")
     try:
         eslog = backend_essentia.essentia_tf.log
-        eslog.setLevel(eslog.WARNING)
+        eslog.setLevel(eslog.ERROR)  # Only show errors, not INFO/WARNING
     except (ImportError, AttributeError):
         pass  # Older Essentia versions may not have log module
 
@@ -234,7 +234,7 @@ def compute_embeddings_for_backbone(
     emb = emb_predictor(wave_f32)
     emb = np.asarray(emb, dtype=np.float32)
 
-    logging.info(
+    logging.debug(
         f"[inference] {params.backbone} backbone output shape: {emb.shape} "
         f"(audio input: {len(wave_f32)} samples @ {audio_result.sample_rate}Hz = {len(wave_f32) / audio_result.sample_rate:.2f}s)"
     )
@@ -243,11 +243,11 @@ def compute_embeddings_for_backbone(
     embeddings_2d: np.ndarray
     if emb.ndim == 1:
         # Already pooled to 1D - expand to (1, embed_dim)
-        logging.info("[inference] Backbone returned 1D embedding (already pooled)")
+        logging.debug("[inference] Backbone returned 1D embedding (already pooled)")
         embeddings_2d = emb.reshape(1, -1)
     elif emb.ndim == 2:
         # Native 2D patches - use directly
-        logging.info(f"[inference] Backbone returned 2D patches: {emb.shape[0]} patches × {emb.shape[1]} dims")
+        logging.debug(f"[inference] Backbone returned 2D patches: {emb.shape[0]} patches × {emb.shape[1]} dims")
         embeddings_2d = emb
     elif emb.ndim == 3:
         # 3D output (rare) - average first two dimensions
@@ -258,7 +258,7 @@ def compute_embeddings_for_backbone(
         logging.warning(f"[inference] Unexpected backbone output shape: {emb.shape}, flattening to 1D")
         embeddings_2d = emb.reshape(1, -1)
 
-    logging.info(
+    logging.debug(
         f"[inference] Computed {embeddings_2d.shape[0]} patches for {params.backbone}: "
         f"shape={embeddings_2d.shape} duration={audio_result.duration:.1f}s"
     )

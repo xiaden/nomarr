@@ -44,12 +44,12 @@ def load_calibrations(models_dir: str, calibrate_heads: bool = False) -> dict[st
         # For dev mode (calibrate_heads=true): load versioned files (calibration-v*.json)
         if calibrate_heads:
             calib_files = list(models_path.rglob("*-calibration-v*.json"))
-            logging.info(f"[calibration] Loading versioned calibration files (dev mode): {len(calib_files)} found")
+            logging.debug(f"[calibration] Loading versioned calibration files (dev mode): {len(calib_files)} found")
         else:
             calib_files = list(models_path.rglob("*-calibration.json"))
             # Filter out versioned files (keep only reference files without -v suffix)
             calib_files = [f for f in calib_files if "-calibration-v" not in f.name]
-            logging.info(f"[calibration] Loading reference calibration files: {len(calib_files)} found")
+            logging.debug(f"[calibration] Loading reference calibration files: {len(calib_files)} found")
 
         for calib_file in calib_files:
             try:
@@ -67,7 +67,7 @@ def load_calibrations(models_dir: str, calibrate_heads: bool = False) -> dict[st
             except Exception as e:
                 logging.warning(f"[calibration] Failed to load {calib_file}: {e}")
 
-        logging.info(f"[calibration] Loaded calibrations for {len(calibrations)} labels")
+        logging.debug(f"[calibration] Loaded calibrations for {len(calibrations)} labels")
 
     except Exception as e:
         logging.error(f"[calibration] Error loading calibrations: {e}")
@@ -259,7 +259,7 @@ def add_regression_mood_tiers(
                 # Acceptable variance OR moderate intensity → loose tier
                 tier = "low"
 
-            logging.info(
+            logging.debug(
                 f"[aggregation] Regression mood: {head_name} → {mood_term} "
                 f"(mean={mean_val:.3f}, std={std_val:.3f}, intensity={intensity:.2f}, tier={tier})"
             )
@@ -331,7 +331,7 @@ def _build_tier_map(
 
         tier_map[ho.model_key] = (ho.tier, value, ho.label)
 
-    logging.info(f"[aggregation] Tier map has {len(tier_map)} entries")
+    logging.debug(f"[aggregation] Tier map has {len(tier_map)} entries")
 
     return tier_map
 
@@ -469,7 +469,7 @@ def _build_tier_term_sets(
         else:
             loose_terms.add(term)
 
-    logging.info(
+    logging.debug(
         f"[aggregation] Mood aggregation: strict={len(strict_terms)}, regular={len(regular_terms)}, loose={len(loose_terms)}"
     )
 
