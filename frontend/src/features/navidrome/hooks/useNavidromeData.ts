@@ -5,6 +5,7 @@
 
 import { useState } from "react";
 
+import { useNotification } from "../../../hooks/useNotification";
 import { api } from "../../../shared/api";
 
 interface TagPreview {
@@ -16,6 +17,8 @@ interface TagPreview {
 }
 
 export function useNavidromeData() {
+  const { showError } = useNotification();
+
   // Config state
   const [configPreview, setConfigPreview] = useState<TagPreview[] | null>(null);
   const [configText, setConfigText] = useState<string | null>(null);
@@ -79,11 +82,11 @@ export function useNavidromeData() {
 
   const generatePlaylist = async () => {
     if (!playlistQuery.trim()) {
-      alert("Query is required");
+      showError("Query is required");
       return;
     }
     if (!playlistName.trim()) {
-      alert("Playlist name is required");
+      showError("Playlist name is required");
       return;
     }
 

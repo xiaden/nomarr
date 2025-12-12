@@ -5,6 +5,8 @@
 
 import { useEffect, useState } from "react";
 
+import { useConfirmDialog } from "../../../hooks/useConfirmDialog";
+import { useNotification } from "../../../hooks/useNotification";
 import { useSSE } from "../../../hooks/useSSE";
 import { api } from "../../../shared/api";
 import type { QueueJob, QueueSummary } from "../../../shared/types";
@@ -12,6 +14,9 @@ import type { QueueJob, QueueSummary } from "../../../shared/types";
 type StatusFilter = "all" | "pending" | "running" | "done" | "error";
 
 export function useQueueData() {
+  const { showSuccess, showError } = useNotification();
+  const { confirm } = useConfirmDialog();
+
   const [jobs, setJobs] = useState<QueueJob[]>([]);
   const [summary, setSummary] = useState<QueueSummary>({
     pending: 0,
@@ -89,59 +94,79 @@ export function useQueueData() {
   });
 
   const removeJob = async (jobId: number) => {
-    if (!confirm(`Remove job ${jobId}?`)) return;
+    const confirmed = await confirm({
+      title: "Remove Job",
+      message: `Remove job ${jobId}?`,
+      severity: "warning",
+    });
+    if (!confirmed) return;
 
     try {
       setActionLoading(true);
       await api.queue.removeJobs({ job_id: jobId });
       await loadQueue();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to remove job");
+      showError(err instanceof Error ? err.message : "Failed to remove job");
     } finally {
       setActionLoading(false);
     }
   };
 
   const clearCompleted = async () => {
-    if (!confirm("Clear all completed jobs?")) return;
+    const confirmed = await confirm({
+      title: "Clear Completed Jobs",
+      message: "Clear all completed jobs?",
+      severity: "warning",
+    });
+    if (!confirmed) return;
 
     try {
       setActionLoading(true);
       const result = await api.queue.clearCompleted();
-      alert(`Removed ${result.removed} completed job(s)`);
+      showSuccess(`Removed ${result.removed} completed job(s)`);
       await loadQueue();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to clear completed");
+      showError(err instanceof Error ? err.message : "Failed to clear completed");
     } finally {
       setActionLoading(false);
     }
   };
 
   const clearErrors = async () => {
-    if (!confirm("Clear all error jobs?")) return;
+    const confirmed = await confirm({
+      title: "Clear Error Jobs",
+      message: "Clear all error jobs?",
+      severity: "error",
+    });
+    if (!confirmed) return;
 
     try {
       setActionLoading(true);
       const result = await api.queue.clearErrors();
-      alert(`Removed ${result.removed} error job(s)`);
+      showSuccess(`Removed ${result.removed} error job(s)`);
       await loadQueue();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to clear errors");
+      showError(err instanceof Error ? err.message : "Failed to clear errors");
     } finally {
       setActionLoading(false);
     }
   };
 
   const clearAll = async () => {
-    if (!confirm("Clear ALL jobs (except running)?")) return;
+    const confirmed = await confirm({
+      title: "Clear All Jobs",
+      message: "Clear ALL jobs (except running)?",
+      severity: "error",
+    });
+    if (!confirmed) return;
 
     try {
       setActionLoading(true);
       const result = await api.queue.clearAll();
-      alert(`Removed ${result.removed} job(s)`);
+      showSuccess(`Removed ${result.removed} job(s)`);
       await loadQueue();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to clear all");
+      showError(err instanceof Error ? err.message : "Failed to clear all");
     } finally {
       setActionLoading(false);
     }

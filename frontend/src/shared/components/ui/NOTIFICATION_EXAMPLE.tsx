@@ -5,8 +5,9 @@
  */
 
 import { useConfirmDialog } from "@hooks/useConfirmDialog";
+import { useNotification } from "@hooks/useNotification";
 import { Button, Stack } from "@mui/material";
-import { ConfirmDialog, useNotification } from "@shared/components/ui";
+import { ConfirmDialog } from "@shared/components/ui";
 import { useState } from "react";
 
 export function ExampleUsage() {

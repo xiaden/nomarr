@@ -122,7 +122,7 @@ def update_library_from_tags(
         logging.warning(f"[update_library_from_tags] Failed to update library for {file_path}: {e}")
 
 
-def _parse_tag_values(tags: dict[str, str]) -> dict[str, Any]:
+def _parse_tag_values(tags: dict[str, Any]) -> dict[str, Any]:
     """
     Parse tag values from strings to appropriate types.
 
@@ -132,10 +132,12 @@ def _parse_tag_values(tags: dict[str, str]) -> dict[str, Any]:
     - Integers (e.g., "120") -> int
     - Everything else -> str
 
+    Handles values that are already typed (passthrough).
+
     This is used when populating library_tags table with typed values.
 
     Args:
-        tags: Dict of tag_key -> tag_value (as strings from file)
+        tags: Dict of tag_key -> tag_value (strings from file or already typed)
 
     Returns:
         Dict with parsed values (arrays as lists, numbers as float/int, rest as str)
@@ -148,6 +150,11 @@ def _parse_tag_values(tags: dict[str, str]) -> dict[str, Any]:
 
     for key, value in tags.items():
         if not value:
+            continue
+
+        # If value is already typed (not a string), keep it as-is
+        if not isinstance(value, str):
+            parsed[key] = value
             continue
 
         # Try to parse as JSON (for arrays)

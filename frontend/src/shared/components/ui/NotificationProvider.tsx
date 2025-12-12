@@ -3,7 +3,7 @@
  */
 
 import { Alert, Snackbar } from "@mui/material";
-import { createContext, useContext, useState } from "react";
+import { createContext, useState } from "react";
 
 interface Notification {
   message: string;
@@ -19,19 +19,9 @@ interface NotificationContextType {
   showInfo: (message: string) => void;
 }
 
-const NotificationContext = createContext<NotificationContextType | undefined>(
+export const NotificationContext = createContext<NotificationContextType | undefined>(
   undefined
 );
-
-export function useNotification() {
-  const context = useContext(NotificationContext);
-  if (!context) {
-    throw new Error(
-      "useNotification must be used within NotificationProvider"
-    );
-  }
-  return context;
-}
 
 export function NotificationProvider({
   children,
