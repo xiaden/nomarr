@@ -217,9 +217,8 @@ class Application:
         # Clean ephemeral state from previous runs (Phase 3: health monitoring)
         logging.info("[Application] Cleaning ephemeral runtime state...")
         self.db.health.clean_all()
-        # Delete worker/job meta keys using meta operations
-        self.db.conn.execute("DELETE FROM meta WHERE key LIKE 'worker:%' OR key LIKE 'job:%'")
-        self.db.conn.commit()
+        # Delete worker/job meta keys from previous runs
+        self.db.meta.delete_ephemeral_runtime_keys()
 
         # Mark app as starting
         self.db.health.mark_starting(component="app", pid=os.getpid())
@@ -440,8 +439,7 @@ class Application:
         # Clean ephemeral state (Phase 3: health monitoring)
         logging.info("[Application] Cleaning ephemeral runtime state...")
         self.db.health.clean_all()
-        self.db.conn.execute("DELETE FROM meta WHERE key LIKE 'worker:%' OR key LIKE 'job:%'")
-        self.db.conn.commit()
+        self.db.meta.delete_ephemeral_runtime_keys()
 
         self._running = False
         logging.info("[Application] Shutdown complete - all workers stopped")

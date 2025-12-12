@@ -95,7 +95,7 @@ def generate_minmax_calibration(
                 # Values are JSON arrays now - unwrap single numbers
                 if isinstance(value, list) and len(value) == 1:
                     value = value[0]
-                
+
                 prob = float(value)
                 if 0.0 <= prob <= 1.0:  # Valid probability range
                     if tag_key not in tag_values:

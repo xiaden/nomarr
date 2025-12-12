@@ -37,3 +37,18 @@ class MetaOperations:
         """
         cur = self.conn.execute("SELECT key, value FROM meta WHERE key LIKE ?", (f"{prefix}%",))
         return {row[0]: row[1] for row in cur.fetchall()}
+
+    def delete_by_prefix(self, prefix: str) -> None:
+        """
+        Delete all metadata keys matching a prefix.
+
+        Args:
+            prefix: Key prefix to match (e.g., 'worker:')
+        """
+        self.conn.execute("DELETE FROM meta WHERE key LIKE ?", (f"{prefix}%",))
+        self.conn.commit()
+
+    def delete_ephemeral_runtime_keys(self) -> None:
+        """Delete ephemeral worker and job metadata keys from previous runs."""
+        self.conn.execute("DELETE FROM meta WHERE key LIKE 'worker:%' OR key LIKE 'job:%'")
+        self.conn.commit()
