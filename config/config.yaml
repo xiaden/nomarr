@@ -35,8 +35,7 @@ overwrite_tags: true # Overwrite existing tags in files
 # Library Scanning
 # ----------------------------------------------------------------------
 library_auto_tag: true # Auto-enqueue untagged files during scan
-library_ignore_patterns:
-  "" # Comma-separated path patterns to skip
+library_ignore_patterns:  "" # Comma-separated path patterns to skip
   # Example: "*/Audiobooks/*,*.wav"
 
 # ----------------------------------------------------------------------

@@ -8,10 +8,24 @@
  * - Browse filesystem to select file
  */
 
+import {
+    Box,
+    Button,
+    Stack,
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableRow,
+    TextField,
+    Typography,
+} from "@mui/material";
 import { useState } from "react";
 
-import { ServerFilePicker } from "../../components/ServerFilePicker";
+import { ErrorMessage, PageContainer, Panel, SectionHeader } from "@shared/components/ui";
+
 import { api } from "../../shared/api";
+import { ServerFilePicker } from "../../shared/components/ServerFilePicker";
 
 interface TagsData {
   path: string;
@@ -77,40 +91,38 @@ export function InspectTagsPage() {
   };
 
   return (
-    <div style={{ padding: "20px" }}>
-      <h1 style={{ marginBottom: "20px" }}>Inspect Tags</h1>
-
-      <section style={styles.section}>
-        <h2 style={styles.sectionTitle}>File Path</h2>
-        <form onSubmit={handleSubmit}>
-          <div style={{ display: "flex", gap: "10px" }}>
-            <input
-              type="text"
+    <PageContainer title="Inspect Tags">
+      <Panel>
+        <SectionHeader title="File Path" />
+        <Box component="form" onSubmit={handleSubmit}>
+          <Stack direction="row" spacing={1.25}>
+            <TextField
               value={filePath}
               onChange={(e) => setFilePath(e.target.value)}
               placeholder="Enter relative path to audio file"
-              style={styles.input}
               disabled={loading}
+              fullWidth
             />
-            <button
-              type="button"
+            <Button
               onClick={() => setShowPicker(!showPicker)}
-              style={styles.browseButton}
+              variant="outlined"
               disabled={loading}
+              sx={{ minWidth: 100 }}
             >
               {showPicker ? "Hide" : "Browse..."}
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
-              style={styles.button}
+              variant="contained"
               disabled={loading || !filePath.trim()}
+              sx={{ minWidth: 100 }}
             >
               {loading ? "Loading..." : "Inspect"}
-            </button>
-          </div>
-        </form>
+            </Button>
+          </Stack>
+        </Box>
         {showPicker && (
-          <div style={{ marginTop: "15px" }}>
+          <Box sx={{ mt: 2 }}>
             <ServerFilePicker
               value={filePath}
               onChange={(newPath) => {
@@ -120,167 +132,111 @@ export function InspectTagsPage() {
               mode="file"
               label="Select Audio File"
             />
-          </div>
+          </Box>
         )}
-      </section>
+      </Panel>
 
       {error && (
-        <section style={{ ...styles.section, marginTop: "20px" }}>
-          <p style={{ color: "var(--accent-red)" }}>Error: {error}</p>
-        </section>
+        <Panel>
+          <ErrorMessage>Error: {error}</ErrorMessage>
+        </Panel>
       )}
 
       {removeSuccess && (
-        <section style={{ ...styles.section, marginTop: "20px" }}>
-          <p style={{ color: "#4a9eff" }}>{removeSuccess}</p>
-        </section>
+        <Panel>
+          <Typography color="primary">{removeSuccess}</Typography>
+        </Panel>
       )}
 
       {tagsData && (
-        <div style={{ display: "grid", gap: "20px", marginTop: "20px" }}>
+        <Stack spacing={2.5}>
           {/* Metadata */}
-          <section style={styles.section}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "15px" }}>
-              <h2 style={{ ...styles.sectionTitle, marginBottom: 0 }}>File Metadata</h2>
-              {tagsData.count > 0 && (
-                <button
-                  onClick={handleRemoveTags}
-                  disabled={removing}
-                  style={styles.removeButton}
-                  title="Remove all tags from this file"
-                >
-                  {removing ? "Removing..." : "Remove All Tags"}
-                </button>
-              )}
-            </div>
-            <div style={{ display: "grid", gap: "10px" }}>
-              <div>
-                <span style={styles.label}>Path:</span>
-                <span style={styles.value}>{tagsData.path}</span>
-              </div>
-              <div>
-                <span style={styles.label}>Namespace:</span>
-                <span style={styles.value}>{tagsData.namespace}</span>
-              </div>
-              <div>
-                <span style={styles.label}>Tag Count:</span>
-                <span style={styles.value}>{tagsData.count}</span>
-              </div>
-            </div>
-          </section>
+          <Panel>
+            <SectionHeader
+              title="File Metadata"
+              action={
+                tagsData.count > 0 ? (
+                  <Button
+                    onClick={handleRemoveTags}
+                    disabled={removing}
+                    variant="contained"
+                    color="error"
+                    size="small"
+                    title="Remove all tags from this file"
+                  >
+                    {removing ? "Removing..." : "Remove All Tags"}
+                  </Button>
+                ) : undefined
+              }
+            />
+            <Stack spacing={1.25}>
+              <Box>
+                <Typography component="span" fontWeight="bold" color="text.secondary" sx={{ mr: 1.25 }}>
+                  Path:
+                </Typography>
+                <Typography component="span">{tagsData.path}</Typography>
+              </Box>
+              <Box>
+                <Typography component="span" fontWeight="bold" color="text.secondary" sx={{ mr: 1.25 }}>
+                  Namespace:
+                </Typography>
+                <Typography component="span">{tagsData.namespace}</Typography>
+              </Box>
+              <Box>
+                <Typography component="span" fontWeight="bold" color="text.secondary" sx={{ mr: 1.25 }}>
+                  Tag Count:
+                </Typography>
+                <Typography component="span">{tagsData.count}</Typography>
+              </Box>
+            </Stack>
+          </Panel>
 
           {/* Tags */}
-          <section style={styles.section}>
-            <h2 style={styles.sectionTitle}>Tags</h2>
+          <Panel>
+            <SectionHeader title="Tags" />
             {tagsData.count === 0 ? (
-              <p style={{ color: "#888", fontStyle: "italic" }}>
+              <Typography color="text.secondary" fontStyle="italic">
                 No tags found in this file.
-              </p>
+              </Typography>
             ) : (
-              <div style={{ overflowX: "auto" }}>
-                <table style={styles.table}>
-                  <thead>
-                    <tr>
-                      <th style={styles.th}>Tag Key</th>
-                      <th style={styles.th}>Value</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+              <Box sx={{ overflowX: "auto" }}>
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell sx={{ bgcolor: "background.default", borderBottom: 2 }}>
+                        Tag Key
+                      </TableCell>
+                      <TableCell sx={{ bgcolor: "background.default", borderBottom: 2 }}>
+                        Value
+                      </TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
                     {Object.entries(tagsData.tags).map(([key, value]) => (
-                      <tr key={key}>
-                        <td style={styles.td}>{key}</td>
-                        <td style={styles.td}>{renderValue(value)}</td>
-                      </tr>
+                      <TableRow key={key}>
+                        <TableCell sx={{ borderColor: "divider", wordBreak: "break-word" }}>
+                          {key}
+                        </TableCell>
+                        <TableCell sx={{ borderColor: "divider", wordBreak: "break-word" }}>
+                          {renderValue(value)}
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
-              </div>
+                  </TableBody>
+                </Table>
+              </Box>
             )}
-          </section>
-        </div>
+          </Panel>
+        </Stack>
       )}
 
       {!tagsData && !error && (
-        <section style={{ ...styles.section, marginTop: "20px" }}>
-          <p style={{ color: "#888", fontStyle: "italic" }}>
+        <Panel>
+          <Typography color="text.secondary" fontStyle="italic">
             Enter a file path above to inspect its tags.
-          </p>
-        </section>
+          </Typography>
+        </Panel>
       )}
-    </div>
+    </PageContainer>
   );
 }
-
-const styles = {
-  section: {
-    backgroundColor: "#1a1a1a",
-    padding: "20px",
-    borderRadius: "8px",
-    border: "1px solid #333",
-  },
-  sectionTitle: {
-    fontSize: "1.25rem",
-    marginBottom: "15px",
-    color: "#fff",
-  },
-  input: {
-    flex: 1,
-    padding: "10px",
-    backgroundColor: "#222",
-    border: "1px solid #444",
-    borderRadius: "4px",
-    color: "#fff",
-    fontSize: "1rem",
-  },
-  button: {
-    padding: "10px 20px",
-    backgroundColor: "#4a9eff",
-    border: "none",
-    borderRadius: "4px",
-    color: "#fff",
-    fontSize: "1rem",
-    cursor: "pointer",
-  },
-  browseButton: {
-    padding: "10px 20px",
-    backgroundColor: "#6c757d",
-    border: "none",
-    borderRadius: "4px",
-    color: "#fff",
-    fontSize: "1rem",
-    cursor: "pointer",
-  },
-  removeButton: {
-    padding: "8px 16px",
-    backgroundColor: "#dc3545",
-    border: "none",
-    borderRadius: "4px",
-    color: "#fff",
-    fontSize: "0.9rem",
-    cursor: "pointer",
-    fontWeight: "bold" as const,
-  },
-  label: {
-    fontWeight: "bold" as const,
-    marginRight: "10px",
-    color: "#888",
-  },
-  value: {
-    color: "#fff",
-  },
-  table: {
-    width: "100%",
-    borderCollapse: "collapse" as const,
-  },
-  th: {
-    textAlign: "left" as const,
-    padding: "10px",
-    backgroundColor: "#222",
-    borderBottom: "2px solid #444",
-  },
-  td: {
-    padding: "10px",
-    borderBottom: "1px solid #333",
-    wordBreak: "break-word" as const,
-  },
-};

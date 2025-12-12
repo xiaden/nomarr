@@ -7,124 +7,30 @@
  * - Per-library scanning
  */
 
-import { useEffect, useState } from "react";
+import { Stack, Typography } from "@mui/material";
 
-import { api } from "../../shared/api";
+import { ErrorMessage, PageContainer, Panel } from "@shared/components/ui";
 
-import { LibraryManagement } from "./LibraryManagement";
-
-interface LibraryStats {
-  total_files: number;
-  unique_artists: number;
-  unique_albums: number;
-  total_duration_seconds: number;
-}
+import { LibraryManagement } from "./components/LibraryManagement";
+import { LibraryStats } from "./components/LibraryStats";
+import { useLibraryStats } from "./hooks/useLibraryStats";
 
 export function LibraryPage() {
-  const [stats, setStats] = useState<LibraryStats | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const loadStats = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await api.library.getStats();
-      setStats(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load stats");
-      console.error("[Library] Load error:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadStats();
-  }, []);
-
-  const formatDuration = (seconds: number): string => {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    return `${hours}h ${minutes}m`;
-  };
+  const { stats, loading, error } = useLibraryStats();
 
   return (
-    <div style={{ padding: "20px" }}>
-      <h1 style={{ marginBottom: "20px" }}>Library Management</h1>
-
-      {loading && <p>Loading library statistics...</p>}
-      {error && <p style={{ color: "var(--accent-red)" }}>Error: {error}</p>}
+    <PageContainer title="Library Management">
+      {loading && <Typography>Loading library statistics...</Typography>}
+      {error && <ErrorMessage>Error: {error}</ErrorMessage>}
 
       {stats && (
-        <div style={{ display: "grid", gap: "20px" }}>
-          {/* Statistics */}
-          <section style={styles.section}>
-            <h2 style={styles.sectionTitle}>Library Statistics</h2>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-                gap: "15px",
-              }}
-            >
-              <div style={styles.statCard}>
-                <div style={styles.statLabel}>Total Files</div>
-                <div style={styles.statValue}>{stats.total_files}</div>
-              </div>
-              <div style={styles.statCard}>
-                <div style={styles.statLabel}>Artists</div>
-                <div style={styles.statValue}>{stats.unique_artists}</div>
-              </div>
-              <div style={styles.statCard}>
-                <div style={styles.statLabel}>Albums</div>
-                <div style={styles.statValue}>{stats.unique_albums}</div>
-              </div>
-              <div style={styles.statCard}>
-                <div style={styles.statLabel}>Total Duration</div>
-                <div style={styles.statValue}>
-                  {formatDuration(stats.total_duration_seconds)}
-                </div>
-              </div>
-            </div>
-          </section>
-
-          {/* Library Management */}
-          <section style={styles.section}>
+        <Stack spacing={2.5}>
+          <LibraryStats stats={stats} />
+          <Panel>
             <LibraryManagement />
-          </section>
-        </div>
+          </Panel>
+        </Stack>
       )}
-    </div>
+    </PageContainer>
   );
 }
-
-const styles = {
-  section: {
-    backgroundColor: "#1a1a1a",
-    padding: "20px",
-    borderRadius: "8px",
-    border: "1px solid #333",
-  },
-  sectionTitle: {
-    fontSize: "1.25rem",
-    marginBottom: "15px",
-    color: "#fff",
-  },
-  statCard: {
-    backgroundColor: "#222",
-    padding: "15px",
-    borderRadius: "6px",
-    border: "1px solid #444",
-  },
-  statLabel: {
-    fontSize: "0.875rem",
-    color: "#888",
-    marginBottom: "5px",
-  },
-  statValue: {
-    fontSize: "1.5rem",
-    fontWeight: "bold" as const,
-    color: "#4a9eff",
-  },
-};

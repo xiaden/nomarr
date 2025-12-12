@@ -1,3 +1,5 @@
+import path from "path";
+
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
@@ -5,6 +7,14 @@ import { defineConfig } from "vite";
 export default defineConfig({
   plugins: [react()],
   base: "/",
+  resolve: {
+    alias: {
+      "@shared": path.resolve(__dirname, "./src/shared"),
+      "@features": path.resolve(__dirname, "./src/features"),
+      "@components": path.resolve(__dirname, "./src/components"),
+      "@hooks": path.resolve(__dirname, "./src/hooks"),
+    },
+  },
   build: {
     outDir: "../nomarr/public_html",
     emptyOutDir: true,

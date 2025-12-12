@@ -655,6 +655,27 @@ export const analytics = {
       )}?limit=${limit}`
     );
   },
+
+  /**
+   * Get generic tag co-occurrence matrix.
+   * 
+   * POST request with X and Y axis tag specifications.
+   * Returns matrix where matrix[j][i] = count of files with both y[j] and x[i].
+   * Maximum 16x16 matrix size.
+   */
+  getTagCoOccurrence: async (requestBody: {
+    x: Array<{ key: string; value: string }>;
+    y: Array<{ key: string; value: string }>;
+  }): Promise<{
+    x: Array<{ key: string; value: string }>;
+    y: Array<{ key: string; value: string }>;
+    matrix: number[][];
+  }> => {
+    return request("/api/web/analytics/tag-co-occurrences", {
+      method: "POST",
+      body: JSON.stringify(requestBody),
+    });
+  },
 };
 
 // ──────────────────────────────────────────────────────────────────────
@@ -992,6 +1013,23 @@ export const files = {
    * Get unique values for a specific tag key.
    */
   getTagValues: async (
+    tagKey: string,
+    nomarrOnly = true
+  ): Promise<{
+    tag_keys: string[]; // Actually values, but backend reuses same DTO
+    count: number;
+  }> => {
+    const queryParams = new URLSearchParams();
+    queryParams.append("tag_key", tagKey);
+    if (nomarrOnly) queryParams.append("nomarr_only", "true");
+
+    return request(`/api/web/libraries/files/tags/values?${queryParams.toString()}`);
+  },
+
+  /**
+   * Get unique values for a specific tag key (alias for getTagValues).
+   */
+  getUniqueTagValues: async (
     tagKey: string,
     nomarrOnly = true
   ): Promise<{

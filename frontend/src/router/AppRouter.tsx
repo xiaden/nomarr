@@ -1,18 +1,21 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import { AppShell } from "../components/layout/AppShell";
-import { AdminPage } from "../pages/AdminPage";
-import { AnalyticsPage } from "../pages/AnalyticsPage";
-import { BrowseFilesPage } from "../pages/BrowseFilesPage";
-import { CalibrationPage } from "../pages/CalibrationPage";
-import { ConfigPage } from "../pages/ConfigPage";
-import { DashboardPage } from "../pages/DashboardPage";
-import { InspectTagsPage } from "../pages/InspectTagsPage";
-import { LibraryPage } from "../pages/LibraryPage";
-import { LoginPage } from "../pages/LoginPage";
-import { NavidromePage } from "../pages/NavidromePage";
-import { QueuePage } from "../pages/QueuePage";
 import { isAuthenticated } from "../shared/auth";
+
+// Lazy-loaded pages for code splitting
+const LoginPage = lazy(() => import("../features/auth/LoginPage").then((m) => ({ default: m.LoginPage })));
+const DashboardPage = lazy(() => import("../features/dashboard/DashboardPage").then((m) => ({ default: m.DashboardPage })));
+const QueuePage = lazy(() => import("../features/queue/QueuePage").then((m) => ({ default: m.QueuePage })));
+const LibraryPage = lazy(() => import("../features/library/LibraryPage").then((m) => ({ default: m.LibraryPage })));
+const BrowseFilesPage = lazy(() => import("../features/browse/BrowseFilesPage").then((m) => ({ default: m.BrowseFilesPage })));
+const AnalyticsPage = lazy(() => import("../features/analytics/AnalyticsPage").then((m) => ({ default: m.AnalyticsPage })));
+const CalibrationPage = lazy(() => import("../features/calibration/CalibrationPage").then((m) => ({ default: m.CalibrationPage })));
+const InspectTagsPage = lazy(() => import("../features/inspect/InspectTagsPage").then((m) => ({ default: m.InspectTagsPage })));
+const ConfigPage = lazy(() => import("../features/config/ConfigPage").then((m) => ({ default: m.ConfigPage })));
+const AdminPage = lazy(() => import("../features/admin/AdminPage").then((m) => ({ default: m.AdminPage })));
+const NavidromePage = lazy(() => import("../features/navidrome/NavidromePage").then((m) => ({ default: m.NavidromePage })));
 
 /**
  * Main application router.
@@ -41,40 +44,42 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
 export function AppRouter() {
   return (
     <BrowserRouter>
-      <Routes>
-        {/* Public Routes */}
-        <Route
-          path="/login"
-          element={
-            <PublicRoute>
-              <LoginPage />
-            </PublicRoute>
-          }
-        />
+      <Suspense fallback={<div style={{ padding: "20px" }}>Loading...</div>}>
+        <Routes>
+          {/* Public Routes */}
+          <Route
+            path="/login"
+            element={
+              <PublicRoute>
+                <LoginPage />
+              </PublicRoute>
+            }
+          />
 
-        {/* Protected Routes - All wrapped in AppShell */}
-        <Route
-          path="/*"
-          element={
-            <ProtectedRoute>
-              <AppShell>
-                <Routes>
-                  <Route path="/" element={<DashboardPage />} />
-                  <Route path="/queue" element={<QueuePage />} />
-                  <Route path="/library" element={<LibraryPage />} />
-                  <Route path="/browse" element={<BrowseFilesPage />} />
-                  <Route path="/analytics" element={<AnalyticsPage />} />
-                  <Route path="/calibration" element={<CalibrationPage />} />
-                  <Route path="/inspect" element={<InspectTagsPage />} />
-                  <Route path="/config" element={<ConfigPage />} />
-                  <Route path="/admin" element={<AdminPage />} />
-                  <Route path="/navidrome" element={<NavidromePage />} />
-                </Routes>
-              </AppShell>
-            </ProtectedRoute>
-          }
-        />
-      </Routes>
+          {/* Protected Routes - All wrapped in AppShell */}
+          <Route
+            path="/*"
+            element={
+              <ProtectedRoute>
+                <AppShell>
+                  <Routes>
+                    <Route path="/" element={<DashboardPage />} />
+                    <Route path="/queue" element={<QueuePage />} />
+                    <Route path="/library" element={<LibraryPage />} />
+                    <Route path="/browse" element={<BrowseFilesPage />} />
+                    <Route path="/analytics" element={<AnalyticsPage />} />
+                    <Route path="/calibration" element={<CalibrationPage />} />
+                    <Route path="/inspect" element={<InspectTagsPage />} />
+                    <Route path="/config" element={<ConfigPage />} />
+                    <Route path="/admin" element={<AdminPage />} />
+                    <Route path="/navidrome" element={<NavidromePage />} />
+                  </Routes>
+                </AppShell>
+              </ProtectedRoute>
+            }
+          />
+        </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }

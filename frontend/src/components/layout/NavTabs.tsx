@@ -1,3 +1,4 @@
+import { Box, Button } from "@mui/material";
 import { NavLink, useNavigate } from "react-router-dom";
 
 import { logout } from "../../shared/auth";
@@ -35,56 +36,46 @@ export function NavTabs() {
   };
 
   return (
-    <nav style={styles.nav}>
-      <div style={styles.navLinks}>
+    <Box
+      component="nav"
+      sx={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        px: 2,
+        borderBottom: 1,
+        borderColor: "divider",
+      }}
+    >
+      <Box sx={{ display: "flex", gap: 2 }}>
         {navItems.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
             end={item.path === "/"}
             style={({ isActive }) => ({
-              ...styles.navLink,
-              color: isActive ? "#fff" : "#aaa",
+              padding: "1rem",
+              textDecoration: "none",
+              borderBottom: "2px solid transparent",
               borderBottomColor: isActive ? "#4a9eff" : "transparent",
+              color: isActive ? "#fff" : "#aaa",
+              transition: "color 0.2s, border-color 0.2s",
             })}
           >
             {item.label}
           </NavLink>
         ))}
-      </div>
-      <button onClick={handleLogout} style={styles.logoutButton}>
+      </Box>
+      <Button
+        onClick={handleLogout}
+        variant="outlined"
+        size="small"
+        sx={{
+          textTransform: "none",
+        }}
+      >
         Logout
-      </button>
-    </nav>
+      </Button>
+    </Box>
   );
 }
-
-const styles = {
-  nav: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: "0 1rem",
-    borderBottom: "1px solid #333",
-  },
-  navLinks: {
-    display: "flex",
-    gap: "1rem",
-  },
-  navLink: {
-    padding: "1rem",
-    textDecoration: "none",
-    borderBottom: "2px solid transparent",
-    transition: "color 0.2s, border-color 0.2s",
-  },
-  logoutButton: {
-    padding: "0.5rem 1rem",
-    backgroundColor: "#444",
-    color: "#fff",
-    border: "1px solid #666",
-    borderRadius: "4px",
-    cursor: "pointer",
-    fontSize: "0.9rem",
-    transition: "background-color 0.2s",
-  } as React.CSSProperties,
-};
