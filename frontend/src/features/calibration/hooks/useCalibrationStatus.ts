@@ -46,8 +46,20 @@ export function useCalibrationStatus() {
 
     try {
       setActionLoading(true);
-      await api.calibration.generate(true);
-      alert("Calibration generated successfully!");
+      const result = await api.calibration.generate(true);
+      
+      const calibCount = Object.keys(result.data.calibrations || {}).length;
+      const filesSaved = result.saved_files?.saved_files || 0;
+      
+      let message = `Calibration generated!\n\n`;
+      message += `Library size: ${result.data.library_size} files\n`;
+      message += `Calibrations generated: ${calibCount}\n`;
+      message += `Tags skipped (insufficient data): ${result.data.skipped_tags}\n`;
+      if (filesSaved > 0) {
+        message += `\nSaved ${filesSaved} calibration files`;
+      }
+      
+      alert(message);
     } catch (err) {
       alert(
         err instanceof Error ? err.message : "Failed to generate calibration"

@@ -690,8 +690,18 @@ export const calibration = {
     saveSidecars = true
   ): Promise<{
     status: string;
-    data: Record<string, unknown>;
-    saved_files: unknown;
+    data: {
+      method: string;
+      library_size: number;
+      min_samples: number;
+      calibrations: Record<string, unknown>;
+      skipped_tags: number;
+    };
+    saved_files?: {
+      saved_files: number;
+      total_files: number;
+      total_labels: number;
+    };
   }> => {
     return request("/api/web/calibration/generate", {
       method: "POST",
