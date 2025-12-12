@@ -295,7 +295,6 @@ class JoinedQueryOperations:
                 lf.*,
                 lt.key as tag_key,
                 lt.value as tag_value,
-                lt.type as tag_type,
                 lt.is_nomarr_tag
             FROM (
                 SELECT * FROM library_files
@@ -321,9 +320,7 @@ class JoinedQueryOperations:
             # First time seeing this file - add it
             if file_id not in files_dict:
                 # Extract file fields (everything except tag fields)
-                file_data = {
-                    k: v for k, v in row_dict.items() if k not in ("tag_key", "tag_value", "tag_type", "is_nomarr_tag")
-                }
+                file_data = {k: v for k, v in row_dict.items() if k not in ("tag_key", "tag_value", "is_nomarr_tag")}
                 file_data["tags"] = []
                 files_dict[file_id] = file_data
 
@@ -333,7 +330,6 @@ class JoinedQueryOperations:
                     {
                         "key": row_dict["tag_key"],
                         "value": row_dict["tag_value"],
-                        "type": row_dict["tag_type"],
                         "is_nomarr": bool(row_dict["is_nomarr_tag"]),
                     }
                 )

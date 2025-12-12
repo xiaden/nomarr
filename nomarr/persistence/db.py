@@ -150,7 +150,6 @@ SCHEMA = [
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         key TEXT NOT NULL,
         value TEXT NOT NULL,
-        type TEXT NOT NULL DEFAULT 'string',
         is_nomarr_tag INTEGER NOT NULL DEFAULT 0,
         UNIQUE(key, value, is_nomarr_tag)
     );

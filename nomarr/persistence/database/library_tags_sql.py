@@ -15,27 +15,23 @@ class LibraryTagOperations:
         """
         Get or create a tag definition and return its ID.
 
+        All values are stored as JSON arrays for consistency.
+        Scalars are automatically wrapped: "foo" → ["foo"], 123 → [123]
+
         Args:
             key: Tag key (e.g., 'mood-strict', 'genre', 'year')
-            value: Tag value (will be serialized based on type)
+            value: Tag value (will be wrapped in array if not already a list)
             is_nomarr_tag: True if Nomarr-generated, False for external metadata
 
         Returns:
             Tag ID from library_tags table
         """
-        # Detect type and serialize value
-        if isinstance(value, list):
-            tag_type = "array"
-            value_str = json.dumps(value, ensure_ascii=False)
-        elif isinstance(value, float):
-            tag_type = "float"
-            value_str = str(value)
-        elif isinstance(value, int):
-            tag_type = "int"
-            value_str = str(value)
-        else:
-            tag_type = "string"
-            value_str = str(value)
+        # Wrap scalars in arrays for consistent storage
+        if not isinstance(value, list):
+            value = [value]
+
+        # Serialize to JSON array
+        value_str = json.dumps(value, ensure_ascii=False)
 
         # Try to get existing tag
         cursor = self.conn.execute(
@@ -53,10 +49,10 @@ class LibraryTagOperations:
         # Create new tag
         cursor = self.conn.execute(
             """
-            INSERT INTO library_tags (key, value, type, is_nomarr_tag)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO library_tags (key, value, is_nomarr_tag)
+            VALUES (?, ?, ?)
             """,
-            (key, value_str, tag_type, 1 if is_nomarr_tag else 0),
+            (key, value_str, 1 if is_nomarr_tag else 0),
         )
         self.conn.commit()
         tag_id = cursor.lastrowid
@@ -69,10 +65,10 @@ class LibraryTagOperations:
         Get tag details by ID.
 
         Returns:
-            Dict with 'id', 'key', 'value', 'type', 'is_nomarr_tag' or None
+            Dict with 'id', 'key', 'value', 'is_nomarr_tag' or None
         """
         cursor = self.conn.execute(
-            "SELECT id, key, value, type, is_nomarr_tag FROM library_tags WHERE id = ?",
+            "SELECT id, key, value, is_nomarr_tag FROM library_tags WHERE id = ?",
             (tag_id,),
         )
         row = cursor.fetchone()
@@ -80,15 +76,13 @@ class LibraryTagOperations:
         if not row:
             return None
 
-        # Deserialize value based on type
-        tag_id, key, value_str, tag_type, is_nomarr_tag = row
-        value = self._deserialize_value(value_str, tag_type)
+        tag_id, key, value_str, is_nomarr_tag = row
+        value = self._deserialize_value(value_str)
 
         return {
             "id": tag_id,
             "key": key,
             "value": value,
-            "type": tag_type,
             "is_nomarr_tag": bool(is_nomarr_tag),
         }
 
@@ -97,7 +91,7 @@ class LibraryTagOperations:
         Get multiple tag details by IDs (bulk operation).
 
         Returns:
-            List of dicts with 'id', 'key', 'value', 'type', 'is_nomarr_tag'
+            List of dicts with 'id', 'key', 'value', 'is_nomarr_tag'
         """
         if not tag_ids:
             return []
@@ -105,7 +99,7 @@ class LibraryTagOperations:
         placeholders = ",".join("?" * len(tag_ids))
         cursor = self.conn.execute(
             f"""
-            SELECT id, key, value, type, is_nomarr_tag
+            SELECT id, key, value, is_nomarr_tag
             FROM library_tags
             WHERE id IN ({placeholders})
             """,
@@ -114,14 +108,13 @@ class LibraryTagOperations:
 
         results = []
         for row in cursor.fetchall():
-            tag_id, key, value_str, tag_type, is_nomarr_tag = row
-            value = self._deserialize_value(value_str, tag_type)
+            tag_id, key, value_str, is_nomarr_tag = row
+            value = self._deserialize_value(value_str)
             results.append(
                 {
                     "id": tag_id,
                     "key": key,
                     "value": value,
-                    "type": tag_type,
                     "is_nomarr_tag": bool(is_nomarr_tag),
                 }
             )
@@ -178,22 +171,12 @@ class LibraryTagOperations:
         result = cursor.fetchone()
         return int(result[0]) if result else 0
 
-    def _deserialize_value(self, value_str: str, tag_type: str) -> Any:
-        """Deserialize value based on type."""
-        if tag_type == "array":
-            try:
-                return json.loads(value_str)
-            except json.JSONDecodeError:
-                return []
-        elif tag_type == "float":
-            try:
-                return float(value_str)
-            except ValueError:
-                return 0.0
-        elif tag_type == "int":
-            try:
-                return int(value_str)
-            except ValueError:
-                return 0
-        else:
-            return value_str
+    def _deserialize_value(self, value_str: str) -> Any:
+        """Deserialize stored tag value (always a JSON array)."""
+        try:
+            result = json.loads(value_str)
+            # Ensure we always return a list
+            return result if isinstance(result, list) else [result]
+        except json.JSONDecodeError:
+            # Fallback for malformed data
+            return []

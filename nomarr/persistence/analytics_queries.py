@@ -46,16 +46,14 @@ def fetch_tag_frequencies_data(
     # For array tags, we need to expand them
     namespace_prefix = f"{namespace}:"
 
-    # This query needs to handle both scalar and array tags
-    # For array tags (type='array'), we store JSON arrays like ["happy", "energetic"]
-    # We need to count frequency of each VALUE across all files
+    # All tags are now stored as JSON arrays
+    # Count unique tag key:value combinations across files
     cursor = db.conn.execute(
         """
         SELECT lt.key || ':' || lt.value as tag_key_value, COUNT(DISTINCT ft.file_id) as tag_count
         FROM file_tags ft
         JOIN library_tags lt ON lt.id = ft.tag_id
         WHERE lt.is_nomarr_tag = 1
-          AND lt.type IN ('string', 'float', 'int')
         GROUP BY lt.key, lt.value
         ORDER BY tag_count DESC
         LIMIT ?
@@ -127,7 +125,7 @@ def fetch_tag_correlation_data(
 
     Returns:
         {
-            "mood_tag_rows": [(tag_value, tag_type, file_id), ...],  # All mood tag data
+            "mood_tag_rows": [(file_id, tag_value), ...],  # All mood tag data (tag_value is JSON array)
             "tier_tag_keys": [tag_key, ...],  # All *_tier tag keys
             "tier_tag_rows": {tag_key: [(file_id, tag_value), ...], ...}  # Tier tag data per key
         }
@@ -140,7 +138,7 @@ def fetch_tag_correlation_data(
     for tag_key in mood_tag_keys:
         cursor = db.conn.execute(
             """
-            SELECT ft.file_id, lt.value, lt.type
+            SELECT ft.file_id, lt.value
             FROM file_tags ft
             JOIN library_tags lt ON lt.id = ft.tag_id
             WHERE lt.key = ? AND lt.is_nomarr_tag = 1
@@ -185,13 +183,14 @@ def fetch_tag_correlation_data(
 def fetch_mood_distribution_data(
     db: Database,
     namespace: str,
-) -> list[tuple[str, str, str]]:
+) -> list[tuple[str, str]]:
     """
     Fetch raw mood tag data for distribution analysis.
 
     Returns:
-        List of (mood_type, tag_value, tag_type) tuples
+        List of (mood_type, tag_value) tuples
         where mood_type is one of: "mood-strict", "mood-regular", "mood-loose"
+        and tag_value is a JSON array string
     """
     mood_rows = []
 
@@ -199,7 +198,7 @@ def fetch_mood_distribution_data(
     for mood_type in ["mood-strict", "mood-regular", "mood-loose"]:
         cursor = db.conn.execute(
             """
-            SELECT lt.value, lt.type
+            SELECT lt.value
             FROM file_tags ft
             JOIN library_tags lt ON lt.id = ft.tag_id
             WHERE lt.key = ? AND lt.is_nomarr_tag = 1
@@ -208,8 +207,8 @@ def fetch_mood_distribution_data(
         )
         results = cursor.fetchall()
         logging.debug(f"[analytics] Query for '{mood_type}': found {len(results)} rows")
-        for tag_value, tag_type in results:
-            mood_rows.append((mood_type, tag_value, tag_type))
+        for (tag_value,) in results:
+            mood_rows.append((mood_type, tag_value))
 
     logging.info(f"[analytics] fetch_mood_distribution_data: total {len(mood_rows)} mood tag rows")
     return mood_rows
@@ -227,7 +226,7 @@ def fetch_artist_tag_profile_data(
         {
             "files": list[dict],  # Artist's files
             "file_count": int,
-            "tag_rows": [(tag_key, tag_value, tag_type), ...]  # All tags for these files
+            "tag_rows": [(tag_key, tag_value), ...]  # All tags for these files (tag_value is JSON array)
         }
     """
     # Get files for this artist
@@ -253,7 +252,7 @@ def fetch_artist_tag_profile_data(
 
         cursor = db.conn.execute(
             f"""
-            SELECT lt.key, lt.value, lt.type
+            SELECT lt.key, lt.value
             FROM file_tags ft
             JOIN library_tags lt ON lt.id = ft.tag_id
             WHERE ft.file_id IN ({placeholders})
@@ -304,13 +303,13 @@ def fetch_tag_co_occurrence_data(
         for row in cursor.fetchall():
             file_ids.add(row[0])
 
-        # Also check for array-type tags where value might be in JSON array
+        # All tags are now arrays - check if value is in the JSON array
         cursor = db.conn.execute(
             """
             SELECT ft.file_id, lt.value
             FROM file_tags ft
             JOIN library_tags lt ON lt.id = ft.tag_id
-            WHERE lt.key = ? AND lt.type = 'array'
+            WHERE lt.key = ?
             """,
             (key,),
         )
@@ -318,7 +317,7 @@ def fetch_tag_co_occurrence_data(
         for file_id, json_value in cursor.fetchall():
             try:
                 values = json.loads(json_value)
-                if value in values:
+                if isinstance(values, list) and value in values:
                     file_ids.add(file_id)
             except json.JSONDecodeError:
                 pass

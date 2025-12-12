@@ -85,19 +85,16 @@ def compute_tag_correlation_matrix(
     """
     logging.info(f"[analytics] Computing VALUE-based correlation matrix (top {params.top_n} moods)")
 
-    # Extract mood values and count occurrences
+    # Extract mood values and count occurrences (all values are JSON arrays now)
     mood_counter: Counter = Counter()
-    for _file_id, tag_value, tag_type in params.mood_tag_rows:
-        if tag_type == "array":
-            try:
-                moods = json.loads(tag_value)
+    for _file_id, tag_value in params.mood_tag_rows:
+        try:
+            moods = json.loads(tag_value)
+            if isinstance(moods, list):
                 for mood in moods:
                     mood_counter[str(mood).strip()] += 1
-            except json.JSONDecodeError:
-                # TODO [LOGGING]
-                pass
-        else:
-            mood_counter[str(tag_value).strip()] += 1
+        except json.JSONDecodeError:
+            pass
 
     top_moods = [mood for mood, _ in mood_counter.most_common(params.top_n)]
 
@@ -110,21 +107,16 @@ def compute_tag_correlation_matrix(
     # Build file sets for each mood value
     mood_file_sets: dict[str, set[int]] = {mood: set() for mood in top_moods}
 
-    for file_id, tag_value, tag_type in params.mood_tag_rows:
-        if tag_type == "array":
-            try:
-                moods = json.loads(tag_value)
+    for file_id, tag_value in params.mood_tag_rows:
+        try:
+            moods = json.loads(tag_value)
+            if isinstance(moods, list):
                 for mood in moods:
                     mood_str = str(mood).strip()
                     if mood_str in mood_file_sets:
                         mood_file_sets[mood_str].add(file_id)
-            except json.JSONDecodeError:
-                # TODO [LOGGING]
-                pass
-        else:
-            mood_str = str(tag_value).strip()
-            if mood_str in mood_file_sets:
-                mood_file_sets[mood_str].add(file_id)
+        except json.JSONDecodeError:
+            pass
 
     # 1. MOOD-TO-MOOD CORRELATIONS
     mood_correlations: dict[str, dict[str, float]] = {}
@@ -176,13 +168,15 @@ def compute_tag_correlation_matrix(
 
 
 def compute_mood_distribution(
-    mood_rows: Sequence[tuple[str, str, str]],
+    mood_rows: Sequence[tuple[str, str]],
 ) -> MoodDistributionData:
     """
     Compute mood distribution from raw mood tag data.
 
+    All tag values are now stored as JSON arrays.
+
     Args:
-        mood_rows: List of (mood_type, tag_value, tag_type) tuples
+        mood_rows: List of (mood_type, tag_value) tuples where tag_value is JSON array string
 
     Returns:
         MoodDistributionData with mood tier distributions and top moods
@@ -199,25 +193,19 @@ def compute_mood_distribution(
         "mood-loose": mood_loose_counts,
     }
 
-    for mood_type, tag_value, tag_type in mood_rows:
+    for mood_type, tag_value in mood_rows:
         counter = counter_map.get(mood_type)
         if not counter:
             continue
 
-        if tag_type == "array":
-            try:
-                moods = json.loads(tag_value)
+        # All values are JSON arrays now
+        try:
+            moods = json.loads(tag_value)
+            if isinstance(moods, list):
                 for mood in moods:
                     counter[str(mood).strip()] += 1
-            except json.JSONDecodeError:
-                pass
-        elif ";" in tag_value:
-            # Handle legacy semicolon-delimited values (from old tagger or MP3 files)
-            moods = [m.strip() for m in tag_value.split(";") if m.strip()]
-            for mood in moods:
-                counter[mood] += 1
-        else:
-            counter[tag_value.strip()] += 1
+        except json.JSONDecodeError:
+            pass
 
     all_moods: Counter = Counter()
     all_moods.update(mood_strict_counts)
@@ -259,28 +247,31 @@ def compute_artist_tag_profile(
     tag_values: dict[str, list[float]] = defaultdict(list)
     mood_counts: Counter = Counter()
 
-    for tag_key, tag_value, tag_type in params.tag_rows:
+    for tag_key, tag_value in params.tag_rows:
         tag_name = tag_key.replace(params.namespace_prefix, "")
 
-        if tag_name in ["mood-strict", "mood-regular", "mood-loose"]:
-            if tag_type == "array":
-                try:
-                    moods = json.loads(tag_value)
-                    for mood in moods:
-                        mood_counts[str(mood).strip()] += 1
-                except json.JSONDecodeError:
-                    # TODO [LOGGING]
-                    pass
+        # All values are JSON arrays now
+        try:
+            values = json.loads(tag_value)
+            if not isinstance(values, list):
+                continue
+
+            if tag_name in ["mood-strict", "mood-regular", "mood-loose"]:
+                # Process mood tags
+                for mood in values:
+                    mood_counts[str(mood).strip()] += 1
             else:
-                mood_counts[tag_value.strip()] += 1
-        else:
-            tag_counts[tag_name] += 1
-            if tag_type in ("float", "int"):
-                try:
-                    numeric_value = float(tag_value)
-                    tag_values[tag_name].append(numeric_value)
-                except ValueError:
-                    pass
+                # Process other tags
+                tag_counts[tag_name] += 1
+                # Try to extract numeric values
+                for val in values:
+                    try:
+                        numeric_value = float(val)
+                        tag_values[tag_name].append(numeric_value)
+                    except (ValueError, TypeError):
+                        pass
+        except json.JSONDecodeError:
+            pass
 
     top_tags = []
     for tag, count in tag_counts.most_common(params.limit):

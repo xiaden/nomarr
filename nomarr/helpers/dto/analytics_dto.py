@@ -72,7 +72,7 @@ class ComputeTagCorrelationMatrixParams:
 
     namespace: str
     top_n: int
-    mood_tag_rows: Sequence[tuple[int, str, str]]
+    mood_tag_rows: Sequence[tuple[int, str]]  # (file_id, tag_value) - tag_value is JSON array string
     tier_tag_keys: Sequence[str]
     tier_tag_rows: dict[str, Sequence[tuple[int, str]]]
 
@@ -96,7 +96,7 @@ class ComputeArtistTagProfileParams:
     artist: str
     file_count: int
     namespace_prefix: str
-    tag_rows: Sequence[tuple[str, str, str]]
+    tag_rows: Sequence[tuple[str, str]]  # (tag_key, tag_value) - tag_value is JSON array string
     limit: int
 
 

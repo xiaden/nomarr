@@ -120,30 +120,39 @@ def _detect_tag_type(stats: dict[str, Any]) -> str:
     Detect the Navidrome tag type from tag statistics.
 
     Args:
-        stats: Dict from get_tag_type_stats() with is_multivalue, sample_values, total_count
+        stats: Dict from get_tag_type_stats() with is_multivalue, sample_values, total_files
+               sample_values are JSON array strings like ["Rock"] or [120]
 
     Returns:
         One of: "string", "int", "float"
     """
+    import json
+
     sample_values = stats.get("sample_values", [])
 
     if not sample_values:
         return "string"
 
-    # Check a few sample values to determine type
-    # (All values should have the same type from upsert_file_tags type detection)
-    sample = sample_values[0]
-
-    # Try to detect numeric types
+    # Parse the first JSON array and check its first element's type
     try:
-        # Check if it's a float with decimal point
-        if "." in sample:
-            float(sample)
-            return "float"
-        # Check if it's an integer
-        int(sample)
-        return "int"
-    except ValueError:
+        arr = json.loads(sample_values[0])
+        if not isinstance(arr, list) or len(arr) == 0:
+            return "string"
+
+        sample = arr[0]
+
+        # Try to detect numeric types
+        if isinstance(sample, (int, float)):
+            return "float" if isinstance(sample, float) else "int"
+
+        # If stored as string, try parsing
+        if isinstance(sample, str):
+            if "." in sample:
+                float(sample)
+                return "float"
+            int(sample)
+            return "int"
+    except (json.JSONDecodeError, ValueError, TypeError):
         pass
 
     return "string"

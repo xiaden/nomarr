@@ -1,5 +1,6 @@
 """File tags operations for file-to-tag associations (join table)."""
 
+import json
 import sqlite3
 from typing import Any
 
@@ -105,7 +106,7 @@ class FileTagOperations:
         if nomarr_only:
             cursor = self.conn.execute(
                 """
-                SELECT lt.key, lt.value, lt.type
+                SELECT lt.key, lt.value
                 FROM file_tags ft
                 JOIN library_tags lt ON lt.id = ft.tag_id
                 WHERE ft.file_id = ? AND lt.is_nomarr_tag = 1
@@ -115,7 +116,7 @@ class FileTagOperations:
         else:
             cursor = self.conn.execute(
                 """
-                SELECT lt.key, lt.value, lt.type
+                SELECT lt.key, lt.value
                 FROM file_tags ft
                 JOIN library_tags lt ON lt.id = ft.tag_id
                 WHERE ft.file_id = ?
@@ -129,8 +130,8 @@ class FileTagOperations:
         library_tags = LibraryTagOperations(self.conn)
 
         tags = {}
-        for key, value_str, tag_type in cursor.fetchall():
-            tags[key] = library_tags._deserialize_value(value_str, tag_type)
+        for key, value_str in cursor.fetchall():
+            tags[key] = library_tags._deserialize_value(value_str)
 
         return tags
 
@@ -148,7 +149,7 @@ class FileTagOperations:
         if nomarr_only:
             cursor = self.conn.execute(
                 """
-                SELECT lt.key, lt.value, lt.type, lt.is_nomarr_tag
+                SELECT lt.key, lt.value, lt.is_nomarr_tag
                 FROM file_tags ft
                 JOIN library_tags lt ON lt.id = ft.tag_id
                 WHERE ft.file_id = ? AND lt.is_nomarr_tag = 1
@@ -158,7 +159,7 @@ class FileTagOperations:
         else:
             cursor = self.conn.execute(
                 """
-                SELECT lt.key, lt.value, lt.type, lt.is_nomarr_tag
+                SELECT lt.key, lt.value, lt.is_nomarr_tag
                 FROM file_tags ft
                 JOIN library_tags lt ON lt.id = ft.tag_id
                 WHERE ft.file_id = ?
@@ -172,12 +173,11 @@ class FileTagOperations:
         library_tags = LibraryTagOperations(self.conn)
 
         tags = []
-        for key, value_str, tag_type, is_nomarr_tag in cursor.fetchall():
+        for key, value_str, is_nomarr_tag in cursor.fetchall():
             tags.append(
                 {
                     "key": key,
-                    "value": library_tags._deserialize_value(value_str, tag_type),
-                    "type": tag_type,
+                    "value": library_tags._deserialize_value(value_str),
                     "is_nomarr_tag": bool(is_nomarr_tag),
                 }
             )
@@ -197,7 +197,7 @@ class FileTagOperations:
         """
         cursor = self.conn.execute(
             """
-            SELECT lt.key, lt.value, lt.type
+            SELECT lt.key, lt.value
             FROM file_tags ft
             JOIN library_tags lt ON lt.id = ft.tag_id
             WHERE ft.file_id = ? AND lt.key = ?
@@ -211,8 +211,8 @@ class FileTagOperations:
         library_tags = LibraryTagOperations(self.conn)
 
         tags = {}
-        for key, value_str, tag_type in cursor.fetchall():
-            tags[key] = library_tags._deserialize_value(value_str, tag_type)
+        for key, value_str in cursor.fetchall():
+            tags[key] = library_tags._deserialize_value(value_str)
 
         return tags
 
@@ -393,40 +393,39 @@ class FileTagOperations:
 
     def get_tag_type_stats(self, tag_key: str) -> dict[str, Any]:
         """
-        Get type and usage statistics for a specific tag key.
+        Get usage statistics for a specific tag key.
+
+        Since all values are now stored as JSON arrays, we infer the type
+        by checking if arrays are multi-valued or single-valued.
 
         Args:
             tag_key: Tag key to analyze
 
         Returns:
-            Dict with 'key', 'type', 'total_files', 'sample_values'
+            Dict with 'key', 'is_multivalue', 'total_files', 'sample_values'
         """
-        # Get type and count files
+        # Count distinct files using this tag
         cursor = self.conn.execute(
             """
-            SELECT lt.type, COUNT(DISTINCT ft.file_id)
+            SELECT COUNT(DISTINCT ft.file_id)
             FROM file_tags ft
             JOIN library_tags lt ON lt.id = ft.tag_id
             WHERE lt.key = ?
-            GROUP BY lt.type
-            LIMIT 1
             """,
             (tag_key,),
         )
         row = cursor.fetchone()
+        total_files = int(row[0]) if row else 0
 
-        if not row:
+        if total_files == 0:
             return {
                 "key": tag_key,
-                "type": "unknown",
+                "is_multivalue": False,
                 "total_files": 0,
                 "sample_values": [],
             }
 
-        tag_type = row[0]
-        total_files = int(row[1])
-
-        # Get sample values (first 5)
+        # Get sample values (first 5 unique arrays)
         cursor = self.conn.execute(
             """
             SELECT DISTINCT lt.value
@@ -438,9 +437,20 @@ class FileTagOperations:
         )
         sample_values = [row[0] for row in cursor.fetchall()]
 
+        # Infer if multi-value by checking if any array has > 1 element
+        is_multivalue = False
+        for val_str in sample_values:
+            try:
+                arr = json.loads(val_str)
+                if isinstance(arr, list) and len(arr) > 1:
+                    is_multivalue = True
+                    break
+            except json.JSONDecodeError:
+                pass
+
         return {
             "key": tag_key,
-            "type": tag_type,
+            "is_multivalue": is_multivalue,
             "total_files": total_files,
             "sample_values": sample_values,
         }
