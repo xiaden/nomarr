@@ -90,14 +90,18 @@ def generate_minmax_calibration(
             if tag_key.startswith("mood-") or tag_key.endswith("_tier"):
                 continue
 
-            # Extract numeric probability
+            # Extract numeric probability (unwrap single-element arrays)
             try:
+                # Values are JSON arrays now - unwrap single numbers
+                if isinstance(value, list) and len(value) == 1:
+                    value = value[0]
+                
                 prob = float(value)
                 if 0.0 <= prob <= 1.0:  # Valid probability range
                     if tag_key not in tag_values:
                         tag_values[tag_key] = []
                     tag_values[tag_key].append(prob)
-            except (ValueError, TypeError):
+            except (ValueError, TypeError, IndexError):
                 continue
 
     logging.info(f"[calibration] Collected distributions for {len(tag_values)} unique tags")

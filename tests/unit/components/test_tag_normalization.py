@@ -20,23 +20,23 @@ class TestVorbisTagNormalization:
         vorbis_tags = {
             "TITLE": ["Test Track"],
             "ARTIST": ["Test Artist"],
-            "NOM_MOOD_STRICT": ['["happy", "energetic"]'],
-            "NOM_MOOD_REGULAR": ['["upbeat", "bright"]'],
-            "NOM_MOOD_LOOSE": ['["positive"]'],
+            "NOM_MOOD_STRICT": ["happy", "energetic"],
+            "NOM_MOOD_REGULAR": ["upbeat", "bright"],
+            "NOM_MOOD_LOOSE": ["positive"],
         }
 
         result = normalize_vorbis_tags(vorbis_tags)
 
-        # Check canonical tags
-        assert result["title"] == "Test Track"
-        assert result["artist"] == "Test Artist"
+        # Check canonical tags (single-element lists are now JSON arrays)
+        assert result["title"] == '["Test Track"]'
+        assert result["artist"] == '["Test Artist"]'
 
         # Check namespace tags are converted to colon format
         assert "nom:mood-strict" in result
         assert "nom:mood-regular" in result
         assert "nom:mood-loose" in result
 
-        # Verify values are preserved
+        # Verify values are preserved as JSON arrays
         assert result["nom:mood-strict"] == '["happy", "energetic"]'
         assert result["nom:mood-regular"] == '["upbeat", "bright"]'
         assert result["nom:mood-loose"] == '["positive"]'
@@ -57,14 +57,14 @@ class TestVorbisTagNormalization:
     def test_preserves_nom_colon_format_if_present(self):
         """Test that nom:* tags with colons are preserved."""
         vorbis_tags = {
-            "nom:mood-strict": ['["happy"]'],
+            "nom:mood-strict": ["happy"],
             "nom:custom-tag": ["value"],
         }
 
         result = normalize_vorbis_tags(vorbis_tags)
 
         assert result["nom:mood-strict"] == '["happy"]'
-        assert result["nom:custom-tag"] == "value"
+        assert result["nom:custom-tag"] == '["value"]'
 
     def test_handles_numeric_nom_tags(self):
         """Test that numeric namespace tags are converted correctly."""
@@ -76,9 +76,9 @@ class TestVorbisTagNormalization:
 
         result = normalize_vorbis_tags(vorbis_tags)
 
-        assert result["nom:danceability-tier"] == "high"
-        assert result["nom:energy-score"] == "0.85"
-        assert result["nom:tempo"] == "120"
+        assert result["nom:danceability-tier"] == '["high"]'
+        assert result["nom:energy-score"] == '["0.85"]'
+        assert result["nom:tempo"] == '["120"]'
 
     def test_drops_cover_art_and_binary_fields(self):
         """Test that binary fields are dropped."""
@@ -112,9 +112,9 @@ class TestMP4TagNormalization:
 
         result = normalize_mp4_tags(mp4_tags)
 
-        # Check canonical tags
-        assert result["title"] == "Test Track"
-        assert result["artist"] == "Test Artist"
+        # Check canonical tags (lists serialize to JSON arrays)
+        assert result["title"] == '["Test Track"]'
+        assert result["artist"] == '["Test Artist"]'
 
         # Check namespace tags preserve colon format
         assert "nom:mood-strict" in result
@@ -181,9 +181,9 @@ class TestID3TagNormalization:
 
         result = normalize_id3_tags(id3_tags)
 
-        # Check canonical tags
-        assert result["title"] == "Test Track"
-        assert result["artist"] == "Test Artist"
+        # Check canonical tags (all values are JSON arrays now)
+        assert result["title"] == '["Test Track"]'
+        assert result["artist"] == '["Test Artist"]'
 
         # Check namespace tags preserve colon format
         assert "nom:mood-strict" in result
@@ -204,13 +204,13 @@ class TestID3TagNormalization:
 
         result = normalize_id3_tags(id3_tags)
 
-        assert result["title"] == "Title"
-        assert result["artist"] == "Artist"
-        assert result["album"] == "Album"
-        assert result["genre"] == "Rock"
-        assert result["date"] == "2024"
-        assert result["tracknumber"] == "5/12"
-        assert result["bpm"] == "120"
+        assert result["title"] == '["Title"]'
+        assert result["artist"] == '["Artist"]'
+        assert result["album"] == '["Album"]'
+        assert result["genre"] == '["Rock"]'
+        assert result["date"] == '["2024"]'
+        assert result["tracknumber"] == '["5/12"]'
+        assert result["bpm"] == '["120"]'
 
     def test_drops_binary_frames(self):
         """Test that binary/picture frames are dropped."""
@@ -270,9 +270,13 @@ class TestCrossFormatConsistency:
             assert "title" in result
             assert "artist" in result
             assert "genre" in result
-            assert result["title"] == "Test"
-            assert result["artist"] == "Artist"
-            assert result["genre"] == "Rock"
+
+        # All formats now consistently return JSON arrays
+        assert vorbis_result["title"] == '["Test"]'
+        assert mp4_result["title"] == '["Test"]'
+        assert id3_result["title"] == '["Test"]'
+        assert vorbis_result["artist"] == '["Artist"]'
+        assert vorbis_result["genre"] == '["Rock"]'
 
 
 class TestEdgeCases:

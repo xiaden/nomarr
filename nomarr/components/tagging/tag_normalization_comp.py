@@ -173,11 +173,11 @@ def normalize_mp4_tags(tags: Any) -> dict[str, str]:
             norm_key = MP4_TAG_MAP[key]
             normalized[norm_key] = _serialize_value(value)
 
-    # Filter to only canonical tags + nom:*
+    # Filter to only canonical tags + nom:* and ensure all values are JSON arrays
     filtered: dict[str, str] = {}
     for key, value in normalized.items():
         if key.startswith("nom:") or key in CANONICAL_TAGS:
-            filtered[key] = value
+            filtered[key] = _ensure_json_array(value)
 
     return filtered
 
@@ -225,11 +225,11 @@ def normalize_id3_tags(tags: Any) -> dict[str, str]:
             norm_key = ID3_TAG_MAP[frame_type]
             normalized[norm_key] = _serialize_value(value)
 
-    # Filter to only canonical tags + nom:*
+    # Filter to only canonical tags + nom:* and ensure all values are JSON arrays
     filtered: dict[str, str] = {}
     for key, value in normalized.items():
         if key.startswith("nom:") or key in CANONICAL_TAGS:
-            filtered[key] = value
+            filtered[key] = _ensure_json_array(value)
 
     return filtered
 
@@ -278,11 +278,11 @@ def normalize_vorbis_tags(tags: Any) -> dict[str, str]:
             norm_key = VORBIS_TAG_MAP[key_upper]
             normalized[norm_key] = _serialize_value(value)
 
-    # Filter to only canonical tags + nom:*
+    # Filter to only canonical tags + nom:* and ensure all values are JSON arrays
     filtered: dict[str, str] = {}
     for key, value in normalized.items():
         if key.startswith("nom:") or key in CANONICAL_TAGS:
-            filtered[key] = value
+            filtered[key] = _ensure_json_array(value)
 
     return filtered
 
@@ -332,3 +332,31 @@ def _serialize_value(value: Any) -> str:
 
     # Everything else
     return str(value) if value is not None else ""
+
+
+def _ensure_json_array(value: str) -> str:
+    """
+    Ensure a tag value is stored as a JSON array.
+
+    If the value is already a JSON array, return it as-is.
+    Otherwise, wrap it in a single-element array.
+
+    Args:
+        value: String value from _serialize_value
+
+    Returns:
+        JSON array string
+    """
+    if not value:
+        return "[]"
+
+    # Check if already a JSON array
+    try:
+        parsed = json.loads(value)
+        if isinstance(parsed, list):
+            return value  # Already an array
+    except json.JSONDecodeError:
+        pass  # Not JSON, wrap it
+
+    # Wrap single value in array
+    return json.dumps([value], ensure_ascii=False)
