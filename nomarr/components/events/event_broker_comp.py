@@ -47,13 +47,13 @@ class StateBroker:
     - system:health - System health and errors
     """
 
-    def __init__(self, db: Database | None = None, poll_interval: float = 0.5):
+    def __init__(self, db: Database | None = None, poll_interval: float = 2.0):
         """
         Initialize StateBroker.
 
         Args:
             db: Database instance for polling worker state (Phase 3.6)
-            poll_interval: How often to poll DB for updates (seconds)
+            poll_interval: How often to poll DB for updates (seconds, default: 2.0)
         """
         self._lock = threading.Lock()
         self._clients: dict[str, dict[str, Any]] = {}  # client_id -> {queue, topics, created_at}
@@ -206,27 +206,35 @@ class StateBroker:
                     eta=0.0,
                 )
 
-            # Update DTO fields from kwargs
+            # Track if state actually changed
             state = self._queue_state_by_type[queue_type]
-            if "pending" in kwargs:
+            changed = False
+
+            if "pending" in kwargs and state.pending != kwargs["pending"]:
                 state.pending = kwargs["pending"]
-            if "running" in kwargs:
+                changed = True
+            if "running" in kwargs and state.running != kwargs["running"]:
                 state.running = kwargs["running"]
-            if "completed" in kwargs:
+                changed = True
+            if "completed" in kwargs and state.completed != kwargs["completed"]:
                 state.completed = kwargs["completed"]
-            if "avg_time" in kwargs:
+                changed = True
+            if "avg_time" in kwargs and state.avg_time != kwargs["avg_time"]:
                 state.avg_time = kwargs["avg_time"]
-            if "eta" in kwargs:
+                changed = True
+            if "eta" in kwargs and state.eta != kwargs["eta"]:
                 state.eta = kwargs["eta"]
+                changed = True
 
-            # Broadcast per-queue update (serialize DTO to dict)
-            self._broadcast_to_topic(
-                f"queue:{queue_type}:status",
-                {"type": "state_update", "state": asdict(state)},
-            )
+            # Only broadcast if state actually changed
+            if changed:
+                self._broadcast_to_topic(
+                    f"queue:{queue_type}:status",
+                    {"type": "state_update", "state": asdict(state)},
+                )
 
-            # Recompute global aggregate and broadcast
-            self._recompute_global_queue_state()
+                # Recompute global aggregate and broadcast
+                self._recompute_global_queue_state()
 
     def _recompute_global_queue_state(self):
         """
@@ -300,19 +308,31 @@ class StateBroker:
                     results=None,
                 )
 
-            # Update DTO fields from kwargs
+            # Track if state actually changed
             job = self._jobs_state[job_id]
-            if "path" in kwargs:
-                job.path = kwargs["path"]
-            if "status" in kwargs:
-                job.status = kwargs["status"]
-            if "error" in kwargs:
-                job.error = kwargs["error"]
-            if "results" in kwargs:
-                job.results = kwargs["results"]
+            changed = False
 
-            # Broadcast job state update (serialize DTO to dict)
-            self._broadcast_to_topic("queue:jobs", {"type": "job_update", "job": asdict(job)})
+            if "path" in kwargs and job.path != kwargs["path"]:
+                job.path = kwargs["path"]
+                changed = True
+            if "status" in kwargs and job.status != kwargs["status"]:
+                job.status = kwargs["status"]
+                changed = True
+            if "error" in kwargs and job.error != kwargs["error"]:
+                job.error = kwargs["error"]
+                changed = True
+            if "results" in kwargs and job.results != kwargs["results"]:
+                job.results = kwargs["results"]
+                changed = True
+
+            # Only broadcast if state actually changed
+            if changed:
+                self._broadcast_to_topic("queue:jobs", {"type": "job_update", "job": asdict(job)})
+
+            # Clean up completed jobs after a short delay (they've been broadcast)
+            if job.status in ("done", "error", "completed"):
+                # Remove from state to prevent duplicate broadcasts
+                del self._jobs_state[job_id]
 
     def update_worker_state(self, component: str, **kwargs):
         """
@@ -344,32 +364,41 @@ class StateBroker:
                     current_job=None,
                 )
 
-            # Update DTO fields from kwargs
+            # Track if state actually changed
             worker = self._worker_state[component]
-            if "id" in kwargs:
+            changed = False
+
+            if "id" in kwargs and worker.id != kwargs["id"]:
                 worker.id = kwargs["id"]
-            if "queue_type" in kwargs:
+                changed = True
+            if "queue_type" in kwargs and worker.queue_type != kwargs["queue_type"]:
                 worker.queue_type = kwargs["queue_type"]
-            if "status" in kwargs:
+                changed = True
+            if "status" in kwargs and worker.status != kwargs["status"]:
                 worker.status = kwargs["status"]
-            if "pid" in kwargs:
+                changed = True
+            if "pid" in kwargs and worker.pid != kwargs["pid"]:
                 worker.pid = kwargs["pid"]
-            if "current_job" in kwargs:
+                changed = True
+            if "current_job" in kwargs and worker.current_job != kwargs["current_job"]:
                 worker.current_job = kwargs["current_job"]
+                changed = True
 
-            # Extract queue_type and id from component for topic construction
-            # component format: "worker:{queue_type}:{id}"
-            parts = component.split(":")
-            if len(parts) == 3:
-                queue_type = parts[1]
-                worker_id_str = parts[2]
-                topic = f"worker:{queue_type}:{worker_id_str}:status"
-            else:
-                # Fallback if component format is unexpected
-                topic = f"{component}:status"
+            # Only broadcast if state actually changed
+            if changed:
+                # Extract queue_type and id from component for topic construction
+                # component format: "worker:{queue_type}:{id}"
+                parts = component.split(":")
+                if len(parts) == 3:
+                    queue_type = parts[1]
+                    worker_id_str = parts[2]
+                    topic = f"worker:{queue_type}:{worker_id_str}:status"
+                else:
+                    # Fallback if component format is unexpected
+                    topic = f"{component}:status"
 
-            # Broadcast to worker-specific topic (serialize DTO to dict)
-            self._broadcast_to_topic(topic, {"type": "worker_update", "worker": asdict(worker)})
+                # Broadcast to worker-specific topic (serialize DTO to dict)
+                self._broadcast_to_topic(topic, {"type": "worker_update", "worker": asdict(worker)})
 
     def remove_job(self, job_id: int):
         """Remove job from state (when completed/cleaned up)."""

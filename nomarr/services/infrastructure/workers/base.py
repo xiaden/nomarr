@@ -380,6 +380,11 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
             # Clear current job (single source of truth: health table)
             self._clear_current_job()
 
+            # Clean up job metadata from meta table after a short delay
+            # (gives StateBroker time to poll and broadcast before cleanup)
+            time.sleep(0.5)
+            self._cleanup_job_metadata(job_id)
+
             # Mark cache as loaded after first successful job (for workers with expensive ML cache)
             if not self._cache_loaded:
                 self._cache_loaded = True
@@ -517,3 +522,17 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
             self.db.meta.set(f"queue:{self.queue_type}:last_update", str(int(time.time() * 1000)))
         except Exception as e:
             logging.error(f"[{self.name}] Failed to publish queue stats: {e}")
+
+    def _cleanup_job_metadata(self, job_id: int) -> None:
+        """Clean up job metadata from meta table after job completion."""
+        if not self.db:
+            return
+
+        try:
+            # Remove job metadata keys to prevent stale data in SSE stream
+            self.db.meta.delete(f"job:{job_id}:status")
+            self.db.meta.delete(f"job:{job_id}:path")
+            self.db.meta.delete(f"job:{job_id}:results")
+            self.db.meta.delete(f"job:{job_id}:error")
+        except Exception as e:
+            logging.error(f"[{self.name}] Failed to cleanup job metadata: {e}")
