@@ -211,6 +211,11 @@ def compute_mood_distribution(
                     counter[str(mood).strip()] += 1
             except json.JSONDecodeError:
                 pass
+        elif ";" in tag_value:
+            # Handle legacy semicolon-delimited values (from old tagger or MP3 files)
+            moods = [m.strip() for m in tag_value.split(";") if m.strip()]
+            for mood in moods:
+                counter[mood] += 1
         else:
             counter[tag_value.strip()] += 1
 
