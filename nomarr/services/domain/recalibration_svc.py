@@ -185,10 +185,13 @@ class RecalibrationService:
         return self._is_any_calibration_worker_busy()
 
     def queue_library_for_recalibration(self) -> ApplyCalibrationResult:
-        """Queue all library files for recalibration.
+        """Queue all TAGGED library files for recalibration.
+
+        Recalibration requires files that already have numeric tags in the database.
+        It applies calibration to existing raw scores without re-running ML inference.
 
         This is a consolidated service method that:
-        1. Gets all library paths from library_service
+        1. Gets tagged library paths from library_service
         2. Enqueues them for recalibration
         3. Returns a result DTO
 
@@ -201,13 +204,13 @@ class RecalibrationService:
         if self.library_service is None:
             raise ValueError("LibraryService not configured. Cannot get library paths.")
 
-        # Get all library file paths
-        paths = self.library_service.get_all_library_paths()
+        # Get only TAGGED library file paths (recalibration needs existing tags)
+        paths = self.library_service.get_tagged_library_paths()
 
         if not paths:
-            return ApplyCalibrationResult(queued=0, message="No library files found")
+            return ApplyCalibrationResult(queued=0, message="No tagged files found. Run tagging first.")
 
-        # Enqueue all files
+        # Enqueue all tagged files
         count = self.enqueue_library_for_recalibration(paths)
 
-        return ApplyCalibrationResult(queued=count, message=f"Queued {count} files for recalibration")
+        return ApplyCalibrationResult(queued=count, message=f"Queued {count} tagged files for recalibration")

@@ -28,7 +28,7 @@ export function TagFrequenciesTable({ data, limit = 50 }: TagFrequenciesTablePro
   return (
     <Panel>
       <SectionHeader title={`Tag Frequencies (Top ${limit})`} />
-      <Box sx={{ overflowX: "auto" }}>
+      <Box sx={{ maxHeight: 600, overflowY: "auto", overflowX: "auto" }}>
         <Table sx={{ minWidth: 300 }}>
           <TableHead>
             <TableRow>

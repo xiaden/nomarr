@@ -581,6 +581,15 @@ class LibraryService:
         """
         return self.db.library_files.get_all_library_paths()
 
+    def get_tagged_library_paths(self) -> list[str]:
+        """
+        Get all file paths that have been tagged (have tags in database).
+
+        Returns:
+            List of absolute file paths that have been tagged
+        """
+        return self.db.library_files.get_tagged_file_paths()
+
     def _is_scan_running(self) -> bool:
         """
         Check if any scan jobs are currently being processed.

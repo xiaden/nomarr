@@ -26,8 +26,8 @@ export function AnalyticsPage() {
       {!loading && !error && (
         <div style={{ display: "grid", gap: "20px" }}>
           <MoodDistributionView data={data.moodDistribution} />
-          <TagCoOccurrence />
           <TagFrequenciesTable data={data.tagFrequencies} />
+          <TagCoOccurrence />
         </div>
       )}
     </div>
