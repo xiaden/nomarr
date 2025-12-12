@@ -240,7 +240,7 @@ class JoinedQueryOperations:
         if tag_key and tag_value:
             where_clauses.append(
                 """library_files.id IN (
-                    SELECT ft.file_id 
+                    SELECT ft.file_id
                     FROM file_tags ft
                     JOIN library_tags lt ON ft.tag_id = lt.id
                     WHERE lt.key = ? AND lt.value = ?
@@ -251,7 +251,7 @@ class JoinedQueryOperations:
         elif tag_key:
             where_clauses.append(
                 """library_files.id IN (
-                    SELECT ft.file_id 
+                    SELECT ft.file_id
                     FROM file_tags ft
                     JOIN library_tags lt ON ft.tag_id = lt.id
                     WHERE lt.key = ?

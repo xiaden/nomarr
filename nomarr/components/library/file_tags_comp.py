@@ -8,9 +8,7 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-def get_file_tags_with_path(
-    db: Database, file_id: int, nomarr_only: bool = False
-) -> dict[str, Any] | None:
+def get_file_tags_with_path(db: Database, file_id: int, nomarr_only: bool = False) -> dict[str, Any] | None:
     """
     Get all tags for a file along with file path.
 
