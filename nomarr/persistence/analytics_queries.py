@@ -15,6 +15,7 @@ PERSISTENCE LAYER RULES:
 from __future__ import annotations
 
 import json
+import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -205,9 +206,12 @@ def fetch_mood_distribution_data(
             """,
             (mood_type,),
         )
-        for tag_value, tag_type in cursor.fetchall():
+        results = cursor.fetchall()
+        logging.debug(f"[analytics] Query for '{mood_type}': found {len(results)} rows")
+        for tag_value, tag_type in results:
             mood_rows.append((mood_type, tag_value, tag_type))
 
+    logging.info(f"[analytics] fetch_mood_distribution_data: total {len(mood_rows)} mood tag rows")
     return mood_rows
 
 
