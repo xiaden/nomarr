@@ -161,14 +161,24 @@ def scan_single_file_workflow(
             file_metadata = extract_metadata(file_path, namespace=namespace)
             existing_version = file_metadata.get("nom_tags", {}).get(version_tag_key)
 
-            if existing_version == tagger_version:
-                # File already tagged with correct version - import existing tags instead of retagging
-                logging.debug(
-                    f"[scan_single_file] File already tagged with version {tagger_version}, importing tags: {file_path}"
-                )
-                needs_tagging = False
+            if existing_version:
+                # File has existing tags - import them to database
+                # If version matches, mark as tagged (no need to retag)
+                # If version differs, import tags but don't mark as tagged (will retag later)
+                version_matches = existing_version == tagger_version
 
-                # Import existing tags to database (metadata already extracted above)
+                if version_matches:
+                    logging.debug(
+                        f"[scan_single_file] File tagged with current version {tagger_version}, importing tags: {file_path}"
+                    )
+                    needs_tagging = False
+                else:
+                    logging.debug(
+                        f"[scan_single_file] File tagged with old version {existing_version} (current: {tagger_version}), importing existing tags and queuing for retag: {file_path}"
+                    )
+                    # Keep needs_tagging=True so file gets queued for retagging
+
+                # Import existing tags to database (regardless of version)
                 from nomarr.components.library.library_update_comp import update_library_from_tags
 
                 update_library_from_tags(
@@ -176,7 +186,9 @@ def scan_single_file_workflow(
                     file_path=file_path,
                     metadata=file_metadata,
                     namespace=namespace,
-                    tagged_version=tagger_version,
+                    tagged_version=tagger_version
+                    if version_matches
+                    else None,  # Only mark as tagged if version matches
                     calibration=None,
                     library_id=library_id,
                 )
