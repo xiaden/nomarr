@@ -7,7 +7,7 @@ import { isAuthenticated } from "../shared/auth";
 // Lazy-loaded pages for code splitting
 const LoginPage = lazy(() => import("../features/auth/LoginPage").then((m) => ({ default: m.LoginPage })));
 const DashboardPage = lazy(() => import("../features/dashboard/DashboardPage").then((m) => ({ default: m.DashboardPage })));
-const QueuePage = lazy(() => import("../features/queue/QueuePage").then((m) => ({ default: m.QueuePage })));
+const TaggerStatusPage = lazy(() => import("../features/tagger-status/TaggerStatusPage").then((m) => ({ default: m.TaggerStatusPage })));
 const LibraryPage = lazy(() => import("../features/library/LibraryPage").then((m) => ({ default: m.LibraryPage })));
 const BrowseFilesPage = lazy(() => import("../features/browse/BrowseFilesPage").then((m) => ({ default: m.BrowseFilesPage })));
 const AnalyticsPage = lazy(() => import("../features/analytics/AnalyticsPage").then((m) => ({ default: m.AnalyticsPage })));
@@ -64,7 +64,7 @@ export function AppRouter() {
                 <AppShell>
                   <Routes>
                     <Route path="/" element={<DashboardPage />} />
-                    <Route path="/queue" element={<QueuePage />} />
+                    <Route path="/tagger-status" element={<TaggerStatusPage />} />
                     <Route path="/library" element={<LibraryPage />} />
                     <Route path="/browse" element={<BrowseFilesPage />} />
                     <Route path="/analytics" element={<AnalyticsPage />} />

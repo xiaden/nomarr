@@ -1,8 +1,8 @@
 /**
- * Queue management page.
+ * Tagger Status page.
  *
  * Features:
- * - List all queue jobs with pagination
+ * - List all tagger jobs with pagination
  * - Filter by status (all, pending, running, done, error)
  * - Real-time updates via SSE
  * - Job removal actions
@@ -18,7 +18,7 @@ import { QueueJobsTable } from "./components/QueueJobsTable";
 import { QueueSummary } from "./components/QueueSummary";
 import { useQueueData } from "./hooks/useQueueData";
 
-export function QueuePage() {
+export function TaggerStatusPage() {
   const {
     jobs,
     summary,
@@ -41,7 +41,7 @@ export function QueuePage() {
   } = useQueueData();
 
   return (
-    <PageContainer title="Queue Management">
+    <PageContainer title="Tagger Status">
       <QueueSummary summary={summary} connected={connected} />
 
       <QueueFilters
@@ -58,7 +58,7 @@ export function QueuePage() {
 
       {loading && (
         <Typography textAlign="center" py={5} color="text.secondary">
-          Loading queue...
+          Loading tagger status...
         </Typography>
       )}
 

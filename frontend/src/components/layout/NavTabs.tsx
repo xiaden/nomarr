@@ -16,7 +16,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { path: "/", label: "Dashboard" },
-  { path: "/queue", label: "Queue" },
+  { path: "/tagger-status", label: "Tagger Status" },
   { path: "/library", label: "Library" },
   { path: "/browse", label: "Browse Files" },
   { path: "/analytics", label: "Analytics" },
