@@ -358,6 +358,7 @@ class Application:
             namespace=self.namespace,
             calibrate_heads=self.calibrate_heads,
             version_tag_key=self.version_tag_key,
+            tagger_version=self.tagger_version,
         )
 
         scanner_backend = create_scanner_backend(

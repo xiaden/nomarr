@@ -38,11 +38,13 @@ class TaggerBackend:
         namespace: str,
         calibrate_heads: bool,
         version_tag_key: str,
+        tagger_version: str,
     ):
         self.models_dir = models_dir
         self.namespace = namespace
         self.calibrate_heads = calibrate_heads
         self.version_tag_key = version_tag_key
+        self.tagger_version = tagger_version
 
     def __call__(self, db: Database, path: str, force: bool) -> ProcessFileResult | dict[str, Any]:
         """Process file with ML tagging workflow."""
@@ -57,7 +59,7 @@ class TaggerBackend:
             allow_short=False,
             batch_size=11,
             version_tag_key=self.version_tag_key,
-            tagger_version="1.2",
+            tagger_version=self.tagger_version,
         )
         return process_file_workflow(path=path, config=config, db=db)
 
@@ -67,6 +69,7 @@ def create_tagger_backend(
     namespace: str,
     calibrate_heads: bool,
     version_tag_key: str,
+    tagger_version: str,
 ) -> TaggerBackend:
     """
     Create a tagger backend callable with captured config.
@@ -79,6 +82,7 @@ def create_tagger_backend(
         namespace: Tag namespace for written tags
         calibrate_heads: Whether to apply calibration to model outputs
         version_tag_key: Metadata key for tagger version tracking
+        tagger_version: Current Nomarr version for tag versioning
 
     Returns:
         TaggerBackend instance that accepts (db, path, force)
@@ -88,6 +92,7 @@ def create_tagger_backend(
         namespace=namespace,
         calibrate_heads=calibrate_heads,
         version_tag_key=version_tag_key,
+        tagger_version=tagger_version,
     )
 
 
