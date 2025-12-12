@@ -264,13 +264,18 @@ class Database:
             raise RuntimeError(f"Unable to create database directory '{db_dir}': {exc}") from exc
 
         try:
-            self.conn = sqlite3.connect(path, check_same_thread=False)
+            self.conn = sqlite3.connect(path, check_same_thread=False, timeout=30.0)
         except sqlite3.OperationalError as exc:
             # Re-raise with a clearer message about common mount/permission issues
             raise RuntimeError(
                 f"Failed to open SQLite DB at '{path}'. Ensure the directory exists and is writable by the container user: {exc}"
             ) from exc
+
+        # Configure SQLite for better concurrency
         self.conn.execute("PRAGMA journal_mode=WAL;")
+        self.conn.execute("PRAGMA busy_timeout=30000;")  # 30 second timeout for locks
+        self.conn.execute("PRAGMA wal_autocheckpoint=1000;")  # Checkpoint every 1000 pages
+
         for ddl in SCHEMA:
             self.conn.execute(ddl)
         self.conn.commit()

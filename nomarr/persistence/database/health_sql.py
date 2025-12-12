@@ -331,25 +331,38 @@ class HealthOperations:
         Used when restart limit exceeded or manual failure marking.
         Requires manual intervention (reset_restart_count) to recover.
 
+        Uses retry logic to ensure critical failure state is persisted even
+        if database is temporarily locked.
+
         Args:
             component: Component ID
             metadata: Failure reason (e.g., "restart limit exceeded")
 
         Raises:
-            sqlite3.Error: On database errors
+            sqlite3.Error: On database errors (after retries)
         """
-        now_ms = int(time.time() * 1000)
-        self.conn.execute(
-            """
-            UPDATE health
-            SET last_heartbeat = ?,
-                status = ?,
-                metadata = ?
-            WHERE component = ?
-            """,
-            (now_ms, "failed", metadata, component),
+        from nomarr.persistence.database.shared_sql import retry_on_locked
+
+        def _mark_failed_internal():
+            now_ms = int(time.time() * 1000)
+            self.conn.execute(
+                """
+                UPDATE health
+                SET last_heartbeat = ?,
+                    status = ?,
+                    metadata = ?
+                WHERE component = ?
+                """,
+                (now_ms, "failed", metadata, component),
+            )
+            self.conn.commit()
+
+        retry_on_locked(
+            _mark_failed_internal,
+            max_retries=5,
+            backoff_seconds=1.0,
+            operation_name=f"mark_failed({component})",
         )
-        self.conn.commit()
 
     def increment_restart_count(self, component: str) -> dict[str, int]:
         """

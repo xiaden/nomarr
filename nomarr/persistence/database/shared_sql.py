@@ -7,10 +7,65 @@ operations by using a count-before-operation pattern.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import logging
+import sqlite3
+import time
+from collections.abc import Callable
+from typing import TYPE_CHECKING, TypeVar
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
+
+T = TypeVar("T")
+
+
+def retry_on_locked(
+    func: Callable[[], T],
+    max_retries: int = 3,
+    backoff_seconds: float = 0.5,
+    operation_name: str = "database operation",
+) -> T:
+    """
+    Retry a database operation if it fails due to database lock.
+
+    Args:
+        func: Function to execute (should contain DB operation)
+        max_retries: Maximum number of retry attempts (default: 3)
+        backoff_seconds: Initial backoff delay in seconds (default: 0.5s)
+        operation_name: Description of operation for logging
+
+    Returns:
+        Result of func()
+
+    Raises:
+        sqlite3.OperationalError: If still locked after max_retries
+
+    Example:
+        result = retry_on_locked(
+            lambda: db.queue.enqueue(path="file.mp3"),
+            operation_name="enqueue job"
+        )
+    """
+    for attempt in range(max_retries + 1):
+        try:
+            return func()
+        except sqlite3.OperationalError as e:
+            if "database is locked" not in str(e).lower():
+                raise  # Re-raise non-lock errors immediately
+
+            if attempt < max_retries:
+                delay = backoff_seconds * (2**attempt)  # Exponential backoff
+                logging.warning(
+                    f"[DB] {operation_name} failed (database locked), retrying in {delay:.1f}s "
+                    f"(attempt {attempt + 1}/{max_retries})"
+                )
+                time.sleep(delay)
+            else:
+                logging.error(f"[DB] {operation_name} failed after {max_retries} retries: {e}")
+                raise
+
+    # Should never reach here, but satisfy type checker
+    raise RuntimeError("Unreachable code in retry_on_locked")
 
 
 def count_and_delete(db: Database, table: str, where_clause: str = "", params: tuple = ()) -> int:

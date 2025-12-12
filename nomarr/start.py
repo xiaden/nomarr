@@ -5,9 +5,11 @@ Initializes the Application (workers, services, etc.) then starts the API server
 """
 
 import logging
+import logging.handlers
 import multiprocessing
 import signal
 import sys
+from pathlib import Path
 
 import uvicorn
 
@@ -18,10 +20,29 @@ from nomarr.app import application
 # (TensorFlow CUDA context doesn't survive fork() - must spawn fresh processes)
 multiprocessing.set_start_method("spawn", force=True)
 
-# Configure logging once for the whole process
+# Configure logging once for the whole process with rotation
+log_dir = Path("logs")
+log_dir.mkdir(exist_ok=True)
+
+# Create rotating file handler (10MB per file, keep 5 backup files = 50MB total)
+file_handler = logging.handlers.RotatingFileHandler(
+    log_dir / "nomarr.log",
+    maxBytes=10 * 1024 * 1024,  # 10MB
+    backupCount=5,
+    encoding="utf-8",
+)
+file_handler.setLevel(logging.INFO)
+file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+
+# Console handler with same format
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setLevel(logging.INFO)
+console_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+
+# Configure root logger
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    handlers=[file_handler, console_handler],
 )
 
 

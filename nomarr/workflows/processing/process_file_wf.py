@@ -113,15 +113,15 @@ def _discover_and_group_heads(models_dir: str) -> tuple[list[HeadInfo], dict[str
     if not heads:
         raise RuntimeError(f"No head models found under {models_dir}")
 
-    logging.info(f"[processor] Discovered {len(heads)} heads")
+    logging.debug(f"[processor] Discovered {len(heads)} heads")
 
     # DEBUG: Log all heads by backbone and type
     from collections import Counter
 
     by_backbone = Counter(h.backbone for h in heads)
     by_type = Counter(h.head_type for h in heads)
-    logging.info(f"[processor] Heads by backbone: {dict(by_backbone)}")
-    logging.info(f"[processor] Heads by type: {dict(by_type)}")
+    logging.debug(f"[processor] Heads by backbone: {dict(by_backbone)}")
+    logging.debug(f"[processor] Heads by type: {dict(by_type)}")
 
     for h in heads:
         logging.debug(f"[processor]   - {h.name} ({h.backbone}/{h.head_type}, {len(h.sidecar.labels)} labels)")
@@ -131,7 +131,7 @@ def _discover_and_group_heads(models_dir: str) -> tuple[list[HeadInfo], dict[str
     for h in heads:
         heads_by_backbone[h.backbone].append(h)
 
-    logging.info(
+    logging.debug(
         f"[processor] Grouped {len(heads)} heads into {len(heads_by_backbone)} backbones: "
         f"{ {k: len(v) for k, v in heads_by_backbone.items()} }"
     )
@@ -164,7 +164,7 @@ def _compute_embeddings_for_backbone(
     seg_len, hop_len = first_head.sidecar.segment_hop
     emb_graph = first_head.embedding_graph
 
-    logging.info(f"[processor] Computing embeddings for {backbone}: sr={target_sr}")
+    logging.debug(f"[processor] Computing embeddings for {backbone}: sr={target_sr}")
 
     t_emb = time.time()
     params = ComputeEmbeddingsForBackboneParams(
@@ -179,7 +179,7 @@ def _compute_embeddings_for_backbone(
     )
     embeddings_2d, duration = compute_embeddings_for_backbone(params=params)
 
-    logging.info(
+    logging.debug(
         f"[processor] Embeddings for {backbone} computed in {time.time() - t_emb:.1f}s: shape={embeddings_2d.shape}"
     )
 
@@ -270,7 +270,7 @@ def _process_head_predictions(
                 logging.debug(f"[processor]   Sample keys: {sample_keys}")
 
             # Combined log: processing complete + tags produced
-            logging.info(
+            logging.debug(
                 f"[processor] Head {head_name} complete: {len(segment_scores)} patches → {len(head_tags)} tags "
                 f"in {time.time() - t_head:.1f}s"
             )
@@ -343,7 +343,7 @@ def _collect_mood_outputs(
     # Use calibrate_heads flag from config to determine which calibration files to load
     calibrations = load_calibrations(models_dir, calibrate_heads=config.calibrate_heads)
     if calibrations:
-        logging.info(f"[aggregation] Loaded calibrations for {len(calibrations)} labels")
+        logging.debug(f"[aggregation] Loaded calibrations for {len(calibrations)} labels")
     else:
         logging.debug("[aggregation] No calibrations found, using raw scores")
 
@@ -374,7 +374,7 @@ def _prepare_file_and_db_tags(
     file_write_mode = config.file_write_mode
     file_tags = select_tags_for_file(db_tags, file_write_mode)
 
-    logging.info(
+    logging.debug(
         f"[processor] Tags prepared: {len(db_tags)} for DB, {len(file_tags)} for file (mode={file_write_mode})"
     )
 
@@ -401,9 +401,9 @@ def _write_tags_to_file(
     """
     if file_tags:
         writer.write(path, file_tags)
-        logging.info(f"[processor] Wrote {len(file_tags)} tags to file")
+        logging.debug(f"[processor] Wrote {len(file_tags)} tags to file")
     else:
-        logging.info("[processor] No tags written to file (file_write_mode=none or empty filter result)")
+        logging.debug("[processor] No tags written to file (file_write_mode=none or empty filter result)")
 
 
 def _sync_database(
@@ -449,12 +449,12 @@ def _sync_database(
             library_id=None,
         )
         update_library_file_from_tags(db, params_update)
-        logging.info(f"[processor] Updated library database for {path} with {len(db_tags)} tags")
+        logging.debug(f"[processor] Updated library database for {path} with {len(db_tags)} tags")
 
         # Now rewrite file with filtered tags if mode is not "full"
         if file_write_mode != "full":
             writer.write(path, file_tags)
-            logging.info(f"[processor] Rewrote file with filtered tags (mode={file_write_mode})")
+            logging.debug(f"[processor] Rewrote file with filtered tags (mode={file_write_mode})")
     except Exception as e:
         # Don't fail the entire processing if library update fails
         logging.warning(f"[processor] Failed to update library database: {e}")
@@ -637,7 +637,7 @@ def process_file_workflow(
         # Release embeddings to minimize memory usage
         del embeddings_2d
         gc.collect()
-        logging.info(f"[processor] Released {backbone} embeddings and predictors from memory")
+        logging.debug(f"[processor] Released {backbone} embeddings and predictors from memory")
 
     if total_heads_succeeded == 0:
         raise RuntimeError("No heads produced decisions; refusing to write tags")
@@ -648,7 +648,7 @@ def process_file_workflow(
 
     # DEBUG: Log mood aggregation results
     mood_keys = [k for k in tags_accum if isinstance(k, str) and k.startswith("mood-")]
-    logging.info(f"[processor] Mood aggregation produced {len(mood_keys)} mood- tags: {mood_keys}")
+    logging.debug(f"[processor] Mood aggregation produced {len(mood_keys)} mood- tags: {mood_keys}")
     for mood_key in mood_keys:
         val = tags_accum[mood_key]
         if isinstance(val, list):

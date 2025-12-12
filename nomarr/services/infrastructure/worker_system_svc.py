@@ -400,6 +400,13 @@ class WorkerSystemService:
 
                         # Check if process died
                         if not worker.is_alive():
+                            # Check if already marked as failed - don't restart if so
+                            if health["status"] == "failed":
+                                logging.debug(
+                                    f"[WorkerSystemService] {component_id} already marked as failed, skipping restart"
+                                )
+                                continue
+
                             exit_code = worker.exitcode if worker.exitcode is not None else EXIT_CODE_UNKNOWN_CRASH
                             logging.warning(
                                 f"[WorkerSystemService] {component_id} process died (exit_code={exit_code}), "
@@ -454,6 +461,11 @@ class WorkerSystemService:
         try:
             # Get current health record to check for interrupted job
             health = self.db.health.get_component(component_id)
+
+            # Double-check: if already marked as failed, don't restart
+            if health and health.get("status") == "failed":
+                logging.info(f"[WorkerSystemService] {component_id} already marked as failed, aborting restart")
+                return
             current_job_raw = health.get("current_job") if health else None
 
             # Ensure current_job is int or None for type safety
