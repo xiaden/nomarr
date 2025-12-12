@@ -10,24 +10,29 @@
  */
 
 import {
-  Box,
-  Button,
-  Checkbox,
-  Chip,
-  FormControlLabel,
-  Stack,
-  TextField,
-  Typography,
+    Box,
+    Button,
+    Checkbox,
+    Chip,
+    FormControlLabel,
+    Stack,
+    TextField,
+    Typography,
 } from "@mui/material";
 import { useEffect, useState } from "react";
 
 import { ErrorMessage, Panel, SectionHeader } from "@shared/components/ui";
+import { useConfirmDialog } from "../../../hooks/useConfirmDialog";
+import { useNotification } from "../../../hooks/useNotification";
 
 import { api } from "../../../shared/api";
 import { ServerFilePicker } from "../../../shared/components/ServerFilePicker";
 import type { Library } from "../../../shared/types";
 
 export function LibraryManagement() {
+  const { showSuccess } = useNotification();
+  const { confirm } = useConfirmDialog();
+
   const [libraries, setLibraries] = useState<Library[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -210,9 +215,10 @@ export function LibraryManagement() {
         recursive: true,
       });
 
-      const confirmed = confirm(
-        `Found ${preview.file_count.toLocaleString()} audio files. Start scan?`
-      );
+      const confirmed = await confirm({
+        title: "Start Library Scan?",
+        message: `Found ${preview.file_count.toLocaleString()} audio files. Start scan?`,
+      });
 
       if (!confirmed) {
         setScanningId(null);
@@ -224,7 +230,7 @@ export function LibraryManagement() {
         force: false,
         cleanMissing: true,
       });
-      alert(
+      showSuccess(
         `Scan ${result.status}: ${result.message || "Library scan queued"}`
       );
       await loadLibraries();
@@ -241,9 +247,11 @@ export function LibraryManagement() {
       return;
     }
 
-    const confirmed = confirm(
-      `Delete library "${name}"?\n\nThis will remove the library entry but will NOT delete files on disk.`
-    );
+    const confirmed = await confirm({
+      title: "Delete Library?",
+      message: `Delete library "${name}"?\n\nThis will remove the library entry but will NOT delete files on disk.`,
+      severity: "warning",
+    });
 
     if (!confirmed) return;
 

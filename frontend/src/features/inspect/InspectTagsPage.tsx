@@ -23,6 +23,7 @@ import {
 import { useState } from "react";
 
 import { ErrorMessage, PageContainer, Panel, SectionHeader } from "@shared/components/ui";
+import { useConfirmDialog } from "../../hooks/useConfirmDialog";
 
 import { api } from "../../shared/api";
 import { ServerFilePicker } from "../../shared/components/ServerFilePicker";
@@ -35,6 +36,8 @@ interface TagsData {
 }
 
 export function InspectTagsPage() {
+  const { confirm } = useConfirmDialog();
+
   const [filePath, setFilePath] = useState("");
   const [tagsData, setTagsData] = useState<TagsData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -64,7 +67,11 @@ export function InspectTagsPage() {
 
   const handleRemoveTags = async () => {
     if (!filePath.trim()) return;
-    if (!confirm(`Remove all tags from ${filePath}?\n\nThis cannot be undone!`)) return;
+    if (!(await confirm({
+      title: "Remove All Tags?",
+      message: `Remove all tags from ${filePath}?\n\nThis cannot be undone!`,
+      severity: "warning",
+    }))) return;
 
     try {
       setRemoving(true);

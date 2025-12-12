@@ -16,6 +16,7 @@ import {
 } from "@mui/material";
 
 import { ErrorMessage, Panel, SectionHeader } from "@shared/components/ui";
+import { useNotification } from "../../../hooks/useNotification";
 
 interface TagPreview {
   tag_key: string;
@@ -42,10 +43,12 @@ export function ConfigTab({
   onLoadPreview,
   onGenerateConfig,
 }: ConfigTabProps) {
+  const { showSuccess } = useNotification();
+
   const handleCopyToClipboard = () => {
     if (configText) {
       navigator.clipboard.writeText(configText);
-      alert("Copied to clipboard!");
+      showSuccess("Copied to clipboard!");
     }
   };
 
