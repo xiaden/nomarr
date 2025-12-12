@@ -3,6 +3,11 @@
  * Status filter buttons and action buttons for queue management.
  */
 
+import { Refresh } from "@mui/icons-material";
+import { Button, Stack, ToggleButton, ToggleButtonGroup } from "@mui/material";
+
+import { Panel } from "@shared/components/ui";
+
 type StatusFilter = "all" | "pending" | "running" | "done" | "error";
 
 interface QueueFiltersProps {
@@ -34,83 +39,70 @@ export function QueueFilters({
   onClearAll,
 }: QueueFiltersProps) {
   return (
-    <div
-      style={{
-        display: "flex",
-        gap: "10px",
-        marginBottom: "20px",
-        flexWrap: "wrap",
-      }}
-    >
-      <div style={{ display: "flex", gap: "5px" }}>
-        {(["all", "pending", "running", "done", "error"] as StatusFilter[]).map(
-          (filter) => (
-            <button
-              key={filter}
-              onClick={() => onFilterChange(filter)}
-              style={{
-                ...buttonStyle,
-                ...(statusFilter === filter ? activeButtonStyle : {}),
-              }}
-              disabled={loading}
-            >
-              {filter.charAt(0).toUpperCase() + filter.slice(1)}
-            </button>
-          )
-        )}
-      </div>
+    <Panel>
+      <Stack
+        direction="row"
+        spacing={2}
+        alignItems="center"
+        justifyContent="space-between"
+        flexWrap="wrap"
+        gap={2}
+      >
+        {/* Status Filters */}
+        <ToggleButtonGroup
+          value={statusFilter}
+          exclusive
+          onChange={(_, value) => value && onFilterChange(value)}
+          size="small"
+          disabled={loading}
+        >
+          {(["all", "pending", "running", "done", "error"] as StatusFilter[]).map(
+            (filter) => (
+              <ToggleButton key={filter} value={filter}>
+                {filter.charAt(0).toUpperCase() + filter.slice(1)}
+              </ToggleButton>
+            )
+          )}
+        </ToggleButtonGroup>
 
-      <div style={{ marginLeft: "auto", display: "flex", gap: "5px" }}>
-        <button
-          onClick={onRefresh}
-          style={buttonStyle}
-          disabled={loading || actionLoading}
-        >
-          Refresh
-        </button>
-        <button
-          onClick={onClearCompleted}
-          style={buttonStyle}
-          disabled={loading || actionLoading || summary.completed === 0}
-        >
-          Clear Completed
-        </button>
-        <button
-          onClick={onClearErrors}
-          style={buttonStyle}
-          disabled={loading || actionLoading || summary.errors === 0}
-        >
-          Clear Errors
-        </button>
-        <button
-          onClick={onClearAll}
-          style={{ ...buttonStyle, ...dangerButtonStyle }}
-          disabled={loading || actionLoading}
-        >
-          Clear All
-        </button>
-      </div>
-    </div>
+        {/* Action Buttons */}
+        <Stack direction="row" spacing={1}>
+          <Button
+            onClick={onRefresh}
+            disabled={loading || actionLoading}
+            variant="outlined"
+            size="small"
+            startIcon={<Refresh />}
+          >
+            Refresh
+          </Button>
+          <Button
+            onClick={onClearCompleted}
+            disabled={loading || actionLoading || summary.completed === 0}
+            variant="outlined"
+            size="small"
+          >
+            Clear Completed
+          </Button>
+          <Button
+            onClick={onClearErrors}
+            disabled={loading || actionLoading || summary.errors === 0}
+            variant="outlined"
+            size="small"
+          >
+            Clear Errors
+          </Button>
+          <Button
+            onClick={onClearAll}
+            disabled={loading || actionLoading}
+            variant="outlined"
+            color="error"
+            size="small"
+          >
+            Clear All
+          </Button>
+        </Stack>
+      </Stack>
+    </Panel>
   );
 }
-
-const buttonStyle = {
-  padding: "8px 16px",
-  backgroundColor: "#2a2a2a",
-  border: "1px solid #444",
-  borderRadius: "4px",
-  color: "#fff",
-  cursor: "pointer",
-  fontSize: "14px",
-  transition: "all 0.2s",
-};
-
-const activeButtonStyle = {
-  backgroundColor: "#4a9eff",
-  borderColor: "#4a9eff",
-};
-
-const dangerButtonStyle = {
-  backgroundColor: "#d32f2f",
-  borderColor: "#d32f2f",
-};

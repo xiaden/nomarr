@@ -81,7 +81,25 @@ export function TagCoOccurrence() {
   const loadTagValues = async (key: string) => {
     try {
       const response = await api.files.getUniqueTagValues(key, true);
-      setTagValues(response.tag_keys); // API reuses same structure
+      // Parse multi-value tags (arrays stored as JSON strings)
+      const parsedValues = new Set<string>();
+      for (const value of response.tag_keys) {
+        if (value.startsWith('[') && value.endsWith(']')) {
+          try {
+            const parsed = JSON.parse(value);
+            if (Array.isArray(parsed)) {
+              parsed.forEach(v => parsedValues.add(String(v)));
+            } else {
+              parsedValues.add(value);
+            }
+          } catch {
+            parsedValues.add(value);
+          }
+        } else {
+          parsedValues.add(value);
+        }
+      }
+      setTagValues(Array.from(parsedValues).sort());
     } catch (err) {
       console.error("[TagCoOccurrence] Failed to load tag values:", err);
       setTagValues([]);

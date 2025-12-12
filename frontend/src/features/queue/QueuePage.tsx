@@ -9,6 +9,10 @@
  * - Clear completed/error jobs
  */
 
+import { Typography } from "@mui/material";
+
+import { ErrorMessage, PageContainer } from "@shared/components/ui";
+
 import { QueueFilters } from "./components/QueueFilters";
 import { QueueJobsTable } from "./components/QueueJobsTable";
 import { QueueSummary } from "./components/QueueSummary";
@@ -37,9 +41,7 @@ export function QueuePage() {
   } = useQueueData();
 
   return (
-    <div style={{ padding: "20px" }}>
-      <h1 style={{ marginBottom: "10px" }}>Queue Management</h1>
-
+    <PageContainer title="Queue Management">
       <QueueSummary summary={summary} connected={connected} />
 
       <QueueFilters
@@ -55,23 +57,12 @@ export function QueuePage() {
       />
 
       {loading && (
-        <div style={{ textAlign: "center", padding: "40px" }}>
-          <p>Loading queue...</p>
-        </div>
+        <Typography textAlign="center" py={5} color="text.secondary">
+          Loading queue...
+        </Typography>
       )}
 
-      {error && (
-        <div
-          style={{
-            padding: "20px",
-            backgroundColor: "var(--accent-red)",
-            borderRadius: "6px",
-            marginBottom: "20px",
-          }}
-        >
-          <strong>Error:</strong> {error}
-        </div>
-      )}
+      {error && <ErrorMessage>{error}</ErrorMessage>}
 
       {!loading && !error && (
         <QueueJobsTable
@@ -85,6 +76,6 @@ export function QueuePage() {
           statusFilter={statusFilter}
         />
       )}
-    </div>
+    </PageContainer>
   );
 }

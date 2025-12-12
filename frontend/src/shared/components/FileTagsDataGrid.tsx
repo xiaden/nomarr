@@ -41,7 +41,7 @@ interface TagRow {
   is_nomarr: boolean;
 }
 
-const truncateValue = (value: string, maxLength = 50): string => {
+const truncateValue = (value: string, maxLength = 120): string => {
   if (value.length <= maxLength) return value;
   return value.substring(0, maxLength) + "...";
 };
@@ -95,7 +95,7 @@ export function FileTagsDataGrid({ tags }: FileTagsDataGridProps) {
       renderCell: (params) => {
         const fullValue = params.value as string;
         const displayValue = truncateValue(fullValue);
-        const isTruncated = fullValue.length > 50;
+        const isTruncated = fullValue.length > 120;
 
         return isTruncated ? (
           <Tooltip title={fullValue} arrow>

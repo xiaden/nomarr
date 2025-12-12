@@ -1,7 +1,20 @@
 /**
  * QueueJobsTable component.
- * Displays queue jobs in a table with pagination.
+ * Displays queue jobs in a MUI-styled list with pagination.
  */
+
+import { Delete } from "@mui/icons-material";
+import {
+  Box,
+  Button,
+  Chip,
+  IconButton,
+  Stack,
+  Tooltip,
+  Typography,
+} from "@mui/material";
+
+import { Panel } from "@shared/components/ui";
 
 import type { QueueJob } from "../../../shared/types";
 
@@ -31,192 +44,153 @@ export function QueueJobsTable({
     return new Date(ts * 1000).toLocaleString();
   };
 
-  const truncatePath = (path: string, maxLen = 60): string => {
+  const truncatePath = (path: string, maxLen = 80): string => {
     if (path.length <= maxLen) return path;
-    const start = path.substring(0, 30);
-    const end = path.substring(path.length - 27);
+    const start = path.substring(0, 40);
+    const end = path.substring(path.length - 37);
     return start + "..." + end;
   };
 
-  const getStatusBadgeStyle = (status: string) => {
-    const baseStyle = {
-      padding: "4px 8px",
-      borderRadius: "4px",
-      fontSize: "12px",
-      fontWeight: "bold" as const,
-      color: "#fff",
-    };
-    
-    let backgroundColor = "#555";
-    if (status === "running") backgroundColor = "#ff9800";
-    else if (status === "done") backgroundColor = "#4caf50";
-    else if (status === "error") backgroundColor = "#f44336";
-    
-    return { ...baseStyle, backgroundColor };
+  const getStatusColor = (
+    status: string
+  ): "default" | "warning" | "success" | "error" => {
+    if (status === "running") return "warning";
+    if (status === "done") return "success";
+    if (status === "error") return "error";
+    return "default";
   };
 
   if (jobs.length === 0 && total === 0) {
     return (
-      <div
-        style={{
-          textAlign: "center",
-          padding: "60px 20px",
-          backgroundColor: "#1a1a1a",
-          borderRadius: "8px",
-          border: "1px solid #333",
-        }}
-      >
-        <p style={{ fontSize: "18px", color: "#888", marginBottom: "10px" }}>
-          No jobs in queue
-        </p>
-        <p style={{ fontSize: "14px", color: "#666" }}>
+      <Panel>
+        <Typography color="text.secondary" textAlign="center" py={8}>
           {statusFilter !== "all"
             ? `No ${statusFilter} jobs found`
             : "Queue is empty"}
-        </p>
-      </div>
+        </Typography>
+      </Panel>
     );
   }
 
   return (
     <>
-      <div style={{ overflowX: "auto" }}>
-        <table style={tableStyle}>
-          <thead>
-            <tr>
-              <th style={thStyle}>ID</th>
-              <th style={thStyle}>File Path</th>
-              <th style={thStyle}>Status</th>
-              <th style={thStyle}>Created</th>
-              <th style={thStyle}>Started</th>
-              <th style={thStyle}>Error</th>
-              <th style={thStyle}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {jobs.length === 0 ? (
-              <tr>
-                <td colSpan={7} style={{ textAlign: "center", padding: "40px" }}>
-                  No jobs found
-                </td>
-              </tr>
-            ) : (
-              jobs.map((job) => (
-                <tr key={job.id} style={trStyle}>
-                  <td style={tdStyle}>{job.id}</td>
-                  <td style={tdStyle} title={job.path}>
-                    {truncatePath(job.path)}
-                  </td>
-                  <td style={tdStyle}>
-                    <span style={getStatusBadgeStyle(job.status)}>
-                      {job.status}
-                    </span>
-                  </td>
-                  <td style={tdStyle}>{formatTimestamp(job.created_at)}</td>
-                  <td style={tdStyle}>{formatTimestamp(job.started_at)}</td>
-                  <td
-                    style={{
-                      ...tdStyle,
-                      fontSize: "12px",
-                      color: "var(--accent-red)",
-                    }}
-                  >
-                    {job.error_message || "-"}
-                  </td>
-                  <td style={tdStyle}>
-                    <button
-                      onClick={() => onRemoveJob(job.id)}
-                      style={removeButtonStyle}
-                      disabled={job.status === "running"}
-                    >
-                      Remove
-                    </button>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+      {/* Jobs List */}
+      <Stack spacing={1}>
+        {jobs.map((job) => (
+          <Box
+            key={job.id}
+            sx={{
+              bgcolor: "background.paper",
+              border: 1,
+              borderColor: "divider",
+              borderRadius: 1,
+              p: 2,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+            }}
+          >
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+                <Typography
+                  variant="caption"
+                  color="text.disabled"
+                  sx={{ fontFamily: "monospace" }}
+                >
+                  #{job.id}
+                </Typography>
+                <Chip
+                  label={job.status}
+                  size="small"
+                  color={getStatusColor(job.status)}
+                  sx={{ height: 20, fontSize: "0.7rem" }}
+                />
+              </Stack>
 
+              <Tooltip title={job.path} placement="top">
+                <Typography
+                  variant="body2"
+                  sx={{
+                    fontFamily: "monospace",
+                    fontSize: "0.85rem",
+                    mb: 0.5,
+                    wordBreak: "break-all",
+                  }}
+                >
+                  {truncatePath(job.path)}
+                </Typography>
+              </Tooltip>
+
+              <Stack direction="row" spacing={2} sx={{ mt: 1 }}>
+                <Typography variant="caption" color="text.secondary">
+                  Created: {formatTimestamp(job.created_at)}
+                </Typography>
+                {job.started_at && (
+                  <Typography variant="caption" color="text.secondary">
+                    Started: {formatTimestamp(job.started_at)}
+                  </Typography>
+                )}
+              </Stack>
+
+              {job.error_message && (
+                <Typography
+                  variant="caption"
+                  color="error"
+                  sx={{
+                    display: "block",
+                    mt: 1,
+                    p: 1,
+                    bgcolor: "error.dark",
+                    borderRadius: 0.5,
+                  }}
+                >
+                  {job.error_message}
+                </Typography>
+              )}
+            </Box>
+
+            <IconButton
+              onClick={() => onRemoveJob(job.id)}
+              disabled={job.status === "running"}
+              color="error"
+              size="small"
+              sx={{ ml: 2 }}
+            >
+              <Delete fontSize="small" />
+            </IconButton>
+          </Box>
+        ))}
+      </Stack>
+
+      {/* Pagination */}
       {totalPages > 1 && (
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginTop: "20px",
-            padding: "15px",
-            backgroundColor: "#1a1a1a",
-            borderRadius: "6px",
-            border: "1px solid #333",
-          }}
-        >
-          <button
-            onClick={onPrevPage}
-            disabled={currentPage === 1}
-            style={paginationButtonStyle}
+        <Box sx={{ mt: 3 }}>
+          <Stack
+            direction="row"
+            spacing={2}
+            alignItems="center"
+            justifyContent="center"
           >
-            Previous
-          </button>
-          <span>
-            Page {currentPage} of {totalPages} ({total} total jobs)
-          </span>
-          <button
-            onClick={onNextPage}
-            disabled={currentPage === totalPages}
-            style={paginationButtonStyle}
-          >
-            Next
-          </button>
-        </div>
+            <Button
+              variant="outlined"
+              onClick={onPrevPage}
+              disabled={currentPage === 1}
+            >
+              Previous
+            </Button>
+            <Typography color="text.secondary">
+              Page {currentPage} of {totalPages} ({total.toLocaleString()} total)
+            </Typography>
+            <Button
+              variant="outlined"
+              onClick={onNextPage}
+              disabled={currentPage === totalPages}
+            >
+              Next
+            </Button>
+          </Stack>
+        </Box>
       )}
     </>
   );
 }
-
-const tableStyle = {
-  width: "100%",
-  borderCollapse: "collapse" as const,
-  backgroundColor: "#1a1a1a",
-  borderRadius: "8px",
-  overflow: "hidden",
-};
-
-const thStyle = {
-  padding: "12px",
-  textAlign: "left" as const,
-  borderBottom: "2px solid #333",
-  fontWeight: "bold" as const,
-  fontSize: "14px",
-};
-
-const tdStyle = {
-  padding: "12px",
-  borderBottom: "1px solid #2a2a2a",
-  fontSize: "14px",
-};
-
-const trStyle = {
-  transition: "background-color 0.15s",
-};
-
-const removeButtonStyle = {
-  padding: "4px 12px",
-  backgroundColor: "#d32f2f",
-  border: "none",
-  borderRadius: "4px",
-  color: "#fff",
-  cursor: "pointer",
-  fontSize: "12px",
-};
-
-const paginationButtonStyle = {
-  padding: "8px 16px",
-  backgroundColor: "#4a9eff",
-  border: "none",
-  borderRadius: "4px",
-  color: "#fff",
-  cursor: "pointer",
-  fontSize: "14px",
-};

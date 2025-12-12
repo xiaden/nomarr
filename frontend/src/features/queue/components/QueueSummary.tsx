@@ -3,6 +3,10 @@
  * Displays queue statistics badges and SSE connection status.
  */
 
+import { Box, Chip, Stack, Typography } from "@mui/material";
+
+import { Panel } from "@shared/components/ui";
+
 interface QueueSummaryProps {
   summary: {
     pending: number;
@@ -15,66 +19,103 @@ interface QueueSummaryProps {
 
 export function QueueSummary({ summary, connected }: QueueSummaryProps) {
   return (
-    <div>
+    <Panel>
       {/* SSE Status */}
-      <div style={{ marginBottom: "20px" }}>
-        <span>
-          SSE:{" "}
-          <span
-            style={{
-              color: connected ? "var(--accent-green)" : "var(--accent-red)",
-            }}
-          >
-            {connected ? "Connected" : "Disconnected"}
-          </span>
-        </span>
-      </div>
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
+        <Typography variant="body2" color="text.secondary">
+          SSE Status:
+        </Typography>
+        <Chip
+          label={connected ? "Connected" : "Disconnected"}
+          size="small"
+          color={connected ? "success" : "error"}
+          sx={{ height: 20, fontSize: "0.7rem" }}
+        />
+      </Stack>
 
       {/* Summary badges */}
-      <div
-        style={{
-          display: "flex",
-          gap: "15px",
-          marginBottom: "20px",
-          flexWrap: "wrap",
-        }}
-      >
-        <div style={badgeStyle}>
-          <span style={{ fontSize: "24px", fontWeight: "bold" }}>
+      <Stack direction="row" spacing={2} flexWrap="wrap">
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            p: 2,
+            bgcolor: "background.default",
+            border: 1,
+            borderColor: "divider",
+            borderRadius: 1,
+            minWidth: 100,
+          }}
+        >
+          <Typography variant="h4" fontWeight="bold">
             {summary.pending}
-          </span>
-          <span style={{ fontSize: "12px", opacity: 0.8 }}>Pending</span>
-        </div>
-        <div style={badgeStyle}>
-          <span style={{ fontSize: "24px", fontWeight: "bold" }}>
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            Pending
+          </Typography>
+        </Box>
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            p: 2,
+            bgcolor: "background.default",
+            border: 1,
+            borderColor: "divider",
+            borderRadius: 1,
+            minWidth: 100,
+          }}
+        >
+          <Typography variant="h4" fontWeight="bold">
             {summary.running}
-          </span>
-          <span style={{ fontSize: "12px", opacity: 0.8 }}>Running</span>
-        </div>
-        <div style={badgeStyle}>
-          <span style={{ fontSize: "24px", fontWeight: "bold" }}>
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            Running
+          </Typography>
+        </Box>
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            p: 2,
+            bgcolor: "background.default",
+            border: 1,
+            borderColor: "divider",
+            borderRadius: 1,
+            minWidth: 100,
+          }}
+        >
+          <Typography variant="h4" fontWeight="bold">
             {summary.completed}
-          </span>
-          <span style={{ fontSize: "12px", opacity: 0.8 }}>Completed</span>
-        </div>
-        <div style={badgeStyle}>
-          <span style={{ fontSize: "24px", fontWeight: "bold" }}>
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            Completed
+          </Typography>
+        </Box>
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            p: 2,
+            bgcolor: "background.default",
+            border: 1,
+            borderColor: "divider",
+            borderRadius: 1,
+            minWidth: 100,
+          }}
+        >
+          <Typography variant="h4" fontWeight="bold">
             {summary.errors}
-          </span>
-          <span style={{ fontSize: "12px", opacity: 0.8 }}>Errors</span>
-        </div>
-      </div>
-    </div>
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            Errors
+          </Typography>
+        </Box>
+      </Stack>
+    </Panel>
   );
 }
-
-const badgeStyle = {
-  display: "flex",
-  flexDirection: "column" as const,
-  alignItems: "center",
-  padding: "15px 25px",
-  backgroundColor: "#1a1a1a",
-  borderRadius: "8px",
-  border: "1px solid #333",
-  minWidth: "100px",
-};
