@@ -260,8 +260,10 @@ class StateBroker:
         self._queue_state_global.avg_time = avg_time
         self._queue_state_global.eta = eta
 
-        # Broadcast global queue status (serialize DTO to dict)
-        self._broadcast_to_topic("queue:status", {"type": "state_update", "state": asdict(self._queue_state_global)})
+        # Broadcast global queue status (serialize DTO to dict, omit queue_type since it's None)
+        global_state = asdict(self._queue_state_global)
+        del global_state["queue_type"]  # Remove null field from global aggregation
+        self._broadcast_to_topic("queue:status", {"type": "state_update", "state": global_state})
 
     def update_queue_state(self, **kwargs):
         """

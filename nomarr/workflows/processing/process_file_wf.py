@@ -73,7 +73,6 @@ from nomarr.components.tagging.tagging_aggregation_comp import (
     normalize_tag_label,
 )
 from nomarr.components.tagging.tagging_writer_comp import TagWriter
-from nomarr.helpers.dto.library_dto import UpdateLibraryFileFromTagsParams
 from nomarr.helpers.dto.ml_dto import ComputeEmbeddingsForBackboneParams
 from nomarr.helpers.dto.processing_dto import ProcessFileResult, ProcessorConfig
 
@@ -435,20 +434,25 @@ def _sync_database(
         return
 
     try:
-        from nomarr.workflows.library.scan_library_wf import update_library_file_from_tags
+        from nomarr.components.library.library_update_comp import update_library_from_tags
+        from nomarr.components.library.metadata_extraction_comp import extract_metadata
 
         # Write FULL tags to file temporarily for DB sync
         writer.write(path, db_tags)
 
-        # Pass tagger_version so library scanner marks file as tagged
-        params_update = UpdateLibraryFileFromTagsParams(
+        # Extract metadata from the freshly-tagged file
+        metadata = extract_metadata(path, namespace=namespace)
+
+        # Update library database with extracted metadata
+        update_library_from_tags(
+            db=db,
             file_path=path,
+            metadata=metadata,
             namespace=namespace,
             tagged_version=tagger_version,
             calibration=calibration_map,
             library_id=None,
         )
-        update_library_file_from_tags(db, params_update)
         logging.debug(f"[processor] Updated library database for {path} with {len(db_tags)} tags")
 
         # Now rewrite file with filtered tags if mode is not "full"

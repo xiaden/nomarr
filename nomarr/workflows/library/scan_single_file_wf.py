@@ -41,7 +41,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.queue import enqueue_file
-from nomarr.helpers.dto.library_dto import ScanSingleFileWorkflowParams, UpdateLibraryFileFromTagsParams
+from nomarr.helpers.dto.library_dto import ScanSingleFileWorkflowParams
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -94,10 +94,8 @@ def scan_single_file_workflow(
     }
 
     try:
-        # Import workflow function for updating library file from tags
+        # Import components for metadata extraction and library update
         import os
-
-        from nomarr.workflows.library.scan_library_wf import update_library_file_from_tags
 
         # Determine library_id if not provided
         if library_id is None:
@@ -165,20 +163,24 @@ def scan_single_file_workflow(
 
             if existing_version == tagger_version:
                 # File already tagged with correct version - import existing tags instead of retagging
-                logging.info(
+                logging.debug(
                     f"[scan_single_file] File already tagged with version {tagger_version}, importing tags: {file_path}"
                 )
                 needs_tagging = False
 
                 # Import existing tags to database (metadata already extracted above)
-                params_update = UpdateLibraryFileFromTagsParams(
+                from nomarr.components.library.library_update_comp import update_library_from_tags
+
+                update_library_from_tags(
+                    db=db,
                     file_path=file_path,
+                    metadata=file_metadata,
                     namespace=namespace,
-                    tagged_version=tagger_version,  # Mark as tagged
+                    tagged_version=tagger_version,
                     calibration=None,
                     library_id=library_id,
                 )
-                update_library_file_from_tags(db, params_update)
+                logging.debug(f"[scan_single_file] Tags imported to DB for {file_path}")
                 result["action"] = "added" if is_new else "updated"
                 result["success"] = True
 
@@ -193,14 +195,19 @@ def scan_single_file_workflow(
         elif not check_existing_version or (check_existing_version and result.get("success") is not True):
             # File doesn't need tagging - extract and update metadata now
             # Skip if we already handled it above (check_existing_version path)
-            params_update = UpdateLibraryFileFromTagsParams(
+            from nomarr.components.library.library_update_comp import update_library_from_tags
+            from nomarr.components.library.metadata_extraction_comp import extract_metadata
+
+            file_metadata = extract_metadata(file_path, namespace=namespace)
+            update_library_from_tags(
+                db=db,
                 file_path=file_path,
+                metadata=file_metadata,
                 namespace=namespace,
-                tagged_version=None,  # Not tagged by us
+                tagged_version=None,
                 calibration=None,
                 library_id=library_id,
             )
-            update_library_file_from_tags(db, params_update)
             result["action"] = "added" if is_new else "updated"
             result["success"] = True
 

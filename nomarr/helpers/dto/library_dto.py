@@ -95,10 +95,11 @@ class ScanLibraryWorkflowParams:
 
 @dataclass
 @dataclass
-class UpdateLibraryFileFromTagsParams:
-    """Parameters for workflows/library/scan_library_wf.py::update_library_file_from_tags."""
+class UpdateLibraryFromTagsParams:
+    """Parameters for components/library/library_update_comp.py::update_library_from_tags."""
 
     file_path: str
+    metadata: dict[str, Any]
     namespace: str
     tagged_version: str | None
     calibration: dict[str, str] | None = None
@@ -190,5 +191,5 @@ __all__ = [
     "StartScanResult",
     "TagCleanupResult",
     "UniqueTagKeysResult",
-    "UpdateLibraryFileFromTagsParams",
+    "UpdateLibraryFromTagsParams",
 ]
