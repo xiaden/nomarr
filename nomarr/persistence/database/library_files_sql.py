@@ -234,7 +234,7 @@ class LibraryFilesOperations:
         Returns:
             List of file paths
         """
-        cur = self.conn.execute("SELECT file_path FROM library_files")
+        cur = self.conn.execute("SELECT path FROM library_files")
         return [row[0] for row in cur.fetchall()]
 
     def get_tagged_file_paths(self) -> list[str]:
@@ -244,7 +244,7 @@ class LibraryFilesOperations:
         Returns:
             List of file paths that have been tagged
         """
-        cur = self.conn.execute("SELECT file_path FROM library_files WHERE tagged = 1")
+        cur = self.conn.execute("SELECT path FROM library_files WHERE tagged = 1")
         return [row[0] for row in cur.fetchall()]
 
     def delete_library_file(self, path: str) -> None:
