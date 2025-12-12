@@ -161,24 +161,11 @@ def scan_single_file_workflow(
             file_metadata = extract_metadata(file_path, namespace=namespace)
             existing_version = file_metadata.get("nom_tags", {}).get(version_tag_key)
 
-            if existing_version:
-                # File has existing tags - import them to database
-                # If version matches, mark as tagged (no need to retag)
-                # If version differs, import tags but don't mark as tagged (will retag later)
-                version_matches = existing_version == tagger_version
-
-                if version_matches:
-                    logging.debug(
-                        f"[scan_single_file] File tagged with current version {tagger_version}, importing tags: {file_path}"
-                    )
-                    needs_tagging = False
-                else:
-                    logging.debug(
-                        f"[scan_single_file] File tagged with old version {existing_version} (current: {tagger_version}), importing existing tags and queuing for retag: {file_path}"
-                    )
-                    # Keep needs_tagging=True so file gets queued for retagging
-
-                # Import existing tags to database (regardless of version)
+            if existing_version == tagger_version:
+                # File already tagged with current version - import tags and mark as tagged
+                logging.debug(
+                    f"[scan_single_file] File already tagged with version {tagger_version}, importing tags: {file_path}"
+                )
                 from nomarr.components.library.library_update_comp import update_library_from_tags
 
                 update_library_from_tags(
@@ -186,15 +173,19 @@ def scan_single_file_workflow(
                     file_path=file_path,
                     metadata=file_metadata,
                     namespace=namespace,
-                    tagged_version=tagger_version
-                    if version_matches
-                    else None,  # Only mark as tagged if version matches
+                    tagged_version=tagger_version,
                     calibration=None,
                     library_id=library_id,
                 )
                 logging.debug(f"[scan_single_file] Tags imported to DB for {file_path}")
                 result["action"] = "added" if is_new else "updated"
                 result["success"] = True
+                needs_tagging = False
+            elif existing_version:
+                # File has old version - queue for retagging (don't import old tags)
+                logging.debug(
+                    f"[scan_single_file] File tagged with old version {existing_version} (current: {tagger_version}), queuing for retag: {file_path}"
+                )
 
         if needs_tagging:
             # File needs tagging - skip metadata extraction, just enqueue for tagging
