@@ -312,13 +312,8 @@ def _serialize_value(value: Any) -> str:
     if isinstance(value, list):
         if len(value) == 0:
             return ""
-        # For single-item lists, unwrap
-        if len(value) == 1:
-            item = value[0]
-            if isinstance(item, bytes):
-                return item.decode("utf-8", errors="replace")
-            return str(item)
-        # For multi-value lists, serialize as JSON array (enables individual value tracking)
+        # Always serialize lists as JSON arrays to maintain consistent type
+        # (single-element arrays should stay as arrays, not unwrapped to strings)
         decoded_items = [
             item.decode("utf-8", errors="replace") if isinstance(item, bytes) else str(item) for item in value
         ]
