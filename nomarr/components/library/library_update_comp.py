@@ -167,6 +167,13 @@ def _parse_tag_values(tags: dict[str, Any]) -> dict[str, Any]:
             except json.JSONDecodeError:
                 pass
 
+        # Handle semicolon-delimited multi-value tags
+        # Some formats (MP3) don't support native multi-value, so tags are stored as "value1; value2; value3"
+        # Split these into proper lists for consistent database storage
+        if ";" in value:
+            parsed[key] = [v.strip() for v in value.split(";") if v.strip()]
+            continue
+
         # Try to parse as float
         try:
             if "." in value:
