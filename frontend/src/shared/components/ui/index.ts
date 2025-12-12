@@ -28,5 +28,9 @@ export { PageContainer } from "./PageContainer";
 export type { PageContainerProps } from "./PageContainer";
 
 export { ErrorMessage } from "./ErrorMessage";
+
+export { NotificationProvider, useNotification } from "./NotificationProvider";
+
+export { ConfirmDialog } from "./ConfirmDialog";
 export type { ErrorMessageProps } from "./ErrorMessage";
 
