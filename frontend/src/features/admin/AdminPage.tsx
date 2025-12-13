@@ -6,12 +6,13 @@
  * - Server restart
  */
 
+import { ConfirmDialog } from "@shared/components/ui";
 import { SystemControls } from "./components/SystemControls";
 import { WorkerControls } from "./components/WorkerControls";
 import { useAdminActions } from "./hooks/useAdminActions";
 
 export function AdminPage() {
-  const { actionLoading, handlePauseWorker, handleResumeWorker, handleRestart } =
+  const { actionLoading, handlePauseWorker, handleResumeWorker, handleRestart, dialogState } =
     useAdminActions();
 
   return (
@@ -26,6 +27,18 @@ export function AdminPage() {
         />
         <SystemControls onRestart={handleRestart} actionLoading={actionLoading} />
       </div>
+
+      {/* Confirm dialog for admin actions */}
+      <ConfirmDialog
+        open={dialogState.isOpen}
+        title={dialogState.options.title}
+        message={dialogState.options.message}
+        confirmLabel={dialogState.options.confirmLabel}
+        cancelLabel={dialogState.options.cancelLabel}
+        severity={dialogState.options.severity}
+        onConfirm={dialogState.handleConfirm}
+        onCancel={dialogState.handleCancel}
+      />
     </div>
   );
 }

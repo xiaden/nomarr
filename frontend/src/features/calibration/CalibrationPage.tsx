@@ -8,6 +8,7 @@
  * - Clear calibration queue
  */
 
+import { ConfirmDialog } from "@shared/components/ui";
 import { CalibrationActions } from "./components/CalibrationActions";
 import { CalibrationStatus } from "./components/CalibrationStatus";
 import { useCalibrationStatus } from "./hooks/useCalibrationStatus";
@@ -21,6 +22,7 @@ export function CalibrationPage() {
     handleGenerate,
     handleApply,
     handleClear,
+    dialogState,
   } = useCalibrationStatus();
 
   return (
@@ -41,6 +43,18 @@ export function CalibrationPage() {
           />
         </div>
       )}
+
+      {/* Confirm dialog for calibration actions */}
+      <ConfirmDialog
+        open={dialogState.isOpen}
+        title={dialogState.options.title}
+        message={dialogState.options.message}
+        confirmLabel={dialogState.options.confirmLabel}
+        cancelLabel={dialogState.options.cancelLabel}
+        severity={dialogState.options.severity}
+        onConfirm={dialogState.handleConfirm}
+        onCancel={dialogState.handleCancel}
+      />
     </div>
   );
 }

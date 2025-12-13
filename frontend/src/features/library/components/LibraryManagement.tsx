@@ -21,7 +21,7 @@ import {
 } from "@mui/material";
 import { useEffect, useState } from "react";
 
-import { ErrorMessage, Panel, SectionHeader } from "@shared/components/ui";
+import { ConfirmDialog, ErrorMessage, Panel, SectionHeader } from "@shared/components/ui";
 import { useConfirmDialog } from "../../../hooks/useConfirmDialog";
 import { useNotification } from "../../../hooks/useNotification";
 
@@ -31,7 +31,7 @@ import type { Library } from "../../../shared/types";
 
 export function LibraryManagement() {
   const { showSuccess } = useNotification();
-  const { confirm } = useConfirmDialog();
+  const { confirm, isOpen, options, handleConfirm, handleCancel } = useConfirmDialog();
 
   const [libraries, setLibraries] = useState<Library[]>([]);
   const [loading, setLoading] = useState(true);
@@ -208,7 +208,6 @@ export function LibraryManagement() {
   const handleScan = async (id: number) => {
     try {
       setError(null);
-      setScanningId(id);
 
       // Get preview first
       const preview = await api.library.preview(id, {
@@ -221,9 +220,11 @@ export function LibraryManagement() {
       });
 
       if (!confirmed) {
-        setScanningId(null);
         return;
       }
+
+      // User confirmed - now set scanning state and start the scan
+      setScanningId(id);
 
       const result = await api.library.scan(id, {
         recursive: true,
@@ -521,6 +522,18 @@ export function LibraryManagement() {
           ))}
         </Stack>
       )}
+
+      {/* Confirm dialog for scan and delete actions */}
+      <ConfirmDialog
+        open={isOpen}
+        title={options.title}
+        message={options.message}
+        confirmLabel={options.confirmLabel}
+        cancelLabel={options.cancelLabel}
+        severity={options.severity}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
     </Stack>
   );
 }

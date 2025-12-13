@@ -5,55 +5,74 @@
 
 import { useState } from "react";
 
+import { useConfirmDialog } from "../../../hooks/useConfirmDialog";
+import { useNotification } from "../../../hooks/useNotification";
 import { api } from "../../../shared/api";
 
 export function useAdminActions() {
+  const { showSuccess, showError } = useNotification();
+  const { confirm, isOpen, options, handleConfirm, handleCancel } = useConfirmDialog();
+  
   const [actionLoading, setActionLoading] = useState(false);
 
   const handlePauseWorker = async () => {
-    if (!confirm("Pause the worker? Processing will stop.")) return;
+    const confirmed = await confirm({
+      title: "Pause Worker?",
+      message: "Pause the worker? Processing will stop.",
+      confirmLabel: "Pause",
+      severity: "warning",
+    });
+    if (!confirmed) return;
 
     try {
       setActionLoading(true);
       const result = await api.admin.pauseWorker();
-      alert(result.message);
+      showSuccess(result.message);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to pause worker");
+      showError(err instanceof Error ? err.message : "Failed to pause worker");
     } finally {
       setActionLoading(false);
     }
   };
 
   const handleResumeWorker = async () => {
-    if (!confirm("Resume the worker? Processing will start.")) return;
+    const confirmed = await confirm({
+      title: "Resume Worker?",
+      message: "Resume the worker? Processing will start.",
+      confirmLabel: "Resume",
+    });
+    if (!confirmed) return;
 
     try {
       setActionLoading(true);
       const result = await api.admin.resumeWorker();
-      alert(result.message);
+      showSuccess(result.message);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to resume worker");
+      showError(err instanceof Error ? err.message : "Failed to resume worker");
     } finally {
       setActionLoading(false);
     }
   };
 
   const handleRestart = async () => {
-    if (
-      !confirm("Restart the API server? The page will reload in a few seconds.")
-    )
-      return;
+    const confirmed = await confirm({
+      title: "Restart Server?",
+      message: "Restart the API server? The page will reload in a few seconds.",
+      confirmLabel: "Restart",
+      severity: "error",
+    });
+    if (!confirmed) return;
 
     try {
       setActionLoading(true);
       const result = await api.admin.restart();
-      alert(result.message);
+      showSuccess(result.message);
       // Wait a moment then reload
       setTimeout(() => {
         window.location.reload();
       }, 3000);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to restart server");
+      showError(err instanceof Error ? err.message : "Failed to restart server");
       setActionLoading(false);
     }
   };
@@ -63,5 +82,7 @@ export function useAdminActions() {
     handlePauseWorker,
     handleResumeWorker,
     handleRestart,
+    // Dialog state for rendering ConfirmDialog
+    dialogState: { isOpen, options, handleConfirm, handleCancel },
   };
 }

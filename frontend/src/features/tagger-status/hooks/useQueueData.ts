@@ -15,7 +15,7 @@ type StatusFilter = "all" | "pending" | "running" | "done" | "error";
 
 export function useQueueData() {
   const { showSuccess, showError } = useNotification();
-  const { confirm } = useConfirmDialog();
+  const { confirm, isOpen, options, handleConfirm, handleCancel } = useConfirmDialog();
 
   const [jobs, setJobs] = useState<QueueJob[]>([]);
   const [summary, setSummary] = useState<QueueSummary>({
@@ -208,5 +208,7 @@ export function useQueueData() {
     handleFilterChange,
     nextPage,
     prevPage,
+    // Dialog state for rendering ConfirmDialog
+    dialogState: { isOpen, options, handleConfirm, handleCancel },
   };
 }

@@ -11,7 +11,7 @@
 
 import { Typography } from "@mui/material";
 
-import { ErrorMessage, PageContainer } from "@shared/components/ui";
+import { ConfirmDialog, ErrorMessage, PageContainer } from "@shared/components/ui";
 
 import { QueueFilters } from "./components/QueueFilters";
 import { QueueJobsTable } from "./components/QueueJobsTable";
@@ -38,6 +38,7 @@ export function TaggerStatusPage() {
     handleFilterChange,
     nextPage,
     prevPage,
+    dialogState,
   } = useQueueData();
 
   return (
@@ -76,6 +77,18 @@ export function TaggerStatusPage() {
           statusFilter={statusFilter}
         />
       )}
+
+      {/* Confirm dialog for queue actions */}
+      <ConfirmDialog
+        open={dialogState.isOpen}
+        title={dialogState.options.title}
+        message={dialogState.options.message}
+        confirmLabel={dialogState.options.confirmLabel}
+        cancelLabel={dialogState.options.cancelLabel}
+        severity={dialogState.options.severity}
+        onConfirm={dialogState.handleConfirm}
+        onCancel={dialogState.handleCancel}
+      />
     </PageContainer>
   );
 }

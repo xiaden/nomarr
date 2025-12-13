@@ -5,9 +5,12 @@
 
 import { useEffect, useState } from "react";
 
+import { useNotification } from "../../../hooks/useNotification";
 import { api } from "../../../shared/api";
 
 export function useConfigData() {
+  const { showSuccess, showError, showInfo } = useNotification();
+  
   const [config, setConfig] = useState<Record<string, unknown>>({});
   const [originalConfig, setOriginalConfig] = useState<
     Record<string, unknown>
@@ -64,16 +67,16 @@ export function useConfigData() {
       }
 
       if (changes.length === 0) {
-        alert("No changes to save");
+        showInfo("No changes to save");
         return;
       }
 
-      alert(
+      showSuccess(
         `Saved ${changes.length} config change(s). Use "Restart Server" in Admin page to apply.`
       );
       await loadConfig(); // Reload to sync state
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to save config");
+      showError(err instanceof Error ? err.message : "Failed to save config");
     } finally {
       setSaveLoading(false);
     }

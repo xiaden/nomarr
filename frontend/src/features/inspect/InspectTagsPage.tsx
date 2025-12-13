@@ -22,7 +22,7 @@ import {
 } from "@mui/material";
 import { useState } from "react";
 
-import { ErrorMessage, PageContainer, Panel, SectionHeader } from "@shared/components/ui";
+import { ConfirmDialog, ErrorMessage, PageContainer, Panel, SectionHeader } from "@shared/components/ui";
 import { useConfirmDialog } from "../../hooks/useConfirmDialog";
 
 import { api } from "../../shared/api";
@@ -36,7 +36,7 @@ interface TagsData {
 }
 
 export function InspectTagsPage() {
-  const { confirm } = useConfirmDialog();
+  const { confirm, isOpen, options, handleConfirm, handleCancel } = useConfirmDialog();
 
   const [filePath, setFilePath] = useState("");
   const [tagsData, setTagsData] = useState<TagsData | null>(null);
@@ -244,6 +244,18 @@ export function InspectTagsPage() {
           </Typography>
         </Panel>
       )}
+
+      {/* Confirm dialog for remove tags action */}
+      <ConfirmDialog
+        open={isOpen}
+        title={options.title}
+        message={options.message}
+        confirmLabel={options.confirmLabel}
+        cancelLabel={options.cancelLabel}
+        severity={options.severity}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
     </PageContainer>
   );
 }
