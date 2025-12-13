@@ -60,7 +60,11 @@ from nomarr.helpers.dto.navidrome_dto import (
     SmartPlaylistFilter,
     TagCondition,
 )
-from nomarr.helpers.dto.path_dto import ValidatedPath, validated_path_from_string
+from nomarr.helpers.dto.path_dto import (
+    LibraryPath,
+    build_library_path_from_db,
+    build_library_path_from_input,
+)
 from nomarr.helpers.dto.processing_dto import (
     ProcessFileResult,
     ProcessorConfig,
@@ -73,6 +77,7 @@ __all__ = [
     "ComputeEmbeddingsForBackboneParams",
     "GenerateMinmaxCalibrationResult",
     "JobState",
+    "LibraryPath",
     "LoadAudioMonoResult",
     "MoodDistributionData",
     "PlaylistPreviewResult",
@@ -88,7 +93,7 @@ __all__ = [
     "TagCorrelationData",
     "TagSpec",
     "TagWriteProfile",
-    "ValidatedPath",
     "WorkerState",
-    "validated_path_from_string",
+    "build_library_path_from_db",
+    "build_library_path_from_input",
 ]

@@ -12,9 +12,12 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mutagen import MutagenError
+
+if TYPE_CHECKING:
+    from nomarr.helpers.dto.path_dto import LibraryPath
 from mutagen.flac import FLAC
 from mutagen.id3 import ID3, TXXX, ID3NoHeaderError
 from mutagen.mp4 import MP4, MP4FreeForm
@@ -79,11 +82,16 @@ class _MP3Writer:
                 # Silently continue on any oddities in old tags
                 pass
 
-    def write(self, path: str, tags: dict[str, Any]) -> None:
+    def write(self, path: LibraryPath, tags: dict[str, Any]) -> None:
         """Write tags as ID3 TXXX frames (one save per file)."""
+        # Enforce validation before file operations
+        if not path.is_valid():
+            raise ValueError(f"Cannot write tags to invalid path ({path.status}): {path.absolute} - {path.reason}")
+
+        path_str = str(path.absolute)
         try:
             try:
-                id3 = ID3(path)
+                id3 = ID3(path_str)
             except ID3NoHeaderError:
                 id3 = ID3()
 
@@ -99,7 +107,7 @@ class _MP3Writer:
                     txt = _to_text_value(v)
                     id3.add(TXXX(encoding=3, desc=ns_key, text=[txt]))
 
-            id3.save(path, v2_version=4)  # Use ID3v2.4 for proper multi-value support
+            id3.save(path_str, v2_version=4)  # Use ID3v2.4 for proper multi-value support
         except MutagenError as e:
             raise RuntimeError(f"MP3 write failed: {e}") from e
 
@@ -139,10 +147,14 @@ class _MP4Writer:
                 # If a malformed key exists, ignore and continue
                 pass
 
-    def write(self, path: str, tags: dict[str, Any]) -> None:
+    def write(self, path: LibraryPath, tags: dict[str, Any]) -> None:
         """Write tags as iTunes freeforms with UTF-8 payloads."""
+        if not path.is_valid():
+            raise ValueError(f"Cannot write tags to invalid path ({path.status}): {path.absolute} - {path.reason}")
+
+        path_str = str(path.absolute)
         try:
-            mp4 = MP4(path)
+            mp4 = MP4(path_str)
             if mp4.tags is None:
                 mp4.add_tags()
 
@@ -200,17 +212,21 @@ class _VorbisWriter:
             except Exception:
                 pass
 
-    def write(self, path: str, tags: dict[str, Any]) -> None:
+    def write(self, path: LibraryPath, tags: dict[str, Any]) -> None:
         """Write tags as Vorbis comments (native multi-value support)."""
+        if not path.is_valid():
+            raise ValueError(f"Cannot write tags to invalid path ({path.status}): {path.absolute} - {path.reason}")
+
+        path_str = str(path.absolute)
         try:
             # Detect file type
-            ext = path.lower().rsplit(".", 1)[-1]
+            ext = path_str.lower().rsplit(".", 1)[-1]
             if ext == "flac":
-                vorbis_file = FLAC(path)
+                vorbis_file = FLAC(path_str)
             elif ext == "ogg":
-                vorbis_file = OggVorbis(path)  # type: ignore[assignment]
+                vorbis_file = OggVorbis(path_str)  # type: ignore[assignment]
             elif ext == "opus":
-                vorbis_file = OggOpus(path)  # type: ignore[assignment]
+                vorbis_file = OggOpus(path_str)  # type: ignore[assignment]
             else:
                 raise RuntimeError(f"Unsupported Vorbis file type: .{ext}")
 
@@ -252,8 +268,11 @@ class TagWriter:
         self._mp4 = _MP4Writer(overwrite=overwrite, ns_prefix=namespace)
         self._vorbis = _VorbisWriter(overwrite=overwrite, ns_prefix=namespace)
 
-    def write(self, path: str, tags: dict[str, Any]) -> None:
-        ext = path.lower().rsplit(".", 1)[-1]
+    def write(self, path: LibraryPath, tags: dict[str, Any]) -> None:
+        if not path.is_valid():
+            raise ValueError(f"Cannot write tags to invalid path ({path.status}): {path.absolute} - {path.reason}")
+
+        ext = str(path.absolute).lower().rsplit(".", 1)[-1]
         if ext == "mp3":
             self._mp3.write(path, tags)
         elif ext in ("m4a", "mp4", "m4b"):

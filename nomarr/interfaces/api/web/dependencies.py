@@ -158,3 +158,12 @@ def get_info_service() -> Any:
     if not service:
         raise HTTPException(status_code=503, detail="Info service not available")
     return service
+
+
+def get_events_service():
+    """Get EventsService instance (may return None if not available)."""
+    from nomarr.app import application
+    from nomarr.services.infrastructure.events_svc import EventsService
+
+    # EventsService wraps the event_broker
+    return EventsService(application.event_broker)

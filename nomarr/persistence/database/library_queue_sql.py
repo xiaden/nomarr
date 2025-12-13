@@ -3,7 +3,7 @@
 import sqlite3
 from typing import Any
 
-from nomarr.helpers.dto import ValidatedPath
+from nomarr.helpers.dto import LibraryPath
 
 
 def now_ms() -> int:
@@ -19,22 +19,29 @@ class LibraryQueueOperations:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
 
-    def enqueue_scan(self, path: ValidatedPath, force: bool = False) -> int:
+    def enqueue_scan(self, path: LibraryPath, force: bool = False) -> int:
         """
         Enqueue a file for library scanning.
 
         Args:
-            path: Validated file path to scan
+            path: LibraryPath with validated file path (must have status == "valid")
             force: Whether to force rescan even if file hasn't changed
 
         Returns:
             Job ID
+
+        Raises:
+            ValueError: If path status is not "valid"
         """
+        if not path.is_valid():
+            raise ValueError(f"Cannot enqueue invalid path ({path.status}): {path.reason}")
+
         cur = self.conn.cursor()
         ts = now_ms()
+        # Store absolute path for now (TODO: store relative + library_id)
         cur.execute(
             "INSERT INTO library_queue(path, status, force, created_at, started_at) VALUES(?, 'pending', ?, ?, NULL)",
-            (path.path, 1 if force else 0, ts),
+            (str(path.absolute), 1 if force else 0, ts),
         )
         self.conn.commit()
         job_id = cur.lastrowid

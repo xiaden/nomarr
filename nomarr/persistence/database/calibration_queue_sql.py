@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
-from nomarr.helpers.dto import ValidatedPath
+from nomarr.helpers.dto import LibraryPath
 
 
 def now_ms() -> int:
@@ -21,13 +21,28 @@ class CalibrationQueueOperations:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
 
-    def enqueue_calibration(self, path: ValidatedPath) -> int:
-        """Add file to calibration queue. Returns calibration job ID."""
+    def enqueue_calibration(self, path: LibraryPath) -> int:
+        """
+        Add file to calibration queue.
+
+        Args:
+            path: LibraryPath with validated file path (must have status == "valid")
+
+        Returns:
+            Calibration job ID
+
+        Raises:
+            ValueError: If path status is not "valid"
+        """
+        if not path.is_valid():
+            raise ValueError(f"Cannot enqueue invalid path ({path.status}): {path.reason}")
+
         cur = self.conn.cursor()
         ts = now_ms()
+        # Store absolute path for now (TODO: store relative + library_id)
         cur.execute(
             "INSERT INTO calibration_queue(path, status, created_at, started_at) VALUES(?, 'pending', ?, NULL)",
-            (path.path, ts),
+            (str(path.absolute), ts),
         )
         self.conn.commit()
         job_id = cur.lastrowid

@@ -11,7 +11,7 @@ import logging
 import os
 from typing import TYPE_CHECKING, Any
 
-from nomarr.helpers.dto import validated_path_from_string
+from nomarr.helpers.dto import build_library_path_from_input
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -76,12 +76,17 @@ def update_library_from_tags(
         # Serialize calibration metadata to JSON
         calibration_json = json.dumps(calibration) if calibration else None
 
-        # Validate file path before writing to DB
-        validated_path = validated_path_from_string(file_path, library_root=None)
+        # Build LibraryPath from file path with validation
+        library_path = build_library_path_from_input(file_path, db)
+        if not library_path.is_valid():
+            logging.warning(
+                f"[update_library_from_tags] Invalid path ({library_path.status}): {file_path} - {library_path.reason}"
+            )
+            return
 
         # Upsert to library database
         db.library_files.upsert_library_file(
-            path=validated_path,
+            path=library_path,
             library_id=library_id,
             file_size=file_size,
             modified_time=modified_time,
@@ -120,8 +125,8 @@ def update_library_from_tags(
 
         # Mark file as tagged if tagger version provided (called from processor)
         if tagged_version and file_record:
-            # Reuse validated_path from earlier in function
-            db.library_files.mark_file_tagged(validated_path, tagged_version)
+            # Reuse library_path from earlier in function
+            db.library_files.mark_file_tagged(library_path, tagged_version)
 
         logging.debug(f"[update_library_from_tags] Updated library for {file_path}")
     except Exception as e:

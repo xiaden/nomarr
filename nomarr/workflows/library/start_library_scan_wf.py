@@ -38,7 +38,6 @@ from nomarr.helpers.dto.library_dto import StartLibraryScanWorkflowParams
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
-    from nomarr.helpers.dto.path_dto import ValidatedPath
 
 
 class LibraryScanStats(TypedDict):
@@ -136,10 +135,10 @@ def start_library_scan_workflow(
         "job_ids": [],
     }
 
-    # Discover all audio files using helpers.files
+    # Discover all audio files using helpers.files (returns raw string paths)
     from nomarr.helpers.files_helper import collect_audio_files
 
-    all_files: set[ValidatedPath] = set()
+    all_files: set[str] = set()
     for root_path in root_paths:
         if not os.path.exists(root_path):
             logging.warning(f"[start_library_scan] Path does not exist: {root_path}")
@@ -158,33 +157,45 @@ def start_library_scan_workflow(
         existing_mtimes = db.library_files.get_file_modified_times()
 
         files_to_check = []
-        for validated_file in all_files:
+        for file_path in all_files:
             try:
-                file_stat = os.stat(validated_file.path)
+                file_stat = os.stat(file_path)
                 current_mtime = int(file_stat.st_mtime * 1000)
-                db_mtime = existing_mtimes.get(validated_file.path)
+                db_mtime = existing_mtimes.get(file_path)
 
                 if db_mtime == current_mtime:
                     # File unchanged, skip
                     stats["files_skipped"] += 1
                 else:
                     # File new or changed, needs scanning
-                    files_to_check.append(validated_file)
+                    files_to_check.append(file_path)
             except Exception as e:
-                logging.warning(f"[start_library_scan] Failed to stat {validated_file.path}: {e}")
+                logging.warning(f"[start_library_scan] Failed to stat {file_path}: {e}")
                 # If we can't stat it, enqueue anyway (worker will handle error)
-                files_to_check.append(validated_file)
+                files_to_check.append(file_path)
 
         files_to_enqueue = set(files_to_check)
         logging.info(f"[start_library_scan] Batch check complete: {len(files_to_enqueue)} files need scanning")
 
-    # Enqueue files that need scanning
-    for validated_path in files_to_enqueue:
+    # Enqueue files that need scanning (convert string paths to LibraryPath)
+    from nomarr.helpers.dto.path_dto import build_library_path_from_input
+
+    for file_path in files_to_enqueue:
         try:
-            enqueue_file(db, validated_path, force=force, queue_type="library")
+            # Convert string path to LibraryPath with proper validation
+            library_path = build_library_path_from_input(file_path, db)
+
+            if not library_path.is_valid():
+                logging.warning(
+                    f"[start_library_scan] Skipping invalid path ({library_path.status}): "
+                    f"{file_path} - {library_path.reason}"
+                )
+                continue
+
+            enqueue_file(db, library_path, force=force, queue_type="library")
             stats["files_queued"] += 1
         except Exception as e:
-            logging.warning(f"[start_library_scan] Failed to enqueue {validated_path.path}: {e}")
+            logging.warning(f"[start_library_scan] Failed to enqueue {file_path}: {e}")
 
     logging.info(
         f"[start_library_scan] Queued {stats['files_queued']} files (skipped {stats['files_skipped']} unchanged)"
@@ -197,8 +208,8 @@ def start_library_scan_workflow(
             existing_files, _ = db.library_files.list_library_files(limit=1000000)
             existing_paths = {f["path"] for f in existing_files}
 
-            # Find files that no longer exist (convert ValidatedPath set to string paths)
-            scanned_paths = {vp.path for vp in all_files}
+            # Find files that no longer exist (all_files is already a set of strings)
+            scanned_paths = all_files
             removed_paths = existing_paths - scanned_paths
 
             # Remove them from database

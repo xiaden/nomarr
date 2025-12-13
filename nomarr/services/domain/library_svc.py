@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from nomarr.components.library.reconcile_paths_comp import ReconcileResult
 from nomarr.components.queue import get_queue_depth
 from nomarr.components.queue import list_jobs as list_jobs_component
 from nomarr.helpers.dto.library_dto import (
@@ -622,6 +623,70 @@ class LibraryService:
         self.db.library_files.clear_library_data()
         logging.info("[LibraryService] Library data cleared")
 
+    def reconcile_library_paths(
+        self,
+        policy: str = "mark_invalid",
+        batch_size: int = 1000,
+    ) -> ReconcileResult:
+        """
+        Re-validate all library paths against current configuration.
+
+        This checks all files in library_files table to detect paths that have
+        become invalid due to config changes (library root moves, deletions, etc.).
+        Useful after modifying library configurations or recovering from filesystem changes.
+
+        Args:
+            policy: What to do with invalid paths:
+                - "dry_run": Only report, don't modify database
+                - "mark_invalid": Keep files but log warnings (default)
+                - "delete_invalid": Remove invalid files from database
+            batch_size: Number of files to process per batch (default: 1000)
+
+        Returns:
+            Dict with reconciliation statistics:
+                - total_files: Total files checked
+                - valid_files: Files that passed validation
+                - invalid_config: Files outside current library roots
+                - not_found: Files that don't exist on disk
+                - unknown_status: Files with other validation issues
+                - deleted_files: Files removed (if policy="delete_invalid")
+                - errors: Validation errors
+
+        Raises:
+            ValueError: If library_root not configured or invalid policy
+
+        Example:
+            # After changing library root configuration
+            result = library_service.reconcile_library_paths(
+                policy="delete_invalid",
+                batch_size=500
+            )
+            print(f"Cleaned up {result['deleted_files']} invalid files")
+        """
+        from nomarr.components.library import reconcile_library_paths
+
+        if not self.cfg.library_root:
+            raise ValueError("Library root not configured")
+
+        # Validate policy
+        valid_policies = {"dry_run", "mark_invalid", "delete_invalid"}
+        if policy not in valid_policies:
+            raise ValueError(f"Invalid policy '{policy}'. Must be one of: {valid_policies}")
+
+        # Call component
+        result = reconcile_library_paths(
+            db=self.db,
+            policy=policy,  # type: ignore[arg-type]
+            batch_size=batch_size,
+        )
+
+        logging.info(
+            f"[LibraryService] Reconciliation complete: {result['total_files']} files checked, "
+            f"{result['valid_files']} valid, {result['deleted_files']} deleted"
+        )
+
+        return result
+
     # ------------------------------------------------------------------
     # Library Management (CRUD)
     # ------------------------------------------------------------------
@@ -1058,13 +1123,16 @@ class LibraryService:
             RuntimeError: If file cannot be read
         """
         from nomarr.components.tagging.tagging_reader_comp import read_tags_from_file
-        from nomarr.helpers.files_helper import validate_library_path
+        from nomarr.helpers.dto.path_dto import build_library_path_from_input
 
-        # Security: validate path is under library_root
-        validated_path = validate_library_path(path, str(self._get_library_root()))
+        # Build and validate LibraryPath
+        library_path = build_library_path_from_input(raw_path=path, db=self.db)
+
+        if not library_path.is_valid():
+            raise ValueError(f"Invalid path: {library_path.reason}")
 
         # Read tags using component
-        tags = read_tags_from_file(validated_path, self.cfg.namespace)
+        tags = read_tags_from_file(library_path, self.cfg.namespace)
 
         return tags
 
@@ -1083,13 +1151,16 @@ class LibraryService:
             RuntimeError: If file cannot be modified
         """
         from nomarr.components.tagging.tagging_remove_comp import remove_tags_from_file
-        from nomarr.helpers.files_helper import validate_library_path
+        from nomarr.helpers.dto.path_dto import build_library_path_from_input
 
-        # Security: validate path is under library_root
-        validated_path = validate_library_path(path, str(self._get_library_root()))
+        # Build and validate LibraryPath
+        library_path = build_library_path_from_input(raw_path=path, db=self.db)
+
+        if not library_path.is_valid():
+            raise ValueError(f"Invalid path: {library_path.reason}")
 
         # Remove tags using component
-        count = remove_tags_from_file(validated_path, self.cfg.namespace)
+        count = remove_tags_from_file(library_path, self.cfg.namespace)
 
         return count
 

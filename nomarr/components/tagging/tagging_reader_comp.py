@@ -4,19 +4,22 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import mutagen  # type: ignore[import-untyped]
+
+if TYPE_CHECKING:
+    from nomarr.helpers.dto.path_dto import LibraryPath
 
 logger = logging.getLogger(__name__)
 
 
-def read_tags_from_file(path: str, namespace: str) -> dict[str, Any]:
+def read_tags_from_file(path: LibraryPath, namespace: str) -> dict[str, Any]:
     """
     Read namespaced tags from an audio file.
 
     Args:
-        path: Absolute path to audio file
+        path: LibraryPath to audio file (must be valid)
         namespace: Tag namespace to filter (e.g., "nom", "essentia")
 
     Returns:
@@ -24,37 +27,42 @@ def read_tags_from_file(path: str, namespace: str) -> dict[str, Any]:
         Multi-value tags returned as lists, single values as strings
 
     Raises:
-        ValueError: If file format is unsupported
+        ValueError: If path is invalid or file format is unsupported
         RuntimeError: If file cannot be read
     """
+    # Enforce validation before file operations
+    if not path.is_valid():
+        raise ValueError(f"Cannot read tags from invalid path ({path.status}): {path.absolute} - {path.reason}")
+
     try:
         # Infer format from file extension - faster than loading file
-        ext = Path(path).suffix.lower()
+        path_str = str(path.absolute)
+        ext = Path(path_str).suffix.lower()
 
         # Route to appropriate extractor based on extension
         if ext == ".mp3":
-            audio = mutagen.File(path)  # type: ignore[attr-defined]
+            audio = mutagen.File(path_str)  # type: ignore[attr-defined]
             if audio is None:
-                raise ValueError(f"Failed to load MP3 file: {path}")
+                raise ValueError(f"Failed to load MP3 file: {path_str}")
             return _extract_id3_tags(audio, namespace)
 
         elif ext in (".m4a", ".mp4", ".m4b", ".m4p"):
-            audio = mutagen.File(path)  # type: ignore[attr-defined]
+            audio = mutagen.File(path_str)  # type: ignore[attr-defined]
             if audio is None:
-                raise ValueError(f"Failed to load MP4 file: {path}")
+                raise ValueError(f"Failed to load MP4 file: {path_str}")
             return _extract_mp4_tags(audio, namespace)
 
         elif ext in (".flac", ".ogg", ".opus"):
-            audio = mutagen.File(path)  # type: ignore[attr-defined]
+            audio = mutagen.File(path_str)  # type: ignore[attr-defined]
             if audio is None:
-                raise ValueError(f"Failed to load Vorbis file: {path}")
+                raise ValueError(f"Failed to load Vorbis file: {path_str}")
             return _extract_vorbis_tags(audio, namespace)
 
         else:
             raise ValueError(f"Unsupported audio format: {ext}")
 
     except Exception as e:
-        logger.exception(f"[TagReader] Failed to read tags from {path}")
+        logger.exception(f"[TagReader] Failed to read tags from {path_str}")
         raise RuntimeError(f"Failed to read tags: {e}") from e
 
 

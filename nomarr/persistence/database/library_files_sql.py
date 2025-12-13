@@ -3,7 +3,7 @@
 import sqlite3
 from typing import Any
 
-from nomarr.helpers.dto import ValidatedPath
+from nomarr.helpers.dto import LibraryPath
 
 
 def now_ms() -> int:
@@ -21,7 +21,7 @@ class LibraryFilesOperations:
 
     def upsert_library_file(
         self,
-        path: ValidatedPath,
+        path: LibraryPath,
         library_id: int,
         file_size: int,
         modified_time: int,
@@ -36,7 +36,7 @@ class LibraryFilesOperations:
         Insert or update a library file entry.
 
         Args:
-            path: Validated file path
+            path: LibraryPath with validated file path (must have status == "valid")
             library_id: ID of owning library
             file_size: File size in bytes
             modified_time: Last modified timestamp
@@ -49,7 +49,13 @@ class LibraryFilesOperations:
 
         Returns:
             File ID
+
+        Raises:
+            ValueError: If path status is not "valid"
         """
+        if not path.is_valid():
+            raise ValueError(f"Cannot upsert invalid path ({path.status}): {path.reason}")
+
         scanned_at = now_ms()
         cur = self.conn.cursor()
         cur.execute(
@@ -72,7 +78,7 @@ class LibraryFilesOperations:
                 last_tagged_at=COALESCE(excluded.last_tagged_at, last_tagged_at)
             """,
             (
-                path.path,
+                str(path.absolute),
                 library_id,
                 file_size,
                 modified_time,
@@ -91,17 +97,20 @@ class LibraryFilesOperations:
             raise RuntimeError("Failed to upsert library file - no row ID returned")
         return file_id
 
-    def mark_file_tagged(self, path: ValidatedPath, tagged_version: str) -> None:
+    def mark_file_tagged(self, path: LibraryPath, tagged_version: str) -> None:
         """
         Mark a file as tagged with the given version.
 
         Args:
-            path: Validated file path
+            path: LibraryPath with validated file path
             tagged_version: Version string of the tagger
         """
+        if not path.is_valid():
+            raise ValueError(f"Cannot mark invalid path as tagged ({path.status}): {path.reason}")
+
         self.conn.execute(
             "UPDATE library_files SET tagged=1, tagged_version=?, last_tagged_at=? WHERE path=?",
-            (tagged_version, now_ms(), path.path),
+            (tagged_version, now_ms(), str(path.absolute)),
         )
         self.conn.commit()
 

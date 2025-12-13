@@ -333,6 +333,31 @@ class TagCleanupResponse(BaseModel):
         return cls(orphaned_count=result.orphaned_count, deleted_count=result.deleted_count)
 
 
+class ReconcilePathsResponse(BaseModel):
+    """Response for library path reconciliation endpoint."""
+
+    total_files: int
+    valid_files: int
+    invalid_config: int
+    not_found: int
+    unknown_status: int
+    deleted_files: int
+    errors: int
+
+    @classmethod
+    def from_dict(cls, result: dict[str, int]) -> ReconcilePathsResponse:
+        """Transform reconciliation result dict to API response."""
+        return cls(
+            total_files=result["total_files"],
+            valid_files=result["valid_files"],
+            invalid_config=result["invalid_config"],
+            not_found=result["not_found"],
+            unknown_status=result["unknown_status"],
+            deleted_files=result["deleted_files"],
+            errors=result["errors"],
+        )
+
+
 class FileTagsResponse(BaseModel):
     """Response for file tags endpoint."""
 

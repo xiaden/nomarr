@@ -12,6 +12,7 @@ from nomarr.interfaces.api.types.library_types import (
     LibraryResponse,
     LibraryStatsResponse,
     ListLibrariesResponse,
+    ReconcilePathsResponse,
     ScanLibraryRequest,
     SearchFilesResponse,
     StartScanWithStatusResponse,
@@ -249,8 +250,8 @@ async def preview_library_scan(
             files = collect_audio_files(root_path, recursive=request.recursive)
             all_files.extend(files)
 
-        # files are now ValidatedPath objects, deduplicate by path
-        unique_paths = {vp.path for vp in all_files}
+        # files are now strings, deduplicate
+        unique_paths = set(all_files)
         return {"file_count": len(unique_paths)}
 
     except ValueError as e:
@@ -453,3 +454,55 @@ async def scan_library(
     except Exception as e:
         logging.exception(f"[Web API] Error starting scan for library {library_id}")
         raise HTTPException(status_code=500, detail=f"Error starting library scan: {e}") from e
+
+
+@router.post("/{library_id}/reconcile", dependencies=[Depends(verify_session)])
+async def reconcile_library_paths(
+    library_id: int,
+    policy: str = Query("mark_invalid", description="Policy for invalid paths: dry_run, mark_invalid, delete_invalid"),
+    batch_size: int = Query(1000, description="Number of files to process per batch", ge=1, le=10000),
+    library_service: "LibraryService" = Depends(get_library_service),
+) -> ReconcilePathsResponse:
+    """
+    Reconcile library paths after configuration changes.
+
+    Re-validates all file paths in the specified library and handles invalid paths
+    according to the specified policy. Useful after changing library root_path or
+    when files have been moved/deleted outside of Nomarr.
+
+    Policies:
+    - dry_run: Only report invalid paths, make no changes
+    - mark_invalid: Update file records with invalid status
+    - delete_invalid: Remove invalid file records from database
+
+    Args:
+        library_id: Library ID to reconcile
+        policy: How to handle invalid paths (default: mark_invalid)
+        batch_size: Files to process per batch (default: 1000)
+        library_service: LibraryService instance (injected)
+
+    Returns:
+        ReconcilePathsResponse with reconciliation statistics
+
+    Raises:
+        HTTPException: 404 if library not found, 400 for invalid policy, 500 for other errors
+    """
+    try:
+        # Call service layer to reconcile paths (returns dict with statistics)
+        stats = library_service.reconcile_library_paths(
+            policy=policy,
+            batch_size=batch_size,
+        )
+
+        # Transform dict to Pydantic response
+        return ReconcilePathsResponse.from_dict(stats)
+
+    except ValueError as e:
+        # Invalid policy or library not found
+        error_msg = str(e)
+        if "policy" in error_msg.lower():
+            raise HTTPException(status_code=400, detail=error_msg) from e
+        raise HTTPException(status_code=404, detail=error_msg) from e
+    except Exception as e:
+        logging.exception(f"[Web API] Error reconciling paths for library {library_id}")
+        raise HTTPException(status_code=500, detail=f"Error reconciling library paths: {e}") from e

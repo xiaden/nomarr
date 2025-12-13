@@ -35,7 +35,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from nomarr.components.queue import check_file_needs_processing, enqueue_file, get_queue_depth
-from nomarr.helpers.dto import validated_path_from_string
 from nomarr.helpers.dto.queue_dto import EnqueueFilesResult
 from nomarr.helpers.files_helper import collect_audio_files
 
@@ -106,18 +105,31 @@ def enqueue_files_workflow(
         else:
             raise ValueError(f"No audio files found in provided paths: {paths}")
 
-    # Enqueue files using queue components (audio_files are now ValidatedPath objects)
+    # Enqueue files using queue components
+    # Convert string paths to LibraryPath with proper validation
+    from nomarr.helpers.dto.path_dto import build_library_path_from_input
+
     job_ids = []
     skipped = 0
-    for validated_path in audio_files:
+    for file_path in audio_files:
+        # Convert string path to LibraryPath with full validation
+        library_path = build_library_path_from_input(file_path, db)
+
+        if not library_path.is_valid():
+            logger.warning(
+                f"[enqueue_files_wf] Skipping invalid path ({library_path.status}): {file_path} - {library_path.reason}"
+            )
+            skipped += 1
+            continue
+
         # Check if file needs processing
-        if check_file_needs_processing(db, validated_path.path, force, queue_type):
-            job_id = enqueue_file(db, validated_path, force, queue_type)
+        if check_file_needs_processing(db, library_path, force, queue_type):
+            job_id = enqueue_file(db, library_path, force, queue_type)
             job_ids.append(job_id)
-            logger.debug(f"[enqueue_files_wf] Queued job {job_id} for {validated_path.path}")
+            logger.debug(f"[enqueue_files_wf] Queued job {job_id} for {library_path.absolute}")
         else:
             skipped += 1
-            logger.debug(f"[enqueue_files_wf] Skipped unchanged file: {file_path}")
+            logger.debug(f"[enqueue_files_wf] Skipped unchanged file: {library_path.absolute}")
 
     # Get final queue depth
     queue_depth = get_queue_depth(db, queue_type)

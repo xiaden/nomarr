@@ -42,6 +42,7 @@ from typing import TYPE_CHECKING, Any
 
 from nomarr.components.queue import enqueue_file
 from nomarr.helpers.dto.library_dto import ScanSingleFileWorkflowParams
+from nomarr.helpers.dto.path_dto import build_library_path_from_db
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -55,9 +56,11 @@ def scan_single_file_workflow(
     Scan a single audio file and update library database.
 
     This workflow:
-    1. Extracts metadata from the file
-    2. Updates library_files table with current metadata
-    3. Optionally enqueues file for ML tagging if untagged
+    1. Validates the file path (converts string to LibraryPath)
+    2. Checks path status against current configuration
+    3. Extracts metadata from the file
+    4. Updates library_files table with current metadata
+    5. Optionally enqueues file for ML tagging if untagged
 
     Args:
         db: Database instance (must provide library, tags, and queue accessors)
@@ -75,7 +78,7 @@ def scan_single_file_workflow(
         Exception: On scan failure (caller should handle and mark job as error)
     """
     # Extract parameters
-    file_path = params.file_path
+    file_path_str = params.file_path
     namespace = params.namespace
     force = params.force
     auto_tag = params.auto_tag
@@ -83,11 +86,11 @@ def scan_single_file_workflow(
     library_id = params.library_id
     version_tag_key = params.version_tag_key
     tagger_version = params.tagger_version
-    logging.debug(f"[scan_single_file] Scanning {file_path}")
+    logging.debug(f"[scan_single_file] Scanning {file_path_str}")
 
     result: dict[str, Any] = {
         "success": False,
-        "file_path": file_path,
+        "file_path": file_path_str,
         "action": "skipped",
         "error": None,
         "auto_tagged": False,
@@ -97,16 +100,29 @@ def scan_single_file_workflow(
         # Import components for metadata extraction and library update
         import os
 
-        # Determine library_id if not provided
-        if library_id is None:
-            library = db.libraries.find_library_containing_path(file_path)
-            if not library:
-                result["action"] = "error"
-                result["error"] = "File path not in any configured library"
-                logging.error(f"[scan_single_file] Path not in any library: {file_path}")
-                return result
-            library_id = library["id"]
-            logging.debug(f"[scan_single_file] Auto-detected library_id={library_id} for {file_path}")
+        # Validate the path against current library configuration
+        # This handles cases where library root has changed since path was queued
+        library_path = build_library_path_from_db(
+            stored_path=file_path_str,
+            db=db,
+            library_id=library_id,
+            check_disk=True,
+        )
+
+        # Check if path is valid under current configuration
+        if not library_path.is_valid():
+            result["action"] = "error"
+            result["error"] = f"Path validation failed: {library_path.status} - {library_path.reason}"
+            logging.error(
+                f"[scan_single_file] Path invalid ({library_path.status}): {file_path_str} - {library_path.reason}"
+            )
+            return result
+
+        # Use validated path for remaining operations
+        file_path = str(library_path.absolute)
+        library_id = library_path.library_id
+
+        logging.debug(f"[scan_single_file] Path validated for library_id={library_id}: {file_path}")
 
         # Check if file exists
         if not os.path.exists(file_path):
@@ -191,7 +207,7 @@ def scan_single_file_workflow(
             # File needs tagging - skip metadata extraction, just enqueue for tagging
             # The tagger will extract metadata and write tags in one pass
             logging.debug(f"[scan_single_file] File needs tagging, skipping metadata extraction: {file_path}")
-            enqueue_file(db, file_path, force=False, queue_type="tag")
+            enqueue_file(db, library_path, force=False, queue_type="tag")
             result["action"] = "queued_for_tagging"
             result["success"] = True
             result["auto_tagged"] = True

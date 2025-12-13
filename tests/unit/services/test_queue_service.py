@@ -18,6 +18,15 @@ class TestQueueServiceAddFiles:
         # Arrange
         from nomarr.helpers.dto.queue_dto import EnqueueFilesResult
 
+        # Create library that contains the temp file
+        db = real_queue_service.db
+        library_id = db.libraries.create_library(
+            name="Test Library",
+            root_path=str(temp_audio_file.parent),
+            is_enabled=True,
+            is_default=True,
+        )
+
         # Act
         result = real_queue_service.enqueue_files_for_tagging(paths=[str(temp_audio_file)])
 
@@ -80,7 +89,14 @@ class TestQueueServiceGetJob:
 
     def test_get_job_success(self, real_queue_service, temp_audio_file):
         """Should successfully get job."""
-        # Arrange - add a job first
+        # Arrange - create library and add a job first
+        db = real_queue_service.db
+        library_id = db.libraries.create_library(
+            name="Test Library",
+            root_path=str(temp_audio_file.parent),
+            is_enabled=True,
+            is_default=True,
+        )
         add_result = real_queue_service.enqueue_files_for_tagging(paths=[str(temp_audio_file)])
         job_id = add_result.job_ids[0]  # Get first job ID from list
 

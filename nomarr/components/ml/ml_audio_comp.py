@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 from scipy.signal import resample_poly
 
 from nomarr.components.ml import ml_backend_essentia_comp as backend_essentia
 from nomarr.helpers.dto.ml_dto import LoadAudioMonoResult
+
+if TYPE_CHECKING:
+    from nomarr.helpers.dto.path_dto import LibraryPath
 
 # Use Essentia for audio loading (supports more formats via ffmpeg)
 HAVE_ESSENTIA = backend_essentia.is_available()
@@ -20,17 +25,30 @@ else:
     MonoLoader = None
 
 
-def load_audio_mono(path: str, target_sr: int = 16000) -> LoadAudioMonoResult:
+def load_audio_mono(path: LibraryPath, target_sr: int = 16000) -> LoadAudioMonoResult:
     """
     Load an audio file as mono float32 in [-1, 1] at target_sr.
     Returns: LoadAudioMonoResult with waveform, sample_rate, duration
 
     Uses Essentia's MonoLoader for broad format support (M4A, MP3, FLAC, etc.).
     Falls back to soundfile if Essentia is not available.
+
+    Args:
+        path: LibraryPath to audio file (must be valid)
+        target_sr: Target sample rate in Hz
+
+    Raises:
+        ValueError: If path is invalid
     """
+    # Enforce validation before file operations
+    if not path.is_valid():
+        raise ValueError(f"Cannot load audio from invalid path ({path.status}): {path.absolute} - {path.reason}")
+
+    path_str = str(path.absolute)
+
     if HAVE_ESSENTIA:
         # Essentia's MonoLoader handles resampling and format conversion automatically
-        loader = MonoLoader(filename=path, sampleRate=target_sr, resampleQuality=4)  # type: ignore[misc]
+        loader = MonoLoader(filename=path_str, sampleRate=target_sr, resampleQuality=4)  # type: ignore[misc]
         # Suppress verbose Essentia logs during load
 
         y = loader()

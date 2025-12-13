@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mutagen.flac import FLAC  # type: ignore[import-untyped]
 from mutagen.id3 import ID3, ID3NoHeaderError  # type: ignore[import-untyped]
@@ -12,39 +12,47 @@ from mutagen.mp4 import MP4  # type: ignore[import-untyped]
 from mutagen.oggopus import OggOpus  # type: ignore[import-untyped]
 from mutagen.oggvorbis import OggVorbis  # type: ignore[import-untyped]
 
+if TYPE_CHECKING:
+    from nomarr.helpers.dto.path_dto import LibraryPath
+
 logger = logging.getLogger(__name__)
 
 
-def remove_tags_from_file(path: str, namespace: str) -> int:
+def remove_tags_from_file(path: LibraryPath, namespace: str) -> int:
     """
     Remove all namespaced tags from an audio file.
 
     Args:
-        path: Absolute path to audio file
+        path: LibraryPath to audio file (must be valid)
         namespace: Tag namespace to remove (e.g., "nom", "essentia")
 
     Returns:
         Number of tags removed
 
     Raises:
-        ValueError: If file format is unsupported
+        ValueError: If path is invalid or file format is unsupported
         RuntimeError: If file cannot be modified
     """
+    # Enforce validation before file operations
+    if not path.is_valid():
+        raise ValueError(f"Cannot remove tags from invalid path ({path.status}): {path.absolute} - {path.reason}")
+
     try:
         # Infer format from file extension
-        ext = Path(path).suffix.lower()
+        path_str = str(path.absolute)
+        ext = Path(path_str).suffix.lower()
 
         if ext == ".mp3":
-            return _remove_id3_tags(path, namespace)
+            return _remove_id3_tags(path_str, namespace)
         elif ext in (".m4a", ".mp4", ".m4b", ".m4p"):
-            return _remove_mp4_tags(path, namespace)
+            return _remove_mp4_tags(path_str, namespace)
         elif ext in (".flac", ".ogg", ".opus"):
-            return _remove_vorbis_tags(path, namespace)
+            return _remove_vorbis_tags(path_str, namespace)
         else:
             raise ValueError(f"Unsupported audio format: {ext}")
 
     except Exception as e:
-        logger.exception(f"[TagRemover] Failed to remove tags from {path}")
+        logger.exception(f"[TagRemover] Failed to remove tags from {path_str}")
         raise RuntimeError(f"Failed to remove tags: {e}") from e
 
 

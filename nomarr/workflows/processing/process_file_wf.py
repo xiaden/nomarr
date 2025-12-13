@@ -523,6 +523,7 @@ def process_file_workflow(
     dependencies or side effects beyond file I/O and optional database updates.
 
     WORKFLOW STEPS:
+    0. Validate path against library configuration (if db provided)
     1. Discover head models and group by backbone
     2. For each backbone group:
        a. Compute embeddings (reused across heads)
@@ -541,6 +542,7 @@ def process_file_workflow(
     - Callable from any context (services, tests, CLI)
 
     RESPONSIBILITIES (what this function DOES):
+    - Validate path against library config (when db provided)
     - Discover and group models by backbone
     - Compute embeddings for each backbone
     - Run head predictions on embeddings
@@ -550,14 +552,13 @@ def process_file_workflow(
     - Optionally update library database via db parameter
 
     RESPONSIBILITIES (what this function DOES NOT do):
-    - File validation (caller must ensure file exists/readable)
     - Skip/force logic (caller decides whether to call this)
     - Cache management internals (handled by cache module)
     - Config loading or DI (caller injects typed config)
     - Error recovery strategies (caller handles retries)
 
     Args:
-        path: Absolute path to audio file (must exist and be readable)
+        path: Path to audio file (string from queue, will be validated if db provided)
         config: Typed configuration for processing pipeline (ProcessorConfig)
                 Must include: models_dir, namespace, batch_size, tagger_version,
                 min_duration_s, allow_short, overwrite_tags, version_tag_key,
@@ -586,6 +587,27 @@ def process_file_workflow(
         >>> print(f"Processed {result.file} in {result.elapsed}s")
     """
     from nomarr.components.ml.ml_cache_comp import check_and_evict_idle_cache, touch_cache
+    from nomarr.helpers.dto.path_dto import build_library_path_from_db
+
+    # === STEP 0: Validate path against library configuration ===
+    # If db provided, validate path to handle config changes (library root moved, etc.)
+    if db is not None:
+        library_path = build_library_path_from_db(
+            stored_path=path,
+            db=db,
+            library_id=None,
+            check_disk=True,
+        )
+
+        if not library_path.is_valid():
+            # Path is no longer valid under current config
+            error_msg = f"Path validation failed ({library_path.status}): {library_path.reason}"
+            logging.error(f"[process_file_workflow] {error_msg} - {path}")
+            raise ValueError(error_msg)
+
+        # Use validated absolute path for file operations
+        path = str(library_path.absolute)
+        logging.debug(f"[process_file_workflow] Path validated for library_id={library_path.library_id}: {path}")
 
     # Cache management (module handles eviction policy)
     check_and_evict_idle_cache()

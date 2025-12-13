@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import mutagen  # type: ignore[import-untyped]
 from mutagen.flac import FLAC
@@ -22,6 +22,9 @@ from nomarr.components.tagging.tag_normalization_comp import (
     normalize_mp4_tags,
     normalize_vorbis_tags,
 )
+
+if TYPE_CHECKING:
+    from nomarr.helpers.dto.path_dto import LibraryPath
 
 
 def resolve_artists(all_tags: dict[str, str]) -> tuple[str | None, str | None]:
@@ -85,7 +88,7 @@ def resolve_artists(all_tags: dict[str, str]) -> tuple[str | None, str | None]:
     return (None, None)
 
 
-def extract_metadata(file_path: str, namespace: str = "nom") -> dict[str, Any]:
+def extract_metadata(file_path: LibraryPath, namespace: str = "nom") -> dict[str, Any]:
     """
     Extract metadata and tags from an audio file.
 
@@ -97,7 +100,7 @@ def extract_metadata(file_path: str, namespace: str = "nom") -> dict[str, Any]:
     For example, "nom:mood-strict" becomes "mood-strict" in nom_tags.
 
     Args:
-        file_path: Absolute path to audio file
+        file_path: LibraryPath to audio file (must be valid)
         namespace: Tag namespace to extract (default: "nom")
 
     Returns:
@@ -112,10 +115,21 @@ def extract_metadata(file_path: str, namespace: str = "nom") -> dict[str, Any]:
         - all_tags: dict[str, str] (all tags as strings)
         - nom_tags: dict[str, str] (namespace tags WITHOUT prefix)
 
+    Raises:
+        ValueError: If path is invalid
+
     Note:
         Handles MP3 (ID3), M4A/MP4, FLAC, and other mutagen-supported formats.
         Multi-value tags in MP3/FLAC are stored as JSON array strings.
     """
+    # Enforce validation before file operations
+    if not file_path.is_valid():
+        raise ValueError(
+            f"Cannot extract metadata from invalid path ({file_path.status}): {file_path.absolute} - {file_path.reason}"
+        )
+
+    path_str = str(file_path.absolute)
+
     metadata: dict[str, Any] = {
         "duration": None,
         "artist": None,
@@ -129,10 +143,10 @@ def extract_metadata(file_path: str, namespace: str = "nom") -> dict[str, Any]:
     }
 
     # Get file extension to determine tag format
-    file_ext = os.path.splitext(file_path)[1].lower()
+    file_ext = os.path.splitext(path_str)[1].lower()
 
     try:
-        audio = mutagen.File(file_path)  # type: ignore[attr-defined]
+        audio = mutagen.File(path_str)  # type: ignore[attr-defined]
         if audio is None:
             return metadata
 
@@ -271,11 +285,11 @@ def _extract_flac_metadata(audio: Any, metadata: dict[str, Any], namespace: str)
     metadata["nom_tags"] = nom_tags
 
 
-def _extract_mp3_metadata(file_path: str, metadata: dict[str, Any], namespace: str) -> None:
+def _extract_mp3_metadata(file_path: LibraryPath, metadata: dict[str, Any], namespace: str) -> None:
     """Extract metadata from MP3 files using ID3 tags."""
     # Use ID3 for detailed tags - normalize to canonical names (for file_tags table)
     try:
-        id3 = ID3(file_path)
+        id3 = ID3(str(file_path.absolute))
         metadata["all_tags"] = normalize_id3_tags(dict(id3))
 
         # Resolve artist/artists with deduplication

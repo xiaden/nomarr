@@ -4,7 +4,7 @@ import json
 import sqlite3
 from typing import TYPE_CHECKING, Any
 
-from nomarr.helpers.dto import ValidatedPath
+from nomarr.helpers.dto import LibraryPath
 
 if TYPE_CHECKING:
     pass
@@ -23,22 +23,29 @@ class QueueOperations:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
 
-    def enqueue(self, path: ValidatedPath, force: bool = False) -> int:
+    def enqueue(self, path: LibraryPath, force: bool = False) -> int:
         """
         Add a file to the tagging queue.
 
         Args:
-            path: Validated file path to tag
+            path: LibraryPath with validated file path (must have status == "valid")
             force: If True, requeue even if already processed
 
         Returns:
             Job ID
+
+        Raises:
+            ValueError: If path status is not "valid"
         """
+        if not path.is_valid():
+            raise ValueError(f"Cannot enqueue invalid path ({path.status}): {path.reason}")
+
         cur = self.conn.cursor()
         ts = now_ms()
+        # Store absolute path for now (TODO: store relative + library_id)
         cur.execute(
             "INSERT INTO tag_queue(path, status, created_at, force) VALUES(?,?,?,?)",
-            (path.path, "pending", ts, int(force)),
+            (str(path.absolute), "pending", ts, int(force)),
         )
         self.conn.commit()
 

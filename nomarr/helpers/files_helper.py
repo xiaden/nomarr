@@ -208,7 +208,7 @@ def resolve_library_path(
 AUDIO_EXTENSIONS = frozenset({".mp3", ".m4a", ".mp4", ".flac", ".ogg", ".wav", ".aac", ".opus"})
 
 
-def collect_audio_files(paths: list[str] | str, recursive: bool = True) -> list["ValidatedPath"]:
+def collect_audio_files(paths: list[str] | str, recursive: bool = True) -> list[str]:
     """
     Collect audio files from one or more paths (files or directories).
 
@@ -217,15 +217,13 @@ def collect_audio_files(paths: list[str] | str, recursive: bool = True) -> list[
         recursive: If True, recursively scan directories. If False, only immediate children.
 
     Returns:
-        Sorted list of ValidatedPath objects for audio files (deduplicated).
+        Sorted list of absolute path strings for audio files (deduplicated).
 
     Note:
-        For user-provided paths, validate using validate_library_path() or
-        resolve_library_path() before calling this function.
-        This function wraps discovered paths in ValidatedPath DTOs.
+        This function returns raw strings. Callers must validate these paths
+        into LibraryPath objects using build_library_path_from_input() or
+        build_library_path_from_db() before performing file operations.
     """
-    from nomarr.helpers.dto.path_dto import ValidatedPath
-    
     # Normalize to list
     if isinstance(paths, str):
         paths = [paths]
@@ -250,9 +248,8 @@ def collect_audio_files(paths: list[str] | str, recursive: bool = True) -> list[
                 for ext in AUDIO_EXTENSIONS:
                     files.extend([str(p.resolve()) for p in path.glob(f"*{ext}")])
 
-    # Deduplicate, sort, and wrap in ValidatedPath
-    unique_files = sorted(set(files))
-    return [ValidatedPath(path=f) for f in unique_files]
+    # Deduplicate and sort
+    return sorted(set(files))
 
 
 def is_audio_file(path: str) -> bool:
