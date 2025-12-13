@@ -249,7 +249,9 @@ async def preview_library_scan(
             files = collect_audio_files(root_path, recursive=request.recursive)
             all_files.extend(files)
 
-        return {"file_count": len(set(all_files))}
+        # files are now ValidatedPath objects, deduplicate by path
+        unique_paths = {vp.path for vp in all_files}
+        return {"file_count": len(unique_paths)}
 
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e

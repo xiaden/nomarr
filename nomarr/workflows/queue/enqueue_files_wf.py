@@ -106,18 +106,15 @@ def enqueue_files_workflow(
         else:
             raise ValueError(f"No audio files found in provided paths: {paths}")
 
-    # Enqueue files using queue components
+    # Enqueue files using queue components (audio_files are now ValidatedPath objects)
     job_ids = []
     skipped = 0
-    for file_path in audio_files:
+    for validated_path in audio_files:
         # Check if file needs processing
-        if check_file_needs_processing(db, file_path, force, queue_type):
-            # Validate path - file already exists and is audio (from collect_audio_files)
-            # No library_root check needed here since files came from library scan
-            validated_path = validated_path_from_string(file_path, library_root=None)
+        if check_file_needs_processing(db, validated_path.path, force, queue_type):
             job_id = enqueue_file(db, validated_path, force, queue_type)
             job_ids.append(job_id)
-            logger.debug(f"[enqueue_files_wf] Queued job {job_id} for {file_path}")
+            logger.debug(f"[enqueue_files_wf] Queued job {job_id} for {validated_path.path}")
         else:
             skipped += 1
             logger.debug(f"[enqueue_files_wf] Skipped unchanged file: {file_path}")
