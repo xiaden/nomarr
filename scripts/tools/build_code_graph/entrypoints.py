@@ -7,7 +7,10 @@ from .models import CodeGraph
 
 def find_interface_entrypoints(graph: CodeGraph) -> set[str]:
     """
-    Find all interface entrypoints (FastAPI routes, CLI commands, and modules).
+    Find all FastAPI endpoints and CLI commands.
+
+    These are the actual entry points that external clients/users can invoke.
+    Used to identify dead code by computing what's reachable from real endpoints.
 
     Returns a set of node IDs that are interface entrypoints.
     """
@@ -16,11 +19,6 @@ def find_interface_entrypoints(graph: CodeGraph) -> set[str]:
     for node in graph.nodes:
         if node.layer != "interfaces":
             continue
-
-        # Module-level code in interfaces layer is an entrypoint
-        # (handles FastAPI app setup, decorators, etc.)
-        if node.kind == "module":
-            entrypoints.add(node.id)
 
         if node.kind not in {"function", "method"}:
             continue
