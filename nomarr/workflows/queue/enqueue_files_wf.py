@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from nomarr.components.queue import check_file_needs_processing, enqueue_file, get_queue_depth
+from nomarr.helpers.dto import ValidatedPath
 from nomarr.helpers.dto.queue_dto import EnqueueFilesResult
 from nomarr.helpers.files_helper import collect_audio_files
 
@@ -111,7 +112,9 @@ def enqueue_files_workflow(
     for file_path in audio_files:
         # Check if file needs processing
         if check_file_needs_processing(db, file_path, force, queue_type):
-            job_id = enqueue_file(db, file_path, force, queue_type)
+            # Wrap in ValidatedPath - file is already validated by collect_audio_files()
+            validated_path = ValidatedPath(path=file_path)
+            job_id = enqueue_file(db, validated_path, force, queue_type)
             job_ids.append(job_id)
             logger.debug(f"[enqueue_files_wf] Queued job {job_id} for {file_path}")
         else:

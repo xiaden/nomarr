@@ -70,7 +70,7 @@ def check_file_needs_processing(db: Database, path: str, force: bool, queue_type
     return True
 
 
-def enqueue_file(db: Database, path: str, force: bool, queue_type: QueueType) -> int:
+def enqueue_file(db: Database, path: ValidatedPath, force: bool, queue_type: QueueType) -> int:
     """
     Enqueue a single file for processing.
 
@@ -78,7 +78,7 @@ def enqueue_file(db: Database, path: str, force: bool, queue_type: QueueType) ->
 
     Args:
         db: Database instance
-        path: Absolute path to audio file
+        path: Validated file path to audio file
         force: Whether to force reprocessing (passed to tag/library queues)
         queue_type: Which queue to add to ("tag", "library", "calibration")
 
@@ -89,7 +89,7 @@ def enqueue_file(db: Database, path: str, force: bool, queue_type: QueueType) ->
         ValueError: If queue_type is invalid
         RuntimeError: If database operation fails
     """
-    logger.debug(f"Enqueueing file to {queue_type} queue: {path}")
+    logger.debug(f"Enqueueing file to {queue_type} queue: {path.path}")
 
     if queue_type == "tag":
         return db.tag_queue.enqueue(path, force)
@@ -101,7 +101,7 @@ def enqueue_file(db: Database, path: str, force: bool, queue_type: QueueType) ->
         raise ValueError(f"Invalid queue_type: {queue_type}")
 
 
-def enqueue_file_checked(db: Database, path: str, force: bool, queue_type: QueueType) -> int | None:
+def enqueue_file_checked(db: Database, path: ValidatedPath, force: bool, queue_type: QueueType) -> int | None:
     """
     Check if file needs processing, then enqueue if needed.
 
@@ -109,7 +109,7 @@ def enqueue_file_checked(db: Database, path: str, force: bool, queue_type: Queue
 
     Args:
         db: Database instance
-        path: Absolute path to audio file
+        path: Validated file path to audio file
         force: Whether to force reprocessing
         queue_type: Which queue to add to
 

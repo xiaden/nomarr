@@ -4,6 +4,8 @@ import json
 import sqlite3
 from typing import TYPE_CHECKING, Any
 
+from nomarr.helpers.dto import ValidatedPath
+
 if TYPE_CHECKING:
     pass
 
@@ -21,30 +23,22 @@ class QueueOperations:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
 
-    def enqueue(self, path: str, force: bool = False) -> int:
+    def enqueue(self, path: ValidatedPath, force: bool = False) -> int:
         """
         Add a file to the tagging queue.
 
         Args:
-            path: File path to tag
+            path: Validated file path to tag
             force: If True, requeue even if already processed
 
         Returns:
             Job ID
-            
-        Raises:
-            FileNotFoundError: If the file does not exist
         """
-        import os
-        
-        if not os.path.isfile(path):
-            raise FileNotFoundError(f"File not found: {path}")
-        
         cur = self.conn.cursor()
         ts = now_ms()
         cur.execute(
             "INSERT INTO tag_queue(path, status, created_at, force) VALUES(?,?,?,?)",
-            (path, "pending", ts, int(force)),
+            (path.path, "pending", ts, int(force)),
         )
         self.conn.commit()
 
