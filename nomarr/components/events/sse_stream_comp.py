@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from queue import Empty
 from typing import TYPE_CHECKING, Any
 
@@ -77,7 +77,7 @@ def map_event_to_sse(event: dict[str, Any]) -> str | None:
 
 async def generate_sse_stream(
     event_queue: Queue[dict[str, Any]],
-    cleanup_callback: callable | None = None,
+    cleanup_callback: Callable[[], None] | None = None,
     keepalive_interval: float = 3.0,
 ) -> AsyncGenerator[str, None]:
     """
