@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nomarr Code Graph Viewer</title>
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            overflow: hidden;
+        }
+
+        #container {
+            display: flex;
+            height: 100vh;
+        }
+
+        #sidebar {
+            width: 320px;
+            background: #252526;
+            border-right: 1px solid #3e3e42;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        #controls {
+            padding: 16px;
+            border-bottom: 1px solid #3e3e42;
+            flex-shrink: 0;
+        }
+
+        #info {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+
+        #network {
+            flex: 1;
+            background: #1e1e1e;
+        }
+
+        h1 {
+            font-size: 18px;
+            margin-bottom: 16px;
+            color: #569cd6;
+            font-weight: 600;
+        }
+
+        h2 {
+            font-size: 14px;
+            margin: 16px 0 8px 0;
+            color: #4ec9b0;
+            font-weight: 600;
+        }
+
+        .control-group {
+            margin-bottom: 16px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 13px;
+            color: #cccccc;
+        }
+
+        input[type="text"], select {
+            width: 100%;
+            padding: 6px 8px;
+            background: #3c3c3c;
+            border: 1px solid #3e3e42;
+            border-radius: 3px;
+            color: #d4d4d4;
+            font-size: 13px;
+            outline: none;
+        }
+
+        input[type="text"]:focus, select:focus {
+            border-color: #569cd6;
+        }
+
+        button {
+            width: 100%;
+            padding: 8px;
+            background: #0e639c;
+            border: none;
+            border-radius: 3px;
+            color: #ffffff;
+            font-size: 13px;
+            cursor: pointer;
+            font-weight: 500;
+            margin-bottom: 8px;
+        }
+
+        button:hover {
+            background: #1177bb;
+        }
+
+        button:active {
+            background: #0d5a8f;
+        }
+
+        .info-section {
+            margin-bottom: 16px;
+        }
+
+        .info-row {
+            display: flex;
+            margin-bottom: 6px;
+            font-size: 12px;
+        }
+
+        .info-label {
+            font-weight: 600;
+            color: #9cdcfe;
+            min-width: 100px;
+        }
+
+        .info-value {
+            color: #ce9178;
+            word-break: break-all;
+        }
+
+        .docstring {
+            background: #2d2d30;
+            padding: 12px;
+            border-radius: 3px;
+            font-size: 12px;
+            line-height: 1.5;
+            margin-top: 8px;
+            color: #6a9955;
+            font-style: italic;
+            border-left: 3px solid #4ec9b0;
+        }
+
+        .stats {
+            background: #2d2d30;
+            padding: 12px;
+            border-radius: 3px;
+            font-size: 12px;
+            margin-bottom: 16px;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+        }
+
+        .stat-label {
+            color: #9cdcfe;
+        }
+
+        .stat-value {
+            color: #b5cea8;
+            font-weight: 600;
+        }
+
+        .edge-list {
+            max-height: 200px;
+            overflow-y: auto;
+            font-size: 12px;
+            background: #2d2d30;
+            padding: 8px;
+            border-radius: 3px;
+        }
+
+        .edge-item {
+            padding: 4px 8px;
+            margin-bottom: 4px;
+            background: #3c3c3c;
+            border-radius: 2px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .edge-type {
+            color: #569cd6;
+            font-weight: 600;
+            font-size: 10px;
+            text-transform: uppercase;
+        }
+
+        .edge-target {
+            color: #dcdcaa;
+            flex: 1;
+            margin-left: 8px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        #loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #252526;
+            padding: 32px;
+            border-radius: 8px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+            z-index: 1000;
+        }
+
+        .spinner {
+            border: 3px solid #3e3e42;
+            border-top: 3px solid #569cd6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        ::-webkit-scrollbar {
+            width: 10px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #1e1e1e;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #424242;
+            border-radius: 5px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #4e4e4e;
+        }
+
+        .checkbox-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            font-size: 12px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        input[type="checkbox"] {
+            margin-right: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">
+        <div style="text-align: center; color: #cccccc; padding: 32px;">
+            <h2 style="color: #569cd6; margin-bottom: 16px;">Load Code Graph</h2>
+            <p style="margin-bottom: 16px; font-size: 14px;">Select the code_graph.json file to visualize:</p>
+            <input type="file" id="fileInput" accept=".json" style="display: block; margin: 0 auto 16px; padding: 8px;">
+            <p style="font-size: 12px; color: #858585; margin-top: 24px;">
+                Or run a local server: <code style="background: #2d2d30; padding: 2px 6px; border-radius: 3px;">python -m http.server 8000</code>
+            </p>
+        </div>
+    </div>
+
+    <div id="container" style="display: none;">
+        <div id="sidebar">
+            <div id="controls">
+                <h1>🔍 Code Graph Explorer</h1>
+
+                <div class="stats" id="stats">
+                    <div class="stat-row">
+                        <span class="stat-label">Total Nodes:</span>
+                        <span class="stat-value" id="totalNodes">-</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Total Edges:</span>
+                        <span class="stat-value" id="totalEdges">-</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Visible Nodes:</span>
+                        <span class="stat-value" id="visibleNodes">-</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Visible Edges:</span>
+                        <span class="stat-value" id="visibleEdges">-</span>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label for="search">Search Nodes:</label>
+                    <input type="text" id="search" placeholder="Type to filter nodes...">
+                </div>
+
+                <div class="control-group">
+                    <label for="layerFilter">Filter by Layer:</label>
+                    <select id="layerFilter">
+                        <option value="">All Layers</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label for="kindFilter">Filter by Kind:</label>
+                    <select id="kindFilter">
+                        <option value="">All Kinds</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label>Edge Types:</label>
+                    <div class="checkbox-group" id="edgeTypeFilters"></div>
+                </div>
+
+                <button onclick="resetView()">Reset View</button>
+                <button onclick="fitNetwork()">Fit to Screen</button>
+                <button onclick="clearSelection()">Clear Selection</button>
+            </div>
+
+            <div id="info">
+                <div id="nodeInfo">
+                    <p style="color: #858585; font-size: 13px; font-style: italic;">
+                        Click on a node to view details
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div id="network"></div>
+    </div>
+
+    <script>
+        let graphData = null;
+        let network = null;
+        let allNodes = null;
+        let allEdges = null;
+        let selectedNodeId = null;
+        let edgeTypes = new Set();
+
+        // Load and initialize
+        async function loadGraph() {
+            // Try to load from same directory (if running on a server)
+            try {
+                const response = await fetch('code_graph.json');
+                if (response.ok) {
+                    graphData = await response.json();
+                    processGraphData();
+                    return;
+                }
+            } catch (error) {
+                // Fall through to file input
+            }
+
+            // Setup file input handler
+            document.getElementById('fileInput').addEventListener('change', handleFileSelect);
+        }
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    graphData = JSON.parse(e.target.result);
+                    processGraphData();
+                } catch (error) {
+                    alert('Error parsing JSON: ' + error.message);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function processGraphData() {
+            // Extract edge types
+            graphData.edges.forEach(edge => edgeTypes.add(edge.type));
+            
+            initializeFilters();
+            initializeNetwork();
+            updateStats();
+            
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('container').style.display = 'flex';
+        }
+
+        function initializeFilters() {
+            // Populate layer filter
+            const layers = [...new Set(graphData.nodes.map(n => n.layer))].sort();
+            const layerFilter = document.getElementById('layerFilter');
+            layers.forEach(layer => {
+                const option = document.createElement('option');
+                option.value = layer;
+                option.textContent = layer;
+                layerFilter.appendChild(option);
+            });
+
+            // Populate kind filter
+            const kinds = [...new Set(graphData.nodes.map(n => n.kind))].sort();
+            const kindFilter = document.getElementById('kindFilter');
+            kinds.forEach(kind => {
+                const option = document.createElement('option');
+                option.value = kind;
+                option.textContent = kind;
+                kindFilter.appendChild(option);
+            });
+
+            // Populate edge type filters
+            const edgeTypeContainer = document.getElementById('edgeTypeFilters');
+            [...edgeTypes].sort().forEach(type => {
+                const label = document.createElement('label');
+                label.className = 'checkbox-label';
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.value = type;
+                checkbox.checked = true;
+                checkbox.onchange = applyFilters;
+                
+                label.appendChild(checkbox);
+                label.appendChild(document.createTextNode(type));
+                edgeTypeContainer.appendChild(label);
+            });
+
+            // Add event listeners
+            document.getElementById('search').addEventListener('input', applyFilters);
+            document.getElementById('layerFilter').addEventListener('change', applyFilters);
+            document.getElementById('kindFilter').addEventListener('change', applyFilters);
+        }
+
+        function initializeNetwork() {
+            // Define layer colors
+            const layerColors = {
+                'interfaces': '#4ec9b0',
+                'services': '#569cd6',
+                'workflows': '#dcdcaa',
+                'components': '#c586c0',
+                'persistence': '#9cdcfe',
+                'helpers': '#ce9178',
+                'root': '#d16969',
+                'other': '#858585'
+            };
+
+            // Define kind shapes
+            const kindShapes = {
+                'module': 'box',
+                'class': 'ellipse',
+                'function': 'diamond',
+                'method': 'dot'
+            };
+
+            // Prepare nodes for vis.js
+            const nodes = graphData.nodes.map(node => ({
+                id: node.id,
+                label: node.name,
+                title: `${node.kind}: ${node.id}\nLayer: ${node.layer}\nFile: ${node.file}`,
+                shape: kindShapes[node.kind] || 'dot',
+                color: {
+                    background: layerColors[node.layer] || layerColors.other,
+                    border: '#ffffff',
+                    highlight: {
+                        background: '#ffd700',
+                        border: '#ffffff'
+                    }
+                },
+                font: {
+                    color: '#ffffff',
+                    size: 12
+                },
+                size: node.kind === 'module' ? 20 : node.kind === 'class' ? 15 : 10,
+                layer: node.layer,
+                kind: node.kind,
+                data: node
+            }));
+
+            // Prepare edges for vis.js
+            const edges = graphData.edges.map((edge, idx) => ({
+                id: idx,
+                from: edge.source_id,
+                to: edge.target_id,
+                label: edge.type,
+                title: `${edge.type}\nLine: ${edge.lineno}`,
+                arrows: 'to',
+                color: {
+                    color: '#666666',
+                    highlight: '#ffd700'
+                },
+                font: {
+                    color: '#cccccc',
+                    size: 10,
+                    align: 'middle'
+                },
+                type: edge.type,
+                smooth: {
+                    type: 'curvedCW',
+                    roundness: 0.2
+                }
+            }));
+
+            allNodes = new vis.DataSet(nodes);
+            allEdges = new vis.DataSet(edges);
+
+            const container = document.getElementById('network');
+            const data = { nodes: allNodes, edges: allEdges };
+            const options = {
+                physics: {
+                    enabled: true,
+                    barnesHut: {
+                        gravitationalConstant: -8000,
+                        centralGravity: 0.3,
+                        springLength: 150,
+                        springConstant: 0.04,
+                        damping: 0.09
+                    },
+                    stabilization: {
+                        iterations: 200
+                    }
+                },
+                interaction: {
+                    hover: true,
+                    tooltipDelay: 100,
+                    navigationButtons: true,
+                    keyboard: true
+                },
+                nodes: {
+                    borderWidth: 2,
+                    borderWidthSelected: 3
+                },
+                edges: {
+                    width: 1,
+                    selectionWidth: 3
+                }
+            };
+
+            network = new vis.Network(container, data, options);
+
+            // Event handlers
+            network.on('click', function(params) {
+                if (params.nodes.length > 0) {
+                    selectNode(params.nodes[0]);
+                }
+            });
+
+            network.on('stabilizationIterationsDone', function() {
+                network.setOptions({ physics: false });
+            });
+        }
+
+        function selectNode(nodeId) {
+            selectedNodeId = nodeId;
+            const node = graphData.nodes.find(n => n.id === nodeId);
+            
+            if (!node) return;
+
+            // Find connected edges
+            const outgoingEdges = graphData.edges.filter(e => e.source_id === nodeId);
+            const incomingEdges = graphData.edges.filter(e => e.target_id === nodeId);
+
+            let html = `
+                <div class="info-section">
+                    <h2>Node Details</h2>
+                    <div class="info-row">
+                        <span class="info-label">ID:</span>
+                        <span class="info-value">${node.id}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Name:</span>
+                        <span class="info-value">${node.name}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Kind:</span>
+                        <span class="info-value">${node.kind}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Layer:</span>
+                        <span class="info-value">${node.layer}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">File:</span>
+                        <span class="info-value">${node.file}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Lines:</span>
+                        <span class="info-value">${node.lineno}-${node.end_lineno} (${node.loc} LOC)</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Reachable:</span>
+                        <span class="info-value">${node.reachable_from_interface ? 'Yes' : 'No'}</span>
+                    </div>
+                </div>
+            `;
+
+            if (node.docstring) {
+                html += `
+                    <div class="info-section">
+                        <h2>Documentation</h2>
+                        <div class="docstring">${node.docstring}</div>
+                    </div>
+                `;
+            }
+
+            if (outgoingEdges.length > 0) {
+                html += `
+                    <div class="info-section">
+                        <h2>Outgoing (${outgoingEdges.length})</h2>
+                        <div class="edge-list">
+                            ${outgoingEdges.map(e => {
+                                const targetNode = graphData.nodes.find(n => n.id === e.target_id);
+                                return `
+                                    <div class="edge-item">
+                                        <span class="edge-type">${e.type}</span>
+                                        <span class="edge-target" title="${e.target_id}">
+                                            ${targetNode ? targetNode.name : e.target_id}
+                                        </span>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+
+            if (incomingEdges.length > 0) {
+                html += `
+                    <div class="info-section">
+                        <h2>Incoming (${incomingEdges.length})</h2>
+                        <div class="edge-list">
+                            ${incomingEdges.map(e => {
+                                const sourceNode = graphData.nodes.find(n => n.id === e.source_id);
+                                return `
+                                    <div class="edge-item">
+                                        <span class="edge-type">${e.type}</span>
+                                        <span class="edge-target" title="${e.source_id}">
+                                            ${sourceNode ? sourceNode.name : e.source_id}
+                                        </span>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+
+            document.getElementById('nodeInfo').innerHTML = html;
+        }
+
+        function applyFilters() {
+            const searchTerm = document.getElementById('search').value.toLowerCase();
+            const layerFilter = document.getElementById('layerFilter').value;
+            const kindFilter = document.getElementById('kindFilter').value;
+            
+            // Get selected edge types
+            const selectedEdgeTypes = new Set();
+            document.querySelectorAll('#edgeTypeFilters input[type="checkbox"]:checked').forEach(cb => {
+                selectedEdgeTypes.add(cb.value);
+            });
+
+            // Filter nodes
+            const visibleNodeIds = new Set();
+            graphData.nodes.forEach(node => {
+                let visible = true;
+                
+                if (searchTerm && !node.id.toLowerCase().includes(searchTerm) && 
+                    !node.name.toLowerCase().includes(searchTerm)) {
+                    visible = false;
+                }
+                
+                if (layerFilter && node.layer !== layerFilter) {
+                    visible = false;
+                }
+                
+                if (kindFilter && node.kind !== kindFilter) {
+                    visible = false;
+                }
+                
+                if (visible) {
+                    visibleNodeIds.add(node.id);
+                }
+            });
+
+            // Filter edges based on visible nodes and selected edge types
+            const visibleEdgeIds = new Set();
+            graphData.edges.forEach((edge, idx) => {
+                if (visibleNodeIds.has(edge.source_id) && 
+                    visibleNodeIds.has(edge.target_id) &&
+                    selectedEdgeTypes.has(edge.type)) {
+                    visibleEdgeIds.add(idx);
+                }
+            });
+
+            // Update network
+            allNodes.forEach(node => {
+                allNodes.update({
+                    id: node.id,
+                    hidden: !visibleNodeIds.has(node.id)
+                });
+            });
+
+            allEdges.forEach(edge => {
+                allEdges.update({
+                    id: edge.id,
+                    hidden: !visibleEdgeIds.has(edge.id)
+                });
+            });
+
+            updateStats(visibleNodeIds.size, visibleEdgeIds.size);
+        }
+
+        function updateStats(visible_nodes, visible_edges) {
+            document.getElementById('totalNodes').textContent = graphData.nodes.length;
+            document.getElementById('totalEdges').textContent = graphData.edges.length;
+            document.getElementById('visibleNodes').textContent = 
+                visible_nodes !== undefined ? visible_nodes : graphData.nodes.length;
+            document.getElementById('visibleEdges').textContent = 
+                visible_edges !== undefined ? visible_edges : graphData.edges.length;
+        }
+
+        function resetView() {
+            document.getElementById('search').value = '';
+            document.getElementById('layerFilter').value = '';
+            document.getElementById('kindFilter').value = '';
+            document.querySelectorAll('#edgeTypeFilters input[type="checkbox"]').forEach(cb => {
+                cb.checked = true;
+            });
+            applyFilters();
+            fitNetwork();
+        }
+
+        function fitNetwork() {
+            if (network) {
+                network.fit({ animation: true });
+            }
+        }
+
+        function clearSelection() {
+            selectedNodeId = null;
+            network.unselectAll();
+            document.getElementById('nodeInfo').innerHTML = `
+                <p style="color: #858585; font-size: 13px; font-style: italic;">
+                    Click on a node to view details
+                </p>
+            `;
+        }
+
+        // Initialize on load
+        loadGraph();
+    </script>
+</body>
+</html>
