@@ -464,4 +464,9 @@ class Application:
 # ----------------------------------------------------------------------
 #  Global application instance
 # ----------------------------------------------------------------------
-application = Application()
+# Don't create singleton during test runs (pytest sets this env var)
+if os.environ.get("PYTEST_CURRENT_TEST") is None:
+    application = Application()
+else:
+    # During tests, application will be None - tests should create their own instances
+    application = None  # type: ignore[assignment]
