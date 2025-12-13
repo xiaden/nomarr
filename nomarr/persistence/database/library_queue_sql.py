@@ -4,13 +4,7 @@ import sqlite3
 from typing import Any
 
 from nomarr.helpers.dto import LibraryPath
-
-
-def now_ms() -> int:
-    """Get current timestamp in milliseconds."""
-    import time
-
-    return int(time.time() * 1000)
+from nomarr.helpers.time_helper import now_ms
 
 
 class LibraryQueueOperations:

@@ -30,7 +30,6 @@ __all__ = [
     "count_and_delete",
     "count_and_update",
     "get_queue_stats",
-    "now_ms",
     "safe_count",
 ]
 
@@ -38,8 +37,7 @@ __all__ = [
 # ----------------------------------------------------------------------
 #  Utility helpers
 # ----------------------------------------------------------------------
-def now_ms() -> int:
-    return int(time.time() * 1000)
+from nomarr.helpers.time_helper import now_ms
 
 
 # ----------------------------------------------------------------------

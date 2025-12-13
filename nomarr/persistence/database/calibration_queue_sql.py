@@ -6,13 +6,7 @@ import sqlite3
 from typing import Any
 
 from nomarr.helpers.dto import LibraryPath
-
-
-def now_ms() -> int:
-    """Return current timestamp in milliseconds."""
-    from time import time_ns
-
-    return time_ns() // 1_000_000
+from nomarr.helpers.time_helper import now_ms
 
 
 class CalibrationQueueOperations:

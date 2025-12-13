@@ -27,6 +27,7 @@ from .navidrome_templates_helper import (
     get_style_templates,
     get_template_summary,
 )
+from .time_helper import now_ms
 
 __all__ = [
     "AUDIO_EXTENSIONS",
@@ -46,6 +47,7 @@ __all__ = [
     "get_template_summary",
     "is_audio_file",
     "make_skip_result",
+    "now_ms",
     "resolve_library_path",
     "sanitize_exception_message",
     "should_skip_processing",

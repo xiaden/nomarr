@@ -2,6 +2,8 @@
 Persistence package.
 """
 
+from nomarr.helpers.time_helper import now_ms
+
 from .analytics_queries import (
     fetch_artist_tag_profile_data,
     fetch_mood_distribution_data,
@@ -9,7 +11,7 @@ from .analytics_queries import (
     fetch_tag_correlation_data,
     fetch_tag_frequencies_data,
 )
-from .db import SCHEMA, SCHEMA_VERSION, Database, now_ms
+from .db import SCHEMA, SCHEMA_VERSION, Database
 
 __all__ = [
     "SCHEMA",

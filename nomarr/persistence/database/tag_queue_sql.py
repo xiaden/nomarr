@@ -5,16 +5,10 @@ import sqlite3
 from typing import TYPE_CHECKING, Any
 
 from nomarr.helpers.dto import LibraryPath
+from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
     pass
-
-
-def now_ms() -> int:
-    """Get current timestamp in milliseconds."""
-    import time
-
-    return int(time.time() * 1000)
 
 
 class QueueOperations:

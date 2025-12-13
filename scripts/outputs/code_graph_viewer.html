@@ -395,36 +395,65 @@
             reader.readAsText(file);
         }
 
-        function processGraphData() {
+        async function processGraphData() {
             // Extract edge types
             graphData.edges.forEach(edge => edgeTypes.add(edge.type));
             
-            // Find interface nodes (nodes in interfaces layer)
+            // Find interface nodes - only module-level to keep list manageable
             interfaceNodes = graphData.nodes
-                .filter(n => n.layer === 'interfaces')
+                .filter(n => n.layer === 'interfaces' && n.kind === 'module')
                 .sort((a, b) => a.id.localeCompare(b.id));
             
-            // Build connection map: which nodes are reachable from which interfaces
-            buildConnectionMap();
-            
             initializeFilters();
-            initializeNetwork();
             
-            // Default to first interface to avoid overwhelming browser
+            // Show UI with progress
+            document.getElementById('loading').innerHTML = 
+                '<div style="text-align: center; color: #cccccc; padding: 32px;">' +
+                '<div class="spinner"></div>' +
+                '<div style="margin-top: 16px;">Building interface connection map...</div>' +
+                '<div id="progress" style="margin-top: 8px; font-size: 12px; color: #858585;">0%</div>' +
+                '</div>';
+            
+            // Build connection map asynchronously
+            await buildConnectionMapAsync();
+            
+            // Update progress
+            document.getElementById('progress').textContent = 'Initializing network visualization...';
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            // Default to first interface BEFORE creating network
             if (interfaceNodes.length > 0) {
                 document.getElementById('interfaceFilter').value = interfaceNodes[0].id;
             }
             
-            applyFilters();
-            updateStats();
+            // Initialize network with filtered data
+            initializeNetwork();
             
             document.getElementById('loading').style.display = 'none';
             document.getElementById('container').style.display = 'flex';
+            
+            // Apply filters and update stats after showing UI
+            await new Promise(resolve => setTimeout(resolve, 100));
+            applyFilters();
+            updateStats();
         }
 
-        function buildConnectionMap() {
-            // For each interface node, find all nodes reachable from it
-            interfaceNodes.forEach(interfaceNode => {
+        async function buildConnectionMapAsync() {
+            // Build edge lookup for faster access
+            const edgesBySource = new Map();
+            graphData.edges.forEach(edge => {
+                if (!edgesBySource.has(edge.source_id)) {
+                    edgesBySource.set(edge.source_id, []);
+                }
+                edgesBySource.get(edge.source_id).push(edge.target_id);
+            });
+            
+            const totalInterfaces = interfaceNodes.length;
+            let completed = 0;
+            
+            // Process interfaces in chunks to avoid freezing
+            for (const interfaceNode of interfaceNodes) {
+                // Do BFS for this interface
                 const reachable = new Set();
                 const queue = [interfaceNode.id];
                 const visited = new Set();
@@ -435,14 +464,13 @@
                     visited.add(currentId);
                     reachable.add(currentId);
                     
-                    // Find all outgoing edges from this node
-                    graphData.edges
-                        .filter(e => e.source_id === currentId)
-                        .forEach(e => {
-                            if (!visited.has(e.target_id)) {
-                                queue.push(e.target_id);
-                            }
-                        });
+                    // Find all outgoing edges from this node (fast lookup)
+                    const targets = edgesBySource.get(currentId) || [];
+                    targets.forEach(targetId => {
+                        if (!visited.has(targetId)) {
+                            queue.push(targetId);
+                        }
+                    });
                 }
                 
                 // Store which interface each node is connected to
@@ -452,7 +480,19 @@
                     }
                     nodeConnectionMap.get(nodeId).add(interfaceNode.id);
                 });
-            });
+                
+                // Update progress and yield to browser every few iterations
+                completed++;
+                if (completed % 5 === 0 || completed === totalInterfaces) {
+                    const progress = Math.round((completed / totalInterfaces) * 100);
+                    const progressEl = document.getElementById('progress');
+                    if (progressEl) {
+                        progressEl.textContent = `${progress}% (${completed}/${totalInterfaces} interfaces)`;
+                    }
+                    // Yield to browser to prevent freezing
+                    await new Promise(resolve => setTimeout(resolve, 0));
+                }
+            }
         }
 
         function initializeFilters() {
@@ -510,76 +550,9 @@
         }
 
         function initializeNetwork() {
-            // Define layer colors
-            const layerColors = {
-                'interfaces': '#4ec9b0',
-                'services': '#569cd6',
-                'workflows': '#dcdcaa',
-                'components': '#c586c0',
-                'persistence': '#9cdcfe',
-                'helpers': '#ce9178',
-                'root': '#d16969',
-                'other': '#858585'
-            };
-
-            // Define kind shapes
-            const kindShapes = {
-                'module': 'box',
-                'class': 'ellipse',
-                'function': 'diamond',
-                'method': 'dot'
-            };
-
-            // Prepare nodes for vis.js
-            const nodes = graphData.nodes.map(node => ({
-                id: node.id,
-                label: node.name,
-                title: `${node.kind}: ${node.id}\nLayer: ${node.layer}\nFile: ${node.file}`,
-                shape: kindShapes[node.kind] || 'dot',
-                color: {
-                    background: layerColors[node.layer] || layerColors.other,
-                    border: '#ffffff',
-                    highlight: {
-                        background: '#ffd700',
-                        border: '#ffffff'
-                    }
-                },
-                font: {
-                    color: '#ffffff',
-                    size: 12
-                },
-                size: node.kind === 'module' ? 20 : node.kind === 'class' ? 15 : 10,
-                layer: node.layer,
-                kind: node.kind,
-                data: node
-            }));
-
-            // Prepare edges for vis.js
-            const edges = graphData.edges.map((edge, idx) => ({
-                id: idx,
-                from: edge.source_id,
-                to: edge.target_id,
-                label: edge.type,
-                title: `${edge.type}\nLine: ${edge.lineno}`,
-                arrows: 'to',
-                color: {
-                    color: '#666666',
-                    highlight: '#ffd700'
-                },
-                font: {
-                    color: '#cccccc',
-                    size: 10,
-                    align: 'middle'
-                },
-                type: edge.type,
-                smooth: {
-                    type: 'curvedCW',
-                    roundness: 0.2
-                }
-            }));
-
-            allNodes = new vis.DataSet(nodes);
-            allEdges = new vis.DataSet(edges);
+            // Create empty DataSets - we'll populate them based on filter
+            allNodes = new vis.DataSet([]);
+            allEdges = new vis.DataSet([]);
 
             const container = document.getElementById('network');
             const data = { nodes: allNodes, edges: allEdges };
@@ -594,7 +567,7 @@
                         damping: 0.09
                     },
                     stabilization: {
-                        iterations: 200
+                        enabled: false  // Disable physics stabilization initially since most nodes are hidden
                     }
                 },
                 interaction: {
@@ -620,10 +593,6 @@
                 if (params.nodes.length > 0) {
                     selectNode(params.nodes[0]);
                 }
-            });
-
-            network.on('stabilizationIterationsDone', function() {
-                network.setOptions({ physics: false });
             });
         }
 
@@ -737,8 +706,30 @@
                 selectedEdgeTypes.add(cb.value);
             });
 
+            // Define layer colors
+            const layerColors = {
+                'interfaces': '#4ec9b0',
+                'services': '#569cd6',
+                'workflows': '#dcdcaa',
+                'components': '#c586c0',
+                'persistence': '#9cdcfe',
+                'helpers': '#ce9178',
+                'root': '#d16969',
+                'other': '#858585'
+            };
+
+            // Define kind shapes
+            const kindShapes = {
+                'module': 'box',
+                'class': 'ellipse',
+                'function': 'diamond',
+                'method': 'dot'
+            };
+
             // Filter nodes
             const visibleNodeIds = new Set();
+            const nodesToAdd = [];
+            
             graphData.nodes.forEach(node => {
                 let visible = true;
                 
@@ -773,35 +764,79 @@
                 
                 if (visible) {
                     visibleNodeIds.add(node.id);
+                    nodesToAdd.push({
+                        id: node.id,
+                        label: node.name,
+                        title: `${node.kind}: ${node.id}\nLayer: ${node.layer}\nFile: ${node.file}`,
+                        shape: kindShapes[node.kind] || 'dot',
+                        color: {
+                            background: layerColors[node.layer] || layerColors.other,
+                            border: '#ffffff',
+                            highlight: {
+                                background: '#ffd700',
+                                border: '#ffffff'
+                            }
+                        },
+                        font: {
+                            color: '#ffffff',
+                            size: 12
+                        },
+                        size: node.kind === 'module' ? 20 : node.kind === 'class' ? 15 : 10,
+                        layer: node.layer,
+                        kind: node.kind,
+                        data: node
+                    });
                 }
             });
 
             // Filter edges based on visible nodes and selected edge types
             const visibleEdgeIds = new Set();
+            const edgesToAdd = [];
+            
             graphData.edges.forEach((edge, idx) => {
                 if (visibleNodeIds.has(edge.source_id) && 
                     visibleNodeIds.has(edge.target_id) &&
                     selectedEdgeTypes.has(edge.type)) {
                     visibleEdgeIds.add(idx);
+                    edgesToAdd.push({
+                        id: idx,
+                        from: edge.source_id,
+                        to: edge.target_id,
+                        label: edge.type,
+                        title: `${edge.type}\nLine: ${edge.lineno}`,
+                        arrows: 'to',
+                        color: {
+                            color: '#666666',
+                            highlight: '#ffd700'
+                        },
+                        font: {
+                            color: '#cccccc',
+                            size: 10,
+                            align: 'middle'
+                        },
+                        type: edge.type,
+                        smooth: {
+                            type: 'curvedCW',
+                            roundness: 0.2
+                        }
+                    });
                 }
             });
 
-            // Update network
-            allNodes.forEach(node => {
-                allNodes.update({
-                    id: node.id,
-                    hidden: !visibleNodeIds.has(node.id)
-                });
-            });
-
-            allEdges.forEach(edge => {
-                allEdges.update({
-                    id: edge.id,
-                    hidden: !visibleEdgeIds.has(edge.id)
-                });
-            });
+            // Clear and rebuild DataSets with only visible items
+            allNodes.clear();
+            allEdges.clear();
+            allNodes.add(nodesToAdd);
+            allEdges.add(edgesToAdd);
 
             updateStats(visibleNodeIds.size, visibleEdgeIds.size);
+            
+            // Fit the network after a short delay
+            setTimeout(() => {
+                if (network) {
+                    network.fit({ animation: true });
+                }
+            }, 500);
         }
 
         function updateStats(visible_nodes, visible_edges) {
