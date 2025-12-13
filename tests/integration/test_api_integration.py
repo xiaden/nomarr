@@ -9,7 +9,7 @@ These tests require:
 - GPU for inference (or very slow on CPU)
 - Docker container environment preferred
 
-Skip in CI with: pytest -m "not gpu_required"
+Skip in CI with: pytest -m "not container_only"
 """
 
 import os
@@ -20,9 +20,8 @@ import requests
 # Mark all tests in this module
 pytestmark = [
     pytest.mark.integration,
-    pytest.mark.gpu_required,
     pytest.mark.container_only,
-    pytest.mark.requires_ml,
+    pytest.mark.slow,
 ]
 
 # Test fixtures path
