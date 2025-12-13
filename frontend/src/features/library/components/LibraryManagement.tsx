@@ -39,6 +39,7 @@ export function LibraryManagement() {
   const [isCreating, setIsCreating] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [scanningId, setScanningId] = useState<number | null>(null);
+  const [scanningState, setScanningState] = useState<"preparing" | "queueing" | null>(null);
   const [libraryRoot, setLibraryRoot] = useState<string | null>(null);
 
   // Create/edit form state
@@ -208,6 +209,8 @@ export function LibraryManagement() {
   const handleScan = async (id: number) => {
     try {
       setError(null);
+      setScanningId(id);
+      setScanningState("preparing");
 
       // Get preview first
       const preview = await api.library.preview(id, {
@@ -223,8 +226,8 @@ export function LibraryManagement() {
         return;
       }
 
-      // User confirmed - now set scanning state and start the scan
-      setScanningId(id);
+      // User confirmed - now queue the scan
+      setScanningState("queueing");
 
       const result = await api.library.scan(id, {
         recursive: true,
@@ -239,6 +242,7 @@ export function LibraryManagement() {
       setError(err instanceof Error ? err.message : "Failed to scan library");
     } finally {
       setScanningId(null);
+      setScanningState(null);
     }
   };
 
@@ -506,7 +510,11 @@ export function LibraryManagement() {
                       : undefined
                   }
                 >
-                  {scanningId === lib.id ? "Scanning..." : "Scan"}
+                  {scanningId === lib.id
+                    ? scanningState === "preparing"
+                      ? "Preparing..."
+                      : "Queueing..."
+                    : "Scan"}
                 </Button>
                 <Button
                   variant="contained"
