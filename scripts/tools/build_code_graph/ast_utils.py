@@ -454,8 +454,56 @@ def extract_calls_from_function(
 
                     # Case 2b: Any other attribute call - try global index
                     elif callable_index and method_name in callable_index:
-                        # Add all possible targets (over-approximation)
-                        target_ids.extend(callable_index[method_name])
+                        # Filter candidates to avoid false self-references
+                        # If caller is a module-level function (not a method), exclude module-level functions
+                        # If caller is a method, exclude methods in the same class
+                        candidates = callable_index[method_name]
+
+                        for candidate in candidates:
+                            # Determine if this is a valid target
+                            is_valid = True
+
+                            # Extract context from caller_id
+                            # caller_id format: "module" or "module.Class.method" or "module.function"
+                            caller_parts = caller_id.split(".")
+                            candidate_parts = candidate.split(".")
+
+                            # Heuristic: Attribute calls on objects (obj.method()) shouldn't resolve to:
+                            # 1. Module-level functions in the same module with the same name
+                            # 2. The exact same function/method (self-reference)
+
+                            # Rule 1: Exact self-reference (same full ID)
+                            if candidate == caller_id:
+                                is_valid = False
+
+                            # Rule 2: If caller is "module.function" and candidate is also "module.function" with same name
+                            # This catches: auth.validate_session() calling auth.validate_session (impossible via obj.method())
+                            elif len(caller_parts) >= 2 and len(candidate_parts) >= 2:
+                                # Both are at least module.something
+                                caller_is_module_function = len(caller_parts) == 2 and caller_parts[1] == method_name
+                                candidate_is_module_function = (
+                                    len(candidate_parts) == 2 and candidate_parts[1] == method_name
+                                )
+
+                                # If both are module-level functions in same module with same name, skip
+                                if caller_is_module_function and candidate_is_module_function:
+                                    if caller_parts[0] == candidate_parts[0]:
+                                        is_valid = False
+
+                            # Rule 3: Methods should prefer calling methods on other classes, not standalone functions
+                            # If caller is a method (3+ parts) and candidate is a module-level function (2 parts) with same name
+                            # This is likely wrong unless it's an explicit import
+                            elif len(caller_parts) >= 3 and len(candidate_parts) == 2:
+                                # Caller is a method, candidate is module.function
+                                if candidate_parts[1] == method_name and caller_parts[-1] == method_name:
+                                    # Same method name - likely want the method version, not function
+                                    # But allow if it's from a different module (cross-module call)
+                                    if ".".join(caller_parts[:-2]) == candidate_parts[0]:
+                                        # Same module - skip the function, prefer other method
+                                        is_valid = False
+
+                            if is_valid:
+                                target_ids.append(candidate)
 
             # Case B: Callable reference (Name node that could be a function reference)
             # This handles cases like Depends(get_queue_service) where get_queue_service

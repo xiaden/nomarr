@@ -316,22 +316,25 @@
                 </div>
 
                 <div class="control-group">
-                    <label for="layerFilter">Filter by Layer:</label>
-                    <select id="layerFilter">
-                        <option value="">All Layers</option>
-                    </select>
+                    <label>Layers:</label>
+                    <div class="checkbox-group" id="layerFilters"></div>
                 </div>
 
                 <div class="control-group">
-                    <label for="kindFilter">Filter by Kind:</label>
-                    <select id="kindFilter">
-                        <option value="">All Kinds</option>
-                    </select>
+                    <label>Kinds:</label>
+                    <div class="checkbox-group" id="kindFilters"></div>
                 </div>
 
                 <div class="control-group">
                     <label>Edge Types:</label>
                     <div class="checkbox-group" id="edgeTypeFilters"></div>
+                </div>
+
+                <div class="control-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="showTransitiveEdges" checked onchange="applyFilters()">
+                        Show connections through hidden nodes
+                    </label>
                 </div>
 
                 <button onclick="resetView()">Reset View</button>
@@ -505,24 +508,40 @@
                 interfaceFilter.appendChild(option);
             });
 
-            // Populate layer filter
+            // Populate layer filters (checkboxes)
             const layers = [...new Set(graphData.nodes.map(n => n.layer))].sort();
-            const layerFilter = document.getElementById('layerFilter');
+            const layerFilterContainer = document.getElementById('layerFilters');
             layers.forEach(layer => {
-                const option = document.createElement('option');
-                option.value = layer;
-                option.textContent = layer;
-                layerFilter.appendChild(option);
+                const label = document.createElement('label');
+                label.className = 'checkbox-label';
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.value = layer;
+                checkbox.checked = true;
+                checkbox.onchange = applyFilters;
+                
+                label.appendChild(checkbox);
+                label.appendChild(document.createTextNode(layer));
+                layerFilterContainer.appendChild(label);
             });
 
-            // Populate kind filter
+            // Populate kind filters (checkboxes)
             const kinds = [...new Set(graphData.nodes.map(n => n.kind))].sort();
-            const kindFilter = document.getElementById('kindFilter');
+            const kindFilterContainer = document.getElementById('kindFilters');
             kinds.forEach(kind => {
-                const option = document.createElement('option');
-                option.value = kind;
-                option.textContent = kind;
-                kindFilter.appendChild(option);
+                const label = document.createElement('label');
+                label.className = 'checkbox-label';
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.value = kind;
+                checkbox.checked = true;
+                checkbox.onchange = applyFilters;
+                
+                label.appendChild(checkbox);
+                label.appendChild(document.createTextNode(kind));
+                kindFilterContainer.appendChild(label);
             });
 
             // Populate edge type filters
@@ -545,8 +564,6 @@
             // Add event listeners
             document.getElementById('search').addEventListener('input', applyFilters);
             document.getElementById('interfaceFilter').addEventListener('change', applyFilters);
-            document.getElementById('layerFilter').addEventListener('change', applyFilters);
-            document.getElementById('kindFilter').addEventListener('change', applyFilters);
         }
 
         function initializeNetwork() {
@@ -697,8 +714,18 @@
         function applyFilters() {
             const searchTerm = document.getElementById('search').value.toLowerCase();
             const interfaceFilter = document.getElementById('interfaceFilter').value;
-            const layerFilter = document.getElementById('layerFilter').value;
-            const kindFilter = document.getElementById('kindFilter').value;
+            
+            // Get selected layers
+            const selectedLayers = new Set();
+            document.querySelectorAll('#layerFilters input[type="checkbox"]:checked').forEach(cb => {
+                selectedLayers.add(cb.value);
+            });
+            
+            // Get selected kinds
+            const selectedKinds = new Set();
+            document.querySelectorAll('#kindFilters input[type="checkbox"]:checked').forEach(cb => {
+                selectedKinds.add(cb.value);
+            });
             
             // Get selected edge types
             const selectedEdgeTypes = new Set();
@@ -754,11 +781,13 @@
                     visible = false;
                 }
                 
-                if (layerFilter && node.layer !== layerFilter) {
+                // Check if node's layer is selected
+                if (!selectedLayers.has(node.layer)) {
                     visible = false;
                 }
                 
-                if (kindFilter && node.kind !== kindFilter) {
+                // Check if node's kind is selected
+                if (!selectedKinds.has(node.kind)) {
                     visible = false;
                 }
                 
@@ -792,7 +821,25 @@
             // Filter edges based on visible nodes and selected edge types
             const visibleEdgeIds = new Set();
             const edgesToAdd = [];
+            const showTransitive = document.getElementById('showTransitiveEdges').checked;
             
+            // Build adjacency map for transitive edge computation
+            const adjacencyMap = new Map();
+            if (showTransitive) {
+                graphData.edges.forEach(edge => {
+                    if (!selectedEdgeTypes.has(edge.type)) return;
+                    if (!adjacencyMap.has(edge.source_id)) {
+                        adjacencyMap.set(edge.source_id, []);
+                    }
+                    adjacencyMap.get(edge.source_id).push({
+                        target: edge.target_id,
+                        type: edge.type,
+                        idx: graphData.edges.indexOf(edge)
+                    });
+                });
+            }
+            
+            // Add direct edges where both endpoints are visible
             graphData.edges.forEach((edge, idx) => {
                 if (visibleNodeIds.has(edge.source_id) && 
                     visibleNodeIds.has(edge.target_id) &&
@@ -822,6 +869,76 @@
                     });
                 }
             });
+            
+            // Add transitive edges through hidden nodes (BFS to find connections)
+            if (showTransitive && adjacencyMap.size > 0) {
+                const transitiveEdges = new Map(); // "source:target" -> edge type
+                
+                visibleNodeIds.forEach(sourceId => {
+                    // BFS from each visible node
+                    const queue = [{id: sourceId, path: [], edgeType: null}];
+                    const visited = new Set([sourceId]);
+                    
+                    while (queue.length > 0) {
+                        const {id: currentId, path, edgeType} = queue.shift();
+                        
+                        // If we reached another visible node (and it's not the source), record the connection
+                        if (currentId !== sourceId && visibleNodeIds.has(currentId)) {
+                            const key = `${sourceId}:${currentId}`;
+                            if (!transitiveEdges.has(key)) {
+                                transitiveEdges.set(key, edgeType || 'transitive');
+                            }
+                            continue; // Don't traverse beyond visible nodes
+                        }
+                        
+                        // Explore neighbors
+                        const neighbors = adjacencyMap.get(currentId) || [];
+                        neighbors.forEach(({target, type}) => {
+                            if (!visited.has(target) && path.length < 5) { // Limit depth to avoid infinite loops
+                                visited.add(target);
+                                queue.push({
+                                    id: target,
+                                    path: [...path, currentId],
+                                    edgeType: edgeType || type
+                                });
+                            }
+                        });
+                    }
+                });
+                
+                // Add transitive edges that don't already exist as direct edges
+                let transitiveId = graphData.edges.length;
+                transitiveEdges.forEach((type, key) => {
+                    const [from, to] = key.split(':');
+                    // Check if direct edge already exists
+                    const hasDirectEdge = edgesToAdd.some(e => e.from === from && e.to === to);
+                    if (!hasDirectEdge) {
+                        edgesToAdd.push({
+                            id: `transitive_${transitiveId++}`,
+                            from: from,
+                            to: to,
+                            label: type,
+                            title: `Transitive: ${type}\n(through hidden nodes)`,
+                            arrows: 'to',
+                            color: {
+                                color: '#888888',
+                                highlight: '#ffd700'
+                            },
+                            font: {
+                                color: '#999999',
+                                size: 9,
+                                align: 'middle'
+                            },
+                            type: type,
+                            smooth: {
+                                type: 'curvedCW',
+                                roundness: 0.3
+                            },
+                            dashes: true // Dashed line to indicate transitive
+                        });
+                    }
+                });
+            }
 
             // Clear and rebuild DataSets with only visible items
             allNodes.clear();
@@ -856,8 +973,15 @@
             } else {
                 document.getElementById('interfaceFilter').value = '';
             }
-            document.getElementById('layerFilter').value = '';
-            document.getElementById('kindFilter').value = '';
+            // Check all layer checkboxes
+            document.querySelectorAll('#layerFilters input[type="checkbox"]').forEach(cb => {
+                cb.checked = true;
+            });
+            // Check all kind checkboxes
+            document.querySelectorAll('#kindFilters input[type="checkbox"]').forEach(cb => {
+                cb.checked = true;
+            });
+            // Check all edge type checkboxes
             document.querySelectorAll('#edgeTypeFilters input[type="checkbox"]').forEach(cb => {
                 cb.checked = true;
             });

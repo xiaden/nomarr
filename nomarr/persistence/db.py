@@ -1,6 +1,5 @@
 import os
 import sqlite3
-import time
 
 # Import table-specific operation classes
 from nomarr.persistence.database.calibration_queue_sql import CalibrationQueueOperations
@@ -37,7 +36,6 @@ __all__ = [
 # ----------------------------------------------------------------------
 #  Utility helpers
 # ----------------------------------------------------------------------
-from nomarr.helpers.time_helper import now_ms
 
 
 # ----------------------------------------------------------------------
