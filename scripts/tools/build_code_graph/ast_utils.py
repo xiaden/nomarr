@@ -419,29 +419,51 @@ def extract_calls_from_function(
                                 if candidate.endswith(f".{func_name}.__init__"):
                                     target_ids.append(candidate)
 
-                    # Case 1b: Local import - resolve to full path
+                    # Case 1b: Local import - resolve to full path (HIGHEST PRIORITY)
                     if func_name in local_imports:
                         imported_path = local_imports[func_name]
                         # Try to find exact match in callable index
                         if callable_index:
-                            # The imported_path might be the full node ID already
-                            if imported_path in callable_index:
-                                target_ids.extend(callable_index[imported_path])
-                            else:
-                                # Or it might be a partial path - try to match
-                                for candidates in callable_index.values():
-                                    for candidate in candidates:
-                                        if candidate == imported_path or candidate.endswith(f".{func_name}"):
-                                            target_ids.append(candidate)
-                                            break
+                            # Get all candidates with this function name
+                            candidates = callable_index.get(func_name, [])
 
-                    # Case 1c: Same-module function
-                    elif func_name in module_functions:
-                        target_ids.append(module_functions[func_name])
+                            # Try to match the imported path against candidates
+                            # imported_path format: "nomarr.components.library.reconcile_library_paths"
+                            # candidate format: "nomarr.components.library.reconcile_paths_comp.reconcile_library_paths"
+                            #
+                            # The import is from a package __init__.py, so the candidate will have
+                            # an extra module name between the package and the function name.
+                            # We need to match based on the package path.
 
-                    # Case 1d: Try callable index by name
-                    elif callable_index and func_name in callable_index:
-                        target_ids.extend(callable_index[func_name])
+                            # Extract package from imported_path
+                            import_parts = imported_path.rsplit(".", 1)
+                            if len(import_parts) != 2:
+                                continue  # Skip malformed imports
+
+                            import_package, import_name = import_parts
+                            # import_package: "nomarr.components.library"
+                            # import_name: "reconcile_library_paths"
+
+                            for candidate in candidates:
+                                # Skip if this would be a self-reference
+                                if candidate == caller_id:
+                                    continue
+
+                                # Check if candidate starts with the import package
+                                # and ends with the function name
+                                if candidate.startswith(import_package + ".") and candidate.endswith("." + import_name):
+                                    target_ids.append(candidate)
+                                    break
+
+                    # Case 1d: Try callable index by name (LOWEST PRIORITY - fallback only)
+                    # Only use if we haven't found a target yet
+                    if not target_ids and callable_index and func_name in callable_index:
+                        # Filter to avoid self-references when using broad index
+                        candidates = callable_index[func_name]
+                        for candidate in candidates:
+                            # Skip if candidate == caller (exact self-reference)
+                            if candidate != caller_id:
+                                target_ids.append(candidate)
 
                 # Case 2: Attribute call (obj.method_name)
                 elif isinstance(node.func, ast.Attribute):
@@ -505,14 +527,19 @@ def extract_calls_from_function(
                             if is_valid:
                                 target_ids.append(candidate)
 
-            # Case B: Callable reference (Name node that could be a function reference)
-            # This handles cases like Depends(get_queue_service) where get_queue_service
-            # is passed as a callable, not called directly
-            elif isinstance(node, ast.Name) and callable_index:
-                name = node.id
-                # Only track if it's in our callable index (to avoid noise from variables)
-                if name in callable_index:
-                    target_ids.extend(callable_index[name])
+            # Case B: Callable reference as argument (e.g., Depends(get_service))
+            # DON'T process bare Name nodes - they're either:
+            # 1. The func of a Call (already handled in Case A)
+            # 2. A variable reference (not a call)
+            # Only process Name nodes that appear as arguments to dependency injection functions
+            # We handle this by looking for Call nodes with Name arguments
+            elif isinstance(node, ast.Call) and callable_index:
+                # Check if this is a dependency injection call like Depends(func)
+                if isinstance(node.func, ast.Name) and node.func.id in ("Depends", "Annotated"):
+                    # Extract callable references from arguments
+                    for arg in node.args:
+                        if isinstance(arg, ast.Name) and arg.id in callable_index:
+                            target_ids.extend(callable_index[arg.id])
 
             # Create CALLS edges for all resolved targets
             for target_id in target_ids:
