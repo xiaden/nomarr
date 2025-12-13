@@ -22,7 +22,7 @@ from nomarr.components.ml.ml_cache_comp import (
 # === STANDALONE FUNCTION TESTS ===
 
 
-@pytest.mark.skip(reason="Requires HeadInfo parameter - needs model fixture")
+@pytest.mark.skip(reason="TODO: Add HeadInfo fixture for this test")
 def test_cache_key():
     """Unique cache key for a head across backbones/types."""
     # TODO: Create mock HeadInfo and test cache_key generation

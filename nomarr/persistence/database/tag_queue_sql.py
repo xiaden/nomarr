@@ -31,7 +31,15 @@ class QueueOperations:
 
         Returns:
             Job ID
+            
+        Raises:
+            FileNotFoundError: If the file does not exist
         """
+        import os
+        
+        if not os.path.isfile(path):
+            raise FileNotFoundError(f"File not found: {path}")
+        
         cur = self.conn.cursor()
         ts = now_ms()
         cur.execute(

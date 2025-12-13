@@ -73,16 +73,18 @@ class TestLibraryServiceIsConfigured:
 class TestLibraryServiceStartScan:
     """Test LibraryService.start_scan() operations."""
 
-    @pytest.mark.skip(reason="Bug in library.py line 105: uses 'files_processed' instead of 'files_scanned'")
     def test_start_scan_success(self, real_library_service):
         """Should successfully start scan."""
         # Arrange
+        from nomarr.helpers.dto.library_dto import StartScanResult
 
         # Act
         result = real_library_service.start_scan()
 
         # Assert
-        assert isinstance(result, int)
+        assert isinstance(result, StartScanResult)
+        assert result.files_discovered >= 0
+        assert result.files_queued >= 0
 
 
 class TestSublibraryOverlapDetection:

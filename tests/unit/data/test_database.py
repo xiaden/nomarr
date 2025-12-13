@@ -108,15 +108,6 @@ class TestDatabaseDeleteLibraryFile:
         # TODO: Verify item was removed
         # TODO: Verify get() returns None after delete
 
-    @pytest.mark.skip(reason="Method doesn't validate paths - no FileNotFoundError raised")
-    def test_delete_library_file_invalid_path_raises_error(self, test_db):
-        """Should raise error for invalid file path."""
-        # Arrange
-
-        # Act & Assert
-        with pytest.raises(FileNotFoundError):
-            test_db.library_files.delete_library_file(path="/nonexistent.mp3")
-
 
 class TestDatabaseDeleteMeta:
     """Test Database.delete_meta() operations."""
@@ -165,7 +156,6 @@ class TestDatabaseEnqueue:
         # TODO: Check item can be retrieved
         # TODO: Verify count/depth increased
 
-    @pytest.mark.skip(reason="Method doesn't validate paths - no FileNotFoundError raised")
     def test_enqueue_invalid_path_raises_error(self, test_db):
         """Should raise error for invalid file path."""
         # Arrange
