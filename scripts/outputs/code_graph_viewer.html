@@ -308,6 +308,14 @@
                 </div>
 
                 <div class="control-group">
+                    <label for="interfaceFilter">Filter by Interface:</label>
+                    <select id="interfaceFilter">
+                        <option value="">All (Warning: May be slow!)</option>
+                        <option value="__unconnected__">Not connected to any interface</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
                     <label for="layerFilter">Filter by Layer:</label>
                     <select id="layerFilter">
                         <option value="">All Layers</option>
@@ -350,6 +358,8 @@
         let allEdges = null;
         let selectedNodeId = null;
         let edgeTypes = new Set();
+        let interfaceNodes = [];
+        let nodeConnectionMap = new Map(); // Maps node id -> set of interface ids it's connected to
 
         // Load and initialize
         async function loadGraph() {
@@ -389,15 +399,72 @@
             // Extract edge types
             graphData.edges.forEach(edge => edgeTypes.add(edge.type));
             
+            // Find interface nodes (nodes in interfaces layer)
+            interfaceNodes = graphData.nodes
+                .filter(n => n.layer === 'interfaces')
+                .sort((a, b) => a.id.localeCompare(b.id));
+            
+            // Build connection map: which nodes are reachable from which interfaces
+            buildConnectionMap();
+            
             initializeFilters();
             initializeNetwork();
+            
+            // Default to first interface to avoid overwhelming browser
+            if (interfaceNodes.length > 0) {
+                document.getElementById('interfaceFilter').value = interfaceNodes[0].id;
+            }
+            
+            applyFilters();
             updateStats();
             
             document.getElementById('loading').style.display = 'none';
             document.getElementById('container').style.display = 'flex';
         }
 
+        function buildConnectionMap() {
+            // For each interface node, find all nodes reachable from it
+            interfaceNodes.forEach(interfaceNode => {
+                const reachable = new Set();
+                const queue = [interfaceNode.id];
+                const visited = new Set();
+                
+                while (queue.length > 0) {
+                    const currentId = queue.shift();
+                    if (visited.has(currentId)) continue;
+                    visited.add(currentId);
+                    reachable.add(currentId);
+                    
+                    // Find all outgoing edges from this node
+                    graphData.edges
+                        .filter(e => e.source_id === currentId)
+                        .forEach(e => {
+                            if (!visited.has(e.target_id)) {
+                                queue.push(e.target_id);
+                            }
+                        });
+                }
+                
+                // Store which interface each node is connected to
+                reachable.forEach(nodeId => {
+                    if (!nodeConnectionMap.has(nodeId)) {
+                        nodeConnectionMap.set(nodeId, new Set());
+                    }
+                    nodeConnectionMap.get(nodeId).add(interfaceNode.id);
+                });
+            });
+        }
+
         function initializeFilters() {
+            // Populate interface filter
+            const interfaceFilter = document.getElementById('interfaceFilter');
+            interfaceNodes.forEach(node => {
+                const option = document.createElement('option');
+                option.value = node.id;
+                option.textContent = node.name;
+                interfaceFilter.appendChild(option);
+            });
+
             // Populate layer filter
             const layers = [...new Set(graphData.nodes.map(n => n.layer))].sort();
             const layerFilter = document.getElementById('layerFilter');
@@ -437,6 +504,7 @@
 
             // Add event listeners
             document.getElementById('search').addEventListener('input', applyFilters);
+            document.getElementById('interfaceFilter').addEventListener('change', applyFilters);
             document.getElementById('layerFilter').addEventListener('change', applyFilters);
             document.getElementById('kindFilter').addEventListener('change', applyFilters);
         }
@@ -659,6 +727,7 @@
 
         function applyFilters() {
             const searchTerm = document.getElementById('search').value.toLowerCase();
+            const interfaceFilter = document.getElementById('interfaceFilter').value;
             const layerFilter = document.getElementById('layerFilter').value;
             const kindFilter = document.getElementById('kindFilter').value;
             
@@ -672,6 +741,22 @@
             const visibleNodeIds = new Set();
             graphData.nodes.forEach(node => {
                 let visible = true;
+                
+                // Interface filter (most important - narrows graph significantly)
+                if (interfaceFilter) {
+                    if (interfaceFilter === '__unconnected__') {
+                        // Show only nodes not connected to any interface
+                        if (nodeConnectionMap.has(node.id)) {
+                            visible = false;
+                        }
+                    } else {
+                        // Show only nodes connected to selected interface
+                        const connections = nodeConnectionMap.get(node.id);
+                        if (!connections || !connections.has(interfaceFilter)) {
+                            visible = false;
+                        }
+                    }
+                }
                 
                 if (searchTerm && !node.id.toLowerCase().includes(searchTerm) && 
                     !node.name.toLowerCase().includes(searchTerm)) {
@@ -730,6 +815,12 @@
 
         function resetView() {
             document.getElementById('search').value = '';
+            // Reset to first interface (default)
+            if (interfaceNodes.length > 0) {
+                document.getElementById('interfaceFilter').value = interfaceNodes[0].id;
+            } else {
+                document.getElementById('interfaceFilter').value = '';
+            }
             document.getElementById('layerFilter').value = '';
             document.getElementById('kindFilter').value = '';
             document.querySelectorAll('#edgeTypeFilters input[type="checkbox"]').forEach(cb => {
