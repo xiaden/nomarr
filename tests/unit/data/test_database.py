@@ -6,6 +6,7 @@ Tests use REAL fixtures from conftest.py - no redundant mocks.
 
 import pytest
 
+from nomarr.helpers.dto import ValidatedPath
 from nomarr.persistence.db import (
     now_ms,
 )
@@ -146,9 +147,9 @@ class TestDatabaseEnqueue:
     def test_enqueue_success(self, test_db, temp_audio_file):
         """Should successfully enqueue."""
         # Arrange
-        from nomarr.helpers.dto import ValidatedPath
+        from nomarr.helpers.dto import validated_path_from_string
 
-        validated = ValidatedPath(path=str(temp_audio_file))
+        validated = validated_path_from_string(str(temp_audio_file), library_root=None)
 
         # Act
         result = test_db.tag_queue.enqueue(path=validated)
@@ -162,18 +163,12 @@ class TestDatabaseEnqueue:
     def test_enqueue_invalid_path_raises_error(self, test_db):
         """Should raise error for invalid file path."""
         # Arrange
-        from nomarr.helpers.dto import ValidatedPath
-
-        # ValidatedPath doesn't validate at construction - validation happens at service layer
-        # This test verifies that even if someone bypasses service validation,
-        # the persistence layer will still fail when the file doesn't exist during processing
-        validated = ValidatedPath(path="/nonexistent.mp3")
+        from nomarr.helpers.dto import validated_path_from_string
 
         # Act & Assert
-        # NOTE: This test is now checking DB behavior, not path validation
-        # Path validation should happen at service layer before constructing ValidatedPath
-        # For now, we'll skip this test since ValidatedPath DTO doesn't enforce validation
-        pytest.skip("Path validation now happens at service layer, not persistence layer")
+        # Factory function validates file exists - should raise FileNotFoundError
+        with pytest.raises(FileNotFoundError):
+            validated_path_from_string("/nonexistent.mp3", library_root=None)
 
 
 class TestDatabaseGetFileTags:
@@ -197,8 +192,9 @@ class TestDatabaseGetLibraryFile:
     def test_get_library_file_success(self, test_db, temp_audio_file, default_library):
         """Should successfully get library file."""
         # Arrange - create library file first
+        validated_path = ValidatedPath(path=str(temp_audio_file))
         test_db.library_files.upsert_library_file(
-            path=str(temp_audio_file), library_id=default_library, file_size=1024, modified_time=1234567890
+            path=validated_path, library_id=default_library, file_size=1024, modified_time=1234567890
         )
 
         # Act
@@ -225,7 +221,8 @@ class TestDatabaseGetLibraryScan:
     def test_get_library_scan_success(self, test_db):
         """Should successfully get library scan job."""
         # Arrange - enqueue a scan job
-        job_id = test_db.library_queue.enqueue_scan(path="/music/test.flac", force=False)
+        validated_path = ValidatedPath(path="/music/test.flac")
+        job_id = test_db.library_queue.enqueue_scan(path=validated_path, force=False)
 
         # Act
         result = test_db.library_queue.get_library_scan(scan_id=job_id)
@@ -381,9 +378,9 @@ class TestDatabaseJobStatus:
     def test_job_status_success(self, test_db, temp_audio_file):
         """Should successfully job status."""
         # Arrange - enqueue job first
-        from nomarr.helpers.dto import ValidatedPath
+        from nomarr.helpers.dto import validated_path_from_string
 
-        validated = ValidatedPath(path=str(temp_audio_file))
+        validated = validated_path_from_string(str(temp_audio_file), library_root=None)
         job_id = test_db.tag_queue.enqueue(path=validated)
 
         # Act
@@ -546,8 +543,9 @@ class TestDatabaseUpsertFileTags:
     def test_upsert_file_tags_success(self, test_db, temp_audio_file, default_library):
         """Should successfully upsert file tags."""
         # Arrange - create library file first to get file_id
+        validated_path = ValidatedPath(path=str(temp_audio_file))
         file_id = test_db.library_files.upsert_library_file(
-            path=str(temp_audio_file), library_id=default_library, file_size=1024, modified_time=1234567890
+            path=validated_path, library_id=default_library, file_size=1024, modified_time=1234567890
         )
         tags = {"mood": "happy", "genre": "rock"}
 
@@ -564,10 +562,11 @@ class TestDatabaseUpsertLibraryFile:
     def test_upsert_library_file_success(self, test_db, temp_audio_file, default_library):
         """Should successfully upsert library file."""
         # Arrange
+        validated_path = ValidatedPath(path=str(temp_audio_file))
 
         # Act
         result = test_db.library_files.upsert_library_file(
-            path=str(temp_audio_file), library_id=default_library, file_size=1024, modified_time=1
+            path=validated_path, library_id=default_library, file_size=1024, modified_time=1234567890
         )
 
         # Assert

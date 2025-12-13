@@ -34,7 +34,12 @@ if TYPE_CHECKING:
 
 # Single guarded import point for Essentia
 try:
+    import essentia  # type: ignore[import-not-found]
     import essentia.standard as essentia_tf  # type: ignore[import-not-found,no-redef]
+
+    # Disable Essentia's verbose logging
+    essentia.log.infoActive = False  # type: ignore[attr-defined]
+    essentia.log.warningActive = False  # type: ignore[attr-defined]
 except ImportError:  # pragma: no cover
     essentia_tf = None  # type: ignore[assignment]
 

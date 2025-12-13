@@ -5,6 +5,8 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
+from nomarr.helpers.dto import ValidatedPath
+
 
 def now_ms() -> int:
     """Return current timestamp in milliseconds."""
@@ -19,13 +21,13 @@ class CalibrationQueueOperations:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
 
-    def enqueue_calibration(self, path: str) -> int:
+    def enqueue_calibration(self, path: ValidatedPath) -> int:
         """Add file to calibration queue. Returns calibration job ID."""
         cur = self.conn.cursor()
         ts = now_ms()
         cur.execute(
             "INSERT INTO calibration_queue(path, status, created_at, started_at) VALUES(?, 'pending', ?, NULL)",
-            (path, ts),
+            (path.path, ts),
         )
         self.conn.commit()
         job_id = cur.lastrowid

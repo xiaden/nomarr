@@ -3,6 +3,8 @@
 import sqlite3
 from typing import Any
 
+from nomarr.helpers.dto import ValidatedPath
+
 
 def now_ms() -> int:
     """Get current timestamp in milliseconds."""
@@ -12,17 +14,17 @@ def now_ms() -> int:
 
 
 class LibraryQueueOperations:
-    """Operations for the library_queue table (library scan job queue)."""
+    """Operations for the library_queue table (library scanning jobs)."""
 
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
 
-    def enqueue_scan(self, path: str, force: bool = False) -> int:
+    def enqueue_scan(self, path: ValidatedPath, force: bool = False) -> int:
         """
         Enqueue a file for library scanning.
 
         Args:
-            path: Path to the file to scan
+            path: Validated file path to scan
             force: Whether to force rescan even if file hasn't changed
 
         Returns:
@@ -32,7 +34,7 @@ class LibraryQueueOperations:
         ts = now_ms()
         cur.execute(
             "INSERT INTO library_queue(path, status, force, created_at, started_at) VALUES(?, 'pending', ?, ?, NULL)",
-            (path, 1 if force else 0, ts),
+            (path.path, 1 if force else 0, ts),
         )
         self.conn.commit()
         job_id = cur.lastrowid

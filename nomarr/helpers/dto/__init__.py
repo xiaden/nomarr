@@ -60,7 +60,7 @@ from nomarr.helpers.dto.navidrome_dto import (
     SmartPlaylistFilter,
     TagCondition,
 )
-from nomarr.helpers.dto.path_dto import ValidatedPath
+from nomarr.helpers.dto.path_dto import ValidatedPath, validated_path_from_string
 from nomarr.helpers.dto.processing_dto import (
     ProcessFileResult,
     ProcessorConfig,
@@ -90,4 +90,5 @@ __all__ = [
     "TagWriteProfile",
     "ValidatedPath",
     "WorkerState",
+    "validated_path_from_string",
 ]

@@ -11,6 +11,8 @@ import logging
 import os
 from typing import TYPE_CHECKING, Any
 
+from nomarr.helpers.dto import validated_path_from_string
+
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
@@ -74,9 +76,12 @@ def update_library_from_tags(
         # Serialize calibration metadata to JSON
         calibration_json = json.dumps(calibration) if calibration else None
 
+        # Validate file path before writing to DB
+        validated_path = validated_path_from_string(file_path, library_root=None)
+
         # Upsert to library database
         db.library_files.upsert_library_file(
-            path=file_path,
+            path=validated_path,
             library_id=library_id,
             file_size=file_size,
             modified_time=modified_time,
@@ -115,7 +120,8 @@ def update_library_from_tags(
 
         # Mark file as tagged if tagger version provided (called from processor)
         if tagged_version and file_record:
-            db.library_files.mark_file_tagged(file_path, tagged_version)
+            # Reuse validated_path from earlier in function
+            db.library_files.mark_file_tagged(validated_path, tagged_version)
 
         logging.debug(f"[update_library_from_tags] Updated library for {file_path}")
     except Exception as e:

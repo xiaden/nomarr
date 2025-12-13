@@ -3,6 +3,8 @@
 import sqlite3
 from typing import Any
 
+from nomarr.helpers.dto import ValidatedPath
+
 
 def now_ms() -> int:
     """Get current timestamp in milliseconds."""
@@ -19,7 +21,7 @@ class LibraryFilesOperations:
 
     def upsert_library_file(
         self,
-        path: str,
+        path: ValidatedPath,
         library_id: int,
         file_size: int,
         modified_time: int,
@@ -34,7 +36,7 @@ class LibraryFilesOperations:
         Insert or update a library file entry.
 
         Args:
-            path: File path
+            path: Validated file path
             library_id: ID of owning library
             file_size: File size in bytes
             modified_time: Last modified timestamp
@@ -70,7 +72,7 @@ class LibraryFilesOperations:
                 last_tagged_at=COALESCE(excluded.last_tagged_at, last_tagged_at)
             """,
             (
-                path,
+                path.path,
                 library_id,
                 file_size,
                 modified_time,
@@ -89,17 +91,17 @@ class LibraryFilesOperations:
             raise RuntimeError("Failed to upsert library file - no row ID returned")
         return file_id
 
-    def mark_file_tagged(self, path: str, tagged_version: str) -> None:
+    def mark_file_tagged(self, path: ValidatedPath, tagged_version: str) -> None:
         """
         Mark a file as tagged with the given version.
 
         Args:
-            path: File path
+            path: Validated file path
             tagged_version: Version string of the tagger
         """
         self.conn.execute(
             "UPDATE library_files SET tagged=1, tagged_version=?, last_tagged_at=? WHERE path=?",
-            (tagged_version, now_ms(), path),
+            (tagged_version, now_ms(), path.path),
         )
         self.conn.commit()
 

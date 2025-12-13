@@ -261,15 +261,6 @@ class Application:
         ml_service = MLService(cfg=ml_cfg)
         self.register_service("ml", ml_service)
 
-        # Don't warm up cache here - CUDA doesn't survive multiprocessing fork!
-        # Workers will lazy-load models on first use
-        # logging.info("[Application] Warming up predictor cache...")
-        # try:
-        #     ml_service.warmup_cache()
-        #     logging.info("[Application] Predictor cache warmed successfully")
-        # except Exception as e:
-        #     logging.error(f"[Application] Failed to warm predictor cache: {e}")
-
         # Register Analytics service (DI: inject db, namespace)
         logging.info("[Application] Initializing AnalyticsService...")
         from nomarr.services.domain.analytics_svc import AnalyticsConfig

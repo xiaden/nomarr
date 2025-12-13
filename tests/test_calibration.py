@@ -13,6 +13,7 @@ from nomarr.components.ml.ml_calibration_comp import (
     generate_minmax_calibration,
     save_calibration_sidecars,
 )
+from nomarr.helpers.dto import ValidatedPath
 from nomarr.persistence.db import Database
 
 
@@ -34,8 +35,11 @@ def temp_db():
     random.seed(42)  # Reproducible test data
 
     for i in range(1100):
+        # Note: Using direct ValidatedPath construction in tests is acceptable
+        # In production code, must use validated_path_from_string()
+        validated_path = ValidatedPath(path=f"/music/song{i}.mp3")
         file_id = db.library_files.upsert_library_file(
-            path=f"/music/song{i}.mp3",
+            path=validated_path,
             library_id=library_id,
             file_size=1024,
             modified_time=1234567890,
@@ -214,8 +218,9 @@ def test_calibration_min_samples_filter():
 
     # Add only 3 files (well below 1000 minimum)
     for i in range(3):
+        validated_path = ValidatedPath(path=f"/music/song{i}.mp3")
         file_id = db.library_files.upsert_library_file(
-            path=f"/music/song{i}.mp3",
+            path=validated_path,
             library_id=library_id,
             file_size=1024,
             modified_time=1234567890,
