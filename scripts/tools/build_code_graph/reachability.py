@@ -13,10 +13,13 @@ def compute_reachability(graph: CodeGraph, entrypoints: set[str]) -> None:
 
     Updates node.reachable_from_interface in place.
     """
-    # Build adjacency list from CALLS and USES_TYPE edges
+    from .edge_types import REACHABLE_EDGE_TYPES
+
+    # Build adjacency list from all reachable edge types
+    # Includes all CALLS_* variants, USES_TYPE, and IMPORTS
     adjacency: dict[str, set[str]] = defaultdict(set)
     for edge in graph.edges:
-        if edge.type in {"CALLS", "USES_TYPE"}:
+        if edge.type in REACHABLE_EDGE_TYPES:
             adjacency[edge.source_id].add(edge.target_id)
 
     # BFS from all entrypoints
@@ -32,8 +35,17 @@ def compute_reachability(graph: CodeGraph, entrypoints: set[str]) -> None:
                 visited.add(neighbor_id)
                 queue.append(neighbor_id)
 
+    # Also mark parent modules as reachable (for IMPORTS traversal)
+    # If "module.Class.method" is reachable, so is "module" and "module.Class"
+    expanded_visited = set(visited)
+    for node_id in visited:
+        parts = node_id.split(".")
+        for i in range(1, len(parts)):
+            parent_id = ".".join(parts[:i])
+            expanded_visited.add(parent_id)
+
     # Update nodes
     node_map = {node.id: node for node in graph.nodes}
-    for node_id in visited:
+    for node_id in expanded_visited:
         if node_id in node_map:
             node_map[node_id].reachable_from_interface = True

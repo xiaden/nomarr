@@ -64,12 +64,27 @@ def build_graph_for_file(
             end_lineno=len(source.splitlines()),
             loc=len(source.splitlines()),
             docstring=get_docstring(tree),
+            ast_context="ModuleDefinition",
         )
         graph.nodes.append(module_node)
 
     # Track module-level functions and class methods for CALLS edge creation
     module_functions: dict[str, str] = {}  # func_name -> node_id
     class_methods: dict[str, dict[str, str]] = {}  # class_name -> {method_name -> node_id}
+
+    # Extract module-level imports for Depends() resolution
+    module_imports: dict[str, str] = {}  # name -> full_path
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            for alias in node.names:
+                if alias.name != "*":
+                    local_name = alias.asname if alias.asname else alias.name
+                    full_path = f"{node.module}.{alias.name}"
+                    module_imports[local_name] = full_path
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                local_name = alias.asname if alias.asname else alias.name
+                module_imports[local_name] = alias.name
 
     # Process imports (only during first pass to avoid duplicates)
     if not build_calls:
@@ -82,7 +97,8 @@ def build_graph_for_file(
                             source_id=module_id,
                             target_id=target_id,
                             type="IMPORTS",
-                            lineno=node.lineno,
+                            linenos=[node.lineno],
+                            ast_case="Import",
                         )
                     )
             elif isinstance(node, ast.ImportFrom) and node.module:
@@ -98,6 +114,7 @@ def build_graph_for_file(
                             target_id=target_id,
                             type="IMPORTS",
                             linenos=[node.lineno],
+                            ast_case="ImportFrom",
                         )
                     )
 
@@ -119,10 +136,17 @@ def build_graph_for_file(
                     loc=(stmt.end_lineno or stmt.lineno) - stmt.lineno + 1,
                     docstring=get_docstring(stmt),
                     attributes=extract_class_attributes(stmt),
+                    ast_context="ClassDefinition",
                 )
                 graph.nodes.append(class_node)
                 graph.edges.append(
-                    Edge(source_id=module_id, target_id=class_id, type="CONTAINS", linenos=[stmt.lineno])
+                    Edge(
+                        source_id=module_id,
+                        target_id=class_id,
+                        type="CONTAINS",
+                        linenos=[stmt.lineno],
+                        ast_case="ClassContainment",
+                    )
                 )
 
             # Track methods for this class (needed for CALLS resolution in second pass)
@@ -148,10 +172,17 @@ def build_graph_for_file(
                             params=extract_function_params(item),
                             return_annotation=get_return_annotation(item),
                             return_var_names=extract_return_var_names(item),
+                            ast_context="MethodDefinition",
                         )
                         graph.nodes.append(method_node)
                         graph.edges.append(
-                            Edge(source_id=class_id, target_id=method_id, type="CONTAINS", linenos=[item.lineno])
+                            Edge(
+                                source_id=class_id,
+                                target_id=method_id,
+                                type="CONTAINS",
+                                linenos=[item.lineno],
+                                ast_case="MethodContainment",
+                            )
                         )
 
                     methods_in_class[item.name] = method_id
@@ -176,9 +207,18 @@ def build_graph_for_file(
                     params=extract_function_params(stmt),
                     return_annotation=get_return_annotation(stmt),
                     return_var_names=extract_return_var_names(stmt),
+                    ast_context="FunctionDefinition",
                 )
                 graph.nodes.append(func_node)
-                graph.edges.append(Edge(source_id=module_id, target_id=func_id, type="CONTAINS", linenos=[stmt.lineno]))
+                graph.edges.append(
+                    Edge(
+                        source_id=module_id,
+                        target_id=func_id,
+                        type="CONTAINS",
+                        linenos=[stmt.lineno],
+                        ast_case="FunctionContainment",
+                    )
+                )
 
             module_functions[stmt.name] = func_id
 
@@ -194,7 +234,7 @@ def build_graph_for_file(
                 # Extract type annotations
                 extract_type_annotations_from_function(stmt, func_id, module_id, graph, callable_index)
                 # Extract calls from function body
-                extract_calls_from_function(stmt, func_id, module_functions, {}, graph, callable_index)
+                extract_calls_from_function(stmt, func_id, module_functions, {}, graph, callable_index, module_imports)
 
             elif isinstance(stmt, ast.ClassDef):
                 class_methods_dict = class_methods.get(stmt.name, {})
@@ -207,38 +247,76 @@ def build_graph_for_file(
                         extract_type_annotations_from_function(item, method_id, module_id, graph, callable_index)
                         # Extract calls from method body
                         extract_calls_from_function(
-                            item, method_id, module_functions, class_methods_dict, graph, callable_index
+                            item, method_id, module_functions, class_methods_dict, graph, callable_index, module_imports
                         )
 
-        # 2b: Extract calls/references from module-level code
-        # This handles things like FastAPI(lifespan=lifespan) or @app.exception_handler(handler)
+        # 2b: Extract module-level function calls
+        # This handles things like FastAPI(lifespan=lifespan_func) at module level
+        # Do NOT match bare Name nodes - those create false positives from imports!
         if callable_index:
+            # Build import map for resolving module.attribute accesses
+            module_imports: dict[str, str] = {}
             for node in ast.walk(tree):
-                target_ids: list[str] = []
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        # import X or import X as Y
+                        local_name = alias.asname if alias.asname else alias.name
+                        module_imports[local_name] = alias.name
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    for alias in node.names:
+                        if alias.name != "*":
+                            # from X import Y or from X import Y as Z
+                            local_name = alias.asname if alias.asname else alias.name
+                            module_imports[local_name] = f"{node.module}.{alias.name}"
 
-                # Module-level function calls
+            for node in ast.walk(tree):
+                # Only match actual CALLS, not name references
                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
                     func_name = node.func.id
                     if func_name in callable_index:
-                        target_ids.extend(callable_index[func_name])
+                        for target_id in callable_index[func_name]:
+                            lineno = getattr(node, "lineno", 0)
+                            from .edge_types import get_edge_type_from_ast_case
 
-                # Module-level callable references (like lifespan=lifespan)
-                elif isinstance(node, ast.Name):
-                    name = node.id
-                    if name in callable_index:
-                        target_ids.extend(callable_index[name])
+                            ast_case = "CaseM-ModuleLevelCall"
+                            edge_type = get_edge_type_from_ast_case(ast_case)
+                            graph.edges.append(
+                                Edge(
+                                    source_id=module_id,
+                                    target_id=target_id,
+                                    type=edge_type,
+                                    linenos=[lineno] if lineno else [],
+                                    ast_case=ast_case,
+                                )
+                            )
 
-                # Create CALLS edges from module to referenced callables
-                for target_id in target_ids:
-                    lineno = getattr(node, "lineno", 0)
-                    graph.edges.append(
-                        Edge(
-                            source_id=module_id,
-                            target_id=target_id,
-                            type="CALLS",
-                            linenos=[lineno] if lineno else [],
-                        )
-                    )
+                # Check for module attribute accesses in call arguments
+                # Example: app.include_router(web.router) at module level
+                if isinstance(node, ast.Call):
+                    for arg in node.args:
+                        if isinstance(arg, ast.Attribute) and isinstance(arg.value, ast.Name):
+                            module_name = arg.value.id
+                            attr_name = arg.attr
+
+                            # Check if this module is imported
+                            if module_name in module_imports:
+                                module_path = module_imports[module_name]
+                                full_attr_path = f"{module_path}.{attr_name}"
+
+                                lineno = getattr(node, "lineno", 0)
+                                from .edge_types import get_edge_type_from_ast_case
+
+                                ast_case = "CaseA-ModuleAttributeAccess"
+                                edge_type = get_edge_type_from_ast_case(ast_case)
+                                graph.edges.append(
+                                    Edge(
+                                        source_id=module_id,
+                                        target_id=full_attr_path,
+                                        type=edge_type,
+                                        linenos=[lineno] if lineno else [],
+                                        ast_case=ast_case,
+                                    )
+                                )
 
     return graph
 

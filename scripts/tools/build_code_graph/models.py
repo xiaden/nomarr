@@ -23,17 +23,30 @@ class Node:
     return_annotation: str | None = None  # For functions/methods
     return_var_names: list[str] = field(default_factory=list)  # For functions/methods
     reachable_from_interface: bool = False
+    ast_context: str | None = None  # How this node was discovered (ModuleLevel, ClassMember, etc)
 
 
 @dataclass
 class Edge:
-    """Represents a relationship between code entities."""
+    """Represents a relationship between code entities.
+
+    ALL edges MUST have ast_case set. Missing ast_case (None) indicates
+    a bug in edge creation logic. This helps catch errors and track how
+    each edge was created.
+    """
 
     source_id: str
     target_id: str
-    type: str  # "CONTAINS" | "IMPORTS" | "CALLS"
+    type: str  # Edge types: CONTAINS | IMPORTS | CALLS_* | USES_TYPE
+    # CALLS_FUNCTION: direct function call
+    # CALLS_METHOD: method call on object
+    # CALLS_CLASS: class instantiation
+    # CALLS_ATTRIBUTE: module attribute access
+    # CALLS_DEPENDENCY: dependency injection
+    # CALLS_THREAD_TARGET: thread target callable
     linenos: list[int] = field(default_factory=list)  # All line numbers where this edge occurs
     details: list[str] = field(default_factory=list)  # Additional details for each occurrence
+    ast_case: str | None = None  # Which AST matching case created this edge (required for call-based edges)
 
 
 @dataclass

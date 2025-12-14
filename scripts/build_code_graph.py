@@ -20,6 +20,7 @@ if str(SCRIPT_DIR) not in sys.path:
 # Import after path setup
 # ruff: noqa: E402
 from tools.build_code_graph import (
+    Edge,
     build_callable_index,
     build_graph_for_file,
     compute_reachability,
@@ -98,24 +99,25 @@ def main() -> int:
     print("Deduplicating edges...")
     edges_before = len(graph.edges)
     edge_map: dict[
-        tuple[str, str, str], tuple[list[int], list[str]]
-    ] = {}  # (source, target, type) -> ([line numbers], [details])
+        tuple[str, str, str], tuple[list[int], list[str], str | None]
+    ] = {}  # (source, target, type) -> ([line numbers], [details], ast_case)
 
     for edge in graph.edges:
         key = (edge.source_id, edge.target_id, edge.type)
         if key not in edge_map:
-            edge_map[key] = ([], [])
+            edge_map[key] = ([], [], edge.ast_case)
 
-        linenos, details = edge_map[key]
+        linenos, details, ast_case = edge_map[key]
         # Collect all line numbers
         linenos.extend(edge.linenos)
         # Collect all details
         details.extend(edge.details)
-        edge_map[key] = (linenos, details)
+        # Keep first ast_case (they should all be the same for duplicate edges)
+        edge_map[key] = (linenos, details, ast_case)
 
     # Rebuild edges with deduplicated line numbers and details
     deduplicated_edges = []
-    for (source_id, target_id, edge_type), (linenos, details) in edge_map.items():
+    for (source_id, target_id, edge_type), (linenos, details, ast_case) in edge_map.items():
         # Remove duplicates and sort line numbers
         unique_linenos = sorted(set(linenos))
         # Remove duplicate details while preserving order
@@ -133,6 +135,7 @@ def main() -> int:
                 type=edge_type,
                 linenos=unique_linenos,
                 details=unique_details,
+                ast_case=ast_case,
             )
         )
 
