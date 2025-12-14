@@ -308,10 +308,10 @@
                 </div>
 
                 <div class="control-group">
-                    <label for="interfaceFilter">Filter by Interface:</label>
+                    <label for="interfaceFilter">Filter by Entrypoint:</label>
                     <select id="interfaceFilter">
                         <option value="">All (Warning: May be slow!)</option>
-                        <option value="__unconnected__">Not connected to any interface</option>
+                        <option value="__unconnected__">Not connected to any entrypoint</option>
                     </select>
                 </div>
 
@@ -402,9 +402,18 @@
             // Extract edge types
             graphData.edges.forEach(edge => edgeTypes.add(edge.type));
             
-            // Find interface nodes - only module-level to keep list manageable
+            // Find interface entrypoints (FastAPI routes and CLI commands)
             interfaceNodes = graphData.nodes
-                .filter(n => n.layer === 'interfaces' && n.kind === 'module')
+                .filter(n => {
+                    if (n.layer !== 'interfaces') return false;
+                    if (n.kind !== 'function' && n.kind !== 'method') return false;
+                    // FastAPI routes in *_if.py files
+                    if (n.file.includes('_if.py')) return true;
+                    // CLI commands
+                    if (n.kind === 'function' && n.name.startsWith('cmd_')) return true;
+                    if (n.name === 'main' && n.file.includes('cli')) return true;
+                    return false;
+                })
                 .sort((a, b) => a.id.localeCompare(b.id));
             
             initializeFilters();
@@ -499,12 +508,14 @@
         }
 
         function initializeFilters() {
-            // Populate interface filter
+            // Populate interface filter with entrypoints
             const interfaceFilter = document.getElementById('interfaceFilter');
             interfaceNodes.forEach(node => {
                 const option = document.createElement('option');
                 option.value = node.id;
-                option.textContent = node.name;
+                // Show file name in parentheses for context
+                const fileName = node.file.split('/').pop();
+                option.textContent = `${node.name} (${fileName})`;
                 interfaceFilter.appendChild(option);
             });
 

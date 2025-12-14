@@ -52,95 +52,107 @@ def build_graph_for_file(
     layer = get_layer_from_module_path(module_id)
     file_str = str(rel_path).replace("\\", "/")
 
-    # Create module node
-    module_node = Node(
-        id=module_id,
-        kind="module",
-        layer=layer,
-        file=file_str,
-        name=module_parts[-1] if module_parts else "",
-        lineno=1,
-        end_lineno=len(source.splitlines()),
-        loc=len(source.splitlines()),
-        docstring=get_docstring(tree),
-    )
-    graph.nodes.append(module_node)
+    # Create module node (only during first pass to avoid duplicates)
+    if not build_calls:
+        module_node = Node(
+            id=module_id,
+            kind="module",
+            layer=layer,
+            file=file_str,
+            name=module_parts[-1] if module_parts else "",
+            lineno=1,
+            end_lineno=len(source.splitlines()),
+            loc=len(source.splitlines()),
+            docstring=get_docstring(tree),
+        )
+        graph.nodes.append(module_node)
 
     # Track module-level functions and class methods for CALLS edge creation
     module_functions: dict[str, str] = {}  # func_name -> node_id
     class_methods: dict[str, dict[str, str]] = {}  # class_name -> {method_name -> node_id}
 
-    # Process imports
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                target_id = alias.name
-                graph.edges.append(
-                    Edge(
-                        source_id=module_id,
-                        target_id=target_id,
-                        type="IMPORTS",
-                        lineno=node.lineno,
+    # Process imports (only during first pass to avoid duplicates)
+    if not build_calls:
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    target_id = alias.name
+                    graph.edges.append(
+                        Edge(
+                            source_id=module_id,
+                            target_id=target_id,
+                            type="IMPORTS",
+                            lineno=node.lineno,
+                        )
                     )
-                )
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            # from X import Y -> we import X (or X.Y)
-            for alias in node.names:
-                if alias.name == "*":
-                    target_id = node.module
-                else:
-                    target_id = f"{node.module}.{alias.name}"
-                graph.edges.append(
-                    Edge(
-                        source_id=module_id,
-                        target_id=target_id,
-                        type="IMPORTS",
-                        lineno=node.lineno,
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                # from X import Y -> we import X (or X.Y)
+                for alias in node.names:
+                    if alias.name == "*":
+                        target_id = node.module
+                    else:
+                        target_id = f"{node.module}.{alias.name}"
+                    graph.edges.append(
+                        Edge(
+                            source_id=module_id,
+                            target_id=target_id,
+                            type="IMPORTS",
+                            linenos=[node.lineno],
+                        )
                     )
-                )
 
     # Process top-level classes and functions
     for stmt in tree.body:
         if isinstance(stmt, ast.ClassDef):
             class_id = f"{module_id}.{stmt.name}"
-            class_node = Node(
-                id=class_id,
-                kind="class",
-                layer=layer,
-                file=file_str,
-                name=stmt.name,
-                lineno=stmt.lineno,
-                end_lineno=stmt.end_lineno or stmt.lineno,
-                loc=(stmt.end_lineno or stmt.lineno) - stmt.lineno + 1,
-                docstring=get_docstring(stmt),
-                attributes=extract_class_attributes(stmt),
-            )
-            graph.nodes.append(class_node)
-            graph.edges.append(Edge(source_id=module_id, target_id=class_id, type="CONTAINS"))
 
-            # Track methods for this class
+            # Create nodes and CONTAINS edges only during first pass
+            if not build_calls:
+                class_node = Node(
+                    id=class_id,
+                    kind="class",
+                    layer=layer,
+                    file=file_str,
+                    name=stmt.name,
+                    lineno=stmt.lineno,
+                    end_lineno=stmt.end_lineno or stmt.lineno,
+                    loc=(stmt.end_lineno or stmt.lineno) - stmt.lineno + 1,
+                    docstring=get_docstring(stmt),
+                    attributes=extract_class_attributes(stmt),
+                )
+                graph.nodes.append(class_node)
+                graph.edges.append(
+                    Edge(source_id=module_id, target_id=class_id, type="CONTAINS", linenos=[stmt.lineno])
+                )
+
+            # Track methods for this class (needed for CALLS resolution in second pass)
             methods_in_class: dict[str, str] = {}
 
             # Process methods
             for item in stmt.body:
                 if isinstance(item, ast.FunctionDef | ast.AsyncFunctionDef):
                     method_id = f"{class_id}.{item.name}"
-                    method_node = Node(
-                        id=method_id,
-                        kind="method",
-                        layer=layer,
-                        file=file_str,
-                        name=item.name,
-                        lineno=item.lineno,
-                        end_lineno=item.end_lineno or item.lineno,
-                        loc=(item.end_lineno or item.lineno) - item.lineno + 1,
-                        docstring=get_docstring(item),
-                        params=extract_function_params(item),
-                        return_annotation=get_return_annotation(item),
-                        return_var_names=extract_return_var_names(item),
-                    )
-                    graph.nodes.append(method_node)
-                    graph.edges.append(Edge(source_id=class_id, target_id=method_id, type="CONTAINS"))
+
+                    # Create nodes and CONTAINS edges only during first pass
+                    if not build_calls:
+                        method_node = Node(
+                            id=method_id,
+                            kind="method",
+                            layer=layer,
+                            file=file_str,
+                            name=item.name,
+                            lineno=item.lineno,
+                            end_lineno=item.end_lineno or item.lineno,
+                            loc=(item.end_lineno or item.lineno) - item.lineno + 1,
+                            docstring=get_docstring(item),
+                            params=extract_function_params(item),
+                            return_annotation=get_return_annotation(item),
+                            return_var_names=extract_return_var_names(item),
+                        )
+                        graph.nodes.append(method_node)
+                        graph.edges.append(
+                            Edge(source_id=class_id, target_id=method_id, type="CONTAINS", linenos=[item.lineno])
+                        )
 
                     methods_in_class[item.name] = method_id
 
@@ -148,22 +160,25 @@ def build_graph_for_file(
 
         elif isinstance(stmt, ast.FunctionDef | ast.AsyncFunctionDef):
             func_id = f"{module_id}.{stmt.name}"
-            func_node = Node(
-                id=func_id,
-                kind="function",
-                layer=layer,
-                file=file_str,
-                name=stmt.name,
-                lineno=stmt.lineno,
-                end_lineno=stmt.end_lineno or stmt.lineno,
-                loc=(stmt.end_lineno or stmt.lineno) - stmt.lineno + 1,
-                docstring=get_docstring(stmt),
-                params=extract_function_params(stmt),
-                return_annotation=get_return_annotation(stmt),
-                return_var_names=extract_return_var_names(stmt),
-            )
-            graph.nodes.append(func_node)
-            graph.edges.append(Edge(source_id=module_id, target_id=func_id, type="CONTAINS"))
+
+            # Create nodes and CONTAINS edges only during first pass
+            if not build_calls:
+                func_node = Node(
+                    id=func_id,
+                    kind="function",
+                    layer=layer,
+                    file=file_str,
+                    name=stmt.name,
+                    lineno=stmt.lineno,
+                    end_lineno=stmt.end_lineno or stmt.lineno,
+                    loc=(stmt.end_lineno or stmt.lineno) - stmt.lineno + 1,
+                    docstring=get_docstring(stmt),
+                    params=extract_function_params(stmt),
+                    return_annotation=get_return_annotation(stmt),
+                    return_var_names=extract_return_var_names(stmt),
+                )
+                graph.nodes.append(func_node)
+                graph.edges.append(Edge(source_id=module_id, target_id=func_id, type="CONTAINS", linenos=[stmt.lineno]))
 
             module_functions[stmt.name] = func_id
 
@@ -221,7 +236,7 @@ def build_graph_for_file(
                             source_id=module_id,
                             target_id=target_id,
                             type="CALLS",
-                            lineno=lineno,
+                            linenos=[lineno] if lineno else [],
                         )
                     )
 

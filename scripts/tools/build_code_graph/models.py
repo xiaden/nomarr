@@ -32,8 +32,8 @@ class Edge:
     source_id: str
     target_id: str
     type: str  # "CONTAINS" | "IMPORTS" | "CALLS"
-    lineno: int | None = None
-    details: str | None = None
+    linenos: list[int] = field(default_factory=list)  # All line numbers where this edge occurs
+    details: list[str] = field(default_factory=list)  # Additional details for each occurrence
 
 
 @dataclass

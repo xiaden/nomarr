@@ -92,7 +92,54 @@ def main() -> int:
         graph.edges.extend(sg.edges)
 
     print(f"  Processed {len(python_files)} files")
-    print(f"  Total edges: {len(graph.edges)}")
+    print(f"  Total edges (before deduplication): {len(graph.edges)}")
+
+    # Deduplicate edges and collect line numbers
+    print("Deduplicating edges...")
+    edges_before = len(graph.edges)
+    edge_map: dict[
+        tuple[str, str, str], tuple[list[int], list[str]]
+    ] = {}  # (source, target, type) -> ([line numbers], [details])
+
+    for edge in graph.edges:
+        key = (edge.source_id, edge.target_id, edge.type)
+        if key not in edge_map:
+            edge_map[key] = ([], [])
+
+        linenos, details = edge_map[key]
+        # Collect all line numbers
+        linenos.extend(edge.linenos)
+        # Collect all details
+        details.extend(edge.details)
+        edge_map[key] = (linenos, details)
+
+    # Rebuild edges with deduplicated line numbers and details
+    deduplicated_edges = []
+    for (source_id, target_id, edge_type), (linenos, details) in edge_map.items():
+        # Remove duplicates and sort line numbers
+        unique_linenos = sorted(set(linenos))
+        # Remove duplicate details while preserving order
+        seen_details = set()
+        unique_details = []
+        for d in details:
+            if d not in seen_details:
+                seen_details.add(d)
+                unique_details.append(d)
+
+        deduplicated_edges.append(
+            Edge(
+                source_id=source_id,
+                target_id=target_id,
+                type=edge_type,
+                linenos=unique_linenos,
+                details=unique_details,
+            )
+        )
+
+    graph.edges = deduplicated_edges
+    edges_after = len(graph.edges)
+    duplicates_removed = edges_before - edges_after
+    print(f"  Removed {duplicates_removed} duplicate edges ({edges_before} -> {edges_after})")
     print()
 
     # Find entrypoints

@@ -306,7 +306,7 @@ def extract_type_annotations_from_function(
                         source_id=func_id,
                         target_id=target_id,
                         type="USES_TYPE",
-                        lineno=func_node.lineno,
+                        linenos=[func_node.lineno],
                     )
                 )
 
@@ -333,13 +333,14 @@ def extract_decorator_targets(
         if isinstance(decorator, ast.Name | ast.Call):
             # The decorator "calls" the function by wrapping/registering it
             # Create reverse edge: module -> decorated_function (because decorators run at module load time)
+            lineno = decorator.lineno if hasattr(decorator, "lineno") else None
             graph.edges.append(
                 Edge(
                     source_id=module_id,
                     target_id=decorated_id,
                     type="CALLS",
-                    lineno=decorator.lineno if hasattr(decorator, "lineno") else None,
-                    details="decorator_registration",
+                    linenos=[lineno] if lineno else [],
+                    details=["decorator_registration"],
                 )
             )
 
@@ -410,15 +411,7 @@ def extract_calls_from_function(
                 if isinstance(node.func, ast.Name):
                     func_name = node.func.id
 
-                    # Case 1a: Class instantiation - mark __init__ as called
-                    # Check if this looks like a class name (CamelCase convention)
-                    if func_name[0].isupper() and callable_index:
-                        # Try to find the __init__ method in callable index
-                        for candidates in callable_index.values():
-                            for candidate in candidates:
-                                if candidate.endswith(f".{func_name}.__init__"):
-                                    target_ids.append(candidate)
-
+                    # Case 1a: Check for local import first (applies to both classes and functions)
                     # Case 1b: Local import - resolve to full path (HIGHEST PRIORITY)
                     if func_name in local_imports:
                         imported_path = local_imports[func_name]
@@ -450,10 +443,25 @@ def extract_calls_from_function(
                                     continue
 
                                 # Check if candidate starts with the import package
-                                # and ends with the function name
-                                if candidate.startswith(import_package + ".") and candidate.endswith("." + import_name):
+                                # and ends with the function name or __init__ (for classes)
+                                if candidate.startswith(import_package + "."):
+                                    # Match function: ends with ".function_name"
+                                    if candidate.endswith("." + import_name):
+                                        target_ids.append(candidate)
+                                        break
+                                    # Match class instantiation: ends with ".ClassName.__init__"
+                                    if candidate.endswith(f".{import_name}.__init__"):
+                                        target_ids.append(candidate)
+                                        break
+
+                    # Case 1c: Class instantiation fallback (no import found)
+                    # Check if this looks like a class name (CamelCase convention)
+                    if not target_ids and func_name[0].isupper() and callable_index:
+                        # Try to find the __init__ method in callable index
+                        for candidates in callable_index.values():
+                            for candidate in candidates:
+                                if candidate.endswith(f".{func_name}.__init__") and candidate != caller_id:
                                     target_ids.append(candidate)
-                                    break
 
                     # Case 1d: Try callable index by name (LOWEST PRIORITY - fallback only)
                     # Only use if we haven't found a target yet
@@ -549,6 +557,6 @@ def extract_calls_from_function(
                         source_id=caller_id,
                         target_id=target_id,
                         type="CALLS",
-                        lineno=lineno,
+                        linenos=[lineno] if lineno else [],
                     )
                 )
