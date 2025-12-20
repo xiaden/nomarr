@@ -2,9 +2,10 @@
  * Main orchestration module - wires all components together
  */
 
+import { ExpansionManager } from './graph-expansion.js';
 import { GraphFilters } from './graph-filters.js';
 import { GraphLoader } from './graph-loader.js';
-import { GraphNetwork } from './graph-network.js';
+import { GraphNetwork } from './graph-network/index.js';
 import { GraphUI } from './graph-ui.js';
 import { PathTracer } from './path-tracer.js';
 
@@ -15,30 +16,36 @@ class CodeGraphViewer {
         this.network = null;
         this.ui = null;
         this.pathTracer = null;
+        this.expansionManager = null;
         this.isRendering = false;
         this.cancelRender = false;
         this.cancelResolve = null;
+        this.userPhysicsPreference = true;  // Match checkbox default (checked)
+        this.isExpanding = false;  // Track if expansion animation is in progress
+        this.autoCenterDuringExpansion = true;  // Allow user to disable auto-center
     }
 
     /**
      * Initialize the viewer application
      */
     async initialize() {
-        try {
-            // Try to load graph from default location
-            const loaded = await this.loader.loadGraph('../../outputs/code_graph.json');
-            
-            if (loaded) {
+        // Create UI first for showing file input
+        this.ui = new GraphUI(null, null);
+        
+        // Show file input dialog
+        this.ui.showFileInput(async (file) => {
+            try {
+                this.ui.showLoading('Loading graph...');
+                const progressCallback = (percentage, completed, total) => {
+                    this.ui.updateProgress(percentage, completed, total);
+                };
+                await this.loader.loadFromFile(file, progressCallback);
                 await this.setupViewer();
-                this.setupGraphSelector();
-            } else {
-                // Show file input if auto-load failed
-                this.showFileInput();
+            } catch (error) {
+                console.error('Error loading file:', error);
+                this.ui.showError(error.message);
             }
-        } catch (error) {
-            console.error('Initialization error:', error);
-            this.showFileInput();
-        }
+        });
     }
 
     /**
@@ -58,7 +65,11 @@ class CodeGraphViewer {
             loadingBarText.textContent = 'Loading graph...';
 
             try {
-                const loaded = await this.loader.loadGraph(selectedPath);
+                const progressCallback = (percentage, completed, total) => {
+                    loadingBarText.textContent = `Building connection map... ${percentage}% (${completed}/${total})`;
+                };
+                
+                const loaded = await this.loader.loadGraph(selectedPath, progressCallback);
                 
                 if (loaded) {
                     loadingBarText.textContent = 'Rebuilding visualization...';
@@ -101,60 +112,7 @@ class CodeGraphViewer {
         });
     }
 
-    /**
-     * Show file input for manual file selection
-     */
-    showFileInput() {
-        // Create temporary UI just for file selection
-        const tempUI = {
-            showFileInput: (onFileSelected) => {
-                document.getElementById('loading').innerHTML = `
-                    <div style="text-align: center; color: #cccccc; padding: 32px;">
-                        <h2 style="color: #569cd6; margin-bottom: 16px;">Load Code Graph</h2>
-                        <p style="margin-bottom: 16px; font-size: 14px;">Select the code_graph.json file to visualize:</p>
-                        <input type="file" id="fileInput" accept=".json" style="display: block; margin: 0 auto 16px; padding: 8px;">
-                        <p style="font-size: 12px; color: #858585; margin-top: 24px;">
-                            Or run a local server: <code style="background: #2d2d30; padding: 2px 6px; border-radius: 3px;">python -m http.server 8000</code>
-                        </p>
-                    </div>
-                `;
 
-                document.getElementById('fileInput').addEventListener('change', (e) => {
-                    if (e.target.files[0]) {
-                        onFileSelected(e.target.files[0]);
-                    }
-                });
-            },
-            showError: (message) => {
-                document.getElementById('loading').innerHTML = `
-                    <div style="text-align: center; color: #cccccc; padding: 32px;">
-                        <h2 style="color: #d16969; margin-bottom: 16px;">❌ Error</h2>
-                        <p style="margin-bottom: 16px; font-size: 14px; color: #d4d4d4;">${message}</p>
-                        <button onclick="location.reload()" style="padding: 8px 16px; background: #0e639c; border: none; border-radius: 3px; color: white; cursor: pointer;">
-                            Reload Page
-                        </button>
-                    </div>
-                `;
-            }
-        };
-
-        tempUI.showFileInput(async (file) => {
-            try {
-                document.getElementById('loading').innerHTML = `
-                    <div style="text-align: center; color: #cccccc; padding: 32px;">
-                        <div class="spinner"></div>
-                        <div style="margin-top: 16px;">Loading graph...</div>
-                    </div>
-                `;
-                
-                await this.loader.loadFromFile(file);
-                await this.setupViewer();
-            } catch (error) {
-                console.error('Error loading file:', error);
-                tempUI.showError(error.message);
-            }
-        });
-    }
 
     /**
      * Setup viewer components after data is loaded
@@ -163,11 +121,18 @@ class CodeGraphViewer {
         // Initialize components
         this.filters = new GraphFilters(this.loader);
         this.network = new GraphNetwork('network');
-        this.ui = new GraphUI(this.loader, this.filters);
+        
+        // Update UI with loader and filters (UI was created earlier for file input)
+        this.ui.loader = this.loader;
+        this.ui.filters = this.filters;
+        
         this.pathTracer = new PathTracer(this.loader);
-
-        // Show loading progress
-        this.ui.showLoading('Building interface connection map...');
+        
+        // Initialize expansion manager with ALL graph data (unfiltered)
+        const allData = this.filters.generateUnfilteredGraph();
+        const entrypointIds = this.loader.findApplicationEntrypoints();
+        console.log('Initializing ExpansionManager with', allData.nodes.length, 'nodes and', entrypointIds.size, 'entrypoint IDs');
+        this.expansionManager = new ExpansionManager(allData.nodes, allData.edges, entrypointIds);
         
         // Wire up event handlers
         this.wireEventHandlers();
@@ -181,8 +146,8 @@ class CodeGraphViewer {
         // Hide loading and show main UI
         this.ui.hideLoading();
 
-        // Apply initial filters and render
-        this.applyFiltersAndRender();
+        // Initialize with entrypoints only (progressive disclosure)
+        await this.renderEntrypointsOnly();
     }
 
     /**
@@ -205,25 +170,23 @@ class CodeGraphViewer {
             this.ui.clearNodeDetails();
         });
 
-        // Network node click displays details and highlights path
-        this.network.on('nodeClick', (nodeId) => {
+        // Network expansion events
+        this.network.on('expandNode', (nodeId) => {
+            this.expandNode(nodeId);
             this.ui.displayNodeDetails(nodeId);
-            
-            // Highlight path to entrypoint (respect interface filter)
-            if (this.pathTracer) {
-                try {
-                    const selectedInterface = this.filters.selectedInterface;
-                    const limitToEntrypoint = (selectedInterface && 
-                                              selectedInterface !== '__blank__' && 
-                                              selectedInterface !== '__unreachable__') 
-                        ? selectedInterface 
-                        : null;
-                    const pathHighlight = this.pathTracer.getPathHighlight(nodeId, 5, limitToEntrypoint);
-                    this.network.highlightPath(pathHighlight);
-                } catch (error) {
-                    console.error('Error highlighting path:', error);
-                }
-            }
+        });
+        
+        this.network.on('collapseNode', (nodeId) => {
+            this.collapseNode(nodeId);
+        });
+        
+        this.network.on('traceNode', (nodeId) => {
+            this.tracePathsFromNode(nodeId);
+        });
+        
+        this.network.on('selectNodeOnly', (nodeId) => {
+            this.selectNodeOnly(nodeId);
+            this.ui.displayNodeDetails(nodeId);
         });
 
         // Network load progress updates
@@ -231,12 +194,31 @@ class CodeGraphViewer {
             this.updateLoadingBar(progressData);
         });
 
-        // UI physics toggle
+        // UI physics toggle - store user preference
         this.ui.on('togglePhysics', (enabled) => {
+            this.userPhysicsPreference = enabled;
             if (enabled) {
                 this.network.enablePhysics();
             } else {
                 this.network.disablePhysics();
+            }
+        });
+
+        // Reheat physics button
+        this.ui.on('reheatPhysics', () => {
+            this.network.reheatPhysics();
+        });
+        
+        // Detect user viewport changes during expansion (stop auto-centering)
+        this.network.on('zoom', () => {
+            if (this.isExpanding) {
+                this.autoCenterDuringExpansion = false;
+            }
+        });
+        
+        this.network.on('dragStart', () => {
+            if (this.isExpanding) {
+                this.autoCenterDuringExpansion = false;
             }
         });
     }
@@ -291,9 +273,15 @@ class CodeGraphViewer {
         
         try {
             const result = this.filters.generateFilteredGraph();
-            await this.network.updateGraph(result.nodes, result.edges, () => this.cancelRender);
+            const renderResult = await this.network.updateGraph(
+                result.nodes, 
+                result.edges, 
+                () => this.cancelRender,
+                this.userPhysicsPreference
+            );
             
-            if (!this.cancelRender) {
+            // Only update stats if render completed successfully
+            if (!renderResult.cancelled) {
                 this.ui.updateStats(result.stats);
             }
         } finally {
@@ -308,6 +296,199 @@ class CodeGraphViewer {
             this.cancelResolve = null;
         }
     }
+
+    /**
+     * Render only entrypoint nodes initially
+     */
+    async renderEntrypointsOnly() {
+        const entrypointData = this.expansionManager.initializeEntrypoints();
+        console.log('Rendering entrypoints:', entrypointData.nodes.length, 'nodes');
+        console.log('Entrypoint node IDs:', entrypointData.nodes.map(n => n.id));
+        const allData = this.expansionManager.getVisibleGraph();
+        await this.network.updateGraph(
+            entrypointData.nodes,
+            entrypointData.edges,
+            null,
+            true  // Keep global physics enabled
+        );
+        
+        // Update stats (total = all data, visible = entrypoints only)
+        const totalNodes = this.filters.generateUnfilteredGraph().nodes.length;
+        const totalEdges = this.filters.generateUnfilteredGraph().edges.length;
+        this.ui.updateStats({ 
+            totalNodes, 
+            totalEdges, 
+            visibleNodes: entrypointData.nodes.length, 
+            visibleEdges: entrypointData.edges.length 
+        });
+    }
+
+    /**
+     * Expand a node - show its neighbors with animation
+     */
+    async expandNode(nodeId) {
+        console.log('expandNode called for:', nodeId);
+        
+        // Focus on the clicked node
+        this.network.network.focus(nodeId, {
+            scale: 1.5,
+            animation: { duration: 500, easingFunction: 'easeInOutQuad' }
+        });
+        
+        // Get neighbors to add
+        const { newNodes, newEdges } = this.expansionManager.expandNode(nodeId);
+        console.log('Expansion returned:', newNodes.length, 'new nodes,', newEdges.length, 'new edges');
+        
+        if (newNodes.length === 0) {
+            console.log('No new nodes to add, node already expanded or has no neighbors');
+            return;  // Already expanded
+        }
+        
+        // Fix all currently visible nodes in place BUT keep physics enabled
+        // This way they act as immovable obstacles that repel new nodes
+        const currentNodes = this.network.nodes.get();
+        this.network.nodes.update(currentNodes.map(n => ({
+            id: n.id,
+            fixed: { x: true, y: true },
+            physics: true  // Keep physics ON so they repel new nodes
+        })));
+        
+        console.log('Existing nodes frozen, adding new nodes with physics enabled');
+        
+        // Get parent position for spawning new nodes
+        const parentPos = this.network.network.getPosition(nodeId);
+        
+        // Add all nodes at once in a circle pattern (further out to avoid overlap)
+        const radius = 250;  // Increased from 150 to give more space
+        const newNodeData = newNodes.map((node, i) => {
+            const angle = (i / newNodes.length) * Math.PI * 2;
+            return {
+                ...node,
+                x: parentPos.x + Math.cos(angle) * radius,
+                y: parentPos.y + Math.sin(angle) * radius,
+                physics: true,  // CRITICAL: Enable physics for animation
+                fixed: false    // Allow movement
+            };
+        });
+        
+        // Add all nodes at once
+        this.network.nodes.add(newNodeData);
+        console.log('Added', newNodeData.length, 'nodes with physics=true at radius', radius);
+        
+        // Add all edges
+        this.network.edges.add(newEdges);
+        
+        // Start physics and wait for stabilization
+        this.network.network.setOptions({ physics: { enabled: true } });
+        console.log('Physics explicitly enabled, waiting for stabilization');
+        
+        // Function to freeze new nodes after settling
+        const freezeNewNodes = () => {
+            console.log('Freezing newly expanded nodes');
+            const addedIds = newNodes.map(n => n.id);
+            this.network.nodes.update(addedIds.map(id => ({
+                id: id,
+                fixed: { x: true, y: true },
+                physics: true  // Keep physics ON so they can still repel future nodes
+            })));
+            console.log('Newly expanded nodes frozen');
+            
+            // Update stats
+            const totalNodes = this.filters.generateUnfilteredGraph().nodes.length;
+            const totalEdges = this.filters.generateUnfilteredGraph().edges.length;
+            this.ui.updateStats({
+                totalNodes,
+                totalEdges,
+                visibleNodes: this.network.nodes.length,
+                visibleEdges: this.network.edges.length
+            });
+        };
+        
+        // Set up both stabilization event AND fallback timeout
+        let stabilizationHandled = false;
+        
+        this.network.network.once('stabilizationIterationsDone', () => {
+            if (!stabilizationHandled) {
+                console.log('Physics stabilization complete (event)');
+                stabilizationHandled = true;
+                freezeNewNodes();
+            }
+        });
+        
+        // Fallback timeout in case stabilization event doesn't fire
+        setTimeout(() => {
+            if (!stabilizationHandled) {
+                console.log('Physics stabilization timeout reached (fallback)');
+                stabilizationHandled = true;
+                freezeNewNodes();
+            }
+        }, 3000);  // 3 second fallback
+    }
+
+    /**
+     * Collapse a node - remove it and orphaned neighbors
+     */
+    collapseNode(nodeId) {
+        const { removedNodeIds, removedEdgeIds } = this.expansionManager.collapseNode(nodeId);
+        
+        if (removedNodeIds.length > 0) {
+            this.network.nodes.remove(removedNodeIds);
+            this.network.edges.remove(removedEdgeIds);
+            
+            const totalNodes = this.filters.generateUnfilteredGraph().nodes.length;
+            const totalEdges = this.filters.generateUnfilteredGraph().edges.length;
+            this.ui.updateStats({
+                totalNodes,
+                totalEdges,
+                visibleNodes: this.network.nodes.length,
+                visibleEdges: this.network.edges.length
+            });
+        }
+    }
+
+    /**
+     * Trace paths from node to entrypoints
+     */
+    async tracePathsFromNode(nodeId) {
+        // Show progress indicator
+        this.ui.showLoading('Tracing paths...');
+        
+        const { pathNodeIds, pathEdgeIds } = await new Promise(resolve => {
+            setTimeout(() => {
+                resolve(this.expansionManager.tracePaths(nodeId, (current, total, percent) => {
+                    this.ui.updateProgress(percent, current, total);
+                }));
+            }, 10);
+        });
+        
+        this.ui.hideLoading();
+        
+        // Apply PATH state to traced nodes/edges using state-styles
+        this.network.setPathHighlight(pathNodeIds, pathEdgeIds);
+    }
+
+    /**
+     * Select node without expansion (Ctrl+click)
+     */
+    selectNodeOnly(nodeId) {
+        // Just update the left panel
+        this.ui.displayNodeDetails(nodeId);
+    }
+    
+    /**
+     * Focus on a node from the info panel (click on connection)
+     * Does not expand, just centers the viewport
+     */
+    focusNodeFromPanel(nodeId) {
+        this.network.network.focus(nodeId, {
+            scale: 1.5,
+            animation: { duration: 500, easingFunction: 'easeInOutQuad' }
+        });
+        // Update selection state
+        this.network.selectedNodeId = nodeId;
+        this.network.updateEdgeVisibility();
+        this.ui.displayNodeDetails(nodeId);
+    }
 }
 
 // Initialize viewer when DOM is ready
@@ -315,8 +496,10 @@ if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
         const viewer = new CodeGraphViewer();
         viewer.initialize();
+        window.codeGraphViewer = viewer;  // Expose for panel navigation
     });
 } else {
     const viewer = new CodeGraphViewer();
     viewer.initialize();
+    window.codeGraphViewer = viewer;  // Expose for panel navigation
 }

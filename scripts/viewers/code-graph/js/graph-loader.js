@@ -13,9 +13,10 @@ export class GraphLoader {
     /**
      * Load graph data from file or URL
      * @param {string|null} jsonUrl - Optional URL to fetch JSON from
+     * @param {Function} progressCallback - Optional callback(percentage, completed, total)
      * @returns {Promise<boolean>} - Success status
      */
-    async loadGraph(jsonUrl = null) {
+    async loadGraph(jsonUrl = null, progressCallback = null) {
         if (jsonUrl) {
             try {
                 // Add cache-busting timestamp to prevent stale data
@@ -28,7 +29,7 @@ export class GraphLoader {
                 }
                 this.graphData = await response.json();
                 this.validateGraphData();
-                await this.processGraphData();
+                await this.processGraphData(progressCallback);
                 return true;
             } catch (error) {
                 console.error('Failed to load graph from URL:', error);
@@ -41,16 +42,17 @@ export class GraphLoader {
     /**
      * Load graph from file input
      * @param {File} file - File object from input
+     * @param {Function} progressCallback - Optional callback(percentage, completed, total)
      * @returns {Promise<void>}
      */
-    async loadFromFile(file) {
+    async loadFromFile(file, progressCallback = null) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = async (e) => {
                 try {
                     this.graphData = JSON.parse(e.target.result);
                     this.validateGraphData();
-                    await this.processGraphData();
+                    await this.processGraphData(progressCallback);
                     resolve();
                 } catch (error) {
                     reject(new Error('Error parsing JSON: ' + error.message));
@@ -99,8 +101,9 @@ export class GraphLoader {
 
     /**
      * Process graph data: extract metadata and build connection map
+     * @param {Function} progressCallback - Optional callback(percentage, completed, total)
      */
-    async processGraphData() {
+    async processGraphData(progressCallback = null) {
         // Extract edge types
         this.edgeTypes.clear();
         this.graphData.edges.forEach(edge => this.edgeTypes.add(edge.type));
@@ -108,8 +111,8 @@ export class GraphLoader {
         // Find interface entrypoints
         this.interfaceNodes = this.findInterfaceNodes();
         
-        // Build connection map asynchronously
-        await this.buildConnectionMapAsync();
+        // Build connection map asynchronously with progress
+        await this.buildConnectionMapAsync(progressCallback);
     }
 
     /**
@@ -129,6 +132,36 @@ export class GraphLoader {
                 return false;
             })
             .sort((a, b) => a.id.localeCompare(b.id));
+    }
+
+    /**
+     * Find the 3 application entrypoints: CLI main, Worker start, API app
+     * @returns {Set<string>} Set of entrypoint node IDs
+     */
+    findApplicationEntrypoints() {
+        const entrypoints = new Set();
+        
+        for (const node of this.graphData.nodes) {
+            // CLI main: main function in interfaces/cli
+            if (node.name === 'main' && node.file.includes('interfaces/cli')) {
+                console.log('Found CLI entrypoint:', node.id, node.file);
+                entrypoints.add(node.id);
+            }
+            // Worker run: run method in workers/base.py (BaseWorker.run)
+            if (node.name === 'run' && node.file.includes('workers/base')) {
+                console.log('Found Worker entrypoint:', node.id, node.file);
+                entrypoints.add(node.id);
+            }
+            // API app: api_app (FastAPI instance) in interfaces/api/api_app.py
+            if (node.name === 'api_app' && node.file.includes('interfaces/api/api_app')) {
+                console.log('Found API entrypoint:', node.id, node.file);
+                entrypoints.add(node.id);
+            }
+        }
+        
+        console.log('Total entrypoints found:', entrypoints.size);
+        console.log('Entrypoint IDs:', Array.from(entrypoints));
+        return entrypoints;
     }
 
     /**
@@ -163,13 +196,14 @@ export class GraphLoader {
         
         // Process interfaces in chunks to avoid freezing
         for (const interfaceNode of this.interfaceNodes) {
-            // Do BFS for this interface
+            // Do BFS for this interface using index-based queue (O(n) instead of O(n²))
             const reachable = new Set();
             const queue = [interfaceNode.id];
             const visited = new Set();
+            let queueIndex = 0;
             
-            while (queue.length > 0) {
-                const currentId = queue.shift();
+            while (queueIndex < queue.length) {
+                const currentId = queue[queueIndex++];
                 if (visited.has(currentId)) continue;
                 visited.add(currentId);
                 reachable.add(currentId);

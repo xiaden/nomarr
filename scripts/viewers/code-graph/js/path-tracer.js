@@ -88,9 +88,10 @@ export class PathTracer {
         const foundPaths = [];
         let iterations = 0;
         const maxIterations = 10000;  // Safety limit
+        let queueIndex = 0;
 
-        while (queue.length > 0 && foundPaths.length < maxPaths && iterations++ < maxIterations) {
-            const path = queue.shift();
+        while (queueIndex < queue.length && foundPaths.length < maxPaths && iterations++ < maxIterations) {
+            const path = queue[queueIndex++];
             const current = path[0];
 
             // Skip if path too long
@@ -162,8 +163,17 @@ export class PathTracer {
             for (let i = 0; i < path.length - 1; i++) {
                 const from = path[i].nodeId;
                 const to = path[i + 1].nodeId;
-                // Edge ID format: from->to (vis.js will match by from/to)
-                edgeIds.add(`${from}->${to}`);
+                
+                // Find the actual edge(s) between these nodes
+                // Handle multiple edges between same nodes by constructing stable IDs
+                const matchingEdges = this.graphLoader.graphData.edges.filter(
+                    e => e.source_id === from && e.target_id === to
+                );
+                matchingEdges.forEach(edge => {
+                    // Construct stable edge ID matching graph-filters format
+                    const edgeId = `${edge.source_id}->${edge.target_id}:${edge.type}`;
+                    edgeIds.add(edgeId);
+                });
             }
         });
 

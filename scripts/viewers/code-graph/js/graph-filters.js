@@ -4,6 +4,16 @@
 
 import { HIGHLIGHT_COLORS, KIND_SHAPES, LAYER_COLORS } from './graph-colors.js';
 
+// Map architectural layers to hierarchical levels (left-to-right)
+const LAYER_TO_LEVEL = {
+    'interfaces': 0,
+    'services': 1,
+    'workflows': 2,
+    'components': 3,
+    'persistence': 4,
+    'helpers': 5
+};
+
 export class GraphFilters {
     constructor(loader) {
         this.loader = loader;
@@ -13,6 +23,9 @@ export class GraphFilters {
         this.searchTerm = '';
         this.selectedInterface = '';
         this.showTransitiveEdges = true;
+        
+        // Get application entrypoints from loader
+        this.appEntrypoints = loader.findApplicationEntrypoints();
         
         // Initialize with all options selected
         this.resetFilters();
@@ -105,6 +118,9 @@ export class GraphFilters {
             if (this.selectedInterface === '__blank__') {
                 // Show nothing when blank is selected
                 return false;
+            } else if (this.selectedInterface === '__entrypoints__') {
+                // Show only application entrypoints
+                return this.appEntrypoints.has(node.id);
             } else if (this.selectedInterface === '__unreachable__') {
                 // Show only nodes marked as unreachable from entrypoints
                 if (node.reachable_from_interface) {
@@ -139,6 +155,23 @@ export class GraphFilters {
     }
 
     /**
+     * Generate unfiltered graph (all nodes and edges)
+     * Used for initializing ExpansionManager with full data
+     * @returns {Object} { nodes, edges }\n     */
+    generateUnfilteredGraph() {
+        // Temporarily clear interface filter
+        const savedInterface = this.selectedInterface;
+        this.selectedInterface = null;
+        
+        const result = this.generateFilteredGraph();
+        
+        // Restore interface filter
+        this.selectedInterface = savedInterface;
+        
+        return result;
+    }
+
+    /**
      * Generate filtered node and edge data for visualization
      * @returns {Object} { nodes: Array, edges: Array, stats: Object }
      */
@@ -168,6 +201,19 @@ export class GraphFilters {
                 const sizeMultiplier = node.kind === 'module' ? 1.5 : 2.5;
                 const calculatedSize = Math.min(maxSize, Math.max(baseSize, labelLength * sizeMultiplier));
                 
+                // Check if this is one of the 3 application entrypoints
+                const isEntrypoint = this.appEntrypoints.has(node.id);
+                
+                // Calculate entrypoint position (centered horizontal row)
+                let entrypointX = 0, entrypointY = 0;
+                if (isEntrypoint) {
+                    const entrypointIndex = Array.from(this.appEntrypoints).indexOf(node.id);
+                    const totalEntrypoints = this.appEntrypoints.size;
+                    // Space them 400 pixels apart, centered at origin
+                    entrypointX = (entrypointIndex - (totalEntrypoints - 1) / 2) * 400;
+                    entrypointY = 0;
+                }
+                
                 nodes.push({
                     id: node.id,
                     label: node.name,
@@ -193,9 +239,13 @@ export class GraphFilters {
                     heightConstraint: node.kind === 'module' ? { minimum: calculatedSize * 0.6, maximum: calculatedSize * 0.8 } : undefined,
                     layer: node.layer,
                     kind: node.kind,
-                    data: node,
-                    x: (Math.random() - 0.5) * spread,
-                    y: (Math.random() - 0.5) * spread
+                    level: LAYER_TO_LEVEL[node.layer] ?? 6,  // Default to level 6 if layer unknown
+                    data: { ...node, is_entrypoint: isEntrypoint },
+                    // Entrypoints get fixed positions, others get layer-based columns
+                    fixed: isEntrypoint ? { x: true, y: true } : { x: true, y: false },
+                    physics: !isEntrypoint,  // Entrypoints never participate in physics
+                    x: isEntrypoint ? entrypointX : LAYER_TO_LEVEL[node.layer] * 500,  // 500px between layer columns
+                    y: isEntrypoint ? entrypointY : (Math.random() - 0.5) * 800  // Spread vertically within column
                 });
             }
         });
@@ -230,8 +280,10 @@ export class GraphFilters {
                 visibleNodeIds.has(edge.target_id) &&
                 this.selectedEdgeTypes.has(edge.type)) {
                 directEdgeIds.add(`${edge.source_id}:${edge.target_id}`);
+                // Use stable edge ID that handles multiple edges between same nodes
+                const edgeId = `${edge.source_id}->${edge.target_id}:${edge.type}`;
                 edges.push({
-                    id: idx,
+                    id: edgeId,
                     from: edge.source_id,
                     to: edge.target_id,
                     label: edge.type,
@@ -295,9 +347,10 @@ export class GraphFilters {
         visibleNodeIds.forEach(sourceId => {
             const queue = [{id: sourceId, path: [], edgeType: null}];
             const visited = new Set([sourceId]);
+            let queueIndex = 0;
             
-            while (queue.length > 0) {
-                const {id: currentId, path, edgeType} = queue.shift();
+            while (queueIndex < queue.length) {
+                const {id: currentId, path, edgeType} = queue[queueIndex++];
                 
                 // If we reached another visible node (not the source), record connection
                 if (currentId !== sourceId && visibleNodeIds.has(currentId)) {

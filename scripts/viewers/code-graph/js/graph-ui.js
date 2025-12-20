@@ -13,6 +13,10 @@ export class GraphUI {
      * Initialize filter controls
      */
     initializeControls() {
+        if (!this.loader || !this.filters) {
+            console.warn('Cannot initialize controls without loader and filters');
+            return;
+        }
         this.populateInterfaceFilter();
         this.populateLayerFilters();
         this.populateKindFilters();
@@ -31,6 +35,12 @@ export class GraphUI {
         blankOption.value = '__blank__';
         blankOption.textContent = '(Select an interface to view)';
         select.insertBefore(blankOption, select.firstChild);
+        
+        // Add entrypoints option
+        const entrypointsOption = document.createElement('option');
+        entrypointsOption.value = '__entrypoints__';
+        entrypointsOption.textContent = 'Application Entrypoints (CLI, Worker, API)';
+        select.appendChild(entrypointsOption);
         
         this.loader.interfaceNodes.forEach(node => {
             const option = document.createElement('option');
@@ -138,6 +148,10 @@ export class GraphUI {
 
         document.getElementById('clearSelectionBtn').addEventListener('click', () => {
             this.clearSelection();
+        });
+
+        document.getElementById('reheatPhysicsBtn').addEventListener('click', () => {
+            this.triggerEvent('reheatPhysics');
         });
     }
 
@@ -263,7 +277,10 @@ export class GraphUI {
      */
     renderEdgeItem(edge, connectedNodeId, isOutgoing) {
         return `
-            <div class="edge-item">
+            <div class="edge-item" style="cursor: pointer; padding: 4px; border-radius: 3px;" 
+                 onmouseover="this.style.backgroundColor='#2a2a2a'" 
+                 onmouseout="this.style.backgroundColor='transparent'"
+                 onclick="window.codeGraphViewer.focusNodeFromPanel('${connectedNodeId}')">
                 <span class="edge-type">${this.escapeHtml(edge.type)}</span>
                 <span class="edge-target">
                     ${this.escapeHtml(connectedNodeId)}
