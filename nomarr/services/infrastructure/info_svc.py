@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from nomarr.helpers.dto.info_dto import (
     ConfigInfo,
+    GPUHealthResult,
     HealthStatusResult,
     ModelsInfo,
     PublicInfoResult,
@@ -45,6 +46,7 @@ class InfoConfig:
     scanner_worker_count: int = 1
     recalibration_worker_count: int = 1
     poll_interval: float = 1.0
+    event_broker: Any | None = None  # StateBroker for GPU health access
 
 
 class InfoService:
@@ -223,4 +225,30 @@ class InfoService:
             models=models_info,
             queue=queue_info,
             worker=worker_info,
+        )
+
+    def get_gpu_health(self) -> GPUHealthResult:
+        """
+        Get GPU health status from StateBroker cached state.
+
+        This is a read-only view of cached GPU probe results.
+        Does NOT run nvidia-smi inline (non-blocking).
+
+        Returns:
+            GPUHealthResult DTO with GPU availability and error info
+
+        Raises:
+            RuntimeError: If event_broker is not configured
+        """
+        if not self.cfg.event_broker:
+            raise RuntimeError("GPU health requires event_broker to be configured")
+
+        gpu_health = self.cfg.event_broker.get_gpu_health()
+
+        return GPUHealthResult(
+            available=gpu_health.available,
+            last_check_at=gpu_health.last_check_at,
+            last_ok_at=gpu_health.last_ok_at,
+            consecutive_failures=gpu_health.consecutive_failures,
+            error_summary=gpu_health.error_summary,
         )

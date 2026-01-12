@@ -36,7 +36,6 @@ class QueueOperations:
 
         cur = self.conn.cursor()
         ts = now_ms()
-        # Store absolute path for now (TODO: store relative + library_id)
         cur.execute(
             "INSERT INTO tag_queue(path, status, created_at, force) VALUES(?,?,?,?)",
             (str(path.absolute), "pending", ts, int(force)),

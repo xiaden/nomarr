@@ -33,7 +33,6 @@ class CalibrationQueueOperations:
 
         cur = self.conn.cursor()
         ts = now_ms()
-        # Store absolute path for now (TODO: store relative + library_id)
         cur.execute(
             "INSERT INTO calibration_queue(path, status, created_at, started_at) VALUES(?, 'pending', ?, NULL)",
             (str(path.absolute), ts),

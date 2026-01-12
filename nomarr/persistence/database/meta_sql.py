@@ -52,3 +52,8 @@ class MetaOperations:
         """Delete ephemeral worker and job metadata keys from previous runs."""
         self.conn.execute("DELETE FROM meta WHERE key LIKE 'worker:%' OR key LIKE 'job:%'")
         self.conn.commit()
+
+    def write_gpu_health_atomic(self, health_json: str) -> None:
+        """Write GPU health as atomic JSON blob (prevents partial updates)."""
+        self.conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES('gpu:health', ?)", (health_json,))
+        self.conn.commit()

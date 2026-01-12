@@ -21,7 +21,7 @@ import time
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 
-from nomarr.helpers.dto.events_state_dto import JobState, QueueState, SystemHealthState, WorkerState
+from nomarr.helpers.dto.events_state_dto import GPUHealthState, JobState, QueueState, SystemHealthState, WorkerState
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -45,6 +45,7 @@ class StateBroker:
     - worker:{queue_type}:*:status - All workers for a specific queue type
     - worker:*:status - All worker states (all queue types)
     - system:health - System health and errors
+    - system:gpu - GPU availability and health
     """
 
     def __init__(self, db: Database | None = None, poll_interval: float = 2.0):
@@ -78,7 +79,17 @@ class StateBroker:
         # Worker state keyed by full component ID to avoid collisions (e.g., "worker:tag:0")
         self._worker_state: dict[str, WorkerState] = {}  # component -> WorkerState DTO
 
-        self._system_health = SystemHealthState(status="healthy", errors=[])
+        # GPU health state (initially unknown, read from DB written by GPUHealthMonitor)
+        self._gpu_health = GPUHealthState(
+            status="unknown",  # Initially unknown until first update
+            available=False,  # Assume unavailable until first update
+            last_check_at=None,
+            last_ok_at=None,
+            consecutive_failures=0,
+            error_summary="GPU health not yet initialized",
+        )
+
+        self._system_health = SystemHealthState(status="healthy", errors=[], gpu=self._gpu_health)
 
         # Phase 3.6: DB polling for multiprocessing IPC
         self._db = db
@@ -90,7 +101,7 @@ class StateBroker:
         if self._db:
             self._poll_thread = threading.Thread(target=self._poll_worker_state, daemon=True, name="StateBrokerPoller")
             self._poll_thread.start()
-            logging.info("[StateBroker] Started DB polling thread for worker IPC")
+            logging.info("[StateBroker] Started DB polling thread (reads GPU state from GPUHealthMonitor)")
 
     def _poll_worker_state(self) -> None:
         """
@@ -173,6 +184,10 @@ class StateBroker:
                         except (ValueError, KeyError):
                             pass
 
+                # Read GPU health state from DB (written by GPUHealthMonitor process)
+                # This is a fast DB read, never blocks on nvidia-smi
+                self._read_gpu_health_from_db()
+
             except Exception as e:
                 logging.error(f"[StateBroker] Error polling worker state: {e}")
 
@@ -185,6 +200,116 @@ class StateBroker:
         self._shutdown = True
         if self._poll_thread:
             self._poll_thread.join(timeout=2)
+
+    def _read_gpu_health_from_db(self) -> None:
+        """
+        Read GPU health state from DB meta table (written by GPUHealthMonitor).
+
+        This is a fast DB read operation that never blocks on nvidia-smi.
+        If GPUHealthMonitor process hangs, this will detect stale data and
+        transition GPU status to UNKNOWN.
+        """
+        import json
+
+        from nomarr.components.platform import check_gpu_health_staleness
+
+        if not self._db:
+            return
+
+        try:
+            # Read atomic GPU health JSON from DB (written by GPUHealthMonitor)
+            health_json = self._db.meta.get("gpu:health")
+
+            with self._lock:
+                if not health_json:
+                    # No health data yet - monitor not running or hasn't written yet
+                    self._gpu_health.status = "unknown"
+                    self._gpu_health.available = False
+                    self._gpu_health.last_check_at = None
+                    self._gpu_health.last_ok_at = None
+                    self._gpu_health.consecutive_failures = 0
+                    self._gpu_health.error_summary = "GPU health not yet initialized"
+                else:
+                    # Parse JSON blob
+                    health_data = json.loads(health_json)
+                    last_check_at = health_data.get("probe_time")
+
+                    # Check for staleness (monitor may be stuck)
+                    is_stale = check_gpu_health_staleness(last_check_at)
+
+                    if is_stale:
+                        # Data too old - monitor may be stuck (nvidia-smi hung)
+                        self._gpu_health.status = "unknown"
+                        self._gpu_health.available = False
+                        self._gpu_health.last_check_at = last_check_at
+                        self._gpu_health.last_ok_at = health_data.get("last_ok_at")
+                        self._gpu_health.consecutive_failures = 0
+                        self._gpu_health.error_summary = "GPU health data stale (monitor may be stuck)"
+                        self._gpu_health.probe_id = health_data.get("probe_id")
+                        self._gpu_health.duration_ms = health_data.get("duration_ms")
+                    else:
+                        # Fresh data from monitor - use reported status
+                        self._gpu_health.status = health_data.get("status", "unknown")
+                        self._gpu_health.available = health_data.get("available", False)
+                        self._gpu_health.last_check_at = last_check_at
+                        self._gpu_health.last_ok_at = health_data.get("last_ok_at")
+                        self._gpu_health.consecutive_failures = 0
+                        self._gpu_health.error_summary = health_data.get("error_summary")
+                        self._gpu_health.probe_id = health_data.get("probe_id")
+                        self._gpu_health.duration_ms = health_data.get("duration_ms")
+
+                # Update system health GPU facet
+                self._system_health.gpu = self._gpu_health
+
+                # Broadcast GPU health update
+                self._broadcast_to_topic("system:gpu", {"type": "state_update", "gpu": asdict(self._gpu_health)})
+
+        except Exception as e:
+            logging.error(f"[StateBroker] Error reading GPU health from DB: {e}")
+
+    def update_gpu_health(self, **kwargs) -> None:
+        """
+        Update GPU health state and broadcast to subscribers.
+
+        Args:
+            **kwargs: GPU health fields (available, error_summary, etc.)
+        """
+        with self._lock:
+            if "available" in kwargs:
+                self._gpu_health.available = kwargs["available"]
+            if "last_check_at" in kwargs:
+                self._gpu_health.last_check_at = kwargs["last_check_at"]
+            if "last_ok_at" in kwargs:
+                self._gpu_health.last_ok_at = kwargs["last_ok_at"]
+            if "consecutive_failures" in kwargs:
+                self._gpu_health.consecutive_failures = kwargs["consecutive_failures"]
+            if "error_summary" in kwargs:
+                self._gpu_health.error_summary = kwargs["error_summary"]
+
+            # Update system health GPU facet
+            self._system_health.gpu = self._gpu_health
+
+            # Broadcast update
+            self._broadcast_to_topic("system:gpu", {"type": "state_update", "gpu": asdict(self._gpu_health)})
+
+    def get_gpu_health(self) -> GPUHealthState:
+        """
+        Get current GPU health state (read-only snapshot).
+
+        Returns:
+            GPUHealthState DTO with current GPU availability
+        """
+        with self._lock:
+            return GPUHealthState(
+                status=self._gpu_health.status,
+                available=self._gpu_health.available,
+                last_check_at=self._gpu_health.last_check_at,
+                last_ok_at=self._gpu_health.last_ok_at,
+                consecutive_failures=self._gpu_health.consecutive_failures,
+                error_summary=self._gpu_health.error_summary,
+                probe_id=getattr(self._gpu_health, "probe_id", None),
+                duration_ms=getattr(self._gpu_health, "duration_ms", None),
+            )
 
     def update_queue_state_for_type(self, queue_type: str, **kwargs):
         """
@@ -536,6 +661,10 @@ class StateBroker:
         # System health snapshot (serialize SystemHealthState DTO)
         if topic == "system:health":
             return {"topic": "system:health", "type": "snapshot", "health": asdict(self._system_health)}
+
+        # GPU health snapshot (serialize GPUHealthState DTO)
+        if topic == "system:gpu":
+            return {"topic": "system:gpu", "type": "snapshot", "gpu": asdict(self._gpu_health)}
 
         return None
 

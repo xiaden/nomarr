@@ -152,6 +152,60 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
             return []
         return get_active_jobs(self.db, self.queue_type, limit=limit)
 
+    def _check_gpu_available(self) -> tuple[bool, str]:
+        """
+        Check GPU availability via DB meta table (cached state from GPUHealthMonitor).
+
+        Returns:
+            Tuple of (is_available, status_message)
+            - (True, "available") if GPU is ready
+            - (False, "unavailable: <reason>") if probe ran but GPU not accessible
+            - (False, "unknown: <reason>") if health data stale/missing
+
+        Note:
+            This reads cached GPU health state written by GPUHealthMonitor.
+            Does NOT run nvidia-smi inline (non-blocking preflight check).
+        """
+        import json
+
+        from nomarr.components.platform import check_gpu_health_staleness
+
+        if not self.db:
+            # No DB - cannot check GPU
+            return False, "unknown: Database not available"
+
+        try:
+            # Read atomic GPU health JSON from DB meta table
+            health_json = self.db.meta.get("gpu:health")
+            if not health_json:
+                # GPU health not yet initialized
+                return False, "unknown: GPU health not yet initialized (monitor may not be running)"
+
+            # Parse JSON blob
+            health_data = json.loads(health_json)
+            last_check_at = health_data.get("probe_time")
+
+            # Check for staleness
+            is_stale = check_gpu_health_staleness(last_check_at)
+
+            if is_stale:
+                # Data too old - monitor may be stuck
+                return False, "unknown: GPU health data stale (monitor may be stuck)"
+
+            # Fresh data - check actual status
+            status = health_data.get("status", "unknown")
+            if status == "available":
+                return True, "available"
+            elif status == "unavailable":
+                error = health_data.get("error_summary", "GPU not accessible")
+                return False, f"unavailable: {error}"
+            else:
+                return False, f"unknown: {health_data.get('error_summary', 'Status unknown')}"
+
+        except Exception as e:
+            logging.error(f"[{self.name}] Error checking GPU availability: {e}")
+            return False, f"unknown: {e!s}"
+
     # ---------------------------- Control Methods ----------------------------
 
     def stop(self) -> None:
@@ -348,6 +402,20 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
         try:
             self._is_busy = True
             t0 = time.time()
+
+            # GPU preflight check for ML tagging workers (tag queue only)
+            if self.queue_type == "tag":
+                gpu_available, gpu_status = self._check_gpu_available()
+                if not gpu_available:
+                    # GPU unavailable - fail fast without attempting ML inference
+                    error_msg = f"GPU unavailable: {gpu_status} (check /health/gpu endpoint)"
+                    logging.error(f"[{self.name}] GPU preflight failed for job {job_id}: {error_msg}")
+                    self._mark_error(job_id, error_msg)
+                    self._publish_job_state(job_id, path, "error", error=error_msg)
+                    self._publish_queue_stats()
+                    self._clear_current_job()
+                    self._cleanup_job_metadata(job_id)
+                    return
 
             # Call injected processing function with worker's DB connection (can return DTO or dict)
             result = self.process_fn(self.db, path, force)  # type: ignore[arg-type]

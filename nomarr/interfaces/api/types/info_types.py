@@ -10,7 +10,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from nomarr.helpers.dto.info_dto import HealthStatusResult, PublicInfoResult, SystemInfoResult
+from nomarr.helpers.dto.info_dto import GPUHealthResult, HealthStatusResult, PublicInfoResult, SystemInfoResult
 
 
 class SystemInfoResponse(BaseModel):
@@ -52,6 +52,27 @@ class HealthStatusResponse(BaseModel):
             worker_count=dto.worker_count,
             queue=dto.queue,
             warnings=dto.warnings,
+        )
+
+
+class GPUHealthResponse(BaseModel):
+    """Response for GPU health endpoint."""
+
+    available: bool = Field(..., description="GPU is available and responding")
+    last_check_at: float | None = Field(None, description="Unix timestamp of last probe")
+    last_ok_at: float | None = Field(None, description="Unix timestamp of last successful probe")
+    consecutive_failures: int = Field(..., description="Number of consecutive probe failures")
+    error_summary: str | None = Field(None, description="Short error message if unavailable")
+
+    @classmethod
+    def from_dto(cls, dto: GPUHealthResult) -> GPUHealthResponse:
+        """Convert GPUHealthResult DTO to Pydantic response model."""
+        return cls(
+            available=dto.available,
+            last_check_at=dto.last_check_at,
+            last_ok_at=dto.last_ok_at,
+            consecutive_failures=dto.consecutive_failures,
+            error_summary=dto.error_summary,
         )
 
 

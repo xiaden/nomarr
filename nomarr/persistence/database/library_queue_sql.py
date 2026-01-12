@@ -32,7 +32,6 @@ class LibraryQueueOperations:
 
         cur = self.conn.cursor()
         ts = now_ms()
-        # Store absolute path for now (TODO: store relative + library_id)
         cur.execute(
             "INSERT INTO library_queue(path, status, force, created_at, started_at) VALUES(?, 'pending', ?, ?, NULL)",
             (str(path.absolute), 1 if force else 0, ts),

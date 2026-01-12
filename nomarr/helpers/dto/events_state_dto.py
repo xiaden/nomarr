@@ -81,6 +81,28 @@ class WorkerState:
 
 
 @dataclass
+class GPUHealthState:
+    """
+    GPU availability and health state.
+
+    Tracks GPU dependency status for readiness probes and worker preflight checks.
+    Populated by background GPU probe loop running nvidia-smi with timeout.
+
+    Used for SSE topic:
+    - system:gpu
+    """
+
+    status: str  # "available", "unavailable", or "unknown" (stale/missing)
+    available: bool  # True if GPU is accessible and responding
+    last_check_at: float | None  # Unix timestamp of last probe attempt
+    last_ok_at: float | None  # Unix timestamp of last successful probe
+    consecutive_failures: int  # Count of consecutive failed probes (resets on success)
+    error_summary: str | None  # Short error message from last failed probe
+    probe_id: str | None = None  # Unique probe identifier for tracking
+    duration_ms: float | None = None  # Probe duration in milliseconds
+
+
+@dataclass
 class SystemHealthState:
     """
     System health state.
@@ -93,3 +115,4 @@ class SystemHealthState:
 
     status: str  # "healthy", "degraded", "error", etc.
     errors: list[str]
+    gpu: GPUHealthState | None = None  # GPU health facet (None if GPU not configured)

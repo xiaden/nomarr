@@ -32,6 +32,17 @@ class HealthStatusResult:
     warnings: list[str]
 
 
+@dataclass
+class GPUHealthResult:
+    """Result from get_gpu_health service method."""
+
+    available: bool
+    last_check_at: float | None
+    last_ok_at: float | None
+    consecutive_failures: int
+    error_summary: str | None
+
+
 # ----------------------------------------------------------------------
 #  Public Info DTOs (for public API endpoint)
 # ----------------------------------------------------------------------

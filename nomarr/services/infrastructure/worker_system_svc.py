@@ -134,6 +134,9 @@ class WorkerSystemService:
             "calibration": [],
         }
 
+        # GPU health monitor process (independent of workers)
+        self._gpu_monitor: Any = None  # GPUHealthMonitor process
+
         # Health monitor control
         self._monitor_thread: threading.Thread | None = None
         self._shutdown = False
@@ -192,6 +195,9 @@ class WorkerSystemService:
         # Start recalibration workers
         self._start_recalibration_workers()
 
+        # Start GPU health monitor (independent process)
+        self._start_gpu_monitor()
+
         # Start health monitor thread
         self._start_health_monitor()
 
@@ -206,7 +212,10 @@ class WorkerSystemService:
         """
         logging.info("[WorkerSystemService] Stopping all worker processes...")
 
-        # Stop health monitor first
+        # Stop GPU monitor first (independent process)
+        self._stop_gpu_monitor()
+
+        # Stop health monitor
         self._shutdown = True
         if self._monitor_thread and self._monitor_thread.is_alive():
             self._monitor_thread.join(timeout=5)
@@ -311,6 +320,50 @@ class WorkerSystemService:
             worker.start()
             existing_workers.append(worker)
             logging.info(f"[WorkerSystemService] Started RecalibrationWorker-{i} (PID: {worker.pid})")
+
+    def _start_gpu_monitor(self) -> None:
+        """
+        Start GPU health monitor process (independent of workers).
+
+        This process runs nvidia-smi probes in complete isolation.
+        If nvidia-smi hangs, the monitor process may become stuck,
+        but StateBroker will detect stale data and mark GPU as UNKNOWN.
+        """
+        from nomarr.components.platform import GPUHealthMonitor
+
+        # Don't restart if already running
+        if self._gpu_monitor and self._gpu_monitor.is_alive():
+            logging.debug("[WorkerSystemService] GPU monitor already running")
+            return
+
+        try:
+            logging.info("[WorkerSystemService] Starting GPU health monitor process")
+            self._gpu_monitor = GPUHealthMonitor(db_path=self.db.path)
+            self._gpu_monitor.start()
+            logging.info("[WorkerSystemService] GPU health monitor started")
+        except Exception as e:
+            logging.error(f"[WorkerSystemService] Failed to start GPU health monitor: {e}")
+            self._gpu_monitor = None
+
+    def _stop_gpu_monitor(self) -> None:
+        """Stop GPU health monitor process."""
+        if not self._gpu_monitor:
+            return
+
+        try:
+            logging.info("[WorkerSystemService] Stopping GPU health monitor...")
+            self._gpu_monitor.stop()
+            self._gpu_monitor.join(timeout=5)
+
+            if self._gpu_monitor.is_alive():
+                logging.warning("[WorkerSystemService] GPU monitor did not stop gracefully, terminating...")
+                self._gpu_monitor.terminate()
+                self._gpu_monitor.join(timeout=2)
+
+            self._gpu_monitor = None
+            logging.info("[WorkerSystemService] GPU health monitor stopped")
+        except Exception as e:
+            logging.error(f"[WorkerSystemService] Error stopping GPU health monitor: {e}")
 
     # ---------------------------- Health Monitoring ----------------------------
 
