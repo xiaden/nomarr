@@ -98,7 +98,7 @@ SCHEMA = [
         album TEXT,
         title TEXT,
         calibration TEXT,
-        content_hash TEXT UNIQUE,
+        chromaprint TEXT,
         needs_tagging INTEGER DEFAULT 0,
         is_valid INTEGER DEFAULT 1,
         scanned_at INTEGER,
@@ -112,6 +112,10 @@ SCHEMA = [
     # Index for fast library file queries by library
     """
     CREATE INDEX IF NOT EXISTS idx_library_files_library_id ON library_files(library_id);
+    """,
+    # Index for fast chromaprint lookups (move detection)
+    """
+    CREATE INDEX IF NOT EXISTS idx_library_files_chromaprint ON library_files(chromaprint) WHERE chromaprint IS NOT NULL;
     """,
     # Calibration queue - tracks recalibration jobs (apply calibration to existing tags)
     """

@@ -309,7 +309,6 @@ class LibraryFilesOperations:
                 - metadata (dict)
                 - file_size (int)
                 - modified_time (int)
-                - content_hash (str | None)
                 - needs_tagging (bool)
                 - is_valid (bool)
                 - scanned_at (int)
@@ -322,8 +321,8 @@ class LibraryFilesOperations:
                 INSERT INTO library_files (
                     path, library_id, file_size, modified_time,
                     duration_seconds, artist, album, title,
-                    content_hash, needs_tagging, is_valid, scanned_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    needs_tagging, is_valid, scanned_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(path) DO UPDATE SET
                     library_id=excluded.library_id,
                     file_size=excluded.file_size,
@@ -332,7 +331,6 @@ class LibraryFilesOperations:
                     artist=excluded.artist,
                     album=excluded.album,
                     title=excluded.title,
-                    content_hash=excluded.content_hash,
                     needs_tagging=excluded.needs_tagging,
                     is_valid=excluded.is_valid,
                     scanned_at=excluded.scanned_at
@@ -346,7 +344,6 @@ class LibraryFilesOperations:
                     metadata.get("artist"),
                     metadata.get("album"),
                     metadata.get("title"),
-                    file_data.get("content_hash"),
                     int(file_data["needs_tagging"]),
                     int(file_data["is_valid"]),
                     file_data["scanned_at"],
@@ -431,6 +428,31 @@ class LibraryFilesOperations:
             placeholders = ",".join("?" * len(paths))
             query += f" AND path IN ({placeholders})"
             params.extend(paths)
+
+        cur = self.conn.execute(query, params)
+        columns = [desc[0] for desc in cur.description]
+        return [dict(zip(columns, row, strict=False)) for row in cur.fetchall()]
+
+    def get_files_by_chromaprint(self, chromaprint: str, library_id: int | None = None) -> list[dict[str, Any]]:
+        """
+        Get library files matching a chromaprint.
+
+        Used for move detection: when a new file is found with a chromaprint,
+        check if any existing files have the same chromaprint (same audio content).
+
+        Args:
+            chromaprint: Audio fingerprint hash to search for
+            library_id: Optional library ID to restrict search
+
+        Returns:
+            List of file dicts with matching chromaprint (id, path, chromaprint, etc.)
+        """
+        query = "SELECT * FROM library_files WHERE chromaprint=?"
+        params: list[Any] = [chromaprint]
+
+        if library_id is not None:
+            query += " AND library_id=?"
+            params.append(library_id)
 
         cur = self.conn.execute(query, params)
         columns = [desc[0] for desc in cur.description]

@@ -1,13 +1,12 @@
 """
 Direct library scan workflow without worker/queue overhead.
 
-Implements fast, read-only metadata extraction with conditional move detection
-based on content hashes.
+Implements fast, read-only metadata extraction. Move detection happens during
+ML processing when chromaprint is computed.
 """
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import os
 import time
@@ -51,7 +50,7 @@ def scan_library_direct_workflow(
         - files_discovered: int (total audio files found)
         - files_added: int (new files)
         - files_updated: int (changed files)
-        - files_moved: int (detected via content_hash and path updated)
+        - files_moved: int (detected during ML processing via chromaprint, not during scan)
         - files_removed: int (marked invalid)
         - files_skipped: int (unchanged, not rescanned)
         - files_failed: int (extraction errors)
@@ -60,7 +59,7 @@ def scan_library_direct_workflow(
 
     Notes:
         - Batches DB writes by folder for crash recovery
-        - Uses content_hash from file tags to detect moved files
+        - Move detection happens during ML processing when chromaprint is computed
         - Crashes intentionally on fatal errors (loud failure for Docker)
         - Progress tracked via library.scan_progress column
     """
@@ -148,19 +147,6 @@ def scan_library_direct_workflow(
                         # Extract metadata + tags (component call)
                         metadata = extract_metadata(library_path, namespace="nom")
 
-                        # Compute or read content hash
-                        content_hash = metadata.get("nom_tags", {}).get("content_hash")
-                        if not content_hash:
-                            # First time seeing this file - compute hash from metadata
-                            # Hash will be written to file tags during ML tagging, not now (read-only scan)
-                            duration = metadata.get("duration", 0)
-                            artist = metadata.get("artist", "")
-                            album = metadata.get("album", "")
-                            title = metadata.get("title", "")
-                            timestamp = now_ms()
-                            hash_input = f"{file_path_str}|{duration}|{artist}|{album}|{title}|{timestamp}"
-                            content_hash = hashlib.md5(hash_input.encode()).hexdigest()
-
                         # Check if file needs tagging
                         existing_version = metadata.get("nom_tags", {}).get("nom_version")
                         tagger_version = metadata.get("nom_tags", {}).get("tagger_version", "unknown")
@@ -177,7 +163,6 @@ def scan_library_direct_workflow(
                             "metadata": metadata,
                             "file_size": file_size,
                             "modified_time": modified_time,
-                            "content_hash": content_hash,
                             "needs_tagging": needs_tagging,
                             "is_valid": True,
                             "scanned_at": now_ms(),
@@ -203,22 +188,17 @@ def scan_library_direct_workflow(
                         db.library_files.batch_upsert_library_files(folder_batch)
                         stats["files_added"] += len([f for f in folder_batch if f["path"] not in existing_paths])
                     except Exception as e:
-                        # Handle hash collisions by rehashing individual files
-                        logger.warning(f"Batch insert collision, processing individually: {e}")
+                        # Batch insert failed - process individually for better error visibility
+                        logger.warning(f"Batch insert failed, processing individually: {e}")
                         for file_entry in folder_batch:
                             try:
                                 db.library_files.batch_upsert_library_files([file_entry])
                                 if file_entry["path"] not in existing_paths:
                                     stats["files_added"] += 1
-                            except Exception:
-                                # Hash collision - rehash with new timestamp
-                                logger.info(f"Hash collision for {file_entry['path']}, rehashing...")
-                                new_hash = hashlib.md5(f"{file_entry['path']}|{now_ms()}".encode()).hexdigest()
-                                file_entry["content_hash"] = new_hash
-                                db.library_files.batch_upsert_library_files([file_entry])
-                                warnings.append(f"Hash collision, rehashed: {file_entry['path']}")
-                                if file_entry["path"] not in existing_paths:
-                                    stats["files_added"] += 1
+                            except Exception as insert_error:
+                                logger.error(f"Failed to insert {file_entry['path']}: {insert_error}")
+                                warnings.append(f"Failed to insert: {file_entry['path']}")
+                                stats["files_failed"] += 1
 
                 # Update progress every folder
                 db.libraries.update_scan_status(library_id, progress=current_file)
@@ -240,44 +220,14 @@ def scan_library_direct_workflow(
                 db.library_files.bulk_mark_invalid(list(missing_paths))
                 stats["files_removed"] += len(missing_paths)
 
-        # PHASE 5: Detect moved files using content hashes (only if enabled)
-        if enable_move_detection:
-            # Compare new files' hashes to removed files' hashes
-            logger.info(f"[scan_library] Checking {len(new_files)} new files for moves...")
-
-            matched_moves: set[int] = set()  # Track which files_to_remove entries were matched
-
-            for new_file in new_files:
-                new_hash = str(new_file.get("content_hash", ""))
-                if not new_hash:
-                    continue  # No hash, can't detect move
-
-                # Check if this hash exists in files_to_remove
-                for idx, removed_file in enumerate(files_to_remove):
-                    if idx in matched_moves:
-                        continue  # Already matched
-
-                    removed_hash = removed_file.get("content_hash")
-                    if new_hash and removed_hash and removed_hash == new_hash:
-                        # Match found - update path instead of adding new entry
-                        logger.info(f"[scan_library] File moved: {removed_file['path']} → {new_file['path']}")
-                        db.library_files.update_file_path(
-                            old_path=removed_file["path"],
-                            new_path=new_file["path"],
-                            file_size=new_file["file_size"],
-                            modified_time=new_file["modified_time"],
-                        )
-                        stats["files_moved"] += 1
-                        matched_moves.add(idx)
-                        break
-
-            # PHASE 6: Bulk remove remaining unmatched missing files
-            unmatched_removed = [f for idx, f in enumerate(files_to_remove) if idx not in matched_moves]
-            if unmatched_removed:
-                logger.info(f"[scan_library] Removing {len(unmatched_removed)} deleted files from library")
-                paths_to_remove = [f["path"] for f in unmatched_removed]
-                db.library_files.bulk_mark_invalid(paths_to_remove)
-                stats["files_removed"] += len(unmatched_removed)
+        # PHASE 5: Mark missing files as invalid (move detection happens during ML processing)
+        # Note: Move detection is deferred to ML processing when chromaprint is computed.
+        # This avoids expensive audio loading during scan.
+        if enable_move_detection and files_to_remove:
+            logger.info(f"[scan_library] Removing {len(files_to_remove)} deleted files from library")
+            paths_to_remove = [f["path"] for f in files_to_remove]
+            db.library_files.bulk_mark_invalid(paths_to_remove)
+            stats["files_removed"] += len(files_to_remove)
 
         # PHASE 7: Finalize scan
         scan_duration = time.time() - start_time

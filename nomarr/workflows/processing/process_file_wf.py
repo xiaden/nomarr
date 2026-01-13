@@ -144,7 +144,7 @@ def _compute_embeddings_for_backbone(
     path: str,
     config: ProcessorConfig,
     db: Database | None,  # Required for LibraryPath validation
-) -> tuple[np.ndarray, float]:
+) -> tuple[np.ndarray, float, str]:
     """
     Compute embeddings for a single backbone.
 
@@ -153,9 +153,10 @@ def _compute_embeddings_for_backbone(
         first_head: First head in the backbone group (for params)
         path: Path to audio file
         config: Processor configuration
+        db: Database instance (for LibraryPath validation)
 
     Returns:
-        Tuple of (embeddings_2d, duration)
+        Tuple of (embeddings_2d, duration, chromaprint)
 
     Raises:
         RuntimeError: If audio is too short or embedding computation fails
@@ -184,13 +185,13 @@ def _compute_embeddings_for_backbone(
         min_duration_s=config.min_duration_s,
         allow_short=config.allow_short,
     )
-    embeddings_2d, duration = compute_embeddings_for_backbone(params=params)
+    embeddings_2d, duration, chromaprint = compute_embeddings_for_backbone(params=params)
 
     logging.debug(
         f"[processor] Embeddings for {backbone} computed in {time.time() - t_emb:.1f}s: shape={embeddings_2d.shape}"
     )
 
-    return embeddings_2d, duration
+    return embeddings_2d, duration, chromaprint
 
 
 def _process_head_predictions(
@@ -429,6 +430,7 @@ def _sync_database(
     namespace: str,
     tagger_version: str,
     file_write_mode: str,
+    chromaprint: str | None = None,
     calibration_map: dict[str, str] | None = None,
 ) -> None:
     """
@@ -443,46 +445,30 @@ def _sync_database(
         namespace: Tag namespace
         tagger_version: Tagger version string
         file_write_mode: File write mode setting
+        chromaprint: Audio fingerprint hash for move detection
         calibration_map: Optional mapping of model keys to calibration IDs
     """
     if db is None:
         return
 
     try:
-        import hashlib
-
         from nomarr.components.library.library_update_comp import update_library_from_tags
         from nomarr.components.library.metadata_extraction_comp import extract_metadata
         from nomarr.helpers.dto.path_dto import build_library_path_from_input
-        from nomarr.helpers.time_helper import now_ms
 
         library_path = build_library_path_from_input(path, db)
 
-        # Extract metadata BEFORE writing tags (to get base metadata for hash)
-        metadata_pre_tag = extract_metadata(library_path, namespace=namespace)
+        # Write tags to file first (no chromaprint in file tags)
+        writer.write(library_path, file_tags)
 
-        # Compute content_hash from metadata (same algorithm as scan_library_direct_wf.py)
-        # Hash formula: MD5(path|duration|artist|album|title|timestamp)
-        # This hash will be written to file tags and used for move detection
-        duration = metadata_pre_tag.get("duration", 0)
-        artist = metadata_pre_tag.get("artist", "")
-        album = metadata_pre_tag.get("album", "")
-        title = metadata_pre_tag.get("title", "")
-        timestamp = now_ms()
-        hash_input = f"{path}|{duration}|{artist}|{album}|{title}|{timestamp}"
-        content_hash = hashlib.md5(hash_input.encode()).hexdigest()
-
-        # Add content_hash to tags that will be written to file
-        db_tags["content_hash"] = content_hash
-        file_tags["content_hash"] = content_hash  # Always write to file (for move detection)
-
-        # Write FULL tags to file (including content_hash)
-        writer.write(library_path, db_tags)
-
-        # Extract metadata from the freshly-tagged file (now includes content_hash)
+        # Extract metadata from the freshly-tagged file
         metadata = extract_metadata(library_path, namespace=namespace)
 
-        # Update library database with extracted metadata
+        # Add chromaprint to metadata (computed during ML, stored in DB only)
+        if chromaprint:
+            metadata["chromaprint"] = chromaprint
+
+        # Update library database with extracted metadata + chromaprint
         update_library_from_tags(
             db=db,
             file_path=path,
@@ -626,10 +612,11 @@ def process_file_workflow(
         >>> print(f"Processed {result.file} in {result.elapsed}s")
     """
     from nomarr.components.ml.ml_cache_comp import check_and_evict_idle_cache, touch_cache
-    from nomarr.helpers.dto.path_dto import build_library_path_from_db
+    from nomarr.helpers.dto.path_dto import LibraryPath, build_library_path_from_db
 
     # === STEP 0: Validate path against library configuration ===
     # If db provided, validate path to handle config changes (library root moved, etc.)
+    library_path: LibraryPath | None = None
     if db is not None:
         library_path = build_library_path_from_db(
             stored_path=path,
@@ -667,10 +654,12 @@ def process_file_workflow(
     tags_accum = TagAccumulator()
     tags_accum._calibration_map = {}  # type: ignore
     all_head_results: dict[str, Any] = {}
-    regression_heads: list[tuple[HeadInfo, list[float]]] = []
+    chromaprint_from_ml: str | None = None  # Will be set by first backbone
+    duration_final: float | None = None
     all_head_outputs: list[Any] = []
+    heads_succeeded = 0
+    regression_heads: list[tuple[HeadInfo, list[float]]] = []
     total_heads_succeeded = 0
-    duration_final = None
 
     # === STEP 2: Process each backbone group (compute embeddings → run heads → release) ===
     for backbone, backbone_heads in heads_by_backbone.items():
@@ -678,9 +667,49 @@ def process_file_workflow(
 
         # Compute embeddings for this backbone
         try:
-            embeddings_2d, duration = _compute_embeddings_for_backbone(backbone, first_head, path, config, db)
+            embeddings_2d, duration, chromaprint_hash = _compute_embeddings_for_backbone(
+                backbone, first_head, path, config, db
+            )
             if duration_final is None:
                 duration_final = float(duration)
+            # Store chromaprint from first backbone (all backbones use same audio)
+            if chromaprint_from_ml is None:
+                chromaprint_from_ml = chromaprint_hash
+
+                # Check for moved files: if chromaprint matches an invalid file, it's a move
+                # Only check if we have db and library_path available
+                if chromaprint_from_ml and db is not None and library_path is not None:
+                    matching_invalid_files = db.library_files.get_files_by_chromaprint(
+                        chromaprint_from_ml,
+                        library_id=library_path.library_id,
+                    )
+                    # Filter to invalid files only (removed from filesystem)
+                    moved_files = [f for f in matching_invalid_files if not f.get("is_valid", True)]
+
+                    if moved_files:
+                        old_path = moved_files[0]["path"]
+                        logging.info(f"[processor] Detected moved file: {old_path} → {library_path.relative}")
+                        # Update DB entry: change path and mark valid
+                        db.library_files.update_file_path(
+                            old_path=old_path,
+                            new_path=library_path.relative,
+                            file_size=library_path.absolute.stat().st_size,
+                            modified_time=int(library_path.absolute.stat().st_mtime * 1000),
+                        )
+                        # Skip further processing - file already has tags from old location
+                        logging.info("[processor] Reactivated moved file, skipping ML processing")
+                        # Return early with minimal result
+                        return ProcessFileResult(
+                            file=path,
+                            elapsed=time.time() - start_all,
+                            duration=None,
+                            heads_processed=0,
+                            tags_written=0,
+                            head_results={"_move_detected": {"status": "moved", "old_path": old_path}},
+                            mood_aggregations=None,
+                            tags={},
+                        )
+
         except RuntimeError as e:
             logging.warning(f"[processor] Skipping backbone {backbone}: {e}")
             for head in backbone_heads:
@@ -738,6 +767,7 @@ def process_file_workflow(
         config.namespace,
         config.tagger_version,
         config.file_write_mode,
+        chromaprint_from_ml,
         calibration_map,
     )
 

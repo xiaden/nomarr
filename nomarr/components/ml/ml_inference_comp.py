@@ -171,7 +171,7 @@ def make_predictor_uncached(head_info: HeadInfo) -> Callable[[np.ndarray, int], 
 
 def compute_embeddings_for_backbone(
     params: ComputeEmbeddingsForBackboneParams,
-) -> tuple[np.ndarray, float]:
+) -> tuple[np.ndarray, float, str]:
     """
     Compute embeddings for an audio file using a specific backbone.
 
@@ -183,8 +183,9 @@ def compute_embeddings_for_backbone(
         params: Parameters including backbone, emb_graph, target_sr, segment_s, hop_s,
                 path, min_duration_s, allow_short
 
-    Returns: (embeddings_2d, duration) where embeddings_2d is (num_patches, embed_dim)
-              num_patches depends on the backbone's internal patching (not our segment_s/hop_s)
+    Returns: (embeddings_2d, duration, chromaprint) where embeddings_2d is (num_patches, embed_dim),
+              num_patches depends on the backbone's internal patching (not our segment_s/hop_s),
+              duration is in seconds, and chromaprint is the audio fingerprint hash
     """
     # Require Essentia at function call time (not module import time)
     backend_essentia.require()
@@ -197,6 +198,11 @@ def compute_embeddings_for_backbone(
     audio_result = load_audio_mono(params.path, target_sr=params.target_sr)
     if should_skip_short(audio_result.duration, params.min_duration_s, params.allow_short):
         raise RuntimeError(f"audio too short ({audio_result.duration:.2f}s < {params.min_duration_s}s)")
+
+    # Compute chromaprint for move detection
+    from nomarr.components.ml.chromaprint_comp import compute_chromaprint
+
+    chromaprint = compute_chromaprint(audio_result.waveform, audio_result.sample_rate)
 
     # Process full track - no trimming
     # Trimming was removed because backbones process efficiently with single-pass
@@ -264,7 +270,8 @@ def compute_embeddings_for_backbone(
         f"shape={embeddings_2d.shape} duration={audio_result.duration:.1f}s"
     )
 
-    return embeddings_2d, audio_result.duration
+    # Return embeddings, duration, and chromaprint
+    return embeddings_2d, audio_result.duration, chromaprint
 
 
 def make_head_only_predictor_batched(
