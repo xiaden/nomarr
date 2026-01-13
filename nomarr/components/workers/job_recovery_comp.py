@@ -195,10 +195,6 @@ def _reset_job_to_pending(db: Database, queue_type: QueueType, job_id: int) -> N
         # Tag queue has direct status update capability
         db.tag_queue.update_job(job_id, status="pending")
         logger.debug(f"Reset tag queue job {job_id} to pending")
-    elif queue_type == "library":
-        # Library queue reset via reset_running_library_scans
-        db.library_queue.reset_running_library_scans()
-        logger.debug(f"Reset library queue job {job_id} via reset_running_library_scans")
     elif queue_type == "calibration":
         logger.warning(f"Calibration queue job {job_id} reset not implemented")
 

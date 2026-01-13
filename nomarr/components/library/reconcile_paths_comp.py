@@ -9,8 +9,9 @@ due to config changes (library root moves, library deletions, etc.).
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Literal, TypedDict
+from typing import TYPE_CHECKING, Literal
 
+from nomarr.helpers.dto.library_dto import ReconcileResult
 from nomarr.helpers.dto.path_dto import LibraryPath, build_library_path_from_db
 
 if TYPE_CHECKING:
@@ -18,18 +19,6 @@ if TYPE_CHECKING:
 
 
 ReconcilePolicy = Literal["mark_invalid", "delete_invalid", "dry_run"]
-
-
-class ReconcileResult(TypedDict):
-    """Statistics from reconciliation operation."""
-
-    total_files: int
-    valid_files: int
-    invalid_config: int
-    not_found: int
-    unknown_status: int
-    deleted_files: int
-    errors: int
 
 
 def reconcile_library_paths(

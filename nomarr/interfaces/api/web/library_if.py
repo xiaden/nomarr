@@ -442,7 +442,6 @@ async def scan_library(
             library_id=library_id,
             paths=request.paths,
             recursive=request.recursive,
-            force=request.force,
             clean_missing=request.clean_missing,
         )
 
@@ -488,13 +487,13 @@ async def reconcile_library_paths(
         HTTPException: 404 if library not found, 400 for invalid policy, 500 for other errors
     """
     try:
-        # Call service layer to reconcile paths (returns dict with statistics)
+        # Call service layer to reconcile paths (returns ReconcileResult)
         stats = library_service.reconcile_library_paths(
             policy=policy,
             batch_size=batch_size,
         )
 
-        # Transform dict to Pydantic response
+        # Transform ReconcileResult to Pydantic response using from_dict
         return ReconcilePathsResponse.from_dict(stats)
 
     except ValueError as e:

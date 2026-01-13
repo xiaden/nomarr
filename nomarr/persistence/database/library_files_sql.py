@@ -293,9 +293,145 @@ class LibraryFilesOperations:
         WARNING: This is a cross-table operation that deletes from:
         - file_tags
         - library_files
-        - library_queue
         """
         self.conn.execute("DELETE FROM file_tags")
         self.conn.execute("DELETE FROM library_files")
-        self.conn.execute("DELETE FROM library_queue")
         self.conn.commit()
+
+    def batch_upsert_library_files(self, files: list[dict[str, Any]]) -> None:
+        """
+        Insert or update multiple library files in one transaction.
+
+        Args:
+            files: List of file dicts with keys:
+                - path (str)
+                - library_id (int)
+                - metadata (dict)
+                - file_size (int)
+                - modified_time (int)
+                - content_hash (str | None)
+                - needs_tagging (bool)
+                - is_valid (bool)
+                - scanned_at (int)
+        """
+
+        for file_data in files:
+            metadata = file_data.get("metadata", {})
+            self.conn.execute(
+                """
+                INSERT INTO library_files (
+                    path, library_id, file_size, modified_time,
+                    duration_seconds, artist, album, title,
+                    content_hash, needs_tagging, is_valid, scanned_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(path) DO UPDATE SET
+                    library_id=excluded.library_id,
+                    file_size=excluded.file_size,
+                    modified_time=excluded.modified_time,
+                    duration_seconds=excluded.duration_seconds,
+                    artist=excluded.artist,
+                    album=excluded.album,
+                    title=excluded.title,
+                    content_hash=excluded.content_hash,
+                    needs_tagging=excluded.needs_tagging,
+                    is_valid=excluded.is_valid,
+                    scanned_at=excluded.scanned_at
+                """,
+                (
+                    file_data["path"],
+                    file_data["library_id"],
+                    file_data["file_size"],
+                    file_data["modified_time"],
+                    metadata.get("duration"),
+                    metadata.get("artist"),
+                    metadata.get("album"),
+                    metadata.get("title"),
+                    file_data.get("content_hash"),
+                    int(file_data["needs_tagging"]),
+                    int(file_data["is_valid"]),
+                    file_data["scanned_at"],
+                ),
+            )
+        self.conn.commit()
+
+    def mark_file_invalid(self, path: str) -> None:
+        """
+        Mark file as no longer existing on disk.
+
+        Args:
+            path: File path to mark invalid
+        """
+        self.conn.execute("UPDATE library_files SET is_valid=0 WHERE path=?", (path,))
+        self.conn.commit()
+
+    def bulk_mark_invalid(self, paths: list[str]) -> None:
+        """
+        Mark multiple files as invalid in one operation.
+
+        Args:
+            paths: List of file paths to mark invalid
+        """
+        if not paths:
+            return
+
+        placeholders = ",".join("?" * len(paths))
+        self.conn.execute(f"UPDATE library_files SET is_valid=0 WHERE path IN ({placeholders})", paths)
+        self.conn.commit()
+
+    def update_file_path(self, old_path: str, new_path: str, file_size: int, modified_time: int) -> None:
+        """
+        Update file path and metadata (for moved files).
+
+        Args:
+            old_path: Original file path
+            new_path: New file path
+            file_size: File size in bytes
+            modified_time: Last modified timestamp
+        """
+        self.conn.execute(
+            "UPDATE library_files SET path=?, file_size=?, modified_time=?, is_valid=1 WHERE path=?",
+            (new_path, file_size, modified_time, old_path),
+        )
+        self.conn.commit()
+
+    def library_has_tagged_files(self, library_id: int) -> bool:
+        """
+        Check if library has any files with ML tags (for conditional move detection).
+
+        Args:
+            library_id: Library ID
+
+        Returns:
+            True if library has at least one tagged file
+        """
+        cur = self.conn.execute("SELECT COUNT(*) FROM library_files WHERE library_id=? AND tagged=1", (library_id,))
+        result = cur.fetchone()
+        count: int = result[0] if result else 0
+        return count > 0
+
+    def get_files_needing_tagging(self, library_id: int | None, paths: list[str] | None = None) -> list[dict[str, Any]]:
+        """
+        Get files that need ML tagging (needs_tagging=True, is_valid=True).
+
+        Args:
+            library_id: Library ID (or None for all libraries)
+            paths: Optional specific file paths to filter
+
+        Returns:
+            List of file dicts needing tagging
+        """
+        query = "SELECT * FROM library_files WHERE needs_tagging=1 AND is_valid=1"
+        params: list = []
+
+        if library_id is not None:
+            query += " AND library_id=?"
+            params.append(library_id)
+
+        if paths:
+            placeholders = ",".join("?" * len(paths))
+            query += f" AND path IN ({placeholders})"
+            params.extend(paths)
+
+        cur = self.conn.execute(query, params)
+        columns = [desc[0] for desc in cur.description]
+        return [dict(zip(columns, row, strict=False)) for row in cur.fetchall()]

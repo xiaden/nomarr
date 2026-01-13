@@ -85,7 +85,10 @@ class RecalibrationService:
             Job ID for the queued recalibration
         """
         logger.info(f"Queuing recalibration for: {file_path}")
-        return enqueue_file(self.db, file_path, force=False, queue_type="calibration")
+        from nomarr.helpers.dto.path_dto import build_library_path_from_input
+
+        library_path = build_library_path_from_input(file_path, self.db)
+        return enqueue_file(self.db, library_path, force=False, queue_type="calibration")
 
     def enqueue_library_for_recalibration(self, paths: list[str]) -> int:
         """Queue multiple library files for recalibration.
@@ -104,10 +107,13 @@ class RecalibrationService:
 
         logger.info(f"Queuing {len(paths)} files for recalibration")
 
+        from nomarr.helpers.dto.path_dto import build_library_path_from_input
+
         queued_count = 0
         for file_path in paths:
             try:
-                enqueue_file(self.db, file_path, force=False, queue_type="calibration")
+                library_path = build_library_path_from_input(file_path, self.db)
+                enqueue_file(self.db, library_path, force=False, queue_type="calibration")
                 queued_count += 1
             except Exception as e:
                 logger.warning(f"Failed to enqueue {file_path}: {e}")

@@ -40,19 +40,6 @@ def get_next_job(db: Database, queue_type: QueueType) -> dict | None:
             }
         return None
 
-    elif queue_type == "library":
-        # library_queue.dequeue_scan() returns tuple[int, str, bool] | None
-        lib_result = db.library_queue.dequeue_scan()
-        if lib_result:
-            job_id, path, force = lib_result
-            return {
-                "id": job_id,
-                "path": path,
-                "force": force,
-                "status": "running",
-            }
-        return None
-
     elif queue_type == "calibration":
         # calibration_queue.get_next_calibration_job() returns tuple[int, str] | None
         cal_result = db.calibration_queue.get_next_calibration_job()
@@ -86,8 +73,6 @@ def mark_job_complete(db: Database, job_id: int, queue_type: QueueType) -> None:
 
     if queue_type == "tag":
         db.tag_queue.update_job(job_id, status="done")
-    elif queue_type == "library":
-        db.library_queue.mark_scan_complete(job_id)
     elif queue_type == "calibration":
         db.calibration_queue.complete_calibration_job(job_id)
     else:
@@ -111,8 +96,6 @@ def mark_job_error(db: Database, job_id: int, error_message: str, queue_type: Qu
 
     if queue_type == "tag":
         db.tag_queue.update_job(job_id, status="error", error_message=error_message)
-    elif queue_type == "library":
-        db.library_queue.mark_scan_error(job_id, error_message)
     elif queue_type == "calibration":
         db.calibration_queue.fail_calibration_job(job_id, error_message)
     else:

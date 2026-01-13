@@ -12,7 +12,10 @@ Rules:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from nomarr.helpers.dto.path_dto import LibraryPath
 
 
 @dataclass
@@ -78,7 +81,7 @@ class ComputeEmbeddingsForBackboneParams:
     target_sr: int
     segment_s: float
     hop_s: float
-    path: str
+    path: LibraryPath  # Security boundary: must be factory-built LibraryPath
     min_duration_s: int
     allow_short: bool
 

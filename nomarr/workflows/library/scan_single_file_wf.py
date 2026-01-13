@@ -173,8 +173,10 @@ def scan_single_file_workflow(
         if needs_tagging and check_existing_version:
             # Extract metadata once to check version tag
             from nomarr.components.library.metadata_extraction_comp import extract_metadata
+            from nomarr.helpers.dto.path_dto import build_library_path_from_input
 
-            file_metadata = extract_metadata(file_path, namespace=namespace)
+            library_path = build_library_path_from_input(file_path, db)
+            file_metadata = extract_metadata(library_path, namespace=namespace)
             existing_version = file_metadata.get("nom_tags", {}).get(version_tag_key)
 
             if existing_version == tagger_version:
@@ -216,8 +218,10 @@ def scan_single_file_workflow(
             # Skip if we already handled it above (check_existing_version path)
             from nomarr.components.library.library_update_comp import update_library_from_tags
             from nomarr.components.library.metadata_extraction_comp import extract_metadata
+            from nomarr.helpers.dto.path_dto import build_library_path_from_input
 
-            file_metadata = extract_metadata(file_path, namespace=namespace)
+            library_path = build_library_path_from_input(file_path, db)
+            file_metadata = extract_metadata(library_path, namespace=namespace)
             update_library_from_tags(
                 db=db,
                 file_path=file_path,

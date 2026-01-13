@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.reconcile_paths_comp import ReconcileResult
-from nomarr.components.queue import get_queue_depth
 from nomarr.components.queue import list_jobs as list_jobs_component
 from nomarr.helpers.dto.library_dto import (
     FileTag,
@@ -21,14 +20,12 @@ from nomarr.helpers.dto.library_dto import (
     LibraryScanStatusResult,
     LibraryStatsResult,
     SearchFilesResult,
-    StartLibraryScanWorkflowParams,
     StartScanResult,
     TagCleanupResult,
     UniqueTagKeysResult,
 )
 from nomarr.helpers.dto.queue_dto import Job
 from nomarr.helpers.files_helper import resolve_library_path
-from nomarr.workflows.queue import clear_all_workflow
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -47,7 +44,7 @@ class LibraryService:
     Library management and scanning operations - shared by all interfaces.
 
     This service manages libraries (user-defined scan roots under library_root)
-    and coordinates scanning across CLI and API interfaces via the library_queue table.
+    and coordinates scanning across CLI and API interfaces using BackgroundTaskService.
 
     Note: Libraries only control which filesystem roots are scanned. All scan results,
     files, and tags remain global (not segmented by library).
@@ -57,6 +54,7 @@ class LibraryService:
         self,
         db: Database,
         cfg: LibraryRootConfig,
+        background_tasks: Any | None = None,
     ):
         """
         Initialize library service.
@@ -64,9 +62,11 @@ class LibraryService:
         Args:
             db: Database instance
             cfg: Library root configuration (defines security boundary)
+            background_tasks: BackgroundTaskService for async scan operations
         """
         self.db = db
         self.cfg = cfg
+        self.background_tasks = background_tasks
 
     def _has_healthy_library_workers(self) -> bool:
         """
@@ -342,48 +342,49 @@ class LibraryService:
         library_id: int,
         paths: list[str] | None = None,
         recursive: bool = True,
-        force: bool = False,
         clean_missing: bool = True,
     ) -> StartScanResult:
         """
-        Start a library scan for a specific library.
+        Start a library scan for a specific library using direct filesystem scan.
 
         IMPORTANT: Libraries are used ONLY to determine which filesystem roots to scan.
-        All discovered files, queue entries, and statistics remain GLOBAL and do NOT track
-        library_id. Nomarr is an autotagger, not a multi-tenant library manager.
+        All discovered files and statistics remain GLOBAL and do NOT track library_id.
+        Nomarr is an autotagger, not a multi-tenant library manager.
 
         This method:
         1. Resolves the library to get its root_path
         2. Validates any user-provided paths are within that root
-        3. Calls the global scanning workflow with root_paths
+        3. Launches background scan via scan_library_direct_workflow
         4. All discovered files are added to global library_files table (no library_id column)
 
         Args:
             library_id: ID of the library to scan (used only to determine scan root)
             paths: Optional list of paths within the library to scan (defaults to library root)
             recursive: Whether to scan subdirectories recursively
-            force: Whether to force rescan even if files haven't changed
-            clean_missing: Whether to remove deleted files from database
+            clean_missing: Whether to detect moved files and mark missing files invalid
 
         Returns:
-            StartScanResult DTO with scan statistics
+            StartScanResult DTO with scan statistics and task_id
 
         Raises:
-            ValueError: If library not found or paths are invalid
+            ValueError: If library not found, paths are invalid, or scan already running
         """
-        # Fetch library - this is used ONLY to determine the root_path to scan.
-        # The library_id is NOT propagated to workflows or persistence layers.
+        # Check if scan already running for this library
         library = self._get_library_or_error(library_id)
+        scan_status = library.get("scan_status")
+        if scan_status == "scanning":
+            raise ValueError(f"Library {library_id} is already being scanned")
+
         base_root = Path(library["root_path"])
 
-        # Build root_paths for scanning.
+        # Build scan paths for scanning.
         # Libraries control which roots to scan, but the workflow operates globally.
         if paths is None:
             # Scan entire library root
-            root_paths = [str(base_root)]
+            scan_paths = [str(base_root)]
         else:
             # Validate each user path is within library root
-            root_paths = []
+            scan_paths = []
             for user_path in paths:
                 resolved = self._resolve_path_within_library(
                     library_root=str(base_root),
@@ -391,48 +392,60 @@ class LibraryService:
                     must_exist=True,
                     must_be_file=False,
                 )
-                root_paths.append(str(resolved))
+                scan_paths.append(str(resolved))
 
-        from nomarr.workflows.library.start_library_scan_wf import start_library_scan_workflow
-
-        logging.info(
-            f"[LibraryService] Starting scan for library {library_id} "
-            f"({library['name']}) with {len(root_paths)} path(s)"
-        )
-
-        # Call the global scanning workflow.
-        # NOTE: library_id is NOT passed to the workflow - it only receives root_paths.
-        # All discovered files are added to global library_files table without library_id.
-        params = StartLibraryScanWorkflowParams(
-            root_paths=root_paths,
-            recursive=recursive,
-            force=force,
-            auto_tag=False,  # Auto-tagging is handled by LibraryScanWorker per file
-            ignore_patterns="",  # Empty string - no patterns to ignore
-            clean_missing=clean_missing,
-        )
-        stats = start_library_scan_workflow(db=self.db, params=params)
+        from nomarr.workflows.library.scan_library_direct_wf import scan_library_direct_workflow
 
         logging.info(
-            f"[LibraryService] Scan planned for library {library_id}: "
-            f"discovered={stats['files_discovered']}, queued={stats['files_queued']}, "
-            f"skipped={stats['files_skipped']}, removed={stats['files_removed']}"
+            f"[LibraryService] Starting direct scan for library {library_id} "
+            f"({library['name']}) with {len(scan_paths)} path(s)"
         )
 
-        return StartScanResult(
-            files_discovered=stats["files_discovered"],
-            files_queued=stats["files_queued"],
-            files_skipped=stats["files_skipped"],
-            files_removed=stats["files_removed"],
-            job_ids=stats["job_ids"],
-        )
+        # Launch background scan task if BackgroundTaskService available
+        if self.background_tasks:
+            task_id = f"scan_library_{library_id}"
+            self.background_tasks.start_task(
+                task_id=task_id,
+                task_fn=scan_library_direct_workflow,
+                db=self.db,
+                library_id=library_id,
+                paths=scan_paths,
+                recursive=recursive,
+                clean_missing=clean_missing,
+            )
+
+            logging.info(f"[LibraryService] Scan task launched: {task_id}")
+
+            return StartScanResult(
+                files_discovered=0,  # Will be updated by workflow
+                files_queued=0,  # Legacy field (no queue anymore)
+                files_skipped=0,
+                files_removed=0,
+                job_ids=[task_id] if task_id else [],  # Task ID is str
+            )
+        else:
+            # Synchronous execution (for testing or no background service)
+            stats = scan_library_direct_workflow(
+                db=self.db,
+                library_id=library_id,
+                paths=scan_paths,
+                recursive=recursive,
+                clean_missing=clean_missing,
+            )
+
+            return StartScanResult(
+                files_discovered=stats["files_discovered"],
+                files_queued=0,  # Legacy field
+                files_skipped=stats["files_skipped"],
+                files_removed=stats["files_removed"],
+                job_ids=[],  # No background task
+            )
 
     def start_scan(
         self,
         library_id: int | None = None,
         paths: list[str] | None = None,
         recursive: bool = True,
-        force: bool = False,
         clean_missing: bool = True,
     ) -> StartScanResult:
         """
@@ -443,14 +456,13 @@ class LibraryService:
 
         IMPORTANT: Libraries are used ONLY to pick which filesystem roots to scan.
         All discovered files and stats are GLOBAL and do NOT carry library_id.
-        The library_files, library_queue, and stats tables remain unaware of libraries.
+        The library_files and stats tables remain unaware of libraries.
 
         Args:
             library_id: ID of library to scan (defaults to default library)
             paths: List of paths to scan within the library (defaults to library root)
             recursive: Whether to scan subdirectories recursively
-            force: Whether to force rescan even if files haven't changed
-            clean_missing: Whether to remove deleted files from database
+            clean_missing: Whether to detect moved files and mark missing files invalid
 
         Returns:
             StartScanResult DTO with scan statistics
@@ -465,7 +477,6 @@ class LibraryService:
                 library_id=library_id,
                 paths=paths,
                 recursive=recursive,
-                force=force,
                 clean_missing=clean_missing,
             )
         else:
@@ -475,19 +486,21 @@ class LibraryService:
                 library_id=default_library["id"],
                 paths=paths,
                 recursive=recursive,
-                force=force,
                 clean_missing=clean_missing,
             )
 
-    def cancel_scan(self) -> bool:
+    def cancel_scan(self, library_id: int | None = None) -> bool:
         """
         Cancel the currently running scan.
 
-        Note: With per-file scanning, this clears the pending queue.
-        Files currently being processed will complete.
+        Note: Cancellation support not yet implemented for direct scans.
+        This method is kept for API compatibility but currently returns False.
+
+        Args:
+            library_id: Optional library ID (uses default if None)
 
         Returns:
-            Number of pending jobs cancelled
+            False (cancellation not yet supported)
 
         Raises:
             ValueError: If library not configured
@@ -495,41 +508,67 @@ class LibraryService:
         if not self.cfg.library_root:
             raise ValueError("Library scanning not configured")
 
-        # Clear pending scan jobs from queue using workflow
-        cleared = clear_all_workflow(self.db, queue_type="library")
-        logging.info(f"[LibraryService] Cleared {cleared} pending scan jobs")
-        return cleared > 0
+        # TODO: Implement scan cancellation for BackgroundTaskService
+        # For now, scans run to completion
+        logging.warning("[LibraryService] Scan cancellation not yet implemented for direct scans")
+        return False
 
-    def get_status(self) -> LibraryScanStatusResult:
+    def get_status(self, library_id: int | None = None) -> LibraryScanStatusResult:
         """
         Get current library scan status.
 
+        Args:
+            library_id: Optional library ID to check scan status for (uses default if None)
+
         Returns:
-            LibraryScanStatusResult with configured, library_path, enabled, pending_jobs, running_jobs
+            LibraryScanStatusResult with configured, library_path, enabled, scan_status, progress, total
         """
         if not self.cfg.library_root:
             return LibraryScanStatusResult(
                 configured=False,
                 library_path=None,
                 enabled=False,
-                pending_jobs=0,
-                running_jobs=0,
+                pending_jobs=0,  # Legacy field
+                running_jobs=0,  # Legacy field
             )
 
-        # Check if library workers are healthy (based on health table)
-        enabled = self._has_healthy_library_workers()
+        # Get library to check scan status
+        if library_id is None:
+            try:
+                library = self._get_default_library_or_error()
+                library_id = library["id"]
+            except Exception:
+                return LibraryScanStatusResult(
+                    configured=True,
+                    library_path=self.cfg.library_root,
+                    enabled=False,
+                    pending_jobs=0,
+                    running_jobs=0,
+                )
+        else:
+            library = self._get_library_or_error(library_id)
 
-        # Count jobs by status using components
-        pending_jobs = get_queue_depth(self.db, queue_type="library")
-        jobs_list, _ = list_jobs_component(self.db, queue_type="library", limit=1000)
-        running_jobs = sum(1 for job in jobs_list if job["status"] == "running")
+        # Check scan status from library record
+        scan_status = library.get("scan_status", "idle")
+        scan_progress = library.get("scan_progress", 0)
+        scan_total = library.get("scan_total", 0)
+        scanned_at = library.get("scanned_at")
+        scan_error = library.get("scan_error")
+
+        # Determine if scanning is enabled (background tasks available)
+        enabled = self.background_tasks is not None
 
         return LibraryScanStatusResult(
             configured=True,
             library_path=self.cfg.library_root,
             enabled=enabled,
-            pending_jobs=pending_jobs,
-            running_jobs=running_jobs,
+            pending_jobs=0,  # Legacy field (no queue)
+            running_jobs=1 if scan_status == "scanning" else 0,  # Legacy field
+            scan_status=scan_status,
+            scan_progress=scan_progress,
+            scan_total=scan_total,
+            scanned_at=scanned_at,
+            scan_error=scan_error,
         )
 
     def get_scan_history(self, limit: int = 100) -> list[Job]:

@@ -8,7 +8,6 @@ from nomarr.persistence.database.file_tags_sql import FileTagOperations
 from nomarr.persistence.database.health_sql import HealthOperations
 from nomarr.persistence.database.libraries_sql import LibrariesOperations
 from nomarr.persistence.database.library_files_sql import LibraryFilesOperations
-from nomarr.persistence.database.library_queue_sql import LibraryQueueOperations
 from nomarr.persistence.database.library_tags_sql import LibraryTagOperations
 from nomarr.persistence.database.meta_sql import MetaOperations
 from nomarr.persistence.database.sessions_sql import SessionOperations
@@ -72,6 +71,11 @@ SCHEMA = [
         root_path TEXT NOT NULL,
         is_enabled INTEGER DEFAULT 1 NOT NULL,
         is_default INTEGER DEFAULT 0 NOT NULL,
+        scan_status TEXT DEFAULT 'never_scanned',
+        scan_progress INTEGER DEFAULT 0,
+        scan_total INTEGER DEFAULT 0,
+        scanned_at INTEGER,
+        scan_error TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
     );
@@ -94,6 +98,9 @@ SCHEMA = [
         album TEXT,
         title TEXT,
         calibration TEXT,
+        content_hash TEXT UNIQUE,
+        needs_tagging INTEGER DEFAULT 0,
+        is_valid INTEGER DEFAULT 1,
         scanned_at INTEGER,
         last_tagged_at INTEGER,
         tagged INTEGER DEFAULT 0,
@@ -105,24 +112,6 @@ SCHEMA = [
     # Index for fast library file queries by library
     """
     CREATE INDEX IF NOT EXISTS idx_library_files_library_id ON library_files(library_id);
-    """,
-    # Library scan queue - tracks library scanning jobs (read existing tags from files)
-    # Each row represents ONE file to scan
-    """
-    CREATE TABLE IF NOT EXISTS library_queue (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        path TEXT NOT NULL,
-        status TEXT DEFAULT 'pending',
-        force INTEGER DEFAULT 0,
-        created_at INTEGER NOT NULL,
-        started_at INTEGER,
-        completed_at INTEGER,
-        error_message TEXT
-    );
-    """,
-    # Index for fast library queue queries
-    """
-    CREATE INDEX IF NOT EXISTS idx_library_queue_status ON library_queue(status);
     """,
     # Calibration queue - tracks recalibration jobs (apply calibration to existing tags)
     """
@@ -280,7 +269,6 @@ class Database:
         self.libraries = LibrariesOperations(self.conn)
         self.tag_queue = QueueOperations(self.conn)
         self.library_files = LibraryFilesOperations(self.conn)
-        self.library_queue = LibraryQueueOperations(self.conn)
         self.library_tags = LibraryTagOperations(self.conn)
         self.file_tags = FileTagOperations(self.conn)
         self.sessions = SessionOperations(self.conn)

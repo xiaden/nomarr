@@ -193,6 +193,7 @@ def compute_embeddings_for_backbone(
     from nomarr.components.ml.ml_discovery_comp import get_embedding_output_node
 
     # Load audio (no manual segmentation - let the backbone do it)
+    # Note: load_audio_mono should accept both str and LibraryPath
     audio_result = load_audio_mono(params.path, target_sr=params.target_sr)
     if should_skip_short(audio_result.duration, params.min_duration_s, params.allow_short):
         raise RuntimeError(f"audio too short ({audio_result.duration:.2f}s < {params.min_duration_s}s)")

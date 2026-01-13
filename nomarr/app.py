@@ -223,11 +223,7 @@ class Application:
         # Mark app as starting
         self.db.health.mark_starting(component="app", pid=os.getpid())
 
-        # Cleanup orphaned jobs from previous sessions
-        logging.info("[Application] Checking for stuck library scans...")
-        scan_reset_count = self.db.library_queue.reset_running_library_scans()
-        if scan_reset_count > 0:
-            logging.info(f"[Application] Reset {scan_reset_count} stuck library scan(s)")
+        # Library scans now use BackgroundTaskService (no queue cleanup needed)
 
         # Initialize keys and authentication (DI: inject db)
         logging.info("[Application] Initializing authentication...")
@@ -313,6 +309,12 @@ class Application:
         )
         self.register_service("info", info_service)
 
+        # Create BackgroundTaskService for direct library scanning
+        from nomarr.services.infrastructure.background_tasks_svc import BackgroundTaskService
+
+        background_tasks = BackgroundTaskService()
+        self.register_service("background_tasks", background_tasks)
+
         # Register library service if library_root is configured
         if self.library_root:
             logging.info(f"[Application] Registering LibraryService with namespace={self.namespace}")
@@ -320,11 +322,15 @@ class Application:
                 namespace=self.namespace,
                 library_root=self.library_root,
             )
-            library_service = LibraryService(db=self.db, cfg=library_cfg)
+            library_service = LibraryService(
+                db=self.db,
+                cfg=library_cfg,
+                background_tasks=background_tasks,
+            )
             library_service.ensure_default_library_exists()
             self.register_service("library", library_service)
         else:
-            logging.info("[Application] LibraryScanWorker not started (no library_root)")
+            logging.info("[Application] No library root configured, library service not started")
 
         # Register recalibration service
         self.register_service(
@@ -340,19 +346,12 @@ class Application:
 
         # Create processing backend functions using worker-specific factories
         from nomarr.services.infrastructure.workers.recalibration import create_recalibration_backend
-        from nomarr.services.infrastructure.workers.scanner import create_scanner_backend
         from nomarr.services.infrastructure.workers.tagger import create_tagger_backend
 
         tagger_backend = create_tagger_backend(
             models_dir=Path(self.models_dir),
             namespace=self.namespace,
             calibrate_heads=self.calibrate_heads,
-            version_tag_key=self.version_tag_key,
-            tagger_version=self.tagger_version,
-        )
-
-        scanner_backend = create_scanner_backend(
-            namespace=self.namespace,
             version_tag_key=self.version_tag_key,
             tagger_version=self.tagger_version,
         )
@@ -367,18 +366,15 @@ class Application:
         # Get per-pool worker counts from config
         config_service = self.get_service("config")
         tagger_count = config_service.get_worker_count("tagger")
-        scanner_count = config_service.get_worker_count("scanner")
         recalibration_count = config_service.get_worker_count("recalibration")
 
         # Create WorkerSystemService with backends
         self.worker_system = WorkerSystemService(
             db=self.db,
             tagger_backend=tagger_backend,
-            scanner_backend=scanner_backend if self.library_root else None,
             recalibration_backend=recalibration_backend,
             event_broker=self.event_broker,
             tagger_count=tagger_count,
-            scanner_count=scanner_count,
             recalibration_count=recalibration_count,
             default_enabled=self.worker_enabled_default,
         )

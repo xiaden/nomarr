@@ -99,8 +99,6 @@ def enqueue_file(db: Database, path: LibraryPath, force: bool, queue_type: Queue
 
     if queue_type == "tag":
         return db.tag_queue.enqueue(path, force)
-    elif queue_type == "library":
-        return db.library_queue.enqueue_scan(path, force)
     elif queue_type == "calibration":
         return db.calibration_queue.enqueue_calibration(path)
     else:

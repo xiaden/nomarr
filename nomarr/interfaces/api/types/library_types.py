@@ -19,6 +19,7 @@ from typing_extensions import Self
 from nomarr.helpers.dto.library_dto import (
     LibraryDict,
     LibraryStatsResult,
+    ReconcileResult,
     StartScanResult,
 )
 
@@ -41,6 +42,11 @@ class LibraryResponse(BaseModel):
     is_default: bool
     created_at: str
     updated_at: str
+    scan_status: str | None = None
+    scan_progress: int | None = None
+    scan_total: int | None = None
+    scanned_at: str | None = None
+    scan_error: str | None = None
 
     @classmethod
     def from_dto(cls, library: LibraryDict) -> Self:
@@ -67,6 +73,16 @@ class LibraryResponse(BaseModel):
 
             updated_at = datetime.fromtimestamp(updated_at / 1000, tz=timezone.utc).isoformat()
 
+        # Convert scanned_at timestamp if present
+        scanned_at_raw = library.scanned_at
+        scanned_at: str | None = None
+        if isinstance(scanned_at_raw, int):
+            from datetime import datetime, timezone
+
+            scanned_at = datetime.fromtimestamp(scanned_at_raw / 1000, tz=timezone.utc).isoformat()
+        elif isinstance(scanned_at_raw, str):
+            scanned_at = scanned_at_raw
+
         return cls(
             id=library.id,
             name=library.name,
@@ -75,6 +91,11 @@ class LibraryResponse(BaseModel):
             is_default=library.is_default,
             created_at=created_at,
             updated_at=updated_at,
+            scan_status=library.scan_status,
+            scan_progress=library.scan_progress,
+            scan_total=library.scan_total,
+            scanned_at=scanned_at,
+            scan_error=library.scan_error,
         )
 
 
@@ -121,7 +142,7 @@ class StartScanResponse(BaseModel):
     files_queued: int
     files_skipped: int
     files_removed: int
-    job_ids: list[int]
+    job_ids: list[int] | list[str]  # Can be int (legacy queue IDs) or str (task IDs)
 
     @classmethod
     def from_dto(cls, result: StartScanResult) -> Self:
@@ -202,7 +223,6 @@ class ScanLibraryRequest(BaseModel):
 
     paths: list[str] | None = None
     recursive: bool = True
-    force: bool = False
     clean_missing: bool = True
 
 
@@ -345,8 +365,8 @@ class ReconcilePathsResponse(BaseModel):
     errors: int
 
     @classmethod
-    def from_dict(cls, result: dict[str, int]) -> ReconcilePathsResponse:
-        """Transform reconciliation result dict to API response."""
+    def from_dict(cls, result: ReconcileResult) -> ReconcilePathsResponse:
+        """Transform ReconcileResult DTO to API response."""
         return cls(
             total_files=result["total_files"],
             valid_files=result["valid_files"],

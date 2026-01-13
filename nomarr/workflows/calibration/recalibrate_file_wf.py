@@ -333,8 +333,11 @@ def _update_db_and_file(
     logging.debug(f"[recalibration] Updated {len(mood_tags)} mood tags in DB")
 
     # Write mood-* tags to file (TagWriter handles namespace prefix for file tags)
+    from nomarr.helpers.dto.path_dto import build_library_path_from_input
+
+    library_path = build_library_path_from_input(file_path, db)
     writer = TagWriter(overwrite=True, namespace=namespace)
-    writer.write(file_path, mood_tags)
+    writer.write(library_path, mood_tags)
 
     logging.info(f"[recalibration] Recalibration complete for {file_path}")
 

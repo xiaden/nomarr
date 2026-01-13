@@ -65,7 +65,9 @@ class LibrariesOperations:
         """
         cursor = self.conn.execute(
             """
-            SELECT id, name, root_path, is_enabled, is_default, created_at, updated_at
+            SELECT id, name, root_path, is_enabled, is_default,
+                   scan_status, scan_progress, scan_total, scanned_at, scan_error,
+                   created_at, updated_at
             FROM libraries
             WHERE id = ?
             """,
@@ -81,8 +83,13 @@ class LibrariesOperations:
             "root_path": row[2],
             "is_enabled": bool(row[3]),
             "is_default": bool(row[4]),
-            "created_at": row[5],
-            "updated_at": row[6],
+            "scan_status": row[5],
+            "scan_progress": row[6],
+            "scan_total": row[7],
+            "scanned_at": row[8],
+            "scan_error": row[9],
+            "created_at": row[10],
+            "updated_at": row[11],
         }
 
     def get_library_by_name(self, name: str) -> dict[str, Any] | None:
@@ -97,7 +104,9 @@ class LibrariesOperations:
         """
         cursor = self.conn.execute(
             """
-            SELECT id, name, root_path, is_enabled, is_default, created_at, updated_at
+            SELECT id, name, root_path, is_enabled, is_default,
+                   scan_status, scan_progress, scan_total, scanned_at, scan_error,
+                   created_at, updated_at
             FROM libraries
             WHERE name = ?
             """,
@@ -113,8 +122,13 @@ class LibrariesOperations:
             "root_path": row[2],
             "is_enabled": bool(row[3]),
             "is_default": bool(row[4]),
-            "created_at": row[5],
-            "updated_at": row[6],
+            "scan_status": row[5],
+            "scan_progress": row[6],
+            "scan_total": row[7],
+            "scanned_at": row[8],
+            "scan_error": row[9],
+            "created_at": row[10],
+            "updated_at": row[11],
         }
 
     def list_libraries(self, enabled_only: bool = False) -> list[dict[str, Any]]:
@@ -128,7 +142,9 @@ class LibrariesOperations:
             List of library dicts
         """
         query = """
-            SELECT id, name, root_path, is_enabled, is_default, created_at, updated_at
+            SELECT id, name, root_path, is_enabled, is_default,
+                   scan_status, scan_progress, scan_total, scanned_at, scan_error,
+                   created_at, updated_at
             FROM libraries
         """
         params: tuple = ()
@@ -148,8 +164,13 @@ class LibrariesOperations:
                     "root_path": row[2],
                     "is_enabled": bool(row[3]),
                     "is_default": bool(row[4]),
-                    "created_at": row[5],
-                    "updated_at": row[6],
+                    "scan_status": row[5],
+                    "scan_progress": row[6],
+                    "scan_total": row[7],
+                    "scanned_at": row[8],
+                    "scan_error": row[9],
+                    "created_at": row[10],
+                    "updated_at": row[11],
                 }
             )
         return libraries
@@ -163,7 +184,9 @@ class LibrariesOperations:
         """
         cursor = self.conn.execute(
             """
-            SELECT id, name, root_path, is_enabled, is_default, created_at, updated_at
+            SELECT id, name, root_path, is_enabled, is_default,
+                   scan_status, scan_progress, scan_total, scanned_at, scan_error,
+                   created_at, updated_at
             FROM libraries
             WHERE is_default = 1
             LIMIT 1
@@ -179,8 +202,13 @@ class LibrariesOperations:
             "root_path": row[2],
             "is_enabled": bool(row[3]),
             "is_default": bool(row[4]),
-            "created_at": row[5],
-            "updated_at": row[6],
+            "scan_status": row[5],
+            "scan_progress": row[6],
+            "scan_total": row[7],
+            "scanned_at": row[8],
+            "scan_error": row[9],
+            "created_at": row[10],
+            "updated_at": row[11],
         }
 
     def update_library(
@@ -326,7 +354,9 @@ class LibrariesOperations:
         # This ensures we match the most specific library
         cursor = self.conn.execute(
             """
-            SELECT id, name, root_path, is_enabled, is_default, created_at, updated_at,
+            SELECT id, name, root_path, is_enabled, is_default,
+                   scan_status, scan_progress, scan_total, scanned_at, scan_error,
+                   created_at, updated_at,
                    LENGTH(root_path) as path_len
             FROM libraries
             ORDER BY path_len DESC
@@ -346,11 +376,63 @@ class LibrariesOperations:
                     "root_path": str(library_root),
                     "is_enabled": bool(row[3]),
                     "is_default": bool(row[4]),
-                    "created_at": row[5],
-                    "updated_at": row[6],
+                    "scan_status": row[5],
+                    "scan_progress": row[6],
+                    "scan_total": row[7],
+                    "scanned_at": row[8],
+                    "scan_error": row[9],
+                    "created_at": row[10],
+                    "updated_at": row[11],
                 }
             except ValueError:
                 # Not a subpath, continue to next library
                 continue
 
         return None
+
+    def update_scan_status(
+        self,
+        library_id: int,
+        status: str | None = None,
+        progress: int | None = None,
+        total: int | None = None,
+        scanned_at: int | None = None,
+        scan_error: str | None = None,
+    ) -> None:
+        """
+        Update library scan status and progress.
+
+        Args:
+            library_id: Library ID
+            status: Scan status ('scanning', 'complete', 'error', 'never_scanned')
+            progress: Current progress (files scanned so far)
+            total: Total files to scan
+            scanned_at: Timestamp of last successful scan completion
+            scan_error: Error message if status='error'
+        """
+        updates = []
+        params: list[Any] = []
+
+        if status is not None:
+            updates.append("scan_status=?")
+            params.append(status)
+        if progress is not None:
+            updates.append("scan_progress=?")
+            params.append(progress)
+        if total is not None:
+            updates.append("scan_total=?")
+            params.append(total)
+        if scanned_at is not None:
+            updates.append("scanned_at=?")
+            params.append(scanned_at)
+        if scan_error is not None:
+            updates.append("scan_error=?")
+            params.append(scan_error)
+
+        if not updates:
+            return  # Nothing to update
+
+        params.append(library_id)
+
+        self.conn.execute(f"UPDATE libraries SET {', '.join(updates)} WHERE id=?", params)
+        self.conn.commit()

@@ -7,7 +7,19 @@ Cross-layer data contracts for library service operations (used by services and 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypedDict
+
+
+class ReconcileResult(TypedDict):
+    """Statistics from library path reconciliation operation."""
+
+    total_files: int
+    valid_files: int
+    invalid_config: int
+    not_found: int
+    unknown_status: int
+    deleted_files: int
+    errors: int
 
 
 @dataclass
@@ -17,8 +29,13 @@ class LibraryScanStatusResult:
     configured: bool
     library_path: str | None
     enabled: bool
-    pending_jobs: int
-    running_jobs: int
+    pending_jobs: int  # Legacy (deprecated, always 0)
+    running_jobs: int  # Legacy (deprecated, 1 if scanning else 0)
+    scan_status: str | None = None  # "idle", "scanning", "complete", "error"
+    scan_progress: int | None = None  # Number of files processed
+    scan_total: int | None = None  # Total files to process
+    scanned_at: int | None = None  # Timestamp (ms) of last scan completion
+    scan_error: str | None = None  # Error message if scan_status == "error"
 
 
 @dataclass
@@ -43,6 +60,11 @@ class LibraryDict:
     is_default: bool
     created_at: str | int  # Can be ISO string or Unix timestamp (ms)
     updated_at: str | int  # Can be ISO string or Unix timestamp (ms)
+    scan_status: str | None = None
+    scan_progress: int | None = None
+    scan_total: int | None = None
+    scanned_at: int | None = None
+    scan_error: str | None = None
 
 
 @dataclass
@@ -53,7 +75,7 @@ class StartScanResult:
     files_queued: int
     files_skipped: int
     files_removed: int
-    job_ids: list[int]
+    job_ids: list[int] | list[str]  # Can be int (legacy queue IDs) or str (task IDs)
 
 
 @dataclass

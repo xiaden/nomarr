@@ -1,7 +1,7 @@
 """
 Worker System Service - Process Pool Management with Health Monitoring.
 
-Manages all worker processes (taggers, scanners, recalibration) with:
+Manages all worker processes (taggers, recalibration) with:
 - Automatic health monitoring and restart
 - Exponential backoff for failed workers
 - Per-worker process isolation
@@ -29,11 +29,10 @@ from nomarr.helpers.dto.admin_dto import WorkerOperationResult
 from nomarr.persistence.db import Database
 from nomarr.services.infrastructure.workers.base import BaseWorker
 from nomarr.services.infrastructure.workers.recalibration import RecalibrationWorker
-from nomarr.services.infrastructure.workers.scanner import LibraryScanWorker
 from nomarr.services.infrastructure.workers.tagger import TaggerWorker
 
 # Queue type literal (matches queue_svc.py)
-QueueType = Literal["tag", "library", "calibration"]
+QueueType = Literal["tag", "calibration"]
 
 # Restart and health monitoring constants
 MAX_RESTARTS_IN_WINDOW = 5  # Maximum restarts before marking as failed
@@ -95,11 +94,9 @@ class WorkerSystemService:
         self,
         db: Database,
         tagger_backend: Callable[[Database, str, bool], Any],
-        scanner_backend: Callable[[Database, str, bool], Any] | None,
         recalibration_backend: Callable[[Database, str, bool], Any],
         event_broker: Any,
         tagger_count: int = 2,
-        scanner_count: int = 10,
         recalibration_count: int = 5,
         default_enabled: bool = True,
     ):
@@ -109,28 +106,23 @@ class WorkerSystemService:
         Args:
             db: Database instance (for health monitoring and meta flags)
             tagger_backend: Processing backend for tagger workers
-            scanner_backend: Processing backend for scanner workers (None if no library_root)
             recalibration_backend: Processing backend for recalibration workers
             event_broker: Event broker for SSE updates
             tagger_count: Number of tagger worker processes (default: 2, ML heavy)
-            scanner_count: Number of scanner worker processes (default: 10, I/O bound)
             recalibration_count: Number of recalibration worker processes (default: 5, CPU light)
             default_enabled: Default worker_enabled flag if not in DB (default: True)
         """
         self.db = db
         self.tagger_backend = tagger_backend
-        self.scanner_backend = scanner_backend
         self.recalibration_backend = recalibration_backend
         self.event_broker = event_broker
         self.tagger_count = tagger_count
-        self.scanner_count = scanner_count
         self.recalibration_count = recalibration_count
         self.default_enabled = default_enabled
 
         # Centralized worker collections by queue type
         self._worker_groups: dict[QueueType, list[BaseWorker]] = {
             "tag": [],
-            "library": [],
             "calibration": [],
         }
 
@@ -187,10 +179,6 @@ class WorkerSystemService:
 
         # Start tagger workers (only starts missing workers)
         self._start_tagger_workers()
-
-        # Start scanner workers (if backend configured)
-        if self.scanner_backend:
-            self._start_scanner_workers()
 
         # Start recalibration workers
         self._start_recalibration_workers()
@@ -271,32 +259,6 @@ class WorkerSystemService:
             worker.start()
             existing_workers.append(worker)
             logging.info(f"[WorkerSystemService] Started TaggerWorker-{i} (PID: {worker.pid})")
-
-    def _start_scanner_workers(self) -> None:
-        """Start N scanner worker processes (only starts missing workers)."""
-        if not self.scanner_backend:
-            return
-
-        existing_workers = self._worker_groups["library"]
-
-        # Remove dead workers from list
-        existing_workers[:] = [w for w in existing_workers if w.is_alive()]
-
-        # Start missing workers
-        for i in range(self.scanner_count):
-            # Check if worker with this ID already exists and is alive
-            if any(w.worker_id == i and w.is_alive() for w in existing_workers):
-                continue
-
-            worker = LibraryScanWorker(
-                db_path=str(self.db.path),
-                processing_backend=self.scanner_backend,
-                worker_id=i,
-                interval=5,
-            )
-            worker.start()
-            existing_workers.append(worker)
-            logging.info(f"[WorkerSystemService] Started LibraryScanWorker-{i} (PID: {worker.pid})")
 
     def _start_recalibration_workers(self) -> None:
         """Start N recalibration worker processes (only starts missing workers)."""
@@ -487,7 +449,8 @@ class WorkerSystemService:
             try:
                 from typing import Literal, cast
 
-                queue_type_literal = cast(Literal["tag", "library", "calibration"], queue_type)
+                # Library queue removed, only tag and calibration supported
+                queue_type_literal = cast(Literal["tag", "calibration"], queue_type)
                 self._restart_worker(worker, queue_type_literal, component_id)
             except Exception as e:
                 logging.error(f"[WorkerSystemService] Background restart failed for {component_id}: {e}")
@@ -601,7 +564,7 @@ class WorkerSystemService:
         Create a new worker process.
 
         Args:
-            queue_type: Queue type ("tag", "library", "calibration")
+            queue_type: Queue type ("tag", "calibration")
             worker_id: Worker ID
 
         Returns:
@@ -613,15 +576,6 @@ class WorkerSystemService:
                 processing_backend=self.tagger_backend,
                 worker_id=worker_id,
                 interval=2,
-            )
-        elif queue_type == "library":
-            if not self.scanner_backend:
-                raise ValueError("Scanner backend not configured")
-            return LibraryScanWorker(
-                db_path=str(self.db.path),
-                processing_backend=self.scanner_backend,
-                worker_id=worker_id,
-                interval=5,
             )
         elif queue_type == "calibration":
             return RecalibrationWorker(

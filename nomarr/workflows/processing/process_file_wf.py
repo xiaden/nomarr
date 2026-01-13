@@ -143,6 +143,7 @@ def _compute_embeddings_for_backbone(
     first_head: HeadInfo,
     path: str,
     config: ProcessorConfig,
+    db: Database | None,  # Required for LibraryPath validation
 ) -> tuple[np.ndarray, float]:
     """
     Compute embeddings for a single backbone.
@@ -165,6 +166,13 @@ def _compute_embeddings_for_backbone(
 
     logging.debug(f"[processor] Computing embeddings for {backbone}: sr={target_sr}")
 
+    # Build LibraryPath at call site (security boundary)
+    from nomarr.helpers.dto.path_dto import build_library_path_from_input
+
+    library_path = build_library_path_from_input(path, db) if db else None
+    if not library_path or not library_path.is_valid():
+        raise ValueError(f"Cannot compute embeddings for invalid path: {path}")
+
     t_emb = time.time()
     params = ComputeEmbeddingsForBackboneParams(
         backbone=backbone,
@@ -172,7 +180,7 @@ def _compute_embeddings_for_backbone(
         target_sr=target_sr,
         segment_s=seg_len,
         hop_s=hop_len,
-        path=path,
+        path=library_path,
         min_duration_s=config.min_duration_s,
         allow_short=config.allow_short,
     )
@@ -389,6 +397,7 @@ def _write_tags_to_file(
     writer: TagWriter,
     path: str,
     file_tags: dict[str, Any],
+    db: Database | None,
 ) -> None:
     """
     Write filtered tags to audio file.
@@ -397,9 +406,15 @@ def _write_tags_to_file(
         writer: TagWriter instance
         path: Path to audio file
         file_tags: Tags to write to file
+        db: Database instance (needed for path validation)
     """
     if file_tags:
-        writer.write(path, file_tags)
+        if not db:
+            raise ValueError("Database required for path validation")
+        from nomarr.helpers.dto.path_dto import build_library_path_from_input
+
+        library_path = build_library_path_from_input(path, db)
+        writer.write(library_path, file_tags)
         logging.debug(f"[processor] Wrote {len(file_tags)} tags to file")
     else:
         logging.debug("[processor] No tags written to file (file_write_mode=none or empty filter result)")
@@ -434,14 +449,38 @@ def _sync_database(
         return
 
     try:
+        import hashlib
+
         from nomarr.components.library.library_update_comp import update_library_from_tags
         from nomarr.components.library.metadata_extraction_comp import extract_metadata
+        from nomarr.helpers.dto.path_dto import build_library_path_from_input
+        from nomarr.helpers.time_helper import now_ms
 
-        # Write FULL tags to file temporarily for DB sync
-        writer.write(path, db_tags)
+        library_path = build_library_path_from_input(path, db)
 
-        # Extract metadata from the freshly-tagged file
-        metadata = extract_metadata(path, namespace=namespace)
+        # Extract metadata BEFORE writing tags (to get base metadata for hash)
+        metadata_pre_tag = extract_metadata(library_path, namespace=namespace)
+
+        # Compute content_hash from metadata (same algorithm as scan_library_direct_wf.py)
+        # Hash formula: MD5(path|duration|artist|album|title|timestamp)
+        # This hash will be written to file tags and used for move detection
+        duration = metadata_pre_tag.get("duration", 0)
+        artist = metadata_pre_tag.get("artist", "")
+        album = metadata_pre_tag.get("album", "")
+        title = metadata_pre_tag.get("title", "")
+        timestamp = now_ms()
+        hash_input = f"{path}|{duration}|{artist}|{album}|{title}|{timestamp}"
+        content_hash = hashlib.md5(hash_input.encode()).hexdigest()
+
+        # Add content_hash to tags that will be written to file
+        db_tags["content_hash"] = content_hash
+        file_tags["content_hash"] = content_hash  # Always write to file (for move detection)
+
+        # Write FULL tags to file (including content_hash)
+        writer.write(library_path, db_tags)
+
+        # Extract metadata from the freshly-tagged file (now includes content_hash)
+        metadata = extract_metadata(library_path, namespace=namespace)
 
         # Update library database with extracted metadata
         update_library_from_tags(
@@ -457,7 +496,7 @@ def _sync_database(
 
         # Now rewrite file with filtered tags if mode is not "full"
         if file_write_mode != "full":
-            writer.write(path, file_tags)
+            writer.write(library_path, file_tags)
             logging.debug(f"[processor] Rewrote file with filtered tags (mode={file_write_mode})")
     except Exception as e:
         # Don't fail the entire processing if library update fails
@@ -639,7 +678,7 @@ def process_file_workflow(
 
         # Compute embeddings for this backbone
         try:
-            embeddings_2d, duration = _compute_embeddings_for_backbone(backbone, first_head, path, config)
+            embeddings_2d, duration = _compute_embeddings_for_backbone(backbone, first_head, path, config, db)
             if duration_final is None:
                 duration_final = float(duration)
         except RuntimeError as e:

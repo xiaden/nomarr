@@ -104,16 +104,6 @@ def clear_jobs_by_status(db: Database, statuses: list[str], queue_type: QueueTyp
 
     if queue_type == "tag":
         return db.tag_queue.delete_jobs_by_status(statuses)
-    elif queue_type == "library":
-        # Library queue only supports clearing ALL jobs
-        if set(statuses) >= {"pending", "done", "error"}:
-            # If they want to clear everything, do it
-            return db.library_queue.clear_scan_queue()
-        else:
-            raise UnsupportedQueueOperationError(
-                "Library queue does not support selective status filtering. "
-                "Can only clear all jobs (pending+done+error) via clear_all_jobs()."
-            )
     elif queue_type == "calibration":
         # Calibration queue only supports clearing ALL jobs
         if set(statuses) >= {"pending", "done", "error"}:
@@ -210,9 +200,6 @@ def clear_all_jobs(db: Database, queue_type: QueueType) -> int:
     if queue_type == "tag":
         # Tag queue: selective clear (preserves running jobs)
         return clear_jobs_by_status(db, ["pending", "done", "error"], queue_type)
-    elif queue_type == "library":
-        # Library queue: clears everything including running
-        return db.library_queue.clear_scan_queue()
     elif queue_type == "calibration":
         # Calibration queue: clears everything including running
         return db.calibration_queue.clear_calibration_queue()
@@ -244,8 +231,6 @@ def reset_stuck_jobs(db: Database, queue_type: QueueType) -> int:
 
     if queue_type == "tag":
         return db.tag_queue.reset_stuck_jobs()
-    elif queue_type == "library":
-        return db.library_queue.reset_running_library_scans()
     elif queue_type == "calibration":
         raise UnsupportedQueueOperationError(
             "Calibration queue does not support resetting stuck jobs. Use clear_all_jobs() to clear queue."

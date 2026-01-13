@@ -25,7 +25,7 @@ else:
     MonoLoader = None
 
 
-def load_audio_mono(path: LibraryPath, target_sr: int = 16000) -> LoadAudioMonoResult:
+def load_audio_mono(path: LibraryPath | str, target_sr: int = 16000) -> LoadAudioMonoResult:
     """
     Load an audio file as mono float32 in [-1, 1] at target_sr.
     Returns: LoadAudioMonoResult with waveform, sample_rate, duration
@@ -34,17 +34,20 @@ def load_audio_mono(path: LibraryPath, target_sr: int = 16000) -> LoadAudioMonoR
     Falls back to soundfile if Essentia is not available.
 
     Args:
-        path: LibraryPath to audio file (must be valid)
+        path: LibraryPath (validated) or str (absolute path, validation bypassed)
         target_sr: Target sample rate in Hz
 
     Raises:
-        ValueError: If path is invalid
+        ValueError: If LibraryPath is invalid
     """
-    # Enforce validation before file operations
-    if not path.is_valid():
-        raise ValueError(f"Cannot load audio from invalid path ({path.status}): {path.absolute} - {path.reason}")
-
-    path_str = str(path.absolute)
+    # Handle both LibraryPath and str
+    if isinstance(path, str):
+        path_str = path
+    else:
+        # Enforce validation before file operations for LibraryPath
+        if not path.is_valid():
+            raise ValueError(f"Cannot load audio from invalid path ({path.status}): {path.absolute} - {path.reason}")
+        path_str = str(path.absolute)
 
     if HAVE_ESSENTIA:
         # Essentia's MonoLoader handles resampling and format conversion automatically
