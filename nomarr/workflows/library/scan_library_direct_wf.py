@@ -50,7 +50,7 @@ def scan_library_direct_workflow(
         - files_discovered: int (total audio files found)
         - files_added: int (new files)
         - files_updated: int (changed files)
-        - files_moved: int (detected during ML processing via chromaprint, not during scan)
+        - files_moved: int (detected via chromaprint comparison to removed files)
         - files_removed: int (marked invalid)
         - files_skipped: int (unchanged, not rescanned)
         - files_failed: int (extraction errors)
@@ -59,7 +59,8 @@ def scan_library_direct_workflow(
 
     Notes:
         - Batches DB writes by folder for crash recovery
-        - Move detection happens during ML processing when chromaprint is computed
+        - Move detection: new files with chromaprint matching removed files are moves
+        - Chromaprint computed for new files if not in DB (requires audio load)
         - Crashes intentionally on fatal errors (loud failure for Docker)
         - Progress tracked via library.scan_progress column
     """
@@ -220,14 +221,76 @@ def scan_library_direct_workflow(
                 db.library_files.bulk_mark_invalid(list(missing_paths))
                 stats["files_removed"] += len(missing_paths)
 
-        # PHASE 5: Mark missing files as invalid (move detection happens during ML processing)
-        # Note: Move detection is deferred to ML processing when chromaprint is computed.
-        # This avoids expensive audio loading during scan.
+        # PHASE 5: Move detection (conditional on chromaprint availability)
         if enable_move_detection and files_to_remove:
-            logger.info(f"[scan_library] Removing {len(files_to_remove)} deleted files from library")
-            paths_to_remove = [f["path"] for f in files_to_remove]
-            db.library_files.bulk_mark_invalid(paths_to_remove)
-            stats["files_removed"] += len(files_to_remove)
+            # Check if any chromaprints exist in this library (indicates ML has run)
+            has_chromaprints = any(f.get("chromaprint") for f in files_to_remove)
+
+            if not has_chromaprints:
+                # Fast path: No chromaprints in DB yet, can't do move detection
+                # Just mark missing files as invalid
+                logger.info(
+                    f"[scan_library] No chromaprints found in library - "
+                    f"skipping move detection, removing {len(files_to_remove)} files"
+                )
+                paths_to_remove = [f["path"] for f in files_to_remove]
+                db.library_files.bulk_mark_invalid(paths_to_remove)
+                stats["files_removed"] += len(files_to_remove)
+            else:
+                # Chromaprints exist - do full move detection
+                from nomarr.components.library.metadata_extraction_comp import load_audio_for_chromaprint
+                from nomarr.components.ml.chromaprint_comp import compute_chromaprint
+
+                logger.info(
+                    f"[scan_library] Chromaprints found - checking {len(new_files)} new files for moves "
+                    f"against {len(files_to_remove)} removed files..."
+                )
+                matched_moves: set[int] = set()
+
+                for new_file in new_files:
+                    new_path = new_file["path"]
+
+                    # Compute chromaprint for new file (requires audio load)
+                    try:
+                        library_path_for_audio = build_library_path_from_input(new_path, db)
+                        if not library_path_for_audio.is_valid():
+                            continue
+
+                        waveform, sample_rate = load_audio_for_chromaprint(library_path_for_audio)
+                        new_chromaprint = compute_chromaprint(waveform, sample_rate)
+
+                        # Check if chromaprint matches any removed file
+                        for idx, removed_file in enumerate(files_to_remove):
+                            if idx in matched_moves:
+                                continue
+
+                            removed_chromaprint = removed_file.get("chromaprint")
+                            if new_chromaprint and removed_chromaprint and removed_chromaprint == new_chromaprint:
+                                # Match found - update path instead of adding new entry
+                                logger.info(f"[scan_library] File moved: {removed_file['path']} → {new_path}")
+                                db.library_files.update_file_path(
+                                    old_path=removed_file["path"],
+                                    new_path=new_path,
+                                    file_size=new_file["file_size"],
+                                    modified_time=new_file["modified_time"],
+                                )
+                                stats["files_moved"] += 1
+                                matched_moves.add(idx)
+                                break
+                    except Exception as e:
+                        logger.warning(f"[scan_library] Failed to compute chromaprint for {new_path}: {e}")
+                        continue
+
+                # PHASE 6: Bulk remove remaining unmatched missing files
+                unmatched_removed = [f for idx, f in enumerate(files_to_remove) if idx not in matched_moves]
+                if unmatched_removed:
+                    logger.info(f"[scan_library] Removing {len(unmatched_removed)} deleted files from library")
+                    paths_to_remove = [f["path"] for f in unmatched_removed]
+                    db.library_files.bulk_mark_invalid(paths_to_remove)
+                    stats["files_removed"] += len(unmatched_removed)
+                paths_to_remove = [f["path"] for f in unmatched_removed]
+                db.library_files.bulk_mark_invalid(paths_to_remove)
+                stats["files_removed"] += len(unmatched_removed)
 
         # PHASE 7: Finalize scan
         scan_duration = time.time() - start_time

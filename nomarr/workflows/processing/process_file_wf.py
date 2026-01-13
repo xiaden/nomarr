@@ -676,40 +676,6 @@ def process_file_workflow(
             if chromaprint_from_ml is None:
                 chromaprint_from_ml = chromaprint_hash
 
-                # Check for moved files: if chromaprint matches an invalid file, it's a move
-                # Only check if we have db and library_path available
-                if chromaprint_from_ml and db is not None and library_path is not None:
-                    matching_invalid_files = db.library_files.get_files_by_chromaprint(
-                        chromaprint_from_ml,
-                        library_id=library_path.library_id,
-                    )
-                    # Filter to invalid files only (removed from filesystem)
-                    moved_files = [f for f in matching_invalid_files if not f.get("is_valid", True)]
-
-                    if moved_files:
-                        old_path = moved_files[0]["path"]
-                        logging.info(f"[processor] Detected moved file: {old_path} → {library_path.relative}")
-                        # Update DB entry: change path and mark valid
-                        db.library_files.update_file_path(
-                            old_path=old_path,
-                            new_path=library_path.relative,
-                            file_size=library_path.absolute.stat().st_size,
-                            modified_time=int(library_path.absolute.stat().st_mtime * 1000),
-                        )
-                        # Skip further processing - file already has tags from old location
-                        logging.info("[processor] Reactivated moved file, skipping ML processing")
-                        # Return early with minimal result
-                        return ProcessFileResult(
-                            file=path,
-                            elapsed=time.time() - start_all,
-                            duration=None,
-                            heads_processed=0,
-                            tags_written=0,
-                            head_results={"_move_detected": {"status": "moved", "old_path": old_path}},
-                            mood_aggregations=None,
-                            tags={},
-                        )
-
         except RuntimeError as e:
             logging.warning(f"[processor] Skipping backbone {backbone}: {e}")
             for head in backbone_heads:
