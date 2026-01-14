@@ -30,7 +30,7 @@ EXPECTED DEPENDENCIES:
   - calibrate_heads: bool
 
 - `db: Database | None` - Optional database instance for library updates
-  - If provided, must support: db.library_files.*, db.file_tags.*, db.conn
+  - If provided, must support: db.library_files.*, db.file_tags.*
   - Used to update library_files and file_tags after successful tagging
 
 USAGE:

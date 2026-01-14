@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import threading
 import time
 from pathlib import Path
@@ -27,6 +28,32 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from nomarr.components.events.event_broker_comp import StateBroker
 from nomarr.persistence.db import Database
+
+
+def validate_environment() -> None:
+    """Validate required environment variables at startup.
+
+    Prevents workers from each spamming "missing ARANGO_HOST" errors.
+    Fails fast with clear message if config is incomplete.
+    """
+    required_vars = [
+        "ARANGO_HOST",
+        "ARANGO_PASSWORD",
+    ]
+
+    missing = [var for var in required_vars if not os.getenv(var)]
+
+    if missing:
+        print(f"ERROR: Missing required environment variables: {', '.join(missing)}", file=sys.stderr)
+        print("\nRequired for ArangoDB connection:", file=sys.stderr)
+        print("  ARANGO_HOST - Database server URL (e.g., http://nomarr-arangodb:8529)", file=sys.stderr)
+        print("  ARANGO_PASSWORD - App user password (NOT root password)", file=sys.stderr)
+        print("\nOptional (have defaults):", file=sys.stderr)
+        print("  ARANGO_USERNAME - Database username (default: nomarr)", file=sys.stderr)
+        print("  ARANGO_DBNAME - Database name (default: nomarr)", file=sys.stderr)
+        sys.exit(1)
+
+
 from nomarr.services.domain.analytics_svc import AnalyticsService
 from nomarr.services.domain.calibration_svc import CalibrationService
 from nomarr.services.domain.library_svc import LibraryRootConfig, LibraryService
@@ -80,6 +107,9 @@ class Application:
         Loads configuration and creates database and queue immediately.
         Services are initialized later during start().
         """
+        # Validate environment variables early
+        validate_environment()
+
         # Load configuration (private - external access via ConfigService)
         config_service = ConfigService()
         self._config = config_service.get_config().config
@@ -118,7 +148,7 @@ class Application:
         self.tagger_version: str = TAGGER_VERSION
 
         # Core dependencies (owned by Application)
-        self.db = Database(self.db_path)
+        self.db = Database()
 
         # Config service for registration
         self._config_service = config_service
@@ -174,13 +204,13 @@ class Application:
 
         def heartbeat_loop():
             # Use dedicated DB connection for this thread to avoid transaction conflicts
-            heartbeat_db = Database(self.db_path)
+            heartbeat_db = Database()
 
             while self._running:
                 try:
                     # Periodic heartbeat update (status="healthy" by default)
                     heartbeat_db.health.update_heartbeat(
-                        component="app",
+                        component_id="app",
                         status="healthy",
                     )
                 except Exception as e:
@@ -217,11 +247,9 @@ class Application:
         # Clean ephemeral state from previous runs (Phase 3: health monitoring)
         logging.info("[Application] Cleaning ephemeral runtime state...")
         self.db.health.clean_all()
-        # Delete worker/job meta keys from previous runs
-        self.db.meta.delete_ephemeral_runtime_keys()
 
         # Mark app as starting
-        self.db.health.mark_starting(component="app", pid=os.getpid())
+        self.db.health.mark_starting(component_id="app", component_type="app")
 
         # Library scans now use BackgroundTaskService (no queue cleanup needed)
 
@@ -389,7 +417,7 @@ class Application:
         self._start_app_heartbeat()
 
         # Mark app as fully healthy after all services/workers started
-        self.db.health.mark_healthy(component="app", pid=os.getpid())
+        self.db.health.mark_healthy(component_id="app")
 
         logging.info("[Application] Started successfully - all workers operational")
 
@@ -421,12 +449,11 @@ class Application:
             self.health_monitor.stop()
 
         # Mark app as stopping
-        self.db.health.mark_stopping(component="app", exit_code=0)
+        self.db.health.mark_stopping(component_id="app", exit_code=0)
 
         # Clean ephemeral state (Phase 3: health monitoring)
         logging.info("[Application] Cleaning ephemeral runtime state...")
         self.db.health.clean_all()
-        self.db.meta.delete_ephemeral_runtime_keys()
 
         self._running = False
         logging.info("[Application] Shutdown complete - all workers stopped")

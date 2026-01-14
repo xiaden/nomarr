@@ -103,7 +103,6 @@ class RecalibrationWorker(BaseWorker):
 
     def __init__(
         self,
-        db_path: str,
         processing_backend: Callable[[Database, str, bool], dict[str, Any]],
         interval: int = 2,
         worker_id: int = 0,
@@ -112,7 +111,6 @@ class RecalibrationWorker(BaseWorker):
         Initialize RecalibrationWorker.
 
         Args:
-            db_path: Path to database file (worker creates its own connection)
             processing_backend: Backend function for processing files
             interval: Polling interval in seconds (default: 2)
             worker_id: Unique worker ID (for multi-worker setups)
@@ -122,7 +120,6 @@ class RecalibrationWorker(BaseWorker):
             name="RecalibrationWorker",
             queue_type="calibration",
             process_fn=processing_backend,
-            db_path=db_path,
             worker_id=worker_id,
             interval=interval,
         )

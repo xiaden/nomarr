@@ -57,7 +57,7 @@ def get_next_job(db: Database, queue_type: QueueType) -> dict | None:
         raise ValueError(f"Invalid queue_type: {queue_type}")
 
 
-def mark_job_complete(db: Database, job_id: int, queue_type: QueueType) -> None:
+def mark_job_complete(db: Database, job_id: str, queue_type: QueueType) -> None:
     """
     Mark a job as completed.
 
@@ -79,7 +79,7 @@ def mark_job_complete(db: Database, job_id: int, queue_type: QueueType) -> None:
         raise ValueError(f"Invalid queue_type: {queue_type}")
 
 
-def mark_job_error(db: Database, job_id: int, error_message: str, queue_type: QueueType) -> None:
+def mark_job_error(db: Database, job_id: str, error_message: str, queue_type: QueueType) -> None:
     """
     Mark a job as failed with error message.
 

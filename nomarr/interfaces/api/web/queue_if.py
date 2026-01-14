@@ -29,7 +29,7 @@ router = APIRouter(prefix="/queue", tags=["Queue"])
 class RemoveRequest(BaseModel):
     """Request to remove jobs from queue."""
 
-    job_id: int | None = None
+    job_id: str | None = None
     status: str | None = None
     all: bool = False
 
@@ -48,7 +48,7 @@ class AdminResetRequest(BaseModel):
 
 @router.get("/status/{job_id}", dependencies=[Depends(verify_session)])
 async def web_status(
-    job_id: int,
+    job_id: str,
     queue_service: QueueService = Depends(get_queue_service),
 ) -> QueueJobResponse:
     """Get status of a specific job (web UI proxy)."""

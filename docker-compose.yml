@@ -1,4 +1,27 @@
 services:
+  # ArangoDB database service
+  nomarr-arangodb:
+    image: arangodb:3.11
+    container_name: nomarr-arangodb
+    networks:
+      - internal_network  # Internal only, no public exposure
+    environment:
+      - ARANGO_ROOT_PASSWORD=${ARANGO_ROOT_PASSWORD}  # From .env file
+      - ARANGO_NO_AUTH=0
+    volumes:
+      - ./config/arangodb:/var/lib/arangodb3
+    # CRITICAL: NO PORT EXPOSURE - Internal network only
+    # External access ONLY via nginx proxy manager (reverse proxy)
+    # Uncomment for development debugging only, never in production
+    # ports:
+    #   - "8529:8529"  # ArangoDB Web UI (DEVELOPMENT ONLY)
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8529/_api/version"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   nomarr:
     # Use pre-built image from GitHub Container Registry
     # To build locally instead: uncomment 'build: .' and comment out 'image:'
@@ -8,6 +31,7 @@ services:
     user: "1000:1000"
     networks:
       - lidarr_network
+      - internal_network
     # ports:
     #   - "8356:8356"  # Only expose if needed outside Docker network
     volumes:
@@ -18,7 +42,19 @@ services:
       # Optional: Custom models (only if not using packaged models)
       # - ./models:/app/models
     environment:
-      - NOMARR_DB=/app/config/db/essentia.sqlite
+      # Runtime environment variables (used by app and workers)
+      - ARANGO_HOST=http://nomarr-arangodb:8529
+      - ARANGO_USERNAME=nomarr
+      - ARANGO_PASSWORD=${NOMARR_APP_PASSWORD}  # App user password (NOT root)
+      - ARANGO_DBNAME=nomarr
+      # Root password ONLY for first-run provisioning
+      # App will create DB/user on first boot, then never use root again
+      - ARANGO_ROOT_PASSWORD=${ARANGO_ROOT_PASSWORD}
+      - ARANGO_HOSTS=http://nomarr-arangodb:8529  # Legacy, use ARANGO_HOST
+      - NOMARR_DB=/app/config/db/essentia.sqlite  # Legacy SQLite path (for reference)
+    depends_on:
+      nomarr-arangodb:
+        condition: service_healthy
     deploy:
       resources:
         reservations:
@@ -27,3 +63,9 @@ services:
               count: 1
               capabilities: [gpu]
     restart: unless-stopped
+
+networks:
+  internal_network:
+    internal: true  # Isolated network (external access via nginx proxy manager)
+  lidarr_network:
+    external: true

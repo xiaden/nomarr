@@ -57,7 +57,7 @@ def compute_chromaprint(waveform: np.ndarray, sample_rate: int) -> str:
         # Extract spectral frames (hop 512 samples = ~32ms at 16kHz)
         hop_size = 512
         frame_size = 2048
-        num_frames = (len(y) - frame_size) // hop_size
+        num_frames = max(0, (len(y) - frame_size) // hop_size)
 
         # Limit to 200 frames to keep fingerprint size reasonable
         num_frames = min(num_frames, 200)
@@ -80,7 +80,18 @@ def compute_chromaprint(waveform: np.ndarray, sample_rate: int) -> str:
             fingerprint_data = waveform.tobytes()
         else:
             spectra_array = np.array(spectra, dtype=np.float32)
-            fingerprint_data = spectra_array.tobytes()
+
+            # Quantize to int16 for robustness against tiny float variations
+            # Scale to use full int16 range, then clip and convert
+            # This makes fingerprint less sensitive to float precision issues
+            spectra_max = np.max(np.abs(spectra_array))
+            if spectra_max > 0:
+                scaled = (spectra_array / spectra_max) * 32767.0  # Scale to int16 range
+                quantized = np.clip(scaled, -32768, 32767).astype(np.int16)
+            else:
+                quantized = np.zeros_like(spectra_array, dtype=np.int16)
+
+            fingerprint_data = quantized.tobytes()
 
         # MD5 hash of spectral fingerprint
         return hashlib.md5(fingerprint_data).hexdigest()

@@ -23,7 +23,7 @@ class Job:
     Used across queue service, library service, and worker operations.
     """
 
-    id: int
+    id: str  # ArangoDB _id
     path: str
     status: str
     created_at: int
@@ -37,7 +37,7 @@ class Job:
 class DequeueResult:
     """Result from queue_service.dequeue."""
 
-    job_id: int
+    job_id: str  # ArangoDB _id
     file_path: str
     force: bool
 
@@ -72,7 +72,7 @@ class QueueStatus:
 class EnqueueFilesResult:
     """Result from enqueue_files_workflow and queue_service.enqueue_files_for_tagging."""
 
-    job_ids: list[int]
+    job_ids: list[str]  # ArangoDB _id format
     files_queued: int
     queue_depth: int
     paths: list[str]
@@ -86,7 +86,7 @@ class BatchEnqueuePathResult:
     status: str  # "queued" or "error"
     message: str
     files_queued: int = 0
-    job_ids: list[int] | None = None
+    job_ids: list[str] | None = None  # ArangoDB _id format
 
 
 @dataclass

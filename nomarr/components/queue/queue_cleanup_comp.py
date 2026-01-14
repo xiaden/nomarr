@@ -37,7 +37,7 @@ class UnsupportedQueueOperationError(Exception):
     pass
 
 
-def remove_job(db: Database, job_id: int, queue_type: QueueType) -> int:
+def remove_job(db: Database, job_id: str, queue_type: QueueType) -> int:
     """
     Remove a single job by ID.
 
@@ -103,7 +103,11 @@ def clear_jobs_by_status(db: Database, statuses: list[str], queue_type: QueueTyp
     logger.info(f"Clearing {queue_type} queue jobs with statuses: {statuses}")
 
     if queue_type == "tag":
-        return db.tag_queue.delete_jobs_by_status(statuses)
+        # Delete jobs for each status separately
+        total_deleted = 0
+        for status in statuses:
+            total_deleted += db.tag_queue.delete_jobs_by_status(status)
+        return total_deleted
     elif queue_type == "calibration":
         # Calibration queue only supports clearing ALL jobs
         if set(statuses) >= {"pending", "done", "error"}:
@@ -230,7 +234,7 @@ def reset_stuck_jobs(db: Database, queue_type: QueueType) -> int:
     logger.info(f"Resetting stuck jobs in {queue_type} queue")
 
     if queue_type == "tag":
-        return db.tag_queue.reset_stuck_jobs()
+        return db.tag_queue.reset_stale_jobs()
     elif queue_type == "calibration":
         raise UnsupportedQueueOperationError(
             "Calibration queue does not support resetting stuck jobs. Use clear_all_jobs() to clear queue."
@@ -299,9 +303,9 @@ def cleanup_old_jobs(db: Database, max_age_hours: int, queue_type: QueueType) ->
     logger.info(f"Cleaning up {queue_type} queue jobs older than {max_age_hours} hours")
 
     if queue_type == "tag":
-        # clear_old_jobs returns None, so we can't get an accurate count
-        db.tag_queue.clear_old_jobs(max_age_hours=max_age_hours)
-        return -1  # -1 indicates "operation completed but count unavailable"
+        # Convert hours to days for clear_completed_jobs
+        max_age_days = int(max_age_hours / 24) if max_age_hours >= 24 else 1
+        return db.tag_queue.clear_completed_jobs(max_age_days=max_age_days)
     elif queue_type == "library":
         raise UnsupportedQueueOperationError("Library queue does not support age-based cleanup.")
     elif queue_type == "calibration":

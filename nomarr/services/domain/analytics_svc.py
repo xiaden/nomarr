@@ -32,12 +32,6 @@ from nomarr.helpers.dto.analytics_dto import (
     TagFrequenciesResult,
     TagFrequencyItem,
 )
-from nomarr.persistence.analytics_queries import (
-    fetch_mood_distribution_data,
-    fetch_tag_co_occurrence_data,
-    fetch_tag_correlation_data,
-    fetch_tag_frequencies_data,
-)
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -81,7 +75,21 @@ class AnalyticsService:
             List of TagFrequencyItem DTOs for frontend
         """
         namespace_prefix = f"{self.cfg.namespace}:"
-        data = fetch_tag_frequencies_data(db=self._db, namespace=self.cfg.namespace, limit=limit)
+        # Get tag frequencies from file_tags
+        tag_data = self._db.file_tags.get_tag_frequencies(limit=limit, namespace_prefix=namespace_prefix)
+        # Get artist/album frequencies from library_files
+        file_data = self._db.library_files.get_artist_album_frequencies(limit=limit)
+        # Get total file count
+        _, total_count = self._db.library_files.list_library_files(limit=1)
+
+        data = {
+            "total_files": total_count,
+            "nom_tag_rows": tag_data["nom_tag_rows"],
+            "artist_rows": file_data["artist_rows"],
+            "genre_rows": tag_data["genre_rows"],
+            "album_rows": file_data["album_rows"],
+            "namespace_prefix": namespace_prefix,
+        }
         params = ComputeTagFrequenciesParams(
             namespace_prefix=namespace_prefix,
             total_files=data["total_files"],
@@ -126,7 +134,13 @@ class AnalyticsService:
         Returns:
             TagCorrelationData with mood-to-mood and mood-to-tier correlations
         """
-        data = fetch_tag_correlation_data(db=self._db, namespace=self.cfg.namespace, top_n=top_n)
+        tag_data = self._db.file_tags.get_mood_and_tier_tags_for_correlation()
+        data = {
+            "mood_tag_rows": tag_data["mood_tag_rows"],
+            "tier_tag_keys": tag_data["tier_tag_keys"],
+            "tier_tag_rows": tag_data["tier_tag_rows"],
+            "namespace": self.cfg.namespace,
+        }
         params = ComputeTagCorrelationMatrixParams(
             namespace=self.cfg.namespace,
             top_n=top_n,
@@ -143,7 +157,7 @@ class AnalyticsService:
         Returns:
             List of MoodDistributionItem DTOs
         """
-        mood_rows = fetch_mood_distribution_data(db=self._db, namespace=self.cfg.namespace)
+        mood_rows = self._db.file_tags.get_mood_distribution_data()
         result = compute_mood_distribution(mood_rows=mood_rows)
 
         # Transform to list format with percentages
@@ -192,7 +206,7 @@ class AnalyticsService:
 
         # Fetch file ID mappings for all unique tags
         all_specs = x_tags + y_tags
-        tag_data = fetch_tag_co_occurrence_data(db=self._db, tag_specs=all_specs)
+        tag_data = self._db.file_tags.get_file_ids_for_tags(tag_specs=all_specs)
 
         params = ComputeTagCoOccurrenceParams(
             x_tags=x_tag_specs,

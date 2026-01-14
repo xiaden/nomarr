@@ -415,24 +415,28 @@ def _serialize_mutagen_value(value: Any) -> str:
     return str(value)
 
 
-def load_audio_for_chromaprint(path: LibraryPath) -> tuple[Any, int]:
+def compute_chromaprint_for_file(path: LibraryPath) -> str:
     """
-    Load audio file for chromaprint computation during scan.
+    Compute chromaprint for an audio file.
 
-    This is a lightweight wrapper around ML audio loading that's used
-    specifically for move detection during library scanning.
+    Single component call that handles audio loading and chromaprint computation.
+    Standardizes on 16kHz sample rate for consistent fingerprinting.
 
     Args:
         path: Validated LibraryPath to audio file
 
     Returns:
-        Tuple of (waveform, sample_rate)
+        Chromaprint hash (32-character hex string)
 
     Raises:
-        RuntimeError: If audio loading fails or Essentia not available
+        RuntimeError: If audio loading or chromaprint computation fails
+        ValueError: If path is invalid
     """
+    from nomarr.components.ml.chromaprint_comp import compute_chromaprint
     from nomarr.components.ml.ml_audio_comp import load_audio_mono
 
-    # Load audio at 16kHz (standard for chromaprint)
+    # Load audio at standardized 16kHz for chromaprint
     result = load_audio_mono(path, target_sr=16000)
-    return result.waveform, result.sample_rate
+
+    # Compute and return chromaprint
+    return compute_chromaprint(result.waveform, result.sample_rate)

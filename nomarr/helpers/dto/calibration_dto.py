@@ -35,7 +35,7 @@ class EnsureCalibrationsExistResult:
 class CalibrationRunResult:
     """Single calibration run from calibration_svc.get_calibration_history."""
 
-    id: int
+    id: str  # ArangoDB _id
     model_name: str
     head_name: str
     version: int

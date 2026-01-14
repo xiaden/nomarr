@@ -79,9 +79,9 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
         name: str,
         queue_type: QueueType,
         process_fn: Callable[[Database, str, bool], TResult],
-        db_path: str,
         worker_id: int = 0,
         interval: int = 2,
+        db_config_override: dict[str, str] | None = None,
     ):
         """
         Initialize generic worker process.
@@ -90,14 +90,21 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
             name: Worker process name (e.g., "TaggerWorker")
             queue_type: Queue type - "tag", "library", or "calibration"
             process_fn: Function to process jobs, signature: (db: Database, path: str, force: bool) -> TResult
-            db_path: Path to database file (worker creates its own connection for multiprocessing safety)
             worker_id: Unique worker ID (for multi-worker setups)
             interval: Polling interval in seconds (default: 2)
+            db_config_override: Database config override for tests ONLY.
+                Do NOT use in production - workers read from environment.
+                Only for single-process test harness or non-fork contexts.
+
+        Note:
+            Database connection is created in run() method from environment variables.
+            Requires ARANGO_HOST, ARANGO_USERNAME, ARANGO_PASSWORD, ARANGO_DBNAME to be set.
+            App startup validates these before spawning workers.
         """
         super().__init__(daemon=True, name=f"{name}-{worker_id}")
         self.queue_type: QueueType = queue_type
-        self.db_path = db_path
         self.db: Database | None = None  # Created in run() for process safety
+        self.db_config_override = db_config_override  # Test-only override
         self.process_fn = process_fn
         self.worker_id = worker_id
         self.interval = max(1, int(interval))
@@ -113,7 +120,7 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
         self._last_heartbeat = 0.0
         self._heartbeat_interval = 5  # seconds
         self._cancel_requested = False
-        self._current_job_id: int | None = None
+        self._current_job_id: str | None = None
         self._heartbeat_thread: threading.Thread | None = None
         self._cache_loaded = True  # True for workers without expensive cache (scanner, recalibration)
 
@@ -128,13 +135,13 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
             return None
         return DequeueResult(job_id=job["id"], file_path=job["path"], force=job["force"])
 
-    def _mark_complete(self, job_id: int) -> None:
+    def _mark_complete(self, job_id: str) -> None:
         """Mark job as complete using queue component."""
         if not self.db:
             return
         mark_job_complete(self.db, job_id, self.queue_type)
 
-    def _mark_error(self, job_id: int, error: str) -> None:
+    def _mark_error(self, job_id: str, error: str) -> None:
         """Mark job as failed using queue component."""
         if not self.db:
             return
@@ -230,10 +237,13 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
         """Background thread that continuously updates heartbeat (prevents blocking during heavy processing)."""
         logging.info(f"[{self.name}] Heartbeat thread started")
 
-        # Create dedicated DB connection for heartbeat thread (SQLite connections are NOT thread-safe)
+        # Create dedicated DB connection for heartbeat thread
         from nomarr.persistence.db import Database
 
-        heartbeat_db = Database(self.db_path)
+        if self.db_config_override:
+            heartbeat_db = Database(**self.db_config_override)
+        else:
+            heartbeat_db = Database()
 
         try:
             while not self._shutdown:
@@ -241,12 +251,14 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
                     # Update heartbeat with cache_loaded metadata
                     import json
 
-                    metadata = json.dumps({"cache_loaded": self._cache_loaded})
                     heartbeat_db.health.upsert_component(
-                        component=self.component_id,
-                        status="healthy",
-                        current_job=self._current_job_id,
-                        metadata=metadata,
+                        component_id=self.component_id,
+                        component_type="worker",
+                        data={
+                            "status": "healthy",
+                            "current_job": self._current_job_id,
+                            "metadata": json.dumps({"cache_loaded": self._cache_loaded}),
+                        },
                     )
                     self._last_heartbeat = time.time()
                 except Exception as e:
@@ -263,12 +275,14 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
             try:
                 import json
 
-                metadata = json.dumps({"cache_loaded": self._cache_loaded})
                 self.db.health.upsert_component(
-                    component=self.component_id,
-                    status="healthy",
-                    current_job=None,
-                    metadata=metadata,
+                    component_id=self.component_id,
+                    component_type="worker",
+                    data={
+                        "status": "healthy",
+                        "current_job": None,
+                        "metadata": json.dumps({"cache_loaded": self._cache_loaded}),
+                    },
                 )
             except Exception as e:
                 logging.warning(f"[{self.name}] Failed to clear current_job in health: {e}")
@@ -279,21 +293,29 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
         """
         Main worker loop - polls and processes jobs.
 
-        CRITICAL: Creates database connection in child process (required for multiprocessing).
-        Each process must have its own sqlite3 connection - never share connections across processes.
+        CRITICAL: Creates database connection in child process from environment variables.
+        This is required for multiprocessing safety - each process must have its own connection.
+        Environment variables are validated at app startup, so if we get here, they exist.
         """
-        # Create database connection in worker process (critical for multiprocessing safety)
-        self.db = Database(self.db_path)
+        # Create database connection from environment (or test override)
+        if self.db_config_override:
+            # Test mode: explicit config
+            self.db = Database(**self.db_config_override)
+        else:
+            # Production mode: environment variables (validated at startup)
+            self.db = Database()
 
         # Mark worker as starting with cache_loaded metadata
         import json
 
-        metadata = json.dumps({"cache_loaded": self._cache_loaded})
         self.db.health.upsert_component(
-            component=self.component_id,
-            status="starting",
-            pid=os.getpid(),
-            metadata=metadata,
+            component_id=self.component_id,
+            component_type="worker",
+            data={
+                "status": "starting",
+                "pid": os.getpid(),
+                "metadata": json.dumps({"cache_loaded": self._cache_loaded}),
+            },
         )
 
         # Start heartbeat thread (prevents blocking during heavy ML processing)
@@ -319,7 +341,7 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
             # Mark worker as stopping
             if self.db:
                 self.db.health.mark_stopping(
-                    component=self.component_id,
+                    component_id=self.component_id,
                     exit_code=0,
                 )
                 self.db.close()
@@ -376,7 +398,7 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
         if self.db:
             try:
                 self.db.health.update_heartbeat(
-                    component=self.component_id,
+                    component_id=self.component_id,
                     status="healthy",
                     current_job=self._current_job_id,
                 )
@@ -498,7 +520,7 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
             # Ensure current job is cleared (Phase 3: DB-based IPC)
             self._current_job_id = None
 
-    def _mark_job_error(self, job_id: int, path: str, error_message: str) -> None:
+    def _mark_job_error(self, job_id: str, path: str, error_message: str) -> None:
         """Mark job as failed and publish error event."""
         self._mark_error(job_id, error_message)
 
@@ -545,17 +567,13 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
     # ---------------------------- Event Publishing ----------------------------
 
     def _publish_job_state(
-        self, job_id: int, path: str, status: str, results: dict[str, Any] | None = None, error: str | None = None
+        self, job_id: str, path: str, status: str, results: dict[str, Any] | None = None, error: str | None = None
     ) -> None:
         """Publish job state to DB meta table (Phase 3.6: IPC for multiprocessing)."""
         if not self.db:
             return
 
         try:
-            # Ensure we're in a clean transaction state
-            if self.db.conn.in_transaction:
-                self.db.conn.commit()
-
             # Write to DB meta table - StateBroker will poll and broadcast to SSE
             self.db.meta.set(f"job:{job_id}:status", status)
             self.db.meta.set(f"job:{job_id}:path", path)
@@ -591,7 +609,7 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
         except Exception as e:
             logging.error(f"[{self.name}] Failed to publish queue stats: {e}")
 
-    def _cleanup_job_metadata(self, job_id: int) -> None:
+    def _cleanup_job_metadata(self, job_id: str) -> None:
         """Clean up job metadata from meta table after job completion."""
         if not self.db:
             return

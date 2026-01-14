@@ -1,0 +1,314 @@
+"""Libraries operations for ArangoDB.
+
+CRITICAL: All mutations by _id must use PARSE_IDENTIFIER(@id).key
+to extract the document key for UPDATE/REMOVE operations.
+"""
+
+from typing import Any, cast
+
+from arango.cursor import Cursor
+from arango.database import StandardDatabase
+
+from nomarr.helpers.time_helper import now_ms
+
+
+class LibrariesOperations:
+    """Operations for the libraries collection."""
+
+    def __init__(self, db: StandardDatabase) -> None:
+        self.db = db
+        self.collection = db.collection("libraries")
+
+    def create_library(
+        self,
+        name: str,
+        root_path: str,
+        is_enabled: bool = True,
+        is_default: bool = False,
+    ) -> str:
+        """Create a new library entry.
+
+        Args:
+            name: Library name (must be unique)
+            root_path: Absolute path to library root
+            is_enabled: Whether library is enabled for scanning
+            is_default: Whether this is the default library
+
+        Returns:
+            Library _id (e.g., "libraries/12345")
+
+        Raises:
+            Duplicate key error if name already exists
+        """
+        now = now_ms()
+
+        # If setting as default, clear other defaults first
+        if is_default:
+            self.db.aql.execute(
+                """
+                FOR lib IN libraries
+                    FILTER lib.is_default == true
+                    UPDATE lib WITH { is_default: false } IN libraries
+                """
+            )
+
+        result = cast(
+            dict[str, Any],
+            self.collection.insert(
+                {
+                    "name": name,
+                    "root_path": root_path,
+                    "is_enabled": is_enabled,
+                    "is_default": is_default,
+                    "scan_status": "idle",
+                    "scan_progress": 0,
+                    "scan_total": 0,
+                    "scanned_at": None,
+                    "scan_error": None,
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            ),
+        )
+
+        return str(result["_id"])
+
+    def get_library(self, library_id: str) -> dict[str, Any] | None:
+        """Get a library by _id.
+
+        Args:
+            library_id: Library _id (e.g., \"libraries/12345\")
+
+        Returns:
+            Library dict or None if not found
+        """
+        cursor = cast(
+            Cursor,
+            self.db.aql.execute(
+                """
+            RETURN DOCUMENT(@library_id)
+            """,
+                bind_vars={"library_id": library_id},
+            ),
+        )
+
+        return next(cursor, None)
+
+    def get_library_by_name(self, name: str) -> dict[str, Any] | None:
+        """Get a library by name.
+
+        Args:
+            name: Library name
+
+        Returns:
+            Library dict or None if not found
+        """
+        cursor = cast(
+            Cursor,
+            self.db.aql.execute(
+                """
+            FOR lib IN libraries
+                FILTER lib.name == @name
+                LIMIT 1
+                RETURN lib
+            """,
+                bind_vars={"name": name},
+            ),
+        )
+        return next(cursor, None)
+
+    def list_libraries(self, enabled_only: bool = False) -> list[dict[str, Any]]:
+        """List all libraries.
+
+        Args:
+            enabled_only: If True, only return enabled libraries
+
+        Returns:
+            List of library dicts
+        """
+        filter_clause = "FILTER lib.is_enabled == true" if enabled_only else ""
+
+        cursor = cast(
+            Cursor,
+            self.db.aql.execute(
+                f"""
+            FOR lib IN libraries
+                {filter_clause}
+                SORT lib.created_at ASC
+                RETURN lib
+            """
+            ),
+        )
+        return list(cursor)
+
+    def get_default_library(self) -> dict[str, Any] | None:
+        """Get the default library.
+
+        Returns:
+            Default library dict or None if no default set
+        """
+        cursor = cast(
+            Cursor,
+            self.db.aql.execute(
+                """
+            FOR lib IN libraries
+                FILTER lib.is_default == true
+                LIMIT 1
+                RETURN lib
+            """
+            ),
+        )
+        return next(cursor, None)
+
+    def update_library(
+        self,
+        library_id: str,
+        name: str | None = None,
+        root_path: str | None = None,
+        is_enabled: bool | None = None,
+        is_default: bool | None = None,
+    ) -> None:
+        """Update library fields.
+
+        Args:
+            library_id: Library _id
+            name: New name (optional)
+            root_path: New root path (optional)
+            is_enabled: New enabled status (optional)
+            is_default: New default status (optional)
+        """
+        update_fields: dict[str, Any] = {"updated_at": now_ms()}
+
+        if name is not None:
+            update_fields["name"] = name
+        if root_path is not None:
+            update_fields["root_path"] = root_path
+        if is_enabled is not None:
+            update_fields["is_enabled"] = is_enabled
+        if is_default is not None:
+            update_fields["is_default"] = is_default
+            # Clear other defaults if setting as default
+            if is_default:
+                self.db.aql.execute(
+                    """
+                    FOR lib IN libraries
+                        FILTER lib._id != @library_id AND lib.is_default == true
+                        UPDATE lib WITH { is_default: false } IN libraries
+                    """,
+                    bind_vars={"library_id": library_id},
+                )
+
+        self.db.aql.execute(
+            """
+            UPDATE PARSE_IDENTIFIER(@library_id).key WITH @fields IN libraries
+            """,
+            bind_vars={"library_id": library_id, "fields": update_fields},
+        )
+
+    def delete_library(self, library_id: str) -> None:
+        """Delete a library.
+
+        Args:
+            library_id: Library _id
+        """
+        self.db.aql.execute(
+            """
+            REMOVE PARSE_IDENTIFIER(@library_id).key IN libraries
+            """,
+            bind_vars={"library_id": library_id},
+        )
+
+    def update_scan_status(
+        self,
+        library_id: str,
+        status: str | None = None,
+        progress: int | None = None,
+        total: int | None = None,
+        error: str | None = None,
+        scan_status: str | None = None,
+        scan_progress: int | None = None,
+        scan_total: int | None = None,
+        scan_error: str | None = None,
+    ) -> None:
+        """Update library scan status.
+
+        Args:
+            library_id: Library _id
+            status or scan_status: Status ('idle', 'scanning', 'complete', 'error')
+            progress or scan_progress: Number of files scanned
+            total or scan_total: Total files to scan
+            error or scan_error: Error message if status is 'error'
+        """
+        # Support both old and new parameter names
+        final_status = status or scan_status or "idle"
+        final_progress = progress if progress is not None else (scan_progress or 0)
+        final_total = total if total is not None else (scan_total or 0)
+        final_error = error or scan_error
+
+        update_fields = {
+            "scan_status": final_status,
+            "scan_progress": final_progress,
+            "scan_total": final_total,
+            "scan_error": final_error,
+            "scanned_at": now_ms() if final_status == "complete" else None,
+            "updated_at": now_ms(),
+        }
+
+        self.db.aql.execute(
+            """
+            UPDATE PARSE_IDENTIFIER(@library_id).key WITH @fields IN libraries
+            """,
+            bind_vars=cast(dict[str, Any], {"library_id": library_id, "fields": update_fields}),
+        )
+
+    def find_library_containing_path(self, file_path: str) -> dict[str, Any] | None:
+        """Find the library that contains the given file path.
+
+        Uses path prefix matching to determine which library owns a file.
+        Returns the most specific (longest) matching library root.
+
+        Args:
+            file_path: Absolute file path to check
+
+        Returns:
+            Library dict if found, None otherwise
+
+        Example:
+            >>> ops.find_library_containing_path("/music/rock/song.mp3")
+            {"_id": "libraries/123", "name": "My Music", "root_path": "/music", ...}
+        """
+        from pathlib import Path
+
+        # Normalize the input path
+        try:
+            normalized_path = Path(file_path).resolve()
+        except (ValueError, OSError):
+            return None
+
+        # Get all libraries ordered by root_path length (longest first)
+        # This ensures we match the most specific library
+        cursor = cast(
+            Cursor,
+            self.db.aql.execute(
+                """
+            FOR lib IN libraries
+                SORT LENGTH(lib.root_path) DESC
+                RETURN lib
+            """
+            ),
+        )
+
+        library: dict[str, Any]
+        for library in cursor:
+            library_root = Path(library["root_path"]).resolve()
+
+            # Check if file_path is within this library's root
+            try:
+                normalized_path.relative_to(library_root)
+                # Success - this library contains the file
+                return library
+            except ValueError:
+                # Not relative to this library root
+                continue
+
+        return None

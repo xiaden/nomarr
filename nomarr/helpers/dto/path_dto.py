@@ -48,7 +48,7 @@ class LibraryPath:
 
     relative: str  # Path relative to library root (normalized, forward slashes)
     absolute: Path  # Absolute path (current container/system resolution)
-    library_id: int | None  # Which library this belongs to (None if unknown/ambiguous)
+    library_id: str | None  # Which library this belongs to (ArangoDB _id or None)
     status: PathStatus  # Validation status under current config
     reason: str | None = None  # Diagnostic message for non-valid status
 
@@ -172,7 +172,7 @@ def build_library_path_from_input(
 def build_library_path_from_db(
     stored_path: str,
     db: Database,
-    library_id: int | None = None,
+    library_id: str | None = None,
     check_disk: bool = True,
 ) -> LibraryPath:
     """

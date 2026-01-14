@@ -397,7 +397,8 @@ def generate_calibration_workflow(
         labels = head_data["labels"]
 
         # Get reference calibration (most recent stable version)
-        reference = db.calibration_runs.get_reference_calibration_run(model_name, head_name)
+        model_key = f"{model_name}_{head_name}"
+        reference = db.calibration_runs.get_reference_calibration_run(model_key)
 
         # Calculate drift if reference exists
         drift_result = None

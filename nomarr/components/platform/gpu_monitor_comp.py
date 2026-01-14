@@ -38,16 +38,14 @@ class GPUHealthMonitor(multiprocessing.Process):
     to the main application or StateBroker polling thread.
     """
 
-    def __init__(self, db_path: str, probe_interval: float = GPU_PROBE_INTERVAL_SECONDS):
+    def __init__(self, probe_interval: float = GPU_PROBE_INTERVAL_SECONDS):
         """
         Initialize GPU health monitor.
 
         Args:
-            db_path: Path to database file (monitor creates its own connection)
             probe_interval: Seconds between GPU probes (default: 15.0)
         """
         super().__init__(daemon=True, name="GPUHealthMonitor")
-        self.db_path = db_path
         self.probe_interval = probe_interval
         self._shutdown = multiprocessing.Event()
 
@@ -60,7 +58,6 @@ class GPUHealthMonitor(multiprocessing.Process):
         application is protected by the process boundary.
         """
         # Import here to avoid issues with multiprocessing fork/spawn
-        import json
         import uuid
 
         from nomarr.components.platform import probe_gpu_availability
@@ -68,9 +65,9 @@ class GPUHealthMonitor(multiprocessing.Process):
 
         logging.info("[GPUHealthMonitor] Starting GPU health monitoring process")
 
-        # Create process-local DB connection (SQLite connections are NOT process-safe)
+        # Create process-local DB connection from environment
         try:
-            db = Database(self.db_path)
+            db = Database()
         except Exception as e:
             logging.error(f"[GPUHealthMonitor] Failed to create DB connection: {e}")
             return
@@ -96,8 +93,7 @@ class GPUHealthMonitor(multiprocessing.Process):
 
                 # Write atomic JSON blob via persistence layer
                 try:
-                    health_json = json.dumps(health_dict)
-                    db.meta.write_gpu_health_atomic(health_json)
+                    db.meta.write_gpu_health_atomic(health_dict)
                     consecutive_errors = 0  # Reset error counter on success
 
                     if result["available"]:

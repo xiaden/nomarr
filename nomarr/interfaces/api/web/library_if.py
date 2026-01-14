@@ -89,7 +89,7 @@ async def get_default_library(
 
 @router.get("/{library_id}", dependencies=[Depends(verify_session)])
 async def get_library(
-    library_id: int,
+    library_id: str,
     library_service: "LibraryService" = Depends(get_library_service),
 ) -> LibraryResponse:
     """Get a library by ID."""
@@ -126,7 +126,7 @@ async def create_library(
 
 @router.patch("/{library_id}", dependencies=[Depends(verify_session)])
 async def update_library(
-    library_id: int,
+    library_id: str,
     request: UpdateLibraryRequest,
     library_service: "LibraryService" = Depends(get_library_service),
 ) -> LibraryResponse:
@@ -152,7 +152,7 @@ async def update_library(
 
 @router.post("/{library_id}/set-default", dependencies=[Depends(verify_session)])
 async def set_default_library(
-    library_id: int,
+    library_id: str,
     library_service: "LibraryService" = Depends(get_library_service),
 ) -> LibraryResponse:
     """Set a library as the default library."""
@@ -168,7 +168,7 @@ async def set_default_library(
 
 @router.delete("/{library_id}", dependencies=[Depends(verify_session)])
 async def delete_library(
-    library_id: int,
+    library_id: str,
     library_service: "LibraryService" = Depends(get_library_service),
 ) -> dict[str, str]:
     """
@@ -191,7 +191,7 @@ async def delete_library(
 
 @router.post("/{library_id}/preview", dependencies=[Depends(verify_session)])
 async def preview_library_scan(
-    library_id: int,
+    library_id: str,
     request: ScanLibraryRequest,
     library_service: "LibraryService" = Depends(get_library_service),
     config: dict = Depends(get_config),
@@ -377,7 +377,7 @@ async def cleanup_orphaned_tags(
 
 @router.get("/files/{file_id}/tags", dependencies=[Depends(verify_session)])
 async def get_file_tags(
-    file_id: int,
+    file_id: str,
     nomarr_only: bool = Query(False, description="Only return Nomarr-generated tags"),
     library_service: "LibraryService" = Depends(get_library_service),
 ) -> FileTagsResponse:
@@ -414,7 +414,7 @@ async def get_file_tags(
 
 @router.post("/{library_id}/scan", dependencies=[Depends(verify_session)])
 async def scan_library(
-    library_id: int,
+    library_id: str,
     request: ScanLibraryRequest,
     library_service: "LibraryService" = Depends(get_library_service),
 ) -> StartScanWithStatusResponse:
@@ -457,7 +457,7 @@ async def scan_library(
 
 @router.post("/{library_id}/reconcile", dependencies=[Depends(verify_session)])
 async def reconcile_library_paths(
-    library_id: int,
+    library_id: str,
     policy: str = Query("mark_invalid", description="Policy for invalid paths: dry_run, mark_invalid, delete_invalid"),
     batch_size: int = Query(1000, description="Number of files to process per batch", ge=1, le=10000),
     library_service: "LibraryService" = Depends(get_library_service),

@@ -37,7 +37,7 @@ QueueType = Literal["tag", "library", "calibration"]
 def requeue_crashed_job(
     db: Database,
     queue_type: QueueType,
-    job_id: int | None,
+    job_id: str | None,
     *,
     max_retries: int = MAX_JOB_CRASH_RETRIES,
 ) -> bool:
@@ -115,7 +115,7 @@ def requeue_crashed_job(
 def _get_job_if_running(
     db: Database,
     queue_type: QueueType,
-    job_id: int,
+    job_id: str,
 ) -> dict[str, Any] | None:
     """
     Get job details if it's currently in running state.
@@ -151,7 +151,7 @@ def _get_job_if_running(
     return None
 
 
-def _get_job_crash_count(db: Database, queue_type: QueueType, job_id: int) -> int:
+def _get_job_crash_count(db: Database, queue_type: QueueType, job_id: str) -> int:
     """
     Get current crash count for a job from meta table.
 
@@ -173,7 +173,7 @@ def _get_job_crash_count(db: Database, queue_type: QueueType, job_id: int) -> in
 def _increment_job_crash_count(
     db: Database,
     queue_type: QueueType,
-    job_id: int,
+    job_id: str,
     current_count: int,
 ) -> None:
     """
@@ -185,7 +185,7 @@ def _increment_job_crash_count(
     logger.debug(f"Incremented crash count for job {job_id}: {current_count} → {new_count}")
 
 
-def _reset_job_to_pending(db: Database, queue_type: QueueType, job_id: int) -> None:
+def _reset_job_to_pending(db: Database, queue_type: QueueType, job_id: str) -> None:
     """
     Reset job from running → pending status.
 
@@ -202,7 +202,7 @@ def _reset_job_to_pending(db: Database, queue_type: QueueType, job_id: int) -> N
 def _mark_job_toxic(
     db: Database,
     queue_type: QueueType,
-    job_id: int,
+    job_id: str,
     crash_count: int,
     error_msg: str,
 ) -> None:

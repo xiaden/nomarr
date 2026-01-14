@@ -57,7 +57,7 @@ def preview_smart_playlist_workflow(
     total_count = len(file_ids)
 
     # Fetch sample tracks (limit already validated at API layer: 1-100)
-    sample_tracks = db.joined_queries.get_tracks_by_file_ids(
+    sample_tracks = db.library_files.get_tracks_by_file_ids(
         file_ids=file_ids,
         order_by=None,  # Random order for preview
         limit=preview_limit,

@@ -171,9 +171,9 @@ class CalibrationService:
         Returns:
             List of CalibrationRunResult DTOs
         """
+        model_key = f"{model_name}_{head_name}" if model_name and head_name else None
         runs = self._db.calibration_runs.list_calibration_runs(
-            model_name=model_name,
-            head_name=head_name,
+            model_key=model_key,
             limit=limit,
         )
         return [

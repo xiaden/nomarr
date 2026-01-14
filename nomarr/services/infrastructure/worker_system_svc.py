@@ -18,7 +18,6 @@ Architecture:
 from __future__ import annotations
 
 import logging
-import os
 import threading
 import time
 from collections.abc import Callable
@@ -251,7 +250,6 @@ class WorkerSystemService:
                 continue
 
             worker = TaggerWorker(
-                db_path=str(self.db.path),
                 processing_backend=self.tagger_backend,
                 worker_id=i,
                 interval=2,
@@ -274,7 +272,6 @@ class WorkerSystemService:
                 continue
 
             worker = RecalibrationWorker(
-                db_path=str(self.db.path),
                 processing_backend=self.recalibration_backend,
                 worker_id=i,
                 interval=2,
@@ -300,7 +297,7 @@ class WorkerSystemService:
 
         try:
             logging.info("[WorkerSystemService] Starting GPU health monitor process")
-            self._gpu_monitor = GPUHealthMonitor(db_path=self.db.path)
+            self._gpu_monitor = GPUHealthMonitor()
             self._gpu_monitor.start()
             logging.info("[WorkerSystemService] GPU health monitor started")
         except Exception as e:
@@ -373,9 +370,9 @@ class WorkerSystemService:
                                 f"[WorkerSystemService] {component_id} has invalid heartbeat, marking as crashed..."
                             )
                             self.db.health.mark_crashed(
-                                component=component_id,
+                                component_id=component_id,
                                 exit_code=EXIT_CODE_INVALID_HEARTBEAT,
-                                metadata="Invalid heartbeat timestamp",
+                                error="Invalid heartbeat timestamp",
                             )
                             self._schedule_restart(worker, queue_type, component_id)
                             continue
@@ -406,9 +403,9 @@ class WorkerSystemService:
                             )
                             # Mark as crashed due to stale heartbeat
                             self.db.health.mark_crashed(
-                                component=component_id,
+                                component_id=component_id,
                                 exit_code=EXIT_CODE_HEARTBEAT_TIMEOUT,
-                                metadata=f"Heartbeat stale for {heartbeat_age}ms (threshold={stale_threshold}ms, cache_loaded={cache_loaded})",
+                                error=f"Heartbeat stale for {heartbeat_age}ms (threshold={stale_threshold}ms, cache_loaded={cache_loaded})",
                             )
                             self._schedule_restart(worker, queue_type, component_id)
                             continue
@@ -429,9 +426,9 @@ class WorkerSystemService:
                             )
                             # Mark as crashed before restarting
                             self.db.health.mark_crashed(
-                                component=component_id,
+                                component_id=component_id,
                                 exit_code=exit_code,
-                                metadata=f"Process terminated unexpectedly with exit code {exit_code}",
+                                error=f"Process terminated unexpectedly with exit code {exit_code}",
                             )
                             self._schedule_restart(worker, queue_type, component_id)
                             continue
@@ -484,10 +481,10 @@ class WorkerSystemService:
                 return
             current_job_raw = health.get("current_job") if health else None
 
-            # Ensure current_job is int or None for type safety
-            current_job: int | None = None
-            if current_job_raw is not None and isinstance(current_job_raw, int):
-                current_job = current_job_raw
+            # Ensure current_job is str or None for type safety (IDs are strings in ArangoDB)
+            current_job: str | None = None
+            if current_job_raw is not None:
+                current_job = str(current_job_raw)
 
             # Attempt to requeue interrupted job (if any) before restart
             if current_job is not None:
@@ -514,8 +511,8 @@ class WorkerSystemService:
             if decision.action == "mark_failed":
                 logging.error(f"[WorkerSystemService] {component_id} exceeded restart limits: {decision.reason}")
                 self.db.health.mark_failed(
-                    component=component_id,
-                    metadata=decision.failure_reason or f"Failed after {restart_count} restart attempts",
+                    component_id=component_id,
+                    error=decision.failure_reason or f"Failed after {restart_count} restart attempts",
                 )
                 return
 
@@ -548,9 +545,8 @@ class WorkerSystemService:
             while new_worker.pid is None and (time.time() - wait_start) < max_wait:
                 time.sleep(PID_WAIT_POLL_MS / 1000.0)
 
-            # Mark new worker as starting with actual PID
-            worker_pid = new_worker.pid if new_worker.pid is not None else os.getpid()
-            self.db.health.mark_starting(component=component_id, pid=worker_pid)
+            # Mark new worker as starting
+            self.db.health.mark_starting(component_id=component_id, component_type="worker")
 
             logging.info(
                 f"[WorkerSystemService] Restarted {component_id} (PID: {new_worker.pid}, restart #{restart_count})"
@@ -572,14 +568,12 @@ class WorkerSystemService:
         """
         if queue_type == "tag":
             return TaggerWorker(
-                db_path=str(self.db.path),
                 processing_backend=self.tagger_backend,
                 worker_id=worker_id,
                 interval=2,
             )
         elif queue_type == "calibration":
             return RecalibrationWorker(
-                db_path=str(self.db.path),
                 processing_backend=self.recalibration_backend,
                 worker_id=worker_id,
                 interval=2,

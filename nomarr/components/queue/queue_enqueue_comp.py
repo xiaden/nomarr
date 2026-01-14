@@ -72,7 +72,7 @@ def check_file_needs_processing(db: Database, path: LibraryPath, force: bool, qu
     return True
 
 
-def enqueue_file(db: Database, path: LibraryPath, force: bool, queue_type: QueueType) -> int:
+def enqueue_file(db: Database, path: LibraryPath, force: bool, queue_type: QueueType) -> str:
     """
     Enqueue a single file for processing.
 
@@ -100,12 +100,18 @@ def enqueue_file(db: Database, path: LibraryPath, force: bool, queue_type: Queue
     if queue_type == "tag":
         return db.tag_queue.enqueue(path, force)
     elif queue_type == "calibration":
-        return db.calibration_queue.enqueue_calibration(path)
+        # Calibration queue expects run_id and model_key - generate from path
+        # This is a simplified approach - caller should ideally pass proper run_id
+        import time
+
+        run_id = f"cal_{int(time.time())}"
+        model_key = "default"  # Placeholder - should be passed by caller
+        return db.calibration_queue.enqueue_calibration(run_id=run_id, model_key=model_key)
     else:
         raise ValueError(f"Invalid queue_type: {queue_type}")
 
 
-def enqueue_file_checked(db: Database, path: LibraryPath, force: bool, queue_type: QueueType) -> int | None:
+def enqueue_file_checked(db: Database, path: LibraryPath, force: bool, queue_type: QueueType) -> str | None:
     """
     Check if file needs processing, then enqueue if needed.
 

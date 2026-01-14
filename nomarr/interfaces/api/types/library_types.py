@@ -35,7 +35,7 @@ class LibraryResponse(BaseModel):
     Maps directly to LibraryDict DTO from helpers/dto/library_dto.py
     """
 
-    id: int
+    id: str  # ArangoDB _id
     name: str
     root_path: str
     is_enabled: bool
@@ -176,7 +176,7 @@ class StartScanWithStatusResponse(BaseModel):
     stats: StartScanResponse
 
     @classmethod
-    def from_dto(cls, result: StartScanResult, library_id: int) -> Self:
+    def from_dto(cls, result: StartScanResult, library_id: str) -> Self:
         """
         Transform internal StartScanResult DTO to wrapped API response.
 
@@ -254,9 +254,9 @@ class FileTagResponse(BaseModel):
 class LibraryFileWithTagsResponse(BaseModel):
     """Single library file with its tags."""
 
-    id: int
+    id: str  # ArangoDB _id
     path: str
-    library_id: int
+    library_id: str  # ArangoDB _id
     file_size: int | None
     modified_time: int | None
     duration_seconds: float | None
@@ -381,7 +381,7 @@ class ReconcilePathsResponse(BaseModel):
 class FileTagsResponse(BaseModel):
     """Response for file tags endpoint."""
 
-    file_id: int
+    file_id: str
     path: str
     tags: list[FileTagResponse]
 

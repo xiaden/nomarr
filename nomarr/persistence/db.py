@@ -1,296 +1,135 @@
-import os
-import sqlite3
+"""Database layer for Nomarr (ArangoDB)."""
 
-# Import table-specific operation classes
-from nomarr.persistence.database.calibration_queue_sql import CalibrationQueueOperations
-from nomarr.persistence.database.calibration_runs_sql import CalibrationRunsOperations
-from nomarr.persistence.database.file_tags_sql import FileTagOperations
-from nomarr.persistence.database.health_sql import HealthOperations
-from nomarr.persistence.database.libraries_sql import LibrariesOperations
-from nomarr.persistence.database.library_files_sql import LibraryFilesOperations
-from nomarr.persistence.database.library_tags_sql import LibraryTagOperations
-from nomarr.persistence.database.meta_sql import MetaOperations
-from nomarr.persistence.database.sessions_sql import SessionOperations
+from arango.database import StandardDatabase
 
-# Re-export SQLite utility functions
-from nomarr.persistence.database.shared_sql import (
-    count_and_delete,
-    count_and_update,
-    get_queue_stats,
-    safe_count,
-)
-from nomarr.persistence.database.tag_queue_sql import QueueOperations
+from nomarr.persistence.arango_client import create_arango_client
 
-__all__ = [
-    "SCHEMA",
-    "SCHEMA_VERSION",
-    "Database",
-    "count_and_delete",
-    "count_and_update",
-    "get_queue_stats",
-    "safe_count",
-]
+# Import operation classes (AQL versions)
+from nomarr.persistence.database.calibration_queue_aql import CalibrationQueueOperations
+from nomarr.persistence.database.calibration_runs_aql import CalibrationRunsOperations
+from nomarr.persistence.database.file_tags_aql import FileTagOperations
+from nomarr.persistence.database.health_aql import HealthOperations
+from nomarr.persistence.database.libraries_aql import LibrariesOperations
+from nomarr.persistence.database.library_files_aql import LibraryFilesOperations
+from nomarr.persistence.database.library_tags_aql import LibraryTagOperations
+from nomarr.persistence.database.meta_aql import MetaOperations
+from nomarr.persistence.database.sessions_aql import SessionOperations
+from nomarr.persistence.database.tag_queue_aql import QueueOperations
 
+__all__ = ["SCHEMA_VERSION", "Database"]
 
-# ----------------------------------------------------------------------
-#  Utility helpers
-# ----------------------------------------------------------------------
+SCHEMA_VERSION = 2  # Incremented for ArangoDB migration
 
-
-# ----------------------------------------------------------------------
-#  Database Schema
-# ----------------------------------------------------------------------
-
-SCHEMA = [
-    # Tag processing queue - tracks ML tagging jobs and errors
-    """
-    CREATE TABLE IF NOT EXISTS tag_queue (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        path TEXT,
-        status TEXT DEFAULT 'pending',
-        created_at INTEGER NOT NULL,
-        started_at INTEGER,
-        finished_at INTEGER,
-        error_message TEXT,
-        results_json TEXT,
-        force INTEGER DEFAULT 0
-    );
-    """,
-    # Metadata key-value store (API key, worker state, etc.)
-    """
-    CREATE TABLE IF NOT EXISTS meta (
-        key TEXT PRIMARY KEY,
-        value TEXT
-    );
-    """,
-    # Libraries - defines multiple library roots that can be scanned independently
-    """
-    CREATE TABLE IF NOT EXISTS libraries (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT UNIQUE NOT NULL,
-        root_path TEXT NOT NULL,
-        is_enabled INTEGER DEFAULT 1 NOT NULL,
-        is_default INTEGER DEFAULT 0 NOT NULL,
-        scan_status TEXT DEFAULT 'never_scanned',
-        scan_progress INTEGER DEFAULT 0,
-        scan_total INTEGER DEFAULT 0,
-        scanned_at INTEGER,
-        scan_error TEXT,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-    );
-    """,
-    # Index for fast library queries
-    """
-    CREATE INDEX IF NOT EXISTS idx_libraries_default ON libraries(is_default);
-    """,
-    # Library files - tracks music library with core metadata
-    # Note: genre and track_number moved to library_tags for normalization
-    """
-    CREATE TABLE IF NOT EXISTS library_files (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        path TEXT UNIQUE NOT NULL,
-        library_id INTEGER NOT NULL,
-        file_size INTEGER,
-        modified_time INTEGER,
-        duration_seconds REAL,
-        artist TEXT,
-        album TEXT,
-        title TEXT,
-        calibration TEXT,
-        chromaprint TEXT,
-        needs_tagging INTEGER DEFAULT 0,
-        is_valid INTEGER DEFAULT 1,
-        scanned_at INTEGER,
-        last_tagged_at INTEGER,
-        tagged INTEGER DEFAULT 0,
-        tagged_version TEXT,
-        skip_auto_tag INTEGER DEFAULT 0,
-        FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE
-    );
-    """,
-    # Index for fast library file queries by library
-    """
-    CREATE INDEX IF NOT EXISTS idx_library_files_library_id ON library_files(library_id);
-    """,
-    # Index for fast chromaprint lookups (move detection)
-    """
-    CREATE INDEX IF NOT EXISTS idx_library_files_chromaprint ON library_files(chromaprint) WHERE chromaprint IS NOT NULL;
-    """,
-    # Calibration queue - tracks recalibration jobs (apply calibration to existing tags)
-    """
-    CREATE TABLE IF NOT EXISTS calibration_queue (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        path TEXT NOT NULL,
-        status TEXT DEFAULT 'pending',
-        created_at INTEGER NOT NULL,
-        started_at INTEGER,
-        completed_at INTEGER,
-        error_message TEXT
-    );
-    """,
-    # Index for fast calibration queue queries
-    """
-    CREATE INDEX IF NOT EXISTS idx_calibration_queue_status ON calibration_queue(status);
-    """,
-    # Library tags - normalized unique tag definitions (deduplication)
-    """
-    CREATE TABLE IF NOT EXISTS library_tags (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        key TEXT NOT NULL,
-        value TEXT NOT NULL,
-        is_nomarr_tag INTEGER NOT NULL DEFAULT 0,
-        UNIQUE(key, value, is_nomarr_tag)
-    );
-    """,
-    # Indexes for fast tag lookups
-    """
-    CREATE INDEX IF NOT EXISTS idx_library_tags_key ON library_tags(key);
-    """,
-    """
-    CREATE INDEX IF NOT EXISTS idx_library_tags_key_value ON library_tags(key, value);
-    """,
-    """
-    CREATE INDEX IF NOT EXISTS idx_library_tags_nomarr ON library_tags(is_nomarr_tag);
-    """,
-    # File tags - many-to-many association between files and tags
-    """
-    CREATE TABLE IF NOT EXISTS file_tags (
-        file_id INTEGER NOT NULL,
-        tag_id INTEGER NOT NULL,
-        PRIMARY KEY (file_id, tag_id),
-        FOREIGN KEY (file_id) REFERENCES library_files(id) ON DELETE CASCADE,
-        FOREIGN KEY (tag_id) REFERENCES library_tags(id) ON DELETE CASCADE
-    );
-    """,
-    # Index for reverse tag lookup (which files have this tag)
-    """
-    CREATE INDEX IF NOT EXISTS idx_file_tags_tag_id ON file_tags(tag_id);
-    """,
-    # Sessions - persistent session storage for web UI
-    """
-    CREATE TABLE IF NOT EXISTS sessions (
-        session_token TEXT PRIMARY KEY,
-        expiry_timestamp REAL NOT NULL,
-        created_at REAL NOT NULL
-    );
-    """,
-    # Index for fast session expiry cleanup
-    """
-    CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expiry_timestamp);
-    """,
-    # Calibration runs - tracks calibration generation and drift metrics
-    """
-    CREATE TABLE IF NOT EXISTS calibration_runs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        model_name TEXT NOT NULL,
-        head_name TEXT NOT NULL,
-        version INTEGER NOT NULL,
-        file_count INTEGER NOT NULL,
-        timestamp INTEGER NOT NULL,
-        p5 REAL,
-        p95 REAL,
-        range REAL,
-        reference_version INTEGER,
-        apd_p5 REAL,
-        apd_p95 REAL,
-        srd REAL,
-        jsd REAL,
-        median_drift REAL,
-        iqr_drift REAL,
-        is_stable INTEGER DEFAULT 0,
-        UNIQUE(model_name, head_name, version)
-    );
-    """,
-    # Health monitoring table - tracks app and worker heartbeats (ephemeral)
-    """
-    CREATE TABLE IF NOT EXISTS health (
-        component TEXT PRIMARY KEY,           -- "app" or "worker:tag:0" (unique per component)
-        last_heartbeat INTEGER NOT NULL,      -- timestamp_ms
-        status TEXT NOT NULL,                 -- "healthy", "starting", "stopping", "crashed", "failed"
-        restart_count INTEGER DEFAULT 0,      -- how many times restarted
-        last_restart INTEGER,                 -- timestamp_ms of last restart
-        pid INTEGER,                          -- process ID
-        current_job INTEGER,                  -- current job_id (for workers)
-        exit_code INTEGER,                    -- process exit code if crashed
-        metadata TEXT                         -- JSON for extra info
-    );
-    """,
-    # Index for fast calibration queries
-    """
-    CREATE INDEX IF NOT EXISTS idx_calibration_runs_model_head ON calibration_runs(model_name, head_name);
-    """,
-    """
-    CREATE INDEX IF NOT EXISTS idx_calibration_runs_reference ON calibration_runs(model_name, head_name, is_stable);
-    """,
-]
-
-# Schema version (pre-alpha, no migrations - just delete DB on breaking changes)
-SCHEMA_VERSION = 1
+# ==================== SCHEMA VERSIONING POLICY ====================
+# Schema versioning is ADDITIVE ONLY.
+#
+# SCHEMA_VERSION is stored in meta but NOT enforced at runtime.
+# Schema bootstrap (ensure_schema) is idempotent and creates missing
+# collections/indexes, but does NOT handle:
+#   - Index changes (must drop manually)
+#   - Collection renames (manual intervention)
+#   - Data migrations (not supported)
+#
+# Future schema changes require:
+#   1. Increment SCHEMA_VERSION
+#   2. Add new collections/indexes to bootstrap
+#   3. Document manual intervention steps if destructive
+#
+# Pre-alpha: Breaking changes are acceptable.
+# Post-1.0: Must build migration framework or maintain additive-only.
+# ==================================================================
 
 
-# ----------------------------------------------------------------------
-#  Database Layer
-# ----------------------------------------------------------------------
 class Database:
-    """
-    Application database.
+    """Application database (ArangoDB).
 
     Handles all data persistence: queue, library, sessions, meta config.
     Single source of truth for database operations across all services.
+
+    Connection pooling is handled automatically by python-arango.
+    Thread-safe within a single process. Each process creates its own pool.
     """
 
-    def __init__(self, path: str):
-        self.path = path
-        # Ensure parent directory exists so sqlite can create the DB file.
-        # This makes initialization idempotent when `/app/config` is a bind mount
-        # that may not contain a `db/` directory yet.
-        db_dir = os.path.dirname(path) or "."
-        try:
-            os.makedirs(db_dir, exist_ok=True)
-        except Exception as exc:
-            raise RuntimeError(f"Unable to create database directory '{db_dir}': {exc}") from exc
+    def __init__(
+        self,
+        hosts: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        db_name: str | None = None,
+    ):
+        """Initialize database connection.
 
-        try:
-            self.conn = sqlite3.connect(path, check_same_thread=False, timeout=30.0)
-        except sqlite3.OperationalError as exc:
-            # Re-raise with a clearer message about common mount/permission issues
+        Args:
+            hosts: ArangoDB server URL(s). Read from ARANGO_HOST env var if not provided.
+            username: Database username. Defaults to ARANGO_USERNAME env var or 'nomarr'.
+            password: Database password. Read from ARANGO_PASSWORD env var (required).
+            db_name: Database name. Defaults to ARANGO_DBNAME env var or 'nomarr'.
+
+        Raises:
+            RuntimeError: If password not provided or ARANGO_HOST not set
+        """
+        import os
+
+        # Host is REQUIRED - no silent default to avoid dev env footguns
+        self.hosts = hosts or os.getenv("ARANGO_HOST")
+        if not self.hosts:
             raise RuntimeError(
-                f"Failed to open SQLite DB at '{path}'. Ensure the directory exists and is writable by the container user: {exc}"
-            ) from exc
+                "ARANGO_HOST environment variable required. "
+                "Set to 'http://nomarr-arangodb:8529' for docker-compose or 'http://localhost:8529' for dev."
+            )
 
-        # Configure SQLite for better concurrency
-        self.conn.execute("PRAGMA journal_mode=WAL;")
-        self.conn.execute("PRAGMA busy_timeout=30000;")  # 30 second timeout for locks
-        self.conn.execute("PRAGMA wal_autocheckpoint=1000;")  # Checkpoint every 1000 pages
+        self.username = username or os.getenv("ARANGO_USERNAME", "nomarr")
+        self.password = password or os.getenv("ARANGO_PASSWORD")
+        self.db_name = db_name or os.getenv("ARANGO_DBNAME", "nomarr")
 
-        for ddl in SCHEMA:
-            self.conn.execute(ddl)
-        self.conn.commit()
+        if not self.password:
+            raise RuntimeError(
+                "Database password required. Set via ARANGO_PASSWORD environment variable or constructor parameter."
+            )
 
-        # Initialize operation classes - one per table (exact table names)
-        self.meta = MetaOperations(self.conn)
-        self.libraries = LibrariesOperations(self.conn)
-        self.tag_queue = QueueOperations(self.conn)
-        self.library_files = LibraryFilesOperations(self.conn)
-        self.library_tags = LibraryTagOperations(self.conn)
-        self.file_tags = FileTagOperations(self.conn)
-        self.sessions = SessionOperations(self.conn)
-        self.calibration_queue = CalibrationQueueOperations(self.conn)
-        self.calibration_runs = CalibrationRunsOperations(self.conn)
-        self.health = HealthOperations(self.conn)
+        # Create ArangoDB connection
+        self.db: StandardDatabase = create_arango_client(
+            hosts=self.hosts,
+            username=self.username or "nomarr",  # Fallback for mypy (already checked to be non-None)
+            password=self.password,
+            db_name=self.db_name or "nomarr",  # Fallback for mypy (already checked to be non-None)
+        )
 
-        # Lazy import to avoid circular dependency (joined_queries imports from workflows)
-        from nomarr.persistence.database.joined_queries_sql import JoinedQueryOperations
+        # Initialize operation classes - one per collection
+        self.meta = MetaOperations(self.db)
+        self.libraries = LibrariesOperations(self.db)
+        self.tag_queue = QueueOperations(self.db)
+        self.library_files = LibraryFilesOperations(self.db)
+        self.library_tags = LibraryTagOperations(self.db)
+        self.file_tags = FileTagOperations(self.db)
+        self.sessions = SessionOperations(self.db)
+        self.calibration_queue = CalibrationQueueOperations(self.db)
+        self.calibration_runs = CalibrationRunsOperations(self.db)
+        self.health = HealthOperations(self.db)
 
-        self.joined_queries = JoinedQueryOperations(self.conn)
+        # Lazy import to avoid circular dependency
+        # from nomarr.persistence.database.joined_queries_aql import JoinedQueryOperations
+        # self.joined_queries = JoinedQueryOperations(self.db)
 
-        # Store schema version for reference (pre-alpha: no migrations, just delete DB on schema changes)
+        # Store schema version for reference
         current_version = self.meta.get("schema_version")
         if not current_version:
             self.meta.set("schema_version", str(SCHEMA_VERSION))
 
     def close(self):
-        """Close database connection."""
-        self.conn.commit()
-        self.conn.close()
+        """Close database connection (cleanup)."""
+        # ArangoDB client handles connection cleanup automatically
+        pass
+
+
+# ==================== ARCHITECTURAL NOTE ====================
+# Database class is a service locator pattern:
+#   - Every consumer gets all persistence capabilities
+#   - Weakens ability to reason about which workflows touch which data
+#   - Consistent with existing architecture, but has implications
+#
+# Future consideration:
+#   - joined_queries module will accumulate graph-heavy queries
+#   - Discipline required to prevent it from ballooning
+#   - Consider splitting into domain-specific query modules if needed
+# ============================================================

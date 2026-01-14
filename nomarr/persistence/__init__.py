@@ -11,10 +11,9 @@ from .analytics_queries import (
     fetch_tag_correlation_data,
     fetch_tag_frequencies_data,
 )
-from .db import SCHEMA, SCHEMA_VERSION, Database
+from .db import SCHEMA_VERSION, Database
 
 __all__ = [
-    "SCHEMA",
     "SCHEMA_VERSION",
     "Database",
     "fetch_artist_tag_profile_data",

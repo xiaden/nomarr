@@ -15,7 +15,7 @@ QueueType = Literal["tag", "library", "calibration"]
 logger = logging.getLogger(__name__)
 
 
-def remove_job_workflow(db: Database, job_id: int, queue_type: QueueType) -> bool:
+def remove_job_workflow(db: Database, job_id: str, queue_type: QueueType) -> bool:
     """
     Remove a specific job by ID with validation.
 

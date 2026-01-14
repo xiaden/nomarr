@@ -49,9 +49,15 @@ class RecalibrationService:
             if not isinstance(component, str) or not component.startswith("worker:calibration:"):
                 continue
 
-            # Use health API helper for consistent liveness check
-            if self.db.health.is_healthy(component, max_age_ms=30_000):
-                return True
+            # Check if worker is healthy (heartbeat recent and status healthy)
+            status = worker.get("status")
+            last_heartbeat = worker.get("last_heartbeat")
+            if status == "healthy" and isinstance(last_heartbeat, int):
+                from nomarr.helpers.time_helpers import now_ms
+
+                heartbeat_age = now_ms() - last_heartbeat
+                if heartbeat_age < 30_000:  # 30 seconds
+                    return True
 
         return False
 
@@ -75,7 +81,7 @@ class RecalibrationService:
 
         return False
 
-    def enqueue_file_for_recalibration(self, file_path: str) -> int:
+    def enqueue_file_for_recalibration(self, file_path: str) -> str:
         """Queue a single file for recalibration.
 
         Args:

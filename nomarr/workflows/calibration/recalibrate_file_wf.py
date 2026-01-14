@@ -311,7 +311,7 @@ def _compute_mood_tags(
 
 def _update_db_and_file(
     db: Database,
-    file_id: int,
+    file_id: str,
     file_path: str,
     namespace: str,
     mood_tags: dict[str, Any],
@@ -429,4 +429,4 @@ def recalibrate_file_workflow(
         return
 
     # Step 7: Update mood-* tags in database and file
-    _update_db_and_file(db, file_id, file_path, namespace, mood_tags)
+    _update_db_and_file(db, str(file_id), file_path, namespace, mood_tags)

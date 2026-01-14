@@ -13,7 +13,7 @@ from nomarr.helpers.dto.navidrome_dto import SmartPlaylistFilter, TagCondition
 from nomarr.persistence.db import Database
 
 
-def execute_smart_playlist_filter(db: Database, playlist_filter: SmartPlaylistFilter) -> set[int]:
+def execute_smart_playlist_filter(db: Database, playlist_filter: SmartPlaylistFilter) -> set[str]:
     """
     Execute a smart playlist filter and return matching file IDs.
 
@@ -56,7 +56,7 @@ def execute_smart_playlist_filter(db: Database, playlist_filter: SmartPlaylistFi
     return set()
 
 
-def _execute_single_condition(db: Database, condition: TagCondition) -> set[int]:
+def _execute_single_condition(db: Database, condition: TagCondition) -> set[str]:
     """
     Execute a single tag condition and return matching file IDs.
 
@@ -69,14 +69,14 @@ def _execute_single_condition(db: Database, condition: TagCondition) -> set[int]
     """
     if condition.operator == "contains":
         # String contains query
-        result = db.joined_queries.get_file_ids_containing_tag(
+        result = db.file_tags.get_file_ids_containing_tag(
             tag_key=condition.tag_key,
             substring=str(condition.value),
         )
         return set(result) if not isinstance(result, set) else result
     else:
         # Numeric comparison query
-        result = db.joined_queries.get_file_ids_matching_tag(
+        result = db.file_tags.get_file_ids_matching_tag(
             tag_key=condition.tag_key,
             operator=condition.operator,
             value=condition.value,

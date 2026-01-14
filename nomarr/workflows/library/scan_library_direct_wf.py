@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 def scan_library_direct_workflow(
     db: Database,
-    library_id: int,
+    library_id: str,
     paths: list[str] | None = None,
     recursive: bool = True,
     clean_missing: bool = True,
@@ -238,26 +238,28 @@ def scan_library_direct_workflow(
                 stats["files_removed"] += len(files_to_remove)
             else:
                 # Chromaprints exist - do full move detection
-                from nomarr.components.library.metadata_extraction_comp import load_audio_for_chromaprint
-                from nomarr.components.ml.chromaprint_comp import compute_chromaprint
+                from nomarr.components.library.metadata_extraction_comp import compute_chromaprint_for_file
 
                 logger.info(
                     f"[scan_library] Chromaprints found - checking {len(new_files)} new files for moves "
                     f"against {len(files_to_remove)} removed files..."
                 )
+
+                # Sort removed files by ID for deterministic matching when duplicates exist
+                files_to_remove.sort(key=lambda f: f["id"])
+
                 matched_moves: set[int] = set()
 
                 for new_file in new_files:
                     new_path = new_file["path"]
 
-                    # Compute chromaprint for new file (requires audio load)
+                    # Compute chromaprint for new file
                     try:
                         library_path_for_audio = build_library_path_from_input(new_path, db)
                         if not library_path_for_audio.is_valid():
                             continue
 
-                        waveform, sample_rate = load_audio_for_chromaprint(library_path_for_audio)
-                        new_chromaprint = compute_chromaprint(waveform, sample_rate)
+                        new_chromaprint = compute_chromaprint_for_file(library_path_for_audio)
 
                         # Check if chromaprint matches any removed file
                         for idx, removed_file in enumerate(files_to_remove):
@@ -266,17 +268,42 @@ def scan_library_direct_workflow(
 
                             removed_chromaprint = removed_file.get("chromaprint")
                             if new_chromaprint and removed_chromaprint and removed_chromaprint == new_chromaprint:
-                                # Match found - update path instead of adding new entry
-                                logger.info(f"[scan_library] File moved: {removed_file['path']} → {new_path}")
-                                db.library_files.update_file_path(
-                                    old_path=removed_file["path"],
-                                    new_path=new_path,
-                                    file_size=new_file["file_size"],
-                                    modified_time=new_file["modified_time"],
+                                # Chromaprint matches - verify duration to catch edge cases
+                                removed_duration = removed_file.get("duration_seconds")
+                                new_duration = new_file.get("duration_seconds")
+
+                                # Verify duration matches (allow 1 second tolerance)
+                                duration_matches = (
+                                    removed_duration is None
+                                    or new_duration is None
+                                    or abs(removed_duration - new_duration) <= 1.0
                                 )
-                                stats["files_moved"] += 1
-                                matched_moves.add(idx)
-                                break
+
+                                if duration_matches:
+                                    # Match confirmed - update all metadata except ML tags
+                                    # (chromaprint + duration match = same audio = same ML output)
+                                    logger.info(f"[scan_library] File moved: {removed_file['path']} → {new_path}")
+                                    metadata = new_file.get("metadata", {})
+                                    db.library_files.update_file_path(
+                                        file_id=removed_file["id"],
+                                        new_path=new_path,
+                                        file_size=new_file["file_size"],
+                                        modified_time=new_file["modified_time"],
+                                        artist=metadata.get("artist"),
+                                        album=metadata.get("album"),
+                                        title=metadata.get("title"),
+                                        duration_seconds=new_duration,
+                                    )
+                                    stats["files_moved"] += 1
+                                    matched_moves.add(idx)
+                                    break
+                                else:
+                                    # Chromaprint collision - different songs with same fingerprint
+                                    logger.warning(
+                                        f"[scan_library] Chromaprint collision detected: "
+                                        f"{removed_file['path']} vs {new_path} "
+                                        f"(duration: {removed_duration}s vs {new_duration}s)"
+                                    )
                     except Exception as e:
                         logger.warning(f"[scan_library] Failed to compute chromaprint for {new_path}: {e}")
                         continue
@@ -312,7 +339,6 @@ def scan_library_direct_workflow(
             library_id,
             status="complete",
             progress=total_files,
-            scanned_at=now_ms(),
             scan_error=None,
         )
 

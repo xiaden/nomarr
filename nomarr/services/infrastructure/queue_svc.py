@@ -162,7 +162,7 @@ class QueueService:
             results=results,
         )
 
-    def remove_jobs(self, job_id: int | None = None, status: str | None = None, all: bool = False) -> int:
+    def remove_jobs(self, job_id: str | None = None, status: str | None = None, all: bool = False) -> int:
         """
         Remove jobs from the queue.
 
@@ -256,7 +256,7 @@ class QueueService:
         depth = get_queue_stats(self.db, self.queue_type).get("pending", 0)
         return QueueStatus(depth=depth, counts=counts)
 
-    def get_job(self, job_id: int) -> Job | None:
+    def get_job(self, job_id: str) -> Job | None:
         """
         Get job details by ID.
 
@@ -326,7 +326,7 @@ class QueueService:
         self._publish_queue_update()
         return removed
 
-    def remove_job_for_admin(self, job_id: int) -> JobRemovalResult:
+    def remove_job_for_admin(self, job_id: str) -> JobRemovalResult:
         """
         Remove a single job by ID for admin operations.
 
@@ -449,7 +449,7 @@ class QueueService:
         return RetagAllResult(status="ok", message=f"Enqueued {count} files for re-tagging", enqueued=count)
 
     def remove_jobs_for_admin(
-        self, job_id: int | None = None, status: str | None = None, all: bool = False
+        self, job_id: str | None = None, status: str | None = None, all: bool = False
     ) -> JobRemovalResult:
         """
         Remove jobs with admin-friendly messaging.

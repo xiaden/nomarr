@@ -82,9 +82,14 @@ class LibraryService:
             if not isinstance(component, str) or not component.startswith("worker:library:"):
                 continue
 
-            # Use health API helper for consistent liveness check
-            if self.db.health.is_healthy(component, max_age_ms=30_000):
-                return True
+            # Check if worker is healthy (heartbeat within 30 seconds)
+            from nomarr.helpers.time_helper import now_ms
+
+            health = self.db.health.get_component(component)
+            if health and health.get("status") == "healthy":
+                last_heartbeat = health.get("last_heartbeat", 0)
+                if now_ms() - last_heartbeat < 30_000:  # 30 seconds
+                    return True
 
         return False
 
@@ -178,7 +183,7 @@ class LibraryService:
         self,
         candidate_root: str,
         *,
-        ignore_id: int | None = None,
+        ignore_id: str | None = None,
     ) -> None:
         """
         Ensure a candidate library root does not overlap with existing libraries.
@@ -277,7 +282,7 @@ class LibraryService:
             must_be_file=must_be_file,
         )
 
-    def _get_library_or_error(self, library_id: int) -> dict[str, Any]:
+    def _get_library_or_error(self, library_id: str) -> dict[str, Any]:
         """
         Get a library by ID or raise an error.
 
@@ -339,7 +344,7 @@ class LibraryService:
 
     def start_scan_for_library(
         self,
-        library_id: int,
+        library_id: str,
         paths: list[str] | None = None,
         recursive: bool = True,
         clean_missing: bool = True,
@@ -443,7 +448,7 @@ class LibraryService:
 
     def start_scan(
         self,
-        library_id: int | None = None,
+        library_id: str | None = None,
         paths: list[str] | None = None,
         recursive: bool = True,
         clean_missing: bool = True,
@@ -489,7 +494,7 @@ class LibraryService:
                 clean_missing=clean_missing,
             )
 
-    def cancel_scan(self, library_id: int | None = None) -> bool:
+    def cancel_scan(self, library_id: str | None = None) -> bool:
         """
         Cancel the currently running scan.
 
@@ -513,7 +518,7 @@ class LibraryService:
         logging.warning("[LibraryService] Scan cancellation not yet implemented for direct scans")
         return False
 
-    def get_status(self, library_id: int | None = None) -> LibraryScanStatusResult:
+    def get_status(self, library_id: str | None = None) -> LibraryScanStatusResult:
         """
         Get current library scan status.
 
@@ -758,7 +763,7 @@ class LibraryService:
             for lib in libraries
         ]
 
-    def get_library(self, library_id: int) -> LibraryDict:
+    def get_library(self, library_id: str) -> LibraryDict:
         """
         Get a library by ID.
 
@@ -859,9 +864,11 @@ class LibraryService:
         library = self.db.libraries.get_library(library_id)
         if not library:
             raise RuntimeError("Failed to retrieve created library")
+        # Map _id to id for DTO
+        library["id"] = library.get("_id", library.get("id"))
         return LibraryDict(**library)
 
-    def update_library_root(self, library_id: int, root_path: str) -> LibraryDict:
+    def update_library_root(self, library_id: str, root_path: str) -> LibraryDict:
         """
         Update a library's root path.
 
@@ -887,9 +894,7 @@ class LibraryService:
         self._ensure_no_overlapping_library_root(abs_path, ignore_id=library_id)
 
         # Update library
-        success = self.db.libraries.update_library(library_id, root_path=abs_path)
-        if not success:
-            raise ValueError(f"Failed to update library: {library_id}")
+        self.db.libraries.update_library(library_id, root_path=abs_path)
 
         logging.info(f"[LibraryService] Updated library {library_id} root path to {abs_path}")
 
@@ -901,7 +906,7 @@ class LibraryService:
 
     def update_library(
         self,
-        library_id: int,
+        library_id: str,
         *,
         name: str | None = None,
         root_path: str | None = None,
@@ -948,7 +953,7 @@ class LibraryService:
         # If only root_path or is_default was updated, fetch and return the updated library
         return self.get_library(library_id)
 
-    def set_default_library(self, library_id: int) -> LibraryDict:
+    def set_default_library(self, library_id: str) -> LibraryDict:
         """
         Set a library as the default.
 
@@ -961,9 +966,7 @@ class LibraryService:
         Raises:
             ValueError: If library not found
         """
-        success = self.db.libraries.set_default_library(library_id)
-        if not success:
-            raise ValueError(f"Library not found: {library_id}")
+        self.db.libraries.update_library(library_id, is_default=True)
 
         logging.info(f"[LibraryService] Set library {library_id} as default")
 
@@ -973,7 +976,7 @@ class LibraryService:
             raise RuntimeError("Failed to retrieve updated library")
         return LibraryDict(**library)
 
-    def delete_library(self, library_id: int) -> bool:
+    def delete_library(self, library_id: str) -> bool:
         """
         Delete a library.
 
@@ -999,16 +1002,14 @@ class LibraryService:
             raise ValueError("Cannot delete the default library. Set another library as default first.")
 
         # Delete from database (cascade deletes library_files and queue entries)
-        deleted = self.db.libraries.delete_library(library_id)
+        self.db.libraries.delete_library(library_id)
 
-        if deleted:
-            logging.info(f"[LibraryService] Deleted library {library_id}: {library.get('name')}")
-
-        return deleted
+        logging.info(f"[LibraryService] Deleted library {library_id}: {library.get('name')}")
+        return True
 
     def update_library_metadata(
         self,
-        library_id: int,
+        library_id: str,
         *,
         name: str | None = None,
         is_enabled: bool | None = None,
@@ -1034,13 +1035,11 @@ class LibraryService:
         _ = self.get_library(library_id)
 
         # Update via persistence layer
-        success = self.db.libraries.update_library(
+        self.db.libraries.update_library(
             library_id,
             name=name,
             is_enabled=is_enabled,
         )
-        if not success:
-            raise ValueError(f"Failed to update library: {library_id}")
 
         logging.info(f"[LibraryService] Updated library {library_id} metadata")
 
@@ -1058,8 +1057,8 @@ class LibraryService:
         library_path config to multi-library model.
         """
         # Check if any libraries exist
-        count = self.db.libraries.count_libraries()
-        if count > 0:
+        libraries = self.db.libraries.list_libraries()
+        if len(libraries) > 0:
             return
 
         # No libraries exist - create default from config
@@ -1222,7 +1221,7 @@ class LibraryService:
             deleted_count=result["deleted_count"],
         )
 
-    def get_file_tags(self, file_id: int, nomarr_only: bool = False) -> FileTagsResult:
+    def get_file_tags(self, file_id: str, nomarr_only: bool = False) -> FileTagsResult:
         """
         Get all tags for a specific file.
 

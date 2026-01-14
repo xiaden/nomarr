@@ -24,7 +24,7 @@ def update_library_from_tags(
     namespace: str,
     tagged_version: str | None,
     calibration: dict[str, str] | None,
-    library_id: int | None,
+    library_id: str | None,
 ) -> None:
     """
     Update library database with extracted file metadata and tags.
@@ -73,9 +73,6 @@ def update_library_from_tags(
         file_size = file_stat.st_size
         modified_time = int(file_stat.st_mtime * 1000)
 
-        # Serialize calibration metadata to JSON
-        calibration_json = json.dumps(calibration) if calibration else None
-
         # Build LibraryPath from file path with validation
         library_path = build_library_path_from_input(file_path, db)
         if not library_path.is_valid():
@@ -94,7 +91,7 @@ def update_library_from_tags(
             artist=metadata.get("artist"),
             album=metadata.get("album"),
             title=metadata.get("title"),
-            calibration=calibration_json,
+            calibration=calibration,  # Pass dict directly, not JSON string
         )
 
         # Get file ID and populate file_tags table
@@ -118,15 +115,15 @@ def update_library_from_tags(
 
             # Insert both sets of tags with appropriate is_nomarr_tag flags
             db.file_tags.upsert_file_tags_mixed(
-                file_record["id"],
+                str(file_record["id"]),
                 external_tags=parsed_all_tags,
                 nomarr_tags=parsed_nom_tags,
             )
 
         # Mark file as tagged if tagger version provided (called from processor)
         if tagged_version and file_record:
-            # Reuse library_path from earlier in function
-            db.library_files.mark_file_tagged(library_path, tagged_version)
+            # Pass file_path string to mark_file_tagged
+            db.library_files.mark_file_tagged(file_path, tagged_version)
 
         logging.debug(f"[update_library_from_tags] Updated library for {file_path}")
     except Exception as e:

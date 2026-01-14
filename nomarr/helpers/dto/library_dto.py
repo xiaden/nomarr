@@ -53,7 +53,7 @@ class LibraryStatsResult:
 class LibraryDict:
     """Single library record from library_service.list_libraries or get_library."""
 
-    id: int
+    id: str  # ArangoDB _id (e.g., "libraries/12345")
     name: str
     root_path: str
     is_enabled: bool
@@ -99,7 +99,7 @@ class ScanSingleFileWorkflowParams:
     force: bool
     auto_tag: bool
     ignore_patterns: str  # Comma-separated patterns like "*/Audiobooks/*,*.wav"
-    library_id: int | None
+    library_id: str | None
     version_tag_key: str  # Key for version tag (e.g., "nomarr_version")
     tagger_version: str  # Current tagger version (e.g., "1.2")
 
@@ -142,9 +142,9 @@ class FileTag:
 class LibraryFileWithTags:
     """Library file with its tags."""
 
-    id: int
+    id: str  # ArangoDB _id
     path: str
-    library_id: int
+    library_id: str  # ArangoDB _id
     file_size: int | None
     modified_time: int | None
     duration_seconds: float | None
@@ -194,7 +194,7 @@ class TagCleanupResult:
 class FileTagsResult:
     """Result from library_service.get_file_tags."""
 
-    file_id: int
+    file_id: str  # ArangoDB _id
     path: str
     tags: list[FileTag]
 

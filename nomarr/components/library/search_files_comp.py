@@ -41,7 +41,7 @@ def search_library_files(
         Tuple of (files list with tags, total count)
     """
     # Use joined queries for efficient file+tag retrieval
-    return db.joined_queries.search_library_files_with_tags(
+    return db.library_files.search_library_files_with_tags(
         q=q,
         artist=artist,
         album=album,
@@ -74,9 +74,11 @@ def get_unique_tag_values(db: Database, tag_key: str, nomarr_only: bool = False)
     Args:
         db: Database instance
         tag_key: The tag key to get values for
-        nomarr_only: Only return values from Nomarr tags
+        nomarr_only: Only return values from Nomarr tags (NOTE: not yet supported)
 
     Returns:
         List of unique tag values
     """
-    return db.file_tags.get_unique_tag_values(tag_key, nomarr_only=nomarr_only)
+    # NOTE: file_tags.get_unique_tag_values doesn't support nomarr_only yet
+    # TODO: Add filtering support in persistence layer
+    return db.file_tags.get_unique_tag_values(tag_key)

@@ -45,7 +45,7 @@ async def admin_remove_job(
 ) -> JobRemovalResponse:
     """Remove a single job by ID (cannot remove if running)."""
     try:
-        result = queue_service.remove_job_for_admin(job_id=int(payload.job_id))
+        result = queue_service.remove_job_for_admin(job_id=payload.job_id)
         return JobRemovalResponse.from_dto(result)
     except ValueError as e:
         status_code = 404 if "not found" in str(e).lower() else 409

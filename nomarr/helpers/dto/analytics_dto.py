@@ -106,7 +106,7 @@ class ComputeTagCoOccurrenceParams:
 
     x_tags: list[TagSpec]
     y_tags: list[TagSpec]
-    tag_data: dict[tuple[str, str], set[int]]  # (key, value) -> set of file_ids
+    tag_data: dict[tuple[str, str], set[str]]  # (key, value) -> set of file_ids (ArangoDB _id)
 
 
 # ──────────────────────────────────────────────────────────────────────

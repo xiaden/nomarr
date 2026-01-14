@@ -12,6 +12,7 @@ uvicorn==0.30.6
 rich==13.7.1
 requests==2.32.3
 bcrypt==4.2.1
+python-arango==7.9.0
 
 # Testing dependencies
 pytest==8.3.3

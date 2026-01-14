@@ -32,7 +32,7 @@ from nomarr.helpers.dto.queue_dto import (
 class RemoveJobRequest(BaseModel):
     """Request to remove a specific job from the queue."""
 
-    job_id: int
+    job_id: str
 
 
 class FlushRequest(BaseModel):
@@ -53,7 +53,7 @@ class QueueJobResponse(BaseModel):
     Maps directly to Job DTO from helpers/dto/queue_dto.py
     """
 
-    id: int
+    id: str  # ArangoDB _id
     path: str
     status: str
     created_at: int

@@ -217,7 +217,11 @@ class KeyManagementService:
         _session_cache[session_token] = expiry
 
         # Write to DB (persistence across restarts)
-        self._db.sessions.create(session_token, expiry)
+        self._db.sessions.create_session(
+            session_id=session_token,
+            user_id="admin",  # Web UI sessions are for admin user
+            expiry_timestamp=int(expiry * 1000),  # Convert seconds to ms
+        )
 
         logging.info(f"[KeyManagement] Created new session (expires in {SESSION_TIMEOUT_SECONDS}s)")
         return session_token
@@ -297,7 +301,8 @@ class KeyManagementService:
             Number of sessions loaded
         """
         sessions = self._db.sessions.load_all()
-        _session_cache.update(sessions)
+        # Transform session documents to cache format: {session_id: expiry_timestamp_seconds}
+        _session_cache.update((s["session_id"], s["expiry_timestamp"] / 1000.0) for s in sessions)
         logging.info(f"[KeyManagement] Loaded {len(sessions)} active session(s) from database")
         return len(sessions)
 
