@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from nomarr.services.domain.analytics_svc import AnalyticsService
     from nomarr.services.domain.calibration_svc import CalibrationService
     from nomarr.services.domain.library_svc import LibraryService
+    from nomarr.services.domain.metadata_svc import MetadataService
     from nomarr.services.domain.navidrome_svc import NavidromeService
     from nomarr.services.infrastructure.config_svc import ConfigService
     from nomarr.services.infrastructure.queue_svc import QueueService
@@ -167,3 +168,15 @@ def get_events_service():
 
     # EventsService wraps the event_broker
     return EventsService(application.event_broker)
+
+
+def get_metadata_service() -> MetadataService:
+    """Get MetadataService instance."""
+    from fastapi import HTTPException
+
+    from nomarr.app import application
+
+    service = application.services.get("metadata")
+    if not service:
+        raise HTTPException(status_code=503, detail="Metadata service not available")
+    return service  # type: ignore[no-any-return]

@@ -22,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 
 import nomarr
 from nomarr.interfaces.api import web
-from nomarr.interfaces.api.v1 import admin_if, public_if
+from nomarr.interfaces.api.v1 import admin_if, metadata_if, public_if
 
 
 # ----------------------------------------------------------------------
@@ -72,6 +72,7 @@ async def exception_handler(request, exc: Exception):
 integration_router = APIRouter(prefix="/api")
 integration_router.include_router(public_if.router, tags=["Integration: Public"])
 integration_router.include_router(admin_if.router, tags=["Integration: Admin"])
+integration_router.include_router(metadata_if.router, tags=["Integration: Metadata"])
 
 # Web UI APIs (session auth) - /api/web prefix
 # Web router already has /api/web prefix configured in web/router.py

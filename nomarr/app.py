@@ -360,6 +360,12 @@ class Application:
         else:
             logging.info("[Application] No library root configured, library service not started")
 
+        # Register metadata service (entity navigation for hybrid graph)
+        from nomarr.services.domain.metadata_svc import MetadataService
+
+        metadata_service = MetadataService(db=self.db)
+        self.register_service("metadata", metadata_service)
+
         # Register recalibration service
         self.register_service(
             "recalibration",
