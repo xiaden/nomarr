@@ -120,6 +120,32 @@ def update_library_from_tags(
                 nomarr_tags=parsed_nom_tags,
             )
 
+            # Seed entity vertices and edges from metadata (hybrid graph model)
+            # This creates entities (artists, albums, genres, etc.) and edges from raw metadata
+            try:
+                from nomarr.components.metadata.entity_seeding_comp import seed_song_entities_from_tags
+                from nomarr.components.metadata.metadata_cache_comp import rebuild_song_metadata_cache
+
+                # Prepare tags dict for entity seeding
+                entity_tags = {
+                    "artist": metadata.get("artist"),
+                    "artists": metadata.get("artists"),
+                    "album": metadata.get("album"),
+                    "label": metadata.get("label"),
+                    "genre": metadata.get("genre"),
+                    "year": metadata.get("year"),
+                }
+
+                # Seed entities + edges from raw metadata
+                seed_song_entities_from_tags(db.db, str(file_record["id"]), entity_tags)
+
+                # Rebuild cache from edges (deterministic derived fields)
+                rebuild_song_metadata_cache(db.db, str(file_record["id"]))
+
+                logging.debug(f"[update_library_from_tags] Seeded entities for {file_path}")
+            except Exception as entity_error:
+                logging.warning(f"[update_library_from_tags] Failed to seed entities: {entity_error}")
+
         # Mark file as tagged if tagger version provided (called from processor)
         if tagged_version and file_record:
             # Pass file ID (not file_path) to mark_file_tagged
