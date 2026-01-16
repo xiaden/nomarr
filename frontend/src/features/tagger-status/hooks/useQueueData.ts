@@ -93,7 +93,7 @@ export function useQueueData() {
     },
   });
 
-  const removeJob = async (jobId: number) => {
+  const removeJob = async (jobId: string) => {
     const confirmed = await confirm({
       title: "Remove Job",
       message: `Remove job ${jobId}?`,

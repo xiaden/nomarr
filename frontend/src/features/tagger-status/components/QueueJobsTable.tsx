@@ -5,13 +5,13 @@
 
 import { Delete } from "@mui/icons-material";
 import {
-  Box,
-  Button,
-  Chip,
-  IconButton,
-  Stack,
-  Tooltip,
-  Typography,
+    Box,
+    Button,
+    Chip,
+    IconButton,
+    Stack,
+    Tooltip,
+    Typography,
 } from "@mui/material";
 
 import { Panel } from "@shared/components/ui";
@@ -23,7 +23,7 @@ interface QueueJobsTableProps {
   total: number;
   currentPage: number;
   totalPages: number;
-  onRemoveJob: (jobId: number) => Promise<void>;
+  onRemoveJob: (jobId: string) => Promise<void>;
   onNextPage: () => void;
   onPrevPage: () => void;
   statusFilter: string;

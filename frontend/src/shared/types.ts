@@ -23,7 +23,7 @@ export interface LogoutResult {
 // ──────────────────────────────────────────────────────────────────────
 
 export interface QueueJob {
-  id: number;
+  id: string; // Arango _id
   path: string;
   status: "pending" | "running" | "done" | "error";
   created_at: number; // Unix timestamp
@@ -31,7 +31,7 @@ export interface QueueJob {
   finished_at?: number | null; // Unix timestamp
   error_message?: string | null;
   results_json?: string | null;
-  force: number; // 0 or 1 (SQLite boolean)
+  force: boolean; // Arango boolean
 }
 
 export interface QueueSummary {
@@ -74,13 +74,13 @@ export interface WorkerStatusData {
 // ──────────────────────────────────────────────────────────────────────
 
 export interface Library {
-  id: number;
+  id: string; // Arango _id
   name: string;
   rootPath: string; // maps to backend root_path
   isEnabled: boolean;
   isDefault: boolean;
-  createdAt?: string;
-  updatedAt?: string;
+  createdAt?: string | number; // Can be ISO string or Unix timestamp
+  updatedAt?: string | number; // Can be ISO string or Unix timestamp
 }
 
 export interface LibraryStats {
@@ -100,21 +100,24 @@ export interface ScanResult {
 }
 
 export interface LibraryFile {
-  id: number;
+  id: string; // Arango _id
+  library_id: string; // Arango _id
   path: string;
-  file_size: number;
-  modified_time: number;
-  duration_seconds: number;
+  file_size?: number;
+  modified_time?: number;
+  duration_seconds?: number;
   artist?: string;
   album?: string;
   title?: string;
-  tags_json?: string;
-  nom_tags?: string;
+  calibration?: string;
   scanned_at?: number;
   last_tagged_at?: number;
-  tagged: number; // 0 or 1 (SQLite boolean)
+  tagged: boolean; // Arango boolean
   tagged_version?: string;
-  skip_auto_tag: number; // 0 or 1 (SQLite boolean)
+  skip_auto_tag: boolean; // Arango boolean
+  created_at?: string | number;
+  updated_at?: string | number;
+  tags?: FileTag[]; // Tags included in some responses
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -149,7 +152,7 @@ export interface TagCleanupResult {
 }
 
 export interface FileTagsResult {
-  file_id: number;
+  file_id: string; // Arango _id
   path: string;
   tags: FileTag[];
 }

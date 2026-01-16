@@ -37,8 +37,8 @@ export function LibraryManagement() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [scanningId, setScanningId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [scanningId, setScanningId] = useState<string | null>(null);
   const [scanningState, setScanningState] = useState<"preparing" | "queueing" | null>(null);
   const [libraryRoot, setLibraryRoot] = useState<string | null>(null);
 
@@ -194,7 +194,7 @@ export function LibraryManagement() {
     }
   };
 
-  const handleSetDefault = async (id: number) => {
+  const handleSetDefault = async (id: string) => {
     try {
       setError(null);
       await api.library.setDefault(id);
@@ -206,7 +206,7 @@ export function LibraryManagement() {
     }
   };
 
-  const handleScan = async (id: number) => {
+  const handleScan = async (id: string) => {
     try {
       setError(null);
       setScanningId(id);
@@ -246,7 +246,7 @@ export function LibraryManagement() {
     }
   };
 
-  const handleDelete = async (id: number, name: string, isDefault: boolean) => {
+  const handleDelete = async (id: string, name: string, isDefault: boolean) => {
     if (isDefault) {
       setError("Cannot delete the default library. Set another library as default first.");
       return;

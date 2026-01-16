@@ -28,24 +28,7 @@ import { ErrorMessage, PageContainer, Panel } from "@shared/components/ui";
 
 import { api } from "../../shared/api";
 import { FileTagsDataGrid } from "../../shared/components/FileTagsDataGrid";
-
-interface FileTag {
-  key: string;
-  value: string;
-  type: string;
-  is_nomarr: boolean;
-}
-
-interface LibraryFile {
-  id: number;
-  path: string;
-  artist?: string;
-  album?: string;
-  title?: string;
-  duration_seconds: number;
-  tagged: number;
-  tags: FileTag[];
-}
+import type { LibraryFile } from "../../shared/types";
 
 export function BrowseFilesPage() {
   const [files, setFiles] = useState<LibraryFile[]>([]);
@@ -66,7 +49,7 @@ export function BrowseFilesPage() {
   const [offset, setOffset] = useState(0);
 
   // Expanded file details
-  const [expandedFileId, setExpandedFileId] = useState<number | null>(null);
+  const [expandedFileId, setExpandedFileId] = useState<string | null>(null);
 
   const loadAvailableTags = async () => {
     try {
@@ -151,7 +134,7 @@ export function BrowseFilesPage() {
     }
   };
 
-  const toggleFileDetails = (fileId: number) => {
+  const toggleFileDetails = (fileId: string) => {
     setExpandedFileId(expandedFileId === fileId ? null : fileId);
   };
 
@@ -288,16 +271,16 @@ export function BrowseFilesPage() {
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
                     {file.artist && <span>{file.artist}</span>}
                     {file.album && <span> • {file.album}</span>}
-                    {file.tags.find(t => t.key === "year") && (
+                    {file.tags && file.tags.find(t => t.key === "year") && (
                       <span> ({file.tags.find(t => t.key === "year")?.value})</span>
                     )}
                   </Typography>
                   <Typography variant="caption" color="text.disabled">
                     {formatDuration(file.duration_seconds)}
-                    {file.tags.find(t => t.key === "genre") && (
+                    {file.tags && file.tags.find(t => t.key === "genre") && (
                       <span> • {file.tags.find(t => t.key === "genre")?.value}</span>
                     )}
-                    {file.tagged === 1 && (
+                    {file.tagged && (
                       <Chip
                         label="Tagged"
                         size="small"
@@ -339,7 +322,7 @@ export function BrowseFilesPage() {
                   </Box>
 
                   {/* Tags DataGrid */}
-                  <FileTagsDataGrid tags={file.tags} />
+                  <FileTagsDataGrid tags={file.tags || []} />
                 </Box>
               )}
             </Box>

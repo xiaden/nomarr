@@ -1,0 +1,1 @@
+import{Bt as e,Ht as t,a as n}from"./index-CnrlnshQ.js";var r=t(e(),1);function i(){let e=(0,r.useContext)(n);if(!e)throw Error(`useNotification must be used within NotificationProvider`);return e}export{i as t};

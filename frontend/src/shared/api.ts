@@ -188,7 +188,7 @@ export const queue = {
   /**
    * Get a specific job by ID.
    */
-  getJob: async (jobId: number): Promise<QueueJob> => {
+  getJob: async (jobId: string): Promise<QueueJob> => {
     return request<QueueJob>(`/api/web/queue/status/${jobId}`);
   },
 
@@ -198,7 +198,7 @@ export const queue = {
    * @param options - Can specify job_id, status, or all=true
    */
   removeJobs: async (options: {
-    job_id?: number;
+    job_id?: string;
     status?: string;
     all?: boolean;
   }): Promise<{ removed: number; status: string }> => {
@@ -287,13 +287,13 @@ export const library = {
     const query = enabledOnly ? "?enabled_only=true" : "";
     const response = await request<{
       libraries: Array<{
-        id: number;
+        id: string;
         name: string;
         root_path: string;
         is_enabled: boolean;
         is_default: boolean;
-        created_at?: string;
-        updated_at?: string;
+        created_at?: string | number;
+        updated_at?: string | number;
       }>;
     }>(`/api/web/libraries${query}`);
 
@@ -312,15 +312,15 @@ export const library = {
   /**
    * Get a specific library by ID.
    */
-  get: async (id: number): Promise<Library> => {
+  get: async (id: string): Promise<Library> => {
     const response = await request<{
-      id: number;
+      id: string;
       name: string;
       root_path: string;
       is_enabled: boolean;
       is_default: boolean;
-      created_at?: string;
-      updated_at?: string;
+      created_at?: string | number;
+      updated_at?: string | number;
     }>(`/api/web/libraries/${id}`);
 
     return {
@@ -340,13 +340,13 @@ export const library = {
   getDefault: async (): Promise<Library | null> => {
     try {
       const response = await request<{
-        id: number;
+        id: string;
         name: string;
         root_path: string;
         is_enabled: boolean;
         is_default: boolean;
-        created_at?: string;
-        updated_at?: string;
+        created_at?: string | number;
+        updated_at?: string | number;
       }>("/api/web/libraries/default");
 
       return {
@@ -373,13 +373,13 @@ export const library = {
     isDefault?: boolean;
   }): Promise<Library> => {
     const response = await request<{
-      id: number;
+      id: string;
       name: string;
       root_path: string;
       is_enabled: boolean;
       is_default: boolean;
-      created_at?: string;
-      updated_at?: string;
+      created_at?: string | number;
+      updated_at?: string | number;
     }>("/api/web/libraries", {
       method: "POST",
       body: JSON.stringify({
@@ -405,7 +405,7 @@ export const library = {
    * Update a library's properties.
    */
   update: async (
-    id: number,
+    id: string,
     payload: {
       name?: string;
       rootPath?: string;
@@ -420,13 +420,13 @@ export const library = {
     if (payload.isDefault !== undefined) body.is_default = payload.isDefault;
 
     const response = await request<{
-      id: number;
+      id: string;
       name: string;
       root_path: string;
       is_enabled: boolean;
       is_default: boolean;
-      created_at?: string;
-      updated_at?: string;
+      created_at?: string | number;
+      updated_at?: string | number;
     }>(`/api/web/libraries/${id}`, {
       method: "PATCH",
       body: JSON.stringify(body),
@@ -446,15 +446,15 @@ export const library = {
   /**
    * Set a library as the default.
    */
-  setDefault: async (id: number): Promise<Library> => {
+  setDefault: async (id: string): Promise<Library> => {
     const response = await request<{
-      id: number;
+      id: string;
       name: string;
       root_path: string;
       is_enabled: boolean;
       is_default: boolean;
-      created_at?: string;
-      updated_at?: string;
+      created_at?: string | number;
+      updated_at?: string | number;
     }>(`/api/web/libraries/${id}/set-default`, {
       method: "POST",
     });
@@ -474,7 +474,7 @@ export const library = {
    * Delete a library.
    * Cannot delete the default library - set another as default first.
    */
-  delete: async (id: number): Promise<void> => {
+  delete: async (id: string): Promise<void> => {
     await request(`/api/web/libraries/${id}`, {
       method: "DELETE",
     });
@@ -484,7 +484,7 @@ export const library = {
    * Preview file count for a library path.
    */
   preview: async (
-    id: number,
+    id: string,
     options?: {
       paths?: string[];
       recursive?: boolean;
@@ -510,7 +510,7 @@ export const library = {
    * Scan a specific library.
    */
   scan: async (
-    id: number,
+    id: string,
     options?: {
       paths?: string[];
       recursive?: boolean;
@@ -559,10 +559,10 @@ export const library = {
    * Get all tags for a specific file.
    */
   getFileTags: async (
-    fileId: number,
+    fileId: string,
     nomarrOnly = false
   ): Promise<{
-    file_id: number;
+    file_id: string;
     path: string;
     tags: Array<{
       key: string;
@@ -955,21 +955,23 @@ export const files = {
     offset?: number;
   }): Promise<{
     files: Array<{
-      id: number;
+      id: string;
       path: string;
-      library_id: number;
-      file_size: number;
-      modified_time: number;
-      duration_seconds: number;
+      library_id: string;
+      file_size?: number;
+      modified_time?: number;
+      duration_seconds?: number;
       artist?: string;
       album?: string;
       title?: string;
       calibration?: string;
       scanned_at?: number;
       last_tagged_at?: number;
-      tagged: number;
+      tagged: boolean;
       tagged_version?: string;
-      skip_auto_tag: number;
+      skip_auto_tag: boolean;
+      created_at?: string | number;
+      updated_at?: string | number;
       tags: Array<{
         key: string;
         value: string;
