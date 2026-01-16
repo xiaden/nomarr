@@ -9,16 +9,11 @@ context to the pure workflow function.
 from __future__ import annotations
 
 import logging
-from dataclasses import asdict, dataclass, field
+import threading
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from nomarr.helpers.dto.admin_dto import CalibrationHistoryResult, RunCalibrationResult
-from nomarr.helpers.dto.calibration_dto import CalibrationRunResult, GenerateCalibrationResult
-from nomarr.helpers.dto.recalibration_dto import GenerateCalibrationResult as GenerateCalibrationResultWrapper
-from nomarr.workflows.calibration.generate_calibration_wf import generate_calibration_workflow
-
 if TYPE_CHECKING:
-    from nomarr.helpers.dto.ml_dto import GenerateMinmaxCalibrationResult, SaveCalibrationSidecarsResult
     from nomarr.persistence.db import Database
 
 
@@ -57,194 +52,175 @@ class CalibrationService:
         """
         self._db = db
         self.cfg = cfg
+        self._generation_thread: threading.Thread | None = None
+        self._generation_result: dict[str, Any] | None = None
+        self._generation_error: Exception | None = None
 
-    def generate_calibration_with_tracking(self) -> GenerateCalibrationResult:
+    # -------------------------------------------------------------------------
+    #  Histogram-Based Calibration (Primary System)
+    # -------------------------------------------------------------------------
+
+    def generate_histogram_calibration(self) -> dict[str, Any]:
         """
-        Generate calibrations for all heads and track drift metrics.
+        Generate calibrations using sparse uniform histogram approach.
 
-        Delegates to workflows.calibration_generation.generate_calibration_workflow.
+        Stateless, idempotent. Always computes from current DB state.
+        Uses 10,000 uniform bins per head, sparse results only.
 
         Returns:
-            GenerateCalibrationResult DTO with version, library_size, heads, saved_files, reference_updates, summary
+            {
+              "version": int,
+              "heads_processed": int,
+              "heads_success": int,
+              "heads_failed": int,
+              "results": {head_key: {p5, p95, n, underflow_count, overflow_count}}
+            }
         """
-        logger.debug("[CalibrationService] Delegating to calibration generation workflow")
+        from nomarr.workflows.calibration.generate_calibration_wf import generate_histogram_calibration_wf
 
-        return generate_calibration_workflow(
+        logger.debug("[CalibrationService] Delegating to histogram calibration workflow")
+
+        return generate_histogram_calibration_wf(
             db=self._db,
             models_dir=self.cfg.models_dir,
             namespace=self.cfg.namespace,
-            thresholds=self.cfg.thresholds,
         )
 
-    def generate_minmax_calibration(self) -> GenerateMinmaxCalibrationResult:
+    def start_histogram_calibration_background(self) -> None:
         """
-        Generate minmax calibration data from database tags.
+        Start histogram-based calibration generation in background thread.
 
-        Returns:
-            Calibration data DTO with min/max values per head
+        Follows threading pattern from design document.
+        Thread-safe: can check is_generation_running() and get_generation_result().
         """
-        from nomarr.components.ml.ml_calibration_comp import generate_minmax_calibration
+        if self._generation_thread and self._generation_thread.is_alive():
+            logger.warning("[CalibrationService] Calibration generation already running")
+            return
 
-        return generate_minmax_calibration(
-            db=self._db,
-            namespace=self.cfg.namespace,
+        # Reset state
+        self._generation_result = None
+        self._generation_error = None
+
+        # Start background thread
+        self._generation_thread = threading.Thread(
+            target=self._run_histogram_generation,
+            name="CalibrationGeneration",
+            daemon=False,
         )
+        self._generation_thread.start()
+        logger.info("[CalibrationService] Started histogram calibration generation in background")
 
-    def generate_calibration_with_sidecars(self, save_sidecars: bool = False) -> GenerateCalibrationResultWrapper:
-        """
-        Generate calibration and optionally save sidecars, returning unified DTO.
-
-        This method consolidates the async execution and conditional logic
-        that was previously in the interface layer.
-
-        Args:
-            save_sidecars: Whether to save JSON sidecars next to model files
-
-        Returns:
-            GenerateCalibrationResultWrapper DTO with all results
-        """
-        # Generate calibration (this can be heavy, caller may want to run in executor)
-        calibration_result = self.generate_minmax_calibration()
-
-        # Optionally save sidecars
-        save_result = None
-        saved_files = None
-        total_files = None
-        total_labels = None
-
-        if save_sidecars:
-            save_result = self.save_calibration_sidecars(asdict(calibration_result))
-            if save_result and not isinstance(save_result, dict):
-                saved_files = save_result.saved_files
-                total_files = save_result.total_files
-                total_labels = save_result.total_labels
-            elif isinstance(save_result, dict):
-                saved_files = save_result.get("saved_files")
-                total_files = save_result.get("total_files")
-                total_labels = save_result.get("total_labels")
-
-        return GenerateCalibrationResultWrapper(
-            status="success",
-            method=calibration_result.method,
-            library_size=calibration_result.library_size,
-            min_samples=calibration_result.min_samples,
-            calibrations=calibration_result.calibrations,
-            skipped_tags=calibration_result.skipped_tags,
-            saved_files=saved_files,
-            total_files=total_files,
-            total_labels=total_labels,
-        )
-
-    def save_calibration_sidecars(
-        self, calibration_data: dict[str, Any]
-    ) -> SaveCalibrationSidecarsResult | dict[str, Any]:
-        """
-        Save calibration data as JSON sidecar files next to model files.
-
-        Args:
-            calibration_data: Calibration data from generate_minmax_calibration()
-
-        Returns:
-            Dictionary with save results and paths
-        """
-        from nomarr.components.ml.ml_calibration_comp import save_calibration_sidecars
-
-        return save_calibration_sidecars(
-            calibration_data=calibration_data,
-            models_dir=self.cfg.models_dir,
-        )
-
-    def get_calibration_history(
-        self,
-        model_name: str | None = None,
-        head_name: str | None = None,
-        limit: int = 100,
-    ) -> list[CalibrationRunResult]:
-        """
-        Get calibration history with drift metrics.
-
-        Args:
-            model_name: Filter by model name (optional)
-            head_name: Filter by head name (optional)
-            limit: Maximum number of results
-
-        Returns:
-            List of CalibrationRunResult DTOs
-        """
-        model_key = f"{model_name}_{head_name}" if model_name and head_name else None
-        runs = self._db.calibration_runs.list_calibration_runs(
-            model_key=model_key,
-            limit=limit,
-        )
-        return [
-            CalibrationRunResult(
-                id=run["id"],
-                model_name=run["model_name"],
-                head_name=run["head_name"],
-                version=run["version"],
-                file_count=run["file_count"],
-                timestamp=run["timestamp"],
-                p5=run["p5"],
-                p95=run["p95"],
-                range=run["range"],
-                reference_version=run["reference_version"],
-                apd_p5=run["apd_p5"],
-                apd_p95=run["apd_p95"],
-                srd=run["srd"],
-                jsd=run["jsd"],
-                median_drift=run["median_drift"],
-                iqr_drift=run["iqr_drift"],
-                is_stable=run["is_stable"],
+    def _run_histogram_generation(self) -> None:
+        """Background thread: run histogram calibration generation."""
+        try:
+            logger.info("[CalibrationService] Background generation started")
+            result = self.generate_histogram_calibration()
+            self._generation_result = result
+            logger.info(
+                f"[CalibrationService] Background generation completed: "
+                f"{result['heads_success']} success, {result['heads_failed']} failed"
             )
-            for run in runs
-        ]
+        except Exception as e:
+            logger.error(f"[CalibrationService] Background generation failed: {e}", exc_info=True)
+            self._generation_error = e
 
-    # -------------------------------------------------------------------------
-    #  Admin Wrappers (for interfaces/api)
-    # -------------------------------------------------------------------------
+    def is_generation_running(self) -> bool:
+        """Check if histogram calibration generation is currently running."""
+        return self._generation_thread is not None and self._generation_thread.is_alive()
 
-    def run_calibration_for_admin(self) -> RunCalibrationResult:
+    def get_generation_result(self) -> dict[str, Any] | None:
         """
-        Generate calibration with tracking and admin-friendly error handling.
-
-        Checks if calibrate_heads is enabled before proceeding.
+        Get result of last histogram calibration generation.
 
         Returns:
-            RunCalibrationResult with status and calibration data or error message
-
-        Raises:
-            ValueError: If calibrate_heads is disabled in config
+            Result dict if generation completed successfully, None if still running or failed
         """
-        if not self.cfg.calibrate_heads:
-            raise ValueError("Calibration generation disabled. Set calibrate_heads: true in config to enable.")
+        return self._generation_result
 
-        result = self.generate_calibration_with_tracking()
-        return RunCalibrationResult(status="ok", calibration=asdict(result))
-
-    def get_calibration_history_for_admin(
-        self,
-        model_name: str | None = None,
-        head_name: str | None = None,
-        limit: int = 100,
-    ) -> CalibrationHistoryResult:
+    def get_generation_error(self) -> Exception | None:
         """
-        Get calibration history with admin-friendly error handling.
-
-        Checks if calibrate_heads is enabled before proceeding.
-
-        Args:
-            model_name: Filter by model name (optional)
-            head_name: Filter by head name (optional)
-            limit: Maximum number of results
+        Get error from last histogram calibration generation.
 
         Returns:
-            CalibrationHistoryResult with runs and count
-
-        Raises:
-            ValueError: If calibrate_heads is disabled in config
+            Exception if generation failed, None if still running or succeeded
         """
-        if not self.cfg.calibrate_heads:
-            raise ValueError("Calibration history not available. Set calibrate_heads: true in config to enable.")
+        return self._generation_error
 
-        runs = self.get_calibration_history(model_name=model_name, head_name=head_name, limit=limit)
-        return CalibrationHistoryResult(status="ok", runs=[asdict(r) for r in runs], count=len(runs))
+    def get_generation_status(self) -> dict[str, Any]:
+        """
+        Get current status of histogram calibration generation.
+
+        Returns:
+            {
+              "running": bool,
+              "completed": bool,
+              "error": str | None,
+              "result": dict | None
+            }
+        """
+        running = self.is_generation_running()
+        completed = self._generation_result is not None
+        error = str(self._generation_error) if self._generation_error else None
+
+        return {
+            "running": running,
+            "completed": completed,
+            "error": error,
+            "result": self._generation_result,
+        }
+
+    def get_generation_progress(self) -> dict[str, Any]:
+        """
+        Get calibration generation progress (per-head completion).
+
+        Returns:
+            {
+              "total_heads": int,
+              "completed_heads": int,
+              "remaining_heads": int,
+              "last_updated": int | None,
+              "is_running": bool
+            }
+        """
+        from nomarr.components.ml.ml_discovery_comp import discover_heads
+        from nomarr.helpers.time_helper import now_ms
+
+        # Discover all heads from models
+        heads = discover_heads(self.cfg.models_dir)
+        total_heads = len(heads)
+
+        # Count heads with recent calibration_state (within 24 hours)
+        recent_threshold = now_ms() - (24 * 60 * 60 * 1000)
+
+        from typing import cast as type_cast
+
+        cursor = self._db.db.aql.execute(
+            """
+            RETURN COUNT(
+                FOR c IN calibration_state
+                    FILTER c.updated_at >= @threshold
+                    RETURN 1
+            )
+            """,
+            bind_vars=type_cast(dict[str, Any], {"threshold": recent_threshold}),
+        )
+        completed = next(cursor, 0)  # type: ignore
+
+        # Get most recent calibration timestamp
+        cursor = self._db.db.aql.execute(
+            """
+            FOR c IN calibration_state
+                SORT c.updated_at DESC
+                LIMIT 1
+                RETURN c.updated_at
+            """
+        )
+        last_updated = next(cursor, None)  # type: ignore
+
+        return {
+            "total_heads": total_heads,
+            "completed_heads": completed,
+            "remaining_heads": total_heads - completed,
+            "last_updated": last_updated,
+            "is_running": self.is_generation_running(),
+        }

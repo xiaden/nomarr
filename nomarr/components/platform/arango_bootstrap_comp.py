@@ -9,8 +9,12 @@ Rationale: Schema bootstrap may evolve to include non-DB setup (directories, def
 Persistence layer is "AQL only" - no upward dependencies.
 """
 
+import logging
+
 from arango.database import StandardDatabase
 from arango.exceptions import CollectionCreateError, GraphCreateError, IndexCreateError
+
+logger = logging.getLogger(__name__)
 
 
 def ensure_schema(db: StandardDatabase) -> None:
@@ -25,6 +29,7 @@ def ensure_schema(db: StandardDatabase) -> None:
     _create_collections(db)
     _create_indexes(db)
     _create_graphs(db)
+    _validate_no_legacy_calibration(db)
 
 
 def _create_collections(db: StandardDatabase) -> None:
@@ -35,10 +40,10 @@ def _create_collections(db: StandardDatabase) -> None:
         "meta",
         "libraries",
         "library_files",
-        "calibration_queue",
         "library_tags",
         "sessions",
-        "calibration_runs",
+        "calibration_state",
+        "calibration_history",
         "health",
     ]
 
@@ -101,13 +106,51 @@ def _create_indexes(db: StandardDatabase) -> None:
         expireAfter=0,  # Expire immediately when timestamp passes
     )
 
-    # calibration_queue indexes
-    _ensure_index(db, "calibration_queue", "persistent", ["status"])
-    _ensure_index(db, "calibration_queue", "persistent", ["created_at"])
+    # file_tags composite index for histogram queries (histogram-based calibration)
+    _ensure_index(
+        db,
+        "file_tags",
+        "persistent",
+        ["model_key", "head_name", "nomarr_only"],
+        unique=False,
+        sparse=False,
+    )
 
-    # calibration_runs indexes
-    _ensure_index(db, "calibration_runs", "persistent", ["run_id"], unique=True)
-    _ensure_index(db, "calibration_runs", "persistent", ["created_at"])
+    # calibration_state indexes (NEW - histogram-based calibration)
+    _ensure_index(
+        db,
+        "calibration_state",
+        "persistent",
+        ["calibration_def_hash"],
+        unique=True,
+        sparse=False,
+    )
+    _ensure_index(
+        db,
+        "calibration_state",
+        "persistent",
+        ["updated_at"],
+        unique=False,
+        sparse=False,
+    )
+
+    # calibration_history indexes (NEW - optional drift tracking)
+    _ensure_index(
+        db,
+        "calibration_history",
+        "persistent",
+        ["calibration_key"],
+        unique=False,
+        sparse=False,
+    )
+    _ensure_index(
+        db,
+        "calibration_history",
+        "persistent",
+        ["snapshot_at"],
+        unique=False,
+        sparse=False,
+    )
 
 
 def _ensure_index(
@@ -170,3 +213,21 @@ def _create_graphs(db: StandardDatabase) -> None:
             )
         except GraphCreateError:
             pass  # Graph already exists
+
+
+def _validate_no_legacy_calibration(db: StandardDatabase) -> None:
+    """Warn if legacy calibration collections exist.
+
+    Legacy queue-based calibration was replaced by histogram-based approach.
+    These collections are no longer used and can be dropped.
+    """
+    legacy_collections = ["calibration_queue", "calibration_runs"]
+    found_legacy = [name for name in legacy_collections if db.has_collection(name)]
+
+    if found_legacy:
+        logger.error(
+            "Legacy calibration collections detected: %s. "
+            "These are no longer used by histogram-based calibration. "
+            "To remove them, run: python scripts/drop_old_calibration_collections.py",
+            ", ".join(found_legacy),
+        )

@@ -180,6 +180,7 @@ class LibraryFilesOperations:
             bind_vars["library_id"] = library_id
 
         query += """
+                SORT file._key
                 LIMIT 1
                 RETURN file
         """
@@ -533,6 +534,7 @@ class LibraryFilesOperations:
                 """
             FOR file IN library_files
                 FILTER file.library_id == @library_id AND file.tagged == 1
+                SORT file._key
                 LIMIT 1
                 RETURN 1
             """,
@@ -790,6 +792,7 @@ class LibraryFilesOperations:
                             AND ft.tag_id == lt._id
                             AND lt.key == @tag_key 
                             AND lt.value == @tag_value
+                        SORT ft._key
                         LIMIT 1
                         RETURN 1
             ) > 0
@@ -804,6 +807,7 @@ class LibraryFilesOperations:
                         FILTER ft.file_id == file._id 
                             AND ft.tag_id == lt._id
                             AND lt.key == @tag_key
+                        SORT ft._key
                         LIMIT 1
                         RETURN 1
             ) > 0

@@ -45,7 +45,7 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 # Queue type literal (consistent with components/workflows)
-QueueType = Literal["tag", "library", "calibration"]
+QueueType = Literal["tag", "library"]
 
 
 class QueueService:

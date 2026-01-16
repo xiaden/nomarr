@@ -13,7 +13,7 @@ from .ml_cache_comp import (
     touch_cache,
     warmup_predictor_cache,
 )
-from .ml_calibration_comp import apply_minmax_calibration, generate_minmax_calibration, save_calibration_sidecars
+from .ml_calibration_comp import apply_minmax_calibration, save_calibration_sidecars
 from .ml_inference_comp import (
     compute_embeddings_for_backbone,
     make_head_only_predictor_batched,
@@ -27,7 +27,6 @@ __all__ = [
     "check_and_evict_idle_cache",
     "clear_predictor_cache",
     "compute_embeddings_for_backbone",
-    "generate_minmax_calibration",
     "get_cache_idle_time",
     "get_cache_size",
     "is_initialized",

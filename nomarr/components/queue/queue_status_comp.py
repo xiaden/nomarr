@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any, Literal
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
-QueueType = Literal["tag", "library", "calibration"]
+QueueType = Literal["tag", "library"]
 
 logger = logging.getLogger(__name__)
 
@@ -55,8 +55,6 @@ def get_queue_stats(db: Database, queue_type: QueueType) -> dict[str, int]:
     """
     if queue_type == "tag":
         stats = db.tag_queue.queue_stats()
-    elif queue_type == "calibration":
-        stats = db.calibration_queue.queue_stats()
     else:
         raise ValueError(f"Invalid queue_type: {queue_type}")
 
@@ -92,9 +90,6 @@ def get_queue_depth(db: Database, queue_type: QueueType) -> int:
     """
     if queue_type == "tag":
         return db.tag_queue.queue_depth()
-    elif queue_type == "calibration":
-        stats = db.calibration_queue.queue_stats()
-        return stats.get("pending", 0)
     else:
         raise ValueError(f"Invalid queue_type: {queue_type}")
 
@@ -121,15 +116,7 @@ def get_job(db: Database, job_id: str, queue_type: QueueType) -> dict[str, Any] 
     """
     if queue_type == "tag":
         return db.tag_queue.job_status(job_id)
-    elif queue_type == "calibration":
-        # Calibration queue doesn't have a direct get_job method, must search active jobs
-        # NOTE: This is inefficient - should be addressed in persistence layer
-        logger.debug(f"Calibration queue get_job: searching active jobs for job_id={job_id}")
-        jobs = db.calibration_queue.get_active_jobs()
-        for job in jobs:
-            if job.get("id") == job_id:
-                return job
-        return None
+
     else:
         raise ValueError(f"Invalid queue_type: {queue_type}")
 
@@ -166,18 +153,8 @@ def list_jobs(
         # Tag queue doesn't support offset, only limit and status
         if offset != 0:
             logger.debug(f"Tag queue list_jobs: offset={offset} ignored (not supported)")
-        return db.tag_queue.list_jobs(limit=limit, status=status)
-    elif queue_type == "calibration":
-        # Calibration queue: only has get_active_jobs (pending + running)
-        if offset != 0 or status is not None:
-            logger.debug(
-                f"Calibration queue list_jobs: only active jobs available, "
-                f"offset={offset}/status={status} parameters ignored"
-            )
-        jobs = db.calibration_queue.get_active_jobs()
-        total = len(jobs)
+        jobs, total = db.tag_queue.list_jobs(limit=limit, status=status)
         return (jobs, total)
-
     else:
         raise ValueError(f"Invalid queue_type: {queue_type}")
 
@@ -201,7 +178,5 @@ def get_active_jobs(db: Database, queue_type: QueueType, limit: int = 50) -> lis
     # We return all jobs and let the caller slice if needed
     if queue_type == "tag":
         return db.tag_queue.get_active_jobs()
-    elif queue_type == "calibration":
-        return db.calibration_queue.get_active_jobs()
     else:
         raise ValueError(f"Invalid queue_type: {queue_type}")

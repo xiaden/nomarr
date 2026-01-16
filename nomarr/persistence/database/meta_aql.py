@@ -28,6 +28,7 @@ class MetaOperations:
                 """
             FOR meta IN meta
                 FILTER meta.key == @key
+                SORT meta._key
                 LIMIT 1
                 RETURN meta.value
             """,

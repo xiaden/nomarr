@@ -48,6 +48,7 @@ class LibraryTagOperations:
                 FILTER tag.key == @key
                     AND tag.value == @value
                     AND tag.is_nomarr_tag == @is_nomarr_tag
+                SORT tag._key
                 LIMIT 1
                 RETURN tag._id
             """,
@@ -139,6 +140,7 @@ class LibraryTagOperations:
                 LET has_refs = (
                     FOR edge IN file_tags
                         FILTER edge._to == tag._id
+                        SORT edge._key
                         LIMIT 1
                         RETURN 1
                 )
@@ -164,6 +166,7 @@ class LibraryTagOperations:
                 LET has_refs = (
                     FOR edge IN file_tags
                         FILTER edge._to == tag._id
+                        SORT edge._key
                         LIMIT 1
                         RETURN 1
                 )

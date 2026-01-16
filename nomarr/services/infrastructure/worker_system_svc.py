@@ -27,11 +27,10 @@ from nomarr.components.workers import requeue_crashed_job, should_restart_worker
 from nomarr.helpers.dto.admin_dto import WorkerOperationResult
 from nomarr.persistence.db import Database
 from nomarr.services.infrastructure.workers.base import BaseWorker
-from nomarr.services.infrastructure.workers.recalibration import RecalibrationWorker
 from nomarr.services.infrastructure.workers.tagger import TaggerWorker
 
 # Queue type literal (matches queue_svc.py)
-QueueType = Literal["tag", "calibration"]
+QueueType = Literal["tag"]
 
 # Restart and health monitoring constants
 MAX_RESTARTS_IN_WINDOW = 5  # Maximum restarts before marking as failed
@@ -93,10 +92,8 @@ class WorkerSystemService:
         self,
         db: Database,
         tagger_backend: Callable[[Database, str, bool], Any],
-        recalibration_backend: Callable[[Database, str, bool], Any],
         event_broker: Any,
         tagger_count: int = 2,
-        recalibration_count: int = 5,
         default_enabled: bool = True,
     ):
         """
@@ -105,24 +102,19 @@ class WorkerSystemService:
         Args:
             db: Database instance (for health monitoring and meta flags)
             tagger_backend: Processing backend for tagger workers
-            recalibration_backend: Processing backend for recalibration workers
             event_broker: Event broker for SSE updates
             tagger_count: Number of tagger worker processes (default: 2, ML heavy)
-            recalibration_count: Number of recalibration worker processes (default: 5, CPU light)
             default_enabled: Default worker_enabled flag if not in DB (default: True)
         """
         self.db = db
         self.tagger_backend = tagger_backend
-        self.recalibration_backend = recalibration_backend
         self.event_broker = event_broker
         self.tagger_count = tagger_count
-        self.recalibration_count = recalibration_count
         self.default_enabled = default_enabled
 
         # Centralized worker collections by queue type
         self._worker_groups: dict[QueueType, list[BaseWorker]] = {
             "tag": [],
-            "calibration": [],
         }
 
         # GPU health monitor process (independent of workers)
@@ -178,9 +170,6 @@ class WorkerSystemService:
 
         # Start tagger workers (only starts missing workers)
         self._start_tagger_workers()
-
-        # Start recalibration workers
-        self._start_recalibration_workers()
 
         # Start GPU health monitor (independent process)
         self._start_gpu_monitor()
@@ -257,28 +246,6 @@ class WorkerSystemService:
             worker.start()
             existing_workers.append(worker)
             logging.info(f"[WorkerSystemService] Started TaggerWorker-{i} (PID: {worker.pid})")
-
-    def _start_recalibration_workers(self) -> None:
-        """Start N recalibration worker processes (only starts missing workers)."""
-        existing_workers = self._worker_groups["calibration"]
-
-        # Remove dead workers from list
-        existing_workers[:] = [w for w in existing_workers if w.is_alive()]
-
-        # Start missing workers
-        for i in range(self.recalibration_count):
-            # Check if worker with this ID already exists and is alive
-            if any(w.worker_id == i and w.is_alive() for w in existing_workers):
-                continue
-
-            worker = RecalibrationWorker(
-                processing_backend=self.recalibration_backend,
-                worker_id=i,
-                interval=2,
-            )
-            worker.start()
-            existing_workers.append(worker)
-            logging.info(f"[WorkerSystemService] Started RecalibrationWorker-{i} (PID: {worker.pid})")
 
     def _start_gpu_monitor(self) -> None:
         """
@@ -446,8 +413,8 @@ class WorkerSystemService:
             try:
                 from typing import Literal, cast
 
-                # Library queue removed, only tag and calibration supported
-                queue_type_literal = cast(Literal["tag", "calibration"], queue_type)
+                # Only tag queue supported for workers
+                queue_type_literal = cast(Literal["tag"], queue_type)
                 self._restart_worker(worker, queue_type_literal, component_id)
             except Exception as e:
                 logging.error(f"[WorkerSystemService] Background restart failed for {component_id}: {e}")
@@ -569,12 +536,6 @@ class WorkerSystemService:
         if queue_type == "tag":
             return TaggerWorker(
                 processing_backend=self.tagger_backend,
-                worker_id=worker_id,
-                interval=2,
-            )
-        elif queue_type == "calibration":
-            return RecalibrationWorker(
-                processing_backend=self.recalibration_backend,
                 worker_id=worker_id,
                 interval=2,
             )

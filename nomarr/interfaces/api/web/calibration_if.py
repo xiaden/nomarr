@@ -10,9 +10,6 @@ from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.types.calibration_types import (
     ApplyCalibrationResponse,
     CalibrationRequest,
-    ClearCalibrationQueueResponse,
-    GenerateCalibrationResponse,
-    RecalibrationStatusResponse,
 )
 from nomarr.interfaces.api.web.dependencies import (
     get_calibration_service,
@@ -35,77 +32,178 @@ async def apply_calibration_to_library(
     recal_service: Any = Depends(get_recalibration_service),
 ) -> ApplyCalibrationResponse:
     """
-    Queue all library files for recalibration.
+    Recalibrate all library files.
     This updates tier and mood tags by applying calibration to existing raw scores.
+
+    Note: This is a synchronous operation that may take time for large libraries.
     """
     try:
-        result = recal_service.queue_library_for_recalibration()
+        # Get config from recal_service if available, otherwise use defaults
+        # TODO: Should get these from ConfigService via dependency injection
+        models_dir = "/app/models"  # Placeholder - needs proper config injection
+        namespace = "nom"
+        version_tag_key = "nom_version"
+        calibrate_heads = False
+
+        result = recal_service.recalibrate_library(
+            models_dir=models_dir,
+            namespace=namespace,
+            version_tag_key=version_tag_key,
+            calibrate_heads=calibrate_heads,
+        )
         return ApplyCalibrationResponse.from_dto(result)
 
     except RuntimeError as e:
         logging.error(f"[Web API] Recalibration service error: {e}")
         raise HTTPException(status_code=503, detail=str(e)) from e
     except Exception as e:
-        logging.exception("[Web API] Error queueing recalibration")
-        raise HTTPException(status_code=500, detail=f"Error queueing recalibration: {e}") from e
+        logging.exception("[Web API] Error during recalibration")
+        raise HTTPException(status_code=500, detail=f"Error during recalibration: {e}") from e
 
 
 @router.get("/status", dependencies=[Depends(verify_session)])
 async def get_calibration_status(
     recal_service: Any = Depends(get_recalibration_service),
-) -> RecalibrationStatusResponse:
-    """Get current recalibration queue status."""
-    try:
-        status_dto, worker_alive, worker_busy = recal_service.get_status_with_worker_state()
+) -> dict[str, str]:
+    """Get current recalibration status.
 
-        return RecalibrationStatusResponse.from_dto(status_dto, worker_alive, worker_busy)
-
-    except Exception as e:
-        logging.exception("[Web API] Error getting calibration status")
-        raise HTTPException(status_code=500, detail=f"Error getting calibration status: {e}") from e
+    Note: Recalibration no longer uses queues. This endpoint returns basic status only.
+    """
+    return {"status": "ready", "message": "Recalibration is available (no queue system)"}
 
 
 @router.post("/clear", dependencies=[Depends(verify_session)])
 async def clear_calibration_queue(
     recal_service: Any = Depends(get_recalibration_service),
-) -> ClearCalibrationQueueResponse:
-    """Clear all pending and completed recalibration jobs."""
-    try:
-        result = recal_service.clear_queue_with_result()
-        return ClearCalibrationQueueResponse.from_dto(result)
+) -> dict[str, str]:
+    """DEPRECATED: Recalibration no longer uses queues.
 
-    except Exception as e:
-        logging.exception("[Web API] Error clearing calibration queue")
-        raise HTTPException(status_code=500, detail=f"Error clearing calibration queue: {e}") from e
+    This endpoint is kept for backward compatibility but does nothing.
+    """
+    return {"status": "ok", "message": "Recalibration no longer uses queues (no-op)"}
 
 
 @router.post("/generate", dependencies=[Depends(verify_session)])
 async def generate_calibration(
     request: CalibrationRequest,
     calibration_service: "CalibrationService" = Depends(get_calibration_service),
-) -> GenerateCalibrationResponse:
+):
     """
-    Generate min-max scale calibration from library tags.
+    DEPRECATED: Use /generate-histogram instead.
 
-    Analyzes all tagged files in the library to compute scaling parameters (5th/95th percentiles)
-    for normalizing each model to a common [0, 1] scale. This makes model outputs comparable
-    while preserving semantic meaning.
-
-    Uses industry standard minimum of 1000 samples per tag for reliable calibration.
-
-    If save_sidecars=True, writes calibration JSON files next to model files.
+    This endpoint is kept for backward compatibility but now uses histogram calibration internally.
     """
     try:
-        # Run calibration in background thread (can take time with 18k songs)
+        # Delegate to histogram calibration
+        result = calibration_service.generate_histogram_calibration()
+        return result
+    except Exception as e:
+        logging.error(f"[Web] Calibration generation failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post("/generate-histogram", dependencies=[Depends(verify_session)])
+async def generate_histogram_calibration(
+    calibration_service: "CalibrationService" = Depends(get_calibration_service),
+) -> dict[str, Any]:
+    """
+    Generate calibrations using sparse uniform histogram approach (NEW).
+
+    Stateless, idempotent. Always computes from current DB state.
+    Uses 10,000 uniform bins per head, memory-bounded (~8 MB vs. ~1 GB old approach).
+
+    Returns:
+        {
+          "version": int,
+          "heads_processed": int,
+          "heads_success": int,
+          "heads_failed": int,
+          "results": {head_key: {p5, p95, n, underflow_count, overflow_count}}
+        }
+    """
+    try:
+        # Run calibration in background thread
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             None,
-            calibration_service.generate_calibration_with_sidecars,
-            request.save_sidecars,
+            calibration_service.generate_histogram_calibration,
         )
 
-        return GenerateCalibrationResponse.from_dto(result)
+        return result
 
     except Exception as e:
-        logging.error(f"[Web] Calibration generation failed: {e}", exc_info=True)
+        logging.error(f"[Web] Histogram calibration generation failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post("/start-histogram", dependencies=[Depends(verify_session)])
+async def start_histogram_calibration_background(
+    calibration_service: "CalibrationService" = Depends(get_calibration_service),
+) -> dict[str, Any]:
+    """
+    Start histogram-based calibration generation in background thread.
+
+    Non-blocking: returns immediately. Use GET /calibration/histogram-status to check progress.
+
+    Returns:
+        {"status": "started"} or {"status": "already_running"}
+    """
+    try:
+        if calibration_service.is_generation_running():
+            return {"status": "already_running", "message": "Calibration generation already in progress"}
+
+        calibration_service.start_histogram_calibration_background()
+        return {"status": "started", "message": "Calibration generation started in background"}
+
+    except Exception as e:
+        logging.error(f"[Web] Failed to start histogram calibration: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get("/histogram-status", dependencies=[Depends(verify_session)])
+async def get_histogram_calibration_status(
+    calibration_service: "CalibrationService" = Depends(get_calibration_service),
+) -> dict[str, Any]:
+    """
+    Get status of histogram-based calibration generation.
+
+    Returns:
+        {
+          "running": bool,
+          "completed": bool,
+          "error": str | None,
+          "result": {heads_processed, heads_success, heads_failed, ...} | None
+        }
+    """
+    try:
+        status = calibration_service.get_generation_status()
+        return status
+
+    except Exception as e:
+        logging.error(f"[Web] Failed to get histogram calibration status: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get("/histogram-progress", dependencies=[Depends(verify_session)])
+async def get_histogram_calibration_progress(
+    calibration_service: "CalibrationService" = Depends(get_calibration_service),
+) -> dict[str, Any]:
+    """
+    Get per-head progress of histogram calibration generation.
+
+    Returns:
+        {
+          "total_heads": int,
+          "completed_heads": int,
+          "remaining_heads": int,
+          "last_updated": int | None,
+          "is_running": bool
+        }
+    """
+    try:
+        progress = calibration_service.get_generation_progress()
+        return progress
+
+    except Exception as e:
+        logging.error(f"[Web] Failed to get histogram calibration progress: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e)) from e

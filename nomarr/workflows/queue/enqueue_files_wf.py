@@ -41,7 +41,7 @@ from nomarr.helpers.files_helper import collect_audio_files
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
-QueueType = Literal["tag", "library", "calibration"]
+QueueType = Literal["tag", "library"]
 
 logger = logging.getLogger(__name__)
 

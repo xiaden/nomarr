@@ -707,6 +707,7 @@ class FileTagOperations:
                 """
                 FOR lt IN library_tags
                     FILTER lt.key == @tag_key
+                    SORT lt._key
                     LIMIT 10
                     RETURN lt.value
                 """,

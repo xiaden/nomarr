@@ -10,7 +10,7 @@ from nomarr.components.queue import clear_all_jobs, clear_completed_jobs, clear_
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
-QueueType = Literal["tag", "library", "calibration"]
+QueueType = Literal["tag", "library"]
 
 logger = logging.getLogger(__name__)
 

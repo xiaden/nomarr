@@ -59,6 +59,7 @@ class HealthOperations:
                 """
             FOR health IN health
                 FILTER health.component == @component
+                SORT health._key
                 LIMIT 1
                 RETURN health
             """,
@@ -189,27 +190,63 @@ class HealthOperations:
             ),
         )
 
-    def is_healthy(self) -> bool:
-        """Check if system is healthy (all components responsive)."""
-        cursor = cast(
-            Cursor,
-            self.db.aql.execute(
-                """
-            FOR health IN health
-                FILTER health.status IN ['crashed', 'failed', 'stopping']
-                    OR health.last_heartbeat < @cutoff
-                LIMIT 1
-                RETURN 1
-            """,
-                bind_vars=cast(
-                    dict[str, Any],
-                    {
-                        "cutoff": now_ms() - 60000  # 60 second timeout
-                    },
+    def is_healthy(self, component_id: str | None = None, max_age_ms: int = 60000) -> bool:
+        """
+        Check if component(s) are healthy.
+
+        Args:
+            component_id: Specific component to check (None = check all workers)
+            max_age_ms: Maximum staleness in milliseconds (default 60000ms = 60s)
+
+        Returns:
+            True if healthy, False otherwise
+        """
+        cutoff = now_ms() - max_age_ms
+
+        if component_id is not None:
+            # Check specific component
+            cursor = cast(
+                Cursor,
+                self.db.aql.execute(
+                    """
+                FOR health IN health
+                    FILTER health.component_id == @component_id
+                    FILTER health.status IN ['crashed', 'failed', 'stopping']
+                        OR health.last_heartbeat < @cutoff
+                    LIMIT 1
+                    RETURN 1
+                """,
+                    bind_vars=cast(
+                        dict[str, Any],
+                        {
+                            "component_id": component_id,
+                            "cutoff": cutoff,
+                        },
+                    ),
                 ),
-            ),
-        )
-        return len(list(cursor)) == 0
+            )
+            return len(list(cursor)) == 0
+        else:
+            # Check all components
+            cursor = cast(
+                Cursor,
+                self.db.aql.execute(
+                    """
+                FOR health IN health
+                    FILTER health.status IN ['crashed', 'failed', 'stopping']
+                        OR health.last_heartbeat < @cutoff
+                    LIMIT 1
+                    RETURN 1
+                """,
+                    bind_vars=cast(
+                        dict[str, Any],
+                        {
+                            "cutoff": cutoff,
+                        },
+                    ),
+                ),
+            )
+            return len(list(cursor)) == 0
 
     def get_component(self, component_id: str) -> dict[str, Any] | None:
         """Get component health record."""

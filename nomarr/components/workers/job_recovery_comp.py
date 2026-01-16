@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 MAX_JOB_CRASH_RETRIES = 2  # Allow job to be requeued this many times after worker crashes
 CRASH_COUNTER_KEY_PREFIX = "job_crash_count"  # Meta key prefix for tracking per-job crashes
 
-QueueType = Literal["tag", "library", "calibration"]
+QueueType = Literal["tag", "library"]
 
 
 def requeue_crashed_job(

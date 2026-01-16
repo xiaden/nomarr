@@ -54,6 +54,7 @@ class SessionOperations:
                 """
             FOR session IN sessions
                 FILTER session.session_id == @session_id
+                SORT session._key
                 LIMIT 1
                 RETURN session
             """,

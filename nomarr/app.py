@@ -373,7 +373,6 @@ class Application:
         logging.info("[Application] Initializing worker system...")
 
         # Create processing backend functions using worker-specific factories
-        from nomarr.services.infrastructure.workers.recalibration import create_recalibration_backend
         from nomarr.services.infrastructure.workers.tagger import create_tagger_backend
 
         tagger_backend = create_tagger_backend(
@@ -384,26 +383,16 @@ class Application:
             tagger_version=self.tagger_version,
         )
 
-        recalibration_backend = create_recalibration_backend(
-            models_dir=Path(self.models_dir),
-            namespace=self.namespace,
-            version_tag_key=self.version_tag_key,
-            calibrate_heads=self.calibrate_heads,
-        )
-
         # Get per-pool worker counts from config
         config_service = self.get_service("config")
         tagger_count = config_service.get_worker_count("tagger")
-        recalibration_count = config_service.get_worker_count("recalibration")
 
         # Create WorkerSystemService with backends
         self.worker_system = WorkerSystemService(
             db=self.db,
             tagger_backend=tagger_backend,
-            recalibration_backend=recalibration_backend,
             event_broker=self.event_broker,
             tagger_count=tagger_count,
-            recalibration_count=recalibration_count,
             default_enabled=self.worker_enabled_default,
         )
 

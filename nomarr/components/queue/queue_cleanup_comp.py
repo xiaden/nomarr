@@ -2,20 +2,20 @@
 
 IMPORTANT: Queue type support matrix:
 
-Operation              | Tag | Library | Calibration
-----------------------|-----|---------|------------
-remove_job            | ✓   | ✗       | ✗
-clear_jobs_by_status  | ✓   | ✗ (1)   | ✗ (1)
-clear_completed_jobs  | ✓   | ✗ (1)   | ✗ (1)
-clear_error_jobs      | ✓   | ✗ (1)   | ✗ (1)
-clear_all_jobs        | ✓   | ✓ (2)   | ✓ (2)
-reset_stuck_jobs      | ✓   | ✓       | ✗
-reset_error_jobs      | ✓   | ✗       | ✗
-cleanup_old_jobs      | ✓   | ✗       | ✗
+Operation              | Tag | Library
+----------------------|-----|----------
+remove_job            | ✓   | ✗
+clear_jobs_by_status  | ✓   | ✗ (1)
+clear_completed_jobs  | ✓   | ✗ (1)
+clear_error_jobs      | ✓   | ✗ (1)
+clear_all_jobs        | ✓   | ✓ (2)
+reset_stuck_jobs      | ✓   | ✓
+reset_error_jobs      | ✓   | ✗
+cleanup_old_jobs      | ✓   | ✗
 
 Notes:
-(1) Library/calibration only support clearing ALL jobs (pending+done+error)
-(2) Library/calibration clear_all_jobs clears everything (no status filtering)
+(1) Library only supports clearing ALL jobs (pending+done+error)
+(2) Library clear_all_jobs clears everything (no status filtering)
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
-QueueType = Literal["tag", "library", "calibration"]
+QueueType = Literal["tag", "library"]
 
 logger = logging.getLogger(__name__)
 
@@ -68,10 +68,6 @@ def remove_job(db: Database, job_id: str, queue_type: QueueType) -> int:
         raise UnsupportedQueueOperationError(
             "Library queue does not support removing individual jobs by ID. Use clear_all_jobs() to clear entire queue."
         )
-    elif queue_type == "calibration":
-        raise UnsupportedQueueOperationError(
-            "Calibration queue does not support removing individual jobs by ID. Use clear_all_jobs() to clear entire queue."
-        )
     else:
         raise ValueError(f"Invalid queue_type: {queue_type}")
 
@@ -108,15 +104,6 @@ def clear_jobs_by_status(db: Database, statuses: list[str], queue_type: QueueTyp
         for status in statuses:
             total_deleted += db.tag_queue.delete_jobs_by_status(status)
         return total_deleted
-    elif queue_type == "calibration":
-        # Calibration queue only supports clearing ALL jobs
-        if set(statuses) >= {"pending", "done", "error"}:
-            return db.calibration_queue.clear_calibration_queue()
-        else:
-            raise UnsupportedQueueOperationError(
-                "Calibration queue does not support selective status filtering. "
-                "Can only clear all jobs (pending+done+error) via clear_all_jobs()."
-            )
     else:
         raise ValueError(f"Invalid queue_type: {queue_type}")
 
@@ -204,9 +191,6 @@ def clear_all_jobs(db: Database, queue_type: QueueType) -> int:
     if queue_type == "tag":
         # Tag queue: selective clear (preserves running jobs)
         return clear_jobs_by_status(db, ["pending", "done", "error"], queue_type)
-    elif queue_type == "calibration":
-        # Calibration queue: clears everything including running
-        return db.calibration_queue.clear_calibration_queue()
     else:
         raise ValueError(f"Invalid queue_type: {queue_type}")
 

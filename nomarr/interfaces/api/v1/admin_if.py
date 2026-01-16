@@ -12,10 +12,8 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from nomarr.interfaces.api.auth import verify_key
 from nomarr.interfaces.api.types.admin_types import (
     CacheRefreshResponse,
-    CalibrationHistoryResponse,
     JobRemovalResponse,
     RetagAllResponse,
-    RunCalibrationResponse,
     WorkerOperationResponse,
 )
 from nomarr.interfaces.api.types.queue_types import FlushRequest, FlushResponse, RemoveJobRequest
@@ -136,53 +134,32 @@ async def admin_resume_worker(
 @router.post("/calibration/run", dependencies=[Depends(verify_key)])
 async def admin_run_calibration(
     calibration_service: CalibrationService = Depends(get_calibration_service),
-) -> RunCalibrationResponse:
+):
     """
-    Generate calibrations with drift tracking (requires calibrate_heads=true).
+    Generate calibrations using histogram-based approach.
 
-    Analyzes library tags, calculates drift metrics, saves versioned files,
-    and updates reference files for unstable heads.
+    Analyzes library tags using DB histogram queries (memory-bounded).
+    Computes p5/p95 percentiles for each head.
 
     Returns:
-        Calibration summary with drift metrics per head
+        Calibration summary with per-head results
     """
     try:
-        result = calibration_service.run_calibration_for_admin()
-        return RunCalibrationResponse.from_dto(result)
-    except ValueError as e:
-        raise HTTPException(status_code=403, detail=str(e)) from e
+        if not calibration_service.cfg.calibrate_heads:
+            raise HTTPException(
+                status_code=403,
+                detail="Calibration generation disabled. Set calibrate_heads: true in config to enable.",
+            )
+
+        result = calibration_service.generate_histogram_calibration()
+        return result
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Calibration generation failed: {e!s}") from e
 
 
-# ----------------------------------------------------------------------
-#  GET /admin/calibration/history
-# ----------------------------------------------------------------------
-@router.get("/calibration/history", dependencies=[Depends(verify_key)])
-async def admin_calibration_history(
-    calibration_service: CalibrationService = Depends(get_calibration_service),
-    model: str | None = None,
-    head: str | None = None,
-    limit: int = 100,
-) -> CalibrationHistoryResponse:
-    """
-    Get calibration history with drift metrics.
-
-    Query params:
-        model: Filter by model name (optional)
-        head: Filter by head name (optional)
-        limit: Maximum number of results (default 100)
-
-    Returns:
-        List of calibration runs with drift metrics
-    """
-    try:
-        result = calibration_service.get_calibration_history_for_admin(model_name=model, head_name=head, limit=limit)
-        return CalibrationHistoryResponse.from_dto(result)
-    except ValueError as e:
-        raise HTTPException(status_code=403, detail=str(e)) from e
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve calibration history: {e!s}") from e
+# NOTE: /admin/calibration/history endpoint removed - was part of old drift tracking system
 
 
 # ----------------------------------------------------------------------

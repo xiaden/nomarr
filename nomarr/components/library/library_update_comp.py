@@ -122,8 +122,8 @@ def update_library_from_tags(
 
         # Mark file as tagged if tagger version provided (called from processor)
         if tagged_version and file_record:
-            # Pass file_path string to mark_file_tagged
-            db.library_files.mark_file_tagged(file_path, tagged_version)
+            # Pass file ID (not file_path) to mark_file_tagged
+            db.library_files.mark_file_tagged(str(file_record["id"]), tagged_version)
 
         logging.debug(f"[update_library_from_tags] Updated library for {file_path}")
     except Exception as e:

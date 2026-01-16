@@ -13,145 +13,12 @@ import logging
 import os
 from typing import Any, cast
 
-import numpy as np
-
-from nomarr.helpers.dto.ml_dto import GenerateMinmaxCalibrationResult, SaveCalibrationSidecarsResult
+from nomarr.helpers.dto.ml_dto import SaveCalibrationSidecarsResult
 from nomarr.persistence.db import Database
 
 
-def generate_minmax_calibration(
-    db: Database,
-    namespace: str = "nom",
-) -> GenerateMinmaxCalibrationResult:
-    """
-    Generate min-max scale calibration from library tags.
-
-    Analyzes raw model outputs to determine scaling parameters (5th/95th percentiles)
-    for normalizing each model to a common [0, 1] scale. This makes model outputs
-    comparable while preserving the semantic meaning of scores.
-
-    Requires minimum 1000 samples per tag (industry standard for reliable calibration).
-
-    Args:
-        db: Database instance
-        namespace: Tag namespace (default "nom")
-
-    Returns:
-        Calibration manifest with min-max scaling parameters per tag
-    """
-    min_samples = 1000  # Industry standard - do not modify
-    logging.info("[calibration] Analyzing library tags for min-max calibration")
-
-    # Fetch all library files with tags (fetch in batches to handle large libraries)
-    all_files = []
-    limit = 1000
-    offset = 0
-
-    while True:
-        files, _total_count = db.library_files.list_library_files(limit=limit, offset=offset)
-        all_files.extend(files)
-        offset += limit
-        if len(files) < limit:
-            break
-
-    if not all_files:
-        # Empty library - return empty calibration result (not error)
-        logging.info("[calibration] No library files found")
-        return GenerateMinmaxCalibrationResult(
-            method="percentile",
-            library_size=0,
-            min_samples=min_samples,
-            calibrations={},
-            skipped_tags=0,
-        )
-
-    logging.info(f"[calibration] Found {len(all_files)} library files")
-
-    # Collect raw probabilities for each tag
-    tag_values: dict[str, list[float]] = {}
-
-    for file in all_files:
-        # Get file ID to query tags from file_tags table
-        file_id = file.get("id")
-        if not file_id:
-            continue
-
-        # Query Nomarr-generated tags from file_tags table
-        tags = db.file_tags.get_file_tags(file_id=file_id, nomarr_only=True)
-        if not tags:
-            continue
-
-        # Extract versioned tags (skip mood-strict/regular/loose and tier tags)
-        for key, value in tags.items():
-            # Tags in file_tags are stored without namespace prefix
-            tag_key = key
-
-            # Skip aggregated mood tags and tier suffixes
-            if tag_key.startswith("mood-") or tag_key.endswith("_tier"):
-                continue
-
-            # Extract numeric probability (unwrap single-element arrays)
-            try:
-                # Values are JSON arrays now - unwrap single numbers
-                if isinstance(value, list) and len(value) == 1:
-                    value = value[0]
-
-                prob = float(value)
-                if 0.0 <= prob <= 1.0:  # Valid probability range
-                    if tag_key not in tag_values:
-                        tag_values[tag_key] = []
-                    tag_values[tag_key].append(prob)
-            except (ValueError, TypeError, IndexError):
-                continue
-
-    logging.info(f"[calibration] Collected distributions for {len(tag_values)} unique tags")
-
-    # Generate min-max scaling parameters for each tag
-    calibrations = {}
-    skipped_tags = []
-
-    for tag_key, values in tag_values.items():
-        if len(values) < min_samples:
-            skipped_tags.append((tag_key, len(values)))
-            continue
-
-        values_arr = np.array(values)
-
-        # Compute min-max scaling parameters (5th and 95th percentiles)
-        # Using percentiles instead of absolute min/max to avoid outliers
-        p5 = float(np.percentile(values_arr, 5))
-        p95 = float(np.percentile(values_arr, 95))
-
-        calibrations[tag_key] = {
-            "method": "minmax",
-            "samples": len(values),
-            "p5": p5,  # Lower bound (5th percentile)
-            "p95": p95,  # Upper bound (95th percentile)
-            "mean": float(np.mean(values_arr)),
-            "std": float(np.std(values_arr)),
-            "min": float(np.min(values_arr)),
-            "max": float(np.max(values_arr)),
-        }
-
-    if skipped_tags:
-        logging.warning(
-            f"[calibration] Skipped {len(skipped_tags)} tags with < {min_samples} samples: "
-            f"{skipped_tags[:5]}{'...' if len(skipped_tags) > 5 else ''}"
-        )
-
-    logging.info(f"[calibration] Generated calibrations for {len(calibrations)} tags")
-
-    return GenerateMinmaxCalibrationResult(
-        method="minmax",
-        library_size=len(all_files),
-        min_samples=min_samples,
-        calibrations=calibrations,
-        skipped_tags=len(skipped_tags),
-    )
-
-
 def save_calibration_sidecars(
-    calibration_data: dict[str, Any] | GenerateMinmaxCalibrationResult,
+    calibration_data: dict[str, Any],
     models_dir: str,
     version: int = 1,
 ) -> SaveCalibrationSidecarsResult:
@@ -194,11 +61,8 @@ def save_calibration_sidecars(
     # Group calibrations by model
     model_calibrations: dict[str, dict[str, Any]] = {}
 
-    # Support both DTO and legacy dict formats
-    if isinstance(calibration_data, GenerateMinmaxCalibrationResult):
-        calibrations = calibration_data.calibrations
-    else:
-        calibrations = calibration_data.get("calibrations", {})
+    # Parse calibrations dict
+    calibrations = calibration_data.get("calibrations", {})
 
     for tag_key, calib_stats in calibrations.items():
         # Parse tag key (NEW FORMAT - no calibration suffix):
@@ -280,12 +144,8 @@ def save_calibration_sidecars(
         calibration_path = os.path.join(model_dir, calibration_filename)
 
         # Extract library_size and min_samples from calibration_data
-        if isinstance(calibration_data, GenerateMinmaxCalibrationResult):
-            library_size = calibration_data.library_size
-            min_samples = calibration_data.min_samples
-        else:
-            library_size = calibration_data["library_size"]
-            min_samples = calibration_data["min_samples"]
+        library_size = calibration_data.get("library_size", 0)
+        min_samples = calibration_data.get("min_samples", 1000)
 
         # Build calibration sidecar
         sidecar = {
@@ -365,3 +225,332 @@ def apply_minmax_calibration(raw_score: float, calibration: dict[str, Any]) -> f
     # Clamp to [0, 1] range
     clamped: float = max(0.0, min(1.0, scaled))
     return clamped
+
+
+# ==================== NEW: Histogram-Based Calibration ====================
+
+
+def compute_calibration_def_hash(model_key: str, head_name: str, version: int) -> str:
+    """
+    Compute calibration definition hash from model metadata.
+
+    Stable identifier for a calibration configuration. Changes when version bumps.
+
+    Args:
+        model_key: Model identifier (e.g., "effnet-discogs-effnet-1")
+        head_name: Head name (e.g., "mood_happy")
+        version: Calibration version
+
+    Returns:
+        MD5 hash of calibration definition
+    """
+    import hashlib
+
+    calib_def_str = f"{model_key}:{head_name}:{version}"
+    return hashlib.md5(calib_def_str.encode()).hexdigest()
+
+
+def get_default_histogram_spec(head_name: str) -> dict[str, Any]:
+    """
+    Get default histogram specification for a head type.
+
+    All heads use same histogram parameters:
+    - lo = 0.0 (minimum calibrated value)
+    - hi = 1.0 (maximum calibrated value)
+    - bins = 10000 (fixed resolution)
+    - bin_width = 0.0001 (computed: (hi - lo) / bins)
+
+    This provides consistent, memory-bounded histogram computation
+    regardless of head type (mood, genre, instrument, etc).
+
+    Args:
+        head_name: Head name (e.g., "mood_happy", "genre_rock")
+
+    Returns:
+        {"lo": float, "hi": float, "bins": int}
+    """
+    # All heads use same histogram parameters
+    # (Future: could differentiate by head type if needed)
+    return {"lo": 0.0, "hi": 1.0, "bins": 10000}
+
+
+def derive_percentiles_from_sparse_histogram(
+    sparse_bins: list[dict[str, Any]],
+    lo: float = 0.0,
+    hi: float = 1.0,
+    bin_width: float = 0.0001,
+    p5_target: float = 0.05,
+    p95_target: float = 0.95,
+) -> dict[str, Any]:
+    """
+    Derive p5/p95 from sparse histogram (only non-zero bins).
+
+    Args:
+        sparse_bins: AQL query result - list of {min_val: float, count: int, underflow_count: int, overflow_count: int}
+        lo: Histogram lower bound (0.0)
+        hi: Histogram upper bound (1.0)
+        bin_width: Uniform bin width (0.0001)
+        p5_target: 5th percentile threshold (0.05)
+        p95_target: 95th percentile threshold (0.95)
+
+    Returns:
+        {p5: float, p95: float, n: int, underflow_count: int, overflow_count: int}
+
+    Note:
+        Approximation error bounded by bin_width.
+        Exact quantiles are not a goal; bin-level precision is sufficient.
+    """
+    # Sort sparse bins by min_val (already sorted if query used ORDER BY)
+    sorted_bins = sorted(sparse_bins, key=lambda x: x["min_val"])
+
+    # Aggregate overflow stats
+    total_n = sum(b["count"] for b in sorted_bins)
+    underflow_count = sum(b["underflow_count"] for b in sorted_bins)
+    overflow_count = sum(b["overflow_count"] for b in sorted_bins)
+
+    # Build cumulative distribution (start with underflow as < lo)
+    cumsum = underflow_count
+    p5_value = None
+    p95_value = None
+
+    for bin_data in sorted_bins:
+        min_val = bin_data["min_val"]
+        count = bin_data["count"]
+        cumsum += count
+
+        # p5: first bin where cumsum >= 5% of total
+        if p5_value is None and cumsum >= total_n * p5_target:
+            p5_value = min_val  # Lower bound of bin
+
+        # p95: first bin where cumsum >= 95% of total
+        if p95_value is None and cumsum >= total_n * p95_target:
+            p95_value = min_val  # Lower bound of bin
+            break  # Can stop once p95 found
+
+    # Handle edge cases (all values in tails)
+    if p5_value is None:
+        p5_value = lo  # All values below 5% threshold
+    if p95_value is None:
+        p95_value = hi  # All values above 95% threshold
+
+    return {
+        "p5": p5_value,
+        "p95": p95_value,
+        "n": total_n,
+        "underflow_count": underflow_count,
+        "overflow_count": overflow_count,
+    }
+
+
+def generate_calibration_from_histogram(
+    db: Database,
+    model_key: str,
+    head_name: str,
+    version: int,
+    lo: float = 0.0,
+    hi: float = 1.0,
+    bins: int = 10000,
+) -> dict[str, Any]:
+    """
+    Generate calibration for a single head using DB histogram query.
+
+    Stateless, idempotent computation. Always computes from current file_tags.
+
+    Args:
+        db: Database instance
+        model_key: Model identifier (e.g., "effnet-discogs-effnet-1")
+        head_name: Head name (e.g., "mood_happy")
+        version: Calibration version
+        lo: Lower bound of calibrated range (default 0.0)
+        hi: Upper bound of calibrated range (default 1.0)
+        bins: Number of uniform bins (default 10000)
+
+    Returns:
+        {p5: float, p95: float, n: int, underflow_count: int, overflow_count: int}
+    """
+    bin_width = (hi - lo) / bins
+
+    # Query sparse histogram from DB
+    sparse_bins = db.calibration_state.get_sparse_histogram(
+        model_key=model_key,
+        head_name=head_name,
+        lo=lo,
+        hi=hi,
+        bins=bins,
+    )
+
+    if not sparse_bins:
+        # No data for this head
+        logging.warning(f"[calibration] No data for {model_key}:{head_name}")
+        return {
+            "p5": lo,
+            "p95": hi,
+            "n": 0,
+            "underflow_count": 0,
+            "overflow_count": 0,
+        }
+
+    # Derive percentiles from sparse histogram
+    result = derive_percentiles_from_sparse_histogram(
+        sparse_bins=sparse_bins,
+        lo=lo,
+        hi=hi,
+        bin_width=bin_width,
+        p5_target=0.05,
+        p95_target=0.95,
+    )
+
+    logging.info(
+        f"[calibration] {model_key}:{head_name} -> p5={result['p5']:.4f}, p95={result['p95']:.4f}, n={result['n']}"
+    )
+
+    return result
+
+
+def export_calibration_state_to_json(db: Database, output_path: str) -> dict[str, Any]:
+    """
+    Export all calibration_state documents to a single JSON file.
+
+    Exports the full calibration state collection for backup or distribution.
+    The JSON file can be imported into another Nomarr instance.
+
+    Args:
+        db: Database instance
+        output_path: Absolute path to output JSON file
+
+    Returns:
+        Dict with export summary: {"calibrations_exported": int, "path": str}
+
+    Raises:
+        IOError: If file cannot be written
+    """
+    logging.info(f"[calibration] Exporting calibration_state to {output_path}")
+
+    # Get all calibration states
+    calibrations = db.calibration_state.get_all_calibration_states()
+
+    # Convert to serializable format (remove _id, _key, _rev)
+    export_data = []
+    for calib in calibrations:
+        export_doc = {
+            "model_key": calib["model_key"],
+            "head_name": calib["head_name"],
+            "calibration_def_hash": calib["calibration_def_hash"],
+            "version": calib.get("version", 1),
+            "histogram": calib["histogram"],
+            "p5": calib["p5"],
+            "p95": calib["p95"],
+            "n": calib["n"],
+            "underflow_count": calib.get("underflow_count", 0),
+            "overflow_count": calib.get("overflow_count", 0),
+            "updated_at": calib.get("updated_at"),
+            "last_computation_at": calib.get("last_computation_at"),
+        }
+        export_data.append(export_doc)
+
+    # Write to file
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "version": 1,
+                "format": "nomarr_calibration_state",
+                "calibrations": export_data,
+            },
+            f,
+            indent=2,
+        )
+
+    logging.info(f"[calibration] Exported {len(export_data)} calibrations to {output_path}")
+
+    return {
+        "calibrations_exported": len(export_data),
+        "path": output_path,
+    }
+
+
+def import_calibration_state_from_json(db: Database, input_path: str, overwrite: bool = False) -> dict[str, Any]:
+    """
+    Import calibration_state documents from a JSON file.
+
+    Imports calibrations exported by export_calibration_state_to_json().
+    By default, skips calibrations that already exist (based on calibration_def_hash).
+
+    Args:
+        db: Database instance
+        input_path: Absolute path to input JSON file
+        overwrite: If True, overwrite existing calibrations. If False, skip existing.
+
+    Returns:
+        Dict with import summary: {"calibrations_imported": int, "skipped": int}
+
+    Raises:
+        ValueError: If file format is invalid
+        IOError: If file cannot be read
+    """
+
+    logging.info(f"[calibration] Importing calibration_state from {input_path}")
+
+    # Read file
+    with open(input_path, encoding="utf-8") as f:
+        data = json.load(f)
+
+    # Validate format
+    if not isinstance(data, dict) or data.get("format") != "nomarr_calibration_state":
+        raise ValueError("Invalid calibration export format")
+
+    calibrations = data.get("calibrations", [])
+    if not isinstance(calibrations, list):
+        raise ValueError("Invalid calibrations field in export file")
+
+    # Import each calibration
+    imported_count = 0
+    skipped_count = 0
+
+    for calib in calibrations:
+        try:
+            model_key = calib["model_key"]
+            head_name = calib["head_name"]
+            calibration_def_hash = calib["calibration_def_hash"]
+
+            # Check if already exists
+            existing = db.calibration_state.get_calibration_state(model_key, head_name)
+
+            if existing and not overwrite:
+                # Skip if hash matches (same calibration)
+                if existing.get("calibration_def_hash") == calibration_def_hash:
+                    logging.debug(f"[calibration] Skipping {model_key}:{head_name} (already exists)")
+                    skipped_count += 1
+                    continue
+
+            # Upsert calibration
+            db.calibration_state.upsert_calibration_state(
+                model_key=model_key,
+                head_name=head_name,
+                calibration_def_hash=calibration_def_hash,
+                version=calib.get("version", 1),
+                histogram_spec=calib["histogram"],
+                p5=calib["p5"],
+                p95=calib["p95"],
+                n=calib["n"],
+                underflow_count=calib.get("underflow_count", 0),
+                overflow_count=calib.get("overflow_count", 0),
+            )
+
+            logging.info(f"[calibration] Imported {model_key}:{head_name}")
+            imported_count += 1
+
+        except KeyError as e:
+            logging.warning(f"[calibration] Skipping invalid calibration entry (missing {e})")
+            skipped_count += 1
+            continue
+        except Exception as e:
+            logging.error(f"[calibration] Failed to import calibration: {e}")
+            skipped_count += 1
+            continue
+
+    logging.info(f"[calibration] Import complete: {imported_count} imported, {skipped_count} skipped")
+
+    return {
+        "calibrations_imported": imported_count,
+        "skipped": skipped_count,
+    }

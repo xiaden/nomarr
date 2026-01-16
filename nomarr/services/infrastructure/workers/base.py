@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 TResult = TypeVar("TResult", covariant=True)
 
 # Queue type literal for type safety
-QueueType = Literal["tag", "library", "calibration"]
+QueueType = Literal["tag", "library"]
 
 
 # ----------------------------------------------------------------------

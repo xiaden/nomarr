@@ -64,3 +64,34 @@ class GenerateCalibrationResult:
     saved_files: dict[str, Any]
     reference_updates: dict[str, str]
     summary: dict[str, Any]
+
+
+@dataclass
+class CalibrationStateDict:
+    """Calibration state document from calibration_state collection."""
+
+    _key: str  # "model_key:head_name"
+    model_key: str
+    head_name: str
+    calibration_def_hash: str
+    version: int
+    histogram: dict[str, Any]  # {lo, hi, bins, bin_width}
+    p5: float
+    p95: float
+    n: int
+    underflow_count: int
+    overflow_count: int
+    created_at: int
+    updated_at: int
+    last_computation_at: int
+
+
+@dataclass
+class HistogramCalibrationResult:
+    """Result from histogram-based calibration generation."""
+
+    version: int
+    heads_processed: int
+    heads_success: int
+    heads_failed: int
+    results: dict[str, dict[str, Any]]  # {head_key: {p5, p95, n, underflow_count, overflow_count}}

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
-QueueType = Literal["tag", "library", "calibration"]
+QueueType = Literal["tag", "library"]
 
 logger = logging.getLogger(__name__)
 
@@ -39,20 +39,6 @@ def get_next_job(db: Database, queue_type: QueueType) -> dict | None:
                 "force": job.get("force", False),
             }
         return None
-
-    elif queue_type == "calibration":
-        # calibration_queue.get_next_calibration_job() returns tuple[int, str] | None
-        cal_result = db.calibration_queue.get_next_calibration_job()
-        if cal_result:
-            job_id, path = cal_result
-            return {
-                "id": job_id,
-                "path": path,
-                "force": False,  # Calibration doesn't use force flag
-                "status": "running",
-            }
-        return None
-
     else:
         raise ValueError(f"Invalid queue_type: {queue_type}")
 
@@ -73,8 +59,6 @@ def mark_job_complete(db: Database, job_id: str, queue_type: QueueType) -> None:
 
     if queue_type == "tag":
         db.tag_queue.update_job(job_id, status="done")
-    elif queue_type == "calibration":
-        db.calibration_queue.complete_calibration_job(job_id)
     else:
         raise ValueError(f"Invalid queue_type: {queue_type}")
 
@@ -96,7 +80,5 @@ def mark_job_error(db: Database, job_id: str, error_message: str, queue_type: Qu
 
     if queue_type == "tag":
         db.tag_queue.update_job(job_id, status="error", error_message=error_message)
-    elif queue_type == "calibration":
-        db.calibration_queue.fail_calibration_job(job_id, error_message)
     else:
         raise ValueError(f"Invalid queue_type: {queue_type}")

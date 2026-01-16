@@ -109,6 +109,7 @@ class LibrariesOperations:
                 """
             FOR lib IN libraries
                 FILTER lib.name == @name
+                SORT lib._key
                 LIMIT 1
                 RETURN lib
             """,
@@ -153,6 +154,7 @@ class LibrariesOperations:
                 """
             FOR lib IN libraries
                 FILTER lib.is_default == true
+                SORT lib._key
                 LIMIT 1
                 RETURN lib
             """

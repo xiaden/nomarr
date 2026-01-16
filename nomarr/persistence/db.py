@@ -5,8 +5,8 @@ from arango.database import StandardDatabase
 from nomarr.persistence.arango_client import create_arango_client
 
 # Import operation classes (AQL versions)
-from nomarr.persistence.database.calibration_queue_aql import CalibrationQueueOperations
-from nomarr.persistence.database.calibration_runs_aql import CalibrationRunsOperations
+from nomarr.persistence.database.calibration_history_aql import CalibrationHistoryOperations
+from nomarr.persistence.database.calibration_state_aql import CalibrationStateOperations
 from nomarr.persistence.database.file_tags_aql import FileTagOperations
 from nomarr.persistence.database.health_aql import HealthOperations
 from nomarr.persistence.database.libraries_aql import LibrariesOperations
@@ -103,8 +103,8 @@ class Database:
         self.library_tags = LibraryTagOperations(self.db)
         self.file_tags = FileTagOperations(self.db)
         self.sessions = SessionOperations(self.db)
-        self.calibration_queue = CalibrationQueueOperations(self.db)
-        self.calibration_runs = CalibrationRunsOperations(self.db)
+        self.calibration_state = CalibrationStateOperations(self.db)
+        self.calibration_history = CalibrationHistoryOperations(self.db)
         self.health = HealthOperations(self.db)
 
         # Lazy import to avoid circular dependency
