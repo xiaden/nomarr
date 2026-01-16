@@ -7,6 +7,7 @@ from nomarr.persistence.arango_client import create_arango_client
 # Import operation classes (AQL versions)
 from nomarr.persistence.database.calibration_history_aql import CalibrationHistoryOperations
 from nomarr.persistence.database.calibration_state_aql import CalibrationStateOperations
+from nomarr.persistence.database.entities_aql import EntityOperations
 from nomarr.persistence.database.file_tags_aql import FileTagOperations
 from nomarr.persistence.database.health_aql import HealthOperations
 from nomarr.persistence.database.libraries_aql import LibrariesOperations
@@ -14,6 +15,7 @@ from nomarr.persistence.database.library_files_aql import LibraryFilesOperations
 from nomarr.persistence.database.library_tags_aql import LibraryTagOperations
 from nomarr.persistence.database.meta_aql import MetaOperations
 from nomarr.persistence.database.sessions_aql import SessionOperations
+from nomarr.persistence.database.song_tag_edges_aql import SongTagEdgeOperations
 from nomarr.persistence.database.tag_queue_aql import QueueOperations
 
 __all__ = ["SCHEMA_VERSION", "Database"]
@@ -106,6 +108,9 @@ class Database:
         self.calibration_state = CalibrationStateOperations(self.db)
         self.calibration_history = CalibrationHistoryOperations(self.db)
         self.health = HealthOperations(self.db)
+        # Metadata entity operations (hybrid graph model)
+        self.entities = EntityOperations(self.db)
+        self.song_tag_edges = SongTagEdgeOperations(self.db)
 
         # Lazy import to avoid circular dependency
         # from nomarr.persistence.database.joined_queries_aql import JoinedQueryOperations

@@ -45,6 +45,12 @@ def _create_collections(db: StandardDatabase) -> None:
         "calibration_state",
         "calibration_history",
         "health",
+        # Metadata entity vertex collections
+        "artists",
+        "albums",
+        "labels",
+        "genres",
+        "years",
     ]
 
     for collection_name in document_collections:
@@ -54,12 +60,18 @@ def _create_collections(db: StandardDatabase) -> None:
             except CollectionCreateError:
                 pass  # Collection already exists (race condition)
 
-    # Edge collection for file→tag relationships
-    if not db.has_collection("file_tags"):
-        try:
-            db.create_collection("file_tags", edge=True)
-        except CollectionCreateError:
-            pass
+    # Edge collections
+    edge_collections = [
+        "file_tags",  # file→tag relationships (ML tags)
+        "song_tag_edges",  # entity→song relationships (metadata entities)
+    ]
+
+    for edge_collection_name in edge_collections:
+        if not db.has_collection(edge_collection_name):
+            try:
+                db.create_collection(edge_collection_name, edge=True)
+            except CollectionCreateError:
+                pass  # Collection already exists (race condition)
 
 
 def _create_indexes(db: StandardDatabase) -> None:
@@ -148,6 +160,35 @@ def _create_indexes(db: StandardDatabase) -> None:
         "calibration_history",
         "persistent",
         ["snapshot_at"],
+        unique=False,
+        sparse=False,
+    )
+
+    # Entity collection indexes (for UI search/listing)
+    for entity_collection in ["artists", "albums", "labels", "genres", "years"]:
+        _ensure_index(
+            db,
+            entity_collection,
+            "persistent",
+            ["display_name"],
+            unique=False,
+            sparse=False,
+        )
+
+    # song_tag_edges indexes (entity→song metadata relationships)
+    _ensure_index(
+        db,
+        "song_tag_edges",
+        "persistent",
+        ["rel", "_from"],  # Entity→songs navigation
+        unique=False,
+        sparse=False,
+    )
+    _ensure_index(
+        db,
+        "song_tag_edges",
+        "persistent",
+        ["rel", "_to"],  # Song→entities updates/cache rebuild
         unique=False,
         sparse=False,
     )
