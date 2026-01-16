@@ -5,7 +5,7 @@
  */
 
 import { Search } from "@mui/icons-material";
-import { Box, Chip, IconButton, MenuItem, Select, Stack, TextField, Typography } from "@mui/material";
+import { Box, Button, Chip, IconButton, MenuItem, Select, Stack, TextField, Typography } from "@mui/material";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ErrorMessage } from "@shared/components/ui";
@@ -24,16 +24,19 @@ export function SimilarTracks({
   currentTrackId,
   isNumeric,
 }: SimilarTracksProps) {
-  const [tracks, setTracks] = useState<LibraryFile[]>([]);
+  const [allTracks, setAllTracks] = useState<Array<{ track: LibraryFile; diff: number }>>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filterQuery, setFilterQuery] = useState("");
   const [sortBy, setSortBy] = useState<"title" | "artist" | "album">("title");
+  const [page, setPage] = useState(0);
+  const pageSize = 25;
 
   const loadSimilarTracks = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
+      setPage(0);
 
       if (isNumeric) {
         const result = await api.files.search({
@@ -54,23 +57,29 @@ export function SimilarTracks({
             };
           })
           .filter((item) => item.value !== null)
-          .sort((a, b) => a.diff - b.diff)
-          .slice(0, 25)
-          .map((item) => item.track);
+          // Stable sort: distance, then title, then artist, then id
+          .sort((a, b) => {
+            if (a.diff !== b.diff) return a.diff - b.diff;
+            const titleCmp = (a.track.title || "").localeCompare(b.track.title || "");
+            if (titleCmp !== 0) return titleCmp;
+            const artistCmp = (a.track.artist || "").localeCompare(b.track.artist || "");
+            if (artistCmp !== 0) return artistCmp;
+            return a.track.id.localeCompare(b.track.id);
+          });
 
-        setTracks(tracksWithTag);
+        setAllTracks(tracksWithTag);
       } else {
         const result = await api.files.search({
           tagKey: tag.key,
           tagValue: tag.value,
-          limit: 100,
+          limit: 500,
         });
 
-        const filteredTracks = result.files.filter(
-          (f) => f.id !== currentTrackId
-        );
+        const filteredTracks = result.files
+          .filter((f) => f.id !== currentTrackId)
+          .map((track) => ({ track, diff: 0 }));
 
-        setTracks(filteredTracks);
+        setAllTracks(filteredTracks);
       }
     } catch (err) {
       setError(
@@ -98,45 +107,59 @@ export function SimilarTracks({
     return trackTag?.value || null;
   };
 
-  const filteredTracks = useMemo(() => {
-    let result = tracks;
+  // Filter and sort, then paginate
+  const { paginatedTracks, totalFiltered, totalPages } = useMemo(() => {
+    let result = allTracks;
     
+    // Apply text filter
     if (filterQuery.trim()) {
       const query = filterQuery.toLowerCase();
       result = result.filter(
-        (track) =>
+        ({ track }) =>
           track.title?.toLowerCase().includes(query) ||
           track.artist?.toLowerCase().includes(query) ||
           track.album?.toLowerCase().includes(query)
       );
     }
 
+    // For string tags, apply user-selected sort
     if (!isNumeric) {
-      return [...result].sort((a, b) => {
+      result = [...result].sort((a, b) => {
         switch (sortBy) {
           case "title":
-            return (a.title || "").localeCompare(b.title || "");
+            return (a.track.title || "").localeCompare(b.track.title || "");
           case "artist":
-            return (a.artist || "").localeCompare(b.artist || "");
+            return (a.track.artist || "").localeCompare(b.track.artist || "");
           case "album":
-            return (a.album || "").localeCompare(b.album || "");
+            return (a.track.album || "").localeCompare(b.track.album || "");
           default:
             return 0;
         }
       });
     }
+    // For numeric tags, result is already sorted by distance (stable)
 
-    return result;
-  }, [tracks, filterQuery, isNumeric, sortBy]);
+    const totalFiltered = result.length;
+    const totalPages = Math.ceil(totalFiltered / pageSize);
+    const start = page * pageSize;
+    const paginatedTracks = result.slice(start, start + pageSize).map((item) => item.track);
+
+    return { paginatedTracks, totalFiltered, totalPages };
+  }, [allTracks, filterQuery, isNumeric, sortBy, page]);
+
+  // Reset to page 0 when filter changes
+  useEffect(() => {
+    setPage(0);
+  }, [filterQuery]);
 
   return (
     <Box>
       <Typography variant="subtitle2" gutterBottom>
         Similar tracks with {tag.key}
-        {isNumeric ? ` (closest 25 to ${tag.value})` : ` = "${tag.value}"`}
+        {isNumeric ? ` (by distance to ${tag.value})` : ` = "${tag.value}"`}
       </Typography>
 
-      {tracks.length > 0 && (
+      {allTracks.length > 0 && (
         <Box sx={{ mb: 2 }}>
           <Stack direction="row" spacing={1}>
             <TextField
@@ -167,7 +190,8 @@ export function SimilarTracks({
             )}
           </Stack>
           <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: "block" }}>
-            {filteredTracks.length} of {tracks.length} shown
+            Showing {paginatedTracks.length} of {totalFiltered} matches
+            {totalFiltered !== allTracks.length && ` (${allTracks.length} total)`}
           </Typography>
         </Box>
       )}
@@ -180,21 +204,21 @@ export function SimilarTracks({
 
       {error && <ErrorMessage>{error}</ErrorMessage>}
 
-      {!loading && tracks.length === 0 && (
+      {!loading && allTracks.length === 0 && (
         <Typography variant="body2" color="text.secondary">
           No similar tracks found.
         </Typography>
       )}
 
-      {!loading && tracks.length > 0 && filteredTracks.length === 0 && (
+      {!loading && allTracks.length > 0 && paginatedTracks.length === 0 && (
         <Typography variant="body2" color="text.secondary">
           No tracks matching "{filterQuery}".
         </Typography>
       )}
 
-      {!loading && tracks.length > 0 && filteredTracks.length > 0 && (
+      {!loading && allTracks.length > 0 && paginatedTracks.length > 0 && (
         <Stack spacing={1} sx={{ mt: 2 }}>
-          {filteredTracks.map((track) => {
+          {paginatedTracks.map((track) => {
             const tagValue = getTagValue(track);
             return (
               <Box
@@ -254,6 +278,37 @@ export function SimilarTracks({
               </Box>
             );
           })}
+        </Stack>
+      )}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <Stack
+          direction="row"
+          justifyContent="center"
+          alignItems="center"
+          spacing={2}
+          sx={{ mt: 2 }}
+        >
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={() => setPage(Math.max(0, page - 1))}
+            disabled={page === 0}
+          >
+            Previous
+          </Button>
+          <Typography variant="body2" color="text.secondary">
+            Page {page + 1} of {totalPages}
+          </Typography>
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
+            disabled={page >= totalPages - 1}
+          >
+            Next
+          </Button>
         </Stack>
       )}
     </Box>
