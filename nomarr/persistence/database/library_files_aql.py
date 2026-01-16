@@ -788,9 +788,9 @@ class LibraryFilesOperations:
             LENGTH(
                 FOR ft IN file_tags
                     FOR lt IN library_tags
-                        FILTER ft.file_id == file._id 
+                        FILTER ft.file_id == file._id
                             AND ft.tag_id == lt._id
-                            AND lt.key == @tag_key 
+                            AND lt.key == @tag_key
                             AND lt.value == @tag_value
                         SORT ft._key
                         LIMIT 1
@@ -804,7 +804,7 @@ class LibraryFilesOperations:
             LENGTH(
                 FOR ft IN file_tags
                     FOR lt IN library_tags
-                        FILTER ft.file_id == file._id 
+                        FILTER ft.file_id == file._id
                             AND ft.tag_id == lt._id
                             AND lt.key == @tag_key
                         SORT ft._key

@@ -168,7 +168,7 @@ def _compute_embeddings_for_backbone(
     logging.debug(f"[processor] Computing embeddings for {backbone}: sr={target_sr}")
 
     # Build LibraryPath at call site (security boundary)
-    from nomarr.helpers.dto.path_dto import build_library_path_from_input
+    from nomarr.components.infrastructure.path_comp import build_library_path_from_input
 
     library_path = build_library_path_from_input(path, db) if db else None
     if not library_path or not library_path.is_valid():
@@ -412,7 +412,7 @@ def _write_tags_to_file(
     if file_tags:
         if not db:
             raise ValueError("Database required for path validation")
-        from nomarr.helpers.dto.path_dto import build_library_path_from_input
+        from nomarr.components.infrastructure.path_comp import build_library_path_from_input
 
         library_path = build_library_path_from_input(path, db)
         writer.write(library_path, file_tags)
@@ -452,9 +452,9 @@ def _sync_database(
         return
 
     try:
+        from nomarr.components.infrastructure.path_comp import build_library_path_from_input
         from nomarr.components.library.library_update_comp import update_library_from_tags
         from nomarr.components.library.metadata_extraction_comp import extract_metadata
-        from nomarr.helpers.dto.path_dto import build_library_path_from_input
 
         library_path = build_library_path_from_input(path, db)
 
@@ -611,8 +611,9 @@ def process_file_workflow(
         >>> result = process_file_workflow("/music/song.mp3", config, db=my_database)
         >>> print(f"Processed {result.file} in {result.elapsed}s")
     """
+    from nomarr.components.infrastructure.path_comp import build_library_path_from_db
     from nomarr.components.ml.ml_cache_comp import check_and_evict_idle_cache, touch_cache
-    from nomarr.helpers.dto.path_dto import LibraryPath, build_library_path_from_db
+    from nomarr.helpers.dto.path_dto import LibraryPath
 
     # === STEP 0: Validate path against library configuration ===
     # If db provided, validate path to handle config changes (library root moved, etc.)

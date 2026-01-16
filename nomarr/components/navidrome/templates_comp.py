@@ -1,6 +1,7 @@
 """
-Predefined Smart Playlist templates for Navidrome.
+Navidrome smart playlist templates component.
 
+Predefined Smart Playlist templates for Navidrome integration.
 These templates provide common playlist configurations that users can
 generate in bulk and customize for their library.
 """

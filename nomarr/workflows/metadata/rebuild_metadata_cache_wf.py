@@ -5,15 +5,17 @@ This is the canonical repair path for cache drift.
 """
 
 import logging
-
-from arango.database import StandardDatabase
+from typing import TYPE_CHECKING
 
 from nomarr.components.metadata.metadata_cache_comp import rebuild_all_song_metadata_caches
+
+if TYPE_CHECKING:
+    from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
 
 
-def rebuild_all_metadata_caches(db: StandardDatabase, limit: int | None = None) -> dict[str, int]:
+def rebuild_all_metadata_caches(db: "Database", limit: int | None = None) -> dict[str, int]:
     """Rebuild metadata cache for all songs (or limited subset).
 
     Reads song_tag_edges for each song and writes derived embedded fields.

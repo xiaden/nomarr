@@ -13,8 +13,8 @@ import time
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any
 
+from nomarr.components.infrastructure.path_comp import build_library_path_from_input
 from nomarr.components.library.metadata_extraction_comp import extract_metadata
-from nomarr.helpers.dto.path_dto import build_library_path_from_input
 from nomarr.helpers.files_helper import collect_audio_files, is_audio_file
 from nomarr.helpers.time_helper import now_ms
 

@@ -34,6 +34,7 @@ Dataclass Classification:
 
 from __future__ import annotations
 
+from nomarr.components.infrastructure.path_comp import build_library_path_from_db, build_library_path_from_input
 from nomarr.helpers.dto.analytics_dto import (
     ArtistTagProfile,
     MoodDistributionData,
@@ -60,11 +61,7 @@ from nomarr.helpers.dto.navidrome_dto import (
     SmartPlaylistFilter,
     TagCondition,
 )
-from nomarr.helpers.dto.path_dto import (
-    LibraryPath,
-    build_library_path_from_db,
-    build_library_path_from_input,
-)
+from nomarr.helpers.dto.path_dto import LibraryPath
 from nomarr.helpers.dto.processing_dto import (
     ProcessFileResult,
     ProcessorConfig,

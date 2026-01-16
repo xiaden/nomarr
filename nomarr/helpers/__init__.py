@@ -18,15 +18,6 @@ from .files_helper import (
     validate_library_path,
 )
 from .logging_helper import sanitize_exception_message
-from .navidrome_templates_helper import (
-    generate_template_files,
-    get_all_templates,
-    get_mixed_templates,
-    get_mood_templates,
-    get_quality_templates,
-    get_style_templates,
-    get_template_summary,
-)
 from .time_helper import now_ms
 
 __all__ = [
@@ -38,13 +29,6 @@ __all__ = [
     "TagWriteProfile",
     "check_already_tagged",
     "collect_audio_files",
-    "generate_template_files",
-    "get_all_templates",
-    "get_mixed_templates",
-    "get_mood_templates",
-    "get_quality_templates",
-    "get_style_templates",
-    "get_template_summary",
     "is_audio_file",
     "make_skip_result",
     "now_ms",

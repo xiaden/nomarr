@@ -178,7 +178,7 @@ def start_library_scan_workflow(
         logging.info(f"[start_library_scan] Batch check complete: {len(files_to_enqueue)} files need scanning")
 
     # Enqueue files that need scanning (convert string paths to LibraryPath)
-    from nomarr.helpers.dto.path_dto import build_library_path_from_input
+    from nomarr.components.infrastructure.path_comp import build_library_path_from_input
 
     for file_path in files_to_enqueue:
         try:

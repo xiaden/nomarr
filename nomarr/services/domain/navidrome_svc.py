@@ -120,8 +120,8 @@ class NavidromeService:
 
     def get_template_summary(self) -> GetTemplateSummaryResult:
         """Get list of available Navidrome templates."""
+        from nomarr.components.navidrome.templates_comp import get_template_summary
         from nomarr.helpers.dto.navidrome_dto import TemplateSummaryItem
-        from nomarr.helpers.navidrome_templates_helper import get_template_summary
 
         templates_list = get_template_summary()
         # Convert list of dicts to list of TemplateSummaryItem DTOs
@@ -134,7 +134,7 @@ class NavidromeService:
         output_dir: str,
     ) -> GenerateTemplateFilesResult:
         """Generate files from a template."""
-        from nomarr.helpers.navidrome_templates_helper import generate_template_files
+        from nomarr.components.navidrome.templates_comp import generate_template_files
 
         files_generated = generate_template_files()
         return GenerateTemplateFilesResult(files_generated=files_generated)

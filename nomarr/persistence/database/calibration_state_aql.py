@@ -48,32 +48,32 @@ class CalibrationStateOperations:
               FILTER ft.head_name == @head_name
               FILTER ft.nomarr_only == true
               FILTER IS_NUMBER(ft.value)
-              
+
               LET lo = @lo
               LET hi = @hi
               LET bin_width = @bin_width
               LET value = ft.value
-              
+
               // Compute integer bin index (avoid floating-point drift)
               LET bin_idx_raw = FLOOR((value - lo) / bin_width)
               LET bin_idx = MIN(MAX(bin_idx_raw, 0), @max_bin)
-              
+
               // Out-of-range flags
               LET is_underflow = value < lo
               LET is_overflow = value > hi
-              
+
               // Group by integer bin index only (sparse: only bins with data)
               COLLECT bin_index = bin_idx
-              AGGREGATE 
+              AGGREGATE
                 count = COUNT(1),
                 underflow_count = SUM(is_underflow ? 1 : 0),
                 overflow_count = SUM(is_overflow ? 1 : 0)
-              
+
               // Derive min_val from integer bin index (stable floating-point)
               LET min_val = lo + (bin_index * bin_width)
-              
+
               SORT min_val ASC
-              
+
               RETURN {
                 min_val: min_val,
                 count: count,

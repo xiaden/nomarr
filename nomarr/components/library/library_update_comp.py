@@ -137,10 +137,10 @@ def update_library_from_tags(
                 }
 
                 # Seed entities + edges from raw metadata
-                seed_song_entities_from_tags(db.db, str(file_record["id"]), entity_tags)
+                seed_song_entities_from_tags(db, str(file_record["id"]), entity_tags)
 
                 # Rebuild cache from edges (deterministic derived fields)
-                rebuild_song_metadata_cache(db.db, str(file_record["id"]))
+                rebuild_song_metadata_cache(db, str(file_record["id"]))
 
                 logging.debug(f"[update_library_from_tags] Seeded entities for {file_path}")
             except Exception as entity_error:

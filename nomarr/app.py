@@ -27,7 +27,18 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from nomarr.components.events.event_broker_comp import StateBroker
+
 from nomarr.persistence.db import Database
+from nomarr.services.domain.analytics_svc import AnalyticsService
+from nomarr.services.domain.calibration_svc import CalibrationService
+from nomarr.services.domain.library_svc import LibraryRootConfig, LibraryService
+from nomarr.services.domain.navidrome_svc import NavidromeService
+from nomarr.services.domain.recalibration_svc import RecalibrationService
+from nomarr.services.infrastructure.config_svc import ConfigService
+from nomarr.services.infrastructure.health_monitor_svc import HealthMonitorService
+from nomarr.services.infrastructure.keys_svc import KeyManagementService
+from nomarr.services.infrastructure.queue_svc import QueueService
+from nomarr.services.infrastructure.worker_system_svc import WorkerSystemService
 
 
 def validate_environment() -> None:
@@ -52,22 +63,6 @@ def validate_environment() -> None:
         print("  ARANGO_USERNAME - Database username (default: nomarr)", file=sys.stderr)
         print("  ARANGO_DBNAME - Database name (default: nomarr)", file=sys.stderr)
         sys.exit(1)
-
-
-from nomarr.services.domain.analytics_svc import AnalyticsService
-from nomarr.services.domain.calibration_svc import CalibrationService
-from nomarr.services.domain.library_svc import LibraryRootConfig, LibraryService
-from nomarr.services.domain.navidrome_svc import NavidromeService
-from nomarr.services.domain.recalibration_svc import RecalibrationService
-from nomarr.services.infrastructure.config_svc import ConfigService
-
-# DELETED: from nomarr.services.coordinator_svc import CoordinatorService
-from nomarr.services.infrastructure.health_monitor_svc import HealthMonitorService
-from nomarr.services.infrastructure.keys_svc import KeyManagementService
-from nomarr.services.infrastructure.queue_svc import QueueService
-from nomarr.services.infrastructure.worker_system_svc import WorkerSystemService
-
-# DELETED: from nomarr.services.worker_pool_svc import WorkerPoolConfig, WorkerPoolService
 
 
 # ----------------------------------------------------------------------

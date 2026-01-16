@@ -220,7 +220,7 @@ async def preview_library_scan(
             # User specified sub-paths - validate they're within library root
             resolved_paths = []
             for path in request.paths:
-                resolved = library_service._resolve_path_within_library(
+                resolved = library_service.resolve_path_within_library(
                     library_root=library.root_path,
                     user_path=path,
                     must_exist=True,

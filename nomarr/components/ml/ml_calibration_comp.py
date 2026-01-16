@@ -515,12 +515,11 @@ def import_calibration_state_from_json(db: Database, input_path: str, overwrite:
             # Check if already exists
             existing = db.calibration_state.get_calibration_state(model_key, head_name)
 
-            if existing and not overwrite:
+            if existing and not overwrite and existing.get("calibration_def_hash") == calibration_def_hash:
                 # Skip if hash matches (same calibration)
-                if existing.get("calibration_def_hash") == calibration_def_hash:
-                    logging.debug(f"[calibration] Skipping {model_key}:{head_name} (already exists)")
-                    skipped_count += 1
-                    continue
+                logging.debug(f"[calibration] Skipping {model_key}:{head_name} (already exists)")
+                skipped_count += 1
+                continue
 
             # Upsert calibration
             db.calibration_state.upsert_calibration_state(

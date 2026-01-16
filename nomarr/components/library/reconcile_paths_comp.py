@@ -11,8 +11,9 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Literal
 
+from nomarr.components.infrastructure.path_comp import build_library_path_from_db
 from nomarr.helpers.dto.library_dto import ReconcileResult
-from nomarr.helpers.dto.path_dto import LibraryPath, build_library_path_from_db
+from nomarr.helpers.dto.path_dto import LibraryPath
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database

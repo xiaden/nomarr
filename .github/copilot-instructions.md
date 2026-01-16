@@ -237,10 +237,11 @@ Contains: `db.py`, `queue.py`, `analytics_queries.py`, `database/` (with `*Opera
 
 ### 3.6 `helpers/` — Pure Utilities
 
-Contains: `audio.py`, `files.py`, `dataclasses.py`, `logging.py`, `navidrome_templates.py`, etc.
+Contains: `files_helper.py`, `file_validation_helper.py`, `sql_helper.py`, `logging_helper.py`, `time_helper.py`, `exceptions.py`, `dataclasses.py`, `dto/`
 
-- Pure utility functions (audio helpers, path helpers, file validation, etc.)
-- `dataclasses.py` contains dataclasses used by multiple top-level packages
+- Pure utility functions (path validation, SQL fragment builders, time utilities, etc.)
+- `dataclasses.py` contains dataclasses used by multiple top-level packages (currently empty)
+- `dto/` contains data transfer objects organized by domain
 - Must not import any `nomarr.*` modules (only stdlib and third-party)
 - No business logic; just reusable utilities
 

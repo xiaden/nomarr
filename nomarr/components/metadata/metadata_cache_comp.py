@@ -5,16 +5,15 @@ Part of hybrid entity graph: edges are truth, embedded fields are read cache.
 """
 
 import logging
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
-from arango.database import StandardDatabase
-
-from nomarr.persistence.database.song_tag_edges_aql import SongTagEdgeOperations
+if TYPE_CHECKING:
+    from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
 
 
-def rebuild_song_metadata_cache(db: StandardDatabase, song_id: str) -> None:
+def rebuild_song_metadata_cache(db: "Database", song_id: str) -> None:
     """Rebuild embedded metadata cache fields on a song from edges.
 
     Reads entities from song_tag_edges and writes derived fields to song document.
@@ -24,7 +23,7 @@ def rebuild_song_metadata_cache(db: StandardDatabase, song_id: str) -> None:
         db: Database handle
         song_id: Song _id (e.g., "library_files/12345")
     """
-    edges = SongTagEdgeOperations(db)
+    edges = db.song_tag_edges
 
     # Fetch entities for each relation type
     artist_entities = edges.list_entities_for_song(song_id, "artist")
@@ -50,7 +49,7 @@ def rebuild_song_metadata_cache(db: StandardDatabase, song_id: str) -> None:
             logger.warning("Failed to parse year from entity: %s", year_entities[0])
 
     # Update song document with derived cache
-    db.aql.execute(
+    db.db.aql.execute(
         """
         UPDATE PARSE_IDENTIFIER(@song_id).key WITH {
             artist: @artist,
@@ -76,7 +75,7 @@ def rebuild_song_metadata_cache(db: StandardDatabase, song_id: str) -> None:
     )
 
 
-def rebuild_all_song_metadata_caches(db: StandardDatabase, limit: int | None = None) -> int:
+def rebuild_all_song_metadata_caches(db: "Database", limit: int | None = None) -> int:
     """Rebuild metadata cache for all songs in library.
 
     Args:
@@ -96,7 +95,7 @@ def rebuild_all_song_metadata_caches(db: StandardDatabase, limit: int | None = N
         query += f" LIMIT {limit}"
     query += " RETURN file._id"
 
-    cursor = cast(Cursor, db.aql.execute(query))
+    cursor = cast(Cursor, db.db.aql.execute(query))
     song_ids = list(cursor)
 
     for i, song_id in enumerate(song_ids, 1):

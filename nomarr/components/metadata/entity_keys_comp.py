@@ -1,7 +1,10 @@
-"""Metadata entity key generation helpers.
+"""Metadata entity key generation component.
 
 Deterministic hash-based _key generation for entity collections.
 NO normalization for equivalence - exact strings produce different entities.
+
+This component provides domain-specific key generation logic for the
+hybrid metadata entity graph (artists, albums, labels, genres, years).
 """
 
 import hashlib

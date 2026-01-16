@@ -5,24 +5,23 @@ Part of hybrid model: seed edges from imports, then rebuild cache.
 """
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from arango.database import StandardDatabase
-
-from nomarr.helpers.entity_keys import (
+from nomarr.components.metadata.entity_keys_comp import (
     generate_album_key,
     generate_artist_key,
     generate_genre_key,
     generate_label_key,
     generate_year_key,
 )
-from nomarr.persistence.database.entities_aql import EntityOperations
-from nomarr.persistence.database.song_tag_edges_aql import SongTagEdgeOperations
+
+if TYPE_CHECKING:
+    from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
 
 
-def seed_song_entities_from_tags(db: StandardDatabase, song_id: str, tags: dict[str, Any]) -> None:
+def seed_song_entities_from_tags(db: "Database", song_id: str, tags: dict[str, Any]) -> None:
     """Derive entity vertices and edges from raw imported metadata tags.
 
     Supports:
@@ -38,8 +37,8 @@ def seed_song_entities_from_tags(db: StandardDatabase, song_id: str, tags: dict[
         song_id: Song _id (e.g., "library_files/12345")
         tags: Raw metadata tags dict (from mutagen/external source)
     """
-    entities = EntityOperations(db)
-    edges = SongTagEdgeOperations(db)
+    entities = db.entities
+    edges = db.song_tag_edges
 
     # ==================== ARTIST (singular) ====================
     artist_raw = tags.get("artist")
@@ -99,7 +98,7 @@ def seed_song_entities_from_tags(db: StandardDatabase, song_id: str, tags: dict[
     labels: list[str] = []
     if label_raw:
         if isinstance(label_raw, list):
-            labels = [str(l) for l in label_raw if l]
+            labels = [str(label_item) for label_item in label_raw if label_item]
         else:
             labels = [str(label_raw)]
 

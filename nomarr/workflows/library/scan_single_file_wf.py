@@ -40,9 +40,9 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from nomarr.components.infrastructure.path_comp import build_library_path_from_db
 from nomarr.components.queue import enqueue_file
 from nomarr.helpers.dto.library_dto import ScanSingleFileWorkflowParams
-from nomarr.helpers.dto.path_dto import build_library_path_from_db
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -172,8 +172,8 @@ def scan_single_file_workflow(
 
         if needs_tagging and check_existing_version:
             # Extract metadata once to check version tag
+            from nomarr.components.infrastructure.path_comp import build_library_path_from_input
             from nomarr.components.library.metadata_extraction_comp import extract_metadata
-            from nomarr.helpers.dto.path_dto import build_library_path_from_input
 
             library_path = build_library_path_from_input(file_path, db)
             file_metadata = extract_metadata(library_path, namespace=namespace)
@@ -216,9 +216,9 @@ def scan_single_file_workflow(
         elif not check_existing_version or (check_existing_version and result.get("success") is not True):
             # File doesn't need tagging - extract and update metadata now
             # Skip if we already handled it above (check_existing_version path)
+            from nomarr.components.infrastructure.path_comp import build_library_path_from_input
             from nomarr.components.library.library_update_comp import update_library_from_tags
             from nomarr.components.library.metadata_extraction_comp import extract_metadata
-            from nomarr.helpers.dto.path_dto import build_library_path_from_input
 
             library_path = build_library_path_from_input(file_path, db)
             file_metadata = extract_metadata(library_path, namespace=namespace)

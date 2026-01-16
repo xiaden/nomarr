@@ -560,8 +560,8 @@ class FileTagOperations:
                 f"""
             FOR ft IN file_tags
                 FOR lt IN library_tags
-                    FILTER ft.tag_id == lt._id 
-                    AND lt.key == @tag_key 
+                    FILTER ft.tag_id == lt._id
+                    AND lt.key == @tag_key
                     AND TO_NUMBER(lt.value) {aql_operator} @value
                     RETURN DISTINCT ft.file_id
             """,
@@ -586,7 +586,7 @@ class FileTagOperations:
                 """
             FOR ft IN file_tags
                 FOR lt IN library_tags
-                    FILTER ft.tag_id == lt._id 
+                    FILTER ft.tag_id == lt._id
                         AND lt.key == @tag_key
                         AND LIKE(LOWER(lt.value), LOWER(@pattern), true)
                     RETURN DISTINCT ft.file_id

@@ -107,7 +107,7 @@ def enqueue_files_workflow(
 
     # Enqueue files using queue components
     # Convert string paths to LibraryPath with proper validation
-    from nomarr.helpers.dto.path_dto import build_library_path_from_input
+    from nomarr.components.infrastructure.path_comp import build_library_path_from_input
 
     job_ids = []
     skipped = 0

@@ -10,13 +10,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from nomarr.components.library.library_root_comp import (
+    ensure_no_overlapping_library_root,
+    get_base_library_root,
+    normalize_library_root,
+)
 from nomarr.components.library.reconcile_paths_comp import ReconcileResult
 from nomarr.components.queue import list_jobs as list_jobs_component
 from nomarr.helpers.dto.library_dto import (
-    FileTag,
     FileTagsResult,
     LibraryDict,
-    LibraryFileWithTags,
     LibraryScanStatusResult,
     LibraryStatsResult,
     SearchFilesResult,
@@ -25,7 +28,6 @@ from nomarr.helpers.dto.library_dto import (
     UniqueTagKeysResult,
 )
 from nomarr.helpers.dto.queue_dto import Job
-from nomarr.helpers.files_helper import resolve_library_path
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -93,195 +95,6 @@ class LibraryService:
 
         return False
 
-    def _get_library_root(self) -> Path:
-        """
-        Get the configured library_root (security boundary).
-
-        This is the top-level directory that all library roots must be nested under.
-        It comes from cfg.library_root and defines the security boundary for file access.
-
-        Returns:
-            Absolute Path to library_root directory
-
-        Raises:
-            ValueError: If library_root not configured or invalid
-        """
-        if not self.cfg.library_root:
-            raise ValueError("Library root not configured")
-
-        try:
-            base = Path(self.cfg.library_root).expanduser().resolve()
-
-            if not base.exists():
-                raise ValueError(f"Base library root does not exist: {self.cfg.library_root}")
-            if not base.is_dir():
-                raise ValueError(f"Base library root is not a directory: {self.cfg.library_root}")
-
-            return base
-
-        except Exception as e:
-            raise ValueError(f"Invalid base library root: {e}") from e
-
-    def _normalize_library_root(self, raw_root: str | Path) -> str:
-        """
-        Normalize and validate a user-provided library root path.
-
-        This ensures the library root:
-        - Exists and is a directory
-        - Is strictly within the configured base library_path
-        - Is canonicalized to an absolute path
-
-        Args:
-            raw_root: User-provided library root (absolute or relative)
-
-        Returns:
-            Canonical absolute path string for storage in database
-
-        Raises:
-            ValueError: If path is invalid or outside base library root
-        """
-        import os
-
-        # Get base root from config
-        base_root = self._get_library_root()
-
-        # Convert raw_root to string for processing
-        raw_root_str = str(raw_root)
-
-        # Determine if input is absolute or relative
-        raw_path = Path(raw_root_str)
-
-        if raw_path.is_absolute():
-            # Convert absolute path to relative path from base root
-            try:
-                # Resolve to handle any symlinks/.. in the path
-                abs_path = raw_path.resolve()
-                # Get relative path from base root
-                user_path = os.path.relpath(abs_path, base_root)
-            except (ValueError, OSError) as e:
-                # relpath can fail if paths are on different drives on Windows
-                raise ValueError(f"Cannot compute relative path from base root: {e}") from e
-        else:
-            # Already relative, use as-is
-            user_path = raw_root_str
-
-        # Validate using resolve_library_path
-        try:
-            resolved = resolve_library_path(
-                library_root=base_root,
-                user_path=user_path,
-                must_exist=True,
-                must_be_file=False,
-            )
-        except ValueError as e:
-            # Re-raise with more context
-            raise ValueError(f"Library root validation failed: {e}") from e
-
-        return str(resolved)
-
-    def _ensure_no_overlapping_library_root(
-        self,
-        candidate_root: str,
-        *,
-        ignore_id: str | None = None,
-    ) -> None:
-        """
-        Ensure a candidate library root does not overlap with existing libraries.
-
-        This enforces the business rule that all library roots must be disjoint -
-        no library may be nested inside another, and no two libraries may share
-        overlapping directory trees.
-
-        Args:
-            candidate_root: Absolute path to validate
-            ignore_id: Optional library ID to ignore (for updates)
-
-        Raises:
-            ValueError: If candidate_root overlaps with any existing library root
-        """
-        # Resolve candidate to canonical absolute path
-        candidate_path = Path(candidate_root).resolve()
-
-        # Fetch all existing libraries
-        existing_libraries = self.db.libraries.list_libraries(enabled_only=False)
-
-        for library in existing_libraries:
-            # Skip if this is the library being updated
-            if ignore_id is not None and library["id"] == ignore_id:
-                continue
-
-            # Resolve existing library root
-            existing_path = Path(library["root_path"]).resolve()
-
-            # Check if candidate is inside existing library
-            try:
-                candidate_path.relative_to(existing_path)
-                # If no ValueError raised, candidate is inside existing
-                raise ValueError(
-                    f"Library root '{candidate_root}' is nested inside "
-                    f"existing library '{library['name']}' at '{library['root_path']}'. "
-                    f"Library roots must be disjoint."
-                )
-            except ValueError as e:
-                # relative_to raises ValueError if not a subpath - this is expected for disjoint paths
-                if "is nested inside" in str(e):
-                    # Re-raise our custom error
-                    raise
-                # Otherwise, paths are not related - continue checking
-
-            # Check if existing library is inside candidate
-            try:
-                existing_path.relative_to(candidate_path)
-                # If no ValueError raised, existing is inside candidate
-                raise ValueError(
-                    f"Existing library '{library['name']}' at '{library['root_path']}' "
-                    f"is nested inside new library root '{candidate_root}'. "
-                    f"Library roots must be disjoint."
-                )
-            except ValueError as e:
-                # relative_to raises ValueError if not a subpath - this is expected for disjoint paths
-                if "is nested inside" in str(e):
-                    # Re-raise our custom error
-                    raise
-                # Otherwise, paths are not related - continue checking
-
-    def _resolve_path_within_library(
-        self,
-        library_root: str,
-        user_path: str | Path,
-        *,
-        must_exist: bool = True,
-        must_be_file: bool | None = None,
-    ) -> Path:
-        """
-        Resolve a user-provided path within a library root.
-
-        This is a thin wrapper around helpers.files.resolve_library_path
-        for use within LibraryService methods that need to validate paths
-        within a library (e.g., scanning subdirectories, loading specific files).
-
-        DO NOT use this for validating library roots themselves - use Path().resolve()
-        directly for that, since there's no parent root to validate against yet.
-
-        Args:
-            library_root: Absolute path to library root directory
-            user_path: User-provided path (relative or absolute) to resolve
-            must_exist: If True, require path to exist (default: True)
-            must_be_file: If True, require file; if False, require directory; if None, allow either
-
-        Returns:
-            Resolved absolute Path within library root
-
-        Raises:
-            ValueError: If path validation fails
-        """
-        return resolve_library_path(
-            library_root=library_root,
-            user_path=user_path,
-            must_exist=must_exist,
-            must_be_file=must_be_file,
-        )
-
     def _get_library_or_error(self, library_id: str) -> dict[str, Any]:
         """
         Get a library by ID or raise an error.
@@ -302,35 +115,6 @@ class LibraryService:
         library = self.db.libraries.get_library(library_id)
         if not library:
             raise ValueError(f"Library not found: {library_id}")
-        return library
-
-    def _get_default_library_or_error(self) -> dict[str, Any]:
-        """
-        Get the default library, creating it if necessary.
-
-        Libraries control which filesystem roots are scanned. This method ensures
-        a default library exists (creating one from library_root config if needed)
-        but does NOT propagate library_id beyond determining the scan root.
-
-        Returns:
-            Default library dict with keys: id, name, root_path, is_enabled, is_default, etc.
-
-        Raises:
-            ValueError: If no default library exists and cannot be created
-        """
-        library = self.db.libraries.get_default_library()
-        if library:
-            return library
-
-        # No default exists - try to create one
-        logging.info("[LibraryService] No default library found, attempting to create one")
-        self.ensure_default_library_exists()
-
-        # Reload default after creation
-        library = self.db.libraries.get_default_library()
-        if not library:
-            raise ValueError("Failed to create or locate default library")
-
         return library
 
     def is_library_root_configured(self) -> bool:
@@ -356,12 +140,6 @@ class LibraryService:
         All discovered files and statistics remain GLOBAL and do NOT track library_id.
         Nomarr is an autotagger, not a multi-tenant library manager.
 
-        This method:
-        1. Resolves the library to get its root_path
-        2. Validates any user-provided paths are within that root
-        3. Launches background scan via scan_library_direct_workflow
-        4. All discovered files are added to global library_files table (no library_id column)
-
         Args:
             library_id: ID of the library to scan (used only to determine scan root)
             paths: Optional list of paths within the library to scan (defaults to library root)
@@ -374,77 +152,16 @@ class LibraryService:
         Raises:
             ValueError: If library not found, paths are invalid, or scan already running
         """
-        # Check if scan already running for this library
-        library = self._get_library_or_error(library_id)
-        scan_status = library.get("scan_status")
-        if scan_status == "scanning":
-            raise ValueError(f"Library {library_id} is already being scanned")
+        from nomarr.workflows.library.start_scan_wf import start_scan_workflow
 
-        base_root = Path(library["root_path"])
-
-        # Build scan paths for scanning.
-        # Libraries control which roots to scan, but the workflow operates globally.
-        if paths is None:
-            # Scan entire library root
-            scan_paths = [str(base_root)]
-        else:
-            # Validate each user path is within library root
-            scan_paths = []
-            for user_path in paths:
-                resolved = self._resolve_path_within_library(
-                    library_root=str(base_root),
-                    user_path=user_path,
-                    must_exist=True,
-                    must_be_file=False,
-                )
-                scan_paths.append(str(resolved))
-
-        from nomarr.workflows.library.scan_library_direct_wf import scan_library_direct_workflow
-
-        logging.info(
-            f"[LibraryService] Starting direct scan for library {library_id} "
-            f"({library['name']}) with {len(scan_paths)} path(s)"
+        return start_scan_workflow(
+            db=self.db,
+            background_tasks=self.background_tasks,
+            library_id=library_id,
+            paths=paths,
+            recursive=recursive,
+            clean_missing=clean_missing,
         )
-
-        # Launch background scan task if BackgroundTaskService available
-        if self.background_tasks:
-            task_id = f"scan_library_{library_id}"
-            self.background_tasks.start_task(
-                task_id=task_id,
-                task_fn=scan_library_direct_workflow,
-                db=self.db,
-                library_id=library_id,
-                paths=scan_paths,
-                recursive=recursive,
-                clean_missing=clean_missing,
-            )
-
-            logging.info(f"[LibraryService] Scan task launched: {task_id}")
-
-            return StartScanResult(
-                files_discovered=0,  # Will be updated by workflow
-                files_queued=0,  # Legacy field (no queue anymore)
-                files_skipped=0,
-                files_removed=0,
-                job_ids=[task_id] if task_id else [],  # Task ID is str
-            )
-        else:
-            # Synchronous execution (for testing or no background service)
-            stats = scan_library_direct_workflow(
-                db=self.db,
-                library_id=library_id,
-                paths=scan_paths,
-                recursive=recursive,
-                clean_missing=clean_missing,
-            )
-
-            return StartScanResult(
-                files_discovered=stats["files_discovered"],
-                files_queued=0,  # Legacy field
-                files_skipped=stats["files_skipped"],
-                files_removed=stats["files_removed"],
-                job_ids=[],  # No background task
-            )
 
     def start_scan(
         self,
@@ -456,12 +173,11 @@ class LibraryService:
         """
         Start a library scan.
 
-        This is the main scanning entrypoint. It resolves a library (either specified
-        or default) and delegates to start_scan_for_library.
+        This is the main scanning entrypoint. It delegates to the workflow,
+        which resolves the library (specified or default) and handles orchestration.
 
         IMPORTANT: Libraries are used ONLY to pick which filesystem roots to scan.
         All discovered files and stats are GLOBAL and do NOT carry library_id.
-        The library_files and stats tables remain unaware of libraries.
 
         Args:
             library_id: ID of library to scan (defaults to default library)
@@ -475,24 +191,16 @@ class LibraryService:
         Raises:
             ValueError: If library not found or no default library exists
         """
-        # Resolve library_id
-        if library_id is not None:
-            # Use explicitly provided library
-            return self.start_scan_for_library(
-                library_id=library_id,
-                paths=paths,
-                recursive=recursive,
-                clean_missing=clean_missing,
-            )
-        else:
-            # Use default library
-            default_library = self._get_default_library_or_error()
-            return self.start_scan_for_library(
-                library_id=default_library["id"],
-                paths=paths,
-                recursive=recursive,
-                clean_missing=clean_missing,
-            )
+        from nomarr.workflows.library.start_scan_wf import start_scan_workflow
+
+        return start_scan_workflow(
+            db=self.db,
+            background_tasks=self.background_tasks,
+            library_id=library_id,
+            paths=paths,
+            recursive=recursive,
+            clean_missing=clean_missing,
+        )
 
     def cancel_scan(self, library_id: str | None = None) -> bool:
         """
@@ -540,7 +248,15 @@ class LibraryService:
         # Get library to check scan status
         if library_id is None:
             try:
-                library = self._get_default_library_or_error()
+                library = self.db.libraries.get_default_library()
+                if not library:
+                    return LibraryScanStatusResult(
+                        configured=True,
+                        library_path=self.cfg.library_root,
+                        enabled=False,
+                        pending_jobs=0,
+                        running_jobs=0,
+                    )
                 library_id = library["id"]
             except Exception:
                 return LibraryScanStatusResult(
@@ -586,20 +302,10 @@ class LibraryService:
         Returns:
             List of Job DTOs
         """
+        from nomarr.services.domain._library_mapping import map_queue_job_to_dto
+
         jobs_list, _ = list_jobs_component(self.db, queue_type="library", limit=limit)
-        return [
-            Job(
-                id=job["id"],
-                path=job["path"],
-                status=job["status"],
-                created_at=job.get("created_at", 0),
-                started_at=job["started_at"],
-                finished_at=job.get("completed_at"),  # Map completed_at → finished_at
-                error_message=job.get("error_message"),
-                force=job.get("force", False),
-            )
-            for job in jobs_list
-        ]
+        return [map_queue_job_to_dto(job) for job in jobs_list]
 
     def get_library_stats(self) -> LibraryStatsResult:
         """
@@ -707,29 +413,14 @@ class LibraryService:
             )
             print(f"Cleaned up {result['deleted_files']} invalid files")
         """
-        from nomarr.components.library import reconcile_library_paths
+        from nomarr.workflows.library.reconcile_paths_wf import reconcile_library_paths_workflow
 
-        if not self.cfg.library_root:
-            raise ValueError("Library root not configured")
-
-        # Validate policy
-        valid_policies = {"dry_run", "mark_invalid", "delete_invalid"}
-        if policy not in valid_policies:
-            raise ValueError(f"Invalid policy '{policy}'. Must be one of: {valid_policies}")
-
-        # Call component
-        result = reconcile_library_paths(
+        return reconcile_library_paths_workflow(
             db=self.db,
+            library_root=self.cfg.library_root,
             policy=policy,  # type: ignore[arg-type]
             batch_size=batch_size,
         )
-
-        logging.info(
-            f"[LibraryService] Reconciliation complete: {result['total_files']} files checked, "
-            f"{result['valid_files']} valid, {result['deleted_files']} deleted"
-        )
-
-        return result
 
     # ------------------------------------------------------------------
     # Library Management (CRUD)
@@ -836,11 +527,14 @@ class LibraryService:
         Raises:
             ValueError: If name already exists or path is invalid
         """
+        # Get base library root from config
+        base_root = get_base_library_root(self.cfg.library_root)
+
         # Validate and normalize path (must be within base library_path)
-        abs_path = self._normalize_library_root(root_path)
+        abs_path = normalize_library_root(base_root, root_path)
 
         # Ensure no overlapping library roots
-        self._ensure_no_overlapping_library_root(abs_path, ignore_id=None)
+        ensure_no_overlapping_library_root(self.db, abs_path, ignore_id=None)
 
         # Check for duplicate name
         existing = self.db.libraries.get_library_by_name(name)
@@ -887,11 +581,14 @@ class LibraryService:
         if not library:
             raise ValueError(f"Library not found: {library_id}")
 
+        # Get base library root from config
+        base_root = get_base_library_root(self.cfg.library_root)
+
         # Validate and normalize path (must be within base library_path)
-        abs_path = self._normalize_library_root(root_path)
+        abs_path = normalize_library_root(base_root, root_path)
 
         # Ensure no overlapping library roots (ignore current library being updated)
-        self._ensure_no_overlapping_library_root(abs_path, ignore_id=library_id)
+        ensure_no_overlapping_library_root(self.db, abs_path, ignore_id=library_id)
 
         # Update library
         self.db.libraries.update_library(library_id, root_path=abs_path)
@@ -1063,7 +760,7 @@ class LibraryService:
 
         # No libraries exist - create default from config
         try:
-            base = self._get_library_root()
+            base = get_base_library_root(self.cfg.library_root)
             root_path = str(base)
         except ValueError as e:
             logging.warning(f"[LibraryService] Cannot create default library: {e}")
@@ -1094,42 +791,10 @@ class LibraryService:
     ) -> SearchFilesResult:
         """Search library files with optional filters."""
         from nomarr.components.library.search_files_comp import search_library_files
+        from nomarr.services.domain._library_mapping import map_file_with_tags_to_dto
 
         files, total = search_library_files(self.db, q, artist, album, tag_key, tag_value, tagged_only, limit, offset)
-
-        # Convert dicts to DTOs
-        files_with_tags = [
-            LibraryFileWithTags(
-                id=f["id"],
-                path=f["path"],
-                library_id=f["library_id"],
-                file_size=f.get("file_size"),
-                modified_time=f.get("modified_time"),
-                duration_seconds=f.get("duration_seconds"),
-                artist=f.get("artist"),
-                album=f.get("album"),
-                title=f.get("title"),
-                calibration=f.get("calibration"),
-                scanned_at=f.get("scanned_at"),
-                last_tagged_at=f.get("last_tagged_at"),
-                tagged=f["tagged"],
-                tagged_version=f.get("tagged_version"),
-                skip_auto_tag=f.get("skip_auto_tag", 0),
-                created_at=f.get("created_at"),
-                updated_at=f.get("updated_at"),
-                tags=[
-                    FileTag(
-                        key=t["key"],
-                        value=t["value"],
-                        type=t["type"],
-                        is_nomarr=t["is_nomarr"],
-                    )
-                    for t in f["tags"]
-                ],
-            )
-            for f in files
-        ]
-
+        files_with_tags = [map_file_with_tags_to_dto(f) for f in files]
         return SearchFilesResult(files=files_with_tags, total=total, limit=limit, offset=offset)
 
     def get_unique_tag_keys(self, nomarr_only: bool = False) -> UniqueTagKeysResult:
@@ -1160,19 +825,9 @@ class LibraryService:
             ValueError: If path is outside library_root or invalid
             RuntimeError: If file cannot be read
         """
-        from nomarr.components.tagging.tagging_reader_comp import read_tags_from_file
-        from nomarr.helpers.dto.path_dto import build_library_path_from_input
+        from nomarr.workflows.library.file_tags_io_wf import read_file_tags_workflow
 
-        # Build and validate LibraryPath
-        library_path = build_library_path_from_input(raw_path=path, db=self.db)
-
-        if not library_path.is_valid():
-            raise ValueError(f"Invalid path: {library_path.reason}")
-
-        # Read tags using component
-        tags = read_tags_from_file(library_path, self.cfg.namespace)
-
-        return tags
+        return read_file_tags_workflow(db=self.db, path=path, namespace=self.cfg.namespace)
 
     def remove_file_tags(self, path: str) -> int:
         """
@@ -1188,19 +843,9 @@ class LibraryService:
             ValueError: If path is outside library_root or invalid
             RuntimeError: If file cannot be modified
         """
-        from nomarr.components.tagging.tagging_remove_comp import remove_tags_from_file
-        from nomarr.helpers.dto.path_dto import build_library_path_from_input
+        from nomarr.workflows.library.file_tags_io_wf import remove_file_tags_workflow
 
-        # Build and validate LibraryPath
-        library_path = build_library_path_from_input(raw_path=path, db=self.db)
-
-        if not library_path.is_valid():
-            raise ValueError(f"Invalid path: {library_path.reason}")
-
-        # Remove tags using component
-        count = remove_tags_from_file(library_path, self.cfg.namespace)
-
-        return count
+        return remove_file_tags_workflow(db=self.db, path=path, namespace=self.cfg.namespace)
 
     def cleanup_orphaned_tags(self, dry_run: bool = False) -> TagCleanupResult:
         """
@@ -1212,7 +857,6 @@ class LibraryService:
         Returns:
             TagCleanupResult DTO with orphaned_count and deleted_count
         """
-        from nomarr.helpers.dto.library_dto import TagCleanupResult
         from nomarr.workflows.library.cleanup_orphaned_tags_wf import cleanup_orphaned_tags_workflow
 
         result = cleanup_orphaned_tags_workflow(self.db, dry_run=dry_run)
@@ -1236,7 +880,7 @@ class LibraryService:
             ValueError: If file not found
         """
         from nomarr.components.library.file_tags_comp import get_file_tags_with_path
-        from nomarr.helpers.dto.library_dto import FileTag, FileTagsResult
+        from nomarr.helpers.dto.library_dto import FileTag
 
         # Get file and tags from component
         result = get_file_tags_with_path(self.db, file_id, nomarr_only=nomarr_only)
@@ -1259,3 +903,31 @@ class LibraryService:
             path=result["path"],
             tags=tags,
         )
+
+    def resolve_path_within_library(
+        self,
+        library_root: str,
+        user_path: str,
+        *,
+        must_exist: bool = True,
+        must_be_file: bool | None = None,
+    ) -> Path:
+        """
+        Resolve and validate a user path within library boundaries.
+
+        Args:
+            library_root: Library root path
+            user_path: User-provided path (absolute or relative)
+            must_exist: Whether path must exist on filesystem
+            must_be_file: If set, whether path must be a file (True) or directory (False)
+
+        Returns:
+            Resolved absolute path
+
+        Raises:
+            ValueError: If path is outside library_root or validation fails
+        """
+
+        from nomarr.components.library.library_root_comp import resolve_path_within_library
+
+        return resolve_path_within_library(library_root, user_path, must_exist=must_exist, must_be_file=must_be_file)

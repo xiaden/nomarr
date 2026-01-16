@@ -9,6 +9,9 @@ from typing import Any, cast
 from arango.cursor import Cursor
 from arango.database import StandardDatabase
 
+# Valid relation types for song_tag_edges (authoritative set)
+VALID_REL_TYPES = frozenset({"artist", "artists", "album", "label", "genres", "year"})
+
 
 class SongTagEdgeOperations:
     """Operations for song_tag_edges edge collection (entity→song associations)."""
@@ -23,37 +26,51 @@ class SongTagEdgeOperations:
         rel: str,
         entity_ids: list[str],
     ) -> None:
-        """Replace all edges for a song and relation type.
+        """Replace all edges for a song and relation type (ATOMIC).
 
         Deletes existing edges matching (song_id, rel), then inserts new edges.
+        Executes as a single AQL query for atomicity.
         Inserts are deterministic (sorted entity_ids).
 
         Args:
             song_id: Song document _id (e.g., "library_files/12345")
             rel: Relation type ("artist", "artists", "album", "label", "genres", "year")
             entity_ids: List of entity _ids (e.g., ["artists/v1_abc...", ...])
+
+        Raises:
+            ValueError: If rel is not a valid relation type
         """
-        # Delete existing edges for this song+rel
+        if rel not in VALID_REL_TYPES:
+            raise ValueError(f"Invalid rel type: {rel}. Must be one of {VALID_REL_TYPES}")
+
+        # Sort entity_ids deterministically before binding
+        sorted_entity_ids = sorted(entity_ids)
+
+        # Atomic delete + insert in single AQL query
         self.db.aql.execute(
             """
+            // Delete existing edges for this song+rel
             FOR edge IN song_tag_edges
                 FILTER edge._to == @song_id AND edge.rel == @rel
                 REMOVE edge IN song_tag_edges
-            """,
-            bind_vars={"song_id": song_id, "rel": rel},
-        )
 
-        # Insert new edges (deterministic order)
-        sorted_entity_ids = sorted(entity_ids)
-        for entity_id in sorted_entity_ids:
-            self.collection.insert(
+            // Insert new edges
+            FOR entity_id IN @entity_ids
+                INSERT {
+                    _from: entity_id,
+                    _to: @song_id,
+                    rel: @rel
+                } INTO song_tag_edges
+            """,
+            bind_vars=cast(
+                dict[str, Any],
                 {
-                    "_from": entity_id,
-                    "_to": song_id,
+                    "song_id": song_id,
                     "rel": rel,
+                    "entity_ids": sorted_entity_ids,
                 },
-                silent=True,  # Ignore duplicates
-            )
+            ),
+        )
 
     def list_songs_for_entity(
         self,
@@ -72,7 +89,13 @@ class SongTagEdgeOperations:
 
         Returns:
             List of song _ids
+
+        Raises:
+            ValueError: If rel is not a valid relation type
         """
+        if rel not in VALID_REL_TYPES:
+            raise ValueError(f"Invalid rel type: {rel}. Must be one of {VALID_REL_TYPES}")
+
         cursor = cast(
             Cursor,
             self.db.aql.execute(
@@ -105,18 +128,23 @@ class SongTagEdgeOperations:
 
         Returns:
             Total count
+
+        Raises:
+            ValueError: If rel is not a valid relation type
         """
+        if rel not in VALID_REL_TYPES:
+            raise ValueError(f"Invalid rel type: {rel}. Must be one of {VALID_REL_TYPES}")
+
         cursor = cast(
             Cursor,
             self.db.aql.execute(
                 """
-            RETURN LENGTH(
-                FOR edge IN song_tag_edges
-                    FILTER edge._from == @entity_id AND edge.rel == @rel
-                    RETURN 1
-            )
+            FOR edge IN song_tag_edges
+                FILTER edge._from == @entity_id AND edge.rel == @rel
+                COLLECT WITH COUNT INTO c
+                RETURN c
             """,
-                bind_vars={"entity_id": entity_id, "rel": rel},
+                bind_vars=cast(dict[str, Any], {"entity_id": entity_id, "rel": rel}),
             ),
         )
         result = next(cursor, 0)
@@ -129,13 +157,21 @@ class SongTagEdgeOperations:
     ) -> list[dict[str, Any]]:
         """List entity documents connected to a song.
 
+        Filters out orphaned entities (where DOCUMENT returns null).
+
         Args:
             song_id: Song _id (e.g., "library_files/12345")
             rel: Relation type to filter by
 
         Returns:
             List of entity dicts with '_id', '_key', 'display_name'
+
+        Raises:
+            ValueError: If rel is not a valid relation type
         """
+        if rel not in VALID_REL_TYPES:
+            raise ValueError(f"Invalid rel type: {rel}. Must be one of {VALID_REL_TYPES}")
+
         cursor = cast(
             Cursor,
             self.db.aql.execute(
@@ -143,6 +179,7 @@ class SongTagEdgeOperations:
             FOR edge IN song_tag_edges
                 FILTER edge._to == @song_id AND edge.rel == @rel
                 LET entity = DOCUMENT(edge._from)
+                FILTER entity != null
                 SORT entity.display_name
                 RETURN {
                     _id: entity._id,
@@ -150,7 +187,7 @@ class SongTagEdgeOperations:
                     display_name: entity.display_name
                 }
             """,
-                bind_vars={"song_id": song_id, "rel": rel},
+                bind_vars=cast(dict[str, Any], {"song_id": song_id, "rel": rel}),
             ),
         )
         return list(cursor)
@@ -167,7 +204,7 @@ class SongTagEdgeOperations:
                 FILTER edge._to == @song_id
                 REMOVE edge IN song_tag_edges
             """,
-            bind_vars={"song_id": song_id},
+            bind_vars=cast(dict[str, Any], {"song_id": song_id}),
         )
 
     def delete_entity_edges(self, entity_id: str) -> None:
@@ -182,5 +219,5 @@ class SongTagEdgeOperations:
                 FILTER edge._from == @entity_id
                 REMOVE edge IN song_tag_edges
             """,
-            bind_vars={"entity_id": entity_id},
+            bind_vars=cast(dict[str, Any], {"entity_id": entity_id}),
         )
