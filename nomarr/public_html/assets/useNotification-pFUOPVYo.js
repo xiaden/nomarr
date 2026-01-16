@@ -1,0 +1,1 @@
+import{St as e,a as t,xt as n}from"./index-BGuWRyLI.js";var r=e(n(),1);function i(){let e=(0,r.useContext)(t);if(!e)throw Error(`useNotification must be used within NotificationProvider`);return e}export{i as t};

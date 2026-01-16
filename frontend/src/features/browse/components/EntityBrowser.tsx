@@ -9,6 +9,8 @@ import {
     List,
     ListItemButton,
     ListItemText,
+    MenuItem,
+    Select,
     Stack,
     TextField,
     Typography,
@@ -33,6 +35,7 @@ export function EntityBrowser({ collection }: EntityBrowserProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
   const [offset, setOffset] = useState(0);
+  const [sortBy, setSortBy] = useState<"name" | "count">("name");
   const limit = 100;
 
   const loadEntities = useCallback(async () => {
@@ -46,7 +49,15 @@ export function EntityBrowser({ collection }: EntityBrowserProps) {
         search: searchQuery || undefined,
       });
 
-      setEntities(result.entities);
+      const sorted = [...result.entities].sort((a, b) => {
+        if (sortBy === "name") {
+          return a.display_name.localeCompare(b.display_name);
+        } else {
+          return (b.song_count || 0) - (a.song_count || 0);
+        }
+      });
+
+      setEntities(sorted);
       setTotal(result.total);
     } catch (err) {
       setError(
@@ -111,7 +122,7 @@ export function EntityBrowser({ collection }: EntityBrowserProps) {
       {/* Entity List (Left Panel) */}
       <Box sx={{ width: 350, display: "flex", flexDirection: "column" }}>
         <Panel sx={{ mb: 2 }}>
-          <Stack direction="row" spacing={1}>
+          <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
             <TextField
               placeholder={`Search ${collection}...`}
               value={searchQuery}
@@ -128,6 +139,15 @@ export function EntityBrowser({ collection }: EntityBrowserProps) {
               <Search />
             </Button>
           </Stack>
+          <Select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as "name" | "count")}
+            size="small"
+            fullWidth
+          >
+            <MenuItem value="name">Sort by Name</MenuItem>
+            <MenuItem value="count">Sort by Song Count</MenuItem>
+          </Select>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
             {loading ? "Loading..." : `${total.toLocaleString()} total`}
             {total > limit && ` (Page ${currentPage} of ${totalPages})`}

@@ -8,10 +8,13 @@ import {
     List,
     ListItem,
     ListItemText,
+    MenuItem,
+    Select,
     Stack,
-    Typography,
+    TextField,
+    Typography
 } from "@mui/material";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { Panel } from "@shared/components/ui";
 
@@ -24,10 +27,50 @@ interface TagExplorerProps {
 
 export function TagExplorer({ track }: TagExplorerProps) {
   const [selectedTag, setSelectedTag] = useState<FileTag | null>(null);
+  const [filterQuery, setFilterQuery] = useState("");
+  const [sortBy, setSortBy] = useState<"key" | "value">("key");
 
   const tags = track.tags || [];
   const nomarrTags = tags.filter((t) => t.is_nomarr);
   const otherTags = tags.filter((t) => !t.is_nomarr);
+
+  const filteredNomarrTags = useMemo(() => {
+    let result = nomarrTags;
+    if (filterQuery.trim()) {
+      const query = filterQuery.toLowerCase();
+      result = result.filter(
+        (tag) =>
+          tag.key.toLowerCase().includes(query) ||
+          tag.value.toLowerCase().includes(query)
+      );
+    }
+    return [...result].sort((a, b) => {
+      if (sortBy === "key") {
+        return a.key.localeCompare(b.key);
+      } else {
+        return a.value.localeCompare(b.value);
+      }
+    });
+  }, [nomarrTags, filterQuery, sortBy]);
+
+  const filteredOtherTags = useMemo(() => {
+    let result = otherTags;
+    if (filterQuery.trim()) {
+      const query = filterQuery.toLowerCase();
+      result = result.filter(
+        (tag) =>
+          tag.key.toLowerCase().includes(query) ||
+          tag.value.toLowerCase().includes(query)
+      );
+    }
+    return [...result].sort((a, b) => {
+      if (sortBy === "key") {
+        return a.key.localeCompare(b.key);
+      } else {
+        return a.value.localeCompare(b.value);
+      }
+    });
+  }, [otherTags, filterQuery, sortBy]);
 
   const handleTagClick = (tag: FileTag) => {
     setSelectedTag(selectedTag?.key === tag.key ? null : tag);
@@ -55,6 +98,46 @@ export function TagExplorer({ track }: TagExplorerProps) {
           {track.path}
         </Typography>
       </Box>
+      {tags.length > 0 && (
+        <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
+          <TextField
+            placeholder="Filter tags..."
+            value={filterQuery}
+            onChange={(e) => setFilterQuery(e.target.value)}
+            size="small"
+            fullWidth
+          />
+          <Select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as "key" | "value")}
+            size="small"
+            sx={{ minWidth: 130 }}
+          >
+            <MenuItem value="key">Sort by Key</MenuItem>
+            <MenuItem value="value">Sort by Value</MenuItem>
+          </Select>
+        </Stack>
+      )}
+      {tags.length > 0 && (
+        <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
+          <TextField
+            placeholder="Filter tags..."
+            value={filterQuery}
+            onChange={(e) => setFilterQuery(e.target.value)}
+            size="small"
+            fullWidth
+          />
+          <Select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as "key" | "value")}
+            size="small"
+            sx={{ minWidth: 130 }}
+          >
+            <MenuItem value="key">Sort by Key</MenuItem>
+            <MenuItem value="value">Sort by Value</MenuItem>
+          </Select>
+        </Stack>
+      )}
 
       {tags.length === 0 && (
         <Typography variant="body2" color="text.secondary">
@@ -62,13 +145,13 @@ export function TagExplorer({ track }: TagExplorerProps) {
         </Typography>
       )}
 
-      {nomarrTags.length > 0 && (
+      {filteredNomarrTags.length > 0 && (
         <Box sx={{ mb: 2 }}>
           <Typography variant="subtitle2" gutterBottom>
             Nomarr Tags (Click to explore similar)
           </Typography>
           <List dense>
-            {nomarrTags.map((tag) => (
+            {filteredNomarrTags.map((tag) => (
               <ListItem
                 key={tag.key}
                 onClick={() => handleTagClick(tag)}
@@ -107,13 +190,13 @@ export function TagExplorer({ track }: TagExplorerProps) {
         </Box>
       )}
 
-      {otherTags.length > 0 && (
+      {filteredOtherTags.length > 0 && (
         <Box sx={{ mb: 2 }}>
           <Typography variant="subtitle2" gutterBottom>
             Other Tags
           </Typography>
           <List dense>
-            {otherTags.map((tag) => (
+            {filteredOtherTags.map((tag) => (
               <ListItem key={tag.key} sx={{ pl: 0 }}>
                 <ListItemText
                   primary={

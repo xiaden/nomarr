@@ -2,8 +2,9 @@
  * TrackList - Display tracks for a selected entity with tag exploration
  */
 
-import { Box, Chip, Stack, Typography } from "@mui/material";
-import { useCallback, useEffect, useState } from "react";
+import { Search } from "@mui/icons-material";
+import { Box, Chip, IconButton, MenuItem, Select, Stack, TextField, Typography } from "@mui/material";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ErrorMessage, Panel } from "@shared/components/ui";
 
@@ -28,6 +29,8 @@ export function TrackList({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedTrackId, setExpandedTrackId] = useState<string | null>(null);
+  const [filterQuery, setFilterQuery] = useState("");
+  const [sortBy, setSortBy] = useState<"title" | "artist" | "album" | "duration">("title");
 
   const loadTracks = useCallback(async () => {
     try {
@@ -71,6 +74,35 @@ export function TrackList({
     loadTracks();
   }, [loadTracks]);
 
+  const filteredTracks = useMemo(() => {
+    let result = tracks;
+
+    if (filterQuery.trim()) {
+      const query = filterQuery.toLowerCase();
+      result = result.filter(
+        (track) =>
+          track.title?.toLowerCase().includes(query) ||
+          track.artist?.toLowerCase().includes(query) ||
+          track.album?.toLowerCase().includes(query)
+      );
+    }
+
+    return [...result].sort((a, b) => {
+      switch (sortBy) {
+        case "title":
+          return (a.title || "").localeCompare(b.title || "");
+        case "artist":
+          return (a.artist || "").localeCompare(b.artist || "");
+        case "album":
+          return (a.album || "").localeCompare(b.album || "");
+        case "duration":
+          return (a.duration_seconds || 0) - (b.duration_seconds || 0);
+        default:
+          return 0;
+      }
+    });
+  }, [tracks, filterQuery, sortBy]);
+
   const toggleTrackDetails = (trackId: string) => {
     setExpandedTrackId(expandedTrackId === trackId ? null : trackId);
   };
@@ -88,25 +120,56 @@ export function TrackList({
         <Typography variant="h6" gutterBottom>
           {entityName}
         </Typography>
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
           {loading
             ? "Loading tracks..."
             : `${tracks.length} track${tracks.length !== 1 ? "s" : ""}`}
+          {filterQuery && ` (${filteredTracks.length} matching)`}
         </Typography>
+        
+        <Stack direction="row" spacing={1}>
+          <TextField
+            placeholder="Filter tracks by title, artist, or album..."
+            value={filterQuery}
+            onChange={(e) => setFilterQuery(e.target.value)}
+            size="small"
+            fullWidth
+            InputProps={{
+              endAdornment: (
+                <IconButton size="small" edge="end">
+                  <Search fontSize="small" />
+                </IconButton>
+              ),
+            }}
+          />
+          <Select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as "title" | "artist" | "album" | "duration")}
+            size="small"
+            sx={{ minWidth: 150 }}
+          >
+            <MenuItem value="title">Sort by Title</MenuItem>
+            <MenuItem value="artist">Sort by Artist</MenuItem>
+            <MenuItem value="album">Sort by Album</MenuItem>
+            <MenuItem value="duration">Sort by Duration</MenuItem>
+          </Select>
+        </Stack>
       </Panel>
 
       {error && <ErrorMessage>{error}</ErrorMessage>}
 
-      {!loading && tracks.length === 0 && (
+      {!loading && filteredTracks.length === 0 && (
         <Panel>
           <Typography color="text.secondary" textAlign="center">
-            No tracks found for this {collection.slice(0, -1)}.
+            {filterQuery
+              ? `No tracks matching "${filterQuery}".`
+              : `No tracks found for this ${collection.slice(0, -1)}.`}
           </Typography>
         </Panel>
       )}
 
       <Stack spacing={1}>
-        {tracks.map((track, index) => (
+        {filteredTracks.map((track, index) => (
           <Box
             key={track.id}
             sx={{

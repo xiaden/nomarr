@@ -4,8 +4,9 @@
  * - Numbers: closest 25 by value
  */
 
-import { Box, Chip, Stack, Typography } from "@mui/material";
-import { useCallback, useEffect, useState } from "react";
+import { Search } from "@mui/icons-material";
+import { Box, Chip, IconButton, MenuItem, Select, Stack, TextField, Typography } from "@mui/material";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ErrorMessage } from "@shared/components/ui";
 
@@ -26,6 +27,8 @@ export function SimilarTracks({
   const [tracks, setTracks] = useState<LibraryFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [filterQuery, setFilterQuery] = useState("");
+  const [sortBy, setSortBy] = useState<"title" | "artist" | "album">("title");
 
   const loadSimilarTracks = useCallback(async () => {
     try {
@@ -95,12 +98,79 @@ export function SimilarTracks({
     return trackTag?.value || null;
   };
 
+  const filteredTracks = useMemo(() => {
+    let result = tracks;
+    
+    if (filterQuery.trim()) {
+      const query = filterQuery.toLowerCase();
+      result = result.filter(
+        (track) =>
+          track.title?.toLowerCase().includes(query) ||
+          track.artist?.toLowerCase().includes(query) ||
+          track.album?.toLowerCase().includes(query)
+      );
+    }
+
+    if (!isNumeric) {
+      return [...result].sort((a, b) => {
+        switch (sortBy) {
+          case "title":
+            return (a.title || "").localeCompare(b.title || "");
+          case "artist":
+            return (a.artist || "").localeCompare(b.artist || "");
+          case "album":
+            return (a.album || "").localeCompare(b.album || "");
+          default:
+            return 0;
+        }
+      });
+    }
+
+    return result;
+  }, [tracks, filterQuery, isNumeric, sortBy]);
+
   return (
     <Box>
       <Typography variant="subtitle2" gutterBottom>
         Similar tracks with {tag.key}
         {isNumeric ? ` (closest 25 to ${tag.value})` : ` = "${tag.value}"`}
       </Typography>
+
+      {tracks.length > 0 && (
+        <Box sx={{ mb: 2 }}>
+          <Stack direction="row" spacing={1}>
+            <TextField
+              placeholder="Filter similar tracks..."
+              value={filterQuery}
+              onChange={(e) => setFilterQuery(e.target.value)}
+              size="small"
+              fullWidth
+              InputProps={{
+                endAdornment: (
+                  <IconButton size="small" edge="end">
+                    <Search fontSize="small" />
+                  </IconButton>
+                ),
+              }}
+            />
+            {!isNumeric && (
+              <Select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as "title" | "artist" | "album")}
+                size="small"
+                sx={{ minWidth: 130 }}
+              >
+                <MenuItem value="title">Sort by Title</MenuItem>
+                <MenuItem value="artist">Sort by Artist</MenuItem>
+                <MenuItem value="album">Sort by Album</MenuItem>
+              </Select>
+            )}
+          </Stack>
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: "block" }}>
+            {filteredTracks.length} of {tracks.length} shown
+          </Typography>
+        </Box>
+      )}
 
       {loading && (
         <Typography variant="body2" color="text.secondary">
@@ -116,9 +186,15 @@ export function SimilarTracks({
         </Typography>
       )}
 
-      {!loading && tracks.length > 0 && (
+      {!loading && tracks.length > 0 && filteredTracks.length === 0 && (
+        <Typography variant="body2" color="text.secondary">
+          No tracks matching "{filterQuery}".
+        </Typography>
+      )}
+
+      {!loading && tracks.length > 0 && filteredTracks.length > 0 && (
         <Stack spacing={1} sx={{ mt: 2 }}>
-          {tracks.map((track) => {
+          {filteredTracks.map((track) => {
             const tagValue = getTagValue(track);
             return (
               <Box
