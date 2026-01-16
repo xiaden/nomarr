@@ -60,8 +60,8 @@ def seed_song_entities_from_tags(db: StandardDatabase, song_id: str, tags: dict[
 
     if primary_artist:
         artist_key = generate_artist_key(primary_artist)
-        artist_id = entities.upsert_entity("artists", artist_key, primary_artist)
-        edges.replace_song_relations(song_id, "artist", [artist_id])
+        artist_entity = entities.upsert_entity("artists", artist_key, primary_artist)
+        edges.replace_song_relations(song_id, "artist", [artist_entity["_id"]])
     else:
         edges.replace_song_relations(song_id, "artist", [])
 
@@ -79,8 +79,8 @@ def seed_song_entities_from_tags(db: StandardDatabase, song_id: str, tags: dict[
     artist_ids = []
     for artist_name in all_artists:
         artist_key = generate_artist_key(artist_name)
-        artist_id = entities.upsert_entity("artists", artist_key, artist_name)
-        artist_ids.append(artist_id)
+        artist_entity = entities.upsert_entity("artists", artist_key, artist_name)
+        artist_ids.append(artist_entity["_id"])
 
     edges.replace_song_relations(song_id, "artists", artist_ids)
 
@@ -89,8 +89,8 @@ def seed_song_entities_from_tags(db: StandardDatabase, song_id: str, tags: dict[
     if album_raw and primary_artist:
         album_str = album_raw[0] if isinstance(album_raw, list) else album_raw
         album_key = generate_album_key(primary_artist, album_str)
-        album_id = entities.upsert_entity("albums", album_key, album_str)
-        edges.replace_song_relations(song_id, "album", [album_id])
+        album_entity = entities.upsert_entity("albums", album_key, album_str)
+        edges.replace_song_relations(song_id, "album", [album_entity["_id"]])
     else:
         edges.replace_song_relations(song_id, "album", [])
 
@@ -106,8 +106,8 @@ def seed_song_entities_from_tags(db: StandardDatabase, song_id: str, tags: dict[
     label_ids = []
     for label_name in labels:
         label_key = generate_label_key(label_name)
-        label_id = entities.upsert_entity("labels", label_key, label_name)
-        label_ids.append(label_id)
+        label_entity = entities.upsert_entity("labels", label_key, label_name)
+        label_ids.append(label_entity["_id"])
 
     edges.replace_song_relations(song_id, "label", label_ids)
 
@@ -123,8 +123,8 @@ def seed_song_entities_from_tags(db: StandardDatabase, song_id: str, tags: dict[
     genre_ids = []
     for genre_name in genres:
         genre_key = generate_genre_key(genre_name)
-        genre_id = entities.upsert_entity("genres", genre_key, genre_name)
-        genre_ids.append(genre_id)
+        genre_entity = entities.upsert_entity("genres", genre_key, genre_name)
+        genre_ids.append(genre_entity["_id"])
 
     edges.replace_song_relations(song_id, "genres", genre_ids)
 
@@ -134,7 +134,7 @@ def seed_song_entities_from_tags(db: StandardDatabase, song_id: str, tags: dict[
         year_int = year_raw if isinstance(year_raw, int) else int(year_raw)
         year_key = generate_year_key(year_int)
         # Store display_name as string for consistency
-        year_id = entities.upsert_entity("years", year_key, str(year_int))
-        edges.replace_song_relations(song_id, "year", [year_id])
+        year_entity = entities.upsert_entity("years", year_key, str(year_int))
+        edges.replace_song_relations(song_id, "year", [year_entity["_id"]])
     else:
         edges.replace_song_relations(song_id, "year", [])

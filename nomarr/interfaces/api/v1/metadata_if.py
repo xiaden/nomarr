@@ -66,8 +66,9 @@ async def get_entity(
 
     Note: entity_id should be URL-encoded if it contains special characters.
     Example: /metadata/artists/artists%2Fv1_abc123...
+    Collection parameter is informational only (entity_id already contains collection).
     """
-    entity = metadata_service.get_entity(collection, entity_id)
+    entity = metadata_service.get_entity(entity_id)
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found")
     return EntityResponse.from_dto(entity)

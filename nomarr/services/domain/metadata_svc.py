@@ -74,17 +74,16 @@ class MetadataService:
             offset=offset,
         )
 
-    def get_entity(self, collection: EntityCollection, entity_id: str) -> EntityDict | None:
+    def get_entity(self, entity_id: str) -> EntityDict | None:
         """Get entity details by _id.
 
         Args:
-            collection: Entity collection name (for validation)
             entity_id: Entity _id
 
         Returns:
             EntityDict or None if not found
         """
-        entity = self.db.entities.get_entity(collection, entity_id)
+        entity = self.db.entities.get_entity(entity_id)
         if not entity:
             return None
 
