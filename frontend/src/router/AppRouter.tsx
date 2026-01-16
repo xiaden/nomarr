@@ -9,7 +9,7 @@ const LoginPage = lazy(() => import("../features/auth/LoginPage").then((m) => ({
 const DashboardPage = lazy(() => import("../features/dashboard/DashboardPage").then((m) => ({ default: m.DashboardPage })));
 const TaggerStatusPage = lazy(() => import("../features/tagger-status/TaggerStatusPage").then((m) => ({ default: m.TaggerStatusPage })));
 const LibraryPage = lazy(() => import("../features/library/LibraryPage").then((m) => ({ default: m.LibraryPage })));
-const BrowseFilesPage = lazy(() => import("../features/browse/BrowseFilesPage").then((m) => ({ default: m.BrowseFilesPage })));
+const BrowsePage = lazy(() => import("../features/browse/BrowsePage").then((m) => ({ default: m.BrowsePage })));
 const AnalyticsPage = lazy(() => import("../features/analytics/AnalyticsPage").then((m) => ({ default: m.AnalyticsPage })));
 const CalibrationPage = lazy(() => import("../features/calibration/CalibrationPage").then((m) => ({ default: m.CalibrationPage })));
 const InspectTagsPage = lazy(() => import("../features/inspect/InspectTagsPage").then((m) => ({ default: m.InspectTagsPage })));
@@ -66,7 +66,7 @@ export function AppRouter() {
                     <Route path="/" element={<DashboardPage />} />
                     <Route path="/tagger-status" element={<TaggerStatusPage />} />
                     <Route path="/library" element={<LibraryPage />} />
-                    <Route path="/browse" element={<BrowseFilesPage />} />
+                    <Route path="/browse" element={<BrowsePage />} />
                     <Route path="/analytics" element={<AnalyticsPage />} />
                     <Route path="/calibration" element={<CalibrationPage />} />
                     <Route path="/inspect" element={<InspectTagsPage />} />

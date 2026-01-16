@@ -171,4 +171,39 @@ export interface FsListResponse {
   entries: FsEntry[];
 }
 
+// ──────────────────────────────────────────────────────────────────────
+// Metadata Entity Types
+// ──────────────────────────────────────────────────────────────────────
+
+export interface Entity {
+  id: string; // Entity _id (e.g., 'artists/v1_abc123...')
+  key: string; // Entity _key
+  display_name: string; // Display string
+  song_count?: number; // Optional song count
+}
+
+export interface EntityListResult {
+  entities: Entity[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface SongListResult {
+  song_ids: string[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface EntityCounts {
+  artists: number;
+  albums: number;
+  labels: number;
+  genres: number;
+  years: number;
+}
+
+export type EntityCollection = "artists" | "albums" | "labels" | "genres" | "years";
+
 // Add more types as needed

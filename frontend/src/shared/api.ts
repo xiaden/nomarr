@@ -1087,6 +1087,69 @@ export const fs = {
 };
 
 // ──────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────
+// Metadata Entity API
+// ──────────────────────────────────────────────────────────────────────
+
+export const metadata = {
+  /**
+   * Get counts for all entity collections.
+   */
+  getCounts: async (): Promise<import("./types").EntityCounts> => {
+    return request("/api/v1/metadata/counts");
+  },
+
+  /**
+   * List entities from a collection (artists, albums, labels, genres, years).
+   */
+  listEntities: async (
+    collection: import("./types").EntityCollection,
+    options?: {
+      limit?: number;
+      offset?: number;
+      search?: string;
+    }
+  ): Promise<import("./types").EntityListResult> => {
+    const params = new URLSearchParams();
+    if (options?.limit) params.append("limit", options.limit.toString());
+    if (options?.offset) params.append("offset", options.offset.toString());
+    if (options?.search) params.append("search", options.search);
+    
+    const query = params.toString();
+    return request(`/api/v1/metadata/${collection}${query ? `?${query}` : ""}`);
+  },
+
+  /**
+   * Get entity details by ID.
+   */
+  getEntity: async (
+    collection: import("./types").EntityCollection,
+    entityId: string
+  ): Promise<import("./types").Entity> => {
+    return request(`/api/v1/metadata/${collection}/${encodeURIComponent(entityId)}`);
+  },
+
+  /**
+   * List songs for an entity.
+   */
+  listSongsForEntity: async (
+    collection: import("./types").EntityCollection,
+    entityId: string,
+    rel: string,
+    options?: {
+      limit?: number;
+      offset?: number;
+    }
+  ): Promise<import("./types").SongListResult> => {
+    const params = new URLSearchParams();
+    params.append("rel", rel);
+    if (options?.limit) params.append("limit", options.limit.toString());
+    if (options?.offset) params.append("offset", options.offset.toString());
+    
+    return request(`/api/v1/metadata/${collection}/${encodeURIComponent(entityId)}/songs?${params.toString()}`);
+  },
+};
+
 // Export Combined API
 // ──────────────────────────────────────────────────────────────────────
 
@@ -1101,4 +1164,5 @@ export const api = {
   tags,
   files,
   fs,
+  metadata,
 };
