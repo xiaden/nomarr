@@ -127,12 +127,6 @@ The project migrated from **SQLite to ArangoDB** but many documentation files st
 - ✅ Updated config.yaml example (removed db path, added note about auto-generated password)
 - ✅ Updated database connectivity check to use Python instead of file check
 - ✅ Fixed port references (8356 internal, 8888 external)
-| 141 | Port 8888 | Verify correct port |
-| 164 | Port mapping `8888:8888` | Verify correct port |
-| 294 | `path: "./data/nomarr.db"` | **CRITICAL**: SQLite path - should be ArangoDB config |
-| 555 | `docker exec -it nomarr ls -l /data/nomarr.db` | **CRITICAL**: SQLite file check - should be ArangoDB health check |
-
-**Recommended Action:** Replace all SQLite database configuration with ArangoDB connection settings (ARANGO_HOST, arango_password in config, etc.).
 
 ---
 
@@ -188,8 +182,8 @@ The project migrated from **SQLite to ArangoDB** but many documentation files st
 **Fixed:**
 - ✅ Updated DI example to show `Database()` without path parameter (ArangoDB reads from config)
 - ✅ Removed `db_path: str` parameter from wrong example
-
-**Notes:** `sqlite3.Row` reference at line 938 may still exist - review if needed.
+- ✅ Updated "Don't Return Raw Database Rows" section to use ArangoDB document terminology
+- ✅ Updated Service Lifecycle startup example to show ArangoDB connection pattern
 
 ---
 

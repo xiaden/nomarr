@@ -932,26 +932,26 @@ def process_file(self, path: str):
     )
 ```
 
-### ❌ Don't: Return Raw Database Rows
+### ❌ Don't: Return Raw Database Documents
 
 ```python
-# Wrong - returns sqlite3.Row
-def get_library(self, library_id: int) -> sqlite3.Row:
+# Wrong - returns raw dict from database
+def get_library(self, library_id: str) -> dict | None:
     return self.db.libraries.get(library_id)
 ```
 
 **Instead:**
 ```python
 # Correct - returns DTO
-def get_library(self, library_id: int) -> LibraryDict | None:
-    row = self.db.libraries.get(library_id)
-    if not row:
+def get_library(self, library_id: str) -> LibraryDict | None:
+    doc = self.db.libraries.get(library_id)
+    if not doc:
         return None
     return LibraryDict(
-        id=row['id'],
-        name=row['name'],
-        path=row['path'],
-        created_at=row['created_at']
+        id=doc['_key'],
+        name=doc['name'],
+        path=doc['path'],
+        created_at=doc['created_at']
     )
 ```
 
@@ -965,9 +965,8 @@ def get_library(self, library_id: int) -> LibraryDict | None:
 # 1. Load configuration
 config_service = ConfigService("/config/config.yaml")
 
-# 2. Create database connection
-db_config = config_service.get_database_config()
-db = Database(db_config)
+# 2. Create database connection (reads password from config file)
+db = Database()  # Connects to ArangoDB using ARANGO_HOST env and arango_password from config
 
 # 3. Initialize services with dependencies
 queue_service = QueueService(db)
