@@ -16,10 +16,11 @@ services:
     #   - "8529:8529"  # ArangoDB Web UI (DEVELOPMENT ONLY)
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8529/_api/version"]
+      test: ["CMD-SHELL", "arangosh --server.endpoint tcp://127.0.0.1:8529 --server.username root --server.password \"$$ARANGO_ROOT_PASSWORD\" --javascript.execute-string 'db._version()' >/dev/null 2>&1"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 30s
 
   nomarr:
     # Use pre-built image from GitHub Container Registry
