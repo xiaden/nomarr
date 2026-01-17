@@ -228,33 +228,39 @@ class LibraryFilesOperations:
         """
         # Build filter conditions
         filters = []
-        bind_vars: dict[str, Any] = {"limit": limit, "offset": offset}
 
         if library_id is not None:
             filters.append("file.library_id == @library_id")
-            bind_vars["library_id"] = library_id
 
         if artist:
             filters.append("file.artist == @artist")
-            bind_vars["artist"] = artist
 
         if album:
             filters.append("file.album == @album")
-            bind_vars["album"] = album
 
         filter_clause = f"FILTER {' AND '.join(filters)}" if filters else ""
 
-        # Get total count
+        # Build bind_vars for filter conditions (used by count query)
+        filter_bind_vars: dict[str, Any] = {}
+        if library_id is not None:
+            filter_bind_vars["library_id"] = library_id
+        if artist:
+            filter_bind_vars["artist"] = artist
+        if album:
+            filter_bind_vars["album"] = album
+
+        # Get total count (only needs filter bind vars)
         count_query = f"""
             FOR file IN library_files
                 {filter_clause}
                 COLLECT WITH COUNT INTO total
                 RETURN total
         """
-        count_cursor = cast(Cursor, self.db.aql.execute(count_query, bind_vars=bind_vars))
+        count_cursor = cast(Cursor, self.db.aql.execute(count_query, bind_vars=filter_bind_vars))
         total = next(count_cursor, 0)
 
-        # Get paginated results
+        # Get paginated results (needs filter + pagination bind vars)
+        paginated_bind_vars = {**filter_bind_vars, "limit": limit, "offset": offset}
         query = f"""
             FOR file IN library_files
                 {filter_clause}
@@ -262,7 +268,7 @@ class LibraryFilesOperations:
                 LIMIT @offset, @limit
                 RETURN file
         """
-        cursor = cast(Cursor, self.db.aql.execute(query, bind_vars=bind_vars))
+        cursor = cast(Cursor, self.db.aql.execute(query, bind_vars=paginated_bind_vars))
         files = list(cursor)
 
         return files, total
@@ -830,22 +836,20 @@ class LibraryFilesOperations:
 
         filter_clause = f"FILTER {' AND '.join(filters)}" if filters else ""
 
-        bind_vars: dict[str, Any] = {
-            "limit": limit,
-            "offset": offset,
-        }
+        # Build filter-only bind vars (for count query)
+        filter_bind_vars: dict[str, Any] = {}
         if tag_key:
-            bind_vars["tag_key"] = tag_key
+            filter_bind_vars["tag_key"] = tag_key
         if tag_value:
-            bind_vars["tag_value"] = tag_value
+            filter_bind_vars["tag_value"] = tag_value
         if q:
-            bind_vars["q_pattern"] = f"%{q}%"
+            filter_bind_vars["q_pattern"] = f"%{q}%"
         if artist:
-            bind_vars["artist"] = artist
+            filter_bind_vars["artist"] = artist
         if album:
-            bind_vars["album"] = album
+            filter_bind_vars["album"] = album
 
-        # Get total count
+        # Get total count (without limit/offset)
         count_cursor = cast(
             Cursor,
             self.db.aql.execute(
@@ -855,10 +859,13 @@ class LibraryFilesOperations:
                 COLLECT WITH COUNT INTO total
                 RETURN total
             """,
-                bind_vars=cast(dict[str, Any], bind_vars),
+                bind_vars=cast(dict[str, Any], filter_bind_vars),
             ),
         )
         total = next(count_cursor, 0)
+
+        # Build full bind vars (with pagination) for data query
+        bind_vars = {**filter_bind_vars, "limit": limit, "offset": offset}
 
         # Get files with tags
         cursor = cast(
