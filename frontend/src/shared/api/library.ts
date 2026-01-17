@@ -166,7 +166,6 @@ export async function preview(
 export interface ScanOptions {
   paths?: string[];
   recursive?: boolean;
-  force?: boolean;
   cleanMissing?: boolean;
 }
 
@@ -176,7 +175,6 @@ export interface ScanOptions {
 export async function scan(id: string, options?: ScanOptions): Promise<ScanResult> {
   const body: Record<string, unknown> = {
     recursive: options?.recursive ?? true,
-    force: options?.force ?? false,
     clean_missing: options?.cleanMissing ?? true,
   };
   if (options?.paths) {

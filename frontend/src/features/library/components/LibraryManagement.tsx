@@ -240,7 +240,6 @@ export function LibraryManagement() {
 
       const result = await scanLibrary(id, {
         recursive: true,
-        force: false,
         cleanMissing: true,
       });
       showSuccess(
