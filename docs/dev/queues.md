@@ -2,51 +2,56 @@
 
 **Queue Normalization, DTOs, and Processing Flow**
 
+> **Note:** Nomarr uses ArangoDB. SQL examples in this document are conceptual
+> illustrations of the logic. Actual implementation uses AQL queries in
+> `nomarr/persistence/database/*_aql.py` files.
+
 ---
 
 ## Overview
 
-Nomarr uses a **single normalized queue table** for all job types (processing, calibration). This design provides:
+Nomarr uses a **single normalized queue collection** for all job types (processing, calibration). This design provides:
 
 - Unified job management (single API for all job types)
-- Type safety via `queue_type` enum
+- Type safety via `queue_type` field
 - Efficient querying with composite indexes
 - Atomic status transitions
 
-**Key principle:** One table, multiple queue types, strict status transitions.
+**Key principle:** One collection, multiple queue types, strict status transitions.
 
 ---
 
-## Queue Table Schema
+## Queue Collection Schema
 
-**Table:** `queue`
+**Collection:** `queue`
 
-**Location:** `nomarr/persistence/database/schema.sql`
+**Location:** `nomarr/persistence/database/tag_queue_aql.py`
 
-```sql
-CREATE TABLE IF NOT EXISTS queue (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    library_id INTEGER NOT NULL,
-    path TEXT NOT NULL,
-    queue_type TEXT NOT NULL DEFAULT 'processing',
-    status TEXT NOT NULL DEFAULT 'pending',
-    priority INTEGER NOT NULL DEFAULT 0,
-    error TEXT,
-    results_json TEXT,
-    enqueued_at INTEGER NOT NULL,
-    started_at INTEGER,
-    completed_at INTEGER,
-    FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE
-);
-
-CREATE INDEX IF NOT EXISTS idx_queue_status ON queue(queue_type, status, priority DESC, enqueued_at ASC);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_queue_path_type ON queue(path, queue_type, status) WHERE status IN ('pending', 'running');
+```json
+{
+    "_key": "auto-generated",
+    "_id": "queue/auto-generated",
+    "library_id": "libraries/123",
+    "path": "/media/music/track.flac",
+    "queue_type": "processing",
+    "status": "pending",
+    "priority": 0,
+    "error": null,
+    "results_json": null,
+    "enqueued_at": 1733407200000,
+    "started_at": null,
+    "completed_at": null
+}
 ```
 
-### Column Descriptions
+**Indexes:**
+- `idx_queue_status`: On `(queue_type, status, priority, enqueued_at)` for efficient dequeue
+- `idx_queue_path_type`: Unique on `(path, queue_type)` when status is pending/running
 
-**`id` (INTEGER, PRIMARY KEY):**
-- Auto-incrementing job ID
+### Field Descriptions
+
+**`_key` (STRING, PRIMARY KEY):**
+- Auto-generated document key
 - Unique across all queue types
 - Used for job tracking and references
 
@@ -548,16 +553,20 @@ success = db.queue.requeue_job(job_id=123)
 
 **Scenario:** 2 workers call `dequeue()` simultaneously.
 
-**Safety:** SQLite atomic UPDATE ensures each worker gets different job.
+**Safety:** ArangoDB transactions ensure each worker gets different job.
 
 **Mechanism:**
-```sql
--- Worker 1 and Worker 2 both execute:
-UPDATE queue SET status = 'running' WHERE id = (SELECT id ... LIMIT 1) RETURNING *;
+```aql
+// Worker 1 and Worker 2 both execute:
+FOR doc IN queue
+    FILTER doc.status == 'pending'
+    LIMIT 1
+    UPDATE doc WITH { status: 'running' } IN queue
+    RETURN NEW
 
--- SQLite serializes updates:
--- Worker 1 gets job ID 100
--- Worker 2 gets job ID 101 (next pending job)
+// ArangoDB serializes updates:
+// Worker 1 gets job ID 100
+// Worker 2 gets job ID 101 (next pending job)
 ```
 
 **No duplicates:** Impossible for two workers to get same job.
@@ -588,15 +597,15 @@ WHERE status = 'running'
   AND started_at < (strftime('%s', 'now') - ?)
 ```
 
-### Database Locks
+### Database Concurrency
 
-**Read operations:** Non-blocking (SQLite WAL mode).
+**Read operations:** Non-blocking (ArangoDB handles concurrent reads).
 
-**Write operations:** Brief exclusive lock (~1ms).
+**Write operations:** Document-level locking (no global locks).
 
-**Contention:** Low (workers write different rows).
+**Contention:** Low (workers write different documents).
 
-**Optimization:** WAL mode enables concurrent reads during writes.
+**Optimization:** ArangoDB's MVCC enables concurrent reads during writes.
 
 ---
 
@@ -752,19 +761,16 @@ WHERE status = 'completed'
   AND completed_at < (strftime('%s', 'now') - 2592000);
 ```
 
-**Schedule:** Weekly or monthly.
-
-**Consideration:** Keep some history for analytics.
-
-### Vacuum Database
+### Compact Collections
 
 **After large deletes:**
 
 ```bash
-sqlite3 /data/nomarr.db "VACUUM;"
+docker compose exec nomarr-arangodb arangosh --server.database nomarr \
+  --javascript.execute-string 'db.queue.compact()'
 ```
 
-**Reclaims:** Disk space from deleted rows.
+**Reclaims:** Disk space from deleted documents.
 
 **Frequency:** Monthly or after clearing 10,000+ jobs.
 
@@ -775,47 +781,53 @@ sqlite3 /data/nomarr.db "VACUUM;"
 ### View Queue State
 
 ```bash
-# SQLite CLI
-sqlite3 /data/nomarr.db "
-SELECT queue_type, status, COUNT(*) 
-FROM queue 
-GROUP BY queue_type, status;
-"
+# Via arangosh
+docker compose exec nomarr-arangodb arangosh --server.database nomarr \
+  --javascript.execute-string '
+    db._query(`
+      FOR doc IN queue
+      COLLECT queueType = doc.queue_type, status = doc.status WITH COUNT INTO count
+      RETURN { queueType, status, count }
+    `).toArray()
+  '
 ```
 
 ### Find Stuck Jobs
 
 ```bash
 # Jobs running for > 10 minutes
-sqlite3 /data/nomarr.db "
-SELECT id, path, started_at, (strftime('%s', 'now') - started_at) as runtime_s
-FROM queue
-WHERE status = 'running'
-  AND started_at < (strftime('%s', 'now') - 600)
-ORDER BY runtime_s DESC;
-"
+docker compose exec nomarr-arangodb arangosh --server.database nomarr \
+  --javascript.execute-string '
+    const tenMinsAgo = Date.now() - 600000;
+    db._query(`
+      FOR doc IN queue
+      FILTER doc.status == "running" AND doc.started_at < @cutoff
+      RETURN { id: doc._key, path: doc.path, started_at: doc.started_at }
+    `, { cutoff: tenMinsAgo }).toArray()
+  '
 ```
 
 ### Inspect Failed Job
 
 ```bash
-# Get error message
-sqlite3 /data/nomarr.db "
-SELECT id, path, error
-FROM queue
-WHERE id = 123;
-"
+# Get error message for job by key
+docker compose exec nomarr-arangodb arangosh --server.database nomarr \
+  --javascript.execute-string 'db.queue.document("123")'
 ```
 
 ### Manually Fix Job
 
 ```bash
 # Retry specific job
-sqlite3 /data/nomarr.db "
-UPDATE queue
-SET status = 'pending', error = NULL, started_at = NULL, completed_at = NULL
-WHERE id = 123;
-"
+docker compose exec nomarr-arangodb arangosh --server.database nomarr \
+  --javascript.execute-string '
+    db.queue.update("123", { 
+      status: "pending", 
+      error: null, 
+      started_at: null, 
+      completed_at: null 
+    })
+  '
 ```
 
 ---
@@ -837,7 +849,7 @@ CREATE INDEX idx_queue_library ON queue(library_id, status);
 ```
 
 **Changing constraints:**
-- Requires recreate table (SQLite limitation)
+- ArangoDB schema-less, but indexes may need updating
 - Stop workers, migrate, restart
 
 **Pre-alpha:** No backward compatibility needed. Can drop and recreate.

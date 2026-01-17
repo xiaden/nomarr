@@ -576,7 +576,6 @@ Get current configuration (user-editable subset).
 ```json
 {
   "models_dir": "/app/models",
-  "db_path": "/app/config/db/nomarr.sqlite",
   "library_auto_tag": true,
   "file_write_mode": "native",
   "namespace": "nom"

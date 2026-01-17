@@ -669,11 +669,16 @@ crontab -e
 
 ### Hot Backup (No Downtime)
 
-Use SQLite's backup API:
+Use ArangoDB's built-in backup (arangodump):
 
 ```bash
-docker exec nomarr sqlite3 /data/nomarr.db ".backup /data/backup_$(date +%Y%m%d).db"
-docker cp nomarr:/data/backup_$(date +%Y%m%d).db /opt/nomarr/backups/
+# Backup via arangodump
+docker compose exec nomarr-arangodb arangodump \
+  --server.database nomarr \
+  --output-directory /var/lib/arangodb3/backup_$(date +%Y%m%d)
+
+# Copy backup out of container
+docker cp nomarr-arangodb:/var/lib/arangodb3/backup_$(date +%Y%m%d) /opt/nomarr/backups/
 ```
 
 ### Configuration Backup
@@ -692,24 +697,18 @@ tar -czf /opt/nomarr/backups/config_$(date +%Y%m%d).tar.gz \
 
 ### Database Optimization
 
-**Enable WAL mode** (in config.yaml):
-```yaml
-database:
-  wal_mode: true
-  cache_size: 10000  # 10 MB cache
+ArangoDB handles optimization automatically. For large deployments:
+
+**Check collection statistics:**
+```bash
+docker compose exec nomarr-arangodb arangosh --server.database nomarr \
+  --javascript.execute-string 'db._collections().forEach(c => print(c.name(), c.count()))'
 ```
 
-**Manual optimization:**
+**Compact collections (rarely needed):**
 ```bash
-# Vacuum and analyze database
-docker exec nomarr sqlite3 /data/nomarr.db "VACUUM; ANALYZE;"
-```
-
-**Schedule monthly optimization:**
-```bash
-crontab -e
-# Add line (first day of month, 4 AM):
-0 4 1 * * docker exec nomarr sqlite3 /data/nomarr.db "VACUUM; ANALYZE;" >> /var/log/nomarr-optimize.log 2>&1
+docker compose exec nomarr-arangodb arangosh --server.database nomarr \
+  --javascript.execute-string 'db.queue.compact()'
 ```
 
 ### Disk I/O Optimization

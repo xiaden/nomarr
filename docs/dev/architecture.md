@@ -234,24 +234,25 @@ def compute_embeddings_for_backbone(
 
 **Example:**
 ```python
-# persistence/database/tag_queue_operations.py
-class TagQueueOperations:
-    def __init__(self, conn: sqlite3.Connection):
-        self.conn = conn
+# persistence/database/tag_queue_aql.py
+class QueueOperations:
+    def __init__(self, db: StandardDatabase):
+        self.db = db
     
-    def enqueue(self, path: str, force: bool = False) -> int:
-        cursor = self.conn.execute(
-            "INSERT INTO tag_queue (path, status, force) VALUES (?, ?, ?)",
-            (path, "pending", force)
+    def enqueue(self, path: str, force: bool = False) -> str:
+        result = self.db.aql.execute(
+            "INSERT { path: @path, status: 'pending', force: @force } INTO queue RETURN NEW",
+            bind_vars={"path": path, "force": force}
         )
-        return cursor.lastrowid
+        return next(result)["_id"]
     
     def get_pending_jobs(self, limit: int = 10) -> list[Job]:
-        cursor = self.conn.execute(
-            "SELECT * FROM tag_queue WHERE status = 'pending' LIMIT ?",
-            (limit,)
+        cursor = self.db.aql.execute(
+            "FOR doc IN queue FILTER doc.status == 'pending' LIMIT @limit RETURN doc",
+            bind_vars={"limit": limit}
         )
-        return [Job.from_row(row) for row in cursor.fetchall()]
+        return [Job.from_doc(doc) for doc in cursor]
+```
 ```
 
 **Access Pattern:**
@@ -485,8 +486,8 @@ Main Process (API Server)
 
 **Key Points:**
 - Separate Python processes (`multiprocessing.Process`)
-- Each worker has **own database connection** (required for SQLite safety)
-- Workers communicate via **database tables** (health, queue)
+- Each worker has **own database connection** (for process isolation)
+- Workers communicate via **database collections** (health, queue)
 - StateBroker polls database and broadcasts to SSE clients
 
 See [Workers & Lifecycle](workers.md) for details.
@@ -623,8 +624,8 @@ async def process_file(request: ProcessRequest, ...):
 ### Database Connections
 
 - **One connection per worker process**
-- SQLite WAL mode for concurrent reads
-- Connection pooling not needed (WAL handles it)
+- ArangoDB handles concurrent access natively
+- Connection pooling managed by python-arango client
 
 ### ML Model Caching
 

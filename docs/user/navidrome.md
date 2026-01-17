@@ -25,7 +25,7 @@ Audio Analysis (ML models)
     ↓
 Tag Extraction (mood, genre, energy, etc.)
     ↓
-Tag Storage (SQLite database)
+Tag Storage (ArangoDB)
     ↓
 Playlist Export (TOML files)
     ↓

@@ -608,31 +608,27 @@ See [navidrome.md](navidrome.md) for integration details.
      gpu_memory_growth: true
    ```
 
-### Database Locked Errors
+### Database Connection Errors
 
 **Symptoms:**
-- Error: "database is locked"
+- Error: "connection refused" or "database unavailable"
 - Operations timeout
-- Multiple workers fail simultaneously
+- Workers fail to start
 
 **Solutions:**
 
-1. **Increase SQLite timeout (config.yaml):**
-   ```yaml
-   database:
-     timeout: 30  # Increase from default 5
-   ```
-
-2. **Reduce worker count:**
-   SQLite has limited write concurrency:
-   ```yaml
-   processing:
-     workers: 1  # Or 2 max
-   ```
-
-3. **Check for abandoned connections:**
+1. **Check ArangoDB is running:**
    ```bash
-   docker restart nomarr
+   docker compose ps nomarr-arangodb
+   docker compose logs nomarr-arangodb
+   ```
+
+2. **Verify credentials in config:**
+   Check `config/nomarr.yaml` has correct `arango_password` (auto-generated on first run).
+
+3. **Restart services:**
+   ```bash
+   docker compose restart
    ```
 
 ### Calibration Never Completes
@@ -772,7 +768,7 @@ processing:
 See example `config/config.yaml` with all options and explanations.
 
 **Key sections:**
-- `database`: SQLite settings and timeout
+- `arango_password`: Auto-generated database password
 - `library`: Music paths and file extensions
 - `processing`: Workers, batch size, queue limits
 - `ml`: Model paths, backends, caching
