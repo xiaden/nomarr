@@ -1,0 +1,72 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nomarr"
+version = "0.1.4"
+description = "AI-powered music organization and tagging system"
+readme = "readme.md"
+requires-python = ">=3.11"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "xiaden"}
+]
+keywords = ["music", "tagging", "ai", "organization", "audio"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Multimedia :: Sound/Audio",
+]
+
+dependencies = [
+    "numpy==1.26.4",
+    "scipy>=1.13.1",
+    "soundfile",
+    "mutagen==1.47.0",
+    "pyyaml==6.0.2",
+    "fastapi==0.115.0",
+    "uvicorn==0.30.6",
+    "rich==13.7.1",
+    "requests==2.32.3",
+    "bcrypt==4.2.1",
+    "python-arango==7.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.3.3",
+    "pytest-cov==5.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.7.0",
+    "bandit>=1.7.5",
+    "vulture>=2.10",
+    "pydub>=0.25.1",
+    "radon>=5.1.0,<5.2",
+    "import-linter>=2.0",
+    "wily>=1.25.0",
+    "flake8>=7.0.0",
+    "flake8-cognitive-complexity>=0.1.0",
+    "flake8-simplify>=0.21.0",
+    "flake8-eradicate>=1.5.0",
+    "flake8-variables-names>=0.0.6",
+    "types-PyYAML",
+    "types-requests",
+]
+
+[project.urls]
+Homepage = "https://github.com/xiaden/nomarr"
+Repository = "https://github.com/xiaden/nomarr"
+Issues = "https://github.com/xiaden/nomarr/issues"
+
+[tool.setuptools.packages.find]
+include = ["nomarr*"]
+exclude = ["tests*", "scripts*", "frontend*", "models*", "docker*"]
+
+[tool.ruff]
+# Ruff configuration (mirrors ruff.toml if it exists)
+line-length = 100
+target-version = "py311"
