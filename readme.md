@@ -78,37 +78,29 @@ All tags are written as native metadata (ID3v2 for MP3, iTunes atoms for M4A, Vo
    mkdir -p config/db
    ```
 
-2. **Start with Docker Compose:**
+2. **Configure environment files:**
 
-   ```yaml
-   services:
-     nomarr:
-       build: .
-       image: nomarr:latest
-       container_name: nomarr
-       user: "1000:1000"
-       networks:
-         - lidarr_network
-       volumes:
-         - ./config:/app/config
-         - /path/to/music:/music # Must match Lidarr's path
-       environment:
-         - NOMARR_DB=/app/config/db/nomarr.sqlite
-       deploy:
-         resources:
-           reservations:
-             devices:
-               - driver: nvidia
-                 count: 1
-                 capabilities: [gpu]
-       restart: unless-stopped
+   ```bash
+   # Copy example env files
+   cp nomarr-arangodb.env.example nomarr-arangodb.env
+   cp nomarr.env.example nomarr.env
+   
+   # Edit nomarr-arangodb.env and set a strong root password
+   # Edit nomarr.env and set the same root password
    ```
+
+3. **Start with Docker Compose:**
 
    ```bash
    docker compose up -d
    ```
 
-3. **Get your admin password:**
+   On first run, Nomarr will:
+   - Provision the ArangoDB database
+   - Generate an app password (stored in `config/nomarr.yaml`)
+   - Create an admin password for the web UI
+
+4. **Get your admin password:**
 
    Check container logs for the auto-generated password:
 
@@ -116,19 +108,18 @@ All tags are written as native metadata (ID3v2 for MP3, iTunes atoms for M4A, Vo
    docker compose logs nomarr | grep "Admin password"
    ```
 
-4. **Access the Web UI:**
+5. **Access the Web UI:**
 
    - Navigate to `http://localhost:8356/`
-   - Login with the admin password from step 3
+   - Login with the admin password from step 4
    - Use the Process Files tab to tag your music!
 
-5. **(Optional) For Lidarr Integration:**
+6. **(Optional) For Lidarr Integration:**
 
-   The API key is auto-generated and stored in the database. To retrieve it, query the database:
+   The API key is auto-generated on first run. Retrieve it from the web UI settings page or check the container logs:
 
    ```bash
-   docker compose exec nomarr sqlite3 /app/config/db/nomarr.sqlite \
-     "SELECT value FROM meta WHERE key='api_key';"
+   docker compose logs nomarr | grep "API key"
    ```
 
 ---
