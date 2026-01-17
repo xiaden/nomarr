@@ -155,6 +155,8 @@ class TestLibraryDict:
         """Should create library with required fields."""
         lib = LibraryDict(
             _id="libraries/12345",
+            _key="12345",
+            _rev="_abc123",
             name="Music",
             root_path="/music",
             is_enabled=True,
@@ -171,6 +173,8 @@ class TestLibraryDict:
         """Should create library with scan progress."""
         lib = LibraryDict(
             _id="libraries/12345",
+            _key="12345",
+            _rev="_abc123",
             name="Music",
             root_path="/music",
             is_enabled=True,
@@ -189,6 +193,8 @@ class TestLibraryDict:
         """Library ID should contain ArangoDB collection prefix."""
         lib = LibraryDict(
             _id="libraries/abc123",
+            _key="abc123",
+            _rev="_xyz789",
             name="Test",
             root_path="/test",
             is_enabled=True,
