@@ -5,7 +5,7 @@ services:
     container_name: nomarr
     user: ${PUID}:${MEDIACENTER_GID}
     networks:
-      - lidarr_network
+      - front_network
     volumes:
       # Required: Config and database persistence
       - ${APPDATA_DIR}/nomarr/config:/app/config

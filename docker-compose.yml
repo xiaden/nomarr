@@ -29,14 +29,14 @@ services:
     container_name: nomarr
     user: "1000:1000"
     networks:
-      - lidarr_network
+      - front_network
       - internal_network
     # ports:
     #   - "8356:8356"  # Only expose if needed outside Docker network
     volumes:
       # Required: Config and database persistence
       - ./config:/app/config
-      # Required: Music library (must match Lidarr's volume mapping)
+      # Required: Music library
       - /media:/media
       # Optional: Custom models (only if not using packaged models)
       # - ./models:/app/models
@@ -57,5 +57,5 @@ services:
 networks:
   internal_network:
     internal: true  # Isolated network (external access via nginx proxy manager)
-  lidarr_network:
-    external: true
+  front_network:
+    external: true  # External network for reverse proxy access
