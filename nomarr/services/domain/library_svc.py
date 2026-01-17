@@ -748,35 +748,17 @@ class LibraryService:
 
     def ensure_default_library_exists(self) -> None:
         """
-        Ensure at least one library exists, creating a default from config if needed.
+        Placeholder for backward compatibility.
 
-        This should be called on service initialization to migrate from single
-        library_path config to multi-library model.
+        Previously auto-created a default library from library_root config.
+        Now does nothing - users should explicitly create libraries via Web UI.
+
+        The library_root config is a SECURITY BOUNDARY (allowed path prefix),
+        not a library itself. Libraries are subdirectories under library_root.
         """
-        # Check if any libraries exist
-        libraries = self.db.libraries.list_libraries()
-        if len(libraries) > 0:
-            return
-
-        # No libraries exist - create default from config
-        try:
-            base = get_base_library_root(self.cfg.library_root)
-            root_path = str(base)
-        except ValueError as e:
-            logging.warning(f"[LibraryService] Cannot create default library: {e}")
-            return
-
-        # Create default library using the base root
-        try:
-            library_id = self.db.libraries.create_library(
-                name="Default Library",
-                root_path=root_path,
-                is_enabled=True,
-                is_default=True,
-            )
-            logging.info(f"[LibraryService] Created default library (ID {library_id}) from config: {root_path}")
-        except Exception as e:
-            logging.error(f"[LibraryService] Failed to create default library: {e}")
+        # No-op: Libraries should be created explicitly by users via Web UI
+        # The old behavior of creating a library at the root security boundary was wrong
+        pass
 
     def search_files(
         self,
