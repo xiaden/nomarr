@@ -604,8 +604,8 @@ result = navidrome_service.export_playlists("Energetic")
 ```python
 # ❌ Wrong - creates own dependencies
 class LibraryService:
-    def __init__(self, db_path: str):
-        self.db = Database(db_path)  # Creates DB
+    def __init__(self):
+        self.db = Database()  # Creates DB internally
 
 # ✅ Correct - receives dependencies
 class LibraryService:

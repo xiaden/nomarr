@@ -23,28 +23,29 @@ The calibration system tracks statistical drift in ML model outputs to minimize 
 
 ### Database Schema
 
-The `calibration_runs` table tracks each calibration generation:
+The `calibration_runs` collection tracks each calibration generation:
 
-```sql
-CREATE TABLE calibration_runs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    model_name TEXT NOT NULL,           -- e.g., "effnet"
-    head_name TEXT NOT NULL,            -- e.g., "mood_happy"
-    version INTEGER NOT NULL,           -- Run number (increments together for all heads)
-    file_count INTEGER NOT NULL,        -- Number of files used to generate calibration
-    timestamp INTEGER NOT NULL,         -- Unix timestamp (milliseconds)
-    p5 REAL,                            -- 5th percentile score
-    p95 REAL,                           -- 95th percentile score
-    range REAL,                         -- p95 - p5
-    reference_version INTEGER,          -- Version used as reference for drift comparison
-    apd_p5 REAL,                        -- Absolute Percentile Drift (p5)
-    apd_p95 REAL,                       -- Absolute Percentile Drift (p95)
-    srd REAL,                           -- Scale Range Drift
-    jsd REAL,                           -- Jensen-Shannon Divergence
-    median_drift REAL,                  -- Median drift (robust to outliers)
-    iqr_drift REAL,                     -- IQR drift (spread measurement)
-    is_stable INTEGER DEFAULT 0         -- Overall stability decision (SQLite boolean)
-);
+```json
+// ArangoDB document structure
+{
+  "_key": "effnet_mood_happy_3",     // Composite key: model_head_version
+  "model_name": "effnet",            // e.g., "effnet"
+  "head_name": "mood_happy",         // e.g., "mood_happy"
+  "version": 3,                      // Run number (increments together for all heads)
+  "file_count": 1500,                // Number of files used to generate calibration
+  "timestamp": 1737158400000,        // Unix timestamp (milliseconds)
+  "p5": 0.15,                        // 5th percentile score
+  "p95": 0.85,                       // 95th percentile score
+  "range": 0.70,                     // p95 - p5
+  "reference_version": 2,            // Version used as reference for drift comparison
+  "apd_p5": 0.005,                   // Absolute Percentile Drift (p5)
+  "apd_p95": 0.008,                  // Absolute Percentile Drift (p95)
+  "srd": 0.02,                       // Scale Range Drift
+  "jsd": 0.01,                       // Jensen-Shannon Divergence
+  "median_drift": 0.003,             // Median drift (robust to outliers)
+  "iqr_drift": 0.01,                 // IQR drift (spread measurement)
+  "is_stable": true                  // Overall stability decision (boolean)
+}
 ```
 
 ### File Management
@@ -283,13 +284,13 @@ Query calibration run history.
       "jsd": 0.142,
       "median_drift": 0.031,
       "iqr_drift": 0.089,
-      "is_stable": 0
+      "is_stable": false
     }
   ]
 }
 ```
 
-Note: `is_stable` is 0 (false) or 1 (true) in SQLite. `timestamp` is Unix milliseconds.
+Note: `is_stable` is a boolean (true/false). `timestamp` is Unix milliseconds.
 
 ### POST /admin/calibration/retag-all
 
@@ -428,10 +429,18 @@ Bulk enqueue all tagged files for re-tagging with final stable calibration.
 4. Check results in database:
 
    ```bash
-   sqlite3 config/db/essentia.sqlite
-   SELECT model_name, head_name, version, is_stable, apd_p5, apd_p95, srd, jsd
-   FROM calibration_runs
-   ORDER BY version DESC, model_name, head_name;
+   # Using arangosh
+   docker exec -it nomarr-arangodb arangosh \
+     --server.username nomarr \
+     --server.password "<password>" \
+     --server.database nomarr \
+     --javascript.execute-string '
+       db._query(`
+         FOR run IN calibration_runs
+           SORT run.version DESC, run.model_name, run.head_name
+           RETURN KEEP(run, "model_name", "head_name", "version", "is_stable", "apd_p5", "apd_p95", "srd", "jsd")
+       `).toArray().forEach(r => print(JSON.stringify(r)))
+     '
    ```
 
 5. Verify reference files created:

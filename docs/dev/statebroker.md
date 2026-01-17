@@ -24,10 +24,10 @@ Workers → Database (health/queue tables)
 
 Worker processes use **database polling** for inter-process communication because:
 
-1. **Multiprocessing Safety** - SQLite WAL mode ensures safe concurrent access
+1. **Multiprocessing Safety** - ArangoDB handles concurrent access via MVCC (no locking conflicts)
 2. **No Shared Memory** - Avoids complexities of `multiprocessing.Queue` or shared state
 3. **Crash Resilience** - State persists across worker restarts
-4. **Debuggability** - All state visible in database tables
+4. **Debuggability** - All state visible in database collections
 5. **Simplicity** - No message passing protocols or serialization
 
 **Trade-off:** Slight latency (~1-2 seconds) acceptable for monitoring UI.

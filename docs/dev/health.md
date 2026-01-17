@@ -17,24 +17,26 @@ Nomarr uses a **health table** for worker process monitoring and crash detection
 
 ---
 
-## Health Table Schema
+## Health Collection Schema
 
-**Table:** `health`
+**Collection:** `health`
 
-**Location:** `nomarr/persistence/database/schema.sql`
+**Location:** `nomarr/persistence/database/health_ops.py`
 
-```sql
-CREATE TABLE IF NOT EXISTS health (
-    component TEXT PRIMARY KEY,       -- Worker identifier (e.g., "worker:processing:0")
-    last_seen INTEGER NOT NULL,       -- Unix timestamp of last heartbeat
-    status TEXT NOT NULL,             -- Worker status (starting, healthy, stopping, crashed, failed)
-    pid INTEGER,                      -- Process ID (NULL if not running)
-    current_job INTEGER,              -- Job ID being processed (NULL if idle)
-    details_json TEXT,                -- Additional metadata (JSON string)
-    restart_count INTEGER DEFAULT 0,  -- Number of restarts
-    last_restart INTEGER,             -- Unix timestamp of last restart
-    created_at INTEGER NOT NULL       -- Unix timestamp of first registration
-);
+```json
+// ArangoDB document structure
+{
+  "_key": "worker:processing:0",     // Worker identifier (document key)
+  "component": "worker:processing:0", // Worker identifier (duplicated for queries)
+  "last_seen": 1737158400000,         // Unix timestamp (milliseconds) of last heartbeat
+  "status": "healthy",                // Worker status (starting, healthy, stopping, crashed, failed)
+  "pid": 12345,                       // Process ID (null if not running)
+  "current_job": "queue/12345",       // Job document key (null if idle)
+  "details_json": { ... },            // Additional metadata (embedded object)
+  "restart_count": 0,                 // Number of restarts
+  "last_restart": null,               // Unix timestamp of last restart
+  "created_at": 1737158000000         // Unix timestamp of first registration
+}
 ```
 
 ### Column Descriptions
@@ -319,7 +321,7 @@ if details.get('paused'):
 
 **Invariant:** `current_job` is NULL or refers to existing job in `queue` table.
 
-**Enforcement:** Foreign key constraint (not enforced by SQLite, but validated by application).
+**Enforcement:** Validated by application (ArangoDB uses document references, not foreign keys).
 
 **Violation:** Current job ID doesn't exist in queue.
 
@@ -360,7 +362,7 @@ UPDATE health SET last_seen = ?, current_job = ? WHERE component = ?
 SELECT * FROM health WHERE status IN ('healthy', 'starting')
 ```
 
-**No lock escalation** (SQLite row-level locking via WAL mode).
+**No lock escalation** (ArangoDB uses document-level MVCC for concurrent access).
 
 ### Race Conditions
 
@@ -459,16 +461,20 @@ def get_failed_workers(db: Database) -> list[str]:
 
 ## Debugging
 
-### View Health Table
+### View Health Collection
 
 ```bash
-# SQLite CLI
-sqlite3 /data/nomarr.db "SELECT * FROM health;"
+# Using arangosh (inside container)
+docker exec -it nomarr-arangodb arangosh \
+  --server.username nomarr \
+  --server.password "$(grep arango_password config/nomarr.yaml | cut -d: -f2 | tr -d ' ')" \
+  --server.database nomarr \
+  --javascript.execute-string 'db.health.toArray().forEach(d => print(JSON.stringify(d, null, 2)))'
 
-# Python
-python -c "
+# Using Python
+docker exec -it nomarr python -c "
 from nomarr.persistence.db import Database
-db = Database('/data/nomarr.db')
+db = Database()
 for worker in db.health.get_all_workers():
     print(f\"{worker['component']}: {worker['status']} (PID {worker['pid']})\")
 "
@@ -494,19 +500,29 @@ kill -0 <pid>
 kill <pid>
 
 # Wait for crash detection (10 seconds)
-# Or manually mark as crashed
-sqlite3 /data/nomarr.db "UPDATE health SET status = 'crashed' WHERE component = 'worker:processing:0';"
+# Or manually mark as crashed via arangosh
+docker exec -it nomarr-arangodb arangosh \
+  --server.username nomarr \
+  --server.password "<password>" \
+  --server.database nomarr \
+  --javascript.execute-string 'db.health.update("worker:processing:0", {status: "crashed"})'
 ```
 
 ### Clear Failed Worker
 
 ```bash
-# Reset restart count and status
-sqlite3 /data/nomarr.db "
-UPDATE health 
-SET status = 'crashed', restart_count = 0, last_restart = NULL
-WHERE component = 'worker:processing:0';
-"
+# Reset restart count and status via arangosh
+docker exec -it nomarr-arangodb arangosh \
+  --server.username nomarr \
+  --server.password "<password>" \
+  --server.database nomarr \
+  --javascript.execute-string '
+    db.health.update("worker:processing:0", {
+      status: "crashed",
+      restart_count: 0,
+      last_restart: null
+    })
+  '
 
 # Coordinator will restart on next cycle
 ```
@@ -528,7 +544,7 @@ WHERE component = 'worker:processing:0';
 **Resolution:**
 1. Check worker logs for errors
 2. Check PID still exists: `ps -p <pid>`
-3. If process dead, mark as crashed: `UPDATE health SET status = 'crashed' WHERE component = '...'`
+3. If process dead, mark as crashed via arangosh: `db.health.update("<component>", {status: "crashed"})`
 4. If process alive but hung, kill: `kill -9 <pid>`
 
 ### Worker Marked "crashed" But Still Running
@@ -544,7 +560,7 @@ WHERE component = 'worker:processing:0';
 
 **Resolution:**
 1. Check worker logs for database errors
-2. Check database lock: `sqlite3 /data/nomarr.db ".timeout 1000" "SELECT * FROM queue;"`
+2. Check database connectivity: `docker exec -it nomarr-arangodb arangosh --server.database nomarr --javascript.execute-string 'db.queue.count()'`
 3. Restart worker: `kill <pid>` (coordinator will restart)
 
 ### Restart Loop

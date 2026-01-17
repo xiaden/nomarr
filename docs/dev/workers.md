@@ -49,7 +49,7 @@ When `WorkerSystemService.start_workers()` is called:
 4. Worker enters main processing loop
 5. Within ~5 seconds, status transitions to `status='healthy'`
 
-**Database Safety:** Each worker must create its own SQLite connection. Sharing connections across process boundaries causes corruption.
+**Database Safety:** Each worker creates its own ArangoDB connection via `Database()`. The python-arango client handles connection pooling internally.
 
 ### 2. Heartbeat Loop
 
@@ -338,10 +338,10 @@ Workers use **database-based IPC** (no shared memory or pipes):
 4. Web UI receives real-time updates via EventSource
 
 This architecture ensures:
-- Multiprocessing safety (SQLite WAL mode)
+- Multiprocessing safety (ArangoDB MVCC handles concurrent access)
 - No shared state between processes
 - Crash resilience (workers can restart independently)
-- Debuggability (all state persisted in DB)
+- Debuggability (all state persisted in DB collections)
 
 ### Restart Backoff Formula
 
