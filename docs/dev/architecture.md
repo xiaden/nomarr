@@ -378,7 +378,8 @@ config_service = ConfigService(config_path="/app/config/config.yaml")
 config = config_service.load_config()
 
 # 2. Initialize database (persistence/db.py)
-db = Database(db_path=config.db_path)
+# Database connects to ArangoDB using ARANGO_HOST env and arango_password from config
+db = Database()
 
 # 3. Initialize ML backend (components/ml/backend_essentia.py)
 ml_backend = EssentiaBackend(models_dir=config.models_dir)

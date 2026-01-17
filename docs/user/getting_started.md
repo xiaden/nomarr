@@ -333,10 +333,16 @@ navidrome:
   export_dir: "./data/playlists"
 ```
 
-#### 6. Initialize Database
+#### 6. Start ArangoDB
+
+For native installations, you need ArangoDB running locally:
 
 ```bash
-python -m nomarr.start --init-db
+# Using Docker (recommended for development)
+docker run -d --name arangodb \
+  -e ARANGO_ROOT_PASSWORD=your-root-password \
+  -p 8529:8529 \
+  arangodb:3.12
 ```
 
 #### 7. Run Nomarr
@@ -344,6 +350,11 @@ python -m nomarr.start --init-db
 ```bash
 python -m nomarr.start
 ```
+
+On first run, Nomarr will:
+1. Connect to ArangoDB using `ARANGO_HOST` and `ARANGO_ROOT_PASSWORD`
+2. Create the `nomarr` database and user
+3. Generate a secure password and store it in `config/nomarr.yaml`
 
 Access web UI at `http://localhost:8888`
 
