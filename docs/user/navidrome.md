@@ -143,7 +143,7 @@ navidrome:
 If both Nomarr and Navidrome run in Docker on the same host:
 
 ```yaml
-# docker-compose.yml
+# compose.yaml
 services:
   nomarr:
     volumes:
@@ -171,7 +171,7 @@ rsync -av /opt/nomarr/data/playlists/ navidrome-server:/var/lib/navidrome/playli
 Mount shared directory on both systems:
 
 ```yaml
-# docker-compose.yml (Nomarr)
+# compose.yaml (Nomarr)
 services:
   nomarr:
     volumes:

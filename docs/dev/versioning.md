@@ -208,7 +208,7 @@ git push origin v0.3.1
 
 **Development:**
 ```yaml
-# docker-compose.yml
+# compose.yaml
 services:
   nomarr:
     image: ghcr.io/nomarr/nomarr:main
@@ -216,7 +216,7 @@ services:
 
 **Production:**
 ```yaml
-# docker-compose.yml
+# compose.yaml
 services:
   nomarr:
     image: ghcr.io/nomarr/nomarr:0.3.1  # Pin to specific version
@@ -224,7 +224,7 @@ services:
 
 **Adventurous users:**
 ```yaml
-# docker-compose.yml
+# compose.yaml
 services:
   nomarr:
     image: ghcr.io/nomarr/nomarr:latest  # Always get latest release

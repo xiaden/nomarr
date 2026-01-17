@@ -143,13 +143,13 @@ models_dir: "/app/models"
 **Note:** Most settings use sensible defaults. Libraries are managed via the Web UI, not config files.
 
 **Important settings:**
-- `library.paths`: Map your music directory (configured in docker-compose.yml)
+- `library.paths`: Map your music directory (configured in compose.yaml)
 - `processing.workers`: Start with 2, increase if you have >8GB GPU memory
 - `processing.batch_size`: Increase to 16-32 with high-end GPUs
 
 #### 5. Configure Docker Compose
 
-The repository includes a working `docker-compose.yml`. Key sections:
+The repository includes a working `compose.yaml`. Key sections:
 
 ```yaml
 services:
@@ -346,7 +346,7 @@ Access web UI at `http://localhost:8356`
 Nomarr runs on port `8356` inside the container. Access depends on your setup:
 
 - **With reverse proxy:** `https://nomarr.yourdomain.com`
-- **Direct access (dev):** Uncomment ports in docker-compose.yml, then `http://localhost:8356`
+- **Direct access (dev):** Uncomment ports in compose.yaml, then `http://localhost:8356`
 - **Native installation:** `http://localhost:8356`
 
 You should see the Nomarr dashboard.
@@ -522,7 +522,7 @@ Nomarr provides a small set of administrative CLI commands for maintenance tasks
    ```
    Should show GPU info. If not, check NVIDIA Container Toolkit installation.
 
-2. **Check docker-compose.yml has GPU config:**
+2. **Check compose.yaml has GPU config:**
    ```yaml
    deploy:
      resources:

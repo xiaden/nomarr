@@ -189,7 +189,7 @@ models_dir: "/app/models"
 
 **Note:** Most settings have sensible defaults. Libraries are configured via the Web UI.
 
-### 3. Production docker-compose.yml
+### 3. Production compose.yaml
 
 ```yaml
 services:
@@ -438,7 +438,7 @@ nvtop
 
 If you have multiple GPUs:
 
-**docker-compose.yml:**
+**compose.yaml:**
 ```yaml
 services:
   nomarr:
@@ -513,7 +513,7 @@ docker exec -it nomarr tail -f /data/nomarr.log
 **Export logs to external system:**
 
 ```yaml
-# docker-compose.yml
+# compose.yaml
 services:
   nomarr:
     logging:
@@ -547,7 +547,7 @@ response=$(docker exec nomarr curl -s -o /dev/null -w "%{http_code}" "$HEALTH_UR
 
 if [ "$response" != "200" ]; then
     echo "$(date): Health check failed (HTTP $response)" >> "$LOG_FILE"
-    docker-compose -f /opt/nomarr/docker-compose.yml restart nomarr
+    docker compose -f /opt/nomarr/compose.yaml restart nomarr
 else
     echo "$(date): Health check OK" >> "$LOG_FILE"
 fi
@@ -625,7 +625,7 @@ docker cp nomarr-arangodb:/var/lib/arangodb3/backup_$(date +%Y%m%d) /opt/nomarr/
 # Backup config and models list
 tar -czf /opt/nomarr/backups/config_$(date +%Y%m%d).tar.gz \
   /opt/nomarr/config \
-  /opt/nomarr/docker-compose.yml \
+  /opt/nomarr/compose.yaml \
   /opt/nomarr/.env
 ```
 
@@ -719,7 +719,7 @@ sudo ufw enable
 
 ### Container Security
 
-**Run as non-root** (in docker-compose.yml):
+**Run as non-root** (in compose.yaml):
 ```yaml
 services:
   nomarr:
@@ -921,7 +921,7 @@ sudo nginx -t
 - [ ] Worker count tuned for your GPU
 - [ ] Database optimization scheduled (monthly)
 - [ ] Container running as non-root user
-- [ ] Memory limits set in docker-compose.yml
+- [ ] Memory limits set in compose.yaml
 - [ ] Update procedure tested
 - [ ] Rollback procedure tested
 
