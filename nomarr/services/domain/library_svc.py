@@ -33,27 +33,6 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-def _map_library_to_dto(lib: dict[str, Any]) -> LibraryDict:
-    """Map database library dict to LibraryDict DTO.
-
-    Handles ArangoDB fields (_id, _key, _rev) and ensures proper field mapping.
-    """
-    return LibraryDict(
-        id=lib.get("_id", lib.get("id", "")),
-        name=lib["name"],
-        root_path=lib["root_path"],
-        is_enabled=lib["is_enabled"],
-        is_default=lib["is_default"],
-        created_at=lib["created_at"],
-        updated_at=lib["updated_at"],
-        scan_status=lib.get("scan_status"),
-        scan_progress=lib.get("scan_progress"),
-        scan_total=lib.get("scan_total"),
-        scanned_at=lib.get("scanned_at"),
-        scan_error=lib.get("scan_error"),
-    )
-
-
 @dataclass
 class LibraryRootConfig:
     """Configuration for LibraryService (library root management)."""
