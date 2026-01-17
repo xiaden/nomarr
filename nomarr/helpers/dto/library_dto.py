@@ -53,7 +53,7 @@ class LibraryStatsResult:
 class LibraryDict:
     """Single library record from library_service.list_libraries or get_library."""
 
-    id: str  # ArangoDB _id (e.g., "libraries/12345")
+    _id: str  # ArangoDB _id (e.g., "libraries/12345")
     name: str
     root_path: str
     is_enabled: bool

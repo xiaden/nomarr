@@ -84,7 +84,7 @@ class LibraryResponse(BaseModel):
             scanned_at = scanned_at_raw
 
         return cls(
-            id=library.id,
+            id=library._id,
             name=library.name,
             root_path=library.root_path,
             is_enabled=library.is_enabled,

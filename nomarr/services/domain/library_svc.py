@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 
 def _map_library_to_dto(lib: dict[str, Any]) -> LibraryDict:
     """Map database library dict to LibraryDict DTO.
-    
+
     Handles ArangoDB fields (_id, _key, _rev) and ensures proper field mapping.
     """
     return LibraryDict(
@@ -462,7 +462,7 @@ class LibraryService:
             List of LibraryDict DTOs
         """
         libraries = self.db.libraries.list_libraries(enabled_only=enabled_only)
-        return [_map_library_to_dto(lib) for lib in libraries]
+        return [LibraryDict(**lib) for lib in libraries]
 
     def get_library(self, library_id: str) -> LibraryDict:
         """
@@ -480,7 +480,7 @@ class LibraryService:
         library = self.db.libraries.get_library(library_id)
         if not library:
             raise ValueError(f"Library not found: {library_id}")
-        return _map_library_to_dto(library)
+        return LibraryDict(**library)
 
     def get_default_library(self) -> LibraryDict | None:
         """
@@ -493,7 +493,7 @@ class LibraryService:
         if not library_dict:
             return None
 
-        return _map_library_to_dto(library_dict)
+        return LibraryDict(**library_dict)
 
     def create_library(
         self,
@@ -564,7 +564,7 @@ class LibraryService:
         library = self.db.libraries.get_library(library_id)
         if not library:
             raise RuntimeError("Failed to retrieve created library")
-        return _map_library_to_dto(library)
+        return LibraryDict(**library)
 
     def update_library_root(self, library_id: str, root_path: str) -> LibraryDict:
         """
@@ -603,7 +603,7 @@ class LibraryService:
         updated = self.db.libraries.get_library(library_id)
         if not updated:
             raise RuntimeError("Failed to retrieve Updated library")
-        return _map_library_to_dto(updated)
+        return LibraryDict(**updated)
 
     def update_library(
         self,
@@ -675,7 +675,7 @@ class LibraryService:
         library = self.db.libraries.get_library(library_id)
         if not library:
             raise RuntimeError("Failed to retrieve updated library")
-        return _map_library_to_dto(library)
+        return LibraryDict(**library)
 
     def delete_library(self, library_id: str) -> bool:
         """
@@ -748,7 +748,7 @@ class LibraryService:
         updated = self.db.libraries.get_library(library_id)
         if not updated:
             raise RuntimeError("Failed to retrieve updated library")
-        return _map_library_to_dto(updated)
+        return LibraryDict(**updated)
 
     def ensure_default_library_exists(self) -> None:
         """
