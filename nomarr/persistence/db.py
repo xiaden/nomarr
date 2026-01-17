@@ -50,25 +50,31 @@ class Database:
 
     Connection pooling is handled automatically by python-arango.
     Thread-safe within a single process. Each process creates its own pool.
+
+    Credential Flow:
+    - First run: App provisions DB with root password, generates app password,
+      stores in config file. Database is NOT usable until first-run completes.
+    - After first run: Password read from config file (/app/config/nomarr.yaml).
+    - Username and db_name are hardcoded as 'nomarr' (not configurable).
     """
+
+    # Hardcoded credentials (not user-configurable)
+    USERNAME = "nomarr"
+    DB_NAME = "nomarr"
 
     def __init__(
         self,
         hosts: str | None = None,
-        username: str | None = None,
         password: str | None = None,
-        db_name: str | None = None,
     ):
         """Initialize database connection.
 
         Args:
             hosts: ArangoDB server URL(s). Read from ARANGO_HOST env var if not provided.
-            username: Database username. Defaults to ARANGO_USERNAME env var or 'nomarr'.
-            password: Database password. Read from ARANGO_PASSWORD env var (required).
-            db_name: Database name. Defaults to ARANGO_DBNAME env var or 'nomarr'.
+            password: Database password. Read from config file if not provided.
 
         Raises:
-            RuntimeError: If password not provided or ARANGO_HOST not set
+            RuntimeError: If password not available or ARANGO_HOST not set
         """
         import os
 
@@ -80,21 +86,26 @@ class Database:
                 "Set to 'http://nomarr-arangodb:8529' for docker-compose or 'http://localhost:8529' for dev."
             )
 
-        self.username = username or os.getenv("ARANGO_USERNAME", "nomarr")
-        self.password = password or os.getenv("ARANGO_PASSWORD")
-        self.db_name = db_name or os.getenv("ARANGO_DBNAME", "nomarr")
+        # Username and db_name are hardcoded
+        self.username = self.USERNAME
+        self.db_name = self.DB_NAME
+
+        # Password: constructor arg > config file
+        self.password = password or self._load_password_from_config()
 
         if not self.password:
             raise RuntimeError(
-                "Database password required. Set via ARANGO_PASSWORD environment variable or constructor parameter."
+                "Database password not available. "
+                "On first run, ensure ARANGO_ROOT_PASSWORD is set for provisioning. "
+                "After first run, password is read from /app/config/nomarr.yaml."
             )
 
         # Create ArangoDB connection
         self.db: StandardDatabase = create_arango_client(
             hosts=self.hosts,
-            username=self.username or "nomarr",  # Fallback for mypy (already checked to be non-None)
+            username=self.username,
             password=self.password,
-            db_name=self.db_name or "nomarr",  # Fallback for mypy (already checked to be non-None)
+            db_name=self.db_name,
         )
 
         # Initialize operation classes - one per collection
@@ -125,6 +136,39 @@ class Database:
         """Close database connection (cleanup)."""
         # ArangoDB client handles connection cleanup automatically
         pass
+
+    @staticmethod
+    def _load_password_from_config() -> str | None:
+        """Load arango_password from config file.
+
+        Checks standard config locations in order:
+        1. /app/config/nomarr.yaml (Docker container)
+        2. ./config/nomarr.yaml (local dev)
+
+        Returns:
+            Password string if found, None otherwise
+        """
+        import os
+
+        import yaml
+
+        config_paths = [
+            "/app/config/nomarr.yaml",
+            os.path.join(os.getcwd(), "config", "nomarr.yaml"),
+        ]
+
+        for path in config_paths:
+            if os.path.exists(path):
+                try:
+                    with open(path, encoding="utf-8") as f:
+                        config = yaml.safe_load(f) or {}
+                    password: str | None = config.get("arango_password")
+                    if password:
+                        return password
+                except Exception:
+                    pass
+
+        return None
 
 
 # ==================== ARCHITECTURAL NOTE ====================

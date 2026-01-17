@@ -46,10 +46,12 @@ def validate_environment() -> None:
 
     Prevents workers from each spamming "missing ARANGO_HOST" errors.
     Fails fast with clear message if config is incomplete.
+
+    Note: ARANGO_ROOT_PASSWORD is only needed on first run (provisioning).
+    After first run, credentials are read from config file.
     """
     required_vars = [
         "ARANGO_HOST",
-        "ARANGO_PASSWORD",
     ]
 
     missing = [var for var in required_vars if not os.getenv(var)]
@@ -58,10 +60,8 @@ def validate_environment() -> None:
         print(f"ERROR: Missing required environment variables: {', '.join(missing)}", file=sys.stderr)
         print("\nRequired for ArangoDB connection:", file=sys.stderr)
         print("  ARANGO_HOST - Database server URL (e.g., http://nomarr-arangodb:8529)", file=sys.stderr)
-        print("  ARANGO_PASSWORD - App user password (NOT root password)", file=sys.stderr)
-        print("\nOptional (have defaults):", file=sys.stderr)
-        print("  ARANGO_USERNAME - Database username (default: nomarr)", file=sys.stderr)
-        print("  ARANGO_DBNAME - Database name (default: nomarr)", file=sys.stderr)
+        print("\nFirst-run only:", file=sys.stderr)
+        print("  ARANGO_ROOT_PASSWORD - Root password for initial provisioning", file=sys.stderr)
         sys.exit(1)
 
 

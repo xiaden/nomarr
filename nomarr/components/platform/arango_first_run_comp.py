@@ -21,12 +21,14 @@ from pathlib import Path
 
 from arango import ArangoClient
 
+# Hardcoded credentials (not user-configurable)
+USERNAME = "nomarr"
+DB_NAME = "nomarr"
+
 
 def provision_database_and_user(
     hosts: str,
     root_password: str,
-    username: str = "nomarr",
-    db_name: str = "nomarr",
 ) -> str:
     """Provision database and user (first-run only).
 
@@ -38,11 +40,11 @@ def provision_database_and_user(
     - App password is randomly generated (64-char hex)
     - This function should only be called once during first boot
 
+    Note: Username and db_name are hardcoded as 'nomarr' (not configurable).
+
     Args:
         hosts: ArangoDB server URL(s)
         root_password: Root password from environment variable
-        username: App username to create (default: "nomarr")
-        db_name: Database name to create (default: "nomarr")
 
     Returns:
         Generated app password (caller must store in config)
@@ -55,29 +57,29 @@ def provision_database_and_user(
     client = ArangoClient(hosts=hosts)
     sys_db = client.db("_system", username="root", password=root_password)
 
-    # Create database
-    if not sys_db.has_database(db_name):
-        sys_db.create_database(db_name)
+    # Create database (hardcoded name)
+    if not sys_db.has_database(DB_NAME):
+        sys_db.create_database(DB_NAME)
 
     # Generate strong random password for app user
     app_password = secrets.token_hex(32)  # 64-character hex string
 
-    # Create user with generated password
-    if not sys_db.has_user(username):
+    # Create user with generated password (hardcoded username)
+    if not sys_db.has_user(USERNAME):
         sys_db.create_user(
-            username=username,
+            username=USERNAME,
             password=app_password,
             active=True,
         )
     else:
         # User exists, update password
-        sys_db.update_user(username=username, password=app_password)
+        sys_db.update_user(username=USERNAME, password=app_password)
 
     # Grant permissions
     sys_db.update_permission(
-        username=username,
+        username=USERNAME,
         permission="rw",  # Read-write access
-        database=db_name,
+        database=DB_NAME,
     )
 
     return app_password
@@ -100,16 +102,18 @@ def is_first_run(config_path: Path) -> bool:
 
 
 def _has_db_config(config_path: Path) -> bool:
-    """Check if config file has ArangoDB credentials."""
+    """Check if config file has ArangoDB password (the only required field).
+
+    Username and db_name are hardcoded as 'nomarr', so only password matters.
+    """
     import yaml
 
     try:
         with open(config_path) as f:
             config = yaml.safe_load(f)
 
-        # Check for required ArangoDB fields
-        required_fields = ["arango_hosts", "arango_username", "arango_password", "arango_db_name"]
-        return all(config.get(field) for field in required_fields)
+        # Only password is required - username/db_name are hardcoded
+        return bool(config.get("arango_password"))
     except Exception:
         return False
 
@@ -118,20 +122,18 @@ def write_db_config(
     config_path: Path,
     password: str,
     hosts: str = "http://nomarr-arangodb:8529",
-    username: str = "nomarr",
-    db_name: str = "nomarr",
 ) -> None:
     """Write ArangoDB credentials to config file.
 
     Creates/updates config with generated app credentials.
     NEVER writes root password.
 
+    Note: Username and db_name are hardcoded as 'nomarr' (not configurable).
+
     Args:
         config_path: Path to config file
         password: Generated app password (from provision_database_and_user)
         hosts: ArangoDB server URL(s)
-        username: App username
-        db_name: Database name
     """
     import yaml
 
@@ -142,13 +144,11 @@ def write_db_config(
     else:
         config = {}
 
-    # Update ArangoDB credentials
+    # Update ArangoDB credentials (username/db_name hardcoded)
     config.update(
         {
             "arango_hosts": hosts,
-            "arango_username": username,
             "arango_password": password,
-            "arango_db_name": db_name,
         }
     )
 

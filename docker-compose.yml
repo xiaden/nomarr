@@ -5,9 +5,8 @@ services:
     container_name: nomarr-arangodb
     networks:
       - internal_network  # Internal only, no public exposure
-    environment:
-      - ARANGO_ROOT_PASSWORD=${ARANGO_ROOT_PASSWORD}  # From .env file
-      - ARANGO_NO_AUTH=0
+    env_file:
+      - nomarr-arangodb.env
     volumes:
       - ./config/arangodb:/var/lib/arangodb3
     # CRITICAL: NO PORT EXPOSURE - Internal network only
@@ -41,17 +40,8 @@ services:
       - /media:/media
       # Optional: Custom models (only if not using packaged models)
       # - ./models:/app/models
-    environment:
-      # Runtime environment variables (used by app and workers)
-      - ARANGO_HOST=http://nomarr-arangodb:8529
-      - ARANGO_USERNAME=nomarr
-      - ARANGO_PASSWORD=${NOMARR_APP_PASSWORD}  # App user password (NOT root)
-      - ARANGO_DBNAME=nomarr
-      # Root password ONLY for first-run provisioning
-      # App will create DB/user on first boot, then never use root again
-      - ARANGO_ROOT_PASSWORD=${ARANGO_ROOT_PASSWORD}
-      - ARANGO_HOSTS=http://nomarr-arangodb:8529  # Legacy, use ARANGO_HOST
-      - NOMARR_DB=/app/config/db/essentia.sqlite  # Legacy SQLite path (for reference)
+    env_file:
+      - nomarr.env
     depends_on:
       nomarr-arangodb:
         condition: service_healthy

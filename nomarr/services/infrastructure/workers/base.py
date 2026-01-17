@@ -97,9 +97,9 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
                 Only for single-process test harness or non-fork contexts.
 
         Note:
-            Database connection is created in run() method from environment variables.
-            Requires ARANGO_HOST, ARANGO_USERNAME, ARANGO_PASSWORD, ARANGO_DBNAME to be set.
-            App startup validates these before spawning workers.
+            Database connection is created in run() method.
+            Requires ARANGO_HOST env var. Password is read from config file.
+            App startup validates environment before spawning workers.
         """
         super().__init__(daemon=True, name=f"{name}-{worker_id}")
         self.queue_type: QueueType = queue_type
