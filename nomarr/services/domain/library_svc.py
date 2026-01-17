@@ -129,28 +129,24 @@ class LibraryService:
     def start_scan_for_library(
         self,
         library_id: str,
-        paths: list[str] | None = None,
-        recursive: bool = True,
-        clean_missing: bool = True,
     ) -> StartScanResult:
         """
         Start a library scan for a specific library using direct filesystem scan.
+
+        Scans the entire library root recursively and marks missing files as invalid.
 
         IMPORTANT: Libraries are used ONLY to determine which filesystem roots to scan.
         All discovered files and statistics remain GLOBAL and do NOT track library_id.
         Nomarr is an autotagger, not a multi-tenant library manager.
 
         Args:
-            library_id: ID of the library to scan (used only to determine scan root)
-            paths: Optional list of paths within the library to scan (defaults to library root)
-            recursive: Whether to scan subdirectories recursively
-            clean_missing: Whether to detect moved files and mark missing files invalid
+            library_id: ID of the library to scan
 
         Returns:
             StartScanResult DTO with scan statistics and task_id
 
         Raises:
-            ValueError: If library not found, paths are invalid, or scan already running
+            ValueError: If library not found or scan already running
         """
         from nomarr.workflows.library.start_scan_wf import start_scan_workflow
 
@@ -158,20 +154,16 @@ class LibraryService:
             db=self.db,
             background_tasks=self.background_tasks,
             library_id=library_id,
-            paths=paths,
-            recursive=recursive,
-            clean_missing=clean_missing,
         )
 
     def start_scan(
         self,
         library_id: str | None = None,
-        paths: list[str] | None = None,
-        recursive: bool = True,
-        clean_missing: bool = True,
     ) -> StartScanResult:
         """
         Start a library scan.
+
+        Scans the entire library root recursively and marks missing files as invalid.
 
         This is the main scanning entrypoint. It delegates to the workflow,
         which resolves the library (specified or default) and handles orchestration.
@@ -181,9 +173,6 @@ class LibraryService:
 
         Args:
             library_id: ID of library to scan (defaults to default library)
-            paths: List of paths to scan within the library (defaults to library root)
-            recursive: Whether to scan subdirectories recursively
-            clean_missing: Whether to detect moved files and mark missing files invalid
 
         Returns:
             StartScanResult DTO with scan statistics
@@ -197,9 +186,6 @@ class LibraryService:
             db=self.db,
             background_tasks=self.background_tasks,
             library_id=library_id,
-            paths=paths,
-            recursive=recursive,
-            clean_missing=clean_missing,
         )
 
     def cancel_scan(self, library_id: str | None = None) -> bool:

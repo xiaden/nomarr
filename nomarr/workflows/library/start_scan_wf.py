@@ -16,10 +16,8 @@ Architecture:
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.library.library_root_comp import resolve_path_within_library
 from nomarr.helpers.dto.library_dto import StartScanResult
 
 if TYPE_CHECKING:
@@ -32,18 +30,16 @@ def start_scan_workflow(
     db: Database,
     background_tasks: Any | None,
     library_id: str | None = None,
-    paths: list[str] | None = None,
-    recursive: bool = True,
-    clean_missing: bool = True,
 ) -> StartScanResult:
     """
     Start a library scan workflow.
 
+    Scans the entire library root recursively and marks missing files as invalid.
+
     This orchestrates scan initialization:
     1. Resolves library (by ID or default)
-    2. Validates scan paths are within library root
-    3. Launches background task or runs synchronously
-    4. Returns scan result DTO
+    2. Launches background task or runs synchronously
+    3. Returns scan result DTO
 
     IMPORTANT: Libraries determine which roots to scan.
     All discovered files are GLOBAL (no library_id in library_files table).
@@ -52,15 +48,12 @@ def start_scan_workflow(
         db: Database instance
         background_tasks: BackgroundTaskService for async execution (or None for sync)
         library_id: Library to scan (None = use default library)
-        paths: Paths to scan within library (None = scan entire library root)
-        recursive: Scan subdirectories recursively
-        clean_missing: Detect moved files and mark missing files invalid
 
     Returns:
         StartScanResult DTO with scan statistics and task_id
 
     Raises:
-        ValueError: If library not found, scan already running, or paths invalid
+        ValueError: If library not found or scan already running
     """
     # Resolve library_id
     if library_id is None:
@@ -82,31 +75,12 @@ def start_scan_workflow(
     if scan_status == "scanning":
         raise ValueError(f"Library {library_id} is already being scanned")
 
-    base_root = Path(library["root_path"])
-
-    # Build scan paths for scanning
-    # Libraries control which roots to scan, but the workflow operates globally
-    if paths is None:
-        # Scan entire library root
-        scan_paths = [str(base_root)]
-    else:
-        # Validate each user path is within library root
-        scan_paths = []
-        for user_path in paths:
-            resolved = resolve_path_within_library(
-                library_root=str(base_root),
-                user_path=user_path,
-                must_exist=True,
-                must_be_file=False,
-            )
-            scan_paths.append(str(resolved))
+    # Always scan entire library root
+    scan_path = library["root_path"]
 
     from nomarr.workflows.library.scan_library_direct_wf import scan_library_direct_workflow
 
-    logger.info(
-        f"[start_scan_workflow] Starting scan for library {library_id} "
-        f"({library['name']}) with {len(scan_paths)} path(s)"
-    )
+    logger.info(f"[start_scan_workflow] Starting scan for library {library_id} ({library['name']}) at {scan_path}")
 
     # Launch background scan task if BackgroundTaskService available
     if background_tasks:
@@ -116,9 +90,7 @@ def start_scan_workflow(
             task_fn=scan_library_direct_workflow,
             db=db,
             library_id=library_id,
-            paths=scan_paths,
-            recursive=recursive,
-            clean_missing=clean_missing,
+            scan_path=scan_path,
         )
 
         logger.info(f"[start_scan_workflow] Scan task launched: {task_id}")
@@ -135,9 +107,7 @@ def start_scan_workflow(
         stats = scan_library_direct_workflow(
             db=db,
             library_id=library_id,
-            paths=scan_paths,
-            recursive=recursive,
-            clean_missing=clean_missing,
+            scan_path=scan_path,
         )
 
         return StartScanResult(

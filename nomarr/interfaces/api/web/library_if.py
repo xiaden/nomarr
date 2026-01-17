@@ -436,12 +436,7 @@ async def scan_library(
     """
     try:
         # Call the service layer to start scan for this specific library (returns StartScanResult DTO)
-        stats = library_service.start_scan_for_library(
-            library_id=library_id,
-            paths=None,
-            recursive=True,
-            clean_missing=True,
-        )
+        stats = library_service.start_scan_for_library(library_id=library_id)
 
         # Transform DTO to wrapped Pydantic response
         return StartScanWithStatusResponse.from_dto(stats, library_id)
