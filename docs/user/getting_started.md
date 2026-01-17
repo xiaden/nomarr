@@ -549,7 +549,7 @@ Nomarr provides a small set of administrative CLI commands for maintenance tasks
 
 1. **Check logs:**
    ```bash
-   docker-compose logs -f nomarr
+   docker compose logs -f nomarr
    ```
    Look for worker startup errors.
 
@@ -692,7 +692,7 @@ Nomarr provides a small set of administrative CLI commands for maintenance tasks
 
 1. Check logs:
    ```bash
-   docker-compose logs -f nomarr | grep -i error
+   docker compose logs -f nomarr | grep -i error
    ```
 
 2. Check system health in the Web UI:

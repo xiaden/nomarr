@@ -502,7 +502,7 @@ docker run -d --restart=unless-stopped \
 
 **View Docker logs:**
 ```bash
-docker-compose logs -f nomarr
+docker compose logs -f nomarr
 ```
 
 **View Nomarr application logs:**
@@ -680,7 +680,7 @@ vim /opt/nomarr/config/config.yaml
 
 # Change workers: 2
 # Restart
-docker-compose restart nomarr
+docker compose restart nomarr
 
 # Monitor GPU memory
 watch -n 1 nvidia-smi
@@ -783,28 +783,28 @@ git checkout main
 git pull origin main
 
 # Rebuild container
-docker-compose build --no-cache
+docker compose build --no-cache
 
 # Restart
-docker-compose down
-docker-compose up -d
+docker compose down
+docker compose up -d
 
 # Check logs
-docker-compose logs -f nomarr
+docker compose logs -f nomarr
 ```
 
 ### Rollback Procedure
 
 ```bash
 # Stop current version
-docker-compose down
+docker compose down
 
 # Restore previous version
 git checkout <previous-commit-hash>
 
 # Rebuild and restart
-docker-compose build --no-cache
-docker-compose up -d
+docker compose build --no-cache
+docker compose up -d
 
 # If database incompatible, restore from backup using arangorestore
 PASSWORD=$(grep arango_password /opt/nomarr/config/nomarr.yaml | cut -d: -f2 | tr -d ' "')
@@ -890,8 +890,8 @@ sudo nginx -t
 - Nginx misconfiguration
 
 **Solutions:**
-- Check container status: `docker-compose ps`
-- Check logs: `docker-compose logs nomarr`
+- Check container status: `docker compose ps`
+- Check logs: `docker compose logs nomarr`
 - Verify Nginx config: `sudo nginx -t`
 
 ---

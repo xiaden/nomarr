@@ -83,7 +83,7 @@ class Database:
         if not self.hosts:
             raise RuntimeError(
                 "ARANGO_HOST environment variable required. "
-                "Set to 'http://nomarr-arangodb:8529' for docker-compose or 'http://localhost:8529' for dev."
+                "Set to 'http://nomarr-arangodb:8529' for Docker Compose or 'http://localhost:8529' for dev."
             )
 
         # Username and db_name are hardcoded
