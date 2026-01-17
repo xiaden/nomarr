@@ -19,6 +19,7 @@ import { useMemo, useState } from "react";
 import { Panel } from "@shared/components/ui";
 
 import type { FileTag, LibraryFile } from "../../../shared/types";
+
 import { SimilarTracks } from "./SimilarTracks";
 
 interface TagExplorerProps {
