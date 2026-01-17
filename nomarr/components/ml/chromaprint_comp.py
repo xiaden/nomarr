@@ -43,16 +43,13 @@ def compute_chromaprint(waveform: np.ndarray, sample_rate: int) -> str:
     backend_essentia.require()
 
     try:
-        # Import Essentia algorithms
-        from essentia.standard import Spectrum, Windowing  # type: ignore[import-untyped]
-
         # Use first 60 seconds for fingerprinting (balance speed vs accuracy)
         max_samples = 60 * sample_rate
         y = waveform[:max_samples] if len(waveform) > max_samples else waveform
 
-        # Initialize Essentia algorithms
-        windowing = Windowing(type="hann", size=2048)
-        spectrum = Spectrum(size=2048)
+        # Initialize Essentia algorithms via backend module
+        windowing = backend_essentia.essentia_tf.Windowing(type="hann", size=2048)
+        spectrum = backend_essentia.essentia_tf.Spectrum(size=2048)
 
         # Extract spectral frames (hop 512 samples = ~32ms at 16kHz)
         hop_size = 512

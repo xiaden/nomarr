@@ -34,7 +34,6 @@ Dataclass Classification:
 
 from __future__ import annotations
 
-from nomarr.components.infrastructure.path_comp import build_library_path_from_db, build_library_path_from_input
 from nomarr.helpers.dto.analytics_dto import (
     ArtistTagProfile,
     MoodDistributionData,
@@ -91,6 +90,4 @@ __all__ = [
     "TagSpec",
     "TagWriteProfile",
     "WorkerState",
-    "build_library_path_from_db",
-    "build_library_path_from_input",
 ]

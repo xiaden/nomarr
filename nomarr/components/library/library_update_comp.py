@@ -11,7 +11,7 @@ import logging
 import os
 from typing import TYPE_CHECKING, Any
 
-from nomarr.helpers.dto import build_library_path_from_input
+from nomarr.components.infrastructure.path_comp import build_library_path_from_input
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database

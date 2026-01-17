@@ -80,7 +80,7 @@ Tests multiple components working together with real dependencies.
 **When to use:**
 - Testing workflows that call multiple components
 - Testing service layer orchestration
-- Using real database (SQLite in-memory or test DB)
+- Using real database (ArangoDB test instance)
 - Testing file I/O with test fixtures
 
 **Example:**
@@ -200,7 +200,7 @@ Informational marker indicating test uses mocked dependencies.
 Informational marker indicating test uses real database (not in-memory).
 
 **When to use:**
-- Tests using persistent SQLite file or PostgreSQL
+- Tests using persistent ArangoDB instance
 - Helps identify tests that need cleanup
 - Usually combined with `@pytest.mark.integration`
 
@@ -260,7 +260,7 @@ pytest -m "container_only"
 
 ### 2. Add Integration Tests for Complex Flows
 - Test workflows that orchestrate multiple components
-- Use real database (in-memory SQLite for speed)
+- Use real database (ArangoDB test instance)
 - Test actual file operations with fixtures
 
 ### 3. Use Appropriate Markers
