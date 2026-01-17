@@ -33,6 +33,27 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
+def _map_library_to_dto(lib: dict[str, Any]) -> LibraryDict:
+    """Map database library dict to LibraryDict DTO.
+    
+    Handles ArangoDB fields (_id, _key, _rev) and ensures proper field mapping.
+    """
+    return LibraryDict(
+        id=lib.get("_id", lib.get("id", "")),
+        name=lib["name"],
+        root_path=lib["root_path"],
+        is_enabled=lib["is_enabled"],
+        is_default=lib["is_default"],
+        created_at=lib["created_at"],
+        updated_at=lib["updated_at"],
+        scan_status=lib.get("scan_status"),
+        scan_progress=lib.get("scan_progress"),
+        scan_total=lib.get("scan_total"),
+        scanned_at=lib.get("scanned_at"),
+        scan_error=lib.get("scan_error"),
+    )
+
+
 @dataclass
 class LibraryRootConfig:
     """Configuration for LibraryService (library root management)."""
@@ -441,18 +462,7 @@ class LibraryService:
             List of LibraryDict DTOs
         """
         libraries = self.db.libraries.list_libraries(enabled_only=enabled_only)
-        return [
-            LibraryDict(
-                id=lib["_id"],
-                name=lib["name"],
-                root_path=lib["root_path"],
-                is_enabled=lib["is_enabled"],
-                is_default=lib["is_default"],
-                created_at=lib["created_at"],
-                updated_at=lib["updated_at"],
-            )
-            for lib in libraries
-        ]
+        return [_map_library_to_dto(lib) for lib in libraries]
 
     def get_library(self, library_id: str) -> LibraryDict:
         """
@@ -470,15 +480,7 @@ class LibraryService:
         library = self.db.libraries.get_library(library_id)
         if not library:
             raise ValueError(f"Library not found: {library_id}")
-        return LibraryDict(
-            id=library["id"],
-            name=library["name"],
-            root_path=library["root_path"],
-            is_enabled=library["is_enabled"],
-            is_default=library["is_default"],
-            created_at=library["created_at"],
-            updated_at=library["updated_at"],
-        )
+        return _map_library_to_dto(library)
 
     def get_default_library(self) -> LibraryDict | None:
         """
@@ -491,15 +493,7 @@ class LibraryService:
         if not library_dict:
             return None
 
-        return LibraryDict(
-            id=library_dict["id"],
-            name=library_dict["name"],
-            root_path=library_dict["root_path"],
-            is_enabled=library_dict["is_enabled"],
-            is_default=library_dict["is_default"],
-            created_at=library_dict["created_at"],
-            updated_at=library_dict["updated_at"],
-        )
+        return _map_library_to_dto(library_dict)
 
     def create_library(
         self,
@@ -570,9 +564,7 @@ class LibraryService:
         library = self.db.libraries.get_library(library_id)
         if not library:
             raise RuntimeError("Failed to retrieve created library")
-        # Map _id to id for DTO
-        library["id"] = library.get("_id", library.get("id"))
-        return LibraryDict(**library)
+        return _map_library_to_dto(library)
 
     def update_library_root(self, library_id: str, root_path: str) -> LibraryDict:
         """
@@ -611,7 +603,7 @@ class LibraryService:
         updated = self.db.libraries.get_library(library_id)
         if not updated:
             raise RuntimeError("Failed to retrieve Updated library")
-        return LibraryDict(**updated)
+        return _map_library_to_dto(updated)
 
     def update_library(
         self,
@@ -683,7 +675,7 @@ class LibraryService:
         library = self.db.libraries.get_library(library_id)
         if not library:
             raise RuntimeError("Failed to retrieve updated library")
-        return LibraryDict(**library)
+        return _map_library_to_dto(library)
 
     def delete_library(self, library_id: str) -> bool:
         """
@@ -756,7 +748,7 @@ class LibraryService:
         updated = self.db.libraries.get_library(library_id)
         if not updated:
             raise RuntimeError("Failed to retrieve updated library")
-        return LibraryDict(**updated)
+        return _map_library_to_dto(updated)
 
     def ensure_default_library_exists(self) -> None:
         """
