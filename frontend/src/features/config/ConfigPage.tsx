@@ -27,6 +27,7 @@ export function ConfigPage() {
 
       {!loading && !error && (
         <Stack spacing={2.5}>
+          <LibraryManagement />
           <ConfigSettings
             config={config}
             hasChanges={hasChanges}
@@ -34,7 +35,6 @@ export function ConfigPage() {
             onChange={handleChange}
             onSaveAll={handleSaveAll}
           />
-          <LibraryManagement />
         </Stack>
       )}
     </PageContainer>

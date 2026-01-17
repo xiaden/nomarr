@@ -443,7 +443,7 @@ class LibraryService:
         libraries = self.db.libraries.list_libraries(enabled_only=enabled_only)
         return [
             LibraryDict(
-                id=lib["id"],
+                id=lib["_id"],
                 name=lib["name"],
                 root_path=lib["root_path"],
                 is_enabled=lib["is_enabled"],

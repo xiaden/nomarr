@@ -5,6 +5,21 @@
 
 import { Box, MenuItem, Select, TextField, Typography } from "@mui/material";
 
+// Human-readable labels for config keys
+const CONFIG_LABELS: Record<string, string> = {
+  library_root: "Library Root Directory",
+  scan_recursive: "Scan Subdirectories",
+  scan_ignore_patterns: "Ignore Patterns",
+  tagging_enabled: "Auto-Tagging Enabled",
+  tagging_version_tag_key: "Version Tag Key",
+  processing_batch_size: "Processing Batch Size",
+  processing_max_workers: "Max Worker Threads",
+  gpu_enabled: "GPU Acceleration",
+  gpu_device_id: "GPU Device ID",
+  cache_size_mb: "Cache Size (MB)",
+  log_level: "Log Level",
+};
+
 interface ConfigFieldProps {
   configKey: string;
   value: unknown;
@@ -21,12 +36,19 @@ export function ConfigField({
   const stringValue = value === null || value === undefined ? "" : String(value);
   const isBool = typeof value === "boolean";
 
+  // Get human-readable label or fall back to key
+  const label = CONFIG_LABELS[configKey] || configKey;
+
   return (
-    <Box sx={{ display: "grid", gap: 1 }}>
-      <Typography variant="body2" color="text.secondary" sx={{ fontWeight: "bold" }}>
-        {configKey}
+    <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
+      <Typography
+        variant="body2"
+        color="text.primary"
+        sx={{ fontWeight: 500, minWidth: "240px", flexShrink: 0 }}
+      >
+        {label}
       </Typography>
-      <Box sx={{ display: "flex", gap: 1.25, alignItems: "center" }}>
+      <Box sx={{ flex: 1, maxWidth: "400px" }}>
         {isBool ? (
           <Select
             value={stringValue}
