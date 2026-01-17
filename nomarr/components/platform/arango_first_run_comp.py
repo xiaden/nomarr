@@ -121,19 +121,20 @@ def _has_db_config(config_path: Path) -> bool:
 def write_db_config(
     config_path: Path,
     password: str,
-    hosts: str = "http://nomarr-arangodb:8529",
 ) -> None:
-    """Write ArangoDB credentials to config file.
+    """Write auto-generated ArangoDB password to config file.
 
-    Creates/updates config with generated app credentials.
+    Creates/updates config with generated app password.
     NEVER writes root password.
 
-    Note: Username and db_name are hardcoded as 'nomarr' (not configurable).
+    Note:
+        - Only the password is written here (auto-generated secret)
+        - Host comes from ARANGO_HOST environment variable (set in nomarr.env)
+        - Username and db_name are hardcoded as 'nomarr' (not configurable)
 
     Args:
-        config_path: Path to config file
+        config_path: Path to config file (e.g., /app/config/nomarr.yaml)
         password: Generated app password (from provision_database_and_user)
-        hosts: ArangoDB server URL(s)
     """
     import yaml
 
@@ -144,13 +145,9 @@ def write_db_config(
     else:
         config = {}
 
-    # Update ArangoDB credentials (username/db_name hardcoded)
-    config.update(
-        {
-            "arango_hosts": hosts,
-            "arango_password": password,
-        }
-    )
+    # Only write the auto-generated password
+    # Host comes from ARANGO_HOST env var, not config file
+    config["arango_password"] = password
 
     # Ensure directory exists
     config_path.parent.mkdir(parents=True, exist_ok=True)

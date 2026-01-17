@@ -238,11 +238,11 @@ class Application:
         # Provision database and user, get generated app password
         app_password = provision_database_and_user(hosts=hosts, root_password=root_password)
 
-        # Write credentials to config (uses /app/config/nomarr.yaml in Docker)
+        # Write password to config (uses /app/config/nomarr.yaml in Docker)
+        # Note: Host comes from ARANGO_HOST env var, not written to config
         write_db_config(
             config_path=Path("/app/config/nomarr.yaml"),
             password=app_password,
-            hosts=hosts,
         )
 
         logging.info("Database provisioned successfully")
