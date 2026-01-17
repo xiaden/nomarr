@@ -109,9 +109,8 @@ class ConfigService:
 # At startup
 config_service = ConfigService(config_path="/config/config.yaml")
 
-# Pass config objects to other services
-db_config = config_service.get_database_config()
-db = Database(db_config)
+# Database reads connection info from env (ARANGO_HOST) and config (arango_password)
+db = Database()
 
 proc_config = config_service.get_processing_config()
 processing_service = ProcessingService(db, proc_config)

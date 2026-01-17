@@ -258,7 +258,7 @@ class QueueOperations:
 **Access Pattern:**
 ```python
 # ✅ GOOD - Via Database facade
-db = Database(db_path)
+db = Database()  # Connects using ARANGO_HOST env and config
 job_id = db.tag_queue.enqueue("/music/track.mp3")
 
 # ❌ BAD - Direct import
