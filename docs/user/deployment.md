@@ -141,27 +141,24 @@ git clone https://github.com/yourusername/nomarr.git .
 
 ## Production Configuration
 
-### 1. Environment Variables
+### 1. Environment Files
 
-Create `.env` file:
+Nomarr uses two environment files:
 
+**`nomarr-arangodb.env`** (for ArangoDB container):
 ```bash
-# Nomarr version
-NOMARR_VERSION=latest
+# Root password for initial database provisioning
+ARANGO_ROOT_PASSWORD=<generate-with-openssl-rand-hex-32>
+```
 
-# Paths
-NOMARR_CONFIG=/opt/nomarr/config/config.yaml
-NOMARR_DATA=/opt/nomarr/data
-NOMARR_MODELS=/opt/nomarr/models
+**`nomarr.env`** (for Nomarr container):
+```bash
+# ArangoDB connection
+ARANGO_HOST=http://nomarr-arangodb:8529
+ARANGO_ROOT_PASSWORD=<same-as-above>
+
+# Paths (optional - uses defaults if not set)
 MUSIC_LIBRARY=/mnt/music
-
-# Server
-NOMARR_HOST=0.0.0.0
-NOMARR_PORT=8888
-
-# Security
-SESSION_SECRET=<generate-with-openssl-rand-hex-32>
-API_KEY=<generate-with-openssl-rand-hex-32>
 
 # GPU
 NVIDIA_VISIBLE_DEVICES=all
@@ -173,9 +170,13 @@ LOG_LEVEL=INFO
 
 Generate secrets:
 ```bash
-openssl rand -hex 32  # For SESSION_SECRET
-openssl rand -hex 32  # For API_KEY
+openssl rand -hex 32  # For ARANGO_ROOT_PASSWORD
 ```
+
+**Note:** On first run, Nomarr automatically:
+1. Provisions the ArangoDB database and user
+2. Generates a secure application password
+3. Stores the password in `config/nomarr.yaml` as `arango_password`
 
 ### 2. Production config.yaml
 
@@ -183,10 +184,8 @@ Create `config/config.yaml`:
 
 ```yaml
 # Production Nomarr Configuration
-database:
-  path: "/data/nomarr.db"
-  timeout: 30
-  wal_mode: true  # Write-Ahead Logging for better concurrency
+# Note: Database password is auto-generated on first run and stored here.
+# The 'arango_password' key will be added automatically.
 
 library:
   paths:
@@ -220,8 +219,7 @@ ml:
 
 server:
   host: "0.0.0.0"
-  port: 8888
-  session_secret: "${SESSION_SECRET}"  # From .env
+  port: 8356  # Internal port (mapped to 8888 externally)
   session_lifetime: 86400  # 24 hours
   cors_origins:
     - "https://yourdomain.com"
@@ -246,7 +244,6 @@ monitoring:
 ```
 
 **Key production settings:**
-- `database.wal_mode`: Improves concurrent access
 - `library.scan_interval`: Automatic rescans
 - `processing.timeout`: Prevent stuck jobs
 - `server.trust_proxy`: Required behind reverse proxy
@@ -256,9 +253,22 @@ monitoring:
 ### 3. Production docker-compose.yml
 
 ```yaml
-version: '3.8'
-
 services:
+  nomarr-arangodb:
+    image: arangodb:3.12
+    container_name: nomarr-arangodb
+    hostname: nomarr-arangodb
+    restart: unless-stopped
+    env_file:
+      - nomarr-arangodb.env
+    volumes:
+      - nomarr-arangodb-data:/var/lib/arangodb3
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8529/_api/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   nomarr:
     build:
       context: .
@@ -266,22 +276,23 @@ services:
     container_name: nomarr
     hostname: nomarr
     restart: unless-stopped
+    depends_on:
+      nomarr-arangodb:
+        condition: service_healthy
+    env_file:
+      - nomarr.env
     
     ports:
-      - "127.0.0.1:8888:8888"  # Only localhost (behind proxy)
+      - "127.0.0.1:8888:8356"  # Only localhost (behind proxy)
       - "127.0.0.1:9090:9090"  # Metrics endpoint
     
     volumes:
-      - ./config:/config:ro
+      - ./config:/config
       - ./models:/models:ro
       - ${MUSIC_LIBRARY}:/music:ro
-      - nomarr-data:/data
       - nomarr-cache:/data/embeddings
     
     environment:
-      - NOMARR_CONFIG=/config/config.yaml
-      - SESSION_SECRET=${SESSION_SECRET}
-      - API_KEY=${API_KEY}
       - LOG_LEVEL=${LOG_LEVEL}
       - NVIDIA_VISIBLE_DEVICES=all
       - TZ=America/New_York  # Set your timezone
@@ -298,7 +309,7 @@ services:
               capabilities: [gpu]
     
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8888/api/web/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8356/api/web/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -316,7 +327,7 @@ services:
     user: "1000:1000"  # Run as non-root (adjust UID/GID)
 
 volumes:
-  nomarr-data:
+  nomarr-arangodb-data:
     driver: local
   nomarr-cache:
     driver: local
@@ -327,6 +338,8 @@ networks:
 ```
 
 **Production features:**
+- ArangoDB service with health check
+- Nomarr waits for healthy database before starting
 - Bind to localhost only (reverse proxy handles external access)
 - Memory limits prevent OOM killing other services
 - Health checks for automatic restart
@@ -637,27 +650,33 @@ crontab -e
 **Automated backup script** (`/opt/nomarr/backup.sh`):
 ```bash
 #!/bin/bash
-# Nomarr database backup
+# Nomarr ArangoDB backup using arangodump
 
 BACKUP_DIR="/opt/nomarr/backups"
 DATE=$(date +%Y%m%d_%H%M%S)
-DB_PATH="/opt/nomarr/data/nomarr.db"
 
 mkdir -p "$BACKUP_DIR"
 
-# Stop container briefly for consistent backup
-docker-compose -f /opt/nomarr/docker-compose.yml stop nomarr
+# Get password from config
+PASSWORD=$(grep arango_password /opt/nomarr/config/nomarr.yaml | cut -d: -f2 | tr -d ' "')
 
-# Backup database
-cp "$DB_PATH" "$BACKUP_DIR/nomarr_$DATE.db"
+# Backup database using arangodump (hot backup, no downtime)
+docker exec nomarr-arangodb arangodump \
+  --server.username nomarr \
+  --server.password "$PASSWORD" \
+  --server.database nomarr \
+  --output-directory /tmp/backup_$DATE
 
-# Restart container
-docker-compose -f /opt/nomarr/docker-compose.yml start nomarr
+# Copy backup out of container
+docker cp nomarr-arangodb:/tmp/backup_$DATE "$BACKUP_DIR/nomarr_$DATE"
+
+# Cleanup temp backup inside container
+docker exec nomarr-arangodb rm -rf /tmp/backup_$DATE
 
 # Keep only last 7 days
-find "$BACKUP_DIR" -name "nomarr_*.db" -mtime +7 -delete
+find "$BACKUP_DIR" -name "nomarr_*" -type d -mtime +7 -exec rm -rf {} +
 
-echo "$(date): Backup completed: nomarr_$DATE.db"
+echo "$(date): Backup completed: nomarr_$DATE"
 ```
 
 **Schedule daily backups:**
@@ -667,9 +686,9 @@ crontab -e
 0 3 * * * /opt/nomarr/backup.sh >> /var/log/nomarr-backup.log 2>&1
 ```
 
-### Hot Backup (No Downtime)
+### Hot Backup (Alternative Method)
 
-Use ArangoDB's built-in backup (arangodump):
+Use ArangoDB's built-in backup directly:
 
 ```bash
 # Backup via arangodump
@@ -869,10 +888,15 @@ git checkout <previous-commit-hash>
 docker-compose build --no-cache
 docker-compose up -d
 
-# If database incompatible, restore backup
-docker-compose stop nomarr
-cp /opt/nomarr/backups/nomarr_YYYYMMDD.db /opt/nomarr/data/nomarr.db
-docker-compose start nomarr
+# If database incompatible, restore from backup using arangorestore
+PASSWORD=$(grep arango_password /opt/nomarr/config/nomarr.yaml | cut -d: -f2 | tr -d ' "')
+docker cp /opt/nomarr/backups/nomarr_YYYYMMDD nomarr-arangodb:/tmp/restore
+docker exec nomarr-arangodb arangorestore \
+  --server.username nomarr \
+  --server.password "$PASSWORD" \
+  --server.database nomarr \
+  --input-directory /tmp/restore \
+  --overwrite true
 ```
 
 ---

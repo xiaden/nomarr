@@ -106,12 +106,26 @@ cd nomarr
 
 #### 4. Configure Nomarr
 
+Create environment files as described in the repository's example files:
+
+**`nomarr-arangodb.env`** (for the ArangoDB container):
+```bash
+ARANGO_ROOT_PASSWORD=your-secure-root-password
+```
+
+**`nomarr.env`** (for the Nomarr container):
+```bash
+ARANGO_HOST=http://nomarr-arangodb:8529
+ARANGO_ROOT_PASSWORD=your-secure-root-password
+```
+
 Create `config/config.yaml`:
 
 ```yaml
 # Nomarr Configuration
-database:
-  path: "/data/nomarr.db"
+# Note: Database credentials are managed automatically.
+# On first run, Nomarr provisions the ArangoDB database and stores
+# the generated password in this file under 'arango_password'.
 
 library:
   paths:
@@ -138,8 +152,7 @@ ml:
 
 server:
   host: "0.0.0.0"
-  port: 8888
-  session_secret: "CHANGE_THIS_TO_A_RANDOM_STRING"
+  port: 8356  # Internal port (mapped to 8888 externally)
 
 navidrome:
   export_dir: "/data/playlists"
@@ -149,26 +162,36 @@ navidrome:
 - `library.paths`: Map your music directory (configured in docker-compose.yml)
 - `processing.workers`: Start with 2, increase if you have >8GB GPU memory
 - `processing.batch_size`: Increase to 16-32 with high-end GPUs
-- `server.session_secret`: Generate with `openssl rand -hex 32`
 
 #### 5. Configure Docker Compose
 
-Edit `docker-compose.yml`:
+The repository includes a working `docker-compose.yml`. Key sections:
 
 ```yaml
 services:
+  nomarr-arangodb:
+    image: arangodb:3.12
+    container_name: nomarr-arangodb
+    env_file:
+      - nomarr-arangodb.env
+    volumes:
+      - nomarr-arangodb-data:/var/lib/arangodb3
+    restart: unless-stopped
+
   nomarr:
     build: .
     container_name: nomarr
+    depends_on:
+      - nomarr-arangodb
+    env_file:
+      - nomarr.env
     ports:
-      - "8888:8888"
+      - "8888:8356"  # External:Internal
     volumes:
       - ./config:/config
       - ./models:/models
       - /path/to/your/music:/music:ro  # CHANGE THIS
-      - nomarr-data:/data
     environment:
-      - NOMARR_CONFIG=/config/config.yaml
       - NVIDIA_VISIBLE_DEVICES=all  # For GPU support
     deploy:
       resources:
@@ -180,7 +203,7 @@ services:
     restart: unless-stopped
 
 volumes:
-  nomarr-data:
+  nomarr-arangodb-data:
 ```
 
 **Key changes:**
@@ -287,11 +310,17 @@ pip install tensorflow[and-cuda]==2.15.0
 
 #### 5. Configure Nomarr
 
-Create `config/config.yaml` as shown in Docker installation section, but use local paths:
+Set up environment variables:
+```bash
+export ARANGO_HOST=http://localhost:8529
+export ARANGO_ROOT_PASSWORD=your-root-password
+```
+
+Create `config/config.yaml`:
 
 ```yaml
-database:
-  path: "./data/nomarr.db"
+# Database credentials are auto-generated on first run.
+# See 'arango_password' after initialization.
 
 library:
   paths:
@@ -550,11 +579,11 @@ See [navidrome.md](navidrome.md) for integration details.
    docker exec -it nomarr nom-cli worker restart
    ```
 
-4. **Check database permissions:**
+4. **Check database connectivity:**
    ```bash
-   docker exec -it nomarr ls -l /data/nomarr.db
+   docker exec -it nomarr python -c "from nomarr.persistence.db import Database; db = Database(); print('Connected to ArangoDB')"
    ```
-   Should be writable by container user.
+   Should print "Connected to ArangoDB".
 
 ### Processing Jobs Fail Immediately
 

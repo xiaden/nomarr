@@ -119,17 +119,14 @@ The project migrated from **SQLite to ArangoDB** but many documentation files st
 
 ### docs/user/getting_started.md
 
-**Status:** `PARTIALLY_FIXED`
+**Status:** `FIXED`
 
-**Fixed (Commit 274df7f):**
-- ✅ Database troubleshooting updated for ArangoDB
-- ✅ Config reference shows ArangoDB password storage
-
-**Remaining Issues:**
-
-| Line | Issue | Details |
-|------|-------|---------|
-| 114 | `database: path: "/data/nomarr.db"` | **CRITICAL**: SQLite path config - should be ArangoDB connection config |
+**Fixed:**
+- ✅ Replaced SQLite database config with ArangoDB env file setup
+- ✅ Updated docker-compose example to include ArangoDB service
+- ✅ Updated config.yaml example (removed db path, added note about auto-generated password)
+- ✅ Updated database connectivity check to use Python instead of file check
+- ✅ Fixed port references (8356 internal, 8888 external)
 | 141 | Port 8888 | Verify correct port |
 | 164 | Port mapping `8888:8888` | Verify correct port |
 | 294 | `path: "./data/nomarr.db"` | **CRITICAL**: SQLite path - should be ArangoDB config |
@@ -141,25 +138,16 @@ The project migrated from **SQLite to ArangoDB** but many documentation files st
 
 ### docs/user/deployment.md
 
-**Status:** `NEEDS_UPDATE`
+**Status:** `FIXED`
 
-**Issues Found:**
-
-| Line | Issue | Details |
-|------|-------|---------|
-| 187 | `database: path: "/data/nomarr.db"` | **CRITICAL**: SQLite config |
-| 189 | `wal_mode: true` | **CRITICAL**: SQLite WAL mode - not applicable to ArangoDB |
-| 249 | `database.wal_mode: Improves concurrent access` | **CRITICAL**: SQLite concept |
-| 644 | `DB_PATH="/opt/nomarr/data/nomarr.db"` | **CRITICAL**: SQLite backup path |
-| 652 | `cp "$DB_PATH"` backup command | **CRITICAL**: SQLite file backup - ArangoDB needs different backup strategy |
-| 874 | `cp .../nomarr_YYYYMMDD.db` | **CRITICAL**: SQLite restore |
-| 160 | Port 8888 | Verify consistent port usage |
-
-**Recommended Action:** 
-1. Replace SQLite config with ArangoDB connection settings
-2. Update backup/restore procedures for ArangoDB (arangodump/arangorestore)
-3. Remove WAL mode references
-4. Add docker-compose service for ArangoDB container
+**Fixed:**
+- ✅ Replaced `.env` section with `nomarr-arangodb.env` and `nomarr.env` setup
+- ✅ Updated config.yaml example (removed database section, updated server port)
+- ✅ Updated production docker-compose.yml to include ArangoDB service
+- ✅ Replaced SQLite backup script with arangodump-based backup
+- ✅ Replaced SQLite restore with arangorestore command
+- ✅ Removed WAL mode references
+- ✅ Fixed port references (8356 internal, 8888 external)
 
 ---
 
