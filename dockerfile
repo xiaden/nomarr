@@ -48,7 +48,6 @@ ENV NOMARR_MODELS=/app/models \
     NOMARR_DB=/app/config/db/essentia.sqlite \
     NOMARR_CONFIG=/app/config/config.yaml \
     PYTHONPATH=/app \
-    NOMARR_API_KEY="" \
     PORT=8356 \
     TF_CPP_MIN_LOG_LEVEL=2 \
     TF_FORCE_GPU_ALLOW_GROWTH=true \
