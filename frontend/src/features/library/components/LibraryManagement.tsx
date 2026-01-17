@@ -238,10 +238,7 @@ export function LibraryManagement() {
       // User confirmed - now queue the scan
       setScanningState("queueing");
 
-      const result = await scanLibrary(id, {
-        recursive: true,
-        cleanMissing: true,
-      });
+      const result = await scanLibrary(id);
       showSuccess(
         `Scan ${result.status}: ${result.message || "Library scan queued"}`
       );

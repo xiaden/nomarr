@@ -415,19 +415,17 @@ async def get_file_tags(
 @router.post("/{library_id}/scan", dependencies=[Depends(verify_session)])
 async def scan_library(
     library_id: str,
-    request: ScanLibraryRequest,
     library_service: "LibraryService" = Depends(get_library_service),
 ) -> StartScanWithStatusResponse:
     """
     Start a scan for a specific library.
 
     This endpoint triggers a scan for the specified library, discovering files
-    and enqueuing them for background processing. The scan respects the library's
-    root_path and only processes files within that directory tree.
+    and enqueuing them for background processing. The scan uses the library's
+    root_path and always runs recursively with clean_missing enabled.
 
     Args:
         library_id: Library ID to scan
-        request: Scan configuration (paths, recursive, force, clean_missing)
         library_service: LibraryService instance (injected)
 
     Returns:
@@ -440,9 +438,9 @@ async def scan_library(
         # Call the service layer to start scan for this specific library (returns StartScanResult DTO)
         stats = library_service.start_scan_for_library(
             library_id=library_id,
-            paths=request.paths,
-            recursive=request.recursive,
-            clean_missing=request.clean_missing,
+            paths=None,
+            recursive=True,
+            clean_missing=True,
         )
 
         # Transform DTO to wrapped Pydantic response

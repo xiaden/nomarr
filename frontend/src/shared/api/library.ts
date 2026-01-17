@@ -163,25 +163,11 @@ export async function preview(
   );
 }
 
-export interface ScanOptions {
-  paths?: string[];
-  recursive?: boolean;
-  cleanMissing?: boolean;
-}
-
 /**
  * Scan a specific library.
  */
-export async function scan(id: string, options?: ScanOptions): Promise<ScanResult> {
-  const body: Record<string, unknown> = {
-    recursive: options?.recursive ?? true,
-    clean_missing: options?.cleanMissing ?? true,
-  };
-  if (options?.paths) {
-    body.paths = options.paths;
-  }
-
-  return post<ScanResult>(`/api/web/libraries/${id}/scan`, body);
+export async function scan(id: string): Promise<ScanResult> {
+  return post<ScanResult>(`/api/web/libraries/${id}/scan`, {});
 }
 
 export interface CleanupTagsResult {

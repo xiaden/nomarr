@@ -24,7 +24,7 @@ export {
     cleanupOrphanedTags, create, deleteLibrary, getDefault, getFileTags, getLibrary, getStats,
     list, preview,
     scan, setDefault, update, type CleanupTagsResult, type CreateLibraryPayload, type FileTagsResult, type LibraryStats, type PreviewOptions,
-    type ScanOptions, type UpdateLibraryPayload
+    type UpdateLibraryPayload
 } from "./library";
 
 // Files - explicit exports to avoid conflicts
