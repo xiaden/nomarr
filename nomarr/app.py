@@ -142,6 +142,9 @@ class Application:
         self.version_tag_key: str = INTERNAL_VERSION_TAG
         self.tagger_version: str = TAGGER_VERSION
 
+        # First-run provisioning (creates DB user and writes credentials)
+        self._ensure_database_provisioned()
+
         # Core dependencies (owned by Application)
         self.db = Database()
 
@@ -192,6 +195,51 @@ class Application:
         if name not in self.services:
             raise KeyError(f"Service '{name}' not found. Available services: {list(self.services.keys())}")
         return self.services[name]
+
+    def _ensure_database_provisioned(self) -> None:
+        """Ensure database is provisioned before creating Database connection.
+
+        On first run:
+        1. Uses ARANGO_ROOT_PASSWORD to connect as root
+        2. Creates 'nomarr' database and user with random password
+        3. Writes generated password to config file
+
+        After first run:
+        - Config file already has credentials, this is a no-op
+        """
+        from nomarr.components.platform.arango_first_run_comp import (
+            get_root_password_from_env,
+            is_first_run,
+            provision_database_and_user,
+            write_db_config,
+        )
+
+        config_path = Path("/app/config/nomarr.yaml")
+        # Also check local dev path
+        if not config_path.exists():
+            config_path = Path.cwd() / "config" / "nomarr.yaml"
+
+        if not is_first_run(config_path):
+            logging.debug("Database already provisioned, skipping first-run setup")
+            return
+
+        logging.info("First run detected - provisioning database...")
+
+        # Get root password from environment
+        root_password = get_root_password_from_env()
+        hosts = os.getenv("ARANGO_HOST", "http://nomarr-arangodb:8529")
+
+        # Provision database and user, get generated app password
+        app_password = provision_database_and_user(hosts=hosts, root_password=root_password)
+
+        # Write credentials to config (uses /app/config/nomarr.yaml in Docker)
+        write_db_config(
+            config_path=Path("/app/config/nomarr.yaml"),
+            password=app_password,
+            hosts=hosts,
+        )
+
+        logging.info("Database provisioned successfully")
 
     def _start_app_heartbeat(self) -> None:
         """Start background thread to write app heartbeat (Phase 3: DB-based IPC)."""
