@@ -203,7 +203,7 @@ class StartScanWithStatusResponse(BaseModel):
 class CreateLibraryRequest(BaseModel):
     """Request body for creating a library."""
 
-    name: str
+    name: str | None = None  # Optional: auto-generated from path if not provided
     root_path: str
     is_enabled: bool = True
     is_default: bool = False

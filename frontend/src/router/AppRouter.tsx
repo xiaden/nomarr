@@ -8,7 +8,6 @@ import { isAuthenticated } from "../shared/auth";
 const LoginPage = lazy(() => import("../features/auth/LoginPage").then((m) => ({ default: m.LoginPage })));
 const DashboardPage = lazy(() => import("../features/dashboard/DashboardPage").then((m) => ({ default: m.DashboardPage })));
 const TaggerStatusPage = lazy(() => import("../features/tagger-status/TaggerStatusPage").then((m) => ({ default: m.TaggerStatusPage })));
-const LibraryPage = lazy(() => import("../features/library/LibraryPage").then((m) => ({ default: m.LibraryPage })));
 const BrowsePage = lazy(() => import("../features/browse/BrowsePage").then((m) => ({ default: m.BrowsePage })));
 const AnalyticsPage = lazy(() => import("../features/analytics/AnalyticsPage").then((m) => ({ default: m.AnalyticsPage })));
 const CalibrationPage = lazy(() => import("../features/calibration/CalibrationPage").then((m) => ({ default: m.CalibrationPage })));
@@ -65,7 +64,6 @@ export function AppRouter() {
                   <Routes>
                     <Route path="/" element={<DashboardPage />} />
                     <Route path="/tagger-status" element={<TaggerStatusPage />} />
-                    <Route path="/library" element={<LibraryPage />} />
                     <Route path="/browse" element={<BrowsePage />} />
                     <Route path="/analytics" element={<AnalyticsPage />} />
                     <Route path="/calibration" element={<CalibrationPage />} />

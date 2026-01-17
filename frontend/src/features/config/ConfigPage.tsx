@@ -5,12 +5,14 @@
  * - View current configuration
  * - Update individual config values
  * - Restart server to apply changes
+ * - Manage libraries (CRUD operations)
  */
 
 import { Alert, CircularProgress, Stack } from "@mui/material";
 
 import { PageContainer } from "@shared/components/ui";
 
+import { LibraryManagement } from "../library/components/LibraryManagement";
 import { ConfigSettings } from "./components/ConfigSettings";
 import { useConfigData } from "./hooks/useConfigData";
 
@@ -32,6 +34,7 @@ export function ConfigPage() {
             onChange={handleChange}
             onSaveAll={handleSaveAll}
           />
+          <LibraryManagement />
         </Stack>
       )}
     </PageContainer>

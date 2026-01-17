@@ -503,7 +503,7 @@ class LibraryService:
 
     def create_library(
         self,
-        name: str,
+        name: str | None,
         root_path: str,
         is_enabled: bool = True,
         is_default: bool = False,
@@ -516,7 +516,7 @@ class LibraryService:
         library_files table without library_id tracking.
 
         Args:
-            name: Library name (must be unique)
+            name: Library name (optional: auto-generated from path basename if not provided)
             root_path: Absolute path to library root (must be within configured library_root)
             is_enabled: Whether library is enabled for scanning
             is_default: Whether this is the default library
@@ -527,6 +527,8 @@ class LibraryService:
         Raises:
             ValueError: If name already exists or path is invalid
         """
+        import os
+
         # Get base library root from config
         base_root = get_base_library_root(self.cfg.library_root)
 
@@ -536,10 +538,20 @@ class LibraryService:
         # Ensure no overlapping library roots
         ensure_no_overlapping_library_root(self.db, abs_path, ignore_id=None)
 
-        # Check for duplicate name
-        existing = self.db.libraries.get_library_by_name(name)
-        if existing:
-            raise ValueError(f"Library name already exists: {name}")
+        # Generate name from path basename if not provided
+        if not name or not name.strip():
+            name = os.path.basename(abs_path.rstrip(os.sep)) or "Library"
+            # If name collision, append number
+            base_name = name
+            counter = 1
+            while self.db.libraries.get_library_by_name(name):
+                counter += 1
+                name = f"{base_name} ({counter})"
+        else:
+            # Check for duplicate name
+            existing = self.db.libraries.get_library_by_name(name)
+            if existing:
+                raise ValueError(f"Library name already exists: {name}")
 
         # Create library
         try:

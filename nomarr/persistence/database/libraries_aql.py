@@ -29,7 +29,7 @@ class LibrariesOperations:
         """Create a new library entry.
 
         Args:
-            name: Library name (must be unique)
+            name: Library name (must be unique, can be auto-generated from path)
             root_path: Absolute path to library root
             is_enabled: Whether library is enabled for scanning
             is_default: Whether this is the default library

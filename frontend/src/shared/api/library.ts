@@ -74,7 +74,7 @@ export async function getDefault(): Promise<Library | null> {
 }
 
 export interface CreateLibraryPayload {
-  name: string;
+  name: string | null;  // Optional: auto-generated from path if null
   rootPath: string;
   isEnabled?: boolean;
   isDefault?: boolean;

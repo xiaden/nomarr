@@ -157,15 +157,15 @@ export function LibraryManagement() {
   };
 
   const handleCreate = async () => {
-    if (!formName.trim() || !formRootPath.trim()) {
-      setError("Name and path are required");
+    if (!formRootPath.trim()) {
+      setError("Path is required");
       return;
     }
 
     try {
       setError(null);
       await createLibrary({
-        name: formName,
+        name: formName.trim() || null,  // Optional: backend will auto-generate from path
         rootPath: formRootPath,
         isEnabled: formIsEnabled,
         isDefault: formIsDefault,
@@ -181,15 +181,15 @@ export function LibraryManagement() {
 
   const handleUpdate = async () => {
     if (editingId === null) return;
-    if (!formName.trim() || !formRootPath.trim()) {
-      setError("Name and path are required");
+    if (!formRootPath.trim()) {
+      setError("Path is required");
       return;
     }
 
     try {
       setError(null);
       await updateLibrary(editingId, {
-        name: formName,
+        name: formName.trim() || undefined,  // Keep existing name if empty
         rootPath: formRootPath,
         isEnabled: formIsEnabled,
         isDefault: formIsDefault,
@@ -303,12 +303,12 @@ export function LibraryManagement() {
           <Stack spacing={2}>
             <Box>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-                Name
+                Name (optional)
               </Typography>
               <TextField
                 value={formName}
                 onChange={(e) => setFormName(e.target.value)}
-                placeholder="My Music Library"
+                placeholder="Auto-generated from path if left empty"
                 fullWidth
               />
             </Box>
