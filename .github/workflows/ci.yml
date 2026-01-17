@@ -99,10 +99,10 @@ jobs:
             echo "✅ Frontend build artifacts are up-to-date"
           fi
 
-  # Docker build and push (only if tests pass OR force_build is true)
+  # Docker build and push (based on test results, force_build, or version change)
   build-and-push:
     needs: test
-    if: always()  # Run even if test fails (for force_build scenarios)
+    if: always()  # Always run this job (actual build is conditional)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -126,13 +126,6 @@ jobs:
         id: version_check
         if: github.event_name == 'push'
         run: |
-          # Manual trigger can force build
-          if [ "${{ github.event.inputs.force_build }}" == "true" ]; then
-            echo "changed=true" >> $GITHUB_OUTPUT
-            echo "Force build requested via manual trigger."
-            exit 0
-          fi
-
           # Get version from previous commit
           git checkout HEAD~1 -- nomarr/__version__.py 2>/dev/null || echo "First commit"
           OLD_VERSION=$(python3 -c "exec(open('nomarr/__version__.py').read()); print(__version__)" 2>/dev/null || echo "0.0.0")
@@ -149,12 +142,41 @@ jobs:
             echo "Version unchanged. Skipping Docker publish."
           fi
 
+      - name: Determine if build should proceed
+        id: should_build
+        run: |
+          # Decision tree:
+          # 1. Tests must pass (unless skip_tests was true)
+          # 2. Then check: force_build OR version_changed
+          
+          TESTS_OK="false"
+          if [ "${{ github.event.inputs.skip_tests }}" == "true" ] || [ "${{ needs.test.result }}" == "success" ]; then
+            TESTS_OK="true"
+          fi
+          
+          BUILD="false"
+          if [ "$TESTS_OK" == "true" ]; then
+            if [ "${{ github.event.inputs.force_build }}" == "true" ]; then
+              BUILD="true"
+              echo "✅ Building: force_build=true"
+            elif [ "${{ github.event_name }}" == "push" ] && [ "${{ steps.version_check.outputs.changed }}" == "true" ]; then
+              BUILD="true"
+              echo "✅ Building: version changed"
+            else
+              echo "⏭️ Skipping: force_build=false and version unchanged"
+            fi
+          else
+            echo "❌ Skipping: tests failed and skip_tests=false"
+          fi
+          
+          echo "should_build=$BUILD" >> $GITHUB_OUTPUT
+
       - name: Set up Docker Buildx
-        if: (needs.test.result == 'success' || github.event.inputs.force_build == 'true') && ((github.event_name == 'push' && steps.version_check.outputs.changed == 'true') || github.event.inputs.force_build == 'true')
+        if: steps.should_build.outputs.should_build == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GitHub Container Registry
-        if: (needs.test.result == 'success' || github.event.inputs.force_build == 'true') && ((github.event_name == 'push' && steps.version_check.outputs.changed == 'true') || github.event.inputs.force_build == 'true')
+        if: steps.should_build.outputs.should_build == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -162,7 +184,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push to GitHub Container Registry with attestation
-        if: (needs.test.result == 'success' || github.event.inputs.force_build == 'true') && ((github.event_name == 'push' && steps.version_check.outputs.changed == 'true') || github.event.inputs.force_build == 'true')
+        if: steps.should_build.outputs.should_build == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
