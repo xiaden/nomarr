@@ -197,7 +197,9 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/nomarr:latest
             ghcr.io/${{ github.repository_owner }}/nomarr:v${{ steps.version.outputs.version }}
             ghcr.io/${{ github.repository_owner }}/nomarr:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: |
+            type=registry,ref=ghcr.io/${{ github.repository_owner }}/nomarr:buildcache
+            type=registry,ref=ghcr.io/${{ github.repository_owner }}/nomarr:latest
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/nomarr:buildcache,mode=max
           provenance: true  # Generate signed build provenance attestation
           sbom: true  # Generate Software Bill of Materials
