@@ -50,6 +50,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write  # Required for attestation
+      attestations: write  # Required for attestation
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -130,7 +132,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build Docker image
+      - name: Build Docker image for testing
         if: (github.event_name == 'push' && steps.version_check.outputs.changed == 'true') || github.event.inputs.force_build == 'true'
         uses: docker/build-push-action@v5
         with:
@@ -150,12 +152,18 @@ jobs:
           # code_smell tests are for architecture quality, not functionality
           docker run --rm nomarr python3 -m pytest tests/ -v -m "not container_only and not requires_database and not code_smell"
 
-      - name: Tag and push to GitHub Container Registry
+      - name: Build and push to GitHub Container Registry with attestation
         if: ((github.event_name == 'push' && steps.version_check.outputs.changed == 'true') || github.event.inputs.force_build == 'true') && (success() || github.event.inputs.skip_tests == 'true')
-        run: |
-          docker tag nomarr ghcr.io/${{ github.repository_owner }}/nomarr:latest
-          docker tag nomarr ghcr.io/${{ github.repository_owner }}/nomarr:v${{ steps.version.outputs.version }}
-          docker tag nomarr ghcr.io/${{ github.repository_owner }}/nomarr:${{ github.sha }}
-          docker push ghcr.io/${{ github.repository_owner }}/nomarr:latest
-          docker push ghcr.io/${{ github.repository_owner }}/nomarr:v${{ steps.version.outputs.version }}
-          docker push ghcr.io/${{ github.repository_owner }}/nomarr:${{ github.sha }}
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/nomarr:latest
+            ghcr.io/${{ github.repository_owner }}/nomarr:v${{ steps.version.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/nomarr:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true  # Generate signed build provenance attestation
+          sbom: true  # Generate Software Bill of Materials
