@@ -48,6 +48,7 @@ jobs:
   # Fast unit tests on runner (no Docker needed)
   test:
     runs-on: ubuntu-latest
+    if: github.event.inputs.skip_tests != 'true'
     permissions:
       contents: read
     steps:
@@ -67,7 +68,6 @@ jobs:
           pip install -e .
 
       - name: Run unit tests
-        if: github.event.inputs.skip_tests != 'true'
         run: |
           # Run unit tests that don't require Docker, database, or GPU
           pytest tests/ -v -m "not container_only and not requires_database and not code_smell"
