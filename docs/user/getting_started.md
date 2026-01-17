@@ -110,16 +110,22 @@ Create environment files as described in the repository's example files:
 
 **`nomarr-arangodb.env`** (for the ArangoDB container):
 ```bash
+# Root password - REQUIRED for first-run provisioning
 ARANGO_ROOT_PASSWORD=your-secure-root-password
+ARANGO_NO_AUTH=0
 ```
 
 **`nomarr.env`** (for the Nomarr container):
 ```bash
+# ArangoDB connection
 ARANGO_HOST=http://nomarr-arangodb:8529
+
+# Root password - must match nomarr-arangodb.env
+# Only needed for first-run provisioning
 ARANGO_ROOT_PASSWORD=your-secure-root-password
 ```
 
-Create `config/config.yaml`:
+Create `config/nomarr.yaml`:
 
 ```yaml
 # Nomarr Configuration
@@ -127,36 +133,14 @@ Create `config/config.yaml`:
 # On first run, Nomarr provisions the ArangoDB database and stores
 # the generated password in this file under 'arango_password'.
 
-library:
-  paths:
-    - "/music"  # Path inside container
-  extensions:
-    - ".flac"
-    - ".mp3"
-    - ".ogg"
-    - ".m4a"
-    - ".wav"
+# Library root - base path for all libraries (inside container)
+library_root: "/media"
 
-processing:
-  workers: 2  # Number of parallel workers (adjust based on GPU memory)
-  queue_sizes:
-    processing: 500
-    calibration: 100
-  batch_size: 8  # Increase with more GPU memory
-
-ml:
-  models_dir: "/models"
-  backends:
-    - "essentia"
-  cache_embeddings: true
-
-server:
-  host: "0.0.0.0"
-  port: 8356  # Internal port (mapped to 8888 externally)
-
-navidrome:
-  export_dir: "/data/playlists"
+# Models directory (packaged in image, usually no need to change)
+models_dir: "/app/models"
 ```
+
+**Note:** Most settings use sensible defaults. Libraries are managed via the Web UI, not config files.
 
 **Important settings:**
 - `library.paths`: Map your music directory (configured in docker-compose.yml)
@@ -170,29 +154,40 @@ The repository includes a working `docker-compose.yml`. Key sections:
 ```yaml
 services:
   nomarr-arangodb:
-    image: arangodb:3.12
+    image: arangodb:3.11
     container_name: nomarr-arangodb
+    networks:
+      - internal_network
     env_file:
       - nomarr-arangodb.env
     volumes:
-      - nomarr-arangodb-data:/var/lib/arangodb3
+      - ./config/arangodb:/var/lib/arangodb3
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "arangosh --server.endpoint tcp://127.0.0.1:8529 --server.username root --server.password \"$$ARANGO_ROOT_PASSWORD\" --javascript.execute-string 'db._version()' >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
   nomarr:
-    build: .
+    # Use pre-built image from GitHub Container Registry
+    image: ghcr.io/xiaden/nomarr:latest
+    # Or build locally: comment out 'image' and uncomment 'build'
+    # build: .
     container_name: nomarr
+    user: "1000:1000"
+    networks:
+      - front_network
+      - internal_network
     depends_on:
-      - nomarr-arangodb
+      nomarr-arangodb:
+        condition: service_healthy
     env_file:
       - nomarr.env
-    ports:
-      - "8888:8356"  # External:Internal
     volumes:
-      - ./config:/config
-      - ./models:/models
-      - /path/to/your/music:/music:ro  # CHANGE THIS
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=all  # For GPU support
+      - ./config:/app/config
+      - /path/to/your/music:/media:ro  # CHANGE THIS
     deploy:
       resources:
         reservations:
@@ -202,49 +197,33 @@ services:
               capabilities: [gpu]
     restart: unless-stopped
 
-volumes:
-  nomarr-arangodb-data:
+networks:
+  internal_network:
+    internal: true  # Isolated network for DB
+  front_network:
+    external: true  # Your reverse proxy network
 ```
 
 **Key changes:**
 - Replace `/path/to/your/music` with your actual music library path
 - Remove GPU configuration if running CPU-only (not recommended)
 
-#### 6. Download Models
+#### 6. Start Nomarr
 
-Nomarr requires pre-trained TensorFlow models:
-
-```bash
-# Download models (run from nomarr directory)
-./scripts/download_models.sh
-
-# Or manually download and extract to models/
-# Expected structure:
-# models/
-#   effnet/
-#     embeddings/
-#       discogs-effnet-bs64-1.pb
-#     heads/
-#       msd-musicnn-1.pb
-#       ...
-```
-
-Model files total ~2GB. See [docs/upstream/modelsinfo.md](../upstream/modelsinfo.md) for details.
-
-#### 7. Start Nomarr
+**Models are pre-packaged** in the Docker image - no separate download needed.
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 View logs:
 ```bash
-docker-compose logs -f nomarr
+docker compose logs -f nomarr
 ```
 
 Stop Nomarr:
 ```bash
-docker-compose down
+docker compose down
 ```
 
 ---
@@ -342,7 +321,7 @@ For native installations, you need ArangoDB running locally:
 docker run -d --name arangodb \
   -e ARANGO_ROOT_PASSWORD=your-root-password \
   -p 8529:8529 \
-  arangodb:3.12
+  arangodb:3.11
 ```
 
 #### 7. Run Nomarr
@@ -356,7 +335,7 @@ On first run, Nomarr will:
 2. Create the `nomarr` database and user
 3. Generate a secure password and store it in `config/nomarr.yaml`
 
-Access web UI at `http://localhost:8888`
+Access web UI at `http://localhost:8356`
 
 ---
 
@@ -364,9 +343,11 @@ Access web UI at `http://localhost:8888`
 
 ### 1. Access Web UI
 
-Open your browser to:
-- Docker: `http://localhost:8888`
-- Native: `http://localhost:8888`
+Nomarr runs on port `8356` inside the container. Access depends on your setup:
+
+- **With reverse proxy:** `https://nomarr.yourdomain.com`
+- **Direct access (dev):** Uncomment ports in docker-compose.yml, then `http://localhost:8356`
+- **Native installation:** `http://localhost:8356`
 
 You should see the Nomarr dashboard.
 

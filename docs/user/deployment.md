@@ -149,23 +149,17 @@ Nomarr uses two environment files:
 ```bash
 # Root password for initial database provisioning
 ARANGO_ROOT_PASSWORD=<generate-with-openssl-rand-hex-32>
+ARANGO_NO_AUTH=0
 ```
 
 **`nomarr.env`** (for Nomarr container):
 ```bash
 # ArangoDB connection
 ARANGO_HOST=http://nomarr-arangodb:8529
+
+# Root password - must match nomarr-arangodb.env
+# Only needed for first-run provisioning
 ARANGO_ROOT_PASSWORD=<same-as-above>
-
-# Paths (optional - uses defaults if not set)
-MUSIC_LIBRARY=/mnt/music
-
-# GPU
-NVIDIA_VISIBLE_DEVICES=all
-CUDA_VISIBLE_DEVICES=0
-
-# Logging
-LOG_LEVEL=INFO
 ```
 
 Generate secrets:
@@ -178,103 +172,54 @@ openssl rand -hex 32  # For ARANGO_ROOT_PASSWORD
 2. Generates a secure application password
 3. Stores the password in `config/nomarr.yaml` as `arango_password`
 
-### 2. Production config.yaml
+### 2. Production config/nomarr.yaml
 
-Create `config/config.yaml`:
+Create `config/nomarr.yaml`:
 
 ```yaml
 # Production Nomarr Configuration
 # Note: Database password is auto-generated on first run and stored here.
-# The 'arango_password' key will be added automatically.
 
-library:
-  paths:
-    - "/music"
-  extensions:
-    - ".flac"
-    - ".mp3"
-    - ".ogg"
-    - ".m4a"
-    - ".wav"
-    - ".opus"
-    - ".aac"
-  scan_interval: 3600  # Auto-rescan every hour
+# Library root - base path for all libraries (inside container)
+library_root: "/media"
 
-processing:
-  workers: 2  # Adjust based on GPU memory
-  queue_sizes:
-    processing: 1000
-    calibration: 200
-  batch_size: 16  # Adjust based on GPU memory
-  retry_limit: 3
-  timeout: 300  # 5 minutes per job
-
-ml:
-  models_dir: "/models"
-  backends:
-    - "essentia"
-  cache_embeddings: true
-  cache_dir: "/data/embeddings"
-  gpu_memory_growth: false  # Set to true if OOM issues
-
-server:
-  host: "0.0.0.0"
-  port: 8356  # Internal port (mapped to 8888 externally)
-  session_lifetime: 86400  # 24 hours
-  cors_origins:
-    - "https://yourdomain.com"
-  trust_proxy: true  # Behind reverse proxy
-
-navidrome:
-  export_dir: "/data/playlists"
-  auto_export: true
-  export_interval: 3600  # Export every hour
-
-logging:
-  level: "INFO"  # DEBUG for troubleshooting
-  file: "/data/nomarr.log"
-  max_size: 100  # MB
-  max_backups: 5
-  format: "json"  # Structured logging for production
-
-monitoring:
-  enable_metrics: true
-  metrics_port: 9090
-  health_check_interval: 30
+# Models directory (packaged in image)
+models_dir: "/app/models"
 ```
 
-**Key production settings:**
-- `library.scan_interval`: Automatic rescans
-- `processing.timeout`: Prevent stuck jobs
-- `server.trust_proxy`: Required behind reverse proxy
-- `server.cors_origins`: Restrict to your domain
-- `logging.format: json`: Machine-readable logs
+**Note:** Most settings have sensible defaults. Libraries are configured via the Web UI.
 
 ### 3. Production docker-compose.yml
 
 ```yaml
 services:
   nomarr-arangodb:
-    image: arangodb:3.12
+    image: arangodb:3.11
     container_name: nomarr-arangodb
-    hostname: nomarr-arangodb
+    networks:
+      - internal_network
     restart: unless-stopped
     env_file:
       - nomarr-arangodb.env
     volumes:
-      - nomarr-arangodb-data:/var/lib/arangodb3
+      - ./config/arangodb:/var/lib/arangodb3
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8529/_api/version"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      test: ["CMD-SHELL", "arangosh --server.endpoint tcp://127.0.0.1:8529 --server.username root --server.password \"$$ARANGO_ROOT_PASSWORD\" --javascript.execute-string 'db._version()' >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
   nomarr:
-    build:
-      context: .
-      dockerfile: dockerfile
+    # Use pre-built image from GitHub Container Registry
+    image: ghcr.io/xiaden/nomarr:latest
+    # Or build locally: comment out 'image' and uncomment 'build'
+    # build: .
     container_name: nomarr
-    hostname: nomarr
+    user: "1000:1000"
+    networks:
+      - front_network
+      - internal_network
     restart: unless-stopped
     depends_on:
       nomarr-arangodb:
@@ -282,70 +227,39 @@ services:
     env_file:
       - nomarr.env
     
-    ports:
-      - "127.0.0.1:8888:8356"  # Only localhost (behind proxy)
-      - "127.0.0.1:9090:9090"  # Metrics endpoint
+    # Ports exposed via reverse proxy (nginx proxy manager, traefik, etc.)
+    # Uncomment for direct access (development only)
+    # ports:
+    #   - "8356:8356"
     
     volumes:
-      - ./config:/config
-      - ./models:/models:ro
-      - ${MUSIC_LIBRARY}:/music:ro
-      - nomarr-cache:/data/embeddings
-    
-    environment:
-      - LOG_LEVEL=${LOG_LEVEL}
-      - NVIDIA_VISIBLE_DEVICES=all
-      - TZ=America/New_York  # Set your timezone
+      - ./config:/app/config
+      - /path/to/your/music:/media:ro  # CHANGE THIS
+      # Models are packaged in the image, no need to mount
     
     deploy:
       resources:
-        limits:
-          memory: 8G
         reservations:
-          memory: 4G
           devices:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
-    
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8356/api/web/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-    
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    
-    security_opt:
-      - no-new-privileges:true
-    
-    user: "1000:1000"  # Run as non-root (adjust UID/GID)
-
-volumes:
-  nomarr-arangodb-data:
-    driver: local
-  nomarr-cache:
-    driver: local
 
 networks:
-  default:
-    name: nomarr-network
+  internal_network:
+    internal: true  # Isolated network for DB (no external access)
+  front_network:
+    external: true  # Your reverse proxy network
 ```
 
 **Production features:**
-- ArangoDB service with health check
+- ArangoDB on isolated internal network (no external access)
 - Nomarr waits for healthy database before starting
-- Bind to localhost only (reverse proxy handles external access)
-- Memory limits prevent OOM killing other services
-- Health checks for automatic restart
-- Log rotation
-- Security hardening (no-new-privileges, non-root user)
-- Persistent volumes for data and cache
+- Pre-built image from GitHub Container Registry
+- Models packaged in image (no separate volume needed)
+- Non-root user (1000:1000)
+- GPU reservation for CUDA acceleration
+- Reverse proxy network for external access
 
 ---
 
@@ -364,7 +278,7 @@ Create `/etc/nginx/sites-available/nomarr`:
 ```nginx
 # Nomarr reverse proxy configuration
 upstream nomarr {
-    server 127.0.0.1:8888;
+    server nomarr:8356;  # Container name on Docker network
     keepalive 32;
 }
 
@@ -611,9 +525,14 @@ services:
 
 ### Health Checks
 
-**Manual health check:**
+**Manual health check (from host with port exposed):**
 ```bash
-curl http://localhost:8888/api/web/health
+curl http://localhost:8356/api/web/health
+```
+
+**Or from inside Docker network:**
+```bash
+docker exec nomarr curl -s http://localhost:8356/api/web/health
 ```
 
 **Automated monitoring script** (`/opt/nomarr/monitor.sh`):
@@ -621,10 +540,10 @@ curl http://localhost:8888/api/web/health
 #!/bin/bash
 # Simple health check script
 
-HEALTH_URL="http://localhost:8888/api/web/health"
+HEALTH_URL="http://localhost:8356/api/web/health"
 LOG_FILE="/var/log/nomarr-monitor.log"
 
-response=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL")
+response=$(docker exec nomarr curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL")
 
 if [ "$response" != "200" ]; then
     echo "$(date): Health check failed (HTTP $response)" >> "$LOG_FILE"
@@ -960,8 +879,8 @@ nvidia-smi dmon  # GPU monitoring
 
 **Diagnose:**
 ```bash
-docker-compose ps
-curl http://localhost:8888/api/web/health
+docker compose ps
+docker exec nomarr curl -s http://localhost:8356/api/web/health
 sudo nginx -t
 ```
 
