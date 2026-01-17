@@ -36,13 +36,12 @@ USAGE:
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.ml.ml_discovery_comp import discover_heads
-from nomarr.components.tagging.tagging_aggregation_comp import aggregate_mood_tiers, load_calibrations
+from nomarr.components.tagging.tagging_aggregation_comp import aggregate_mood_tiers
 from nomarr.components.tagging.tagging_writer_comp import TagWriter
 from nomarr.helpers.dto.calibration_dto import RecalibrateFileWorkflowParams
 from nomarr.helpers.dto.ml_dto import HeadOutput
@@ -57,7 +56,6 @@ class LoadLibraryStateResult:
 
     file_id: int
     all_tags: dict[str, Any]
-    calibration_map: dict[str, str]
 
 
 def _load_library_state(
@@ -74,7 +72,7 @@ def _load_library_state(
         namespace: Tag namespace
 
     Returns:
-        LoadLibraryStateResult with file_id, all_tags, calibration_map
+        LoadLibraryStateResult with file_id and all_tags
 
     Raises:
         FileNotFoundError: If file not found in library database
@@ -87,15 +85,6 @@ def _load_library_state(
 
     file_id = library_file["id"]
 
-    # Load calibration metadata (model_key -> calibration_id mapping)
-    calibration_json = library_file.get("calibration")
-    calibration_map: dict[str, str] = {}
-    if calibration_json:
-        try:
-            calibration_map = json.loads(calibration_json) if isinstance(calibration_json, str) else calibration_json
-        except Exception as e:
-            logging.warning(f"[recalibration] Failed to parse calibration metadata: {e}")
-
     # Get all numeric tags for this file from file_tags
     all_tags = db.file_tags.get_file_tags_by_prefix(file_id, f"{namespace}:")
 
@@ -105,7 +94,6 @@ def _load_library_state(
     return LoadLibraryStateResult(
         file_id=file_id,
         all_tags=all_tags,
-        calibration_map=calibration_map,
     )
 
 
@@ -193,23 +181,27 @@ def _discover_head_mappings(
     return head_by_model_key
 
 
-def _load_calibrations(
-    models_dir: str,
-    calibrate_heads: bool,
+def _load_calibrations_from_db(
+    db: Database,
 ) -> dict[str, Any]:
     """
-    Load calibration sidecars from models directory.
+    Load calibrations from calibration_state database table.
 
     Args:
-        models_dir: Path to models directory
-        calibrate_heads: Whether to use versioned calibration files
+        db: Database instance
 
     Returns:
-        Dictionary of calibrations (may be empty)
+        Dictionary of calibration data (label -> {p5, p95})
+        Empty dict if no calibrations exist (initial state)
     """
-    calibrations = load_calibrations(models_dir, calibrate_heads=calibrate_heads)
-    if calibrations:
-        logging.info(f"[recalibration] Loaded calibrations for {len(calibrations)} labels")
+    from nomarr.workflows.calibration.calibration_loader_wf import load_calibrations_from_db_wf
+
+    calibrations = load_calibrations_from_db_wf(db)
+
+    if not calibrations:
+        logging.debug("[recalibration] No calibrations in database (initial state)")
+    else:
+        logging.debug(f"[recalibration] Loaded {len(calibrations)} calibrations from database")
 
     return calibrations
 
@@ -217,19 +209,19 @@ def _load_calibrations(
 def _reconstruct_head_outputs(
     numeric_tags: dict[str, float | int],
     head_by_model_key: dict[str, tuple[Any, str]],
-    calibration_map: dict[str, str],
     namespace: str,
     calibrations: dict[str, Any],
 ) -> list[HeadOutput]:
     """
     Reconstruct HeadOutput objects from numeric tags and calibration data.
 
+    Note: calibration_id set to None for all outputs (legacy field, not used).
+
     Args:
         numeric_tags: Numeric tags from database
         head_by_model_key: Mapping of tag_key -> (HeadInfo, label)
-        calibration_map: Mapping of model_key -> calibration_id
         namespace: Tag namespace
-        calibrations: Calibration parameters
+        calibrations: Calibration data (label -> {p5, p95})
 
     Returns:
         List of HeadOutput objects
@@ -243,9 +235,6 @@ def _reconstruct_head_outputs(
 
         # Strip namespace for clean key
         clean_key = tag_key[len(namespace) + 1 :] if tag_key.startswith(f"{namespace}:") else tag_key
-
-        # Get calibration_id for this tag
-        calib_id = calibration_map.get(clean_key)
 
         # Compute tier from value using calibration
         # For now, use simple thresholds (can be enhanced with actual calibration logic)
@@ -273,7 +262,7 @@ def _reconstruct_head_outputs(
                 label=label,
                 value=value,
                 tier=tier,
-                calibration_id=calib_id,
+                calibration_id=None,  # Not used; calibration tracked via calibration_hash
             )
         )
 
@@ -391,15 +380,13 @@ def recalibrate_file_workflow(
     models_dir = params.models_dir
     namespace = params.namespace
     version_tag_key = params.version_tag_key
-    calibrate_heads = params.calibrate_heads
 
     logging.debug(f"[recalibration] Processing {file_path}")
 
-    # 1. Load library state (file ID, all tags, calibration metadata)
+    # 1. Load library state (file ID, all tags)
     library_state = _load_library_state(db, file_path, namespace)
     file_id = library_state.file_id
     all_tags = library_state.all_tags
-    calibration_map = library_state.calibration_map
 
     if not all_tags:
         return
@@ -413,11 +400,11 @@ def recalibrate_file_workflow(
     # Step 3: Discover heads and build tag-to-head mappings
     head_by_model_key = _discover_head_mappings(models_dir, namespace, numeric_tags)
 
-    # Step 4: Load calibration sidecars
-    calibrations = _load_calibrations(models_dir, calibrate_heads)
+    # Step 4: Load calibrations from database
+    calibrations = _load_calibrations_from_db(db)
 
     # Step 5: Reconstruct HeadOutput objects from tags and calibration
-    head_outputs = _reconstruct_head_outputs(numeric_tags, head_by_model_key, calibration_map, namespace, calibrations)
+    head_outputs = _reconstruct_head_outputs(numeric_tags, head_by_model_key, namespace, calibrations)
 
     if not head_outputs:
         return
@@ -430,3 +417,9 @@ def recalibrate_file_workflow(
 
     # Step 7: Update mood-* tags in database and file
     _update_db_and_file(db, str(file_id), file_path, namespace, mood_tags)
+
+    # Step 8: Update calibration_hash to mark file as current
+    global_version = db.meta.get("calibration_version")
+    if global_version:
+        db.library_files.update_calibration_hash(f"library_files/{file_id}", global_version)
+        logging.debug(f"[recalibration] Updated calibration_hash for {file_path}")

@@ -19,17 +19,33 @@ if TYPE_CHECKING:
 
 def load_calibrations(models_dir: str, calibrate_heads: bool = False) -> dict[str, dict[str, Any]]:
     """
-    Load all calibration sidecars from models directory.
+    DEPRECATED: Load calibration bundles from disk (transport artifacts only).
 
-    Returns lookup table: tag_key -> calibration_params (p5, p95, method)
-    Gracefully handles missing calibration files (returns empty dict).
+    WARNING: This function is for BUNDLE IMPORT/EXPORT workflows only.
+    Production processing/recalibration must NEVER call this directly.
+
+    ARCHITECTURE:
+    - Bundles are TRANSPORT ARTIFACTS for distribution (e.g., nom-cal repo)
+    - Database (calibration_state) is the SINGLE SOURCE OF TRUTH
+    - Use import_calibration_bundle_wf to parse bundles into DB
+    - Use calibration_loader_wf to read from DB for processing/recalibration
+
+    DO NOT USE THIS IN:
+    - process_file_wf (use calibration_loader_wf with DB)
+    - recalibrate_file_wf (use calibration_loader_wf with DB)
+    - Any production processing path
 
     Args:
-        models_dir: Path to models directory
-        calibrate_heads: If True, load versioned files (dev mode). If False, load reference files (default)
+        models_dir: Path to models directory containing bundle files
+        calibrate_heads: If True, load versioned bundles (dev mode). If False, load reference bundles (default)
 
     Returns:
         Dictionary mapping tag keys to calibration parameters
+        Empty dict if no bundles found (graceful degradation)
+
+    Note:
+        This is retained for backward compatibility with import/export workflows.
+        Will be moved to workflows/calibration in future refactor.
     """
     calibrations: dict[str, Any] = {}
 
@@ -39,17 +55,17 @@ def load_calibrations(models_dir: str, calibrate_heads: bool = False) -> dict[st
             logging.debug(f"[calibration] Models directory not found: {models_dir}")
             return calibrations
 
-        # Find calibration sidecar files
-        # For normal users (calibrate_heads=false): load reference files (calibration.json)
-        # For dev mode (calibrate_heads=true): load versioned files (calibration-v*.json)
+        # Find calibration bundle files (transport artifacts)
+        # For normal users (calibrate_heads=false): load reference bundles (calibration.json)
+        # For dev mode (calibrate_heads=true): load versioned bundles (calibration-v*.json)
         if calibrate_heads:
             calib_files = list(models_path.rglob("*-calibration-v*.json"))
-            logging.debug(f"[calibration] Loading versioned calibration files (dev mode): {len(calib_files)} found")
+            logging.debug(f"[calibration] Loading versioned calibration bundles (dev mode): {len(calib_files)} found")
         else:
             calib_files = list(models_path.rglob("*-calibration.json"))
-            # Filter out versioned files (keep only reference files without -v suffix)
+            # Filter out versioned files (keep only reference bundles without -v suffix)
             calib_files = [f for f in calib_files if "-calibration-v" not in f.name]
-            logging.debug(f"[calibration] Loading reference calibration files: {len(calib_files)} found")
+            logging.debug(f"[calibration] Loading reference calibration bundles: {len(calib_files)} found")
 
         for calib_file in calib_files:
             try:

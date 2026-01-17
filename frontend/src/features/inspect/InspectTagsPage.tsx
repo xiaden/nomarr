@@ -23,8 +23,8 @@ import {
 import { useState } from "react";
 
 import { ConfirmDialog, ErrorMessage, PageContainer, Panel, SectionHeader } from "@shared/components/ui";
-import { useConfirmDialog } from "../../hooks/useConfirmDialog";
 
+import { useConfirmDialog } from "../../hooks/useConfirmDialog";
 import { removeTags, showTags } from "../../shared/api/tags";
 import { ServerFilePicker } from "../../shared/components/ServerFilePicker";
 

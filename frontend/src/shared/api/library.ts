@@ -3,6 +3,7 @@
  */
 
 import type { Library, ScanResult } from "../types";
+
 import { del, get, patch, post } from "./client";
 
 export interface LibraryStats {

@@ -553,3 +553,32 @@ def import_calibration_state_from_json(db: Database, input_path: str, overwrite:
         "calibrations_imported": imported_count,
         "skipped": skipped_count,
     }
+
+
+def compute_global_calibration_hash(calibration_states: list[dict[str, Any]]) -> str:
+    """
+    Compute global calibration version hash from all calibration states.
+
+    This hash changes whenever any head's calibration changes (version bump,
+    p5/p95 update, etc). Used to detect if files need recalibration.
+
+    Args:
+        calibration_states: List of calibration_state documents
+
+    Returns:
+        MD5 hash representing the combined calibration version
+    """
+    import hashlib
+
+    # Sort by _key for deterministic ordering
+    sorted_states = sorted(calibration_states, key=lambda x: x.get("_key", ""))
+
+    # Combine all calibration_def_hash values
+    hash_parts = []
+    for state in sorted_states:
+        _key = state.get("_key", "")
+        calib_hash = state.get("calibration_def_hash", "")
+        hash_parts.append(f"{_key}:{calib_hash}")
+
+    combined = "|".join(hash_parts)
+    return hashlib.md5(combined.encode()).hexdigest()

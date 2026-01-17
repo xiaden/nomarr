@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from nomarr.helpers.dto.recalibration_dto import ApplyCalibrationResult
 
@@ -136,3 +136,59 @@ class RecalibrationService:
             queued=success_count,  # Keep field name for DTO compatibility
             message=f"Recalibrated {success_count}/{len(paths)} tagged files",
         )
+
+    def get_calibration_status(self) -> dict[str, Any]:
+        """Get global calibration status with per-library breakdown.
+
+        Returns:
+            Dict representation of GlobalCalibrationStatus DTO
+        """
+        from dataclasses import asdict
+
+        from nomarr.helpers.dto.calibration_dto import (
+            GlobalCalibrationStatus,
+            LibraryCalibrationStatus,
+        )
+
+        # Get global calibration version from meta
+        global_version = self.db.meta.get("calibration_version")
+        last_run_str = self.db.meta.get("calibration_last_run")
+        last_run = int(last_run_str) if last_run_str else None
+
+        # Get per-library calibration counts
+        library_status_list = []
+        if global_version and self.library_service:
+            # Get library counts
+            status_data = self.db.library_files.get_calibration_status_by_library(global_version)
+
+            # Enrich with library names
+            for status in status_data:
+                library_id = status["library_id"]
+                library_doc = self.db.libraries.get_library(library_id)
+
+                if library_doc:
+                    total = status["total_files"]
+                    current = status["current_count"]
+                    outdated = status["outdated_count"]
+                    percentage = (current / total * 100) if total > 0 else 0.0
+
+                    library_status_list.append(
+                        LibraryCalibrationStatus(
+                            library_id=library_id,
+                            library_name=library_doc.get("name", "Unknown"),
+                            total_files=total,
+                            current_count=current,
+                            outdated_count=outdated,
+                            percentage=round(percentage, 1),
+                        )
+                    )
+
+        result = GlobalCalibrationStatus(
+            global_version=global_version,
+            last_run=last_run,
+            libraries=library_status_list,
+        )
+
+        # Convert to dict for interface layer
+        result_dict: dict[str, Any] = asdict(result)
+        return result_dict

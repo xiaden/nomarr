@@ -1,8 +1,21 @@
 """
-Calibration download service - fetch pre-made calibration files from GitHub.
+Calibration bundle download service - fetch pre-made calibration bundles from GitHub.
 
-For users with calibrate_heads=false (default), this downloads calibration files
-from the nom-cal repository instead of generating them locally.
+ARCHITECTURE:
+- Bundles are TRANSPORT ARTIFACTS for distribution (e.g., from nom-cal repo)
+- Database (calibration_state) is the SINGLE SOURCE OF TRUTH
+- This service downloads bundles → calls import_calibration_bundle_wf → upserts to DB
+
+WORKFLOW:
+1. Check local models directory for missing bundle files
+2. Download missing bundles from nom-cal repository
+3. Import bundles to database via import_calibration_bundle_wf
+4. Production code uses calibration_loader_wf to read from DB
+
+USAGE:
+- For users with calibrate_heads=false (default)
+- Downloads reference bundles instead of generating locally
+- Post-download, all processing uses DB exclusively
 """
 
 from __future__ import annotations
@@ -18,9 +31,13 @@ logger = logging.getLogger(__name__)
 
 def download_calibrations(repo_url: str, models_dir: str) -> dict[str, Any]:
     """
-    Download pre-made calibration files from GitHub repository.
+    Download pre-made calibration bundles from GitHub repository.
 
-    Checks local models directory for missing calibration files and downloads
+    NOTE: After download, bundles must be imported to database via
+    import_calibration_bundle_wf before use. This function only handles
+    the download step (transport artifact acquisition).
+
+    Checks local models directory for missing bundle files and downloads
     them from the specified repository.
 
     Args:
@@ -39,14 +56,15 @@ def download_calibrations(repo_url: str, models_dir: str) -> dict[str, Any]:
 
     Example:
         >>> download_calibrations("https://github.com/xiaden/nom-cal", "/app/models")
-        NotImplementedError: Calibration download not yet implemented
+        NotImplementedError: Calibration bundle download not yet implemented
     """
-    logger.info(f"[calibration_download] Checking for missing calibration files in {models_dir}")
+    logger.info(f"[calibration_download] Checking for missing calibration bundle files in {models_dir}")
 
     # This is a stub implementation
     # TODO: Implement actual download logic
+    # TODO: After download, call import_calibration_bundle_wf to import to DB
     raise NotImplementedError(
-        "Calibration download feature is not yet implemented.\n\n"
+        "Calibration bundle download feature is not yet implemented.\n\n"
         "To use nomarr without local calibration generation:\n"
         "1. Manually download calibration files from the repository:\n"
         f"   {repo_url}\n"
@@ -150,7 +168,7 @@ def ensure_calibrations_exist(
     missing = check_missing_calibrations(models_dir)
 
     if not missing:
-        logger.info("[calibration_download] All heads have calibration files")
+        logger.info("[calibration_download] All heads have calibration bundle files")
         return EnsureCalibrationsExistResult(
             has_calibrations=True,
             missing_count=0,
@@ -158,7 +176,7 @@ def ensure_calibrations_exist(
             action_required=None,
         )
 
-    logger.warning(f"[calibration_download] {len(missing)} heads missing calibration files")
+    logger.warning(f"[calibration_download] {len(missing)} heads missing calibration bundle files")
 
     if auto_download:
         logger.info("[calibration_download] Attempting automatic download...")
@@ -171,5 +189,8 @@ def ensure_calibrations_exist(
         has_calibrations=False,
         missing_count=len(missing),
         missing_heads=missing,
-        action_required=(f"Download calibration files from {repo_url} or enable calibrate_heads mode in config"),
+        action_required=(
+            f"Download calibration bundles from {repo_url} and import via "
+            f"import_calibration_bundle_wf, or enable calibrate_heads mode in config"
+        ),
     )

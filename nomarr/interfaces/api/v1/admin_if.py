@@ -163,6 +163,33 @@ async def admin_run_calibration(
 
 
 # ----------------------------------------------------------------------
+#  POST /admin/calibration/backfill
+# ----------------------------------------------------------------------
+@router.post("/calibration/backfill", dependencies=[Depends(verify_key)])
+async def admin_backfill_calibration_hashes(
+    set_to_current: bool = False,
+    calibration_service: CalibrationService = Depends(get_calibration_service),
+):
+    """
+    Backfill calibration_hash for files currently showing as NULL.
+
+    Two strategies:
+    - set_to_current=False (default): Leave as NULL, users must recalibrate
+    - set_to_current=True: Set to current global hash (assumes files are current)
+
+    Returns:
+        Summary of backfill operation
+    """
+    try:
+        from nomarr.workflows.calibration.backfill_calibration_hash_wf import backfill_calibration_hashes_wf
+
+        result = backfill_calibration_hashes_wf(db=calibration_service._db, set_to_current=set_to_current)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Backfill failed: {e!s}") from e
+
+
+# ----------------------------------------------------------------------
 #  POST /admin/calibration/retag-all
 # ----------------------------------------------------------------------
 @router.post("/calibration/retag-all", dependencies=[Depends(verify_key)])

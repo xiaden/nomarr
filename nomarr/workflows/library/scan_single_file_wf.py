@@ -192,7 +192,6 @@ def scan_single_file_workflow(
                     metadata=file_metadata,
                     namespace=namespace,
                     tagged_version=tagger_version,
-                    calibration=None,
                     library_id=library_id,
                 )
                 logging.debug(f"[scan_single_file] Tags imported to DB for {file_path}")
@@ -228,7 +227,6 @@ def scan_single_file_workflow(
                 metadata=file_metadata,
                 namespace=namespace,
                 tagged_version=None,
-                calibration=None,
                 library_id=library_id,
             )
             result["action"] = "added" if is_new else "updated"

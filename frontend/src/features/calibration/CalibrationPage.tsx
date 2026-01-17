@@ -11,6 +11,7 @@
 import { Alert, CircularProgress, Stack } from "@mui/material";
 
 import { ConfirmDialog, PageContainer } from "@shared/components/ui";
+
 import { CalibrationActions } from "./components/CalibrationActions";
 import { CalibrationStatus } from "./components/CalibrationStatus";
 import { useCalibrationStatus } from "./hooks/useCalibrationStatus";
@@ -24,6 +25,7 @@ export function CalibrationPage() {
     handleGenerate,
     handleApply,
     handleClear,
+    handleUpdateFiles,
     dialogState,
   } = useCalibrationStatus();
 
@@ -39,6 +41,7 @@ export function CalibrationPage() {
             onGenerate={handleGenerate}
             onApply={handleApply}
             onClear={handleClear}
+            onUpdateFiles={handleUpdateFiles}
             actionLoading={actionLoading}
           />
         </Stack>

@@ -95,3 +95,24 @@ class HistogramCalibrationResult:
     heads_success: int
     heads_failed: int
     results: dict[str, dict[str, Any]]  # {head_key: {p5, p95, n, underflow_count, overflow_count}}
+
+
+@dataclass
+class LibraryCalibrationStatus:
+    """Calibration status for a single library (derived from file-level tracking)."""
+
+    library_id: str
+    library_name: str
+    total_files: int
+    current_count: int  # Files with current calibration
+    outdated_count: int  # Files with outdated or missing calibration
+    percentage: float  # current_count / total_files * 100
+
+
+@dataclass
+class GlobalCalibrationStatus:
+    """Global calibration status with per-library breakdown."""
+
+    global_version: str | None  # MD5 hash of all calibrations combined
+    last_run: int | None  # Unix timestamp (ms) of last calibration generation
+    libraries: list[LibraryCalibrationStatus]

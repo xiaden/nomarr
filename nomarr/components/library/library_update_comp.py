@@ -23,7 +23,6 @@ def update_library_from_tags(
     metadata: dict[str, Any],
     namespace: str,
     tagged_version: str | None,
-    calibration: dict[str, str] | None,
     library_id: str | None,
 ) -> None:
     """
@@ -47,7 +46,6 @@ def update_library_from_tags(
         metadata: Pre-extracted metadata dict from extract_metadata()
         namespace: Tag namespace (e.g., "nom")
         tagged_version: Tagger version if file was tagged, None otherwise
-        calibration: Optional model_key -> calibration_id mapping
         library_id: Optional library ID (will auto-detect if None)
 
     Returns:
@@ -82,6 +80,7 @@ def update_library_from_tags(
             return
 
         # Upsert to library database
+        # Note: calibration_hash remains NULL until first recalibration
         db.library_files.upsert_library_file(
             path=library_path,
             library_id=library_id,
@@ -91,7 +90,6 @@ def update_library_from_tags(
             artist=metadata.get("artist"),
             album=metadata.get("album"),
             title=metadata.get("title"),
-            calibration=calibration,  # Pass dict directly, not JSON string
         )
 
         # Get file ID and populate file_tags table

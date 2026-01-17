@@ -13,6 +13,7 @@ import { useState } from "react";
 import { PageContainer } from "@shared/components/ui";
 
 import type { EntityCollection } from "../../shared/types";
+
 import { EntityBrowser } from "./components/EntityBrowser";
 
 export function BrowsePage() {

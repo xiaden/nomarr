@@ -11,6 +11,7 @@
 import { Alert, CircularProgress, Stack } from "@mui/material";
 
 import { PageContainer } from "@shared/components/ui";
+
 import { MoodDistributionView } from "./components/MoodDistributionView";
 import { TagCoOccurrence } from "./components/TagCoOccurrence";
 import { TagFrequenciesTable } from "./components/TagFrequenciesTable";

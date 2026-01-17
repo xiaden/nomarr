@@ -404,10 +404,23 @@ def generate_histogram_calibration_wf(
 
     logger.info(f"[histogram_calibration_wf] Completed: {success_count} success, {failed_count} failed")
 
+    # Compute and store global calibration version
+    from nomarr.components.ml.ml_calibration_comp import compute_global_calibration_hash
+
+    all_calibration_states = db.calibration_state.get_all_calibration_states()
+    global_version_hash = compute_global_calibration_hash(all_calibration_states)
+    current_timestamp = str(int(__import__("time").time() * 1000))
+
+    db.meta.set("calibration_version", global_version_hash)
+    db.meta.set("calibration_last_run", current_timestamp)
+
+    logger.info(f"[histogram_calibration_wf] Stored global calibration version: {global_version_hash[:12]}...")
+
     return {
         "version": 1,  # Placeholder - could derive from head metadata
         "heads_processed": len(heads),
         "heads_success": success_count,
         "heads_failed": failed_count,
         "results": results,
+        "global_version": global_version_hash,
     }

@@ -69,7 +69,6 @@ from nomarr.components.ml.ml_inference_comp import compute_embeddings_for_backbo
 from nomarr.components.tagging.tagging_aggregation_comp import (
     add_regression_mood_tiers,
     aggregate_mood_tiers,
-    load_calibrations,
     normalize_tag_label,
 )
 from nomarr.components.tagging.tagging_writer_comp import TagWriter
@@ -217,10 +216,6 @@ def _process_head_predictions(
     regression_heads: list[tuple[HeadInfo, list[float]]] = []
     all_head_outputs: list[Any] = []
 
-    # Initialize calibration map on tags_accum if not present
-    if not hasattr(tags_accum, "_calibration_map"):
-        tags_accum._calibration_map = {}  # type: ignore
-
     for head_info in backbone_heads:
         head_name = head_info.name
 
@@ -247,17 +242,13 @@ def _process_head_predictions(
             # Build versioned tag keys using runtime framework version and model metadata
             # Normalize labels (non_happy -> not_happy) before building keys
             # Capture head_info in closure to avoid late binding issue
-            # Track calibration IDs for storage in database
-            calib_map = tags_accum._calibration_map  # type: ignore
-
-            def _build_key(label: str, head: HeadInfo = head_info, calib_map: dict = calib_map) -> str:
-                model_key, calibration_id = head.build_versioned_tag_key(
+            def _build_key(label: str, head: HeadInfo = head_info) -> str:
+                model_key, _ = head.build_versioned_tag_key(
                     normalize_tag_label(label),
                     framework_version=_get_essentia_version(),
                     calib_method="none",
                     calib_version=0,
                 )
-                calib_map[model_key] = calibration_id
                 return model_key
 
             # Convert HeadDecision to HeadOutput objects for aggregation
@@ -328,6 +319,7 @@ def _collect_mood_outputs(
     all_head_outputs: list[Any],
     models_dir: str,
     config: ProcessorConfig,
+    db: Database | None,
 ) -> dict[str, Any]:
     """
     Collect and aggregate all mood outputs from classification and regression heads.
@@ -337,6 +329,7 @@ def _collect_mood_outputs(
         all_head_outputs: List of HeadOutput objects from classification heads
         models_dir: Directory containing model files (for calibrations)
         config: Processor configuration
+        db: Optional Database instance for loading calibrations
 
     Returns:
         Dict of mood-* tags
@@ -347,13 +340,17 @@ def _collect_mood_outputs(
 
     logging.debug(f"[processor] Total HeadOutput objects: {len(all_head_outputs)}")
 
-    # Load calibrations if available (conditional - gracefully handles missing files)
-    # Use calibrate_heads flag from config to determine which calibration files to load
-    calibrations = load_calibrations(models_dir, calibrate_heads=config.calibrate_heads)
-    if calibrations:
-        logging.debug(f"[aggregation] Loaded calibrations for {len(calibrations)} labels")
-    else:
-        logging.debug("[aggregation] No calibrations found, using raw scores")
+    # Load calibrations from database if available
+    # If no calibrations exist (initial state), use raw scores without normalization
+    calibrations = {}
+    if db is not None:
+        from nomarr.workflows.calibration.calibration_loader_wf import load_calibrations_from_db_wf
+
+        calibrations = load_calibrations_from_db_wf(db)
+        if calibrations:
+            logging.debug(f"[aggregation] Loaded {len(calibrations)} calibrations from database")
+        else:
+            logging.debug("[aggregation] No calibrations in database (initial state), using raw scores")
 
     # Aggregate HeadOutput objects into mood-* tags
     mood_tags = aggregate_mood_tiers(all_head_outputs, calibrations=calibrations)
@@ -385,11 +382,6 @@ def _prepare_file_and_db_tags(
     logging.debug(
         f"[processor] Tags prepared: {len(db_tags)} for DB, {len(file_tags)} for file (mode={file_write_mode})"
     )
-
-    # DEBUG: Log calibration map
-    if hasattr(tags_accum, "_calibration_map"):
-        calib_map = tags_accum._calibration_map  # type: ignore
-        logging.debug(f"[processor] Calibration map has {len(calib_map)} entries")
 
     return db_tags, file_tags
 
@@ -431,7 +423,6 @@ def _sync_database(
     tagger_version: str,
     file_write_mode: str,
     chromaprint: str | None = None,
-    calibration_map: dict[str, str] | None = None,
 ) -> None:
     """
     Sync database with tags and handle file rewriting if needed.
@@ -446,7 +437,6 @@ def _sync_database(
         tagger_version: Tagger version string
         file_write_mode: File write mode setting
         chromaprint: Audio fingerprint hash for move detection
-        calibration_map: Optional mapping of model keys to calibration IDs
     """
     if db is None:
         return
@@ -469,13 +459,14 @@ def _sync_database(
             metadata["chromaprint"] = chromaprint
 
         # Update library database with extracted metadata + chromaprint
+        # Note: calibration_hash remains NULL until first recalibration
+        # Initial processing stores raw scores only
         update_library_from_tags(
             db=db,
             file_path=path,
             metadata=metadata,
             namespace=namespace,
             tagged_version=tagger_version,
-            calibration=calibration_map,
             library_id=None,
         )
         logging.debug(f"[processor] Updated library database for {path} with {len(db_tags)} tags")
@@ -653,7 +644,6 @@ def process_file_workflow(
         pass
 
     tags_accum = TagAccumulator()
-    tags_accum._calibration_map = {}  # type: ignore
     all_head_results: dict[str, Any] = {}
     chromaprint_from_ml: str | None = None  # Will be set by first backbone
     duration_final: float | None = None
@@ -704,7 +694,7 @@ def process_file_workflow(
         raise RuntimeError("No heads produced decisions; refusing to write tags")
 
     # === STEP 3: Aggregate mood tiers from all head outputs ===
-    mood_tags = _collect_mood_outputs(regression_heads, all_head_outputs, config.models_dir, config)
+    mood_tags = _collect_mood_outputs(regression_heads, all_head_outputs, config.models_dir, config, db)
     tags_accum.update(mood_tags)
 
     # DEBUG: Log mood aggregation results
@@ -724,7 +714,6 @@ def process_file_workflow(
     # === STEP 5: Sync database and write tags to file ===
     # NOTE: Database sync handles ALL file writing (writes db_tags, scans, then rewrites file_tags)
     # No need to write file_tags before sync
-    calibration_map = getattr(tags_accum, "_calibration_map", None)
     _sync_database(
         db,
         path,
@@ -735,7 +724,6 @@ def process_file_workflow(
         config.tagger_version,
         config.file_write_mode,
         chromaprint_from_ml,
-        calibration_map,
     )
 
     elapsed = round(time.time() - start_all, 2)

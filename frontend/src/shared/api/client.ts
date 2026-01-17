@@ -97,6 +97,7 @@ export async function request<T>(
   }
 
   try {
+    // eslint-disable-next-line no-restricted-globals
     const response = await fetch(url, {
       ...fetchOptions,
       headers,

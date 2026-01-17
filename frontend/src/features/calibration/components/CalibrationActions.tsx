@@ -11,6 +11,7 @@ interface CalibrationActionsProps {
   onGenerate: () => Promise<void>;
   onApply: () => Promise<void>;
   onClear: () => Promise<void>;
+  onUpdateFiles: () => void;
   actionLoading: boolean;
 }
 
@@ -18,6 +19,7 @@ export function CalibrationActions({
   onGenerate,
   onApply,
   onClear,
+  onUpdateFiles,
   actionLoading,
 }: CalibrationActionsProps) {
   const actions = [
@@ -36,6 +38,14 @@ export function CalibrationActions({
       onClick: onApply,
       color: "primary" as const,
       variant: "contained" as const,
+    },
+    {
+      label: "Update Calibration Files",
+      description:
+        "Download and import the latest calibration bundle files from the repository.",
+      onClick: onUpdateFiles,
+      color: "secondary" as const,
+      variant: "outlined" as const,
     },
     {
       label: "Clear Calibration Queue",

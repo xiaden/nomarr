@@ -45,17 +45,23 @@ export async function apply(): Promise<ApplyCalibrationResponse> {
   return post("/api/web/calibration/apply");
 }
 
+export interface LibraryCalibrationStatus {
+  library_id: string;
+  library_name: string;
+  total_files: number;
+  current_count: number;
+  outdated_count: number;
+  percentage: number;
+}
+
 export interface CalibrationStatus {
-  pending: number;
-  running: number;
-  completed: number;
-  errors: number;
-  worker_alive: boolean;
-  worker_busy: boolean;
+  global_version: string;
+  last_run: number;
+  libraries: LibraryCalibrationStatus[];
 }
 
 /**
- * Get calibration queue status.
+ * Get calibration status with per-library breakdown.
  */
 export async function getStatus(): Promise<CalibrationStatus> {
   return get("/api/web/calibration/status");

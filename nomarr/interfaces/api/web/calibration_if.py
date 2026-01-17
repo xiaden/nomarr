@@ -18,6 +18,7 @@ from nomarr.interfaces.api.web.dependencies import (
 
 if TYPE_CHECKING:
     from nomarr.services.domain.calibration_svc import CalibrationService
+    from nomarr.services.domain.recalibration_svc import RecalibrationService
 
 router = APIRouter(prefix="/calibration", tags=["Calibration"])
 
@@ -63,13 +64,31 @@ async def apply_calibration_to_library(
 
 @router.get("/status", dependencies=[Depends(verify_session)])
 async def get_calibration_status(
-    recal_service: Any = Depends(get_recalibration_service),
-) -> dict[str, str]:
-    """Get current recalibration status.
+    recal_service: "RecalibrationService" = Depends(get_recalibration_service),
+) -> dict[str, Any]:
+    """Get current calibration status with per-library breakdown.
 
-    Note: Recalibration no longer uses queues. This endpoint returns basic status only.
+    Returns:
+        {
+          "global_version": "abc123...",
+          "last_run": 1234567890,
+          "libraries": [
+            {
+              "library_id": "libraries/123",
+              "library_name": "Main Library",
+              "total_files": 10000,
+              "current_count": 8500,
+              "outdated_count": 1500,
+              "percentage": 85.0
+            }
+          ]
+        }
     """
-    return {"status": "ready", "message": "Recalibration is available (no queue system)"}
+    try:
+        return recal_service.get_calibration_status()
+    except Exception as e:
+        logging.exception("[Web API] Error fetching calibration status")
+        raise HTTPException(status_code=500, detail=f"Error fetching status: {e}") from e
 
 
 @router.post("/clear", dependencies=[Depends(verify_session)])

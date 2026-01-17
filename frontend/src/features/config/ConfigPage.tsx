@@ -10,6 +10,7 @@
 import { Alert, CircularProgress, Stack } from "@mui/material";
 
 import { PageContainer } from "@shared/components/ui";
+
 import { ConfigSettings } from "./components/ConfigSettings";
 import { useConfigData } from "./hooks/useConfigData";
 

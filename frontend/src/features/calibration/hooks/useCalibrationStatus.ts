@@ -13,18 +13,10 @@ import {
     generate,
     getStatus,
 } from "../../../shared/api/calibration";
-
-export interface CalibrationStatus {
-  pending: number;
-  running: number;
-  completed: number;
-  errors: number;
-  worker_alive: boolean;
-  worker_busy: boolean;
-}
+import type { CalibrationStatus } from "../../../shared/api/calibration";
 
 export function useCalibrationStatus() {
-  const { showSuccess, showError } = useNotification();
+  const { showSuccess, showError, showInfo } = useNotification();
   const { confirm, isOpen, options, handleConfirm, handleCancel } = useConfirmDialog();
   
   const [status, setStatus] = useState<CalibrationStatus | null>(null);
@@ -73,6 +65,7 @@ export function useCalibrationStatus() {
       }
       
       showSuccess(message);
+      await loadStatus();
     } catch (err) {
       showError(
         err instanceof Error ? err.message : "Failed to generate calibration"
@@ -126,6 +119,10 @@ export function useCalibrationStatus() {
     }
   };
 
+  const handleUpdateFiles = () => {
+    showInfo("Not implemented");
+  };
+
   return {
     status,
     loading,
@@ -134,6 +131,7 @@ export function useCalibrationStatus() {
     handleGenerate,
     handleApply,
     handleClear,
+    handleUpdateFiles,
     // Dialog state for rendering ConfirmDialog
     dialogState: { isOpen, options, handleConfirm, handleCancel },
   };

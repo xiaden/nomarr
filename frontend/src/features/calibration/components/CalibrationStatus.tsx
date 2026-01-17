@@ -1,73 +1,79 @@
 /**
- * Calibration queue status display component.
- * Shows pending, running, completed, errors, and worker status.
+ * Calibration status component.
+ * Displays per-library calibration status with global version info.
  */
 
-import { Box, Typography } from "@mui/material";
+import {
+    Box,
+    Paper,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
+    Typography,
+} from "@mui/material";
 
-import { MetricCard, Panel, ResponsiveGrid, SectionHeader } from "@shared/components/ui";
+import { Panel, SectionHeader } from "@shared/components/ui";
+
+import type { CalibrationStatus as CalibrationStatusType } from "../../../shared/api/calibration";
 
 interface CalibrationStatusProps {
-  status: {
-    pending: number;
-    running: number;
-    completed: number;
-    errors: number;
-    worker_alive: boolean;
-    worker_busy: boolean;
-  };
+  status: CalibrationStatusType;
 }
 
 export function CalibrationStatus({ status }: CalibrationStatusProps) {
-  const stats = [
-    { label: "Pending", value: status.pending },
-    { label: "Running", value: status.running },
-    { label: "Completed", value: status.completed },
-    { label: "Errors", value: status.errors },
-  ];
+  // Format last_run timestamp
+  const lastRunDate = status.last_run 
+    ? new Date(status.last_run * 1000).toLocaleString()
+    : "Never";
 
   return (
     <Panel>
-      <SectionHeader title="Calibration Queue Status" />
-      <ResponsiveGrid minColumnWidth={150}>
-        {stats.map((stat) => (
-          <MetricCard
-            key={stat.label}
-            label={stat.label}
-            value={stat.value}
-            valueVariant="h5"
-            centered
-          />
-        ))}
-      </ResponsiveGrid>
-      <Box sx={{ mt: 2 }}>
-        <Typography variant="body1">
-          Worker:{" "}
-          <Typography
-            component="span"
-            sx={{
-              color: status.worker_alive ? "success.main" : "error.main",
-              fontWeight: 600,
-            }}
-          >
-            {status.worker_alive ? "Alive" : "Not Running"}
-          </Typography>
-          {status.worker_alive && (
-            <>
-              {" • "}
-              <Typography
-                component="span"
-                sx={{
-                  color: status.worker_busy ? "info.main" : "success.main",
-                  fontWeight: 600,
-                }}
-              >
-                {status.worker_busy ? "Busy" : "Idle"}
-              </Typography>
-            </>
-          )}
+      <SectionHeader title="Calibration Status" />
+      
+      {/* Global version info */}
+      <Box sx={{ mb: 3 }}>
+        <Typography variant="body2" color="text.secondary">
+          <strong>Global Version:</strong> {status.global_version || "Not calibrated"}
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          <strong>Last Run:</strong> {lastRunDate}
         </Typography>
       </Box>
+
+      {/* Per-library status table */}
+      {status.libraries.length > 0 ? (
+        <TableContainer component={Paper} variant="outlined">
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Library</TableCell>
+                <TableCell align="right">Total Files</TableCell>
+                <TableCell align="right">Current</TableCell>
+                <TableCell align="right">Outdated</TableCell>
+                <TableCell align="right">Calibration %</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {status.libraries.map((lib) => (
+                <TableRow key={lib.library_id}>
+                  <TableCell>{lib.library_name}</TableCell>
+                  <TableCell align="right">{lib.total_files.toLocaleString()}</TableCell>
+                  <TableCell align="right">{lib.current_count.toLocaleString()}</TableCell>
+                  <TableCell align="right">{lib.outdated_count.toLocaleString()}</TableCell>
+                  <TableCell align="right">{lib.percentage.toFixed(1)}%</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      ) : (
+        <Typography variant="body2" color="text.secondary">
+          No libraries found.
+        </Typography>
+      )}
     </Panel>
   );
 }

@@ -68,7 +68,7 @@ export function EntityBrowser({ collection }: EntityBrowserProps) {
     } finally {
       setLoading(false);
     }
-  }, [collection, offset, searchQuery]);
+  }, [collection, offset, searchQuery, sortBy]);
 
   useEffect(() => {
     setOffset(0);
