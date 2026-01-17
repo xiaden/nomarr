@@ -8,7 +8,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ErrorMessage, Panel } from "@shared/components/ui";
 
-import { api } from "../../../shared/api";
+import { search } from "../../../shared/api/files";
+import { listSongsForEntity } from "../../../shared/api/metadata";
 import type { EntityCollection, LibraryFile } from "../../../shared/types";
 
 import { TagExplorer } from "./TagExplorer";
@@ -38,7 +39,7 @@ export function TrackList({
       setLoading(true);
       setError(null);
 
-      const songResult = await api.metadata.listSongsForEntity(
+      const songResult = await listSongsForEntity(
         collection,
         entityId,
         relationType,
@@ -50,17 +51,17 @@ export function TrackList({
         return;
       }
 
-      const searchResult = await api.files.search({
+      const searchResult = await search({
         limit: 500,
       });
 
       const trackMap = new Map(
-        searchResult.files.map((f) => [f.id, f])
+        searchResult.files.map((f: LibraryFile) => [f.id, f])
       );
 
       const orderedTracks = songResult.song_ids
-        .map((id) => trackMap.get(id))
-        .filter((t) => t !== undefined) as LibraryFile[];
+        .map((id: string) => trackMap.get(id))
+        .filter((t: LibraryFile | undefined) => t !== undefined) as LibraryFile[];
 
       setTracks(orderedTracks);
     } catch (err) {

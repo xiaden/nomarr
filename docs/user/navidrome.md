@@ -182,45 +182,44 @@ services:
 
 ## Generating Playlists
 
+Nomarr provides a Web UI for generating Navidrome-compatible smart playlists.
+
+### Using the Web UI
+
+1. Navigate to the **Navidrome** page from the sidebar
+2. **Preview Tags:** See available tags and their distribution across your library
+3. **Use Templates:** Choose from predefined playlist templates (e.g., "Energetic", "Mellow Acoustic")
+4. **Custom Queries:** Write custom tag queries for more control
+5. **Preview Results:** See which tracks match before generating
+6. **Generate Playlist:** Export the playlist as a `.nsp` file
+
+### Template System
+
+Templates are predefined playlist configurations. From the Navidrome page:
+
+1. View available templates with descriptions
+2. Click a template to preview matching tracks
+3. Generate the playlist file
+
+### Custom Playlist Queries
+
+For more control, use the query builder:
+
+1. Select tags and tiers (strong, moderate, weak)
+2. Combine with AND/OR logic
+3. Preview matching tracks
+4. Adjust query until satisfied
+5. Generate and export
+
 ### Automatic Export
 
-With `auto_export: true`, Nomarr exports playlists automatically:
+Configure automatic playlist generation in `config/config.yaml`:
 
-- After processing completes
-- Every `export_interval` seconds
-- After calibration updates
-
-**Monitor exports:**
-```bash
-# Docker
-docker exec -it nomarr nom-cli navidrome status
-
-# Native
-python -m nomarr.interfaces.cli navidrome status
-```
-
-### Manual Export
-
-**Export all playlists now:**
-
-```bash
-# Docker
-docker exec -it nomarr nom-cli navidrome export
-
-# Native
-python -m nomarr.interfaces.cli navidrome export
-```
-
-**Export specific playlist:**
-
-```bash
-docker exec -it nomarr nom-cli navidrome export --playlist "Energetic"
-```
-
-**Export with custom config:**
-
-```bash
-docker exec -it nomarr nom-cli navidrome export --config /path/to/custom_playlists.yaml
+```yaml
+navidrome:
+  export_dir: "/data/playlists"  # Where to write .nsp files
+  auto_export: true              # Export after processing
+  export_interval: 3600          # Export every hour (seconds)
 ```
 
 ---
@@ -358,7 +357,7 @@ Result: `[Auto] Energetic`, `[Auto] Mellow`, etc.
 
 **Update frequency:**
 - Depends on `export_interval` setting
-- Manual exports anytime with `nom-cli navidrome export`
+- Manual exports via the Navidrome page in Web UI
 
 ---
 
@@ -474,7 +473,7 @@ See full vocabulary in Nomarr web UI under "Tags" page.
 # List exported playlists
 docker exec -it nomarr ls -l /data/playlists/
 
-# Should see .toml files
+# Should see .nsp files
 ```
 
 **Verify Navidrome can read files:**
@@ -495,22 +494,13 @@ docker exec navidrome /app/navidrome --scan
 ### Empty Playlists
 
 **Check if tracks processed:**
-```bash
-docker exec -it nomarr nom-cli queue status
-# Should show completed > 0
-```
+Navigate to the **Dashboard** page in Nomarr - should show completed tracks.
 
 **Check tag coverage:**
-```bash
-docker exec -it nomarr nom-cli analytics tags
-# Should show tags extracted
-```
+Navigate to the **Analytics** page to see tag distribution and verify tags are being extracted.
 
 **Verify calibration applied:**
-```bash
-docker exec -it nomarr nom-cli calibration status
-# Should show completed > 0
-```
+Navigate to the **Calibration** page to see which tags have calibration thresholds.
 
 **Lower tier requirements:**
 ```yaml
@@ -556,9 +546,7 @@ navidrome:
 ```
 
 **Trigger manual export:**
-```bash
-docker exec -it nomarr nom-cli navidrome export
-```
+Navigate to the **Navidrome** page in the Web UI and generate playlists manually.
 
 **Check Navidrome scan schedule:**
 Navidrome must rescan to see updated playlists.
@@ -569,59 +557,35 @@ Navidrome must rescan to see updated playlists.
 
 ### 1. Process Music Library
 
-```bash
-# Scan library
-docker exec -it nomarr nom-cli library scan "My Music"
-
-# Wait for processing to complete
-docker exec -it nomarr nom-cli queue status
-```
+1. Navigate to the **Libraries** page in Nomarr Web UI
+2. Click **Scan** on your library
+3. Monitor progress on the **Dashboard** page
+4. Wait for processing to complete (workers run automatically)
 
 ### 2. Apply Calibration
 
-```bash
-# Generate calibration data
-docker exec -it nomarr nom-cli calibration generate
+1. Navigate to the **Calibration** page
+2. Review calibration statistics
+3. Trigger recalibration if needed (after adding significant new music)
 
-# Apply calibration
-docker exec -it nomarr nom-cli calibration apply
-```
+### 3. Generate Playlists
 
-### 3. Configure Playlists
+1. Navigate to the **Navidrome** page
+2. Preview available tags and their distribution
+3. Choose a template or create a custom query
+4. Preview matching tracks
+5. Generate the playlist file
 
-Edit `config/config.yaml`:
+### 4. Configure Navidrome Access
 
-```yaml
-navidrome:
-  playlists:
-    - name: "Chill"
-      rules:
-        - tag: "mellow"
-          tier: "strong"
-    
-    - name: "Party"
-      rules:
-        - tag: "energetic"
-          tier: "strong"
-        - tag: "danceable"
-          tier: "strong"
-    
-    - name: "Focus"
-      rules:
-        - tag: "instrumental"
-          tier: "strong"
-      exclude:
-        - tag: "energetic"
-```
-
-### 4. Export Playlists
+Ensure Navidrome can read the exported playlists:
 
 ```bash
-# Export
-docker exec -it nomarr nom-cli navidrome export
-
 # Verify files created
 docker exec -it nomarr ls -l /data/playlists/
+
+# Check Navidrome has access
+docker exec navidrome ls -l /data/playlists/
 ```
 
 ### 5. Load in Navidrome
@@ -630,48 +594,45 @@ docker exec -it nomarr ls -l /data/playlists/
 # Trigger Navidrome scan
 docker exec navidrome /app/navidrome --scan
 
-# Check Navidrome UI
-# Navigate to Playlists → see "Chill", "Party", "Focus"
+# Or wait for scheduled scan
+# Then check Navidrome UI → Playlists
 ```
 
 ### 6. Ongoing Sync
 
-With `auto_export: true`, new tracks automatically added to playlists as they're processed.
+With `auto_export: true` in config, new tracks are automatically included in playlists as they're processed.
 
 ---
 
 ## API Integration
 
-### Export via HTTP API
+### Generate Playlist via HTTP API
 
 ```bash
-# Trigger export via API
-curl -X POST http://localhost:8888/api/web/navidrome/export \
-  -H "Authorization: Bearer YOUR_API_KEY"
-
-# Export specific playlist
-curl -X POST http://localhost:8888/api/web/navidrome/export \
-  -H "Authorization: Bearer YOUR_API_KEY" \
+# Generate playlist
+curl -X POST http://localhost:8888/api/web/navidrome/playlists/generate \
+  -H "Cookie: session=YOUR_SESSION" \
   -H "Content-Type: application/json" \
-  -d '{"playlist": "Energetic"}'
+  -d '{"query": "energetic:strong", "playlist_name": "Energetic"}'
 ```
 
-### Check Export Status
+### Preview Playlist Query
 
 ```bash
-curl http://localhost:8888/api/web/navidrome/status \
-  -H "Authorization: Bearer YOUR_API_KEY"
+curl -X POST http://localhost:8888/api/web/navidrome/playlists/preview \
+  -H "Cookie: session=YOUR_SESSION" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "electronic:strong AND danceable:moderate", "preview_limit": 50}'
 ```
 
-Response:
-```json
-{
-  "last_export": "2025-12-05T10:30:00Z",
-  "playlists_exported": 12,
-  "total_tracks": 5432,
-  "export_dir": "/data/playlists"
-}
+### Get Tag Statistics Preview
+
+```bash
+curl http://localhost:8888/api/web/navidrome/preview \
+  -H "Cookie: session=YOUR_SESSION"
 ```
+
+Response includes tag distribution, track counts, and available templates.
 
 See [api_reference.md](api_reference.md) for full API documentation.
 

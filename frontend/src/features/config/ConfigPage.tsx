@@ -7,29 +7,23 @@
  * - Restart server to apply changes
  */
 
+import { Alert, CircularProgress, Stack } from "@mui/material";
+
+import { PageContainer } from "@shared/components/ui";
 import { ConfigSettings } from "./components/ConfigSettings";
 import { useConfigData } from "./hooks/useConfigData";
 
 export function ConfigPage() {
-  const {
-    config,
-    loading,
-    error,
-    saveLoading,
-    hasChanges,
-    handleSaveAll,
-    handleChange,
-  } = useConfigData();
+  const { config, loading, error, saveLoading, hasChanges, handleSaveAll, handleChange } =
+    useConfigData();
 
   return (
-    <div style={{ padding: "20px" }}>
-      <h1 style={{ marginBottom: "20px" }}>Configuration</h1>
-
-      {loading && <p>Loading configuration...</p>}
-      {error && <p style={{ color: "var(--accent-red)" }}>Error: {error}</p>}
+    <PageContainer title="Configuration">
+      {loading && <CircularProgress />}
+      {error && <Alert severity="error">Error: {error}</Alert>}
 
       {!loading && !error && (
-        <div style={{ display: "grid", gap: "20px" }}>
+        <Stack spacing={2.5}>
           <ConfigSettings
             config={config}
             hasChanges={hasChanges}
@@ -37,8 +31,8 @@ export function ConfigPage() {
             onChange={handleChange}
             onSaveAll={handleSaveAll}
           />
-        </div>
+        </Stack>
       )}
-    </div>
+    </PageContainer>
   );
 }

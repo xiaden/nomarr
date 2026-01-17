@@ -7,7 +7,12 @@ import { useEffect, useState } from "react";
 
 import { useConfirmDialog } from "../../../hooks/useConfirmDialog";
 import { useNotification } from "../../../hooks/useNotification";
-import { api } from "../../../shared/api";
+import {
+    apply,
+    clear,
+    generate,
+    getStatus,
+} from "../../../shared/api/calibration";
 
 export interface CalibrationStatus {
   pending: number;
@@ -31,7 +36,7 @@ export function useCalibrationStatus() {
     try {
       setLoading(true);
       setError(null);
-      const data = await api.calibration.getStatus();
+      const data = await getStatus();
       setStatus(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load status");
@@ -56,7 +61,7 @@ export function useCalibrationStatus() {
 
     try {
       setActionLoading(true);
-      const result = await api.calibration.generate(true);
+      const result = await generate(true);
       
       const calibCount = Object.keys(result.data.calibrations || {}).length;
       const filesSaved = result.saved_files?.saved_files || 0;
@@ -88,7 +93,7 @@ export function useCalibrationStatus() {
 
     try {
       setActionLoading(true);
-      const result = await api.calibration.apply();
+      const result = await apply();
       showSuccess(`Queued ${result.queued} files for recalibration`);
       await loadStatus();
     } catch (err) {
@@ -109,7 +114,7 @@ export function useCalibrationStatus() {
 
     try {
       setActionLoading(true);
-      const result = await api.calibration.clear();
+      const result = await clear();
       showSuccess(`Cleared ${result.cleared} jobs`);
       await loadStatus();
     } catch (err) {

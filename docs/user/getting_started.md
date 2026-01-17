@@ -372,73 +372,53 @@ You should see the Nomarr dashboard.
 
 ### 2. Add Your Music Library
 
-**Via Web UI:**
-1. Navigate to "Libraries" page
+**All library management is done via the Web UI:**
+
+1. Navigate to the "Libraries" page from the sidebar
 2. Click "Add Library"
-3. Enter library name (e.g., "My Music")
-4. Enter path (must match config.yaml)
-5. Click "Create"
+3. Enter a library name (e.g., "My Music")
+4. Use the path picker to select a directory (must be within the configured `library_root`)
+5. Enable/disable the library as needed
+6. Click "Create"
 
-**Via CLI:**
-```bash
-# Docker
-docker exec -it nomarr nom-cli library add "My Music" /music
-
-# Native
-python -m nomarr.interfaces.cli library add "My Music" /home/user/Music
-```
+**Note:** The library path must be accessible from within the Nomarr container. For Docker installations, ensure your music directory is mounted as a volume.
 
 ### 3. Scan Your Library
 
 **Via Web UI:**
-1. Go to "Libraries" page
-2. Click "Scan" button next to your library
-3. Monitor progress on Dashboard
-
-**Via CLI:**
-```bash
-# Docker
-docker exec -it nomarr nom-cli library scan "My Music"
-
-# Native
-python -m nomarr.interfaces.cli library scan "My Music"
-```
+1. Go to the "Libraries" page
+2. Find your library in the list
+3. Click the "Scan" button on the library card
+4. Monitor progress - the scan state will update in real-time
 
 **Scan behavior:**
 - Finds all audio files matching configured extensions
-- Reads metadata (artist, album, title, duration)
-- Creates processing queue entries
-- Does **not** start analysis (see next step)
+- Reads file metadata (artist, album, title, duration)
+- Creates processing queue entries for new/changed files
+- **Workers automatically start processing** (no manual intervention needed)
 
-**Expected time:** 1-5 minutes for 10,000 tracks
+**Preview before scanning:** Click "Preview" to see how many files will be found without actually queuing them.
 
-### 4. Start Processing Queue
+**Expected time:** 1-5 minutes for 10,000 tracks (scan only; processing is separate)
 
-Processing analyzes audio files using ML models.
+### 4. Processing Runs Automatically
 
-**Via Web UI:**
-1. Go to "Admin" page
-2. Click "Resume Workers" (if paused)
-3. Monitor progress on Dashboard
-
-**Via CLI:**
-```bash
-# Docker
-docker exec -it nomarr nom-cli queue resume
-
-# Native
-python -m nomarr.interfaces.cli queue resume
-```
+**Workers start automatically** when Nomarr launches. There's no need to manually start or resume them.
 
 **Processing behavior:**
-- Workers pick up jobs from queue
+- Workers continuously pick up jobs from the queue
 - Each file: compute embeddings → run head models → extract tags
-- Results stored in database
+- Results stored in ArangoDB
 - Failed files logged with errors
 
 **Expected time:**
 - With GPU: 1-2 minutes per 100 tracks
 - Without GPU: 30-60 minutes per 100 tracks
+
+**Pause/Resume workers:**
+- Navigate to the Admin page in the Web UI
+- Use the "Pause Workers" / "Resume Workers" buttons
+- Workers will finish current jobs before pausing
 
 ### 5. Monitor Progress
 
@@ -453,11 +433,10 @@ python -m nomarr.interfaces.cli queue resume
 - Error messages for failed jobs
 - Estimated time remaining
 
-**Worker page shows:**
+**Admin page shows:**
 - Worker health (heartbeat status)
 - Current job per worker
-- Worker process IDs
-- Restart counts
+- Pause/Resume controls
 
 ---
 
@@ -467,69 +446,82 @@ python -m nomarr.interfaces.cli queue resume
 
 When you add new music files to your library:
 
-```bash
-# Scan library (finds new files)
-docker exec -it nomarr nom-cli library scan "My Music"
-
-# Processing starts automatically if workers are running
-# Check queue to see new jobs
-```
-
-### Process Specific Files
-
-```bash
-# Add specific file to queue
-docker exec -it nomarr nom-cli queue enqueue /music/album/track.flac
-
-# Or enqueue entire directory
-docker exec -it nomarr nom-cli queue enqueue-dir /music/new-album/
-```
+1. Go to the **Libraries** page in the Web UI
+2. Find your library and click **Scan**
+3. The scan will detect new/changed files and queue them for processing
+4. Workers will automatically process the new files
 
 ### Pause Processing
 
 Useful before system maintenance or to free GPU:
 
-```bash
-# Pause workers (finish current jobs, don't start new ones)
-docker exec -it nomarr nom-cli queue pause
-
-# Resume later
-docker exec -it nomarr nom-cli queue resume
-```
+1. Go to the **Admin** page in the Web UI
+2. Click **Pause Workers**
+3. Workers will finish their current jobs and then stop taking new ones
+4. Click **Resume Workers** when ready to continue
 
 ### View Processing Errors
 
-```bash
-# List failed jobs
-docker exec -it nomarr nom-cli queue list --status error
+1. Go to the **Queue** page in the Web UI
+2. Filter by status to see failed jobs
+3. Click on a job to see error details
+4. Jobs can be retried using the admin controls
 
-# Show error details for specific job
-docker exec -it nomarr nom-cli queue show <job-id>
+### Reset Stuck or Failed Jobs
+
+If jobs are stuck in "running" state (e.g., after a crash) or you want to retry errors:
+
+```bash
+# Docker - reset stuck jobs
+docker exec -it nomarr nom admin-reset --stuck
+
+# Docker - retry all failed jobs
+docker exec -it nomarr nom admin-reset --errors
+
+# Native
+python -m nomarr.interfaces.cli admin-reset --stuck
+python -m nomarr.interfaces.cli admin-reset --errors
 ```
 
-### Retry Failed Jobs
+### Clean Up Old Jobs
+
+Remove completed jobs older than a certain age to keep the database clean:
 
 ```bash
-# Retry all failed jobs
-docker exec -it nomarr nom-cli queue retry-errors
+# Docker - remove jobs older than 7 days (168 hours)
+docker exec -it nomarr nom cleanup --hours 168
 
-# Or manually requeue
-docker exec -it nomarr nom-cli queue requeue <job-id>
+# Native
+python -m nomarr.interfaces.cli cleanup --hours 168
 ```
 
 ### Export Tags to Navidrome
 
-After processing, export smart playlists:
+After processing, generate smart playlists via the Web UI:
 
-```bash
-# Generate TOML playlists for Navidrome
-docker exec -it nomarr nom-cli navidrome export
+1. Go to the **Navidrome** page
+2. Preview your tag statistics
+3. Use playlist templates or create custom queries
+4. Generate and export playlist files
 
-# Output in /data/playlists/ (or configured export_dir)
-# Copy these to Navidrome's playlist directory
-```
+See [navidrome.md](navidrome.md) for detailed integration instructions.
 
-See [navidrome.md](navidrome.md) for integration details.
+---
+
+## CLI Reference
+
+Nomarr provides a small set of administrative CLI commands for maintenance tasks:
+
+| Command | Description |
+|---------|-------------|
+| `nom cleanup --hours N` | Remove completed jobs older than N hours |
+| `nom admin-reset --stuck` | Reset jobs stuck in "running" state |
+| `nom admin-reset --errors` | Retry all failed jobs |
+| `nom cache-refresh` | Rebuild model predictor cache |
+| `nom remove --status <status>` | Remove jobs by status (pending, error, done) |
+| `nom manage-password reset` | Change admin password |
+
+**Note:** Library management, scanning, and worker control are handled through the Web UI, not the CLI.
 
 ---
 
@@ -570,7 +562,7 @@ See [navidrome.md](navidrome.md) for integration details.
 
 **Symptoms:**
 - Queue depth shows "pending" but nothing processing
-- Worker page shows no workers or "crashed" status
+- Admin page shows no active workers
 
 **Solutions:**
 
@@ -580,15 +572,14 @@ See [navidrome.md](navidrome.md) for integration details.
    ```
    Look for worker startup errors.
 
-2. **Check worker status:**
-   ```bash
-   docker exec -it nomarr nom-cli worker status
-   ```
+2. **Verify workers are active:**
+   Workers start automatically with Nomarr. Check the Admin page in the Web UI to see worker status.
 
-3. **Restart workers:**
+3. **Restart Nomarr:**
    ```bash
-   docker exec -it nomarr nom-cli worker restart
+   docker compose restart nomarr
    ```
+   Workers will be restarted with the application.
 
 4. **Check database connectivity:**
    ```bash
@@ -683,16 +674,11 @@ See [navidrome.md](navidrome.md) for integration details.
    - Need 1000+ tracks for reliable calibration
    - More is better (5000+ recommended)
 
-2. **Check calibration queue:**
-   ```bash
-   docker exec -it nomarr nom-cli queue list --queue calibration
-   ```
+2. **Check calibration status:**
+   Navigate to the **Calibration** page in the Web UI to see which tags have been calibrated.
 
-3. **Manually trigger calibration:**
-   ```bash
-   docker exec -it nomarr nom-cli calibration generate
-   docker exec -it nomarr nom-cli calibration apply
-   ```
+3. **Trigger recalibration:**
+   Use the **Calibration** page in the Web UI to recalculate thresholds for all tags.
 
 ---
 
@@ -728,11 +714,10 @@ See [navidrome.md](navidrome.md) for integration details.
    docker-compose logs -f nomarr | grep -i error
    ```
 
-2. Check system health:
-   ```bash
-   docker exec -it nomarr nom-cli worker status
-   docker exec -it nomarr nom-cli queue status
-   ```
+2. Check system health in the Web UI:
+   - **Dashboard** page shows overall status
+   - **Admin** page shows worker health
+   - **Queue** page shows job status
 
 3. Verify GPU status:
    ```bash
@@ -744,7 +729,7 @@ See [navidrome.md](navidrome.md) for integration details.
 - GitHub Discussions: Ask questions and share experiences
 
 **When reporting issues:**
-- Include Nomarr version (`docker exec -it nomarr nom-cli version`)
+- Include Nomarr version (shown in Web UI footer)
 - Include relevant logs (last 50 lines)
 - Describe GPU hardware and driver version
 - Describe steps to reproduce

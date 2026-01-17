@@ -1,0 +1,1 @@
+import{a as e,r as t}from"./index-gBnixkw7.js";async function n(){return t(`/api/web/config`)}async function r(t,n){return e(`/api/web/config`,{key:t,value:n})}export{r as n,n as t};

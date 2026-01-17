@@ -16,7 +16,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { api } from "../api";
+import { listFs } from "../api/filesystem";
 import type { FsEntry } from "../types";
 
 import "./ServerFilePicker.css";
@@ -86,7 +86,7 @@ export function ServerFilePicker({
             : libraryRoot
           : path || undefined;
 
-        const response = await api.fs.listFs(apiPath);
+        const response = await listFs(apiPath);
         setEntries(response.entries);
       } catch (err) {
         const errorMessage =

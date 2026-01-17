@@ -320,8 +320,6 @@ class Application:
             api_port=self.api_port,
             worker_enabled_default=self.worker_enabled_default,
             tagger_worker_count=self._config_service.get_worker_count("tagger"),
-            scanner_worker_count=self._config_service.get_worker_count("scanner"),
-            recalibration_worker_count=self._config_service.get_worker_count("recalibration"),
             poll_interval=float(self.worker_poll_interval),
         )
         info_service = InfoService(

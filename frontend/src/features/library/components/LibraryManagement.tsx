@@ -25,7 +25,16 @@ import { ConfirmDialog, ErrorMessage, Panel, SectionHeader } from "@shared/compo
 import { useConfirmDialog } from "../../../hooks/useConfirmDialog";
 import { useNotification } from "../../../hooks/useNotification";
 
-import { api } from "../../../shared/api";
+import { getConfig } from "../../../shared/api/config";
+import {
+    create as createLibrary,
+    deleteLibrary,
+    list as listLibraries,
+    preview as previewLibrary,
+    scan as scanLibrary,
+    setDefault as setDefaultLibrary,
+    update as updateLibrary,
+} from "../../../shared/api/library";
 import { ServerFilePicker } from "../../../shared/components/ServerFilePicker";
 import type { Library } from "../../../shared/types";
 
@@ -55,7 +64,7 @@ export function LibraryManagement() {
     try {
       setLoading(true);
       setError(null);
-      const data = await api.library.list();
+      const data = await listLibraries();
       setLibraries(data);
     } catch (err) {
       setError(
@@ -69,7 +78,7 @@ export function LibraryManagement() {
 
   const loadConfig = async () => {
     try {
-      const config = await api.config.get();
+      const config = await getConfig();
       setLibraryRoot(config.library_root as string || null);
     } catch (err) {
       console.error("[LibraryManagement] Failed to load config:", err);
@@ -134,7 +143,7 @@ export function LibraryManagement() {
       setError(null);
       setPreviewLoading(true);
       // Don't send paths - let backend use library's root_path directly
-      const result = await api.library.preview(editingId, {
+      const result = await previewLibrary(editingId, {
         recursive: true,
       });
       setPreviewCount(result.file_count);
@@ -155,7 +164,7 @@ export function LibraryManagement() {
 
     try {
       setError(null);
-      await api.library.create({
+      await createLibrary({
         name: formName,
         rootPath: formRootPath,
         isEnabled: formIsEnabled,
@@ -179,7 +188,7 @@ export function LibraryManagement() {
 
     try {
       setError(null);
-      await api.library.update(editingId, {
+      await updateLibrary(editingId, {
         name: formName,
         rootPath: formRootPath,
         isEnabled: formIsEnabled,
@@ -197,7 +206,7 @@ export function LibraryManagement() {
   const handleSetDefault = async (id: string) => {
     try {
       setError(null);
-      await api.library.setDefault(id);
+      await setDefaultLibrary(id);
       await loadLibraries();
     } catch (err) {
       setError(
@@ -213,7 +222,7 @@ export function LibraryManagement() {
       setScanningState("preparing");
 
       // Get preview first
-      const preview = await api.library.preview(id, {
+      const preview = await previewLibrary(id, {
         recursive: true,
       });
 
@@ -229,7 +238,7 @@ export function LibraryManagement() {
       // User confirmed - now queue the scan
       setScanningState("queueing");
 
-      const result = await api.library.scan(id, {
+      const result = await scanLibrary(id, {
         recursive: true,
         force: false,
         cleanMissing: true,
@@ -262,7 +271,7 @@ export function LibraryManagement() {
 
     try {
       setError(null);
-      await api.library.delete(id);
+      await deleteLibrary(id);
       await loadLibraries();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete library");

@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ErrorMessage } from "@shared/components/ui";
 
-import { api } from "../../../shared/api";
+import { search } from "../../../shared/api/files";
 import type { FileTag, LibraryFile } from "../../../shared/types";
 
 interface SimilarTracksProps {
@@ -39,16 +39,16 @@ export function SimilarTracks({
       setPage(0);
 
       if (isNumeric) {
-        const result = await api.files.search({
+        const result = await search({
           tagKey: tag.key,
           limit: 500,
         });
 
         const targetValue = parseFloat(tag.value);
         const tracksWithTag = result.files
-          .filter((f) => f.id !== currentTrackId)
-          .map((track) => {
-            const trackTag = track.tags?.find((t) => t.key === tag.key);
+          .filter((f: LibraryFile) => f.id !== currentTrackId)
+          .map((track: LibraryFile) => {
+            const trackTag = track.tags?.find((t: FileTag) => t.key === tag.key);
             const trackValue = trackTag ? parseFloat(trackTag.value) : null;
             return {
               track,
@@ -56,9 +56,9 @@ export function SimilarTracks({
               diff: trackValue !== null ? Math.abs(trackValue - targetValue) : Infinity,
             };
           })
-          .filter((item) => item.value !== null)
+          .filter((item: { value: number | null }) => item.value !== null)
           // Stable sort: distance, then title, then artist, then id
-          .sort((a, b) => {
+          .sort((a: { track: LibraryFile; diff: number }, b: { track: LibraryFile; diff: number }) => {
             if (a.diff !== b.diff) return a.diff - b.diff;
             const titleCmp = (a.track.title || "").localeCompare(b.track.title || "");
             if (titleCmp !== 0) return titleCmp;
@@ -69,15 +69,15 @@ export function SimilarTracks({
 
         setAllTracks(tracksWithTag);
       } else {
-        const result = await api.files.search({
+        const result = await search({
           tagKey: tag.key,
           tagValue: tag.value,
           limit: 500,
         });
 
         const filteredTracks = result.files
-          .filter((f) => f.id !== currentTrackId)
-          .map((track) => ({ track, diff: 0 }));
+          .filter((f: LibraryFile) => f.id !== currentTrackId)
+          .map((track: LibraryFile) => ({ track, diff: 0 }));
 
         setAllTracks(filteredTracks);
       }

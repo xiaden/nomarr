@@ -25,7 +25,7 @@ import { useState } from "react";
 import { ConfirmDialog, ErrorMessage, PageContainer, Panel, SectionHeader } from "@shared/components/ui";
 import { useConfirmDialog } from "../../hooks/useConfirmDialog";
 
-import { api } from "../../shared/api";
+import { removeTags, showTags } from "../../shared/api/tags";
 import { ServerFilePicker } from "../../shared/components/ServerFilePicker";
 
 interface TagsData {
@@ -54,7 +54,7 @@ export function InspectTagsPage() {
       setLoading(true);
       setError(null);
       setRemoveSuccess(null);
-      const data = await api.tags.showTags(filePath);
+      const data = await showTags(filePath);
       setTagsData(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load tags");
@@ -77,10 +77,10 @@ export function InspectTagsPage() {
       setRemoving(true);
       setError(null);
       setRemoveSuccess(null);
-      const result = await api.tags.removeTags(filePath);
+      const result = await removeTags(filePath);
       setRemoveSuccess(`Removed ${result.removed} tag(s) from ${result.path}`);
       // Refresh tags to show empty state
-      const data = await api.tags.showTags(filePath);
+      const data = await showTags(filePath);
       setTagsData(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to remove tags");

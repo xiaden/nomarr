@@ -200,26 +200,19 @@ class ConfigService:
             worker_enabled=worker_enabled,
         )
 
-    def get_worker_count(self, kind: Literal["tagger", "scanner", "recalibration"]) -> int:
+    def get_worker_count(self, kind: Literal["tagger"] = "tagger") -> int:
         """
-        Get worker count for a specific worker pool.
-
-        This method supports per-pool worker counts via flat config keys:
-        - tagger_worker_count
-        - scanner_worker_count
-        - recalibration_worker_count
+        Get worker count for the tagger worker pool.
 
         Args:
-            kind: Worker pool type ("tagger", "scanner", or "recalibration")
+            kind: Worker pool type (only "tagger" is supported)
 
         Returns:
-            Worker count for the specified pool (constrained to 1-8, defaults to 1)
+            Worker count (constrained to 1-8, defaults to 1)
 
         Example:
             >>> config_service.get_worker_count("tagger")
             2  # from tagger_worker_count
-            >>> config_service.get_worker_count("scanner")
-            1  # from scanner_worker_count or default
         """
         cfg = self.get_config().config
 
@@ -312,10 +305,8 @@ class ConfigService:
             # Library scanner settings
             "library_auto_tag": True,
             "library_ignore_patterns": "",
-            # Worker settings (per-pool counts, defaults to 1)
+            # Worker settings
             "tagger_worker_count": None,  # ML tagging workers (1-8, controls VRAM usage)
-            "scanner_worker_count": None,  # Library scanner workers (1-8)
-            "recalibration_worker_count": None,  # Calibration workers (1-8)
             # Calibration settings
             "calibrate_heads": False,
             "calibration_repo": "https://github.com/xiaden/nom-cal",
@@ -376,8 +367,6 @@ class ConfigService:
             "admin_password",
             "cache_idle_timeout",
             "tagger_worker_count",
-            "scanner_worker_count",
-            "recalibration_worker_count",
             "calibrate_heads",
             "calibration_repo",
         }

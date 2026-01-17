@@ -8,6 +8,9 @@
  * - Tag co-occurrence matrix
  */
 
+import { Alert, CircularProgress, Stack } from "@mui/material";
+
+import { PageContainer } from "@shared/components/ui";
 import { MoodDistributionView } from "./components/MoodDistributionView";
 import { TagCoOccurrence } from "./components/TagCoOccurrence";
 import { TagFrequenciesTable } from "./components/TagFrequenciesTable";
@@ -17,19 +20,17 @@ export function AnalyticsPage() {
   const { data, loading, error } = useAnalyticsData();
 
   return (
-    <div style={{ padding: "20px" }}>
-      <h1 style={{ marginBottom: "20px" }}>Analytics</h1>
-
-      {loading && <p>Loading analytics data...</p>}
-      {error && <p style={{ color: "var(--accent-red)" }}>Error: {error}</p>}
+    <PageContainer title="Analytics">
+      {loading && <CircularProgress />}
+      {error && <Alert severity="error">Error: {error}</Alert>}
 
       {!loading && !error && (
-        <div style={{ display: "grid", gap: "20px" }}>
+        <Stack spacing={2.5}>
           <MoodDistributionView data={data.moodDistribution} />
           <TagFrequenciesTable data={data.tagFrequencies} />
           <TagCoOccurrence />
-        </div>
+        </Stack>
       )}
-    </div>
+    </PageContainer>
   );
 }

@@ -26,7 +26,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { ErrorMessage, PageContainer, Panel } from "@shared/components/ui";
 
-import { api } from "../../shared/api";
+import { getTagValues, getUniqueTagKeys, search } from "../../shared/api/files";
 import { FileTagsDataGrid } from "../../shared/components/FileTagsDataGrid";
 import type { LibraryFile } from "../../shared/types";
 
@@ -53,7 +53,7 @@ export function BrowseFilesPage() {
 
   const loadAvailableTags = async () => {
     try {
-      const result = await api.files.getUniqueTagKeys(true); // Nomarr tags only
+      const result = await getUniqueTagKeys(true); // Nomarr tags only
       setAvailableTags(result.tag_keys);
     } catch (err) {
       console.error("[BrowseFiles] Failed to load tags:", err);
@@ -66,7 +66,7 @@ export function BrowseFilesPage() {
       return;
     }
     try {
-      const result = await api.files.getTagValues(key, true); // Nomarr tags only
+      const result = await getTagValues(key, true); // Nomarr tags only
       setAvailableValues(result.tag_keys); // Backend reuses same DTO structure
     } catch (err) {
       console.error("[BrowseFiles] Failed to load tag values:", err);
@@ -79,7 +79,7 @@ export function BrowseFilesPage() {
       setLoading(true);
       setError(null);
 
-      const result = await api.files.search({
+      const result = await search({
         q: searchQuery || undefined,
         tagKey: tagKey || undefined,
         tagValue: tagValue || undefined,

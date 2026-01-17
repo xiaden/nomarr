@@ -19,7 +19,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { ErrorMessage, Panel } from "@shared/components/ui";
 
-import { api } from "../../../shared/api";
+import { listEntities } from "../../../shared/api/metadata";
 import type { Entity, EntityCollection } from "../../../shared/types";
 
 import { TrackList } from "./TrackList";
@@ -44,7 +44,7 @@ export function EntityBrowser({ collection }: EntityBrowserProps) {
       setLoading(true);
       setError(null);
 
-      const result = await api.metadata.listEntities(collection, {
+      const result = await listEntities(collection, {
         limit,
         offset,
         search: searchQuery || undefined,

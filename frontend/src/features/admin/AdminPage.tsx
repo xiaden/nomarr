@@ -6,7 +6,9 @@
  * - Server restart
  */
 
-import { ConfirmDialog } from "@shared/components/ui";
+import { Stack } from "@mui/material";
+
+import { ConfirmDialog, PageContainer } from "@shared/components/ui";
 import { SystemControls } from "./components/SystemControls";
 import { WorkerControls } from "./components/WorkerControls";
 import { useAdminActions } from "./hooks/useAdminActions";
@@ -16,17 +18,15 @@ export function AdminPage() {
     useAdminActions();
 
   return (
-    <div style={{ padding: "20px" }}>
-      <h1 style={{ marginBottom: "20px" }}>Admin</h1>
-
-      <div style={{ display: "grid", gap: "20px" }}>
+    <PageContainer title="Admin">
+      <Stack spacing={2.5}>
         <WorkerControls
           onPause={handlePauseWorker}
           onResume={handleResumeWorker}
           actionLoading={actionLoading}
         />
         <SystemControls onRestart={handleRestart} actionLoading={actionLoading} />
-      </div>
+      </Stack>
 
       {/* Confirm dialog for admin actions */}
       <ConfirmDialog
@@ -39,6 +39,6 @@ export function AdminPage() {
         onConfirm={dialogState.handleConfirm}
         onCancel={dialogState.handleCancel}
       />
-    </div>
+    </PageContainer>
   );
 }

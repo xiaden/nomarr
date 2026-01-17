@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from "react";
 
-import { api } from "../../../shared/api";
+import { getMoodDistribution, getTagFrequencies } from "../../../shared/api/analytics";
 
 export interface TagFrequency {
   tag_key: string;
@@ -38,8 +38,8 @@ export function useAnalyticsData() {
         setError(null);
 
         const [tagFreqData, moodData] = await Promise.all([
-          api.analytics.getTagFrequencies(50),
-          api.analytics.getMoodDistribution(),
+          getTagFrequencies(50),
+          getMoodDistribution(),
         ]);
 
         setData({

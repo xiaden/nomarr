@@ -8,7 +8,9 @@
  * - Clear calibration queue
  */
 
-import { ConfirmDialog } from "@shared/components/ui";
+import { Alert, CircularProgress, Stack } from "@mui/material";
+
+import { ConfirmDialog, PageContainer } from "@shared/components/ui";
 import { CalibrationActions } from "./components/CalibrationActions";
 import { CalibrationStatus } from "./components/CalibrationStatus";
 import { useCalibrationStatus } from "./hooks/useCalibrationStatus";
@@ -26,14 +28,12 @@ export function CalibrationPage() {
   } = useCalibrationStatus();
 
   return (
-    <div style={{ padding: "20px" }}>
-      <h1 style={{ marginBottom: "20px" }}>Calibration</h1>
-
-      {loading && <p>Loading calibration status...</p>}
-      {error && <p style={{ color: "var(--accent-red)" }}>Error: {error}</p>}
+    <PageContainer title="Calibration">
+      {loading && <CircularProgress />}
+      {error && <Alert severity="error">Error: {error}</Alert>}
 
       {status && (
-        <div style={{ display: "grid", gap: "20px" }}>
+        <Stack spacing={2.5}>
           <CalibrationStatus status={status} />
           <CalibrationActions
             onGenerate={handleGenerate}
@@ -41,7 +41,7 @@ export function CalibrationPage() {
             onClear={handleClear}
             actionLoading={actionLoading}
           />
-        </div>
+        </Stack>
       )}
 
       {/* Confirm dialog for calibration actions */}
@@ -55,6 +55,6 @@ export function CalibrationPage() {
         onConfirm={dialogState.handleConfirm}
         onCancel={dialogState.handleCancel}
       />
-    </div>
+    </PageContainer>
   );
 }

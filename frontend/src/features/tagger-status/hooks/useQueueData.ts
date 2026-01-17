@@ -8,7 +8,14 @@ import { useEffect, useState } from "react";
 import { useConfirmDialog } from "../../../hooks/useConfirmDialog";
 import { useNotification } from "../../../hooks/useNotification";
 import { useSSE } from "../../../hooks/useSSE";
-import { api } from "../../../shared/api";
+import {
+    clearAll as apiClearAll,
+    clearCompleted as apiClearCompleted,
+    clearErrors as apiClearErrors,
+    getQueueStatus,
+    listJobs,
+    removeJobs,
+} from "../../../shared/api/queue";
 import type { QueueJob, QueueSummary } from "../../../shared/types";
 
 type StatusFilter = "all" | "pending" | "running" | "done" | "error";
@@ -41,19 +48,23 @@ export function useQueueData() {
       setLoading(true);
       setError(null);
 
-      const params: { status?: string; limit: number; offset: number } = {
+      const params: {
+        status?: "pending" | "running" | "done" | "error";
+        limit: number;
+        offset: number;
+      } = {
         limit,
         offset,
       };
       if (statusFilter !== "all") {
-        params.status = statusFilter;
+        params.status = statusFilter as "pending" | "running" | "done" | "error";
       }
 
-      const jobsResponse = await api.queue.listJobs(params);
+      const jobsResponse = await listJobs(params);
       setJobs(jobsResponse.jobs);
       setTotal(jobsResponse.total);
 
-      const summaryResponse = await api.queue.getStatus();
+      const summaryResponse = await getQueueStatus();
       setSummary(summaryResponse);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load queue");
@@ -103,7 +114,7 @@ export function useQueueData() {
 
     try {
       setActionLoading(true);
-      await api.queue.removeJobs({ job_id: jobId });
+      await removeJobs({ job_id: jobId });
       await loadQueue();
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to remove job");
@@ -122,7 +133,7 @@ export function useQueueData() {
 
     try {
       setActionLoading(true);
-      const result = await api.queue.clearCompleted();
+      const result = await apiClearCompleted();
       showSuccess(`Removed ${result.removed} completed job(s)`);
       await loadQueue();
     } catch (err) {
@@ -142,7 +153,7 @@ export function useQueueData() {
 
     try {
       setActionLoading(true);
-      const result = await api.queue.clearErrors();
+      const result = await apiClearErrors();
       showSuccess(`Removed ${result.removed} error job(s)`);
       await loadQueue();
     } catch (err) {
@@ -162,7 +173,7 @@ export function useQueueData() {
 
     try {
       setActionLoading(true);
-      const result = await api.queue.clearAll();
+      const result = await apiClearAll();
       showSuccess(`Removed ${result.removed} job(s)`);
       await loadQueue();
     } catch (err) {

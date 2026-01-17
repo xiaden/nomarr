@@ -6,7 +6,12 @@
 import { useState } from "react";
 
 import { useNotification } from "../../../hooks/useNotification";
-import { api } from "../../../shared/api";
+import {
+    generatePlaylist as apiGeneratePlaylist,
+    previewPlaylist as apiPreviewPlaylist,
+    getConfig,
+    getPreview,
+} from "../../../shared/api/navidrome";
 
 interface TagPreview {
   tag_key: string;
@@ -41,7 +46,7 @@ export function useNavidromeData() {
     try {
       setConfigLoading(true);
       setConfigError(null);
-      const data = await api.navidrome.getPreview();
+      const data = await getPreview();
       setConfigPreview(data.tags);
     } catch (err) {
       setConfigError(err instanceof Error ? err.message : "Failed to load preview");
@@ -54,7 +59,7 @@ export function useNavidromeData() {
     try {
       setConfigLoading(true);
       setConfigError(null);
-      const data = await api.navidrome.getConfig();
+      const data = await getConfig();
       setConfigText(data.config);
     } catch (err) {
       setConfigError(err instanceof Error ? err.message : "Failed to generate config");
@@ -71,7 +76,7 @@ export function useNavidromeData() {
     try {
       setPlaylistLoading(true);
       setPlaylistError(null);
-      const data = await api.navidrome.previewPlaylist(playlistQuery, 10);
+      const data = await apiPreviewPlaylist(playlistQuery, 10);
       setPlaylistPreview(data);
     } catch (err) {
       setPlaylistError(err instanceof Error ? err.message : "Failed to preview playlist");
@@ -93,7 +98,7 @@ export function useNavidromeData() {
     try {
       setPlaylistLoading(true);
       setPlaylistError(null);
-      const data = await api.navidrome.generatePlaylist({
+      const data = await apiGeneratePlaylist({
         query: playlistQuery,
         playlist_name: playlistName,
         comment: playlistComment,

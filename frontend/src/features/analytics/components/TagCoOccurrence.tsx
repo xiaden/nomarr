@@ -26,7 +26,8 @@ import { useEffect, useState } from "react";
 
 import { Panel, SectionHeader } from "@shared/components/ui";
 
-import { api } from "../../../shared/api";
+import { getTagCoOccurrence } from "../../../shared/api/analytics";
+import { getUniqueTagKeys, getUniqueTagValues } from "../../../shared/api/files";
 import { ComboBox } from "../../../shared/components/ComboBox";
 
 interface TagSpec {
@@ -71,7 +72,7 @@ export function TagCoOccurrence() {
 
   const loadTagKeys = async () => {
     try {
-      const response = await api.files.getUniqueTagKeys(true);
+      const response = await getUniqueTagKeys(true);
       setTagKeys(response.tag_keys);
     } catch (err) {
       console.error("[TagCoOccurrence] Failed to load tag keys:", err);
@@ -80,7 +81,7 @@ export function TagCoOccurrence() {
 
   const loadTagValues = async (key: string) => {
     try {
-      const response = await api.files.getUniqueTagValues(key, true);
+      const response = await getUniqueTagValues(key, true);
       // Parse multi-value tags (arrays stored as JSON strings)
       const parsedValues = new Set<string>();
       for (const value of response.tag_keys) {
@@ -154,7 +155,7 @@ export function TagCoOccurrence() {
       setLoading(true);
       setError(null);
 
-      const result = await api.analytics.getTagCoOccurrence({
+      const result = await getTagCoOccurrence({
         x: xTags,
         y: yTags,
       });

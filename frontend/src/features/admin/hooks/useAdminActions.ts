@@ -7,7 +7,7 @@ import { useState } from "react";
 
 import { useConfirmDialog } from "../../../hooks/useConfirmDialog";
 import { useNotification } from "../../../hooks/useNotification";
-import { api } from "../../../shared/api";
+import { pauseWorker, restart, resumeWorker } from "../../../shared/api/worker";
 
 export function useAdminActions() {
   const { showSuccess, showError } = useNotification();
@@ -26,7 +26,7 @@ export function useAdminActions() {
 
     try {
       setActionLoading(true);
-      const result = await api.admin.pauseWorker();
+      const result = await pauseWorker();
       showSuccess(result.message);
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to pause worker");
@@ -45,7 +45,7 @@ export function useAdminActions() {
 
     try {
       setActionLoading(true);
-      const result = await api.admin.resumeWorker();
+      const result = await resumeWorker();
       showSuccess(result.message);
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to resume worker");
@@ -65,7 +65,7 @@ export function useAdminActions() {
 
     try {
       setActionLoading(true);
-      const result = await api.admin.restart();
+      const result = await restart();
       showSuccess(result.message);
       // Wait a moment then reload
       setTimeout(() => {

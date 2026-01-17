@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from "react";
 
-import { api } from "../../../shared/api";
+import { getStats } from "../../../shared/api/library";
 
 export interface LibraryStatsData {
   total_files: number;
@@ -22,7 +22,7 @@ export function useLibraryStats() {
     try {
       setLoading(true);
       setError(null);
-      const data = await api.library.getStats();
+      const data = await getStats();
       setStats(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load stats");

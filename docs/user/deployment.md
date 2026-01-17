@@ -766,8 +766,7 @@ docker-compose restart nomarr
 # Monitor GPU memory
 watch -n 1 nvidia-smi
 
-# Check processing rate
-docker exec nomarr nom-cli queue status
+# Check processing rate in Web UI Dashboard
 ```
 
 **Increase if:**
@@ -942,8 +941,8 @@ nvidia-smi  # GPU memory
 ### Slow Processing
 
 **Diagnose:**
+Check queue status in Web UI Dashboard, then run:
 ```bash
-docker exec nomarr nom-cli queue status
 nvidia-smi dmon  # GPU monitoring
 ```
 

@@ -6,7 +6,7 @@
 import { useEffect, useState } from "react";
 
 import { useNotification } from "../../../hooks/useNotification";
-import { api } from "../../../shared/api";
+import { getConfig, updateConfig } from "../../../shared/api/config";
 
 export function useConfigData() {
   const { showSuccess, showError, showInfo } = useNotification();
@@ -24,7 +24,7 @@ export function useConfigData() {
     try {
       setLoading(true);
       setError(null);
-      const data = await api.config.get();
+      const data = await getConfig();
       setConfig(data);
       setOriginalConfig(data);
       setHasChanges(false);
@@ -61,7 +61,7 @@ export function useConfigData() {
           if (value === null || value === undefined || value === "") {
             continue;
           }
-          await api.config.update(key, String(value));
+          await updateConfig(key, String(value));
           changes.push(key);
         }
       }

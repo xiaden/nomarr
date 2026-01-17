@@ -41,11 +41,9 @@ library_ignore_patterns:  "" # Comma-separated path patterns to skip
 # ----------------------------------------------------------------------
 # Worker Settings
 # ----------------------------------------------------------------------
-# Per-pool worker counts (1-8 recommended, controls VRAM usage)
+# ML tagging worker count (1-8 recommended, controls VRAM usage)
 # Defaults to 1 if not specified
-tagger_worker_count: 1 # ML tagging workers
-scanner_worker_count: 1 # Library scanner workers
-recalibration_worker_count: 1 # Calibration workers
+tagger_worker_count: 1
 
 # ----------------------------------------------------------------------
 # Model Cache

@@ -12,7 +12,8 @@ import {
 } from "@shared/components/ui";
 
 import { useSSE } from "../../hooks/useSSE";
-import { api } from "../../shared/api";
+import { getStats } from "../../shared/api/library";
+import { getQueueStatus } from "../../shared/api/queue";
 
 /**
  * Dashboard page component.
@@ -63,8 +64,8 @@ export function DashboardPage() {
       setError(null);
 
       const [queue, library] = await Promise.all([
-        api.queue.getStatus(),
-        api.library.getStats(),
+        getQueueStatus(),
+        getStats(),
       ]);
 
       setQueueSummary(queue);
