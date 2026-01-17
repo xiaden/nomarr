@@ -127,7 +127,11 @@ class Database:
         # from nomarr.persistence.database.joined_queries_aql import JoinedQueryOperations
         # self.joined_queries = JoinedQueryOperations(self.db)
 
-        # Store schema version for reference
+    def ensure_schema_version(self) -> None:
+        """Ensure schema version is recorded in meta collection.
+
+        Should be called AFTER ensure_schema() has created collections.
+        """
         current_version = self.meta.get("schema_version")
         if not current_version:
             self.meta.set("schema_version", str(SCHEMA_VERSION))

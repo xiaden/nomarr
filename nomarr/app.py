@@ -148,6 +148,12 @@ class Application:
         # Core dependencies (owned by Application)
         self.db = Database()
 
+        # Ensure schema exists (idempotent - safe on every startup)
+        from nomarr.components.platform.arango_bootstrap_comp import ensure_schema
+
+        ensure_schema(self.db.db)
+        self.db.ensure_schema_version()
+
         # Config service for registration
         self._config_service = config_service
 
