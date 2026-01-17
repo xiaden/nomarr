@@ -154,7 +154,7 @@ class TestLibraryDict:
     def test_can_create_basic_library(self) -> None:
         """Should create library with required fields."""
         lib = LibraryDict(
-            id="libraries/12345",
+            _id="libraries/12345",
             name="Music",
             root_path="/music",
             is_enabled=True,
@@ -162,7 +162,7 @@ class TestLibraryDict:
             created_at="2024-01-01T00:00:00Z",
             updated_at="2024-01-01T00:00:00Z",
         )
-        assert lib.id == "libraries/12345"
+        assert lib._id == "libraries/12345"
         assert lib.name == "Music"
         assert lib.is_enabled
 
@@ -170,7 +170,7 @@ class TestLibraryDict:
     def test_can_create_library_with_scan_info(self) -> None:
         """Should create library with scan progress."""
         lib = LibraryDict(
-            id="libraries/12345",
+            _id="libraries/12345",
             name="Music",
             root_path="/music",
             is_enabled=True,
@@ -188,7 +188,7 @@ class TestLibraryDict:
     def test_id_contains_collection_prefix(self) -> None:
         """Library ID should contain ArangoDB collection prefix."""
         lib = LibraryDict(
-            id="libraries/abc123",
+            _id="libraries/abc123",
             name="Test",
             root_path="/test",
             is_enabled=True,
@@ -196,7 +196,7 @@ class TestLibraryDict:
             created_at=0,
             updated_at=0,
         )
-        assert lib.id.startswith("libraries/")
+        assert lib._id.startswith("libraries/")
 
 
 class TestStartScanResult:
