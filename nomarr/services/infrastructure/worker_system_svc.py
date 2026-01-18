@@ -92,7 +92,6 @@ class WorkerSystemService:
         self,
         db: Database,
         tagger_backend: Callable[[Database, str, bool], Any],
-        event_broker: Any,
         tagger_count: int = 2,
         default_enabled: bool = True,
     ):
@@ -102,13 +101,11 @@ class WorkerSystemService:
         Args:
             db: Database instance (for health monitoring and meta flags)
             tagger_backend: Processing backend for tagger workers
-            event_broker: Event broker for SSE updates
             tagger_count: Number of tagger worker processes (default: 2, ML heavy)
             default_enabled: Default worker_enabled flag if not in DB (default: True)
         """
         self.db = db
         self.tagger_backend = tagger_backend
-        self.event_broker = event_broker
         self.tagger_count = tagger_count
         self.default_enabled = default_enabled
 
@@ -559,14 +556,11 @@ class WorkerSystemService:
 
     # ---------------------------- Admin Operations ----------------------------
 
-    def pause_all_workers(self, event_broker: Any | None = None) -> WorkerOperationResult:
+    def pause_all_workers(self) -> WorkerOperationResult:
         """
         Pause all workers.
 
         Sets worker_enabled=false, then stops all worker processes.
-
-        Args:
-            event_broker: Optional event broker for SSE updates
 
         Returns:
             WorkerOperationResult with status message
@@ -579,18 +573,13 @@ class WorkerSystemService:
         # Stop all workers
         self.stop_all_workers()
 
-        # Individual worker state changes are broadcast via normal worker updates
-
         return WorkerOperationResult(status="success", message="All workers paused")
 
-    def resume_all_workers(self, event_broker: Any | None = None) -> WorkerOperationResult:
+    def resume_all_workers(self) -> WorkerOperationResult:
         """
         Resume all workers.
 
         Sets worker_enabled=true and starts all worker processes.
-
-        Args:
-            event_broker: Optional event broker for SSE updates
 
         Returns:
             WorkerOperationResult with status message

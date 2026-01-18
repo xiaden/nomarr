@@ -1,9 +1,9 @@
 /**
  * QueueSummary component.
- * Displays queue statistics badges and SSE connection status.
+ * Displays queue statistics badges.
  */
 
-import { Box, Chip, Stack, Typography } from "@mui/material";
+import { Box, Stack, Typography } from "@mui/material";
 
 import { Panel } from "@shared/components/ui";
 
@@ -14,25 +14,11 @@ interface QueueSummaryProps {
     completed: number;
     errors: number;
   };
-  connected: boolean;
 }
 
-export function QueueSummary({ summary, connected }: QueueSummaryProps) {
+export function QueueSummary({ summary }: QueueSummaryProps) {
   return (
     <Panel>
-      {/* SSE Status */}
-      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
-        <Typography variant="body2" color="text.secondary">
-          SSE Status:
-        </Typography>
-        <Chip
-          label={connected ? "Connected" : "Disconnected"}
-          size="small"
-          color={connected ? "success" : "error"}
-          sx={{ height: 20, fontSize: "0.7rem" }}
-        />
-      </Stack>
-
       {/* Summary badges */}
       <Stack direction="row" spacing={2} flexWrap="wrap">
         <Box

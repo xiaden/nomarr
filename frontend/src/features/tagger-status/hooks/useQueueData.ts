@@ -1,13 +1,12 @@
 /**
  * Custom hook for managing queue data and actions.
- * Handles loading, filtering, pagination, SSE updates, and job actions.
+ * Handles loading, filtering, pagination, polling updates, and job actions.
  */
 
 import { useEffect, useState } from "react";
 
 import { useConfirmDialog } from "../../../hooks/useConfirmDialog";
 import { useNotification } from "../../../hooks/useNotification";
-import { useSSE } from "../../../hooks/useSSE";
 import {
     clearAll as apiClearAll,
     clearCompleted as apiClearCompleted,
@@ -79,30 +78,41 @@ export function useQueueData() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, offset]);
 
-  const { connected } = useSSE({
-    onMessage: (event) => {
+  // Adaptive polling: 1s when active, 30s when idle
+  useEffect(() => {
+    const hasJobs = total > 0 || summary.pending > 0 || summary.running > 0;
+    const pollInterval = hasJobs ? 1000 : 30000; // 1s active, 30s idle
+
+    const interval = setInterval(async () => {
       try {
-        const data = JSON.parse(event.data);
+        const summaryResponse = await getQueueStatus();
+        setSummary(summaryResponse);
 
-        if (data.topic === "queue:status" && data.state) {
-          setSummary({
-            pending: data.state.pending || 0,
-            running: data.state.running || 0,
-            completed: data.state.completed || 0,
-            errors: data.state.errors || 0,
-          });
-          console.log("[Queue] SSE: Updated summary from event", data.state);
-        }
+        // If we're looking at a specific status page, refresh job list
+        if (!loading) {
+          const params: {
+            status?: "pending" | "running" | "done" | "error";
+            limit: number;
+            offset: number;
+          } = {
+            limit,
+            offset,
+          };
+          if (statusFilter !== "all") {
+            params.status = statusFilter as "pending" | "running" | "done" | "error";
+          }
 
-        if (data.topic === "queue:jobs" && !loading) {
-          console.log("[Queue] SSE: Job update, reloading job list");
-          loadQueue();
+          const jobsResponse = await listJobs(params);
+          setJobs(jobsResponse.jobs);
+          setTotal(jobsResponse.total);
         }
       } catch (err) {
-        console.warn("[Queue] Failed to parse SSE message:", err);
+        console.error("[Queue] Failed to poll queue status:", err);
       }
-    },
-  });
+    }, pollInterval);
+
+    return () => clearInterval(interval);
+  }, [total, summary, loading, statusFilter, offset, limit]);
 
   const removeJob = async (jobId: string) => {
     const confirmed = await confirm({
@@ -207,7 +217,6 @@ export function useQueueData() {
     loading,
     error,
     actionLoading,
-    connected,
     statusFilter,
     currentPage,
     totalPages,

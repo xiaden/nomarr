@@ -58,13 +58,6 @@ def get_workers_coordinator() -> WorkerSystemService:
     return service  # type: ignore[no-any-return]
 
 
-def get_event_broker() -> Any | None:
-    """Get EventBroker instance (may be None)."""
-    from nomarr.app import application
-
-    return application.event_broker
-
-
 def get_library_service() -> LibraryService:
     """Get LibraryService instance."""
     from nomarr.app import application
@@ -159,15 +152,6 @@ def get_info_service() -> Any:
     if not service:
         raise HTTPException(status_code=503, detail="Info service not available")
     return service
-
-
-def get_events_service():
-    """Get EventsService instance (may return None if not available)."""
-    from nomarr.app import application
-    from nomarr.services.infrastructure.events_svc import EventsService
-
-    # EventsService wraps the event_broker
-    return EventsService(application.event_broker)
 
 
 def get_metadata_service() -> MetadataService:

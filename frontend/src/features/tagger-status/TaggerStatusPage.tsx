@@ -26,7 +26,6 @@ export function TaggerStatusPage() {
     loading,
     error,
     actionLoading,
-    connected,
     statusFilter,
     currentPage,
     totalPages,
@@ -43,7 +42,7 @@ export function TaggerStatusPage() {
 
   return (
     <PageContainer title="Tagger Status">
-      <QueueSummary summary={summary} connected={connected} />
+      <QueueSummary summary={summary} />
 
       <QueueFilters
         statusFilter={statusFilter}

@@ -11,7 +11,6 @@ import {
     SectionHeader,
 } from "@shared/components/ui";
 
-import { useSSE } from "../../hooks/useSSE";
 import { getStats } from "../../shared/api/library";
 import { getQueueStatus } from "../../shared/api/queue";
 
@@ -133,38 +132,23 @@ export function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // SSE real-time updates
-  const { connected } = useSSE({
-    onMessage: (event) => {
+  // Adaptive polling: 1s when active, 30s when idle
+  useEffect(() => {
+    const hasActiveJobs = queueSummary && (queueSummary.pending > 0 || queueSummary.running > 0);
+    const pollInterval = hasActiveJobs ? 1000 : 30000; // 1s active, 30s idle
+
+    const interval = setInterval(async () => {
       try {
-        const data = JSON.parse(event.data);
-        console.log("[Dashboard] SSE update:", data);
-
-        // Update queue summary if data contains queue info
-        if (data.queue) {
-          setQueueSummary({
-            pending: data.queue.pending || 0,
-            running: data.queue.running || 0,
-            completed: data.queue.completed || 0,
-            errors: data.queue.errors || 0,
-          });
-
-          // Update progress tracking
-          updateProgressTracking({
-            pending: data.queue.pending || 0,
-            running: data.queue.running || 0,
-            completed: data.queue.completed || 0,
-            errors: data.queue.errors || 0,
-          });
-        }
+        const queue = await getQueueStatus();
+        setQueueSummary(queue);
+        updateProgressTracking(queue);
       } catch (err) {
-        console.error("[Dashboard] Failed to parse SSE message:", err);
+        console.error("[Dashboard] Failed to update queue status:", err);
       }
-    },
-    onError: (error) => {
-      console.error("[Dashboard] SSE error:", error);
-    },
-  });
+    }, pollInterval);
+
+    return () => clearInterval(interval);
+  }, [queueSummary]);
 
   const formatDuration = (seconds: number): string => {
     const hours = Math.floor(seconds / 3600);
@@ -192,13 +176,10 @@ export function DashboardPage() {
     <PageContainer title="Dashboard">
       {/* Connection Status */}
       <Typography
-        variant="body2"
-        sx={{
-          color: connected ? "success.main" : "error.main",
-          mb: 2,
-        }}
+        variant="h4"
+        sx={{ mb: 2 }}
       >
-        {connected ? "● Live" : "● Disconnected"}
+        Dashboard
       </Typography>
 
       {loading && <Typography sx={{ mt: 2 }}>Loading dashboard...</Typography>}

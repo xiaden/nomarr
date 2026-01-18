@@ -41,7 +41,6 @@ from nomarr.helpers.dto.queue_dto import (
 from nomarr.workflows.queue.enqueue_files_wf import enqueue_files_workflow
 
 if TYPE_CHECKING:
-    from nomarr.components.events.event_broker_comp import StateBroker
     from nomarr.persistence.db import Database
 
 # Queue type literal (consistent with components/workflows)
@@ -60,7 +59,6 @@ class QueueService:
         self,
         db: Database,
         config: dict[str, Any],
-        event_broker: StateBroker | None = None,
         queue_type: QueueType = "tag",
     ):
         """
@@ -69,12 +67,10 @@ class QueueService:
         Args:
             db: Database instance (passed to components)
             config: Application configuration dict
-            event_broker: Optional StateBroker for SSE events
             queue_type: Which queue to operate on ("tag", "library", "calibration")
         """
         self.db = db
         self.config = config
-        self.event_broker = event_broker
         self.queue_type = queue_type
 
     def enqueue_files_for_tagging(
@@ -104,7 +100,6 @@ class QueueService:
             force=force,
             recursive=recursive,
         )
-        self._publish_queue_update()
         return result
 
     def batch_add_files(self, paths: list[str], force: bool = False) -> BatchEnqueueResult:
@@ -185,12 +180,10 @@ class QueueService:
                 raise ValueError("Cannot remove running job")
             removed = remove_job(self.db, job_id, self.queue_type)
             logging.info(f"[QueueService] Removed job {job_id}")
-            self._publish_queue_update()
             return removed
         elif all:
             removed = clear_jobs_by_status(self.db, ["pending", "done", "error"], self.queue_type)
             logging.info(f"[QueueService] Removed all {removed} jobs from queue")
-            self._publish_queue_update()
             return removed
         elif status:
             valid_statuses = {"pending", "running", "done", "error"}
@@ -200,7 +193,6 @@ class QueueService:
                 raise ValueError("Cannot remove running jobs")
             removed = clear_jobs_by_status(self.db, [status], self.queue_type)
             logging.info(f"[QueueService] Removed {removed} job(s) with status '{status}'")
-            self._publish_queue_update()
             return removed
         else:
             raise ValueError("Must specify job_id, status, or all=True")
@@ -215,7 +207,6 @@ class QueueService:
         done_count = clear_jobs_by_status(self.db, ["done"], self.queue_type)
         error_count = clear_jobs_by_status(self.db, ["error"], self.queue_type)
         logging.info(f"[QueueService] Flushed {done_count} done and {error_count} error jobs")
-        self._publish_queue_update()
         return (done_count, error_count)
 
     def flush_by_statuses(self, statuses: list[str]) -> FlushResult:
@@ -307,7 +298,6 @@ class QueueService:
             reset_count += count
             if count > 0:
                 logging.info(f"[QueueService] Reset {count} error job(s) to 'pending'")
-        self._publish_queue_update()
         return reset_count
 
     def cleanup_old_jobs(self, max_age_hours: int = 24) -> int:
@@ -323,7 +313,6 @@ class QueueService:
 
         removed = cleanup_old_jobs(self.db, max_age_hours, self.queue_type)
         logging.info(f"[QueueService] Cleaned up {removed} old job(s) (>{max_age_hours}h)")
-        self._publish_queue_update()
         return removed
 
     def remove_job_for_admin(self, job_id: str) -> JobRemovalResult:
@@ -388,18 +377,6 @@ class QueueService:
             for j in jobs_data
         ]
         return ListJobsResult(jobs=jobs, total=total, limit=limit, offset=offset)
-
-    def _publish_queue_update(self) -> None:
-        """
-        Update queue state in event broker with current statistics.
-
-        Retrieves current queue stats from database and broadcasts to SSE clients.
-        """
-        if not self.event_broker:
-            return
-        stats = get_queue_stats(self.db, self.queue_type)  # type: ignore[arg-type]
-        self.event_broker.update_queue_state(**stats)
-        logging.debug(f"[QueueService] Published queue update: {stats}")
 
     def enqueue_all_tagged_files(self, force: bool = True) -> int:
         """

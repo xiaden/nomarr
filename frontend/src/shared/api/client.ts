@@ -9,6 +9,7 @@
  * - Optional case conversion
  */
 
+import { redirectToLogin } from "../../hooks/useAuthRedirect";
 import { clearSessionToken, getSessionToken } from "../auth";
 
 /**
@@ -104,9 +105,10 @@ export async function request<T>(
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
 
-    // Handle auth errors - clear session
+    // Handle auth errors - clear session and redirect
     if (response.status === 401 || response.status === 403) {
       clearSessionToken();
+      redirectToLogin();
       throw new ApiError(response.status, "Unauthorized");
     }
 

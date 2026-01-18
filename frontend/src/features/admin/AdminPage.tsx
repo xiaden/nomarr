@@ -4,12 +4,14 @@
  * Features:
  * - Worker control (pause/resume)
  * - Server restart
+ * - Inspect tags (debug tool)
  */
 
 import { Stack } from "@mui/material";
 
 import { ConfirmDialog, PageContainer } from "@shared/components/ui";
 
+import { InspectTags } from "./components/InspectTags";
 import { SystemControls } from "./components/SystemControls";
 import { WorkerControls } from "./components/WorkerControls";
 import { useAdminActions } from "./hooks/useAdminActions";
@@ -27,6 +29,7 @@ export function AdminPage() {
           actionLoading={actionLoading}
         />
         <SystemControls onRestart={handleRestart} actionLoading={actionLoading} />
+        <InspectTags />
       </Stack>
 
       {/* Confirm dialog for admin actions */}

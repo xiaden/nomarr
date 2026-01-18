@@ -17,7 +17,6 @@ from nomarr.interfaces.api.web import library_if as library
 from nomarr.interfaces.api.web import navidrome_if as navidrome
 from nomarr.interfaces.api.web import processing_if as processing
 from nomarr.interfaces.api.web import queue_if as queue
-from nomarr.interfaces.api.web import sse_if as sse
 from nomarr.interfaces.api.web import tags_if as tags
 from nomarr.interfaces.api.web import worker_if as worker
 
@@ -35,6 +34,5 @@ router.include_router(library.router)
 router.include_router(navidrome.router)
 router.include_router(processing.router)
 router.include_router(queue.router)
-router.include_router(sse.router)
 router.include_router(tags.router)
 router.include_router(worker.router)

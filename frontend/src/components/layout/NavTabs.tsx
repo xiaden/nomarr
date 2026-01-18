@@ -18,12 +18,10 @@ const navItems: NavItem[] = [
   { path: "/", label: "Dashboard" },
   { path: "/tagger-status", label: "Tagger Status" },
   { path: "/browse", label: "Browse Files" },
-  { path: "/analytics", label: "Analytics" },
+  { path: "/insights", label: "Insights" },
   { path: "/calibration", label: "Calibration" },
-  { path: "/inspect", label: "Inspect" },
   { path: "/config", label: "Config" },
   { path: "/admin", label: "Admin" },
-  { path: "/navidrome", label: "Navidrome" },
 ];
 
 export function NavTabs() {

@@ -22,7 +22,6 @@ from nomarr.interfaces.api.types.admin_types import (
 from nomarr.interfaces.api.types.queue_types import FlushRequest, FlushResponse, RemoveJobRequest
 from nomarr.interfaces.api.web.dependencies import (
     get_calibration_service,
-    get_event_broker,
     get_ml_service,
     get_queue_service,
     get_workers_coordinator,
@@ -114,10 +113,9 @@ async def admin_cache_refresh(
 @router.post("/worker/pause", dependencies=[Depends(verify_key)])
 async def admin_pause_worker(
     workers_coordinator: WorkerSystemService = Depends(get_workers_coordinator),
-    event_broker=Depends(get_event_broker),
 ) -> WorkerOperationResponse:
     """Pause all background workers (stops processing new jobs)."""
-    result = workers_coordinator.pause_all_workers(event_broker)
+    result = workers_coordinator.pause_all_workers()
     return WorkerOperationResponse.from_dto(result)
 
 
@@ -127,10 +125,9 @@ async def admin_pause_worker(
 @router.post("/worker/resume", dependencies=[Depends(verify_key)])
 async def admin_resume_worker(
     workers_coordinator: WorkerSystemService = Depends(get_workers_coordinator),
-    event_broker=Depends(get_event_broker),
 ) -> WorkerOperationResponse:
     """Resume all background workers (starts processing again)."""
-    result = workers_coordinator.resume_all_workers(event_broker)
+    result = workers_coordinator.resume_all_workers()
     return WorkerOperationResponse.from_dto(result)
 
 

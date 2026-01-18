@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import { AppShell } from "../components/layout/AppShell";
+import { useAuthRedirect } from "../hooks/useAuthRedirect";
 import { isAuthenticated } from "../shared/auth";
 
 // Lazy-loaded pages for code splitting
@@ -9,12 +10,10 @@ const LoginPage = lazy(() => import("../features/auth/LoginPage").then((m) => ({
 const DashboardPage = lazy(() => import("../features/dashboard/DashboardPage").then((m) => ({ default: m.DashboardPage })));
 const TaggerStatusPage = lazy(() => import("../features/tagger-status/TaggerStatusPage").then((m) => ({ default: m.TaggerStatusPage })));
 const BrowsePage = lazy(() => import("../features/browse/BrowsePage").then((m) => ({ default: m.BrowsePage })));
-const AnalyticsPage = lazy(() => import("../features/analytics/AnalyticsPage").then((m) => ({ default: m.AnalyticsPage })));
+const InsightsPage = lazy(() => import("../features/insights/InsightsPage").then((m) => ({ default: m.InsightsPage })));
 const CalibrationPage = lazy(() => import("../features/calibration/CalibrationPage").then((m) => ({ default: m.CalibrationPage })));
-const InspectTagsPage = lazy(() => import("../features/inspect/InspectTagsPage").then((m) => ({ default: m.InspectTagsPage })));
 const ConfigPage = lazy(() => import("../features/config/ConfigPage").then((m) => ({ default: m.ConfigPage })));
 const AdminPage = lazy(() => import("../features/admin/AdminPage").then((m) => ({ default: m.AdminPage })));
-const NavidromePage = lazy(() => import("../features/navidrome/NavidromePage").then((m) => ({ default: m.NavidromePage })));
 
 /**
  * Main application router.
@@ -43,6 +42,7 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
 export function AppRouter() {
   return (
     <BrowserRouter>
+      <AuthManager />
       <Suspense fallback={<div style={{ padding: "20px" }}>Loading...</div>}>
         <Routes>
           {/* Public Routes */}
@@ -65,12 +65,10 @@ export function AppRouter() {
                     <Route path="/" element={<DashboardPage />} />
                     <Route path="/tagger-status" element={<TaggerStatusPage />} />
                     <Route path="/browse" element={<BrowsePage />} />
-                    <Route path="/analytics" element={<AnalyticsPage />} />
+                    <Route path="/insights" element={<InsightsPage />} />
                     <Route path="/calibration" element={<CalibrationPage />} />
-                    <Route path="/inspect" element={<InspectTagsPage />} />
                     <Route path="/config" element={<ConfigPage />} />
                     <Route path="/admin" element={<AdminPage />} />
-                    <Route path="/navidrome" element={<NavidromePage />} />
                   </Routes>
                 </AppShell>
               </ProtectedRoute>
@@ -80,4 +78,10 @@ export function AppRouter() {
       </Suspense>
     </BrowserRouter>
   );
+}
+
+// Component to manage global auth redirects
+function AuthManager() {
+  useAuthRedirect();
+  return null;
 }

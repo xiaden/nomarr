@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from nomarr.components.events.event_broker_comp import StateBroker
+    pass
 
 from nomarr.persistence.db import Database
 from nomarr.services.domain.analytics_svc import AnalyticsService
@@ -164,7 +164,6 @@ class Application:
         self.worker_system: WorkerSystemService | None = None
 
         # Infrastructure
-        self.event_broker: StateBroker | None = None
         self.health_monitor: HealthMonitorService | None = None
         self._heartbeat_thread: threading.Thread | None = None
 
@@ -311,17 +310,11 @@ class Application:
         self.register_service("keys", key_service)
         self.register_service("config", self._config_service)
 
-        # Initialize event broker (Phase 3.6: DB polling for multiprocessing IPC)
-        logging.info("[Application] Initializing event broker...")
-        from nomarr.components.events.event_broker_comp import StateBroker
-
-        self.event_broker = StateBroker(db=self.db, poll_interval=0.5)
-
         # Initialize services (DI: inject dependencies)
         logging.info("[Application] Initializing services...")
 
-        # QueueService - TODO: Phase 4 - needs new signature
-        queue_service = QueueService(self.db, self._config, event_broker=self.event_broker)
+        # QueueService
+        queue_service = QueueService(self.db, self._config)
         self.register_service("queue", queue_service)
 
         # Register ML service
@@ -369,6 +362,7 @@ class Application:
             version="1.2",
             namespace=self.namespace,
             models_dir=str(self.models_dir),
+            db=self.db,
             db_path=self.db_path,
             api_host=self.api_host,
             api_port=self.api_port,
@@ -483,7 +477,6 @@ class Application:
         self.worker_system = WorkerSystemService(
             db=self.db,
             tagger_backend=tagger_backend,
-            event_broker=self.event_broker,
             tagger_count=tagger_count,
             default_enabled=self.worker_enabled_default,
         )
@@ -525,11 +518,6 @@ class Application:
             logging.info("[Application] Stopping worker processes...")
             self.worker_system.stop_all_workers()
             logging.info("[Application] Worker processes stopped")
-
-        # Stop event broker polling thread (Phase 3.6: DB polling)
-        if self.event_broker:
-            logging.info("[Application] Stopping event broker...")
-            self.event_broker.stop()
 
         # Stop health monitor
         if hasattr(self, "health_monitor") and self.health_monitor:

@@ -99,7 +99,7 @@ export function LibraryManagement() {
 
     const interval = setInterval(() => {
       loadLibraries();
-    }, 3000); // Poll every 3 seconds
+    }, 1000); // Poll every 1 second during scan
 
     return () => clearInterval(interval);
   }, [libraries]);

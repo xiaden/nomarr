@@ -37,6 +37,7 @@ class InfoConfig:
     version: str
     namespace: str
     models_dir: str
+    db: Any  # Database instance for reading GPU health
     # Additional fields for public info endpoint
     db_path: str | None = None
     api_host: str | None = None
@@ -44,7 +45,6 @@ class InfoConfig:
     worker_enabled_default: bool = True
     tagger_worker_count: int = 1
     poll_interval: float = 1.0
-    event_broker: Any | None = None  # StateBroker for GPU health access
 
 
 class InfoService:
@@ -225,26 +225,60 @@ class InfoService:
 
     def get_gpu_health(self) -> GPUHealthResult:
         """
-        Get GPU health status from StateBroker cached state.
+        Get GPU health status from DB meta table.
 
-        This is a read-only view of cached GPU probe results.
+        Reads cached GPU probe results written by GPUHealthMonitor process.
         Does NOT run nvidia-smi inline (non-blocking).
 
         Returns:
-            GPUHealthResult DTO with GPU availability and error info
-
-        Raises:
-            RuntimeError: If event_broker is not configured
+            GPUHealthResult with GPU status or error state
         """
-        if not self.cfg.event_broker:
-            raise RuntimeError("GPU health requires event_broker to be configured")
+        import json
 
-        gpu_health = self.cfg.event_broker.get_gpu_health()
+        from nomarr.components.platform.gpu_monitor_comp import (
+            GPU_HEALTH_STALENESS_THRESHOLD_SECONDS,
+            check_gpu_health_staleness,
+        )
 
+        # Read GPU health from DB meta table
+        gpu_health_json = self.cfg.db.meta.get("gpu_health")
+        if not gpu_health_json:
+            # No GPU health data in DB yet
+            return GPUHealthResult(
+                available=False,
+                last_check_at=None,
+                last_ok_at=None,
+                consecutive_failures=0,
+                error_summary="GPU health not yet initialized",
+            )
+
+        try:
+            health_data = json.loads(gpu_health_json)
+        except json.JSONDecodeError:
+            return GPUHealthResult(
+                available=False,
+                last_check_at=None,
+                last_ok_at=None,
+                consecutive_failures=0,
+                error_summary="GPU health data corrupted",
+            )
+
+        # Check staleness
+        last_check_at = health_data.get("probe_time")
+        if check_gpu_health_staleness(last_check_at):
+            return GPUHealthResult(
+                available=False,
+                last_check_at=last_check_at,
+                last_ok_at=health_data.get("last_ok_at"),
+                consecutive_failures=health_data.get("consecutive_failures", 0),
+                error_summary=f"GPU health data stale (>{GPU_HEALTH_STALENESS_THRESHOLD_SECONDS}s)",
+            )
+
+        # Fresh data
         return GPUHealthResult(
-            available=gpu_health.available,
-            last_check_at=gpu_health.last_check_at,
-            last_ok_at=gpu_health.last_ok_at,
-            consecutive_failures=gpu_health.consecutive_failures,
-            error_summary=gpu_health.error_summary,
+            available=health_data.get("available", False),
+            last_check_at=last_check_at,
+            last_ok_at=health_data.get("last_ok_at"),
+            consecutive_failures=health_data.get("consecutive_failures", 0),
+            error_summary=health_data.get("error_summary"),
         )
