@@ -25,7 +25,7 @@ Dataclass Classification:
   * Processing: ProcessorConfig, TagWriteProfile
 
 - Category B (Service-local config): Kept in service modules
-  * NavidromeConfig, CoordinatorConfig, LibraryRootConfig, MLConfig,
+  * NavidromeConfig, CoordinatorConfig, LibraryServiceConfig, MLConfig,
     HealthMonitorConfig, CalibrationConfig, AnalyticsConfig
 
 - Category C (Component-internal helpers): Kept in component modules

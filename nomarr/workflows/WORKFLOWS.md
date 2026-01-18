@@ -25,7 +25,7 @@ Workflows are **use case implementations** that:
   - `start_scan_wf.py`
   - `process_file_wf.py`
   - `generate_calibration_wf.py`
-  - `recalibrate_file_wf.py`
+  - `write_calibrated_tags_wf.py`
 
 ### 2. Function naming
 

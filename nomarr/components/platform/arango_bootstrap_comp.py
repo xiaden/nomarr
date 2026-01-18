@@ -40,6 +40,7 @@ def _create_collections(db: StandardDatabase) -> None:
         "meta",
         "libraries",
         "library_files",
+        "library_folders",
         "library_tags",
         "sessions",
         "calibration_state",
@@ -98,6 +99,16 @@ def _create_indexes(db: StandardDatabase) -> None:
         "persistent",
         ["chromaprint"],
         sparse=True,  # Only index non-null values
+    )
+
+    # library_folders indexes
+    _ensure_index(db, "library_folders", "persistent", ["library_id"])
+    _ensure_index(
+        db,
+        "library_folders",
+        "persistent",
+        ["library_id", "path"],
+        unique=True,
     )
 
     # library_tags indexes

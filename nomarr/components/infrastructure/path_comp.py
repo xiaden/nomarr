@@ -257,3 +257,24 @@ def build_library_path_from_db(
         status="valid" if check_disk else "unknown",
         reason=None,
     )
+
+
+def get_library_root(library_path: LibraryPath, db: Database) -> Path | None:
+    """
+    Get the library root path for a given LibraryPath.
+
+    Args:
+        library_path: A validated LibraryPath
+        db: Database instance
+
+    Returns:
+        Path to library root, or None if library_id is unknown or library not found
+    """
+    if not library_path.library_id:
+        return None
+
+    library = db.libraries.get_library(library_path.library_id)
+    if not library:
+        return None
+
+    return Path(library["root_path"]).resolve()

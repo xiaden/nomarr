@@ -11,8 +11,8 @@ from typing import Any
 
 
 @dataclass
-class RecalibrateFileWorkflowParams:
-    """Parameters for workflows/calibration/recalibrate_file_wf.py::recalibrate_file_workflow."""
+class WriteCalibratedTagsParams:
+    """Parameters for workflows/calibration/write_calibrated_tags_wf.py::write_calibrated_tags_wf."""
 
     file_path: str
     models_dir: str

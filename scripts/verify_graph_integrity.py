@@ -58,7 +58,7 @@ def main():
         else:
             unknown_edges.append(edge)
 
-    print(f"Edge type breakdown:")
+    print("Edge type breakdown:")
     print(f"  Known edge types: {len(known_edges)}")
     if unknown_edges:
         print(f"  ⚠️  Unknown edge types: {len(unknown_edges)}")
@@ -66,7 +66,7 @@ def main():
     # Check for missing ast_case in ALL edges
     missing_ast_case = [e for e in graph["edges"] if not e.get("ast_case")]
 
-    print(f"\nIntegrity check:")
+    print("\nIntegrity check:")
     if missing_ast_case:
         print(f"❌ FAILED: {len(missing_ast_case)} edges missing ast_case\n")
 

@@ -18,7 +18,7 @@ from .import_calibration_bundle_wf import (
     import_calibration_bundle_wf,
     import_calibration_bundles_from_directory_wf,
 )
-from .recalibrate_file_wf import LoadLibraryStateResult, recalibrate_file_workflow
+from .write_calibrated_tags_wf import LoadLibraryStateResult, write_calibrated_tags_wf
 
 __all__ = [
     "CalculateHeadDriftResult",
@@ -32,5 +32,5 @@ __all__ = [
     "import_calibration_bundle_wf",
     "import_calibration_bundles_from_directory_wf",
     "load_calibrations_from_db_wf",
-    "recalibrate_file_workflow",
+    "write_calibrated_tags_wf",
 ]

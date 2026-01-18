@@ -6,8 +6,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 
 from nomarr.interfaces.api.auth import verify_session
-from nomarr.interfaces.api.web.dependencies import get_library_service
-from nomarr.services.domain.library_svc import LibraryService
+from nomarr.interfaces.api.web.dependencies import get_tagging_service
+from nomarr.services.domain.tagging_svc import TaggingService
 
 router = APIRouter(prefix="/tags", tags=["Tags"])
 
@@ -20,15 +20,16 @@ router = APIRouter(prefix="/tags", tags=["Tags"])
 @router.get("/show-tags", dependencies=[Depends(verify_session)])
 async def web_show_tags(
     path: str,
-    library_service: LibraryService = Depends(get_library_service),
+    tagging_service: TaggingService = Depends(get_tagging_service),
 ) -> dict[str, Any]:
     """Read tags from an audio file (web UI proxy)."""
     try:
-        tags = library_service.read_file_tags(path)
+        namespace = tagging_service.namespace
+        tags = tagging_service.read_file_tags(path, namespace)
 
         return {
             "path": path,
-            "namespace": library_service.cfg.namespace,
+            "namespace": namespace,
             "tags": tags,
             "count": len(tags),
         }
@@ -45,15 +46,16 @@ async def web_show_tags(
 @router.delete("/remove-tags", dependencies=[Depends(verify_session)])
 async def web_remove_tags(
     path: str,
-    library_service: LibraryService = Depends(get_library_service),
+    tagging_service: TaggingService = Depends(get_tagging_service),
 ) -> dict[str, Any]:
     """Remove all namespaced tags from an audio file (web UI proxy)."""
     try:
-        count = library_service.remove_file_tags(path)
+        namespace = tagging_service.namespace
+        count = tagging_service.remove_file_tags(path, namespace)
 
         return {
             "path": path,
-            "namespace": library_service.cfg.namespace,
+            "namespace": namespace,
             "removed": count,
         }
 

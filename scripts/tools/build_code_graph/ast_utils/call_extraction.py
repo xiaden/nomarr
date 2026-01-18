@@ -284,7 +284,6 @@ def extract_calls_from_function(
         module_imports: Optional dict of module-level imports {name -> full_path}
                        for resolving Depends() calls.
     """
-    from ..models import Edge
 
     # Extract local imports from this function
     function_imports = extract_imports_from_function(func_node)

@@ -33,6 +33,7 @@ def start_scan_workflow(
     library_id: str | None = None,
     scan_targets: list[ScanTarget] | None = None,
     batch_size: int = 200,
+    force_rescan: bool = False,
 ) -> StartScanResult:
     """
     Start a library scan workflow.
@@ -54,6 +55,7 @@ def start_scan_workflow(
         library_id: Library to scan (None = use default library)
         scan_targets: List of folders to scan (None = full library scan)
         batch_size: Number of files to accumulate before DB write (default 200)
+        force_rescan: If True, skip unchanged files detection (rescan all files)
 
     Returns:
         StartScanResult DTO with scan statistics and task_id
@@ -111,6 +113,7 @@ def start_scan_workflow(
             library_id=library_id,
             scan_targets=scan_targets,
             batch_size=batch_size,
+            force_rescan=force_rescan,
         )
 
         logger.info(f"[start_scan_workflow] Scan task launched: {task_id}")
@@ -129,6 +132,7 @@ def start_scan_workflow(
             library_id=library_id,
             scan_targets=scan_targets,
             batch_size=batch_size,
+            force_rescan=force_rescan,
         )
 
         return StartScanResult(

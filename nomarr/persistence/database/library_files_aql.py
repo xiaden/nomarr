@@ -1040,3 +1040,40 @@ class LibraryFilesOperations:
 
         results = list(cursor)
         return results[0] if results else 0
+
+    def get_library_counts(self) -> dict[str, dict[str, int]]:
+        """Get file and folder counts for all libraries.
+
+        Returns:
+            Dict mapping library_id to {"file_count": int, "folder_count": int}
+            Only includes valid files (is_valid == true or 1).
+        """
+        cursor = cast(
+            Cursor,
+            self.db.aql.execute(
+                """
+                FOR file IN library_files
+                    FILTER file.is_valid == true OR file.is_valid == 1
+                    COLLECT library_id = file.library_id
+                    AGGREGATE
+                        file_count = COUNT(1),
+                        folders = UNIQUE(
+                            REGEX_REPLACE(file.path, '/[^/]+$', '')
+                        )
+                    RETURN {
+                        library_id: library_id,
+                        file_count: file_count,
+                        folder_count: LENGTH(folders)
+                    }
+                """
+            ),
+        )
+
+        result: dict[str, dict[str, int]] = {}
+        for row in cursor:
+            lib_id = row["library_id"]
+            result[lib_id] = {
+                "file_count": row["file_count"],
+                "folder_count": row["folder_count"],
+            }
+        return result

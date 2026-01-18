@@ -5,6 +5,7 @@ Implements fast, read-only metadata extraction. Move detection happens during
 ML processing when chromaprint is computed.
 
 Supports targeted/incremental scanning via scan_targets parameter.
+Uses folder-level caching for quick scans (skips unchanged folders entirely).
 """
 
 from __future__ import annotations
@@ -46,11 +47,43 @@ def _compute_normalized_path(absolute_path: Path, library_root: Path) -> str:
     return relative.as_posix()
 
 
+def _compute_folder_path(absolute_folder: Path, library_root: Path) -> str:
+    """Compute POSIX-style relative folder path from library root.
+
+    Args:
+        absolute_folder: Absolute folder path
+        library_root: Library root path
+
+    Returns:
+        POSIX-style relative path (e.g., "Rock/Beatles"), or "" for root
+    """
+    if absolute_folder == library_root:
+        return ""
+    relative = absolute_folder.relative_to(library_root)
+    return relative.as_posix()
+
+
+def _get_folder_mtime(folder_path: str) -> int:
+    """Get folder modification time in milliseconds."""
+    return int(os.stat(folder_path).st_mtime * 1000)
+
+
+def _count_audio_files_in_folder(folder_path: str) -> int:
+    """Count audio files in a single folder (non-recursive)."""
+    try:
+        return sum(
+            1 for f in os.listdir(folder_path) if is_audio_file(f) and os.path.isfile(os.path.join(folder_path, f))
+        )
+    except OSError:
+        return 0
+
+
 def scan_library_direct_workflow(
     db: Database,
     library_id: str,
     scan_targets: list[ScanTarget],
     batch_size: int = 200,
+    force_rescan: bool = False,
 ) -> dict[str, Any]:
     """
     Scan specific folders within a library.
@@ -68,6 +101,7 @@ def scan_library_direct_workflow(
         library_id: Library to scan
         scan_targets: List of folders to scan (empty folder_path = full library)
         batch_size: Number of files to accumulate before writing to DB
+        force_rescan: If True, skip unchanged files detection (rescan all files)
 
     Returns:
         Dict with scan results:
@@ -137,15 +171,63 @@ def scan_library_direct_workflow(
         if not scan_paths:
             raise ValueError("No valid scan paths found in scan_targets")
 
-        # PHASE 2: Count total files (fast walk for progress tracking)
-        logger.info(f"[scan_library] Counting files in {len(scan_paths)} target(s)...")
-        total_files = 0
-        for scan_path in scan_paths:
-            total_files += count_audio_files(str(scan_path), recursive=True)
+        # PHASE 2: Folder-based scan optimization
+        # For quick scans, we check folder mtime + file_count to skip unchanged folders
+        # For full scans, we scan all folders regardless of cache
 
+        # Get cached folder data from DB
+        cached_folders = db.library_folders.get_all_folders_for_library(library_id)
+
+        # Walk folders and determine which need scanning
+        folders_to_scan: list[tuple[str, str, int, int]] = []  # (abs_path, rel_path, mtime, file_count)
+        folders_skipped = 0
+        all_folder_data: list[tuple[str, str, int, int]] = []  # For updating DB later
+
+        for scan_path in scan_paths:
+            for dirpath, _dirnames, _filenames in os.walk(str(scan_path)):
+                try:
+                    folder_mtime = _get_folder_mtime(dirpath)
+                    folder_file_count = _count_audio_files_in_folder(dirpath)
+                except OSError as e:
+                    logger.warning(f"[scan_library] Cannot access folder {dirpath}: {e}")
+                    continue
+
+                # Skip folders with no audio files
+                if folder_file_count == 0:
+                    continue
+
+                # Compute relative path for DB lookup
+                folder_rel_path = _compute_folder_path(Path(dirpath), library_root)
+                all_folder_data.append((dirpath, folder_rel_path, folder_mtime, folder_file_count))
+
+                # Check if folder needs scanning (skip unchanged folders for quick scan)
+                if not force_rescan:
+                    cached = cached_folders.get(folder_rel_path)
+                    if cached and cached["mtime"] == folder_mtime and cached["file_count"] == folder_file_count:
+                        folders_skipped += 1
+                        logger.debug(f"[scan_library] Skipping unchanged folder: {folder_rel_path}")
+                        continue
+
+                folders_to_scan.append((dirpath, folder_rel_path, folder_mtime, folder_file_count))
+
+        # Log folder scan stats
+        total_folders = len(all_folder_data)
+        scan_folder_count = len(folders_to_scan)
+        if force_rescan:
+            logger.info(f"[scan_library] Full scan: {total_folders} folders to scan")
+        else:
+            logger.info(
+                f"[scan_library] Quick scan: {scan_folder_count}/{total_folders} folders "
+                f"need scanning ({folders_skipped} unchanged)"
+            )
+        stats["folders_scanned"] = scan_folder_count
+        stats["folders_skipped"] = folders_skipped
+
+        # Count files in folders to scan (for progress)
+        total_files = sum(fc for _, _, _, fc in folders_to_scan)
         db.libraries.update_scan_status(library_id, total=total_files)
         stats["files_discovered"] = total_files
-        logger.info(f"[scan_library] Found {total_files} audio files")
+        logger.info(f"[scan_library] {total_files} files to scan in {scan_folder_count} folders")
 
         # PHASE 3: Check if move detection is needed
         # Only detect moves if library has tagged files (preserves ML work)
@@ -169,126 +251,135 @@ def scan_library_direct_workflow(
         files_to_remove: list[dict] = [] if enable_move_detection else []
         new_files: list[dict] = [] if enable_move_detection else []
 
-        # PHASE 4: Walk filesystem and process files (batched by folder)
-        logger.info("[scan_library] Walking filesystem...")
+        # PHASE 4: Scan files in selected folders only
+        logger.info("[scan_library] Scanning files in selected folders...")
         current_file = 0
 
-        # Walk each scan target
-        for scan_path in scan_paths:
-            # Walk directory tree, batched by folder to avoid RAM bloat
-            for _folder_path, files in walk_audio_files_batched(str(scan_path), recursive=True):
-                folder_batch: list[dict] = []  # Batch writes for this folder
+        # Iterate over folders to scan (not all folders)
+        for folder_abs_path, folder_rel_path, folder_mtime, _folder_file_count in folders_to_scan:
+            folder_batch: list[dict] = []  # Batch writes for this folder
 
-                for file_path in files:
-                    current_file += 1
+            # Get audio files in this folder (non-recursive)
+            try:
+                filenames = os.listdir(folder_abs_path)
+                files = [
+                    os.path.join(folder_abs_path, f)
+                    for f in filenames
+                    if is_audio_file(f) and os.path.isfile(os.path.join(folder_abs_path, f))
+                ]
+            except OSError as e:
+                logger.error(f"[scan_library] Cannot read folder {folder_abs_path}: {e}")
+                continue
 
-                    try:
-                        # Validate path
-                        library_path = build_library_path_from_input(file_path, db)
-                        if not library_path.is_valid():
-                            warnings.append(f"Invalid path: {file_path} - {library_path.reason}")
-                            stats["files_failed"] += 1
-                            continue
+            for file_path in files:
+                current_file += 1
 
-                        file_path_str = str(library_path.absolute)
-
-                        # Compute normalized_path: POSIX-style relative to library root
-                        try:
-                            normalized_path = _compute_normalized_path(Path(file_path_str), library_root)
-                        except ValueError:
-                            warning = f"File outside library root: {file_path_str}"
-                            warnings.append(warning)
-                            logger.warning(f"[scan_library] {warning}")
-                            stats["files_failed"] += 1
-                            continue
-
-                        discovered_paths.add(file_path_str)
-
-                        # Check if file exists in DB
-                        existing_file = existing_files_dict.get(file_path_str)
-                        file_stat = os.stat(file_path_str)
-                        modified_time = int(file_stat.st_mtime * 1000)
-                        file_size = file_stat.st_size
-
-                        # Skip unchanged files
-                        if existing_file and existing_file.get("modified_time") == modified_time:
-                            stats["files_skipped"] += 1
-                            continue
-
-                        # Extract metadata + tags (component call)
-                        metadata = extract_metadata(library_path, namespace="nom")
-
-                        # Check if file needs tagging
-                        existing_version = metadata.get("nom_tags", {}).get("nom_version")
-                        tagger_version = metadata.get("nom_tags", {}).get("tagger_version", "unknown")
-                        needs_tagging = (
-                            existing_file is None
-                            or not existing_file.get("tagged")
-                            or existing_version != tagger_version
-                        )
-
-                        # Prepare batch entry with normalized_path for identity
-                        file_entry = {
-                            "path": file_path_str,  # Absolute path for access
-                            "normalized_path": normalized_path,  # POSIX relative path for identity
-                            "library_id": library_id,
-                            "metadata": metadata,
-                            "file_size": file_size,
-                            "modified_time": modified_time,
-                            "needs_tagging": needs_tagging,
-                            "is_valid": True,
-                            "scanned_at": now_ms(),
-                            "last_seen_scan_id": scan_id,  # Mark as seen in this scan
-                        }
-                        folder_batch.append(file_entry)
-
-                        # Track new files for move detection (if enabled)
-                        if existing_file is None:
-                            if enable_move_detection:
-                                new_files.append(file_entry)
-                        else:
-                            stats["files_updated"] += 1
-
-                    except Exception as e:
-                        logger.error(f"Failed to process {file_path}: {e}")
+                try:
+                    # Validate path
+                    library_path = build_library_path_from_input(file_path, db)
+                    if not library_path.is_valid():
+                        warnings.append(f"Invalid path: {file_path} - {library_path.reason}")
                         stats["files_failed"] += 1
-                        warnings.append(f"Extraction failed: {file_path} - {str(e)[:100]}")
                         continue
 
-                # Batch write folder files to DB (with collision handling)
-                if folder_batch and len(folder_batch) >= batch_size:
+                    file_path_str = str(library_path.absolute)
+
+                    # Compute normalized_path: POSIX-style relative to library root
                     try:
-                        db.library_files.upsert_batch(folder_batch)
+                        normalized_path = _compute_normalized_path(Path(file_path_str), library_root)
+                    except ValueError:
+                        warning = f"File outside library root: {file_path_str}"
+                        warnings.append(warning)
+                        logger.warning(f"[scan_library] {warning}")
+                        stats["files_failed"] += 1
+                        continue
+
+                    discovered_paths.add(file_path_str)
+
+                    # Check if file exists in DB
+                    existing_file = existing_files_dict.get(file_path_str)
+                    file_stat = os.stat(file_path_str)
+                    modified_time = int(file_stat.st_mtime * 1000)
+                    file_size = file_stat.st_size
+
+                    # Note: For quick scans, we already filtered at folder level.
+                    # We still process all files in changed folders since folder mtime changed.
+
+                    # Extract metadata + tags (component call)
+                    metadata = extract_metadata(library_path, namespace="nom")
+
+                    # Check if file needs tagging
+                    existing_version = metadata.get("nom_tags", {}).get("nom_version")
+                    tagger_version = metadata.get("nom_tags", {}).get("tagger_version", "unknown")
+                    needs_tagging = (
+                        existing_file is None or not existing_file.get("tagged") or existing_version != tagger_version
+                    )
+
+                    # Prepare batch entry with normalized_path for identity
+                    file_entry = {
+                        "path": file_path_str,  # Absolute path for access
+                        "normalized_path": normalized_path,  # POSIX relative path for identity
+                        "library_id": library_id,
+                        "metadata": metadata,
+                        "file_size": file_size,
+                        "modified_time": modified_time,
+                        "needs_tagging": needs_tagging,
+                        "is_valid": True,
+                        "scanned_at": now_ms(),
+                        "last_seen_scan_id": scan_id,  # Mark as seen in this scan
+                    }
+                    folder_batch.append(file_entry)
+
+                    # Track new files for move detection (if enabled)
+                    if existing_file is None:
+                        if enable_move_detection:
+                            new_files.append(file_entry)
+                    else:
+                        stats["files_updated"] += 1
+
+                except Exception as e:
+                    logger.error(f"Failed to process {file_path}: {e}")
+                    stats["files_failed"] += 1
+                    warnings.append(f"Extraction failed: {file_path} - {str(e)[:100]}")
+                    continue
+
+            # Batch write folder files to DB (with collision handling)
+            if folder_batch and len(folder_batch) >= batch_size:
+                try:
+                    db.library_files.upsert_batch(folder_batch)
+                    stats["files_added"] += len([f for f in folder_batch if f["path"] not in existing_paths])
+                    folder_batch.clear()
+                except Exception as e:
+                    logger.error(f"Batch upsert failed: {e}")
+                    # Fall back to existing method
+                    try:
+                        db.library_files.batch_upsert_library_files(folder_batch)
                         stats["files_added"] += len([f for f in folder_batch if f["path"] not in existing_paths])
                         folder_batch.clear()
-                    except Exception as e:
-                        logger.error(f"Batch upsert failed: {e}")
-                        # Fall back to existing method
-                        try:
-                            db.library_files.batch_upsert_library_files(folder_batch)
-                            stats["files_added"] += len([f for f in folder_batch if f["path"] not in existing_paths])
-                            folder_batch.clear()
-                        except Exception as fallback_error:
-                            logger.error(f"Fallback batch insert also failed: {fallback_error}")
-                            stats["files_failed"] += len(folder_batch)
+                    except Exception as fallback_error:
+                        logger.error(f"Fallback batch insert also failed: {fallback_error}")
+                        stats["files_failed"] += len(folder_batch)
 
-                # Write remaining batch at end of folder
-                if folder_batch:
+            # Write remaining batch at end of folder
+            if folder_batch:
+                try:
+                    db.library_files.upsert_batch(folder_batch)
+                    stats["files_added"] += len([f for f in folder_batch if f["path"] not in existing_paths])
+                except Exception as e:
+                    # Fall back to existing method
+                    logger.warning(f"upsert_batch failed, using fallback: {e}")
                     try:
-                        db.library_files.upsert_batch(folder_batch)
+                        db.library_files.batch_upsert_library_files(folder_batch)
                         stats["files_added"] += len([f for f in folder_batch if f["path"] not in existing_paths])
-                    except Exception as e:
-                        # Fall back to existing method
-                        logger.warning(f"upsert_batch failed, using fallback: {e}")
-                        try:
-                            db.library_files.batch_upsert_library_files(folder_batch)
-                            stats["files_added"] += len([f for f in folder_batch if f["path"] not in existing_paths])
-                        except Exception as fallback_error:
-                            logger.error(f"All batch methods failed: {fallback_error}")
-                            stats["files_failed"] += len(folder_batch)
+                    except Exception as fallback_error:
+                        logger.error(f"All batch methods failed: {fallback_error}")
+                        stats["files_failed"] += len(folder_batch)
 
-                # Update progress every folder
-                db.libraries.update_scan_status(library_id, progress=current_file)
+            # Update folder record after scanning
+            db.library_folders.upsert_folder(library_id, folder_rel_path, folder_mtime, len(files))
+
+            # Update progress every folder
+            db.libraries.update_scan_status(library_id, progress=current_file)
         if enable_move_detection and files_to_remove:
             # Check if any chromaprints exist in this library (indicates ML has run)
             has_chromaprints = any(f.get("chromaprint") for f in files_to_remove)
@@ -394,19 +485,30 @@ def scan_library_direct_workflow(
             except Exception as e:
                 logger.error(f"[scan_library] Failed to mark missing files: {e}")
                 warnings.append(f"Failed to mark missing files: {str(e)[:100]}")
+
+            # Clean up folder records for deleted folders
+            existing_folder_paths = {rel_path for _, rel_path, _, _ in all_folder_data}
+            try:
+                deleted_folders = db.library_folders.delete_missing_folders(library_id, existing_folder_paths)
+                if deleted_folders > 0:
+                    logger.info(f"[scan_library] Removed {deleted_folders} deleted folder records")
+            except Exception as e:
+                logger.warning(f"[scan_library] Failed to clean up folder records: {e}")
         else:
             logger.info("[scan_library] Targeted scan - skipping missing file detection")
 
         # PHASE 6: Finalize scan
         scan_duration = time.time() - start_time
 
-        # Verify count matches (warning only for dev/alpha visibility)
-        expected = stats["files_added"] + stats["files_updated"] + stats["files_skipped"] + stats["files_failed"]
-        if expected != total_files:
+        # Note: For quick scans, files in skipped folders aren't counted in total_files
+        # So we only verify count for files we actually attempted to process
+        expected = stats["files_added"] + stats["files_updated"] + stats["files_failed"]
+        if expected != total_files and force_rescan:
+            # Only warn for full scans where we expect all files to be processed
             warning = (
                 f"File count mismatch: discovered={total_files}, "
                 f"processed={expected} (added={stats['files_added']}, "
-                f"updated={stats['files_updated']}, skipped={stats['files_skipped']}, "
+                f"updated={stats['files_updated']}, "
                 f"failed={stats['files_failed']}). Filesystem may have changed during scan."
             )
             warnings.append(warning)
@@ -423,9 +525,10 @@ def scan_library_direct_workflow(
 
         logger.info(
             f"[scan_library] Scan complete in {scan_duration:.1f}s: "
-            f"added={stats['files_added']}, updated={stats['files_updated']}, "
+            f"folders={stats['folders_scanned']}/{stats['folders_scanned'] + stats['folders_skipped']} scanned, "
+            f"files: added={stats['files_added']}, updated={stats['files_updated']}, "
             f"moved={stats['files_moved']}, removed={stats['files_removed']}, "
-            f"skipped={stats['files_skipped']}, failed={stats['files_failed']}"
+            f"failed={stats['files_failed']}"
         )
 
         return {

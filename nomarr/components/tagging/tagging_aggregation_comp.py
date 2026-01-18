@@ -28,11 +28,11 @@ def load_calibrations(models_dir: str, calibrate_heads: bool = False) -> dict[st
     - Bundles are TRANSPORT ARTIFACTS for distribution (e.g., nom-cal repo)
     - Database (calibration_state) is the SINGLE SOURCE OF TRUTH
     - Use import_calibration_bundle_wf to parse bundles into DB
-    - Use calibration_loader_wf to read from DB for processing/recalibration
+    - Use calibration_loader_wf to read from DB for processing/tagging
 
     DO NOT USE THIS IN:
     - process_file_wf (use calibration_loader_wf with DB)
-    - recalibrate_file_wf (use calibration_loader_wf with DB)
+    - write_calibrated_tags_wf (use calibration_loader_wf with DB)
     - Any production processing path
 
     Args:

@@ -57,6 +57,7 @@ import logging
 import time
 from collections import defaultdict
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -73,6 +74,7 @@ from nomarr.components.tagging.tagging_aggregation_comp import (
 )
 from nomarr.components.tagging.tagging_writer_comp import TagWriter
 from nomarr.helpers.dto.ml_dto import ComputeEmbeddingsForBackboneParams
+from nomarr.helpers.dto.path_dto import LibraryPath
 from nomarr.helpers.dto.processing_dto import ProcessFileResult, ProcessorConfig
 
 if TYPE_CHECKING:
@@ -413,6 +415,43 @@ def _write_tags_to_file(
         logging.debug("[processor] No tags written to file (file_write_mode=none or empty filter result)")
 
 
+def _update_folder_mtime_after_write(
+    db: Database,
+    library_path: LibraryPath,
+    library_root: Path,
+) -> None:
+    """
+    Update folder mtime in DB after writing tags to a file.
+
+    Both hardlink and fallback write strategies modify folder mtime
+    (via rename, link, or unlink operations). We need to update the
+    stored mtime so quick scan doesn't re-scan unchanged folders.
+    """
+    import os
+
+    if not library_path.library_id:
+        return
+
+    folder_abs = library_path.absolute.parent
+    try:
+        folder_mtime = int(os.stat(folder_abs).st_mtime * 1000)
+        folder_rel = str(folder_abs.relative_to(library_root)).replace("\\", "/")
+        if folder_abs == library_root:
+            folder_rel = ""
+
+        # Get current file count in folder
+        from nomarr.helpers.files_helper import is_audio_file
+
+        file_count = sum(
+            1 for f in os.listdir(folder_abs) if is_audio_file(f) and os.path.isfile(os.path.join(folder_abs, f))
+        )
+
+        db.library_folders.upsert_folder(library_path.library_id, folder_rel, folder_mtime, file_count)
+        logging.debug(f"[processor] Updated folder mtime after fallback write: {folder_rel}")
+    except Exception as e:
+        logging.warning(f"[processor] Failed to update folder mtime: {e}")
+
+
 def _sync_database(
     db: Database | None,
     path: str,
@@ -427,6 +466,8 @@ def _sync_database(
     """
     Sync database with tags and handle file rewriting if needed.
 
+    Uses atomic safe writes to prevent file corruption.
+
     Args:
         db: Optional Database instance
         path: Path to audio file
@@ -436,20 +477,35 @@ def _sync_database(
         namespace: Tag namespace
         tagger_version: Tagger version string
         file_write_mode: File write mode setting
-        chromaprint: Audio fingerprint hash for move detection
+        chromaprint: Audio fingerprint hash for verification and move detection
     """
     if db is None:
         return
 
     try:
-        from nomarr.components.infrastructure.path_comp import build_library_path_from_input
-        from nomarr.components.library.library_update_comp import update_library_from_tags
+        from nomarr.components.infrastructure.path_comp import build_library_path_from_input, get_library_root
         from nomarr.components.library.metadata_extraction_comp import extract_metadata
+        from nomarr.workflows.library.sync_file_to_library_wf import sync_file_to_library
 
         library_path = build_library_path_from_input(path, db)
+        library_root = get_library_root(library_path, db)
 
-        # Write tags to file first (no chromaprint in file tags)
-        writer.write(library_path, file_tags)
+        # Safe write requires chromaprint and library_root
+        if chromaprint and library_root and file_tags:
+            # Use atomic safe write
+            result = writer.write_safe(library_path, file_tags, library_root, chromaprint)
+            if not result.success:
+                raise RuntimeError(f"Safe write failed: {result.error}")
+
+            # Always update folder mtime after tag write (write modifies folder mtime)
+            if library_path.library_id:
+                _update_folder_mtime_after_write(db, library_path, library_root)
+
+            logging.debug(f"[processor] Safely wrote {len(file_tags)} tags to file")
+        elif file_tags:
+            # Fallback to direct write (no chromaprint available)
+            logging.warning("[processor] No chromaprint - using unsafe direct write")
+            writer.write(library_path, file_tags)
 
         # Extract metadata from the freshly-tagged file
         metadata = extract_metadata(library_path, namespace=namespace)
@@ -461,7 +517,7 @@ def _sync_database(
         # Update library database with extracted metadata + chromaprint
         # Note: calibration_hash remains NULL until first recalibration
         # Initial processing stores raw scores only
-        update_library_from_tags(
+        sync_file_to_library(
             db=db,
             file_path=path,
             metadata=metadata,
@@ -472,8 +528,15 @@ def _sync_database(
         logging.debug(f"[processor] Updated library database for {path} with {len(db_tags)} tags")
 
         # Now rewrite file with filtered tags if mode is not "full"
-        if file_write_mode != "full":
-            writer.write(library_path, file_tags)
+        if file_write_mode != "full" and file_tags:
+            if chromaprint and library_root:
+                result = writer.write_safe(library_path, file_tags, library_root, chromaprint)
+                if not result.success:
+                    raise RuntimeError(f"Safe rewrite failed: {result.error}")
+                if library_path.library_id:
+                    _update_folder_mtime_after_write(db, library_path, library_root)
+            else:
+                writer.write(library_path, file_tags)
             logging.debug(f"[processor] Rewrote file with filtered tags (mode={file_write_mode})")
     except Exception as e:
         # Don't fail the entire processing if library update fails
@@ -604,7 +667,6 @@ def process_file_workflow(
     """
     from nomarr.components.infrastructure.path_comp import build_library_path_from_db
     from nomarr.components.ml.ml_cache_comp import check_and_evict_idle_cache, touch_cache
-    from nomarr.helpers.dto.path_dto import LibraryPath
 
     # === STEP 0: Validate path against library configuration ===
     # If db provided, validate path to handle config changes (library root moved, etc.)

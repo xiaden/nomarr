@@ -68,6 +68,9 @@ class LibraryDict:
     scan_total: int | None = None
     scanned_at: int | None = None
     scan_error: str | None = None
+    # Statistics (populated by service layer, not stored in DB)
+    file_count: int = 0
+    folder_count: int = 0
 
 
 @dataclass

@@ -12,6 +12,7 @@ from nomarr.persistence.database.file_tags_aql import FileTagOperations
 from nomarr.persistence.database.health_aql import HealthOperations
 from nomarr.persistence.database.libraries_aql import LibrariesOperations
 from nomarr.persistence.database.library_files_aql import LibraryFilesOperations
+from nomarr.persistence.database.library_folders_aql import LibraryFoldersOperations
 from nomarr.persistence.database.library_tags_aql import LibraryTagOperations
 from nomarr.persistence.database.meta_aql import MetaOperations
 from nomarr.persistence.database.sessions_aql import SessionOperations
@@ -113,6 +114,7 @@ class Database:
         self.libraries = LibrariesOperations(self.db)
         self.tag_queue = QueueOperations(self.db)
         self.library_files = LibraryFilesOperations(self.db)
+        self.library_folders = LibraryFoldersOperations(self.db)
         self.library_tags = LibraryTagOperations(self.db)
         self.file_tags = FileTagOperations(self.db)
         self.sessions = SessionOperations(self.db)

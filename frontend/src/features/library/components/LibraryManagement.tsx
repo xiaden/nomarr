@@ -35,7 +35,6 @@ import {
     create as createLibrary,
     deleteLibrary,
     list as listLibraries,
-    preview as previewLibrary,
     scan as scanLibrary,
     setDefault as setDefaultLibrary,
     update as updateLibrary,
@@ -53,7 +52,6 @@ export function LibraryManagement() {
   const [isCreating, setIsCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [scanningId, setScanningId] = useState<string | null>(null);
-  const [scanningState, setScanningState] = useState<"preparing" | "queueing" | null>(null);
   const [libraryRoot, setLibraryRoot] = useState<string | null>(null);
 
   // Create/edit form state
@@ -63,8 +61,6 @@ export function LibraryManagement() {
   const [formIsDefault, setFormIsDefault] = useState(false);
   const [formWatchMode, setFormWatchMode] = useState<string>("off");
   const [showPathPicker, setShowPathPicker] = useState(false);
-  const [previewCount, setPreviewCount] = useState<number | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
 
   const loadLibraries = async () => {
     try {
@@ -111,8 +107,6 @@ export function LibraryManagement() {
     setFormIsDefault(false);
     setFormWatchMode("off");
     setShowPathPicker(false);
-    setPreviewCount(null);
-    setPreviewLoading(false);
     setIsCreating(false);
     setEditingId(null);
   };
@@ -130,38 +124,6 @@ export function LibraryManagement() {
     setFormWatchMode(library.watchMode);
     setEditingId(library.id);
     setIsCreating(false);
-    setPreviewCount(null);
-    setPreviewLoading(false);
-  };
-
-  const handlePreview = async () => {
-    if (!formRootPath.trim()) {
-      setError("Path is required for preview");
-      return;
-    }
-
-    // Need library ID for preview - only works when editing existing library
-    if (editingId === null) {
-      // For new libraries, we can't preview until they're created
-      setError("Create the library first to preview file count");
-      return;
-    }
-
-    try {
-      setError(null);
-      setPreviewLoading(true);
-      // Don't send paths - let backend use library's root_path directly
-      const result = await previewLibrary(editingId, {
-        recursive: true,
-      });
-      setPreviewCount(result.file_count);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to preview library"
-      );
-    } finally {
-      setPreviewLoading(false);
-    }
   };
 
   const handleCreate = async () => {
@@ -225,30 +187,12 @@ export function LibraryManagement() {
     }
   };
 
-  const handleScan = async (id: string) => {
+  const handleScan = async (id: string, scanType: "quick" | "full") => {
     try {
       setError(null);
       setScanningId(id);
-      setScanningState("preparing");
 
-      // Get preview first
-      const preview = await previewLibrary(id, {
-        recursive: true,
-      });
-
-      const confirmed = await confirm({
-        title: "Start Library Scan?",
-        message: `Found ${preview.file_count.toLocaleString()} audio files. Start scan?`,
-      });
-
-      if (!confirmed) {
-        return;
-      }
-
-      // User confirmed - now queue the scan
-      setScanningState("queueing");
-
-      const result = await scanLibrary(id);
+      const result = await scanLibrary(id, scanType);
       showSuccess(
         `Scan ${result.status}: ${result.message || "Library scan queued"}`
       );
@@ -257,7 +201,6 @@ export function LibraryManagement() {
       setError(err instanceof Error ? err.message : "Failed to scan library");
     } finally {
       setScanningId(null);
-      setScanningState(null);
     }
   };
 
@@ -447,36 +390,6 @@ export function LibraryManagement() {
               </FormControl>
             </Box>
 
-            {/* Preview file count (only for existing libraries) */}
-            {editingId !== null && (
-              <Box>
-                <Button
-                  variant="outlined"
-                  onClick={handlePreview}
-                  disabled={!formRootPath.trim() || previewLoading}
-                >
-                  {previewLoading ? "Checking..." : "Preview File Count"}
-                </Button>
-                {previewCount !== null && (
-                  <Box
-                    sx={{
-                      mt: 1,
-                      p: 1.5,
-                      bgcolor: "background.paper",
-                      borderRadius: 1,
-                      border: 1,
-                      borderColor: "divider",
-                    }}
-                  >
-                    <Typography>
-                      <strong>{previewCount.toLocaleString()}</strong> audio files
-                      found
-                    </Typography>
-                  </Box>
-                )}
-              </Box>
-            )}
-
             <Stack direction="row" spacing={1.25}>
               <Button
                 variant="contained"
@@ -534,6 +447,15 @@ export function LibraryManagement() {
                   >
                     {lib.rootPath}
                   </Typography>
+                  {/* File and Folder Statistics */}
+                  <Stack direction="row" spacing={2} sx={{ mt: 0.5 }}>
+                    <Typography variant="body2" color="text.secondary">
+                      <strong>{lib.fileCount.toLocaleString()}</strong> files
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      <strong>{lib.folderCount.toLocaleString()}</strong> folders
+                    </Typography>
+                  </Stack>
                   {isOutsideLibraryRoot(lib.rootPath) && (
                     <Typography variant="caption" color="warning.main" sx={{ mt: 0.5 }}>
                       ⚠ This library is outside the configured library_root ({libraryRoot})
@@ -607,10 +529,33 @@ export function LibraryManagement() {
                   </Button>
                 )}
                 <Button
+                  variant="outlined"
+                  color="success"
+                  size="small"
+                  onClick={() => handleScan(lib.id, "quick")}
+                  disabled={
+                    !lib.isEnabled || 
+                    scanningId === lib.id || 
+                    isOutsideLibraryRoot(lib.rootPath) ||
+                    !lib.scannedAt  // Disable if never scanned
+                  }
+                  title={
+                    !lib.scannedAt
+                      ? "Run a Full Scan first before using Quick Scan"
+                      : isOutsideLibraryRoot(lib.rootPath)
+                      ? "Cannot scan: library is outside library_root"
+                      : "Scan only new and modified files"
+                  }
+                >
+                  {scanningId === lib.id
+                    ? "Scanning..."
+                    : "Quick Scan"}
+                </Button>
+                <Button
                   variant="contained"
                   color="success"
                   size="small"
-                  onClick={() => handleScan(lib.id)}
+                  onClick={() => handleScan(lib.id, "full")}
                   disabled={
                     !lib.isEnabled || 
                     scanningId === lib.id || 
@@ -619,14 +564,12 @@ export function LibraryManagement() {
                   title={
                     isOutsideLibraryRoot(lib.rootPath)
                       ? "Cannot scan: library is outside library_root"
-                      : undefined
+                      : "Rescan all files in the library"
                   }
                 >
                   {scanningId === lib.id
-                    ? scanningState === "preparing"
-                      ? "Preparing..."
-                      : "Queueing..."
-                    : "Scan"}
+                    ? "Scanning..."
+                    : "Full Scan"}
                 </Button>
                 <Button
                   variant="contained"

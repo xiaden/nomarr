@@ -12,6 +12,7 @@ from .file_tags_aql import FileTagOperations
 from .health_aql import HealthOperations
 from .libraries_aql import LibrariesOperations
 from .library_files_aql import LibraryFilesOperations
+from .library_folders_aql import LibraryFoldersOperations
 from .library_tags_aql import LibraryTagOperations
 from .meta_aql import MetaOperations
 from .sessions_aql import SessionOperations
@@ -28,6 +29,7 @@ __all__ = [
     "HealthOperations",
     "LibrariesOperations",
     "LibraryFilesOperations",
+    "LibraryFoldersOperations",
     "LibraryTagOperations",
     "MetaOperations",
     "QueueOperations",

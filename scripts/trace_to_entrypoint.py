@@ -244,7 +244,7 @@ def main():
 
     if not paths:
         print(f"❌ No paths found from {target_id} to any entrypoint")
-        print(f"\nThis node is unreachable from interfaces.")
+        print("\nThis node is unreachable from interfaces.")
 
         # Show what calls this node
         callers = reverse_edges.get(target_id, [])
@@ -255,7 +255,7 @@ def main():
                 print(f"  {reachable} {source_id}")
                 print(f"      via {edge_type} ({ast_case})")
         else:
-            print(f"\n⚠️  No nodes reference this node - it may be dead code!")
+            print("\n⚠️  No nodes reference this node - it may be dead code!")
     else:
         print(f"Found {len(paths)} path(s) to entrypoints:\n")
         for i, path in enumerate(paths, 1):

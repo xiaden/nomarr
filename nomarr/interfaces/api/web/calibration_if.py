@@ -13,12 +13,12 @@ from nomarr.interfaces.api.types.calibration_types import (
 )
 from nomarr.interfaces.api.web.dependencies import (
     get_calibration_service,
-    get_recalibration_service,
+    get_tagging_service,
 )
 
 if TYPE_CHECKING:
     from nomarr.services.domain.calibration_svc import CalibrationService
-    from nomarr.services.domain.recalibration_svc import RecalibrationService
+    from nomarr.services.domain.tagging_svc import TaggingService
 
 router = APIRouter(prefix="/calibration", tags=["Calibration"])
 
@@ -30,23 +30,23 @@ router = APIRouter(prefix="/calibration", tags=["Calibration"])
 
 @router.post("/apply", dependencies=[Depends(verify_session)])
 async def apply_calibration_to_library(
-    recal_service: Any = Depends(get_recalibration_service),
+    tagging_service: Any = Depends(get_tagging_service),
 ) -> ApplyCalibrationResponse:
     """
-    Recalibrate all library files.
+    Apply calibrated tags to all library files.
     This updates tier and mood tags by applying calibration to existing raw scores.
 
     Note: This is a synchronous operation that may take time for large libraries.
     """
     try:
-        # Get config from recal_service if available, otherwise use defaults
+        # Get config from tagging_service if available, otherwise use defaults
         # TODO: Should get these from ConfigService via dependency injection
         models_dir = "/app/models"  # Placeholder - needs proper config injection
         namespace = "nom"
         version_tag_key = "nom_version"
         calibrate_heads = False
 
-        result = recal_service.recalibrate_library(
+        result = tagging_service.tag_library(
             models_dir=models_dir,
             namespace=namespace,
             version_tag_key=version_tag_key,
@@ -55,16 +55,16 @@ async def apply_calibration_to_library(
         return ApplyCalibrationResponse.from_dto(result)
 
     except RuntimeError as e:
-        logging.error(f"[Web API] Recalibration service error: {e}")
+        logging.error(f"[Web API] Tagging service error: {e}")
         raise HTTPException(status_code=503, detail=str(e)) from e
     except Exception as e:
-        logging.exception("[Web API] Error during recalibration")
-        raise HTTPException(status_code=500, detail=f"Error during recalibration: {e}") from e
+        logging.exception("[Web API] Error during calibrated tag application")
+        raise HTTPException(status_code=500, detail=f"Error applying calibrated tags: {e}") from e
 
 
 @router.get("/status", dependencies=[Depends(verify_session)])
 async def get_calibration_status(
-    recal_service: "RecalibrationService" = Depends(get_recalibration_service),
+    tagging_service: "TaggingService" = Depends(get_tagging_service),
 ) -> dict[str, Any]:
     """Get current calibration status with per-library breakdown.
 
@@ -85,7 +85,7 @@ async def get_calibration_status(
         }
     """
     try:
-        return recal_service.get_calibration_status()
+        return tagging_service.get_calibration_status()
     except Exception as e:
         logging.exception("[Web API] Error fetching calibration status")
         raise HTTPException(status_code=500, detail=f"Error fetching status: {e}") from e
@@ -93,13 +93,13 @@ async def get_calibration_status(
 
 @router.post("/clear", dependencies=[Depends(verify_session)])
 async def clear_calibration_queue(
-    recal_service: Any = Depends(get_recalibration_service),
+    tagging_service: Any = Depends(get_tagging_service),
 ) -> dict[str, str]:
-    """DEPRECATED: Recalibration no longer uses queues.
+    """DEPRECATED: Tagging no longer uses queues.
 
     This endpoint is kept for backward compatibility but does nothing.
     """
-    return {"status": "ok", "message": "Recalibration no longer uses queues (no-op)"}
+    return {"status": "ok", "message": "Tagging no longer uses queues (no-op)"}
 
 
 @router.post("/generate", dependencies=[Depends(verify_session)])

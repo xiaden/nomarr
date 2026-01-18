@@ -48,6 +48,9 @@ class LibraryResponse(BaseModel):
     scan_total: int | None = None
     scanned_at: str | None = None
     scan_error: str | None = None
+    # Statistics
+    file_count: int = 0
+    folder_count: int = 0
 
     @classmethod
     def from_dto(cls, library: LibraryDict) -> Self:
@@ -98,6 +101,8 @@ class LibraryResponse(BaseModel):
             scan_total=library.scan_total,
             scanned_at=scanned_at,
             scan_error=library.scan_error,
+            file_count=library.file_count,
+            folder_count=library.folder_count,
         )
 
 
@@ -220,14 +225,6 @@ class UpdateLibraryRequest(BaseModel):
     is_enabled: bool | None = None
     is_default: bool | None = None
     watch_mode: str | None = None  # 'off', 'event', or 'poll'
-
-
-class ScanLibraryRequest(BaseModel):
-    """Request body for starting a library scan."""
-
-    paths: list[str] | None = None
-    recursive: bool = True
-    clean_missing: bool = True
 
 
 class ListLibrariesResponse(BaseModel):

@@ -34,7 +34,7 @@ These domains need to be migrated to use DTO-backed Pydantic models:
 | Domain | Route File | Current State | DTOs Available | Notes |
 |--------|-----------|---------------|----------------|-------|
 | **Analytics** | `web/analytics_if.py` | Uses TypedDict, returns dicts | `dto/analytics_dto.py` (TagCorrelationData, MoodDistributionData, MoodCoOccurrenceData, ArtistTagProfile) | 4 endpoints need migration |
-| **Calibration** | `web/calibration_if.py` | Pydantic requests, dict responses | `dto/calibration_dto.py` (GenerateCalibrationResult, EnsureCalibrationsExistResult, CalibrationRunResult, RecalibrateFileWorkflowParams) | 4 endpoints need migration |
+| **Calibration** | `web/calibration_if.py` | Pydantic requests, dict responses | `dto/calibration_dto.py` (GenerateCalibrationResult, EnsureCalibrationsExistResult, CalibrationRunResult, WriteCalibratedTagsParams) | 4 endpoints need migration |
 | **Config** | `web/config_if.py` | Pydantic request, dict responses | `dto/config_dto.py` (ConfigResult, GetInternalInfoResult) | 2 endpoints need migration |
 | **Auth** | `web/auth_if.py` | Already uses Pydantic request/response | No DTOs (simple auth flow) | ✅ Already clean (no DTOs needed) |
 | **Info/Health** | `web/info_if.py` | Returns dicts | No specific DTOs (system status) | Simple status endpoints, may not need formal DTOs |

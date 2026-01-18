@@ -137,15 +137,15 @@ def get_ml_service() -> Any:
     return service
 
 
-def get_recalibration_service() -> Any:
-    """Get recalibration service instance."""
+def get_tagging_service() -> Any:
+    """Get tagging service instance."""
     from fastapi import HTTPException
 
     from nomarr.app import application
 
-    service = application.services.get("recalibration")
+    service = application.services.get("tagging")
     if not service:
-        raise HTTPException(status_code=503, detail="Recalibration service not available")
+        raise HTTPException(status_code=503, detail="Tagging service not available")
     return service
 
 

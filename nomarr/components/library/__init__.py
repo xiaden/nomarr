@@ -9,7 +9,6 @@ from .library_root_comp import (
     normalize_library_root,
     resolve_path_within_library,
 )
-from .library_update_comp import update_library_from_tags
 from .metadata_extraction_comp import (
     compute_chromaprint_for_file,
     extract_metadata,
@@ -38,5 +37,4 @@ __all__ = [
     "resolve_artists",
     "resolve_path_within_library",
     "search_library_files",
-    "update_library_from_tags",
 ]

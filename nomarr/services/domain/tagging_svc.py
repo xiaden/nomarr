@@ -1,4 +1,4 @@
-"""Recalibration service - applies calibration to existing library files."""
+"""Tagging service - applies calibrated tags to library files."""
 
 from __future__ import annotations
 
@@ -15,21 +15,21 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class RecalibrationService:
-    """Service for recalibrating library files with updated calibration values.
+class TaggingService:
+    """Service for writing calibrated tags to library files.
 
-    This service provides methods to recalibrate files with new calibration values.
-    Recalibration updates tier and mood tags by applying calibration to raw scores
+    This service provides methods to apply calibration to files.
+    It updates tier and mood tags by applying calibration to raw scores
     already stored in the database, without re-running ML inference.
 
     Architecture note:
     - Service provides API surface and DI
-    - Actual recalibration logic lives in workflows/calibration/recalibrate_file_wf.py
+    - Actual tagging logic lives in workflows/calibration/write_calibrated_tags_wf.py
     - Threading/background execution should be in workflow layer, not service layer
     """
 
     def __init__(self, database: Database, library_service: LibraryService | None = None):
-        """Initialize the recalibration service.
+        """Initialize the tagging service.
 
         Args:
             database: Database instance for persistence operations
@@ -38,7 +38,14 @@ class RecalibrationService:
         self.db = database
         self.library_service = library_service
 
-    def recalibrate_file(
+    @property
+    def namespace(self) -> str:
+        """Get the tag namespace from library service config."""
+        if self.library_service is None:
+            raise ValueError("LibraryService not configured. Cannot determine namespace.")
+        return self.library_service.cfg.namespace
+
+    def tag_file(
         self,
         file_path: str,
         models_dir: str,
@@ -46,7 +53,7 @@ class RecalibrationService:
         version_tag_key: str,
         calibrate_heads: bool,
     ) -> None:
-        """Recalibrate a single file with updated calibration values.
+        """Write calibrated tags to a single file.
 
         Args:
             file_path: Absolute path to the audio file
@@ -56,14 +63,14 @@ class RecalibrationService:
             calibrate_heads: Whether to use calibration
 
         Raises:
-            ValueError: If file doesn't have existing tags to recalibrate
+            ValueError: If file doesn't have existing tags
         """
-        from nomarr.helpers.dto.calibration_dto import RecalibrateFileWorkflowParams
-        from nomarr.workflows.calibration.recalibrate_file_wf import recalibrate_file_workflow
+        from nomarr.helpers.dto.calibration_dto import WriteCalibratedTagsParams
+        from nomarr.workflows.calibration.write_calibrated_tags_wf import write_calibrated_tags_wf
 
-        logger.info(f"Recalibrating file: {file_path}")
+        logger.info(f"Writing calibrated tags to file: {file_path}")
 
-        params = RecalibrateFileWorkflowParams(
+        params = WriteCalibratedTagsParams(
             file_path=file_path,
             models_dir=models_dir,
             namespace=namespace,
@@ -71,19 +78,19 @@ class RecalibrationService:
             calibrate_heads=calibrate_heads,
         )
 
-        recalibrate_file_workflow(db=self.db, params=params)
-        logger.info(f"Recalibration complete: {file_path}")
+        write_calibrated_tags_wf(db=self.db, params=params)
+        logger.info(f"Wrote calibrated tags: {file_path}")
 
-    def recalibrate_library(
+    def tag_library(
         self,
         models_dir: str,
         namespace: str,
         version_tag_key: str,
         calibrate_heads: bool,
     ) -> ApplyCalibrationResult:
-        """Recalibrate all TAGGED library files with updated calibration values.
+        """Write calibrated tags to all TAGGED library files.
 
-        Recalibration requires files that already have numeric tags in the database.
+        This requires files that already have numeric tags in the database.
         It applies calibration to existing raw scores without re-running ML inference.
 
         Args:
@@ -101,7 +108,7 @@ class RecalibrationService:
         if self.library_service is None:
             raise ValueError("LibraryService not configured. Cannot get library paths.")
 
-        # Get only TAGGED library file paths (recalibration needs existing tags)
+        # Get only TAGGED library file paths (needs existing tags)
         paths = self.library_service.get_tagged_library_paths()
 
         if not paths:
@@ -110,31 +117,31 @@ class RecalibrationService:
                 message="No tagged files found. Run tagging first.",
             )
 
-        logger.info(f"Recalibrating {len(paths)} tagged files...")
+        logger.info(f"Writing calibrated tags to {len(paths)} files...")
 
-        from nomarr.helpers.dto.calibration_dto import RecalibrateFileWorkflowParams
-        from nomarr.workflows.calibration.recalibrate_file_wf import recalibrate_file_workflow
+        from nomarr.helpers.dto.calibration_dto import WriteCalibratedTagsParams
+        from nomarr.workflows.calibration.write_calibrated_tags_wf import write_calibrated_tags_wf
 
         success_count = 0
         for file_path in paths:
             try:
-                params = RecalibrateFileWorkflowParams(
+                params = WriteCalibratedTagsParams(
                     file_path=file_path,
                     models_dir=models_dir,
                     namespace=namespace,
                     version_tag_key=version_tag_key,
                     calibrate_heads=calibrate_heads,
                 )
-                recalibrate_file_workflow(db=self.db, params=params)
+                write_calibrated_tags_wf(db=self.db, params=params)
                 success_count += 1
             except Exception as e:
-                logger.warning(f"Failed to recalibrate {file_path}: {e}")
+                logger.warning(f"Failed to write calibrated tags for {file_path}: {e}")
 
-        logger.info(f"Recalibration complete: {success_count}/{len(paths)} files")
+        logger.info(f"Wrote calibrated tags: {success_count}/{len(paths)} files")
 
         return ApplyCalibrationResult(
             queued=success_count,  # Keep field name for DTO compatibility
-            message=f"Recalibrated {success_count}/{len(paths)} tagged files",
+            message=f"Wrote calibrated tags to {success_count}/{len(paths)} files",
         )
 
     def get_calibration_status(self) -> dict[str, Any]:
@@ -192,3 +199,41 @@ class RecalibrationService:
         # Convert to dict for interface layer
         result_dict: dict[str, Any] = asdict(result)
         return result_dict
+
+    def read_file_tags(self, path: str, namespace: str) -> dict[str, Any]:
+        """
+        Read tags from an audio file.
+
+        Args:
+            path: Absolute file path
+            namespace: Tag namespace to filter by
+
+        Returns:
+            Dictionary of tag_key -> value(s)
+
+        Raises:
+            ValueError: If path is invalid
+            RuntimeError: If file cannot be read
+        """
+        from nomarr.workflows.library.file_tags_io_wf import read_file_tags_workflow
+
+        return read_file_tags_workflow(db=self.db, path=path, namespace=namespace)
+
+    def remove_file_tags(self, path: str, namespace: str) -> int:
+        """
+        Remove all namespaced tags from an audio file.
+
+        Args:
+            path: Absolute file path
+            namespace: Tag namespace to remove
+
+        Returns:
+            Number of tags removed
+
+        Raises:
+            ValueError: If path is invalid
+            RuntimeError: If file cannot be modified
+        """
+        from nomarr.workflows.library.file_tags_io_wf import remove_file_tags_workflow
+
+        return remove_file_tags_workflow(db=self.db, path=path, namespace=namespace)

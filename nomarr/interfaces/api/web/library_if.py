@@ -13,14 +13,13 @@ from nomarr.interfaces.api.types.library_types import (
     LibraryStatsResponse,
     ListLibrariesResponse,
     ReconcilePathsResponse,
-    ScanLibraryRequest,
     SearchFilesResponse,
     StartScanWithStatusResponse,
     TagCleanupResponse,
     UniqueTagKeysResponse,
     UpdateLibraryRequest,
 )
-from nomarr.interfaces.api.web.dependencies import get_config, get_library_service
+from nomarr.interfaces.api.web.dependencies import get_library_service
 
 if TYPE_CHECKING:
     from nomarr.services.domain.library_svc import LibraryService
@@ -191,78 +190,6 @@ async def delete_library(
         raise HTTPException(status_code=500, detail=f"Error deleting library: {e}") from e
 
 
-@router.post("/{library_id}/preview", dependencies=[Depends(verify_session)])
-async def preview_library_scan(
-    library_id: str,
-    request: ScanLibraryRequest,
-    library_service: "LibraryService" = Depends(get_library_service),
-    config: dict = Depends(get_config),
-) -> dict[str, int]:
-    """
-    Preview file count for a library path without scanning.
-
-    Returns:
-        Dictionary with file_count (total audio files found)
-    """
-    try:
-        from pathlib import Path
-
-        from nomarr.helpers.files_helper import collect_audio_files
-
-        # Get library to resolve root path
-        library = library_service.get_library(library_id)
-
-        # Get configured library_root for security validation
-        library_root = config.get("library_root")
-        if not library_root:
-            raise HTTPException(status_code=503, detail="Library root not configured")
-
-        # Resolve paths to scan
-        if request.paths:
-            # User specified sub-paths - validate they're within library root
-            resolved_paths = []
-            for path in request.paths:
-                resolved = library_service.resolve_path_within_library(
-                    library_root=library.root_path,
-                    user_path=path,
-                    must_exist=True,
-                    must_be_file=False,
-                )
-                resolved_paths.append(str(resolved))
-        else:
-            # No paths specified - validate library root against configured library_root
-            # Compute relative path from library_root to library.root_path to ensure it's within bounds
-            library_root_path = Path(library_root).resolve()
-            library_path = Path(library.root_path).resolve()
-
-            try:
-                # This validates the library is within library_root
-                library_path.relative_to(library_root_path)
-            except ValueError as e:
-                # Library is outside library_root - security violation
-                raise HTTPException(status_code=403, detail="Library path is outside configured library_root") from e
-
-            # Library path is valid and within library_root - use it directly
-            # (it was already validated when the library was created)
-            resolved_paths = [str(library_path)]
-
-        # Count files using helper
-        all_files = []
-        for root_path in resolved_paths:
-            files = collect_audio_files(root_path, recursive=request.recursive)
-            all_files.extend(files)
-
-        # files are now strings, deduplicate
-        unique_paths = set(all_files)
-        return {"file_count": len(unique_paths)}
-
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-    except Exception as e:
-        logging.exception(f"[Web API] Error previewing library {library_id}")
-        raise HTTPException(status_code=500, detail=f"Error previewing library: {e}") from e
-
-
 @router.get("/files/search", dependencies=[Depends(verify_session)])
 async def search_library_files(
     q: str = Query("", description="Search query for artist/album/title"),
@@ -417,6 +344,7 @@ async def get_file_tags(
 @router.post("/{library_id}/scan", dependencies=[Depends(verify_session)])
 async def scan_library(
     library_id: str,
+    scan_type: str = Query("quick", description="Scan type: 'quick' (skip unchanged files) or 'full' (rescan all)"),
     library_service: "LibraryService" = Depends(get_library_service),
 ) -> StartScanWithStatusResponse:
     """
@@ -428,17 +356,24 @@ async def scan_library(
 
     Args:
         library_id: Library ID to scan
+        scan_type: Scan mode - 'quick' uses hash-based skipping, 'full' rescans all files
         library_service: LibraryService instance (injected)
 
     Returns:
         StartScanWithStatusResponse with scan statistics and status message
 
     Raises:
-        HTTPException: 404 if library not found, 500 for other errors
+        HTTPException: 404 if library not found, 400 for invalid scan_type, 500 for other errors
     """
     try:
+        # Validate scan_type
+        if scan_type not in ("quick", "full"):
+            raise HTTPException(status_code=400, detail="scan_type must be 'quick' or 'full'")
+
+        force_rescan = scan_type == "full"
+
         # Call the service layer to start scan for this specific library (returns StartScanResult DTO)
-        stats = library_service.start_scan_for_library(library_id=library_id)
+        stats = library_service.start_scan_for_library(library_id=library_id, force_rescan=force_rescan)
 
         # Transform DTO to wrapped Pydantic response
         return StartScanWithStatusResponse.from_dto(stats, library_id)

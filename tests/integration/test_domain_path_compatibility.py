@@ -21,7 +21,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_input
-from nomarr.components.library.library_update_comp import update_library_from_tags
+from nomarr.workflows.library.sync_file_to_library_wf import sync_file_to_library
 
 # Platform-specific test paths
 IS_WINDOWS = sys.platform == "win32"
@@ -103,10 +103,10 @@ class TestPathComputationDomain:
 
 
 class TestLibraryUpdateDomain:
-    """Test update_library_from_tags can still access files by absolute path."""
+    """Test sync_file_to_library can still access files by absolute path."""
 
-    def test_update_library_from_tags_uses_absolute_path(self, mock_db_with_file):
-        """update_library_from_tags should query by absolute path and get file."""
+    def test_sync_file_to_library_uses_absolute_path(self, mock_db_with_file):
+        """sync_file_to_library should query by absolute path and get file."""
         mock_db, test_absolute_path, _ = mock_db_with_file
 
         # Mock file operations
@@ -136,7 +136,7 @@ class TestLibraryUpdateDomain:
             mock_stat.return_value = mock_stat_result
 
             # Should not raise, should use absolute path to query DB
-            update_library_from_tags(
+            sync_file_to_library(
                 db=mock_db,
                 file_path=test_absolute_path,
                 metadata=test_metadata,

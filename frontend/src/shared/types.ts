@@ -82,6 +82,10 @@ export interface Library {
   watchMode: string; // 'off', 'event', or 'poll'
   createdAt?: string | number; // Can be ISO string or Unix timestamp
   updatedAt?: string | number; // Can be ISO string or Unix timestamp
+  scannedAt?: string | null; // null if never scanned, ISO string if scanned
+  // Statistics
+  fileCount: number;
+  folderCount: number;
 }
 
 export interface LibraryStats {

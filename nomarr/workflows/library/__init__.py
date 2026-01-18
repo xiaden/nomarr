@@ -11,6 +11,7 @@ from .scan_library_direct_wf import (
     walk_audio_files_batched,
 )
 from .start_scan_wf import start_scan_workflow
+from .sync_file_to_library_wf import sync_file_to_library
 
 __all__ = [
     "cleanup_orphaned_tags_workflow",
@@ -20,5 +21,6 @@ __all__ = [
     "remove_file_tags_workflow",
     "scan_library_direct_workflow",
     "start_scan_workflow",
+    "sync_file_to_library",
     "walk_audio_files_batched",
 ]

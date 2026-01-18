@@ -12,11 +12,13 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from mutagen import MutagenError
 
 if TYPE_CHECKING:
+    from nomarr.components.tagging.safe_write_comp import SafeWriteResult
     from nomarr.helpers.dto.path_dto import LibraryPath
 from mutagen.flac import FLAC
 from mutagen.id3 import ID3, TXXX, ID3NoHeaderError
@@ -268,7 +270,33 @@ class TagWriter:
         self._mp4 = _MP4Writer(overwrite=overwrite, ns_prefix=namespace)
         self._vorbis = _VorbisWriter(overwrite=overwrite, ns_prefix=namespace)
 
+    def _write_to_path(self, path_str: str, tags: dict[str, Any]) -> None:
+        """Internal write method that works with string paths (for temp files)."""
+        from pathlib import Path as PathLib
+
+        from nomarr.helpers.dto.path_dto import LibraryPath
+
+        # Create a minimal LibraryPath for internal writers
+        # Status is "valid" since we're writing to a known good temp file
+        temp_lib_path = LibraryPath(
+            relative="",
+            absolute=PathLib(path_str),
+            library_id=None,
+            status="valid",
+        )
+
+        ext = path_str.lower().rsplit(".", 1)[-1]
+        if ext == "mp3":
+            self._mp3.write(temp_lib_path, tags)
+        elif ext in ("m4a", "mp4", "m4b"):
+            self._mp4.write(temp_lib_path, tags)
+        elif ext in ("flac", "ogg", "opus"):
+            self._vorbis.write(temp_lib_path, tags)
+        else:
+            raise RuntimeError(f"Unsupported file type for writing: .{ext}")
+
     def write(self, path: LibraryPath, tags: dict[str, Any]) -> None:
+        """Write tags directly to file (no safety verification)."""
         if not path.is_valid():
             raise ValueError(f"Cannot write tags to invalid path ({path.status}): {path.absolute} - {path.reason}")
 
@@ -281,3 +309,43 @@ class TagWriter:
             self._vorbis.write(path, tags)
         else:
             raise RuntimeError(f"Unsupported file type for writing: .{ext}")
+
+    def write_safe(
+        self,
+        path: LibraryPath,
+        tags: dict[str, Any],
+        library_root: Path,
+        chromaprint: str,
+    ) -> SafeWriteResult:
+        """
+        Write tags using atomic copy-modify-verify-replace pattern.
+
+        This prevents file corruption if a crash occurs during write.
+        Verifies audio content hasn't changed by comparing chromaprints.
+
+        Args:
+            path: LibraryPath to the file to modify
+            tags: Tags to write
+            library_root: Root path of the library (for temp folder)
+            chromaprint: Chromaprint of original file for verification
+
+        Returns:
+            SafeWriteResult with success status and folder_mtime_changed flag
+
+        The caller should always update folder mtime after a successful write
+        since all write strategies modify folder mtime.
+        """
+        from pathlib import Path as PathLib
+
+        from nomarr.components.tagging.safe_write_comp import SafeWriteResult, safe_write_tags
+
+        if not path.is_valid():
+            return SafeWriteResult(
+                success=False,
+                error=f"Invalid path: {path.reason}",
+            )
+
+        def write_fn(temp_path: PathLib) -> None:
+            self._write_to_path(str(temp_path), tags)
+
+        return safe_write_tags(path, library_root, chromaprint, write_fn)

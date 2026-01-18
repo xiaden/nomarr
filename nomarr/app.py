@@ -31,9 +31,9 @@ if TYPE_CHECKING:
 from nomarr.persistence.db import Database
 from nomarr.services.domain.analytics_svc import AnalyticsService
 from nomarr.services.domain.calibration_svc import CalibrationService
-from nomarr.services.domain.library_svc import LibraryRootConfig, LibraryService
+from nomarr.services.domain.library_svc import LibraryService, LibraryServiceConfig
 from nomarr.services.domain.navidrome_svc import NavidromeService
-from nomarr.services.domain.recalibration_svc import RecalibrationService
+from nomarr.services.domain.tagging_svc import TaggingService
 from nomarr.services.infrastructure.config_svc import ConfigService
 from nomarr.services.infrastructure.health_monitor_svc import HealthMonitorService
 from nomarr.services.infrastructure.keys_svc import KeyManagementService
@@ -393,7 +393,7 @@ class Application:
         # Register library service if library_root is configured
         if self.library_root:
             logging.info(f"[Application] Registering LibraryService with namespace={self.namespace}")
-            library_cfg = LibraryRootConfig(
+            library_cfg = LibraryServiceConfig(
                 namespace=self.namespace,
                 library_root=self.library_root,
             )
@@ -452,10 +452,10 @@ class Application:
         metadata_service = MetadataService(db=self.db)
         self.register_service("metadata", metadata_service)
 
-        # Register recalibration service
+        # Register tagging service
         self.register_service(
-            "recalibration",
-            RecalibrationService(
+            "tagging",
+            TaggingService(
                 database=self.db,
                 library_service=self.services.get("library"),
             ),

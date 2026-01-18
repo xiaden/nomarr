@@ -51,8 +51,7 @@ services/
 └── workers/
     ├── base.py
     ├── tagger.py
-    ├── scanner.py
-    └── recalibration.py
+    └── scanner.py
 ```
 
 Guidelines:

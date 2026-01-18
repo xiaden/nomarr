@@ -22,8 +22,8 @@ export * from "./worker";
 // Library - explicit exports to avoid conflicts with files module
 export {
     cleanupOrphanedTags, create, deleteLibrary, getDefault, getFileTags, getLibrary, getStats,
-    list, preview,
-    scan, setDefault, update, type CleanupTagsResult, type CreateLibraryPayload, type FileTagsResult, type LibraryStats, type PreviewOptions,
+    list,
+    scan, setDefault, update, type CleanupTagsResult, type CreateLibraryPayload, type FileTagsResult, type LibraryStats,
     type UpdateLibraryPayload
 } from "./library";
 
