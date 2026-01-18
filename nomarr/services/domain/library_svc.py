@@ -22,6 +22,7 @@ from nomarr.helpers.dto.library_dto import (
     LibraryDict,
     LibraryScanStatusResult,
     LibraryStatsResult,
+    ScanTarget,
     SearchFilesResult,
     StartScanResult,
     TagCleanupResult,
@@ -126,12 +127,69 @@ class LibraryService:
         """
         return self.cfg.library_root is not None
 
+    def scan_targets(
+        self,
+        targets: list[ScanTarget],
+        batch_size: int = 200,
+    ) -> StartScanResult:
+        """
+        Scan specific folders within libraries.
+
+        This is the core scanning method that supports both full library scans
+        and targeted/incremental scans. Use this when you want fine-grained control
+        over which folders to scan.
+
+        Args:
+            targets: List of ScanTarget specifying which folders to scan.
+                     Each target identifies a library and optional subfolder.
+                     Empty folder_path means scan entire library.
+            batch_size: Number of files to batch per database write (default: 200)
+
+        Returns:
+            StartScanResult DTO with scan statistics and task_id
+
+        Raises:
+            ValueError: If targets list is empty
+            ValueError: If any library_id not found
+            ValueError: If scan already running for any target library
+            ValueError: If multiple targets reference the same library
+        """
+        from nomarr.workflows.library.start_scan_wf import start_scan_workflow
+
+        # Validation: targets must not be empty
+        if not targets:
+            raise ValueError("Cannot scan: targets list is empty")
+
+        # Validation: check for duplicate library_ids in targets
+        library_ids = [t.library_id for t in targets]
+        if len(library_ids) != len(set(library_ids)):
+            raise ValueError("Cannot scan: multiple targets reference the same library")
+
+        # Validation: ensure all libraries exist
+        for target in targets:
+            self._get_library_or_error(target.library_id)
+
+        # Use first target's library_id for orchestration
+        # (start_scan_workflow expects a primary library_id)
+        primary_library_id = targets[0].library_id
+
+        return start_scan_workflow(
+            db=self.db,
+            background_tasks=self.background_tasks,
+            library_id=primary_library_id,
+            scan_targets=targets,
+            batch_size=batch_size,
+        )
+
     def start_scan_for_library(
         self,
         library_id: str,
     ) -> StartScanResult:
         """
-        Start a library scan for a specific library using direct filesystem scan.
+        Start a full library scan for a specific library.
+
+        This is a convenience method that delegates to scan_targets()
+        with a full library scan target (empty folder_path).
 
         Scans the entire library root recursively and marks missing files as invalid.
 
@@ -148,13 +206,9 @@ class LibraryService:
         Raises:
             ValueError: If library not found or scan already running
         """
-        from nomarr.workflows.library.start_scan_wf import start_scan_workflow
-
-        return start_scan_workflow(
-            db=self.db,
-            background_tasks=self.background_tasks,
-            library_id=library_id,
-        )
+        # Delegate to scan_targets with full library scan
+        target = ScanTarget(library_id=library_id, folder_path="")
+        return self.scan_targets([target])
 
     def start_scan(
         self,
