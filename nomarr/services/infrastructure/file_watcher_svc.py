@@ -33,7 +33,7 @@ import time
 from collections import defaultdict
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
@@ -155,8 +155,8 @@ class FileWatcherService:
         self.event_loop = event_loop or asyncio.get_event_loop()
         self.polling_interval_seconds = polling_interval_seconds
 
-        # Active watchers (event mode: Observer objects, poll mode: asyncio.Task objects)
-        self.observers: dict[str, Observer | asyncio.Task] = {}  # type: ignore[valid-type]
+        # Active watchers (event mode: Observer, poll mode: Task or Thread)
+        self.observers: dict[str, Any] = {}  # Observer | Task | Thread
 
         # Debouncing state (thread-safe)
         self._lock = threading.Lock()
@@ -243,6 +243,7 @@ class FileWatcherService:
         """Start polling-based watching with periodic full-library scans.
 
         Network-mount-safe alternative to event-based watching.
+        Uses a background thread since this may be called from sync context.
 
         Args:
             library_id: Library document _id
@@ -250,9 +251,24 @@ class FileWatcherService:
         # Initialize last poll time to now (so first poll happens after interval)
         self.last_poll_time[library_id] = time.time()
 
-        # Create polling task
-        task = asyncio.create_task(self._polling_loop(library_id))
-        self.observers[library_id] = task
+        # Try to schedule on existing event loop, fall back to thread
+        try:
+            loop = asyncio.get_running_loop()
+            task = loop.create_task(self._polling_loop(library_id))
+            self.observers[library_id] = task
+        except RuntimeError:
+            # No running event loop - use a background thread with its own loop
+            def run_polling():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    loop.run_until_complete(self._polling_loop(library_id))
+                finally:
+                    loop.close()
+
+            thread = threading.Thread(target=run_polling, daemon=True, name=f"poll-{library_id}")
+            thread.start()
+            self.observers[library_id] = thread
 
         logger.info(
             f"Started polling-based watching for library {library_id} (interval={self.polling_interval_seconds}s)"
@@ -292,7 +308,8 @@ class FileWatcherService:
     def stop_watching_library(self, library_id: str) -> None:
         """Stop watching a library.
 
-        Handles both event-based (Observer) and polling (asyncio.Task) modes.
+        Handles event-based (Observer), polling task (asyncio.Task), and
+        polling thread (threading.Thread) modes.
 
         Args:
             library_id: Library document _id
@@ -303,16 +320,21 @@ class FileWatcherService:
 
         watcher = self.observers[library_id]
 
-        # Check if it's an Observer (event mode) or Task (poll mode)
+        # Check watcher type and stop appropriately
         if isinstance(watcher, asyncio.Task):
             # Polling mode: cancel the task
-            watcher.cancel()  # type: ignore[union-attr]
+            watcher.cancel()
             if library_id in self.last_poll_time:
                 del self.last_poll_time[library_id]
+        elif isinstance(watcher, threading.Thread):
+            # Polling mode (thread): just remove reference, daemon thread will die
+            if library_id in self.last_poll_time:
+                del self.last_poll_time[library_id]
+            # Note: daemon threads auto-terminate on main exit
         else:
             # Event mode: stop the observer
-            watcher.stop()  # type: ignore[attr-defined]
-            watcher.join(timeout=5.0)  # type: ignore[attr-defined]
+            watcher.stop()
+            watcher.join(timeout=5.0)
 
         del self.observers[library_id]
         logger.info(f"Stopped watching library {library_id}")
