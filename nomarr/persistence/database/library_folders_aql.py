@@ -42,10 +42,10 @@ class LibraryFoldersOperations:
             Cursor,
             self.db.aql.execute(
                 """
-                UPSERT { library_id: @library_id, folder_path: @folder_path }
+                UPSERT { library_id: @library_id, path: @path }
                 INSERT {
                     library_id: @library_id,
-                    folder_path: @folder_path,
+                    path: @path,
                     mtime: @mtime,
                     file_count: @file_count,
                     last_scanned_at: @scanned_at
@@ -62,7 +62,7 @@ class LibraryFoldersOperations:
                     dict[str, Any],
                     {
                         "library_id": library_id,
-                        "folder_path": folder_path,
+                        "path": folder_path,
                         "mtime": mtime,
                         "file_count": file_count,
                         "scanned_at": scanned_at,
@@ -93,12 +93,12 @@ class LibraryFoldersOperations:
                 """
                 FOR folder IN library_folders
                     FILTER folder.library_id == @library_id
-                    FILTER folder.folder_path == @folder_path
+                    FILTER folder.path == @path
                     RETURN folder
                 """,
                 bind_vars={
                     "library_id": library_id,
-                    "folder_path": folder_path,
+                    "path": folder_path,
                 },
             ),
         )
@@ -128,7 +128,7 @@ class LibraryFoldersOperations:
                 bind_vars={"library_id": library_id},
             ),
         )
-        return {folder["folder_path"]: folder for folder in cursor}
+        return {folder["path"]: folder for folder in cursor}
 
     def delete_folders_for_library(self, library_id: str) -> int:
         """Delete all folder records for a library.
@@ -175,7 +175,7 @@ class LibraryFoldersOperations:
                 """
                 FOR folder IN library_folders
                     FILTER folder.library_id == @library_id
-                    FILTER folder.folder_path NOT IN @existing_paths
+                    FILTER folder.path NOT IN @existing_paths
                     REMOVE folder IN library_folders
                     COLLECT WITH COUNT INTO deleted
                     RETURN deleted

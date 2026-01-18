@@ -404,7 +404,7 @@ def scan_library_direct_workflow(
                 )
 
                 # Sort removed files by ID for deterministic matching when duplicates exist
-                files_to_remove.sort(key=lambda f: f["id"])
+                files_to_remove.sort(key=lambda f: f["_id"])
 
                 matched_moves: set[int] = set()
 
@@ -443,7 +443,7 @@ def scan_library_direct_workflow(
                                     logger.info(f"[scan_library] File moved: {removed_file['path']} → {new_path}")
                                     metadata = new_file.get("metadata", {})
                                     db.library_files.update_file_path(
-                                        file_id=removed_file["id"],
+                                        file_id=removed_file["_id"],
                                         new_path=new_path,
                                         file_size=new_file["file_size"],
                                         modified_time=new_file["modified_time"],

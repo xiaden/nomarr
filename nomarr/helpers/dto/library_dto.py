@@ -68,6 +68,7 @@ class LibraryDict:
     scan_total: int | None = None
     scanned_at: int | None = None
     scan_error: str | None = None
+    last_scan_started_at: int | None = None  # Timestamp (ms) when scan started
     # Statistics (populated by service layer, not stored in DB)
     file_count: int = 0
     folder_count: int = 0
