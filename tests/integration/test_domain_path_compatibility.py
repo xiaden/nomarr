@@ -21,7 +21,6 @@ import pytest
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_input
 from nomarr.components.library.library_update_comp import update_library_from_tags
-from nomarr.components.queue.queue_enqueue_comp import check_file_needs_processing
 
 
 @pytest.fixture
@@ -143,22 +142,22 @@ class TestQueueDomain:
     def test_check_file_needs_processing_uses_absolute_path(self, mock_db_with_file):
         """Verify queue operations work with absolute paths (conceptual test)."""
         mock_db, test_absolute_path, _ = mock_db_with_file
-        
+
         # Conceptual verification: queue component receives LibraryPath with absolute path
         # LibraryPath.absolute should be the absolute filesystem path
         # DB queries use str(path.absolute) to look up files
-        
+
         mock_library_path = MagicMock()
         mock_library_path.absolute = Path(test_absolute_path)
-        
+
         # Verify absolute path is available and correct
         assert str(mock_library_path.absolute) == test_absolute_path
         assert Path(test_absolute_path).is_absolute()
-        
+
         # When queue component queries DB, it uses absolute path
         path_str = str(mock_library_path.absolute)
         file_record = mock_db.library_files.get_library_file(path_str)
-        
+
         # Verify file record has absolute path
         assert file_record["path"] == test_absolute_path
 
