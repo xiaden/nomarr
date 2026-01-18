@@ -1,4 +1,6 @@
-"""Metadata workflows package."""
+"""
+Metadata package.
+"""
 
 from .rebuild_metadata_cache_wf import rebuild_all_metadata_caches
 

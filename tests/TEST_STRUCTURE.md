@@ -88,11 +88,12 @@ Tests multiple components working together with real dependencies.
 @pytest.mark.integration
 def test_library_scan_workflow(test_db, tmp_audio_files):
     # Tests workflow → components → persistence
-    stats = start_library_scan_workflow(
+    result = start_scan_workflow(
         db=test_db,
-        params=ScanParams(...)
+        library_id="libraries/1",
+        background_tasks=None
     )
-    assert stats["files_queued"] > 0
+    assert result["files_scanned"] > 0
 ```
 
 #### `@pytest.mark.e2e`

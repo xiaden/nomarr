@@ -314,3 +314,113 @@ class LibrariesOperations:
                 continue
 
         return None
+
+    def mark_scan_started(self, library_id: str, full_scan: bool) -> None:
+        """Mark a scan as started by updating library document.
+
+        Sets last_scan_started_at to current timestamp and records scan type.
+        Used to detect interrupted scans on restart.
+
+        Args:
+            library_id: Library document _id (e.g., "libraries/123")
+            full_scan: True if scanning entire library, False if targeted scan
+        """
+        now = now_ms()
+
+        self.db.aql.execute(
+            """
+            UPDATE PARSE_IDENTIFIER(@library_id).key WITH {
+                last_scan_started_at: @timestamp,
+                full_scan_in_progress: @full_scan
+            } IN libraries
+            """,
+            bind_vars=cast(
+                dict[str, Any],
+                {
+                    "library_id": library_id,
+                    "timestamp": now,
+                    "full_scan": full_scan,
+                },
+            ),
+        )
+
+    def mark_scan_completed(self, library_id: str) -> None:
+        """Mark a scan as completed by clearing start timestamp.
+
+        Args:
+            library_id: Library document _id (e.g., "libraries/123")
+        """
+        now = now_ms()
+
+        self.db.aql.execute(
+            """
+            UPDATE PARSE_IDENTIFIER(@library_id).key WITH {
+                last_scan_at: @timestamp,
+                last_scan_started_at: null,
+                full_scan_in_progress: false
+            } IN libraries
+            """,
+            bind_vars=cast(
+                dict[str, Any],
+                {
+                    "library_id": library_id,
+                    "timestamp": now,
+                },
+            ),
+        )
+
+    def get_scan_state(self, library_id: str) -> dict[str, Any] | None:
+        """Get current scan state from library document.
+
+        Args:
+            library_id: Library document _id (e.g., "libraries/123")
+
+        Returns:
+            Dict with last_scan_started_at, last_scan_at, full_scan_in_progress
+            or None if library not found
+        """
+        cursor = cast(
+            Cursor,
+            self.db.aql.execute(
+                """
+                FOR lib IN libraries
+                    FILTER lib._id == @library_id
+                    RETURN {
+                        last_scan_started_at: lib.last_scan_started_at,
+                        last_scan_at: lib.last_scan_at,
+                        full_scan_in_progress: lib.full_scan_in_progress
+                    }
+                """,
+                bind_vars={"library_id": library_id},
+            ),
+        )
+
+        results = list(cursor)
+        return results[0] if results else None
+
+    def check_interrupted_scan(self, library_id: str) -> tuple[bool, bool]:
+        """Check if a scan was interrupted.
+
+        Args:
+            library_id: Library document _id (e.g., "libraries/123")
+
+        Returns:
+            Tuple of (was_interrupted, was_full_scan)
+
+        A scan is interrupted if:
+        - last_scan_started_at is set, AND
+        - last_scan_started_at > last_scan_at (or last_scan_at is null)
+
+        Uses integer timestamp comparison.
+        """
+        state = self.get_scan_state(library_id)
+        if not state or not state.get("last_scan_started_at"):
+            return False, False
+
+        # Interrupted if started but never completed
+        if not state.get("last_scan_at"):
+            return True, bool(state.get("full_scan_in_progress", False))
+
+        # Or if started after last completion (integer comparison)
+        interrupted = state["last_scan_started_at"] > state["last_scan_at"]
+        return interrupted, bool(state.get("full_scan_in_progress", False))

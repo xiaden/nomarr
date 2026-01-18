@@ -9,6 +9,5 @@ __all__ = [
     "BaseWorker",
     "TaggerBackend",
     "TaggerWorker",
-    "create_scanner_backend",
     "create_tagger_backend",
 ]

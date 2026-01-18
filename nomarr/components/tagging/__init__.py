@@ -3,6 +3,8 @@ Tagging package.
 """
 
 from .tag_normalization_comp import (
+    CANONICAL_TAGS,
+    MP4_FREEFORM_BLOCKLIST,
     normalize_id3_tags,
     normalize_mp4_tags,
     normalize_vorbis_tags,
@@ -21,7 +23,9 @@ from .tagging_remove_comp import remove_tags_from_file
 from .tagging_writer_comp import TagWriter
 
 __all__ = [
+    "CANONICAL_TAGS",
     "LABEL_PAIRS",
+    "MP4_FREEFORM_BLOCKLIST",
     "TagWriter",
     "add_regression_mood_tiers",
     "aggregate_mood_tiers",

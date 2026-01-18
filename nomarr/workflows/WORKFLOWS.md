@@ -21,9 +21,9 @@ Workflows are **use case implementations** that:
 - File name: `verb_object_wf.py`
   
   Examples:
-  - `scan_library_wf.py`
-  - `tag_audio_file_wf.py`
-  - `enqueue_files_wf.py`
+  - `scan_library_direct_wf.py`
+  - `start_scan_wf.py`
+  - `process_file_wf.py`
   - `generate_calibration_wf.py`
   - `recalibrate_file_wf.py`
 

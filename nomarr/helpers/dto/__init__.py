@@ -47,6 +47,7 @@ from nomarr.helpers.dto.events_state_dto import (
     SystemHealthState,
     WorkerState,
 )
+from nomarr.helpers.dto.library_dto import ScanTarget
 from nomarr.helpers.dto.ml_dto import (
     AnalyzeWithSegmentsResult,
     ComputeEmbeddingsForBackboneParams,
@@ -81,6 +82,7 @@ __all__ = [
     "ProcessorConfig",
     "QueueState",
     "SaveCalibrationSidecarsResult",
+    "ScanTarget",
     "SegmentWaveformParams",
     "SmartPlaylistFilter",
     "SystemHealthState",

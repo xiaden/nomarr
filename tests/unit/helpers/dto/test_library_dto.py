@@ -11,7 +11,6 @@ from nomarr.helpers.dto.library_dto import (
     LibraryScanStatusResult,
     LibraryStatsResult,
     ReconcileResult,
-    StartLibraryScanWorkflowParams,
     StartScanResult,
 )
 
@@ -245,49 +244,3 @@ class TestStartScanResult:
             job_ids=[1, 2, 3],
         )
         assert result.job_ids == [1, 2, 3]
-
-
-class TestStartLibraryScanWorkflowParams:
-    """Tests for StartLibraryScanWorkflowParams dataclass."""
-
-    @pytest.mark.unit
-    def test_can_create_basic_params(self) -> None:
-        """Should create workflow params."""
-        params = StartLibraryScanWorkflowParams(
-            root_paths=["/music"],
-            recursive=True,
-            force=False,
-            auto_tag=True,
-            ignore_patterns="*.wav,*/Audiobooks/*",
-            clean_missing=False,
-        )
-        assert params.root_paths == ["/music"]
-        assert params.recursive
-        assert not params.force
-
-    @pytest.mark.unit
-    def test_can_have_multiple_root_paths(self) -> None:
-        """Should accept multiple root paths."""
-        params = StartLibraryScanWorkflowParams(
-            root_paths=["/music", "/podcasts", "/audiobooks"],
-            recursive=True,
-            force=False,
-            auto_tag=False,
-            ignore_patterns="",
-            clean_missing=True,
-        )
-        assert len(params.root_paths) == 3
-
-    @pytest.mark.unit
-    def test_ignore_patterns_is_comma_separated(self) -> None:
-        """Ignore patterns should be comma-separated string."""
-        params = StartLibraryScanWorkflowParams(
-            root_paths=["/music"],
-            recursive=True,
-            force=False,
-            auto_tag=True,
-            ignore_patterns="*.wav,*.aiff,*/Audiobooks/*",
-            clean_missing=False,
-        )
-        patterns = params.ignore_patterns.split(",")
-        assert len(patterns) == 3

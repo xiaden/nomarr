@@ -3,7 +3,7 @@ Workflow for starting library scans (orchestration layer).
 
 This workflow handles the orchestration of scan initialization:
 - Resolves library (by ID or default)
-- Validates scan paths within library root
+- Constructs ScanTarget list (defaults to full library scan)
 - Launches background scan task OR runs synchronously
 - Calls scan_library_direct_workflow for actual scanning
 
@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from nomarr.helpers.dto import ScanTarget
 from nomarr.helpers.dto.library_dto import StartScanResult
 
 if TYPE_CHECKING:
@@ -30,24 +31,29 @@ def start_scan_workflow(
     db: Database,
     background_tasks: Any | None,
     library_id: str | None = None,
+    scan_targets: list[ScanTarget] | None = None,
+    batch_size: int = 200,
 ) -> StartScanResult:
     """
     Start a library scan workflow.
 
-    Scans the entire library root recursively and marks missing files as invalid.
+    Supports both full library scans and targeted/incremental scans.
 
     This orchestrates scan initialization:
     1. Resolves library (by ID or default)
-    2. Launches background task or runs synchronously
-    3. Returns scan result DTO
+    2. Constructs scan_targets if not provided (defaults to full scan)
+    3. Launches background task or runs synchronously
+    4. Returns scan result DTO
 
     IMPORTANT: Libraries determine which roots to scan.
-    All discovered files are GLOBAL (no library_id in library_files table).
+    Files are stored with (library_id, normalized_path) identity.
 
     Args:
         db: Database instance
         background_tasks: BackgroundTaskService for async execution (or None for sync)
         library_id: Library to scan (None = use default library)
+        scan_targets: List of folders to scan (None = full library scan)
+        batch_size: Number of files to accumulate before DB write (default 200)
 
     Returns:
         StartScanResult DTO with scan statistics and task_id
@@ -75,12 +81,25 @@ def start_scan_workflow(
     if scan_status == "scanning":
         raise ValueError(f"Library {library_id} is already being scanned")
 
-    # Always scan entire library root
-    scan_path = library["root_path"]
+    # Construct scan_targets if not provided (default to full library scan)
+    if not scan_targets:
+        scan_targets = [ScanTarget(library_id=library_id, folder_path="")]
+        logger.info("[start_scan_workflow] No scan_targets provided - defaulting to full library scan")
+
+    # Check for interrupted scan
+    interrupted, was_full = db.libraries.check_interrupted_scan(library_id)
+    if interrupted:
+        logger.warning(
+            f"[start_scan_workflow] Detected interrupted {'full' if was_full else 'targeted'} scan "
+            f"for library {library['name']} - continuing with new scan"
+        )
 
     from nomarr.workflows.library.scan_library_direct_wf import scan_library_direct_workflow
 
-    logger.info(f"[start_scan_workflow] Starting scan for library {library_id} ({library['name']}) at {scan_path}")
+    logger.info(
+        f"[start_scan_workflow] Starting scan for library {library_id} ({library['name']}) "
+        f"with {len(scan_targets)} target(s)"
+    )
 
     # Launch background scan task if BackgroundTaskService available
     if background_tasks:
@@ -90,7 +109,8 @@ def start_scan_workflow(
             task_fn=scan_library_direct_workflow,
             db=db,
             library_id=library_id,
-            scan_path=scan_path,
+            scan_targets=scan_targets,
+            batch_size=batch_size,
         )
 
         logger.info(f"[start_scan_workflow] Scan task launched: {task_id}")
@@ -107,7 +127,8 @@ def start_scan_workflow(
         stats = scan_library_direct_workflow(
             db=db,
             library_id=library_id,
-            scan_path=scan_path,
+            scan_targets=scan_targets,
+            batch_size=batch_size,
         )
 
         return StartScanResult(

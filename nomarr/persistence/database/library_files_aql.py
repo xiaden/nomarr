@@ -891,7 +891,9 @@ class LibraryFilesOperations:
 
         if q:
             filters.append(
-                "(LIKE(file.artist, @q_pattern, true) OR LIKE(file.album, @q_pattern, true) OR LIKE(file.title, @q_pattern, true))"
+                "(LIKE(file.artist, @q_pattern, true) OR "
+                "LIKE(file.album, @q_pattern, true) OR "
+                "LIKE(file.title, @q_pattern, true))"
             )
 
         if artist:
@@ -964,3 +966,77 @@ class LibraryFilesOperations:
         )
 
         return list(cursor), total
+
+    def upsert_batch(self, file_docs: list[dict[str, Any]]) -> int:
+        """Batch upsert file documents to ArangoDB.
+
+        More efficient than individual upserts - reduces DB roundtrips.
+        Uses (library_id, normalized_path) as unique key for upsert logic.
+
+        Args:
+            file_docs: List of file documents. Each must have:
+                - library_id: Library document _id
+                - normalized_path: POSIX-style path relative to library root
+                - Other fields as needed (file_size, modified_time, etc.)
+
+        Returns:
+            Number of documents processed
+
+        Note: ArangoDB UPSERT does not reliably distinguish inserted vs updated.
+        Workflows must not depend on this split for correctness.
+        """
+        if not file_docs:
+            return 0
+
+        # Use AQL UPSERT for atomic insert-or-update
+        # Key on (library_id, normalized_path) tuple
+        self.db.aql.execute(
+            """
+            FOR doc IN @docs
+                UPSERT {
+                    library_id: doc.library_id,
+                    normalized_path: doc.normalized_path
+                }
+                INSERT doc
+                UPDATE doc
+                IN library_files
+            """,
+            bind_vars={"docs": file_docs},
+        )
+
+        return len(file_docs)
+
+    def mark_missing_for_library(self, library_id: str, scan_id: str) -> int:
+        """Mark files not seen in this scan as invalid.
+
+        Args:
+            library_id: Library that was scanned (full scan only)
+            scan_id: Identifier of this scan (timestamp or unique ID)
+
+        Returns:
+            Number of files marked invalid
+
+        Files with last_seen_scan_id != scan_id are assumed deleted.
+        Only call this for FULL library scans (not targeted scans).
+        """
+        cursor = cast(
+            Cursor,
+            self.db.aql.execute(
+                """
+                FOR file IN library_files
+                    FILTER file.library_id == @library_id
+                    FILTER file.last_seen_scan_id != @scan_id
+                    FILTER file.is_valid == 1
+                    UPDATE file WITH { is_valid: 0 } IN library_files
+                    COLLECT WITH COUNT INTO marked
+                    RETURN marked
+                """,
+                bind_vars={
+                    "library_id": library_id,
+                    "scan_id": scan_id,
+                },
+            ),
+        )
+
+        results = list(cursor)
+        return results[0] if results else 0

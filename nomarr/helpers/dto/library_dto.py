@@ -81,34 +81,8 @@ class StartScanResult:
 
 
 @dataclass
-class StartLibraryScanWorkflowParams:
-    """Parameters for workflows/library/start_library_scan_wf.py::start_library_scan_workflow."""
-
-    root_paths: list[str]
-    recursive: bool
-    force: bool
-    auto_tag: bool
-    ignore_patterns: str  # Comma-separated patterns like "*/Audiobooks/*,*.wav"
-    clean_missing: bool
-
-
-@dataclass
-class ScanSingleFileWorkflowParams:
-    """Parameters for workflows/library/scan_single_file_wf.py::scan_single_file_workflow."""
-
-    file_path: str
-    namespace: str
-    force: bool
-    auto_tag: bool
-    ignore_patterns: str  # Comma-separated patterns like "*/Audiobooks/*,*.wav"
-    library_id: str | None
-    version_tag_key: str  # Key for version tag (e.g., "nomarr_version")
-    tagger_version: str  # Current tagger version (e.g., "1.2")
-
-
-@dataclass
 class ScanLibraryWorkflowParams:
-    """Parameters for workflows/library/scan_library_wf.py::scan_library_workflow."""
+    """Parameters for workflows/library/scan_library_direct_wf.py::scan_library_direct_workflow."""
 
     library_path: str
     namespace: str
@@ -201,6 +175,23 @@ class FileTagsResult:
     tags: list[FileTag]
 
 
+@dataclass
+class ScanTarget:
+    """Represents a specific folder within a library to scan.
+
+    Used for targeted/incremental scanning:
+    - folder_path="" means scan entire library
+    - folder_path="Rock/Beatles" means scan only that subtree
+    """
+
+    library_id: str  # ArangoDB uses string IDs (e.g., "libraries/123")
+    folder_path: str = ""  # Relative to library root, POSIX-style
+
+    def __post_init__(self) -> None:
+        """Normalize folder_path: strip leading/trailing slashes."""
+        self.folder_path = self.folder_path.strip("/")
+
+
 __all__ = [
     "FileTag",
     "FileTagsResult",
@@ -209,9 +200,8 @@ __all__ = [
     "LibraryScanStatusResult",
     "LibraryStatsResult",
     "ScanLibraryWorkflowParams",
-    "ScanSingleFileWorkflowParams",
+    "ScanTarget",
     "SearchFilesResult",
-    "StartLibraryScanWorkflowParams",
     "StartScanResult",
     "TagCleanupResult",
     "UniqueTagKeysResult",
