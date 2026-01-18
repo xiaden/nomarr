@@ -69,6 +69,7 @@ class LibraryDict:
     scanned_at: int | None = None
     scan_error: str | None = None
     last_scan_started_at: int | None = None  # Timestamp (ms) when scan started
+    last_scan_at: int | None = None  # Timestamp (ms) of last scan completion
     full_scan_in_progress: bool = False  # True if a full scan is currently running
     # Statistics (populated by service layer, not stored in DB)
     file_count: int = 0

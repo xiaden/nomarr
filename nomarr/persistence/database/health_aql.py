@@ -166,7 +166,11 @@ class HealthOperations:
         )
 
     def update_heartbeat(self, component_id: str, status: str | None = None, current_job: str | None = None) -> None:
-        """Update component heartbeat with optional status and job."""
+        """Update component heartbeat with optional status and job.
+
+        Uses UPSERT to handle the case where the component doesn't exist yet,
+        avoiding write-write conflicts on startup.
+        """
         ts = now_ms()
 
         update_data: dict[str, Any] = {"last_heartbeat": ts}
@@ -177,9 +181,10 @@ class HealthOperations:
 
         self.db.aql.execute(
             """
-            FOR health IN health
-                FILTER health.component_id == @component_id
-                UPDATE health WITH @data IN health
+            UPSERT {component_id: @component_id}
+            INSERT MERGE(@data, {component_id: @component_id, component_type: "app"})
+            UPDATE @data
+            IN health
             """,
             bind_vars=cast(
                 dict[str, Any],
