@@ -14,6 +14,7 @@ Tests cover:
 """
 
 import os
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -21,6 +22,21 @@ import pytest
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_input
 from nomarr.components.library.library_update_comp import update_library_from_tags
+
+# Platform-specific test paths
+IS_WINDOWS = sys.platform == "win32"
+if IS_WINDOWS:
+    TEST_LIBRARY_ROOT = "D:\\Music"
+    TEST_ABSOLUTE_PATH = "D:\\Music\\Rock\\song.mp3"
+    TEST_SCAN_ROOT = Path("D:\\Music")
+    TEST_SCAN_FILE = Path("D:\\Music\\Rock\\Beatles\\Help.mp3")
+else:
+    TEST_LIBRARY_ROOT = "/home/music"
+    TEST_ABSOLUTE_PATH = "/home/music/Rock/song.mp3"
+    TEST_SCAN_ROOT = Path("/home/music")
+    TEST_SCAN_FILE = Path("/home/music/Rock/Beatles/Help.mp3")
+
+TEST_NORMALIZED_PATH = "Rock/song.mp3"  # Always POSIX relative
 
 
 @pytest.fixture
@@ -33,27 +49,24 @@ def mock_db_with_file():
     mock_db.library_files = MagicMock()
     mock_db.file_tags = MagicMock()
 
-    # Mock library lookup
+    # Mock library lookup (use platform-specific paths)
     mock_db.libraries.find_library_containing_path.return_value = {
         "_id": "libraries/lib1",
         "_key": "lib1",
         "id": "lib1",
         "name": "Test Library",
-        "root_path": "D:\\Music",
+        "root_path": TEST_LIBRARY_ROOT,
         "is_enabled": True,
         "is_default": True,
     }
 
     # Mock file lookup - returns file with absolute path
-    test_absolute_path = "D:\\Music\\Rock\\song.mp3"
-    test_normalized_path = "Rock/song.mp3"  # POSIX relative
-
     mock_db.library_files.get_library_file.return_value = {
         "_id": "library_files/file1",
         "_key": "file1",
         "id": "file1",
-        "path": test_absolute_path,  # Absolute path available to domains
-        "normalized_path": test_normalized_path,  # POSIX relative for identity
+        "path": TEST_ABSOLUTE_PATH,  # Absolute path available to domains
+        "normalized_path": TEST_NORMALIZED_PATH,  # POSIX relative for identity
         "library_id": "lib1",
         "file_size": 5000000,
         "modified_time": 1705600000000,
@@ -66,7 +79,7 @@ def mock_db_with_file():
         "is_valid": 1,
     }
 
-    return mock_db, test_absolute_path, test_normalized_path
+    return mock_db, TEST_ABSOLUTE_PATH, TEST_NORMALIZED_PATH
 
 
 class TestPathComputationDomain:
@@ -204,9 +217,9 @@ class TestScanWorkflowDualPath:
         """Scan workflow should create docs with absolute path AND normalized_path."""
         from nomarr.workflows.library.scan_library_direct_wf import _compute_normalized_path
 
-        # Test Windows path
-        library_root = Path("D:\\Music")
-        absolute_path = Path("D:\\Music\\Rock\\Beatles\\Help.mp3")
+        # Test with platform-specific paths
+        library_root = TEST_SCAN_ROOT
+        absolute_path = TEST_SCAN_FILE
 
         normalized = _compute_normalized_path(absolute_path, library_root)
 
@@ -216,7 +229,7 @@ class TestScanWorkflowDualPath:
         assert "\\" not in normalized  # No Windows separators
 
         # Absolute path should remain unchanged
-        assert str(absolute_path) == "D:\\Music\\Rock\\Beatles\\Help.mp3"
+        assert str(absolute_path) == str(TEST_SCAN_FILE)
 
         # Document should have both:
         file_doc = {
@@ -269,18 +282,25 @@ class TestNormalizedPathUniqueness:
         """upsert_batch should key on (library_id, normalized_path), not absolute path."""
         # This is verified by the Phase 2 tests, but we document the requirement here
 
-        # If two files have different absolute paths (e.g., moved from C: to D:)
+        # Platform-specific example paths
+        if IS_WINDOWS:
+            old_path = "C:\\Music\\Rock\\song.mp3"
+            new_path = "D:\\Music\\Rock\\song.mp3"
+        else:
+            old_path = "/mnt/old/music/Rock/song.mp3"
+            new_path = "/mnt/new/music/Rock/song.mp3"
+
+        # If two files have different absolute paths (e.g., moved or remounted)
         # but same normalized_path (relative to library root), they should update
         # the same DB document, not create duplicates.
-
         file1 = {
-            "path": "C:\\Music\\Rock\\song.mp3",  # Old absolute path
+            "path": old_path,  # Old absolute path
             "normalized_path": "Rock/song.mp3",  # Same relative
             "library_id": "lib1",
         }
 
         file2 = {
-            "path": "D:\\Music\\Rock\\song.mp3",  # New absolute path (drive changed)
+            "path": new_path,  # New absolute path
             "normalized_path": "Rock/song.mp3",  # Same relative
             "library_id": "lib1",
         }
