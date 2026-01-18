@@ -109,13 +109,13 @@ class LibraryFoldersOperations:
         self,
         library_id: str,
     ) -> dict[str, dict[str, Any]]:
-        """Get all folder records for a library as a dict keyed by folder_path.
+        """Get all folder records for a library as a dict keyed by path.
 
         Args:
             library_id: ID of library
 
         Returns:
-            Dict mapping folder_path to folder record
+            Dict mapping path to folder record
         """
         cursor = cast(
             Cursor,
