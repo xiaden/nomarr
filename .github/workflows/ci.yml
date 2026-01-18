@@ -59,16 +59,26 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-          cache: 'pip'
+
+      - name: Cache virtualenv
+        id: cache-venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py3.11-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
 
       - name: Install dependencies
+        if: steps.cache-venv.outputs.cache-hit != 'true'
         run: |
+          python -m venv .venv
+          source .venv/bin/activate
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -e .
 
       - name: Run unit tests
         run: |
+          source .venv/bin/activate
           # Run unit tests that don't require Docker, database, or GPU
           pytest tests/ -v -m "not container_only and not requires_database and not code_smell"
 
