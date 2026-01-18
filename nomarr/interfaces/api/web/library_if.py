@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from nomarr.interfaces.api.auth import verify_session
+from nomarr.interfaces.api.id_helpers import to_library_id
 from nomarr.interfaces.api.types.library_types import (
     CreateLibraryRequest,
     FileTagsResponse,
@@ -92,6 +93,7 @@ async def get_library(
     library_service: "LibraryService" = Depends(get_library_service),
 ) -> LibraryResponse:
     """Get a library by ID."""
+    library_id = to_library_id(library_id)
     try:
         library = library_service.get_library(library_id)
         return LibraryResponse.from_dto(library)
@@ -131,6 +133,7 @@ async def update_library(
     library_service: "LibraryService" = Depends(get_library_service),
 ) -> LibraryResponse:
     """Update a library's properties."""
+    library_id = to_library_id(library_id)
     try:
         library = library_service.update_library(
             library_id,
@@ -157,6 +160,7 @@ async def set_default_library(
     library_service: "LibraryService" = Depends(get_library_service),
 ) -> LibraryResponse:
     """Set a library as the default library."""
+    library_id = to_library_id(library_id)
     try:
         library = library_service.set_default_library(library_id)
         return LibraryResponse.from_dto(library)
@@ -178,6 +182,7 @@ async def delete_library(
     Removes the library entry but does NOT delete files on disk.
     Cannot delete the default library - set another as default first.
     """
+    library_id = to_library_id(library_id)
     try:
         deleted = library_service.delete_library(library_id)
         if not deleted:
@@ -365,6 +370,7 @@ async def scan_library(
     Raises:
         HTTPException: 404 if library not found, 400 for invalid scan_type, 500 for other errors
     """
+    library_id = to_library_id(library_id)
     try:
         # Validate scan_type
         if scan_type not in ("quick", "full"):
@@ -416,6 +422,7 @@ async def reconcile_library_paths(
     Raises:
         HTTPException: 404 if library not found, 400 for invalid policy, 500 for other errors
     """
+    library_id = to_library_id(library_id)
     try:
         # Call service layer to reconcile paths (returns ReconcileResult)
         stats = library_service.reconcile_library_paths(
