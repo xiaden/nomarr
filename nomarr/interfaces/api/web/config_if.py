@@ -35,7 +35,7 @@ def get_config(
         result = config_service.get_config_for_web(worker_service=None)
 
         # Only return Web UI appropriate config fields (runtime settings)
-        # Infrastructure paths excluded - must be set via config.yaml or env vars
+        # Infrastructure paths and security settings excluded - must be set via config.yaml or env vars
         editable_keys = {
             "file_write_mode",
             "overwrite_tags",
@@ -45,7 +45,6 @@ def get_config(
             "cache_idle_timeout",
             "calibrate_heads",
             "calibration_repo",
-            "admin_password",
         }
 
         # Filter config dict to only editable keys
@@ -84,7 +83,7 @@ def update_config(
         value = request.value
 
         # Whitelist of Web UI editable keys (runtime settings only)
-        # Infrastructure paths excluded - must be set via config.yaml or env vars
+        # Infrastructure paths and security settings excluded - must be set via config.yaml or env vars
         editable_keys = {
             "file_write_mode",
             "overwrite_tags",
@@ -94,7 +93,6 @@ def update_config(
             "cache_idle_timeout",
             "calibrate_heads",
             "calibration_repo",
-            "admin_password",
         }
 
         if key not in editable_keys:

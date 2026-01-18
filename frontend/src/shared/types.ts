@@ -83,6 +83,11 @@ export interface Library {
   createdAt?: string | number; // Can be ISO string or Unix timestamp
   updatedAt?: string | number; // Can be ISO string or Unix timestamp
   scannedAt?: string | null; // null if never scanned, ISO string if scanned
+  // Scan status (for live progress tracking)
+  scanStatus?: string | null; // "idle", "scanning", "complete", "error"
+  scanProgress?: number | null; // Files processed so far
+  scanTotal?: number | null; // Total files to process
+  scanError?: string | null; // Error message if scanStatus === "error"
   // Statistics
   fileCount: number;
   folderCount: number;

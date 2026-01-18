@@ -30,6 +30,10 @@ interface LibraryResponse {
   created_at?: string | number;
   updated_at?: string | number;
   scanned_at?: string | null;
+  scan_status?: string | null;
+  scan_progress?: number | null;
+  scan_total?: number | null;
+  scan_error?: string | null;
   file_count: number;
   folder_count: number;
 }
@@ -45,6 +49,10 @@ function mapLibraryResponse(lib: LibraryResponse): Library {
     createdAt: lib.created_at,
     updatedAt: lib.updated_at,
     scannedAt: lib.scanned_at,
+    scanStatus: lib.scan_status,
+    scanProgress: lib.scan_progress,
+    scanTotal: lib.scan_total,
+    scanError: lib.scan_error,
     fileCount: lib.file_count,
     folderCount: lib.folder_count,
   };

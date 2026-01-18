@@ -197,8 +197,8 @@ class StartScanWithStatusResponse(BaseModel):
         """
         stats = StartScanResponse.from_dto(result)
         return cls(
-            status="queued",
-            message=f"Scan started for library {library_id}: {stats.files_queued} files queued",
+            status="started",
+            message=f"Scan started for library {library_id}: {stats.files_queued} files discovered",
             stats=stats,
         )
 

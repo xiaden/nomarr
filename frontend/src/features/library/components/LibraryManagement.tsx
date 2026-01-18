@@ -92,6 +92,18 @@ export function LibraryManagement() {
     loadConfig();
   }, []);
 
+  // Poll for scan status updates when any library is scanning
+  useEffect(() => {
+    const hasScanning = libraries.some(lib => lib.scanStatus === "scanning");
+    if (!hasScanning) return;
+
+    const interval = setInterval(() => {
+      loadLibraries();
+    }, 3000); // Poll every 3 seconds
+
+    return () => clearInterval(interval);
+  }, [libraries]);
+
   const isOutsideLibraryRoot = (path: string): boolean => {
     if (!libraryRoot) return false;
     // Normalize paths for comparison (handle trailing slashes)
@@ -194,7 +206,7 @@ export function LibraryManagement() {
 
       const result = await scanLibrary(id, scanType);
       showSuccess(
-        `Scan ${result.status}: ${result.message || "Library scan queued"}`
+        result.message || `Library scan started (${result.stats?.files_queued ?? 0} files)`
       );
       await loadLibraries();
     } catch (err) {
@@ -456,6 +468,28 @@ export function LibraryManagement() {
                       <strong>{lib.folderCount.toLocaleString()}</strong> folders
                     </Typography>
                   </Stack>
+                  {/* Scan Progress Indicator */}
+                  {lib.scanStatus === "scanning" && (
+                    <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: 0.5 }}>
+                      <Chip 
+                        label="Scanning..." 
+                        color="info" 
+                        size="small"
+                        sx={{ animation: "pulse 1.5s infinite" }}
+                      />
+                      {lib.scanProgress != null && lib.scanTotal != null && lib.scanTotal > 0 && (
+                        <Typography variant="body2" color="info.main">
+                          {lib.scanProgress.toLocaleString()} / {lib.scanTotal.toLocaleString()} files
+                          {" "}({Math.round((lib.scanProgress / lib.scanTotal) * 100)}%)
+                        </Typography>
+                      )}
+                    </Stack>
+                  )}
+                  {lib.scanStatus === "error" && lib.scanError && (
+                    <Typography variant="caption" color="error.main" sx={{ mt: 0.5 }}>
+                      ⚠ Scan error: {lib.scanError}
+                    </Typography>
+                  )}
                   {isOutsideLibraryRoot(lib.rootPath) && (
                     <Typography variant="caption" color="warning.main" sx={{ mt: 0.5 }}>
                       ⚠ This library is outside the configured library_root ({libraryRoot})
@@ -536,18 +570,21 @@ export function LibraryManagement() {
                   disabled={
                     !lib.isEnabled || 
                     scanningId === lib.id || 
+                    lib.scanStatus === "scanning" ||
                     isOutsideLibraryRoot(lib.rootPath) ||
                     !lib.scannedAt  // Disable if never scanned
                   }
                   title={
                     !lib.scannedAt
                       ? "Run a Full Scan first before using Quick Scan"
+                      : lib.scanStatus === "scanning"
+                      ? "Scan already in progress"
                       : isOutsideLibraryRoot(lib.rootPath)
                       ? "Cannot scan: library is outside library_root"
                       : "Scan only new and modified files"
                   }
                 >
-                  {scanningId === lib.id
+                  {scanningId === lib.id || lib.scanStatus === "scanning"
                     ? "Scanning..."
                     : "Quick Scan"}
                 </Button>
@@ -559,15 +596,18 @@ export function LibraryManagement() {
                   disabled={
                     !lib.isEnabled || 
                     scanningId === lib.id || 
+                    lib.scanStatus === "scanning" ||
                     isOutsideLibraryRoot(lib.rootPath)
                   }
                   title={
-                    isOutsideLibraryRoot(lib.rootPath)
+                    lib.scanStatus === "scanning"
+                      ? "Scan already in progress"
+                      : isOutsideLibraryRoot(lib.rootPath)
                       ? "Cannot scan: library is outside library_root"
                       : "Rescan all files in the library"
                   }
                 >
-                  {scanningId === lib.id
+                  {scanningId === lib.id || lib.scanStatus === "scanning"
                     ? "Scanning..."
                     : "Full Scan"}
                 </Button>
