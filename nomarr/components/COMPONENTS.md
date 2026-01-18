@@ -33,31 +33,62 @@ Components live under `nomarr/components/`, grouped by domain:
 ```text
 components/
 ├── analytics/
-│   ├── tag_statistics.py
-│   ├── correlations.py
-│   └── co_occurrence.py
+│   └── analytics_comp.py           # Tag statistics, co-occurrence
+├── events/
+│   ├── event_broker_comp.py        # Event broadcasting
+│   └── sse_stream_comp.py          # Server-sent events streaming
+├── infrastructure/
+│   └── path_comp.py                # Path resolution utilities
+├── library/
+│   ├── file_tags_comp.py           # File tag operations
+│   ├── library_admin_comp.py       # Library CRUD
+│   ├── library_root_comp.py        # Root path operations
+│   ├── metadata_extraction_comp.py # Audio metadata extraction
+│   ├── reconcile_paths_comp.py     # Path reconciliation
+│   ├── search_files_comp.py        # File search
+│   └── tag_cleanup_comp.py         # Orphan tag cleanup
+├── metadata/
+│   ├── entity_keys_comp.py         # Entity key generation
+│   ├── entity_seeding_comp.py      # Entity seeding
+│   └── metadata_cache_comp.py      # Metadata caching
 ├── ml/
-│   ├── embeddings.py
-│   ├── inference.py
-│   ├── calibration.py
-│   └── backend_essentia.py
-├── tagging/
-│   ├── predictions_to_tags.py
-│   ├── mood_aggregation.py
-│   └── tag_resolution.py
-├── workers/
-│   ├── worker_crash_comp.py
-│   └── job_recovery_comp.py
+│   ├── chromaprint_comp.py         # Audio fingerprinting
+│   ├── ml_audio_comp.py            # Audio loading/processing
+│   ├── ml_backend_essentia_comp.py # Essentia ML backend (ONLY Essentia import)
+│   ├── ml_cache_comp.py            # Embedding/prediction caching
+│   ├── ml_calibration_comp.py      # Calibration logic
+│   ├── ml_discovery_comp.py        # Model discovery
+│   ├── ml_embed_comp.py            # Embedding computation
+│   ├── ml_heads_comp.py            # Head management
+│   └── ml_inference_comp.py        # Inference orchestration
+├── navidrome/
+│   └── templates_comp.py           # Navidrome template handling
+├── platform/
+│   ├── arango_bootstrap_comp.py    # ArangoDB initialization
+│   ├── arango_first_run_comp.py    # First-run setup
+│   ├── gpu_monitor_comp.py         # GPU monitoring
+│   └── gpu_probe_comp.py           # GPU detection
 ├── queue/
-│   ├── queue_cleanup_comp.py
-│   └── queue_dequeue_comp.py
-└── events/
-    └── event_broker_comp.py
+│   ├── queue_cleanup_comp.py       # Queue maintenance
+│   ├── queue_dequeue_comp.py       # Job dequeuing
+│   ├── queue_enqueue_comp.py       # Job enqueuing
+│   └── queue_status_comp.py        # Queue status
+├── tagging/
+│   ├── safe_write_comp.py          # Safe tag writing
+│   ├── tagging_aggregation_comp.py # Tag aggregation
+│   ├── tagging_reader_comp.py      # Tag reading
+│   ├── tagging_remove_comp.py      # Tag removal
+│   ├── tagging_writer_comp.py      # Tag writing
+│   ├── tag_normalization_comp.py   # Tag normalization
+│   └── tag_parsing_comp.py         # Tag parsing
+└── workers/
+    ├── job_recovery_comp.py        # Job recovery after crashes
+    └── worker_crash_comp.py        # Crash handling decisions
 ```
 
 Naming rules:
 
-* Modules: `snake_case` by domain (`tag_statistics.py`, `embeddings.py`).
+* Modules: `snake_case_comp.py` by domain (e.g., `analytics_comp.py`, `ml_embed_comp.py`).
 * Public functions: clear verb–noun names (`compute_embeddings`, `compute_tag_statistics`, `aggregate_mood_tags`).
 * Private helpers: `_prefix` (`_load_model`, `_format_tag_stats`).
 

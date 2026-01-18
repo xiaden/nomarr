@@ -15,9 +15,17 @@ Interfaces are **thin adapters** that:
 
 ```
 interfaces/
-├── api/        # FastAPI REST endpoints
-├── cli/        # Click CLI commands
-└── web/        # Web UI handlers (future)
+├── api/
+│   ├── api_app.py          # FastAPI app configuration
+│   ├── auth.py             # Authentication utilities
+│   ├── id_codec.py         # URL-safe ID encoding/decoding
+│   ├── types/              # Pydantic request/response models
+│   ├── v1/                 # API v1 route handlers
+│   └── web/                # Web UI routes
+└── cli/
+    ├── cli_main.py         # CLI entry point
+    ├── cli_ui.py           # CLI UI utilities
+    └── commands/           # CLI command implementations
 ```
 
 ## Complexity Guidelines

@@ -13,6 +13,44 @@ Workflows are **use case implementations** that:
 
 ---
 
+## Directory Structure
+
+```
+workflows/
+├── calibration/
+│   ├── backfill_calibration_hash_wf.py   # Backfill missing hashes
+│   ├── calibration_loader_wf.py          # Load calibration data
+│   ├── export_calibration_bundle_wf.py   # Export calibration bundle
+│   ├── generate_calibration_wf.py        # Generate calibration thresholds
+│   ├── import_calibration_bundle_wf.py   # Import calibration bundle
+│   └── write_calibrated_tags_wf.py       # Write calibrated tags to files
+├── library/
+│   ├── cleanup_orphaned_tags_wf.py       # Remove orphan tags
+│   ├── file_tags_io_wf.py                # File tag I/O operations
+│   ├── reconcile_paths_wf.py             # Reconcile file paths
+│   ├── scan_library_direct_wf.py         # Direct library scan (no queue)
+│   ├── start_scan_wf.py                  # Start queued library scan
+│   └── sync_file_to_library_wf.py        # Sync single file to library
+├── metadata/
+│   └── rebuild_metadata_cache_wf.py      # Rebuild metadata cache
+├── navidrome/
+│   ├── filter_engine_wf.py               # Smart playlist filter engine
+│   ├── generate_navidrome_config_wf.py   # Generate Navidrome config
+│   ├── generate_smart_playlist_wf.py     # Generate smart playlist
+│   ├── parse_smart_playlist_query_wf.py  # Parse playlist query syntax
+│   ├── preview_smart_playlist_wf.py      # Preview playlist results
+│   └── preview_tag_stats_wf.py           # Preview tag statistics
+├── processing/
+│   └── process_file_wf.py                # Process single file (ML + tags)
+└── queue/
+    ├── clear_queue_wf.py                 # Clear queue
+    ├── enqueue_files_wf.py               # Enqueue files for processing
+    ├── remove_jobs_wf.py                 # Remove specific jobs
+    └── reset_jobs_wf.py                  # Reset failed jobs
+```
+
+---
+
 ## WORKFLOW NAMING & STRUCTURE
 
 ### 1. File naming

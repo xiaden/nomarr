@@ -66,7 +66,7 @@ class LibraryService:
 
 **Purpose:** Load, validate, and provide typed configuration.
 
-**Location:** `nomarr/services/config_service.py`
+**Location:** `nomarr/services/infrastructure/config_svc.py`
 
 **Responsibilities:**
 - Load config from YAML file
@@ -124,7 +124,7 @@ processing_service = ProcessingService(db, proc_config)
 
 **Purpose:** Manage job queue operations (enqueue, dequeue, status).
 
-**Location:** `nomarr/services/queue_service.py`
+**Location:** `nomarr/services/infrastructure/queue_svc.py`
 
 **Responsibilities:**
 - Enqueue processing jobs
@@ -238,11 +238,11 @@ print(f"Requeued {retried} jobs")
 
 ---
 
-### ProcessingService
+### WorkerSystemService
 
-**Purpose:** Own processing workers and coordinate processing operations.
+**Purpose:** Own processing workers and coordinate worker lifecycle.
 
-**Location:** `nomarr/services/processing_service.py`
+**Location:** `nomarr/services/infrastructure/worker_system_svc.py`
 
 **Responsibilities:**
 - Start/stop worker processes
@@ -326,7 +326,7 @@ processing_service.resume_workers()
 
 **Purpose:** Manage music library operations (add, scan, remove).
 
-**Location:** `nomarr/services/library_service.py`
+**Location:** `nomarr/services/domain/library_svc/` (multi-file module)
 
 **Responsibilities:**
 - Register libraries in database
@@ -398,7 +398,7 @@ print(f"Artists: {stats['unique_artists']}")
 
 **Purpose:** Generate and apply tag calibration thresholds.
 
-**Location:** `nomarr/services/calibration_service.py`
+**Location:** `nomarr/services/domain/calibration_svc.py`
 
 **Responsibilities:**
 - Generate calibration data from processed tracks
@@ -466,7 +466,7 @@ if status['is_calibrated']:
 
 **Purpose:** Generate tag analytics and statistics.
 
-**Location:** `nomarr/services/analytics_service.py`
+**Location:** `nomarr/services/domain/analytics_svc.py`
 
 **Responsibilities:**
 - Compute tag frequency statistics
@@ -539,7 +539,7 @@ for corr in correlations:
 
 **Purpose:** Export smart playlists for Navidrome.
 
-**Location:** `nomarr/services/navidrome_service.py`
+**Location:** `nomarr/services/domain/navidrome_svc.py`
 
 **Responsibilities:**
 - Generate TOML playlists from tag rules

@@ -35,29 +35,56 @@ They are the **wiring hubs** between interfaces and workflows.
 
 ## 2. Structure of the Services Layer
 
-The services layer lives under `nomarr/services/` and is organized by domain.
+The services layer lives under `nomarr/services/` and is organized into two categories:
 
-Typical layout:
+### Domain Services (`services/domain/`)
+
+Domain-specific business operations:
 
 ```
-services/
-├── config_svc.py
-├── library_svc.py
-├── processing_svc.py
-├── queue_svc.py
-├── worker_pool_svc.py
-├── workers_coordinator_svc.py
-├── analytics_svc.py
-└── workers/
-    ├── base.py
-    ├── tagger.py
-    └── scanner.py
+services/domain/
+├── analytics_svc.py        # Tag analytics, statistics
+├── calibration_svc.py      # Calibration generation and application
+├── library_svc/            # Library management (multi-file)
+│   ├── admin.py            # Add/remove libraries
+│   ├── config.py           # Library configuration
+│   ├── entities.py         # Artists/albums/tracks
+│   ├── files.py            # File operations
+│   ├── query.py            # Search and listing
+│   └── scan.py             # Scanning operations
+├── metadata_svc.py         # Metadata entity operations
+├── navidrome_svc.py        # Navidrome integration
+├── tagging_svc.py          # Tag writing operations
+└── _library_mapping.py     # Internal library ID mapping
+```
+
+### Infrastructure Services (`services/infrastructure/`)
+
+Runtime resource management and system operations:
+
+```
+services/infrastructure/
+├── background_tasks_svc.py     # Async task management
+├── calibration_download_svc.py # Calibration file downloads
+├── cli_bootstrap_svc.py        # CLI initialization
+├── config_svc.py               # Configuration loading
+├── events_svc.py               # SSE event streaming
+├── file_watcher_svc.py         # Filesystem watching
+├── health_monitor_svc.py       # Component health monitoring
+├── info_svc.py                 # System information
+├── keys_svc.py                 # API key management
+├── ml_svc.py                   # ML backend management
+├── queue_svc.py                # Job queue operations
+├── worker_system_svc.py        # Worker lifecycle management
+└── workers/                    # Worker implementations
+    ├── base.py                 # Base worker class
+    └── tagger.py               # Tag processing worker
 ```
 
 Guidelines:
-- One service per domain.
-- Workers under `services/workers/` as thin wrappers.
-- Global orchestration in coordinator services.
+- One service per domain or infrastructure concern.
+- Large services can split into sub-modules (like `library_svc/`).
+- Workers under `services/infrastructure/workers/` as background processes.
 
 ---
 

@@ -183,11 +183,17 @@ def process_file_workflow(
 **Purpose:** Domain-specific heavy logic.
 
 **Contains:**
-- `ml/` - ML inference, embeddings, calibration
-- `tagging/` - Tag conversion, aggregation, writing
-- `analytics/` - Tag statistics, correlations
-- `queue/` - Queue operations and status
-- `events/` - Event broadcasting (StateBroker)
+- `analytics/` - Tag statistics, co-occurrence
+- `events/` - Event broadcasting, SSE streaming
+- `infrastructure/` - Path resolution
+- `library/` - File tag operations, metadata extraction, search
+- `metadata/` - Entity keys, seeding, caching
+- `ml/` - ML inference, embeddings, calibration, Essentia backend
+- `navidrome/` - Template handling
+- `platform/` - ArangoDB bootstrap, GPU monitoring
+- `queue/` - Queue operations, cleanup, status
+- `tagging/` - Tag conversion, aggregation, reading/writing
+- `workers/` - Job recovery, crash handling
 
 **Rules:**
 - Implement complex domain logic
