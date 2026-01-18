@@ -23,6 +23,7 @@ from nomarr.helpers.dto.queue_dto import (
     ListJobsResult,
     QueueStatus,
 )
+from nomarr.interfaces.api.id_codec import EncodedId, encode_id
 
 # ──────────────────────────────────────────────────────────────────────
 # Queue Request Types
@@ -32,7 +33,7 @@ from nomarr.helpers.dto.queue_dto import (
 class RemoveJobRequest(BaseModel):
     """Request to remove a specific job from the queue."""
 
-    job_id: str
+    job_id: EncodedId  # Automatically decoded from HTTP-safe format
 
 
 class FlushRequest(BaseModel):
@@ -74,7 +75,7 @@ class QueueJobResponse(BaseModel):
             API response model
         """
         return cls(
-            id=job.id,
+            id=encode_id(job.id),
             path=job.path,
             status=job.status,
             created_at=job.created_at,

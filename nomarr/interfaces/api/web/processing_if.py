@@ -5,7 +5,9 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
+from nomarr.interfaces.api.id_codec import encode_id
 from nomarr.interfaces.api.types.processing_types import (
     BatchProcessRequest,
     BatchProcessResponse,
@@ -42,17 +44,17 @@ async def web_process(
 
         # Return job info immediately (async processing)
         return {
-            "job_id": result.job_ids[0],
+            "job_id": encode_id(result.job_ids[0]),
             "files_queued": result.files_queued,
             "queue_depth": result.queue_depth,
         }
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=f"File not found: {request.path}") from e
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="File not found") from None
     except HTTPException:
         raise
     except Exception as e:
         logging.exception(f"[Web API] Error processing {request.path}: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to process file")) from e
 
 
 @router.post("/batch-process", dependencies=[Depends(verify_session)])

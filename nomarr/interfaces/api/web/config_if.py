@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.types.config_types import (
     ConfigResponse,
@@ -62,7 +63,7 @@ def get_config(
         return ConfigResponse.from_dto(filtered_result)
     except Exception as e:
         logging.exception("[Web API] Error getting config")
-        raise HTTPException(status_code=500, detail=f"Error getting config: {e}") from e
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get configuration")) from e
 
 
 @router.post("")
@@ -114,4 +115,6 @@ def update_config(
         raise
     except Exception as e:
         logging.exception("[Web API] Error updating config")
-        raise HTTPException(status_code=500, detail=f"Error updating config: {e}") from e
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Failed to update configuration")
+        ) from e

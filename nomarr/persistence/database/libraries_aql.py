@@ -181,17 +181,13 @@ class LibrariesOperations:
         """Update library fields.
 
         Args:
-            library_id: Library _id or _key
+            library_id: Library _id (e.g., "libraries/12345")
             name: New name (optional)
             root_path: New root path (optional)
             is_enabled: New enabled status (optional)
             is_default: New default status (optional)
             watch_mode: New watch mode ('off', 'event', 'poll') (optional)
         """
-        # Normalize: if not prefixed with collection name, add it
-        if not library_id.startswith("libraries/"):
-            library_id = f"libraries/{library_id}"
-
         update_fields: dict[str, Any] = {"updated_at": now_ms()}
 
         if name is not None:
@@ -228,12 +224,8 @@ class LibrariesOperations:
         """Delete a library.
 
         Args:
-            library_id: Library _id or _key
+            library_id: Library _id (e.g., "libraries/12345")
         """
-        # Normalize: if not prefixed with collection name, add it
-        if not library_id.startswith("libraries/"):
-            library_id = f"libraries/{library_id}"
-
         self.db.aql.execute(
             """
             REMOVE PARSE_IDENTIFIER(@library_id).key IN libraries
@@ -256,16 +248,12 @@ class LibrariesOperations:
         """Update library scan status.
 
         Args:
-            library_id: Library _id or _key
+            library_id: Library _id (e.g., "libraries/12345")
             status or scan_status: Status ('idle', 'scanning', 'complete', 'error')
             progress or scan_progress: Number of files scanned
             total or scan_total: Total files to scan
             error or scan_error: Error message if status is 'error'
         """
-        # Normalize: if not prefixed with collection name, add it
-        if not library_id.startswith("libraries/"):
-            library_id = f"libraries/{library_id}"
-
         # Support both old and new parameter names
         final_status = status or scan_status or "idle"
         final_progress = progress if progress is not None else (scan_progress or 0)
@@ -347,13 +335,9 @@ class LibrariesOperations:
         Used to detect interrupted scans on restart.
 
         Args:
-            library_id: Library document _id or _key
+            library_id: Library document _id (e.g., "libraries/12345")
             full_scan: True if scanning entire library, False if targeted scan
         """
-        # Normalize: if not prefixed with collection name, add it
-        if not library_id.startswith("libraries/"):
-            library_id = f"libraries/{library_id}"
-
         now = now_ms()
 
         self.db.aql.execute(
@@ -377,12 +361,8 @@ class LibrariesOperations:
         """Mark a scan as completed by clearing start timestamp.
 
         Args:
-            library_id: Library document _id or _key
+            library_id: Library document _id (e.g., "libraries/12345")
         """
-        # Normalize: if not prefixed with collection name, add it
-        if not library_id.startswith("libraries/"):
-            library_id = f"libraries/{library_id}"
-
         now = now_ms()
 
         self.db.aql.execute(
@@ -406,16 +386,12 @@ class LibrariesOperations:
         """Get current scan state from library document.
 
         Args:
-            library_id: Library document _id or _key
+            library_id: Library document _id (e.g., "libraries/12345")
 
         Returns:
             Dict with last_scan_started_at, last_scan_at, full_scan_in_progress
             or None if library not found
         """
-        # Normalize: if not prefixed with collection name, add it
-        if not library_id.startswith("libraries/"):
-            library_id = f"libraries/{library_id}"
-
         cursor = cast(
             Cursor,
             self.db.aql.execute(
@@ -439,7 +415,7 @@ class LibrariesOperations:
         """Check if a scan was interrupted.
 
         Args:
-            library_id: Library document _id or _key
+            library_id: Library document _id (e.g., \"libraries/12345\")
 
         Returns:
             Tuple of (was_interrupted, was_full_scan)
@@ -450,7 +426,6 @@ class LibrariesOperations:
 
         Uses integer timestamp comparison.
         """
-        # Normalization handled by get_scan_state
         state = self.get_scan_state(library_id)
         if not state or not state.get("last_scan_started_at"):
             return False, False

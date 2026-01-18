@@ -10,8 +10,11 @@ ARCHITECTURE:
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 
+from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_key
 from nomarr.interfaces.api.types.info_types import PublicInfoResponse
 from nomarr.interfaces.api.types.queue_types import ListJobsResponse
@@ -55,7 +58,8 @@ async def list_jobs(
         result = queue_service.list_jobs(limit=limit, offset=offset, status=status)
         return ListJobsResponse.from_dto(result)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error listing jobs: {e}") from e
+        logging.exception("[Public API] Error listing jobs")
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to list jobs")) from e
 
 
 # ----------------------------------------------------------------------

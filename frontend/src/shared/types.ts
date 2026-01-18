@@ -23,7 +23,7 @@ export interface LogoutResult {
 // ──────────────────────────────────────────────────────────────────────
 
 export interface QueueJob {
-  id: string; // Arango _id
+  id: string; // HTTP-encoded Arango _id (e.g., "queue:123")
   path: string;
   status: "pending" | "running" | "done" | "error";
   created_at: number; // Unix timestamp
@@ -74,7 +74,7 @@ export interface WorkerStatusData {
 // ──────────────────────────────────────────────────────────────────────
 
 export interface Library {
-  id: string; // Arango _id
+  id: string; // HTTP-encoded Arango _id (e.g., "libraries:123")
   name: string;
   rootPath: string; // maps to backend root_path
   isEnabled: boolean;
@@ -105,8 +105,8 @@ export interface ScanResult {
 }
 
 export interface LibraryFile {
-  id: string; // Arango _id
-  library_id: string; // Arango _id
+  id: string; // HTTP-encoded Arango _id (e.g., "library_files:123")
+  library_id: string; // HTTP-encoded Arango _id (e.g., "libraries:123")
   path: string;
   file_size?: number;
   modified_time?: number;

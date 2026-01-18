@@ -7,8 +7,11 @@ These routes will be mounted under /api/v1/admin via the integration router.
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Body, Depends, HTTPException
 
+from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_key
 from nomarr.interfaces.api.types.admin_types import (
     CacheRefreshResponse,
@@ -47,7 +50,8 @@ async def admin_remove_job(
         return JobRemovalResponse.from_dto(result)
     except ValueError as e:
         status_code = 404 if "not found" in str(e).lower() else 409
-        raise HTTPException(status_code=status_code, detail=str(e)) from e
+        detail = "Job not found" if status_code == 404 else "Cannot remove job"
+        raise HTTPException(status_code=status_code, detail=detail) from None
 
 
 # ----------------------------------------------------------------------
@@ -67,7 +71,8 @@ async def admin_flush_queue(
         return FlushResponse.from_dto(result)
     except ValueError as e:
         status_code = 400 if "Invalid" in str(e) else 409
-        raise HTTPException(status_code=status_code, detail=str(e)) from e
+        detail = "Invalid flush request" if status_code == 400 else "Cannot flush queue"
+        raise HTTPException(status_code=status_code, detail=detail) from None
 
 
 # ----------------------------------------------------------------------
@@ -99,7 +104,8 @@ async def admin_cache_refresh(
         result = ml_service.warmup_cache_for_admin()
         return CacheRefreshResponse.from_dto(result)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        logging.exception("[Admin API] Cache refresh failed")
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Cache refresh failed")) from e
 
 
 # ----------------------------------------------------------------------
@@ -156,7 +162,10 @@ async def admin_run_calibration(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Calibration generation failed: {e!s}") from e
+        logging.exception("[Admin API] Calibration generation failed")
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Calibration generation failed")
+        ) from e
 
 
 # NOTE: /admin/calibration/history endpoint removed - was part of old drift tracking system
@@ -186,7 +195,8 @@ async def admin_backfill_calibration_hashes(
         result = backfill_calibration_hashes_wf(db=calibration_service._db, set_to_current=set_to_current)
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Backfill failed: {e!s}") from e
+        logging.exception("[Admin API] Backfill failed")
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Backfill failed")) from e
 
 
 # ----------------------------------------------------------------------
@@ -209,7 +219,8 @@ async def admin_retag_all(
     try:
         result = queue_service.retag_all_for_admin()
         return RetagAllResponse.from_dto(result)
-    except ValueError as e:
-        raise HTTPException(status_code=403, detail=str(e)) from e
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Retag operation not allowed") from None
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to enqueue files: {e!s}") from e
+        logging.exception("[Admin API] Failed to enqueue files")
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to enqueue files")) from e

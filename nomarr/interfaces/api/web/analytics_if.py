@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.types.analytics_types import (
     MoodDistributionResponse,
@@ -38,7 +39,9 @@ async def web_analytics_tag_frequencies(
 
     except Exception as e:
         logging.exception("[Web API] Error getting tag frequencies")
-        raise HTTPException(status_code=500, detail=f"Error getting tag frequencies: {e}") from e
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Failed to get tag frequencies")
+        ) from e
 
 
 @router.get("/mood-distribution", dependencies=[Depends(verify_session)])
@@ -52,7 +55,9 @@ async def web_analytics_mood_distribution(
 
     except Exception as e:
         logging.exception("[Web API] Error getting mood distribution")
-        raise HTTPException(status_code=500, detail=f"Error getting mood distribution: {e}") from e
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Failed to get mood distribution")
+        ) from e
 
 
 @router.get("/tag-correlations", dependencies=[Depends(verify_session)])
@@ -72,7 +77,9 @@ async def web_analytics_tag_correlations(
 
     except Exception as e:
         logging.exception("[Web API] Error getting tag correlations")
-        raise HTTPException(status_code=500, detail=f"Error getting tag correlations: {e}") from e
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Failed to get tag correlations")
+        ) from e
 
 
 @router.post("/tag-co-occurrences", dependencies=[Depends(verify_session)])
@@ -108,4 +115,6 @@ async def web_analytics_tag_co_occurrences(
 
     except Exception as e:
         logging.exception("[Web API] Error getting tag co-occurrences")
-        raise HTTPException(status_code=500, detail=f"Error getting tag co-occurrences: {e}") from e
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Failed to get tag co-occurrences")
+        ) from e

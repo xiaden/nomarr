@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.types.calibration_types import (
     ApplyCalibrationResponse,
@@ -56,10 +57,12 @@ async def apply_calibration_to_library(
 
     except RuntimeError as e:
         logging.error(f"[Web API] Tagging service error: {e}")
-        raise HTTPException(status_code=503, detail=str(e)) from e
+        raise HTTPException(status_code=503, detail=sanitize_exception_message(e, "Tagging service unavailable")) from e
     except Exception as e:
         logging.exception("[Web API] Error during calibrated tag application")
-        raise HTTPException(status_code=500, detail=f"Error applying calibrated tags: {e}") from e
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Failed to apply calibrated tags")
+        ) from e
 
 
 @router.get("/status", dependencies=[Depends(verify_session)])
@@ -88,7 +91,9 @@ async def get_calibration_status(
         return tagging_service.get_calibration_status()
     except Exception as e:
         logging.exception("[Web API] Error fetching calibration status")
-        raise HTTPException(status_code=500, detail=f"Error fetching status: {e}") from e
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Failed to get calibration status")
+        ) from e
 
 
 @router.post("/clear", dependencies=[Depends(verify_session)])
@@ -118,7 +123,9 @@ async def generate_calibration(
         return result
     except Exception as e:
         logging.error(f"[Web] Calibration generation failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Calibration generation failed")
+        ) from e
 
 
 @router.post("/generate-histogram", dependencies=[Depends(verify_session)])
@@ -152,7 +159,9 @@ async def generate_histogram_calibration(
 
     except Exception as e:
         logging.error(f"[Web] Histogram calibration generation failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Histogram calibration failed")
+        ) from e
 
 
 @router.post("/start-histogram", dependencies=[Depends(verify_session)])
@@ -176,7 +185,7 @@ async def start_histogram_calibration_background(
 
     except Exception as e:
         logging.error(f"[Web] Failed to start histogram calibration: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to start calibration")) from e
 
 
 @router.get("/histogram-status", dependencies=[Depends(verify_session)])
@@ -200,7 +209,9 @@ async def get_histogram_calibration_status(
 
     except Exception as e:
         logging.error(f"[Web] Failed to get histogram calibration status: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Failed to get calibration status")
+        ) from e
 
 
 @router.get("/histogram-progress", dependencies=[Depends(verify_session)])
@@ -225,4 +236,6 @@ async def get_histogram_calibration_progress(
 
     except Exception as e:
         logging.error(f"[Web] Failed to get histogram calibration progress: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Failed to get calibration progress")
+        ) from e

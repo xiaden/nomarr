@@ -6,7 +6,9 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
+from nomarr.interfaces.api.id_codec import decode_path_id
 from nomarr.interfaces.api.types.admin_types import CacheRefreshResponse
 from nomarr.interfaces.api.types.queue_types import (
     JobRemovalResult,
@@ -52,6 +54,7 @@ async def web_status(
     queue_service: QueueService = Depends(get_queue_service),
 ) -> QueueJobResponse:
     """Get status of a specific job (web UI proxy)."""
+    job_id = decode_path_id(job_id)
     # Use QueueService to get job details
     job = queue_service.get_job(job_id)
 
@@ -161,7 +164,7 @@ async def web_admin_cache_refresh(
         return CacheRefreshResponse.from_dto(result)
     except Exception as e:
         logging.exception("[Web API] Cache refresh failed")
-        raise HTTPException(status_code=500, detail=f"Cache refresh failed: {e}") from e
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Cache refresh failed")) from e
 
 
 @router.post("/admin/reset", dependencies=[Depends(verify_session)])
@@ -173,5 +176,5 @@ async def web_admin_reset(
     try:
         result = queue_service.reset_jobs_for_admin(stuck=request.stuck, errors=request.errors)
         return OperationResult.from_dto(result)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid reset request") from None

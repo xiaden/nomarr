@@ -14,6 +14,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from nomarr.helpers.files_helper import resolve_library_path
+from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import get_config
 
@@ -128,5 +129,5 @@ async def list_directory(
         logging.exception(f"[FS Browser] Error listing directory: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Internal error while listing directory: {e!s}",
+            detail=sanitize_exception_message(e, "Internal error while listing directory"),
         ) from e

@@ -50,12 +50,12 @@ async def web_gpu_health(
     try:
         result = info_service.get_gpu_health()
         return GPUHealthResponse.from_dto(result)
-    except RuntimeError as e:
+    except RuntimeError:
         # Event broker not configured - GPU monitoring disabled
         return GPUHealthResponse(
             available=False,
             last_check_at=None,
             last_ok_at=None,
             consecutive_failures=0,
-            error_summary=str(e),
+            error_summary="GPU monitoring not available",
         )

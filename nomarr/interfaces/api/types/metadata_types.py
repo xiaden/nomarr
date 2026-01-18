@@ -3,12 +3,13 @@
 from pydantic import BaseModel, Field
 
 from nomarr.helpers.dto.metadata_dto import EntityDict, EntityListResult, SongListForEntityResult
+from nomarr.interfaces.api.id_codec import encode_id
 
 
 class EntityResponse(BaseModel):
     """Single entity response."""
 
-    id: str = Field(description="Entity _id (e.g., 'artists/v1_abc123...')")
+    id: str = Field(description="Entity _id (e.g., 'artists:v1_abc123...')")
     key: str = Field(description="Entity _key")
     display_name: str = Field(description="Exact raw string for display")
     song_count: int | None = Field(None, description="Optional: count of songs for this entity")
@@ -16,7 +17,7 @@ class EntityResponse(BaseModel):
     @classmethod
     def from_dto(cls, dto: EntityDict) -> "EntityResponse":
         return cls(
-            id=dto["id"],
+            id=encode_id(dto["id"]),
             key=dto["key"],
             display_name=dto["display_name"],
             song_count=dto.get("song_count"),
@@ -44,7 +45,7 @@ class EntityListResponse(BaseModel):
 class SongListResponse(BaseModel):
     """List of songs for an entity."""
 
-    song_ids: list[str] = Field(description="Song _ids")
+    song_ids: list[str] = Field(description="Song _ids (encoded)")
     total: int = Field(description="Total count (before pagination)")
     limit: int
     offset: int
@@ -52,7 +53,7 @@ class SongListResponse(BaseModel):
     @classmethod
     def from_dto(cls, dto: SongListForEntityResult) -> "SongListResponse":
         return cls(
-            song_ids=dto["song_ids"],
+            song_ids=[encode_id(sid) for sid in dto["song_ids"]],
             total=dto["total"],
             limit=dto["limit"],
             offset=dto["offset"],

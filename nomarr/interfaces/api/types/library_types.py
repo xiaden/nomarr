@@ -22,6 +22,7 @@ from nomarr.helpers.dto.library_dto import (
     ReconcileResult,
     StartScanResult,
 )
+from nomarr.interfaces.api.id_codec import encode_id
 
 # ──────────────────────────────────────────────────────────────────────
 # Library Response Types (DTO → Pydantic mappings)
@@ -88,7 +89,7 @@ class LibraryResponse(BaseModel):
             scanned_at = scanned_at_raw
 
         return cls(
-            id=library._id,
+            id=encode_id(library._id),
             name=library.name,
             root_path=library.root_path,
             is_enabled=library.is_enabled,
@@ -293,9 +294,9 @@ class SearchFilesResponse(BaseModel):
         return cls(
             files=[
                 LibraryFileWithTagsResponse(
-                    id=f.id,
+                    id=encode_id(f.id),
                     path=f.path,
-                    library_id=f.library_id,
+                    library_id=encode_id(f.library_id),
                     file_size=f.file_size,
                     modified_time=f.modified_time,
                     duration_seconds=f.duration_seconds,

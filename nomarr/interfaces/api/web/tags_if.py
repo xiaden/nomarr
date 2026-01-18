@@ -5,6 +5,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import get_tagging_service
 from nomarr.services.domain.tagging_svc import TaggingService
@@ -34,13 +35,13 @@ async def web_show_tags(
             "count": len(tags),
         }
 
-    except ValueError as e:
+    except ValueError:
         # Path validation errors (security)
-        raise HTTPException(status_code=400, detail=str(e)) from e
+        raise HTTPException(status_code=400, detail="Invalid file path") from None
     except RuntimeError as e:
         # File reading errors
         logging.exception(f"[Web API] Error reading tags from {path}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to read tags")) from e
 
 
 @router.delete("/remove-tags", dependencies=[Depends(verify_session)])
@@ -59,10 +60,10 @@ async def web_remove_tags(
             "removed": count,
         }
 
-    except ValueError as e:
+    except ValueError:
         # Path validation errors (security)
-        raise HTTPException(status_code=400, detail=str(e)) from e
+        raise HTTPException(status_code=400, detail="Invalid file path") from None
     except RuntimeError as e:
         # File modification errors
         logging.exception(f"[Web API] Error removing tags from {path}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to remove tags")) from e

@@ -4,11 +4,12 @@ Routes: /v1/metadata/*
 Provides entity listing, song-entity relationships, and traversal queries.
 """
 
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from nomarr.interfaces.api.auth import verify_key
+from nomarr.interfaces.api.id_codec import decode_path_id, encode_ids
 from nomarr.interfaces.api.types.metadata_types import (
     EntityCountsResponse,
     EntityListResponse,
@@ -64,10 +65,10 @@ async def get_entity(
 ) -> EntityResponse:
     """Get entity details by _id.
 
-    Note: entity_id should be URL-encoded if it contains special characters.
-    Example: /metadata/artists/artists%2Fv1_abc123...
+    Note: entity_id should be encoded (e.g., artists:v1_abc123).
     Collection parameter is informational only (entity_id already contains collection).
     """
+    entity_id = decode_path_id(entity_id)
     entity = metadata_service.get_entity(entity_id)
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found")
@@ -88,9 +89,10 @@ async def list_songs_for_entity(
 ) -> SongListResponse:
     """List songs connected to an entity.
 
-    Example: GET /metadata/artists/artists%2Fv1_abc.../songs?rel=artist
+    Example: GET /metadata/artists/artists:v1_abc.../songs?rel=artist
     Returns all songs where this artist is the primary credited artist.
     """
+    entity_id = decode_path_id(entity_id)
     result = metadata_service.list_songs_for_entity(entity_id, rel, limit=limit, offset=offset)
     return SongListResponse.from_dto(result)
 
@@ -103,10 +105,13 @@ async def list_artists_for_album(
     album_id: str,
     limit: int = Query(100, ge=1, le=1000),
     metadata_service: MetadataService = Depends(get_metadata_service),
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """List artists for an album via traversal (album→songs→artists).
 
     Requires authentication. Returns deduplicated artists sorted by display_name.
     """
+    album_id = decode_path_id(album_id)
     artists = metadata_service.list_artists_for_album(album_id, limit=limit)
-    return [dict(a) for a in artists]
+    # Encode IDs in the response
+    result: list[dict[str, Any]] = encode_ids([dict(a) for a in artists])
+    return result

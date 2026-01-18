@@ -5,8 +5,9 @@ from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
-from nomarr.interfaces.api.id_helpers import to_library_id
+from nomarr.interfaces.api.id_codec import decode_path_id
 from nomarr.interfaces.api.types.library_types import (
     CreateLibraryRequest,
     FileTagsResponse,
@@ -47,7 +48,7 @@ async def web_library_stats(
 
     except Exception as e:
         logging.exception("[Web API] Error getting library stats")
-        raise HTTPException(status_code=500, detail=f"Error getting library stats: {e}") from e
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get library stats")) from e
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -66,7 +67,7 @@ async def list_libraries(
         return ListLibrariesResponse.from_dto(libraries)
     except Exception as e:
         logging.exception("[Web API] Error listing libraries")
-        raise HTTPException(status_code=500, detail=f"Error listing libraries: {e}") from e
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to list libraries")) from e
 
 
 @router.get("/default", dependencies=[Depends(verify_session)])
@@ -84,7 +85,9 @@ async def get_default_library(
         raise
     except Exception as e:
         logging.exception("[Web API] Error getting default library")
-        raise HTTPException(status_code=500, detail=f"Error getting default library: {e}") from e
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Failed to get default library")
+        ) from e
 
 
 @router.get("/{library_id}", dependencies=[Depends(verify_session)])
@@ -93,15 +96,15 @@ async def get_library(
     library_service: "LibraryService" = Depends(get_library_service),
 ) -> LibraryResponse:
     """Get a library by ID."""
-    library_id = to_library_id(library_id)
+    library_id = decode_path_id(library_id)
     try:
         library = library_service.get_library(library_id)
         return LibraryResponse.from_dto(library)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Library not found") from None
     except Exception as e:
         logging.exception(f"[Web API] Error getting library {library_id}")
-        raise HTTPException(status_code=500, detail=f"Error getting library: {e}") from e
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get library")) from e
 
 
 @router.post("", dependencies=[Depends(verify_session)])
@@ -119,11 +122,11 @@ async def create_library(
             watch_mode=request.watch_mode,
         )
         return LibraryResponse.from_dto(library)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid library configuration") from None
     except Exception as e:
         logging.exception("[Web API] Error creating library")
-        raise HTTPException(status_code=500, detail=f"Error creating library: {e}") from e
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to create library")) from e
 
 
 @router.patch("/{library_id}", dependencies=[Depends(verify_session)])
@@ -133,7 +136,7 @@ async def update_library(
     library_service: "LibraryService" = Depends(get_library_service),
 ) -> LibraryResponse:
     """Update a library's properties."""
-    library_id = to_library_id(library_id)
+    library_id = decode_path_id(library_id)
     try:
         library = library_service.update_library(
             library_id,
@@ -145,13 +148,13 @@ async def update_library(
         )
         return LibraryResponse.from_dto(library)
 
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid library update") from None
     except HTTPException:
         raise
     except Exception as e:
         logging.exception(f"[Web API] Error updating library {library_id}")
-        raise HTTPException(status_code=500, detail=f"Error updating library: {e}") from e
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to update library")) from e
 
 
 @router.post("/{library_id}/set-default", dependencies=[Depends(verify_session)])
@@ -160,15 +163,17 @@ async def set_default_library(
     library_service: "LibraryService" = Depends(get_library_service),
 ) -> LibraryResponse:
     """Set a library as the default library."""
-    library_id = to_library_id(library_id)
+    library_id = decode_path_id(library_id)
     try:
         library = library_service.set_default_library(library_id)
         return LibraryResponse.from_dto(library)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Library not found") from None
     except Exception as e:
         logging.exception(f"[Web API] Error setting default library {library_id}")
-        raise HTTPException(status_code=500, detail=f"Error setting default library: {e}") from e
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Failed to set default library")
+        ) from e
 
 
 @router.delete("/{library_id}", dependencies=[Depends(verify_session)])
@@ -182,17 +187,17 @@ async def delete_library(
     Removes the library entry but does NOT delete files on disk.
     Cannot delete the default library - set another as default first.
     """
-    library_id = to_library_id(library_id)
+    library_id = decode_path_id(library_id)
     try:
         deleted = library_service.delete_library(library_id)
         if not deleted:
             raise HTTPException(status_code=404, detail="Library not found")
         return {"status": "success", "message": f"Library {library_id} deleted"}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Cannot delete library") from None
     except Exception as e:
         logging.exception(f"[Web API] Error deleting library {library_id}")
-        raise HTTPException(status_code=500, detail=f"Error deleting library: {e}") from e
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to delete library")) from e
 
 
 @router.get("/files/search", dependencies=[Depends(verify_session)])
@@ -230,7 +235,7 @@ async def search_library_files(
 
     except Exception as e:
         logging.exception("[Web API] Error searching library files")
-        raise HTTPException(status_code=500, detail=f"Error searching files: {e}") from e
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to search files")) from e
 
 
 @router.get("/files/tags/unique-keys", dependencies=[Depends(verify_session)])
@@ -252,7 +257,7 @@ async def get_unique_tag_keys(
 
     except Exception as e:
         logging.exception("[Web API] Error getting unique tag keys")
-        raise HTTPException(status_code=500, detail=f"Error getting tag keys: {e}") from e
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get tag keys")) from e
 
 
 @router.get("/files/tags/values", dependencies=[Depends(verify_session)])
@@ -275,7 +280,7 @@ async def get_unique_tag_values(
 
     except Exception as e:
         logging.exception("[Web API] Error getting unique tag values")
-        raise HTTPException(status_code=500, detail=f"Error getting tag values: {e}") from e
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get tag values")) from e
 
 
 @router.post("/cleanup-tags", dependencies=[Depends(verify_session)])
@@ -306,7 +311,7 @@ async def cleanup_orphaned_tags(
 
     except Exception as e:
         logging.exception("[Web API] Error cleaning up orphaned tags")
-        raise HTTPException(status_code=500, detail=f"Error cleaning up tags: {e}") from e
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to clean up tags")) from e
 
 
 @router.get("/files/{file_id}/tags", dependencies=[Depends(verify_session)])
@@ -332,6 +337,7 @@ async def get_file_tags(
     Raises:
         HTTPException: 404 if file not found, 500 for other errors
     """
+    file_id = decode_path_id(file_id)
     try:
         # Call service layer to get file tags (returns FileTagsResult DTO)
         result = library_service.get_file_tags(file_id=file_id, nomarr_only=nomarr_only)
@@ -339,11 +345,11 @@ async def get_file_tags(
         # Transform DTO to Pydantic response
         return FileTagsResponse.from_dto(result)
 
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ValueError:
+        raise HTTPException(status_code=404, detail="File not found") from None
     except Exception as e:
         logging.exception(f"[Web API] Error getting tags for file {file_id}")
-        raise HTTPException(status_code=500, detail=f"Error getting file tags: {e}") from e
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get file tags")) from e
 
 
 @router.post("/{library_id}/scan", dependencies=[Depends(verify_session)])
@@ -370,7 +376,7 @@ async def scan_library(
     Raises:
         HTTPException: 404 if library not found, 400 for invalid scan_type, 500 for other errors
     """
-    library_id = to_library_id(library_id)
+    library_id = decode_path_id(library_id)
     try:
         # Validate scan_type
         if scan_type not in ("quick", "full"):
@@ -384,11 +390,13 @@ async def scan_library(
         # Transform DTO to wrapped Pydantic response
         return StartScanWithStatusResponse.from_dto(stats, library_id)
 
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Library not found") from None
     except Exception as e:
         logging.exception(f"[Web API] Error starting scan for library {library_id}")
-        raise HTTPException(status_code=500, detail=f"Error starting library scan: {e}") from e
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Failed to start library scan")
+        ) from e
 
 
 @router.post("/{library_id}/reconcile", dependencies=[Depends(verify_session)])
@@ -422,7 +430,7 @@ async def reconcile_library_paths(
     Raises:
         HTTPException: 404 if library not found, 400 for invalid policy, 500 for other errors
     """
-    library_id = to_library_id(library_id)
+    library_id = decode_path_id(library_id)
     try:
         # Call service layer to reconcile paths (returns ReconcileResult)
         stats = library_service.reconcile_library_paths(
@@ -435,10 +443,12 @@ async def reconcile_library_paths(
 
     except ValueError as e:
         # Invalid policy or library not found
-        error_msg = str(e)
-        if "policy" in error_msg.lower():
-            raise HTTPException(status_code=400, detail=error_msg) from e
-        raise HTTPException(status_code=404, detail=error_msg) from e
+        error_msg = str(e).lower()
+        if "policy" in error_msg:
+            raise HTTPException(status_code=400, detail="Invalid reconciliation policy") from None
+        raise HTTPException(status_code=404, detail="Library not found") from None
     except Exception as e:
         logging.exception(f"[Web API] Error reconciling paths for library {library_id}")
-        raise HTTPException(status_code=500, detail=f"Error reconciling library paths: {e}") from e
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Failed to reconcile library paths")
+        ) from e

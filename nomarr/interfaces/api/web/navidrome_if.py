@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from fastapi import APIRouter, Depends, HTTPException
 
 from nomarr.helpers.exceptions import PlaylistQueryError
+from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.types.navidrome_types import (
     GeneratePlaylistResponse,
@@ -44,7 +45,7 @@ async def web_navidrome_preview(
 
     except Exception as e:
         logging.exception("[Web API] Error generating Navidrome preview")
-        raise HTTPException(status_code=500, detail=f"Error generating preview: {e}") from e
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to generate preview")) from e
 
 
 @router.get("/config", dependencies=[Depends(verify_session)])
@@ -58,7 +59,7 @@ async def web_navidrome_config(
 
     except Exception as e:
         logging.exception("[Web API] Error generating Navidrome config")
-        raise HTTPException(status_code=500, detail=f"Error generating config: {e}") from e
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to generate config")) from e
 
 
 @router.post("/playlists/preview", dependencies=[Depends(verify_session)])
@@ -74,13 +75,13 @@ async def web_navidrome_playlist_preview(
         # Transform DTO to Pydantic response
         return PlaylistPreviewResponse.from_dto(result_dto)
 
-    except PlaylistQueryError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid query: {e}") from e
+    except PlaylistQueryError:
+        raise HTTPException(status_code=400, detail="Invalid playlist query") from None
     except HTTPException:
         raise
     except Exception as e:
         logging.exception("[Web API] Error previewing playlist")
-        raise HTTPException(status_code=500, detail=f"Error previewing playlist: {e}") from e
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to preview playlist")) from e
 
 
 @router.post("/playlists/generate", dependencies=[Depends(verify_session)])
@@ -102,13 +103,13 @@ async def web_navidrome_playlist_generate(
         # Transform DTO to Pydantic response
         return GeneratePlaylistResponse.from_dto(result_dto)
 
-    except PlaylistQueryError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid query: {e}") from e
+    except PlaylistQueryError:
+        raise HTTPException(status_code=400, detail="Invalid playlist query") from None
     except HTTPException:
         raise
     except Exception as e:
         logging.exception("[Web API] Error generating playlist")
-        raise HTTPException(status_code=500, detail=f"Error generating playlist: {e}") from e
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to generate playlist")) from e
 
 
 @router.get("/templates", dependencies=[Depends(verify_session)])
@@ -122,7 +123,7 @@ async def web_navidrome_templates_list(
 
     except Exception as e:
         logging.exception("[Web API] Error listing templates")
-        raise HTTPException(status_code=500, detail=f"Error listing templates: {e}") from e
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to list templates")) from e
 
 
 @router.post("/templates", dependencies=[Depends(verify_session)])
@@ -140,4 +141,6 @@ async def web_navidrome_templates_generate(
 
     except Exception as e:
         logging.exception("[Web API] Error generating templates")
-        raise HTTPException(status_code=500, detail=f"Error generating templates: {e}") from e
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Failed to generate templates")
+        ) from e

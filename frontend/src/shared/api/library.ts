@@ -65,9 +65,8 @@ export async function list(enabledOnly = false): Promise<Library[]> {
  * Get a specific library by ID.
  */
 export async function getLibrary(id: string): Promise<Library> {
-  // Extract key from ArangoDB _id format (libraries/3970 -> 3970)
-  const libraryKey = id.includes('/') ? id.split('/')[1] : id;
-  const response = await get<LibraryResponse>(`/api/web/libraries/${libraryKey}`);
+  // ID is already HTTP-encoded (e.g., "libraries:3970")
+  const response = await get<LibraryResponse>(`/api/web/libraries/${id}`);
   return mapLibraryResponse(response);
 }
 
@@ -127,11 +126,9 @@ export async function update(
   if (payload.isDefault !== undefined) body.is_default = payload.isDefault;
   if (payload.watchMode !== undefined) body.watch_mode = payload.watchMode;
 
-  // Extract key from ArangoDB _id format (libraries/3970 -> 3970)
-  const libraryKey = id.includes('/') ? id.split('/')[1] : id;
-
+  // ID is already HTTP-encoded (e.g., "libraries:3970")
   const response = await patch<LibraryResponse>(
-    `/api/web/libraries/${libraryKey}`,
+    `/api/web/libraries/${id}`,
     body
   );
   return mapLibraryResponse(response);
@@ -141,10 +138,9 @@ export async function update(
  * Set a library as the default.
  */
 export async function setDefault(id: string): Promise<Library> {
-  // Extract key from ArangoDB _id format (libraries/3970 -> 3970)
-  const libraryKey = id.includes('/') ? id.split('/')[1] : id;
+  // ID is already HTTP-encoded (e.g., "libraries:3970")
   const response = await post<LibraryResponse>(
-    `/api/web/libraries/${libraryKey}/set-default`
+    `/api/web/libraries/${id}/set-default`
   );
   return mapLibraryResponse(response);
 }
@@ -154,9 +150,8 @@ export async function setDefault(id: string): Promise<Library> {
  * Cannot delete the default library - set another as default first.
  */
 export async function deleteLibrary(id: string): Promise<void> {
-  // Extract key from ArangoDB _id format (libraries/3970 -> 3970)
-  const libraryKey = id.includes('/') ? id.split('/')[1] : id;
-  await del(`/api/web/libraries/${libraryKey}`);
+  // ID is already HTTP-encoded (e.g., "libraries:3970")
+  await del(`/api/web/libraries/${id}`);
 }
 
 /**
@@ -165,9 +160,8 @@ export async function deleteLibrary(id: string): Promise<void> {
  * @param scanType - 'quick' (skip unchanged files) or 'full' (rescan all)
  */
 export async function scan(id: string, scanType: "quick" | "full" = "quick"): Promise<ScanResult> {
-  // Extract key from ArangoDB _id format (libraries/3970 -> 3970)
-  const libraryKey = id.includes('/') ? id.split('/')[1] : id;
-  return post<ScanResult>(`/api/web/libraries/${libraryKey}/scan?scan_type=${scanType}`, {});
+  // ID is already HTTP-encoded (e.g., "libraries:3970")
+  return post<ScanResult>(`/api/web/libraries/${id}/scan?scan_type=${scanType}`, {});
 }
 
 export interface CleanupTagsResult {
