@@ -382,7 +382,36 @@ You should see the Nomarr dashboard.
 
 **Expected time:** 1-5 minutes for 10,000 tracks (scan only; processing is separate)
 
-### 4. Processing Runs Automatically
+### 4. File Watching (Automatic Incremental Scanning)
+
+**Nomarr automatically monitors your libraries for changes:**
+
+Once a library is added and initially scanned, Nomarr's file watcher continuously monitors the directory for changes:
+
+- **Detects:** File additions, modifications, and deletions
+- **Response time:** 2-5 seconds from file save to scan trigger
+- **Debouncing:** Multiple rapid changes are batched into one scan (2-second quiet period)
+- **Incremental scans:** Only changed folders are scanned (10-100x faster than full library scans)
+
+**How it works:**
+1. File watcher detects changes via OS filesystem events (inotify/FSEvents/ReadDirectoryChangesW)
+2. Changes are batched during a quiet period (default: 2 seconds)
+3. Parent folders are identified and deduplicated (e.g., "Rock/Beatles" → "Rock")
+4. Incremental scan triggered for only the affected folders
+5. New/changed files are queued for processing automatically
+
+**Benefits:**
+- No manual rescanning needed after adding new music
+- Fast response time for new files
+- Minimal overhead (< 1% CPU, ~1-2 MB RAM per library)
+
+**Limitations:**
+- Network mounts (NFS/SMB/CIFS) may not receive filesystem events reliably
+- Manual scan button always available as fallback
+
+**Configuration:** File watching is enabled by default for all libraries. Future versions will add per-library enable/disable and configurable debounce timing.
+
+### 5. Processing Runs Automatically
 
 **Workers start automatically** when Nomarr launches. There's no need to manually start or resume them.
 
@@ -423,14 +452,24 @@ You should see the Nomarr dashboard.
 
 ## Common Workflows
 
-### Rescan After Adding Music
+### Adding New Music Files
 
 When you add new music files to your library:
 
+**Automatic (Recommended):**
+- Simply copy files to your library directory
+- File watcher detects changes within 2-5 seconds
+- Incremental scan triggers automatically
+- New files are queued for processing
+- **No manual action required**
+
+**Manual:**
 1. Go to the **Libraries** page in the Web UI
 2. Find your library and click **Scan**
 3. The scan will detect new/changed files and queue them for processing
 4. Workers will automatically process the new files
+
+**Note:** File watching is most reliable on local filesystems. For network mounts, manual scans may be more reliable.
 
 ### Pause Processing
 

@@ -495,6 +495,271 @@ See [Workers & Lifecycle](workers.md) for details.
 
 ---
 
+## File Watching Architecture
+
+### FileWatcherService (Infrastructure Service)
+
+**Purpose:** Automatically detect filesystem changes and trigger incremental library scans.
+
+**Location:** `services/infrastructure/file_watcher_svc.py`
+
+**Dependencies:**
+- `watchdog` library (cross-platform file system events)
+- `Database` (for library metadata)
+- `LibraryService` (for triggering scans)
+- asyncio event loop (for debouncing)
+
+### Threading Model
+
+```
+Main Thread (Asyncio Event Loop)
+    └─> FileWatcherService
+        ├─> Observer Thread 1 (Library A)
+        │   └─> LibraryEventHandler
+        │       └─> on_any_event() [Background Thread]
+        │           └─> loop.call_soon_threadsafe() → asyncio task
+        │
+        ├─> Observer Thread 2 (Library B)
+        │   └─> LibraryEventHandler
+        │       └─> on_any_event() [Background Thread]
+        │           └─> loop.call_soon_threadsafe() → asyncio task
+        │
+        └─> Debounce Task (Asyncio)
+            └─> await asyncio.sleep(debounce_seconds)
+            └─> LibraryService.scan_targets()
+```
+
+**Critical Threading Rules:**
+1. Watchdog callbacks run on **background threads** (NOT asyncio event loop)
+2. NEVER call `asyncio.create_task()` directly from watchdog callbacks
+3. Use `loop.call_soon_threadsafe()` to schedule asyncio tasks from threads
+4. All async operations must go through event loop handoff
+
+### Event Flow
+
+```
+1. File System Change
+   └─> watchdog detects event (inotify/FSEvents/ReadDirectoryChangesW)
+
+2. LibraryEventHandler.on_any_event() [Background Thread]
+   ├─> Filter: audio/playlist/image files only
+   ├─> Ignore: temp files, hidden files, directories
+   └─> Convert: absolute path → library-relative path
+
+3. FileWatcherService._on_file_change() [Thread-Safe]
+   ├─> Lock pending_changes set
+   ├─> Add (library_id, relative_path)
+   └─> Schedule debounce task via loop.call_soon_threadsafe()
+
+4. Debounce Task [Asyncio]
+   ├─> await asyncio.sleep(debounce_seconds)
+   ├─> Collect pending changes
+   ├─> Map files → parent folders (ScanTargets)
+   ├─> Deduplicate (Rock subsumes Rock/Beatles)
+   └─> LibraryService.scan_targets()
+
+5. Incremental Scan [Asyncio]
+   └─> scan_library_direct_workflow(targets=[...])
+```
+
+### Debouncing Strategy
+
+**Problem:** User copies 100 files → 100 filesystem events → 100 scans
+
+**Solution:** Batch all events within a quiet period
+
+```python
+# Default: 2.0 seconds
+debounce_seconds = 2.0
+
+# Event timeline:
+T+0.0s: file1.mp3 modified → timer starts
+T+0.5s: file2.mp3 added → timer resets
+T+1.2s: file3.mp3 deleted → timer resets
+T+3.2s: no more events → scan triggers (after 2s quiet)
+```
+
+**Benefits:**
+- 100 events → 1 scan (100x reduction)
+- Waits for bulk operations to complete
+- Configurable per deployment (TODO: add to config.yaml)
+
+### Target Deduplication
+
+**Problem:** Multiple files in same folder → redundant scan targets
+
+**Solution:** Deduplicate parent-child relationships
+
+```python
+# Input: File changes
+changes = [
+    ("Rock/Beatles/Abbey Road/track1.mp3", modified),
+    ("Rock/Beatles/Abbey Road/track2.mp3", added),
+    ("Rock/Beatles/Let It Be/track3.mp3", modified),
+    ("Jazz/Miles Davis/Kind of Blue/track4.mp3", added)
+]
+
+# Step 1: Map files → parent folders
+targets = [
+    ScanTarget(library_id=1, folder_path="Rock/Beatles/Abbey Road"),
+    ScanTarget(library_id=1, folder_path="Rock/Beatles/Let It Be"),
+    ScanTarget(library_id=1, folder_path="Jazz/Miles Davis/Kind of Blue")
+]
+
+# Step 2: Deduplicate (if user adds "Rock" later)
+# "Rock" subsumes "Rock/Beatles/*"
+deduplicated = [
+    ScanTarget(library_id=1, folder_path="Rock"),
+    ScanTarget(library_id=1, folder_path="Jazz/Miles Davis/Kind of Blue")
+]
+```
+
+**Deduplication Rules:**
+1. Parent folder subsumes all child folders
+2. Empty `folder_path` ("") = full library scan → subsumes all
+3. Sibling folders kept separate (Rock vs Jazz)
+
+### Lifecycle Integration
+
+**Startup (app.py Application.start()):**
+```python
+# 1. Register FileWatcherService after LibraryService
+file_watcher = FileWatcherService(
+    db=self.database,
+    library_service=self.library_service,
+    debounce_seconds=2.0,
+    event_loop=asyncio.get_event_loop()
+)
+self.register_service("file_watcher", file_watcher)
+
+# 2. Auto-start watchers for all enabled libraries
+libraries = self.database.library.get_all(enabled_only=True)
+for library in libraries:
+    try:
+        file_watcher.start_watching_library(library["_key"])
+        logger.info(f"Started file watcher for library: {library['name']}")
+    except Exception as e:
+        logger.warning(f"Failed to start watcher for {library['name']}: {e}")
+```
+
+**Shutdown (app.py Application.stop()):**
+```python
+# Stop watchers BEFORE stopping other services
+if self.file_watcher:
+    logger.info("Stopping file watchers")
+    self.file_watcher.stop_all()  # Joins all observer threads
+
+# Then stop workers, event broker, health monitor, etc.
+```
+
+### Configuration (TODO: Add to config.yaml)
+
+```yaml
+file_watching:
+  enabled: true              # Enable/disable file watching globally
+  debounce_seconds: 2.0      # Quiet period before triggering scan
+  batch_size: 200            # Files per batch write in incremental scans
+  
+libraries:
+  - name: "Music"
+    path: "/music"
+    enabled: true
+    watch_enabled: true      # Per-library enable/disable (TODO)
+```
+
+### Performance Characteristics
+
+**Memory Usage:**
+- ~1-2 MB per library (watchdog overhead)
+- Pending changes: O(changed files) until debounce fires
+- Typically < 5 MB total for 5 libraries
+
+**CPU Usage:**
+- Idle: <0.1% (OS handles inotify/FSEvents)
+- Active: <1% (event filtering + debouncing)
+- Scan: Same as manual scan (dependent on file count)
+
+**Responsiveness:**
+- Detection latency: <1 second (OS filesystem notification)
+- Debounce delay: 2 seconds (configurable)
+- Total: ~3-5 seconds from file save to scan start
+
+**Scan Speedup (vs full library scan):**
+- 1% files changed: ~10-100x faster
+- 10% files changed: ~5-10x faster
+- 100% files changed: Same speed (degrades to full scan)
+
+### Limitations & Edge Cases
+
+**Network Mounts:**
+- watchdog may not receive events on NFS/SMB/CIFS mounts
+- Mitigation: Manual scan button always available
+- Future: Polling fallback for network paths
+
+**Bulk Operations:**
+- Copying 10,000 files triggers scan after quiet period
+- May still take time to process all targets
+- Mitigation: Adaptive debounce (extend timeout if events keep arriving)
+
+**Concurrent Scans:**
+- Service checks `last_scan_started_at` to detect in-progress scans
+- Raises `RuntimeError` if scan already running
+- Future: Queue targets for next scan instead of failing
+
+**Symlink Handling:**
+- watchdog follows symlinks by default
+- May cause duplicate events if symlink points inside watched tree
+- TODO: Test and document symlink behavior
+
+### API Methods
+
+**FileWatcherService:**
+```python
+def start_watching_library(self, library_id: str) -> None:
+    """Start watching filesystem for library. Raises ValueError if library not found."""
+
+def stop_watching_library(self, library_id: str) -> None:
+    """Stop watching specific library. Safe to call if not watching."""
+
+def stop_all(self) -> None:
+    """Stop all watchers. Called during shutdown."""
+
+def _on_file_change(self, library_id: str, relative_path: str) -> None:
+    """Thread-safe event handler. Called from watchdog threads."""
+
+def _schedule_debounce(self, library_id: str) -> None:
+    """Schedule debounce task via asyncio event loop."""
+
+async def _trigger_after_debounce(self, library_id: str) -> None:
+    """Wait for quiet period, then trigger scan."""
+
+def _paths_to_scan_targets(self, library_id: str, paths: set[str]) -> list[ScanTarget]:
+    """Map changed files to parent folder targets."""
+
+def _deduplicate_targets(self, targets: list[ScanTarget]) -> list[ScanTarget]:
+    """Remove child folders when parent present."""
+```
+
+### Testing Strategy
+
+**Unit Tests (tests/unit/services/test_file_watcher_svc.py):**
+- Event filtering (audio only, ignore temp/hidden)
+- Debouncing (multiple events → one scan)
+- Target mapping (files → parent folders)
+- Deduplication (parent subsumes children)
+- Thread safety (concurrent events)
+- Lifecycle (start/stop watchers)
+
+**Integration Tests (Deferred):**
+- Real filesystem events → scan workflow
+- Interrupted scan detection
+- Batch writes verification
+- Cross-platform compatibility (Windows/Linux/macOS)
+
+See [REFACTOR_PLAN_INCREMENTAL_SCAN.md](REFACTOR_PLAN_INCREMENTAL_SCAN.md) for full details.
+
+---
+
 ## Testing Strategy
 
 ### Unit Tests

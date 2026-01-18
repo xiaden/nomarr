@@ -1389,25 +1389,25 @@ async def test_batch_writes(db, test_library_with_tracks):
 - [ ] Add validation for scan targets
 - [ ] Run `python -m mypy nomarr/services/domain/library_svc.py`
 
-### Phase 4: File Watcher ✓
-- [ ] Create `services/infrastructure/file_watcher_svc.py`
-- [ ] Implement `LibraryEventHandler` with file filtering
-- [ ] Implement `FileWatcherService` with debouncing
-- [ ] Add `_paths_to_scan_targets()` and `_deduplicate_targets()`
-- [ ] Add watcher lifecycle to app startup/shutdown
-- [ ] Add configuration: `enable_file_watching`, `debounce_seconds`, `batch_size`
+### Phase 4: File Watcher ✅
+- [x] Create `services/infrastructure/file_watcher_svc.py`
+- [x] Implement `LibraryEventHandler` with file filtering
+- [x] Implement `FileWatcherService` with debouncing
+- [x] Add `_paths_to_scan_targets()` and `_deduplicate_targets()`
+- [x] Add watcher lifecycle to app startup/shutdown
+- [x] Add watchdog==6.0.0 to requirements.txt and dockerfile.base
 
-### Phase 5: Testing ✓
-- [ ] Write `test_file_watcher_svc.py` unit tests
-- [ ] Write `test_incremental_scan.py` integration tests
-- [ ] Test debouncing (multiple rapid changes = one scan)
-- [ ] Test targeted scanning (only specified folder is scanned)
-- [ ] Test interrupted scan detection
-- [ ] Test batch writes (verify multiple batches used)
+### Phase 5: Testing ⏭️ (Skipped - No DB/ML for integration tests)
+- [x] Write `test_file_watcher_svc.py` unit tests (10 tests passing)
+- [ ] ~~Write `test_incremental_scan.py` integration tests~~ (Requires DB/ML - deferred)
+- [x] Test debouncing (multiple rapid changes = one scan)
+- [x] Test targeted scanning (only specified folder is scanned)
+- [ ] ~~Test interrupted scan detection~~ (Requires DB - deferred)
+- [ ] ~~Test batch writes (verify multiple batches used)~~ (Requires DB - deferred)
 
-### Phase 6: Documentation ✓
+### Phase 6: Documentation 🔄 (In Progress)
 - [ ] Update `docs/dev/architecture.md` with watcher architecture
-- [ ] Document configuration options
+- [ ] Document configuration options (TODO: add to config.yaml)
 - [ ] Add docstrings to all new public methods
 - [ ] Update README with file watching feature
 

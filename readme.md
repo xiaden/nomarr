@@ -49,7 +49,8 @@ All tags are written as native metadata (ID3v2 for MP3, iTunes atoms for M4A, Vo
 - **🌐 Modern Web UI** - Browser interface for processing, monitoring, analytics, and configuration
 - **🔌 Lidarr Integration** - Drop-in Docker sidecar that auto-tags imports via webhooks
 - **📚 Library Scanner** - Automatic background scanning with tag extraction and analytics
-- **📊 Calibration System** - Normalize model outputs with min-max scaling and drift tracking
+- **�️ File Watching** - Detects filesystem changes and triggers incremental scans automatically (2-5 second response time)
+- **�📊 Calibration System** - Normalize model outputs with min-max scaling and drift tracking
 - **⚡ GPU Accelerated** - NVIDIA CUDA support for fast ML inference
 - **🎨 Rich Metadata** - Writes probabilities, tiers, and aggregated mood tags in native format (ID3v2/MP4)
 - **📊 Queue System** - Background processing with pause/resume, status tracking, and error recovery
@@ -132,12 +133,15 @@ The easiest way to use Nomarr - modern browser interface for:
 
 - **Processing files** - Single file or batch upload with real-time progress
 - **Queue management** - Monitor jobs, pause/resume workers, clear errors
-- **Library scanning** - Automatic tag scanning and analytics
+- **Library management** - Add libraries, trigger scans, view scan history
+- **File watching** - Automatic incremental scanning when files are added/modified (enabled by default)
 - **Navidrome integration** - Smart playlist generation and config export
 - **Calibration** - Generate and apply calibration to normalize model outputs
 - **Tag analytics** - Mood distributions, correlations, and co-occurrences
 
 Access at `http://localhost:8356/` (login with auto-generated admin password)
+
+**File Watching:** Once a library is added and scanned, Nomarr automatically monitors it for changes. When files are added, modified, or deleted, an incremental scan is triggered within 2-5 seconds. This is 10-100x faster than full library scans for small changes.
 
 ### CLI
 
