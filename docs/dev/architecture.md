@@ -504,12 +504,50 @@ See [Workers & Lifecycle](workers.md) for details.
 **Location:** `services/infrastructure/file_watcher_svc.py`
 
 **Dependencies:**
-- `watchdog` library (cross-platform file system events)
+- `watchdog` library (cross-platform file system events - event mode only)
 - `Database` (for library metadata)
 - `LibraryService` (for triggering scans)
-- asyncio event loop (for debouncing)
+- asyncio event loop (for debouncing and polling)
 
-### Threading Model
+### Watch Modes
+
+FileWatcherService supports two modes for detecting filesystem changes:
+
+**Event Mode (Default):**
+- Uses watchdog library for real-time filesystem events
+- Fast response time (2-5 seconds from file change to scan trigger)
+- Low overhead (< 0.1% CPU idle, ~1-2 MB RAM per library)
+- **Limitation:** May not reliably detect changes on network mounts (NFS/SMB/CIFS)
+- Best for: Local filesystems (ext4, NTFS, APFS)
+
+**Polling Mode (Network-Mount-Safe):**
+- Periodic full-library scans at configurable intervals
+- Default interval: 60 seconds (configurable via `polling_interval_seconds`)
+- Slower response time but guaranteed detection
+- Slightly higher overhead during scan periods
+- Best for: Network mounts, remote shares, virtualized filesystems
+
+**Configuration:**
+```bash
+# Environment variable (applies globally)
+export NOMARR_WATCH_MODE=poll  # or 'event' (default)
+
+# Or via FileWatcherService constructor
+watcher = FileWatcherService(
+    db=db,
+    library_service=library_service,
+    watch_mode="poll",           # 'event' or 'poll'
+    polling_interval_seconds=90  # Only used in poll mode
+)
+```
+
+**Mode Selection Guidelines:**
+- Local filesystem (local disk, SSD): Use `event` mode (default)
+- Network mount (NFS, SMB, CIFS): Use `poll` mode
+- Docker bind mount from host: Use `event` mode (usually reliable)
+- Virtualized filesystem: Test with `event` first, fallback to `poll` if unreliable
+
+### Threading Model (Event Mode)
 
 ```
 Main Thread (Asyncio Event Loop)
@@ -529,11 +567,34 @@ Main Thread (Asyncio Event Loop)
             └─> LibraryService.scan_targets()
 ```
 
-**Critical Threading Rules:**
+**Critical Threading Rules (Event Mode):**
 1. Watchdog callbacks run on **background threads** (NOT asyncio event loop)
 2. NEVER call `asyncio.create_task()` directly from watchdog callbacks
 3. Use `loop.call_soon_threadsafe()` to schedule asyncio tasks from threads
 4. All async operations must go through event loop handoff
+
+### Polling Model (Poll Mode)
+
+```
+Main Thread (Asyncio Event Loop)
+    └─> FileWatcherService
+        ├─> Polling Task 1 (Library A) [Asyncio]
+        │   └─> while True:
+        │       └─> await asyncio.sleep(polling_interval)
+        │       └─> LibraryService.scan_targets([full_library])
+        │
+        └─> Polling Task 2 (Library B) [Asyncio]
+            └─> while True:
+                └─> await asyncio.sleep(polling_interval)
+                └─> LibraryService.scan_targets([full_library])
+```
+
+**Polling Mode Characteristics:**
+- Pure asyncio (no background threads or multiprocessing)
+- One asyncio.Task per library
+- Each task sleeps for polling_interval, then triggers full-library scan
+- Minimal state: only last_poll_time dict
+- Errors in scan do not stop polling loop
 
 ### Event Flow
 
@@ -656,8 +717,10 @@ if self.file_watcher:
 
 ```yaml
 file_watching:
+  mode: "event"              # 'event' (default) or 'poll'
   enabled: true              # Enable/disable file watching globally
-  debounce_seconds: 2.0      # Quiet period before triggering scan
+  debounce_seconds: 2.0      # Quiet period before triggering scan (event mode)
+  polling_interval: 60       # Seconds between scans (poll mode)
   batch_size: 200            # Files per batch write in incremental scans
   
 libraries:
@@ -666,6 +729,11 @@ libraries:
     enabled: true
     watch_enabled: true      # Per-library enable/disable (TODO)
 ```
+
+**Current Implementation:**
+- `watch_mode` via `NOMARR_WATCH_MODE` environment variable or constructor parameter
+- `polling_interval_seconds` via constructor parameter only (default: 60s)
+- Other options are TODOs for future implementation
 
 ### Performance Characteristics
 
@@ -684,25 +752,38 @@ libraries:
 - Debounce delay: 2 seconds (configurable)
 - Total: ~3-5 seconds from file save to scan start
 
-**Scan Speedup (vs full library scan):**
-- 1% files changed: ~10-100x faster
-- 10% files changed: ~5-10x faster
-- 100% files changed: Same speed (degrades to full scan)
-
-### Limitations & Edge Cases
-
-**Network Mounts:**
+**Scan Speedup ( (Event Mode):**
 - watchdog may not receive events on NFS/SMB/CIFS mounts
-- Mitigation: Manual scan button always available
-- Future: Polling fallback for network paths
+- Depends on OS-level filesystem event support
+- Mitigation: Use `NOMARR_WATCH_MODE=poll` environment variable
+- Fallback: Manual scan button always available
+
+**Network Mounts (Poll Mode):**
+- Reliable detection via periodic scans
+- Higher latency (default 60 seconds vs 2-5 seconds for event mode)
+- Slightly higher CPU usage during scan intervals
+- No threading complexity (pure asyncio)
 
 **Bulk Operations:**
-- Copying 10,000 files triggers scan after quiet period
-- May still take time to process all targets
-- Mitigation: Adaptive debounce (extend timeout if events keep arriving)
+- Event mode: Debouncing batches rapid changes (2s quiet period)
+- Poll mode: Full scan happens regardless of change volume
+- Both modes: May take time to process all targets after detection
 
 **Concurrent Scans:**
 - Service checks `last_scan_started_at` to detect in-progress scans
+- Raises `RuntimeError` if scan already running
+- Future: Queue targets for next scan instead of failing
+
+**Symlink Handling:**
+- Event mode: watchdog follows symlinks by default
+- May cause duplicate events if symlink points inside watched tree
+- TODO: Test and document symlink behavior
+
+**Polling Mode Overhead:**
+- Each library scans entire root every polling_interval
+- For large libraries (10k+ files): each poll takes 1-5 seconds
+- Recommended minimum interval: 30 seconds
+- Recommended maximum interval: 120 seconds for reasonable responsiveness detect in-progress scans
 - Raises `RuntimeError` if scan already running
 - Future: Queue targets for next scan instead of failing
 

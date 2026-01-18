@@ -141,7 +141,14 @@ The easiest way to use Nomarr - modern browser interface for:
 
 Access at `http://localhost:8356/` (login with auto-generated admin password)
 
-**File Watching:** Once a library is added and scanned, Nomarr automatically monitors it for changes. When files are added, modified, or deleted, an incremental scan is triggered within 2-5 seconds. This is 10-100x faster than full library scans for small changes.
+**File Watching:** Once a library is added and scanned, Nomarr automatically monitors it for changes. When files are added, modified, or deleted, an incremental scan is triggered within 2-5 seconds (event mode) or 30-120 seconds (polling mode). This is 10-100x faster than full library scans for small changes.
+
+For network mounts (NFS/SMB/CIFS), use polling mode for reliable detection:
+```bash
+# Add to docker-compose.yml environment:
+environment:
+  - NOMARR_WATCH_MODE=poll
+```
 
 ### CLI
 

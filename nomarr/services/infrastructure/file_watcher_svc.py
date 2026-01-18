@@ -4,14 +4,23 @@ This service monitors library directories for changes and triggers
 targeted scans via LibraryService. It implements debouncing to batch
 rapid changes and avoid excessive scanning.
 
+Watch Modes:
+- 'event': Real-time filesystem events via watchdog (default)
+  - Fast response time (2-5 seconds)
+  - May not work reliably on network mounts (NFS/SMB/CIFS)
+- 'poll': Periodic full-library scans
+  - Slower response time (30-120 seconds)
+  - Reliable on network mounts
+  - Conservative default: 60 seconds
+
 Architecture:
-- One Observer per library
-- Events are debounced (configurable quiet period)
+- One Observer (event mode) or polling task (poll mode) per library
+- Events/scans are debounced (configurable quiet period)
 - Only relevant file types are processed (audio, playlists, artwork)
 - Maps changed paths to parent-folder ScanTargets
 - Calls LibraryService.scan_targets() - NO direct persistence access
 
-CRITICAL: Watchdog callbacks run on background threads, NOT the asyncio event loop.
+CRITICAL (event mode): Watchdog callbacks run on background threads, NOT the asyncio event loop.
 Must use thread-safe handoff via loop.call_soon_threadsafe().
 """
 
@@ -19,11 +28,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import threading
+import time
 from collections import defaultdict
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
@@ -124,8 +135,12 @@ class FileWatcherService:
     - Make domain decisions (when to scan, what to process)
     - Trigger ML/tagging pipelines (those are manual)
 
+    Watch Modes:
+    - 'event' (default): Real-time filesystem events via watchdog
+    - 'poll': Periodic full-library scans (network-mount-safe)
+
     Thread Safety:
-    - Watchdog callbacks execute on background threads
+    - Event mode: Watchdog callbacks execute on background threads
     - Uses lock for pending_changes access
     - Uses loop.call_soon_threadsafe() to schedule async work
     """
@@ -136,26 +151,48 @@ class FileWatcherService:
         library_service: LibraryService,
         debounce_seconds: float = 2.0,
         event_loop: asyncio.AbstractEventLoop | None = None,
+        watch_mode: Literal["event", "poll"] | None = None,
+        polling_interval_seconds: float = 60.0,
     ):
         self.db = db
         self.library_service = library_service
         self.debounce_seconds = debounce_seconds
         self.event_loop = event_loop or asyncio.get_event_loop()
 
-        # Active watchers
-        self.observers: dict[str, Observer] = {}  # type: ignore[valid-type]
+        # Watch mode: read from env var if not explicitly set
+        if watch_mode is None:
+            env_mode = os.getenv("NOMARR_WATCH_MODE", "event").lower()
+            if env_mode not in ("event", "poll"):
+                logger.warning(f"Invalid NOMARR_WATCH_MODE={env_mode}, defaulting to 'event'")
+                env_mode = "event"
+            self.watch_mode: Literal["event", "poll"] = env_mode  # type: ignore[assignment]
+        else:
+            self.watch_mode = watch_mode
+
+        self.polling_interval_seconds = polling_interval_seconds
+
+        # Active watchers (event mode: Observer objects, poll mode: asyncio.Task objects)
+        self.observers: dict[str, Observer | asyncio.Task] = {}  # type: ignore[valid-type]
 
         # Debouncing state (thread-safe)
         self._lock = threading.Lock()
         self.pending_changes: set[tuple[str, str]] = set()  # (library_id, relative_path)
         self.debounce_task: asyncio.Task | None = None
 
-        logger.info(f"FileWatcherService initialized (debounce={debounce_seconds}s)")
+        # Polling state (minimal - just last poll time per library)
+        self.last_poll_time: dict[str, float] = {}
+
+        logger.info(
+            f"FileWatcherService initialized (mode={self.watch_mode}, debounce={debounce_seconds}s, poll_interval={polling_interval_seconds}s)"
+        )
 
     def start_watching_library(self, library_id: str) -> None:
         """Start watching a library for changes.
 
         If already watching, restarts the watcher.
+
+        Uses either event-based watching (watchdog) or polling mode
+        depending on self.watch_mode.
 
         Args:
             library_id: Library document _id (e.g., "libraries/lib1")
@@ -177,6 +214,19 @@ class FileWatcherService:
             logger.info(f"Stopping existing watcher for library {library_id}")
             self.stop_watching_library(library_id)
 
+        # Branch on watch mode
+        if self.watch_mode == "event":
+            self._start_event_watching(library_id, library_root)
+        else:  # poll mode
+            self._start_polling_library(library_id)
+
+    def _start_event_watching(self, library_id: str, library_root: Path) -> None:
+        """Start event-based watching with watchdog Observer.
+
+        Args:
+            library_id: Library document _id
+            library_root: Absolute path to library root
+        """
         # Create handler
         handler = LibraryEventHandler(
             library_id=library_id,
@@ -190,10 +240,62 @@ class FileWatcherService:
         observer.start()
 
         self.observers[library_id] = observer
-        logger.info(f"Started watching library {library_id} at {library_root}")
+        logger.info(f"Started event-based watching for library {library_id} at {library_root}")
+
+    def _start_polling_library(self, library_id: str) -> None:
+        """Start polling-based watching with periodic full-library scans.
+
+        Network-mount-safe alternative to event-based watching.
+
+        Args:
+            library_id: Library document _id
+        """
+        # Initialize last poll time to now (so first poll happens after interval)
+        self.last_poll_time[library_id] = time.time()
+
+        # Create polling task
+        task = asyncio.create_task(self._polling_loop(library_id))
+        self.observers[library_id] = task
+
+        logger.info(
+            f"Started polling-based watching for library {library_id} (interval={self.polling_interval_seconds}s)"
+        )
+
+    async def _polling_loop(self, library_id: str) -> None:
+        """Periodic polling loop for one library.
+
+        Runs until cancelled. Triggers full-library scan at fixed intervals.
+
+        Args:
+            library_id: Library document _id
+        """
+        try:
+            while True:
+                await asyncio.sleep(self.polling_interval_seconds)
+
+                # Update last poll time
+                self.last_poll_time[library_id] = time.time()
+
+                # Trigger full library scan (empty folder_path = entire library)
+                target = ScanTarget(library_id=library_id, folder_path="")
+                logger.info(f"Polling library {library_id}: triggering full scan")
+
+                try:
+                    self.library_service.scan_targets(
+                        targets=[target],
+                        batch_size=200,
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to trigger poll scan for library {library_id}: {e}", exc_info=True)
+
+        except asyncio.CancelledError:
+            logger.info(f"Polling loop cancelled for library {library_id}")
+            raise
 
     def stop_watching_library(self, library_id: str) -> None:
         """Stop watching a library.
+
+        Handles both event-based (Observer) and polling (asyncio.Task) modes.
 
         Args:
             library_id: Library document _id
@@ -202,9 +304,18 @@ class FileWatcherService:
             logger.warning(f"No watcher found for library {library_id}")
             return
 
-        observer = self.observers[library_id]
-        observer.stop()  # type: ignore[attr-defined]
-        observer.join(timeout=5.0)  # type: ignore[attr-defined]
+        watcher = self.observers[library_id]
+
+        # Check if it's an Observer (event mode) or Task (poll mode)
+        if isinstance(watcher, asyncio.Task):
+            # Polling mode: cancel the task
+            watcher.cancel()  # type: ignore[union-attr]
+            if library_id in self.last_poll_time:
+                del self.last_poll_time[library_id]
+        else:
+            # Event mode: stop the observer
+            watcher.stop()  # type: ignore[attr-defined]
+            watcher.join(timeout=5.0)  # type: ignore[attr-defined]
 
         del self.observers[library_id]
         logger.info(f"Stopped watching library {library_id}")

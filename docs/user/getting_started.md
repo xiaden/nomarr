@@ -389,27 +389,57 @@ You should see the Nomarr dashboard.
 Once a library is added and initially scanned, Nomarr's file watcher continuously monitors the directory for changes:
 
 - **Detects:** File additions, modifications, and deletions
-- **Response time:** 2-5 seconds from file save to scan trigger
-- **Debouncing:** Multiple rapid changes are batched into one scan (2-second quiet period)
+- **Response time:** 2-5 seconds (event mode) or 30-120 seconds (polling mode)
+- **Debouncing:** Multiple rapid changes are batched into one scan (event mode only)
 - **Incremental scans:** Only changed folders are scanned (10-100x faster than full library scans)
 
+**Watch Modes:**
+
+**Event Mode (Default):**
+- Real-time filesystem event detection via watchdog library
+- Fast (2-5 second response time)
+- Low overhead (< 1% CPU, ~1-2 MB RAM per library)
+- **Limitation:** May not work reliably on network mounts (NFS/SMB/CIFS)
+
+**Polling Mode (Network-Mount-Safe):**
+- Periodic full-library scans at fixed intervals (default: 60 seconds)
+- Slower but guaranteed detection on any filesystem type
+- Reliable for network mounts (NFS, SMB, CIFS)
+- Slightly higher overhead during scan periods
+
+**Enabling Polling Mode:**
+
+If your music library is on a network mount and you notice the file watcher isn't detecting changes:
+
+```bash
+# Docker: Add to environment in docker-compose.yml
+environment:
+  - NOMARR_WATCH_MODE=poll
+
+# Native: Export before starting Nomarr
+export NOMARR_WATCH_MODE=poll
+python -m nomarr.start
+```
+
 **How it works:**
-1. File watcher detects changes via OS filesystem events (inotify/FSEvents/ReadDirectoryChangesW)
-2. Changes are batched during a quiet period (default: 2 seconds)
-3. Parent folders are identified and deduplicated (e.g., "Rock/Beatles" → "Rock")
-4. Incremental scan triggered for only the affected folders
-5. New/changed files are queued for processing automatically
+1. Event mode: Watcher detects changes via OS filesystem events (inotify/FSEvents/ReadDirectoryChangesW)
+2. Poll mode: Watcher triggers full-library scan every 60 seconds (configurable)
+3. Changes are batched during a quiet period (event mode only, default: 2 seconds)
+4. Parent folders are identified and deduplicated (e.g., "Rock/Beatles" → "Rock")
+5. Incremental scan triggered for only the affected folders
+6. New/changed files are queued for processing automatically
 
 **Benefits:**
 - No manual rescanning needed after adding new music
-- Fast response time for new files
-- Minimal overhead (< 1% CPU, ~1-2 MB RAM per library)
+- Fast response time for new files (event mode) or guaranteed detection (poll mode)
+- Minimal overhead
 
 **Limitations:**
-- Network mounts (NFS/SMB/CIFS) may not receive filesystem events reliably
-- Manual scan button always available as fallback
+- Event mode: Network mounts may not receive filesystem events reliably
+- Poll mode: Higher latency (60s vs 2-5s), full scans every interval
+- Manual scan button always available as fallback for both modes
 
-**Configuration:** File watching is enabled by default for all libraries. Future versions will add per-library enable/disable and configurable debounce timing.
+**Configuration:** File watching is enabled by default for all libraries in event mode. Use `NOMARR_WATCH_MODE=poll` for network mounts. Future versions will add per-library enable/disable and configurable polling intervals.
 
 ### 5. Processing Runs Automatically
 

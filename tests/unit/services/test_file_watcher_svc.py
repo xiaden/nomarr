@@ -231,11 +231,12 @@ class TestFileWatcherService:
         # Wait for debounce
         await asyncio.sleep(0.2)
 
-        # Should have one target: Rock/Beatles
+        # Should have one target: Rock/Beatles (normalize for cross-platform)
         assert len(mock_library_service.scan_calls) == 1
         targets = mock_library_service.scan_calls[0]["targets"]
         assert len(targets) == 1
-        assert targets[0].folder_path == "Rock/Beatles"
+        normalized_path = targets[0].folder_path.replace("\\", "/")
+        assert normalized_path == "Rock/Beatles"
 
     def test_deduplicates_parent_child_targets(self, mock_db, mock_library_service):
         """Should remove child targets when parent is being scanned."""
@@ -371,6 +372,164 @@ class TestWatcherLifecycle:
 
         with pytest.raises(ValueError, match="not found"):
             watcher.start_watching_library("libraries/invalid")
+
+
+class TestPollingMode:
+    """Test polling mode for network-mount-safe file watching."""
+
+    @pytest.mark.asyncio
+    async def test_polling_mode_initialization(self, mock_db, mock_library_service):
+        """Polling mode should be enabled via watch_mode parameter."""
+        watcher = FileWatcherService(
+            db=mock_db,
+            library_service=mock_library_service,
+            watch_mode="poll",
+            polling_interval_seconds=1.0,
+        )
+
+        assert watcher.watch_mode == "poll"
+        assert watcher.polling_interval_seconds == 1.0
+
+    @pytest.mark.asyncio
+    async def test_polling_mode_from_env_var(self, mock_db, mock_library_service, monkeypatch):
+        """Polling mode should be enabled via NOMARR_WATCH_MODE env var."""
+        monkeypatch.setenv("NOMARR_WATCH_MODE", "poll")
+
+        watcher = FileWatcherService(
+            db=mock_db,
+            library_service=mock_library_service,
+            polling_interval_seconds=1.0,
+        )
+
+        assert watcher.watch_mode == "poll"
+
+    @pytest.mark.asyncio
+    async def test_invalid_env_var_defaults_to_event(self, mock_db, mock_library_service, monkeypatch):
+        """Invalid NOMARR_WATCH_MODE should default to event mode."""
+        monkeypatch.setenv("NOMARR_WATCH_MODE", "invalid")
+
+        watcher = FileWatcherService(
+            db=mock_db,
+            library_service=mock_library_service,
+        )
+
+        assert watcher.watch_mode == "event"
+
+    @pytest.mark.asyncio
+    async def test_polling_triggers_periodic_scans(self, mock_db, mock_library_service):
+        """Polling mode should trigger full-library scans at intervals."""
+        watcher = FileWatcherService(
+            db=mock_db,
+            library_service=mock_library_service,
+            watch_mode="poll",
+            polling_interval_seconds=0.1,  # Short interval for testing
+        )
+
+        # Start watching
+        watcher.start_watching_library("libraries/lib1")
+
+        # Verify polling task was created
+        assert "libraries/lib1" in watcher.observers
+        assert isinstance(watcher.observers["libraries/lib1"], asyncio.Task)
+
+        # Wait for 2-3 poll cycles
+        await asyncio.sleep(0.35)
+
+        # Stop watching (cancels task)
+        watcher.stop_watching_library("libraries/lib1")
+
+        # Should have triggered 2-3 scans
+        assert len(mock_library_service.scan_calls) >= 2
+        assert len(mock_library_service.scan_calls) <= 3
+
+        # Each call should scan entire library (empty folder_path)
+        for call in mock_library_service.scan_calls:
+            assert len(call["targets"]) == 1
+            assert call["targets"][0].folder_path == ""
+            assert call["targets"][0].library_id == "libraries/lib1"
+
+    @pytest.mark.asyncio
+    async def test_polling_stop_cancels_task(self, mock_db, mock_library_service):
+        """Stopping polling mode should cancel the polling task."""
+        watcher = FileWatcherService(
+            db=mock_db,
+            library_service=mock_library_service,
+            watch_mode="poll",
+            polling_interval_seconds=1.0,
+        )
+
+        watcher.start_watching_library("libraries/lib1")
+
+        # Get task
+        task = watcher.observers["libraries/lib1"]
+        assert isinstance(task, asyncio.Task)
+        assert not task.done()
+
+        # Stop watching
+        watcher.stop_watching_library("libraries/lib1")
+
+        # Give task a moment to finish cancellation
+        await asyncio.sleep(0.01)
+
+        # Task should be cancelled or done
+        assert task.cancelled() or task.done()
+
+        # Should no longer be in observers
+        assert "libraries/lib1" not in watcher.observers
+
+    @pytest.mark.asyncio
+    async def test_polling_handles_scan_errors(self, mock_db, monkeypatch):
+        """Polling should continue even if scan fails."""
+
+        class FailingLibraryService:
+            def __init__(self):
+                self.scan_call_count = 0
+
+            def scan_targets(self, targets, batch_size=200):
+                self.scan_call_count += 1
+                raise RuntimeError("Scan failed")
+
+        failing_service = FailingLibraryService()
+
+        watcher = FileWatcherService(
+            db=mock_db,
+            library_service=failing_service,
+            watch_mode="poll",
+            polling_interval_seconds=0.1,
+        )
+
+        watcher.start_watching_library("libraries/lib1")
+
+        # Wait for 2-3 poll cycles
+        await asyncio.sleep(0.35)
+
+        # Stop watching
+        watcher.stop_watching_library("libraries/lib1")
+
+        # Should have attempted multiple scans despite errors
+        assert failing_service.scan_call_count >= 2
+
+    @pytest.mark.asyncio
+    async def test_stop_all_handles_mixed_modes(self, mock_db, mock_library_service):
+        """stop_all() should handle both event and polling modes gracefully."""
+        # This test would require both modes, but we'll test just polling
+        watcher = FileWatcherService(
+            db=mock_db,
+            library_service=mock_library_service,
+            watch_mode="poll",
+            polling_interval_seconds=1.0,
+        )
+
+        watcher.start_watching_library("libraries/lib1")
+
+        # Verify task exists
+        assert "libraries/lib1" in watcher.observers
+
+        # Stop all
+        watcher.stop_all()
+
+        # Should be empty
+        assert len(watcher.observers) == 0
 
 
 if __name__ == "__main__":
