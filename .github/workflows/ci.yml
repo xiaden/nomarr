@@ -194,28 +194,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Cache base image pull (1.38GB) to GHA cache
-      - name: Cache base image
-        if: steps.should_build.outputs.should_build == 'true'
-        uses: actions/cache@v4
-        id: base-cache
-        with:
-          path: /tmp/base-image.tar
-          key: base-image-${{ hashFiles('dockerfile.base') }}
-
-      - name: Load or pull base image
-        if: steps.should_build.outputs.should_build == 'true'
-        run: |
-          if [ "${{ steps.base-cache.outputs.cache-hit }}" == "true" ]; then
-            echo "Loading base image from cache..."
-            docker load < /tmp/base-image.tar
-          else
-            echo "Pulling base image..."
-            docker pull ghcr.io/xiaden/nomarr-base:latest
-            echo "Saving to cache..."
-            docker save ghcr.io/xiaden/nomarr-base:latest > /tmp/base-image.tar
-          fi
-
       - name: Build and push to GitHub Container Registry with attestation
         if: steps.should_build.outputs.should_build == 'true'
         uses: docker/build-push-action@v6
