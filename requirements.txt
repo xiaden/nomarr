@@ -13,7 +13,7 @@ rich==13.7.1
 requests==2.32.3
 bcrypt==4.2.1
 python-arango==7.9.0
-watchdog>=3.0.0  # File system event monitoring for automatic library scanning
+watchdog==6.0.0
 
 # Testing dependencies
 pytest==8.3.3
