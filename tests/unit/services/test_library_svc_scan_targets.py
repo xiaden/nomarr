@@ -53,7 +53,7 @@ class TestScanTargetsValidation:
 
         # Mock _get_library_or_error to raise ValueError
         service = LibraryService(db=mock_db, cfg=mock_cfg, background_tasks=mock_background_tasks)
-        service._get_library_or_error = MagicMock(side_effect=ValueError("Library not found: bad_lib"))
+        service._get_library_or_error = MagicMock(side_effect=ValueError("Library not found: bad_lib"))  # type: ignore[method-assign]
 
         targets = [ScanTarget(library_id="bad_lib", folder_path="")]
 
@@ -67,7 +67,7 @@ class TestScanTargetsValidation:
         mock_cfg = MagicMock()
 
         service = LibraryService(db=mock_db, cfg=mock_cfg, background_tasks=mock_background_tasks)
-        service._get_library_or_error = MagicMock(
+        service._get_library_or_error = MagicMock(  # type: ignore[method-assign]
             return_value=LibraryDict(
                 _id="libraries/lib1",
                 _key="lib1",
@@ -135,7 +135,7 @@ class TestScanTargetsValidation:
                 updated_at=1000000,
             )
 
-        service._get_library_or_error = MagicMock(side_effect=mock_get_library)
+        service._get_library_or_error = MagicMock(side_effect=mock_get_library)  # type: ignore[method-assign]
 
         # Mock start_scan_workflow
         mock_start_scan = MagicMock(
@@ -188,7 +188,7 @@ class TestStartScanForLibraryDelegation:
             )
         )
 
-        service.scan_targets = mock_scan_targets
+        service.scan_targets = mock_scan_targets  # type: ignore[method-assign]
 
         result = service.start_scan_for_library("lib1")
 

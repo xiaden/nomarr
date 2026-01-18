@@ -520,6 +520,7 @@ class LibraryService:
         root_path: str,
         is_enabled: bool = True,
         is_default: bool = False,
+        watch_mode: str = "off",
     ) -> LibraryDict:
         """
         Create a new library.
@@ -533,6 +534,7 @@ class LibraryService:
             root_path: Absolute path to library root (must be within configured library_root)
             is_enabled: Whether library is enabled for scanning
             is_default: Whether this is the default library
+            watch_mode: File watching mode ('off', 'event', or 'poll')
 
         Returns:
             Created library DTO
@@ -573,6 +575,7 @@ class LibraryService:
                 root_path=abs_path,
                 is_enabled=is_enabled,
                 is_default=is_default,
+                watch_mode=watch_mode,
             )
         except Exception as e:
             raise ValueError(f"Failed to create library: {e}") from e
@@ -632,6 +635,7 @@ class LibraryService:
         root_path: str | None = None,
         is_enabled: bool | None = None,
         is_default: bool | None = None,
+        watch_mode: str | None = None,
     ) -> LibraryDict:
         """
         Update library properties (consolidated method for all updates).
@@ -639,7 +643,7 @@ class LibraryService:
         Handles conditional updates:
         - root_path: Validates and normalizes path
         - is_default: Sets as default library (unsets others)
-        - name/is_enabled: Updates metadata
+        - name/is_enabled/watch_mode: Updates metadata
 
         Args:
             library_id: Library ID
@@ -647,6 +651,7 @@ class LibraryService:
             root_path: New root path (optional)
             is_enabled: New enabled state (optional)
             is_default: Set as default library (optional)
+            watch_mode: New watch mode ('off', 'event', or 'poll') (optional)
 
         Returns:
             Updated Library DTO
@@ -663,11 +668,12 @@ class LibraryService:
             self.set_default_library(library_id)
 
         # Update name and/or is_enabled if provided
-        if name is not None or is_enabled is not None:
+        if name is not None or is_enabled is not None or watch_mode is not None:
             return self.update_library_metadata(
                 library_id,
                 name=name,
                 is_enabled=is_enabled,
+                watch_mode=watch_mode,
             )
 
         # If only root_path or is_default was updated, fetch and return the updated library
@@ -733,9 +739,10 @@ class LibraryService:
         *,
         name: str | None = None,
         is_enabled: bool | None = None,
+        watch_mode: str | None = None,
     ) -> LibraryDict:
         """
-        Update name and/or enabled status of a library.
+        Update name, enabled status, and/or watch mode of a library.
 
         Root path updates are handled separately by update_library_root.
         Default flag updates are handled by set_default_library.
@@ -744,12 +751,13 @@ class LibraryService:
             library_id: Library ID
             name: New name (optional)
             is_enabled: New enabled state (optional)
+            watch_mode: New watch mode ('off', 'event', or 'poll') (optional)
 
         Returns:
             Updated library DTO
 
         Raises:
-            ValueError: If library not found or name conflicts
+            ValueError: If library not found or name conflicts or invalid watch_mode
         """
         # Validate library exists (raises ValueError if not found)
         _ = self.get_library(library_id)
@@ -759,7 +767,15 @@ class LibraryService:
             library_id,
             name=name,
             is_enabled=is_enabled,
+            watch_mode=watch_mode,
         )
+
+        # If watch_mode was changed and file_watcher service is available, update watcher
+        if watch_mode is not None and hasattr(self, "file_watcher"):
+            try:
+                self.file_watcher.switch_watch_mode(library_id, watch_mode)
+            except Exception as e:
+                logging.warning(f"[LibraryService] Failed to switch watch mode for {library_id}: {e}")
 
         logging.info(f"[LibraryService] Updated library {library_id} metadata")
 

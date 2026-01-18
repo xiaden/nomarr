@@ -417,14 +417,26 @@ class Application:
             )
             self.register_service("file_watcher", file_watcher)
 
-            # Start watching all enabled libraries
-            # TODO: Make this configurable (enable/disable file watching per library)
+            # Start watching enabled libraries (only if watch_mode != 'off')
+            # Per-library watch_mode field controls automatic file watching:
+            # - 'off': No watching (default for new libraries)
+            # - 'event': Real-time watchdog observer
+            # - 'poll': Periodic polling (network-mount-safe)
             try:
                 libraries = self.db.libraries.list_libraries(enabled_only=True)
                 for library in libraries:
+                    watch_mode = library.get("watch_mode", "off")
+                    if watch_mode == "off":
+                        logging.info(
+                            f"[Application] Skipping file watcher for library '{library['name']}': watch_mode='off'"
+                        )
+                        continue
+
                     try:
                         file_watcher.start_watching_library(library["_id"])
-                        logging.info(f"[Application] Started file watcher for library: {library['name']}")
+                        logging.info(
+                            f"[Application] Started file watcher for library '{library['name']}' (mode={watch_mode})"
+                        )
                     except Exception as e:
                         logging.warning(
                             f"[Application] Failed to start file watcher for library {library['name']}: {e}"

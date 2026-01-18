@@ -26,6 +26,7 @@ interface LibraryResponse {
   root_path: string;
   is_enabled: boolean;
   is_default: boolean;
+  watch_mode: string;
   created_at?: string | number;
   updated_at?: string | number;
 }
@@ -37,6 +38,7 @@ function mapLibraryResponse(lib: LibraryResponse): Library {
     rootPath: lib.root_path,
     isEnabled: lib.is_enabled,
     isDefault: lib.is_default,
+    watchMode: lib.watch_mode,
     createdAt: lib.created_at,
     updatedAt: lib.updated_at,
   };
@@ -78,6 +80,7 @@ export interface CreateLibraryPayload {
   rootPath: string;
   isEnabled?: boolean;
   isDefault?: boolean;
+  watchMode?: string;  // 'off', 'event', or 'poll'
 }
 
 /**
@@ -89,6 +92,7 @@ export async function create(payload: CreateLibraryPayload): Promise<Library> {
     root_path: payload.rootPath,
     is_enabled: payload.isEnabled ?? true,
     is_default: payload.isDefault ?? false,
+    watch_mode: payload.watchMode ?? "off",
   });
   return mapLibraryResponse(response);
 }
@@ -98,6 +102,7 @@ export interface UpdateLibraryPayload {
   rootPath?: string;
   isEnabled?: boolean;
   isDefault?: boolean;
+  watchMode?: string;  // 'off', 'event', or 'poll'
 }
 
 /**
@@ -112,6 +117,7 @@ export async function update(
   if (payload.rootPath !== undefined) body.root_path = payload.rootPath;
   if (payload.isEnabled !== undefined) body.is_enabled = payload.isEnabled;
   if (payload.isDefault !== undefined) body.is_default = payload.isDefault;
+  if (payload.watchMode !== undefined) body.watch_mode = payload.watchMode;
 
   const response = await patch<LibraryResponse>(
     `/api/web/libraries/${id}`,

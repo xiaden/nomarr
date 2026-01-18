@@ -79,6 +79,7 @@ export interface Library {
   rootPath: string; // maps to backend root_path
   isEnabled: boolean;
   isDefault: boolean;
+  watchMode: string; // 'off', 'event', or 'poll'
   createdAt?: string | number; // Can be ISO string or Unix timestamp
   updatedAt?: string | number; // Can be ISO string or Unix timestamp
 }

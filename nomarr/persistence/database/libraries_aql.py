@@ -25,6 +25,7 @@ class LibrariesOperations:
         root_path: str,
         is_enabled: bool = True,
         is_default: bool = False,
+        watch_mode: str = "off",
     ) -> str:
         """Create a new library entry.
 
@@ -33,6 +34,7 @@ class LibrariesOperations:
             root_path: Absolute path to library root
             is_enabled: Whether library is enabled for scanning
             is_default: Whether this is the default library
+            watch_mode: File watching mode ('off', 'event', or 'poll')
 
         Returns:
             Library _id (e.g., "libraries/12345")
@@ -60,6 +62,7 @@ class LibrariesOperations:
                     "root_path": root_path,
                     "is_enabled": is_enabled,
                     "is_default": is_default,
+                    "watch_mode": watch_mode,
                     "scan_status": "idle",
                     "scan_progress": 0,
                     "scan_total": 0,
@@ -169,6 +172,7 @@ class LibrariesOperations:
         root_path: str | None = None,
         is_enabled: bool | None = None,
         is_default: bool | None = None,
+        watch_mode: str | None = None,
     ) -> None:
         """Update library fields.
 
@@ -178,6 +182,7 @@ class LibrariesOperations:
             root_path: New root path (optional)
             is_enabled: New enabled status (optional)
             is_default: New default status (optional)
+            watch_mode: New watch mode ('off', 'event', 'poll') (optional)
         """
         update_fields: dict[str, Any] = {"updated_at": now_ms()}
 
@@ -199,6 +204,10 @@ class LibrariesOperations:
                     """,
                     bind_vars={"library_id": library_id},
                 )
+        if watch_mode is not None:
+            if watch_mode not in ("off", "event", "poll"):
+                raise ValueError(f"Invalid watch_mode: {watch_mode}. Must be 'off', 'event', or 'poll'")
+            update_fields["watch_mode"] = watch_mode
 
         self.db.aql.execute(
             """

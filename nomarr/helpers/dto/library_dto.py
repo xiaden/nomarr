@@ -7,7 +7,7 @@ Cross-layer data contracts for library service operations (used by services and 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, TypedDict
+from typing import Any, Literal, TypedDict
 
 
 class ReconcileResult(TypedDict):
@@ -62,6 +62,7 @@ class LibraryDict:
     is_default: bool
     created_at: str | int  # Can be ISO string or Unix timestamp (ms)
     updated_at: str | int  # Can be ISO string or Unix timestamp (ms)
+    watch_mode: Literal["off", "event", "poll"] = "off"  # File watching mode (default: off)
     scan_status: str | None = None
     scan_progress: int | None = None
     scan_total: int | None = None

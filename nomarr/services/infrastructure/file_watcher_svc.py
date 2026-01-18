@@ -28,13 +28,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import threading
 import time
 from collections import defaultdict
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, ClassVar
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
@@ -52,9 +51,9 @@ class LibraryEventHandler(FileSystemEventHandler):
     """Handles file system events for a single library."""
 
     # File extensions we care about
-    AUDIO_EXTENSIONS = {".mp3", ".flac", ".m4a", ".ogg", ".opus", ".wav", ".wma", ".aac"}
-    PLAYLIST_EXTENSIONS = {".m3u", ".m3u8", ".pls"}
-    IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+    AUDIO_EXTENSIONS: ClassVar[set[str]] = {".mp3", ".flac", ".m4a", ".ogg", ".opus", ".wav", ".wma", ".aac"}
+    PLAYLIST_EXTENSIONS: ClassVar[set[str]] = {".m3u", ".m3u8", ".pls"}
+    IMAGE_EXTENSIONS: ClassVar[set[str]] = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 
     def __init__(
         self,
@@ -115,10 +114,7 @@ class LibraryEventHandler(FileSystemEventHandler):
             return True
 
         # OS-specific
-        if name in {".DS_Store", "Thumbs.db", "desktop.ini"}:
-            return True
-
-        return False
+        return name in {".DS_Store", "Thumbs.db", "desktop.ini"}
 
 
 class FileWatcherService:
@@ -151,24 +147,12 @@ class FileWatcherService:
         library_service: LibraryService,
         debounce_seconds: float = 2.0,
         event_loop: asyncio.AbstractEventLoop | None = None,
-        watch_mode: Literal["event", "poll"] | None = None,
         polling_interval_seconds: float = 60.0,
     ):
         self.db = db
         self.library_service = library_service
         self.debounce_seconds = debounce_seconds
         self.event_loop = event_loop or asyncio.get_event_loop()
-
-        # Watch mode: read from env var if not explicitly set
-        if watch_mode is None:
-            env_mode = os.getenv("NOMARR_WATCH_MODE", "event").lower()
-            if env_mode not in ("event", "poll"):
-                logger.warning(f"Invalid NOMARR_WATCH_MODE={env_mode}, defaulting to 'event'")
-                env_mode = "event"
-            self.watch_mode: Literal["event", "poll"] = env_mode  # type: ignore[assignment]
-        else:
-            self.watch_mode = watch_mode
-
         self.polling_interval_seconds = polling_interval_seconds
 
         # Active watchers (event mode: Observer objects, poll mode: asyncio.Task objects)
@@ -183,7 +167,7 @@ class FileWatcherService:
         self.last_poll_time: dict[str, float] = {}
 
         logger.info(
-            f"FileWatcherService initialized (mode={self.watch_mode}, debounce={debounce_seconds}s, poll_interval={polling_interval_seconds}s)"
+            f"FileWatcherService initialized (debounce={debounce_seconds}s, poll_interval={polling_interval_seconds}s)"
         )
 
     def start_watching_library(self, library_id: str) -> None:
@@ -191,8 +175,10 @@ class FileWatcherService:
 
         If already watching, restarts the watcher.
 
-        Uses either event-based watching (watchdog) or polling mode
-        depending on self.watch_mode.
+        Watch mode is determined by the library's watch_mode field:
+        - 'off': No watching (method returns without starting)
+        - 'event': Real-time watchdog observer
+        - 'poll': Periodic polling loop
 
         Args:
             library_id: Library document _id (e.g., "libraries/lib1")
@@ -209,16 +195,27 @@ class FileWatcherService:
         if not library_root.exists():
             raise ValueError(f"Library path does not exist: {library_root}")
 
+        # Get watch mode from library config (default to 'off')
+        watch_mode = library.get("watch_mode", "off")
+
+        # If watch_mode is 'off', don't start anything
+        if watch_mode == "off":
+            logger.info(f"Watch mode is 'off' for library {library_id}, skipping watcher")
+            return
+
         # Stop existing watcher if any
         if library_id in self.observers:
             logger.info(f"Stopping existing watcher for library {library_id}")
             self.stop_watching_library(library_id)
 
-        # Branch on watch mode
-        if self.watch_mode == "event":
+        # Branch on watch mode from library config
+        if watch_mode == "event":
             self._start_event_watching(library_id, library_root)
-        else:  # poll mode
+        elif watch_mode == "poll":
             self._start_polling_library(library_id)
+        else:
+            # Should not reach here if validation is correct, but log just in case
+            logger.warning(f"Unknown watch_mode '{watch_mode}' for library {library_id}, skipping")
 
     def _start_event_watching(self, library_id: str, library_root: Path) -> None:
         """Start event-based watching with watchdog Observer.
@@ -325,6 +322,49 @@ class FileWatcherService:
         logger.info("Stopping all file watchers")
         for library_id in list(self.observers.keys()):
             self.stop_watching_library(library_id)
+
+    def switch_watch_mode(self, library_id: str, new_mode: str) -> None:
+        """Switch watch mode for a library at runtime.
+
+        Stops the existing watcher (if any), updates the library's watch_mode
+        in the database, then starts the new mode (unless 'off').
+
+        Idempotent - safe to call multiple times with the same mode.
+
+        Args:
+            library_id: Library document _id (e.g., "libraries/lib1")
+            new_mode: New watch mode ('off', 'event', or 'poll')
+
+        Raises:
+            ValueError: If library not found or new_mode is invalid
+        """
+        # Validate mode
+        if new_mode not in ("off", "event", "poll"):
+            raise ValueError(f"Invalid watch_mode: {new_mode}. Must be 'off', 'event', or 'poll'")
+
+        # Verify library exists
+        library = self.db.libraries.get_library(library_id)
+        if not library:
+            raise ValueError(f"Library {library_id} not found")
+
+        # Stop existing watcher if any
+        if library_id in self.observers:
+            logger.info(f"Stopping existing watcher for library {library_id} before mode switch")
+            self.stop_watching_library(library_id)
+
+        # Clear any pending changes for this library (debounce state)
+        with self._lock:
+            self.pending_changes = {(lib_id, path) for lib_id, path in self.pending_changes if lib_id != library_id}
+
+        # Update watch_mode in database
+        self.db.libraries.update_library(library_id, watch_mode=new_mode)
+        logger.info(f"Updated library {library_id} watch_mode to '{new_mode}'")
+
+        # Start new mode if not 'off'
+        if new_mode != "off":
+            self.start_watching_library(library_id)
+        else:
+            logger.info(f"Watch mode is 'off' for library {library_id}, no watcher started")
 
     def _on_file_change(self, library_id: str, relative_path: str) -> None:
         """Handle file change event from watchdog thread.

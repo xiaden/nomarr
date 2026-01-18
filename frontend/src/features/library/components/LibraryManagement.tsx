@@ -14,9 +14,14 @@ import {
     Button,
     Checkbox,
     Chip,
+    FormControl,
     FormControlLabel,
+    InputLabel,
+    MenuItem,
+    Select,
     Stack,
     TextField,
+    Tooltip,
     Typography,
 } from "@mui/material";
 import { useEffect, useState } from "react";
@@ -56,6 +61,7 @@ export function LibraryManagement() {
   const [formRootPath, setFormRootPath] = useState("");
   const [formIsEnabled, setFormIsEnabled] = useState(true);
   const [formIsDefault, setFormIsDefault] = useState(false);
+  const [formWatchMode, setFormWatchMode] = useState<string>("off");
   const [showPathPicker, setShowPathPicker] = useState(false);
   const [previewCount, setPreviewCount] = useState<number | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -103,6 +109,7 @@ export function LibraryManagement() {
     setFormRootPath("");
     setFormIsEnabled(true);
     setFormIsDefault(false);
+    setFormWatchMode("off");
     setShowPathPicker(false);
     setPreviewCount(null);
     setPreviewLoading(false);
@@ -120,6 +127,7 @@ export function LibraryManagement() {
     setFormRootPath(library.rootPath);
     setFormIsEnabled(library.isEnabled);
     setFormIsDefault(library.isDefault);
+    setFormWatchMode(library.watchMode);
     setEditingId(library.id);
     setIsCreating(false);
     setPreviewCount(null);
@@ -169,6 +177,7 @@ export function LibraryManagement() {
         rootPath: formRootPath,
         isEnabled: formIsEnabled,
         isDefault: formIsDefault,
+        watchMode: formWatchMode,
       });
       await loadLibraries();
       resetForm();
@@ -193,6 +202,7 @@ export function LibraryManagement() {
         rootPath: formRootPath,
         isEnabled: formIsEnabled,
         isDefault: formIsDefault,
+        watchMode: formWatchMode,
       });
       await loadLibraries();
       resetForm();
@@ -271,6 +281,33 @@ export function LibraryManagement() {
       await loadLibraries();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete library");
+    }
+  };
+
+  const handleWatchModeChange = async (id: string, newMode: string) => {
+    try {
+      setError(null);
+      await updateLibrary(id, { watchMode: newMode });
+      await loadLibraries();
+      showSuccess(`File watching mode changed to ${newMode}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to change watch mode");
+    }
+  };
+
+  const getWatchModeLabel = (mode: string) => {
+    switch (mode) {
+      case "event": return "Event";
+      case "poll": return "Poll";
+      default: return "Off";
+    }
+  };
+
+  const getWatchModeColor = (mode: string): "default" | "success" | "warning" => {
+    switch (mode) {
+      case "event": return "success";
+      case "poll": return "warning";
+      default: return "default";
     }
   };
 
@@ -372,6 +409,44 @@ export function LibraryManagement() {
               label="Default Library"
             />
 
+            {/* Watch Mode Selection */}
+            <Box>
+              <FormControl fullWidth>
+                <InputLabel id="watch-mode-label">File Watching</InputLabel>
+                <Select
+                  labelId="watch-mode-label"
+                  value={formWatchMode}
+                  label="File Watching"
+                  onChange={(e) => setFormWatchMode(e.target.value)}
+                >
+                  <MenuItem value="off">
+                    <Stack>
+                      <Typography><strong>Off</strong> - No automatic scanning</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Manual scans only
+                      </Typography>
+                    </Stack>
+                  </MenuItem>
+                  <MenuItem value="event">
+                    <Stack>
+                      <Typography><strong>Event</strong> - Real-time file watching</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Fast (2-5s response), local filesystems only
+                      </Typography>
+                    </Stack>
+                  </MenuItem>
+                  <MenuItem value="poll">
+                    <Stack>
+                      <Typography><strong>Poll</strong> - Periodic scanning</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Slower (60s interval), network-mount-safe
+                      </Typography>
+                    </Stack>
+                  </MenuItem>
+                </Select>
+              </FormControl>
+            </Box>
+
             {/* Preview file count (only for existing libraries) */}
             {editingId !== null && (
               <Box>
@@ -464,6 +539,38 @@ export function LibraryManagement() {
                       ⚠ This library is outside the configured library_root ({libraryRoot})
                     </Typography>
                   )}
+                  {/* Watch Mode Indicator and Quick Changer */}
+                  <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: 1 }}>
+                    <Typography variant="caption" color="text.secondary">
+                      File Watching:
+                    </Typography>
+                    <FormControl size="small" sx={{ minWidth: 120 }}>
+                      <Select
+                        value={lib.watchMode}
+                        onChange={(e) => handleWatchModeChange(lib.id, e.target.value)}
+                        size="small"
+                        sx={{ fontSize: "0.75rem" }}
+                        disabled={scanningId === lib.id}
+                      >
+                        <MenuItem value="off">Off</MenuItem>
+                        <MenuItem value="event">Event</MenuItem>
+                        <MenuItem value="poll">Poll</MenuItem>
+                      </Select>
+                    </FormControl>
+                    <Tooltip title={
+                      lib.watchMode === "event" 
+                        ? "Real-time file watching (local filesystems)"
+                        : lib.watchMode === "poll"
+                        ? "Periodic scanning (network-mount-safe)"
+                        : "No automatic file watching"
+                    }>
+                      <Chip 
+                        label={getWatchModeLabel(lib.watchMode)}
+                        color={getWatchModeColor(lib.watchMode)}
+                        size="small"
+                      />
+                    </Tooltip>
+                  </Stack>
                 </Box>
                 <Stack direction="row" alignItems="center" spacing={1}>
                   <Box
