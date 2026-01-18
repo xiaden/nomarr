@@ -63,7 +63,7 @@ class LibraryEventHandler(FileSystemEventHandler):
             return
 
         # Get path
-        path = Path(event.src_path)
+        path = Path(str(event.src_path))  # type: ignore[arg-type]
 
         # Filter: only relevant file types
         if not self._is_relevant_file(path):
@@ -143,7 +143,7 @@ class FileWatcherService:
         self.event_loop = event_loop or asyncio.get_event_loop()
 
         # Active watchers
-        self.observers: dict[str, Observer] = {}
+        self.observers: dict[str, Observer] = {}  # type: ignore[valid-type]
 
         # Debouncing state (thread-safe)
         self._lock = threading.Lock()
@@ -203,8 +203,8 @@ class FileWatcherService:
             return
 
         observer = self.observers[library_id]
-        observer.stop()
-        observer.join(timeout=5.0)
+        observer.stop()  # type: ignore[attr-defined]
+        observer.join(timeout=5.0)  # type: ignore[attr-defined]
 
         del self.observers[library_id]
         logger.info(f"Stopped watching library {library_id}")

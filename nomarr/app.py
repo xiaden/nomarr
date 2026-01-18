@@ -404,6 +404,33 @@ class Application:
             )
             library_service.ensure_default_library_exists()
             self.register_service("library", library_service)
+
+            # Initialize FileWatcherService for automatic incremental scanning
+            # Only start if library service is enabled (requires library_root)
+            logging.info("[Application] Initializing FileWatcherService...")
+            from nomarr.services.infrastructure.file_watcher_svc import FileWatcherService
+
+            file_watcher = FileWatcherService(
+                db=self.db,
+                library_service=library_service,
+                debounce_seconds=2.0,  # TODO: Make configurable
+            )
+            self.register_service("file_watcher", file_watcher)
+
+            # Start watching all enabled libraries
+            # TODO: Make this configurable (enable/disable file watching per library)
+            try:
+                libraries = self.db.libraries.list_libraries(enabled_only=True)
+                for library in libraries:
+                    try:
+                        file_watcher.start_watching_library(library["_id"])
+                        logging.info(f"[Application] Started file watcher for library: {library['name']}")
+                    except Exception as e:
+                        logging.warning(
+                            f"[Application] Failed to start file watcher for library {library['name']}: {e}"
+                        )
+            except Exception as e:
+                logging.error(f"[Application] Failed to start file watchers: {e}")
         else:
             logging.info("[Application] No library root configured, library service not started")
 
@@ -473,6 +500,13 @@ class Application:
             return
 
         logging.info("[Application] Shutting down...")
+
+        # Stop file watchers first (before stopping services they depend on)
+        if "file_watcher" in self.services:
+            logging.info("[Application] Stopping file watchers...")
+            file_watcher = self.services["file_watcher"]
+            file_watcher.stop_all()
+            logging.info("[Application] File watchers stopped")
 
         # Stop worker processes (Phase 4: WorkerSystemService)
         if self.worker_system:
