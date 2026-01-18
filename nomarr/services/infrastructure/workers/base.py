@@ -133,7 +133,7 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
         job = get_next_job(self.db, self.queue_type)
         if not job:
             return None
-        return DequeueResult(job_id=job["id"], file_path=job["path"], force=job["force"])
+        return DequeueResult(_id=job["_id"], file_path=job["path"], force=job["force"])
 
     def _mark_complete(self, job_id: str) -> None:
         """Mark job as complete using queue component."""
@@ -388,10 +388,10 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
         if not result:
             return None
 
-        logging.debug(f"[{self.name}] Processing job {result.job_id}: {result.file_path} (force={result.force})")
+        logging.debug(f"[{self.name}] Processing job {result._id}: {result.file_path} (force={result.force})")
 
         # Track current job for heartbeat (Phase 3: DB-based IPC)
-        self._current_job_id = result.job_id
+        self._current_job_id = result._id
 
         # CRITICAL: Update health record IMMEDIATELY with current_job
         # Don't wait for heartbeat thread (5s delay) - worker might crash before then
@@ -406,7 +406,7 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
                 logging.warning(f"[{self.name}] Failed to set current_job in health immediately: {e}")
 
         # Publish job start event
-        self._publish_job_state(result.job_id, result.file_path, "running")
+        self._publish_job_state(result._id, result.file_path, "running")
         self._publish_queue_stats()
 
         return result
@@ -417,7 +417,7 @@ class BaseWorker(multiprocessing.Process, Generic[TResult]):
 
         Handles success, failure, and shutdown scenarios.
         """
-        job_id = job.job_id
+        job_id = job._id
         path = job.file_path
         force = job.force
 

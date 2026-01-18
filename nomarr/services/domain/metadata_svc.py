@@ -59,8 +59,8 @@ class MetadataService:
 
         entity_dicts: list[EntityDict] = [
             {
-                "id": e["_id"],
-                "key": e["_key"],
+                "_id": e["_id"],
+                "_key": e["_key"],
                 "display_name": e["display_name"],
                 "song_count": None,  # Not computed by default (expensive)
             }
@@ -88,8 +88,8 @@ class MetadataService:
             return None
 
         return EntityDict(
-            id=entity["_id"],
-            key=entity["_key"],
+            _id=entity["_id"],
+            _key=entity["_key"],
             display_name=entity["display_name"],
             song_count=None,
         )
@@ -149,8 +149,8 @@ class MetadataService:
                     artist_ids_seen.add(artist_entity["_id"])
                     artists.append(
                         EntityDict(
-                            id=artist_entity["_id"],
-                            key=artist_entity["_key"],
+                            _id=artist_entity["_id"],
+                            _key=artist_entity["_key"],
                             display_name=artist_entity["display_name"],
                             song_count=None,
                         )

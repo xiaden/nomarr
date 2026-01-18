@@ -76,7 +76,7 @@ class TestFullScanMissingMarkInvariant:
         db = MagicMock()
         library_root_str = str(good_library_root.resolve())
         db.libraries.get_library.return_value = {
-            "id": "lib1",
+            "_id": "lib1",
             "root_path": library_root_str,
         }
         # Return empty tuple for list_library_files (not get_library_files!)
@@ -99,7 +99,7 @@ class TestFullScanMissingMarkInvariant:
         db = MagicMock()
         library_root_str = str(good_library_root.resolve())
         db.libraries.get_library.return_value = {
-            "id": "lib1",
+            "_id": "lib1",
             "root_path": library_root_str,
         }
         db.library_files.list_library_files.return_value = ([], 0)
@@ -117,7 +117,7 @@ class TestFullScanMissingMarkInvariant:
         db = MagicMock()
         library_root_str = str(good_library_root.resolve())
         db.libraries.get_library.return_value = {
-            "id": "lib1",
+            "_id": "lib1",
             "root_path": library_root_str,
         }
         db.library_files.list_library_files.return_value = ([], 0)
@@ -144,12 +144,12 @@ class TestUpsertBatchUsesNormalizedPath:
         library_root_str = str(library_root)
 
         db.libraries.get_library.return_value = {
-            "id": "lib1",
+            "_id": "lib1",
             "root_path": library_root_str,
         }
         # Mock find_library_containing_path (called by build_library_path_from_input)
         db.libraries.find_library_containing_path.return_value = {
-            "id": "lib1",
+            "_id": "lib1",
             "root_path": library_root_str,
         }
         # Return empty tuple for list_library_files

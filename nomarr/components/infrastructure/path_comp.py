@@ -67,7 +67,7 @@ def build_library_path_from_input(
         return LibraryPath(
             relative="",
             absolute=absolute,
-            library_id=library["id"],
+            library_id=library["_id"],
             status="invalid_config",
             reason=f"Path not relative to library root: {library_root}",
         )
@@ -77,7 +77,7 @@ def build_library_path_from_input(
         return LibraryPath(
             relative=relative_str,
             absolute=absolute,
-            library_id=library["id"],
+            library_id=library["_id"],
             status="not_found",
             reason="File does not exist on disk",
         )
@@ -87,7 +87,7 @@ def build_library_path_from_input(
         return LibraryPath(
             relative=relative_str,
             absolute=absolute,
-            library_id=library["id"],
+            library_id=library["_id"],
             status="invalid_config",
             reason="Path is a directory, not a file",
         )
@@ -97,7 +97,7 @@ def build_library_path_from_input(
         return LibraryPath(
             relative=relative_str,
             absolute=absolute,
-            library_id=library["id"],
+            library_id=library["_id"],
             status="invalid_config",
             reason="Not a supported audio file format",
         )
@@ -106,7 +106,7 @@ def build_library_path_from_input(
     return LibraryPath(
         relative=relative_str,
         absolute=absolute,
-        library_id=library["id"],
+        library_id=library["_id"],
         status="valid",
         reason=None,
     )
@@ -142,7 +142,7 @@ def build_library_path_from_db(
         path = build_library_path_from_db(job.file_path, db)
         if not path.is_valid():
             # Config changed, path no longer valid
-            db.tag_queue.mark_error(job.id, path.reason)
+            db.tag_queue.mark_error(job._id, path.reason)
             return
     """
     from nomarr.helpers.files_helper import is_audio_file
@@ -213,12 +213,12 @@ def build_library_path_from_db(
             return LibraryPath(
                 relative=stored_path,
                 absolute=absolute,
-                library_id=library["id"],
+                library_id=library["_id"],
                 status="invalid_config",
                 reason=f"Stored path not relative to library root: {library_root}",
             )
 
-        library_id = library["id"]
+        library_id = library["_id"]
 
     # Optionally check disk
     if check_disk:

@@ -6,8 +6,8 @@ from typing import TypedDict
 class EntityDict(TypedDict):
     """Entity result (artist, album, genre, label, year)."""
 
-    id: str  # _id (e.g., "artists/v1_abc123...")
-    key: str  # _key (e.g., "v1_abc123...")
+    _id: str  # ArangoDB _id (e.g., "artists/v1_abc123...")
+    _key: str  # ArangoDB _key (e.g., "v1_abc123...")
     display_name: str  # Exact raw string
     song_count: int | None  # Optional: count of songs for this entity
 

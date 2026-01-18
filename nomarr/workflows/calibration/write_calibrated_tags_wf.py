@@ -86,7 +86,7 @@ def _load_library_state(
     if not library_file:
         raise FileNotFoundError(f"File not in library: {file_path}")
 
-    file_id = library_file["id"]
+    file_id = library_file["_id"]
     chromaprint = library_file.get("chromaprint")
 
     # Get all numeric tags for this file from file_tags

@@ -22,13 +22,13 @@ def map_file_with_tags_to_dto(file_dict: dict[str, Any]) -> LibraryFileWithTags:
 
     Args:
         file_dict: Dictionary from search_library_files_with_tags query
-                   Must contain 'id', 'path', 'library_id', 'tagged', and 'tags' keys
+                   Must contain '_id', 'path', 'library_id', 'tagged', and 'tags' keys
 
     Returns:
         LibraryFileWithTags DTO
     """
     return LibraryFileWithTags(
-        id=file_dict["id"],
+        _id=file_dict["_id"],
         path=file_dict["path"],
         library_id=file_dict["library_id"],
         file_size=file_dict.get("file_size"),
@@ -63,13 +63,13 @@ def map_queue_job_to_dto(job_dict: dict[str, Any]) -> Job:
 
     Args:
         job_dict: Dictionary from list_jobs query
-                  Must contain 'id', 'path', 'status', 'started_at' keys
+                  Must contain '_id', 'path', 'status', 'started_at' keys
 
     Returns:
         Job DTO
     """
     return Job(
-        id=job_dict["id"],
+        _id=job_dict["_id"],
         path=job_dict["path"],
         status=job_dict["status"],
         created_at=job_dict.get("created_at", 0),

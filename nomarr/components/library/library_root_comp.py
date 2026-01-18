@@ -138,7 +138,7 @@ def ensure_no_overlapping_library_root(
 
     for library in existing_libraries:
         # Skip if this is the library being updated
-        if ignore_id is not None and library["id"] == ignore_id:
+        if ignore_id is not None and library["_id"] == ignore_id:
             continue
 
         # Resolve existing library root

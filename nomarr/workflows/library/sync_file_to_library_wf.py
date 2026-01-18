@@ -59,7 +59,7 @@ def sync_file_to_library(
             if not library:
                 logging.warning(f"[sync_file_to_library] File path not in any library: {file_path}")
                 return
-            library_id = library["id"]
+            library_id = library["_id"]
 
         assert library_id is not None  # Type narrowing for mypy
 
@@ -92,7 +92,7 @@ def sync_file_to_library(
             logging.warning(f"[sync_file_to_library] File record not found after upsert: {file_path}")
             return
 
-        file_id = str(file_record["id"])
+        file_id = str(file_record["_id"])
 
         # --- Tagging domain: parse and upsert tags ---
         all_tags = metadata.get("all_tags", {})

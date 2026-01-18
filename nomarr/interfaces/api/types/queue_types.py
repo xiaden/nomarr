@@ -75,7 +75,7 @@ class QueueJobResponse(BaseModel):
             API response model
         """
         return cls(
-            id=encode_id(job.id),
+            id=encode_id(job._id),
             path=job.path,
             status=job.status,
             created_at=job.created_at,

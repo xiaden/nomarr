@@ -23,7 +23,7 @@ class Job:
     Used across queue service, library service, and worker operations.
     """
 
-    id: str  # ArangoDB _id
+    _id: str  # ArangoDB _id
     path: str
     status: str
     created_at: int
@@ -37,7 +37,7 @@ class Job:
 class DequeueResult:
     """Result from queue_service.dequeue."""
 
-    job_id: str  # ArangoDB _id
+    _id: str  # ArangoDB _id
     file_path: str
     force: bool
 

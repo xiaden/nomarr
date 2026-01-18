@@ -26,6 +26,7 @@ You are here to help maintain that architecture, not invent a new one.
 - let persistence or ml import `nomarr.workflows`, `nomarr.services`, or `nomarr.interfaces`
 - let helpers import any `nomarr.*` modules
 - invent modules, imports, attributes, or function names (use `scripts/discover_api.py` to confirm real APIs)
+- rename `_id` or `_key` to `id`, `uuid`, or similar (these are reserved persistence-layer identifiers)
 
 **Always:**
 

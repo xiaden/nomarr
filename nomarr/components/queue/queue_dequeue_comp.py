@@ -34,7 +34,7 @@ def get_next_job(db: Database, queue_type: QueueType) -> dict | None:
         job = db.tag_queue.get_next_pending_job()
         if job:
             return {
-                "id": job["id"],
+                "id": job["_id"],
                 "path": job["path"],
                 "force": job.get("force", False),
             }

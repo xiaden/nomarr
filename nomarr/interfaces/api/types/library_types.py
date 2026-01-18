@@ -294,7 +294,7 @@ class SearchFilesResponse(BaseModel):
         return cls(
             files=[
                 LibraryFileWithTagsResponse(
-                    id=encode_id(f.id),
+                    id=encode_id(f._id),
                     path=f.path,
                     library_id=encode_id(f.library_id),
                     file_size=f.file_size,

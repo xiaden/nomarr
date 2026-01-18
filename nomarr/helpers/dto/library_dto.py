@@ -124,7 +124,7 @@ class FileTag:
 class LibraryFileWithTags:
     """Library file with its tags."""
 
-    id: str  # ArangoDB _id
+    _id: str  # ArangoDB _id
     path: str
     library_id: str  # ArangoDB _id
     file_size: int | None

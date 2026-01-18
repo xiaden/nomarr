@@ -53,7 +53,6 @@ def mock_db_with_file():
     mock_db.libraries.find_library_containing_path.return_value = {
         "_id": "libraries/lib1",
         "_key": "lib1",
-        "id": "lib1",
         "name": "Test Library",
         "root_path": TEST_LIBRARY_ROOT,
         "is_enabled": True,
@@ -64,7 +63,6 @@ def mock_db_with_file():
     mock_db.library_files.get_library_file.return_value = {
         "_id": "library_files/file1",
         "_key": "file1",
-        "id": "file1",
         "path": TEST_ABSOLUTE_PATH,  # Absolute path available to domains
         "normalized_path": TEST_NORMALIZED_PATH,  # POSIX relative for identity
         "library_id": "lib1",
@@ -99,7 +97,7 @@ class TestPathComputationDomain:
 
             assert result.is_valid()
             assert str(result.absolute) == test_absolute_path
-            assert result.library_id == "lib1"
+            assert result.library_id == "libraries/lib1"
 
 
 class TestLibraryUpdateDomain:

@@ -205,7 +205,9 @@ def resolve_library_path(
 
 
 # Supported audio file extensions (immutable)
-AUDIO_EXTENSIONS = frozenset({".mp3", ".m4a", ".mp4", ".flac", ".ogg", ".wav", ".aac", ".opus"})
+AUDIO_EXTENSIONS = frozenset(
+    {".mp3", ".m4a", ".mp4", ".flac", ".ogg", ".wav", ".aac", ".opus", ".wv", ".ape", ".aiff", ".aif"}
+)
 
 
 def collect_audio_files(paths: list[str] | str, recursive: bool = True) -> list[str]:

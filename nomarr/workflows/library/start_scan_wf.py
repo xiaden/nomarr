@@ -71,7 +71,7 @@ def start_scan_workflow(
             # Try to create default library
             logger.info("[start_scan_workflow] No default library found, creating one may be needed")
             raise ValueError("No default library exists. Create a library first or configure library_root.")
-        library_id = library["id"]
+        library_id = library["_id"]
     else:
         # Validate specified library exists
         library = db.libraries.get_library(library_id)

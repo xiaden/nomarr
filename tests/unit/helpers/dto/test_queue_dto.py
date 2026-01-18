@@ -25,7 +25,7 @@ class TestJob:
     def test_can_create_pending_job(self) -> None:
         """Job should be creatable for a pending job."""
         job = Job(
-            id="queue/12345",
+            _id="queue/12345",
             path="/music/song.mp3",
             status="pending",
             created_at=1700000000000,
@@ -34,7 +34,7 @@ class TestJob:
             error_message=None,
             force=False,
         )
-        assert job.id == "queue/12345"
+        assert job._id == "queue/12345"
         assert job.path == "/music/song.mp3"
         assert job.status == "pending"
         assert job.started_at is None
@@ -46,7 +46,7 @@ class TestJob:
     def test_can_create_completed_job(self) -> None:
         """Job should be creatable for a completed job."""
         job = Job(
-            id="queue/12345",
+            _id="queue/12345",
             path="/music/song.mp3",
             status="done",
             created_at=1700000000000,
@@ -64,7 +64,7 @@ class TestJob:
     def test_can_create_failed_job(self) -> None:
         """Job should be creatable for a failed job with error message."""
         job = Job(
-            id="queue/12345",
+            _id="queue/12345",
             path="/music/song.mp3",
             status="error",
             created_at=1700000000000,
@@ -82,13 +82,13 @@ class TestDequeueResult:
 
     @pytest.mark.unit
     def test_can_create_dequeue_result(self) -> None:
-        """DequeueResult should store job_id, file_path, and force flag."""
+        """DequeueResult should store _id, file_path, and force flag."""
         result = DequeueResult(
-            job_id="queue/12345",
+            _id="queue/12345",
             file_path="/music/song.mp3",
             force=True,
         )
-        assert result.job_id == "queue/12345"
+        assert result._id == "queue/12345"
         assert result.file_path == "/music/song.mp3"
         assert result.force is True
 
@@ -112,7 +112,7 @@ class TestListJobsResult:
     def test_can_create_with_jobs(self) -> None:
         """ListJobsResult should store list of Job objects."""
         job = Job(
-            id="queue/1",
+            _id="queue/1",
             path="/music/song.mp3",
             status="pending",
             created_at=1700000000000,
@@ -128,7 +128,7 @@ class TestListJobsResult:
             offset=0,
         )
         assert len(result.jobs) == 1
-        assert result.jobs[0].id == "queue/1"
+        assert result.jobs[0]._id == "queue/1"
 
 
 class TestFlushResult:

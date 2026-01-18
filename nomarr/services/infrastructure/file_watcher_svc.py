@@ -51,7 +51,19 @@ class LibraryEventHandler(FileSystemEventHandler):
     """Handles file system events for a single library."""
 
     # File extensions we care about
-    AUDIO_EXTENSIONS: ClassVar[set[str]] = {".mp3", ".flac", ".m4a", ".ogg", ".opus", ".wav", ".wma", ".aac"}
+    AUDIO_EXTENSIONS: ClassVar[set[str]] = {
+        ".mp3",
+        ".flac",
+        ".m4a",
+        ".ogg",
+        ".opus",
+        ".wav",
+        ".aac",
+        ".wv",
+        ".ape",
+        ".aiff",
+        ".aif",
+    }
     PLAYLIST_EXTENSIONS: ClassVar[set[str]] = {".m3u", ".m3u8", ".pls"}
     IMAGE_EXTENSIONS: ClassVar[set[str]] = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 

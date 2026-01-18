@@ -247,7 +247,7 @@ class LibraryScanMixin:
                         pending_jobs=0,
                         running_jobs=0,
                     )
-                library_id = library["id"]
+                library_id = library["_id"]
             except Exception:
                 return LibraryScanStatusResult(
                     configured=True,

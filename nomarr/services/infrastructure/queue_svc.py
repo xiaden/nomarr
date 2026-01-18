@@ -269,7 +269,7 @@ class QueueService:
         job = get_job(self.db, job_id, self.queue_type)
         if job:
             return Job(
-                id=job["id"],
+                _id=job["_id"],
                 path=job["path"],
                 status=job["status"],
                 created_at=job.get("created_at", 0),
@@ -376,7 +376,7 @@ class QueueService:
         jobs_data, total = list_jobs_comp(self.db, self.queue_type, limit=limit, offset=offset, status=status)  # type: ignore[arg-type]
         jobs = [
             Job(
-                id=j["id"],
+                _id=j["_id"],
                 path=j.get("file_path", j.get("path", "")),
                 status=j["status"],
                 created_at=j.get("created_at", 0),
