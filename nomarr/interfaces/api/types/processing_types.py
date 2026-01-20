@@ -21,7 +21,6 @@ from typing_extensions import Self
 from nomarr.helpers.dto.processing_dto import (
     ProcessFileResult,
 )
-from nomarr.helpers.dto.queue_dto import BatchEnqueueResult
 
 # ──────────────────────────────────────────────────────────────────────
 # Processing Response Types (DTO → Pydantic mappings)
@@ -106,28 +105,3 @@ class BatchProcessResponse(BaseModel):
     skipped: int
     errors: int
     results: list[BatchPathResult]
-
-    @classmethod
-    def from_dto(cls, batch_result: BatchEnqueueResult) -> Self:
-        """
-        Transform BatchEnqueueResult DTO to API response.
-
-        Args:
-            batch_result: Internal batch enqueue result from service layer
-
-        Returns:
-            API response model
-        """
-        return cls(
-            queued=batch_result.total_queued,
-            skipped=0,
-            errors=batch_result.total_errors,
-            results=[
-                BatchPathResult(
-                    path=r.path,
-                    status=r.status,
-                    message=r.message,
-                )
-                for r in batch_result.results
-            ],
-        )

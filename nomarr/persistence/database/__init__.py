@@ -17,7 +17,6 @@ from .library_tags_aql import LibraryTagOperations
 from .meta_aql import MetaOperations
 from .sessions_aql import SessionOperations
 from .song_tag_edges_aql import SongTagEdgeOperations
-from .tag_queue_aql import QueueOperations
 
 # JoinedQueryOperations has circular import with workflows - imported directly in db.py
 
@@ -32,7 +31,6 @@ __all__ = [
     "LibraryFoldersOperations",
     "LibraryTagOperations",
     "MetaOperations",
-    "QueueOperations",
     "SessionOperations",
     "SongTagEdgeOperations",
 ]

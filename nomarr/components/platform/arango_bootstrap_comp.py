@@ -36,7 +36,6 @@ def _create_collections(db: StandardDatabase) -> None:
     """Create document and edge collections."""
     # Document collections
     document_collections = [
-        "tag_queue",
         "meta",
         "libraries",
         "library_files",
@@ -46,6 +45,7 @@ def _create_collections(db: StandardDatabase) -> None:
         "calibration_state",
         "calibration_history",
         "health",
+        "worker_claims",  # Discovery worker claims (Phase 2)
         # Metadata entity vertex collections
         "artists",
         "albums",
@@ -80,9 +80,10 @@ def _create_indexes(db: StandardDatabase) -> None:
 
     Idempotent - skips existing indexes.
     """
-    # tag_queue indexes
-    _ensure_index(db, "tag_queue", "persistent", ["status"])
-    _ensure_index(db, "tag_queue", "persistent", ["created_at"])
+    # worker_claims indexes (discovery workers)
+    _ensure_index(db, "worker_claims", "persistent", ["file_key"])
+    _ensure_index(db, "worker_claims", "persistent", ["worker_id"])
+    _ensure_index(db, "worker_claims", "persistent", ["claimed_at"])
 
     # library_files indexes
     _ensure_index(db, "library_files", "persistent", ["library_id"])

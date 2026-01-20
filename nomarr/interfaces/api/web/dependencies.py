@@ -21,7 +21,6 @@ if TYPE_CHECKING:
     from nomarr.services.domain.metadata_svc import MetadataService
     from nomarr.services.domain.navidrome_svc import NavidromeService
     from nomarr.services.infrastructure.config_svc import ConfigService
-    from nomarr.services.infrastructure.queue_svc import QueueService
     from nomarr.services.infrastructure.worker_system_svc import WorkerSystemService
 
 
@@ -32,18 +31,6 @@ def get_config() -> dict[str, Any]:
     config_service = application.get_service("config")
     result = config_service.get_config()
     return result.config  # type: ignore[no-any-return]
-
-
-def get_queue_service() -> QueueService:
-    """Get QueueService instance."""
-    from nomarr.app import application
-
-    service = application.services.get("queue")
-    if not service:
-        from fastapi import HTTPException
-
-        raise HTTPException(status_code=503, detail="Queue service not available")
-    return service  # type: ignore[no-any-return]
 
 
 def get_workers_coordinator() -> WorkerSystemService:

@@ -83,16 +83,6 @@ from .processing_types import (
     ProcessFileRequest,
     ProcessFileResponse,
 )
-from .queue_types import (
-    FlushRequest,
-    FlushResponse,
-    JobRemovalResult,
-    ListJobsResponse,
-    OperationResult,
-    QueueJobResponse,
-    QueueStatusResponse,
-    RemoveJobRequest,
-)
 
 __all__ = [
     "ApplyCalibrationResponse",
@@ -113,8 +103,6 @@ __all__ = [
     "EntityResponse",
     "FileTagResponse",
     "FileTagsResponse",
-    "FlushRequest",
-    "FlushResponse",
     "GPUHealthResponse",
     "GenerateCalibrationResponse",
     "GenerateMinmaxCalibrationResponse",
@@ -134,7 +122,6 @@ __all__ = [
     "MoodDistributionItemResponse",
     "MoodDistributionResponse",
     "NavidromeConfigResponse",
-    "OperationResult",
     "PlaylistGenerateRequest",
     "PlaylistPreviewRequest",
     "PlaylistPreviewResponse",
@@ -143,11 +130,8 @@ __all__ = [
     "ProcessFileResponse",
     "PublicInfoResponse",
     "QueueInfoResponse",
-    "QueueJobResponse",
-    "QueueStatusResponse",
     "RecalibrationStatusResponse",
     "ReconcilePathsResponse",
-    "RemoveJobRequest",
     "RetagAllResponse",
     "RunCalibrationResponse",
     "SaveCalibrationSidecarsResponse",

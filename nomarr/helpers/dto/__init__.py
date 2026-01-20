@@ -41,11 +41,11 @@ from nomarr.helpers.dto.analytics_dto import (
     TagCorrelationData,
     TagSpec,
 )
-from nomarr.helpers.dto.events_state_dto import (
-    JobState,
-    QueueState,
-    SystemHealthState,
-    WorkerState,
+from nomarr.helpers.dto.health_dto import (
+    ComponentLifecycleHandler,
+    ComponentPolicy,
+    ComponentStatus,
+    StatusChangeContext,
 )
 from nomarr.helpers.dto.library_dto import ScanTarget
 from nomarr.helpers.dto.ml_dto import (
@@ -71,25 +71,25 @@ from nomarr.helpers.dto.processing_dto import (
 __all__ = [
     "AnalyzeWithSegmentsResult",
     "ArtistTagProfile",
+    "ComponentLifecycleHandler",
+    "ComponentPolicy",
+    "ComponentStatus",
     "ComputeEmbeddingsForBackboneParams",
     "GenerateMinmaxCalibrationResult",
-    "JobState",
     "LibraryPath",
     "LoadAudioMonoResult",
     "MoodDistributionData",
     "PlaylistPreviewResult",
     "ProcessFileResult",
     "ProcessorConfig",
-    "QueueState",
     "SaveCalibrationSidecarsResult",
     "ScanTarget",
     "SegmentWaveformParams",
     "SmartPlaylistFilter",
-    "SystemHealthState",
+    "StatusChangeContext",
     "TagCoOccurrenceData",
     "TagCondition",
     "TagCorrelationData",
     "TagSpec",
     "TagWriteProfile",
-    "WorkerState",
 ]

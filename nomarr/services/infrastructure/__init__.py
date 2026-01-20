@@ -27,7 +27,6 @@ from .health_monitor_svc import HealthMonitorConfig, HealthMonitorService
 from .info_svc import InfoService
 from .keys_svc import SESSION_TIMEOUT_SECONDS, KeyManagementService
 from .ml_svc import MLConfig, MLService
-from .queue_svc import QueueService
 from .worker_system_svc import WorkerSystemService
 
 __all__ = [
@@ -58,7 +57,6 @@ __all__ = [
     "KeyManagementService",
     "MLConfig",
     "MLService",
-    "QueueService",
     "WorkerSystemService",
     "check_missing_calibrations",
     "download_calibrations",

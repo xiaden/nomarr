@@ -127,6 +127,7 @@ class TestLibraryStatsResult:
             total_albums=0,
             total_duration=None,
             total_size=None,
+            needs_tagging_count=0,
         )
         assert stats.total_files == 0
         assert stats.total_duration is None
@@ -140,10 +141,12 @@ class TestLibraryStatsResult:
             total_albums=100,
             total_duration=360000.5,  # 100 hours
             total_size=10_000_000_000,  # 10 GB
+            needs_tagging_count=250,  # 250 files awaiting processing
         )
         assert stats.total_files == 1000
         assert stats.total_artists == 50
         assert stats.total_duration == 360000.5
+        assert stats.needs_tagging_count == 250
 
 
 class TestLibraryDict:

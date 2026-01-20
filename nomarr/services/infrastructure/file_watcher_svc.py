@@ -164,7 +164,12 @@ class FileWatcherService:
         self.db = db
         self.library_service = library_service
         self.debounce_seconds = debounce_seconds
-        self.event_loop = event_loop or asyncio.get_event_loop()
+        # Use provided loop or get running loop (avoid deprecated get_event_loop)
+        try:
+            self.event_loop = event_loop or asyncio.get_running_loop()
+        except RuntimeError:
+            # No running loop - create new one (for non-async context)
+            self.event_loop = asyncio.new_event_loop()
         self.polling_interval_seconds = polling_interval_seconds
 
         # Active watchers (event mode: Observer, poll mode: Task or Thread)

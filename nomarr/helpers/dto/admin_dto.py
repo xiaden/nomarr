@@ -30,8 +30,9 @@ class CacheRefreshResult:
 class WorkerOperationResult:
     """Result from worker control operations (pause/resume)."""
 
-    status: str
+    success: bool
     message: str
+    worker_enabled: bool
 
 
 @dataclass

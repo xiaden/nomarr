@@ -5,10 +5,10 @@ import logging
 import os
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.types.admin_types import WorkerOperationResponse
-from nomarr.interfaces.api.types.queue_types import OperationResult
 from nomarr.interfaces.api.web.dependencies import (
     get_workers_coordinator,
 )
@@ -18,6 +18,14 @@ router = APIRouter(prefix="/worker", tags=["worker"])
 
 # Background task storage for restart
 _RESTART_TASKS: set = set()
+
+
+# Simple response model for restart
+class RestartResponse(BaseModel):
+    """Response for restart operation."""
+
+    status: str
+    message: str
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -49,7 +57,7 @@ async def web_admin_worker_resume(
 
 
 @router.post("/restart", dependencies=[Depends(verify_session)])
-async def web_admin_restart() -> OperationResult:
+async def web_admin_restart() -> RestartResponse:
     """Restart the API server (useful after config changes)."""
     import sys
 
@@ -66,7 +74,7 @@ async def web_admin_restart() -> OperationResult:
     _RESTART_TASKS.add(task)
     task.add_done_callback(_RESTART_TASKS.discard)
 
-    return OperationResult(
+    return RestartResponse(
         status="success",
         message="API server is restarting... Please refresh the page in a few seconds.",
     )

@@ -47,6 +47,7 @@ class LibraryStatsResult:
     total_albums: int
     total_duration: float | None
     total_size: int | None
+    needs_tagging_count: int
 
 
 @dataclass

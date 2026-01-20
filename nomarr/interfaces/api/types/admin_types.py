@@ -49,11 +49,13 @@ class WorkerOperationResponse(BaseModel):
 
     status: str
     message: str
+    worker_enabled: bool
 
     @classmethod
     def from_dto(cls, dto: WorkerOperationResult) -> WorkerOperationResponse:
         """Convert DTO to Pydantic response model."""
-        return cls(status=dto.status, message=dto.message)
+        status = "success" if dto.success else "error"
+        return cls(status=status, message=dto.message, worker_enabled=dto.worker_enabled)
 
 
 class RunCalibrationResponse(BaseModel):

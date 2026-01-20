@@ -137,12 +137,12 @@ def build_library_path_from_db(
         LibraryPath with status reflecting current config validity
 
     Example:
-        # After dequeuing a job
-        job = db.tag_queue.dequeue()
-        path = build_library_path_from_db(job.file_path, db)
+        # When processing a file from discovery
+        file_record = db.files.get_file(file_id)
+        path = build_library_path_from_db(file_record["path"], db)
         if not path.is_valid():
             # Config changed, path no longer valid
-            db.tag_queue.mark_error(job._id, path.reason)
+            db.files.mark_invalid(file_id, path.reason)
             return
     """
     from nomarr.helpers.files_helper import is_audio_file

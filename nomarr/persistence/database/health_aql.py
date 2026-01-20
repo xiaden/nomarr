@@ -435,6 +435,48 @@ class HealthOperations:
             ),
         )
 
+    def update_health_snapshot(
+        self,
+        component_id: str,
+        status: str,
+        timestamp: int,
+    ) -> None:
+        """Write a health history snapshot for a component.
+
+        This is used by HealthMonitor to record status for history/diagnostics.
+        This is WRITE-ONLY and BEST-EFFORT - not used for liveness decisions.
+
+        Args:
+            component_id: Component identifier
+            status: Current status (pending, healthy, unhealthy, failed)
+            timestamp: Timestamp in milliseconds
+        """
+        self.db.aql.execute(
+            """
+            UPSERT {component_id: @component_id}
+            INSERT {
+                component_id: @component_id,
+                status: @status,
+                last_snapshot: @timestamp,
+                created_at: @timestamp,
+                snapshot_type: "history"
+            }
+            UPDATE {
+                status: @status,
+                last_snapshot: @timestamp
+            }
+            IN health
+            """,
+            bind_vars=cast(
+                dict[str, Any],
+                {
+                    "component_id": component_id,
+                    "status": status,
+                    "timestamp": timestamp,
+                },
+            ),
+        )
+
     def clean_all(self) -> int:
         """Delete all health records.
 

@@ -37,8 +37,6 @@ from nomarr.services.domain.tagging_svc import TaggingService
 from nomarr.services.infrastructure.config_svc import ConfigService
 from nomarr.services.infrastructure.health_monitor_svc import HealthMonitorService
 from nomarr.services.infrastructure.keys_svc import KeyManagementService
-from nomarr.services.infrastructure.queue_svc import QueueService
-from nomarr.services.infrastructure.worker_system_svc import WorkerSystemService
 
 
 def validate_environment() -> None:
@@ -160,8 +158,9 @@ class Application:
         # Services container (DI registry)
         self.services: dict[str, Any] = {}
 
-        # Workers and processing (Phase 4: multiprocessing with health monitoring)
-        self.worker_system: WorkerSystemService | None = None
+        # Workers and processing (Phase 2: discovery-based workers)
+        # TODO: Implement discovery workers per DISCOVERY_WORKER_REFACTOR.md
+        self.worker_system = None  # Placeholder - will be WorkerSystemService
 
         # Infrastructure
         self.health_monitor: HealthMonitorService | None = None
@@ -313,10 +312,6 @@ class Application:
         # Initialize services (DI: inject dependencies)
         logging.info("[Application] Initializing services...")
 
-        # QueueService
-        queue_service = QueueService(self.db, self._config)
-        self.register_service("queue", queue_service)
-
         # Register ML service
         from nomarr.services.infrastructure.ml_svc import MLConfig, MLService
 
@@ -354,8 +349,7 @@ class Application:
         navidrome_service = NavidromeService(db=self.db, cfg=navidrome_cfg)
         self.register_service("navidrome", navidrome_service)
 
-        # Register Info service - TODO: Phase 4 - needs coordinators
-        # Mock minimal version for now
+        # Register Info service
         from nomarr.services.infrastructure.info_svc import InfoConfig, InfoService
 
         info_cfg = InfoConfig(
@@ -372,8 +366,7 @@ class Application:
         )
         info_service = InfoService(
             cfg=info_cfg,
-            workers_coordinator=self.worker_system,  # Phase 4: WorkerSystemService
-            queue_service=queue_service,
+            workers_coordinator=self.worker_system,  # Discovery workers (Phase 2)
             ml_service=ml_service,
         )
         self.register_service("info", info_service)
@@ -455,36 +448,31 @@ class Application:
             ),
         )
 
-        # Initialize WorkerSystemService (Phase 4: multiprocessing with health monitoring)
-        logging.info("[Application] Initializing worker system...")
+        # Initialize discovery-based WorkerSystemService
+        # Per DISCOVERY_WORKER_REFACTOR.md, workers:
+        # - Query library_files directly for needs_tagging=1
+        # - Claim files atomically via worker_claims collection
+        # - Process and update library_files.tagged=1
+        logging.info("[Application] Initializing discovery-based worker system...")
+        from nomarr.services.infrastructure.worker_system_svc import WorkerSystemService
 
-        # Create processing backend functions using worker-specific factories
-        from nomarr.services.infrastructure.workers.tagger import create_tagger_backend
+        processor_config = self._config_service.make_processor_config()
+        worker_count = self._config_service.get_worker_count("tagger")
 
-        tagger_backend = create_tagger_backend(
-            models_dir=Path(self.models_dir),
-            namespace=self.namespace,
-            calibrate_heads=self.calibrate_heads,
-            version_tag_key=self.version_tag_key,
-            tagger_version=self.tagger_version,
-        )
-
-        # Get per-pool worker counts from config
-        config_service = self.get_service("config")
-        tagger_count = config_service.get_worker_count("tagger")
-
-        # Create WorkerSystemService with backends
         self.worker_system = WorkerSystemService(
             db=self.db,
-            tagger_backend=tagger_backend,
-            tagger_count=tagger_count,
+            processor_config=processor_config,
+            worker_count=worker_count,
             default_enabled=self.worker_enabled_default,
         )
+        self.register_service("worker_system", self.worker_system)
 
-        # Start all worker processes
-        logging.info("[Application] Starting worker processes...")
-        self.worker_system.start_all_workers()
-        logging.info("[Application] Worker processes started")
+        # Start workers if enabled
+        if self.worker_system.is_worker_system_enabled():
+            logging.info("[Application] Starting discovery workers...")
+            self.worker_system.start_all_workers()
+        else:
+            logging.info("[Application] Worker system disabled, not starting workers")
 
         # Start app heartbeat thread (Phase 3: DB-based IPC)
         self._running = True
@@ -493,7 +481,7 @@ class Application:
         # Mark app as fully healthy after all services/workers started
         self.db.health.mark_healthy(component_id="app")
 
-        logging.info("[Application] Started successfully - all workers operational")
+        logging.info("[Application] Started successfully")
 
     def stop(self) -> None:
         """
@@ -513,7 +501,7 @@ class Application:
             file_watcher.stop_all()
             logging.info("[Application] File watchers stopped")
 
-        # Stop worker processes (Phase 4: WorkerSystemService)
+        # Stop worker processes (Phase 2: discovery workers)
         if self.worker_system:
             logging.info("[Application] Stopping worker processes...")
             self.worker_system.stop_all_workers()

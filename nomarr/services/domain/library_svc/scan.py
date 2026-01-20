@@ -11,9 +11,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.queue import list_jobs as list_jobs_component
 from nomarr.helpers.dto.library_dto import LibraryScanStatusResult, ScanTarget, StartScanResult
-from nomarr.helpers.dto.queue_dto import Job
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -63,14 +61,15 @@ class LibraryScanMixin:
 
     def _is_scan_running(self) -> bool:
         """
-        Check if any scan jobs are currently being processed.
+        Check if any scan is currently running.
+
+        Uses library.scan_status field instead of queue jobs.
 
         Returns:
-            True if any jobs are in 'running' status
+            True if any library has scan_status='scanning'
         """
-        # Query for any running scan jobs using component
-        jobs_list, _ = list_jobs_component(self.db, queue_type="library", limit=1000)
-        return any(job["status"] == "running" for job in jobs_list)
+        libraries = self.db.libraries.list_libraries(enabled_only=False)
+        return any(lib.get("scan_status") == "scanning" for lib in libraries)
 
     def scan_targets(
         self,
@@ -282,17 +281,26 @@ class LibraryScanMixin:
             scan_error=scan_error,
         )
 
-    def get_scan_history(self, limit: int = 100) -> list[Job]:
+    def get_scan_history(self, limit: int = 100) -> list[dict[str, Any]]:
         """
-        Get recent library scan jobs.
+        Get recent library scan history from library records.
+
+        Note: Queue-based job history removed in favor of library.scanned_at field.
+        Returns simplified scan info from library records.
 
         Args:
-            limit: Maximum number of jobs to return
+            limit: Maximum number of libraries to return
 
         Returns:
-            List of Job DTOs
+            List of scan info dicts with library_id, name, scanned_at, scan_status
         """
-        from nomarr.services.domain._library_mapping import map_queue_job_to_dto
-
-        jobs_list, _ = list_jobs_component(self.db, queue_type="library", limit=limit)
-        return [map_queue_job_to_dto(job) for job in jobs_list]
+        libraries = self.db.libraries.list_libraries(enabled_only=False)
+        return [
+            {
+                "library_id": lib["_id"],
+                "name": lib.get("name", "Unknown"),
+                "scanned_at": lib.get("scanned_at"),
+                "scan_status": lib.get("scan_status", "idle"),
+            }
+            for lib in libraries[:limit]
+        ]

@@ -27,6 +27,7 @@ You are here to help maintain that architecture, not invent a new one.
 - let helpers import any `nomarr.*` modules
 - invent modules, imports, attributes, or function names (use `scripts/discover_api.py` to confirm real APIs)
 - rename `_id` or `_key` to `id`, `uuid`, or similar (these are reserved persistence-layer identifiers)
+- run Python commands (pytest, pip, python, etc.) without first confirming the venv is active
 
 **Always:**
 
@@ -38,6 +39,7 @@ You are here to help maintain that architecture, not invent a new one.
 - write mypy-friendly, fully type-annotated Python
 - write code that passes `ruff`, `mypy`, and `pytest` without needing huge repairs
 - prefer minimal diffs unless explicitly instructed otherwise
+- check terminal context for venv activation before running any Python command; if unknown, call `configure_python_environment` first
 
 ---
 

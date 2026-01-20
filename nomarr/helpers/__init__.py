@@ -3,7 +3,6 @@ Helpers package.
 """
 
 from .dto.processing_dto import ProcessorConfig, TagWriteProfile
-from .dto.queue_dto import DequeueResult, Job, ListJobsResult
 from .file_validation_helper import (
     check_already_tagged,
     make_skip_result,
@@ -22,9 +21,6 @@ from .time_helper import now_ms
 
 __all__ = [
     "AUDIO_EXTENSIONS",
-    "DequeueResult",
-    "Job",
-    "ListJobsResult",
     "ProcessorConfig",
     "TagWriteProfile",
     "check_already_tagged",

@@ -42,6 +42,7 @@ class LibraryQueryMixin:
             total_albums=stats.get("total_albums", 0),
             total_duration=stats.get("total_duration"),
             total_size=stats.get("total_size"),
+            needs_tagging_count=stats.get("needs_tagging_count", 0),
         )
 
     def get_all_library_paths(self) -> list[str]:

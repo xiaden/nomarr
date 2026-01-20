@@ -23,8 +23,6 @@ from nomarr.helpers.dto.info_dto import (
 
 if TYPE_CHECKING:
     from nomarr.services.infrastructure.ml_svc import MLService
-    from nomarr.services.infrastructure.queue_svc import QueueService
-    from nomarr.services.infrastructure.worker_system_svc import WorkerSystemService
 
 
 logger = logging.getLogger(__name__)
@@ -57,8 +55,7 @@ class InfoService:
     def __init__(
         self,
         cfg: InfoConfig,
-        workers_coordinator: WorkerSystemService | None = None,
-        queue_service: QueueService | None = None,
+        workers_coordinator: Any = None,
         ml_service: MLService | None = None,
     ):
         """
@@ -67,12 +64,10 @@ class InfoService:
         Args:
             cfg: Info configuration
             workers_coordinator: Worker system service instance (optional)
-            queue_service: Queue service instance (optional)
             ml_service: ML service instance (optional)
         """
         self.cfg = cfg
         self.workers_coordinator = workers_coordinator
-        self.queue_service = queue_service
         self.ml_service = ml_service
 
     def get_system_info(self) -> SystemInfoResult:
@@ -83,12 +78,11 @@ class InfoService:
             SystemInfoResult DTO with version, namespace, models_dir, worker status
         """
         worker_enabled = self.workers_coordinator.is_worker_system_enabled() if self.workers_coordinator else False
-        # For worker_count, we'll use the total from all pools
+        # For worker_count, get from workers_coordinator
         worker_count = 0
         if self.workers_coordinator:
             status = self.workers_coordinator.get_workers_status()
-            for pool_status in status["pools"].values():
-                worker_count += pool_status["worker_count"]
+            worker_count = status.get("worker_count", 0)
 
         return SystemInfoResult(
             version=self.cfg.version,
@@ -102,56 +96,29 @@ class InfoService:
         """
         Get health status with warnings and diagnostics.
 
-        Analyzes queue statistics, worker status, and generates warnings
-        for potential issues.
+        Analyzes worker status and generates warnings for potential issues.
+        Queue-based statistics removed in favor of discovery workers.
 
         Returns:
-            HealthStatusResult DTO with status, warnings, queue info, worker count
+            HealthStatusResult DTO with status, warnings, worker count
         """
-        if not self.queue_service:
-            return HealthStatusResult(
-                status="unavailable",
-                processor_initialized=False,
-                worker_count=0,
-                queue={},
-                warnings=["Queue service not available"],
-            )
-
-        # Get queue statistics
-        queue_stats = self.queue_service.get_status()
-
         # Compute worker count from worker system
         worker_count = 0
         if self.workers_coordinator:
             worker_status = self.workers_coordinator.get_workers_status()
-            for pool_status in worker_status["pools"].values():
-                worker_count += pool_status["count"]
-        running_jobs = queue_stats.counts.get("running", 0)
+            worker_count = worker_status.get("running", 0)
 
         # Detect potential issues
         warnings: list[str] = []
 
-        # Check for more running jobs than workers (stuck jobs)
-        if running_jobs > worker_count:
-            warnings.append(
-                f"More running jobs ({running_jobs}) than workers ({worker_count}). "
-                f"Some jobs may be stuck in 'running' state."
-            )
-
         # Determine overall health status
         health_status = "healthy" if not warnings else "degraded"
-
-        # Convert queue_stats to dict for response
-        queue_dict: dict[str, Any] = {
-            "depth": queue_stats.depth,
-            "counts": queue_stats.counts,
-        }
 
         return HealthStatusResult(
             status=health_status,
             processor_initialized=self.workers_coordinator is not None,
             worker_count=worker_count,
-            queue=queue_dict,
+            queue={},  # No queue in discovery worker model
             warnings=warnings,
         )
 
@@ -175,17 +142,14 @@ class InfoService:
 
         if self.workers_coordinator and worker_enabled:
             status = self.workers_coordinator.get_workers_status()
-            # Check if any pool has running workers
-            for pool_status in status["pools"].values():
-                if pool_status["running"]:
-                    worker_alive = True
-                    break
+            # Check if any workers are running
+            worker_alive = status.get("running", 0) > 0
 
-        # Queue info
-        queue_stats = self.queue_service.get_status() if self.queue_service else None
+        # Queue info - deprecated in discovery worker model
+        # TODO: Phase 2 - Replace with needs_tagging count from library_files
         queue_info = QueueInfo(
-            depth=queue_stats.depth if queue_stats else 0,
-            counts=queue_stats.counts if queue_stats else {},
+            depth=0,
+            counts={},
         )
 
         # Models info

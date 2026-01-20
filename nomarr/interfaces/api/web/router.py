@@ -1,7 +1,7 @@
 """
 Combined router for all web UI endpoints.
 
-This module aggregates all web UI routers (auth, analytics, queue, worker, etc.)
+This module aggregates all web UI routers (auth, analytics, worker, etc.)
 into a single router that can be included in the main FastAPI app.
 """
 
@@ -16,7 +16,6 @@ from nomarr.interfaces.api.web import info_if as info
 from nomarr.interfaces.api.web import library_if as library
 from nomarr.interfaces.api.web import navidrome_if as navidrome
 from nomarr.interfaces.api.web import processing_if as processing
-from nomarr.interfaces.api.web import queue_if as queue
 from nomarr.interfaces.api.web import tags_if as tags
 from nomarr.interfaces.api.web import worker_if as worker
 
@@ -33,6 +32,5 @@ router.include_router(info.router)
 router.include_router(library.router)
 router.include_router(navidrome.router)
 router.include_router(processing.router)
-router.include_router(queue.router)
 router.include_router(tags.router)
 router.include_router(worker.router)

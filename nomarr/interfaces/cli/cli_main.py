@@ -7,11 +7,9 @@ from __future__ import annotations
 
 import argparse
 
-from nomarr.interfaces.cli.commands.admin_reset_cli import cmd_admin_reset
 from nomarr.interfaces.cli.commands.cache_refresh_cli import cmd_cache_refresh
 from nomarr.interfaces.cli.commands.cleanup_cli import cmd_cleanup
 from nomarr.interfaces.cli.commands.manage_password_cli import cmd_manage_password
-from nomarr.interfaces.cli.commands.remove_cli import cmd_remove
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -22,9 +20,7 @@ def build_parser() -> argparse.ArgumentParser:
         epilog="Examples:\n"
         "  nom cleanup                                # Remove orphaned entities\n"
         "  nom cleanup --dry-run                      # Preview orphaned entities\n"
-        "  nom admin-reset --stuck                    # Reset stuck jobs\n"
         "  nom cache-refresh                          # Rebuild model cache\n"
-        "  nom remove --status error                  # Remove failed jobs\n"
         "  nom manage-password reset                  # Change admin password",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -35,13 +31,6 @@ def build_parser() -> argparse.ArgumentParser:
         description="Available commands (use 'nom <command> --help' for command-specific help)",
     )
 
-    # remove: Remove jobs from queue
-    s = sub.add_parser("remove", help="Remove job(s) from the queue")
-    s.add_argument("job_id", nargs="?", help="specific job ID to remove")
-    s.add_argument("--all", action="store_true", help="remove all non-running jobs")
-    s.add_argument("--status", help="remove jobs with status: pending, error, or done")
-    s.set_defaults(func=cmd_remove)
-
     # cleanup: Remove orphaned entities
     s = sub.add_parser("cleanup", help="Remove orphaned entities (artists, albums, etc.) with no songs")
     s.add_argument("--dry-run", action="store_true", help="show what would be deleted without deleting")
@@ -50,13 +39,6 @@ def build_parser() -> argparse.ArgumentParser:
     # cache-refresh: Rebuild predictor cache
     s = sub.add_parser("cache-refresh", help="Rebuild model cache (use after adding/removing models)")
     s.set_defaults(func=cmd_cache_refresh)
-
-    # admin-reset: Reset stuck or error jobs
-    s = sub.add_parser("admin-reset", help="Reset stuck or failed jobs back to pending state")
-    s.add_argument("--stuck", action="store_true", help="reset jobs stuck in 'running' state (after crashes)")
-    s.add_argument("--errors", action="store_true", help="reset all failed jobs to retry them")
-    s.add_argument("--force", action="store_true", help="skip confirmation prompt")
-    s.set_defaults(func=cmd_admin_reset)
 
     # manage-password: Admin password management
     s = sub.add_parser("manage-password", help="Manage admin password for web UI")

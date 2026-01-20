@@ -18,7 +18,6 @@ from nomarr.components.library.library_root_comp import (
     get_base_library_root,
     normalize_library_root,
 )
-from nomarr.components.queue import list_jobs as list_jobs_component
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -174,6 +173,6 @@ def _resolve_library_name(db: Database, name: str | None, abs_path: str) -> str:
 
 
 def _is_scan_running(db: Database) -> bool:
-    """Check if any scan jobs are currently running."""
-    jobs_list, _ = list_jobs_component(db, queue_type="library", limit=1000)
-    return any(job["status"] == "running" for job in jobs_list)
+    """Check if any library has an active scan."""
+    libraries = db.libraries.list_libraries(enabled_only=False)
+    return any(lib.get("scan_status") == "scanning" for lib in libraries)

@@ -10,7 +10,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from nomarr.helpers.dto.library_dto import FileTag, LibraryFileWithTags
-from nomarr.helpers.dto.queue_dto import Job
 
 if TYPE_CHECKING:
     pass
@@ -54,27 +53,4 @@ def map_file_with_tags_to_dto(file_dict: dict[str, Any]) -> LibraryFileWithTags:
             )
             for tag in file_dict["tags"]
         ],
-    )
-
-
-def map_queue_job_to_dto(job_dict: dict[str, Any]) -> Job:
-    """
-    Convert a raw queue job dictionary to Job DTO.
-
-    Args:
-        job_dict: Dictionary from list_jobs query
-                  Must contain '_id', 'path', 'status', 'started_at' keys
-
-    Returns:
-        Job DTO
-    """
-    return Job(
-        _id=job_dict["_id"],
-        path=job_dict["path"],
-        status=job_dict["status"],
-        created_at=job_dict.get("created_at", 0),
-        started_at=job_dict["started_at"],
-        finished_at=job_dict.get("completed_at"),  # Map completed_at → finished_at
-        error_message=job_dict.get("error_message"),
-        force=job_dict.get("force", False),
     )

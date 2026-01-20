@@ -338,7 +338,8 @@ class LibraryFilesOperations:
             library_id: Optional library ID to filter
 
         Returns:
-            Dict with: total_files, total_artists, total_albums, total_duration, total_size
+            Dict with: total_files, total_artists, total_albums, total_duration, total_size,
+                       needs_tagging_count (files awaiting processing)
         """
         filter_clause = "FILTER file.library_id == @library_id" if library_id is not None else ""
         bind_vars = {"library_id": library_id} if library_id is not None else {}
@@ -354,13 +355,15 @@ class LibraryFilesOperations:
                     total_artists = COUNT_DISTINCT(file.artist),
                     total_albums = COUNT_DISTINCT(file.album),
                     total_duration = SUM(file.duration_seconds),
-                    total_size = SUM(file.file_size)
+                    total_size = SUM(file.file_size),
+                    needs_tagging_count = SUM(file.needs_tagging == 1 ? 1 : 0)
                 RETURN {{
                     total_files,
                     total_artists,
                     total_albums,
                     total_duration,
-                    total_size
+                    total_size,
+                    needs_tagging_count
                 }}
             """,
                 bind_vars=cast(dict[str, Any], bind_vars),
@@ -529,6 +532,32 @@ class LibraryFilesOperations:
             ),
         )
         return list(cursor)
+
+    def discover_next_unprocessed_file(self) -> dict[str, Any] | None:
+        """Discover next file needing ML tagging for worker discovery.
+
+        Query optimized for discovery-based workers:
+        - Filters: needs_tagging=1, is_valid=1
+        - Deterministic ordering by _key for consistent work distribution
+        - LIMIT 1 for single-file claiming
+
+        Returns:
+            File dict or None if no work available
+        """
+        cursor = cast(
+            Cursor,
+            self.db.aql.execute(
+                """
+                FOR file IN library_files
+                    FILTER file.needs_tagging == 1
+                    FILTER file.is_valid == 1
+                    SORT file._key
+                    LIMIT 1
+                    RETURN file
+                """
+            ),
+        )
+        return next(iter(cursor), None)
 
     def get_files_by_chromaprint(self, chromaprint: str, library_id: int | None = None) -> list[dict[str, Any]]:
         """Get library files matching a chromaprint (for move detection).

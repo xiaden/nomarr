@@ -1,6 +1,6 @@
 """
-Public API endpoints for system information and job management.
-Routes: /api/v1/list, /api/v1/info
+Public API endpoints for system information.
+Routes: /api/v1/info
 
 ARCHITECTURE:
 - These endpoints are thin HTTP boundaries
@@ -10,56 +10,14 @@ ARCHITECTURE:
 
 from __future__ import annotations
 
-import logging
+from fastapi import APIRouter, Depends
 
-from fastapi import APIRouter, Depends, HTTPException
-
-from nomarr.helpers.logging_helper import sanitize_exception_message
-from nomarr.interfaces.api.auth import verify_key
 from nomarr.interfaces.api.types.info_types import PublicInfoResponse
-from nomarr.interfaces.api.types.queue_types import ListJobsResponse
-from nomarr.interfaces.api.web.dependencies import get_info_service, get_queue_service
+from nomarr.interfaces.api.web.dependencies import get_info_service
 from nomarr.services.infrastructure.info_svc import InfoService
-from nomarr.services.infrastructure.queue_svc import QueueService
 
 # Router instance (will be included in main app under /api prefix)
 router = APIRouter(prefix="/v1", tags=["public"])
-
-
-# ----------------------------------------------------------------------
-#  GET /list
-# ----------------------------------------------------------------------
-@router.get("/list", dependencies=[Depends(verify_key)])
-async def list_jobs(
-    limit: int = 50,
-    offset: int = 0,
-    status: str | None = None,
-    queue_service: QueueService = Depends(get_queue_service),
-) -> ListJobsResponse:
-    """
-    List jobs with pagination and optional status filtering.
-
-    Args:
-        limit: Maximum number of jobs to return (default 50)
-        offset: Number of jobs to skip for pagination (default 0)
-        status: Filter by status (pending/running/done/error), or None for all
-        queue_service: Injected QueueService
-
-    Returns:
-        ListJobsResponse with jobs, total count, limit, and offset
-    """
-    # Validate status parameter
-    if status and status not in ("pending", "running", "done", "error"):
-        raise HTTPException(
-            status_code=400, detail=f"Invalid status '{status}'. Must be one of: pending, running, done, error"
-        )
-
-    try:
-        result = queue_service.list_jobs(limit=limit, offset=offset, status=status)
-        return ListJobsResponse.from_dto(result)
-    except Exception as e:
-        logging.exception("[Public API] Error listing jobs")
-        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to list jobs")) from e
 
 
 # ----------------------------------------------------------------------

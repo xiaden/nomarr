@@ -17,7 +17,7 @@ from nomarr.persistence.database.library_tags_aql import LibraryTagOperations
 from nomarr.persistence.database.meta_aql import MetaOperations
 from nomarr.persistence.database.sessions_aql import SessionOperations
 from nomarr.persistence.database.song_tag_edges_aql import SongTagEdgeOperations
-from nomarr.persistence.database.tag_queue_aql import QueueOperations
+from nomarr.persistence.database.worker_claims_aql import WorkerClaimsOperations
 
 __all__ = ["SCHEMA_VERSION", "Database"]
 
@@ -112,7 +112,6 @@ class Database:
         # Initialize operation classes - one per collection
         self.meta = MetaOperations(self.db)
         self.libraries = LibrariesOperations(self.db)
-        self.tag_queue = QueueOperations(self.db)
         self.library_files = LibraryFilesOperations(self.db)
         self.library_folders = LibraryFoldersOperations(self.db)
         self.library_tags = LibraryTagOperations(self.db)
@@ -121,6 +120,7 @@ class Database:
         self.calibration_state = CalibrationStateOperations(self.db)
         self.calibration_history = CalibrationHistoryOperations(self.db)
         self.health = HealthOperations(self.db)
+        self.worker_claims = WorkerClaimsOperations(self.db)
         # Metadata entity operations (hybrid graph model)
         self.entities = EntityOperations(self.db)
         self.song_tag_edges = SongTagEdgeOperations(self.db)
