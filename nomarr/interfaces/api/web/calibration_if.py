@@ -96,17 +96,6 @@ async def get_calibration_status(
         ) from e
 
 
-@router.post("/clear", dependencies=[Depends(verify_session)])
-async def clear_calibration_queue(
-    tagging_service: Any = Depends(get_tagging_service),
-) -> dict[str, str]:
-    """DEPRECATED: Tagging no longer uses queues.
-
-    This endpoint is kept for backward compatibility but does nothing.
-    """
-    return {"status": "ok", "message": "Tagging no longer uses queues (no-op)"}
-
-
 @router.post("/generate", dependencies=[Depends(verify_session)])
 async def generate_calibration(
     request: CalibrationRequest,

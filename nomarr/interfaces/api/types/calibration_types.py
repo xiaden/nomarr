@@ -22,7 +22,6 @@ from nomarr.helpers.dto.ml_dto import (
 )
 from nomarr.helpers.dto.recalibration_dto import (
     ApplyCalibrationResult,
-    ClearCalibrationQueueResult,
     GenerateCalibrationResult,
     GetStatusResult,
 )
@@ -66,21 +65,6 @@ class ApplyCalibrationResponse(BaseModel):
         """Convert ApplyCalibrationResult DTO to Pydantic response model."""
         return cls(
             queued=dto.queued,
-            message=dto.message,
-        )
-
-
-class ClearCalibrationQueueResponse(BaseModel):
-    """Response for clear calibration queue endpoint."""
-
-    cleared: int = Field(..., description="Number of jobs cleared")
-    message: str = Field(..., description="Status message")
-
-    @classmethod
-    def from_dto(cls, dto: ClearCalibrationQueueResult) -> ClearCalibrationQueueResponse:
-        """Convert ClearCalibrationQueueResult DTO to Pydantic response model."""
-        return cls(
-            cleared=dto.cleared,
             message=dto.message,
         )
 

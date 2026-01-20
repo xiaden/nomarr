@@ -2,7 +2,7 @@
 
 **Audience:** Developers working on worker processes, health monitoring, or debugging worker behavior.
 
-Nomarr uses dedicated worker processes for background processing of tagging, library scanning, and recalibration jobs. This document describes the worker lifecycle, health system, restart semantics, and runtime behavior.
+Nomarr uses a unified discovery-based worker system for background ML processing and library scanning. Workers query `library_files` directly for claiming work via ephemeral claim documents. This document describes the worker lifecycle, health system, health monitoring via pipe/FD channels, and runtime behavior.
 
 ---
 
@@ -10,30 +10,30 @@ Nomarr uses dedicated worker processes for background processing of tagging, lib
 
 ### Architecture
 
-Nomarr runs three types of workers, each managed by `WorkerSystemService`:
+Nomarr runs a unified set of discovery-based workers, all managed by `WorkerSystemService`:
 
-1. **Tag Workers** - Process audio files for ML inference and tag writing
-2. **Library Workers** - Scan filesystem for new/changed files and queue them
-3. **Calibration Workers** - Recalibrate existing tags with updated thresholds
+**Single Worker Type: Discovery Workers**
+- Process audio files for ML inference and tag writing
+- Discover work by querying `library_files` collection for `needs_tagging=true`
+- Claim files via ephemeral claim documents (one file per worker at a time)
+- All workers are identical; no separate scanner/calibration workers
 
 Each worker:
 - Runs in a separate Python process (`multiprocessing.Process`)
 - Has its own database connection (required for multiprocessing safety)
-- Reports health via heartbeats to the `health` table
-- Can be independently paused, resumed, or terminated
+- Reports health via pipe/FD channels (real-time, not DB-based)
+- Can be paused, resumed, or terminated
 
 ### Component IDs
 
 Workers are identified by hierarchical component IDs:
-
 ```
-worker:{queue_type}:{id}
+worker:discovery:{id}
 ```
 
 Examples:
-- `worker:tag:0` - First tag worker (usually the only one)
-- `worker:library:0` - Library scanner worker
-- `worker:calibration:0` - Calibration worker
+- `worker:discovery:0` - First discovery worker (typically the only one)
+- `worker:discovery:1` - Second discovery worker (if scaling is enabled)
 
 ---
 
@@ -51,21 +51,24 @@ When `WorkerSystemService.start_workers()` is called:
 
 **Database Safety:** Each worker creates its own ArangoDB connection via `Database()`. The python-arango client handles connection pooling internally.
 
-### 2. Heartbeat Loop
+### 2. Discovery & Claiming Loop
 
 While running, workers:
 
-1. Check for pending jobs in their queue
-2. Process jobs one at a time (single-threaded within each worker)
-3. Write heartbeat every **5 seconds** via `health` table:
+1. Query `library_files` for files with `needs_tagging=true`
+2. Attempt to claim one file by inserting ephemeral claim document
+3. If claim succeeds: process file, write tags, delete claim
+4. If claim fails (another worker claimed it): try next file
+5. Write health frames via pipe/FD every **5 seconds**:
    - `component`: Worker ID
-   - `last_seen`: Current timestamp (milliseconds)
    - `status`: `"healthy"` during normal operation
-   - `pid`: Process ID
-   - `current_job`: Job ID if processing, `None` if idle
-   - `details_json`: Serialized metadata (queue stats, error counts, etc.)
+   - `current_job`: File ID if processing, `None` if idle
+   - Optional: telemetry fields (files_processed, errors, etc.)
 
-**Heartbeat Timeout:** If a worker doesn't update `last_seen` within **30 seconds**, the health system marks it as unhealthy.
+**Health Monitoring:** 
+- Real-time health via pipe/FD (in-memory status in main process)
+- DB writes are optional history-only (for audit/debugging)
+- Main process detects worker death via channel closure or write failure
 
 ### 3. Pause
 
@@ -91,27 +94,21 @@ When `WorkerSystemService.stop_workers()` is called:
 
 If worker doesn't exit within **10 seconds**, service sends `SIGTERM` to force termination.
 
-### 5. Crash Detection & Job Recovery
+### 5. Crash Detection & Claim Recovery
 
 The health system detects crashes via:
 
-**Heartbeat Timeout:**
-- Worker's `last_seen` timestamp exceeds 30 seconds
-- Health system marks worker as `status='crashed'`
+**Pipe/FD Channel Closure:**
+- Main process detects pipe closure or write failure
+- Indicates worker died unexpectedly
+- Main process marks worker as `crashed`
 
-**Exit Code Monitoring:**
-- Service detects non-zero exit codes
-- Nomarr-specific codes:
-  - `-1`: Fatal error during initialization
-  - `-2`: Database corruption detected
-  - `-3`: ML model loading failed
-- Standard Python exit codes indicate exceptions
-
-**Automatic Job Recovery:**
-- When a worker crashes mid-job, the interrupted job is automatically requeued
-- Jobs have a crash counter (max 2 retries) to prevent infinite loops from problematic files
-- After exceeding retry limit, job is marked as "error" (toxic job) and will not be requeued
-- This distinguishes worker crashes (infrastructure issues) from file-level failures (bad audio files)
+**Ephemeral Claim Cleanup:**
+- When a worker crashes mid-file, its claim document is ephemeral (no TTL)
+- Crashed worker's claim can be manually cleaned up or auto-expires
+- File remains in `library_files` with `needs_tagging=true`
+- Next healthy worker will pick it up automatically
+- No file gets stuck; just re-processed by next available worker
 
 ### 6. Automatic Restart
 
@@ -153,57 +150,73 @@ Nomarr uses two-tier limits to catch both rapid crashes (OOM loops) and slow thr
 
 ---
 
-## Health Table Structure
+## Health System: Pipe/FD Channels
 
-Workers communicate state via the `health` table:
+### Real-Time Health (Single Source of Truth)
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `component` | TEXT PRIMARY KEY | Worker ID: `worker:{type}:{id}` |
-| `last_seen` | INTEGER | Timestamp (ms since epoch) of last heartbeat |
-| `status` | TEXT | Current status: `starting`, `healthy`, `stopping`, `crashed`, `failed` |
-| `pid` | INTEGER | Process ID (for debugging and termination) |
-| `current_job` | INTEGER | Job ID if processing, `NULL` if idle |
-| `details_json` | TEXT | JSON metadata (queue stats, error counts, version) |
-| `restart_count` | INTEGER | Total number of restarts (lifetime counter) |
-| `last_restart` | INTEGER | Timestamp (ms) of most recent restart |
-| `created_at` | INTEGER | Timestamp (ms) when worker first registered |
+Workers write health frames to pipe/FD channels (in-memory in main process):
 
-### Job Crash Counters
+**Frame Format:**
+```
+HEALTH|{"component_id":"worker:discovery:0","status":"healthy","current_job":"file_123"}
+```
 
-Jobs that are interrupted by worker crashes have their own crash counter tracked in the `meta` table:
+**Frame Frequency:** Every 5 seconds (configurable)
 
-- **Key format:** `job_crash_count:{queue_type}:{job_id}`
-- **Max retries:** 2 (job requeued up to 2 times after crashes)
-- **Toxic job detection:** After 2 crash retries, job marked as "error" and not requeued
-- **Purpose:** Prevents infinite loops from problematic audio files that consistently crash workers
-- **Separate from worker restarts:** Job crash counter is independent of worker restart limits
+**Channel Model:**
+- Main process creates one pipe per worker at spawn time
+- Worker writes periodic frames to that pipe
+- Main process reads frames, updates in-memory status registry
+- HealthMonitor polls registry for status snapshot
 
-Example: If a corrupted audio file crashes a worker 3 times, the job is marked toxic and skipped, but the worker continues processing other jobs normally.
+### Database History (Write-Only, Optional)
+
+Optional append-only collection for audit/debugging:
+
+```json
+{
+  "_key": "snap_2025_01_20_001",
+  "timestamp": 1705779600000,
+  "components": [
+    {"component_id": "worker:discovery:0", "status": "healthy", "current_job": "file_123"},
+    {"component_id": "worker:discovery:1", "status": "healthy", "current_job": null}
+  ]
+}
+```
+
+**Key invariant:** If pipe is wrong, fix pipe—do not maintain dual real-time paths.
+
+### Main Process Death Detection
+
+Workers detect main process death via channel closure:
+- Worker writes frame fails (broken pipe)
+- Worker logs, finishes current file, exits gracefully
+- No orphaned claims (worker dies before inserting claim, or deletes claim before exiting)
 
 ### Status State Machine
 
 ```
-starting → healthy ↔ stopping
-    ↓          ↓
-  crashed   crashed → failed
+starting → healthy ↔ paused → stopped
+    ↓
+  crashed
 ```
 
-**State Transitions:**
+**State Values:**
 
-- `starting`: Worker process spawned, initializing resources
-- `healthy`: Normal operation, heartbeating every 5s
-- `stopping`: Graceful shutdown in progress
-- `crashed`: Heartbeat timeout (>30s) or abnormal exit detected
-- `failed`: Too many restarts (5 within 5 minutes), manual recovery required
+- `starting`: Worker process spawned, ML models initializing
+- `healthy`: Normal operation, claiming and processing files
+- `paused`: Not claiming new files (current file completes)
+- `crashed`: Pipe closed or worker exited unexpectedly
+- `stopped`: Graceful shutdown (no active work)
 
 ### Invariants
 
-1. **Ephemeral Data:** Health table is cleared on service startup (workers from previous runs are stale)
-2. **Single Writer:** Each worker writes only its own row (no conflicts)
-3. **Heartbeat Frequency:** Workers MUST update `last_seen` at least every 30 seconds
-4. **Status Consistency:** `status='healthy'` requires `last_seen` within last 30 seconds
-5. **PID Uniqueness:** Each worker has unique PID (enforced by OS)
+1. **Ephemeral Claims:** Claim documents have no TTL; they represent active work
+2. **Single Writer:** Each worker writes only to its own pipe (no conflicts)
+3. **Frame Frequency:** Workers write frames every ~5 seconds
+4. **Status Consistency:** `status='healthy'` requires recent frame (< 30s old)
+5. **Channel Closure:** Broken pipe = worker death (automatic detection by main process)
+6. **Claim Cleanup:** Worker cleans up claim after processing file (before next claim or on exit)
 
 ---
 
@@ -266,9 +279,6 @@ Pause/resume **does not** reset restart counts:
 ### Check Worker Health
 
 ```bash
-# Via CLI
-docker exec nomarr python -m nomarr.cli health
-
 # Via API
 curl http://localhost:8356/api/v1/info
 ```
@@ -280,7 +290,7 @@ curl http://localhost:8356/api/v1/info
 docker logs nomarr
 
 # Filter for specific worker
-docker logs nomarr 2>&1 | grep "worker:tag:0"
+docker logs nomarr 2>&1 | grep "worker:discovery:0"
 ```
 
 ### Common Issues
@@ -291,57 +301,77 @@ docker logs nomarr 2>&1 | grep "worker:tag:0"
 - Check disk space for database writes
 
 **Worker keeps crashing:**
-- Check `restart_count` in health table (if ≥5 rapid or ≥20 lifetime, it's marked failed)
 - Review logs for exceptions or error codes (look for specific file paths that trigger crashes)
-- Check for toxic jobs: Query `meta` table for keys like `job_crash_count:tag:*` with values ≥2
+- Check restart count in health system
 - Verify file permissions on database and music library
 - Check available VRAM (effnet requires 9GB)
-- If specific files consistently crash workers, they'll be marked as "error" after 2 retries
+- If specific files consistently crash workers, inspect with `ffprobe` or audio editor (may be corrupted)
 
-**Jobs stuck in error state:**
-- Check if job crash counter exceeded limit (marked as toxic job)
-- Review file that caused crash: may be corrupted, invalid format, or triggering model bug
-- Manually inspect problem file with `ffprobe` or audio editor
-- If file is valid, consider reporting issue with model or increasing retry limit
-
-**Workers not processing jobs:**
+**Workers not processing files:**
 - Verify `worker_enabled=True` (check `/api/v1/info`)
-- Ensure jobs exist in queue (`queue_depth` > 0)
-- Check worker is `healthy` and `current_job=None` (idle but alive)
+- Ensure files exist in `library_files` with `needs_tagging=true`
+- Check worker is `healthy` (pipe/FD channel active)
+- Check for orphaned claims: query `library_file_claims` collection for stale claims
 
 **Database lock errors:**
-- Workers must NOT share database connections
-- Each worker creates its own connection on spawn
-- If seeing "database is locked" errors, verify multiprocessing safety
+- Each worker creates its own database connection on spawn
+- If seeing "database is locked" errors, verify ArangoDB MVCC is working
+- Check for stuck transactions in database logs
 
 ---
 
 ## Advanced Topics
 
-### Custom Worker Implementation
+### Worker Process Communication via Pipe/FD
 
-To add a new worker type:
+Workers use **pipe/FD channels for real-time health** (no database IPC):
 
-1. Define queue type in `QueueType` enum
-2. Implement worker loop function in `nomarr/components/workers/`
-3. Register worker in `WorkerSystemService._spawn_workers()`
-4. Add health monitoring via `HeartbeatWriter` utility
-5. Handle pause signals via `worker_enabled` flag checks
-
-### Worker Process Communication
-
-Workers use **database-based IPC** (no shared memory or pipes):
-
-1. Workers write heartbeats to `health` table
-2. `StateBroker` polls `health` table every 1-2 seconds
-3. Broker broadcasts changes via Server-Sent Events (SSE)
-4. Web UI receives real-time updates via EventSource
+1. Main process creates one pipe per worker at spawn time
+2. Workers write periodic health frames to their pipe
+3. Main process reads frames, updates in-memory status registry
+4. HealthMonitor queries registry for snapshots
+5. Web UI receives status via API endpoint (not SSE)
 
 This architecture ensures:
-- Multiprocessing safety (ArangoDB MVCC handles concurrent access)
-- No shared state between processes
-- Crash resilience (workers can restart independently)
-- Debuggability (all state persisted in DB collections)
+- Real-time health without database polling
+- Immediate crash detection via pipe closure
+- Multiprocessing safety (no shared memory)
+- Minimal latency and overhead
+
+**Pipe Frame Format:**
+```
+HEALTH|{"component_id":"worker:discovery:0","status":"healthy","current_job":"file_123"}
+```
+
+### Claim Document Structure
+
+When a worker claims a file for processing, it creates an ephemeral claim document:
+
+```json
+{
+  "_key": "file_123_claim_worker0",
+  "file_id": "file_123",
+  "claimed_by": "worker:discovery:0",
+  "claimed_at": 1705779600000,
+  "ttl": null
+}
+```
+
+**Key Properties:**
+- **Ephemeral (no TTL):** Represents active work, not scheduled work
+- **Unique per file:** Only one worker can hold claim at a time
+- **Auto-cleanup:** Worker deletes claim after processing file
+- **Crash recovery:** Stale claims can be manually cleaned up; file remains in `needs_tagging=true`
+
+### Debugging Pipe Health
+
+```bash
+# Check pipe file descriptors for a running worker
+lsof -p $(docker inspect -f '{{.State.Pid}}' nomarr) | grep pipe
+
+# Monitor pipe writes in real time
+strace -p $(docker inspect -f '{{.State.Pid}}' nomarr) -e write
+```
 
 ### Restart Backoff Formula
 
@@ -364,7 +394,6 @@ This exponential backoff prevents restart storms while allowing quick recovery f
 
 ## Related Documentation
 
-- [Health System](health.md) - Detailed health table invariants and operations
-- [StateBroker & SSE](statebroker.md) - Real-time state broadcasting
-- [Queue System](queues.md) - Job queuing and processing
+- [Health System](health.md) - Detailed health monitoring via pipe/FD channels
+- [Calibration Refactor](CALIBRATION_REFACTOR.md) - Historical background on discovery worker design
 - [Services Layer](services.md) - WorkerSystemService API reference

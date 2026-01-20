@@ -2,7 +2,9 @@
 
 **Audience:** Developers integrating Nomarr with automation tools, Lidarr, or custom scripts.
 
-Nomarr provides a REST API for file processing, queue management, library operations, and system monitoring. All endpoints return JSON responses.
+Nomarr provides a REST API for file processing, library operations, system monitoring, and worker management. All endpoints return JSON responses.
+
+**Note:** Queue-based job endpoints have been removed with the discovery-based worker system. File processing now uses direct database queries instead of a separate job queue.
 
 ---
 
@@ -62,138 +64,29 @@ curl -H "Authorization: Bearer <API_KEY>" \
   http://localhost:8356/api/v1/info
 ```
 
----
+---Processing Endpoints
 
-## Queue Endpoints
+### POST /api/web/processing/process-files
 
-### GET /api/web/queue/queue-depth
+Enqueue files for ML tagging and processing.
 
-Get queue statistics (counts by status).
-
-**Response:**
+**Request:**
 ```json
 {
-  "pending": 10,
-  "running": 1,
-  "completed": 245,
-  "errors": 3
-}
-```
-
-**Note:** Field names changed in recent update:
-- ✅ `completed` (not `done`)
-- ✅ `errors` (not `error`)
-
----
-
-### GET /api/web/queue/list
-
-List jobs with pagination and filtering.
-
-**Query Parameters:**
-- `limit` (int, default: 50) - Max jobs to return
-- `offset` (int, default: 0) - Number of jobs to skip
-- `status` (string, optional) - Filter: `pending`, `running`, `done`, `error`
-
-**Examples:**
-```bash
-# First page (50 jobs)
-GET /api/web/queue/list
-
-# Second page
-GET /api/web/queue/list?limit=50&offset=50
-
-# Only pending jobs
-GET /api/web/queue/list?status=pending
-
-# Errors, paginated
-GET /api/web/queue/list?status=error&limit=100&offset=200
-```
-
-**Response:**
-```json
-{
-  "jobs": [
-    {
-      "id": 123,
-      "path": "/music/Artist/Album/Track.mp3",
-      "status": "done",
-      "started_at": "2025-12-05T10:30:00Z",
-      "finished_at": "2025-12-05T10:30:15Z",
-      "error_message": null,
-      "force": false
-    }
-  ],
-  "total": 1234,
-  "limit": 50,
-  "offset": 0
-}
-```
-
----
-
-### GET /api/web/queue/status/{job_id}
-
-Get status of specific job.
-
-**Response:**
-```json
-{
-  "id": 123,
-  "path": "/music/Artist/Album/Track.mp3",
-  "status": "done",
-  "started_at": "2025-12-05T10:30:00Z",
-  "finished_at": "2025-12-05T10:30:15Z",
-  "error_message": null,
+  "paths": ["/music/Artist/Album/Track.mp3"],
   "force": false
 }
 ```
 
-**Status Values:**
-- `pending` - Queued, waiting for worker
-- `running` - Currently being processed
-- `done` - Completed successfully
-- `error` - Failed with error (see `error_message`)
-
----
-
-### POST /api/web/queue/admin/clear-all
-
-Clear all jobs except running ones.
-
 **Response:**
 ```json
 {
-  "removed": 150,
-  "status": "success"
+  "enqueued": 1,
+  "message": "Queued 1 file for processing"
 }
 ```
 
----
-
-### POST /api/web/queue/admin/clear-completed
-
-Clear only completed jobs.
-
-**Response:**
-```json
-{
-  "removed": 120,
-  "status": "success"
-}
-```
-
----
-
-### POST /api/web/queue/admin/clear-errors
-
-Clear only error jobs.
-
-**Response:**
-```json
-{
-  "removed": 5,
-  "status": "success"
+**Note:** Files are tracked in `library_files` collection with `needs_tagging` field. Discovery workers query and claim files directly from the database.status": "success"
 }
 ```
 
@@ -274,81 +167,66 @@ Start library scan.
 
 ### GET /api/web/calibration/status
 
-Get calibration queue status.
+Get calibration generation status.
 
 **Response:**
 ```json
 {
-  "pending": 5,
-  "running": 1,
-  "completed": 120,
-  "errors": 2,
-  "worker_alive": true,
-  "worker_busy": true
-}
-```
-
-**Note:** Field names changed in recent update:
-- ✅ `completed` (not `done`)
-- ✅ `errors` (not `error`)
-
----
-
-### POST /api/web/calibration/generate
-
-Generate new calibration from library data.
-
-**Request:**
-```json
-{
-  "save_sidecars": true
-}
-```
-
-**Response:**
-```json
-{
-  "status": "success",
-  "data": {
-    "mood_aggressive": {
-      "min": 0.02,
-      "max": 0.98,
-      "samples": 15234
+  "global_version": "abc123def456",
+  "last_run": 1705067200000,
+  "libraries": [
+    {
+      "library_id": "lib_001",
+      "library_name": "Main Library",
+      "total_files": 18432,
+      "current_count": 18432,
+      "outdated_count": 0,
+      "percentage": 100.0
     }
-  },
-  "saved_files": [
-    "/app/models/effnet/heads/mood_aggressive-discogs-effnet-1.json"
   ]
 }
 ```
 
+**Note:** Uses histogram-based calibration stored in `calibration_state` collection. Computes p5/p95 percentiles via sparse histogram queries (memory-bounded, ~8MB for 50 heads).
+
 ---
 
-### POST /api/web/calibration/apply
+### POST /api/web/calibration/generate-histogram
 
-Apply calibration to entire library (queues recalibration jobs).
+Generate histogram-based calibrations from library data.
+
+Uses DB histogram queries to compute p5/p95 percentiles for each ML model head.
+
+**Request:**
+```json
+{}
+```
 
 **Response:**
 ```json
 {
-  "queued": 18432,
-  "message": "Queued 18432 files for recalibration"
+  "version": 5,
+  "library_size": 18432,
+  "heads": {
+    "effnet:mood_happy": {
+      "model_name": "effnet",
+      "head_name": "mood_happy",
+      "p5": 0.15,
+      "p95": 0.87,
+      "n": 18432
+    }
+  },
+  "saved_files": {
+    "effnet:mood_happy": "/app/models/effnet/heads/mood_happy-calibration-v5.json"
+  },
+  "summary": {
+    "total_heads": 17,
+    "completed_heads": 17
+  }
 }
 ```
 
----
-
-### POST /api/web/calibration/clear
-
-Clear calibration queue.
-
-**Response:**
-```json
-{
-  "cleared": 50,
-  "message": "Cleared 50 calibration jobs"
-}
-```
+**Note:** Requires `calibrate_heads: true` in config.
 
 ---
 
@@ -745,9 +623,9 @@ No rate limiting currently enforced. Consider implementing client-side throttlin
 
 ## Legacy API (Deprecated)
 
-### POST /api/v1/tag
+### POST /api/v1/processing/process-files
 
-Enqueue file for tagging (maintained for Lidarr compatibility).
+Enqueue file for tagging (legacy v1 endpoint).
 
 **Request:**
 ```json
@@ -760,13 +638,12 @@ Enqueue file for tagging (maintained for Lidarr compatibility).
 **Response:**
 ```json
 {
-  "job_id": 123,
-  "status": "queued",
-  "blocking": false
+  "enqueued": 1,
+  "message": "Queued 1 file for processing"
 }
 ```
 
-**Note:** Prefer `/api/web/processing/process-files` for new integrations.
+**Note:** Maintained for backward compatibility. Prefer `/api/web/processing/process-files` for new integrations.
 
 ---
 

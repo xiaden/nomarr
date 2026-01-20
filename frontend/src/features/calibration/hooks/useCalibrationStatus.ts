@@ -1,19 +1,18 @@
 /**
  * Custom hook for managing calibration status.
- * Handles loading status, generating, applying, and clearing calibration.
+ * Handles loading status, generating, and applying calibration.
  */
 
 import { useEffect, useState } from "react";
 
 import { useConfirmDialog } from "../../../hooks/useConfirmDialog";
 import { useNotification } from "../../../hooks/useNotification";
+import type { CalibrationStatus } from "../../../shared/api/calibration";
 import {
     apply,
-    clear,
     generate,
     getStatus,
 } from "../../../shared/api/calibration";
-import type { CalibrationStatus } from "../../../shared/api/calibration";
 
 export function useCalibrationStatus() {
   const { showSuccess, showError, showInfo } = useNotification();
@@ -96,29 +95,6 @@ export function useCalibrationStatus() {
     }
   };
 
-  const handleClear = async () => {
-    const confirmed = await confirm({
-      title: "Clear Calibration Queue?",
-      message: "Clear all calibration queue jobs?",
-      confirmLabel: "Clear",
-      severity: "warning",
-    });
-    if (!confirmed) return;
-
-    try {
-      setActionLoading(true);
-      const result = await clear();
-      showSuccess(`Cleared ${result.cleared} jobs`);
-      await loadStatus();
-    } catch (err) {
-      showError(
-        err instanceof Error ? err.message : "Failed to clear calibration queue"
-      );
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
   const handleUpdateFiles = () => {
     showInfo("Not implemented");
   };
@@ -130,7 +106,6 @@ export function useCalibrationStatus() {
     actionLoading,
     handleGenerate,
     handleApply,
-    handleClear,
     handleUpdateFiles,
     // Dialog state for rendering ConfirmDialog
     dialogState: { isOpen, options, handleConfirm, handleCancel },

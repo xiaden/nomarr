@@ -66,15 +66,3 @@ export interface CalibrationStatus {
 export async function getStatus(): Promise<CalibrationStatus> {
   return get("/api/web/calibration/status");
 }
-
-export interface ClearCalibrationResponse {
-  cleared: number;
-  message: string;
-}
-
-/**
- * Clear calibration queue.
- */
-export async function clear(): Promise<ClearCalibrationResponse> {
-  return post("/api/web/calibration/clear");
-}

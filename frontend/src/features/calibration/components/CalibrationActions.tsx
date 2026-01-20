@@ -1,6 +1,6 @@
 /**
  * Calibration actions component.
- * Provides buttons to generate, apply, and clear calibration.
+ * Provides buttons to generate and apply calibration.
  */
 
 import { Stack } from "@mui/material";
@@ -10,7 +10,6 @@ import { ActionCard, Panel, SectionHeader } from "@shared/components/ui";
 interface CalibrationActionsProps {
   onGenerate: () => Promise<void>;
   onApply: () => Promise<void>;
-  onClear: () => Promise<void>;
   onUpdateFiles: () => void;
   actionLoading: boolean;
 }
@@ -18,7 +17,6 @@ interface CalibrationActionsProps {
 export function CalibrationActions({
   onGenerate,
   onApply,
-  onClear,
   onUpdateFiles,
   actionLoading,
 }: CalibrationActionsProps) {
@@ -45,14 +43,6 @@ export function CalibrationActions({
         "Download and import the latest calibration bundle files from the repository.",
       onClick: onUpdateFiles,
       color: "secondary" as const,
-      variant: "outlined" as const,
-    },
-    {
-      label: "Clear Calibration Queue",
-      description:
-        "Remove all pending calibration jobs from the queue. Running jobs will complete.",
-      onClick: onClear,
-      color: "error" as const,
       variant: "outlined" as const,
     },
   ];

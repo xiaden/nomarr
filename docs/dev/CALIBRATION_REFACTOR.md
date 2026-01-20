@@ -1,7 +1,47 @@
 # Calibration System Refactor: DB-Histogram Percentile Computation
 
-**Status:** Design Document - Alpha (no backward compatibility)  
+**Status:** Implemented (Alpha)  
 **Goal:** Replace queue-based calibration with DB-histogram percentile computation to avoid OOM on large libraries
+
+---
+
+## Implementation Status
+
+### Phase 1: Data Model ✅
+- `calibration_state` collection: DONE
+- `calibration_history` collection: DONE  
+- Indexes: DONE (created in bootstrap)
+- Legacy collections (`calibration_queue`, `calibration_runs`) marked for cleanup: DONE
+
+### Phase 2: Persistence Layer ✅
+- `calibration_state_aql.py`: DONE (203 lines)
+- `calibration_history_aql.py`: DONE (208 lines)
+
+### Phase 3: Component Layer ✅
+- `generate_histogram_calibration`: DONE (in `generate_calibration_wf.py`)
+- `derive_percentiles_from_histogram`: DONE
+- `apply_minmax_calibration`: DONE (uses p5/p95 from DB)
+
+### Phase 4: Service Layer ✅
+- `CalibrationService`: DONE (227 lines)
+- Background generation thread: DONE
+- Progress tracking: DONE
+
+### Phase 5: Remove Old Code ✅
+- `calibration_queue_aql.py`: DELETED
+- `calibration_runs_aql.py`: DELETED
+- `clear_calibration_queue` endpoint: DELETED
+- Old `calibration.md` doc: DELETED
+
+### Phase 6: Export/Import ✅
+- `export_calibration_bundle_wf.py`: DONE (177 lines)
+- `import_calibration_bundle_wf.py`: DONE (251 lines)
+
+### Recalibration Workflow
+- Design doc name: `recalibrate_library_direct_wf`
+- **Canonical implementation:** `write_calibrated_tags_wf` (480 lines)
+- Status: COMPLETE
+- Optional future optimization: Add `expected_hash` filter for selective recalibration
 
 ---
 

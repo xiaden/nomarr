@@ -23,7 +23,6 @@ from .analytics_types import (
 from .calibration_types import (
     ApplyCalibrationResponse,
     CalibrationRequest,
-    ClearCalibrationQueueResponse,
     GenerateCalibrationResponse,
     GenerateMinmaxCalibrationResponse,
     RecalibrationStatusResponse,
@@ -92,7 +91,6 @@ __all__ = [
     "CacheRefreshResponse",
     "CalibrationHistoryResponse",
     "CalibrationRequest",
-    "ClearCalibrationQueueResponse",
     "ConfigInfoResponse",
     "ConfigResponse",
     "ConfigUpdateRequest",

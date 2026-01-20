@@ -4,8 +4,7 @@
  * Features:
  * - Generate new calibration from library data
  * - Apply calibration to library (recalibrate all files)
- * - View calibration queue status
- * - Clear calibration queue
+ * - View calibration status
  */
 
 import { Alert, CircularProgress, Stack } from "@mui/material";
@@ -24,7 +23,6 @@ export function CalibrationPage() {
     actionLoading,
     handleGenerate,
     handleApply,
-    handleClear,
     handleUpdateFiles,
     dialogState,
   } = useCalibrationStatus();
@@ -40,7 +38,6 @@ export function CalibrationPage() {
           <CalibrationActions
             onGenerate={handleGenerate}
             onApply={handleApply}
-            onClear={handleClear}
             onUpdateFiles={handleUpdateFiles}
             actionLoading={actionLoading}
           />

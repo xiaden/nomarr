@@ -29,14 +29,6 @@ class ApplyCalibrationResult:
 
 
 @dataclass
-class ClearCalibrationQueueResult:
-    """Result from recalibration_service.clear_queue_with_result()."""
-
-    cleared: int
-    message: str
-
-
-@dataclass
 class GenerateCalibrationResult:
     """Result from calibration_service.generate_calibration_with_sidecars().
 

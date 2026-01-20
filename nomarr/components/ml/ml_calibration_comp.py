@@ -29,7 +29,7 @@ def save_calibration_sidecars(
     then saves calibration data as <model>-calibration-v{version}.json sidecars.
 
     Args:
-        calibration_data: Output from generate_minmax_calibration() (DTO or legacy dict)
+        calibration_data: Calibration data dict with "calibrations" key mapping labels to {p5, p95}
         models_dir: Path to models directory
         version: Calibration version number
 
