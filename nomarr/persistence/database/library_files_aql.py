@@ -308,11 +308,22 @@ class LibraryFilesOperations:
         return list(cursor)
 
     def delete_library_file(self, file_id: str) -> None:
-        """Remove a file from the library.
+        """Remove a file from the library and clean up entity edges.
 
         Args:
             file_id: Document _id (e.g., "library_files/12345")
         """
+        # Delete entity edges first (referential integrity)
+        self.db.aql.execute(
+            """
+            FOR edge IN song_tag_edges
+                FILTER edge._to == @file_id
+                REMOVE edge IN song_tag_edges
+            """,
+            bind_vars={"file_id": file_id},
+        )
+
+        # Then delete the file
         self.db.aql.execute(
             """
             REMOVE PARSE_IDENTIFIER(@file_id).key IN library_files
@@ -369,72 +380,6 @@ class LibraryFilesOperations:
         self.db.aql.execute("FOR edge IN file_tags REMOVE edge IN file_tags")
         # Delete library_files
         self.db.aql.execute("FOR file IN library_files REMOVE file IN library_files")
-
-    def batch_upsert_library_files(self, files: list[dict[str, Any]]) -> None:
-        """Insert or update multiple library files.
-
-        Args:
-            files: List of file dicts with keys:
-                - path (str)
-                - library_id (int)
-                - metadata (dict)
-                - file_size (int)
-                - modified_time (int)
-                - needs_tagging (bool)
-                - is_valid (bool)
-                - scanned_at (int)
-        """
-        for file_data in files:
-            metadata = file_data.get("metadata", {})
-            self.db.aql.execute(
-                """
-                UPSERT { library_id: @library_id, path: @path }
-                INSERT {
-                    library_id: @library_id,
-                    path: @path,
-                    file_size: @file_size,
-                    modified_time: @modified_time,
-                    duration_seconds: @duration,
-                    artist: @artist,
-                    album: @album,
-                    title: @title,
-                    needs_tagging: @needs_tagging,
-                    is_valid: @is_valid,
-                    scanned_at: @scanned_at,
-                    tagged: 0,
-                    chromaprint: null,
-                    calibration: {}
-                }
-                UPDATE {
-                    file_size: @file_size,
-                    modified_time: @modified_time,
-                    duration_seconds: @duration,
-                    artist: @artist,
-                    album: @album,
-                    title: @title,
-                    needs_tagging: @needs_tagging,
-                    is_valid: @is_valid,
-                    scanned_at: @scanned_at
-                }
-                IN library_files
-                """,
-                bind_vars=cast(
-                    dict[str, Any],
-                    {
-                        "library_id": file_data["library_id"],
-                        "path": file_data["path"],
-                        "file_size": file_data["file_size"],
-                        "modified_time": file_data["modified_time"],
-                        "duration": metadata.get("duration"),
-                        "artist": metadata.get("artist"),
-                        "album": metadata.get("album"),
-                        "title": metadata.get("title"),
-                        "needs_tagging": int(file_data["needs_tagging"]),
-                        "is_valid": int(file_data["is_valid"]),
-                        "scanned_at": file_data["scanned_at"],
-                    },
-                ),
-            )
 
     def mark_file_invalid(self, path: str) -> None:
         """Mark file as no longer existing on disk.

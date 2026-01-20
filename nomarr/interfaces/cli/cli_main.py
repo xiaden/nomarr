@@ -20,7 +20,8 @@ def build_parser() -> argparse.ArgumentParser:
         prog="nom",
         description="Nomarr - Audio auto-tagging for Lidarr using Essentia ML models",
         epilog="Examples:\n"
-        "  nom cleanup --hours 168                    # Remove old jobs (7 days)\n"
+        "  nom cleanup                                # Remove orphaned entities\n"
+        "  nom cleanup --dry-run                      # Preview orphaned entities\n"
         "  nom admin-reset --stuck                    # Reset stuck jobs\n"
         "  nom cache-refresh                          # Rebuild model cache\n"
         "  nom remove --status error                  # Remove failed jobs\n"
@@ -41,9 +42,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--status", help="remove jobs with status: pending, error, or done")
     s.set_defaults(func=cmd_remove)
 
-    # cleanup: Remove old finished jobs
-    s = sub.add_parser("cleanup", help="Remove old completed jobs from database")
-    s.add_argument("--hours", type=int, default=168, help="remove jobs older than N hours (default: 168 = 1 week)")
+    # cleanup: Remove orphaned entities
+    s = sub.add_parser("cleanup", help="Remove orphaned entities (artists, albums, etc.) with no songs")
+    s.add_argument("--dry-run", action="store_true", help="show what would be deleted without deleting")
     s.set_defaults(func=cmd_cleanup)
 
     # cache-refresh: Rebuild predictor cache

@@ -1,52 +1,45 @@
 """
-Cleanup command: Remove old finished jobs from the queue.
+Cleanup command: Remove orphaned entities from the metadata graph.
 """
 
 from __future__ import annotations
 
 import argparse
 
-import nomarr.app as app
-from nomarr.interfaces.cli.cli_ui import InfoPanel, print_error, print_info, show_spinner
+from nomarr.interfaces.cli.cli_ui import InfoPanel, print_error
+from nomarr.persistence.db import Database
+from nomarr.workflows.metadata.cleanup_orphaned_entities_wf import cleanup_orphaned_entities_workflow
 
 
 def cmd_cleanup(args: argparse.Namespace) -> int:
     """
-    Remove old finished jobs from the queue to prevent bloat.
+    Remove orphaned entities (artists, albums, genres, labels, years) that have no songs.
+    Runs standalone without requiring the app to be running.
     """
-    # Check if Application is running
-    if not app.application.is_running():
-        print_error("Application is not running. Start the server first.")
-        return 1
-
+    db = Database()
     try:
-        # Get max age from args (default 168 hours = 1 week)
-        max_age_hours = args.hours if args.hours is not None else 168
+        dry_run = getattr(args, "dry_run", False)
 
-        # Task to perform cleanup using service
-        def _do_cleanup(service, hours: int) -> int:
-            result: int = service.cleanup_old_jobs(max_age_hours=hours)
-            return result
+        result = cleanup_orphaned_entities_workflow(db, dry_run=dry_run)
 
-        # Use service from running Application
-        queue_service = app.application.services["queue"]
+        total_deleted = result.get("total_deleted", 0)
+        deleted_counts = result.get("deleted_counts", {})
 
-        # Run with spinner
-        count = show_spinner(
-            f"Cleaning up jobs older than {max_age_hours} hours...",
-            _do_cleanup,
-            queue_service,
-            max_age_hours,
-        )
+        if isinstance(total_deleted, int) and total_deleted > 0:
+            if isinstance(deleted_counts, dict):
+                details = "\n".join([f"[bold]{k.title()}:[/bold] {v}" for k, v in deleted_counts.items() if v > 0])
+            else:
+                details = ""
+            content = f"""[bold]Total Deleted:[/bold] {total_deleted}
 
-        if count > 0:
-            content = f"""[bold]Max Age:[/bold] {max_age_hours} hours
-[bold]Jobs Removed:[/bold] {count}"""
-            InfoPanel.show("Cleanup Complete", content, "green")
+{details}"""
+            InfoPanel.show("Entity Cleanup Complete", content, "green")
         else:
-            print_info(f"No jobs older than {max_age_hours} hours found")
+            print_error("No orphaned entities found")
 
         return 0
     except Exception as e:
         print_error(f"Error during cleanup: {e}")
         return 1
+    finally:
+        db.close()

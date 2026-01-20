@@ -16,6 +16,64 @@ class EntityOperations:
     def __init__(self, db: StandardDatabase) -> None:
         self.db = db
 
+    def count_orphaned_entities(self, collection: str) -> int:
+        """Count entities in collection with no incoming edges.
+
+        Args:
+            collection: Entity collection name ("artists", "albums", etc.)
+
+        Returns:
+            Number of orphaned entities
+        """
+        cursor = cast(
+            Cursor,
+            self.db.aql.execute(
+                """
+                FOR entity IN @@collection
+                    LET has_refs = (
+                        FOR edge IN song_tag_edges
+                            FILTER edge._from == entity._id
+                            LIMIT 1
+                            RETURN 1
+                    )
+                    FILTER LENGTH(has_refs) == 0
+                    COLLECT WITH COUNT INTO total
+                    RETURN total
+                """,
+                bind_vars={"@collection": collection},
+            ),
+        )
+        return next(cursor, 0)
+
+    def cleanup_orphaned_entities(self, collection: str) -> int:
+        """Delete entities in collection with no incoming edges.
+
+        Args:
+            collection: Entity collection name ("artists", "albums", etc.)
+
+        Returns:
+            Number of entities deleted
+        """
+        cursor = cast(
+            Cursor,
+            self.db.aql.execute(
+                """
+                FOR entity IN @@collection
+                    LET has_refs = (
+                        FOR edge IN song_tag_edges
+                            FILTER edge._from == entity._id
+                            LIMIT 1
+                            RETURN 1
+                    )
+                    FILTER LENGTH(has_refs) == 0
+                    REMOVE entity IN @@collection
+                    RETURN 1
+                """,
+                bind_vars={"@collection": collection},
+            ),
+        )
+        return len(list(cursor))
+
     def upsert_entity(self, collection: str, entity_key: str, display_name: str) -> dict[str, Any]:
         """Get or create an entity and return its metadata.
 

@@ -173,3 +173,16 @@ class MetadataService:
             "genres": self.db.entities.count_entities("genres"),
             "years": self.db.entities.count_entities("years"),
         }
+
+    def cleanup_orphaned_entities(self, dry_run: bool = False) -> dict[str, int | dict[str, int]]:
+        """Clean up orphaned entities from entity graph.
+
+        Args:
+            dry_run: If True, count orphaned entities but don't delete them
+
+        Returns:
+            Dict with orphaned_counts, deleted_counts, total_orphaned, total_deleted
+        """
+        from nomarr.workflows.metadata import cleanup_orphaned_entities_workflow
+
+        return cleanup_orphaned_entities_workflow(self.db, dry_run=dry_run)

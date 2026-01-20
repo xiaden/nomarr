@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_input
 from nomarr.components.library.metadata_extraction_comp import extract_metadata
+from nomarr.components.metadata import rebuild_song_metadata_cache, seed_song_entities_from_tags
 from nomarr.helpers.dto import ScanTarget
 from nomarr.helpers.files_helper import collect_audio_files, is_audio_file
 from nomarr.helpers.time_helper import now_ms
@@ -27,6 +28,49 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
+
+
+def _seed_and_rebuild_batch(
+    db: Database, file_batch: list[dict[str, Any]], metadata_map: dict[str, dict[str, Any]]
+) -> None:
+    """Seed entities and rebuild metadata caches for a batch of files.
+
+    Args:
+        db: Database instance
+        file_batch: List of file entries that were just upserted
+        metadata_map: Map of file_path -> metadata dict
+    """
+    for file_entry in file_batch:
+        file_path = file_entry["path"]
+        metadata = metadata_map.get(file_path)
+        if not metadata:
+            continue
+
+        # Get file_id from database
+        file_record = db.library_files.get_library_file(file_path)
+        if not file_record:
+            logger.warning(f"File not found after upsert: {file_path}")
+            continue
+
+        file_id = file_record["_id"]
+
+        try:
+            # Seed entity vertices and edges from metadata
+            entity_tags = {
+                "artist": metadata.get("artist"),
+                "artists": metadata.get("artists"),
+                "album": metadata.get("album"),
+                "label": metadata.get("label"),
+                "genre": metadata.get("genre"),
+                "year": metadata.get("year"),
+            }
+            seed_song_entities_from_tags(db, file_id, entity_tags)
+
+            # Rebuild cache fields (artist, album, etc.) from edges
+            rebuild_song_metadata_cache(db, file_id)
+
+        except Exception as e:
+            logger.warning(f"Failed to seed entities for {file_path}: {e}")
 
 
 def _compute_normalized_path(absolute_path: Path, library_root: Path) -> str:
@@ -251,6 +295,9 @@ def scan_library_direct_workflow(
         files_to_remove: list[dict] = [] if enable_move_detection else []
         new_files: list[dict] = [] if enable_move_detection else []
 
+        # Track metadata for entity seeding after upsert
+        files_metadata: dict[str, dict[str, Any]] = {}
+
         # PHASE 4: Scan files in selected folders only
         logger.info("[scan_library] Scanning files in selected folders...")
         current_file = 0
@@ -316,19 +363,26 @@ def scan_library_direct_workflow(
                     )
 
                     # Prepare batch entry with normalized_path for identity
+                    # NOTE: artist/album/title are cache fields derived from entity graph
+                    # They will be populated after upsert via seed_song_entities + rebuild_cache
                     file_entry = {
                         "path": file_path_str,  # Absolute path for access
                         "normalized_path": normalized_path,  # POSIX relative path for identity
                         "library_id": library_id,
-                        "metadata": metadata,
                         "file_size": file_size,
                         "modified_time": modified_time,
+                        "duration_seconds": metadata.get("duration"),
+                        "title": metadata.get("title"),  # Title is direct metadata, not derived
                         "needs_tagging": needs_tagging,
                         "is_valid": True,
                         "scanned_at": now_ms(),
                         "last_seen_scan_id": scan_id,  # Mark as seen in this scan
                     }
                     folder_batch.append(file_entry)
+
+                    # Store metadata for immediate post-upsert entity seeding
+                    # Store path as key for looking up file_id after upsert
+                    files_metadata[file_path_str] = metadata
 
                     # Track new files for move detection (if enabled)
                     if existing_file is None:
@@ -343,37 +397,23 @@ def scan_library_direct_workflow(
                     warnings.append(f"Extraction failed: {file_path} - {str(e)[:100]}")
                     continue
 
-            # Batch write folder files to DB (with collision handling)
+            # Batch write folder files to DB
             if folder_batch and len(folder_batch) >= batch_size:
-                try:
-                    db.library_files.upsert_batch(folder_batch)
-                    stats["files_added"] += len([f for f in folder_batch if f["path"] not in existing_paths])
-                    folder_batch.clear()
-                except Exception as e:
-                    logger.error(f"Batch upsert failed: {e}")
-                    # Fall back to existing method
-                    try:
-                        db.library_files.batch_upsert_library_files(folder_batch)
-                        stats["files_added"] += len([f for f in folder_batch if f["path"] not in existing_paths])
-                        folder_batch.clear()
-                    except Exception as fallback_error:
-                        logger.error(f"Fallback batch insert also failed: {fallback_error}")
-                        stats["files_failed"] += len(folder_batch)
+                db.library_files.upsert_batch(folder_batch)
+                stats["files_added"] += len([f for f in folder_batch if f["path"] not in existing_paths])
+
+                # Immediately seed entities and rebuild caches for upserted files
+                _seed_and_rebuild_batch(db, folder_batch, files_metadata)
+
+                folder_batch.clear()
 
             # Write remaining batch at end of folder
             if folder_batch:
-                try:
-                    db.library_files.upsert_batch(folder_batch)
-                    stats["files_added"] += len([f for f in folder_batch if f["path"] not in existing_paths])
-                except Exception as e:
-                    # Fall back to existing method
-                    logger.warning(f"upsert_batch failed, using fallback: {e}")
-                    try:
-                        db.library_files.batch_upsert_library_files(folder_batch)
-                        stats["files_added"] += len([f for f in folder_batch if f["path"] not in existing_paths])
-                    except Exception as fallback_error:
-                        logger.error(f"All batch methods failed: {fallback_error}")
-                        stats["files_failed"] += len(folder_batch)
+                db.library_files.upsert_batch(folder_batch)
+                stats["files_added"] += len([f for f in folder_batch if f["path"] not in existing_paths])
+
+                # Immediately seed entities and rebuild caches for final batch
+                _seed_and_rebuild_batch(db, folder_batch, files_metadata)
 
             # Update folder record after scanning
             db.library_folders.upsert_folder(library_id, folder_rel_path, folder_mtime, len(files))
@@ -438,20 +478,40 @@ def scan_library_direct_workflow(
                                 )
 
                                 if duration_matches:
-                                    # Match confirmed - update all metadata except ML tags
-                                    # (chromaprint + duration match = same audio = same ML output)
+                                    # Match confirmed - update path and re-read metadata
+                                    # Preserve: ML tags (chromaprint, calibration, tagged status)
+                                    # Update: artist/album/title/genre from new file location
                                     logger.info(f"[scan_library] File moved: {removed_file['path']} → {new_path}")
-                                    metadata = new_file.get("metadata", {})
+
+                                    # Update path and filesystem metadata (preserves ML fields)
                                     db.library_files.update_file_path(
                                         file_id=removed_file["_id"],
                                         new_path=new_path,
                                         file_size=new_file["file_size"],
                                         modified_time=new_file["modified_time"],
-                                        artist=metadata.get("artist"),
-                                        album=metadata.get("album"),
-                                        title=metadata.get("title"),
                                         duration_seconds=new_duration,
                                     )
+
+                                    # Re-seed entities and rebuild cache from new file's metadata
+                                    # This updates artist/album/genre if tags were edited
+                                    new_metadata = files_metadata.get(new_path)
+                                    if new_metadata:
+                                        try:
+                                            entity_tags = {
+                                                "artist": new_metadata.get("artist"),
+                                                "artists": new_metadata.get("artists"),
+                                                "album": new_metadata.get("album"),
+                                                "label": new_metadata.get("label"),
+                                                "genre": new_metadata.get("genre"),
+                                                "year": new_metadata.get("year"),
+                                            }
+                                            seed_song_entities_from_tags(db, removed_file["_id"], entity_tags)
+                                            rebuild_song_metadata_cache(db, removed_file["_id"])
+                                        except Exception as entity_error:
+                                            logger.warning(
+                                                f"Failed to update entities for moved file {new_path}: {entity_error}"
+                                            )
+
                                     stats["files_moved"] += 1
                                     matched_moves.add(idx)
                                     break
@@ -497,7 +557,18 @@ def scan_library_direct_workflow(
         else:
             logger.info("[scan_library] Targeted scan - skipping missing file detection")
 
-        # PHASE 6: Finalize scan
+        # PHASE 6: Entity graph cleanup after scan
+        try:
+            from nomarr.workflows.metadata.cleanup_orphaned_entities_wf import cleanup_orphaned_entities_workflow
+
+            cleanup_result = cleanup_orphaned_entities_workflow(db, dry_run=False)
+            total_deleted = cleanup_result.get("total_deleted", 0)
+            if total_deleted:
+                logger.info(f"[scan_library] Entity cleanup removed {total_deleted} orphaned entities")
+        except Exception as e:
+            logger.warning(f"[scan_library] Entity cleanup failed: {e}")
+
+        # PHASE 7: Finalize scan
         scan_duration = time.time() - start_time
 
         # Note: For quick scans, files in skipped folders aren't counted in total_files

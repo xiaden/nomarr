@@ -21,10 +21,11 @@ from nomarr.interfaces.api.types.library_types import (
     UniqueTagKeysResponse,
     UpdateLibraryRequest,
 )
-from nomarr.interfaces.api.web.dependencies import get_library_service
+from nomarr.interfaces.api.web.dependencies import get_library_service, get_metadata_service
 
 if TYPE_CHECKING:
     from nomarr.services.domain.library_svc import LibraryService
+    from nomarr.services.domain.metadata_svc import MetadataService
 
 router = APIRouter(prefix="/libraries", tags=["Library"])
 
@@ -312,6 +313,37 @@ async def cleanup_orphaned_tags(
     except Exception as e:
         logging.exception("[Web API] Error cleaning up orphaned tags")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to clean up tags")) from e
+
+
+@router.post("/cleanup-entities", dependencies=[Depends(verify_session)])
+async def cleanup_orphaned_entities(
+    dry_run: bool = Query(False, description="Preview orphaned entities without deleting"),
+    metadata_service: "MetadataService" = Depends(get_metadata_service),
+) -> dict[str, int | dict[str, int]]:
+    """
+    Clean up orphaned entities (artists, albums, genres, labels, years).
+
+    Entities become orphaned when:
+    - Songs are deleted from the library
+    - Song metadata is updated to reference different entities
+
+    This endpoint identifies and removes entity vertices that have no incoming
+    edges from songs. Useful for database maintenance after library changes.
+
+    Args:
+        dry_run: If True, only count orphaned entities without deleting them
+        metadata_service: MetadataService instance (injected)
+
+    Returns:
+        Dict with orphaned_counts, deleted_counts, total_orphaned, total_deleted
+    """
+    try:
+        result = metadata_service.cleanup_orphaned_entities(dry_run=dry_run)
+        return result
+
+    except Exception as e:
+        logging.exception("[Web API] Error cleaning up orphaned entities")
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to clean up entities")) from e
 
 
 @router.get("/files/{file_id}/tags", dependencies=[Depends(verify_session)])
