@@ -3,6 +3,12 @@ Predictor cache management for TensorFlow models.
 
 Manages global cache of model predictors to avoid repeated model loading overhead.
 Supports automatic cache eviction after idle timeout to free GPU memory.
+
+Two cache types:
+1. Head predictor cache: Full two-stage predictors (waveform -> embedding -> predictions)
+2. Backbone predictor cache: Embedding-only predictors for compute_embeddings_for_backbone
+
+Both caches share the same idle timeout and eviction policy.
 """
 
 from __future__ import annotations
@@ -11,7 +17,7 @@ import logging
 import threading
 import time
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -21,6 +27,11 @@ if TYPE_CHECKING:
 # Global predictor cache: {cache_key: predict_fn}
 # Cache key must be unique across backbones to avoid collisions
 _PREDICTOR_CACHE: dict[str, Callable[[np.ndarray, int], np.ndarray]] = {}
+
+# Backbone embedding predictor cache: {backbone_key: (emb_predictor, emb_graph)}
+# Stores the raw Essentia predictor objects for backbone embedding computation
+_BACKBONE_CACHE: dict[str, Any] = {}
+
 _CACHE_INITIALIZED = False
 _CACHE_LAST_ACCESS: float = 0.0
 _CACHE_LOCK = threading.Lock()
@@ -106,14 +117,15 @@ def warmup_predictor_cache(
 
 def clear_predictor_cache() -> int:
     """
-    Clear the predictor cache and free GPU memory.
+    Clear all caches (predictor and backbone) and free GPU memory.
     Returns the number of predictors that were cleared.
     """
-    global _PREDICTOR_CACHE, _CACHE_INITIALIZED, _CACHE_LAST_ACCESS
+    global _PREDICTOR_CACHE, _BACKBONE_CACHE, _CACHE_INITIALIZED, _CACHE_LAST_ACCESS
 
     with _CACHE_LOCK:
-        count = len(_PREDICTOR_CACHE)
+        count = len(_PREDICTOR_CACHE) + len(_BACKBONE_CACHE)
         _PREDICTOR_CACHE.clear()
+        _BACKBONE_CACHE.clear()
         _CACHE_INITIALIZED = False
         _CACHE_LAST_ACCESS = 0.0
 
@@ -155,7 +167,7 @@ def check_and_evict_idle_cache() -> bool:
     if _CACHE_TIMEOUT == 0:
         return False
 
-    if not _CACHE_INITIALIZED or len(_PREDICTOR_CACHE) == 0:
+    if not _CACHE_INITIALIZED or (len(_PREDICTOR_CACHE) == 0 and len(_BACKBONE_CACHE) == 0):
         return False
 
     idle_time = get_cache_idle_time()
@@ -165,3 +177,48 @@ def check_and_evict_idle_cache() -> bool:
         return True
 
     return False
+
+
+# =============================================================================
+# Backbone Embedding Predictor Cache
+# =============================================================================
+
+
+def backbone_cache_key(backbone: str, emb_graph: str) -> str:
+    """Generate cache key for a backbone embedding predictor."""
+    return f"backbone::{backbone}::{emb_graph}"
+
+
+def get_cached_backbone_predictor(backbone: str, emb_graph: str) -> Any | None:
+    """
+    Get cached backbone predictor if available.
+
+    Args:
+        backbone: Backbone name (effnet, musicnn, etc.)
+        emb_graph: Path to embedding graph file
+
+    Returns:
+        Cached predictor object or None if not cached
+    """
+    key = backbone_cache_key(backbone, emb_graph)
+    return _BACKBONE_CACHE.get(key)
+
+
+def cache_backbone_predictor(backbone: str, emb_graph: str, predictor: Any) -> None:
+    """
+    Cache a backbone predictor for reuse.
+
+    Args:
+        backbone: Backbone name
+        emb_graph: Path to embedding graph file
+        predictor: The Essentia predictor object to cache
+    """
+    key = backbone_cache_key(backbone, emb_graph)
+    with _CACHE_LOCK:
+        _BACKBONE_CACHE[key] = predictor
+        logging.debug(f"[cache] Cached backbone predictor: {backbone}")
+
+
+def get_backbone_cache_size() -> int:
+    """Return number of backbone predictors in cache."""
+    return len(_BACKBONE_CACHE)

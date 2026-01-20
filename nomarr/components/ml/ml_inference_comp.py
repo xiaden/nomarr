@@ -175,6 +175,7 @@ def compute_embeddings_for_backbone(
     """
     Compute embeddings for an audio file using a specific backbone.
 
+    Uses cached backbone predictors when available to avoid repeated model loading.
     The backbone models (YAMNet, EffNet) internally create patches with their own
     segment/hop sizes. We feed the entire audio clip to get all patches in one call,
     preserving temporal resolution.
@@ -191,6 +192,7 @@ def compute_embeddings_for_backbone(
     backend_essentia.require()
 
     from nomarr.components.ml.ml_audio_comp import load_audio_mono, should_skip_short
+    from nomarr.components.ml.ml_cache_comp import cache_backbone_predictor, get_cached_backbone_predictor
     from nomarr.components.ml.ml_discovery_comp import get_embedding_output_node
 
     # Load audio (no manual segmentation - let the backbone do it)
@@ -211,29 +213,41 @@ def compute_embeddings_for_backbone(
         f"[inference] Processing full track: {audio_result.duration:.1f}s ({len(audio_result.waveform)} samples @ {audio_result.sample_rate}Hz)"
     )
 
-    # Build embedding predictor for this backbone
+    # Get embedding output node
     emb_output = get_embedding_output_node(params.backbone)
 
-    if params.backbone == "yamnet":
-        if TensorflowPredictVGGish is None:
-            raise RuntimeError("TensorflowPredictVGGish not available")
-        emb_predictor = TensorflowPredictVGGish(
-            graphFilename=params.emb_graph, input="melspectrogram", output=emb_output
-        )
-    elif params.backbone == "vggish":
-        if TensorflowPredictVGGish is None:
-            raise RuntimeError("TensorflowPredictVGGish not available")
-        emb_predictor = TensorflowPredictVGGish(graphFilename=params.emb_graph, output=emb_output)
-    elif params.backbone == "effnet":
-        if TensorflowPredictEffnetDiscogs is None:
-            raise RuntimeError("TensorflowPredictEffnetDiscogs not available")
-        emb_predictor = TensorflowPredictEffnetDiscogs(graphFilename=params.emb_graph, output=emb_output)
-    elif params.backbone == "musicnn":
-        if TensorflowPredictMusiCNN is None:
-            raise RuntimeError("TensorflowPredictMusiCNN not available")
-        emb_predictor = TensorflowPredictMusiCNN(graphFilename=params.emb_graph, output=emb_output)
+    # Try to get cached backbone predictor first
+    emb_predictor = get_cached_backbone_predictor(params.backbone, params.emb_graph)
+
+    if emb_predictor is None:
+        # Build embedding predictor for this backbone (will be cached)
+        logging.debug(f"[inference] Creating backbone predictor for {params.backbone} (not cached)")
+
+        if params.backbone == "yamnet":
+            if TensorflowPredictVGGish is None:
+                raise RuntimeError("TensorflowPredictVGGish not available")
+            emb_predictor = TensorflowPredictVGGish(
+                graphFilename=params.emb_graph, input="melspectrogram", output=emb_output
+            )
+        elif params.backbone == "vggish":
+            if TensorflowPredictVGGish is None:
+                raise RuntimeError("TensorflowPredictVGGish not available")
+            emb_predictor = TensorflowPredictVGGish(graphFilename=params.emb_graph, output=emb_output)
+        elif params.backbone == "effnet":
+            if TensorflowPredictEffnetDiscogs is None:
+                raise RuntimeError("TensorflowPredictEffnetDiscogs not available")
+            emb_predictor = TensorflowPredictEffnetDiscogs(graphFilename=params.emb_graph, output=emb_output)
+        elif params.backbone == "musicnn":
+            if TensorflowPredictMusiCNN is None:
+                raise RuntimeError("TensorflowPredictMusiCNN not available")
+            emb_predictor = TensorflowPredictMusiCNN(graphFilename=params.emb_graph, output=emb_output)
+        else:
+            raise RuntimeError(f"Unsupported backbone {params.backbone}")
+
+        # Cache the predictor for future use
+        cache_backbone_predictor(params.backbone, params.emb_graph, emb_predictor)
     else:
-        raise RuntimeError(f"Unsupported backbone {params.backbone}")
+        logging.debug(f"[inference] Using cached backbone predictor for {params.backbone}")
 
     # Single-pass backbone processing: feed entire audio clip once
     # Backbone models (YAMNet, EffNet) internally create patches with their own hop/stride

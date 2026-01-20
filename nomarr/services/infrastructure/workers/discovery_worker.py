@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 HEALTH_FRAME_INTERVAL_S = 5.0  # Send health frame every 5 seconds
 IDLE_SLEEP_S = 1.0  # Sleep when no work available
 MAX_CONSECUTIVE_ERRORS = 10  # Shutdown after this many consecutive failures
+CACHE_IDLE_TIMEOUT_S = 300  # Evict cache after 5 minutes of no work (matches default)
 
 # Health frame prefix
 HEALTH_FRAME_PREFIX = "HEALTH|"
@@ -152,6 +153,7 @@ class DiscoveryWorker(multiprocessing.Process):
 
         consecutive_errors = 0
         files_processed = 0
+        cache_warmed = False  # Lazy cache warmup - only warm when work arrives
 
         try:
             while not self._stop_event.is_set():
@@ -159,9 +161,33 @@ class DiscoveryWorker(multiprocessing.Process):
                 file_id = discover_and_claim_file(db, self.worker_id)
 
                 if file_id is None:
-                    # No work available - sleep briefly
+                    # No work available - check for cache eviction (idle timeout)
+                    from nomarr.components.ml.ml_cache_comp import check_and_evict_idle_cache
+
+                    if check_and_evict_idle_cache():
+                        cache_warmed = False  # Cache was evicted, will need re-warmup
+                        logger.info("[%s] ML cache evicted due to idle timeout", self.worker_id)
+
                     time.sleep(IDLE_SLEEP_S)
                     continue
+
+                # Lazy cache warmup: warm cache on first file discovered
+                # This avoids VRAM allocation until actual work arrives
+                if not cache_warmed:
+                    from nomarr.components.ml.ml_cache_comp import is_initialized, warmup_predictor_cache
+
+                    if not is_initialized():
+                        logger.info("[%s] Work discovered - warming up ML cache...", self.worker_id)
+                        try:
+                            count = warmup_predictor_cache(
+                                models_dir=config.models_dir,
+                                cache_idle_timeout=CACHE_IDLE_TIMEOUT_S,
+                            )
+                            logger.info("[%s] ML cache ready: %d predictors loaded", self.worker_id, count)
+                        except Exception as e:
+                            logger.error("[%s] Failed to warm ML cache: %s", self.worker_id, e)
+                            # Continue anyway - workflow will create predictors inline (slower but works)
+                    cache_warmed = True
 
                 # Process the claimed file
                 try:
