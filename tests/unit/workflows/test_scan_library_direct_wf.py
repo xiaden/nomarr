@@ -85,7 +85,7 @@ class TestFullScanMissingMarkInvariant:
 
         # Execute: Full scan (real filesystem walk will happen)
         scan_targets = [ScanTarget(library_id="lib1", folder_path="")]
-        scan_library_direct_workflow(db, "lib1", scan_targets)
+        scan_library_direct_workflow(db, "lib1", scan_targets, tagger_version="test123")
 
         # Assert: mark_missing_for_library was called
         db.library_files.mark_missing_for_library.assert_called_once()
@@ -106,7 +106,7 @@ class TestFullScanMissingMarkInvariant:
 
         # Execute: Targeted scan (real filesystem walk will happen)
         scan_targets = [ScanTarget(library_id="lib1", folder_path="Rock/Beatles")]
-        scan_library_direct_workflow(db, "lib1", scan_targets)
+        scan_library_direct_workflow(db, "lib1", scan_targets, tagger_version="test123")
 
         # Assert: mark_missing_for_library was NOT called
         db.library_files.mark_missing_for_library.assert_not_called()
@@ -127,7 +127,7 @@ class TestFullScanMissingMarkInvariant:
             ScanTarget(library_id="lib1", folder_path="Rock"),
             ScanTarget(library_id="lib1", folder_path="Jazz"),
         ]
-        scan_library_direct_workflow(db, "lib1", scan_targets)
+        scan_library_direct_workflow(db, "lib1", scan_targets, tagger_version="test123")
 
         # Assert: mark_missing_for_library was NOT called
         db.library_files.mark_missing_for_library.assert_not_called()
@@ -158,7 +158,7 @@ class TestUpsertBatchUsesNormalizedPath:
 
         # Execute: Full scan with batch_size=100 (force end-of-folder flushes, not mid-folder)
         scan_targets = [ScanTarget(library_id="lib1", folder_path="")]
-        result = scan_library_direct_workflow(db, "lib1", scan_targets, batch_size=100)
+        result = scan_library_direct_workflow(db, "lib1", scan_targets, tagger_version="test123", batch_size=100)
 
         # Debug: Check result to understand what happened
         print(f"\nScan result: {result}")
