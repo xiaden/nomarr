@@ -228,7 +228,9 @@ class Application:
         if not config_path.exists():
             config_path = Path.cwd() / "config" / "nomarr.yaml"
 
-        if not is_first_run(config_path):
+        hosts = os.getenv("ARANGO_HOST", "http://nomarr-arangodb:8529")
+
+        if not is_first_run(config_path, hosts=hosts):
             logging.debug("Database already provisioned, skipping first-run setup")
             return
 
@@ -236,7 +238,6 @@ class Application:
 
         # Get root password from environment
         root_password = get_root_password_from_env()
-        hosts = os.getenv("ARANGO_HOST", "http://nomarr-arangodb:8529")
 
         # Provision database and user, get generated app password
         app_password = provision_database_and_user(hosts=hosts, root_password=root_password)

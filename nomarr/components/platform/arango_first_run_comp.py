@@ -85,20 +85,26 @@ def provision_database_and_user(
     return app_password
 
 
-def is_first_run(config_path: Path) -> bool:
-    """Check if this is first run (no config exists or no DB credentials).
+def is_first_run(config_path: Path, hosts: str | None = None) -> bool:
+    """Check if this is first run (no config exists, no DB credentials, or DB missing).
 
     Args:
         config_path: Path to config file (e.g., /app/config/nomarr.yaml)
+        hosts: ArangoDB server URL(s). Read from ARANGO_HOST env var if not provided.
 
     Returns:
-        True if first run needed, False if already configured
+        True if first run needed, False if already configured AND database exists
     """
     if not config_path.exists():
         return True
 
     # Check if config has ArangoDB credentials
-    return not _has_db_config(config_path)
+    if not _has_db_config(config_path):
+        return True
+
+    # Config exists with password - verify database actually exists
+    # (handles case where DB was reset but config still has old password)
+    return not _database_exists(hosts)
 
 
 def _has_db_config(config_path: Path) -> bool:
@@ -115,6 +121,39 @@ def _has_db_config(config_path: Path) -> bool:
         # Only password is required - username/db_name are hardcoded
         return bool(config.get("arango_password"))
     except Exception:
+        return False
+
+
+def _database_exists(hosts: str | None = None) -> bool:
+    """Check if the 'nomarr' database exists in ArangoDB.
+
+    Uses root credentials from environment to check system database.
+    This handles the case where the DB volume was reset but config still has old password.
+
+    Args:
+        hosts: ArangoDB server URL(s). Read from ARANGO_HOST env var if not provided.
+
+    Returns:
+        True if database exists, False otherwise (including connection errors)
+    """
+    import logging
+
+    actual_hosts = hosts or os.getenv("ARANGO_HOST", "http://nomarr-arangodb:8529")
+
+    try:
+        root_password = os.getenv("ARANGO_ROOT_PASSWORD")
+        if not root_password:
+            # Can't check without root password - assume DB exists
+            # (will fail later with clear error if it doesn't)
+            logging.debug("ARANGO_ROOT_PASSWORD not set, skipping database existence check")
+            return True
+
+        client = ArangoClient(hosts=actual_hosts)
+        sys_db = client.db("_system", username="root", password=root_password)
+        return sys_db.has_database(DB_NAME)
+    except Exception as e:
+        # Connection error or auth failure - assume needs provisioning
+        logging.warning(f"Database existence check failed: {e}")
         return False
 
 
