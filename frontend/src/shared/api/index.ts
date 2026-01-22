@@ -2,11 +2,11 @@
  * API module exports.
  *
  * Import domain functions directly:
- *   import { listJobs, getQueueStatus } from "@/shared/api/queue";
+ *   import { getProcessingStatus } from "@/shared/api/processing";
  *   import { list, create } from "@/shared/api/library";
  *
  * Or import from index for convenience:
- *   import { listJobs, list } from "@/shared/api";
+ *   import { getProcessingStatus, list } from "@/shared/api";
  */
 
 // Re-export all domain modules
@@ -15,7 +15,7 @@ export * from "./auth";
 export * from "./calibration";
 export * from "./filesystem";
 export * from "./metadata";
-export * from "./queue";
+export * from "./processing";
 export * from "./tags";
 export * from "./worker";
 

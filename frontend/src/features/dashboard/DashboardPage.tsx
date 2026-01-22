@@ -12,23 +12,16 @@ import {
 } from "@shared/components/ui";
 
 import { getStats } from "../../shared/api/library";
-import { getQueueStatus } from "../../shared/api/queue";
+import { getProcessingStatus, type ProcessingStatus } from "../../shared/api/processing";
 
 /**
  * Dashboard page component.
  *
  * Landing page showing:
  * - System overview with real-time updates
- * - Queue summary with progress tracking
+ * - Processing progress with velocity tracking
  * - Library stats
  */
-
-interface QueueSummary {
-  pending: number;
-  running: number;
-  completed: number;
-  errors: number;
-}
 
 interface LibraryStats {
   total_files: number;
@@ -38,22 +31,22 @@ interface LibraryStats {
 }
 
 interface ProgressTracking {
-  totalJobs: number;
-  completedCount: number;
+  totalFiles: number;
+  processedCount: number;
   filesPerMinute: number;
   estimatedMinutesRemaining: number | null;
   lastUpdateTime: number;
 }
 
 export function DashboardPage() {
-  const [queueSummary, setQueueSummary] = useState<QueueSummary | null>(null);
+  const [processingStatus, setProcessingStatus] = useState<ProcessingStatus | null>(null);
   const [libraryStats, setLibraryStats] = useState<LibraryStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<ProgressTracking | null>(null);
 
-  // Track completed count over time for velocity calculation
-  const completedHistoryRef = useRef<Array<{ count: number; time: number }>>(
+  // Track processed count over time for velocity calculation
+  const processedHistoryRef = useRef<Array<{ count: number; time: number }>>(
     []
   );
 
@@ -62,16 +55,16 @@ export function DashboardPage() {
       setLoading(true);
       setError(null);
 
-      const [queue, library] = await Promise.all([
-        getQueueStatus(),
+      const [status, library] = await Promise.all([
+        getProcessingStatus(),
         getStats(),
       ]);
 
-      setQueueSummary(queue);
+      setProcessingStatus(status);
       setLibraryStats(library);
 
       // Initialize progress tracking
-      updateProgressTracking(queue);
+      updateProgressTracking(status);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to load dashboard data"
@@ -82,18 +75,17 @@ export function DashboardPage() {
     }
   };
 
-  const updateProgressTracking = (queue: QueueSummary) => {
+  const updateProgressTracking = (status: ProcessingStatus) => {
     const now = Date.now();
-    const total = queue.pending + queue.running + queue.completed + queue.errors;
-    const completed = queue.completed;
+    const processed = status.processed;
 
-    // Track completed count history (last 5 minutes)
-    const history = completedHistoryRef.current;
-    history.push({ count: completed, time: now });
+    // Track processed count history (last 5 minutes)
+    const history = processedHistoryRef.current;
+    history.push({ count: processed, time: now });
 
     // Keep only last 5 minutes of data
     const fiveMinutesAgo = now - 5 * 60 * 1000;
-    completedHistoryRef.current = history.filter(
+    processedHistoryRef.current = history.filter(
       (entry) => entry.time > fiveMinutesAgo
     );
 
@@ -101,17 +93,17 @@ export function DashboardPage() {
     let filesPerMinute = 0;
     let estimatedMinutesRemaining: number | null = null;
 
-    if (completedHistoryRef.current.length >= 2) {
-      const oldest = completedHistoryRef.current[0];
-      const newest = completedHistoryRef.current[completedHistoryRef.current.length - 1];
+    if (processedHistoryRef.current.length >= 2) {
+      const oldest = processedHistoryRef.current[0];
+      const newest = processedHistoryRef.current[processedHistoryRef.current.length - 1];
       const timeDiffMinutes = (newest.time - oldest.time) / (1000 * 60);
       const countDiff = newest.count - oldest.count;
 
       if (timeDiffMinutes > 0 && countDiff > 0) {
         filesPerMinute = countDiff / timeDiffMinutes;
 
-        // Calculate ETA for remaining jobs
-        const remaining = queue.pending + queue.running;
+        // Calculate ETA for remaining files
+        const remaining = status.pending;
         if (remaining > 0 && filesPerMinute > 0) {
           estimatedMinutesRemaining = remaining / filesPerMinute;
         }
@@ -119,8 +111,8 @@ export function DashboardPage() {
     }
 
     setProgress({
-      totalJobs: total,
-      completedCount: completed,
+      totalFiles: status.total,
+      processedCount: processed,
       filesPerMinute: Math.round(filesPerMinute * 10) / 10,
       estimatedMinutesRemaining,
       lastUpdateTime: now,
@@ -132,23 +124,23 @@ export function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Adaptive polling: 1s when active, 30s when idle
+  // Adaptive polling: 1s when processing active, 30s when idle
   useEffect(() => {
-    const hasActiveJobs = queueSummary && (queueSummary.pending > 0 || queueSummary.running > 0);
-    const pollInterval = hasActiveJobs ? 1000 : 30000; // 1s active, 30s idle
+    const hasPending = processingStatus && processingStatus.pending > 0;
+    const pollInterval = hasPending ? 1000 : 30000; // 1s active, 30s idle
 
     const interval = setInterval(async () => {
       try {
-        const queue = await getQueueStatus();
-        setQueueSummary(queue);
-        updateProgressTracking(queue);
+        const status = await getProcessingStatus();
+        setProcessingStatus(status);
+        updateProgressTracking(status);
       } catch (err) {
-        console.error("[Dashboard] Failed to update queue status:", err);
+        console.error("[Dashboard] Failed to update processing status:", err);
       }
     }, pollInterval);
 
     return () => clearInterval(interval);
-  }, [queueSummary]);
+  }, [processingStatus]);
 
   const formatDuration = (seconds: number): string => {
     const hours = Math.floor(seconds / 3600);
@@ -165,11 +157,10 @@ export function DashboardPage() {
     return `${hours}h ${mins}m`;
   };
 
-  const hasActiveJobs =
-    queueSummary && (queueSummary.pending > 0 || queueSummary.running > 0);
+  const hasPending = processingStatus && processingStatus.pending > 0;
   const progressPercent =
-    progress && progress.totalJobs > 0
-      ? Math.round((progress.completedCount / progress.totalJobs) * 100)
+    progress && progress.totalFiles > 0
+      ? Math.round((progress.processedCount / progress.totalFiles) * 100)
       : 0;
 
   return (
@@ -187,16 +178,16 @@ export function DashboardPage() {
 
       {!loading && !error && (
         <Stack spacing={2.5}>
-          {/* Processing Status */}
-          {hasActiveJobs && progress && (
+          {/* Processing Status - show when files pending */}
+          {hasPending && progress && (
             <Panel>
               <SectionHeader title="Processing Status" />
 
               <Box sx={{ mb: 2 }}>
                 <ProgressBar
                   label="Files processed"
-                  value={progress.completedCount}
-                  total={progress.totalJobs}
+                  value={progress.processedCount}
+                  total={progress.totalFiles}
                   percentage={progressPercent}
                 />
               </Box>
@@ -215,26 +206,25 @@ export function DashboardPage() {
                   value={formatETA(progress.estimatedMinutesRemaining)}
                 />
                 <MetricCard
-                  label="Active"
-                  value={queueSummary?.running || 0}
+                  label="Pending"
+                  value={processingStatus?.pending || 0}
                 />
                 <MetricCard
-                  label="Remaining"
-                  value={queueSummary?.pending || 0}
+                  label="Processed"
+                  value={processingStatus?.processed || 0}
                 />
               </ResponsiveGrid>
             </Panel>
           )}
 
-          {/* Queue Summary */}
+          {/* Processing Summary - always show */}
           <Panel>
-            <SectionHeader title="Queue Summary" />
-            {queueSummary && (
+            <SectionHeader title="Processing Summary" />
+            {processingStatus && (
               <ResponsiveGrid minWidth={150}>
-                <MetricCard label="Pending" value={queueSummary.pending} />
-                <MetricCard label="Running" value={queueSummary.running} />
-                <MetricCard label="Completed" value={queueSummary.completed} />
-                <MetricCard label="Errors" value={queueSummary.errors} />
+                <MetricCard label="Pending" value={processingStatus.pending} />
+                <MetricCard label="Processed" value={processingStatus.processed} />
+                <MetricCard label="Total Files" value={processingStatus.total} />
               </ResponsiveGrid>
             )}
           </Panel>
