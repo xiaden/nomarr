@@ -39,7 +39,7 @@ class LibraryService(
 
     Usage:
         db = Database(...)
-        cfg = LibraryServiceConfig(namespace="NOMARR", library_root="/music")
+        cfg = LibraryServiceConfig(namespace="nom", tagger_version="abc123def456", library_root="/music")
         service = LibraryService(db=db, cfg=cfg)
 
         # Admin operations

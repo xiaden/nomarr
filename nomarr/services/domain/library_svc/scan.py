@@ -122,6 +122,7 @@ class LibraryScanMixin:
         return start_scan_workflow(
             db=self.db,
             background_tasks=self.background_tasks,
+            tagger_version=self.cfg.tagger_version,
             library_id=primary_library_id,
             scan_targets=targets,
             batch_size=batch_size,
@@ -188,6 +189,7 @@ class LibraryScanMixin:
         return start_scan_workflow(
             db=self.db,
             background_tasks=self.background_tasks,
+            tagger_version=self.cfg.tagger_version,
             library_id=library_id,
         )
 

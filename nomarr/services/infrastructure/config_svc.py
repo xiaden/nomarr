@@ -23,19 +23,6 @@ if TYPE_CHECKING:
 
 
 # ======================================================================
-# Nomarr Version (for tag versioning)
-# ======================================================================
-# Imported at module level so it's accessible as config.TAGGER_VERSION
-# without needing to load from __version__ at runtime
-try:
-    from nomarr.__version__ import __version__
-
-    TAGGER_VERSION: str = __version__
-except ImportError:  # pragma: no cover
-    TAGGER_VERSION = "unknown"
-
-
-# ======================================================================
 # Internal Constants (Not User-Configurable)
 # ======================================================================
 # These values control internal Nomarr behavior and are not exposed
@@ -500,13 +487,18 @@ class ConfigService:
         Returns:
             ProcessorConfig instance ready for injection into process_file()
         """
+        from nomarr.components.ml.ml_discovery_comp import compute_model_suite_hash
         from nomarr.helpers.dto.processing_dto import ProcessorConfig
 
         cfg = self.get_config()
+        models_dir = str(cfg.config["models_dir"])
+
+        # Compute tagger_version dynamically from installed models
+        tagger_version = compute_model_suite_hash(models_dir)
 
         return ProcessorConfig(
             # User-configurable settings
-            models_dir=str(cfg.config["models_dir"]),
+            models_dir=models_dir,
             overwrite_tags=bool(cfg.config["overwrite_tags"]),
             file_write_mode=str(cfg.config.get("file_write_mode", "minimal")),  # type: ignore
             calibrate_heads=bool(cfg.config.get("calibrate_heads", False)),
@@ -516,5 +508,5 @@ class ConfigService:
             batch_size=INTERNAL_BATCH_SIZE,
             namespace=INTERNAL_NAMESPACE,
             version_tag_key=INTERNAL_VERSION_TAG,
-            tagger_version=TAGGER_VERSION,
+            tagger_version=tagger_version,
         )

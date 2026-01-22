@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 def start_scan_workflow(
     db: Database,
     background_tasks: Any | None,
+    tagger_version: str,
     library_id: str | None = None,
     scan_targets: list[ScanTarget] | None = None,
     batch_size: int = 200,
@@ -52,6 +53,7 @@ def start_scan_workflow(
     Args:
         db: Database instance
         background_tasks: BackgroundTaskService for async execution (or None for sync)
+        tagger_version: Model suite hash for version comparison
         library_id: Library to scan (None = use default library)
         scan_targets: List of folders to scan (None = full library scan)
         batch_size: Number of files to accumulate before DB write (default 200)
@@ -112,6 +114,7 @@ def start_scan_workflow(
             db=db,
             library_id=library_id,
             scan_targets=scan_targets,
+            tagger_version=tagger_version,
             batch_size=batch_size,
             force_rescan=force_rescan,
         )
@@ -131,6 +134,7 @@ def start_scan_workflow(
             db=db,
             library_id=library_id,
             scan_targets=scan_targets,
+            tagger_version=tagger_version,
             batch_size=batch_size,
             force_rescan=force_rescan,
         )

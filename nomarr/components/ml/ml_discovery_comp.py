@@ -5,6 +5,7 @@ Structure: models/<backbone>/embeddings/*.pb and models/<backbone>/heads/<type>/
 """
 
 import glob
+import hashlib
 import json
 import os
 from typing import Any
@@ -323,3 +324,55 @@ def discover_heads(models_dir: str) -> list[HeadInfo]:
 
     heads.sort(key=lambda h: h.name)
     return heads
+
+
+def compute_model_suite_hash(models_dir: str) -> str:
+    """
+    Compute a deterministic hash representing the installed ML model suite.
+
+    This hash changes when:
+    - Model files are added/removed
+    - Model release dates change
+    - Backbone or head configurations change
+
+    The hash is computed from sorted (backbone, head_name, release_date) tuples
+    to ensure determinism across runs.
+
+    Args:
+        models_dir: Directory containing model files
+
+    Returns:
+        Short hex hash (12 chars) representing the model suite version.
+        Returns "unknown" if no models found or discovery fails.
+    """
+    try:
+        heads = discover_heads(models_dir)
+        if not heads:
+            return "unknown"
+
+        # Build sorted list of (backbone, head_name, head_release, embedder_release) tuples
+        model_signatures: list[tuple[str, str, str, str]] = []
+
+        for head in heads:
+            backbone = head.backbone
+            head_name = head.name
+            head_release = head.sidecar.data.get("release_date", "unknown")
+
+            embedder_release = "unknown"
+            if head.embedding_sidecar:
+                embedder_release = head.embedding_sidecar.data.get("release_date", "unknown")
+
+            model_signatures.append((backbone, head_name, head_release, embedder_release))
+
+        # Sort for determinism
+        model_signatures.sort()
+
+        # Create hash from sorted signatures
+        sig_str = "|".join(f"{b}:{n}:{hr}:{er}" for b, n, hr, er in model_signatures)
+        full_hash = hashlib.md5(sig_str.encode("utf-8")).hexdigest()
+
+        # Return short hash (12 chars is plenty for version identification)
+        return full_hash[:12]
+
+    except Exception:
+        return "unknown"

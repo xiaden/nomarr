@@ -125,6 +125,7 @@ def scan_library_direct_workflow(
     db: Database,
     library_id: str,
     scan_targets: list[ScanTarget],
+    tagger_version: str,
     batch_size: int = 200,
     force_rescan: bool = False,
 ) -> dict[str, Any]:
@@ -143,6 +144,7 @@ def scan_library_direct_workflow(
         db: Database instance
         library_id: Library to scan
         scan_targets: List of folders to scan (empty folder_path = full library)
+        tagger_version: Model suite hash for version comparison (determines needs_tagging)
         batch_size: Number of files to accumulate before writing to DB
         force_rescan: If True, skip unchanged files detection (rescan all files)
 
@@ -354,11 +356,13 @@ def scan_library_direct_workflow(
                     # Extract metadata + tags (component call)
                     metadata = extract_metadata(library_path, namespace="nom")
 
-                    # Check if file needs tagging
-                    existing_version = metadata.get("nom_tags", {}).get("nom_version")
-                    tagger_version = metadata.get("nom_tags", {}).get("tagger_version", "unknown")
+                    # Check if file needs ML tagging
+                    # Compare file's nom_version tag against current tagger_version (model suite hash)
+                    file_version = metadata.get("nom_tags", {}).get("nom_version")
                     needs_tagging = (
-                        existing_file is None or not existing_file.get("tagged") or existing_version != tagger_version
+                        existing_file is None  # New file
+                        or not existing_file.get("tagged")  # Not yet tagged in DB
+                        or file_version != tagger_version  # Tagged with different model suite
                     )
 
                     # Prepare batch entry with normalized_path for identity

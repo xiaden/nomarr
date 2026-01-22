@@ -24,6 +24,7 @@ from .ml_capacity_probe_comp import (
     get_or_run_capacity_probe,
     invalidate_capacity_estimate,
 )
+from .ml_discovery_comp import compute_model_suite_hash
 from .ml_inference_comp import (
     compute_embeddings_for_backbone,
     make_head_only_predictor_batched,
@@ -50,6 +51,7 @@ __all__ = [
     "clear_predictor_cache",
     "compute_embeddings_for_backbone",
     "compute_model_set_hash",
+    "compute_model_suite_hash",
     "get_backbone_cache_size",
     "get_cache_idle_time",
     "get_cache_size",

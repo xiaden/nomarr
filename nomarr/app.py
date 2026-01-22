@@ -116,7 +116,6 @@ class Application:
             INTERNAL_PORT,
             INTERNAL_VERSION_TAG,
             INTERNAL_WORKER_ENABLED,
-            TAGGER_VERSION,
         )
 
         # Extract config-derived values as instance attributes
@@ -138,7 +137,13 @@ class Application:
         self.library_scan_poll_interval: int = INTERNAL_LIBRARY_SCAN_POLL_INTERVAL
         self.namespace: str = INTERNAL_NAMESPACE
         self.version_tag_key: str = INTERNAL_VERSION_TAG
-        self.tagger_version: str = TAGGER_VERSION
+
+        # Compute tagger_version dynamically from installed ML models
+        # This hash changes when models are updated, triggering re-tagging
+        from nomarr.components.ml.ml_discovery_comp import compute_model_suite_hash
+
+        self.tagger_version: str = compute_model_suite_hash(self.models_dir)
+        logging.info(f"[Application] Model suite hash (tagger_version): {self.tagger_version}")
 
         # First-run provisioning (creates DB user and writes credentials)
         self._ensure_database_provisioned()
@@ -394,6 +399,7 @@ class Application:
             logging.info(f"[Application] Registering LibraryService with namespace={self.namespace}")
             library_cfg = LibraryServiceConfig(
                 namespace=self.namespace,
+                tagger_version=self.tagger_version,
                 library_root=self.library_root,
             )
             library_service = LibraryService(
