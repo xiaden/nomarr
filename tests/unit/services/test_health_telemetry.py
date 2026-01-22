@@ -171,8 +171,11 @@ class TestHealthMonitorStatusRegistry:
         # Deadline should be clamped to max_recovery_s (30s)
         assert state.recovery_deadline is not None
         # Convert InternalSeconds to float for comparison
-        from nomarr.helpers.time_helper import internal_s
-        deadline_float = float(state.recovery_deadline.value) if hasattr(state.recovery_deadline, 'value') else float(state.recovery_deadline)
+        deadline_float = (
+            float(state.recovery_deadline.value)
+            if hasattr(state.recovery_deadline, "value")
+            else float(state.recovery_deadline)
+        )
         assert deadline_float <= after + 30.0 + 1  # Allow 1s tolerance
 
     def test_set_failed_is_terminal(self) -> None:

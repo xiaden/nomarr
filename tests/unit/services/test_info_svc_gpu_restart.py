@@ -9,6 +9,7 @@ Tests verify that:
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -47,7 +48,9 @@ class TestGPUMonitorRestartFlow:
     """Tests for InfoService GPU monitor restart supervision."""
 
     @pytest.fixture
-    def info_service_with_fake_monitor(self) -> tuple:
+    def info_service_with_fake_monitor(
+        self,
+    ) -> Generator[tuple[Any, MagicMock, list[FakeGPUMonitor], str], None, None]:
         """Create InfoService with fake GPU monitor for testing."""
         from nomarr.services.infrastructure.info_svc import (
             GPU_MONITOR_COMPONENT_ID,

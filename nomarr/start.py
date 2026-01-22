@@ -26,10 +26,7 @@ log_dir = Path("logs")
 log_dir.mkdir(exist_ok=True)
 
 # Nomarr log format: includes auto-derived identity/role tags and optional context
-_LOG_FORMAT = (
-    "%(asctime)s %(levelname)s %(nomarr_identity_tag)s %(nomarr_role_tag)s"
-    "%(context_str)s%(message)s"
-)
+_LOG_FORMAT = "%(asctime)s %(levelname)s %(nomarr_identity_tag)s %(nomarr_role_tag)s%(context_str)s%(message)s"
 
 # Create rotating file handler (10MB per file, keep 5 backup files = 50MB total)
 file_handler = logging.handlers.RotatingFileHandler(
@@ -48,8 +45,6 @@ console_handler.setFormatter(logging.Formatter(_LOG_FORMAT))
 
 # Install NomarrLogFilter on root logger BEFORE configuring handlers
 # This ensures all log records have the required attributes
-from nomarr.helpers.logging_helper import NomarrLogFilter
-
 logging.root.addFilter(NomarrLogFilter())
 
 # Configure root logger

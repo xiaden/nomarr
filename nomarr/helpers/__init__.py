@@ -16,7 +16,13 @@ from .files_helper import (
     resolve_library_path,
     validate_library_path,
 )
-from .logging_helper import sanitize_exception_message
+from .logging_helper import (
+    NomarrLogFilter,
+    clear_log_context,
+    get_log_context,
+    sanitize_exception_message,
+    set_log_context,
+)
 from .time_helper import (
     MS_PER_SECOND,
     NS_PER_MS,
@@ -55,15 +61,18 @@ __all__ = [
     "InternalMilliseconds",
     "InternalSeconds",
     "Milliseconds",
+    "NomarrLogFilter",
     "ProcessorConfig",
     "Seconds",
     "TagWriteProfile",
     "check_already_tagged",
+    "clear_log_context",
     "collect_audio_files",
     "format_internal_timestamp",
     "format_internal_timestamp_local",
     "format_wall_timestamp",
     "format_wall_timestamp_local",
+    "get_log_context",
     "internal_ms",
     "internal_ms_to_s",
     "internal_s",
@@ -76,6 +85,7 @@ __all__ = [
     "resolve_library_path",
     "s_to_ms",
     "sanitize_exception_message",
+    "set_log_context",
     "should_skip_processing",
     "to_wall_ms",
     "to_wall_s",
