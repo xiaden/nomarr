@@ -58,14 +58,14 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
+          python-version: '3.12'
 
       - name: Cache virtualenv
         id: cache-venv
         uses: actions/cache@v4
         with:
           path: .venv
-          key: venv-${{ runner.os }}-py3.11-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+          key: venv-${{ runner.os }}-py3.12-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
 
       - name: Install dependencies
         if: steps.cache-venv.outputs.cache-hit != 'true'
