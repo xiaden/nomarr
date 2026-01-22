@@ -97,43 +97,38 @@ class TestGPUHealthResult:
 
     @pytest.mark.unit
     def test_gpu_available(self) -> None:
-        """Should handle available GPU."""
+        """Should handle available GPU with healthy monitor."""
         health = GPUHealthResult(
             available=True,
-            last_check_at=1700000000.0,
-            last_ok_at=1700000000.0,
-            consecutive_failures=0,
             error_summary=None,
+            monitor_healthy=True,
         )
         assert health.available
-        assert health.consecutive_failures == 0
         assert health.error_summary is None
+        assert health.monitor_healthy
 
     @pytest.mark.unit
     def test_gpu_unavailable(self) -> None:
         """Should handle unavailable GPU."""
         health = GPUHealthResult(
             available=False,
-            last_check_at=1700000000.0,
-            last_ok_at=None,
-            consecutive_failures=5,
             error_summary="CUDA out of memory",
+            monitor_healthy=True,
         )
         assert not health.available
-        assert health.consecutive_failures == 5
         assert health.error_summary == "CUDA out of memory"
+        assert health.monitor_healthy
 
     @pytest.mark.unit
-    def test_gpu_never_checked(self) -> None:
-        """Should handle GPU that was never checked."""
+    def test_gpu_monitor_unhealthy(self) -> None:
+        """Should handle unhealthy GPU monitor (subprocess dead/unresponsive)."""
         health = GPUHealthResult(
             available=False,
-            last_check_at=None,
-            last_ok_at=None,
-            consecutive_failures=0,
             error_summary=None,
+            monitor_healthy=False,
         )
-        assert health.last_check_at is None
+        assert not health.available
+        assert not health.monitor_healthy
 
 
 class TestConfigInfo:

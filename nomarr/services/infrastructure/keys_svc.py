@@ -17,8 +17,8 @@ from __future__ import annotations
 
 import logging
 import secrets
-import time
 
+from nomarr.helpers.time_helper import now_s
 from nomarr.persistence.db import Database
 
 # Session timeout (24 hours)
@@ -211,7 +211,7 @@ class KeyManagementService:
             Session token string
         """
         session_token = secrets.token_urlsafe(32)
-        expiry = time.time() + SESSION_TIMEOUT_SECONDS
+        expiry = now_s().value + SESSION_TIMEOUT_SECONDS
 
         # Write to memory cache (fast reads)
         _session_cache[session_token] = expiry
@@ -248,7 +248,7 @@ class KeyManagementService:
             return False
 
         # Check if expired
-        if time.time() > expiry:
+        if now_s().value > expiry:
             # Expired - remove from cache
             _session_cache.pop(session_token, None)
             return False
@@ -278,7 +278,7 @@ class KeyManagementService:
         Returns:
             Number of sessions cleaned up from cache
         """
-        now = time.time()
+        now = now_s().value
         expired = [token for token, expiry in _session_cache.items() if expiry < now]
 
         # Remove from memory cache

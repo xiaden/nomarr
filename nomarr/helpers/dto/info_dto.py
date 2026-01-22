@@ -34,13 +34,16 @@ class HealthStatusResult:
 
 @dataclass
 class GPUHealthResult:
-    """Result from get_gpu_health service method."""
+    """
+    Result from get_gpu_health service method.
+
+    Contains GPU resource snapshot and monitor liveness.
+    Monitor liveness is determined by HealthMonitorService, not DB.
+    """
 
     available: bool
-    last_check_at: float | None
-    last_ok_at: float | None
-    consecutive_failures: int
     error_summary: str | None
+    monitor_healthy: bool = False  # True if GPUHealthMonitor subprocess is alive
 
 
 # ----------------------------------------------------------------------

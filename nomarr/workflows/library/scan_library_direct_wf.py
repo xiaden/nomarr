@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import logging
 import os
-import time
 from collections import defaultdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -22,7 +21,7 @@ from nomarr.components.library.metadata_extraction_comp import extract_metadata
 from nomarr.components.metadata import rebuild_song_metadata_cache, seed_song_entities_from_tags
 from nomarr.helpers.dto import ScanTarget
 from nomarr.helpers.files_helper import collect_audio_files, is_audio_file
-from nomarr.helpers.time_helper import now_ms
+from nomarr.helpers.time_helper import internal_s, now_ms
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -170,7 +169,7 @@ def scan_library_direct_workflow(
         - Identity model: files keyed by (library_id, normalized_path)
         - normalized_path is POSIX-style relative to library root
     """
-    start_time = time.time()
+    start_time = internal_s()
     stats: dict[str, int] = defaultdict(int)
     warnings: list[str] = []
 
@@ -569,7 +568,7 @@ def scan_library_direct_workflow(
             logger.warning(f"[scan_library] Entity cleanup failed: {e}")
 
         # PHASE 7: Finalize scan
-        scan_duration = time.time() - start_time
+        scan_duration = internal_s().value - start_time.value
 
         # Note: For quick scans, files in skipped folders aren't counted in total_files
         # So we only verify count for files we actually attempted to process

@@ -15,13 +15,15 @@ from nomarr.persistence.database.library_files_aql import LibraryFilesOperations
 from nomarr.persistence.database.library_folders_aql import LibraryFoldersOperations
 from nomarr.persistence.database.library_tags_aql import LibraryTagOperations
 from nomarr.persistence.database.meta_aql import MetaOperations
+from nomarr.persistence.database.ml_capacity_aql import MLCapacityOperations
 from nomarr.persistence.database.sessions_aql import SessionOperations
 from nomarr.persistence.database.song_tag_edges_aql import SongTagEdgeOperations
 from nomarr.persistence.database.worker_claims_aql import WorkerClaimsOperations
+from nomarr.persistence.database.worker_restart_policy_aql import WorkerRestartPolicyOperations
 
 __all__ = ["SCHEMA_VERSION", "Database"]
 
-SCHEMA_VERSION = 2  # Incremented for ArangoDB migration
+SCHEMA_VERSION = 3  # GPU/CPU adaptive resource management collections
 
 # ==================== SCHEMA VERSIONING POLICY ====================
 # Schema versioning is ADDITIVE ONLY.
@@ -120,7 +122,9 @@ class Database:
         self.calibration_state = CalibrationStateOperations(self.db)
         self.calibration_history = CalibrationHistoryOperations(self.db)
         self.health = HealthOperations(self.db)
+        self.worker_restart_policy = WorkerRestartPolicyOperations(self.db)
         self.worker_claims = WorkerClaimsOperations(self.db)
+        self.ml_capacity = MLCapacityOperations(self.db)
         # Metadata entity operations (hybrid graph model)
         self.entities = EntityOperations(self.db)
         self.song_tag_edges = SongTagEdgeOperations(self.db)

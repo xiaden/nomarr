@@ -54,7 +54,7 @@ class LibraryScanMixin:
             health = self.db.health.get_component(component)
             if health and health.get("status") == "healthy":
                 last_heartbeat = health.get("last_heartbeat", 0)
-                if now_ms() - last_heartbeat < 30_000:  # 30 seconds
+                if now_ms().value - last_heartbeat < 30_000:  # 30 seconds
                     return True
 
         return False

@@ -1,15 +1,24 @@
 """
-InfoService - System information and health status.
+InfoService - System information.
 
-Provides consolidated system information and health checks for API endpoints.
+Provides consolidated system information for API endpoints.
+Owns GPUHealthMonitor lifecycle as it produces system resource facts.
+
+NOT a health service - HealthMonitorService tracks component liveness.
 """
 
 from __future__ import annotations
 
 import logging
+import multiprocessing
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from nomarr.components.platform.gpu_monitor_comp import (
+    GPU_PROBE_INTERVAL_SECONDS,
+    GPUHealthMonitor,
+)
+from nomarr.helpers.dto.health_dto import ComponentLifecycleHandler, ComponentPolicy
 from nomarr.helpers.dto.info_dto import (
     ConfigInfo,
     GPUHealthResult,
@@ -22,6 +31,7 @@ from nomarr.helpers.dto.info_dto import (
 )
 
 if TYPE_CHECKING:
+    from nomarr.services.infrastructure.health_monitor_svc import HealthMonitorService
     from nomarr.services.infrastructure.ml_svc import MLService
 
 
@@ -35,7 +45,8 @@ class InfoConfig:
     version: str
     namespace: str
     models_dir: str
-    db: Any  # Database instance for reading GPU health
+    db: Any  # Database instance for reading GPU resources
+    health_monitor: HealthMonitorService | None = None  # For GPU monitor liveness
     # Additional fields for public info endpoint
     db_path: str | None = None
     api_host: str | None = None
@@ -45,11 +56,41 @@ class InfoConfig:
     poll_interval: float = 1.0
 
 
+# Component ID for GPU monitor registration with HealthMonitorService
+GPU_MONITOR_COMPONENT_ID = "gpu_monitor"
+
+
+class _GPUMonitorLifecycleHandler(ComponentLifecycleHandler):
+    """Lifecycle handler for GPUHealthMonitor - receives callbacks from HealthMonitorService."""
+
+    def __init__(self, info_service: InfoService):
+        self.info_service = info_service
+
+    def on_status_change(
+        self,
+        component_id: str,
+        old_status: str,
+        new_status: str,
+        context: Any,
+    ) -> None:
+        """Handle GPU monitor status changes from HealthMonitorService."""
+        logger.info(f"[InfoService] GPU monitor status: {old_status} -> {new_status}")
+
+        if new_status == "dead":
+            # GPU monitor died - restart it
+            logger.warning("[InfoService] GPU monitor died, restarting...")
+            self.info_service._restart_gpu_monitor()
+
+
 class InfoService:
     """
-    Service for system info and health status operations.
+    Service for system information.
 
-    Consolidates information from multiple services into unified DTOs.
+    Owns GPUHealthMonitor lifecycle - starts/stops the subprocess and
+    registers it with HealthMonitorService for liveness tracking.
+
+    GPU resource snapshot is written to DB by GPUHealthMonitor.
+    GPU monitor liveness is tracked by HealthMonitorService.
     """
 
     def __init__(
@@ -62,13 +103,101 @@ class InfoService:
         Initialize info service.
 
         Args:
-            cfg: Info configuration
+            cfg: Info configuration (includes health_monitor for GPU registration)
             workers_coordinator: Worker system service instance (optional)
             ml_service: ML service instance (optional)
         """
         self.cfg = cfg
         self.workers_coordinator = workers_coordinator
         self.ml_service = ml_service
+
+        # GPU monitor state (owned by InfoService)
+        self._gpu_monitor: GPUHealthMonitor | None = None
+        self._gpu_pipe_parent: Any = None  # Parent end of pipe for HealthMonitor
+        self._gpu_lifecycle_handler: _GPUMonitorLifecycleHandler | None = None
+
+    # ----------------------------- Lifecycle ---------------------------------
+
+    def start(self) -> None:
+        """
+        Start InfoService - initializes GPU monitor subprocess.
+
+        Call this after all services are registered.
+        """
+        self._start_gpu_monitor()
+
+    def stop(self) -> None:
+        """
+        Stop InfoService - gracefully shuts down GPU monitor.
+        """
+        self._stop_gpu_monitor()
+
+    def _start_gpu_monitor(self) -> None:
+        """Start GPUHealthMonitor subprocess and register with HealthMonitorService."""
+        if self._gpu_monitor is not None:
+            logger.warning("[InfoService] GPU monitor already started")
+            return
+
+        # Create pipe for IPC with HealthMonitorService
+        parent_conn, child_conn = multiprocessing.Pipe(duplex=False)
+        self._gpu_pipe_parent = parent_conn
+
+        # Create and start GPU monitor
+        self._gpu_monitor = GPUHealthMonitor(
+            probe_interval=GPU_PROBE_INTERVAL_SECONDS,
+            health_pipe=child_conn,  # type: ignore[arg-type]
+        )
+        self._gpu_monitor.start()
+        logger.info("[InfoService] Started GPUHealthMonitor subprocess")
+
+        # Register with HealthMonitorService if available
+        if self.cfg.health_monitor:
+            self._gpu_lifecycle_handler = _GPUMonitorLifecycleHandler(self)
+            policy = ComponentPolicy(
+                startup_timeout_s=30.0,  # GPU probe may take time on cold start
+                staleness_interval_s=GPU_PROBE_INTERVAL_SECONDS,  # Check at probe interval
+                max_consecutive_misses=3,  # 3 missed probes = dead
+            )
+            self.cfg.health_monitor.register_component(
+                component_id=GPU_MONITOR_COMPONENT_ID,
+                handler=self._gpu_lifecycle_handler,
+                pipe_conn=self._gpu_pipe_parent,
+                policy=policy,
+            )
+            logger.info("[InfoService] Registered GPU monitor with HealthMonitorService")
+
+    def _stop_gpu_monitor(self) -> None:
+        """Stop GPUHealthMonitor subprocess and unregister from HealthMonitorService."""
+        # Unregister from HealthMonitorService
+        if self.cfg.health_monitor:
+            self.cfg.health_monitor.unregister_component(GPU_MONITOR_COMPONENT_ID)
+            logger.debug("[InfoService] Unregistered GPU monitor from HealthMonitorService")
+
+        # Stop the subprocess
+        if self._gpu_monitor:
+            self._gpu_monitor.stop()
+            self._gpu_monitor.join(timeout=5.0)
+            if self._gpu_monitor.is_alive():
+                logger.warning("[InfoService] GPU monitor did not stop gracefully, terminating")
+                self._gpu_monitor.terminate()
+            self._gpu_monitor = None
+            logger.info("[InfoService] Stopped GPUHealthMonitor subprocess")
+
+        # Close pipe
+        if self._gpu_pipe_parent:
+            try:
+                self._gpu_pipe_parent.close()
+            except Exception:
+                pass
+            self._gpu_pipe_parent = None
+
+    def _restart_gpu_monitor(self) -> None:
+        """Restart GPUHealthMonitor after crash."""
+        logger.info("[InfoService] Restarting GPU monitor...")
+        self._stop_gpu_monitor()
+        self._start_gpu_monitor()
+
+    # ----------------------------- Query Methods -----------------------------
 
     def get_system_info(self) -> SystemInfoResult:
         """
@@ -189,60 +318,46 @@ class InfoService:
 
     def get_gpu_health(self) -> GPUHealthResult:
         """
-        Get GPU health status from DB meta table.
+        Get GPU resource snapshot and monitor liveness.
 
         Reads cached GPU probe results written by GPUHealthMonitor process.
         Does NOT run nvidia-smi inline (non-blocking).
 
+        Monitor liveness is determined by HealthMonitorService.
+
         Returns:
-            GPUHealthResult with GPU status or error state
+            GPUHealthResult with GPU resource snapshot and monitor liveness
         """
         import json
 
-        from nomarr.components.platform.gpu_monitor_comp import (
-            GPU_HEALTH_STALENESS_THRESHOLD_SECONDS,
-            check_gpu_health_staleness,
-        )
+        # Check monitor liveness via HealthMonitorService
+        monitor_healthy = False
+        if self.cfg.health_monitor:
+            status = self.cfg.health_monitor.get_status(GPU_MONITOR_COMPONENT_ID)
+            monitor_healthy = status in ("healthy", "recovering")
 
-        # Read GPU health from DB meta table
-        gpu_health_json = self.cfg.db.meta.get("gpu_health")
-        if not gpu_health_json:
-            # No GPU health data in DB yet
+        # Read GPU resources from DB
+        gpu_resources_json = self.cfg.db.meta.get("gpu_resources")
+        if not gpu_resources_json:
+            # No GPU resource data in DB yet
             return GPUHealthResult(
                 available=False,
-                last_check_at=None,
-                last_ok_at=None,
-                consecutive_failures=0,
-                error_summary="GPU health not yet initialized",
+                error_summary="GPU resources not yet initialized",
+                monitor_healthy=monitor_healthy,
             )
 
         try:
-            health_data = json.loads(gpu_health_json)
+            resource_data = json.loads(gpu_resources_json)
         except json.JSONDecodeError:
             return GPUHealthResult(
                 available=False,
-                last_check_at=None,
-                last_ok_at=None,
-                consecutive_failures=0,
-                error_summary="GPU health data corrupted",
+                error_summary="GPU resource data corrupted",
+                monitor_healthy=monitor_healthy,
             )
 
-        # Check staleness
-        last_check_at = health_data.get("probe_time")
-        if check_gpu_health_staleness(last_check_at):
-            return GPUHealthResult(
-                available=False,
-                last_check_at=last_check_at,
-                last_ok_at=health_data.get("last_ok_at"),
-                consecutive_failures=health_data.get("consecutive_failures", 0),
-                error_summary=f"GPU health data stale (>{GPU_HEALTH_STALENESS_THRESHOLD_SECONDS}s)",
-            )
-
-        # Fresh data
+        # Return resource snapshot with monitor liveness
         return GPUHealthResult(
-            available=health_data.get("available", False),
-            last_check_at=last_check_at,
-            last_ok_at=health_data.get("last_ok_at"),
-            consecutive_failures=health_data.get("consecutive_failures", 0),
-            error_summary=health_data.get("error_summary"),
+            available=resource_data.get("gpu_available", False),
+            error_summary=resource_data.get("error_summary"),
+            monitor_healthy=monitor_healthy,
         )

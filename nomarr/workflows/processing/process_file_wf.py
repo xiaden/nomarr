@@ -54,7 +54,6 @@ from __future__ import annotations
 
 import gc
 import logging
-import time
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -76,6 +75,7 @@ from nomarr.components.tagging.tagging_writer_comp import TagWriter
 from nomarr.helpers.dto.ml_dto import ComputeEmbeddingsForBackboneParams
 from nomarr.helpers.dto.path_dto import LibraryPath
 from nomarr.helpers.dto.processing_dto import ProcessFileResult, ProcessorConfig
+from nomarr.helpers.time_helper import internal_s
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -175,7 +175,7 @@ def _compute_embeddings_for_backbone(
     if not library_path or not library_path.is_valid():
         raise ValueError(f"Cannot compute embeddings for invalid path: {path}")
 
-    t_emb = time.time()
+    t_emb = internal_s()
     params = ComputeEmbeddingsForBackboneParams(
         backbone=backbone,
         emb_graph=emb_graph,
@@ -189,7 +189,7 @@ def _compute_embeddings_for_backbone(
     embeddings_2d, duration, chromaprint = compute_embeddings_for_backbone(params=params)
 
     logging.debug(
-        f"[processor] Embeddings for {backbone} computed in {time.time() - t_emb:.1f}s: shape={embeddings_2d.shape}"
+        f"[processor] Embeddings for {backbone} computed in {internal_s().value - t_emb.value:.1f}s: shape={embeddings_2d.shape}"
     )
 
     return embeddings_2d, duration, chromaprint
@@ -222,7 +222,7 @@ def _process_head_predictions(
         head_name = head_info.name
 
         try:
-            t_head = time.time()
+            t_head = internal_s()
 
             # Build head-only predictor (batched with explicit batch size for VRAM control)
             head_predict_fn = make_head_only_predictor_batched(head_info, embeddings_2d, batch_size=config.batch_size)
@@ -273,7 +273,7 @@ def _process_head_predictions(
             # Combined log: processing complete + tags produced
             logging.debug(
                 f"[processor] Head {head_name} complete: {len(segment_scores)} patches → {len(head_tags)} tags "
-                f"in {time.time() - t_head:.1f}s"
+                f"in {internal_s().value - t_head.value:.1f}s"
             )
 
             if len(head_tags) == 0:
@@ -693,7 +693,7 @@ def process_file_workflow(
     check_and_evict_idle_cache()
     touch_cache()
 
-    start_all = time.time()
+    start_all = internal_s()
 
     # === STEP 1: Discover and group heads by backbone ===
     _, heads_by_backbone = _discover_and_group_heads(config.models_dir)
@@ -788,7 +788,7 @@ def process_file_workflow(
         chromaprint_from_ml,
     )
 
-    elapsed = round(time.time() - start_all, 2)
+    elapsed = round(internal_s().value - start_all.value, 2)
 
     # Collect mood aggregation info if written
     mood_info = {}

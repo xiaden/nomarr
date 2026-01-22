@@ -39,13 +39,16 @@ async def web_gpu_health(
     info_service: Any = Depends(get_info_service),
 ) -> GPUHealthResponse:
     """
-    GPU dependency health check endpoint (readiness probe).
+    GPU resource snapshot endpoint.
 
-    Returns cached GPU probe results from StateBroker.
+    Returns cached GPU probe results from GPUHealthMonitor.
     Does NOT run nvidia-smi inline (non-blocking).
 
     Returns 200 with GPU status even if unavailable (not a failure state).
     Clients should check the 'available' field to determine GPU readiness.
+
+    Note: Monitor liveness should be checked via HealthMonitorService,
+    not by inspecting this response.
     """
     try:
         result = info_service.get_gpu_health()
@@ -54,8 +57,6 @@ async def web_gpu_health(
         # Event broker not configured - GPU monitoring disabled
         return GPUHealthResponse(
             available=False,
-            last_check_at=None,
-            last_ok_at=None,
-            consecutive_failures=0,
             error_summary="GPU monitoring not available",
+            monitor_healthy=False,
         )

@@ -36,6 +36,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     "watchdog==6.0.0" \
     "pytest==8.3.3" \
     "pytest-cov==5.0.0" \
+    "psutil==7.2.1" \
     # Clean up pip cache and temp files
     && rm -rf /root/.cache/pip /tmp/* /var/tmp/* \
     # Sanity probe

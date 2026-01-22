@@ -20,6 +20,7 @@ select = [
     "C4",     # flake8-comprehensions
     "SIM",    # flake8-simplify
     "RUF",    # Ruff-specific rules
+    "TID",    # flake8-tidy-imports (for banned-api)
 ]
 
 # Ignore specific rules
@@ -38,6 +39,8 @@ ignore = [
 
 [lint.per-file-ignores]
 "debug_vram.py" = ["E722"]  # Debug script can use bare except
+"nomarr/helpers/time_helper.py" = ["TID251"]  # time_helper is allowed to use time module directly
+"nomarr/components/workers/worker_crash_comp.py" = ["TID251"]  # Dead code (not integrated), uses time.time directly
 
 [format]
 # Use double quotes
@@ -52,3 +55,13 @@ docstring-code-format = true
 [lint.isort]
 # Group imports: stdlib -> third-party -> first-party
 known-first-party = ["essentia_autotag"]
+
+[lint.flake8-tidy-imports.banned-api]
+# Ban direct time access - use nomarr.helpers.time_helper instead
+"time.time".msg = "Use now_s() or now_ms() from nomarr.helpers.time_helper for wall-clock time"
+"time.time_ns".msg = "Use now_s() or now_ms() from nomarr.helpers.time_helper for wall-clock time"
+"time.monotonic".msg = "Use internal_s() or internal_ms() from nomarr.helpers.time_helper for monotonic time"
+"time.monotonic_ns".msg = "Use internal_s() or internal_ms() from nomarr.helpers.time_helper for monotonic time"
+"datetime.datetime.now".msg = "Use now_ms() from nomarr.helpers.time_helper, or format_wall_timestamp() for display"
+"datetime.datetime.utcnow".msg = "Use now_ms() from nomarr.helpers.time_helper (utcnow is deprecated in Python 3.12)"
+"builtins.print".msg = "Use logging (logger.info/debug/warning) instead of print() for proper log management"

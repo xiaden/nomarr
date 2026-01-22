@@ -115,8 +115,13 @@ class MetaOperations:
         """Alias for set() for backward compatibility."""
         self.set(key, value)
 
-    def write_gpu_health_atomic(self, data: dict[str, Any]) -> None:
-        """Write GPU health data atomically."""
+    def write_gpu_resources(self, data: dict[str, Any]) -> None:
+        """
+        Write GPU resource snapshot atomically.
+
+        The snapshot contains only resource facts (gpu_available, error_summary).
+        No timestamps - monitor liveness is tracked by HealthMonitorService.
+        """
         import json
 
-        self.set_key(key="gpu_health", value=json.dumps(data))
+        self.set_key(key="gpu_resources", value=json.dumps(data))

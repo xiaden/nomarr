@@ -84,6 +84,7 @@ class ComputeEmbeddingsForBackboneParams:
     path: LibraryPath  # Security boundary: must be factory-built LibraryPath
     min_duration_s: int
     allow_short: bool
+    prefer_gpu: bool = True  # GPU/CPU adaptive: False forces CPU execution
 
 
 @dataclass

@@ -15,11 +15,12 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+
+from nomarr.helpers.time_helper import internal_s
 
 if TYPE_CHECKING:
     from nomarr.components.ml.ml_discovery_comp import HeadInfo
@@ -33,7 +34,7 @@ _PREDICTOR_CACHE: dict[str, Callable[[np.ndarray, int], np.ndarray]] = {}
 _BACKBONE_CACHE: dict[str, Any] = {}
 
 _CACHE_INITIALIZED = False
-_CACHE_LAST_ACCESS: float = 0.0
+_CACHE_LAST_ACCESS: int = 0
 _CACHE_LOCK = threading.Lock()
 _CACHE_TIMEOUT: int = 300  # seconds (0 = never evict)
 
@@ -85,7 +86,7 @@ def warmup_predictor_cache(
 
     logging.info(f"[cache] Warming up predictor cache with {len(heads)} heads...")
     logging.info("[cache] Building model cache (Essentia warnings normal during warmup)...")
-    start = time.time()
+    start = internal_s()
 
     # Note: Essentia's "No network created" warnings during model loading are expected
     # and harmless. They occur when TensorFlow graphs are loaded for the first time.
@@ -102,9 +103,9 @@ def warmup_predictor_cache(
         except Exception as e:
             logging.error(f"[cache] Failed to cache predictor for {head_info.name}: {e}")
 
-    elapsed = time.time() - start
+    elapsed = internal_s().value - start.value
     _CACHE_INITIALIZED = True
-    _CACHE_LAST_ACCESS = time.time()
+    _CACHE_LAST_ACCESS = internal_s().value
     logging.info(
         f"[cache] Predictor cache ready: {len(_PREDICTOR_CACHE)}/{len(heads)} predictors loaded in {elapsed:.1f}s"
     )
@@ -127,7 +128,7 @@ def clear_predictor_cache() -> int:
         _PREDICTOR_CACHE.clear()
         _BACKBONE_CACHE.clear()
         _CACHE_INITIALIZED = False
-        _CACHE_LAST_ACCESS = 0.0
+        _CACHE_LAST_ACCESS = 0
 
         # Force garbage collection and GPU memory cleanup
         import gc
@@ -149,12 +150,12 @@ def clear_predictor_cache() -> int:
 def touch_cache() -> None:
     """Update the last access time for the cache."""
     global _CACHE_LAST_ACCESS
-    _CACHE_LAST_ACCESS = time.time()
+    _CACHE_LAST_ACCESS = internal_s().value
 
 
 def get_cache_idle_time() -> float:
     """Get the number of seconds since last cache access."""
-    return time.time() - _CACHE_LAST_ACCESS
+    return internal_s().value - _CACHE_LAST_ACCESS
 
 
 def check_and_evict_idle_cache() -> bool:

@@ -34,6 +34,24 @@ class TagWriteProfile:
 
 
 @dataclass
+class ResourceManagementConfig:
+    """
+    Configuration for GPU/CPU adaptive resource management.
+
+    Per GPU_REFACTOR_PLAN.md Section 13:
+    - enabled: Whether resource management is active
+    - vram_budget_mb: Maximum VRAM ML may consume (absolute MB)
+    - ram_budget_mb: Maximum RAM ML may consume (absolute MB)
+    - ram_detection_mode: How to detect RAM usage (auto/cgroup/host)
+    """
+
+    enabled: bool = True
+    vram_budget_mb: int = 12288  # 12GB default
+    ram_budget_mb: int = 16384  # 16GB default
+    ram_detection_mode: Literal["auto", "cgroup", "host"] = "auto"
+
+
+@dataclass
 class ProcessorConfig:
     """
     Configuration for the audio processing pipeline.
@@ -71,6 +89,9 @@ class ProcessorConfig:
 
     # File write mode: controls what tags go to media files
     file_write_mode: Literal["none", "minimal", "full"] = "minimal"
+
+    # Resource management configuration (GPU/CPU adaptive)
+    resource_management: ResourceManagementConfig | None = None
 
 
 @dataclass

@@ -166,10 +166,12 @@ def should_restart_worker(
     - Rapid: 5 restarts in 5 minutes (catches OOM loops)
     - Lifetime: 20 total restarts (catches slow thrashing)
     """
-    now_ms = int(time.time() * 1000)
+    from nomarr.helpers.time_helper import now_ms
+    
+    current_time_ms = now_ms()
     
     # Check rapid restart limit
-    if restart_count >= 5 and (now_ms - last_restart_ms) < (5 * 60 * 1000):
+    if restart_count >= 5 and (current_time_ms - last_restart_ms) < (5 * 60 * 1000):
         return RestartDecision(
             action="mark_failed",
             reason="Exceeded 5 restarts in 5 minutes",

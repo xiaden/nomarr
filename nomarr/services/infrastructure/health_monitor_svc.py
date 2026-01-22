@@ -49,6 +49,7 @@ from nomarr.helpers.dto.health_dto import (
     ComponentStatus,
     StatusChangeContext,
 )
+from nomarr.helpers.time_helper import InternalSeconds, internal_s, internal_s_to_ms, to_wall_ms
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -75,10 +76,10 @@ class _ComponentState:
     pipe_conn: Any
     policy: ComponentPolicy
     status: ComponentStatus = "pending"
-    last_frame_time: float = field(default_factory=time.time)
+    last_frame_time: InternalSeconds = field(default_factory=internal_s)
     consecutive_misses: int = 0
-    startup_deadline: float = 0.0
-    recovery_deadline: float | None = None
+    startup_deadline: InternalSeconds | None = None
+    recovery_deadline: InternalSeconds | None = None
     reported_recover_for_s: float | None = None
 
 
@@ -141,7 +142,7 @@ class HealthMonitorService:
         if policy is None:
             policy = ComponentPolicy()
 
-        now = time.time()
+        now = internal_s()
         state = _ComponentState(
             handler=handler,
             pipe_conn=pipe_conn,
@@ -149,7 +150,7 @@ class HealthMonitorService:
             status="pending",
             last_frame_time=now,
             consecutive_misses=0,
-            startup_deadline=now + policy.startup_timeout_s,
+            startup_deadline=InternalSeconds(now.value + int(policy.startup_timeout_s)),
             recovery_deadline=None,
             reported_recover_for_s=None,
         )
@@ -301,10 +302,10 @@ class HealthMonitorService:
 
         Polls all pipes and checks deadlines/staleness in a single thread.
         """
-        last_staleness_check = 0.0
+        last_staleness_check = internal_s()
 
         while not self._stop_event.is_set():
-            now = time.time()
+            now = internal_s()
 
             # Get current pipes snapshot
             with self._lock:
@@ -334,8 +335,8 @@ class HealthMonitorService:
                 self._read_pipe(component_id, conn)
 
             # Periodic staleness check (every ~1s based on poll timeout)
-            now = time.time()
-            if now - last_staleness_check >= 1.0:
+            now = internal_s()
+            if now.value - last_staleness_check.value >= 1:
                 self._check_all_deadlines(now)
                 last_staleness_check = now
 
@@ -367,7 +368,7 @@ class HealthMonitorService:
             # Other statuses in frame are ignored (only healthy resets misses)
 
         except json.JSONDecodeError:
-            pass
+            logger.warning("Dropped malformed HEALTH frame from %s", component_id)
 
     def _transition_to_healthy(self, component_id: str) -> None:
         """Transition component to healthy status."""
@@ -378,7 +379,7 @@ class HealthMonitorService:
 
             old_status = state.status
             state.status = "healthy"
-            state.last_frame_time = time.time()
+            state.last_frame_time = internal_s()
             state.consecutive_misses = 0
             state.recovery_deadline = None
             state.reported_recover_for_s = None
@@ -404,8 +405,8 @@ class HealthMonitorService:
 
             old_status = state.status
             state.status = "recovering"
-            state.last_frame_time = time.time()
-            state.recovery_deadline = time.time() + recover_s
+            state.last_frame_time = internal_s()
+            state.recovery_deadline = InternalSeconds(internal_s().value + int(recover_s))
             state.reported_recover_for_s = reported_recover_for_s
             handler = state.handler
 
@@ -433,7 +434,7 @@ class HealthMonitorService:
         logger.debug("[HealthMonitor] %s: %s -> dead (pipe closed)", component_id, old_status)
         self._emit_status_change(component_id, old_status, "dead", handler, state)
 
-    def _check_all_deadlines(self, now: float) -> None:
+    def _check_all_deadlines(self, now: InternalSeconds) -> None:
         """Check startup timeouts, staleness, and recovery deadlines."""
         # Collect state changes to emit outside lock
         changes: list[tuple[str, ComponentStatus, ComponentStatus, ComponentLifecycleHandler, _ComponentState]] = []
@@ -452,14 +453,14 @@ class HealthMonitorService:
             self._emit_status_change(component_id, old_status, new_status, handler, state)
 
     def _check_component_deadline(
-        self, component_id: str, state: _ComponentState, now: float
+        self, component_id: str, state: _ComponentState, now: InternalSeconds
     ) -> tuple[str, ComponentStatus, ComponentStatus, ComponentLifecycleHandler, _ComponentState] | None:
         """Check deadlines for a single component. Returns state change if any."""
         policy = state.policy
 
         # Pending: check startup timeout
         if state.status == "pending":
-            if now >= state.startup_deadline:
+            if state.startup_deadline and now.value >= state.startup_deadline.value:
                 old_status: ComponentStatus = state.status
                 state.status = "dead"
                 logger.warning(
@@ -471,7 +472,7 @@ class HealthMonitorService:
 
         # Recovering: check recovery deadline
         if state.status == "recovering":
-            if state.recovery_deadline and now >= state.recovery_deadline:
+            if state.recovery_deadline and now.value >= state.recovery_deadline.value:
                 old_status = state.status
                 state.status = "dead"
                 logger.warning(
@@ -483,7 +484,7 @@ class HealthMonitorService:
 
         # Healthy/Unhealthy: check staleness
         if state.status in ("healthy", "unhealthy"):
-            time_since_frame = now - state.last_frame_time
+            time_since_frame = now.value - state.last_frame_time.value
             if time_since_frame >= policy.staleness_interval_s:
                 state.consecutive_misses += 1
                 state.last_frame_time = now  # Reset for next interval
@@ -524,7 +525,7 @@ class HealthMonitorService:
         """Emit status change callback to handler."""
         context = StatusChangeContext(
             consecutive_misses=state.consecutive_misses,
-            recovery_deadline=state.recovery_deadline,
+            recovery_deadline=state.recovery_deadline.value if state.recovery_deadline else None,
             reported_recover_for_s=state.reported_recover_for_s,
         )
 
@@ -561,10 +562,12 @@ class HealthMonitorService:
 
             for component_id, status, last_time in snapshot:
                 try:
+                    # Convert monotonic time to wall-clock for DB storage
+                    wall_ms = to_wall_ms(internal_s_to_ms(last_time))
                     self.db.health.update_health_snapshot(
                         component_id=component_id,
                         status=status,
-                        timestamp=int(last_time * 1000),
+                        timestamp=wall_ms.value,
                     )
                 except Exception as e:
                     logger.debug("[HealthMonitor] History write failed for %s: %s", component_id, e)

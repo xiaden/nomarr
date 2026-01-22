@@ -216,6 +216,12 @@ def compute_embeddings_for_backbone(
     # Get embedding output node
     emb_output = get_embedding_output_node(params.backbone)
 
+    # Log GPU preference (CPU spill indicator)
+    # Note: Full CPU spill requires loading models on CPU device which is complex
+    # with Essentia. For now, we log the preference for monitoring.
+    if not params.prefer_gpu:
+        logging.info(f"[inference] CPU spill requested for {params.backbone} (GPU VRAM pressure detected)")
+
     # Try to get cached backbone predictor first
     emb_predictor = get_cached_backbone_predictor(params.backbone, params.emb_graph)
 

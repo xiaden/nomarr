@@ -12,34 +12,46 @@ from .arango_first_run_comp import (
     write_db_config,
 )
 from .gpu_monitor_comp import (
-    GPU_HEALTH_STALENESS_THRESHOLD_SECONDS,
     GPU_PROBE_INTERVAL_SECONDS,
     GPU_PROBE_TIMEOUT_SECONDS,
     GPUHealthMonitor,
-    check_gpu_health_staleness,
 )
 from .gpu_probe_comp import (
-    DEFAULT_PROBE_INTERVAL_SECONDS,
     NVIDIA_SMI_TIMEOUT_SECONDS,
     probe_gpu_availability,
-    should_run_gpu_probe,
+)
+from .resource_monitor_comp import (
+    TELEMETRY_CACHE_TTL_MS,
+    ResourceStatus,
+    check_nvidia_gpu_capability,
+    check_resource_headroom,
+    get_ram_usage_mb,
+    get_vram_usage_for_pid_mb,
+    get_vram_usage_mb,
+    reset_capability_cache,
+    reset_telemetry_cache,
 )
 
 __all__ = [
     "DB_NAME",
-    "DEFAULT_PROBE_INTERVAL_SECONDS",
-    "GPU_HEALTH_STALENESS_THRESHOLD_SECONDS",
     "GPU_PROBE_INTERVAL_SECONDS",
     "GPU_PROBE_TIMEOUT_SECONDS",
     "NVIDIA_SMI_TIMEOUT_SECONDS",
+    "TELEMETRY_CACHE_TTL_MS",
     "USERNAME",
     "GPUHealthMonitor",
-    "check_gpu_health_staleness",
+    "ResourceStatus",
+    "check_nvidia_gpu_capability",
+    "check_resource_headroom",
     "ensure_schema",
+    "get_ram_usage_mb",
     "get_root_password_from_env",
+    "get_vram_usage_for_pid_mb",
+    "get_vram_usage_mb",
     "is_first_run",
     "probe_gpu_availability",
     "provision_database_and_user",
-    "should_run_gpu_probe",
+    "reset_capability_cache",
+    "reset_telemetry_cache",
     "write_db_config",
 ]

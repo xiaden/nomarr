@@ -190,7 +190,7 @@ class CalibrationService:
         total_heads = len(heads)
 
         # Count heads with recent calibration_state (within 24 hours)
-        recent_threshold = now_ms() - (24 * 60 * 60 * 1000)
+        recent_threshold = now_ms().value - (24 * 60 * 60 * 1000)
 
         from typing import cast as type_cast
 

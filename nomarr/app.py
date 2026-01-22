@@ -291,6 +291,8 @@ class Application:
 
         logging.info("[Application] Starting...")
 
+        # NomarrLogFilter is installed in start.py before handlers are configured
+
         # Clean ephemeral state from previous runs (Phase 3: health monitoring)
         logging.info("[Application] Cleaning ephemeral runtime state...")
         self.db.health.clean_all()
@@ -322,6 +324,15 @@ class Application:
         ml_service = MLService(cfg=ml_cfg)
         self.register_service("ml", ml_service)
 
+        # Initialize HealthMonitorService for component liveness tracking
+        from nomarr.services.infrastructure.health_monitor_svc import HealthMonitorConfig
+
+        health_cfg = HealthMonitorConfig()
+        self.health_monitor = HealthMonitorService(cfg=health_cfg, db=self.db)
+        self.health_monitor.start()
+        self.register_service("health_monitor", self.health_monitor)
+        logging.info("[Application] HealthMonitorService started")
+
         # Register Analytics service (DI: inject db, namespace)
         logging.info("[Application] Initializing AnalyticsService...")
         from nomarr.services.domain.analytics_svc import AnalyticsConfig
@@ -349,7 +360,7 @@ class Application:
         navidrome_service = NavidromeService(db=self.db, cfg=navidrome_cfg)
         self.register_service("navidrome", navidrome_service)
 
-        # Register Info service
+        # Register Info service (owns GPUHealthMonitor lifecycle)
         from nomarr.services.infrastructure.info_svc import InfoConfig, InfoService
 
         info_cfg = InfoConfig(
@@ -357,6 +368,7 @@ class Application:
             namespace=self.namespace,
             models_dir=str(self.models_dir),
             db=self.db,
+            health_monitor=self.health_monitor,
             db_path=self.db_path,
             api_host=self.api_host,
             api_port=self.api_port,
@@ -474,6 +486,10 @@ class Application:
         else:
             logging.info("[Application] Worker system disabled, not starting workers")
 
+        # Start InfoService (owns GPUHealthMonitor lifecycle)
+        logging.info("[Application] Starting InfoService (GPU monitor)...")
+        info_service.start()
+
         # Start app heartbeat thread (Phase 3: DB-based IPC)
         self._running = True
         self._start_app_heartbeat()
@@ -506,6 +522,12 @@ class Application:
             logging.info("[Application] Stopping worker processes...")
             self.worker_system.stop_all_workers()
             logging.info("[Application] Worker processes stopped")
+
+        # Stop InfoService (owns GPUHealthMonitor)
+        if "info" in self.services:
+            logging.info("[Application] Stopping InfoService (GPU monitor)...")
+            self.services["info"].stop()
+            logging.info("[Application] InfoService stopped")
 
         # Stop health monitor
         if hasattr(self, "health_monitor") and self.health_monitor:

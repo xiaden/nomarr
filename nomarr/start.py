@@ -14,6 +14,7 @@ from pathlib import Path
 import uvicorn
 
 from nomarr.app import application
+from nomarr.helpers.logging_helper import NomarrLogFilter
 
 # CRITICAL: Set multiprocessing start method to 'spawn' before any other imports
 # This prevents CUDA context corruption when forking worker processes
@@ -24,6 +25,12 @@ multiprocessing.set_start_method("spawn", force=True)
 log_dir = Path("logs")
 log_dir.mkdir(exist_ok=True)
 
+# Nomarr log format: includes auto-derived identity/role tags and optional context
+_LOG_FORMAT = (
+    "%(asctime)s %(levelname)s %(nomarr_identity_tag)s %(nomarr_role_tag)s"
+    "%(context_str)s%(message)s"
+)
+
 # Create rotating file handler (10MB per file, keep 5 backup files = 50MB total)
 file_handler = logging.handlers.RotatingFileHandler(
     log_dir / "nomarr.log",
@@ -32,12 +39,18 @@ file_handler = logging.handlers.RotatingFileHandler(
     encoding="utf-8",
 )
 file_handler.setLevel(logging.INFO)
-file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+file_handler.setFormatter(logging.Formatter(_LOG_FORMAT))
 
 # Console handler with same format
 console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setLevel(logging.INFO)
-console_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+console_handler.setFormatter(logging.Formatter(_LOG_FORMAT))
+
+# Install NomarrLogFilter on root logger BEFORE configuring handlers
+# This ensures all log records have the required attributes
+from nomarr.helpers.logging_helper import NomarrLogFilter
+
+logging.root.addFilter(NomarrLogFilter())
 
 # Configure root logger
 logging.basicConfig(

@@ -184,7 +184,7 @@ class WorkerClaimsOperations:
         Returns:
             Total number of claims removed
         """
-        heartbeat_cutoff = now_ms() - heartbeat_timeout_ms
+        heartbeat_cutoff = now_ms().value - heartbeat_timeout_ms
         removed = 0
         removed += self.cleanup_inactive_worker_claims(heartbeat_cutoff)
         removed += self.cleanup_completed_file_claims()

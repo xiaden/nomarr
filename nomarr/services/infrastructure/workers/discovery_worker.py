@@ -17,6 +17,8 @@ from multiprocessing import Event
 from multiprocessing.synchronize import Event as EventType
 from typing import TYPE_CHECKING, Any
 
+from nomarr.helpers.time_helper import internal_s
+
 if TYPE_CHECKING:
     from nomarr.helpers.dto.processing_dto import ProcessorConfig
 
@@ -56,6 +58,8 @@ class DiscoveryWorker(multiprocessing.Process):
         processor_config_dict: dict[str, Any],
         stop_event: EventType | None = None,
         health_pipe: Any = None,
+        execution_tier: int = 0,
+        prefer_gpu: bool = True,
     ) -> None:
         """Initialize discovery worker.
 
@@ -66,6 +70,8 @@ class DiscoveryWorker(multiprocessing.Process):
             processor_config_dict: ProcessorConfig as dict (for multiprocessing)
             stop_event: Event to signal graceful shutdown
             health_pipe: Pipe write-end for health telemetry to parent
+            execution_tier: Execution tier (0-4) from admission control
+            prefer_gpu: Whether to prefer GPU for backbone execution
         """
         super().__init__()
         self.worker_id = worker_id
@@ -75,6 +81,8 @@ class DiscoveryWorker(multiprocessing.Process):
         self._stop_event = stop_event or Event()
         self._health_pipe = health_pipe
         self._current_status: str = "pending"  # Current health status for frame emission
+        self.execution_tier = execution_tier  # GPU/CPU tier from admission control
+        self.prefer_gpu = prefer_gpu  # GPU preference from tier config
 
     def _send_health_frame(self, status: str) -> None:
         """Send a health frame to the parent process via pipe.
@@ -110,11 +118,12 @@ class DiscoveryWorker(multiprocessing.Process):
         """Main worker loop - discover, claim, process, repeat."""
         # Late imports to avoid import-time issues in subprocess
         from nomarr.components.ml.ml_backend_essentia_comp import is_available as ml_is_available
+        from nomarr.components.platform.resource_monitor_comp import check_resource_headroom
         from nomarr.components.workers.worker_discovery_comp import (
             discover_and_claim_file,
             release_claim,
         )
-        from nomarr.helpers.dto.processing_dto import ProcessorConfig
+        from nomarr.helpers.dto.processing_dto import ProcessorConfig, ResourceManagementConfig
         from nomarr.persistence.db import Database
         from nomarr.workflows.processing.process_file_wf import process_file_workflow
 
@@ -142,6 +151,9 @@ class DiscoveryWorker(multiprocessing.Process):
         # Reconstruct ProcessorConfig from dict
         config = ProcessorConfig(**self.processor_config_dict)
 
+        # Get resource management config (may be None if disabled)
+        rm_config: ResourceManagementConfig | None = config.resource_management
+
         # Mark as healthy now that preflight passed
         self._current_status = "healthy"
 
@@ -149,14 +161,32 @@ class DiscoveryWorker(multiprocessing.Process):
         db.health.mark_starting(self.worker_id, "worker")
         db.health.mark_healthy(self.worker_id)
 
-        logger.info("[%s] Discovery worker started", self.worker_id)
+        logger.info(
+            "[%s] Discovery worker started (tier=%d, prefer_gpu=%s)",
+            self.worker_id,
+            self.execution_tier,
+            self.prefer_gpu,
+        )
 
         consecutive_errors = 0
         files_processed = 0
         cache_warmed = False  # Lazy cache warmup - only warm when work arrives
+        recovering_until: float | None = None  # Recovery deadline if in recovering state
 
         try:
             while not self._stop_event.is_set():
+                # Check if in recovery state
+                if recovering_until is not None:
+                    if internal_s().value < recovering_until:
+                        # Still recovering - sleep briefly and recheck
+                        time.sleep(1.0)
+                        continue
+                    else:
+                        # Recovery window expired - check resources again
+                        recovering_until = None
+                        self._current_status = "healthy"
+                        logger.info("[%s] Recovery window expired, resuming work", self.worker_id)
+
                 # Discover and claim next file
                 file_id = discover_and_claim_file(db, self.worker_id)
 
@@ -170,6 +200,41 @@ class DiscoveryWorker(multiprocessing.Process):
 
                     time.sleep(IDLE_SLEEP_S)
                     continue
+
+                # Per-file resource check (GPU_REFACTOR_PLAN.md Section 11)
+                # Only if resource management is enabled
+                if rm_config is not None and rm_config.enabled:
+                    resource_status = check_resource_headroom(
+                        vram_budget_mb=rm_config.vram_budget_mb,
+                        ram_budget_mb=rm_config.ram_budget_mb,
+                        vram_estimate_mb=8192,  # Conservative backbone estimate
+                        ram_estimate_mb=2048,  # Conservative heads estimate
+                        ram_detection_mode=rm_config.ram_detection_mode,
+                    )
+
+                    # Check resource headroom
+                    if not resource_status.vram_ok and not resource_status.ram_ok:
+                        # Both VRAM and RAM exhausted - enter recovering state
+                        # Per GPU_REFACTOR_PLAN.md Section 12: release claim, report recovering
+                        logger.warning(
+                            "[%s] Resources exhausted (VRAM=%dMB, RAM=%dMB) - entering recovery",
+                            self.worker_id,
+                            resource_status.vram_used_mb,
+                            resource_status.ram_used_mb,
+                        )
+                        release_claim(db, file_id)
+                        self._current_status = "recovering"
+                        recovering_until = internal_s().value + 30.0  # 30s recovery window
+                        continue
+
+                    # If only VRAM exhausted but RAM OK, we can still process (CPU spill)
+                    # The prefer_gpu setting from tier selection still applies
+                    if not resource_status.vram_ok and resource_status.ram_ok:
+                        logger.info(
+                            "[%s] VRAM pressure, spilling to CPU (RAM=%dMB available)",
+                            self.worker_id,
+                            resource_status.ram_used_mb,
+                        )
 
                 # Lazy cache warmup: warm cache on first file discovered
                 # This avoids VRAM allocation until actual work arrives
@@ -270,6 +335,8 @@ def create_discovery_worker(
     processor_config: ProcessorConfig,
     stop_event: EventType | None = None,
     health_pipe: Any = None,
+    execution_tier: int = 0,
+    prefer_gpu: bool = True,
 ) -> DiscoveryWorker:
     """Factory function to create a DiscoveryWorker.
 
@@ -280,6 +347,8 @@ def create_discovery_worker(
         processor_config: ProcessorConfig for the processing workflow
         stop_event: Optional shared Event for coordinated shutdown
         health_pipe: Pipe write-end for health telemetry to parent
+        execution_tier: Execution tier (0-4) from admission control
+        prefer_gpu: Whether to prefer GPU for backbone execution
 
     Returns:
         Configured DiscoveryWorker process (not started)
@@ -298,4 +367,6 @@ def create_discovery_worker(
         processor_config_dict=config_dict,
         stop_event=stop_event,
         health_pipe=health_pipe,
+        execution_tier=execution_tier,
+        prefer_gpu=prefer_gpu,
     )

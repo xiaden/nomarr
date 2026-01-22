@@ -35,6 +35,7 @@ dependencies = [
     "bcrypt==4.2.1",
     "python-arango==7.9.0",
     "watchdog>=6.0.0",
+    "psutil==7.2.1",
 ]
 
 [project.optional-dependencies]

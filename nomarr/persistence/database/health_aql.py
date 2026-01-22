@@ -206,7 +206,7 @@ class HealthOperations:
         Returns:
             True if healthy, False otherwise
         """
-        cutoff = now_ms() - max_age_ms
+        cutoff = now_ms().value - max_age_ms
 
         if component_id is not None:
             # Check specific component

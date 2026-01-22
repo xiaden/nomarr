@@ -29,7 +29,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-import time
 from collections import defaultdict
 from collections.abc import Callable
 from pathlib import Path
@@ -39,6 +38,7 @@ from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
 from nomarr.helpers.dto.library_dto import ScanTarget
+from nomarr.helpers.time_helper import InternalSeconds, internal_s
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -181,7 +181,7 @@ class FileWatcherService:
         self.debounce_task: asyncio.Task | None = None
 
         # Polling state (minimal - just last poll time per library)
-        self.last_poll_time: dict[str, float] = {}
+        self.last_poll_time: dict[str, InternalSeconds] = {}
 
         logger.info(
             f"FileWatcherService initialized (debounce={debounce_seconds}s, poll_interval={polling_interval_seconds}s)"
@@ -266,7 +266,7 @@ class FileWatcherService:
             library_id: Library document _id
         """
         # Initialize last poll time to now (so first poll happens after interval)
-        self.last_poll_time[library_id] = time.time()
+        self.last_poll_time[library_id] = internal_s()
 
         # Try to schedule on existing event loop, fall back to thread
         try:
@@ -304,7 +304,7 @@ class FileWatcherService:
                 await asyncio.sleep(self.polling_interval_seconds)
 
                 # Update last poll time
-                self.last_poll_time[library_id] = time.time()
+                self.last_poll_time[library_id] = internal_s()
 
                 # Trigger full library scan (empty folder_path = entire library)
                 target = ScanTarget(library_id=library_id, folder_path="")

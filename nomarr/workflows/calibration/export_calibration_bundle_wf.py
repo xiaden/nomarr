@@ -19,9 +19,10 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+from nomarr.helpers.time_helper import format_wall_timestamp, now_ms
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -106,7 +107,7 @@ def export_calibration_bundle_wf(
 
     if include_metadata:
         bundle["metadata"] = {
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": format_wall_timestamp(now_ms(), "%Y-%m-%dT%H:%M:%SZ"),
             "version": "v1",
             "source": "nomarr-export",
             "global_version": global_version,

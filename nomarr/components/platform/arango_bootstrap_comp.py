@@ -46,6 +46,9 @@ def _create_collections(db: StandardDatabase) -> None:
         "calibration_history",
         "health",
         "worker_claims",  # Discovery worker claims (Phase 2)
+        # ML capacity probe collections (GPU/CPU adaptive resource management)
+        "ml_capacity_estimates",  # Stores probe results per model_set_hash
+        "ml_capacity_probe_locks",  # Prevents concurrent probes
         # Metadata entity vertex collections
         "artists",
         "albums",

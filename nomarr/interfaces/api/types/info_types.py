@@ -56,23 +56,23 @@ class HealthStatusResponse(BaseModel):
 
 
 class GPUHealthResponse(BaseModel):
-    """Response for GPU health endpoint."""
+    """
+    Response for GPU health endpoint.
+
+    Contains GPU resource snapshot and monitor liveness.
+    """
 
     available: bool = Field(..., description="GPU is available and responding")
-    last_check_at: float | None = Field(None, description="Unix timestamp of last probe")
-    last_ok_at: float | None = Field(None, description="Unix timestamp of last successful probe")
-    consecutive_failures: int = Field(..., description="Number of consecutive probe failures")
     error_summary: str | None = Field(None, description="Short error message if unavailable")
+    monitor_healthy: bool = Field(..., description="GPU monitor subprocess is alive and healthy")
 
     @classmethod
     def from_dto(cls, dto: GPUHealthResult) -> GPUHealthResponse:
         """Convert GPUHealthResult DTO to Pydantic response model."""
         return cls(
             available=dto.available,
-            last_check_at=dto.last_check_at,
-            last_ok_at=dto.last_ok_at,
-            consecutive_failures=dto.consecutive_failures,
             error_summary=dto.error_summary,
+            monitor_healthy=dto.monitor_healthy,
         )
 
 
