@@ -524,8 +524,7 @@ python scripts/qc_metrics.py > qc_reports/metrics.json
 3. `import-linter` - Architecture boundary enforcer
 4. `radon` - Complexity metrics
 5. `interrogate` - Docstring coverage
-6. `wily` - Code metrics over time
-7. `discover_api.py` - Module API inspection (see below)
+6. `discover_api.py` - Module API inspection (see below)
 
 **Requires Docker (ML deps):**
 1. `mypy` - Static type checking
@@ -609,7 +608,7 @@ python scripts/discover_imports.py nomarr.services.processing_service
 
 ```bash
 # Development machine (no ML deps)
-pip install ruff radon interrogate wily import-linter
+pip install ruff radon interrogate import-linter
 
 # Docker container (with ML deps)
 # Already installed in nomarr Docker image

@@ -1,16 +1,16 @@
 name: "CodeQL Config"
 
-# Teach CodeQL about our custom security patterns
 queries:
   - uses: security-and-quality
 
-# Disable path injection warnings - we use resolve_library_path as a sanitizer
-# All paths pass through this function which validates:
-# - No path traversal (..)
-# - No absolute paths (except library_root)
-# - No NUL bytes
-# - Boundary checks against library_root
-# See: nomarr/helpers/files_helper.py::resolve_library_path
+# Suppress path-injection false positives.
+#
+# All user-provided paths go through path_comp._resolve_path_untrusted()
+# which validates: NUL bytes, absolute paths, ".." traversal, symlink escape,
+# and library boundary containment. CodeQL can't trace through this sanitizer
+# without a custom QL model pack (not worth the effort).
+#
+# Security boundary: nomarr/components/infrastructure/path_comp.py
 query-filters:
   - exclude:
       id: py/path-injection

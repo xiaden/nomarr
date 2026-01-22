@@ -1,0 +1,153 @@
+---
+name: layer-services
+description: Use when creating or modifying code in nomarr/services/. Services own runtime wiring, long-lived resources (DB, queues, workers), and call workflows. No complex business logic here.
+---
+
+# Services Layer
+
+**Purpose:** Own runtime wiring and long-lived resources (config, DB, queues, workers) and expose a clean API for interfaces.
+
+Services are:
+- **Dependency coordinators** (wire config, DB, ML backends, queues, workers)
+- **Thin orchestrators** (call workflows, aggregate results)
+- **DTO providers** (shape data for interfaces)
+
+**No complex business logic lives here.** That belongs in workflows.
+
+---
+
+## Allowed Imports
+
+```python
+# ✅ Allowed
+from nomarr.workflows import scan_library_workflow, process_file_workflow
+from nomarr.persistence import Database
+from nomarr.components.ml import MLBackend
+from nomarr.helpers.dto import LibraryDict, ProcessResult
+```
+
+## Forbidden Imports
+
+```python
+# ❌ NEVER import these in services
+from nomarr.interfaces import ...     # Services don't know about HTTP/CLI
+from fastapi import HTTPException     # No HTTP semantics
+from pydantic import BaseModel        # No Pydantic models
+```
+
+---
+
+## Service Method Naming
+
+All public methods use `<verb>_<noun>`:
+
+```python
+# ✅ Good
+get_library()
+list_libraries()
+scan_library()
+queue_file_for_tagging()
+start_processing()
+stop_workers()
+
+# ❌ Bad
+api_get_library()     # No transport prefixes
+get_library_for_admin()  # No audience suffixes
+```
+
+### Allowed Verbs
+
+- **Read:** `get_`, `list_`, `exists_`, `count_`, `fetch_`
+- **Write:** `create_`, `update_`, `delete_`, `set_`, `rename_`
+- **Domain:** `scan_`, `tag_`, `queue_`, `start_`, `stop_`, `sync_`, `import_`, `export_`
+- **Boolean:** `enable_`, `disable_`
+
+---
+
+## Complexity Rule: DI + Orchestration Only
+
+A service method should:
+1. Collect dependencies
+2. Call workflow(s)
+3. Return result
+
+**Extract to workflow when you see:**
+- Loops
+- Branching logic
+- Multi-step operations
+- Data transformations
+
+```python
+# ✅ Good - orchestration only
+def process_file(self, file_id: str) -> ProcessResult:
+    file_path = self._resolve_file_path(file_id)
+    return process_file_workflow(
+        db=self.db,
+        file_path=file_path,
+        models_dir=self.config.models_dir,
+    )
+
+# ❌ Bad - business logic in service
+def process_file(self, file_id: str) -> ProcessResult:
+    file_path = self._resolve_file_path(file_id)
+    if self._should_skip(file_path):  # ← Logic belongs in workflow
+        return ProcessResult(skipped=True)
+    embeddings = compute_embeddings(file_path)  # ← Direct component call
+    # ... more logic
+```
+
+---
+
+## DTO Requirements
+
+**Public methods returning structured data must return DTOs.**
+
+```python
+# ✅ Correct - DTO return
+def get_job(self, job_id: int) -> JobDict | None: ...
+
+# ✅ Correct - trivial return (no DTO needed)
+def is_enabled(self) -> bool: ...
+def get_count(self) -> int: ...
+
+# ❌ Wrong - returning raw dict
+def get_job(self, job_id: int) -> dict[str, Any]: ...
+```
+
+### DTO Placement
+
+- **Single-service DTOs:** Define in the service file
+- **Cross-layer DTOs:** Must live in `helpers/dto/<domain>.py`
+
+---
+
+## Long-Lived Resources
+
+Services own:
+- DB connections (`Database`)
+- Config snapshots (`ConfigService`)
+- ML backends
+- Queue handles
+- Worker managers
+
+Use constructor injection:
+
+```python
+class LibraryService:
+    def __init__(self, db: Database, config: ConfigService):
+        self.db = db
+        self.config = config
+```
+
+---
+
+## Validation Checklist
+
+Before committing service code, verify:
+
+- [ ] Does this file import from interfaces? **→ Violation**
+- [ ] Does this file import FastAPI, HTTPException, or Pydantic? **→ Violation**
+- [ ] Does this method contain loops, branching, or computation? **→ Extract to workflow**
+- [ ] Does this method call components directly? **→ Should call workflow instead**
+- [ ] Are public methods returning DTOs for structured data? **→ Required**
+- [ ] Is the method name `<verb>_<noun>`? **→ Required pattern**

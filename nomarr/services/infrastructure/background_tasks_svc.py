@@ -7,6 +7,9 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# Maximum number of task results to keep in memory
+MAX_TASK_RESULTS = 100
+
 
 class BackgroundTaskService:
     """
@@ -22,7 +25,31 @@ class BackgroundTaskService:
     def __init__(self) -> None:
         self._tasks: dict[str, threading.Thread] = {}
         self._task_results: dict[str, dict[str, Any]] = {}
+        self._task_order: list[str] = []  # Track insertion order for eviction
         self._lock = threading.Lock()
+
+    def _evict_old_results(self) -> None:
+        """Remove oldest completed/errored results when over limit. Must hold lock."""
+        evicted = 0
+        while len(self._task_results) > MAX_TASK_RESULTS and self._task_order:
+            oldest_id = self._task_order[0]
+            result = self._task_results.get(oldest_id)
+            # Only evict completed/errored tasks, never running ones
+            if result and result["status"] in ("complete", "error"):
+                self._task_order.pop(0)
+                del self._task_results[oldest_id]
+                if oldest_id in self._tasks:
+                    del self._tasks[oldest_id]
+                evicted += 1
+            else:
+                # Running task - move to end of queue and continue checking
+                self._task_order.pop(0)
+                self._task_order.append(oldest_id)
+                # If we've cycled through all tasks without evicting, they're all running
+                if evicted == 0 and len(self._task_order) > MAX_TASK_RESULTS:
+                    running_count = sum(1 for r in self._task_results.values() if r["status"] == "running")
+                    logger.warning(f"Task overload: {running_count} tasks running, exceeds limit of {MAX_TASK_RESULTS}")
+                    break
 
     def start_task(
         self,
@@ -77,6 +104,8 @@ class BackgroundTaskService:
                 "result": None,
                 "error": None,
             }
+            self._task_order.append(task_id)
+            self._evict_old_results()
 
         return task_id
 
@@ -96,36 +125,40 @@ class BackgroundTaskService:
 
     def list_tasks(self) -> list[str]:
         """
-        List all task IDs.
+        List all task IDs in order (oldest first).
 
         Returns:
             List of task identifiers
         """
         with self._lock:
-            return list(self._tasks.keys())
+            return list(self._task_order)
 
-    def cleanup_completed_tasks(self, max_age_seconds: int = 3600) -> int:
+    def cleanup_completed_tasks(self, max_count: int = 10) -> int:
         """
-        Remove completed/errored tasks older than max_age.
+        Remove oldest completed/errored tasks.
 
         Args:
-            max_age_seconds: Maximum age to keep completed tasks
+            max_count: Maximum number of tasks to remove per call
 
         Returns:
             Number of tasks cleaned up
         """
-
         with self._lock:
-            to_remove = []
-            for task_id, result in self._task_results.items():
-                # Only clean up completed/errored tasks
-                if result["status"] in ("complete", "error"):
-                    # Simple cleanup for now - could add timestamp tracking
-                    to_remove.append(task_id)
-
-            for task_id in to_remove[:10]:  # Limit cleanup per call
-                del self._task_results[task_id]
-                if task_id in self._tasks:
-                    del self._tasks[task_id]
-
-            return len(to_remove[:10])
+            removed = 0
+            while removed < max_count and self._task_order:
+                oldest_id = self._task_order[0]
+                result = self._task_results.get(oldest_id)
+                if result and result["status"] in ("complete", "error"):
+                    self._task_order.pop(0)
+                    del self._task_results[oldest_id]
+                    if oldest_id in self._tasks:
+                        del self._tasks[oldest_id]
+                    removed += 1
+                else:
+                    # Running task - move to end and continue
+                    self._task_order.pop(0)
+                    self._task_order.append(oldest_id)
+                    # Avoid infinite loop if all are running
+                    if removed == 0 and len(self._task_order) <= max_count:
+                        break
+            return removed

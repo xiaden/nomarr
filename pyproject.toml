@@ -24,17 +24,17 @@ classifiers = [
 
 dependencies = [
     "numpy==1.26.4",
-    "scipy>=1.13.1",
-    "soundfile",
+    "scipy==1.17.0",
+    "soundfile==0.13.1",
     "mutagen==1.47.0",
     "pyyaml==6.0.2",
-    "fastapi==0.115.0",
-    "uvicorn==0.30.6",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.6",
     "rich==13.7.1",
     "requests==2.32.3",
     "bcrypt==4.2.1",
     "python-arango==7.9.0",
-    "watchdog>=6.0.0",
+    "watchdog==6.0.0",
     "psutil==7.2.1",
 ]
 
@@ -42,21 +42,21 @@ dependencies = [
 dev = [
     "pytest==8.3.3",
     "pytest-cov==5.0.0",
-    "ruff>=0.1.0",
-    "mypy>=1.7.0",
-    "bandit>=1.7.5",
-    "vulture>=2.10",
-    "pydub>=0.25.1",
-    "radon>=5.1.0,<5.2",
-    "import-linter>=2.0",
-    "wily>=1.25.0",
-    "flake8>=7.0.0",
-    "flake8-cognitive-complexity>=0.1.0",
-    "flake8-simplify>=0.21.0",
-    "flake8-eradicate>=1.5.0",
-    "flake8-variables-names>=0.0.6",
-    "types-PyYAML",
-    "types-requests",
+    "ruff==0.14.13",
+    "mypy==1.19.1",
+    "bandit==1.9.3",
+    "vulture==2.14",
+    "pydub==0.25.1",
+    "radon==5.1.0",
+    "import-linter==2.6",
+    "flake8==7.3.0",
+    "flake8-cognitive-complexity==0.1.0",
+    "flake8-simplify==0.30.0",
+    "flake8-eradicate==1.5.0",
+    "flake8-variables-names==0.0.6",
+    "types-PyYAML==6.0.12.20250915",
+    "types-requests==2.32.4.20260107",
+    "mcp>=1.0.0",
 ]
 
 [project.urls]
@@ -71,4 +71,4 @@ exclude = ["tests*", "scripts*", "frontend*", "models*", "docker*"]
 [tool.ruff]
 # Ruff configuration (mirrors ruff.toml if it exists)
 line-length = 100
-target-version = "py311"
+target-version = "py312"
