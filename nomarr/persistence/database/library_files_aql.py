@@ -57,7 +57,7 @@ class LibraryFilesOperations:
         if not path.is_valid():
             raise ValueError(f"Cannot upsert invalid path ({path.status}): {path.reason}")
 
-        scanned_at = now_ms()
+        scanned_at = now_ms().value
         cursor = cast(
             Cursor,
             self.db.aql.execute(
@@ -134,7 +134,7 @@ class LibraryFilesOperations:
                 needs_tagging: 0
             } IN library_files
             """,
-            bind_vars=cast(dict[str, Any], {"file_id": file_id, "version": tagged_version, "timestamp": now_ms()}),
+            bind_vars=cast(dict[str, Any], {"file_id": file_id, "version": tagged_version, "timestamp": now_ms().value}),
         )
 
     def get_file_by_id(self, file_id: str) -> dict[str, Any] | None:
@@ -467,7 +467,7 @@ class LibraryFilesOperations:
                     "album": album,
                     "title": title,
                     "duration_seconds": duration_seconds,
-                    "scanned_at": now_ms(),
+                    "scanned_at": now_ms().value,
                 },
             ),
         )

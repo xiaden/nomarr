@@ -55,7 +55,7 @@ class MLCapacityOperations:
                     {
                         "model_set_hash": model_set_hash,
                         "worker_id": worker_id,
-                        "started_at": now_ms(),
+                        "started_at": now_ms().value,
                     },
                 ),
             )
@@ -104,7 +104,7 @@ class MLCapacityOperations:
                 dict[str, Any],
                 {
                     "model_set_hash": model_set_hash,
-                    "completed_at": now_ms(),
+                    "completed_at": now_ms().value,
                 },
             ),
         )
@@ -199,7 +199,7 @@ class MLCapacityOperations:
                     "worker_ram": estimated_worker_ram_mb,
                     "duration": probe_duration_s,
                     "worker_id": probed_by_worker,
-                    "timestamp": now_ms(),
+                    "timestamp": now_ms().value,
                 },
             ),
         )

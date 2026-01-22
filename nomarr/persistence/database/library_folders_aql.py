@@ -37,7 +37,7 @@ class LibraryFoldersOperations:
         Returns:
             Document _id
         """
-        scanned_at = now_ms()
+        scanned_at = now_ms().value
         cursor = cast(
             Cursor,
             self.db.aql.execute(

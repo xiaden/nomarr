@@ -64,7 +64,7 @@ class WorkerRestartPolicyOperations:
         Args:
             component_id: Component identifier (e.g., "worker:tag:0")
         """
-        ts = now_ms()
+        ts = now_ms().value
         self.db.aql.execute(
             """
             UPSERT { component_id: @component_id }
@@ -100,7 +100,7 @@ class WorkerRestartPolicyOperations:
         Args:
             component_id: Component identifier (e.g., "worker:tag:0")
         """
-        ts = now_ms()
+        ts = now_ms().value
         self.db.aql.execute(
             """
             FOR doc IN worker_restart_policy
@@ -123,7 +123,7 @@ class WorkerRestartPolicyOperations:
             component_id: Component identifier (e.g., "worker:tag:0")
             failure_reason: Human-readable failure explanation
         """
-        ts = now_ms()
+        ts = now_ms().value
         self.db.aql.execute(
             """
             UPSERT { component_id: @component_id }

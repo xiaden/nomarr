@@ -42,7 +42,7 @@ class LibrariesOperations:
         Raises:
             Duplicate key error if name already exists
         """
-        now = now_ms()
+        now = now_ms().value
 
         # If setting as default, clear other defaults first
         if is_default:
@@ -188,7 +188,7 @@ class LibrariesOperations:
             is_default: New default status (optional)
             watch_mode: New watch mode ('off', 'event', 'poll') (optional)
         """
-        update_fields: dict[str, Any] = {"updated_at": now_ms()}
+        update_fields: dict[str, Any] = {"updated_at": now_ms().value}
 
         if name is not None:
             update_fields["name"] = name
@@ -265,8 +265,8 @@ class LibrariesOperations:
             "scan_progress": final_progress,
             "scan_total": final_total,
             "scan_error": final_error,
-            "scanned_at": now_ms() if final_status == "complete" else None,
-            "updated_at": now_ms(),
+            "scanned_at": now_ms().value if final_status == "complete" else None,
+            "updated_at": now_ms().value,
         }
 
         self.db.aql.execute(
@@ -338,7 +338,7 @@ class LibrariesOperations:
             library_id: Library document _id (e.g., "libraries/12345")
             full_scan: True if scanning entire library, False if targeted scan
         """
-        now = now_ms()
+        now = now_ms().value
 
         self.db.aql.execute(
             """
@@ -363,7 +363,7 @@ class LibrariesOperations:
         Args:
             library_id: Library document _id (e.g., "libraries/12345")
         """
-        now = now_ms()
+        now = now_ms().value
 
         self.db.aql.execute(
             """

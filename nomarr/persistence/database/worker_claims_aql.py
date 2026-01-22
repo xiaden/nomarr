@@ -50,7 +50,7 @@ class WorkerClaimsOperations:
                     "_key": claim_key,
                     "file_id": file_id,
                     "worker_id": worker_id,
-                    "claimed_at": now_ms(),
+                    "claimed_at": now_ms().value,
                 }
             )
             return True

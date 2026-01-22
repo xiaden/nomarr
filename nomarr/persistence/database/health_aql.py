@@ -23,7 +23,7 @@ class HealthOperations:
             status: Status ('healthy', 'degraded', 'unhealthy')
             message: Optional status message
         """
-        ts = now_ms()
+        ts = now_ms().value
         self.db.aql.execute(
             """
             UPSERT { component: @component }
@@ -124,7 +124,7 @@ class HealthOperations:
             component_type: Type of component (worker, service, etc.)
             data: Dict with component, status, current_job, metadata, pid, etc.
         """
-        ts = now_ms()
+        ts = now_ms().value
 
         self.db.aql.execute(
             """
@@ -171,7 +171,7 @@ class HealthOperations:
         Uses UPSERT to handle the case where the component doesn't exist yet,
         avoiding write-write conflicts on startup.
         """
-        ts = now_ms()
+        ts = now_ms().value
 
         update_data: dict[str, Any] = {"last_heartbeat": ts}
         if status:
@@ -288,7 +288,7 @@ class HealthOperations:
 
         update_data: dict[str, Any] = {
             "status": "crashed",
-            "last_heartbeat": now_ms(),
+            "last_heartbeat": now_ms().value,
         }
 
         if exit_code is not None:
@@ -319,7 +319,7 @@ class HealthOperations:
         Returns:
             Dict with updated restart_count and last_restart timestamp
         """
-        ts = now_ms()
+        ts = now_ms().value
         self.db.aql.execute(
             """
             FOR health IN health
@@ -364,7 +364,7 @@ class HealthOperations:
 
         update_data: dict[str, Any] = {
             "status": "failed",
-            "last_heartbeat": now_ms(),
+            "last_heartbeat": now_ms().value,
         }
 
         if error is not None:
@@ -409,7 +409,7 @@ class HealthOperations:
                 {
                     "component_id": component_id,
                     "component_type": component_type,
-                    "timestamp": now_ms(),
+                    "timestamp": now_ms().value,
                 },
             ),
         )
@@ -430,7 +430,7 @@ class HealthOperations:
                 dict[str, Any],
                 {
                     "component_id": component_id,
-                    "timestamp": now_ms(),
+                    "timestamp": now_ms().value,
                 },
             ),
         )

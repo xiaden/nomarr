@@ -33,7 +33,7 @@ class SessionOperations:
                     "session_id": session_id,
                     "user_id": user_id,
                     "expiry_timestamp": expiry_timestamp,
-                    "created_at": now_ms(),
+                    "created_at": now_ms().value,
                 }
             ),
         )
@@ -144,7 +144,7 @@ class SessionOperations:
                 REMOVE session IN sessions
                 RETURN 1
             """,
-                bind_vars=cast(dict[str, Any], {"now": now_ms()}),
+                bind_vars=cast(dict[str, Any], {"now": now_ms().value}),
             ),
         )
         return len(list(cursor))
