@@ -165,14 +165,6 @@ export function DashboardPage() {
 
   return (
     <PageContainer title="Dashboard">
-      {/* Connection Status */}
-      <Typography
-        variant="h4"
-        sx={{ mb: 2 }}
-      >
-        Dashboard
-      </Typography>
-
       {loading && <Typography sx={{ mt: 2 }}>Loading dashboard...</Typography>}
       {error && <ErrorMessage>Error: {error}</ErrorMessage>}
 

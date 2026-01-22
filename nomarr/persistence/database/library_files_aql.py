@@ -134,7 +134,9 @@ class LibraryFilesOperations:
                 needs_tagging: 0
             } IN library_files
             """,
-            bind_vars=cast(dict[str, Any], {"file_id": file_id, "version": tagged_version, "timestamp": now_ms().value}),
+            bind_vars=cast(
+                dict[str, Any], {"file_id": file_id, "version": tagged_version, "timestamp": now_ms().value}
+            ),
         )
 
     def get_file_by_id(self, file_id: str) -> dict[str, Any] | None:
