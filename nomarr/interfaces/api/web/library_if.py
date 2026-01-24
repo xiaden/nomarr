@@ -268,9 +268,14 @@ async def get_files_by_ids(
 
     Used for batch lookup (e.g., when browsing songs for an entity).
     Returns files in same order as input IDs where possible.
+
+    Note: file_ids should be encoded (colon-separated), they will be decoded
+    before querying the database.
     """
     try:
-        result = library_service.get_files_by_ids(request.file_ids)
+        # Decode IDs from API format (library_files:123) to DB format (library_files/123)
+        decoded_ids = [decode_path_id(fid) for fid in request.file_ids]
+        result = library_service.get_files_by_ids(decoded_ids)
         return SearchFilesResponse.from_dto(result)
     except Exception as e:
         logging.exception("[Web API] Error getting files by IDs")

@@ -27,65 +27,117 @@ if TYPE_CHECKING:
     from nomarr.helpers.dto.path_dto import LibraryPath
 
 
-def resolve_artists(all_tags: dict[str, str]) -> tuple[str | None, str | None]:
+def _parse_single_value(value: str | None) -> str | None:
+    """Parse a tag value that may be a JSON array, returning the first element.
+
+    Args:
+        value: Raw tag value (may be JSON array string or plain string)
+
+    Returns:
+        First element as string if JSON array, otherwise the value itself
+    """
+    if not value:
+        return None
+
+    # Try to parse as JSON array and return first element
+    if value.startswith("[") and value.endswith("]"):
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, list) and parsed:
+                return str(parsed[0])
+        except json.JSONDecodeError:
+            pass
+
+    return value
+
+
+def _parse_tag_value(value: str | None) -> str | list[str] | None:
+    """Parse a tag value that may be a JSON array or plain string.
+
+    Args:
+        value: Raw tag value (may be JSON array string or plain string)
+
+    Returns:
+        - None if value is empty/None
+        - list[str] if value is a JSON array
+        - str if value is a plain string
+    """
+    if not value:
+        return None
+
+    # Try to parse as JSON array
+    if value.startswith("[") and value.endswith("]"):
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, list):
+                return [str(v) for v in parsed if v]
+        except json.JSONDecodeError:
+            pass
+
+    return value
+
+
+def resolve_artists(all_tags: dict[str, str]) -> tuple[str | None, list[str] | None]:
     """
     Resolve artist and artists tags with deduplication and fallback logic.
 
+    Handles JSON array values from normalization (e.g., '["Artist1", "Artist2"]').
+
     Resolution rules:
-    - If BOTH exist: Keep artist as single value, artists as multi-value list
+    - If BOTH exist: Keep artist as single value, artists as deduplicated list
     - If ONLY artists exists: Extract first as artist, keep full list as artists
     - If ONLY artist exists: Use same value for both
     - If neither exists: Return (None, None)
 
     Args:
-        all_tags: Dict of normalized tags (may contain "artist" and/or "artists")
+        all_tags: Dict of normalized tags (values may be JSON arrays or plain strings)
 
     Returns:
-        Tuple of (artist_value, artists_value) - both strings or None
+        Tuple of (artist_str, artists_list) - single artist string and list of all artists
     """
-    artist_value = all_tags.get("artist")
-    artists_value = all_tags.get("artists")
+    artist_raw = _parse_tag_value(all_tags.get("artist"))
+    artists_raw = _parse_tag_value(all_tags.get("artists"))
 
     # Neither exists - return None for both
-    if not artist_value and not artists_value:
+    if not artist_raw and not artists_raw:
         return (None, None)
 
-    # Process artists field - split, deduplicate, rejoin
-    if artists_value:
-        # Split on common separators
-        artists_list = []
+    # Extract artist string
+    if isinstance(artist_raw, list):
+        artist_str = artist_raw[0] if artist_raw else None
+    else:
+        artist_str = artist_raw
+
+    # Build artists list
+    artists_list: list[str] = []
+    if isinstance(artists_raw, list):
+        artists_list = artists_raw
+    elif artists_raw:
+        # Single value or separator-delimited string
         for sep in (";", ",", "/", " / "):
-            if sep in artists_value:
-                artists_list = [a.strip() for a in artists_value.split(sep)]
+            if sep in artists_raw:
+                artists_list = [a.strip() for a in artists_raw.split(sep) if a.strip()]
                 break
         else:
-            # No separator found - single value
-            artists_list = [artists_value.strip()]
+            artists_list = [artists_raw.strip()] if artists_raw.strip() else []
 
-        # Deduplicate while preserving order
-        seen = set()
-        deduplicated = []
-        for a in artists_list:
-            if a and a not in seen:
-                seen.add(a)
-                deduplicated.append(a)
+    # Deduplicate while preserving order
+    seen: set[str] = set()
+    deduplicated: list[str] = []
+    for a in artists_list:
+        if a and a not in seen:
+            seen.add(a)
+            deduplicated.append(a)
 
-        artists_value = "; ".join(deduplicated) if deduplicated else None
+    # Apply fallback logic
+    if not artist_str and deduplicated:
+        # Only artists exists - extract first as artist
+        artist_str = deduplicated[0]
+    elif artist_str and not deduplicated:
+        # Only artist exists - use as single-item list
+        deduplicated = [artist_str]
 
-    # Case 1: Both exist - keep both as-is
-    if artist_value and artists_value:
-        return (artist_value, artists_value)
-
-    # Case 2: Only artists exists - extract first as artist
-    if artists_value:
-        first_artist = artists_value.split(";")[0].strip() if ";" in artists_value else artists_value
-        return (first_artist, artists_value)
-
-    # Case 3: Only artist exists - use for both
-    if artist_value:
-        return (artist_value, artist_value)
-
-    return (None, None)
+    return (artist_str, deduplicated if deduplicated else None)
 
 
 def extract_metadata(file_path: LibraryPath, namespace: str = "nom") -> dict[str, Any]:
@@ -184,14 +236,17 @@ def _extract_mp4_metadata(audio: Any, metadata: dict[str, Any], namespace: str) 
     # Resolve artist/artists with deduplication
     artist_value, artists_value = resolve_artists(metadata["all_tags"])
 
-    # Set standard metadata for library_files table
-    metadata["title"] = metadata["all_tags"].get("title")
+    # Set standard metadata for library_files table (parse JSON arrays to get first value)
+    metadata["title"] = _parse_single_value(metadata["all_tags"].get("title"))
     metadata["artist"] = artist_value
-    metadata["album"] = metadata["all_tags"].get("album")
-    metadata["genre"] = metadata["all_tags"].get("genre")
+    metadata["artists"] = artists_value  # List for entity seeding
+    metadata["album"] = _parse_single_value(metadata["all_tags"].get("album"))
+    metadata["genre"] = _parse_single_value(metadata["all_tags"].get("genre"))
 
-    # Parse year from date
-    year_str = metadata["all_tags"].get("year") or metadata["all_tags"].get("date")
+    # Parse year from date (may be JSON array)
+    year_str = _parse_single_value(metadata["all_tags"].get("year")) or _parse_single_value(
+        metadata["all_tags"].get("date")
+    )
     if year_str:
         try:
             metadata["year"] = int(year_str[:4])
@@ -199,18 +254,18 @@ def _extract_mp4_metadata(audio: Any, metadata: dict[str, Any], namespace: str) 
             pass
 
     # Parse track number (may be "10/10" format from normalized tags)
-    track_str = metadata["all_tags"].get("tracknumber")
+    track_str = _parse_single_value(metadata["all_tags"].get("tracknumber"))
     if track_str:
         try:
             metadata["track_number"] = int(track_str.split("/")[0])
         except (ValueError, IndexError):
             pass
 
-    # Update all_tags with resolved artist/artists
+    # Update all_tags with resolved artist/artists (JSON strings for storage)
     if artist_value:
-        metadata["all_tags"]["artist"] = artist_value
+        metadata["all_tags"]["artist"] = json.dumps([artist_value], ensure_ascii=False)
     if artists_value:
-        metadata["all_tags"]["artists"] = artists_value
+        metadata["all_tags"]["artists"] = json.dumps(artists_value, ensure_ascii=False)
 
     # Extract namespace tags (nom:*) - store WITHOUT namespace prefix
     # and REMOVE from all_tags to prevent duplication
@@ -240,14 +295,17 @@ def _extract_flac_metadata(audio: Any, metadata: dict[str, Any], namespace: str)
     # Resolve artist/artists with deduplication
     artist_value, artists_value = resolve_artists(metadata["all_tags"])
 
-    # Set standard metadata for library_files table
-    metadata["title"] = metadata["all_tags"].get("title")
+    # Set standard metadata for library_files table (parse JSON arrays to get first value)
+    metadata["title"] = _parse_single_value(metadata["all_tags"].get("title"))
     metadata["artist"] = artist_value
-    metadata["album"] = metadata["all_tags"].get("album")
-    metadata["genre"] = metadata["all_tags"].get("genre")
+    metadata["artists"] = artists_value  # List for entity seeding
+    metadata["album"] = _parse_single_value(metadata["all_tags"].get("album"))
+    metadata["genre"] = _parse_single_value(metadata["all_tags"].get("genre"))
 
-    # Parse year from date
-    year_str = metadata["all_tags"].get("year") or metadata["all_tags"].get("date")
+    # Parse year from date (may be JSON array)
+    year_str = _parse_single_value(metadata["all_tags"].get("year")) or _parse_single_value(
+        metadata["all_tags"].get("date")
+    )
     if year_str:
         try:
             metadata["year"] = int(year_str[:4])
@@ -255,18 +313,18 @@ def _extract_flac_metadata(audio: Any, metadata: dict[str, Any], namespace: str)
             pass
 
     # Parse track number
-    track_str = metadata["all_tags"].get("tracknumber")
+    track_str = _parse_single_value(metadata["all_tags"].get("tracknumber"))
     if track_str:
         try:
             metadata["track_number"] = int(track_str.split("/")[0])
         except (ValueError, IndexError):
             pass
 
-    # Update all_tags with resolved artist/artists
+    # Update all_tags with resolved artist/artists (JSON strings for storage)
     if artist_value:
-        metadata["all_tags"]["artist"] = artist_value
+        metadata["all_tags"]["artist"] = json.dumps([artist_value], ensure_ascii=False)
     if artists_value:
-        metadata["all_tags"]["artists"] = artists_value
+        metadata["all_tags"]["artists"] = json.dumps(artists_value, ensure_ascii=False)
 
     # Extract namespace tags (nom:*) - store WITHOUT namespace prefix
     # and REMOVE from all_tags to prevent duplication
@@ -295,14 +353,17 @@ def _extract_mp3_metadata(file_path: LibraryPath, metadata: dict[str, Any], name
         # Resolve artist/artists with deduplication
         artist_value, artists_value = resolve_artists(metadata["all_tags"])
 
-        # Set standard metadata for library_files table
-        metadata["title"] = metadata["all_tags"].get("title")
+        # Set standard metadata for library_files table (parse JSON arrays to get first value)
+        metadata["title"] = _parse_single_value(metadata["all_tags"].get("title"))
         metadata["artist"] = artist_value
-        metadata["album"] = metadata["all_tags"].get("album")
-        metadata["genre"] = metadata["all_tags"].get("genre")
+        metadata["artists"] = artists_value  # List for entity seeding
+        metadata["album"] = _parse_single_value(metadata["all_tags"].get("album"))
+        metadata["genre"] = _parse_single_value(metadata["all_tags"].get("genre"))
 
-        # Parse year from date
-        year_str = metadata["all_tags"].get("year") or metadata["all_tags"].get("date")
+        # Parse year from date (may be JSON array)
+        year_str = _parse_single_value(metadata["all_tags"].get("year")) or _parse_single_value(
+            metadata["all_tags"].get("date")
+        )
         if year_str:
             try:
                 metadata["year"] = int(year_str[:4])
@@ -310,18 +371,18 @@ def _extract_mp3_metadata(file_path: LibraryPath, metadata: dict[str, Any], name
                 pass
 
         # Parse track number
-        track_str = metadata["all_tags"].get("tracknumber")
+        track_str = _parse_single_value(metadata["all_tags"].get("tracknumber"))
         if track_str:
             try:
                 metadata["track_number"] = int(track_str.split("/")[0])
             except (ValueError, IndexError):
                 pass
 
-        # Update all_tags with resolved artist/artists
+        # Update all_tags with resolved artist/artists (JSON strings for storage)
         if artist_value:
-            metadata["all_tags"]["artist"] = artist_value
+            metadata["all_tags"]["artist"] = json.dumps([artist_value], ensure_ascii=False)
         if artists_value:
-            metadata["all_tags"]["artists"] = artists_value
+            metadata["all_tags"]["artists"] = json.dumps(artists_value, ensure_ascii=False)
 
         # Extract namespace tags (nom:*) - store WITHOUT namespace prefix
         # and REMOVE from all_tags to prevent duplication

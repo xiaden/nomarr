@@ -126,7 +126,7 @@ async def list_albums_for_artist(
     artist_id: str,
     limit: int = Query(100, ge=1, le=1000),
     metadata_service: MetadataService = Depends(get_metadata_service),
-) -> list[dict[str, Any]]:
+) -> list[EntityResponse]:
     """List albums for an artist via traversal (artist→songs→albums).
 
     Returns deduplicated albums sorted by display_name.
@@ -134,6 +134,4 @@ async def list_albums_for_artist(
     """
     artist_id = decode_path_id(artist_id)
     albums = metadata_service.list_albums_for_artist(artist_id, limit=limit)
-    # Encode IDs in the response
-    result: list[dict[str, Any]] = encode_ids([dict(a) for a in albums])
-    return result
+    return [EntityResponse.from_dto(a) for a in albums]

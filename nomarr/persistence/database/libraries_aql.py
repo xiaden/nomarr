@@ -278,6 +278,9 @@ class LibrariesOperations:
     ) -> None:
         """Update library scan status.
 
+        Only updates fields that are explicitly provided. Does not reset
+        scan_status when only updating progress/total.
+
         Args:
             library_id: Library _id (e.g., "libraries/12345")
             status or scan_status: Status ('idle', 'scanning', 'complete', 'error')
@@ -286,19 +289,28 @@ class LibrariesOperations:
             error or scan_error: Error message if status is 'error'
         """
         # Support both old and new parameter names
-        final_status = status or scan_status or "idle"
-        final_progress = progress if progress is not None else (scan_progress or 0)
-        final_total = total if total is not None else (scan_total or 0)
+        # IMPORTANT: Only include scan_status if explicitly provided
+        final_status = status or scan_status  # None if not provided
+        final_progress = progress if progress is not None else scan_progress
+        final_total = total if total is not None else scan_total
         final_error = error or scan_error
 
-        update_fields = {
-            "scan_status": final_status,
-            "scan_progress": final_progress,
-            "scan_total": final_total,
-            "scan_error": final_error,
-            "scanned_at": now_ms().value if final_status == "complete" else None,
-            "updated_at": now_ms().value,
-        }
+        # Build update fields dynamically - only include what was provided
+        update_fields: dict[str, Any] = {"updated_at": now_ms().value}
+
+        if final_status is not None:
+            update_fields["scan_status"] = final_status
+            if final_status == "complete":
+                update_fields["scanned_at"] = now_ms().value
+
+        if final_progress is not None:
+            update_fields["scan_progress"] = final_progress
+
+        if final_total is not None:
+            update_fields["scan_total"] = final_total
+
+        if final_error is not None:
+            update_fields["scan_error"] = final_error
 
         self.db.aql.execute(
             """
