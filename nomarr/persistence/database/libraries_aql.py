@@ -24,7 +24,6 @@ class LibrariesOperations:
         name: str,
         root_path: str,
         is_enabled: bool = True,
-        is_default: bool = False,
         watch_mode: str = "off",
         file_write_mode: str = "full",
     ) -> str:
@@ -34,7 +33,6 @@ class LibrariesOperations:
             name: Library name (must be unique, can be auto-generated from path)
             root_path: Absolute path to library root
             is_enabled: Whether library is enabled for scanning
-            is_default: Whether this is the default library
             watch_mode: File watching mode ('off', 'event', or 'poll')
             file_write_mode: Tag write mode ('none', 'minimal', or 'full')
 
@@ -46,16 +44,6 @@ class LibrariesOperations:
         """
         now = now_ms().value
 
-        # If setting as default, clear other defaults first
-        if is_default:
-            self.db.aql.execute(
-                """
-                FOR lib IN libraries
-                    FILTER lib.is_default == true
-                    UPDATE lib WITH { is_default: false } IN libraries
-                """
-            )
-
         result = cast(
             dict[str, Any],
             self.collection.insert(
@@ -63,7 +51,6 @@ class LibrariesOperations:
                     "name": name,
                     "root_path": root_path,
                     "is_enabled": is_enabled,
-                    "is_default": is_default,
                     "watch_mode": watch_mode,
                     "file_write_mode": file_write_mode,
                     "scan_status": "idle",
@@ -174,33 +161,12 @@ class LibrariesOperations:
         )
         return list(cursor)
 
-    def get_default_library(self) -> dict[str, Any] | None:
-        """Get the default library.
-
-        Returns:
-            Default library dict or None if no default set
-        """
-        cursor = cast(
-            Cursor,
-            self.db.aql.execute(
-                """
-            FOR lib IN libraries
-                FILTER lib.is_default == true
-                SORT lib._key
-                LIMIT 1
-                RETURN lib
-            """
-            ),
-        )
-        return next(cursor, None)
-
     def update_library(
         self,
         library_id: str,
         name: str | None = None,
         root_path: str | None = None,
         is_enabled: bool | None = None,
-        is_default: bool | None = None,
         watch_mode: str | None = None,
         file_write_mode: str | None = None,
     ) -> None:
@@ -211,7 +177,6 @@ class LibrariesOperations:
             name: New name (optional)
             root_path: New root path (optional)
             is_enabled: New enabled status (optional)
-            is_default: New default status (optional)
             watch_mode: New watch mode ('off', 'event', 'poll') (optional)
             file_write_mode: New file write mode ('none', 'minimal', 'full') (optional)
         """
@@ -223,18 +188,6 @@ class LibrariesOperations:
             update_fields["root_path"] = root_path
         if is_enabled is not None:
             update_fields["is_enabled"] = is_enabled
-        if is_default is not None:
-            update_fields["is_default"] = is_default
-            # Clear other defaults if setting as default
-            if is_default:
-                self.db.aql.execute(
-                    """
-                    FOR lib IN libraries
-                        FILTER lib._id != @library_id AND lib.is_default == true
-                        UPDATE lib WITH { is_default: false } IN libraries
-                    """,
-                    bind_vars={"library_id": library_id},
-                )
         if watch_mode is not None:
             if watch_mode not in ("off", "event", "poll"):
                 raise ValueError(f"Invalid watch_mode: {watch_mode}. Must be 'off', 'event', or 'poll'")

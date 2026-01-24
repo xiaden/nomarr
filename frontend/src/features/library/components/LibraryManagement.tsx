@@ -4,9 +4,8 @@
  * Features:
  * - List all libraries with status indicators
  * - Create new libraries with path picker
- * - Edit library properties (name, path, enabled, default)
+ * - Edit library properties (name, path, enabled)
  * - Scan individual libraries
- * - Set default library
  */
 
 import {
@@ -38,7 +37,6 @@ import {
   list as listLibraries,
   reconcileTags,
   scan as scanLibrary,
-  setDefault as setDefaultLibrary,
   update as updateLibrary,
 } from "../../../shared/api/library";
 import { getWorkStatus } from "../../../shared/api/processing";
@@ -61,13 +59,13 @@ export function LibraryManagement() {
   const [formName, setFormName] = useState("");
   const [formRootPath, setFormRootPath] = useState("");
   const [formIsEnabled, setFormIsEnabled] = useState(true);
-  const [formIsDefault, setFormIsDefault] = useState(false);
   const [formWatchMode, setFormWatchMode] = useState<string>("off");
   const [formFileWriteMode, setFormFileWriteMode] = useState<"none" | "minimal" | "full">("full");
   const [showPathPicker, setShowPathPicker] = useState(false);
   const [reconcilingId, setReconcilingId] = useState<string | null>(null);
   const [reconcileStatus, setReconcileStatus] = useState<Record<string, { pending: number; inProgress: boolean }>>({});
 
+  // Initial load - shows loading state
   const loadLibraries = useCallback(async () => {
     try {
       setLoading(true);
@@ -81,6 +79,74 @@ export function LibraryManagement() {
       console.error("[LibraryManagement] Load error:", err);
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  // Silent refresh - merges updates without loading state, only updates changed fields
+  const refreshLibraries = useCallback(async () => {
+    try {
+      const freshData = await listLibraries();
+      setLibraries(prev => {
+        // If lengths differ, full replacement needed (library added/removed)
+        if (prev.length !== freshData.length) {
+          return freshData;
+        }
+        // Build lookup for quick access
+        const freshMap = new Map(freshData.map(lib => [lib.id, lib]));
+        
+        // Check if any library actually changed
+        let hasChanges = false;
+        for (const lib of prev) {
+          const fresh = freshMap.get(lib.id);
+          if (!fresh) {
+            // Library removed
+            hasChanges = true;
+            break;
+          }
+          // Check fields that can change during scan
+          if (
+            lib.scanStatus !== fresh.scanStatus ||
+            lib.scanProgress !== fresh.scanProgress ||
+            lib.scanTotal !== fresh.scanTotal ||
+            lib.scanError !== fresh.scanError ||
+            lib.scannedAt !== fresh.scannedAt ||
+            lib.fileCount !== fresh.fileCount ||
+            lib.folderCount !== fresh.folderCount
+          ) {
+            hasChanges = true;
+            break;
+          }
+        }
+        
+        // No changes - return same reference to prevent re-render
+        if (!hasChanges) {
+          return prev;
+        }
+        
+        // Merge: keep existing objects where unchanged, update only changed libraries
+        return prev.map(lib => {
+          const fresh = freshMap.get(lib.id);
+          if (!fresh) return lib;
+          
+          // Check if this specific library changed
+          if (
+            lib.scanStatus === fresh.scanStatus &&
+            lib.scanProgress === fresh.scanProgress &&
+            lib.scanTotal === fresh.scanTotal &&
+            lib.scanError === fresh.scanError &&
+            lib.scannedAt === fresh.scannedAt &&
+            lib.fileCount === fresh.fileCount &&
+            lib.folderCount === fresh.folderCount
+          ) {
+            return lib; // Same reference - no re-render for this item
+          }
+          
+          return fresh; // New object - triggers re-render for this item only
+        });
+      });
+    } catch (err) {
+      // Silent fail during background refresh - don't disrupt UI
+      console.error("[LibraryManagement] Refresh error:", err);
     }
   }, []);
 
@@ -109,18 +175,21 @@ export function LibraryManagement() {
         const status = await getWorkStatus();
         if (!active) return;
 
-        // If busy (scanning or processing), poll every 1 second
+        // If busy (scanning or processing), poll with silent refresh
         if (status.is_busy) {
           if (!interval) {
+            // Use 500ms for smoother updates during active work
             interval = setInterval(() => {
-              loadLibraries();
-            }, 1000);
+              refreshLibraries();
+            }, 500);
           }
         } else {
-          // Not busy - stop polling
+          // Not busy - stop polling and do one final refresh
           if (interval) {
             clearInterval(interval);
             interval = null;
+            // Final refresh to catch any last updates
+            refreshLibraries();
           }
         }
       } catch (err) {
@@ -139,7 +208,7 @@ export function LibraryManagement() {
       if (interval) clearInterval(interval);
       clearInterval(statusInterval);
     };
-  }, [loadLibraries]);
+  }, [refreshLibraries]);
 
   const isOutsideLibraryRoot = (path: string): boolean => {
     if (!libraryRoot) return false;
@@ -153,7 +222,6 @@ export function LibraryManagement() {
     setFormName("");
     setFormRootPath("");
     setFormIsEnabled(true);
-    setFormIsDefault(false);
     setFormWatchMode("off");
     setFormFileWriteMode("full");
     setShowPathPicker(false);
@@ -170,7 +238,6 @@ export function LibraryManagement() {
     setFormName(library.name);
     setFormRootPath(library.rootPath);
     setFormIsEnabled(library.isEnabled);
-    setFormIsDefault(library.isDefault);
     setFormWatchMode(library.watchMode);
     setFormFileWriteMode(library.fileWriteMode);
     setEditingId(library.id);
@@ -189,7 +256,6 @@ export function LibraryManagement() {
         name: formName.trim() || null,  // Optional: backend will auto-generate from path
         rootPath: formRootPath,
         isEnabled: formIsEnabled,
-        isDefault: formIsDefault,
         watchMode: formWatchMode,
         fileWriteMode: formFileWriteMode,
       });
@@ -215,7 +281,6 @@ export function LibraryManagement() {
         name: formName.trim() || undefined,  // Keep existing name if empty
         rootPath: formRootPath,
         isEnabled: formIsEnabled,
-        isDefault: formIsDefault,
         watchMode: formWatchMode,
         fileWriteMode: formFileWriteMode,
       });
@@ -224,18 +289,6 @@ export function LibraryManagement() {
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to update library"
-      );
-    }
-  };
-
-  const handleSetDefault = async (id: string) => {
-    try {
-      setError(null);
-      await setDefaultLibrary(id);
-      await loadLibraries();
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to set default library"
       );
     }
   };
@@ -257,7 +310,7 @@ export function LibraryManagement() {
     }
   };
 
-  const handleDelete = async (id: string, name: string, _isDefault: boolean) => {
+  const handleDelete = async (id: string, name: string) => {
     const confirmed = await confirm({
       title: "Delete Library?",
       message: `Delete library "${name}"?\n\nThis will remove the library entry but will NOT delete files on disk.`,
@@ -439,16 +492,6 @@ export function LibraryManagement() {
               label="Enabled"
             />
 
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={formIsDefault}
-                  onChange={(e) => setFormIsDefault(e.target.checked)}
-                />
-              }
-              label="Default Library"
-            />
-
             {/* Watch Mode Selection */}
             <Box>
               <FormControl fullWidth>
@@ -564,9 +607,6 @@ export function LibraryManagement() {
                 <Box>
                   <Stack direction="row" alignItems="center" spacing={1.25} sx={{ mb: 0.5 }}>
                     <Typography variant="h6">{lib.name}</Typography>
-                    {lib.isDefault && (
-                      <Chip label="Default" color="primary" size="small" />
-                    )}
                     {isOutsideLibraryRoot(lib.rootPath) && (
                       <Chip
                         label="Outside library_root"
@@ -701,16 +741,6 @@ export function LibraryManagement() {
                 >
                   Edit
                 </Button>
-                {!lib.isDefault && (
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    onClick={() => handleSetDefault(lib.id)}
-                    disabled={scanningId === lib.id}
-                  >
-                    Set Default
-                  </Button>
-                )}
                 <Button
                   variant="outlined"
                   color="success"
@@ -785,7 +815,7 @@ export function LibraryManagement() {
                   variant="contained"
                   color="error"
                   size="small"
-                  onClick={() => handleDelete(lib.id, lib.name, lib.isDefault)}
+                  onClick={() => handleDelete(lib.id, lib.name)}
                   disabled={scanningId === lib.id}
                 >
                   Delete

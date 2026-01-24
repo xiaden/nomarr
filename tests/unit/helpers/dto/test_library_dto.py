@@ -162,7 +162,6 @@ class TestLibraryDict:
             name="Music",
             root_path="/music",
             is_enabled=True,
-            is_default=True,
             created_at="2024-01-01T00:00:00Z",
             updated_at="2024-01-01T00:00:00Z",
         )
@@ -180,7 +179,6 @@ class TestLibraryDict:
             name="Music",
             root_path="/music",
             is_enabled=True,
-            is_default=False,
             created_at=1700000000000,
             updated_at=1700000000000,
             scan_status="scanning",
@@ -200,7 +198,6 @@ class TestLibraryDict:
             name="Test",
             root_path="/test",
             is_enabled=True,
-            is_default=False,
             created_at=0,
             updated_at=0,
         )

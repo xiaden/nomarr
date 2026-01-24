@@ -78,7 +78,6 @@ export interface Library {
   name: string;
   rootPath: string; // maps to backend root_path
   isEnabled: boolean;
-  isDefault: boolean;
   watchMode: string; // 'off', 'event', or 'poll'
   fileWriteMode: "none" | "minimal" | "full"; // Tag writing mode
   createdAt?: string | number; // Can be ISO string or Unix timestamp

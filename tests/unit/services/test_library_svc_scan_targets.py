@@ -75,7 +75,6 @@ class TestScanTargetsValidation:
                 name="Test Library",
                 root_path="/music",
                 is_enabled=True,
-                is_default=False,
                 created_at=1000000,
                 updated_at=1000000,
             )
@@ -130,7 +129,6 @@ class TestScanTargetsValidation:
                 name=f"Library {library_id}",
                 root_path=f"/music/{library_id}",
                 is_enabled=True,
-                is_default=False,
                 created_at=1000000,
                 updated_at=1000000,
             )

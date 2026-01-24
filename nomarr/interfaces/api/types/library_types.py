@@ -40,7 +40,6 @@ class LibraryResponse(BaseModel):
     name: str
     root_path: str
     is_enabled: bool
-    is_default: bool
     watch_mode: str  # 'off', 'event', or 'poll'
     file_write_mode: str = "full"  # 'none', 'minimal', or 'full'
     created_at: str
@@ -94,7 +93,6 @@ class LibraryResponse(BaseModel):
             name=library.name,
             root_path=library.root_path,
             is_enabled=library.is_enabled,
-            is_default=library.is_default,
             watch_mode=library.watch_mode,
             file_write_mode=library.file_write_mode,
             created_at=created_at,
@@ -216,7 +214,6 @@ class CreateLibraryRequest(BaseModel):
     name: str | None = None  # Optional: auto-generated from path if not provided
     root_path: str
     is_enabled: bool = True
-    is_default: bool = False
     watch_mode: str = "off"  # 'off', 'event', or 'poll' (default: 'off')
 
 
@@ -226,7 +223,6 @@ class UpdateLibraryRequest(BaseModel):
     name: str | None = None
     root_path: str | None = None
     is_enabled: bool | None = None
-    is_default: bool | None = None
     watch_mode: str | None = None  # 'off', 'event', or 'poll'
     file_write_mode: str | None = None  # 'none', 'minimal', or 'full'
 

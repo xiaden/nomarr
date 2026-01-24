@@ -60,7 +60,6 @@ class LibraryDict:
     name: str
     root_path: str
     is_enabled: bool
-    is_default: bool
     created_at: str | int  # Can be ISO string or Unix timestamp (ms)
     updated_at: str | int  # Can be ISO string or Unix timestamp (ms)
     watch_mode: Literal["off", "event", "poll"] = "off"  # File watching mode (default: off)

@@ -2,7 +2,7 @@
 Workflow for starting library scans (orchestration layer).
 
 This workflow handles the orchestration of scan initialization:
-- Resolves library (by ID or default)
+- Validates library exists
 - Constructs ScanTarget list (defaults to full library scan)
 - Launches background scan task OR runs synchronously
 - Calls scan_library_direct_workflow for actual scanning
@@ -31,7 +31,7 @@ def start_scan_workflow(
     db: Database,
     background_tasks: Any | None,
     tagger_version: str,
-    library_id: str | None = None,
+    library_id: str,
     scan_targets: list[ScanTarget] | None = None,
     batch_size: int = 200,
     force_rescan: bool = False,
@@ -42,7 +42,7 @@ def start_scan_workflow(
     Supports both full library scans and targeted/incremental scans.
 
     This orchestrates scan initialization:
-    1. Resolves library (by ID or default)
+    1. Validates library exists
     2. Constructs scan_targets if not provided (defaults to full scan)
     3. Launches background task or runs synchronously
     4. Returns scan result DTO
@@ -54,7 +54,7 @@ def start_scan_workflow(
         db: Database instance
         background_tasks: BackgroundTaskService for async execution (or None for sync)
         tagger_version: Model suite hash for version comparison
-        library_id: Library to scan (None = use default library)
+        library_id: Library to scan (required)
         scan_targets: List of folders to scan (None = full library scan)
         batch_size: Number of files to accumulate before DB write (default 200)
         force_rescan: If True, skip unchanged files detection (rescan all files)
@@ -65,20 +65,10 @@ def start_scan_workflow(
     Raises:
         ValueError: If library not found or scan already running
     """
-    # Resolve library_id
-    if library_id is None:
-        # Use default library
-        library = db.libraries.get_default_library()
-        if not library:
-            # Try to create default library
-            logger.info("[start_scan_workflow] No default library found, creating one may be needed")
-            raise ValueError("No default library exists. Create a library first or configure library_root.")
-        library_id = library["_id"]
-    else:
-        # Validate specified library exists
-        library = db.libraries.get_library(library_id)
-        if not library:
-            raise ValueError(f"Library not found: {library_id}")
+    # Validate library exists
+    library = db.libraries.get_library(library_id)
+    if not library:
+        raise ValueError(f"Library not found: {library_id}")
 
     # Check if scan already running
     scan_status = library.get("scan_status")

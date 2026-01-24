@@ -408,7 +408,6 @@ class Application:
                 cfg=library_cfg,
                 background_tasks=background_tasks,
             )
-            library_service.ensure_default_library_exists()
             self.register_service("library", library_service)
 
             # Initialize FileWatcherService for automatic incremental scanning

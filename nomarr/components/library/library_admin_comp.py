@@ -29,7 +29,6 @@ def create_library(
     name: str | None,
     root_path: str,
     is_enabled: bool = True,
-    is_default: bool = False,
     watch_mode: str = "off",
 ) -> str:
     """
@@ -41,7 +40,6 @@ def create_library(
         name: Library name (optional: auto-generated from path basename)
         root_path: Path to library root (must be within base_library_root)
         is_enabled: Whether library is enabled for scanning
-        is_default: Whether this is the default library
         watch_mode: File watching mode ('off', 'event', or 'poll')
 
     Returns:
@@ -61,7 +59,6 @@ def create_library(
             name=resolved_name,
             root_path=abs_path,
             is_enabled=is_enabled,
-            is_default=is_default,
             watch_mode=watch_mode,
         )
     except Exception as e:

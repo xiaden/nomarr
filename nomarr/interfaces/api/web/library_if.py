@@ -76,26 +76,6 @@ async def list_libraries(
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to list libraries")) from e
 
 
-@router.get("/default", dependencies=[Depends(verify_session)])
-async def get_default_library(
-    library_service: "LibraryService" = Depends(get_library_service),
-) -> LibraryResponse:
-    """Get the default library."""
-    try:
-        library = library_service.get_default_library()
-        if not library:
-            raise HTTPException(status_code=404, detail="No default library configured")
-
-        return LibraryResponse.from_dto(library)
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.exception("[Web API] Error getting default library")
-        raise HTTPException(
-            status_code=500, detail=sanitize_exception_message(e, "Failed to get default library")
-        ) from e
-
-
 @router.get("/{library_id}", dependencies=[Depends(verify_session)])
 async def get_library(
     library_id: str,
@@ -124,7 +104,6 @@ async def create_library(
             name=request.name,
             root_path=request.root_path,
             is_enabled=request.is_enabled,
-            is_default=request.is_default,
             watch_mode=request.watch_mode,
         )
         return LibraryResponse.from_dto(library)
@@ -149,7 +128,6 @@ async def update_library(
             name=request.name,
             root_path=request.root_path,
             is_enabled=request.is_enabled,
-            is_default=request.is_default,
             watch_mode=request.watch_mode,
         )
         return LibraryResponse.from_dto(library)
@@ -161,25 +139,6 @@ async def update_library(
     except Exception as e:
         logging.exception(f"[Web API] Error updating library {library_id}")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to update library")) from e
-
-
-@router.post("/{library_id}/set-default", dependencies=[Depends(verify_session)])
-async def set_default_library(
-    library_id: str,
-    library_service: "LibraryService" = Depends(get_library_service),
-) -> LibraryResponse:
-    """Set a library as the default library."""
-    library_id = decode_path_id(library_id)
-    try:
-        library = library_service.set_default_library(library_id)
-        return LibraryResponse.from_dto(library)
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Library not found") from None
-    except Exception as e:
-        logging.exception(f"[Web API] Error setting default library {library_id}")
-        raise HTTPException(
-            status_code=500, detail=sanitize_exception_message(e, "Failed to set default library")
-        ) from e
 
 
 @router.delete("/{library_id}", dependencies=[Depends(verify_session)])

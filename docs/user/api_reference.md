@@ -130,7 +130,6 @@ List all configured libraries.
     "name": "Main Library",
     "root_path": "/music",
     "is_enabled": true,
-    "is_default": true,
     "created_at": "2025-01-01T00:00:00Z",
     "updated_at": "2025-12-05T10:00:00Z"
   }

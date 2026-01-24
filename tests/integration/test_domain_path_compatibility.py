@@ -56,7 +56,6 @@ def mock_db_with_file():
         "name": "Test Library",
         "root_path": TEST_LIBRARY_ROOT,
         "is_enabled": True,
-        "is_default": True,
     }
 
     # Mock file lookup - returns file with absolute path

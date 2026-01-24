@@ -3,7 +3,6 @@
 This module handles:
 - Library configuration checks
 - Library CRUD (create, read, update, delete)
-- Default library management
 - Clearing library data
 """
 
@@ -37,7 +36,7 @@ class LibraryAdminMixin:
             library_id: ID of the library to retrieve
 
         Returns:
-            Library dict with keys: id, name, root_path, is_enabled, is_default, etc.
+            Library dict with keys: id, name, root_path, is_enabled, etc.
 
         Raises:
             ValueError: If library does not exist
@@ -100,25 +99,11 @@ class LibraryAdminMixin:
             raise ValueError(f"Library not found: {library_id}")
         return LibraryDict(**library)
 
-    def get_default_library(self) -> LibraryDict | None:
-        """
-        Get the default library.
-
-        Returns:
-            LibraryDict DTO or None if no default set
-        """
-        library_dict = self.db.libraries.get_default_library()
-        if not library_dict:
-            return None
-
-        return LibraryDict(**library_dict)
-
     def create_library(
         self,
         name: str | None,
         root_path: str,
         is_enabled: bool = True,
-        is_default: bool = False,
         watch_mode: str = "off",
     ) -> LibraryDict:
         """Create a new library."""
@@ -130,7 +115,6 @@ class LibraryAdminMixin:
             name=name,
             root_path=root_path,
             is_enabled=is_enabled,
-            is_default=is_default,
             watch_mode=watch_mode,
         )
 
@@ -162,7 +146,6 @@ class LibraryAdminMixin:
         name: str | None = None,
         root_path: str | None = None,
         is_enabled: bool | None = None,
-        is_default: bool | None = None,
         watch_mode: str | None = None,
         file_write_mode: str | None = None,
     ) -> LibraryDict:
@@ -173,25 +156,12 @@ class LibraryAdminMixin:
         if root_path is not None:
             self.update_library_root(library_id, root_path)
 
-        if is_default is True:
-            self.set_default_library(library_id)
-
         if name is not None or is_enabled is not None or watch_mode is not None or file_write_mode is not None:
             self.update_library_metadata(
                 library_id, name=name, is_enabled=is_enabled, watch_mode=watch_mode, file_write_mode=file_write_mode
             )
 
         return self.get_library(library_id)
-
-    def set_default_library(self, library_id: str) -> LibraryDict:
-        """Set a library as the default."""
-        self._get_library_or_error(library_id)
-        self.db.libraries.update_library(library_id, is_default=True)
-
-        updated = self.db.libraries.get_library(library_id)
-        if not updated:
-            raise RuntimeError("Failed to retrieve updated library")
-        return LibraryDict(**updated)
 
     def delete_library(self, library_id: str) -> bool:
         """Delete a library."""
@@ -218,20 +188,6 @@ class LibraryAdminMixin:
         if not updated:
             raise RuntimeError("Failed to retrieve updated library")
         return LibraryDict(**updated)
-
-    def ensure_default_library_exists(self) -> None:
-        """
-        Placeholder for backward compatibility.
-
-        Previously auto-created a default library from library_root config.
-        Now does nothing - users should explicitly create libraries via Web UI.
-
-        The library_root config is a SECURITY BOUNDARY (allowed path prefix),
-        not a library itself. Libraries are subdirectories under library_root.
-        """
-        # No-op: Libraries should be created explicitly by users via Web UI
-        # The old behavior of creating a library at the root security boundary was wrong
-        pass
 
     def clear_library_data(self) -> None:
         """Clear all library data (files, tags, scan queue)."""

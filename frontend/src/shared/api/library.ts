@@ -25,7 +25,6 @@ interface LibraryResponse {
   name: string;
   root_path: string;
   is_enabled: boolean;
-  is_default: boolean;
   watch_mode: string;
   file_write_mode: "none" | "minimal" | "full";
   created_at?: string | number;
@@ -45,7 +44,6 @@ function mapLibraryResponse(lib: LibraryResponse): Library {
     name: lib.name,
     rootPath: lib.root_path,
     isEnabled: lib.is_enabled,
-    isDefault: lib.is_default,
     watchMode: lib.watch_mode,
     fileWriteMode: lib.file_write_mode,
     createdAt: lib.created_at,
@@ -80,23 +78,10 @@ export async function getLibrary(id: string): Promise<Library> {
   return mapLibraryResponse(response);
 }
 
-/**
- * Get the default library.
- */
-export async function getDefault(): Promise<Library | null> {
-  try {
-    const response = await get<LibraryResponse>("/api/web/libraries/default");
-    return mapLibraryResponse(response);
-  } catch {
-    return null;
-  }
-}
-
 export interface CreateLibraryPayload {
   name: string | null;  // Optional: auto-generated from path if null
   rootPath: string;
   isEnabled?: boolean;
-  isDefault?: boolean;
   watchMode?: string;  // 'off', 'event', or 'poll'
   fileWriteMode?: "none" | "minimal" | "full";  // Tag writing mode
 }
@@ -109,7 +94,6 @@ export async function create(payload: CreateLibraryPayload): Promise<Library> {
     name: payload.name,
     root_path: payload.rootPath,
     is_enabled: payload.isEnabled ?? true,
-    is_default: payload.isDefault ?? false,
     watch_mode: payload.watchMode ?? "off",
     file_write_mode: payload.fileWriteMode ?? "full",
   });
@@ -120,7 +104,6 @@ export interface UpdateLibraryPayload {
   name?: string;
   rootPath?: string;
   isEnabled?: boolean;
-  isDefault?: boolean;
   watchMode?: string;  // 'off', 'event', or 'poll'
   fileWriteMode?: "none" | "minimal" | "full";  // Tag writing mode
 }
@@ -136,7 +119,6 @@ export async function update(
   if (payload.name !== undefined) body.name = payload.name;
   if (payload.rootPath !== undefined) body.root_path = payload.rootPath;
   if (payload.isEnabled !== undefined) body.is_enabled = payload.isEnabled;
-  if (payload.isDefault !== undefined) body.is_default = payload.isDefault;
   if (payload.watchMode !== undefined) body.watch_mode = payload.watchMode;
   if (payload.fileWriteMode !== undefined) body.file_write_mode = payload.fileWriteMode;
 
@@ -149,19 +131,7 @@ export async function update(
 }
 
 /**
- * Set a library as the default.
- */
-export async function setDefault(id: string): Promise<Library> {
-  // ID is already HTTP-encoded (e.g., "libraries:3970")
-  const response = await post<LibraryResponse>(
-    `/api/web/libraries/${id}/set-default`
-  );
-  return mapLibraryResponse(response);
-}
-
-/**
  * Delete a library.
- * Cannot delete the default library - set another as default first.
  */
 export async function deleteLibrary(id: string): Promise<void> {
   // ID is already HTTP-encoded (e.g., "libraries:3970")

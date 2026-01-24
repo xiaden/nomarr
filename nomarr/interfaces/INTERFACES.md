@@ -39,17 +39,15 @@ Each route handler should:
 
 ```python
 # ✅ Good
-@router.get("/library/default")
-def get_default_library(library_service: LibraryService = Depends(...)) -> LibraryResponse:
-    library = library_service.get_default_library()
-    if not library:
-        raise HTTPException(404)
+@router.get("/library/{library_id}")
+def get_library(library_id: str, library_service: LibraryService = Depends(...)) -> LibraryResponse:
+    library = library_service.get_library(library_id)
     return LibraryResponse.from_dto(library)
 
 # ❌ Bad - multiple service calls
 @router.post("/process")
-def process(library_service: LibraryService = Depends(...)):
-    library = library_service.get_default_library()
+def process(library_id: str, library_service: LibraryService = Depends(...)):
+    library = library_service.get_library(library_id)
     queue_service.enqueue_files(library.root_path)  # ← extract to service method
     return {"status": "ok"}
 ```
@@ -61,14 +59,14 @@ Extract a service method that orchestrates them:
 
 ```python
 # Service
-def start_processing(self) -> StartProcessingResult:
-    library = self.library_service.get_default_library()
-    return self.queue_service.enqueue_library(library.id)
+def start_processing(self, library_id: str) -> StartProcessingResult:
+    library = self.get_library(library_id)
+    return self.queue_service.enqueue_library(library._id)
 
 # Interface
-@router.post("/process")
-def process(processing_service: ProcessingService = Depends(...)):
-    result = processing_service.start_processing()
+@router.post("/process/{library_id}")
+def process(library_id: str, processing_service: ProcessingService = Depends(...)):
+    result = processing_service.start_processing(library_id)
     return ProcessingResponse.from_dto(result)
 ```
 
@@ -97,13 +95,13 @@ Service (DTO) → .from_dto() → Pydantic Response Model → JSON
 from nomarr.helpers.dto.library import LibraryDict
 from nomarr.interfaces.api.types.library_types import LibraryResponse
 
-def get_library(library_service: LibraryService = Depends(...)) -> LibraryResponse:
-    library_dto = library_service.get_default_library()  # Returns LibraryDict
+def get_library(library_id: str, library_service: LibraryService = Depends(...)) -> LibraryResponse:
+    library_dto = library_service.get_library(library_id)  # Returns LibraryDict
     return LibraryResponse.from_dto(library_dto)  # Converts to Pydantic
 
 # ❌ Bad - Pydantic in service
-def get_library(library_service: LibraryService = Depends(...)) -> LibraryResponse:
-    return library_service.get_default_library()  # Service returns Pydantic ❌
+def get_library(library_id: str, library_service: LibraryService = Depends(...)) -> LibraryResponse:
+    return library_service.get_library(library_id)  # Service returns Pydantic ❌
 ```
 
 ### Error Handling
@@ -135,8 +133,8 @@ def get_tracks(db: Database = Depends(...)):
 ```python
 # NEVER do this in an interface
 @router.post("/process")
-def process(library_service: LibraryService = Depends(...)):
-    library = library_service.get_default_library()
+def process(library_id: str, library_service: LibraryService = Depends(...)):
+    library = library_service.get_library(library_id)
     # ❌ Computing things here
     if library.is_enabled and check_some_condition():
         do_something()

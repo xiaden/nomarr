@@ -42,17 +42,15 @@ Each route handler should call **exactly one** service method.
 
 ```python
 # ✅ Good - one service call
-@router.get("/library/default")
-def get_default_library(library_service: LibraryService = Depends(...)) -> LibraryResponse:
-    library = library_service.get_default_library()
-    if not library:
-        raise HTTPException(404)
+@router.get("/library/{library_id}")
+def get_library(library_id: str, library_service: LibraryService = Depends(...)) -> LibraryResponse:
+    library = library_service.get_library(library_id)
     return LibraryResponse.from_dto(library)
 
 # ❌ Bad - multiple service calls
-@router.post("/process")
-def process(library_service: LibraryService = Depends(...), tagging_service: TaggingService = Depends(...)):
-    library = library_service.get_default_library()
+@router.post("/process/{library_id}")
+def process(library_id: str, library_service: LibraryService = Depends(...), tagging_service: TaggingService = Depends(...)):
+    library = library_service.get_library(library_id)
     tagging_service.tag_library(library.key)  # ← Extract to service method
     return {"status": "ok"}
 ```

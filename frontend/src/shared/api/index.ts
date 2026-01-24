@@ -21,10 +21,11 @@ export * from "./worker";
 
 // Library - explicit exports to avoid conflicts with files module
 export {
-    cleanupOrphanedTags, create, deleteLibrary, getDefault, getFileTags, getLibrary, getStats,
-    list,
-    scan, setDefault, update, type CleanupTagsResult, type CreateLibraryPayload, type FileTagsResult, type LibraryStats,
-    type UpdateLibraryPayload
+    cleanupOrphanedTags, create, deleteLibrary, getFileTags, getLibrary, getReconcileStatus, getStats,
+    list, reconcileTags,
+    scan, update, updateWriteMode,
+    type CleanupTagsResult, type CreateLibraryPayload, type FileTagsResult, type LibraryStats,
+    type ReconcileStatusResult, type ReconcileTagsResult, type UpdateLibraryPayload, type UpdateWriteModeResult
 } from "./library";
 
 // Files - explicit exports to avoid conflicts

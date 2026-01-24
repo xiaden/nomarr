@@ -57,7 +57,6 @@ def mock_db(temp_library):
                     "name": "Test Library",
                     "root_path": str(self.library_root),
                     "is_enabled": True,
-                    "is_default": True,
                     "watch_mode": "off",  # Default to 'off'
                 }
 
@@ -709,7 +708,6 @@ class TestPerLibraryWatchMode:
             "name": "Test Library 2",
             "root_path": str(temp_library),
             "is_enabled": True,
-            "is_default": False,
             "watch_mode": "poll",
         }
 
