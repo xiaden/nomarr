@@ -4,6 +4,37 @@ These are the **always-on** hard rules. Layer-specific guidance lives in `.githu
 
 ---
 
+## MANDATORY: Read Skills Before Editing
+
+**You MUST read the relevant skill file BEFORE editing any code in that layer.**
+
+This is not optional. Do not skip this step to save time. Skills contain:
+- Layer-specific conventions and patterns
+- Required validation steps
+- Common mistakes to avoid
+- File naming and structure rules
+
+**Workflow:**
+1. Identify which layer(s) the file belongs to
+2. Read the skill file for that layer using `read_file`
+3. Follow the skill's guidance during implementation
+4. Run any verification steps the skill requires
+
+Layers and their skills:
+| Path Pattern | Skill to Read |
+|--------------|---------------|
+| `nomarr/interfaces/` | `.github/skills/layer-interfaces/SKILL.md` |
+| `nomarr/services/` | `.github/skills/layer-services/SKILL.md` |
+| `nomarr/workflows/` | `.github/skills/layer-workflows/SKILL.md` |
+| `nomarr/components/` | `.github/skills/layer-components/SKILL.md` |
+| `nomarr/persistence/` | `.github/skills/layer-persistence/SKILL.md` |
+| `nomarr/helpers/` | `.github/skills/layer-helpers/SKILL.md` |
+| `frontend/` | `.github/skills/layer-frontend/SKILL.md` |
+
+**Skipping skill consultation = architectural debt.**
+
+---
+
 ## Pre-Alpha Policy
 
 Nomarr is **pre-alpha**. That means:
@@ -77,7 +108,9 @@ python scripts/detect_slop.py nomarr/workflows/some_wf.py
 
 ## Layer-Specific Skills
 
-Detailed guidance for each layer is loaded on-demand via Agent Skills:
+**REMINDER: You MUST read the skill file before editing files in any layer.**
+
+Skill files contain mandatory conventions, patterns, and verification steps:
 
 - `layer-interfaces/` — API routes, CLI commands
 - `layer-services/` — DI wiring, orchestration
@@ -87,7 +120,7 @@ Detailed guidance for each layer is loaded on-demand via Agent Skills:
 - `layer-helpers/` — Pure utilities, DTOs
 - `layer-frontend/` — React + TypeScript UI (requires lint+build verification)
 
-These load automatically when editing files in the relevant layer.
+**If you edit code without reading the skill first, you are doing it wrong.**
 
 ---
 
