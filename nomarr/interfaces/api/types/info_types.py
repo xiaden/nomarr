@@ -177,7 +177,7 @@ class ScanningLibraryResponse(BaseModel):
     total: int = Field(..., description="Total files to process")
 
     @classmethod
-    def from_dto(cls, dto: ScanningLibraryInfo) -> "ScanningLibraryResponse":
+    def from_dto(cls, dto: ScanningLibraryInfo) -> ScanningLibraryResponse:
         """Convert ScanningLibraryInfo DTO to Pydantic response model."""
         return cls(
             library_id=dto.library_id,
@@ -209,7 +209,7 @@ class WorkStatusResponse(BaseModel):
     is_busy: bool = Field(..., description="System is doing any work (scanning or processing)")
 
     @classmethod
-    def from_dto(cls, dto: WorkStatusResult) -> "WorkStatusResponse":
+    def from_dto(cls, dto: WorkStatusResult) -> WorkStatusResponse:
         """Convert WorkStatusResult DTO to Pydantic response model."""
         return cls(
             is_scanning=dto.is_scanning,
