@@ -379,11 +379,16 @@ class FileWatcherService:
                         batch_size=200,
                     )
                 except ValueError as e:
+                    error_msg = str(e)
                     # Library not found - stop watching it
-                    if "Library not found" in str(e):
+                    if "Library not found" in error_msg:
                         logger.warning(f"Library {library_id} no longer exists, stopping watcher")
                         # Schedule cleanup on next iteration (can't modify observers while iterating)
                         self._schedule_cleanup(library_id)
+                        return
+                    # Already scanning - skip silently (common after server restart mid-scan)
+                    if "already being scanned" in error_msg:
+                        logger.debug(f"Library {library_id} is already being scanned, skipping poll")
                         return
                     logger.error(f"Failed to trigger poll scan for library {library_id}: {e}", exc_info=True)
                 except Exception as e:

@@ -162,7 +162,7 @@ class LibraryScanMixin:
 
     def start_scan(
         self,
-        library_id: str | None = None,
+        library_id: str,
     ) -> StartScanResult:
         """
         Start a library scan.
@@ -170,19 +170,19 @@ class LibraryScanMixin:
         Scans the entire library root recursively and marks missing files as invalid.
 
         This is the main scanning entrypoint. It delegates to the workflow,
-        which resolves the library (specified or default) and handles orchestration.
+        which resolves the library and handles orchestration.
 
         IMPORTANT: Libraries are used ONLY to pick which filesystem roots to scan.
         All discovered files and stats are GLOBAL and do NOT carry library_id.
 
         Args:
-            library_id: ID of library to scan (defaults to default library)
+            library_id: ID of library to scan (required)
 
         Returns:
             StartScanResult DTO with scan statistics
 
         Raises:
-            ValueError: If library not found or no default library exists
+            ValueError: If library not found
         """
         from nomarr.workflows.library.start_scan_wf import start_scan_workflow
 
@@ -222,7 +222,7 @@ class LibraryScanMixin:
         Get current library scan status.
 
         Args:
-            library_id: Optional library ID to check scan status for (uses default if None)
+            library_id: Library ID to check scan status for
 
         Returns:
             LibraryScanStatusResult with configured, library_path, enabled, scan_status, progress, total
@@ -238,27 +238,16 @@ class LibraryScanMixin:
 
         # Get library to check scan status
         if library_id is None:
-            try:
-                library = self.db.libraries.get_default_library()
-                if not library:
-                    return LibraryScanStatusResult(
-                        configured=True,
-                        library_path=self.cfg.library_root,
-                        enabled=False,
-                        pending_jobs=0,
-                        running_jobs=0,
-                    )
-                library_id = library["_id"]
-            except Exception:
-                return LibraryScanStatusResult(
-                    configured=True,
-                    library_path=self.cfg.library_root,
-                    enabled=False,
-                    pending_jobs=0,
-                    running_jobs=0,
-                )
-        else:
-            library = self._get_library_or_error(library_id)
+            # No library specified - return basic status
+            return LibraryScanStatusResult(
+                configured=True,
+                library_path=self.cfg.library_root,
+                enabled=self.background_tasks is not None,
+                pending_jobs=0,
+                running_jobs=0,
+            )
+
+        library = self._get_library_or_error(library_id)
 
         # Check scan status from library record
         scan_status = library.get("scan_status", "idle")

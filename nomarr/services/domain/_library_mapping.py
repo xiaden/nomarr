@@ -21,7 +21,7 @@ def map_file_with_tags_to_dto(file_dict: dict[str, Any]) -> LibraryFileWithTags:
 
     Args:
         file_dict: Dictionary from search_library_files_with_tags query
-                   Must contain '_id', 'path', 'library_id', 'tagged', and 'tags' keys
+                   Must contain '_id', 'path', 'library_id', and 'tags' keys
 
     Returns:
         LibraryFileWithTags DTO
@@ -39,7 +39,7 @@ def map_file_with_tags_to_dto(file_dict: dict[str, Any]) -> LibraryFileWithTags:
         calibration=file_dict.get("calibration"),
         scanned_at=file_dict.get("scanned_at"),
         last_tagged_at=file_dict.get("last_tagged_at"),
-        tagged=file_dict["tagged"],
+        tagged=file_dict.get("tagged", False),
         tagged_version=file_dict.get("tagged_version"),
         skip_auto_tag=file_dict.get("skip_auto_tag", 0),
         created_at=file_dict.get("created_at"),
@@ -51,6 +51,6 @@ def map_file_with_tags_to_dto(file_dict: dict[str, Any]) -> LibraryFileWithTags:
                 type=tag["type"],
                 is_nomarr=tag["is_nomarr"],
             )
-            for tag in file_dict["tags"]
+            for tag in file_dict.get("tags", [])
         ],
     )
