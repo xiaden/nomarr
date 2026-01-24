@@ -193,8 +193,16 @@ async def delete_library(
     Removes the library entry but does NOT delete files on disk.
     Cannot delete the default library - set another as default first.
     """
+    from nomarr.interfaces.api.web.dependencies import get_file_watcher_service
+
     library_id = decode_path_id(library_id)
     try:
+        # Stop file watcher before deletion (if running)
+        file_watcher = get_file_watcher_service()
+        if file_watcher and library_id in file_watcher.observers:
+            file_watcher.stop_watching_library(library_id)
+            logging.info(f"[Web API] Stopped file watcher for library {library_id}")
+
         deleted = library_service.delete_library(library_id)
         if not deleted:
             raise HTTPException(status_code=404, detail="Library not found")

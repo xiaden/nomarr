@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from nomarr.services.domain.navidrome_svc import NavidromeService
     from nomarr.services.domain.tagging_svc import TaggingService
     from nomarr.services.infrastructure.config_svc import ConfigService
+    from nomarr.services.infrastructure.file_watcher_svc import FileWatcherService
     from nomarr.services.infrastructure.worker_system_svc import WorkerSystemService
 
 
@@ -152,3 +153,10 @@ def get_metadata_service() -> MetadataService:
     if not service:
         raise HTTPException(status_code=503, detail="Metadata service not available")
     return service  # type: ignore[no-any-return]
+
+
+def get_file_watcher_service() -> FileWatcherService | None:
+    """Get FileWatcherService instance (optional - may not be running)."""
+    from nomarr.app import application
+
+    return application.services.get("file_watcher")  # type: ignore[return-value]

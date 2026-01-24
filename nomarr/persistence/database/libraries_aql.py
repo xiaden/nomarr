@@ -152,6 +152,28 @@ class LibrariesOperations:
         )
         return list(cursor)
 
+    def list_watchable_libraries(self) -> list[dict[str, Any]]:
+        """List libraries that should be watched (enabled + watch_mode != 'off').
+
+        Used by FileWatcherService to sync watchers with DB state.
+
+        Returns:
+            List of library dicts with _id, root_path, watch_mode
+        """
+        cursor = cast(
+            Cursor,
+            self.db.aql.execute(
+                """
+            FOR lib IN libraries
+                FILTER lib.is_enabled == true
+                FILTER lib.watch_mode != null AND lib.watch_mode != "off"
+                SORT lib.created_at ASC
+                RETURN { _id: lib._id, root_path: lib.root_path, watch_mode: lib.watch_mode }
+            """
+            ),
+        )
+        return list(cursor)
+
     def get_default_library(self) -> dict[str, Any] | None:
         """Get the default library.
 

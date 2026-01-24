@@ -183,9 +183,58 @@ class FileWatcherService:
         # Polling state (minimal - just last poll time per library)
         self.last_poll_time: dict[str, InternalSeconds] = {}
 
+        # Libraries scheduled for cleanup (when not found)
+        self._pending_cleanups: set[str] = set()
+
         logger.info(
             f"FileWatcherService initialized (debounce={debounce_seconds}s, poll_interval={polling_interval_seconds}s)"
         )
+
+    def sync_watchers(self) -> None:
+        """Sync watchers with the library collection (DB is source of truth).
+
+        - Starts watchers for libraries in DB with watch_mode != 'off'
+        - Stops watchers for libraries no longer in DB or with watch_mode == 'off'
+
+        Should be called on startup and can be called periodically if needed.
+        """
+        # Get libraries that should be watched from DB
+        watchable = self.db.libraries.list_watchable_libraries()
+        watchable_ids = {lib["_id"] for lib in watchable}
+
+        # Stop watchers for libraries no longer watchable
+        for library_id in list(self.observers.keys()):
+            if library_id not in watchable_ids:
+                logger.info(f"Library {library_id} no longer needs watching, stopping watcher")
+                self.stop_watching_library(library_id)
+
+        # Start watchers for new watchable libraries
+        for lib in watchable:
+            library_id = lib["_id"]
+            if library_id not in self.observers:
+                try:
+                    self.start_watching_library(library_id)
+                except ValueError as e:
+                    logger.warning(f"Could not start watcher for library {library_id}: {e}")
+                except Exception as e:
+                    logger.error(f"Failed to start watcher for library {library_id}: {e}", exc_info=True)
+
+    def _schedule_cleanup(self, library_id: str) -> None:
+        """Schedule a library for cleanup (called from polling loop when library not found)."""
+        self._pending_cleanups.add(library_id)
+        # Schedule actual cleanup on event loop
+        try:
+            self.event_loop.call_soon_threadsafe(self._do_cleanup, library_id)
+        except RuntimeError:
+            # Event loop not running - just mark for cleanup
+            pass
+
+    def _do_cleanup(self, library_id: str) -> None:
+        """Actually stop watching a library (runs on event loop)."""
+        if library_id in self._pending_cleanups:
+            self._pending_cleanups.discard(library_id)
+            if library_id in self.observers:
+                self.stop_watching_library(library_id)
 
     def start_watching_library(self, library_id: str) -> None:
         """Start watching a library for changes.
@@ -295,6 +344,7 @@ class FileWatcherService:
         """Periodic polling loop for one library.
 
         Runs until cancelled. Triggers full-library scan at fixed intervals.
+        Validates library still exists and is watchable before each scan.
 
         Args:
             library_id: Library document _id
@@ -302,6 +352,19 @@ class FileWatcherService:
         try:
             while True:
                 await asyncio.sleep(self.polling_interval_seconds)
+
+                # Validate library still exists and should be watched
+                library = self.db.libraries.get_library(library_id)
+                if not library:
+                    logger.info(f"Library {library_id} no longer exists, stopping watcher")
+                    self._schedule_cleanup(library_id)
+                    return
+
+                watch_mode = library.get("watch_mode", "off")
+                if watch_mode == "off" or not library.get("is_enabled", True):
+                    logger.info(f"Library {library_id} watch_mode is '{watch_mode}' or disabled, stopping watcher")
+                    self._schedule_cleanup(library_id)
+                    return
 
                 # Update last poll time
                 self.last_poll_time[library_id] = internal_s()
@@ -315,6 +378,14 @@ class FileWatcherService:
                         targets=[target],
                         batch_size=200,
                     )
+                except ValueError as e:
+                    # Library not found - stop watching it
+                    if "Library not found" in str(e):
+                        logger.warning(f"Library {library_id} no longer exists, stopping watcher")
+                        # Schedule cleanup on next iteration (can't modify observers while iterating)
+                        self._schedule_cleanup(library_id)
+                        return
+                    logger.error(f"Failed to trigger poll scan for library {library_id}: {e}", exc_info=True)
                 except Exception as e:
                     logger.error(f"Failed to trigger poll scan for library {library_id}: {e}", exc_info=True)
 
