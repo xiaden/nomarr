@@ -175,6 +175,50 @@ class LibraryFilesOperations:
         result: dict[str, Any] = next(cursor, {})
         return result if result else None
 
+    def get_files_by_ids_with_tags(
+        self,
+        file_ids: list[str],
+    ) -> list[dict[str, Any]]:
+        """Get files by IDs with their associated tags.
+
+        Used for batch lookup of files (e.g., for browse UI).
+        Preserves order of input IDs where possible.
+
+        Args:
+            file_ids: List of document _ids to fetch
+
+        Returns:
+            List of file dicts with 'tags' array containing tag details
+        """
+        if not file_ids:
+            return []
+
+        cursor = cast(
+            Cursor,
+            self.db.aql.execute(
+                """
+            FOR file_id IN @file_ids
+                LET file = DOCUMENT(file_id)
+                FILTER file != null
+                LET tags = (
+                    FOR edge IN file_tags
+                        FILTER edge._from == file._id
+                        LET tag = DOCUMENT(edge._to)
+                        FILTER tag != null
+                        RETURN {
+                            key: tag.key,
+                            value: tag.value,
+                            type: tag.type,
+                            is_nomarr: tag.is_nomarr_tag
+                        }
+                )
+                RETURN MERGE(file, { tags: tags })
+            """,
+                bind_vars=cast(dict[str, Any], {"file_ids": file_ids}),
+            ),
+        )
+        return list(cursor)
+
     def get_library_file(self, path: str, library_id: int | None = None) -> dict[str, Any] | None:
         """Get library file by path.
 

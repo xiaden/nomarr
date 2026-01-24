@@ -144,3 +144,32 @@ Before committing workflow code, verify:
 - [ ] Does the function return a DTO? **→ Required**
 - [ ] Is there one public workflow per file? **→ Required**
 - [ ] Does the file name end in `_wf.py`? **→ Convention**
+
+---
+
+## Layer Scripts
+
+This skill includes validation scripts in `.github/skills/layer-workflows/scripts/`:
+
+### `lint.py`
+
+Runs all linters on the workflows layer:
+
+```powershell
+python .github/skills/layer-workflows/scripts/lint.py
+```
+
+Executes: ruff, mypy, vulture, bandit, radon, lint-imports
+
+### `check_naming.py`
+
+Validates workflows naming conventions:
+
+```powershell
+python .github/skills/layer-workflows/scripts/check_naming.py
+```
+
+Checks:
+- Files must end in `_wf.py`
+- Each file must have exactly one `*_workflow` function
+- Internal helpers must be `_private`

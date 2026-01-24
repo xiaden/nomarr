@@ -82,6 +82,23 @@ class LibraryQueryMixin:
         files_with_tags = [map_file_with_tags_to_dto(f) for f in files]
         return SearchFilesResult(files=files_with_tags, total=total, limit=limit, offset=offset)
 
+    def get_files_by_ids(self, file_ids: list[str]) -> SearchFilesResult:
+        """Get files by IDs with their tags.
+
+        Used for batch lookup (e.g., when browsing songs for an entity).
+
+        Args:
+            file_ids: List of file _ids to fetch
+
+        Returns:
+            SearchFilesResult with files matching the IDs
+        """
+        from nomarr.services.domain._library_mapping import map_file_with_tags_to_dto
+
+        files = self.db.library_files.get_files_by_ids_with_tags(file_ids)
+        files_with_tags = [map_file_with_tags_to_dto(f) for f in files]
+        return SearchFilesResult(files=files_with_tags, total=len(files), limit=len(file_ids), offset=0)
+
     def get_unique_tag_keys(self, nomarr_only: bool = False) -> UniqueTagKeysResult:
         """Get all unique tag keys across the library."""
         from nomarr.components.library.search_files_comp import get_unique_tag_keys

@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ErrorMessage, Panel } from "@shared/components/ui";
 
-import { search } from "../../../shared/api/files";
+import { getFilesByIds } from "../../../shared/api/files";
 import { listSongsForEntity } from "../../../shared/api/metadata";
 import type { EntityCollection, LibraryFile } from "../../../shared/types";
 
@@ -39,6 +39,7 @@ export function TrackList({
       setLoading(true);
       setError(null);
 
+      // Get song IDs for this entity
       const songResult = await listSongsForEntity(
         collection,
         entityId,
@@ -51,12 +52,12 @@ export function TrackList({
         return;
       }
 
-      const searchResult = await search({
-        limit: 500,
-      });
+      // Fetch full file details for these song IDs
+      const filesResult = await getFilesByIds(songResult.song_ids);
 
+      // Preserve order from song_ids
       const trackMap = new Map(
-        searchResult.files.map((f: LibraryFile) => [f.id, f])
+        filesResult.files.map((f: LibraryFile) => [f.id, f])
       );
 
       const orderedTracks = songResult.song_ids

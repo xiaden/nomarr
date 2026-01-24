@@ -4,6 +4,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
@@ -241,6 +242,31 @@ async def search_library_files(
     except Exception as e:
         logging.exception("[Web API] Error searching library files")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to search files")) from e
+
+
+class FileIdsRequest(BaseModel):
+    """Request body for fetching files by IDs."""
+
+    file_ids: list[str] = Field(..., description="List of file _ids to fetch", max_length=500)
+
+
+@router.post("/files/by-ids", dependencies=[Depends(verify_session)])
+async def get_files_by_ids(
+    request: FileIdsRequest,
+    library_service: "LibraryService" = Depends(get_library_service),
+) -> SearchFilesResponse:
+    """
+    Get files by their IDs with full metadata and tags.
+
+    Used for batch lookup (e.g., when browsing songs for an entity).
+    Returns files in same order as input IDs where possible.
+    """
+    try:
+        result = library_service.get_files_by_ids(request.file_ids)
+        return SearchFilesResponse.from_dto(result)
+    except Exception as e:
+        logging.exception("[Web API] Error getting files by IDs")
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get files")) from e
 
 
 @router.get("/files/tags/unique-keys", dependencies=[Depends(verify_session)])

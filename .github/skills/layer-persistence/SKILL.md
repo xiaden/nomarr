@@ -160,3 +160,31 @@ Before committing persistence code, verify:
 - [ ] Are `_id` and `_key` preserved as-is? **→ Required**
 - [ ] Is external code importing from `database/*` directly? **→ Access via `Database`**
 - [ ] Is health/liveness logic here instead of in services? **→ Move to service**
+
+---
+
+## Layer Scripts
+
+This skill includes validation scripts in `.github/skills/layer-persistence/scripts/`:
+
+### `lint.py`
+
+Runs all linters on the persistence layer:
+
+```powershell
+python .github/skills/layer-persistence/scripts/lint.py
+```
+
+Executes: ruff, mypy, vulture, bandit, radon, lint-imports
+
+### `check_naming.py`
+
+Validates persistence naming conventions:
+
+```powershell
+python .github/skills/layer-persistence/scripts/check_naming.py
+```
+
+Checks:
+- Database module files must end in `_aql.py`
+- Classes must end in `Operations` (e.g., `LibraryFilesOperations`)

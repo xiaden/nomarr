@@ -182,3 +182,32 @@ Before committing helper code, verify:
 - [ ] Does this construct or validate library paths? **→ Violation (use path_comp)**
 - [ ] Is this DTO used across layers? **→ Put in `helpers/dto/`**
 - [ ] Are functions pure (no hidden state)? **→ Preferred**
+
+---
+
+## Layer Scripts
+
+This skill includes validation scripts in `.github/skills/layer-helpers/scripts/`:
+
+### `lint.py`
+
+Runs all linters on the helpers layer:
+
+```powershell
+python .github/skills/layer-helpers/scripts/lint.py
+```
+
+Executes: ruff, mypy, vulture, bandit, radon, lint-imports
+
+### `check_naming.py`
+
+Validates helpers naming conventions:
+
+```powershell
+python .github/skills/layer-helpers/scripts/check_naming.py
+```
+
+Checks:
+- Files must end in `_helper.py` or `_dto.py` (exceptions: `exceptions.py`, `dataclasses.py`)
+- No stateful classes (classes with `__init__` storing state)
+- No `nomarr.*` imports (hard rule)

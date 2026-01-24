@@ -103,3 +103,31 @@ Before committing interface code, verify:
 - [ ] Does this route contain business logic (loops, branching, computation)? **→ Move to service**
 - [ ] Are Pydantic models staying in this layer only? **→ Services return DTOs**
 - [ ] Is the DTO-to-Pydantic conversion explicit? **→ Use `.from_dto()`**
+
+---
+
+## Layer Scripts
+
+This skill includes validation scripts in `.github/skills/layer-interfaces/scripts/`:
+
+### `lint.py`
+
+Runs all linters on the interfaces layer:
+
+```powershell
+python .github/skills/layer-interfaces/scripts/lint.py
+```
+
+Executes: ruff, mypy, vulture, bandit, radon, lint-imports
+
+### `check_naming.py`
+
+Validates interfaces naming conventions:
+
+```powershell
+python .github/skills/layer-interfaces/scripts/check_naming.py
+```
+
+Checks:
+- Files must end in `_if.py`
+- Route handlers should be thin (validate, call service, serialize)

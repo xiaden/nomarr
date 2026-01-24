@@ -158,7 +158,10 @@ jobs:
         run: |
           # Decision tree:
           # 1. Tests must pass (unless skip_tests was true)
-          # 2. Then check: force_build OR version_changed
+          # 2. Then check: force_build OR version_changed OR ALWAYS_BUILD
+          
+          # TEMPORARY: Build on every push while in active development
+          ALWAYS_BUILD="true"
           
           TESTS_OK="false"
           if [ "${{ github.event.inputs.skip_tests }}" == "true" ] || [ "${{ needs.test.result }}" == "success" ]; then
@@ -167,7 +170,10 @@ jobs:
           
           BUILD="false"
           if [ "$TESTS_OK" == "true" ]; then
-            if [ "${{ github.event.inputs.force_build }}" == "true" ]; then
+            if [ "$ALWAYS_BUILD" == "true" ]; then
+              BUILD="true"
+              echo "✅ Building: ALWAYS_BUILD=true (active development mode)"
+            elif [ "${{ github.event.inputs.force_build }}" == "true" ]; then
               BUILD="true"
               echo "✅ Building: force_build=true"
             elif [ "${{ github.event_name }}" == "push" ] && [ "${{ steps.version_check.outputs.changed }}" == "true" ]; then

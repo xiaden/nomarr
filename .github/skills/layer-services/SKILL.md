@@ -151,3 +151,32 @@ Before committing service code, verify:
 - [ ] Does this method call components directly? **→ Should call workflow instead**
 - [ ] Are public methods returning DTOs for structured data? **→ Required**
 - [ ] Is the method name `<verb>_<noun>`? **→ Required pattern**
+
+---
+
+## Layer Scripts
+
+This skill includes validation scripts in `.github/skills/layer-services/scripts/`:
+
+### `lint.py`
+
+Runs all linters on the services layer:
+
+```powershell
+python .github/skills/layer-services/scripts/lint.py
+```
+
+Executes: ruff, mypy, vulture, bandit, radon, lint-imports
+
+### `check_naming.py`
+
+Validates services naming conventions:
+
+```powershell
+python .github/skills/layer-services/scripts/check_naming.py
+```
+
+Checks:
+- Files must end in `_svc.py`
+- Classes must end in `Service`
+- Methods must follow `<verb>_<noun>` pattern

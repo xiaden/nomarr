@@ -2,7 +2,7 @@
  * Files/Browse API functions.
  */
 
-import { get } from "./client";
+import { get, post } from "./client";
 
 export interface FileTag {
   key: string;
@@ -70,6 +70,14 @@ export async function search(params?: SearchFilesParams): Promise<SearchFilesRes
     : "/api/web/libraries/files/search";
 
   return get(endpoint);
+}
+
+/**
+ * Get files by their IDs with full metadata and tags.
+ * Used for batch lookup (e.g., when browsing songs for an entity).
+ */
+export async function getFilesByIds(fileIds: string[]): Promise<SearchFilesResponse> {
+  return post("/api/web/libraries/files/by-ids", { file_ids: fileIds });
 }
 
 export interface UniqueTagKeysResponse {

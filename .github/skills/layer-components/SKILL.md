@@ -187,3 +187,31 @@ Before committing component code, verify:
 - [ ] Is this doing orchestration instead of computation? **→ Should be a workflow**
 - [ ] Are heavy functions split into `_private` helpers? **→ Recommended**
 - [ ] Does the module name end in `_comp.py`? **→ Convention**
+
+---
+
+## Layer Scripts
+
+This skill includes validation scripts in `.github/skills/layer-components/scripts/`:
+
+### `lint.py`
+
+Runs all linters on the components layer:
+
+```powershell
+python .github/skills/layer-components/scripts/lint.py
+```
+
+Executes: ruff, mypy, vulture, bandit, radon, lint-imports
+
+### `check_naming.py`
+
+Validates components naming conventions:
+
+```powershell
+python .github/skills/layer-components/scripts/check_naming.py
+```
+
+Checks:
+- Files must end in `_comp.py`
+- Essentia imports only allowed in `ml_backend_essentia_comp.py`
