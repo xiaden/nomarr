@@ -84,6 +84,54 @@ class DiscoveryWorker(multiprocessing.Process):
         self.execution_tier = execution_tier  # GPU/CPU tier from admission control
         self.prefer_gpu = prefer_gpu  # GPU preference from tier config
 
+    def _configure_subprocess_logging(self) -> None:
+        """Configure logging for the subprocess.
+
+        When using multiprocessing with 'spawn' start method, subprocesses
+        don't inherit the parent's logging configuration. This method sets up
+        logging handlers that match the main process format, writing to both
+        console and rotating file.
+        """
+        import logging.handlers
+        import sys
+        from pathlib import Path
+
+        from nomarr.helpers.logging_helper import NomarrLogFilter
+
+        # Same format as start.py
+        log_format = "%(asctime)s %(levelname)s %(nomarr_identity_tag)s %(nomarr_role_tag)s%(context_str)s%(message)s"
+
+        # Create logs directory if needed
+        log_dir = Path("logs")
+        log_dir.mkdir(exist_ok=True)
+
+        # Create rotating file handler (same settings as start.py)
+        file_handler = logging.handlers.RotatingFileHandler(
+            log_dir / "nomarr.log",
+            maxBytes=10 * 1024 * 1024,  # 10MB
+            backupCount=5,
+            encoding="utf-8",
+        )
+        file_handler.setLevel(logging.INFO)
+        file_handler.setFormatter(logging.Formatter(log_format))
+
+        # Console handler
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(logging.INFO)
+        console_handler.setFormatter(logging.Formatter(log_format))
+
+        # Install NomarrLogFilter on root logger
+        logging.root.addFilter(NomarrLogFilter())
+
+        # Configure root logger
+        logging.basicConfig(
+            level=logging.INFO,
+            handlers=[file_handler, console_handler],
+            force=True,  # Override any existing config
+        )
+
+        logger.info("[%s] Subprocess logging configured", self.worker_id)
+
     def _send_health_frame(self, status: str) -> None:
         """Send a health frame to the parent process via pipe.
 
@@ -116,6 +164,9 @@ class DiscoveryWorker(multiprocessing.Process):
 
     def run(self) -> None:
         """Main worker loop - discover, claim, process, repeat."""
+        # Configure logging for subprocess (spawn doesn't inherit parent's logging config)
+        self._configure_subprocess_logging()
+
         # Late imports to avoid import-time issues in subprocess
         from nomarr.components.ml.ml_backend_essentia_comp import is_available as ml_is_available
         from nomarr.components.platform.resource_monitor_comp import check_resource_headroom

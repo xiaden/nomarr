@@ -456,8 +456,15 @@ async def scan_library(
         # Transform DTO to wrapped Pydantic response
         return StartScanWithStatusResponse.from_dto(stats, library_id)
 
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Library not found") from None
+    except ValueError as e:
+        # Distinguish between "not found" and "already scanning" errors
+        error_msg = str(e)
+        if "not found" in error_msg.lower():
+            raise HTTPException(status_code=404, detail="Library not found") from None
+        elif "already being scanned" in error_msg.lower():
+            raise HTTPException(status_code=409, detail="Library is already being scanned") from None
+        else:
+            raise HTTPException(status_code=400, detail=error_msg) from None
     except Exception as e:
         logging.exception(f"[Web API] Error starting scan for library {library_id}")
         raise HTTPException(

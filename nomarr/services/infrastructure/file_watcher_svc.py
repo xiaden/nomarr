@@ -190,14 +190,49 @@ class FileWatcherService:
             f"FileWatcherService initialized (debounce={debounce_seconds}s, poll_interval={polling_interval_seconds}s)"
         )
 
+    def _reset_stale_scan_statuses(self) -> None:
+        """Reset stale scan_status on startup.
+
+        If a scan was interrupted (server crash/restart), the library may be stuck
+        in scan_status='scanning' even though no scan is actually running.
+        This resets such libraries to 'idle' so new scans can be started.
+
+        Called once at startup via sync_watchers().
+        """
+        all_libraries = self.db.libraries.list_libraries()
+        reset_count = 0
+
+        for lib in all_libraries:
+            if lib.get("scan_status") == "scanning":
+                library_id = lib["_id"]
+                logger.warning(
+                    f"[FileWatcherService] Resetting stale scan_status for library {lib.get('name', library_id)} "
+                    f"(was 'scanning' at startup, likely from interrupted scan)"
+                )
+                self.db.libraries.update_scan_status(
+                    library_id,
+                    status="idle",
+                    error="Scan interrupted by server restart",
+                )
+                reset_count += 1
+
+        if reset_count > 0:
+            logger.info(f"[FileWatcherService] Reset {reset_count} libraries with stale scan_status")
+
     def sync_watchers(self) -> None:
         """Sync watchers with the library collection (DB is source of truth).
 
+        - Resets stale scan_status on startup (handles interrupted scans from crashes)
         - Starts watchers for libraries in DB with watch_mode != 'off'
         - Stops watchers for libraries no longer in DB or with watch_mode == 'off'
 
         Should be called on startup and can be called periodically if needed.
         """
+        # Reset stale scan_status for all libraries on startup
+        # If scan_status is 'scanning' but no scan is actually running (server restart),
+        # reset it to 'idle' so users can start new scans
+        self._reset_stale_scan_statuses()
+
         # Get libraries that should be watched from DB
         watchable = self.db.libraries.list_watchable_libraries()
         watchable_ids = {lib["_id"] for lib in watchable}
@@ -386,10 +421,10 @@ class FileWatcherService:
                         # Schedule cleanup on next iteration (can't modify observers while iterating)
                         self._schedule_cleanup(library_id)
                         return
-                    # Already scanning - skip silently (common after server restart mid-scan)
+                    # Already scanning - skip this poll cycle, continue polling
                     if "already being scanned" in error_msg:
-                        logger.debug(f"Library {library_id} is already being scanned, skipping poll")
-                        return
+                        logger.debug(f"Library {library_id} is already being scanned, skipping this poll")
+                        continue  # Don't exit the loop! Continue polling.
                     logger.error(f"Failed to trigger poll scan for library {library_id}: {e}", exc_info=True)
                 except Exception as e:
                     logger.error(f"Failed to trigger poll scan for library {library_id}: {e}", exc_info=True)
