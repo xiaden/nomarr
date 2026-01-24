@@ -5,12 +5,12 @@ Provides entity listing, song-entity relationships, and traversal queries
 for the web frontend using session authentication.
 """
 
-from typing import Any, Literal
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from nomarr.interfaces.api.auth import verify_session
-from nomarr.interfaces.api.id_codec import decode_path_id, encode_ids
+from nomarr.interfaces.api.id_codec import decode_path_id
 from nomarr.interfaces.api.types.metadata_types import (
     EntityCountsResponse,
     EntityListResponse,
@@ -106,16 +106,14 @@ async def list_artists_for_album(
     album_id: str,
     limit: int = Query(100, ge=1, le=1000),
     metadata_service: MetadataService = Depends(get_metadata_service),
-) -> list[dict[str, Any]]:
+) -> list[EntityResponse]:
     """List artists for an album via traversal (album→songs→artists).
 
     Returns deduplicated artists sorted by display_name.
     """
     album_id = decode_path_id(album_id)
     artists = metadata_service.list_artists_for_album(album_id, limit=limit)
-    # Encode IDs in the response
-    result: list[dict[str, Any]] = encode_ids([dict(a) for a in artists])
-    return result
+    return [EntityResponse.from_dto(a) for a in artists]
 
 
 # ----------------------------------------------------------------------
