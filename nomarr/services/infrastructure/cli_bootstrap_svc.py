@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 
 from nomarr.persistence.db import Database
+from nomarr.services.domain.metadata_svc import MetadataService
 from nomarr.services.infrastructure.config_svc import ConfigService
 from nomarr.services.infrastructure.keys_svc import KeyManagementService
 
@@ -66,6 +67,19 @@ def get_config_service() -> ConfigService:
         ConfigService instance
     """
     return ConfigService()
+
+
+def get_metadata_service() -> MetadataService:
+    """
+    Get MetadataService instance for CLI operations.
+
+    Used by cleanup command and other entity management CLI operations.
+
+    Returns:
+        MetadataService instance with injected Database
+    """
+    db = get_database()
+    return MetadataService(db)
 
 
 # Log that bootstrap module is designed for CLI use only

@@ -164,6 +164,7 @@ class LibraryAdminMixin:
         is_enabled: bool | None = None,
         is_default: bool | None = None,
         watch_mode: str | None = None,
+        file_write_mode: str | None = None,
     ) -> LibraryDict:
         """Update library properties."""
         # Validate library exists
@@ -175,8 +176,10 @@ class LibraryAdminMixin:
         if is_default is True:
             self.set_default_library(library_id)
 
-        if name is not None or is_enabled is not None or watch_mode is not None:
-            self.update_library_metadata(library_id, name=name, is_enabled=is_enabled, watch_mode=watch_mode)
+        if name is not None or is_enabled is not None or watch_mode is not None or file_write_mode is not None:
+            self.update_library_metadata(
+                library_id, name=name, is_enabled=is_enabled, watch_mode=watch_mode, file_write_mode=file_write_mode
+            )
 
         return self.get_library(library_id)
 
@@ -203,10 +206,13 @@ class LibraryAdminMixin:
         name: str | None = None,
         is_enabled: bool | None = None,
         watch_mode: str | None = None,
+        file_write_mode: str | None = None,
     ) -> LibraryDict:
-        """Update library metadata (name, enabled, watch_mode)."""
+        """Update library metadata (name, enabled, watch_mode, file_write_mode)."""
         self._get_library_or_error(library_id)
-        self.db.libraries.update_library(library_id, name=name, is_enabled=is_enabled, watch_mode=watch_mode)
+        self.db.libraries.update_library(
+            library_id, name=name, is_enabled=is_enabled, watch_mode=watch_mode, file_write_mode=file_write_mode
+        )
 
         updated = self.db.libraries.get_library(library_id)
         if not updated:

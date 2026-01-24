@@ -11,13 +11,14 @@ Persistence layer is "AQL only" - no upward dependencies.
 
 import logging
 
-from arango.database import StandardDatabase
 from arango.exceptions import CollectionCreateError, GraphCreateError, IndexCreateError
+
+from nomarr.persistence.arango_client import DatabaseLike
 
 logger = logging.getLogger(__name__)
 
 
-def ensure_schema(db: StandardDatabase) -> None:
+def ensure_schema(db: DatabaseLike) -> None:
     """Ensure all collections, indexes, and graphs exist.
 
     Idempotent - safe to call on every startup.
@@ -32,7 +33,7 @@ def ensure_schema(db: StandardDatabase) -> None:
     _validate_no_legacy_calibration(db)
 
 
-def _create_collections(db: StandardDatabase) -> None:
+def _create_collections(db: DatabaseLike) -> None:
     """Create document and edge collections."""
     # Document collections
     document_collections = [
@@ -78,7 +79,7 @@ def _create_collections(db: StandardDatabase) -> None:
                 pass  # Collection already exists (race condition)
 
 
-def _create_indexes(db: StandardDatabase) -> None:
+def _create_indexes(db: DatabaseLike) -> None:
     """Create indexes for performance.
 
     Idempotent - skips existing indexes.
@@ -210,7 +211,7 @@ def _create_indexes(db: StandardDatabase) -> None:
 
 
 def _ensure_index(
-    db: StandardDatabase,
+    db: DatabaseLike,
     collection: str,
     index_type: str,
     fields: list[str],
@@ -248,7 +249,7 @@ def _ensure_index(
         pass  # Index already exists
 
 
-def _create_graphs(db: StandardDatabase) -> None:
+def _create_graphs(db: DatabaseLike) -> None:
     """Create named graphs for traversals.
 
     Creates "file_tag_graph" for file→tag relationships.
@@ -271,7 +272,7 @@ def _create_graphs(db: StandardDatabase) -> None:
             pass  # Graph already exists
 
 
-def _validate_no_legacy_calibration(db: StandardDatabase) -> None:
+def _validate_no_legacy_calibration(db: DatabaseLike) -> None:
     """Warn if legacy calibration collections exist.
 
     Legacy queue-based calibration was replaced by histogram-based approach.

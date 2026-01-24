@@ -12,16 +12,16 @@ Per GPU_REFACTOR_PLAN.md Section 7:
 from typing import Any, cast
 
 from arango.cursor import Cursor
-from arango.database import StandardDatabase
 from arango.exceptions import DocumentInsertError
 
 from nomarr.helpers.time_helper import now_ms
+from nomarr.persistence.arango_client import DatabaseLike
 
 
 class MLCapacityOperations:
     """Operations for ML capacity estimation collections."""
 
-    def __init__(self, db: StandardDatabase) -> None:
+    def __init__(self, db: DatabaseLike) -> None:
         self.db = db
 
     # ==================== Probe Lock Operations ====================

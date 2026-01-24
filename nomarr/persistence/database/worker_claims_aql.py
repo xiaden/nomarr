@@ -7,10 +7,10 @@ Claims are temporary leases, not authoritative state.
 from typing import Any, cast
 
 from arango.cursor import Cursor
-from arango.database import StandardDatabase
 from arango.exceptions import DocumentInsertError
 
 from nomarr.helpers.time_helper import now_ms
+from nomarr.persistence.arango_client import DatabaseLike
 
 
 class WorkerClaimsOperations:
@@ -23,7 +23,7 @@ class WorkerClaimsOperations:
     - claimed_at: Claim timestamp (milliseconds)
     """
 
-    def __init__(self, db: StandardDatabase) -> None:
+    def __init__(self, db: DatabaseLike) -> None:
         self.db = db
         self.collection = db.collection("worker_claims")
 

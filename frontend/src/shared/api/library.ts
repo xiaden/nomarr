@@ -27,6 +27,7 @@ interface LibraryResponse {
   is_enabled: boolean;
   is_default: boolean;
   watch_mode: string;
+  file_write_mode: "none" | "minimal" | "full";
   created_at?: string | number;
   updated_at?: string | number;
   scanned_at?: string | null;
@@ -46,6 +47,7 @@ function mapLibraryResponse(lib: LibraryResponse): Library {
     isEnabled: lib.is_enabled,
     isDefault: lib.is_default,
     watchMode: lib.watch_mode,
+    fileWriteMode: lib.file_write_mode,
     createdAt: lib.created_at,
     updatedAt: lib.updated_at,
     scannedAt: lib.scanned_at,
@@ -96,6 +98,7 @@ export interface CreateLibraryPayload {
   isEnabled?: boolean;
   isDefault?: boolean;
   watchMode?: string;  // 'off', 'event', or 'poll'
+  fileWriteMode?: "none" | "minimal" | "full";  // Tag writing mode
 }
 
 /**
@@ -108,6 +111,7 @@ export async function create(payload: CreateLibraryPayload): Promise<Library> {
     is_enabled: payload.isEnabled ?? true,
     is_default: payload.isDefault ?? false,
     watch_mode: payload.watchMode ?? "off",
+    file_write_mode: payload.fileWriteMode ?? "full",
   });
   return mapLibraryResponse(response);
 }
@@ -118,6 +122,7 @@ export interface UpdateLibraryPayload {
   isEnabled?: boolean;
   isDefault?: boolean;
   watchMode?: string;  // 'off', 'event', or 'poll'
+  fileWriteMode?: "none" | "minimal" | "full";  // Tag writing mode
 }
 
 /**
@@ -133,6 +138,7 @@ export async function update(
   if (payload.isEnabled !== undefined) body.is_enabled = payload.isEnabled;
   if (payload.isDefault !== undefined) body.is_default = payload.isDefault;
   if (payload.watchMode !== undefined) body.watch_mode = payload.watchMode;
+  if (payload.fileWriteMode !== undefined) body.file_write_mode = payload.fileWriteMode;
 
   // ID is already HTTP-encoded (e.g., "libraries:3970")
   const response = await patch<LibraryResponse>(
@@ -192,6 +198,55 @@ export async function cleanupOrphanedTags(
     : "/api/web/libraries/cleanup-tags";
 
   return post(endpoint);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Tag Reconciliation API
+// ──────────────────────────────────────────────────────────────────────────────
+
+export interface ReconcileTagsResult {
+  processed: number;
+  remaining: number;
+  failed: number;
+}
+
+/**
+ * Reconcile file tags for a library.
+ * Writes tags from database to audio files based on the library's file_write_mode.
+ */
+export async function reconcileTags(
+  libraryId: string,
+  batchSize = 100
+): Promise<ReconcileTagsResult> {
+  return post(`/api/web/libraries/${libraryId}/reconcile-tags?batch_size=${batchSize}`);
+}
+
+export interface ReconcileStatusResult {
+  pending_count: number;
+  in_progress: boolean;
+}
+
+/**
+ * Get tag reconciliation status for a library.
+ */
+export async function getReconcileStatus(libraryId: string): Promise<ReconcileStatusResult> {
+  return get(`/api/web/libraries/${libraryId}/reconcile-status`);
+}
+
+export interface UpdateWriteModeResult {
+  file_write_mode: "none" | "minimal" | "full";
+  requires_reconciliation: boolean;
+  affected_file_count: number;
+}
+
+/**
+ * Update the file write mode for a library.
+ */
+export async function updateWriteMode(
+  libraryId: string,
+  mode: "none" | "minimal" | "full"
+): Promise<UpdateWriteModeResult> {
+  return patch(`/api/web/libraries/${libraryId}/write-mode?file_write_mode=${mode}`);
 }
 
 export interface FileTag {

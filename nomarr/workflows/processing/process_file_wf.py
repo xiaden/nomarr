@@ -1,20 +1,23 @@
 """
 High-level audio file processing workflow.
 
-This is a PURE WORKFLOW module that orchestrates the complete audio tagging pipeline:
+This is a PURE WORKFLOW module that orchestrates the ML audio tagging pipeline:
 - Model discovery and backbone grouping
 - Embedding computation per backbone
 - Head prediction execution
 - Score pooling and decision logic
 - Mood tier aggregation (including regression-based tiers)
 - Calibration loading and application
-- Tag writing to audio files
-- Optional library database updates
+- Database storage of predictions
+
+NOTE: This workflow does NOT write tags to audio files. File tag writing
+is decoupled and handled by write_file_tags_wf based on per-library settings.
+This separation ensures ML inference is not affected by file I/O failures.
 
 ARCHITECTURE:
-- This workflow is domain logic that coordinates ML, tagging, and persistence layers.
+- This workflow is domain logic that coordinates ML and persistence layers.
 - It does NOT import or use the DI container, services, or application object.
-- Callers (typically services) must provide all dependencies:
+- Callers (typically discovery workers) must provide all dependencies:
   - File path
   - ProcessorConfig with all processing parameters
   - Optional Database instance for persistence updates
@@ -24,7 +27,6 @@ EXPECTED DEPENDENCIES:
   - models_dir: str
   - min_duration_s, allow_short: float, bool
   - batch_size: int
-  - overwrite_tags: bool
   - namespace: str
   - version_tag_key, tagger_version: str
   - calibrate_heads: bool
@@ -56,7 +58,6 @@ import gc
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -71,7 +72,6 @@ from nomarr.components.tagging.tagging_aggregation_comp import (
     aggregate_mood_tiers,
     normalize_tag_label,
 )
-from nomarr.components.tagging.tagging_writer_comp import TagWriter
 from nomarr.helpers.dto.ml_dto import ComputeEmbeddingsForBackboneParams
 from nomarr.helpers.dto.path_dto import LibraryPath
 from nomarr.helpers.dto.processing_dto import ProcessFileResult, ProcessorConfig
@@ -360,154 +360,39 @@ def _collect_mood_outputs(
     return mood_tags
 
 
-def _prepare_file_and_db_tags(
-    tags_accum: dict[str, Any],
-    config: ProcessorConfig,
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    """
-    Prepare separate tag dicts for database and file writing.
-
-    Args:
-        tags_accum: Complete accumulated tags
-        config: Processor configuration
-
-    Returns:
-        Tuple of (db_tags, file_tags)
-    """
-    # DB gets ALL tags (numeric scores + mood-*)
-    db_tags = dict(tags_accum)  # Copy for DB
-
-    # File writes are filtered based on file_write_mode config
-    file_write_mode = config.file_write_mode
-    file_tags = select_tags_for_file(db_tags, file_write_mode)
-
-    logging.debug(
-        f"[processor] Tags prepared: {len(db_tags)} for DB, {len(file_tags)} for file (mode={file_write_mode})"
-    )
-
-    return db_tags, file_tags
-
-
-def _write_tags_to_file(
-    writer: TagWriter,
-    path: str,
-    file_tags: dict[str, Any],
-    db: Database | None,
-) -> None:
-    """
-    Write filtered tags to audio file.
-
-    Args:
-        writer: TagWriter instance
-        path: Path to audio file
-        file_tags: Tags to write to file
-        db: Database instance (needed for path validation)
-    """
-    if file_tags:
-        if not db:
-            raise ValueError("Database required for path validation")
-        from nomarr.components.infrastructure.path_comp import build_library_path_from_input
-
-        library_path = build_library_path_from_input(path, db)
-        writer.write(library_path, file_tags)
-        logging.debug(f"[processor] Wrote {len(file_tags)} tags to file")
-    else:
-        logging.debug("[processor] No tags written to file (file_write_mode=none or empty filter result)")
-
-
-def _update_folder_mtime_after_write(
-    db: Database,
-    library_path: LibraryPath,
-    library_root: Path,
-) -> None:
-    """
-    Update folder mtime in DB after writing tags to a file.
-
-    Both hardlink and fallback write strategies modify folder mtime
-    (via rename, link, or unlink operations). We need to update the
-    stored mtime so quick scan doesn't re-scan unchanged folders.
-    """
-    import os
-
-    if not library_path.library_id:
-        return
-
-    folder_abs = library_path.absolute.parent
-    try:
-        folder_mtime = int(os.stat(folder_abs).st_mtime * 1000)
-        folder_rel = str(folder_abs.relative_to(library_root)).replace("\\", "/")
-        if folder_abs == library_root:
-            folder_rel = ""
-
-        # Get current file count in folder
-        from nomarr.helpers.files_helper import is_audio_file
-
-        file_count = sum(
-            1 for f in os.listdir(folder_abs) if is_audio_file(f) and os.path.isfile(os.path.join(folder_abs, f))
-        )
-
-        db.library_folders.upsert_folder(library_path.library_id, folder_rel, folder_mtime, file_count)
-        logging.debug(f"[processor] Updated folder mtime after fallback write: {folder_rel}")
-    except Exception as e:
-        logging.warning(f"[processor] Failed to update folder mtime: {e}")
-
-
-def _sync_database(
+def _sync_to_database(
     db: Database | None,
     path: str,
-    writer: TagWriter,
     db_tags: dict[str, Any],
-    file_tags: dict[str, Any],
     namespace: str,
     tagger_version: str,
-    file_write_mode: str,
     chromaprint: str | None = None,
 ) -> None:
     """
-    Sync database with tags and handle file rewriting if needed.
+    Sync ML predictions to database only (NO file writes).
 
-    Uses atomic safe writes to prevent file corruption.
+    File tag writing is handled separately by write_file_tags_wf based on
+    library settings. This decouples ML inference from file I/O failures.
 
     Args:
         db: Optional Database instance
         path: Path to audio file
-        writer: TagWriter instance
         db_tags: Tags to write to database
-        file_tags: Tags to write to file (filtered)
         namespace: Tag namespace
         tagger_version: Tagger version string
-        file_write_mode: File write mode setting
-        chromaprint: Audio fingerprint hash for verification and move detection
+        chromaprint: Audio fingerprint hash for move detection
     """
     if db is None:
         return
 
     try:
-        from nomarr.components.infrastructure.path_comp import build_library_path_from_input, get_library_root
+        from nomarr.components.infrastructure.path_comp import build_library_path_from_input
         from nomarr.components.library.metadata_extraction_comp import extract_metadata
         from nomarr.workflows.library.sync_file_to_library_wf import sync_file_to_library
 
         library_path = build_library_path_from_input(path, db)
-        library_root = get_library_root(library_path, db)
 
-        # Safe write requires chromaprint and library_root
-        if chromaprint and library_root and file_tags:
-            # Use atomic safe write
-            result = writer.write_safe(library_path, file_tags, library_root, chromaprint)
-            if not result.success:
-                raise RuntimeError(f"Safe write failed: {result.error}")
-
-            # Always update folder mtime after tag write (write modifies folder mtime)
-            if library_path.library_id:
-                _update_folder_mtime_after_write(db, library_path, library_root)
-
-            logging.debug(f"[processor] Safely wrote {len(file_tags)} tags to file")
-        elif file_tags:
-            # Fallback to direct write (no chromaprint available)
-            logging.warning("[processor] No chromaprint - using unsafe direct write")
-            writer.write(library_path, file_tags)
-
-        # Extract metadata from the freshly-tagged file
+        # Extract metadata from file (does not modify file)
         metadata = extract_metadata(library_path, namespace=namespace)
 
         # Add chromaprint to metadata (computed during ML, stored in DB only)
@@ -517,6 +402,7 @@ def _sync_database(
         # Update library database with extracted metadata + chromaprint
         # Note: calibration_hash remains NULL until first recalibration
         # Initial processing stores raw scores only
+        # File writing is handled separately by reconciliation workflow
         sync_file_to_library(
             db=db,
             file_path=path,
@@ -527,17 +413,6 @@ def _sync_database(
         )
         logging.debug(f"[processor] Updated library database for {path} with {len(db_tags)} tags")
 
-        # Now rewrite file with filtered tags if mode is not "full"
-        if file_write_mode != "full" and file_tags:
-            if chromaprint and library_root:
-                result = writer.write_safe(library_path, file_tags, library_root, chromaprint)
-                if not result.success:
-                    raise RuntimeError(f"Safe rewrite failed: {result.error}")
-                if library_path.library_id:
-                    _update_folder_mtime_after_write(db, library_path, library_root)
-            else:
-                writer.write(library_path, file_tags)
-            logging.debug(f"[processor] Rewrote file with filtered tags (mode={file_write_mode})")
     except Exception as e:
         # Don't fail the entire processing if library update fails
         logging.warning(f"[processor] Failed to update library database: {e}")
@@ -698,9 +573,6 @@ def process_file_workflow(
     # === STEP 1: Discover and group heads by backbone ===
     _, heads_by_backbone = _discover_and_group_heads(config.models_dir)
 
-    # Initialize state
-    writer = TagWriter(overwrite=config.overwrite_tags, namespace=config.namespace)
-
     # Use a simple class to allow attribute storage (can't set attrs on built-in dict)
     class TagAccumulator(dict):
         pass
@@ -770,21 +642,20 @@ def process_file_workflow(
     # Add version tag
     tags_accum[config.version_tag_key] = config.tagger_version
 
-    # === STEP 4: Prepare tags for database and file writing ===
-    db_tags, file_tags = _prepare_file_and_db_tags(tags_accum, config)
+    # === STEP 4: Prepare tags for database ===
+    # All tags go to DB; file writing is handled separately by reconciliation
+    db_tags = dict(tags_accum)
 
-    # === STEP 5: Sync database and write tags to file ===
-    # NOTE: Database sync handles ALL file writing (writes db_tags, scans, then rewrites file_tags)
-    # No need to write file_tags before sync
-    _sync_database(
+    # === STEP 5: Sync to database only (NO file writes) ===
+    # File tag writing is decoupled and handled by write_file_tags_wf
+    # based on library settings. This prevents file I/O failures from
+    # affecting ML inference results.
+    _sync_to_database(
         db,
         path,
-        writer,
         db_tags,
-        file_tags,
         config.namespace,
         config.tagger_version,
-        config.file_write_mode,
         chromaprint_from_ml,
     )
 

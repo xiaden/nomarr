@@ -138,7 +138,8 @@ def _database_exists(hosts: str | None = None) -> bool:
     """
     import logging
 
-    actual_hosts = hosts or os.getenv("ARANGO_HOST", "http://nomarr-arangodb:8529")
+    # actual_hosts is always a str: either `hosts` (if str), or getenv with default
+    actual_hosts: str = hosts or os.getenv("ARANGO_HOST") or "http://nomarr-arangodb:8529"
 
     try:
         root_password = os.getenv("ARANGO_ROOT_PASSWORD")
@@ -150,7 +151,7 @@ def _database_exists(hosts: str | None = None) -> bool:
 
         client = ArangoClient(hosts=actual_hosts)
         sys_db = client.db("_system", username="root", password=root_password)
-        return sys_db.has_database(DB_NAME)
+        return bool(sys_db.has_database(DB_NAME))
     except Exception as e:
         # Connection error or auth failure - assume needs provisioning
         logging.warning(f"Database existence check failed: {e}")

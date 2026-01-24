@@ -62,7 +62,7 @@ def _ns_key(key: str, ns_prefix: str) -> str:
 # MP3 (ID3 v2.x) writer
 # ----------------------------------------------------------------------
 class _MP3Writer:
-    def __init__(self, overwrite: bool = True, ns_prefix: str = "essentia"):
+    def __init__(self, overwrite: bool = True, ns_prefix: str = "nom"):
         self.overwrite = overwrite
         self.ns_prefix = ns_prefix
 
@@ -118,7 +118,7 @@ class _MP3Writer:
 # MP4/M4A (iTunes freeform atoms) writer
 # ----------------------------------------------------------------------
 class _MP4Writer:
-    def __init__(self, overwrite: bool = True, ns_prefix: str = "essentia"):
+    def __init__(self, overwrite: bool = True, ns_prefix: str = "nom"):
         self.overwrite = overwrite
         self.ns_prefix = ns_prefix
 
@@ -181,7 +181,7 @@ class _MP4Writer:
 # FLAC/OGG/Opus (Vorbis comments) writer
 # ----------------------------------------------------------------------
 class _VorbisWriter:
-    def __init__(self, overwrite: bool = True, ns_prefix: str = "essentia"):
+    def __init__(self, overwrite: bool = True, ns_prefix: str = "nom"):
         self.overwrite = overwrite
         self.ns_prefix = ns_prefix
 
@@ -263,7 +263,7 @@ class TagWriter:
       - namespace: every key is written as '<namespace>:<key>' exactly once
     """
 
-    def __init__(self, overwrite: bool = True, namespace: str = "essentia"):
+    def __init__(self, overwrite: bool = True, namespace: str = "nom"):
         self.overwrite = overwrite
         self.namespace = namespace
         self._mp3 = _MP3Writer(overwrite=overwrite, ns_prefix=namespace)

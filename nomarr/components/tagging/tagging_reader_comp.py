@@ -13,6 +13,69 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Default namespace for nomarr tags - must match INTERNAL_NAMESPACE in config_svc.py
+DEFAULT_NAMESPACE = "nom"
+
+
+def read_nomarr_namespace(path: LibraryPath, namespace: str = DEFAULT_NAMESPACE) -> set[str]:
+    """
+    Check which nomarr tags exist in an audio file.
+
+    Returns the set of tag names found under the specified namespace.
+    Used to detect if files have been written to by nomarr, and to
+    infer the write mode used.
+
+    Args:
+        path: LibraryPath to audio file (must be valid)
+        namespace: Tag namespace to check (default: "nom")
+
+    Returns:
+        Set of tag names found (e.g., {"mood-strict", "mood-regular", "yamnet-class"})
+        Empty set if no nomarr tags found or file cannot be read.
+
+    Note:
+        Does not raise exceptions - returns empty set on any error.
+        This is intentional for scanning performance.
+    """
+    try:
+        if not path.is_valid():
+            return set()
+        return set(read_tags_from_file(path, namespace).keys())
+    except Exception:
+        # Silently return empty set - scanning shouldn't fail on read errors
+        return set()
+
+
+# Mood-tier tag names - written in "minimal" mode
+MOOD_TIER_TAGS = {"mood-strict", "mood-regular", "mood-loose"}
+
+
+def infer_write_mode_from_tags(tag_names: set[str]) -> str | None:
+    """
+    Infer what write mode was used based on the tags present.
+
+    Args:
+        tag_names: Set of tag names found in the file
+
+    Returns:
+        "none" if no tags found
+        "minimal" if only mood tags found
+        "full" if any non-mood tags found
+        None if indeterminate
+    """
+    if not tag_names:
+        return "none"
+
+    # Check if we have any non-mood tags
+    has_non_mood = any(name not in MOOD_TIER_TAGS for name in tag_names)
+
+    if has_non_mood:
+        return "full"
+    elif tag_names & MOOD_TIER_TAGS:  # Has at least one mood tag
+        return "minimal"
+    else:
+        return None
+
 
 def read_tags_from_file(path: LibraryPath, namespace: str) -> dict[str, Any]:
     """

@@ -7,13 +7,14 @@ No normalization for equivalence - exact strings produce different entities.
 from typing import Any, cast
 
 from arango.cursor import Cursor
-from arango.database import StandardDatabase
+
+from nomarr.persistence.arango_client import DatabaseLike
 
 
 class EntityOperations:
     """Operations for entity vertex collections (artists, albums, etc.)."""
 
-    def __init__(self, db: StandardDatabase) -> None:
+    def __init__(self, db: DatabaseLike) -> None:
         self.db = db
 
     def count_orphaned_entities(self, collection: str) -> int:

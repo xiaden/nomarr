@@ -3,13 +3,14 @@
 from typing import Any, cast
 
 from arango.cursor import Cursor
-from arango.database import StandardDatabase
+
+from nomarr.persistence.arango_client import DatabaseLike
 
 
 class MetaOperations:
     """Operations for the meta collection (key-value configuration)."""
 
-    def __init__(self, db: StandardDatabase) -> None:
+    def __init__(self, db: DatabaseLike) -> None:
         self.db = db
         self.collection = db.collection("meta")
 

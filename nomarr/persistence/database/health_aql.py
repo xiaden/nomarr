@@ -3,15 +3,15 @@
 from typing import Any, cast
 
 from arango.cursor import Cursor
-from arango.database import StandardDatabase
 
 from nomarr.helpers.time_helper import now_ms
+from nomarr.persistence.arango_client import DatabaseLike
 
 
 class HealthOperations:
     """Operations for the health collection (component health monitoring)."""
 
-    def __init__(self, db: StandardDatabase) -> None:
+    def __init__(self, db: DatabaseLike) -> None:
         self.db = db
         self.collection = db.collection("health")
 

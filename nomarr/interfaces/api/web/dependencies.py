@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from nomarr.services.domain.library_svc import LibraryService
     from nomarr.services.domain.metadata_svc import MetadataService
     from nomarr.services.domain.navidrome_svc import NavidromeService
+    from nomarr.services.domain.tagging_svc import TaggingService
     from nomarr.services.infrastructure.config_svc import ConfigService
     from nomarr.services.infrastructure.worker_system_svc import WorkerSystemService
 
@@ -117,8 +118,8 @@ def get_ml_service() -> Any:
     return service
 
 
-def get_tagging_service() -> Any:
-    """Get tagging service instance."""
+def get_tagging_service() -> TaggingService:
+    """Get TaggingService instance."""
     from fastapi import HTTPException
 
     from nomarr.app import application
@@ -126,7 +127,7 @@ def get_tagging_service() -> Any:
     service = application.services.get("tagging")
     if not service:
         raise HTTPException(status_code=503, detail="Tagging service not available")
-    return service
+    return service  # type: ignore[no-any-return]
 
 
 def get_info_service() -> Any:

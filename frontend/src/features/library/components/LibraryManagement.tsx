@@ -34,7 +34,9 @@ import { getConfig } from "../../../shared/api/config";
 import {
     create as createLibrary,
     deleteLibrary,
+    getReconcileStatus,
     list as listLibraries,
+    reconcileTags,
     scan as scanLibrary,
     setDefault as setDefaultLibrary,
     update as updateLibrary,
@@ -60,7 +62,10 @@ export function LibraryManagement() {
   const [formIsEnabled, setFormIsEnabled] = useState(true);
   const [formIsDefault, setFormIsDefault] = useState(false);
   const [formWatchMode, setFormWatchMode] = useState<string>("off");
+  const [formFileWriteMode, setFormFileWriteMode] = useState<"none" | "minimal" | "full">("full");
   const [showPathPicker, setShowPathPicker] = useState(false);
+  const [reconcilingId, setReconcilingId] = useState<string | null>(null);
+  const [reconcileStatus, setReconcileStatus] = useState<Record<string, { pending: number; inProgress: boolean }>>({});
 
   const loadLibraries = async () => {
     try {
@@ -118,6 +123,7 @@ export function LibraryManagement() {
     setFormIsEnabled(true);
     setFormIsDefault(false);
     setFormWatchMode("off");
+    setFormFileWriteMode("full");
     setShowPathPicker(false);
     setIsCreating(false);
     setEditingId(null);
@@ -134,6 +140,7 @@ export function LibraryManagement() {
     setFormIsEnabled(library.isEnabled);
     setFormIsDefault(library.isDefault);
     setFormWatchMode(library.watchMode);
+    setFormFileWriteMode(library.fileWriteMode);
     setEditingId(library.id);
     setIsCreating(false);
   };
@@ -152,6 +159,7 @@ export function LibraryManagement() {
         isEnabled: formIsEnabled,
         isDefault: formIsDefault,
         watchMode: formWatchMode,
+        fileWriteMode: formFileWriteMode,
       });
       await loadLibraries();
       resetForm();
@@ -177,6 +185,7 @@ export function LibraryManagement() {
         isEnabled: formIsEnabled,
         isDefault: formIsDefault,
         watchMode: formWatchMode,
+        fileWriteMode: formFileWriteMode,
       });
       await loadLibraries();
       resetForm();
@@ -263,6 +272,55 @@ export function LibraryManagement() {
       case "event": return "success";
       case "poll": return "warning";
       default: return "default";
+    }
+  };
+
+  const getWriteModeLabel = (mode: "none" | "minimal" | "full") => {
+    switch (mode) {
+      case "none": return "None";
+      case "minimal": return "Minimal";
+      case "full": return "Full";
+    }
+  };
+
+  const getWriteModeColor = (mode: "none" | "minimal" | "full"): "default" | "primary" | "secondary" => {
+    switch (mode) {
+      case "none": return "default";
+      case "minimal": return "secondary";
+      case "full": return "primary";
+    }
+  };
+
+  const handleReconcileTags = async (libraryId: string) => {
+    try {
+      setError(null);
+      setReconcilingId(libraryId);
+      const result = await reconcileTags(libraryId);
+      showSuccess(
+        `Reconciled ${result.processed} files (${result.remaining} remaining, ${result.failed} failed)`
+      );
+      // Update reconcile status
+      const status = await getReconcileStatus(libraryId);
+      setReconcileStatus(prev => ({
+        ...prev,
+        [libraryId]: { pending: status.pending_count, inProgress: status.in_progress }
+      }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to reconcile tags");
+    } finally {
+      setReconcilingId(null);
+    }
+  };
+
+  const loadReconcileStatus = async (libraryId: string) => {
+    try {
+      const status = await getReconcileStatus(libraryId);
+      setReconcileStatus(prev => ({
+        ...prev,
+        [libraryId]: { pending: status.pending_count, inProgress: status.in_progress }
+      }));
+    } catch {
+      // Silently ignore errors for status checks
     }
   };
 
@@ -402,6 +460,44 @@ export function LibraryManagement() {
               </FormControl>
             </Box>
 
+            {/* File Write Mode Selection */}
+            <Box>
+              <FormControl fullWidth>
+                <InputLabel id="write-mode-label">Tag Writing Mode</InputLabel>
+                <Select
+                  labelId="write-mode-label"
+                  value={formFileWriteMode}
+                  label="Tag Writing Mode"
+                  onChange={(e) => setFormFileWriteMode(e.target.value as "none" | "minimal" | "full")}
+                >
+                  <MenuItem value="none">
+                    <Stack>
+                      <Typography><strong>None</strong> - Don't write tags to files</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        DB is source of truth; clears existing nomarr tags
+                      </Typography>
+                    </Stack>
+                  </MenuItem>
+                  <MenuItem value="minimal">
+                    <Stack>
+                      <Typography><strong>Minimal</strong> - Mood tags only</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Write mood-strict, mood-regular, mood-loose
+                      </Typography>
+                    </Stack>
+                  </MenuItem>
+                  <MenuItem value="full">
+                    <Stack>
+                      <Typography><strong>Full</strong> - All tags</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Write all ML-derived tags to audio files
+                      </Typography>
+                    </Stack>
+                  </MenuItem>
+                </Select>
+              </FormControl>
+            </Box>
+
             <Stack direction="row" spacing={1.25}>
               <Button
                 variant="contained"
@@ -527,6 +623,32 @@ export function LibraryManagement() {
                       />
                     </Tooltip>
                   </Stack>
+                  {/* Tag Write Mode Indicator */}
+                  <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: 0.5 }}>
+                    <Typography variant="caption" color="text.secondary">
+                      Tag Writing:
+                    </Typography>
+                    <Tooltip title={
+                      lib.fileWriteMode === "full"
+                        ? "All ML-derived tags written to audio files"
+                        : lib.fileWriteMode === "minimal"
+                        ? "Only mood tags written to audio files"
+                        : "No tags written to audio files (DB only)"
+                    }>
+                      <Chip 
+                        label={getWriteModeLabel(lib.fileWriteMode)}
+                        color={getWriteModeColor(lib.fileWriteMode)}
+                        size="small"
+                      />
+                    </Tooltip>
+                    {reconcileStatus[lib.id]?.pending > 0 && (
+                      <Chip 
+                        label={`${reconcileStatus[lib.id].pending} pending`}
+                        color="warning"
+                        size="small"
+                      />
+                    )}
+                  </Stack>
                 </Box>
                 <Stack direction="row" alignItems="center" spacing={1}>
                   <Box
@@ -610,6 +732,27 @@ export function LibraryManagement() {
                   {scanningId === lib.id || lib.scanStatus === "scanning"
                     ? "Scanning..."
                     : "Full Scan"}
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="secondary"
+                  size="small"
+                  onClick={() => handleReconcileTags(lib.id)}
+                  disabled={
+                    !lib.isEnabled || 
+                    reconcilingId === lib.id ||
+                    lib.scanStatus === "scanning"
+                  }
+                  title={
+                    reconcilingId === lib.id
+                      ? "Reconciling tags..."
+                      : "Write tags from database to audio files"
+                  }
+                  onMouseEnter={() => loadReconcileStatus(lib.id)}
+                >
+                  {reconcilingId === lib.id
+                    ? "Reconciling..."
+                    : "Reconcile Tags"}
                 </Button>
                 <Button
                   variant="contained"

@@ -79,12 +79,13 @@ python scripts/detect_slop.py nomarr/workflows/some_wf.py
 
 Detailed guidance for each layer is loaded on-demand via Agent Skills:
 
-- `layer-interfaces/` â€” API routes, CLI commands
-- `layer-services/` â€” DI wiring, orchestration
-- `layer-workflows/` â€” Use case implementation
-- `layer-components/` â€” Heavy domain logic
-- `layer-persistence/` â€” Database access
-- `layer-helpers/` â€” Pure utilities, DTOs
+- `layer-interfaces/` — API routes, CLI commands
+- `layer-services/` — DI wiring, orchestration
+- `layer-workflows/` — Use case implementation
+- `layer-components/` — Heavy domain logic
+- `layer-persistence/` — Database access
+- `layer-helpers/` — Pure utilities, DTOs
+- `layer-frontend/` — React + TypeScript UI (requires lint+build verification)
 
 These load automatically when editing files in the relevant layer.
 

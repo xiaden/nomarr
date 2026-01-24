@@ -7,13 +7,14 @@ All operations use graph semantics (_from, _to).
 from typing import Any, cast
 
 from arango.cursor import Cursor
-from arango.database import StandardDatabase
+
+from nomarr.persistence.arango_client import DatabaseLike
 
 
 class FileTagOperations:
     """Operations for the file_tags edge collection (file→tag associations)."""
 
-    def __init__(self, db: StandardDatabase) -> None:
+    def __init__(self, db: DatabaseLike) -> None:
         self.db = db
         self.collection = db.collection("file_tags")
 

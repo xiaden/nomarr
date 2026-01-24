@@ -15,17 +15,21 @@ from nomarr.interfaces.api.types.library_types import (
     LibraryStatsResponse,
     ListLibrariesResponse,
     ReconcilePathsResponse,
+    ReconcileStatusResponse,
+    ReconcileTagsResponse,
     SearchFilesResponse,
     StartScanWithStatusResponse,
     TagCleanupResponse,
     UniqueTagKeysResponse,
     UpdateLibraryRequest,
+    UpdateWriteModeResponse,
 )
-from nomarr.interfaces.api.web.dependencies import get_library_service, get_metadata_service
+from nomarr.interfaces.api.web.dependencies import get_library_service, get_metadata_service, get_tagging_service
 
 if TYPE_CHECKING:
     from nomarr.services.domain.library_svc import LibraryService
     from nomarr.services.domain.metadata_svc import MetadataService
+    from nomarr.services.domain.tagging_svc import TaggingService
 
 router = APIRouter(prefix="/libraries", tags=["Library"])
 
@@ -484,3 +488,130 @@ async def reconcile_library_paths(
         raise HTTPException(
             status_code=500, detail=sanitize_exception_message(e, "Failed to reconcile library paths")
         ) from e
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Tag Writing Reconciliation Endpoints
+# ──────────────────────────────────────────────────────────────────────
+
+
+@router.post("/{library_id}/reconcile-tags", dependencies=[Depends(verify_session)])
+async def reconcile_library_tags(
+    library_id: str,
+    batch_size: int = Query(100, description="Number of files to process per batch", ge=1, le=1000),
+    tagging_service: "TaggingService" = Depends(get_tagging_service),
+) -> ReconcileTagsResponse:
+    """
+    Reconcile file tags for a library.
+
+    Writes tags from database to audio files based on the library's file_write_mode.
+    This handles:
+    - Mode changes (e.g., switching from "full" to "minimal")
+    - Calibration updates (new mood tag values)
+    - New ML results (files analyzed but never written)
+
+    Args:
+        library_id: Library ID to reconcile
+        batch_size: Files to process per batch (default: 100)
+        tagging_service: TaggingService instance (injected)
+
+    Returns:
+        ReconcileTagsResponse with processed, remaining, and failed counts
+    """
+    library_id = decode_path_id(library_id)
+    try:
+        result = tagging_service.reconcile_library(library_id=library_id, batch_size=batch_size)
+        return ReconcileTagsResponse.from_dto(result)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Library not found") from None
+    except Exception as e:
+        logging.exception(f"[Web API] Error reconciling tags for library {library_id}")
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to reconcile tags")) from e
+
+
+@router.get("/{library_id}/reconcile-status", dependencies=[Depends(verify_session)])
+async def get_reconcile_status(
+    library_id: str,
+    tagging_service: "TaggingService" = Depends(get_tagging_service),
+) -> ReconcileStatusResponse:
+    """
+    Get tag reconciliation status for a library.
+
+    Returns the count of files needing reconciliation and whether
+    a reconciliation operation is currently in progress.
+
+    Args:
+        library_id: Library ID to check
+        tagging_service: TaggingService instance (injected)
+
+    Returns:
+        ReconcileStatusResponse with pending_count and in_progress status
+    """
+    library_id = decode_path_id(library_id)
+    try:
+        status = tagging_service.get_reconcile_status(library_id=library_id)
+        return ReconcileStatusResponse(
+            pending_count=status["pending_count"],
+            in_progress=status["in_progress"],
+        )
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Library not found") from None
+    except Exception as e:
+        logging.exception(f"[Web API] Error getting reconcile status for library {library_id}")
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Failed to get reconcile status")
+        ) from e
+
+
+@router.patch("/{library_id}/write-mode", dependencies=[Depends(verify_session)])
+async def update_write_mode(
+    library_id: str,
+    file_write_mode: str = Query(..., description="New write mode: 'none', 'minimal', or 'full'"),
+    library_service: "LibraryService" = Depends(get_library_service),
+    tagging_service: "TaggingService" = Depends(get_tagging_service),
+) -> UpdateWriteModeResponse:
+    """
+    Update the file write mode for a library.
+
+    Changes how tags are written to audio files:
+    - 'none': Remove all essentia:* tags
+    - 'minimal': Only mood-tier tags (mood-strict, mood-regular, mood-loose)
+    - 'full': All available tags from DB
+
+    Returns information about whether reconciliation is needed.
+
+    Args:
+        library_id: Library ID to update
+        file_write_mode: New write mode
+        library_service: LibraryService instance (injected)
+        tagging_service: TaggingService instance (injected)
+
+    Returns:
+        UpdateWriteModeResponse with mode, requires_reconciliation, and affected_file_count
+    """
+    library_id = decode_path_id(library_id)
+
+    # Validate mode
+    if file_write_mode not in ("none", "minimal", "full"):
+        raise HTTPException(
+            status_code=400,
+            detail="file_write_mode must be 'none', 'minimal', or 'full'",
+        )
+
+    try:
+        # Update the library
+        library_service.update_library(library_id, file_write_mode=file_write_mode)
+
+        # Check if reconciliation is needed
+        status = tagging_service.get_reconcile_status(library_id=library_id)
+
+        return UpdateWriteModeResponse(
+            file_write_mode=file_write_mode,
+            requires_reconciliation=status["pending_count"] > 0,
+            affected_file_count=status["pending_count"],
+        )
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Library not found") from None
+    except Exception as e:
+        logging.exception(f"[Web API] Error updating write mode for library {library_id}")
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to update write mode")) from e

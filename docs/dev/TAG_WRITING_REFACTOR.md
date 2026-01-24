@@ -1,453 +1,235 @@
 # Tag Writing Refactor Plan
 
-## Status: PROPOSED
+## Status: IMPLEMENTATION READY
 
-> **Validation Date**: 2024-12-09
->
-> This document was validated against the actual codebase. Key corrections:
-> - Calibration is stored **per model/head**, not per library (see Calibration section)
-> - `file_write_mode` and `library_auto_tag` are currently **global config**, not per-library
-> - Actual calibration API: `load_calibrations_from_db_wf(db)` returns `dict[label, {p5, p95}]`
-> - Fields `file_tags_pending`, `auto_write_tags`, per-library `file_write_mode` don't exist yet
+**Goal**: Decouple ML inference from file tag writing. DB becomes source of truth; files are projections controlled per-library.
 
-## Problem Statement
+---
 
-Currently, `process_file_wf` (called by DiscoveryWorker) does ML inference AND writes tags to files in the same operation. This is problematic because:
+## Hard Rules
 
-1. **Crash risk**: DiscoveryWorker is a spawned multiprocessing process - the most crash-prone execution context. File I/O during crashes can corrupt files.
+1. **DB is source of truth** - ML writes to DB only; files are projections
+2. **TagWriter already supports reconciliation** - `overwrite=True` clears `essentia:*` namespace, then writes provided tags
+3. **Mood tags require calibration** - Filter out mood-tier tags (`mood-*`) when calibration is empty, even in `full` mode
+4. **Never touch non-Nomarr tags** - Only `essentia:*` namespace is modified ("Nomarr namespace" = `essentia:*` throughout this doc)
 
-2. **No user consent**: Tags are written immediately without explicit user permission.
+---
 
-3. **All-or-nothing**: Can't do ML analysis without also writing tags.
+## Mode Definitions
 
-4. **No batch control**: Can't preview what will be written before committing.
+| Mode | File Result |
+|------|-------------|
+| `none` | Remove all `essentia:*` tags (call TagWriter with `tags={}`) |
+| `minimal` | Only mood-tier tags (`mood-strict`, `mood-regular`, `mood-loose`) - requires calibration |
+| `full` | All available tags from DB |
 
-## Desired Behavior
+---
 
-### Phase 1: Separate ML from Tag Writing
+## Projection State Model
 
-1. **DiscoveryWorker** does ML inference only:
-   - Compute embeddings and predictions
-   - Store results in database (`file_tags` collection)
-   - Does NOT write to audio files
-   - Sets `needs_file_write = True` on processed files
+**Principle**: No explicit "pending work" flag. A file needs reconciliation when its recorded projection state differs from the desired projection state. This is derived at query time.
 
-2. **Tag Writing** is a separate operation:
-   - Triggered by user action OR library auto-tag setting
-   - Runs in BackgroundTaskService (threading, not multiprocessing)
-   - Reads from database, writes to files
-   - Safer execution context for file I/O
+### Desired State Sources (inputs)
+- **Library's `file_write_mode`** - the target mode (`none`, `minimal`, `full`)
+- **Current calibration hash** - hash of active calibration state (changes when calibration is created/updated)
 
-### Phase 2: Library-Level Toggle
+### Recorded Projection State (per-file markers)
 
-Add `auto_write_tags` setting to library configuration:
+| Field | Type | Purpose |
+|-------|------|---------|
+| `last_written_mode` | `"none" \| "minimal" \| "full" \| "unknown" \| null` | Mode used for last write. `null` = never written. `unknown` = inferred from legacy file. |
+| `last_written_calibration_hash` | `str \| null` | Calibration hash at time of last write. `null` = never written or pre-hash file. |
+| `last_written_at` | `int \| null` | Primitive int, ms since epoch (not DTO) |
 
+### Per-Library Fields (`libraries` collection)
 ```python
-@dataclass
-class LibraryDict:
-    # ... existing fields ...
-    auto_write_tags: bool = False  # If True, write tags after ML processing
-    file_write_mode: Literal["none", "minimal", "full"] = "full"
+file_write_mode: Literal["none", "minimal", "full"] = "full"
 ```
 
-- `auto_write_tags=False` (default): ML runs, tags stored in DB, files untouched
-- `auto_write_tags=True`: After ML completes, queue file for tag writing
+### Mismatch Detection Query
+
+A file needs reconciliation when **any** of these conditions is true:
+
+```sql
+-- Pseudocode for "find files needing reconciliation"
+SELECT f FROM library_files f
+JOIN libraries lib ON f.library_id = lib._key
+WHERE f.library_id = @library_id
+  AND (
+    -- Mode mismatch
+    f.last_written_mode != lib.file_write_mode
+    -- OR calibration mismatch (only matters if mode uses mood tags)
+    OR (lib.file_write_mode IN ("minimal", "full") 
+        AND f.last_written_calibration_hash != @current_calibration_hash)
+    -- OR namespace exists but never tracked (bootstrap case)
+    OR (f.has_nomarr_namespace = true AND f.last_written_mode IS NULL)
+  )
+LIMIT @batch_size
+```
+
+**Detection notes**:
+- `has_nomarr_namespace` is derived during scanning by checking for namespace key presence (do not hardcode specific tag keys)
+- Calibration hash comparison only applies when mode would write mood tags
+
+### Concurrency: Claim Mechanism
+
+Since file selection is derived (no flag to atomically flip), workers must claim files before writing:
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `write_claimed_by` | `str \| null` | Worker ID holding claim |
+| `write_claimed_at` | `int \| null` | Claim timestamp (ms). Claims expire after configurable lease (e.g., 60s). |
+
+**Claim flow**:
+1. Query for mismatched files WHERE `write_claimed_by IS NULL OR write_claimed_at < (now - lease_duration)`
+2. Atomically set `write_claimed_by=worker_id, write_claimed_at=now`
+3. On write success: clear claim, update `last_written_*` fields
+4. On failure: clear claim (file remains mismatched, will be retried)
 
 ---
 
-## Tag Writing Modes
+## Existing Assets (Do Not Duplicate)
 
-There are **two operational modes** for writing tags to files:
-
-### 1. Explicit Batch Mode (Static)
-
-- **Trigger**: User action (e.g., clicking "Write Tags" button in frontend)
-- **Scope**: Tags all eligible files that can be tagged **at that moment**
-- **Behavior**:
-  - Ignores files still pending ML discovery
-  - Ignores files missing required calibration (see Calibration Requirements)
-  - Writes are deterministic and user-controlled
-  - Returns summary of success/skipped/failed counts
-- **Use case**: User reviews pending tags, then commits when ready
-
-### 2. Discovery Mode (Dynamic)
-
-- **Trigger**: Per-library config toggle (`auto_write_tags=True`)
-- **Scope**: Each file is tagged automatically after ML processing completes
-- **Behavior**:
-  - Tag writer runs as persistent background worker or queue consumer
-  - Files are written as soon as they become eligible
-  - Respects calibration requirements (skips mood-tier if uncalibrated)
-- **Use case**: "Set and forget" libraries where user wants immediate tagging
+| Asset | Location | Reuse Notes |
+|-------|----------|-------------|
+| TagWriter | `nomarr/components/tagging/tagging_writer_comp.py` | Use `write_safe()` for all file writes. Supports MP3, M4A/MP4/M4B, FLAC, OGG, Opus. Clears namespace before writing. |
+| SafeWriteComp | `nomarr/components/tagging/safe_write_comp.py` | Called by TagWriter.write_safe(). Atomic copy-modify-verify-replace with chromaprint verification. No changes needed. |
+| TagReader | `nomarr/components/tagging/tagging_reader_comp.py` | Extend with `read_nomarr_namespace()` for bootstrap detection. |
+| write_calibrated_tags_wf | `nomarr/workflows/calibration/write_calibrated_tags_wf.py` | Reference for tag preparation logic. New `write_file_tags_wf` handles mode filtering; calibration application stays here. |
+| Tagging service | `nomarr/services/domain/tagging_svc.py` | Extend with `reconcile_library()`. Keep existing `tag_file()`, `tag_library()`. |
+| Process workflow | `nomarr/workflows/processing/process_file_wf.py` | Split into analyze + write. |
 
 ---
 
-## Calibration Requirements
+## Implementation Phases
 
-Mood-tier tags (e.g., `mood-strict`, `mood-regular`, `mood-loose`) **require calibration vectors** computed from a representative sample of the library.
+### Phase 1: Persistence Layer
 
-### Current Calibration Architecture
+**1.1** `nomarr/persistence/database/library_files_aql.py`
+- Add fields: `last_written_mode`, `last_written_calibration_hash`, `last_written_at`, `has_nomarr_namespace`, `write_claimed_by`, `write_claimed_at`
+- Add queries:
+  - `claim_files_for_reconciliation(library_id, target_mode, calibration_hash, worker_id, batch_size, lease_ms)` → atomically claim mismatched files
+  - `set_file_written(file_key, mode, calibration_hash)` → update `last_written_mode`, `last_written_calibration_hash`, `last_written_at=now_ms()`, clear claim
+  - `release_claim(file_key)` → clear `write_claimed_by`, `write_claimed_at`
+  - `count_files_needing_reconciliation(library_id, target_mode, calibration_hash)` → count mismatched files
 
-> **IMPORTANT**: Calibration is stored per **model/head**, NOT per library.
->
-> - Collection: `calibration_state`
-> - Key: `model_key` + `head_name` (e.g., `effnet-discogs-moods`)
-> - Load API: `load_calibrations_from_db_wf(db)` → `dict[label, {p5: float, p95: float}]`
-> - Returns empty dict if no calibrations exist
->
-> The calibration represents percentile thresholds derived from model predictions,
-> not library-specific data. A single calibration applies to ALL libraries.
+**1.2** `nomarr/persistence/database/libraries_aql.py`
+- Add field: `file_write_mode: str = "full"`
 
-### Preconditions for Mood-Tier Tags
+**1.3** `nomarr/helpers/dto/library_dto.py`
+- Add to `LibraryDict`: `file_write_mode: Literal["none", "minimal", "full"] = "full"`
 
-| Condition | Mood-Tier Tags | Raw Scores |
-|-----------|----------------|------------|
-| Calibration exists | ✅ Written | ✅ Written |
-| No calibration, `write_raw_scores=True` | ❌ Skipped | ✅ Written |
-| No calibration, `write_raw_scores=False` | ❌ Skipped | ❌ Skipped |
-| `file_write_mode="minimal"`, no calibration | ❌ Skipped | ❌ Skipped |
+### Phase 2: Workflow Layer
 
-### Tag Writer Calibration Logic
+**2.1** CREATE `nomarr/workflows/processing/analyze_file_wf.py`
+- Extract from `process_file_wf`: audio loading, embedding computation, prediction, DB storage
+- After storing tags, file becomes mismatched (no flag needed - mismatch is derived from `last_written_mode` vs new DB state)
+- **NO file I/O**
+- Return `AnalyzeResult(file_key, predictions, embeddings_stored)`
 
-> **NOTE**: The API shown below differs from current code. Actual implementation:
-> - `load_calibrations_from_db_wf(db)` returns all calibrations globally
-> - Check `if not calibrations:` to determine if ANY calibration exists
-> - There is no per-library calibration; it's a global state
+**2.2** CREATE `nomarr/workflows/processing/write_file_tags_wf.py`
 
+Reuse existing TagWriter - do not create new write logic:
 ```python
-from nomarr.workflows.calibration.calibration_loader_wf import load_calibrations_from_db_wf
-
-def has_valid_calibration(db: Database) -> bool:
-    """Check if any calibration exists (global, not per-library)."""
-    calibrations = load_calibrations_from_db_wf(db)
-    return bool(calibrations)  # Empty dict = no calibration
-
-def get_writable_tags(file_tags: dict, config: WriteConfig, db: Database) -> dict:
-    """Filter tags based on calibration state and config."""
-    has_calibration = has_valid_calibration(db)
+def write_file_tags_wf(db, file_key, target_mode, calibration_hash, has_calibration) -> WriteResult:
+    file_doc = db.library_files.get_file(file_key)
+    db_tags = db.file_tags.get_tags(file_key)
     
-    writable = {}
-    for key, value in file_tags.items():
-        if key.startswith("mood-"):
-            # Mood-tier tags require calibration
-            if has_calibration:
-                writable[key] = value
-            # else: skip mood-tier tag
-        elif key.startswith("raw_"):
-            # Raw scores: write if configured and no calibration
-            if config.write_raw_scores and not has_calibration:
-                writable[key] = value
-        else:
-            # Other tags (version, chromaprint, etc.): always write
-            writable[key] = value
+    # Filter out mood tags if uncalibrated (applies to all modes)
+    if not has_calibration:
+        db_tags = {k: v for k, v in db_tags.items() if not k.startswith("mood-")}
     
-    return writable
+    if target_mode == "none":
+        tags_to_write = {}  # Clears namespace
+    elif target_mode == "minimal":
+        tags_to_write = {k: v for k, v in db_tags.items() if k.startswith("mood-")}
+    else:  # full
+        tags_to_write = db_tags
+    
+    # Resolve LibraryPath from file_doc (existing helper)
+    path = resolve_library_path(file_doc, db)  # Returns LibraryPath with validation
+    library_root = db.libraries.get_library(file_doc["library_id"])["path"]
+    chromaprint = file_doc.get("chromaprint")  # Stored on file_doc, not in tags
+    
+    # Reuse existing TagWriter with safe atomic writes
+    tag_writer = TagWriter(overwrite=True, namespace="nom")
+    tag_writer.write_safe(path, tags_to_write, Path(library_root), chromaprint)
+    
+    db.library_files.set_file_written(file_key, mode=target_mode, calibration_hash=calibration_hash)
+    return WriteResult(file_key, len(tags_to_write), len(db_tags) - len(tags_to_write), False)
 ```
 
-### Calibration-Gated Behavior
+**2.3** UPDATE `nomarr/workflows/processing/process_file_wf.py`
+- Make thin wrapper: call `analyze_file_wf` then `write_file_tags_wf` (backward compat)
 
-- **Explicit Batch Mode**: Before writing, check calibration. If missing:
-  - Log warning: "Library {name} has no calibration - mood-tier tags will be skipped"
-  - Proceed with non-mood tags only (or raw scores if configured)
+### Phase 3: Service Layer
 
-- **Discovery Mode**: Same check per-file. Files tagged before calibration get partial tags; can be re-tagged after calibration via explicit batch.
+**3.1** UPDATE `nomarr/services/infrastructure/workers/discovery_worker.py`
+- Replace `process_file_wf(...)` with `analyze_file_wf(...)`
 
----
+**3.2** UPDATE `nomarr/services/domain/tagging_svc.py`
+- Add `reconcile_library(library_id, batch_size=100)` → claim and write mismatched files (mode OR calibration mismatch)
+- Single method handles all reconciliation (no separate "pending" vs "reconcile" - both are projection mismatches)
+- Returns `{processed, remaining, failed}` for progress tracking
 
-## Configuration Implications
+### Phase 4: Interface Layer
 
-### Current State vs Proposed
+**4.1** UPDATE `nomarr/interfaces/api/web/libraries_if.py`
+- `POST /api/libraries/{library_id}/reconcile` → call `tagging_svc.reconcile_library()` (handles all mismatches: mode, calibration, or new ML results)
+- `PATCH /api/libraries/{library_id}/write-mode` → update mode, return `{requires_reconciliation, affected_file_count}`
+- `GET /api/libraries/{library_id}/reconcile-status` → return `{pending_count, in_progress}` for UI feedback
 
-> **Current code (as of validation)**:
-> - `library_auto_tag`: Global config in `config.yaml` (default: `True`)
-> - `file_write_mode`: Global config AND in `ProcessorConfig` (default: `"full"`)
-> - `overwrite_tags`: Global config AND in `ProcessorConfig` (default: `True`)
-> - No per-library config fields for these settings
->
-> **Decision needed**: Keep global or move to per-library?
+**Note**: `/reconcile` may be long-running on large libraries. Pre-alpha: sync is acceptable. If timeouts occur, convert to background task.
 
-### Proposed: New Library Fields
+### Phase 5: Scanning Integration
 
-```python
-@dataclass
-class LibraryDict:
-    # ... existing fields ...
-    auto_write_tags: bool = False      # Enable Discovery Mode (NEW FIELD)
-    file_write_mode: str = "full"      # "none" | "minimal" | "full" (MOVE FROM GLOBAL)
-    write_raw_scores: bool = False     # Write raw model scores if no calibration (NEW FIELD)
-```
+**5.1** UPDATE `nomarr/components/tagging/tagging_reader_comp.py`
+- Add `read_nomarr_namespace(path) -> set[str]` to read existing namespace keys (do not hardcode specific keys)
 
-### Tag Writer Config Validation
+**5.2** UPDATE `nomarr/workflows/scanning/scan_file_wf.py`
+- Set `has_nomarr_namespace = bool(namespace_keys)` based on namespace presence
+- Infer `last_written_mode` from key patterns:
+  - No namespace keys → `null`
+  - Only mood-tier keys present → `"minimal"`
+  - Non-mood keys present (head score keys, embeddings, etc.) → `"full"`
+  - Unrecognized key patterns → `"unknown"` (conservative)
 
-Tag writer must validate before writing:
+### Phase 6: Frontend
 
-1. **file_write_mode check**:
-   - `"none"`: No file writes, ever
-   - `"minimal"`: Only write if calibration exists (mood-tiers only)
-   - `"full"`: Write all available tags
+**6.1** `frontend/src/features/libraries/` - Add write mode dropdown to library config
 
-2. **Calibration check**:
-   - Query via `load_calibrations_from_db_wf(db)`
-   - If empty dict returned → no calibration exists
-   - Gate mood-tier tags on calibration presence
+**6.2** Mode change handler:
+- Call `PATCH /write-mode`
+- If `requires_reconciliation`, show confirmation dialog
+- On confirm, call `POST /reconcile`
 
-3. **Fallback behavior**:
-   - If `write_raw_scores=True` and no calibration: write raw scores instead of mood-tiers
-   - If `write_raw_scores=False` and no calibration: skip mood-related tags entirely
+**6.3** `frontend/src/features/libraries/` - Add "Reconcile Tags" button to library actions
+- Shows count from `GET /reconcile-status` when mismatches exist
+- Calls `POST /reconcile` to sync files to current mode + calibration
 
 ---
 
 ## Error Handling
 
-### Calibration Errors
+| Error | Action |
+|-------|--------|
+| No calibration | Filter out mood tags, write remaining tags |
+| File not found / permission denied | Log, release claim, mark `last_write_error`, continue batch |
+| Write exception | Release claim (file remains mismatched, will be retried on next reconcile) |
+| `mode="none"` | Clear namespace, set `last_written_mode="none"` (valid reconciliation) |
 
-| Scenario | Behavior |
-|----------|----------|
-| No calibration exists | Skip mood-tier tags, log info, continue with other tags |
-| Calibration expired/invalid | Treat as "no calibration" |
-| Calibration loading fails | Log error, skip file, continue batch |
+---
 
-### File Write Errors
+## Verification Checklist
 
-| Scenario | Behavior |
-|----------|----------|
-| File not found | Log error, mark as failed, continue batch |
-| Permission denied | Log error, mark as failed, continue batch |
-| Corrupt file (mutagen error) | Log error, mark as failed, continue batch |
-| Disk full | Log error, abort batch (critical) |
-
-### Discovery Mode Errors
-
-- Failed file writes do NOT block other files
-- Failed files remain with `file_tags_pending=True`
-- Retry on next explicit batch or periodic retry (future enhancement)
-
-## Implementation Plan
-
-### Step 1: Split `process_file_wf` into Two Workflows
-
-**New workflow structure:**
-
-```
-workflows/processing/
-├── analyze_file_wf.py      # ML inference only → writes to DB
-├── write_file_tags_wf.py   # Reads DB → writes to file
-└── process_file_wf.py      # Legacy: calls both (for CLI compatibility)
-```
-
-#### `analyze_file_wf.py`
-- All current ML logic from `process_file_wf`
-- Writes predictions to `file_tags` collection
-- Sets `file_tags_pending = True` flag on file record
-- Returns `AnalyzeFileResult` with tag preview
-
-#### `write_file_tags_wf.py`
-- Loads tags from `file_tags` collection
-- **Checks calibration state for library** (gates mood-tier tags)
-- Applies `file_write_mode` filtering
-- Falls back to raw scores if configured and uncalibrated
-- Writes to audio file via `TagWriter`
-- Clears `file_tags_pending` flag
-- Returns `WriteFileTagsResult` with written/skipped counts
-
-### Step 2: Update DiscoveryWorker
-
-```python
-# discovery_worker.py - BEFORE
-result = process_file_workflow(path=file_path, config=config, db=db)
-
-# discovery_worker.py - AFTER
-result = analyze_file_workflow(path=file_path, config=config, db=db)
-# No file writing - just ML and DB
-```
-
-### Step 3: Create Tag Writing Service
-
-**New service:** `nomarr/services/domain/tag_writer_svc.py`
-
-```python
-class TagWriterService:
-    def __init__(self, db: Database, background_tasks: BackgroundTaskService):
-        self._db = db
-        self._bg = background_tasks
-    
-    def write_pending_tags_for_library(self, library_id: str) -> str:
-        """Queue background task to write all pending tags for library (Explicit Batch Mode)."""
-        task_id = f"write_tags_{library_id}_{now_ms()}"
-        self._bg.start_task(
-            task_id=task_id,
-            task_fn=self._write_library_tags,
-            library_id=library_id,
-        )
-        return task_id
-    
-    def write_tags_for_file(self, file_id: str) -> WriteFileTagsResult:
-        """Synchronously write tags for single file (respects calibration)."""
-        return write_file_tags_wf(db=self._db, file_id=file_id)
-    
-    def _write_library_tags(self, library_id: str) -> dict:
-        """Background task: write all pending tags for library."""
-        # Check calibration state upfront (GLOBAL, not per-library)
-        from nomarr.workflows.calibration.calibration_loader_wf import load_calibrations_from_db_wf
-        calibrations = load_calibrations_from_db_wf(self._db)
-        has_calibration = bool(calibrations)
-        
-        library = self._db.libraries.get_library(library_id)
-        write_raw = library.get("write_raw_scores", False)
-        
-        if not has_calibration:
-            logger.info(
-                "No calibration exists - mood-tier tags will be skipped%s",
-                " (writing raw scores instead)" if write_raw else "",
-            )
-        
-        files = self._db.library_files.get_files_with_pending_tags(library_id)
-        results = {"success": 0, "skipped": 0, "failed": 0, "errors": []}
-        
-        for file_doc in files:
-            try:
-                result = write_file_tags_wf(
-                    db=self._db,
-                    file_id=file_doc["_key"],
-                    has_calibration=has_calibration,
-                    write_raw_scores=write_raw,
-                )
-                if result.tags_written > 0:
-                    results["success"] += 1
-                else:
-                    results["skipped"] += 1
-            except Exception as e:
-                results["failed"] += 1
-                results["errors"].append({"file": file_doc["path"], "error": str(e)})
-        
-        return results
-```
-
-### Step 4: Add Library Toggle
-
-1. Add `auto_write_tags` field to library schema
-2. After DiscoveryWorker completes a file:
-   - If library has `auto_write_tags=True`:
-     - Queue file for tag writing via TagWriterService
-   - If `auto_write_tags=False`:
-     - Tags stay in DB only, file untouched
-
-### Step 5: Add API Endpoints
-
-```python
-# interfaces/api/web/tags_if.py
-
-@router.post("/api/libraries/{library_id}/write-tags")
-async def write_library_tags(library_id: str):
-    """Write all pending tags to files in library."""
-    task_id = tag_writer_svc.write_pending_tags_for_library(library_id)
-    return {"task_id": task_id}
-
-@router.post("/api/files/{file_id}/write-tags")
-async def write_file_tags(file_id: str):
-    """Write pending tags to single file."""
-    result = tag_writer_svc.write_tags_for_file(file_id)
-    return result
-```
-
-### Step 6: Update CLI
-
-```bash
-# Current (unchanged for backward compat)
-nomarr process /path/to/file.mp3
-
-# New: analyze only (no file write)
-nomarr analyze /path/to/file.mp3
-
-# New: write pending tags
-nomarr write-tags --library <id>
-nomarr write-tags --file <id>
-```
-
-## Database Schema Changes
-
-### `library_files` Collection
-
-Add field (does not exist yet):
-```python
-file_tags_pending: bool = False  # True if ML complete but file not written
-```
-
-### `libraries` Collection
-
-Add fields (none exist yet - these are NEW):
-```python
-auto_write_tags: bool = False    # Enable Discovery Mode (auto-tag after ML)
-file_write_mode: str = "full"    # "none" | "minimal" | "full" (currently global)
-write_raw_scores: bool = False   # Write raw scores if no calibration
-```
-
-> **Note**: Currently `file_write_mode` is in global config and `ProcessorConfig`.
-> This refactor proposes moving it to per-library settings.
-
-## Migration Path
-
-1. **Phase 1** (this refactor):
-   - Split workflows
-   - Update DiscoveryWorker to use `analyze_file_wf`
-   - Add `file_tags_pending` flag
-   - Create TagWriterService
-   - Default `auto_write_tags=True` for existing libraries (preserve current behavior)
-
-2. **Phase 2** (later):
-   - Add frontend UI for tag writing control
-   - Add tag preview before writing
-   - Add selective tag writing (choose which tags to write)
-
-## Risk Assessment
-
-| Risk | Mitigation |
-|------|------------|
-| Breaking existing behavior | Default `auto_write_tags=True` for backward compat |
-| File corruption during write | TagWriter already uses atomic write pattern |
-| Lost tags on crash | Tags persist in DB; file write is idempotent |
-| Performance regression | Minimal - just splitting existing work |
-
-## Files to Modify
-
-### New Files
-- `nomarr/workflows/processing/analyze_file_wf.py`
-- `nomarr/workflows/processing/write_file_tags_wf.py`
-- `nomarr/services/domain/tag_writer_svc.py`
-
-### Modified Files
-- `nomarr/services/infrastructure/workers/discovery_worker.py` - Use analyze_file_wf
-- `nomarr/workflows/processing/process_file_wf.py` - Become thin wrapper
-- `nomarr/persistence/database/library_files_aql.py` - Add `file_tags_pending` queries
-- `nomarr/persistence/database/libraries_aql.py` - Add `auto_write_tags` field
-- `nomarr/helpers/dto/library_dto.py` - Add new fields
-- `nomarr/interfaces/api/web/tags_if.py` - Add write endpoints
-
-## Success Criteria
-
-1. DiscoveryWorker never writes to files directly
-2. Tag writing only happens via explicit action or library toggle
-3. Files with pending tags are visible in frontend
-4. **Mood-tier tags are only written when calibration exists**
-5. **Raw scores fallback works when configured**
-6. Backward compatibility: existing behavior preserved with toggle
-7. All existing tests pass
-8. New tests cover split workflow behavior and calibration gating
-
-## Open Questions
-
-1. Should `auto_write_tags` be a global config OR per-library setting?
-   - **Current**: `library_auto_tag` is **global** config
-   - **Recommendation**: Per-library (more flexible)
-   - **Migration**: Default new per-library field to global value
-
-2. Should `file_write_mode` move from global to per-library?
-   - **Current**: Global config (`config.yaml`) + `ProcessorConfig`
-   - **Recommendation**: Per-library with global default fallback
-   - **Migration**: Add per-library field, use global as default if unset
-
-3. Should we add a queue for tag writing or just background tasks?
-   - **Recommendation**: BackgroundTaskService (simpler, safer)
-
-4. Should we batch file writes or write one-at-a-time?
-   - **Recommendation**: One-at-a-time (safer, simpler error handling)
+- [ ] DiscoveryWorker never writes to audio files
+- [ ] After ML, file is mismatched (derived from `last_written_mode` != current state)
+- [ ] Mode `none` clears namespace, `minimal` writes moods only, `full` writes all
+- [ ] Reconciliation is idempotent
+- [ ] Non-Nomarr tags never touched
+- [ ] All writes use `TagWriter.write_safe()` (atomic copy-modify-verify-replace)
+- [ ] All supported formats work: MP3, M4A/MP4/M4B, FLAC, OGG, Opus
+- [ ] Scanning sets `has_nomarr_namespace` and infers `last_written_mode` from on-disk keys
+- [ ] Mode change triggers reconciliation prompt when files exist
+- [ ] Calibration change triggers reconciliation for files using mood tags
+- [ ] Claim mechanism prevents duplicate writes

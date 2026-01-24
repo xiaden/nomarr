@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from nomarr.helpers.dto.library_dto import ReconcileTagsResult
 from nomarr.helpers.dto.recalibration_dto import ApplyCalibrationResult
 
 if TYPE_CHECKING:
@@ -237,3 +238,126 @@ class TaggingService:
         from nomarr.workflows.library.file_tags_io_wf import remove_file_tags_workflow
 
         return remove_file_tags_workflow(db=self.db, path=path, namespace=namespace)
+
+    def reconcile_library(
+        self,
+        library_id: str,
+        batch_size: int = 100,
+        namespace: str = "nom",
+    ) -> ReconcileTagsResult:
+        """
+        Reconcile file tags for a library based on its file_write_mode.
+
+        Claims files with mismatched projection state and writes tags according
+        to the library's current mode and calibration. This handles:
+        - Mode changes (e.g., switching from "full" to "minimal")
+        - Calibration updates (new mood tag values)
+        - New ML results (files analyzed but never written)
+
+        Args:
+            library_id: Library document _id
+            batch_size: Number of files to process per batch
+            namespace: Tag namespace (default: "nom")
+
+        Returns:
+            ReconcileTagsResult with processed, remaining, and failed counts
+        """
+        from nomarr.workflows.processing.write_file_tags_wf import write_file_tags_workflow
+
+        # Get library settings
+        library = self.db.libraries.get_library(library_id)
+        if not library:
+            raise ValueError(f"Library not found: {library_id}")
+
+        target_mode = library.get("file_write_mode", "full")
+
+        # Get current calibration hash
+        calibration_hash = self.db.meta.get("calibration_version")
+        has_calibration = bool(calibration_hash)
+
+        # Claim files for reconciliation
+        worker_id = f"reconcile:{library_id}"
+        claimed_files = self.db.library_files.claim_files_for_reconciliation(
+            library_id=library_id,
+            target_mode=target_mode,
+            calibration_hash=calibration_hash,
+            worker_id=worker_id,
+            batch_size=batch_size,
+        )
+
+        processed = 0
+        failed = 0
+
+        for file_doc in claimed_files:
+            file_key = file_doc["_key"]
+            try:
+                result = write_file_tags_workflow(
+                    db=self.db,
+                    file_key=file_key,
+                    target_mode=target_mode,
+                    calibration_hash=calibration_hash,
+                    has_calibration=has_calibration,
+                    namespace=namespace,
+                )
+                if result.success:
+                    processed += 1
+                else:
+                    failed += 1
+                    logger.warning(f"[reconcile] Failed to write tags for {file_key}: {result.error}")
+            except Exception as e:
+                failed += 1
+                logger.exception(f"[reconcile] Error processing {file_key}: {e}")
+                # Release claim on error
+                try:
+                    self.db.library_files.release_claim(file_key)
+                except Exception:
+                    pass
+
+        # Count remaining files needing reconciliation
+        remaining = self.db.library_files.count_files_needing_reconciliation(
+            library_id=library_id,
+            target_mode=target_mode,
+            calibration_hash=calibration_hash,
+        )
+
+        logger.info(f"[reconcile] Library {library_id}: processed={processed}, failed={failed}, remaining={remaining}")
+
+        return ReconcileTagsResult(
+            processed=processed,
+            remaining=remaining,
+            failed=failed,
+        )
+
+    def get_reconcile_status(
+        self,
+        library_id: str,
+    ) -> dict[str, Any]:
+        """
+        Get reconciliation status for a library.
+
+        Args:
+            library_id: Library document _id
+
+        Returns:
+            Dict with pending_count and in_progress status
+        """
+        # Get library settings
+        library = self.db.libraries.get_library(library_id)
+        if not library:
+            raise ValueError(f"Library not found: {library_id}")
+
+        target_mode = library.get("file_write_mode", "full")
+        calibration_hash = self.db.meta.get("calibration_version")
+
+        pending_count = self.db.library_files.count_files_needing_reconciliation(
+            library_id=library_id,
+            target_mode=target_mode,
+            calibration_hash=calibration_hash,
+        )
+
+        # For now, in_progress is always False (sync reconciliation)
+        # Can be extended later for background task tracking
+        return {
+            "pending_count": pending_count,
+            "in_progress": False,
+        }

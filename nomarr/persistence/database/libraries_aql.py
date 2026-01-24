@@ -7,15 +7,15 @@ to extract the document key for UPDATE/REMOVE operations.
 from typing import Any, cast
 
 from arango.cursor import Cursor
-from arango.database import StandardDatabase
 
 from nomarr.helpers.time_helper import now_ms
+from nomarr.persistence.arango_client import DatabaseLike
 
 
 class LibrariesOperations:
     """Operations for the libraries collection."""
 
-    def __init__(self, db: StandardDatabase) -> None:
+    def __init__(self, db: DatabaseLike) -> None:
         self.db = db
         self.collection = db.collection("libraries")
 
@@ -26,6 +26,7 @@ class LibrariesOperations:
         is_enabled: bool = True,
         is_default: bool = False,
         watch_mode: str = "off",
+        file_write_mode: str = "full",
     ) -> str:
         """Create a new library entry.
 
@@ -35,6 +36,7 @@ class LibrariesOperations:
             is_enabled: Whether library is enabled for scanning
             is_default: Whether this is the default library
             watch_mode: File watching mode ('off', 'event', or 'poll')
+            file_write_mode: Tag write mode ('none', 'minimal', or 'full')
 
         Returns:
             Library _id (e.g., "libraries/12345")
@@ -63,6 +65,7 @@ class LibrariesOperations:
                     "is_enabled": is_enabled,
                     "is_default": is_default,
                     "watch_mode": watch_mode,
+                    "file_write_mode": file_write_mode,
                     "scan_status": "idle",
                     "scan_progress": 0,
                     "scan_total": 0,
@@ -177,6 +180,7 @@ class LibrariesOperations:
         is_enabled: bool | None = None,
         is_default: bool | None = None,
         watch_mode: str | None = None,
+        file_write_mode: str | None = None,
     ) -> None:
         """Update library fields.
 
@@ -187,6 +191,7 @@ class LibrariesOperations:
             is_enabled: New enabled status (optional)
             is_default: New default status (optional)
             watch_mode: New watch mode ('off', 'event', 'poll') (optional)
+            file_write_mode: New file write mode ('none', 'minimal', 'full') (optional)
         """
         update_fields: dict[str, Any] = {"updated_at": now_ms().value}
 
@@ -212,6 +217,10 @@ class LibrariesOperations:
             if watch_mode not in ("off", "event", "poll"):
                 raise ValueError(f"Invalid watch_mode: {watch_mode}. Must be 'off', 'event', or 'poll'")
             update_fields["watch_mode"] = watch_mode
+        if file_write_mode is not None:
+            if file_write_mode not in ("none", "minimal", "full"):
+                raise ValueError(f"Invalid file_write_mode: {file_write_mode}. Must be 'none', 'minimal', or 'full'")
+            update_fields["file_write_mode"] = file_write_mode
 
         self.db.aql.execute(
             """

@@ -42,6 +42,7 @@ class LibraryResponse(BaseModel):
     is_enabled: bool
     is_default: bool
     watch_mode: str  # 'off', 'event', or 'poll'
+    file_write_mode: str = "full"  # 'none', 'minimal', or 'full'
     created_at: str
     updated_at: str
     scan_status: str | None = None
@@ -95,6 +96,7 @@ class LibraryResponse(BaseModel):
             is_enabled=library.is_enabled,
             is_default=library.is_default,
             watch_mode=library.watch_mode,
+            file_write_mode=library.file_write_mode,
             created_at=created_at,
             updated_at=updated_at,
             scan_status=library.scan_status,
@@ -226,6 +228,7 @@ class UpdateLibraryRequest(BaseModel):
     is_enabled: bool | None = None
     is_default: bool | None = None
     watch_mode: str | None = None  # 'off', 'event', or 'poll'
+    file_write_mode: str | None = None  # 'none', 'minimal', or 'full'
 
 
 class ListLibrariesResponse(BaseModel):
@@ -399,3 +402,43 @@ class FileTagsResponse(BaseModel):
             path=result.path,
             tags=[FileTagResponse(key=t.key, value=t.value, type=t.type, is_nomarr=t.is_nomarr) for t in result.tags],
         )
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Tag Writing Reconciliation Types
+# ──────────────────────────────────────────────────────────────────────
+
+
+class ReconcileTagsResponse(BaseModel):
+    """Response for tag reconciliation endpoint."""
+
+    processed: int  # Files successfully reconciled
+    remaining: int  # Files still needing reconciliation
+    failed: int  # Files that failed during this batch
+
+    @classmethod
+    def from_dto(cls, result) -> ReconcileTagsResponse:
+        """Transform ReconcileTagsResult DTO to API response."""
+        from nomarr.helpers.dto.library_dto import ReconcileTagsResult
+
+        assert isinstance(result, ReconcileTagsResult)
+        return cls(
+            processed=result.processed,
+            remaining=result.remaining,
+            failed=result.failed,
+        )
+
+
+class ReconcileStatusResponse(BaseModel):
+    """Response for reconciliation status endpoint."""
+
+    pending_count: int  # Files needing reconciliation
+    in_progress: bool  # Whether reconciliation is running
+
+
+class UpdateWriteModeResponse(BaseModel):
+    """Response for write mode update endpoint."""
+
+    file_write_mode: str
+    requires_reconciliation: bool
+    affected_file_count: int

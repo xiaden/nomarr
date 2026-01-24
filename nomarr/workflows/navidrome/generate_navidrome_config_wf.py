@@ -142,7 +142,7 @@ def _detect_tag_type(stats: dict[str, Any]) -> str:
         sample = arr[0]
 
         # Try to detect numeric types
-        if isinstance(sample, (int, float)):
+        if isinstance(sample, int | float):
             return "float" if isinstance(sample, float) else "int"
 
         # If stored as string, try parsing

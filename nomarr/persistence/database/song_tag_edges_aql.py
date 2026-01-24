@@ -7,7 +7,8 @@ All operations use graph semantics (_from, _to, rel).
 from typing import Any, cast
 
 from arango.cursor import Cursor
-from arango.database import StandardDatabase
+
+from nomarr.persistence.arango_client import DatabaseLike
 
 # Valid relation types for song_tag_edges (authoritative set)
 VALID_REL_TYPES = frozenset({"artist", "artists", "album", "label", "genres", "year"})
@@ -16,7 +17,7 @@ VALID_REL_TYPES = frozenset({"artist", "artists", "album", "label", "genres", "y
 class SongTagEdgeOperations:
     """Operations for song_tag_edges edge collection (entity→song associations)."""
 
-    def __init__(self, db: StandardDatabase) -> None:
+    def __init__(self, db: DatabaseLike) -> None:
         self.db = db
         self.collection = db.collection("song_tag_edges")
 

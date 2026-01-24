@@ -378,7 +378,7 @@ def scan_library_direct_workflow(
                         "title": metadata.get("title"),  # Title is direct metadata, not derived
                         "needs_tagging": needs_tagging,
                         "is_valid": True,
-                        "scanned_at": now_ms(),
+                        "scanned_at": now_ms().value,
                         "last_seen_scan_id": scan_id,  # Mark as seen in this scan
                     }
                     folder_batch.append(file_entry)

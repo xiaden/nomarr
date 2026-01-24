@@ -1,5 +1,11 @@
 """
 Cleanup command: Remove orphaned entities from the metadata graph.
+
+Architecture:
+- Uses CLI bootstrap service to get MetadataService instance
+- Does NOT depend on running Application (separate process)
+- Does NOT access Database or workflows directly
+- Calls service methods for all cleanup operations
 """
 
 from __future__ import annotations
@@ -7,8 +13,7 @@ from __future__ import annotations
 import argparse
 
 from nomarr.interfaces.cli.cli_ui import InfoPanel, print_error
-from nomarr.persistence.db import Database
-from nomarr.workflows.metadata.cleanup_orphaned_entities_wf import cleanup_orphaned_entities_workflow
+from nomarr.services.infrastructure.cli_bootstrap_svc import get_metadata_service
 
 
 def cmd_cleanup(args: argparse.Namespace) -> int:
@@ -16,11 +21,13 @@ def cmd_cleanup(args: argparse.Namespace) -> int:
     Remove orphaned entities (artists, albums, genres, labels, years) that have no songs.
     Runs standalone without requiring the app to be running.
     """
-    db = Database()
+    # Get standalone service instance (no running Application required)
+    service = get_metadata_service()
+
     try:
         dry_run = getattr(args, "dry_run", False)
 
-        result = cleanup_orphaned_entities_workflow(db, dry_run=dry_run)
+        result = service.cleanup_orphaned_entities(dry_run=dry_run)
 
         total_deleted = result.get("total_deleted", 0)
         deleted_counts = result.get("deleted_counts", {})
@@ -41,5 +48,3 @@ def cmd_cleanup(args: argparse.Namespace) -> int:
     except Exception as e:
         print_error(f"Error during cleanup: {e}")
         return 1
-    finally:
-        db.close()

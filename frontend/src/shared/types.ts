@@ -80,6 +80,7 @@ export interface Library {
   isEnabled: boolean;
   isDefault: boolean;
   watchMode: string; // 'off', 'event', or 'poll'
+  fileWriteMode: "none" | "minimal" | "full"; // Tag writing mode
   createdAt?: string | number; // Can be ISO string or Unix timestamp
   updatedAt?: string | number; // Can be ISO string or Unix timestamp
   scannedAt?: string | null; // null if never scanned, ISO string if scanned

@@ -37,7 +37,7 @@ async def web_processing_status(
     """
     try:
         stats = library_service.get_library_stats()
-        pending = stats.needs_tagging_count
+        pending = stats.needs_tagging_count or 0
         processed = stats.total_files - pending
         return {
             "pending": pending,

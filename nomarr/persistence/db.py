@@ -1,8 +1,6 @@
 """Database layer for Nomarr (ArangoDB)."""
 
-from arango.database import StandardDatabase
-
-from nomarr.persistence.arango_client import create_arango_client
+from nomarr.persistence.arango_client import SafeDatabase, create_arango_client
 
 # Import operation classes (AQL versions)
 from nomarr.persistence.database.calibration_history_aql import CalibrationHistoryOperations
@@ -103,8 +101,8 @@ class Database:
                 "After first run, password is read from /app/config/nomarr.yaml."
             )
 
-        # Create ArangoDB connection
-        self.db: StandardDatabase = create_arango_client(
+        # Create ArangoDB connection (SafeDatabase wraps StandardDatabase with JSON serialization)
+        self.db: SafeDatabase = create_arango_client(
             hosts=self.hosts,
             username=self.username,
             password=self.password,

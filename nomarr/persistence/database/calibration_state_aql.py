@@ -6,13 +6,13 @@ results (p5/p95 percentiles) for each model head.
 
 from typing import Any, cast
 
-from arango.database import StandardDatabase
+from nomarr.persistence.arango_client import DatabaseLike
 
 
 class CalibrationStateOperations:
     """Operations for the calibration_state collection (histogram-based calibration)."""
 
-    def __init__(self, db: StandardDatabase) -> None:
+    def __init__(self, db: DatabaseLike) -> None:
         self.db = db
         self.collection = db.collection("calibration_state")
 

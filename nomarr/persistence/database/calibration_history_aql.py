@@ -6,13 +6,13 @@ calibration drift over time.
 
 from typing import Any, cast
 
-from arango.database import StandardDatabase
+from nomarr.persistence.arango_client import DatabaseLike
 
 
 class CalibrationHistoryOperations:
     """Operations for the calibration_history collection (drift tracking)."""
 
-    def __init__(self, db: StandardDatabase) -> None:
+    def __init__(self, db: DatabaseLike) -> None:
         self.db = db
         self.collection = db.collection("calibration_history")
 

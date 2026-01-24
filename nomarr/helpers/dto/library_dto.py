@@ -64,6 +64,7 @@ class LibraryDict:
     created_at: str | int  # Can be ISO string or Unix timestamp (ms)
     updated_at: str | int  # Can be ISO string or Unix timestamp (ms)
     watch_mode: Literal["off", "event", "poll"] = "off"  # File watching mode (default: off)
+    file_write_mode: Literal["none", "minimal", "full"] = "full"  # Tag write mode (default: full)
     scan_status: str | None = None
     scan_progress: int | None = None
     scan_total: int | None = None
@@ -200,6 +201,23 @@ class ScanTarget:
         self.folder_path = self.folder_path.strip("/")
 
 
+@dataclass
+class ReconcileTagsResult:
+    """Result from tagging_svc.reconcile_library."""
+
+    processed: int  # Number of files successfully reconciled
+    remaining: int  # Files still needing reconciliation
+    failed: int  # Files that failed during this batch
+
+
+@dataclass
+class ReconcileStatusResult:
+    """Result from reconcile status check."""
+
+    pending_count: int  # Number of files needing reconciliation
+    in_progress: bool  # Whether reconciliation is currently running
+
+
 __all__ = [
     "FileTag",
     "FileTagsResult",
@@ -207,6 +225,8 @@ __all__ = [
     "LibraryFileWithTags",
     "LibraryScanStatusResult",
     "LibraryStatsResult",
+    "ReconcileStatusResult",
+    "ReconcileTagsResult",
     "ScanLibraryWorkflowParams",
     "ScanTarget",
     "SearchFilesResult",

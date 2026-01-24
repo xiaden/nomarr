@@ -14,15 +14,15 @@ Architecture:
 from typing import Any, cast
 
 from arango.cursor import Cursor
-from arango.database import StandardDatabase
 
 from nomarr.helpers.time_helper import now_ms
+from nomarr.persistence.arango_client import DatabaseLike
 
 
 class WorkerRestartPolicyOperations:
     """Operations for the worker_restart_policy collection (restart state persistence)."""
 
-    def __init__(self, db: StandardDatabase) -> None:
+    def __init__(self, db: DatabaseLike) -> None:
         self.db = db
         self.collection = db.collection("worker_restart_policy")
 

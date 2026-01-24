@@ -360,7 +360,7 @@ def _get_first(tags: Any, key: str) -> str | None:
         return None
     if isinstance(value, list) and len(value) > 0:
         return str(value[0])
-    if isinstance(value, (str, int, float)):
+    if isinstance(value, str | int | float):
         return str(value)
     return None
 
@@ -385,7 +385,7 @@ def _serialize_mutagen_value(value: Any) -> str:
         String representation of the value
     """
     # Handle MP4FreeForm values (bytes wrapped in a list-like object)
-    if hasattr(value, "__iter__") and not isinstance(value, (str, bytes)):
+    if hasattr(value, "__iter__") and not isinstance(value, str | bytes):
         try:
             items = list(value)
             if len(items) == 0:
