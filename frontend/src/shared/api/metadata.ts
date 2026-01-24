@@ -16,7 +16,7 @@ import { get } from "./client";
  * Get counts for all entity collections.
  */
 export async function getCounts(): Promise<EntityCounts> {
-  return get("/api/v1/metadata/counts");
+  return get("/api/web/metadata/counts");
 }
 
 export interface ListEntitiesOptions {
@@ -38,7 +38,7 @@ export async function listEntities(
   if (options?.search) params.append("search", options.search);
 
   const query = params.toString();
-  return get(`/api/v1/metadata/${collection}${query ? `?${query}` : ""}`);
+  return get(`/api/web/metadata/${collection}${query ? `?${query}` : ""}`);
 }
 
 /**
@@ -49,7 +49,7 @@ export async function getEntity(
   entityId: string
 ): Promise<Entity> {
   return get(
-    `/api/v1/metadata/${collection}/${encodeURIComponent(entityId)}`
+    `/api/web/metadata/${collection}/${encodeURIComponent(entityId)}`
   );
 }
 
@@ -73,7 +73,7 @@ export async function listSongsForEntity(
   if (options?.offset) params.append("offset", options.offset.toString());
 
   return get(
-    `/api/v1/metadata/${collection}/${encodeURIComponent(entityId)}/songs?${params.toString()}`
+    `/api/web/metadata/${collection}/${encodeURIComponent(entityId)}/songs?${params.toString()}`
   );
 }
 
@@ -94,6 +94,6 @@ export async function listAlbumsForArtist(
   params.append("limit", limit.toString());
   
   return get(
-    `/api/v1/metadata/artists/${encodeURIComponent(artistId)}/albums?${params.toString()}`
+    `/api/web/metadata/artists/${encodeURIComponent(artistId)}/albums?${params.toString()}`
   );
 }

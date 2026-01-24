@@ -77,6 +77,35 @@ Pydantic models live **only** in interfaces. Never let them leak into services.
 
 ---
 
+## Authentication Rules
+
+**MANDATORY: All API endpoints require authentication except login.**
+
+### Web API (`/api/web/*`)
+- Uses `verify_session` for session token authentication
+- All routes MUST include `dependencies=[Depends(verify_session)]` or `_session: dict = Depends(verify_session)` as a parameter
+- **Exception:** `/api/web/auth/login` is the only unauthenticated endpoint
+
+### v1 API (`/api/v1/*`)
+- Uses `verify_key` for API key authentication
+- All routes MUST include `dependencies=[Depends(verify_key)]`
+- **Exception:** `/api/v1/public/*` is intentionally public (version info)
+
+### API Consumer Separation — DO NOT MIX
+
+| Router | Auth Method | Consumer | Frontend Calls? |
+|--------|-------------|----------|-----------------|
+| `/api/web/*` | Session token (`verify_session`) | Web frontend | **YES** |
+| `/api/v1/*` | API key (`verify_key`) | External tools (Navidrome, scripts) | **NEVER** |
+
+**The web frontend MUST ONLY call `/api/web/*` endpoints.**
+
+The v1 API uses API key authentication. The web frontend uses session authentication. These are incompatible — the frontend cannot authenticate to v1 endpoints.
+
+If functionality exists in v1 but the frontend needs it, create a parallel route under web API.
+
+---
+
 ## Error Handling
 
 - HTTP routes: Raise `HTTPException`
@@ -103,6 +132,8 @@ Before committing interface code, verify:
 - [ ] Does this route contain business logic (loops, branching, computation)? **→ Move to service**
 - [ ] Are Pydantic models staying in this layer only? **→ Services return DTOs**
 - [ ] Is the DTO-to-Pydantic conversion explicit? **→ Use `.from_dto()`**
+- [ ] Does this route have authentication? **→ Add `verify_session` (web) or `verify_key` (v1)**
+- [ ] Is the frontend calling `/api/v1/*`? **→ Create web API route instead**
 
 ---
 

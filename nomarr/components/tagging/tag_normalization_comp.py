@@ -293,7 +293,7 @@ def _serialize_value(value: Any) -> str:
 
     Handles various mutagen types:
     - MP4FreeForm: Extract bytes and decode
-    - Lists: Serialize as JSON array for structured data (moods, etc.)
+    - Lists: Single-element lists unwrap to plain string; multi-element to JSON array
     - Tuples (MP4 track/disc): Format as "N/total"
     - Bytes: Decode to UTF-8
     - Everything else: str()
@@ -302,7 +302,7 @@ def _serialize_value(value: Any) -> str:
         value: Tag value from mutagen
 
     Returns:
-        String representation (JSON for multi-value lists)
+        String representation (JSON only for multi-value lists)
     """
     # Handle MP4 track/disc tuples: (track, total)
     if isinstance(value, tuple) and len(value) >= 2 and all(isinstance(x, int) for x in value[:2]):
@@ -312,11 +312,14 @@ def _serialize_value(value: Any) -> str:
     if isinstance(value, list):
         if len(value) == 0:
             return ""
-        # Always serialize lists as JSON arrays to maintain consistent type
-        # (single-element arrays should stay as arrays, not unwrapped to strings)
+        # Decode all items first
         decoded_items = [
             item.decode("utf-8", errors="replace") if isinstance(item, bytes) else str(item) for item in value
         ]
+        # Single-element lists: unwrap to plain string (most common case)
+        # Multi-element lists: serialize as JSON for fields like genres, artists
+        if len(decoded_items) == 1:
+            return decoded_items[0]
         return json.dumps(decoded_items, ensure_ascii=False)
 
     # Handle bytes directly

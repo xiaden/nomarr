@@ -14,6 +14,7 @@ from nomarr.interfaces.api.web import config_if as config
 from nomarr.interfaces.api.web import fs_if as fs
 from nomarr.interfaces.api.web import info_if as info
 from nomarr.interfaces.api.web import library_if as library
+from nomarr.interfaces.api.web import metadata_if as metadata
 from nomarr.interfaces.api.web import navidrome_if as navidrome
 from nomarr.interfaces.api.web import processing_if as processing
 from nomarr.interfaces.api.web import tags_if as tags
@@ -30,6 +31,7 @@ router.include_router(config.router)
 router.include_router(fs.router)
 router.include_router(info.router)
 router.include_router(library.router)
+router.include_router(metadata.router)
 router.include_router(navidrome.router)
 router.include_router(processing.router)
 router.include_router(tags.router)

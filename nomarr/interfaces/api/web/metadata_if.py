@@ -1,14 +1,15 @@
-"""Metadata entity API endpoints (read-only navigation).
+"""Metadata entity API endpoints for web UI (session-authenticated).
 
-Routes: /v1/metadata/*
-Provides entity listing, song-entity relationships, and traversal queries.
+Routes: /api/web/metadata/*
+Provides entity listing, song-entity relationships, and traversal queries
+for the web frontend using session authentication.
 """
 
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from nomarr.interfaces.api.auth import verify_key
+from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.id_codec import decode_path_id, encode_ids
 from nomarr.interfaces.api.types.metadata_types import (
     EntityCountsResponse,
@@ -19,8 +20,8 @@ from nomarr.interfaces.api.types.metadata_types import (
 from nomarr.interfaces.api.web.dependencies import get_metadata_service
 from nomarr.services.domain.metadata_svc import MetadataService
 
-# Router instance (will be included under /api/v1/metadata)
-router = APIRouter(tags=["metadata"], prefix="/v1/metadata")
+# Router instance (will be included under /api/web/metadata)
+router = APIRouter(tags=["metadata"], prefix="/metadata")
 
 # Type alias for entity collection names
 EntityCollection = Literal["artists", "albums", "labels", "genres", "years"]
@@ -29,7 +30,7 @@ EntityCollection = Literal["artists", "albums", "labels", "genres", "years"]
 # ----------------------------------------------------------------------
 #  GET /metadata/counts
 # ----------------------------------------------------------------------
-@router.get("/counts", dependencies=[Depends(verify_key)])
+@router.get("/counts", dependencies=[Depends(verify_session)])
 async def get_entity_counts(
     metadata_service: MetadataService = Depends(get_metadata_service),
 ) -> EntityCountsResponse:
@@ -41,7 +42,7 @@ async def get_entity_counts(
 # ----------------------------------------------------------------------
 #  GET /metadata/{collection}
 # ----------------------------------------------------------------------
-@router.get("/{collection}", dependencies=[Depends(verify_key)])
+@router.get("/{collection}", dependencies=[Depends(verify_session)])
 async def list_entities(
     collection: EntityCollection,
     limit: int = Query(100, ge=1, le=1000),
@@ -57,7 +58,7 @@ async def list_entities(
 # ----------------------------------------------------------------------
 #  GET /metadata/{collection}/{entity_id}
 # ----------------------------------------------------------------------
-@router.get("/{collection}/{entity_id}", dependencies=[Depends(verify_key)])
+@router.get("/{collection}/{entity_id}", dependencies=[Depends(verify_session)])
 async def get_entity(
     collection: EntityCollection,
     entity_id: str,
@@ -78,7 +79,7 @@ async def get_entity(
 # ----------------------------------------------------------------------
 #  GET /metadata/{collection}/{entity_id}/songs
 # ----------------------------------------------------------------------
-@router.get("/{collection}/{entity_id}/songs", dependencies=[Depends(verify_key)])
+@router.get("/{collection}/{entity_id}/songs", dependencies=[Depends(verify_session)])
 async def list_songs_for_entity(
     collection: EntityCollection,
     entity_id: str,
@@ -100,7 +101,7 @@ async def list_songs_for_entity(
 # ----------------------------------------------------------------------
 #  GET /metadata/albums/{album_id}/artists
 # ----------------------------------------------------------------------
-@router.get("/albums/{album_id}/artists", dependencies=[Depends(verify_key)])
+@router.get("/albums/{album_id}/artists", dependencies=[Depends(verify_session)])
 async def list_artists_for_album(
     album_id: str,
     limit: int = Query(100, ge=1, le=1000),
@@ -108,7 +109,7 @@ async def list_artists_for_album(
 ) -> list[dict[str, Any]]:
     """List artists for an album via traversal (album→songs→artists).
 
-    Requires authentication. Returns deduplicated artists sorted by display_name.
+    Returns deduplicated artists sorted by display_name.
     """
     album_id = decode_path_id(album_id)
     artists = metadata_service.list_artists_for_album(album_id, limit=limit)
@@ -120,7 +121,7 @@ async def list_artists_for_album(
 # ----------------------------------------------------------------------
 #  GET /metadata/artists/{artist_id}/albums
 # ----------------------------------------------------------------------
-@router.get("/artists/{artist_id}/albums", dependencies=[Depends(verify_key)])
+@router.get("/artists/{artist_id}/albums", dependencies=[Depends(verify_session)])
 async def list_albums_for_artist(
     artist_id: str,
     limit: int = Query(100, ge=1, le=1000),
@@ -128,7 +129,7 @@ async def list_albums_for_artist(
 ) -> list[dict[str, Any]]:
     """List albums for an artist via traversal (artist→songs→albums).
 
-    Requires authentication. Returns deduplicated albums sorted by display_name.
+    Returns deduplicated albums sorted by display_name.
     Each album includes song_count (number of songs by this artist on that album).
     """
     artist_id = decode_path_id(artist_id)
