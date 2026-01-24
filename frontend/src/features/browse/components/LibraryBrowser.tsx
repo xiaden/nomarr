@@ -17,6 +17,7 @@ import {
 } from "@mui/icons-material";
 import {
     Box,
+    Button,
     Chip,
     List,
     ListItemButton,
@@ -58,13 +59,20 @@ export function LibraryBrowser({ initialStep }: LibraryBrowserProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load artists
-  const loadArtists = useCallback(async () => {
+  // Pagination for artists
+  const [artistsTotal, setArtistsTotal] = useState(0);
+  const [artistsOffset, setArtistsOffset] = useState(0);
+  const artistsLimit = 50;
+
+  // Load artists with pagination
+  const loadArtists = useCallback(async (offset: number = 0) => {
     try {
       setLoading(true);
       setError(null);
-      const result = await listEntities("artists", { limit: 500 });
+      const result = await listEntities("artists", { limit: artistsLimit, offset });
       setArtists(result.entities.sort((a, b) => a.display_name.localeCompare(b.display_name)));
+      setArtistsTotal(result.total);
+      setArtistsOffset(offset);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load artists");
     } finally {
@@ -124,7 +132,8 @@ export function LibraryBrowser({ initialStep }: LibraryBrowserProps) {
   useEffect(() => {
     switch (step.type) {
       case "artists":
-        loadArtists();
+        // Reset to first page when returning to artist view
+        loadArtists(0);
         setTagBreadcrumbs([]);
         break;
       case "albums":
@@ -262,23 +271,65 @@ export function LibraryBrowser({ initialStep }: LibraryBrowserProps) {
     }
 
     switch (step.type) {
-      case "artists":
+      case "artists": {
+        const currentPage = Math.floor(artistsOffset / artistsLimit) + 1;
+        const totalPages = Math.ceil(artistsTotal / artistsLimit);
+        const hasPrev = artistsOffset > 0;
+        const hasNext = artistsOffset + artistsLimit < artistsTotal;
+
         return (
-          <List dense>
-            {artists.map((artist) => (
-              <ListItemButton key={artist.id} onClick={() => handleArtistClick(artist)}>
-                <ListItemIcon>
-                  <Person />
-                </ListItemIcon>
-                <ListItemText
-                  primary={artist.display_name}
-                  secondary={artist.song_count ? `${artist.song_count} songs` : undefined}
-                />
-                <DrillIcon color="action" />
-              </ListItemButton>
-            ))}
-          </List>
+          <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
+            <List dense sx={{ flex: 1, overflow: "auto" }}>
+              {artists.map((artist) => (
+                <ListItemButton key={artist.id} onClick={() => handleArtistClick(artist)}>
+                  <ListItemIcon>
+                    <Person />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={artist.display_name}
+                    secondary={artist.song_count ? `${artist.song_count} songs` : undefined}
+                  />
+                  <DrillIcon color="action" />
+                </ListItemButton>
+              ))}
+              {artists.length === 0 && (
+                <Box sx={{ p: 2, textAlign: "center" }}>
+                  <Typography color="text.secondary">No artists found</Typography>
+                </Box>
+              )}
+            </List>
+            {artistsTotal > artistsLimit && (
+              <Stack
+                direction="row"
+                spacing={2}
+                alignItems="center"
+                justifyContent="center"
+                sx={{ p: 1.5, borderTop: 1, borderColor: "divider" }}
+              >
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => loadArtists(Math.max(0, artistsOffset - artistsLimit))}
+                  disabled={!hasPrev || loading}
+                >
+                  Previous
+                </Button>
+                <Typography variant="body2" color="text.secondary">
+                  Page {currentPage} of {totalPages}
+                </Typography>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => loadArtists(artistsOffset + artistsLimit)}
+                  disabled={!hasNext || loading}
+                >
+                  Next
+                </Button>
+              </Stack>
+            )}
+          </Box>
         );
+      }
 
       case "albums":
         return (
