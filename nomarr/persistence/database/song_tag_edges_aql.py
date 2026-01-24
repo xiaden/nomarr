@@ -27,10 +27,10 @@ class SongTagEdgeOperations:
         rel: str,
         entity_ids: list[str],
     ) -> None:
-        """Replace all edges for a song and relation type (ATOMIC).
+        """Replace all edges for a song and relation type.
 
         Deletes existing edges matching (song_id, rel), then inserts new edges.
-        Executes as a single AQL query for atomicity.
+        Two separate queries to avoid ArangoDB's read-after-write limitation.
         Inserts are deterministic (sorted entity_ids).
 
         Args:
@@ -47,31 +47,42 @@ class SongTagEdgeOperations:
         # Sort entity_ids deterministically before binding
         sorted_entity_ids = sorted(entity_ids)
 
-        # Atomic delete + insert in single AQL query
+        # Step 1: Delete existing edges for this song+rel
         self.db.aql.execute(
             """
-            // Delete existing edges for this song+rel
             FOR edge IN song_tag_edges
                 FILTER edge._to == @song_id AND edge.rel == @rel
                 REMOVE edge IN song_tag_edges
-
-            // Insert new edges
-            FOR entity_id IN @entity_ids
-                INSERT {
-                    _from: entity_id,
-                    _to: @song_id,
-                    rel: @rel
-                } INTO song_tag_edges
             """,
             bind_vars=cast(
                 dict[str, Any],
                 {
                     "song_id": song_id,
                     "rel": rel,
-                    "entity_ids": sorted_entity_ids,
                 },
             ),
         )
+
+        # Step 2: Insert new edges (skip if no entities)
+        if sorted_entity_ids:
+            self.db.aql.execute(
+                """
+                FOR entity_id IN @entity_ids
+                    INSERT {
+                        _from: entity_id,
+                        _to: @song_id,
+                        rel: @rel
+                    } INTO song_tag_edges
+                """,
+                bind_vars=cast(
+                    dict[str, Any],
+                    {
+                        "song_id": song_id,
+                        "rel": rel,
+                        "entity_ids": sorted_entity_ids,
+                    },
+                ),
+            )
 
     def list_songs_for_entity(
         self,
