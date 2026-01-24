@@ -4,23 +4,20 @@ These are the **always-on** hard rules. Layer-specific guidance lives in `.githu
 
 ---
 
-## MANDATORY: Read Skills Before Editing
+## MANDATORY PROCESS REQUIREMENTS
+
+**These requirements are NOT optional. Skipping them creates architectural debt and bugs.**
+
+### 1. Read Layer Skills BEFORE Editing
 
 **You MUST read the relevant skill file BEFORE editing any code in that layer.**
 
-This is not optional. Do not skip this step to save time. Skills contain:
+Do not skip this step to save time. Skills contain:
 - Layer-specific conventions and patterns
 - Required validation steps
 - Common mistakes to avoid
 - File naming and structure rules
 
-**Workflow:**
-1. Identify which layer(s) the file belongs to
-2. Read the skill file for that layer using `read_file`
-3. Follow the skill's guidance during implementation
-4. Run any verification steps the skill requires
-
-Layers and their skills:
 | Path Pattern | Skill to Read |
 |--------------|---------------|
 | `nomarr/interfaces/` | `.github/skills/layer-interfaces/SKILL.md` |
@@ -31,7 +28,39 @@ Layers and their skills:
 | `nomarr/helpers/` | `.github/skills/layer-helpers/SKILL.md` |
 | `frontend/` | `.github/skills/layer-frontend/SKILL.md` |
 
-**Skipping skill consultation = architectural debt.**
+The skill guidance is **authoritative** for naming, boundaries, and allowed imports. Do not proceed without consulting it.
+
+### 2. Use MCP `discover_api` Before Editing Modules
+
+**You MUST use the MCP `discover_api` tool to inspect module shapes before editing.**
+
+- Run `discover_api` for each module you will modify
+- Use the discovered function/class signatures as the source of truth
+- Do not guess at existing APIs — verify them
+
+```
+# Example: discover API before modifying
+mcp_nomarrdev_discover_api("nomarr.services.infrastructure.file_watcher_svc")
+```
+
+### 3. Run Layer Validation Scripts
+
+**You MUST NOT skip validation steps required by the skill.**
+
+After making changes, run the layer's naming checker:
+
+```powershell
+# Services layer
+python .github/skills/layer-services/scripts/check_naming.py
+
+# Persistence layer
+python .github/skills/layer-persistence/scripts/check_naming.py
+
+# Interfaces layer
+python .github/skills/layer-interfaces/scripts/check_naming.py
+```
+
+If the skill specifies additional checks (lint, mypy, build), run them before committing.
 
 ---
 
@@ -106,21 +135,19 @@ python scripts/detect_slop.py nomarr/workflows/some_wf.py
 
 ---
 
-## Layer-Specific Skills
+## Layer-Specific Skills Reference
 
-**REMINDER: You MUST read the skill file before editing files in any layer.**
+Skills contain mandatory conventions, patterns, and verification steps:
 
-Skill files contain mandatory conventions, patterns, and verification steps:
-
-- `layer-interfaces/` — API routes, CLI commands
-- `layer-services/` — DI wiring, orchestration
-- `layer-workflows/` — Use case implementation
-- `layer-components/` — Heavy domain logic
-- `layer-persistence/` — Database access
-- `layer-helpers/` — Pure utilities, DTOs
-- `layer-frontend/` — React + TypeScript UI (requires lint+build verification)
-
-**If you edit code without reading the skill first, you are doing it wrong.**
+| Skill | Purpose |
+|-------|---------|
+| `layer-interfaces/` | API routes, CLI commands |
+| `layer-services/` | DI wiring, orchestration, worker processes |
+| `layer-workflows/` | Use case implementation |
+| `layer-components/` | Heavy domain logic |
+| `layer-persistence/` | Database access |
+| `layer-helpers/` | Pure utilities, DTOs |
+| `layer-frontend/` | React + TypeScript UI |
 
 ---
 
