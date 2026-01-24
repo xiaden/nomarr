@@ -257,12 +257,7 @@ export function LibraryManagement() {
     }
   };
 
-  const handleDelete = async (id: string, name: string, isDefault: boolean) => {
-    if (isDefault) {
-      setError("Cannot delete the default library. Set another library as default first.");
-      return;
-    }
-
+  const handleDelete = async (id: string, name: string, _isDefault: boolean) => {
     const confirmed = await confirm({
       title: "Delete Library?",
       message: `Delete library "${name}"?\n\nThis will remove the library entry but will NOT delete files on disk.`,

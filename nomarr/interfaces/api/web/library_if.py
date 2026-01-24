@@ -191,7 +191,6 @@ async def delete_library(
     Delete a library.
 
     Removes the library entry but does NOT delete files on disk.
-    Cannot delete the default library - set another as default first.
     """
     from nomarr.interfaces.api.web.dependencies import get_file_watcher_service
 

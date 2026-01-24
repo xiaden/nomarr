@@ -103,9 +103,7 @@ def update_library_root(
 
 def delete_library(db: Database, library_id: str) -> bool:
     """
-    Delete a library with policy checks.
-
-    Policy: Cannot delete the default library.
+    Delete a library.
 
     Args:
         db: Database instance
@@ -113,16 +111,10 @@ def delete_library(db: Database, library_id: str) -> bool:
 
     Returns:
         True if deleted, False if not found
-
-    Raises:
-        ValueError: If trying to delete the default library
     """
     library = db.libraries.get_library(library_id)
     if not library:
         return False
-
-    if library.get("is_default"):
-        raise ValueError("Cannot delete the default library. Set another library as default first.")
 
     db.libraries.delete_library(library_id)
     logging.info(f"[LibraryAdmin] Deleted library {library_id}: {library.get('name')}")
