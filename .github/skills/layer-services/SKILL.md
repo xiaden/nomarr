@@ -16,6 +16,78 @@ Services are:
 
 ---
 
+## File and Package Naming
+
+### Single-File Services
+
+For simple services, use a single file ending in `_svc.py`:
+
+```
+nomarr/services/domain/processing_svc.py  → ProcessingService
+nomarr/services/domain/analytics_svc.py   → AnalyticsService
+```
+
+### Service Packages
+
+For complex services with multiple concerns, use a **package** (folder) ending in `_svc`:
+
+```
+nomarr/services/domain/library_svc/
+├── __init__.py      # Exports LibraryService
+├── admin.py         # LibraryAdminMixin
+├── scan.py          # LibraryScanMixin  
+├── query.py         # LibraryQueryMixin
+├── files.py         # LibraryFilesMixin
+└── config.py        # LibraryServiceConfig dataclass
+```
+
+**Rules for service packages:**
+- Package folder must end in `_svc`
+- Internal files do NOT need `_svc.py` suffix
+- The `__init__.py` exports the composed `<Domain>Service` class
+- Internal classes (mixins, config) don't follow `<Domain>Service` pattern
+
+### Infrastructure Packages
+
+Some folders in `services/infrastructure/` are support packages, not services:
+
+```
+nomarr/services/infrastructure/workers/
+├── __init__.py
+└── discovery_worker.py       # DiscoveryWorker(Process) - runner process
+```
+
+These are exempt from `_svc.py` naming since they're not services themselves.
+
+---
+
+## Worker Processes (Runners)
+
+`services/infrastructure/workers/` contains **runner processes** — `multiprocessing.Process` subclasses that execute work in separate subprocesses.
+
+**Why they live here:**
+- Spawned and managed by `WorkerSystemService` (co-location with their manager)
+- Not components (they call workflows, which components cannot do)
+- Not workflows (they contain the execution loop, not just orchestration)
+- They are **internal entrypoints**, similar to CLI or API routes
+
+**Architectural exemptions for workers:**
+
+| Normal Service Rule | Worker Exemption |
+|---------------------|------------------|
+| Services are thin orchestrators | Workers contain execution loops |
+| Services call workflows, not components directly | Workers may call both |
+| Files must end in `_svc.py` | Worker files end in `_worker.py` |
+| Classes must end in `Service` | Worker classes end in `Worker` |
+
+**Rationale:** The subprocess boundary requires self-contained, picklable process classes. Fragmenting them to "follow the rules" would increase complexity without benefit. The architecture rules exist to improve maintainability and code reuse — workers don't need reuse, they need reliability.
+
+**Worker file naming:**
+- `*_worker.py` — Process subclass definitions
+- Classes should be named `<Domain>Worker` (e.g., `DiscoveryWorker`)
+
+---
+
 ## Allowed Imports
 
 ```python
@@ -177,6 +249,12 @@ python .github/skills/layer-services/scripts/check_naming.py
 ```
 
 Checks:
-- Files must end in `_svc.py`
+- Standalone service files must end in `_svc.py`
+- Service **packages** (folders ending in `_svc/`) exempt their internal files from suffix rule
+- Infrastructure packages (e.g., `workers/`) are exempt from service naming rules
 - Classes must end in `Service`
 - Methods must follow `<verb>_<noun>` pattern
+
+**Package vs File:**
+- Simple service: `processing_svc.py` → `ProcessingService`
+- Complex service: `library_svc/` folder with `admin.py`, `scan.py`, `query.py` mixins

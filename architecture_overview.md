@@ -42,3 +42,32 @@ Nomarr is a pre-alpha audio tagging system built on strict Clean Architecture pr
 - **Persistence contains SQL only**: Database modules handle data access exclusively; business rules live in workflows and services.
 
 - **Services own runtime wiring**: Services construct long-lived objects (Database, queues, workers), configure dependencies, and delegate work to workflows.
+## Worker Processes (Internal Entrypoints)
+
+Worker processes in `services/infrastructure/workers/` are a special architectural category: **runner processes** spawned by services to execute work in separate subprocesses.
+
+**What they are:**
+- `multiprocessing.Process` subclasses that run in isolated subprocesses
+- Internal entrypoints (analogous to CLI or API routes, but spawned programmatically)
+- Self-contained execution boundaries that bootstrap their own dependencies
+
+**Why they exist separately:**
+- Subprocess boundary requires picklability and self-contained initialization
+- Must create their own DB connections after fork (can't inherit from parent)
+- Contain the main execution loop that would be impractical to fragment
+
+**Architectural rules for workers:**
+- Allowed to call workflows, components, and persistence directly (they ARE an entrypoint)
+- The "services are thin" rule does NOT apply—they are not services
+- Domain logic should move to workflows when reusable; otherwise pragmatic containment is acceptable
+- Located in `services/infrastructure/workers/` because they are spawned/managed by `WorkerSystemService`
+
+**Example:**
+```
+services/infrastructure/
+├── worker_system_svc.py          # Service that spawns and manages workers
+└── workers/
+    └── discovery_worker.py       # DiscoveryWorker(Process) - the runner itself
+```
+
+`WorkerSystemService` is a thin service (spawns workers, handles lifecycle). `DiscoveryWorker` is a runner (contains the execution loop, calls workflows directly).

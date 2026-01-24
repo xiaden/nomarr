@@ -5,6 +5,15 @@ Rules:
 - Service files must end in `_svc.py`
 - Private helpers can start with `_`
 - Service classes named `<Domain>Service`
+- Files inside `_svc` packages don't need the suffix (package is the service)
+- Infrastructure packages (e.g., `workers`) are exempt from file naming rules
+
+Worker Process Exemption:
+- `services/infrastructure/workers/` contains runner processes, not services
+- These are multiprocessing.Process subclasses that execute in subprocesses
+- They are internal entrypoints (like CLI/API) spawned by WorkerSystemService
+- The "services are thin" rule does not apply to worker process classes
+- Worker files should end in `_worker.py` and classes in `Worker`
 """
 
 import ast
@@ -17,6 +26,28 @@ SERVICE_SUFFIX = "_svc.py"
 ALLOWED_FILES = {"__init__.py"}
 SERVICE_CLASS_PATTERN = re.compile(r"^[A-Z][a-zA-Z0-9]*Service$")
 
+# Folders that are service packages - files inside don't need _svc suffix
+SERVICE_PACKAGE_SUFFIX = "_svc"
+
+# Infrastructure packages that don't follow service naming (not services themselves)
+INFRASTRUCTURE_PACKAGES = {"workers"}
+
+
+def is_inside_service_package(file_path: Path) -> bool:
+    """Check if file is inside a _svc package folder."""
+    for parent in file_path.parents:
+        if parent.name.endswith(SERVICE_PACKAGE_SUFFIX):
+            return True
+    return False
+
+
+def is_inside_infrastructure_package(file_path: Path) -> bool:
+    """Check if file is inside an infrastructure package that's exempt."""
+    for parent in file_path.parents:
+        if parent.name in INFRASTRUCTURE_PACKAGES:
+            return True
+    return False
+
 
 def check_file_naming(file_path: Path) -> list[str]:
     """Check that file follows naming conventions."""
@@ -27,6 +58,14 @@ def check_file_naming(file_path: Path) -> list[str]:
 
     if file_path.name.startswith("_"):
         return errors  # Private modules allowed
+
+    # Files inside _svc packages don't need the suffix
+    if is_inside_service_package(file_path):
+        return errors
+
+    # Files inside infrastructure packages are exempt
+    if is_inside_infrastructure_package(file_path):
+        return errors
 
     if not file_path.name.endswith(SERVICE_SUFFIX):
         errors.append(f"{file_path}: Service files must end with '{SERVICE_SUFFIX}'")
@@ -39,6 +78,14 @@ def check_service_classes(file_path: Path) -> list[str]:
     errors: list[str] = []
 
     if file_path.name == "__init__.py":
+        return errors
+
+    # Classes inside _svc packages are internal (mixins, config, etc.)
+    if is_inside_service_package(file_path):
+        return errors
+
+    # Infrastructure packages are exempt
+    if is_inside_infrastructure_package(file_path):
         return errors
 
     try:

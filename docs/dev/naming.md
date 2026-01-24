@@ -304,23 +304,54 @@ helpers/dto/
 
 ### Service Files
 
-**One service class per file:**
+**Simple services: one class per file ending in `_svc.py`:**
 
 ```python
-# library_service.py
+# processing_svc.py
 
 from nomarr.persistence.db import Database
-from nomarr.helpers.dto.library import LibraryDict
+from nomarr.helpers.dto.processing import ProcessingResult
 
-class LibraryService:
-    """Manage music library operations."""
+class ProcessingService:
+    """Manage file processing operations."""
     
     def __init__(self, db: Database):
         self.db = db
     
-    def get_library(self, library_id: int) -> LibraryDict | None:
-        """Get library by ID."""
+    def get_status(self) -> ProcessingResult:
+        """Get processing status."""
         pass
+```
+
+### Service Packages
+
+**Complex services with multiple concerns use a package (folder) ending in `_svc`:**
+
+```
+nomarr/services/domain/library_svc/
+├── __init__.py      # Exports LibraryService (composed from mixins)
+├── admin.py         # LibraryAdminMixin
+├── scan.py          # LibraryScanMixin
+├── query.py         # LibraryQueryMixin
+├── files.py         # LibraryFilesMixin
+└── config.py        # LibraryServiceConfig dataclass
+```
+
+**Rules:**
+- Package folder ends in `_svc` (e.g., `library_svc/`)
+- Internal files do NOT need `_svc.py` suffix
+- Internal classes (mixins, config) don't follow `<Domain>Service` pattern
+- Only the composed class exported from `__init__.py` is `<Domain>Service`
+
+```python
+# library_svc/__init__.py
+from .admin import LibraryAdminMixin
+from .scan import LibraryScanMixin
+from .query import LibraryQueryMixin
+
+class LibraryService(LibraryAdminMixin, LibraryScanMixin, LibraryQueryMixin):
+    """Unified library service composed from mixins."""
+    pass
 ```
 
 **Service-local DTOs at top:**
@@ -340,29 +371,34 @@ class QueueService:
     # ... service implementation
 ```
 
-### Avoid Splitting Services
+### Avoid Ad-Hoc Splitting
 
-**Bad:**
+**Bad - splitting without a package:**
 ```python
 # library_service.py
 class LibraryService:
     def get_library(...): pass
 
-# library_service_scan.py  # ❌ Splitting same service
+# library_service_scan.py  # ❌ Splitting same service without package
 class LibraryService:
     def scan_library(...): pass
 ```
 
-**Good:**
+**Good - simple service in one file:**
 ```python
-# library_service.py
-class LibraryService:
-    def get_library(...): pass
-    def scan_library(...): pass
-    
-    def _find_audio_files(self, path: str) -> list[str]:
-        """Private helper (same file)."""
-        pass
+# analytics_svc.py
+class AnalyticsService:
+    def get_stats(...): pass
+    def compute_insights(...): pass
+```
+
+**Good - complex service in a package:**
+```
+library_svc/
+├── __init__.py     # Exports composed LibraryService
+├── admin.py        # Create, update, delete operations
+├── scan.py         # Scanning operations
+└── query.py        # Read operations
 ```
 
 ---
