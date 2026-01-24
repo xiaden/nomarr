@@ -105,6 +105,10 @@ def start_scan_workflow(
         f"with {len(scan_targets)} target(s)"
     )
 
+    # Set scan_status to 'scanning' BEFORE launching background task
+    # This ensures frontend can detect the scan immediately after API returns
+    db.libraries.update_scan_status(library_id, status="scanning", progress=0, total=0)
+
     # Launch background scan task if BackgroundTaskService available
     if background_tasks:
         task_id = f"scan_library_{library_id}"

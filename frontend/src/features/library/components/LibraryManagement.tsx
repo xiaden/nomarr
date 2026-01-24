@@ -10,21 +10,21 @@
  */
 
 import {
-    Box,
-    Button,
-    Checkbox,
-    Chip,
-    FormControl,
-    FormControlLabel,
-    InputLabel,
-    MenuItem,
-    Select,
-    Stack,
-    TextField,
-    Tooltip,
-    Typography,
+  Box,
+  Button,
+  Checkbox,
+  Chip,
+  FormControl,
+  FormControlLabel,
+  InputLabel,
+  MenuItem,
+  Select,
+  Stack,
+  TextField,
+  Tooltip,
+  Typography,
 } from "@mui/material";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { ConfirmDialog, ErrorMessage, Panel, SectionHeader } from "@shared/components/ui";
 
@@ -32,15 +32,16 @@ import { useConfirmDialog } from "../../../hooks/useConfirmDialog";
 import { useNotification } from "../../../hooks/useNotification";
 import { getConfig } from "../../../shared/api/config";
 import {
-    create as createLibrary,
-    deleteLibrary,
-    getReconcileStatus,
-    list as listLibraries,
-    reconcileTags,
-    scan as scanLibrary,
-    setDefault as setDefaultLibrary,
-    update as updateLibrary,
+  create as createLibrary,
+  deleteLibrary,
+  getReconcileStatus,
+  list as listLibraries,
+  reconcileTags,
+  scan as scanLibrary,
+  setDefault as setDefaultLibrary,
+  update as updateLibrary,
 } from "../../../shared/api/library";
+import { getWorkStatus } from "../../../shared/api/processing";
 import { ServerFilePicker } from "../../../shared/components/ServerFilePicker";
 import type { Library } from "../../../shared/types";
 
@@ -67,7 +68,7 @@ export function LibraryManagement() {
   const [reconcilingId, setReconcilingId] = useState<string | null>(null);
   const [reconcileStatus, setReconcileStatus] = useState<Record<string, { pending: number; inProgress: boolean }>>({});
 
-  const loadLibraries = async () => {
+  const loadLibraries = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -81,7 +82,7 @@ export function LibraryManagement() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   const loadConfig = async () => {
     try {
@@ -95,19 +96,50 @@ export function LibraryManagement() {
   useEffect(() => {
     loadLibraries();
     loadConfig();
-  }, []);
+  }, [loadLibraries]);
 
-  // Poll for scan status updates when any library is scanning
+  // Poll for scan/work status updates using unified work-status endpoint
   useEffect(() => {
-    const hasScanning = libraries.some(lib => lib.scanStatus === "scanning");
-    if (!hasScanning) return;
+    // Check work status to determine if we should poll
+    let active = true;
+    let interval: ReturnType<typeof setInterval> | null = null;
 
-    const interval = setInterval(() => {
-      loadLibraries();
-    }, 1000); // Poll every 1 second during scan
+    const checkAndPoll = async () => {
+      try {
+        const status = await getWorkStatus();
+        if (!active) return;
 
-    return () => clearInterval(interval);
-  }, [libraries]);
+        // If busy (scanning or processing), poll every 1 second
+        if (status.is_busy) {
+          if (!interval) {
+            interval = setInterval(() => {
+              loadLibraries();
+            }, 1000);
+          }
+        } else {
+          // Not busy - stop polling
+          if (interval) {
+            clearInterval(interval);
+            interval = null;
+          }
+        }
+      } catch (err) {
+        console.error("[LibraryManagement] Failed to check work status:", err);
+      }
+    };
+
+    // Initial check
+    checkAndPoll();
+
+    // Check work status every 5 seconds to adapt polling
+    const statusInterval = setInterval(checkAndPoll, 5000);
+
+    return () => {
+      active = false;
+      if (interval) clearInterval(interval);
+      clearInterval(statusInterval);
+    };
+  }, [loadLibraries]);
 
   const isOutsideLibraryRoot = (path: string): boolean => {
     if (!libraryRoot) return false;

@@ -191,8 +191,8 @@ def scan_library_direct_workflow(
     # Mark scan started
     db.libraries.mark_scan_started(library_id, full_scan=is_full_scan)
 
-    # Update library status to 'scanning'
-    db.libraries.update_scan_status(library_id, status="scanning", progress=0, total=0)
+    # Note: scan_status is set to 'scanning' in start_scan_wf BEFORE this workflow runs
+    # This ensures frontend can detect the scan immediately after API returns
 
     try:
         # PHASE 1: Determine scan paths from targets

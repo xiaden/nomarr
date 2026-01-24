@@ -10,7 +10,14 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from nomarr.helpers.dto.info_dto import GPUHealthResult, HealthStatusResult, PublicInfoResult, SystemInfoResult
+from nomarr.helpers.dto.info_dto import (
+    GPUHealthResult,
+    HealthStatusResult,
+    PublicInfoResult,
+    ScanningLibraryInfo,
+    SystemInfoResult,
+    WorkStatusResult,
+)
 
 
 class SystemInfoResponse(BaseModel):
@@ -153,4 +160,63 @@ class PublicInfoResponse(BaseModel):
                 alive=dto.worker.alive,
                 last_heartbeat=dto.worker.last_heartbeat,
             ),
+        )
+
+
+# ----------------------------------------------------------------------
+#  Work Status Response Models
+# ----------------------------------------------------------------------
+
+
+class ScanningLibraryResponse(BaseModel):
+    """Info about a library currently being scanned."""
+
+    library_id: str = Field(..., description="Library document _id")
+    name: str = Field(..., description="Library name")
+    progress: int = Field(..., description="Files processed so far")
+    total: int = Field(..., description="Total files to process")
+
+    @classmethod
+    def from_dto(cls, dto: ScanningLibraryInfo) -> "ScanningLibraryResponse":
+        """Convert ScanningLibraryInfo DTO to Pydantic response model."""
+        return cls(
+            library_id=dto.library_id,
+            name=dto.name,
+            progress=dto.progress,
+            total=dto.total,
+        )
+
+
+class WorkStatusResponse(BaseModel):
+    """
+    Unified work status for the system.
+
+    Indicates if any scanning, ML processing, or tagging is happening.
+    Used by frontend for polling and activity indicators.
+    """
+
+    # Scanning status
+    is_scanning: bool = Field(..., description="Any library is currently being scanned")
+    scanning_libraries: list[ScanningLibraryResponse] = Field(..., description="Libraries currently being scanned")
+
+    # ML processing status (files needing tagging)
+    is_processing: bool = Field(..., description="Files are pending ML processing")
+    pending_files: int = Field(..., description="Number of files waiting for ML processing")
+    processed_files: int = Field(..., description="Number of files already processed")
+    total_files: int = Field(..., description="Total files in library")
+
+    # Overall activity indicator
+    is_busy: bool = Field(..., description="System is doing any work (scanning or processing)")
+
+    @classmethod
+    def from_dto(cls, dto: WorkStatusResult) -> "WorkStatusResponse":
+        """Convert WorkStatusResult DTO to Pydantic response model."""
+        return cls(
+            is_scanning=dto.is_scanning,
+            scanning_libraries=[ScanningLibraryResponse.from_dto(lib) for lib in dto.scanning_libraries],
+            is_processing=dto.is_processing,
+            pending_files=dto.pending_files,
+            processed_files=dto.processed_files,
+            total_files=dto.total_files,
+            is_busy=dto.is_busy,
         )

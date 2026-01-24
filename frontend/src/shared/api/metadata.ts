@@ -76,3 +76,24 @@ export async function listSongsForEntity(
     `/api/v1/metadata/${collection}/${encodeURIComponent(entityId)}/songs?${params.toString()}`
   );
 }
+
+export interface Album {
+  id: string;
+  display_name: string;
+  song_count?: number;
+}
+
+/**
+ * List albums for an artist via traversal (artist→songs→albums).
+ */
+export async function listAlbumsForArtist(
+  artistId: string,
+  limit = 100
+): Promise<Album[]> {
+  const params = new URLSearchParams();
+  params.append("limit", limit.toString());
+  
+  return get(
+    `/api/v1/metadata/artists/${encodeURIComponent(artistId)}/albums?${params.toString()}`
+  );
+}

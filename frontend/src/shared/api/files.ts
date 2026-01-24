@@ -80,6 +80,22 @@ export async function getFilesByIds(fileIds: string[]): Promise<SearchFilesRespo
   return post("/api/web/libraries/files/by-ids", { file_ids: fileIds });
 }
 
+export interface TagSearchParams {
+  tag_key: string;
+  target_value: number | string;
+  limit?: number;
+  offset?: number;
+}
+
+/**
+ * Search files by tag value with distance sorting (float) or exact match (string).
+ * For float values: Returns files sorted by absolute distance from target value.
+ * For string values: Returns files with exact match on the tag value.
+ */
+export async function searchByTag(params: TagSearchParams): Promise<SearchFilesResponse> {
+  return post("/api/web/libraries/files/by-tag", params);
+}
+
 export interface UniqueTagKeysResponse {
   tag_keys: string[];
   count: number;

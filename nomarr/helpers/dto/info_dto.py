@@ -99,3 +99,40 @@ class PublicInfoResult:
     models: ModelsInfo
     queue: QueueInfo
     worker: WorkerInfo
+
+
+# ----------------------------------------------------------------------
+#  Work Status DTOs
+# ----------------------------------------------------------------------
+
+
+@dataclass
+class ScanningLibraryInfo:
+    """Info about a library currently being scanned."""
+
+    library_id: str
+    name: str
+    progress: int
+    total: int
+
+
+@dataclass
+class WorkStatusResult:
+    """
+    Result from get_work_status service method.
+
+    Unified work status for the system: scanning, processing, tagging.
+    """
+
+    # Scanning status
+    is_scanning: bool
+    scanning_libraries: list[ScanningLibraryInfo]
+
+    # ML processing status (files needing tagging)
+    is_processing: bool
+    pending_files: int
+    processed_files: int
+    total_files: int
+
+    # Overall activity indicator
+    is_busy: bool

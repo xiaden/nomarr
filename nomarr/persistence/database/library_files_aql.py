@@ -219,6 +219,136 @@ class LibraryFilesOperations:
         )
         return list(cursor)
 
+    def search_files_by_tag(
+        self,
+        tag_key: str,
+        target_value: float | str,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """Search files by tag value with distance sorting (float) or exact match (string).
+
+        For float values: Returns files sorted by absolute distance from target value.
+        For string values: Returns files with exact match on the tag value.
+
+        Args:
+            tag_key: Tag key to search (e.g., "nom:bpm", "genre")
+            target_value: Target value (float for distance sort, string for exact match)
+            limit: Maximum number of results
+            offset: Pagination offset
+
+        Returns:
+            List of file dicts with 'tags' array, 'matched_tag', and 'distance' (for floats)
+        """
+        import json
+
+        is_float = isinstance(target_value, float | int) and not isinstance(target_value, bool)
+
+        if is_float:
+            # Float: search by distance
+            cursor = cast(
+                Cursor,
+                self.db.aql.execute(
+                    """
+                FOR tag IN library_tags
+                    FILTER tag.key == @tag_key
+                    // Parse value from JSON array
+                    LET raw_val = JSON_PARSE(tag.value)
+                    LET tag_val = IS_ARRAY(raw_val) ? raw_val[0] : raw_val
+                    FILTER IS_NUMBER(tag_val)
+                    LET distance = ABS(tag_val - @target_value)
+
+                    // Find files with this tag
+                    FOR edge IN file_tags
+                        FILTER edge._to == tag._id
+                        LET file = DOCUMENT(edge._from)
+                        FILTER file != null
+
+                        SORT distance ASC
+                        LIMIT @offset, @limit
+
+                        // Get all tags for the file
+                        LET all_tags = (
+                            FOR e2 IN file_tags
+                                FILTER e2._from == file._id
+                                LET t2 = DOCUMENT(e2._to)
+                                FILTER t2 != null
+                                RETURN {
+                                    key: t2.key,
+                                    value: t2.value,
+                                    is_nomarr: t2.is_nomarr_tag
+                                }
+                        )
+
+                        RETURN MERGE(file, {
+                            tags: all_tags,
+                            matched_tag: { key: @tag_key, value: tag_val },
+                            distance: distance
+                        })
+                """,
+                    bind_vars=cast(
+                        dict[str, Any],
+                        {
+                            "tag_key": tag_key,
+                            "target_value": float(target_value),
+                            "limit": limit,
+                            "offset": offset,
+                        },
+                    ),
+                ),
+            )
+        else:
+            # String: exact match
+            # Wrap in array and serialize for comparison
+            value_str = json.dumps([str(target_value)], ensure_ascii=False)
+            cursor = cast(
+                Cursor,
+                self.db.aql.execute(
+                    """
+                FOR tag IN library_tags
+                    FILTER tag.key == @tag_key AND tag.value == @value_str
+
+                    // Find files with this tag
+                    FOR edge IN file_tags
+                        FILTER edge._to == tag._id
+                        LET file = DOCUMENT(edge._from)
+                        FILTER file != null
+
+                        SORT file.artist, file.album, file.title
+                        LIMIT @offset, @limit
+
+                        // Get all tags for the file
+                        LET all_tags = (
+                            FOR e2 IN file_tags
+                                FILTER e2._from == file._id
+                                LET t2 = DOCUMENT(e2._to)
+                                FILTER t2 != null
+                                RETURN {
+                                    key: t2.key,
+                                    value: t2.value,
+                                    is_nomarr: t2.is_nomarr_tag
+                                }
+                        )
+
+                        RETURN MERGE(file, {
+                            tags: all_tags,
+                            matched_tag: { key: @tag_key, value: @target_value }
+                        })
+                """,
+                    bind_vars=cast(
+                        dict[str, Any],
+                        {
+                            "tag_key": tag_key,
+                            "value_str": value_str,
+                            "target_value": str(target_value),
+                            "limit": limit,
+                            "offset": offset,
+                        },
+                    ),
+                ),
+            )
+        return list(cursor)
+
     def get_library_file(self, path: str, library_id: int | None = None) -> dict[str, Any] | None:
         """Get library file by path.
 

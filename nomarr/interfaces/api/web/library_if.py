@@ -269,6 +269,39 @@ async def get_files_by_ids(
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get files")) from e
 
 
+class TagSearchRequest(BaseModel):
+    """Request body for searching files by tag value."""
+
+    tag_key: str = Field(..., description="Tag key to search (e.g., 'nom:bpm', 'genre')")
+    target_value: float | str = Field(..., description="Target value (float for distance sort, string for exact match)")
+    limit: int = Field(100, ge=1, le=500, description="Maximum results")
+    offset: int = Field(0, ge=0, description="Pagination offset")
+
+
+@router.post("/files/by-tag", dependencies=[Depends(verify_session)])
+async def search_files_by_tag(
+    request: TagSearchRequest,
+    library_service: "LibraryService" = Depends(get_library_service),
+) -> SearchFilesResponse:
+    """
+    Search files by tag value with distance sorting (float) or exact match (string).
+
+    For float values: Returns files sorted by absolute distance from target value.
+    For string values: Returns files with exact match on the tag value.
+    """
+    try:
+        result = library_service.search_files_by_tag(
+            tag_key=request.tag_key,
+            target_value=request.target_value,
+            limit=request.limit,
+            offset=request.offset,
+        )
+        return SearchFilesResponse.from_dto(result)
+    except Exception as e:
+        logging.exception("[Web API] Error searching files by tag")
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to search files")) from e
+
+
 @router.get("/files/tags/unique-keys", dependencies=[Depends(verify_session)])
 async def get_unique_tag_keys(
     nomarr_only: bool = Query(False, description="Only show Nomarr tags"),

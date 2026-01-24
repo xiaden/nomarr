@@ -160,6 +160,53 @@ class MetadataService:
         artists.sort(key=lambda a: a["display_name"])
         return artists[:limit]
 
+    def list_albums_for_artist(self, artist_id: str, limit: int = 100) -> list[EntityDict]:
+        """List albums for an artist via traversal (artist→songs→albums).
+
+        Traverses: artist -[rel:artist]-> songs -[rel:album]-> albums
+        Deduplicates and sorts by display_name.
+
+        Args:
+            artist_id: Artist entity _id
+            limit: Maximum albums to return
+
+        Returns:
+            List of EntityDict (albums)
+        """
+        # Get all songs for this artist (using singular "artist" relation)
+        song_list = self.db.song_tag_edges.list_songs_for_entity(artist_id, "artist", limit=10000)
+
+        # For each song, get album
+        album_ids_seen: set[str] = set()
+        albums: list[EntityDict] = []
+
+        for song_id in song_list:
+            album_entities = self.db.song_tag_edges.list_entities_for_song(song_id, "album")
+            for album_entity in album_entities:
+                if album_entity["_id"] not in album_ids_seen:
+                    album_ids_seen.add(album_entity["_id"])
+                    # Count songs in this album for this artist
+                    album_song_count = sum(
+                        1
+                        for s in song_list
+                        if any(
+                            ae["_id"] == album_entity["_id"]
+                            for ae in self.db.song_tag_edges.list_entities_for_song(s, "album")
+                        )
+                    )
+                    albums.append(
+                        EntityDict(
+                            _id=album_entity["_id"],
+                            _key=album_entity["_key"],
+                            display_name=album_entity["display_name"],
+                            song_count=album_song_count,
+                        )
+                    )
+
+        # Sort by display_name and limit
+        albums.sort(key=lambda a: a["display_name"])
+        return albums[:limit]
+
     def get_entity_counts(self) -> dict[str, int]:
         """Get total counts for all entity collections.
 

@@ -1,12 +1,22 @@
 """System info and health endpoints for web UI."""
 
-from typing import Any
+import logging
+from typing import TYPE_CHECKING, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
+from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
-from nomarr.interfaces.api.types.info_types import GPUHealthResponse, HealthStatusResponse, SystemInfoResponse
-from nomarr.interfaces.api.web.dependencies import get_info_service
+from nomarr.interfaces.api.types.info_types import (
+    GPUHealthResponse,
+    HealthStatusResponse,
+    SystemInfoResponse,
+    WorkStatusResponse,
+)
+from nomarr.interfaces.api.web.dependencies import get_info_service, get_library_service
+
+if TYPE_CHECKING:
+    from nomarr.services.domain.library_svc import LibraryService
 
 router = APIRouter(prefix="", tags=["Info"])
 
@@ -60,3 +70,30 @@ async def web_gpu_health(
             error_summary="GPU monitoring not available",
             monitor_healthy=False,
         )
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Work Status Endpoint
+# ──────────────────────────────────────────────────────────────────────
+
+
+@router.get("/work-status", dependencies=[Depends(verify_session)])
+async def web_work_status(
+    library_service: "LibraryService" = Depends(get_library_service),
+) -> WorkStatusResponse:
+    """
+    Get unified work status for the system.
+
+    Returns status of:
+    - Scanning: Any library currently being scanned
+    - Processing: ML inference on audio files (pending/processed counts)
+
+    This endpoint is designed for frontend polling to show activity indicators.
+    Poll at 1s intervals when busy, 30s when idle.
+    """
+    try:
+        result = library_service.get_work_status()
+        return WorkStatusResponse.from_dto(result)
+    except Exception as e:
+        logging.exception("[Web API] Error getting work status")
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get work status")) from e

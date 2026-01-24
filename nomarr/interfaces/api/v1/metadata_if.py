@@ -115,3 +115,24 @@ async def list_artists_for_album(
     # Encode IDs in the response
     result: list[dict[str, Any]] = encode_ids([dict(a) for a in artists])
     return result
+
+
+# ----------------------------------------------------------------------
+#  GET /metadata/artists/{artist_id}/albums
+# ----------------------------------------------------------------------
+@router.get("/artists/{artist_id}/albums", dependencies=[Depends(verify_key)])
+async def list_albums_for_artist(
+    artist_id: str,
+    limit: int = Query(100, ge=1, le=1000),
+    metadata_service: MetadataService = Depends(get_metadata_service),
+) -> list[dict[str, Any]]:
+    """List albums for an artist via traversal (artist→songs→albums).
+
+    Requires authentication. Returns deduplicated albums sorted by display_name.
+    Each album includes song_count (number of songs by this artist on that album).
+    """
+    artist_id = decode_path_id(artist_id)
+    albums = metadata_service.list_albums_for_artist(artist_id, limit=limit)
+    # Encode IDs in the response
+    result: list[dict[str, Any]] = encode_ids([dict(a) for a in albums])
+    return result

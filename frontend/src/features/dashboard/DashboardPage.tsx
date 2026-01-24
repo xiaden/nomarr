@@ -12,7 +12,7 @@ import {
 } from "@shared/components/ui";
 
 import { getStats } from "../../shared/api/library";
-import { getProcessingStatus, type ProcessingStatus } from "../../shared/api/processing";
+import { getWorkStatus, type WorkStatus } from "../../shared/api/processing";
 
 /**
  * Dashboard page component.
@@ -39,7 +39,7 @@ interface ProgressTracking {
 }
 
 export function DashboardPage() {
-  const [processingStatus, setProcessingStatus] = useState<ProcessingStatus | null>(null);
+  const [workStatus, setWorkStatus] = useState<WorkStatus | null>(null);
   const [libraryStats, setLibraryStats] = useState<LibraryStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -56,11 +56,11 @@ export function DashboardPage() {
       setError(null);
 
       const [status, library] = await Promise.all([
-        getProcessingStatus(),
+        getWorkStatus(),
         getStats(),
       ]);
 
-      setProcessingStatus(status);
+      setWorkStatus(status);
       setLibraryStats(library);
 
       // Initialize progress tracking
@@ -75,9 +75,9 @@ export function DashboardPage() {
     }
   };
 
-  const updateProgressTracking = (status: ProcessingStatus) => {
+  const updateProgressTracking = (status: WorkStatus) => {
     const now = Date.now();
-    const processed = status.processed;
+    const processed = status.processed_files;
 
     // Track processed count history (last 5 minutes)
     const history = processedHistoryRef.current;
@@ -103,7 +103,7 @@ export function DashboardPage() {
         filesPerMinute = countDiff / timeDiffMinutes;
 
         // Calculate ETA for remaining files
-        const remaining = status.pending;
+        const remaining = status.pending_files;
         if (remaining > 0 && filesPerMinute > 0) {
           estimatedMinutesRemaining = remaining / filesPerMinute;
         }
@@ -111,7 +111,7 @@ export function DashboardPage() {
     }
 
     setProgress({
-      totalFiles: status.total,
+      totalFiles: status.total_files,
       processedCount: processed,
       filesPerMinute: Math.round(filesPerMinute * 10) / 10,
       estimatedMinutesRemaining,
@@ -124,23 +124,23 @@ export function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Adaptive polling: 1s when processing active, 30s when idle
+  // Adaptive polling: 1s when busy (scanning or processing), 30s when idle
   useEffect(() => {
-    const hasPending = processingStatus && processingStatus.pending > 0;
-    const pollInterval = hasPending ? 1000 : 30000; // 1s active, 30s idle
+    const isBusy = workStatus?.is_busy ?? false;
+    const pollInterval = isBusy ? 1000 : 30000; // 1s active, 30s idle
 
     const interval = setInterval(async () => {
       try {
-        const status = await getProcessingStatus();
-        setProcessingStatus(status);
+        const status = await getWorkStatus();
+        setWorkStatus(status);
         updateProgressTracking(status);
       } catch (err) {
-        console.error("[Dashboard] Failed to update processing status:", err);
+        console.error("[Dashboard] Failed to update work status:", err);
       }
     }, pollInterval);
 
     return () => clearInterval(interval);
-  }, [processingStatus]);
+  }, [workStatus]);
 
   const formatDuration = (seconds: number): string => {
     const hours = Math.floor(seconds / 3600);
@@ -157,7 +157,8 @@ export function DashboardPage() {
     return `${hours}h ${mins}m`;
   };
 
-  const hasPending = processingStatus && processingStatus.pending > 0;
+  const hasPending = workStatus && workStatus.pending_files > 0;
+  const isScanning = workStatus?.is_scanning ?? false;
   const progressPercent =
     progress && progress.totalFiles > 0
       ? Math.round((progress.processedCount / progress.totalFiles) * 100)
@@ -170,6 +171,24 @@ export function DashboardPage() {
 
       {!loading && !error && (
         <Stack spacing={2.5}>
+          {/* Scanning Status - show when libraries are scanning */}
+          {isScanning && workStatus?.scanning_libraries && (
+            <Panel>
+              <SectionHeader title="Scanning Libraries" />
+              <Stack spacing={1}>
+                {workStatus.scanning_libraries.map((lib) => (
+                  <ProgressBar
+                    key={lib.library_id}
+                    label={lib.name}
+                    value={lib.progress}
+                    total={lib.total}
+                    percentage={lib.total > 0 ? Math.round((lib.progress / lib.total) * 100) : 0}
+                  />
+                ))}
+              </Stack>
+            </Panel>
+          )}
+
           {/* Processing Status - show when files pending */}
           {hasPending && progress && (
             <Panel>
@@ -199,11 +218,11 @@ export function DashboardPage() {
                 />
                 <MetricCard
                   label="Pending"
-                  value={processingStatus?.pending || 0}
+                  value={workStatus?.pending_files || 0}
                 />
                 <MetricCard
                   label="Processed"
-                  value={processingStatus?.processed || 0}
+                  value={workStatus?.processed_files || 0}
                 />
               </ResponsiveGrid>
             </Panel>
@@ -212,11 +231,11 @@ export function DashboardPage() {
           {/* Processing Summary - always show */}
           <Panel>
             <SectionHeader title="Processing Summary" />
-            {processingStatus && (
+            {workStatus && (
               <ResponsiveGrid minWidth={150}>
-                <MetricCard label="Pending" value={processingStatus.pending} />
-                <MetricCard label="Processed" value={processingStatus.processed} />
-                <MetricCard label="Total Files" value={processingStatus.total} />
+                <MetricCard label="Pending" value={workStatus.pending_files} />
+                <MetricCard label="Processed" value={workStatus.processed_files} />
+                <MetricCard label="Total Files" value={workStatus.total_files} />
               </ResponsiveGrid>
             )}
           </Panel>
