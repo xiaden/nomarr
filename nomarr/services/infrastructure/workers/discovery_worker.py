@@ -120,15 +120,15 @@ class DiscoveryWorker(multiprocessing.Process):
         console_handler.setLevel(logging.INFO)
         console_handler.setFormatter(logging.Formatter(log_format))
 
-        # Install NomarrLogFilter on root logger
-        logging.root.addFilter(NomarrLogFilter())
-
-        # Configure root logger
+        # Configure root logger first (force=True clears existing config including filters)
         logging.basicConfig(
             level=logging.INFO,
             handlers=[file_handler, console_handler],
             force=True,  # Override any existing config
         )
+
+        # Install NomarrLogFilter AFTER basicConfig (force=True would clear it otherwise)
+        logging.root.addFilter(NomarrLogFilter())
 
         logger.info("[%s] Subprocess logging configured", self.worker_id)
 
