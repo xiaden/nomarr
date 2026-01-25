@@ -24,7 +24,7 @@ def rebuild_song_metadata_cache(db: "Database", song_id: str) -> None:
         song_id: Song _id (e.g., "library_files/12345")
     """
     # Fetch all tags for this song as a dict
-    tags_dict = db.tags.get_song_tags_as_dict(song_id)
+    tags_dict = db.tags.get_song_tags(song_id).to_dict()
 
     # Extract metadata from tags (using rel names directly)
     artists_raw = tags_dict.get("artists", [])

@@ -358,26 +358,6 @@ class TagOperations:
         )
         return Tags.from_db_rows(list(cursor))
 
-    def get_song_tags_as_dict(
-        self,
-        song_id: str,
-        nomarr_only: bool = False,
-    ) -> dict[str, list[TagValue]]:
-        """Get all tags for a song as a key→value dict.
-
-        DEPRECATED: Use get_song_tags().to_dict() directly instead.
-        This method exists for backward compatibility.
-
-        Args:
-            song_id: Song _id
-            nomarr_only: If True, filter by STARTS_WITH(rel, "nom:")
-
-        Returns:
-            Dict of {rel: [values]} - always list values per Tags invariant
-        """
-        tags = self.get_song_tags(song_id, nomarr_only=nomarr_only)
-        return tags.to_dict()
-
     def list_songs_for_tag(
         self,
         tag_id: str,
@@ -405,7 +385,9 @@ class TagOperations:
             Cursor,
             self._db.aql.execute(
                 query,
-                bind_vars=cast(dict[str, Any], {"tag_id": tag_id, "limit": limit, "offset": offset}),
+                bind_vars=cast(
+                    dict[str, Any], {"tag_id": tag_id, "limit": limit, "offset": offset}
+                ),
             ),
         )
         return list(cursor)
@@ -754,7 +736,9 @@ class TagOperations:
 
         return mood_rows
 
-    def get_file_ids_for_tags(self, tag_specs: list[tuple[str, str]]) -> dict[tuple[str, str], set[str]]:
+    def get_file_ids_for_tags(
+        self, tag_specs: list[tuple[str, str]]
+    ) -> dict[tuple[str, str], set[str]]:
         """Get file IDs for tag co-occurrence analysis.
 
         Args:

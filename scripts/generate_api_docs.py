@@ -81,7 +81,9 @@ def discover_module(module_name: str) -> dict[str, Any] | None:
         # With resilient discover_api, returncode should always be 0
         # But check anyway for backward compat
         if result.returncode != 0:
-            stderr_line = result.stderr.strip().split("\n")[0] if result.stderr.strip() else "Unknown error"
+            stderr_line = (
+                result.stderr.strip().split("\n")[0] if result.stderr.strip() else "Unknown error"
+            )
             print(f"[!] Skipping {module_name}: discovery subprocess failed")
             print(f"    Reason: {stderr_line}")
             return None
@@ -230,14 +232,23 @@ def main() -> int:
 
     Uses architecture_manifest.LAYERS as source of truth.
     """
-    # Import LAYERS from architecture manifest
-    try:
-        sys.path.insert(0, str(Path.cwd()))
-        from architecture_manifest import LAYERS
-    except ImportError as e:
-        print(f"[ERROR] Failed to import architecture_manifest: {e}")
+    # Import LAYERS from architecture manifest using importlib
+    import importlib.util
+
+    manifest_path = Path.cwd() / "scripts" / "configs" / "architecture_manifest.py"
+    if not manifest_path.exists():
+        print(f"[ERROR] architecture_manifest.py not found at {manifest_path}")
         print("   Make sure you're running from the project root.")
         return 1
+
+    spec = importlib.util.spec_from_file_location("architecture_manifest", manifest_path)
+    if spec is None or spec.loader is None:
+        print(f"[ERROR] Failed to load architecture_manifest from {manifest_path}")
+        return 1
+
+    manifest = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(manifest)
+    LAYERS: list[str] = manifest.LAYERS
 
     # Ensure output directory exists
     output_dir = Path("docs/api/modules")
