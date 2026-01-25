@@ -48,6 +48,12 @@ config/*.sqlite*
 # Data directories (bind mounts)
 .docker/*
 
+# Serena IDE files
+.serena/
+
+# Old/deprecated models
+models_old/
+
 # Test coverage
 .coverage
 htmlcov/
