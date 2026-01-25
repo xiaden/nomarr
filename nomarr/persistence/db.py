@@ -5,17 +5,14 @@ from nomarr.persistence.arango_client import SafeDatabase, create_arango_client
 # Import operation classes (AQL versions)
 from nomarr.persistence.database.calibration_history_aql import CalibrationHistoryOperations
 from nomarr.persistence.database.calibration_state_aql import CalibrationStateOperations
-from nomarr.persistence.database.entities_aql import EntityOperations
-from nomarr.persistence.database.file_tags_aql import FileTagOperations
 from nomarr.persistence.database.health_aql import HealthOperations
 from nomarr.persistence.database.libraries_aql import LibrariesOperations
 from nomarr.persistence.database.library_files_aql import LibraryFilesOperations
 from nomarr.persistence.database.library_folders_aql import LibraryFoldersOperations
-from nomarr.persistence.database.library_tags_aql import LibraryTagOperations
 from nomarr.persistence.database.meta_aql import MetaOperations
 from nomarr.persistence.database.ml_capacity_aql import MLCapacityOperations
 from nomarr.persistence.database.sessions_aql import SessionOperations
-from nomarr.persistence.database.song_tag_edges_aql import SongTagEdgeOperations
+from nomarr.persistence.database.tags_aql import TagOperations
 from nomarr.persistence.database.worker_claims_aql import WorkerClaimsOperations
 from nomarr.persistence.database.worker_restart_policy_aql import WorkerRestartPolicyOperations
 
@@ -114,8 +111,6 @@ class Database:
         self.libraries = LibrariesOperations(self.db)
         self.library_files = LibraryFilesOperations(self.db)
         self.library_folders = LibraryFoldersOperations(self.db)
-        self.library_tags = LibraryTagOperations(self.db)
-        self.file_tags = FileTagOperations(self.db)
         self.sessions = SessionOperations(self.db)
         self.calibration_state = CalibrationStateOperations(self.db)
         self.calibration_history = CalibrationHistoryOperations(self.db)
@@ -123,9 +118,8 @@ class Database:
         self.worker_restart_policy = WorkerRestartPolicyOperations(self.db)
         self.worker_claims = WorkerClaimsOperations(self.db)
         self.ml_capacity = MLCapacityOperations(self.db)
-        # Metadata entity operations (hybrid graph model)
-        self.entities = EntityOperations(self.db)
-        self.song_tag_edges = SongTagEdgeOperations(self.db)
+        # Unified tag operations (TAG_UNIFICATION_REFACTOR)
+        self.tags = TagOperations(self.db)
 
         # Lazy import to avoid circular dependency
         # from nomarr.persistence.database.joined_queries_aql import JoinedQueryOperations

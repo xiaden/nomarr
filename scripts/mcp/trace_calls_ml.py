@@ -43,18 +43,35 @@ class CallInfo:
 
 
 def _mock_unavailable_dependencies() -> None:
-    """Mock Docker-only dependencies for discovery in dev environment."""
-    mock_modules = [
-        "essentia",
-        "essentia.standard",
-        "tensorflow",
-        "tensorflow.lite",
-        "tensorflow.lite.python",
-        "tensorflow.lite.python.interpreter",
-    ]
-    for mod in mock_modules:
-        if mod not in sys.modules:
-            sys.modules[mod] = MagicMock()
+    """Mock Docker-only dependencies for discovery in dev environment.
+
+    Must create proper package structure - parent modules need submodule
+    attributes for 'from x.y import z' to work.
+    """
+    # Define hierarchy: parent -> list of submodules
+    package_hierarchy = {
+        "arango": ["aql", "collection", "cursor", "database", "exceptions"],
+        "essentia": ["standard"],
+        "tensorflow": ["lite"],
+        "tensorflow.lite": ["python"],
+        "tensorflow.lite.python": ["interpreter"],
+    }
+
+    # Create all modules with proper structure
+    for parent, children in package_hierarchy.items():
+        if parent not in sys.modules:
+            parent_mock = MagicMock()
+            sys.modules[parent] = parent_mock
+        else:
+            parent_mock = sys.modules[parent]
+
+        # Attach child modules to parent
+        for child in children:
+            full_name = f"{parent}.{child}"
+            if full_name not in sys.modules:
+                child_mock = MagicMock()
+                sys.modules[full_name] = child_mock
+                setattr(parent_mock, child, child_mock)
 
 
 def _resolve_module_to_path(module_name: str, project_root: Path) -> Path | None:
@@ -110,29 +127,132 @@ def _extract_imports(tree: ast.Module) -> dict[str, str]:
 def _extract_param_types(
     func_node: ast.FunctionDef | ast.AsyncFunctionDef,
     imports: dict[str, str],
+    project_root: Path | None = None,
 ) -> dict[str, str]:
-    """Extract parameter type annotations.
+    """Extract parameter type annotations, including FastAPI Depends() patterns.
 
     Returns dict mapping parameter names to their resolved type.
     E.g., {"library_service": "nomarr.services.domain.library_svc.LibraryService"}
+
+    Handles:
+    1. Direct type annotations: `service: LibraryService`
+    2. FastAPI Depends: `service: LibraryService = Depends(get_library_service)`
+    3. Depends with Any type: `service: Any = Depends(get_library_service)` - resolves via return annotation
     """
     param_types: dict[str, str] = {}
 
     for arg in func_node.args.args:
+        type_str = None
+        depends_func = None
+
+        # Check for type annotation
         if arg.annotation:
             type_str = _annotation_to_string(arg.annotation)
-            if type_str:
-                # Resolve through imports
-                parts = type_str.split(".")
-                if parts[0] in imports:
-                    resolved = imports[parts[0]]
-                    if len(parts) > 1:
-                        resolved = f"{resolved}.{'.'.join(parts[1:])}"
-                    param_types[arg.arg] = resolved
-                else:
-                    param_types[arg.arg] = type_str
+
+        # Check for default value that's a Depends() call
+        # Find the default for this arg (in func_node.args.defaults aligned from the right)
+        arg_index = func_node.args.args.index(arg)
+        num_defaults = len(func_node.args.defaults)
+        num_args = len(func_node.args.args)
+        default_index = arg_index - (num_args - num_defaults)
+
+        if default_index >= 0:
+            default = func_node.args.defaults[default_index]
+            depends_info = _extract_depends_function(default)
+            if depends_info:
+                depends_func = depends_info
+
+        # If we have a Depends() and type is Any/unresolved, resolve from dependency function
+        if depends_func and (type_str is None or type_str == "Any"):
+            resolved_type = _resolve_depends_return_type(depends_func, imports, project_root)
+            if resolved_type:
+                param_types[arg.arg] = resolved_type
+                continue
+
+        # Standard type resolution
+        if type_str:
+            parts = type_str.split(".")
+            if parts[0] in imports:
+                resolved = imports[parts[0]]
+                if len(parts) > 1:
+                    resolved = f"{resolved}.{'.'.join(parts[1:])}"
+                param_types[arg.arg] = resolved
+            else:
+                param_types[arg.arg] = type_str
 
     return param_types
+
+
+def _extract_depends_function(node: ast.expr) -> str | None:
+    """Extract the function name from a Depends(func) call.
+
+    Returns the function name (e.g., 'get_library_service') or None.
+    """
+    if not isinstance(node, ast.Call):
+        return None
+
+    # Check if it's Depends(...)
+    if isinstance(node.func, ast.Name) and node.func.id == "Depends":
+        if node.args:
+            return _call_to_string(node.args[0])
+    elif isinstance(node.func, ast.Attribute) and node.func.attr == "Depends":
+        if node.args:
+            return _call_to_string(node.args[0])
+
+    return None
+
+
+def _resolve_depends_return_type(
+    depends_func: str,
+    imports: dict[str, str],
+    project_root: Path | None = None,
+) -> str | None:
+    """Resolve the return type of a dependency function.
+
+    Looks up the function in the dependencies module and extracts its return annotation.
+    """
+    if project_root is None:
+        return None
+
+    # Resolve the depends function through imports
+    if depends_func in imports:
+        full_path = imports[depends_func]
+    else:
+        # Not imported directly - might be local or from dependencies module
+        return None
+
+    # Parse the module containing the depends function
+    parts = full_path.rsplit(".", 1)
+    if len(parts) != 2:
+        return None
+
+    mod_path, func_name = parts
+    file_path = _resolve_module_to_path(mod_path, project_root)
+    if not file_path:
+        return None
+
+    tree = _parse_file(file_path)
+    if not tree:
+        return None
+
+    # Find the function and extract return annotation
+    for node in ast.iter_child_nodes(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.name == func_name:
+                if node.returns:
+                    return_type = _annotation_to_string(node.returns)
+                    if return_type:
+                        # Resolve the return type through the deps module's imports
+                        deps_imports = _extract_imports(tree)
+                        type_parts = return_type.split(".")
+                        if type_parts[0] in deps_imports:
+                            resolved = deps_imports[type_parts[0]]
+                            if len(type_parts) > 1:
+                                resolved = f"{resolved}.{'.'.join(type_parts[1:])}"
+                            return resolved
+                        return return_type
+
+    return None
 
 
 def _annotation_to_string(node: ast.expr) -> str | None:
@@ -171,6 +291,17 @@ def _find_function_node(tree: ast.Module, func_name: str) -> ast.FunctionDef | a
                     return node
 
     return None
+
+
+def _find_class_node(tree: ast.Module, class_name: str) -> tuple[ast.ClassDef | None, int | None]:
+    """Find a class definition in AST.
+
+    Returns (ClassDef node, line number) or (None, None).
+    """
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef) and node.name == class_name:
+            return node, node.lineno
+    return None, None
 
 
 def _extract_calls_from_function(
@@ -265,19 +396,24 @@ def _resolve_call(
     if parts[0] in imports:
         base_module = imports[parts[0]]
 
-        # If it's a direct function import
+        # If it's a direct function/class import (len(parts) == 1)
         if len(parts) == 1:
-            # The import is the function itself
+            # The import could be a function or a class (for instantiation)
             module_parts = base_module.rsplit(".", 1)
             if len(module_parts) == 2:
-                mod_path, func_name = module_parts
+                mod_path, name = module_parts
                 file_path = _resolve_module_to_path(mod_path, project_root)
                 if file_path:
                     tree = _parse_file(file_path)
                     if tree:
-                        func_node = _find_function_node(tree, func_name)
+                        # First try as function
+                        func_node = _find_function_node(tree, name)
                         if func_node:
                             return base_module, file_path, func_node.lineno
+                        # Then try as class (for instantiation like SystemInfoResult())
+                        class_node, class_line = _find_class_node(tree, name)
+                        if class_node and class_line:
+                            return base_module, file_path, class_line
             return base_module, None, None
 
         # It's module.something or module.Class.method
@@ -360,7 +496,55 @@ def _trace_calls_recursive(
         )
 
     func_node = _find_function_node(tree, func_name)
+
+    # If not found and file_path is a package __init__.py, search mixin files
+    if not func_node and file_path.name == "__init__.py":
+        package_dir = file_path.parent
+        # func_name might be "ClassName.method_name"
+        if "." in func_name:
+            class_name, method_name = func_name.split(".", 1)
+        else:
+            class_name = None
+            method_name = func_name
+
+        # Search all .py files in the package for the method
+        for py_file in package_dir.glob("*.py"):
+            if py_file.name == "__init__.py":
+                continue
+            mixin_tree = _parse_file(py_file)
+            if mixin_tree:
+                # Search for any class with this method
+                for node in ast.walk(mixin_tree):
+                    if isinstance(node, ast.ClassDef):
+                        for item in node.body:
+                            if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                                if item.name == method_name or (class_name and item.name == method_name):
+                                    # Found it in a mixin
+                                    file_path = py_file
+                                    tree = mixin_tree
+                                    func_node = item
+                                    break
+                    if func_node:
+                        break
+            if func_node:
+                break
+
     if not func_node:
+        # If no function found, try finding it as a class (for class instantiation like DTOs)
+        # func_name might just be the class name without a method
+        if "." not in func_name:
+            class_node, class_line = _find_class_node(tree, func_name)
+            if class_node and class_line:
+                # It's a class instantiation - return as a leaf node (no calls to trace)
+                return CallInfo(
+                    name=qualified_name.split(".")[-1],
+                    resolved=qualified_name,
+                    file=str(file_path.relative_to(project_root)).replace("\\", "/"),
+                    line=class_line,
+                    calls=[],  # Classes typically don't have nested calls we care about
+                )
+
+        # Neither function nor class found
         return CallInfo(
             name=qualified_name,
             resolved=qualified_name,
@@ -371,8 +555,8 @@ def _trace_calls_recursive(
     # Extract imports for resolution
     imports = _extract_imports(tree)
 
-    # Extract parameter types for resolving injected dependencies
-    param_types = _extract_param_types(func_node, imports)
+    # Extract parameter types for resolving injected dependencies (including Depends())
+    param_types = _extract_param_types(func_node, imports, project_root)
 
     # Get module name from file path
     rel_path = file_path.relative_to(project_root)

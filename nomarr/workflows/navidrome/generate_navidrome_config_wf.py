@@ -1,7 +1,7 @@
 """
 Navidrome configuration generation workflow.
 
-Generates navidrome.toml custom tag configuration from file_tags data.
+Generates navidrome.toml custom tag configuration from tags data.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ def generate_navidrome_config_workflow(db: Database, namespace: str = "nom") -> 
     """
     Generate Navidrome TOML configuration for custom tags.
 
-    Queries the file_tags table to discover all tags, detects their types,
+    Queries the tags collection to discover all nomarr tags, detects their types,
     and generates proper TOML configuration with all three tag format aliases.
 
     Args:
@@ -35,50 +35,50 @@ def generate_navidrome_config_workflow(db: Database, namespace: str = "nom") -> 
     """
     logging.info("[navidrome] Generating Navidrome config from library tags")
 
-    # Get all unique tag keys
-    tag_keys = db.file_tags.get_unique_tag_keys()
+    # Get all unique nomarr rels
+    all_rels = db.tags.get_unique_rels(nomarr_only=True)
 
-    if not tag_keys:
+    if not all_rels:
         return "# No tags found in library. Run a library scan first.\n"
 
-    # Filter to only tags with the specified namespace
-    namespace_prefix = f"{namespace}:"
-    filtered_tags = [tag for tag in tag_keys if tag.startswith(namespace_prefix)]
+    # Filter to only rels with "nom:" prefix
+    filtered_rels = [rel for rel in all_rels if rel.startswith("nom:")]
 
-    if not filtered_tags:
-        return f"# No tags found with namespace '{namespace}:'. Check your tag namespace setting.\n"
+    if not filtered_rels:
+        return "# No tags found with 'nom:' prefix. Check your tag namespace setting.\n"
 
-    logging.info(f"[navidrome] Found {len(filtered_tags)} tags with namespace '{namespace}:'")
+    logging.info(f"[navidrome] Found {len(filtered_rels)} tags with 'nom:' prefix")
 
     # Generate config sections
     config_lines = [
         "# Navidrome Custom Tags Configuration",
-        f"# Generated from library with {len(filtered_tags)} tags",
+        f"# Generated from library with {len(filtered_rels)} tags",
         "#",
         "# Add this to your navidrome.toml file, then run a FULL scan (not quick scan)",
         "",
     ]
 
-    for tag_key in sorted(filtered_tags):
-        # Get tag statistics
-        stats = db.file_tags.get_tag_type_stats(tag_key)
+    for rel in sorted(filtered_rels):
+        # Get tag value counts for type detection
+        value_counts = db.tags.get_tag_value_counts(rel)
+        total_count = sum(value_counts.values())
 
-        # Convert tag key to Navidrome field name
+        # Convert rel to Navidrome field name
         # nom:mood-strict -> mood_strict
-        field_name = tag_key.replace(f"{namespace}:", "").replace("-", "_")
+        field_name = rel.replace("nom:", "").replace("-", "_")
 
         # Generate the three alias formats
-        aliases = _generate_aliases(tag_key, namespace)
+        aliases = _generate_aliases(rel, namespace)
 
-        # Detect tag type
-        tag_type = _detect_tag_type(stats)
+        # Detect tag type from values
+        stats = _compute_tag_stats(value_counts)
 
         # Build TOML section
-        config_lines.append(f"# {tag_key} ({stats['total_count']} files)")
+        config_lines.append(f"# {rel} ({total_count} files)")
         config_lines.append(f"Tags.{field_name}.Aliases = {aliases}")
 
-        if tag_type != "string":
-            config_lines.append(f'Tags.{field_name}.Type = "{tag_type}"')
+        if stats["type"] != "string":
+            config_lines.append(f'Tags.{field_name}.Type = "{stats["type"]}"')
 
         if stats["is_multivalue"]:
             config_lines.append(f'Tags.{field_name}.Split = ["; "]')
@@ -88,6 +88,26 @@ def generate_navidrome_config_workflow(db: Database, namespace: str = "nom") -> 
     config_lines.append("# End of generated configuration")
 
     return "\n".join(config_lines)
+
+
+def _compute_tag_stats(value_counts: dict[Any, int]) -> dict[str, Any]:
+    """Compute tag statistics from value counts."""
+    if not value_counts:
+        return {"type": "string", "is_multivalue": False, "total_count": 0}
+
+    first_value = next(iter(value_counts.keys()))
+    if isinstance(first_value, float):
+        tag_type = "number"
+    elif isinstance(first_value, int):
+        tag_type = "integer"
+    else:
+        tag_type = "string"
+
+    return {
+        "type": tag_type,
+        "is_multivalue": len(value_counts) > 1,
+        "total_count": sum(value_counts.values()),
+    }
 
 
 def _generate_aliases(tag_key: str, namespace: str) -> str:
@@ -113,46 +133,3 @@ def _generate_aliases(tag_key: str, namespace: str) -> str:
     vorbis_alias = f"{namespace.upper()}_{tag_name.upper()}".replace("-", "_").replace(":", "_")
 
     return f'["{id3_alias}", "{itunes_alias}", "{vorbis_alias}"]'
-
-
-def _detect_tag_type(stats: dict[str, Any]) -> str:
-    """
-    Detect the Navidrome tag type from tag statistics.
-
-    Args:
-        stats: Dict from get_tag_type_stats() with is_multivalue, sample_values, total_files
-               sample_values are JSON array strings like ["Rock"] or [120]
-
-    Returns:
-        One of: "string", "int", "float"
-    """
-    import json
-
-    sample_values = stats.get("sample_values", [])
-
-    if not sample_values:
-        return "string"
-
-    # Parse the first JSON array and check its first element's type
-    try:
-        arr = json.loads(sample_values[0])
-        if not isinstance(arr, list) or len(arr) == 0:
-            return "string"
-
-        sample = arr[0]
-
-        # Try to detect numeric types
-        if isinstance(sample, int | float):
-            return "float" if isinstance(sample, float) else "int"
-
-        # If stored as string, try parsing
-        if isinstance(sample, str):
-            if "." in sample:
-                float(sample)
-                return "float"
-            int(sample)
-            return "int"
-    except (json.JSONDecodeError, ValueError, TypeError):
-        pass
-
-    return "string"

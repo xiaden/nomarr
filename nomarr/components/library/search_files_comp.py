@@ -55,30 +55,30 @@ def search_library_files(
 
 def get_unique_tag_keys(db: Database, nomarr_only: bool = False) -> list[str]:
     """
-    Get list of unique tag keys.
+    Get list of unique tag keys (rel values).
 
     Args:
         db: Database instance
-        nomarr_only: Only return Nomarr tags
+        nomarr_only: Only return Nomarr tags (rel starts with "nom:")
 
     Returns:
-        List of unique tag keys
+        List of unique tag keys (rel values)
     """
-    return db.file_tags.get_unique_tag_keys(nomarr_only=nomarr_only)
+    return db.tags.get_unique_rels(nomarr_only=nomarr_only)
 
 
 def get_unique_tag_values(db: Database, tag_key: str, nomarr_only: bool = False) -> list[str]:
     """
-    Get list of unique values for a specific tag key.
+    Get list of unique values for a specific tag key (rel).
 
     Args:
         db: Database instance
-        tag_key: The tag key to get values for
-        nomarr_only: Only return values from Nomarr tags (NOTE: not yet supported)
+        tag_key: The tag rel to get values for
+        nomarr_only: Ignored (key already determines if it's nomarr)
 
     Returns:
         List of unique tag values
     """
-    # NOTE: file_tags.get_unique_tag_values doesn't support nomarr_only yet
-    # TODO: Add filtering support in persistence layer
-    return db.file_tags.get_unique_tag_values(tag_key)
+    # Get all tags for this rel (limited to reasonable count)
+    tags = db.tags.list_tags_by_rel(tag_key, limit=10000)
+    return [str(t["value"]) for t in tags]

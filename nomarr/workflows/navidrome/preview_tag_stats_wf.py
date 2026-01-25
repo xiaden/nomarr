@@ -24,31 +24,56 @@ def preview_tag_stats_workflow(db: Database, namespace: str = "nom") -> dict[str
     Returns:
         Dict of tag_key -> stats dict (type, is_multivalue, summary, count)
     """
-    tag_keys = db.file_tags.get_unique_tag_keys()
-    namespace_prefix = f"{namespace}:"
-    filtered_tags = [tag for tag in tag_keys if tag.startswith(namespace_prefix)]
+    # Get unique rels for nomarr tags
+    all_rels = db.tags.get_unique_rels(nomarr_only=True)
+    f"nom:{namespace}:" if not namespace.startswith("nom:") else f"{namespace}:"
+    # Also match simple "nom:" prefix
+    filtered_rels = [rel for rel in all_rels if rel.startswith("nom:")]
 
-    logging.info(f"[navidrome] Computing summaries for {len(filtered_tags)} tags...")
+    logging.info(f"[navidrome] Computing summaries for {len(filtered_rels)} tag types...")
 
     stats_by_tag = {}
 
-    for idx, tag_key in enumerate(filtered_tags, 1):
+    for idx, rel in enumerate(filtered_rels, 1):
         try:
             if idx % 10 == 0:
-                logging.info(f"[navidrome] Progress: {idx}/{len(filtered_tags)} tags processed...")
+                logging.info(f"[navidrome] Progress: {idx}/{len(filtered_rels)} tags processed...")
 
-            summary = db.file_tags.get_tag_summary(tag_key)
+            # Get value counts for this rel
+            value_counts = db.tags.get_tag_value_counts(rel)
+            total_count = sum(value_counts.values())
 
-            stats_by_tag[tag_key] = {
-                "type": summary["type"],
-                "is_multivalue": summary["is_multivalue"],
-                "summary": summary["summary"],
-                "total_count": summary["total_count"],
+            # Infer type from first value
+            if value_counts:
+                first_value = next(iter(value_counts.keys()))
+                if isinstance(first_value, float):
+                    tag_type = "float"
+                elif isinstance(first_value, int):
+                    tag_type = "integer"
+                else:
+                    tag_type = "string"
+            else:
+                tag_type = "unknown"
+
+            # Build summary
+            if tag_type in ("float", "integer"):
+                values = list(value_counts.keys())
+                if values:
+                    summary = f"min={min(values)}, max={max(values)}, unique={len(values)}"
+                else:
+                    summary = "no values"
+            else:
+                summary = f"unique={len(value_counts)}"
+
+            stats_by_tag[rel] = {
+                "type": tag_type,
+                "is_multivalue": len(value_counts) > 1,
+                "summary": summary,
+                "total_count": total_count,
             }
         except Exception as e:
-            logging.error(f"[navidrome] Error computing summary for {tag_key}: {e}")
-            # Provide fallback data so one error doesn't break everything
-            stats_by_tag[tag_key] = {
+            logging.error(f"[navidrome] Error computing summary for {rel}: {e}")
+            stats_by_tag[rel] = {
                 "type": "string",
                 "is_multivalue": False,
                 "summary": f"Error: {e!s}",

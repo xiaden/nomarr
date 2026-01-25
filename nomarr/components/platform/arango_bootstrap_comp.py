@@ -41,7 +41,7 @@ def _create_collections(db: DatabaseLike) -> None:
         "libraries",
         "library_files",
         "library_folders",
-        "library_tags",
+        "tags",  # Unified tag vertex collection (rel, value)
         "sessions",
         "calibration_state",
         "calibration_history",
@@ -50,12 +50,6 @@ def _create_collections(db: DatabaseLike) -> None:
         # ML capacity probe collections (GPU/CPU adaptive resource management)
         "ml_capacity_estimates",  # Stores probe results per model_set_hash
         "ml_capacity_probe_locks",  # Prevents concurrent probes
-        # Metadata entity vertex collections
-        "artists",
-        "albums",
-        "labels",
-        "genres",
-        "years",
     ]
 
     for collection_name in document_collections:
@@ -67,8 +61,7 @@ def _create_collections(db: DatabaseLike) -> None:
 
     # Edge collections
     edge_collections = [
-        "file_tags",  # file→tag relationships (ML tags)
-        "song_tag_edges",  # entity→song relationships (metadata entities)
+        "song_tag_edges",  # song→tag relationships (unified)
     ]
 
     for edge_collection_name in edge_collections:
@@ -116,15 +109,6 @@ def _create_indexes(db: DatabaseLike) -> None:
         unique=True,
     )
 
-    # library_tags indexes
-    _ensure_index(
-        db,
-        "library_tags",
-        "persistent",
-        ["key", "value", "is_nomarr_tag"],
-        unique=True,
-    )
-
     # sessions TTL index (auto-expire based on expiry_timestamp)
     _ensure_index(
         db,
@@ -132,16 +116,6 @@ def _create_indexes(db: DatabaseLike) -> None:
         "ttl",
         ["expiry_timestamp"],
         expireAfter=0,  # Expire immediately when timestamp passes
-    )
-
-    # file_tags composite index for histogram queries (histogram-based calibration)
-    _ensure_index(
-        db,
-        "file_tags",
-        "persistent",
-        ["model_key", "head_name", "nomarr_only"],
-        unique=False,
-        sparse=False,
     )
 
     # calibration_state indexes (NEW - histogram-based calibration)
@@ -180,23 +154,34 @@ def _create_indexes(db: DatabaseLike) -> None:
         sparse=False,
     )
 
-    # Entity collection indexes (for UI search/listing)
-    for entity_collection in ["artists", "albums", "labels", "genres", "years"]:
-        _ensure_index(
-            db,
-            entity_collection,
-            "persistent",
-            ["display_name"],
-            unique=False,
-            sparse=False,
-        )
+    # ─────────────────────────────────────────────────────────────────────
+    # Unified tag schema indexes (TAG_UNIFICATION_REFACTOR)
+    # ─────────────────────────────────────────────────────────────────────
 
-    # song_tag_edges indexes (entity→song metadata relationships)
+    # tags collection: filter by rel (browse), unique on (rel, value)
+    _ensure_index(
+        db,
+        "tags",
+        "persistent",
+        ["rel"],  # Browse by type, Nomarr prefix filtering
+        unique=False,
+        sparse=False,
+    )
+    _ensure_index(
+        db,
+        "tags",
+        "persistent",
+        ["rel", "value"],  # Upsert deduplication
+        unique=True,
+        sparse=False,
+    )
+
+    # song_tag_edges: song→tag edges (minimal shape: _from, _to only)
     _ensure_index(
         db,
         "song_tag_edges",
         "persistent",
-        ["rel", "_from"],  # Entity→songs navigation
+        ["_from"],  # Get all tags for a song
         unique=False,
         sparse=False,
     )
@@ -204,8 +189,16 @@ def _create_indexes(db: DatabaseLike) -> None:
         db,
         "song_tag_edges",
         "persistent",
-        ["rel", "_to"],  # Song→entities updates/cache rebuild
+        ["_to"],  # Get all songs for a tag
         unique=False,
+        sparse=False,
+    )
+    _ensure_index(
+        db,
+        "song_tag_edges",
+        "persistent",
+        ["_from", "_to"],  # Prevent duplicate edges (idempotent inserts)
+        unique=True,
         sparse=False,
     )
 
@@ -252,9 +245,9 @@ def _ensure_index(
 def _create_graphs(db: DatabaseLike) -> None:
     """Create named graphs for traversals.
 
-    Creates "file_tag_graph" for file→tag relationships.
+    Creates "tag_graph" for song→tag relationships.
     """
-    graph_name = "file_tag_graph"
+    graph_name = "tag_graph"
 
     if not db.has_graph(graph_name):
         try:
@@ -262,9 +255,9 @@ def _create_graphs(db: DatabaseLike) -> None:
                 name=graph_name,
                 edge_definitions=[
                     {
-                        "edge_collection": "file_tags",
+                        "edge_collection": "song_tag_edges",
                         "from_vertex_collections": ["library_files"],
-                        "to_vertex_collections": ["library_tags"],
+                        "to_vertex_collections": ["tags"],
                     }
                 ],
             )
@@ -287,4 +280,24 @@ def _validate_no_legacy_calibration(db: DatabaseLike) -> None:
             "These are no longer used by histogram-based calibration. "
             "To remove them, run: python scripts/drop_old_calibration_collections.py",
             ", ".join(found_legacy),
+        )
+
+    # TAG_UNIFICATION_REFACTOR: Legacy tag collections
+    legacy_tag_collections = [
+        "library_tags",
+        "file_tags",
+        "artists",
+        "albums",
+        "genres",
+        "labels",
+        "years",
+    ]
+    found_legacy_tags = [name for name in legacy_tag_collections if db.has_collection(name)]
+
+    if found_legacy_tags:
+        logger.error(
+            "Legacy tag collections detected: %s. "
+            "These have been replaced by the unified 'tags' + 'song_tag_edges' schema. "
+            "Drop them manually and rescan libraries.",
+            ", ".join(found_legacy_tags),
         )

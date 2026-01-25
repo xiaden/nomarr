@@ -1,11 +1,11 @@
-"""Entity cleanup workflow - orchestrate orphaned entity cleanup."""
+"""Tag cleanup workflow - orchestrate orphaned tag cleanup."""
 
 from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING
 
-from nomarr.components.metadata.entity_cleanup_comp import cleanup_orphaned_entities, get_orphaned_entity_counts
+from nomarr.components.metadata.entity_cleanup_comp import cleanup_orphaned_tags, get_orphaned_tag_count
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -15,51 +15,50 @@ logger = logging.getLogger(__name__)
 
 def cleanup_orphaned_entities_workflow(db: Database, dry_run: bool = False) -> dict[str, int | dict[str, int]]:
     """
-    Clean up orphaned entities from entity collections.
+    Clean up orphaned tags from the tags collection.
 
-    Removes entities (artists, albums, genres, labels, years) that have no
-    incoming edges from songs. This happens when songs are deleted or metadata
-    is updated.
+    Removes tags that have no incoming edges from songs. This happens when
+    songs are deleted or metadata is updated.
+
+    Note: Function name kept for API compatibility, but now cleans tags.
 
     Args:
         db: Database instance
-        dry_run: If True, count orphaned entities but don't delete them
+        dry_run: If True, count orphaned tags but don't delete them
 
     Returns:
         Dict with:
-        - 'orphaned_counts': Dict[collection -> count] of orphaned entities found
-        - 'deleted_counts': Dict[collection -> count] of entities deleted (0 if dry_run)
-        - 'total_orphaned': Total orphaned entities across all collections
-        - 'total_deleted': Total deleted entities (0 if dry_run)
+        - 'orphaned_counts': Dict with 'tags' -> count of orphaned tags found
+        - 'deleted_counts': Dict with 'tags' -> count of tags deleted (0 if dry_run)
+        - 'total_orphaned': Total orphaned tags
+        - 'total_deleted': Total deleted tags (0 if dry_run)
     """
-    logger.info("[entity_cleanup] Starting orphaned entity cleanup workflow")
+    logger.info("[tag_cleanup] Starting orphaned tag cleanup workflow")
 
-    # Count orphaned entities
-    orphaned_counts = get_orphaned_entity_counts(db)
-    total_orphaned = sum(orphaned_counts.values())
+    # Count orphaned tags
+    orphaned_count = get_orphaned_tag_count(db)
 
-    logger.info(
-        f"[entity_cleanup] Found {total_orphaned} orphaned entities: " + ", ".join(f"{k}={v}" for k, v in orphaned_counts.items())
-    )
+    logger.info(f"[tag_cleanup] Found {orphaned_count} orphaned tags")
+
+    orphaned_counts = {"tags": orphaned_count}
 
     if dry_run:
-        logger.info("[entity_cleanup] Dry run - no entities deleted")
+        logger.info("[tag_cleanup] Dry run - no tags deleted")
         return {
             "orphaned_counts": orphaned_counts,
-            "deleted_counts": dict.fromkeys(orphaned_counts, 0),
-            "total_orphaned": total_orphaned,
+            "deleted_counts": {"tags": 0},
+            "total_orphaned": orphaned_count,
             "total_deleted": 0,
         }
 
-    # Delete orphaned entities
-    deleted_counts = cleanup_orphaned_entities(db)
-    total_deleted = sum(deleted_counts.values())
+    # Delete orphaned tags
+    deleted_count = cleanup_orphaned_tags(db)
 
-    logger.info(f"[entity_cleanup] Deleted {total_deleted} orphaned entities: " + ", ".join(f"{k}={v}" for k, v in deleted_counts.items()))
+    logger.info(f"[tag_cleanup] Deleted {deleted_count} orphaned tags")
 
     return {
         "orphaned_counts": orphaned_counts,
-        "deleted_counts": deleted_counts,
-        "total_orphaned": total_orphaned,
-        "total_deleted": total_deleted,
+        "deleted_counts": {"tags": deleted_count},
+        "total_orphaned": orphaned_count,
+        "total_deleted": deleted_count,
     }

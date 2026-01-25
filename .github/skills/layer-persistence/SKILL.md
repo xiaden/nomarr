@@ -58,7 +58,7 @@ External code **never** imports from `persistence/database/` directly:
 # ✅ Correct - access via Database instance
 def some_workflow(db: Database):
     files = db.library_files.get_pending_files(library_key)
-    tags = db.file_tags.get_track_tags(track_id)
+    tags = db.tags.get_song_tags(file_id)
 
 # ❌ Wrong - direct import
 from nomarr.persistence.database.library_files_aql import LibraryFilesAQL

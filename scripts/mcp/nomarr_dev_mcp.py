@@ -42,7 +42,15 @@ sys.path.insert(0, str(ROOT))
 from mcp.server.fastmcp import FastMCP
 
 # Initialize MCP server
-mcp = FastMCP("nomarr-dev")
+mcp = FastMCP(
+    "nomarr-dev",
+    instructions="""Tools for navigating nomarr codebase.
+- discover_api: Returns module exports (classes, functions, signatures) in ~20 lines vs reading full files.
+- get_source: Returns a single function/method/class with file path and line number - ideal for targeted edits.
+- list_routes: Static analysis of API routes without runtime.
+- trace_calls: Follows call chains from entry points through layers.
+- trace_endpoint: Resolves FastAPI DI to trace full endpoint behavior.""",
+)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -54,37 +62,20 @@ from scripts.mcp.discover_api_ml import discover_api as _discover_api_impl
 from scripts.mcp.get_source_ml import get_source as _get_source_impl
 from scripts.mcp.list_routes_ml import list_routes as _list_routes_impl
 from scripts.mcp.trace_calls_ml import trace_calls as _trace_calls_impl
+from scripts.mcp.trace_endpoint_ml import trace_endpoint as _trace_endpoint_impl
 
 
 @mcp.tool()
 def discover_api(
     module_name: Annotated[
         str,
-        "Fully qualified module name (e.g., 'nomarr.components.ml', 'nomarr.helpers')",
+        "Fully qualified module name (e.g., 'nomarr.components.ml')",
     ],
 ) -> dict:
     """
     Discover the public API of a nomarr module.
 
     Shows classes, functions, methods, and constants exported by a module.
-    Use this BEFORE writing code that calls a module to understand what's available.
-
-    PREFER THIS OVER read_file:
-    - Returns ~20 lines of structured signatures vs 500+ lines of raw code
-    - Shows WHAT you can call without loading implementation details
-    - Use get_source() after to see specific implementations you need
-
-    Examples:
-        - discover_api("nomarr.components.ml") - See ML component exports
-        - discover_api("nomarr.helpers") - See helper utilities
-        - discover_api("nomarr.persistence.arango") - See DB access layer
-
-    Returns structured JSON with:
-        - module: Module name
-        - classes: {name: {methods: {name: signature}, doc: str}}
-        - functions: {name: {sig: str, doc: str}}
-        - constants: {name: value}
-        - error: Optional error message
     """
     # Run with stdout capture (in case any imports print)
     stdout_capture = io.StringIO()
@@ -101,40 +92,24 @@ def discover_api(
 def get_source(
     qualified_name: Annotated[
         str,
-        "Fully qualified name: 'module.Class.method' or 'module.function'",
+        "Python dotted path: 'module.function' or 'module.Class.method'",
     ],
+    context_lines: Annotated[
+        int,
+        "Lines to include before the entity (for edit context)",
+    ] = 0,
 ) -> dict:
     """
-    Get source code of a specific function, method, or class.
+    Get source code of a Python function, method, or class by import path.
 
-    Use after discover_api() when you need to see the actual implementation
-    of a specific function/method/class.
-
-    PREFER THIS OVER read_file:
-    - Returns exactly ONE entity (4-50 lines) vs loading entire files (500+ lines)
-    - Includes file path and line number for precise edits
-    - Workflow: discover_api() -> see what exists -> get_source() -> see how it works
-
-    Examples:
-        - get_source("nomarr.persistence.db.Database.close") - Get method source
-        - get_source("nomarr.helpers.time_helper.now_ms") - Get function source
-        - get_source("nomarr.helpers.dto.library_dto.LibraryDict") - Get class source
-
-    Returns structured JSON with:
-        - name: The qualified name requested
-        - type: "function", "method", or "class"
-        - source: The source code
-        - file: Source file path
-        - line: Starting line number
-        - line_count: Number of lines in the entity
-        - error: Optional error message
+    Returns source with file path, line number, and optional preceding context for edits.
     """
     stdout_capture = io.StringIO()
     stderr_capture = io.StringIO()
 
     try:
         with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
-            return _get_source_impl(qualified_name)
+            return _get_source_impl(qualified_name, context_lines=context_lines)
     except Exception as e:
         return {"name": qualified_name, "error": f"{type(e).__name__}: {e}"}
 
@@ -143,31 +118,13 @@ def get_source(
 def trace_calls(
     function: Annotated[
         str,
-        "Fully qualified function name (e.g., 'nomarr.interfaces.api.web.library_if.scan_library')",
+        "Fully qualified function name (e.g., 'nomarr.services.domain.library_svc.LibraryService.start_scan')",
     ],
 ) -> dict:
     """
-    Trace the call chain from a function down through the layers.
+    Trace the call chain from a function down through the codebase.
 
-    Starting from an entry point (like an API endpoint), shows every nomarr
-    function it calls, recursively, with file paths and line numbers.
-
-    USE THIS TO:
-    - Understand what an endpoint does without reading entire files
-    - Find buried methods when you know the origin call
-    - Navigate from interface → service → workflow → component → persistence
-    - Reduce token count vs loading multiple full files
-
-    Examples:
-        - trace_calls("nomarr.interfaces.api.web.library_if.scan_library")
-        - trace_calls("nomarr.services.domain.library_svc.LibraryService.start_scan")
-
-    Returns structured JSON with:
-        - root: The starting function
-        - tree: Nested call tree with file/line for each call
-        - flat: Flattened list with indentation for easy reading
-        - depth: Maximum call depth
-        - call_count: Total unique calls traced
+    Shows every nomarr function it calls, recursively, with file paths and line numbers.
     """
     stdout_capture = io.StringIO()
     stderr_capture = io.StringIO()
@@ -184,19 +141,7 @@ def list_routes() -> dict:
     """
     List all API routes by static analysis.
 
-    Discovers routes without importing the FastAPI app (which hangs).
-    Parses @router.get/post/etc decorators directly from source files.
-
-    PREFER THIS for understanding the API surface:
-    - Returns structured data: routes grouped by prefix
-    - Includes function name, file path, and line number
-    - No runtime dependencies - pure static analysis
-
-    Returns structured JSON with:
-        - routes: List of {method, path, function, file, line}
-        - by_prefix: Routes grouped by 'integration', 'web', 'other'
-        - total: Total route count
-        - summary: Counts by prefix
+    Parses @router decorators from source files. Returns routes with method, path, function, file, and line.
     """
     stdout_capture = io.StringIO()
     stderr_capture = io.StringIO()
@@ -206,6 +151,34 @@ def list_routes() -> dict:
             return _list_routes_impl(ROOT)
     except Exception as e:
         return {"error": f"{type(e).__name__}: {e}"}
+
+
+@mcp.tool()
+def trace_endpoint(
+    endpoint: Annotated[
+        str,
+        "Fully qualified endpoint name (e.g., 'nomarr.interfaces.api.web.info_if.web_info')",
+    ],
+) -> dict:
+    """
+    Trace an API endpoint through FastAPI DI to service methods.
+
+    Higher-level tool that:
+    1. Finds the endpoint function
+    2. Extracts Depends() injections and resolves service types
+    3. Finds which methods are called on each injected service
+    4. Traces the full call chain for each service method
+
+    Use this for interface endpoints to get the complete picture without manual DI resolution.
+    """
+    stdout_capture = io.StringIO()
+    stderr_capture = io.StringIO()
+
+    try:
+        with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
+            return _trace_endpoint_impl(endpoint, ROOT)
+    except Exception as e:
+        return {"endpoint": endpoint, "error": f"{type(e).__name__}: {e}"}
 
 
 # ──────────────────────────────────────────────────────────────────────

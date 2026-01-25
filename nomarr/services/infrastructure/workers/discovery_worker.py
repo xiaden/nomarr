@@ -239,9 +239,11 @@ class DiscoveryWorker(multiprocessing.Process):
                         logger.info("[%s] Recovery window expired, resuming work", self.worker_id)
 
                 # Discover and claim next file
+                logger.debug("[%s] Polling for work...", self.worker_id)
                 file_id = discover_and_claim_file(db, self.worker_id)
 
                 if file_id is None:
+                    logger.debug("[%s] No work found, sleeping %.1fs", self.worker_id, IDLE_SLEEP_S)
                     # No work available - check for cache eviction (idle timeout)
                     from nomarr.components.ml.ml_cache_comp import check_and_evict_idle_cache
 
@@ -251,6 +253,8 @@ class DiscoveryWorker(multiprocessing.Process):
 
                     time.sleep(IDLE_SLEEP_S)
                     continue
+
+                logger.debug("[%s] Work found: claimed file %s", self.worker_id, file_id)
 
                 # Per-file resource check (GPU_REFACTOR_PLAN.md Section 11)
                 # Only if resource management is enabled

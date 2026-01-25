@@ -89,8 +89,20 @@ def _load_library_state(
     file_id = library_file["_id"]
     chromaprint = library_file.get("chromaprint")
 
-    # Get all numeric tags for this file from file_tags
-    all_tags = db.file_tags.get_file_tags_by_prefix(file_id, f"{namespace}:")
+    # Get all nomarr tags for this file (rel starts with "nom:")
+    all_tags_raw = db.tags.get_song_tags(file_id, nomarr_only=True)
+    # Convert to dict format expected by downstream code
+    # Filter to those matching the namespace prefix
+    f"nom:{namespace}:" if not namespace.startswith("nom:") else f"{namespace}:"
+    all_tags = {}
+    for tag in all_tags_raw:
+        rel = tag["rel"]
+        # Strip "nom:" prefix for compatibility with existing code
+        if rel.startswith("nom:"):
+            key = rel[4:]  # Remove "nom:" prefix
+        else:
+            key = rel
+        all_tags[key] = tag["value"]
 
     if not all_tags:
         logging.warning(f"[calibrated_tags] No tags found for {file_path}")
@@ -324,9 +336,10 @@ def _update_db_and_file(
         mood_tags: Mood tags to write
         chromaprint: Audio fingerprint for verification (from library_files)
     """
-    # Store mood tags in DB WITHOUT namespace prefix (is_nomarr_tag=True indicates these are Nomarr tags)
-    # The database schema uses is_nomarr_tag flag instead of namespace prefix
-    db.file_tags.upsert_file_tags(file_id, mood_tags, is_nomarr_tag=True)
+    # Store mood tags in DB with "nom:" prefix (Nomarr provenance)
+    for key, value in mood_tags.items():
+        nomarr_rel = f"nom:{key}" if not key.startswith("nom:") else key
+        db.tags.set_song_tags(file_id, nomarr_rel, [value])
 
     logging.debug(f"[calibrated_tags] Updated {len(mood_tags)} mood tags in DB")
 

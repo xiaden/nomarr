@@ -28,23 +28,41 @@ from unittest.mock import MagicMock
 
 
 def _mock_unavailable_dependencies() -> None:
-    """Mock Docker-only dependencies for discovery in dev environment."""
-    mock_modules = [
-        "essentia",
-        "essentia.standard",
-        "tensorflow",
-        "tensorflow.lite",
-        "tensorflow.lite.python",
-        "tensorflow.lite.python.interpreter",
-    ]
-    for mod in mock_modules:
-        if mod not in sys.modules:
-            sys.modules[mod] = MagicMock()
+    """Mock Docker-only dependencies for discovery in dev environment.
+
+    Must create proper package structure - parent modules need submodule
+    attributes for 'from x.y import z' to work.
+    """
+    # Define hierarchy: parent -> list of submodules
+    package_hierarchy = {
+        "arango": ["aql", "collection", "cursor", "database", "exceptions"],
+        "essentia": ["standard"],
+        "tensorflow": ["lite"],
+        "tensorflow.lite": ["python"],
+        "tensorflow.lite.python": ["interpreter"],
+    }
+
+    # Create all modules with proper structure
+    for parent, children in package_hierarchy.items():
+        if parent not in sys.modules:
+            parent_mock = MagicMock()
+            sys.modules[parent] = parent_mock
+        else:
+            parent_mock = sys.modules[parent]
+
+        # Attach child modules to parent
+        for child in children:
+            full_name = f"{parent}.{child}"
+            if full_name not in sys.modules:
+                child_mock = MagicMock()
+                sys.modules[full_name] = child_mock
+                setattr(parent_mock, child, child_mock)
 
 
 def get_source(
     qualified_name: str,
     *,
+    context_lines: int = 0,
     max_lines: int | None = None,
 ) -> dict[str, Any]:
     """
@@ -56,15 +74,17 @@ def get_source(
             - "nomarr.persistence.db.Database" (class)
             - "nomarr.persistence.db.Database.close" (method)
             - "nomarr.helpers.time_helper.now_ms" (function)
+        context_lines: Include N lines before the entity (for edit context)
         max_lines: Truncate source to this many lines (None = full source)
 
     Returns:
         Dict with:
             - name: The qualified name requested
             - type: "function", "method", "class", or "unknown"
-            - source: The source code (or None if unavailable)
+            - source: The source code as a string
             - file: Source file path
-            - line: Starting line number
+            - line: Starting line number (of context if included)
+            - line_count: Total lines returned
             - error: Optional error message
     """
     _mock_unavailable_dependencies()
@@ -123,25 +143,32 @@ def get_source(
         if hasattr(obj, "__func__"):
             source_obj = obj.__func__
 
-        source = inspect.getsource(source_obj)
+        source_lines_raw, line_number = inspect.getsourcelines(source_obj)
 
-        # Truncate if requested
-        if max_lines is not None:
-            lines = source.split("\n")
-            if len(lines) > max_lines:
-                source = "\n".join(lines[:max_lines]) + f"\n# ... ({len(lines) - max_lines} more lines)"
-
-        result["source"] = source
-
-        # Get file and line info
+        # Get file path first (needed for context)
+        source_file = None
         try:
             source_file = inspect.getfile(source_obj)
             result["file"] = source_file
-            source_lines, line_number = inspect.getsourcelines(source_obj)
-            result["line"] = line_number
-            result["line_count"] = len(source_lines)
         except (OSError, TypeError):
             pass
+
+        # Prepend context lines if requested
+        if context_lines > 0 and source_file:
+            context_start = max(1, line_number - context_lines)
+            with open(source_file, "r", encoding="utf-8") as f:
+                all_lines = f.readlines()
+                context = all_lines[context_start - 1 : line_number - 1]
+                source_lines_raw = context + source_lines_raw
+                line_number = context_start
+
+        # Truncate if requested
+        if max_lines is not None and len(source_lines_raw) > max_lines:
+            source_lines_raw = source_lines_raw[:max_lines]
+
+        result["source"] = "".join(source_lines_raw)
+        result["line"] = line_number
+        result["line_count"] = len(source_lines_raw)
 
     except (OSError, TypeError) as e:
         result["error"] = f"Could not get source: {e}"
@@ -159,6 +186,12 @@ def main() -> int:
         help="Qualified name (e.g., nomarr.persistence.db.Database.close)",
     )
     parser.add_argument(
+        "--context-lines",
+        type=int,
+        default=0,
+        help="Include N lines before the entity (for edit context)",
+    )
+    parser.add_argument(
         "--max-lines",
         type=int,
         default=None,
@@ -171,7 +204,7 @@ def main() -> int:
     project_root = Path(__file__).parent.parent.parent
     sys.path.insert(0, str(project_root))
 
-    result = get_source(args.name, max_lines=args.max_lines)
+    result = get_source(args.name, context_lines=args.context_lines, max_lines=args.max_lines)
 
     print(json.dumps(result, indent=2))
 

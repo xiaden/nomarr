@@ -1,4 +1,4 @@
-"""Entity cleanup component - remove orphaned entities from entity collections."""
+"""Tag cleanup component - remove orphaned tags from tags collection."""
 
 from __future__ import annotations
 
@@ -7,47 +7,32 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
-# Entity collections to clean
-ENTITY_COLLECTIONS = ["artists", "albums", "labels", "genres", "years"]
 
-
-def cleanup_orphaned_entities(db: Database) -> dict[str, int]:
+def cleanup_orphaned_tags(db: Database) -> int:
     """
-    Remove entities that are no longer referenced by any song.
+    Remove tags that are no longer referenced by any song.
 
-    Entities become orphaned when:
+    Tags become orphaned when:
     - Songs are deleted
-    - Song metadata is updated to reference different entities
+    - Song metadata is updated to use different tags
 
     Args:
         db: Database instance
 
     Returns:
-        Dict mapping collection name to count of deleted entities
+        Count of deleted tags
     """
-    deleted_counts: dict[str, int] = {}
-
-    for collection in ENTITY_COLLECTIONS:
-        count = db.entities.cleanup_orphaned_entities(collection)
-        deleted_counts[collection] = count
-
-    return deleted_counts
+    return db.tags.cleanup_orphaned_tags()
 
 
-def get_orphaned_entity_counts(db: Database) -> dict[str, int]:
+def get_orphaned_tag_count(db: Database) -> int:
     """
-    Count orphaned entities in each collection without deleting.
+    Count orphaned tags in the tags collection without deleting.
 
     Args:
         db: Database instance
 
     Returns:
-        Dict mapping collection name to count of orphaned entities
+        Count of orphaned tags
     """
-    orphaned_counts: dict[str, int] = {}
-
-    for collection in ENTITY_COLLECTIONS:
-        count = db.entities.count_orphaned_entities(collection)
-        orphaned_counts[collection] = count
-
-    return orphaned_counts
+    return db.tags.get_orphaned_tag_count()

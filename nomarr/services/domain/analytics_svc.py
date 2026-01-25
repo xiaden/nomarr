@@ -75,8 +75,8 @@ class AnalyticsService:
             List of TagFrequencyItem DTOs for frontend
         """
         namespace_prefix = f"{self.cfg.namespace}:"
-        # Get tag frequencies from file_tags
-        tag_data = self._db.file_tags.get_tag_frequencies(limit=limit, namespace_prefix=namespace_prefix)
+        # Get tag frequencies from tags collection
+        tag_data = self._db.tags.get_tag_frequencies(limit=limit, namespace_prefix=namespace_prefix)
         # Get artist/album frequencies from library_files
         file_data = self._db.library_files.get_artist_album_frequencies(limit=limit)
         # Get total file count
@@ -134,7 +134,7 @@ class AnalyticsService:
         Returns:
             TagCorrelationData with mood-to-mood and mood-to-tier correlations
         """
-        tag_data = self._db.file_tags.get_mood_and_tier_tags_for_correlation()
+        tag_data = self._db.tags.get_mood_and_tier_tags_for_correlation()
         data = {
             "mood_tag_rows": tag_data["mood_tag_rows"],
             "tier_tag_keys": tag_data["tier_tag_keys"],
@@ -157,7 +157,7 @@ class AnalyticsService:
         Returns:
             List of MoodDistributionItem DTOs
         """
-        mood_rows = self._db.file_tags.get_mood_distribution_data()
+        mood_rows = self._db.tags.get_mood_distribution_data()
         result = compute_mood_distribution(mood_rows=mood_rows)
 
         # Transform to list format with percentages
@@ -206,7 +206,7 @@ class AnalyticsService:
 
         # Fetch file ID mappings for all unique tags
         all_specs = x_tags + y_tags
-        tag_data = self._db.file_tags.get_file_ids_for_tags(tag_specs=all_specs)
+        tag_data = self._db.tags.get_file_ids_for_tags(tag_specs=all_specs)
 
         params = ComputeTagCoOccurrenceParams(
             x_tags=x_tag_specs,

@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from nomarr.services.domain.tagging_svc import TaggingService
     from nomarr.services.infrastructure.config_svc import ConfigService
     from nomarr.services.infrastructure.file_watcher_svc import FileWatcherService
+    from nomarr.services.infrastructure.info_svc import InfoService
     from nomarr.services.infrastructure.worker_system_svc import WorkerSystemService
 
 
@@ -131,7 +132,7 @@ def get_tagging_service() -> TaggingService:
     return service  # type: ignore[no-any-return]
 
 
-def get_info_service() -> Any:
+def get_info_service() -> InfoService:
     """Get info service instance."""
     from fastapi import HTTPException
 
@@ -140,7 +141,7 @@ def get_info_service() -> Any:
     service = application.services.get("info")
     if not service:
         raise HTTPException(status_code=503, detail="Info service not available")
-    return service
+    return service  # type: ignore[no-any-return]
 
 
 def get_metadata_service() -> MetadataService:

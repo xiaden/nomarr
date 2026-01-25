@@ -181,8 +181,8 @@ def write_file_tags_workflow(
         # Get chromaprint for verification
         chromaprint = file_doc.get("chromaprint")
 
-        # Get tags from database
-        db_tags = db.file_tags.get_file_tags(file_id, nomarr_only=True)
+        # Get tags from database (nomarr tags only)
+        db_tags = db.tags.get_song_tags_as_dict(file_id, nomarr_only=True)
 
         # Filter tags for target mode
         tags_to_write = _filter_tags_for_mode(db_tags, target_mode, has_calibration)

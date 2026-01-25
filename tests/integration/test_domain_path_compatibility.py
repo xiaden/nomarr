@@ -108,8 +108,8 @@ class TestLibraryUpdateDomain:
 
         # Mock file operations
         mock_db.library_files.upsert_library_file.return_value = "library_files/file1"
-        mock_db.file_tags.delete_tags_by_file_and_prefix = MagicMock()
-        mock_db.file_tags.batch_insert_tags = MagicMock()
+        mock_db.tags.delete_song_tags = MagicMock()
+        mock_db.tags.set_song_tags = MagicMock()
 
         test_metadata = {
             "duration": 180.5,

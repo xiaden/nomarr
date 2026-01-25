@@ -42,17 +42,14 @@ persistence/
 └── database/                      # Operations classes (one per collection)
     ├── calibration_history_aql.py
     ├── calibration_state_aql.py
-    ├── entities_aql.py
-    ├── file_tags_aql.py
     ├── health_aql.py
     ├── libraries_aql.py
     ├── library_files_aql.py
     ├── library_folders_aql.py
-    ├── library_tags_aql.py
     ├── meta_aql.py
     ├── ml_capacity_aql.py
     ├── sessions_aql.py
-    ├── song_tag_edges_aql.py
+    ├── tags_aql.py                # Unified tag operations (TAG_UNIFICATION_REFACTOR)
     ├── worker_claims_aql.py
     └── worker_restart_policy_aql.py
 ```

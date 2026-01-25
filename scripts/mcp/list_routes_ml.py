@@ -36,6 +36,7 @@ class RouteInfo:
     function: str
     file: str
     line: int
+    injected_services: list[dict[str, str]] = field(default_factory=list)  # [{param, depends_on, type}]
 
 
 @dataclass
@@ -52,6 +53,74 @@ def _extract_string_value(node: ast.expr) -> str | None:
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
     return None
+
+
+def _annotation_to_string(node: ast.expr) -> str | None:
+    """Convert type annotation to string."""
+    if isinstance(node, ast.Name):
+        return node.id
+    elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    elif isinstance(node, ast.Attribute):
+        value_str = _annotation_to_string(node.value)
+        if value_str:
+            return f"{value_str}.{node.attr}"
+    elif isinstance(node, ast.Subscript):
+        return _annotation_to_string(node.value)
+    return None
+
+
+def _call_to_string(node: ast.expr) -> str | None:
+    """Convert a call expression to string."""
+    if isinstance(node, ast.Name):
+        return node.id
+    elif isinstance(node, ast.Attribute):
+        value_str = _call_to_string(node.value)
+        if value_str:
+            return f"{value_str}.{node.attr}"
+    return None
+
+
+def _extract_injected_services(
+    func_node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> list[dict[str, str]]:
+    """Extract Depends() injected services from function parameters."""
+    services: list[dict[str, str]] = []
+
+    for arg in func_node.args.args:
+        type_str = None
+        depends_func = None
+
+        if arg.annotation:
+            type_str = _annotation_to_string(arg.annotation)
+
+        # Find default value (aligned from right)
+        arg_index = func_node.args.args.index(arg)
+        num_defaults = len(func_node.args.defaults)
+        num_args = len(func_node.args.args)
+        default_index = arg_index - (num_args - num_defaults)
+
+        if default_index >= 0:
+            default = func_node.args.defaults[default_index]
+            if isinstance(default, ast.Call):
+                func_name = None
+                if isinstance(default.func, ast.Name) and default.func.id == "Depends":
+                    if default.args:
+                        func_name = _call_to_string(default.args[0])
+                elif isinstance(default.func, ast.Attribute) and default.func.attr == "Depends":
+                    if default.args:
+                        func_name = _call_to_string(default.args[0])
+                if func_name:
+                    depends_func = func_name
+
+        if depends_func:
+            services.append({
+                "param": arg.arg,
+                "depends_on": depends_func,
+                "type": type_str or "Any",
+            })
+
+    return services
 
 
 def _parse_router_definition(node: ast.Assign, file_path: Path) -> RouterInfo | None:
@@ -136,6 +205,8 @@ def _parse_file(file_path: Path) -> RouterInfo | None:
                 route = _parse_route_decorator(decorator, node)
                 if route:
                     method, path = route
+                    # Extract injected services from this route handler
+                    injected = _extract_injected_services(node)
                     router_info.routes.append(
                         RouteInfo(
                             method=method,
@@ -143,6 +214,7 @@ def _parse_file(file_path: Path) -> RouterInfo | None:
                             function=node.name,
                             file=str(file_path),
                             line=node.lineno,
+                            injected_services=injected,
                         )
                     )
 
@@ -186,6 +258,7 @@ def _build_full_paths(routers: list[RouterInfo], project_root: Path) -> list[dic
                     "function": route.function,
                     "file": file_str,
                     "line": route.line,
+                    "injected_services": route.injected_services,
                 }
             )
 

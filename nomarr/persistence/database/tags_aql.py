@@ -1,0 +1,687 @@
+"""Unified tag operations for the tags collection.
+
+This is the ONLY canonical tag persistence implementation.
+All tag read/write operations go through this module.
+
+Schema:
+    tags vertex collection: { _key, rel: str, value: scalar }
+    song_tag_edges edge collection: { _from: library_files/_id, _to: tags/_id }
+
+Uniqueness:
+    A tag is uniquely identified by (rel, value) pair.
+    Edge uniqueness enforced by unique index on [_from, _to].
+
+Provenance Convention:
+    - Nomarr-generated tags: rel starts with "nom:" (e.g., "nom:mood-strict")
+    - External/user tags: all other rel values (e.g., "artist", "album", "genre")
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING, Any
+
+from arango.cursor import Cursor
+
+if TYPE_CHECKING:
+    from arango.database import StandardDatabase
+
+    from nomarr.persistence.arango_client import SafeDatabase
+
+logger = logging.getLogger(__name__)
+
+# Type alias for scalar values allowed in tags
+TagValue = str | int | float | bool
+
+
+class TagOperations:
+    """Unified tag operations for the tags collection."""
+
+    def __init__(self, db: StandardDatabase | SafeDatabase) -> None:
+        self._db = db
+
+    # ──────────────────────────────────────────────────────────────────────
+    # Tag vertex operations
+    # ──────────────────────────────────────────────────────────────────────
+
+    def find_or_create_tag(self, rel: str, value: TagValue) -> str:
+        """Find or create a tag vertex. Returns tag _id.
+
+        Uses UPSERT on (rel, value) unique index for idempotency.
+
+        Args:
+            rel: Tag key (e.g., "artist", "album", "nom:mood-strict")
+            value: Scalar value (str|int|float|bool). NOT a list. NOT JSON.
+
+        Returns:
+            Tag document _id (e.g., "tags/12345")
+        """
+        query = """
+        UPSERT { rel: @rel, value: @value }
+        INSERT { rel: @rel, value: @value }
+        UPDATE {}
+        IN tags
+        RETURN NEW._id
+        """
+        cursor: Cursor = self._db.aql.execute(query, bind_vars={"rel": rel, "value": value})
+        result = list(cursor)
+        return str(result[0])
+
+    def get_tag(self, tag_id: str) -> dict[str, Any] | None:
+        """Get tag by _id. Returns {_id, _key, rel, value} or None."""
+        query = """
+        RETURN DOCUMENT(@tag_id)
+        """
+        cursor: Cursor = self._db.aql.execute(query, bind_vars={"tag_id": tag_id})
+        result = list(cursor)
+        return result[0] if result and result[0] else None
+
+    def list_tags_by_rel(
+        self,
+        rel: str,
+        limit: int = 100,
+        offset: int = 0,
+        search: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List all unique tag values for a rel. For browse UI.
+
+        Args:
+            rel: Tag key to filter by (e.g., "artist", "album")
+            limit: Max results
+            offset: Pagination offset
+            search: Optional substring search on value (case-insensitive)
+
+        Returns:
+            List of {_id, _key, rel, value, song_count}
+        """
+        if search:
+            query = """
+            FOR tag IN tags
+                FILTER tag.rel == @rel
+                FILTER CONTAINS(LOWER(TO_STRING(tag.value)), LOWER(@search))
+                SORT tag.value
+                LIMIT @offset, @limit
+                LET song_count = LENGTH(
+                    FOR edge IN song_tag_edges
+                        FILTER edge._to == tag._id
+                        RETURN 1
+                )
+                RETURN {
+                    _id: tag._id,
+                    _key: tag._key,
+                    rel: tag.rel,
+                    value: tag.value,
+                    song_count: song_count
+                }
+            """
+            bind_vars = {"rel": rel, "search": search, "limit": limit, "offset": offset}
+        else:
+            query = """
+            FOR tag IN tags
+                FILTER tag.rel == @rel
+                SORT tag.value
+                LIMIT @offset, @limit
+                LET song_count = LENGTH(
+                    FOR edge IN song_tag_edges
+                        FILTER edge._to == tag._id
+                        RETURN 1
+                )
+                RETURN {
+                    _id: tag._id,
+                    _key: tag._key,
+                    rel: tag.rel,
+                    value: tag.value,
+                    song_count: song_count
+                }
+            """
+            bind_vars = {"rel": rel, "limit": limit, "offset": offset}
+
+        cursor: Cursor = self._db.aql.execute(query, bind_vars=bind_vars)
+        return list(cursor)
+
+    def count_tags_by_rel(self, rel: str, search: str | None = None) -> int:
+        """Count unique tags for a rel.
+
+        Args:
+            rel: Tag key to filter by
+            search: Optional substring search on value
+
+        Returns:
+            Count of matching tags
+        """
+        if search:
+            query = """
+            RETURN LENGTH(
+                FOR tag IN tags
+                    FILTER tag.rel == @rel
+                    FILTER CONTAINS(LOWER(TO_STRING(tag.value)), LOWER(@search))
+                    RETURN 1
+            )
+            """
+            bind_vars = {"rel": rel, "search": search}
+        else:
+            query = """
+            RETURN LENGTH(
+                FOR tag IN tags
+                    FILTER tag.rel == @rel
+                    RETURN 1
+            )
+            """
+            bind_vars = {"rel": rel}
+
+        cursor: Cursor = self._db.aql.execute(query, bind_vars=bind_vars)
+        result = list(cursor)
+        return result[0] if result else 0
+
+    # ──────────────────────────────────────────────────────────────────────
+    # Edge operations (song ↔ tag relationships)
+    # ──────────────────────────────────────────────────────────────────────
+
+    def set_song_tags(
+        self,
+        song_id: str,
+        rel: str,
+        values: list[TagValue],
+    ) -> None:
+        """Replace all tags for a song+rel. Creates tag vertices as needed.
+
+        This is a full replacement: existing edges for (song_id, rel) are deleted,
+        then new edges are created for each value.
+
+        Uses UPSERT for edges to ensure idempotency (unique index on [_from, _to]).
+
+        Args:
+            song_id: Song _id (e.g., "library_files/abc123")
+            rel: Tag key (e.g., "artist", "album", "nom:mood-strict")
+            values: List of scalar values. Empty list clears all tags for this rel.
+
+        Note:
+            Nomarr provenance is implicit in rel prefix ("nom:*").
+        """
+        # First, delete existing edges for this song+rel
+        delete_query = """
+        FOR edge IN song_tag_edges
+            FILTER edge._from == @song_id
+            LET tag = DOCUMENT(edge._to)
+            FILTER tag != null AND tag.rel == @rel
+            REMOVE edge IN song_tag_edges
+        """
+        self._db.aql.execute(delete_query, bind_vars={"song_id": song_id, "rel": rel})
+
+        # Then create new edges for each value (with UPSERT for idempotency)
+        if values:
+            insert_query = """
+            FOR value IN @values
+                // Find or create tag
+                UPSERT { rel: @rel, value: value }
+                INSERT { rel: @rel, value: value }
+                UPDATE {}
+                IN tags
+                LET tag_id = NEW._id
+
+                // Create edge (UPSERT to handle duplicates from concurrent writes)
+                UPSERT { _from: @song_id, _to: tag_id }
+                INSERT { _from: @song_id, _to: tag_id }
+                UPDATE {}
+                IN song_tag_edges
+            """
+            self._db.aql.execute(
+                insert_query,
+                bind_vars={"song_id": song_id, "rel": rel, "values": values},
+            )
+
+    def add_song_tag(
+        self,
+        song_id: str,
+        rel: str,
+        value: TagValue,
+    ) -> None:
+        """Add a single tag to a song (without replacing existing tags for this rel).
+
+        Uses UPSERT for both tag and edge to ensure idempotency.
+
+        Args:
+            song_id: Song _id (e.g., "library_files/abc123")
+            rel: Tag key (e.g., "nom:danceability_...")
+            value: Scalar value
+        """
+        query = """
+        // Find or create tag
+        UPSERT { rel: @rel, value: @value }
+        INSERT { rel: @rel, value: @value }
+        UPDATE {}
+        IN tags
+        LET tag_id = NEW._id
+
+        // Create edge (UPSERT to prevent duplicates)
+        UPSERT { _from: @song_id, _to: tag_id }
+        INSERT { _from: @song_id, _to: tag_id }
+        UPDATE {}
+        IN song_tag_edges
+        """
+        self._db.aql.execute(
+            query,
+            bind_vars={"song_id": song_id, "rel": rel, "value": value},
+        )
+
+    def get_song_tags(
+        self,
+        song_id: str,
+        rel: str | None = None,
+        nomarr_only: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Get all tags for a song, optionally filtered by rel or Nomarr prefix.
+
+        Args:
+            song_id: Song _id
+            rel: Optional filter by specific rel (e.g., "artist")
+            nomarr_only: If True, filter by STARTS_WITH(rel, "nom:")
+
+        Returns:
+            List of {rel, value} dicts
+        """
+        if rel:
+            query = """
+            FOR edge IN song_tag_edges
+                FILTER edge._from == @song_id
+                LET tag = DOCUMENT(edge._to)
+                FILTER tag != null AND tag.rel == @rel
+                RETURN { rel: tag.rel, value: tag.value }
+            """
+            bind_vars: dict[str, Any] = {"song_id": song_id, "rel": rel}
+        elif nomarr_only:
+            query = """
+            FOR edge IN song_tag_edges
+                FILTER edge._from == @song_id
+                LET tag = DOCUMENT(edge._to)
+                FILTER tag != null AND STARTS_WITH(tag.rel, "nom:")
+                RETURN { rel: tag.rel, value: tag.value }
+            """
+            bind_vars = {"song_id": song_id}
+        else:
+            query = """
+            FOR edge IN song_tag_edges
+                FILTER edge._from == @song_id
+                LET tag = DOCUMENT(edge._to)
+                FILTER tag != null
+                RETURN { rel: tag.rel, value: tag.value }
+            """
+            bind_vars = {"song_id": song_id}
+
+        cursor: Cursor = self._db.aql.execute(query, bind_vars=bind_vars)
+        return list(cursor)
+
+    def get_song_tags_as_dict(
+        self,
+        song_id: str,
+        nomarr_only: bool = False,
+    ) -> dict[str, Any]:
+        """Get all tags for a song as a key→value dict.
+
+        For multi-value tags (same rel), returns a list of values.
+
+        Args:
+            song_id: Song _id
+            nomarr_only: If True, filter by STARTS_WITH(rel, "nom:")
+
+        Returns:
+            Dict of {rel: value} or {rel: [values]} for multi-value
+        """
+        tags = self.get_song_tags(song_id, nomarr_only=nomarr_only)
+        result: dict[str, Any] = {}
+        for tag in tags:
+            rel = tag["rel"]
+            value = tag["value"]
+            if rel in result:
+                # Multi-value: convert to list
+                existing = result[rel]
+                if isinstance(existing, list):
+                    existing.append(value)
+                else:
+                    result[rel] = [existing, value]
+            else:
+                result[rel] = value
+        return result
+
+    def list_songs_for_tag(
+        self,
+        tag_id: str,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[str]:
+        """List song _ids with this tag. For browse drill-down.
+
+        Args:
+            tag_id: Tag _id (e.g., "tags/12345")
+            limit: Max results
+            offset: Pagination offset
+
+        Returns:
+            List of song _ids
+        """
+        query = """
+        FOR edge IN song_tag_edges
+            FILTER edge._to == @tag_id
+            SORT edge._from
+            LIMIT @offset, @limit
+            RETURN edge._from
+        """
+        cursor: Cursor = self._db.aql.execute(query, bind_vars={"tag_id": tag_id, "limit": limit, "offset": offset})
+        return list(cursor)
+
+    def count_songs_for_tag(self, tag_id: str) -> int:
+        """Count songs with this tag.
+
+        Args:
+            tag_id: Tag _id
+
+        Returns:
+            Count of songs
+        """
+        query = """
+        RETURN LENGTH(
+            FOR edge IN song_tag_edges
+                FILTER edge._to == @tag_id
+                RETURN 1
+        )
+        """
+        cursor: Cursor = self._db.aql.execute(query, bind_vars={"tag_id": tag_id})
+        result = list(cursor)
+        return result[0] if result else 0
+
+    def delete_song_tags(self, song_id: str) -> None:
+        """Delete all tag edges for a song (on file delete).
+
+        Args:
+            song_id: Song _id
+        """
+        query = """
+        FOR edge IN song_tag_edges
+            FILTER edge._from == @song_id
+            REMOVE edge IN song_tag_edges
+        """
+        self._db.aql.execute(query, bind_vars={"song_id": song_id})
+
+    def cleanup_orphaned_tags(self) -> int:
+        """Delete tags with no edges. Returns count deleted.
+
+        Use this periodically or after bulk file deletions.
+        """
+        query = """
+        LET orphans = (
+            FOR tag IN tags
+                LET edge_count = LENGTH(
+                    FOR edge IN song_tag_edges
+                        FILTER edge._to == tag._id
+                        LIMIT 1
+                        RETURN 1
+                )
+                FILTER edge_count == 0
+                RETURN tag._key
+        )
+        FOR key IN orphans
+            REMOVE { _key: key } IN tags
+        RETURN LENGTH(orphans)
+        """
+        cursor: Cursor = self._db.aql.execute(query)
+        result = list(cursor)
+        return result[0] if result else 0
+
+    def get_orphaned_tag_count(self) -> int:
+        """Count tags with no edges (for reporting before cleanup)."""
+        query = """
+        RETURN LENGTH(
+            FOR tag IN tags
+                LET edge_count = LENGTH(
+                    FOR edge IN song_tag_edges
+                        FILTER edge._to == tag._id
+                        LIMIT 1
+                        RETURN 1
+                )
+                FILTER edge_count == 0
+                RETURN 1
+        )
+        """
+        cursor: Cursor = self._db.aql.execute(query)
+        result = list(cursor)
+        return result[0] if result else 0
+
+    # ──────────────────────────────────────────────────────────────────────
+    # Analytics / query helpers
+    # ──────────────────────────────────────────────────────────────────────
+
+    def get_unique_rels(self, nomarr_only: bool = False) -> list[str]:
+        """Get all unique rel values in the tags collection.
+
+        Args:
+            nomarr_only: If True, only return rels starting with "nom:"
+
+        Returns:
+            List of unique rel strings
+        """
+        if nomarr_only:
+            query = """
+            FOR tag IN tags
+                FILTER STARTS_WITH(tag.rel, "nom:")
+                COLLECT rel = tag.rel
+                RETURN rel
+            """
+        else:
+            query = """
+            FOR tag IN tags
+                COLLECT rel = tag.rel
+                RETURN rel
+            """
+        cursor: Cursor = self._db.aql.execute(query)
+        return list(cursor)
+
+    def get_tag_value_counts(self, rel: str) -> dict[Any, int]:
+        """Get value counts for a specific rel (for analytics).
+
+        Args:
+            rel: Tag key to analyze
+
+        Returns:
+            Dict of {value: song_count}
+        """
+        query = """
+        FOR tag IN tags
+            FILTER tag.rel == @rel
+            LET song_count = LENGTH(
+                FOR edge IN song_tag_edges
+                    FILTER edge._to == tag._id
+                    RETURN 1
+            )
+            RETURN { value: tag.value, count: song_count }
+        """
+        cursor: Cursor = self._db.aql.execute(query, bind_vars={"rel": rel})
+        return {row["value"]: row["count"] for row in cursor}
+
+    def get_file_ids_matching_tag(self, rel: str, operator: str, value: TagValue) -> set[str]:
+        """Get file IDs matching a tag condition.
+
+        Args:
+            rel: Tag key
+            operator: Comparison operator ("==", ">=", "<=", ">", "<", "CONTAINS")
+            value: Value to compare
+
+        Returns:
+            Set of file _ids matching the condition
+        """
+        if operator == "CONTAINS":
+            query = """
+            FOR tag IN tags
+                FILTER tag.rel == @rel
+                FILTER CONTAINS(LOWER(TO_STRING(tag.value)), LOWER(@value))
+                FOR edge IN song_tag_edges
+                    FILTER edge._to == tag._id
+                    RETURN DISTINCT edge._from
+            """
+        else:
+            # Build dynamic filter based on operator
+            # Safe operators only
+            safe_ops = {"==": "==", ">=": ">=", "<=": "<=", ">": ">", "<": "<"}
+            op = safe_ops.get(operator, "==")
+            query = f"""
+            FOR tag IN tags
+                FILTER tag.rel == @rel
+                FILTER tag.value {op} @value
+                FOR edge IN song_tag_edges
+                    FILTER edge._to == tag._id
+                    RETURN DISTINCT edge._from
+            """
+
+        cursor: Cursor = self._db.aql.execute(query, bind_vars={"rel": rel, "value": value})
+        return set(cursor)
+
+    # ──────────────────────────────────────────────────────────────────────
+    # Analytics service helpers
+    # ──────────────────────────────────────────────────────────────────────
+
+    def get_tag_frequencies(self, limit: int, namespace_prefix: str) -> dict[str, Any]:
+        """Get tag frequency data for analytics.
+
+        Args:
+            limit: Max results per category
+            namespace_prefix: Prefix to filter nomarr tags (e.g., "nom:")
+
+        Returns:
+            Dict with keys: nom_tag_rows (list of tuples), genre_rows (list of tuples)
+        """
+        # Count Nomarr tag rel:value combinations (rel starts with namespace_prefix)
+        # Extract the key portion after the prefix for display
+        query = """
+        FOR tag IN tags
+            FILTER STARTS_WITH(tag.rel, @prefix)
+            LET song_count = LENGTH(
+                FOR edge IN song_tag_edges
+                    FILTER edge._to == tag._id
+                    RETURN 1
+            )
+            FILTER song_count > 0
+            LET key_part = SUBSTRING(tag.rel, LENGTH(@prefix))
+            COLLECT tag_key_value = CONCAT(key_part, ':', tag.value) WITH COUNT INTO tag_count
+            SORT tag_count DESC
+            LIMIT @limit
+            RETURN [tag_key_value, tag_count]
+        """
+        cursor: Cursor = self._db.aql.execute(query, bind_vars={"prefix": namespace_prefix, "limit": limit})
+        nom_tag_rows = [tuple(row) for row in cursor]
+
+        # Count genre tags (rel == "genre", non-Nomarr)
+        query = """
+        FOR tag IN tags
+            FILTER tag.rel == "genre"
+            LET song_count = LENGTH(
+                FOR edge IN song_tag_edges
+                    FILTER edge._to == tag._id
+                    RETURN 1
+            )
+            FILTER song_count > 0
+            COLLECT genre = tag.value WITH COUNT INTO count
+            SORT count DESC
+            LIMIT @limit
+            RETURN [genre, count]
+        """
+        cursor = self._db.aql.execute(query, bind_vars={"limit": limit})
+        genre_rows = [tuple(row) for row in cursor]
+
+        return {
+            "nom_tag_rows": nom_tag_rows,
+            "genre_rows": genre_rows,
+        }
+
+    def get_mood_and_tier_tags_for_correlation(self) -> dict[str, Any]:
+        """Get mood and tier tag data for correlation analysis.
+
+        Returns:
+            Dict with keys: mood_tag_rows (list of tuples), tier_tag_keys (list), tier_tag_rows (dict)
+        """
+        # Get mood tags (nom:mood-strict, nom:mood-regular, nom:mood-loose)
+        mood_tag_rels = ["nom:mood-strict", "nom:mood-regular", "nom:mood-loose"]
+        mood_tag_rows: list[tuple[str, Any]] = []
+
+        for rel in mood_tag_rels:
+            query = """
+            FOR tag IN tags
+                FILTER tag.rel == @rel
+                FOR edge IN song_tag_edges
+                    FILTER edge._to == tag._id
+                    RETURN [edge._from, tag.value]
+            """
+            cursor: Cursor = self._db.aql.execute(query, bind_vars={"rel": rel})
+            mood_tag_rows.extend([tuple(row) for row in cursor])
+
+        # Get all *_tier tag rels (nomarr only)
+        query = """
+        FOR tag IN tags
+            FILTER STARTS_WITH(tag.rel, "nom:") AND LIKE(tag.rel, "%_tier")
+            COLLECT tier_rel = tag.rel
+            RETURN tier_rel
+        """
+        cursor = self._db.aql.execute(query)
+        tier_tag_keys = list(cursor)
+
+        # Get tier tag data for each rel
+        tier_tag_rows: dict[str, list[tuple[str, Any]]] = {}
+        for tier_rel in tier_tag_keys:
+            query = """
+            FOR tag IN tags
+                FILTER tag.rel == @tier_rel
+                FOR edge IN song_tag_edges
+                    FILTER edge._to == tag._id
+                    RETURN [edge._from, tag.value]
+            """
+            cursor = self._db.aql.execute(query, bind_vars={"tier_rel": tier_rel})
+            tier_tag_rows[tier_rel] = [tuple(row) for row in cursor]
+
+        return {
+            "mood_tag_rows": mood_tag_rows,
+            "tier_tag_keys": tier_tag_keys,
+            "tier_tag_rows": tier_tag_rows,
+        }
+
+    def get_mood_distribution_data(self) -> list[tuple[str, str]]:
+        """Get mood tag distribution for analytics.
+
+        Returns:
+            List of (mood_type, tag_value) tuples
+        """
+        mood_rows: list[tuple[str, str]] = []
+        for mood_type in ["nom:mood-strict", "nom:mood-regular", "nom:mood-loose"]:
+            query = """
+            FOR tag IN tags
+                FILTER tag.rel == @mood_type
+                FOR edge IN song_tag_edges
+                    FILTER edge._to == tag._id
+                    RETURN tag.value
+            """
+            cursor: Cursor = self._db.aql.execute(query, bind_vars={"mood_type": mood_type})
+            for tag_value in cursor:
+                mood_rows.append((mood_type, str(tag_value)))
+
+        return mood_rows
+
+    def get_file_ids_for_tags(self, tag_specs: list[tuple[str, str]]) -> dict[tuple[str, str], set[str]]:
+        """Get file IDs for tag co-occurrence analysis.
+
+        Args:
+            tag_specs: List of (rel, value) tuples
+
+        Returns:
+            Dict mapping (rel, value) -> set of file_ids
+        """
+        result: dict[tuple[str, str], set[str]] = {}
+
+        for rel, value in tag_specs:
+            query = """
+            FOR tag IN tags
+                FILTER tag.rel == @rel AND tag.value == @value
+                FOR edge IN song_tag_edges
+                    FILTER edge._to == tag._id
+                    RETURN edge._from
+            """
+            cursor: Cursor = self._db.aql.execute(query, bind_vars={"rel": rel, "value": value})
+            result[(rel, value)] = set(cursor)
+
+        return result

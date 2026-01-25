@@ -102,7 +102,7 @@ def sync_file_to_library(
 
         file_id = str(file_record["_id"])
 
-        # --- Tagging domain: parse and upsert tags ---
+        # --- Tagging domain: sync all tags via unified TagOperations ---
         all_tags = metadata.get("all_tags", {})
         nom_tags = metadata.get("nom_tags", {})
 
@@ -117,11 +117,21 @@ def sync_file_to_library(
         parsed_all_tags = parse_tag_values(all_tags) if all_tags else {}
         parsed_nom_tags = parse_tag_values(nom_tags) if nom_tags else {}
 
-        db.file_tags.upsert_file_tags_mixed(
-            file_id,
-            external_tags=parsed_all_tags,
-            nomarr_tags=parsed_nom_tags,
-        )
+        # Write external tags (non-nomarr)
+        for rel, value in parsed_all_tags.items():
+            if isinstance(value, list):
+                db.tags.set_song_tags(file_id, rel, value)
+            else:
+                db.tags.set_song_tags(file_id, rel, [value])
+
+        # Write nomarr tags (rel starts with namespace prefix, e.g., "nom:")
+        for rel, value in parsed_nom_tags.items():
+            # Nomarr tags use "nom:" prefix in rel
+            nomarr_rel = f"nom:{rel}" if not rel.startswith("nom:") else rel
+            if isinstance(value, list):
+                db.tags.set_song_tags(file_id, nomarr_rel, value)
+            else:
+                db.tags.set_song_tags(file_id, nomarr_rel, [value])
 
         # --- Metadata domain: seed entities and rebuild cache ---
         try:

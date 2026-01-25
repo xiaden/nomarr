@@ -1,7 +1,7 @@
 """Metadata cache rebuild component.
 
-Rebuilds derived song metadata fields from authoritative song_tag_edges.
-Part of hybrid entity graph: edges are truth, embedded fields are read cache.
+Rebuilds derived song metadata fields from authoritative tags collection.
+Part of hybrid entity graph: tags are truth, embedded fields are read cache.
 """
 
 import logging
@@ -14,39 +14,40 @@ logger = logging.getLogger(__name__)
 
 
 def rebuild_song_metadata_cache(db: "Database", song_id: str) -> None:
-    """Rebuild embedded metadata cache fields on a song from edges.
+    """Rebuild embedded metadata cache fields on a song from tags.
 
-    Reads entities from song_tag_edges and writes derived fields to song document.
+    Reads tags from tags collection and writes derived fields to song document.
     This is the authoritative repair mechanism for the hybrid model.
 
     Args:
         db: Database handle
         song_id: Song _id (e.g., "library_files/12345")
     """
-    edges = db.song_tag_edges
+    # Fetch all tags for this song as a dict
+    tags_dict = db.tags.get_song_tags_as_dict(song_id)
 
-    # Fetch entities for each relation type
-    artist_entities = edges.list_entities_for_song(song_id, "artist")
-    artists_entities = edges.list_entities_for_song(song_id, "artists")
-    album_entities = edges.list_entities_for_song(song_id, "album")
-    label_entities = edges.list_entities_for_song(song_id, "label")
-    genre_entities = edges.list_entities_for_song(song_id, "genres")
-    year_entities = edges.list_entities_for_song(song_id, "year")
+    # Extract metadata from tags (using rel names directly)
+    artists_raw = tags_dict.get("artists", [])
+    artist_raw = tags_dict.get("artist", [])
+    album_raw = tags_dict.get("album", [])
+    label_raw = tags_dict.get("label", [])
+    genre_raw = tags_dict.get("genre", [])
+    year_raw = tags_dict.get("year", [])
 
     # Derive embedded field values
-    artist = artist_entities[0]["display_name"] if artist_entities else None
-    artists = sorted([e["display_name"] for e in artists_entities]) if artists_entities else None
-    album = album_entities[0]["display_name"] if album_entities else None
-    labels = sorted([e["display_name"] for e in label_entities]) if label_entities else None
-    genres = sorted([e["display_name"] for e in genre_entities]) if genre_entities else None
+    artist = str(artist_raw[0]) if artist_raw else None
+    artists = sorted([str(a) for a in artists_raw]) if artists_raw else None
+    album = str(album_raw[0]) if album_raw else None
+    labels = sorted([str(lbl) for lbl in label_raw]) if label_raw else None
+    genres = sorted([str(g) for g in genre_raw]) if genre_raw else None
 
-    # Year: convert display_name back to int if present
+    # Year: convert to int if present
     year = None
-    if year_entities:
+    if year_raw:
         try:
-            year = int(year_entities[0]["display_name"])
-        except (ValueError, KeyError):
-            logger.warning("Failed to parse year from entity: %s", year_entities[0])
+            year = int(year_raw[0])
+        except (ValueError, TypeError):
+            logger.warning("Failed to parse year from tag: %s", year_raw[0])
 
     # Update song document with derived cache
     db.db.aql.execute(

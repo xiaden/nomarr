@@ -15,19 +15,30 @@ def get_file_tags_with_path(db: Database, file_id: str, nomarr_only: bool = Fals
     Args:
         db: Database instance
         file_id: Library file ID
-        nomarr_only: If True, only return Nomarr-generated tags
+        nomarr_only: If True, only return Nomarr-generated tags (rel starts with "nom:")
 
     Returns:
         Dict with 'path' and 'tags' keys, or None if file not found.
-        'tags' is a list of dicts with 'key', 'value', 'type', 'is_nomarr_tag'.
+        'tags' is a list of dicts with 'rel', 'value', 'is_nomarr_tag'.
     """
     # Get file info from persistence
     file_record = db.library_files.get_file_by_id(file_id)
     if not file_record:
         return None
 
-    # Get tags from persistence
-    tags_data = db.file_tags.get_file_tags_with_metadata(file_id, nomarr_only=nomarr_only)
+    # Get tags from unified TagOperations
+    tags_raw = db.tags.get_song_tags(file_id, nomarr_only=nomarr_only)
+
+    # Transform to expected format for API compatibility
+    tags_data = [
+        {
+            "key": tag["rel"],  # API uses "key" for backward compat
+            "rel": tag["rel"],
+            "value": tag["value"],
+            "is_nomarr_tag": tag["rel"].startswith("nom:"),
+        }
+        for tag in tags_raw
+    ]
 
     return {
         "path": file_record["path"],

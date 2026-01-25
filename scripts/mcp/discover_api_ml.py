@@ -29,18 +29,35 @@ from unittest.mock import MagicMock
 
 
 def _mock_unavailable_dependencies() -> None:
-    """Mock Docker-only dependencies for discovery in dev environment."""
-    mock_modules = [
-        "essentia",
-        "essentia.standard",
-        "tensorflow",
-        "tensorflow.lite",
-        "tensorflow.lite.python",
-        "tensorflow.lite.python.interpreter",
-    ]
-    for mod in mock_modules:
-        if mod not in sys.modules:
-            sys.modules[mod] = MagicMock()
+    """Mock Docker-only dependencies for discovery in dev environment.
+
+    Must create proper package structure - parent modules need submodule
+    attributes for 'from x.y import z' to work.
+    """
+    # Define hierarchy: parent -> list of submodules
+    package_hierarchy = {
+        "arango": ["aql", "collection", "cursor", "database", "exceptions"],
+        "essentia": ["standard"],
+        "tensorflow": ["lite"],
+        "tensorflow.lite": ["python"],
+        "tensorflow.lite.python": ["interpreter"],
+    }
+
+    # Create all modules with proper structure
+    for parent, children in package_hierarchy.items():
+        if parent not in sys.modules:
+            parent_mock = MagicMock()
+            sys.modules[parent] = parent_mock
+        else:
+            parent_mock = sys.modules[parent]
+
+        # Attach child modules to parent
+        for child in children:
+            full_name = f"{parent}.{child}"
+            if full_name not in sys.modules:
+                child_mock = MagicMock()
+                sys.modules[full_name] = child_mock
+                setattr(parent_mock, child, child_mock)
 
 
 def _get_signature(obj: Any) -> str:

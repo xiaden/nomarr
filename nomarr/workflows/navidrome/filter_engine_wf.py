@@ -67,17 +67,28 @@ def _execute_single_condition(db: Database, condition: TagCondition) -> set[str]
     Returns:
         Set of file IDs matching the condition
     """
+    # Use unified TagOperations for tag queries
+    # Tag key needs "nom:" prefix for nomarr tags
+    rel = condition.tag_key
+    if not rel.startswith("nom:") and ":" in rel:
+        # Already namespaced
+        pass
+    elif not rel.startswith("nom:"):
+        # Add nom: prefix for nomarr tags (most filter engine uses are nomarr tags)
+        rel = f"nom:{rel}"
+
     if condition.operator == "contains":
         # String contains query
-        result = db.file_tags.get_file_ids_containing_tag(
-            tag_key=condition.tag_key,
-            substring=str(condition.value),
+        result = db.tags.get_file_ids_matching_tag(
+            rel=rel,
+            operator="CONTAINS",
+            value=str(condition.value),
         )
         return set(result) if not isinstance(result, set) else result
     else:
         # Numeric comparison query
-        result = db.file_tags.get_file_ids_matching_tag(
-            tag_key=condition.tag_key,
+        result = db.tags.get_file_ids_matching_tag(
+            rel=rel,
             operator=condition.operator,
             value=condition.value,
         )
