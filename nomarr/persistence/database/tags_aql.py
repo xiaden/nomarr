@@ -232,23 +232,35 @@ class TagOperations:
 
         # Then create new edges for each value (with UPSERT for idempotency)
         if values:
-            insert_query = """
+            # First ensure all tag vertices exist
+            tag_create_query = """
             FOR value IN @values
-                // Find or create tag
                 UPSERT { rel: @rel, value: value }
                 INSERT { rel: @rel, value: value }
                 UPDATE {}
                 IN tags
-                LET tag_id = NEW._id
+            """
+            self._db.aql.execute(
+                tag_create_query,
+                bind_vars=cast(dict[str, Any], {"rel": rel, "values": values}),
+            )
 
-                // Create edge (UPSERT to handle duplicates from concurrent writes)
-                UPSERT { _from: @song_id, _to: tag_id }
-                INSERT { _from: @song_id, _to: tag_id }
+            # Then create edges from song to tags
+            edge_create_query = """
+            FOR value IN @values
+                LET tag = FIRST(
+                    FOR t IN tags
+                        FILTER t.rel == @rel AND t.value == value
+                        RETURN t
+                )
+                FILTER tag != null
+                UPSERT { _from: @song_id, _to: tag._id }
+                INSERT { _from: @song_id, _to: tag._id }
                 UPDATE {}
                 IN song_tag_edges
             """
             self._db.aql.execute(
-                insert_query,
+                edge_create_query,
                 bind_vars=cast(dict[str, Any], {"song_id": song_id, "rel": rel, "values": values}),
             )
 
@@ -267,23 +279,33 @@ class TagOperations:
             rel: Tag key (e.g., "nom:danceability_...")
             value: Scalar value
         """
-        query = """
-        // Find or create tag
+        # First ensure tag vertex exists
+        tag_query = """
         UPSERT { rel: @rel, value: @value }
         INSERT { rel: @rel, value: @value }
         UPDATE {}
         IN tags
-        LET tag_id = NEW._id
+        RETURN NEW._id
+        """
+        cursor = cast(
+            Cursor,
+            self._db.aql.execute(
+                tag_query,
+                bind_vars=cast(dict[str, Any], {"rel": rel, "value": value}),
+            ),
+        )
+        tag_id = list(cursor)[0]
 
-        // Create edge (UPSERT to prevent duplicates)
-        UPSERT { _from: @song_id, _to: tag_id }
-        INSERT { _from: @song_id, _to: tag_id }
+        # Then create edge
+        edge_query = """
+        UPSERT { _from: @song_id, _to: @tag_id }
+        INSERT { _from: @song_id, _to: @tag_id }
         UPDATE {}
         IN song_tag_edges
         """
         self._db.aql.execute(
-            query,
-            bind_vars=cast(dict[str, Any], {"song_id": song_id, "rel": rel, "value": value}),
+            edge_query,
+            bind_vars=cast(dict[str, Any], {"song_id": song_id, "tag_id": tag_id}),
         )
 
     def get_song_tags(

@@ -45,13 +45,8 @@ config/*.sqlite*
 
 # Docker
 .dockerignore
-docker-compose.yml  # Old spec, use compose.yaml instead
 # Data directories (bind mounts)
-.docker/arango/*
-.docker/nom-config/*
-!.docker/arango/.gitkeep
-!.docker/nom-config/.gitkeep
-!.docker/.env.local  # Keep template as example
+.docker/*
 
 # Test coverage
 .coverage

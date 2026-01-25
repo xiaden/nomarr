@@ -23,15 +23,15 @@ export default defineConfig({
     proxy: {
       // Proxy all /web/* and /api/* requests to backend during dev
       "/web": {
-        target: "http://localhost:8356",
+        target: "http://localhost:8081",
         changeOrigin: true,
       },
       "/api": {
-        target: "http://localhost:8356",
+        target: "http://localhost:8081",
         changeOrigin: true,
       },
       "/admin": {
-        target: "http://localhost:8356",
+        target: "http://localhost:8081",
         changeOrigin: true,
       },
     },
