@@ -1426,18 +1426,23 @@ class LibraryFilesOperations:
         Returns:
             Total count of files with at least one tag in namespace
         """
-        cursor = self.db.aql.execute(
-            """
-            FOR edge IN song_tag_edges
-              LET tag = DOCUMENT(edge._to)
-              FILTER STARTS_WITH(tag.rel, CONCAT(@namespace, ":"))
-              COLLECT file_id = edge._from
-              RETURN 1
-            """,
-            bind_vars=cast(dict[str, Any], {"namespace": namespace}),
+        cursor = cast(
+            Cursor,
+            self.db.aql.execute(
+                """
+                FOR edge IN song_tag_edges
+                  LET tag = DOCUMENT(edge._to)
+                  FILTER STARTS_WITH(tag.rel, CONCAT(@namespace, ":"))
+                  COLLECT file_id = edge._from
+                  RETURN 1
+                """,
+                bind_vars=cast(dict[str, Any], {"namespace": namespace}),
+            ),
         )
-        results = list(cursor)
-        return len(results)  # type: ignore
+        if cursor:
+            results: list[Any] = list(cursor)
+            return len(results)
+        return 0
 
     def update_nomarr_namespace_flag(self, file_key: str, has_namespace: bool) -> None:
         """Update the has_nomarr_namespace flag during scanning.
