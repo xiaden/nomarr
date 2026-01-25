@@ -98,6 +98,29 @@ def _create_indexes(db: DatabaseLike) -> None:
         ["chromaprint"],
         sparse=True,  # Only index non-null values
     )
+    # Worker queue queries (HIGH PRIORITY)
+    _ensure_index(
+        db,
+        "library_files",
+        "persistent",
+        ["needs_tagging", "is_valid"],  # Worker queue filtering
+    )
+    _ensure_index(
+        db,
+        "library_files",
+        "persistent",
+        ["library_id", "tagged"],  # Per-library stats
+    )
+    _ensure_index(db, "library_files", "persistent", ["path"])  # Path lookups
+    # Recalibration and tag writing (MEDIUM PRIORITY)
+    _ensure_index(db, "library_files", "persistent", ["calibration_hash"])
+    _ensure_index(
+        db,
+        "library_files",
+        "persistent",
+        ["write_claimed_by"],
+        sparse=True,  # Only index non-null claims
+    )
 
     # library_folders indexes
     _ensure_index(db, "library_folders", "persistent", ["library_id"])
@@ -117,6 +140,20 @@ def _create_indexes(db: DatabaseLike) -> None:
         ["expiry_timestamp"],
         expireAfter=0,  # Expire immediately when timestamp passes
     )
+    # Session lookup indexes (HIGH PRIORITY)
+    _ensure_index(db, "sessions", "persistent", ["session_id"])
+
+    # health indexes (HIGH PRIORITY)
+    _ensure_index(db, "health", "persistent", ["component_id"])
+
+    # meta indexes (HIGH PRIORITY)
+    _ensure_index(db, "meta", "persistent", ["key"])
+
+    # libraries indexes (MEDIUM PRIORITY)
+    _ensure_index(db, "libraries", "persistent", ["is_enabled"])
+
+    # worker_restart_policy indexes (MEDIUM PRIORITY)
+    _ensure_index(db, "worker_restart_policy", "persistent", ["component_id"])
 
     # calibration_state indexes (NEW - histogram-based calibration)
     _ensure_index(
