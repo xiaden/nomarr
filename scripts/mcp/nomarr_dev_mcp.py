@@ -8,7 +8,7 @@ All tools use static analysis and return structured JSON.
 Tools (4 focused tools):
 - discover_api: Show public API of any nomarr module (signatures, methods, constants)
 - get_source: Get source code of a specific function/method/class
-- discover_import_chains: Trace imports and detect architecture violations
+- trace_calls: Trace call chains from entry point through layers
 - list_routes: List all API routes by static analysis
 
 Usage:
@@ -51,9 +51,9 @@ mcp = FastMCP("nomarr-dev")
 
 # Import ML-optimized tools (self-contained, no dependency on human scripts)
 from scripts.mcp.discover_api_ml import discover_api as _discover_api_impl
-from scripts.mcp.discover_import_chains_ml import discover_import_chains as _discover_import_chains_impl
 from scripts.mcp.get_source_ml import get_source as _get_source_impl
 from scripts.mcp.list_routes_ml import list_routes as _list_routes_impl
+from scripts.mcp.trace_calls_ml import trace_calls as _trace_calls_impl
 
 
 @mcp.tool()
@@ -140,42 +140,43 @@ def get_source(
 
 
 @mcp.tool()
-def discover_import_chains(
-    module: Annotated[
+def trace_calls(
+    function: Annotated[
         str,
-        "Module name or file path (e.g., 'nomarr.services.queue' or 'nomarr/services/queue.py')",
+        "Fully qualified function name (e.g., 'nomarr.interfaces.api.web.library_if.scan_library')",
     ],
 ) -> dict:
     """
-    Trace import chains and detect architecture violations.
+    Trace the call chain from a function down through the layers.
 
-    Shows which modules a target imports and flags layer violations.
-    Architecture rules: interfaces -> services -> workflows -> components -> persistence/helpers
+    Starting from an entry point (like an API endpoint), shows every nomarr
+    function it calls, recursively, with file paths and line numbers.
 
-    PREFER THIS when understanding module dependencies:
-    - Returns structured data: violations, direct imports, layer info
-    - Catches forbidden imports BEFORE they break the build
-    - Use before modifying imports in any layer
+    USE THIS TO:
+    - Understand what an endpoint does without reading entire files
+    - Find buried methods when you know the origin call
+    - Navigate from interface → service → workflow → component → persistence
+    - Reduce token count vs loading multiple full files
 
     Examples:
-        - discover_import_chains("nomarr.services.queue") - See service deps
-        - discover_import_chains("nomarr.workflows.library.scan_library") - Check workflow
+        - trace_calls("nomarr.interfaces.api.web.library_if.scan_library")
+        - trace_calls("nomarr.services.domain.library_svc.LibraryService.start_scan")
 
     Returns structured JSON with:
-        - root: The module analyzed
-        - layer: What architecture layer it belongs to
-        - violations: List of architecture violations (empty = good)
-        - direct_imports: List of direct nomarr imports
-        - summary: Counts
+        - root: The starting function
+        - tree: Nested call tree with file/line for each call
+        - flat: Flattened list with indentation for easy reading
+        - depth: Maximum call depth
+        - call_count: Total unique calls traced
     """
     stdout_capture = io.StringIO()
     stderr_capture = io.StringIO()
 
     try:
         with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
-            return _discover_import_chains_impl(module, ROOT)
+            return _trace_calls_impl(function, ROOT)
     except Exception as e:
-        return {"module": module, "error": f"{type(e).__name__}: {e}"}
+        return {"function": function, "error": f"{type(e).__name__}: {e}"}
 
 
 @mcp.tool()
