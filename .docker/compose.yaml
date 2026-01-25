@@ -6,7 +6,7 @@ x-env: &env
 
 services:
   # ArangoDB database
-  arangodb:
+  nomarr-arangodb:
     image: arangodb:latest
     container_name: nomarr-arangodb
     environment:
@@ -29,7 +29,7 @@ services:
       dockerfile: Dockerfile
     container_name: nomarr-app
     depends_on:
-      arangodb:
+      nomarr-arangodb:
         condition: service_healthy
     <<: *env
     environment:
