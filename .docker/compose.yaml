@@ -1,0 +1,55 @@
+# Shared environment configuration
+x-env: &env
+  env_file:
+    - .env
+    - .env.local  # Local overrides (optional, not committed)
+
+services:
+  # ArangoDB database
+  arangodb:
+    image: arangodb:latest
+    container_name: nomarr-arangodb
+    environment:
+      ARANGO_ROOT_PASSWORD: ${ARANGO_ROOT_PASSWORD}
+      ARANGO_RANDOM_ROOT_PASSWORD: ${ARANGO_RANDOM_ROOT_PASSWORD}
+    ports:
+      - "8529:8529"  # ArangoDB Web UI + API
+    volumes:
+      - ./arango:/var/lib/arangodb3  # Bind mount for local data access
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8529/_api/version"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Nomarr application (development)
+  nomarr:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: nomarr-app
+    depends_on:
+      arangodb:
+        condition: service_healthy
+    <<: *env
+    environment:
+      ARANGO_HOST: ${ARANGO_HOST}
+      ARANGO_PASSWORD: ${ARANGO_ROOT_PASSWORD}
+      NOMARR_API_HOST: ${NOMARR_API_HOST}
+      NOMARR_API_PORT: ${NOMARR_API_PORT}
+      NOMARR_LOG_LEVEL: ${NOMARR_LOG_LEVEL}
+    ports:
+      - "${NOMARR_API_PORT}:${NOMARR_API_PORT}"  # Web UI + API
+    volumes:
+      - ./nom-config:/app/config                              # Bind mount for nomarr config + DB
+      - ../models:/app/models:ro                              # Models mounted as read-only
+      - //192.168.220.254/data/media:/media:ro                # Network music library (UNC path for WSL2)
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${NOMARR_API_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  default:
+    name: nomarr-network
