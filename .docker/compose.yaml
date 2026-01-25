@@ -9,9 +9,8 @@ services:
   nomarr-arangodb:
     image: arangodb:latest
     container_name: nomarr-arangodb
-    environment:
-      ARANGO_ROOT_PASSWORD: ${ARANGO_ROOT_PASSWORD}
-      ARANGO_RANDOM_ROOT_PASSWORD: ${ARANGO_RANDOM_ROOT_PASSWORD}
+    env_file:
+      - .env
     ports:
       - "8529:8529"  # ArangoDB Web UI + API
     volumes:
@@ -32,16 +31,11 @@ services:
       context: ..
       dockerfile: Dockerfile
     container_name: nomarr-app
+    env_file:
+      - .env
     depends_on:
       nomarr-arangodb:
         condition: service_healthy
-    <<: *env
-    environment:
-      ARANGO_HOST: ${ARANGO_HOST}
-      ARANGO_ROOT_PASSWORD: ${ARANGO_ROOT_PASSWORD}
-      NOMARR_API_HOST: ${NOMARR_API_HOST}
-      NOMARR_API_PORT: ${NOMARR_API_PORT}
-      NOMARR_LOG_LEVEL: ${NOMARR_LOG_LEVEL}
     ports:
       - "${NOMARR_API_PORT}:${NOMARR_API_PORT}"  # Web UI + API
     volumes:
