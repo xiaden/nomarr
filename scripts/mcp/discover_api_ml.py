@@ -51,20 +51,21 @@ def _get_signature(obj: Any) -> str:
         return "(...)"
 
 
-def _get_docstring(obj: Any, max_lines: int = 3) -> str:
-    """Get first N lines of docstring, cleaned."""
+def _get_docstring(obj: Any, max_lines: int = 1) -> str:
+    """Get first N lines of docstring, cleaned. Returns single line by default."""
     doc = inspect.getdoc(obj)
     if not doc:
         return ""
     lines = doc.strip().split("\n")[:max_lines]
-    return "\n".join(line.strip() for line in lines)
+    # Join with space for single-line output (common case), newline for multi-line
+    return " ".join(line.strip() for line in lines) if max_lines == 1 else "\n".join(line.strip() for line in lines)
 
 
 def discover_api(
     module_name: str,
     *,
     include_docstrings: bool = True,
-    max_doc_lines: int = 3,
+    max_doc_lines: int = 1,
 ) -> dict[str, Any]:
     """
     Discover the public API of a Python module.
@@ -75,7 +76,7 @@ def discover_api(
     Args:
         module_name: Fully qualified module name (e.g., 'nomarr.helpers.dto')
         include_docstrings: Include docstrings in output (default: True)
-        max_doc_lines: Max lines of docstring to include (default: 3)
+        max_doc_lines: Max lines of docstring to include (default: 1 = first line only)
 
     Returns:
         Dict with:
@@ -175,8 +176,8 @@ def main() -> int:
     parser.add_argument(
         "--max-doc-lines",
         type=int,
-        default=3,
-        help="Max docstring lines (default: 3)",
+        default=1,
+        help="Max docstring lines (default: 1 = first line only)",
     )
 
     args = parser.parse_args()
