@@ -148,7 +148,7 @@ def ms_to_s(ms: Milliseconds) -> Seconds:
     return Seconds(ms.value // 1000)
 
 
-def s_to_ms(secondseconds: Seconds) -> Milliseconds:
+def s_to_ms(seconds: Seconds) -> Milliseconds:
     """Convert wall-clock seconds to milliseconds."""
     return Milliseconds(seconds.value * 1000)
 

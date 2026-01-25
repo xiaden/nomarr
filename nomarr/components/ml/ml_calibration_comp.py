@@ -603,7 +603,7 @@ def import_calibration_state_from_json(db: Database, input_path: str, overwrite:
                 histogram_spec=calib["histogram"],
                 p5=calib["p5"],
                 p95=calib["p95"],
-                n=calib["n"],
+                sample_count=calib["n"],
                 underflow_count=calib.get("underflow_count", 0),
                 overflow_count=calib.get("overflow_count", 0),
             )

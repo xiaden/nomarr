@@ -77,7 +77,7 @@ def check_already_tagged(
                 values = audio.tags[key]
                 if values and hasattr(values[0], "decode"):
                     existing_version = values[0].decode("utf-8", errors="replace")
-                    return existing_version == current_version
+                    return existing_version == current_version  # type: ignore[no-any-return]
             # MP3 format
             elif key_str == f"TXXX:{namespace}:{version_tag_key}":
                 values = audio.tags[key]

@@ -42,7 +42,7 @@ def search_library_files(
     """
     # Use joined queries for efficient file+tag retrieval
     return db.library_files.search_library_files_with_tags(
-        q=query_text,
+        query_text=query_text,
         artist=artist,
         album=album,
         tag_key=tag_key,

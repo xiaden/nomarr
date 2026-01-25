@@ -134,7 +134,7 @@ class TemplateSummaryItemResponse(BaseModel):
     def from_dto(cls, dto: TemplateSummaryItem) -> TemplateSummaryItemResponse:
         """Convert TemplateSummaryItem DTO to Pydantic response model."""
         return cls(
-            id=dto.id,
+            template_id=dto.template_id,
             name=dto.name,
             description=dto.description,
         )

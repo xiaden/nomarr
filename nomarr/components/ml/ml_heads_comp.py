@@ -255,25 +255,25 @@ def decide_multilabel(scores: np.ndarray, spec: HeadSpec) -> dict[str, Any]:
         counter_p = max(0.0, min(1.0, counter_p))
 
         # Compute ratio and gap
-        ratio = p / max(counter_p, eps)
-        gap = p - counter_p
+        ratio = prob / max(counter_p, eps)
+        gap = prob - counter_p
 
         # Determine tier using helper
-        tier = _determine_tier(p, ratio, gap, spec.cascade)
+        tier = _determine_tier(prob, ratio, gap, spec.cascade)
 
         # Debug logging for labels that don't meet thresholds
-        if tier is None and p >= 0.1:  # Only log if there's some signal
+        if tier is None and prob >= 0.1:  # Only log if there's some signal
             import logging
 
             logging.debug(
-                f"[heads] Label '{lab}' rejected: p={p:.3f} (need >={spec.cascade.low:.2f}), "
+                f"[heads] Label '{lab}' rejected: p={prob:.3f} (need >={spec.cascade.low:.2f}), "
                 f"ratio={ratio:.2f} (need >={spec.cascade.ratio_low:.2f}), "
                 f"gap={gap:.3f} (need >={spec.cascade.gap_low:.2f})"
             )
 
         # Only add to out if tier was assigned (for tier tags)
         if tier is not None:
-            out[lab] = {"p": p, "tier": tier}
+            out[lab] = {"p": prob, "tier": tier}
 
     # Return dict with both selected labels (with tiers) and all raw probabilities
     return {"selected": out, "all_probs": all_probs}

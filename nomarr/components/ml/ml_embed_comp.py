@@ -42,7 +42,7 @@ def segment_waveform(
             - hop_s: Hop length in seconds
             - pad_final: If True, zero-pad the last short segment to full length
     """
-    waveform = params.y
+    waveform = params.waveform
     sr = params.sr
     segment_s = params.segment_s
     hop_s = params.hop_s
@@ -208,13 +208,13 @@ def _trimmed_mean(scores: np.ndarray, trim_perc: float, axis: int = 0) -> np.nda
         col = scores[:, col_idx]
         col = col[~np.isnan(col)]
         if col.size == 0:
-            result[j] = 0.0
+            result[col_idx] = 0.0
             continue
         col.sort()
         lo = trim_count
         hi = max(trim_count, col.size - trim_count)
         trimmed = col[lo:hi] if hi > lo else col
-        result[j] = float(np.mean(trimmed)) if trimmed.size else 0.0
+        result[col_idx] = float(np.mean(trimmed)) if trimmed.size else 0.0
 
     if axis != 0:
         result = np.swapaxes(result, axis, 0)

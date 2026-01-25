@@ -127,7 +127,7 @@ def import_calibration_bundle_wf(
                 histogram_spec=histogram_spec,
                 p5=float(p5),
                 p95=float(p95),
-                n=params.get("n", 0),  # Unknown sample count for imported bundles
+                sample_count=params.get("n", 0),  # Unknown sample count for imported bundles
                 underflow_count=params.get("underflow_count", 0),
                 overflow_count=params.get("overflow_count", 0),
             )

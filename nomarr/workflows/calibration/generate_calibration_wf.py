@@ -425,7 +425,7 @@ def _run_single_calibration(
                 },
                 p5=calib_result["p5"],
                 p95=calib_result["p95"],
-                n=calib_result["n"],
+                sample_count=calib_result["n"],
                 underflow_count=calib_result["underflow_count"],
                 overflow_count=calib_result["overflow_count"],
             )
@@ -560,7 +560,7 @@ def _run_progressive_calibration(
                     calibration_key=calibration_key,
                     p5=calib_result["p5"],
                     p95=calib_result["p95"],
-                    n=calib_result["n"],
+                    sample_count=calib_result["n"],
                     underflow_count=calib_result["underflow_count"],
                     overflow_count=calib_result["overflow_count"],
                     p5_delta=p5_delta,
@@ -582,7 +582,7 @@ def _run_progressive_calibration(
                     },
                     p5=calib_result["p5"],
                     p95=calib_result["p95"],
-                    n=calib_result["n"],
+                    sample_count=calib_result["n"],
                     underflow_count=calib_result["underflow_count"],
                     overflow_count=calib_result["overflow_count"],
                 )

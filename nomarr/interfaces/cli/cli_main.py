@@ -56,7 +56,7 @@ def build_parser() -> argparse.ArgumentParser:
     ps = password_sub.add_parser("reset", help="Change admin password")
     ps.set_defaults(func=cmd_manage_password)
 
-    return p
+    return parser
 
 
 def main(argv: list[str] | None = None) -> int:

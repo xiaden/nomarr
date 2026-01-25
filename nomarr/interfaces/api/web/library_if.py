@@ -192,7 +192,7 @@ async def search_library_files(
     try:
         # Call service (returns SearchFilesResult DTO)
         result = library_service.search_files(
-            q=q,
+            query_text=q,
             artist=artist,
             album=album,
             tag_key=tag_key,
