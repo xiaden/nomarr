@@ -83,11 +83,11 @@ All tags are written as native metadata (ID3v2 for MP3, iTunes atoms for M4A, Vo
 
    ```bash
    # Copy example env files
-   cp nomarr-arangodb.env.example nomarr-arangodb.env
-   cp nomarr.env.example nomarr.env
+   cp docker/nomarr-arangodb.env.example docker/nomarr-arangodb.env
+   cp docker/nomarr.env.example docker/nomarr.env
    
-   # Edit nomarr-arangodb.env and set a strong root password
-   # Edit nomarr.env and set the same root password
+   # Edit docker/nomarr-arangodb.env and set a strong root password
+   # Edit docker/nomarr.env and set the same root password
    ```
 
 3. **Start with Docker Compose:**

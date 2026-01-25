@@ -20,15 +20,16 @@ WORKDIR /app
 # ----------------------------------------------------------------------
 # Copy directories preserving structure
 COPY nomarr/ /app/nomarr/
-COPY models/ /app/models/
-COPY config/ /app/config/
-COPY scripts/ /app/scripts/
+COPY build_resources/models/ /app/models/
+COPY build_resources/config/ /app/config/
+COPY build_resources/scripts/ /app/scripts/
 COPY docs/ /app/docs/
 COPY tests/ /app/tests/
 # Copy individual files in one layer
 COPY pytest.ini readme.md /app/
-COPY docker/cleanup-cron.sh /app/
-COPY docker/nom-cli.sh /usr/local/bin/nom
+COPY docker/*.sh /app/docker/
+RUN cp /app/docker/cleanup-cron.sh /app/ && \
+    cp /app/docker/nom-cli.sh /usr/local/bin/nom
 
 # Note: Frontend is built separately (npm run build in frontend/)
 # Vite builds directly to nomarr/public_html/, which is copied above
