@@ -352,28 +352,3 @@ def scan_library_direct_workflow(
             scan_error=str(e),
         )
         raise
-
-
-# Public helper functions for other modules
-def count_audio_files(root_path: str, recursive: bool) -> int:
-    """Fast count of audio files for progress tracking."""
-    from nomarr.helpers.files_helper import collect_audio_files
-
-    files = collect_audio_files(root_path, recursive=recursive)
-    return len(list(files))
-
-
-def walk_audio_files_batched(root_path: str, recursive: bool):
-    """Walk filesystem and yield (folder_path, audio_files) batches."""
-    from nomarr.helpers.files_helper import collect_audio_files
-
-    files = collect_audio_files(root_path, recursive=recursive)
-    # Group by folder
-    from collections import defaultdict
-    folders: dict[str, list[str]] = defaultdict(list)
-    for file in files:
-        folder = str(Path(file).parent)
-        folders[folder].append(file)
-
-    for folder, files_in_folder in folders.items():
-        yield folder, files_in_folder
