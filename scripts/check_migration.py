@@ -31,7 +31,7 @@ from typing import TypedDict
 
 NOMARR_ROOT = Path("nomarr")
 SKILLS_DIR = Path(".github/skills")
-RUFF_TOML = Path("ruff.toml")
+RUFF_TOML = Path("tool_configs/ruff.toml")
 
 
 class MigrationCheckResult(TypedDict):

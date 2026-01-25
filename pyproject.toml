@@ -68,7 +68,15 @@ Issues = "https://github.com/xiaden/nomarr/issues"
 include = ["nomarr*"]
 exclude = ["tests*", "scripts*", "frontend*", "models*", "docker*"]
 
+[tool.pytest.ini_options]
+# Point to config file in new location
+addopts = "-c tool_configs/pytest.ini"
+
+[tool.mypy]
+# Point to config file in new location  
+config_file = "tool_configs/mypy.ini"
+
 [tool.ruff]
-# Ruff configuration (mirrors ruff.toml if it exists)
+# Ruff configuration (mirrors tool_configs/ruff.toml if it exists)
 line-length = 100
 target-version = "py312"
