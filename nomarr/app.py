@@ -217,6 +217,7 @@ class Application:
         - Config file already has credentials, this is a no-op
         """
         from nomarr.components.platform.arango_first_run_comp import (
+            _wait_for_arango,
             get_root_password_from_env,
             is_first_run,
             provision_database_and_user,
@@ -230,6 +231,10 @@ class Application:
 
         hosts = os.getenv("ARANGO_HOST", "http://nomarr-arangodb:8529")
 
+        # Wait for ArangoDB to be ready BEFORE any checks or provisioning
+        if not _wait_for_arango(hosts):
+            raise RuntimeError(f"Cannot connect to ArangoDB at {hosts} after 60 seconds")
+
         if not is_first_run(config_path, hosts=hosts):
             logging.debug("Database already provisioned, skipping first-run setup")
             return
@@ -242,10 +247,10 @@ class Application:
         # Provision database and user, get generated app password
         app_password = provision_database_and_user(hosts=hosts, root_password=root_password)
 
-        # Write password to config (uses /app/config/nomarr.yaml in Docker)
+        # Write password to config
         # Note: Host comes from ARANGO_HOST env var, not written to config
         write_db_config(
-            config_path=Path("/app/config/nomarr.yaml"),
+            config_path=config_path,
             password=app_password,
         )
 

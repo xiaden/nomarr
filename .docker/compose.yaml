@@ -17,10 +17,14 @@ services:
     volumes:
       - ./arango:/var/lib/arangodb3  # Bind mount for local data access
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8529/_api/version"]
+      test:
+        [
+          "CMD-SHELL",
+          "arangosh --server.endpoint tcp://127.0.0.1:8529 --server.username root --server.password \"$$ARANGO_ROOT_PASSWORD\" --javascript.execute-string \"require('internal').version\" > /dev/null"
+        ]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   # Nomarr application (development)
   nomarr:
@@ -34,7 +38,7 @@ services:
     <<: *env
     environment:
       ARANGO_HOST: ${ARANGO_HOST}
-      ARANGO_PASSWORD: ${ARANGO_ROOT_PASSWORD}
+      ARANGO_ROOT_PASSWORD: ${ARANGO_ROOT_PASSWORD}
       NOMARR_API_HOST: ${NOMARR_API_HOST}
       NOMARR_API_PORT: ${NOMARR_API_PORT}
       NOMARR_LOG_LEVEL: ${NOMARR_LOG_LEVEL}
