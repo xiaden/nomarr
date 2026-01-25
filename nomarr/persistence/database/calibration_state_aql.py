@@ -42,17 +42,34 @@ class CalibrationStateOperations:
         """
         bin_width = (hi - lo) / bins
 
+        # Convert model_key format from "backbone-date" to "backbonedate" to match tag format
+        # Tags store "yamnet20220825" but calibration uses "yamnet-20220825"
+        model_key_for_tag = model_key.replace("-", "")
+
         query = """
-            FOR ft IN file_tags
-              FILTER ft.model_key == @model_key
-              FILTER ft.head_name == @head_name
-              FILTER ft.nomarr_only == true
-              FILTER IS_NUMBER(ft.value)
+            FOR edge IN song_tag_edges
+              LET tag = DOCUMENT(edge._to)
+              // Match individual head score tags containing model_key and head_name
+              // Versioned tag format: nom:<label>_<framework>_<embedder>_<head>
+              // Example: nom:happy_essentia21b6dev1389_yamnet20220825_happy20220825
+              // model_key format in DB: <backbone><embedder_date> (e.g., "yamnet20220825")
+              // head_name: label (e.g., "happy")
+              FILTER STARTS_WITH(tag.rel, "nom:")
+              FILTER IS_NUMBER(tag.value)
+              // Check if tag contains both the model backbone/date and head label
+              // The tag rel should contain model_key parts and start with head_name
+              LET rel_without_prefix = SUBSTRING(tag.rel, 4)
+              // Extract label (first segment before first underscore)
+              LET first_underscore = POSITION(rel_without_prefix, "_")
+              LET label = first_underscore > 0 ? SUBSTRING(rel_without_prefix, 0, first_underscore) : rel_without_prefix
+              // Check if tag matches this head by label and contains model_key pattern
+              FILTER label == @head_name
+              FILTER CONTAINS(rel_without_prefix, @model_key_for_tag)
 
               LET lo = @lo
               LET hi = @hi
               LET bin_width = @bin_width
-              LET value = ft.value
+              LET value = tag.value
 
               // Compute integer bin index (avoid floating-point drift)
               LET bin_idx_raw = FLOOR((value - lo) / bin_width)
@@ -87,7 +104,7 @@ class CalibrationStateOperations:
             bind_vars=cast(
                 dict[str, Any],
                 {
-                    "model_key": model_key,
+                    "model_key_for_tag": model_key_for_tag,
                     "head_name": head_name,
                     "lo": lo,
                     "hi": hi,

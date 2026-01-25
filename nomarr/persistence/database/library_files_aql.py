@@ -201,15 +201,15 @@ class LibraryFilesOperations:
                 LET file = DOCUMENT(file_id)
                 FILTER file != null
                 LET tags = (
-                    FOR edge IN file_tags
+                    FOR edge IN song_tag_edges
                         FILTER edge._from == file._id
                         LET tag = DOCUMENT(edge._to)
                         FILTER tag != null
                         RETURN {
-                            key: tag.key,
+                            key: tag.rel,
                             value: tag.value,
-                            type: tag.type,
-                            is_nomarr: tag.is_nomarr_tag
+                            type: "string",
+                            is_nomarr: STARTS_WITH(tag.rel, "nom:")
                         }
                 )
                 RETURN MERGE(file, { tags: tags })
@@ -232,7 +232,7 @@ class LibraryFilesOperations:
         For string values: Returns files with exact match on the tag value.
 
         Args:
-            tag_key: Tag key to search (e.g., "nom:bpm", "genre")
+            tag_key: Tag rel to search (e.g., "nom:bpm", "genre")
             target_value: Target value (float for distance sort, string for exact match)
             limit: Maximum number of results
             offset: Pagination offset
@@ -240,8 +240,6 @@ class LibraryFilesOperations:
         Returns:
             List of file dicts with 'tags' array, 'matched_tag', and 'distance' (for floats)
         """
-        import json
-
         is_float = isinstance(target_value, float | int) and not isinstance(target_value, bool)
 
         if is_float:
@@ -250,16 +248,13 @@ class LibraryFilesOperations:
                 Cursor,
                 self.db.aql.execute(
                     """
-                FOR tag IN library_tags
-                    FILTER tag.key == @tag_key
-                    // Parse value from JSON array
-                    LET raw_val = JSON_PARSE(tag.value)
-                    LET tag_val = IS_ARRAY(raw_val) ? raw_val[0] : raw_val
-                    FILTER IS_NUMBER(tag_val)
-                    LET distance = ABS(tag_val - @target_value)
+                FOR tag IN tags
+                    FILTER tag.rel == @tag_key
+                    FILTER IS_NUMBER(tag.value)
+                    LET distance = ABS(tag.value - @target_value)
 
                     // Find files with this tag
-                    FOR edge IN file_tags
+                    FOR edge IN song_tag_edges
                         FILTER edge._to == tag._id
                         LET file = DOCUMENT(edge._from)
                         FILTER file != null
@@ -269,20 +264,20 @@ class LibraryFilesOperations:
 
                         // Get all tags for the file
                         LET all_tags = (
-                            FOR e2 IN file_tags
+                            FOR e2 IN song_tag_edges
                                 FILTER e2._from == file._id
                                 LET t2 = DOCUMENT(e2._to)
                                 FILTER t2 != null
                                 RETURN {
-                                    key: t2.key,
+                                    key: t2.rel,
                                     value: t2.value,
-                                    is_nomarr: t2.is_nomarr_tag
+                                    is_nomarr: STARTS_WITH(t2.rel, "nom:")
                                 }
                         )
 
                         RETURN MERGE(file, {
                             tags: all_tags,
-                            matched_tag: { key: @tag_key, value: tag_val },
+                            matched_tag: { key: @tag_key, value: tag.value },
                             distance: distance
                         })
                 """,
@@ -299,17 +294,15 @@ class LibraryFilesOperations:
             )
         else:
             # String: exact match
-            # Wrap in array and serialize for comparison
-            value_str = json.dumps([str(target_value)], ensure_ascii=False)
             cursor = cast(
                 Cursor,
                 self.db.aql.execute(
                     """
-                FOR tag IN library_tags
-                    FILTER tag.key == @tag_key AND tag.value == @value_str
+                FOR tag IN tags
+                    FILTER tag.rel == @tag_key AND tag.value == @target_value
 
                     // Find files with this tag
-                    FOR edge IN file_tags
+                    FOR edge IN song_tag_edges
                         FILTER edge._to == tag._id
                         LET file = DOCUMENT(edge._from)
                         FILTER file != null
@@ -319,14 +312,14 @@ class LibraryFilesOperations:
 
                         // Get all tags for the file
                         LET all_tags = (
-                            FOR e2 IN file_tags
+                            FOR e2 IN song_tag_edges
                                 FILTER e2._from == file._id
                                 LET t2 = DOCUMENT(e2._to)
                                 FILTER t2 != null
                                 RETURN {
-                                    key: t2.key,
+                                    key: t2.rel,
                                     value: t2.value,
-                                    is_nomarr: t2.is_nomarr_tag
+                                    is_nomarr: STARTS_WITH(t2.rel, "nom:")
                                 }
                         )
 
@@ -339,7 +332,6 @@ class LibraryFilesOperations:
                         dict[str, Any],
                         {
                             "tag_key": tag_key,
-                            "value_str": value_str,
                             "target_value": str(target_value),
                             "limit": limit,
                             "offset": offset,
@@ -564,14 +556,14 @@ class LibraryFilesOperations:
         return result
 
     def clear_library_data(self) -> None:
-        """Clear all library files and file_tags.
+        """Clear all library files and song_tag_edges.
 
         WARNING: This is a cross-collection operation that deletes from:
-        - file_tags
+        - song_tag_edges
         - library_files
         """
-        # Delete file_tags first (edge collection)
-        self.db.aql.execute("FOR edge IN file_tags REMOVE edge IN file_tags")
+        # Delete song_tag_edges first (edge collection)
+        self.db.aql.execute("FOR edge IN song_tag_edges REMOVE edge IN song_tag_edges")
         # Delete library_files
         self.db.aql.execute("FOR file IN library_files REMOVE file IN library_files")
 
@@ -1010,7 +1002,7 @@ class LibraryFilesOperations:
             q: Text search query for artist/album/title
             artist: Filter by artist name
             album: Filter by album name
-            tag_key: Filter by files that have this tag key
+            tag_key: Filter by files that have this tag key (rel)
             tag_value: Filter by specific tag key=value (requires tag_key)
             tagged_only: Only return tagged files
             limit: Maximum number of results
@@ -1026,15 +1018,12 @@ class LibraryFilesOperations:
             filters.append(
                 """
             LENGTH(
-                FOR ft IN file_tags
-                    FOR lt IN library_tags
-                        FILTER ft.file_id == file._id
-                            AND ft.tag_id == lt._id
-                            AND lt.key == @tag_key
-                            AND lt.value == @tag_value
-                        SORT ft._key
-                        LIMIT 1
-                        RETURN 1
+                FOR edge IN song_tag_edges
+                    FILTER edge._from == file._id
+                    LET tag = DOCUMENT(edge._to)
+                    FILTER tag != null AND tag.rel == @tag_key AND tag.value == @tag_value
+                    LIMIT 1
+                    RETURN 1
             ) > 0
             """
             )
@@ -1042,14 +1031,12 @@ class LibraryFilesOperations:
             filters.append(
                 """
             LENGTH(
-                FOR ft IN file_tags
-                    FOR lt IN library_tags
-                        FILTER ft.file_id == file._id
-                            AND ft.tag_id == lt._id
-                            AND lt.key == @tag_key
-                        SORT ft._key
-                        LIMIT 1
-                        RETURN 1
+                FOR edge IN song_tag_edges
+                    FILTER edge._from == file._id
+                    LET tag = DOCUMENT(edge._to)
+                    FILTER tag != null AND tag.rel == @tag_key
+                    LIMIT 1
+                    RETURN 1
             ) > 0
             """
             )
@@ -1103,7 +1090,7 @@ class LibraryFilesOperations:
         # Build full bind vars (with pagination) for data query
         bind_vars = {**filter_bind_vars, "limit": limit, "offset": offset}
 
-        # Get files with tags
+        # Get files with tags (using unified schema)
         cursor = cast(
             Cursor,
             self.db.aql.execute(
@@ -1113,16 +1100,16 @@ class LibraryFilesOperations:
                 SORT file.artist, file.album, file.title
                 LIMIT @offset, @limit
                 LET tags = (
-                    FOR ft IN file_tags
-                        FILTER ft.file_id == file._id
-                        FOR lt IN library_tags
-                            FILTER ft.tag_id == lt._id
-                            SORT lt.key
-                            RETURN {{
-                                key: lt.key,
-                                value: lt.value,
-                                is_nomarr: lt.is_nomarr_tag
-                            }}
+                    FOR edge IN song_tag_edges
+                        FILTER edge._from == file._id
+                        LET tag = DOCUMENT(edge._to)
+                        FILTER tag != null
+                        SORT tag.rel
+                        RETURN {{
+                            key: tag.rel,
+                            value: tag.value,
+                            is_nomarr: STARTS_WITH(tag.rel, "nom:")
+                        }}
                 )
                 RETURN MERGE(file, {{ tags: tags }})
             """,

@@ -401,7 +401,6 @@ def _sync_to_database(
 
         # Update library database with extracted metadata + chromaprint
         # Note: calibration_hash remains NULL until first recalibration
-        # Initial processing stores raw scores only
         # File writing is handled separately by reconciliation workflow
         sync_file_to_library(
             db=db,
