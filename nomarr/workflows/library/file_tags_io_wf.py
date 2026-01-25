@@ -37,7 +37,8 @@ def read_file_tags_workflow(db: Database, path: str, namespace: str) -> dict[str
     # Read tags using component
     tags = read_tags_from_file(library_path, namespace)
 
-    return tags
+    # Convert to dict for API response
+    return tags.to_dict()
 
 
 def remove_file_tags_workflow(db: Database, path: str, namespace: str) -> int:

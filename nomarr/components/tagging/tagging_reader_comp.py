@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import mutagen  # type: ignore[import-untyped]
+
+from nomarr.helpers.dto.tags_dto import Tag, Tags, TagValue
 
 if TYPE_CHECKING:
     from nomarr.helpers.dto.path_dto import LibraryPath
@@ -40,7 +42,8 @@ def read_nomarr_namespace(path: LibraryPath, namespace: str = DEFAULT_NAMESPACE)
     try:
         if not path.is_valid():
             return set()
-        return set(read_tags_from_file(path, namespace).keys())
+        tags = read_tags_from_file(path, namespace)
+        return {tag.key for tag in tags}
     except Exception:
         # Silently return empty set - scanning shouldn't fail on read errors
         return set()
@@ -77,7 +80,7 @@ def infer_write_mode_from_tags(tag_names: set[str]) -> str | None:
         return None
 
 
-def read_tags_from_file(path: LibraryPath, namespace: str) -> dict[str, Any]:
+def read_tags_from_file(path: LibraryPath, namespace: str) -> Tags:
     """
     Read namespaced tags from an audio file.
 
@@ -86,8 +89,7 @@ def read_tags_from_file(path: LibraryPath, namespace: str) -> dict[str, Any]:
         namespace: Tag namespace to filter (e.g., "nom", "essentia")
 
     Returns:
-        Dictionary of tag name -> value(s)
-        Multi-value tags returned as lists, single values as strings
+        Tags collection with always-list values
 
     Raises:
         ValueError: If path is invalid or file format is unsupported
@@ -107,35 +109,40 @@ def read_tags_from_file(path: LibraryPath, namespace: str) -> dict[str, Any]:
             audio = mutagen.File(path_str)  # type: ignore[attr-defined]
             if audio is None:
                 raise ValueError(f"Failed to load MP3 file: {path_str}")
-            return _extract_id3_tags(audio, namespace)
+            tag_dict = _extract_id3_tags(audio, namespace)
 
         elif ext in (".m4a", ".mp4", ".m4b", ".m4p"):
             audio = mutagen.File(path_str)  # type: ignore[attr-defined]
             if audio is None:
                 raise ValueError(f"Failed to load MP4 file: {path_str}")
-            return _extract_mp4_tags(audio, namespace)
+            tag_dict = _extract_mp4_tags(audio, namespace)
 
         elif ext in (".flac", ".ogg", ".opus"):
             audio = mutagen.File(path_str)  # type: ignore[attr-defined]
             if audio is None:
                 raise ValueError(f"Failed to load Vorbis file: {path_str}")
-            return _extract_vorbis_tags(audio, namespace)
+            tag_dict = _extract_vorbis_tags(audio, namespace)
 
         else:
             raise ValueError(f"Unsupported audio format: {ext}")
+
+        # Convert dict to Tags DTO (already has list values from extractors)
+        items = tuple(Tag(key=k, value=tuple(cast(list[TagValue], v))) for k, v in tag_dict.items())
+        return Tags(items=items)
 
     except Exception as e:
         logger.exception(f"[TagReader] Failed to read tags from {path_str}")
         raise RuntimeError(f"Failed to read tags: {e}") from e
 
 
-def _extract_id3_tags(audio: Any, namespace: str) -> dict[str, Any]:
+def _extract_id3_tags(audio: Any, namespace: str) -> dict[str, list[str]]:
     """
     Extract tags from ID3v2 format (MP3).
 
     Reads TXXX (user-defined text) frames with namespace prefix.
+    Returns always-list format per Tags invariant.
     """
-    tags: dict[str, Any] = {}
+    tags: dict[str, list[str]] = {}
     if not hasattr(audio, "tags") or not audio.tags:
         return tags
 
@@ -150,19 +157,20 @@ def _extract_id3_tags(audio: Any, namespace: str) -> dict[str, Any]:
         clean_name = tag_name[len(namespace) + 1 :]  # Remove namespace prefix
         values = audio.tags[key].text
 
-        # Multi-value handling: list if multiple values, single string if one
-        tags[clean_name] = values if len(values) > 1 else values[0]
+        # Always store as list per Tags invariant
+        tags[clean_name] = list(values)
 
     return tags
 
 
-def _extract_mp4_tags(audio: Any, namespace: str) -> dict[str, Any]:
+def _extract_mp4_tags(audio: Any, namespace: str) -> dict[str, list[str]]:
     """
     Extract tags from MP4/M4A format.
 
     Reads iTunes freeform atoms (----:com.apple.iTunes:) with namespace prefix.
+    Returns always-list format per Tags invariant.
     """
-    tags: dict[str, Any] = {}
+    tags: dict[str, list[str]] = {}
     if not hasattr(audio, "tags") or not hasattr(audio.tags, "items"):
         return tags
 
@@ -185,12 +193,12 @@ def _extract_mp4_tags(audio: Any, namespace: str) -> dict[str, Any]:
                         decoded.append(item.decode("utf-8"))
                     else:
                         decoded.append(str(item))
-
-                # Return single value if only one, otherwise return list
-                tags[clean_name] = decoded[0] if len(decoded) == 1 else decoded
+                # Always store as list per Tags invariant
+                tags[clean_name] = decoded
             else:
-                # Fallback for non-list values
-                tags[clean_name] = value.decode("utf-8") if isinstance(value, bytes) else str(value)
+                # Fallback for non-list values - wrap in list
+                decoded_val = value.decode("utf-8") if isinstance(value, bytes) else str(value)
+                tags[clean_name] = [decoded_val]
         except Exception as e:
             # Log and skip malformed tags
             logger.warning(f"[TagReader] Failed to decode tag {key}: {e}")
@@ -199,14 +207,15 @@ def _extract_mp4_tags(audio: Any, namespace: str) -> dict[str, Any]:
     return tags
 
 
-def _extract_vorbis_tags(audio: Any, namespace: str) -> dict[str, Any]:
+def _extract_vorbis_tags(audio: Any, namespace: str) -> dict[str, list[str]]:
     """
     Extract tags from Vorbis comments format (FLAC, OGG, Opus).
 
     Vorbis tags use uppercase keys with underscores.
     Example: "ESSENTIA_YAMNET_HAPPY" for namespace "essentia"
+    Returns always-list format per Tags invariant.
     """
-    tags: dict[str, Any] = {}
+    tags: dict[str, list[str]] = {}
     if not hasattr(audio, "tags") or not audio.tags:
         return tags
 
@@ -219,7 +228,7 @@ def _extract_vorbis_tags(audio: Any, namespace: str) -> dict[str, Any]:
 
         clean_name = key[len(vorbis_prefix) :].lower().replace("_", "-")
 
-        # Multi-value handling
-        tags[clean_name] = values if len(values) > 1 else values[0]
+        # Always store as list per Tags invariant
+        tags[clean_name] = list(values)
 
     return tags

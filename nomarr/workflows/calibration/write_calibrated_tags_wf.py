@@ -47,6 +47,7 @@ from nomarr.components.tagging.tagging_writer_comp import TagWriter
 from nomarr.helpers.dto.calibration_dto import WriteCalibratedTagsParams
 from nomarr.helpers.dto.ml_dto import HeadOutput
 from nomarr.helpers.dto.path_dto import LibraryPath
+from nomarr.helpers.dto.tags_dto import Tags
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -90,19 +91,19 @@ def _load_library_state(
     chromaprint = library_file.get("chromaprint")
 
     # Get all nomarr tags for this file (rel starts with "nom:")
-    all_tags_raw = db.tags.get_song_tags(file_id, nomarr_only=True)
+    tags = db.tags.get_song_tags(file_id, nomarr_only=True)
     # Convert to dict format expected by downstream code
-    # Filter to those matching the namespace prefix
-    f"nom:{namespace}:" if not namespace.startswith("nom:") else f"{namespace}:"
+    # Strip "nom:" prefix for compatibility with existing code
     all_tags = {}
-    for tag in all_tags_raw:
-        rel = tag["rel"]
+    for tag in tags:
+        rel = tag.key
         # Strip "nom:" prefix for compatibility with existing code
         if rel.startswith("nom:"):
             key = rel[4:]  # Remove "nom:" prefix
         else:
             key = rel
-        all_tags[key] = tag["value"]
+        # Flatten single-value lists for compatibility with existing code
+        all_tags[key] = tag.value[0] if len(tag.value) == 1 else tag.value
 
     if not all_tags:
         logging.warning(f"[calibrated_tags] No tags found for {file_path}")
@@ -294,7 +295,7 @@ def _reconstruct_head_outputs(
 def _compute_mood_tags(
     head_outputs: list[HeadOutput],
     calibrations: dict[str, Any],
-) -> dict[str, Any]:
+) -> Tags:
     """
     Aggregate HeadOutput objects into mood-* tags.
 
@@ -303,16 +304,18 @@ def _compute_mood_tags(
         calibrations: Calibration parameters
 
     Returns:
-        Dictionary of mood tags
+        Tags DTO with mood tags
     """
-    mood_tags = aggregate_mood_tiers(head_outputs, calibrations=calibrations)
+    mood_tags_dict = aggregate_mood_tiers(head_outputs, calibrations=calibrations)
 
-    if not mood_tags:
+    if not mood_tags_dict:
         logging.debug("[calibrated_tags] No mood tags generated")
-    else:
-        logging.info(f"[calibrated_tags] Generated {len(mood_tags)} mood tags")
+        return Tags(items=())
 
-    return mood_tags
+    logging.info(f"[calibrated_tags] Generated {len(mood_tags_dict)} mood tags")
+
+    # Convert dict to Tags DTO
+    return Tags.from_dict(mood_tags_dict)
 
 
 def _update_db_and_file(
@@ -320,7 +323,7 @@ def _update_db_and_file(
     file_id: str,
     file_path: str,
     namespace: str,
-    mood_tags: dict[str, Any],
+    mood_tags: Tags,
     chromaprint: str | None = None,
 ) -> None:
     """
@@ -333,13 +336,13 @@ def _update_db_and_file(
         file_id: File ID in library
         file_path: Path to audio file
         namespace: Tag namespace
-        mood_tags: Mood tags to write
+        mood_tags: Tags DTO with mood tags to write
         chromaprint: Audio fingerprint for verification (from library_files)
     """
     # Store mood tags in DB with "nom:" prefix (Nomarr provenance)
-    for key, value in mood_tags.items():
-        nomarr_rel = f"nom:{key}" if not key.startswith("nom:") else key
-        db.tags.set_song_tags(file_id, nomarr_rel, [value])
+    for tag in mood_tags:
+        nomarr_rel = f"nom:{tag.key}" if not tag.key.startswith("nom:") else tag.key
+        db.tags.set_song_tags(file_id, nomarr_rel, tag.value)
 
     logging.debug(f"[calibrated_tags] Updated {len(mood_tags)} mood tags in DB")
 

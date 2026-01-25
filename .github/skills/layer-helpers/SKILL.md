@@ -47,10 +47,20 @@ from typing import TypedDict
 import yaml  # Third-party OK
 ```
 
-**Helpers must NEVER import:**
+**DTO cross-imports are allowed (one-way only):**
 
 ```python
-# ❌ NEVER import any nomarr.* modules
+# ✅ Allowed - sibling DTO imports within helpers/dto/
+from nomarr.helpers.dto.tags_dto import Tags  # OK in processing_dto.py
+from nomarr.helpers.dto.path_dto import LibraryPath  # OK in ml_dto.py
+```
+
+The dependency direction must be acyclic. If `A` imports `B`, then `B` must not import `A`.
+
+**Helpers must NEVER import from higher layers:**
+
+```python
+# ❌ NEVER import any higher-layer nomarr.* modules
 from nomarr.persistence import Database
 from nomarr.services import ConfigService
 from nomarr.workflows import ...

@@ -117,21 +117,15 @@ def sync_file_to_library(
         parsed_all_tags = parse_tag_values(all_tags) if all_tags else {}
         parsed_nom_tags = parse_tag_values(nom_tags) if nom_tags else {}
 
-        # Write external tags (non-nomarr)
-        for rel, value in parsed_all_tags.items():
-            if isinstance(value, list):
-                db.tags.set_song_tags(file_id, rel, value)
-            else:
-                db.tags.set_song_tags(file_id, rel, [value])
+        # Write external tags (non-nomarr) - parse_tag_values guarantees list values
+        for rel, values in parsed_all_tags.items():
+            db.tags.set_song_tags(file_id, rel, values)
 
         # Write nomarr tags (rel starts with namespace prefix, e.g., "nom:")
-        for rel, value in parsed_nom_tags.items():
+        for rel, values in parsed_nom_tags.items():
             # Nomarr tags use "nom:" prefix in rel
             nomarr_rel = f"nom:{rel}" if not rel.startswith("nom:") else rel
-            if isinstance(value, list):
-                db.tags.set_song_tags(file_id, nomarr_rel, value)
-            else:
-                db.tags.set_song_tags(file_id, nomarr_rel, [value])
+            db.tags.set_song_tags(file_id, nomarr_rel, values)
 
         # --- Metadata domain: seed entities and rebuild cache ---
         try:
@@ -150,6 +144,12 @@ def sync_file_to_library(
             logging.debug(f"[sync_file_to_library] Seeded entities for {file_path}")
         except Exception as entity_error:
             logging.warning(f"[sync_file_to_library] Failed to seed entities: {entity_error}")
+
+        # Store chromaprint if present in metadata (computed during ML inference)
+        chromaprint = metadata.get("chromaprint")
+        if chromaprint:
+            db.library_files.set_chromaprint(file_id, chromaprint)
+            logging.debug(f"[sync_file_to_library] Stored chromaprint for {file_path}")
 
         # Mark file as tagged if version provided (called from processor)
         if tagged_version:

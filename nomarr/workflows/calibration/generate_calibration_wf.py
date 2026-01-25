@@ -298,6 +298,9 @@ def generate_histogram_calibration_wf(
     db: Database,
     models_dir: str,
     namespace: str = "nom",
+    progressive: bool = True,
+    start_pct: float = 0.5,
+    increment_pct: float = 0.05,
 ) -> dict[str, Any]:
     """
     Generate histogram-based calibrations for all model heads.
@@ -305,10 +308,16 @@ def generate_histogram_calibration_wf(
     Stateless, idempotent workflow. Always computes from current DB state.
     Uses sparse uniform histogram (10,000 bins) to derive p5/p95 percentiles.
 
+    Progressive mode: Runs calibration multiple times with increasing sample sizes
+    (50% → 55% → 60% → ... until 100%), storing convergence history.
+
     Args:
         db: Database instance
         models_dir: Path to models directory
         namespace: Tag namespace (default "nom")
+        progressive: Enable progressive calibration with convergence tracking (default True)
+        start_pct: Starting percentage of total files (default 0.5 = 50%)
+        increment_pct: Percentage increment per iteration (default 0.05 = 5%)
 
     Returns:
         {
@@ -316,13 +325,17 @@ def generate_histogram_calibration_wf(
           "heads_processed": int,
           "heads_success": int,
           "heads_failed": int,
-          "results": {head_key: {p5, p95, n, underflow_count, overflow_count}}
+          "results": {head_key: {p5, p95, n, underflow_count, overflow_count}},
+          "progressive_iterations": int (if progressive=True),
+          "convergence_history": [{iteration, sample_size, sample_pct, heads: {head_key: deltas}}] (if progressive=True)
         }
     """
     from nomarr.components.ml.ml_calibration_comp import generate_calibration_from_histogram
     from nomarr.components.ml.ml_discovery_comp import discover_heads
 
-    logger.info("[histogram_calibration_wf] Starting histogram-based calibration generation")
+    logger.info(
+        f"[histogram_calibration_wf] Starting histogram-based calibration generation (progressive={progressive})"
+    )
 
     # Discover all heads
     heads = discover_heads(models_dir)
@@ -338,7 +351,30 @@ def generate_histogram_calibration_wf(
 
     logger.info(f"[histogram_calibration_wf] Discovered {len(heads)} heads")
 
-    # Generate calibrations for each head
+    if not progressive:
+        # Legacy mode: Single pass over all data
+        return _run_single_calibration(db, models_dir, heads, namespace)
+
+    # Progressive mode: Multiple iterations with increasing sample sizes
+    return _run_progressive_calibration(
+        db=db,
+        models_dir=models_dir,
+        heads=heads,
+        namespace=namespace,
+        start_pct=start_pct,
+        increment_pct=increment_pct,
+    )
+
+
+def _run_single_calibration(
+    db: Database,
+    models_dir: str,
+    heads: list[Any],
+    namespace: str,
+) -> dict[str, Any]:
+    """Run calibration once over all available data (legacy mode)."""
+    from nomarr.components.ml.ml_calibration_comp import generate_calibration_from_histogram
+
     results = {}
     success_count = 0
     failed_count = 0
@@ -423,4 +459,194 @@ def generate_histogram_calibration_wf(
         "heads_failed": failed_count,
         "results": results,
         "global_version": global_version_hash,
+    }
+
+
+def _run_progressive_calibration(
+    db: Database,
+    models_dir: str,
+    heads: list[Any],
+    namespace: str,
+    start_sample_size: int,
+    increment_size: int,
+) -> dict[str, Any]:
+    """
+    Run calibration progressively: start with N files, add M more each iteration.
+    Store convergence history in calibration_history collection.
+    """
+    from nomarr.components.ml.ml_calibration_comp import (
+        compute_calibration_def_hash,
+        compute_global_calibration_hash,
+        generate_calibration_from_histogram_with_limit,
+    )
+
+    logger.info(f"[progressive_calibration] Starting: {start_sample_size} files → +{increment_size} per iteration")
+
+    # Get total file count
+    total_files = db.library_files.count_files_with_tags(namespace)
+    if total_files == 0:
+        logger.warning("[progressive_calibration] No tagged files found")
+        return {
+            "version": 0,
+            "heads_processed": 0,
+            "heads_success": 0,
+            "heads_failed": 0,
+            "results": {},
+            "progressive_iterations": 0,
+            "convergence_history": [],
+        }
+
+    logger.info(f"[progressive_calibration] Total tagged files: {total_files}")
+
+    # Track previous iteration results for delta calculation
+    previous_results: dict[str, dict[str, Any]] = {}
+    convergence_history = []
+    iteration = 0
+
+    # Progressive loop: start_pct → +increment_pct → until 100%
+    current_pct = start_pct
+    while current_pct <= 1.0:
+        iteration += 1
+        current_sample_size = int(total_files * current_pct)
+        logger.info(
+            f"[progressive_calibration] Iteration {iteration}: {current_sample_size} files ({current_pct * 100:.0f}%)"
+        )
+
+        iteration_results = {}
+        iteration_deltas = {}
+        success_count = 0
+        failed_count = 0
+
+        for head_info in heads:
+            # Construct identifiers
+            embedder_date = "unknown"
+            if head_info.embedding_sidecar:
+                embedder_release = head_info.embedding_sidecar.data.get("release_date", "")
+                if embedder_release:
+                    embedder_date = embedder_release.replace("-", "")
+
+            model_key = f"{head_info.backbone}-{embedder_date}"
+            head_name = head_info.name
+            version = head_info.sidecar.data.get("version", 1)
+            head_key = f"{model_key}:{head_name}"
+
+            try:
+                # Generate calibration with sample limit
+                calib_result = generate_calibration_from_histogram_with_limit(
+                    db=db,
+                    model_key=model_key,
+                    head_name=head_name,
+                    version=version,
+                    lo=0.0,
+                    hi=1.0,
+                    bins=10000,
+                    sample_limit=current_sample_size,
+                )
+
+                # Calculate deltas from previous iteration
+                p5_delta = None
+                p95_delta = None
+                n_delta = None
+                if head_key in previous_results:
+                    prev = previous_results[head_key]
+                    p5_delta = calib_result["p5"] - prev["p5"]
+                    p95_delta = calib_result["p95"] - prev["p95"]
+                    n_delta = calib_result["n"] - prev["n"]
+
+                # Store snapshot in calibration_history
+                calib_def_hash = compute_calibration_def_hash(model_key, head_name, version)
+                calibration_key = f"{model_key}:{head_name}"
+
+                db.calibration_history.create_snapshot(
+                    calibration_key=calibration_key,
+                    p5=calib_result["p5"],
+                    p95=calib_result["p95"],
+                    n=calib_result["n"],
+                    underflow_count=calib_result["underflow_count"],
+                    overflow_count=calib_result["overflow_count"],
+                    p5_delta=p5_delta,
+                    p95_delta=p95_delta,
+                    n_delta=n_delta,
+                )
+
+                # Update calibration_state with latest values
+                db.calibration_state.upsert_calibration_state(
+                    model_key=model_key,
+                    head_name=head_name,
+                    calibration_def_hash=calib_def_hash,
+                    version=version,
+                    histogram_spec={
+                        "lo": 0.0,
+                        "hi": 1.0,
+                        "bins": 10000,
+                        "bin_width": 0.0001,
+                    },
+                    p5=calib_result["p5"],
+                    p95=calib_result["p95"],
+                    n=calib_result["n"],
+                    underflow_count=calib_result["underflow_count"],
+                    overflow_count=calib_result["overflow_count"],
+                )
+
+                iteration_results[head_key] = calib_result
+                iteration_deltas[head_key] = {
+                    "p5_delta": p5_delta,
+                    "p95_delta": p95_delta,
+                    "n_delta": n_delta,
+                }
+                success_count += 1
+
+                logger.debug(
+                    f"[progressive_calibration] {head_key}: p5={calib_result['p5']:.4f} "
+                    f"(Δ{p5_delta:.4f if p5_delta else 'N/A'}), "
+                    f"p95={calib_result['p95']:.4f} (Δ{p95_delta:.4f if p95_delta else 'N/A'})"
+                )
+
+            except Exception as e:
+                logger.error(f"[progressive_calibration] Failed {head_key}: {e}")
+                failed_count += 1
+
+        # Store iteration summary
+        convergence_history.append(
+            {
+                "iteration": iteration,
+                "sample_size": current_sample_size,
+                "sample_pct": round(current_pct * 100, 1),
+                "heads_success": success_count,
+                "heads_failed": failed_count,
+                "deltas": iteration_deltas,
+            }
+        )
+
+        # Save results for next iteration's delta calculation
+        previous_results = iteration_results
+
+        # Increment percentage
+        current_pct += increment_pct
+
+        # Stop if we've reached or exceeded 100%
+        if current_pct > 1.0 and iteration > 1:
+            break
+
+    logger.info(f"[progressive_calibration] Completed {iteration} iterations")
+
+    # Update global calibration version
+    all_calibration_states = db.calibration_state.get_all_calibration_states()
+    global_version_hash = compute_global_calibration_hash(all_calibration_states)
+    current_timestamp = str(int(__import__("time").time() * 1000))
+
+    db.meta.set("calibration_version", global_version_hash)
+    db.meta.set("calibration_last_run", current_timestamp)
+
+    logger.info(f"[progressive_calibration] Global version: {global_version_hash[:12]}...")
+
+    return {
+        "version": 1,
+        "heads_processed": len(heads),
+        "heads_success": success_count,
+        "heads_failed": failed_count,
+        "results": previous_results,  # Final iteration results
+        "global_version": global_version_hash,
+        "progressive_iterations": iteration,
+        "convergence_history": convergence_history,
     }

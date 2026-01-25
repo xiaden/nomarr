@@ -224,3 +224,83 @@ class CalibrationService:
             "last_updated": last_updated,
             "is_running": self.is_generation_running(),
         }
+
+    def get_calibration_history(
+        self,
+        calibration_key: str | None = None,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        """
+        Get calibration convergence history.
+
+        Args:
+            calibration_key: Specific head (e.g., "effnet-20220825:mood_happy") or None for all
+            limit: Maximum snapshots to return per head
+
+        Returns:
+            {
+              "calibration_key": [...snapshots...] or
+              "all": {calibration_key: [...snapshots...]}
+            }
+        """
+        if calibration_key:
+            # Single head history
+            history = self._db.calibration_history.get_history(
+                calibration_key=calibration_key,
+                limit=limit,
+            )
+            return {"calibration_key": calibration_key, "history": history}
+        else:
+            # All heads - get recent snapshots and group by calibration_key
+            recent = self._db.calibration_history.get_all_recent_snapshots(limit=limit * 10)
+            grouped: dict[str, list[dict[str, Any]]] = {}
+            for snapshot in recent:
+                key = snapshot["calibration_key"]
+                if key not in grouped:
+                    grouped[key] = []
+                grouped[key].append(snapshot)
+
+            # Trim each group to limit
+            for key in grouped:
+                grouped[key] = sorted(grouped[key], key=lambda x: x["snapshot_at"], reverse=True)[:limit]
+
+            return {"all_heads": grouped}
+
+    def get_latest_convergence_status(self) -> dict[str, Any]:
+        """
+        Get latest convergence metrics for all heads.
+
+        Returns:
+            {
+              head_key: {
+                "latest_snapshot": {...},
+                "p5_delta": float,
+                "p95_delta": float,
+                "n": int,
+                "converged": bool (|p5_delta| < 0.01 and |p95_delta| < 0.01)
+              }
+            }
+        """
+        all_states = self._db.calibration_state.get_all_calibration_states()
+        convergence_status = {}
+
+        for state in all_states:
+            calibration_key = f"{state['model_key']}:{state['head_name']}"
+            latest = self._db.calibration_history.get_latest_snapshot(calibration_key)
+
+            if latest:
+                p5_delta = latest.get("p5_delta")
+                p95_delta = latest.get("p95_delta")
+                converged = False
+                if p5_delta is not None and p95_delta is not None:
+                    converged = abs(p5_delta) < 0.01 and abs(p95_delta) < 0.01
+
+                convergence_status[calibration_key] = {
+                    "latest_snapshot": latest,
+                    "p5_delta": p5_delta,
+                    "p95_delta": p95_delta,
+                    "n": latest.get("n", 0),
+                    "converged": converged,
+                }
+
+        return convergence_status

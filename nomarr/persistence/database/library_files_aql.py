@@ -814,35 +814,6 @@ class LibraryFilesOperations:
             bind_vars={"file_id": file_id, "calibration_hash": calibration_hash},
         )
 
-    def get_files_needing_recalibration(self, library_id: str, expected_hash: str) -> list[dict[str, Any]]:
-        """Get files in a library that need recalibration.
-
-        Returns files where calibration_hash is null or doesn't match expected_hash.
-
-        Args:
-            library_id: Library document _id
-            expected_hash: Expected global calibration version hash
-
-        Returns:
-            List of file documents needing recalibration
-        """
-        cursor = cast(
-            Cursor,
-            self.db.aql.execute(
-                """
-                FOR f IN library_files
-                    FILTER f.library_id == @library_id
-                    FILTER f.calibration_hash == null OR f.calibration_hash != @expected_hash
-                    RETURN f
-                """,
-                bind_vars=cast(
-                    dict[str, Any],
-                    {"library_id": library_id, "expected_hash": expected_hash},
-                ),
-            ),
-        )
-        return list(cursor)
-
     def get_calibration_status_by_library(self, expected_hash: str) -> list[dict[str, Any]]:
         """Get calibration status counts grouped by library.
 
@@ -1445,6 +1416,28 @@ class LibraryFilesOperations:
         )
         result = next(cursor, 0)
         return int(result) if result else 0
+
+    def count_files_with_tags(self, namespace: str = "nom") -> int:
+        """Count total files with tags in the given namespace.
+
+        Args:
+            namespace: Tag namespace (default "nom")
+
+        Returns:
+            Total count of files with at least one tag in namespace
+        """
+        cursor = self.db.aql.execute(
+            """
+            FOR edge IN song_tag_edges
+              LET tag = DOCUMENT(edge._to)
+              FILTER STARTS_WITH(tag.rel, CONCAT(@namespace, ":"))
+              COLLECT file_id = edge._from
+              RETURN 1
+            """,
+            bind_vars=cast(dict[str, Any], {"namespace": namespace}),
+        )
+        results = list(cursor)
+        return len(results)  # type: ignore
 
     def update_nomarr_namespace_flag(self, file_key: str, has_namespace: bool) -> None:
         """Update the has_nomarr_namespace flag during scanning.

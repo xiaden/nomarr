@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any
 
 from nomarr.components.tagging.tagging_writer_comp import TagWriter
 from nomarr.helpers.dto.path_dto import LibraryPath
+from nomarr.helpers.dto.tags_dto import Tag, Tags
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -45,34 +46,36 @@ class WriteResult:
 
 
 def _filter_tags_for_mode(
-    db_tags: dict[str, Any],
+    db_tags: Tags,
     target_mode: str,
     has_calibration: bool,
-) -> dict[str, Any]:
+) -> Tags:
     """
     Filter tags based on target mode and calibration state.
 
     Args:
-        db_tags: All tags from database
+        db_tags: All tags from database (Tags DTO)
         target_mode: "none", "minimal", or "full"
         has_calibration: Whether calibration exists
 
     Returns:
-        Filtered tags dict for file writing
+        Filtered Tags DTO for file writing
     """
     # Filter out mood tags if uncalibrated (applies to ALL modes)
     if not has_calibration:
-        db_tags = {k: v for k, v in db_tags.items() if not str(k).startswith("mood-")}
+        filtered_items = tuple(tag for tag in db_tags.items if not tag.key.startswith("mood-"))
+    else:
+        filtered_items = db_tags.items  # Already a tuple
 
     if target_mode == "none":
-        return {}  # Clears namespace
+        return Tags(items=())  # Clears namespace
 
     if target_mode == "minimal":
         # Only mood-tier tags
-        return {k: v for k, v in db_tags.items() if str(k).startswith("mood-")}
+        return Tags(items=tuple(tag for tag in filtered_items if tag.key.startswith("mood-")))
 
     # "full" mode - return all tags (already mood-filtered if uncalibrated)
-    return db_tags
+    return Tags(items=filtered_items)
 
 
 def _resolve_library_path(
@@ -181,8 +184,8 @@ def write_file_tags_workflow(
         # Get chromaprint for verification
         chromaprint = file_doc.get("chromaprint")
 
-        # Get tags from database (nomarr tags only)
-        db_tags = db.tags.get_song_tags_as_dict(file_id, nomarr_only=True)
+        # Get tags from database (nomarr tags only) - returns Tags DTO
+        db_tags = db.tags.get_song_tags(file_id, nomarr_only=True)
 
         # Filter tags for target mode
         tags_to_write = _filter_tags_for_mode(db_tags, target_mode, has_calibration)

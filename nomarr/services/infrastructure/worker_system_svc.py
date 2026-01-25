@@ -456,6 +456,14 @@ class WorkerSystemService(ComponentLifecycleHandler):
             tier_selection.config.description,
         )
 
+        # Clean up stale claims from previous runs before starting workers
+        removed_claims = self.cleanup_stale_claims()
+        if removed_claims > 0:
+            logger.info(
+                "[WorkerSystemService] Cleaned up %d stale claim(s) from previous session",
+                removed_claims,
+            )
+
         # Clear stop event for new workers
         self._stop_event.clear()
 

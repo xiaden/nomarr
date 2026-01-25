@@ -67,6 +67,7 @@ from nomarr.helpers.dto.processing_dto import (
     ProcessorConfig,
     TagWriteProfile,
 )
+from nomarr.helpers.dto.tags_dto import Tag, Tags, TagValue
 
 __all__ = [
     "AnalyzeWithSegmentsResult",
@@ -87,9 +88,12 @@ __all__ = [
     "SegmentWaveformParams",
     "SmartPlaylistFilter",
     "StatusChangeContext",
+    "Tag",
     "TagCoOccurrenceData",
     "TagCondition",
     "TagCorrelationData",
     "TagSpec",
+    "Tags",
+    "TagValue",
     "TagWriteProfile",
 ]

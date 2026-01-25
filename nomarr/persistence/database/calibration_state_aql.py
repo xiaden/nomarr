@@ -116,6 +116,100 @@ class CalibrationStateOperations:
 
         return list(cursor)  # type: ignore
 
+    def get_sparse_histogram_with_limit(
+        self,
+        model_key: str,
+        head_name: str,
+        lo: float = 0.0,
+        hi: float = 1.0,
+        bins: int = 10000,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Query sparse histogram with sample limiting for progressive calibration.
+
+        Args:
+            model_key: Model identifier
+            head_name: Head name
+            lo: Lower bound of calibrated range
+            hi: Upper bound of calibrated range
+            bins: Number of uniform bins
+            limit: Maximum number of samples to use (None = unlimited)
+
+        Returns:
+            List of {min_val: float, count: int, underflow_count: int, overflow_count: int}
+        """
+        if limit is None:
+            # No limit - use standard method
+            return self.get_sparse_histogram(
+                model_key=model_key,
+                head_name=head_name,
+                lo=lo,
+                hi=hi,
+                bins=bins,
+            )
+
+        bin_width = (hi - lo) / bins
+        model_key_for_tag = model_key.replace("-", "")
+
+        query = """
+            FOR edge IN song_tag_edges
+              LIMIT @limit
+              LET tag = DOCUMENT(edge._to)
+              FILTER STARTS_WITH(tag.rel, "nom:")
+              FILTER IS_NUMBER(tag.value)
+              LET rel_without_prefix = SUBSTRING(tag.rel, 4)
+              LET first_underscore = POSITION(rel_without_prefix, "_")
+              LET label = first_underscore > 0 ? SUBSTRING(rel_without_prefix, 0, first_underscore) : rel_without_prefix
+              FILTER label == @head_name
+              FILTER CONTAINS(rel_without_prefix, @model_key_for_tag)
+
+              LET lo = @lo
+              LET hi = @hi
+              LET bin_width = @bin_width
+              LET value = tag.value
+
+              LET bin_idx_raw = FLOOR((value - lo) / bin_width)
+              LET bin_idx = MIN(MAX(bin_idx_raw, 0), @max_bin)
+
+              LET is_underflow = value < lo
+              LET is_overflow = value > hi
+
+              COLLECT bin_index = bin_idx
+              AGGREGATE
+                count = COUNT(1),
+                underflow_count = SUM(is_underflow ? 1 : 0),
+                overflow_count = SUM(is_overflow ? 1 : 0)
+
+              LET min_val = lo + (bin_index * bin_width)
+
+              SORT min_val ASC
+
+              RETURN {
+                min_val: min_val,
+                count: count,
+                underflow_count: underflow_count,
+                overflow_count: overflow_count
+              }
+        """
+
+        cursor = self.db.aql.execute(
+            query,
+            bind_vars=cast(
+                dict[str, Any],
+                {
+                    "model_key_for_tag": model_key_for_tag,
+                    "head_name": head_name,
+                    "lo": lo,
+                    "hi": hi,
+                    "bin_width": bin_width,
+                    "max_bin": bins - 1,
+                    "limit": limit,
+                },
+            ),
+        )
+
+        return list(cursor)  # type: ignore
+
     def upsert_calibration_state(
         self,
         model_key: str,

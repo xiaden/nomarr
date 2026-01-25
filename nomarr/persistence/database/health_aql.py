@@ -195,64 +195,6 @@ class HealthOperations:
             ),
         )
 
-    def is_healthy(self, component_id: str | None = None, max_age_ms: int = 60000) -> bool:
-        """
-        Check if component(s) are healthy.
-
-        Args:
-            component_id: Specific component to check (None = check all workers)
-            max_age_ms: Maximum staleness in milliseconds (default 60000ms = 60s)
-
-        Returns:
-            True if healthy, False otherwise
-        """
-        cutoff = now_ms().value - max_age_ms
-
-        if component_id is not None:
-            # Check specific component
-            cursor = cast(
-                Cursor,
-                self.db.aql.execute(
-                    """
-                FOR health IN health
-                    FILTER health.component_id == @component_id
-                    FILTER health.status IN ['crashed', 'failed', 'stopping']
-                        OR health.last_heartbeat < @cutoff
-                    LIMIT 1
-                    RETURN 1
-                """,
-                    bind_vars=cast(
-                        dict[str, Any],
-                        {
-                            "component_id": component_id,
-                            "cutoff": cutoff,
-                        },
-                    ),
-                ),
-            )
-            return len(list(cursor)) == 0
-        else:
-            # Check all components
-            cursor = cast(
-                Cursor,
-                self.db.aql.execute(
-                    """
-                FOR health IN health
-                    FILTER health.status IN ['crashed', 'failed', 'stopping']
-                        OR health.last_heartbeat < @cutoff
-                    LIMIT 1
-                    RETURN 1
-                """,
-                    bind_vars=cast(
-                        dict[str, Any],
-                        {
-                            "cutoff": cutoff,
-                        },
-                    ),
-                ),
-            )
-            return len(list(cursor)) == 0
-
     def get_component(self, component_id: str) -> dict[str, Any] | None:
         """Get component health record."""
         cursor = cast(
@@ -268,50 +210,6 @@ class HealthOperations:
         )
         results = list(cursor)
         return results[0] if results else None
-
-    def mark_crashed(
-        self,
-        component_id: str,
-        exit_code: int | None = None,
-        error: str | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> None:
-        """Mark component as crashed with full diagnostic context.
-
-        Args:
-            component_id: Component identifier
-            exit_code: Process exit code (custom codes: -1=unknown, -2=heartbeat_timeout, -3=invalid_heartbeat)
-            error: Human-readable error message
-            metadata: Structured crash context (e.g., {"crash_type": "oom", "job_id": "123"})
-        """
-        import json
-
-        update_data: dict[str, Any] = {
-            "status": "crashed",
-            "last_heartbeat": now_ms().value,
-        }
-
-        if exit_code is not None:
-            update_data["exit_code"] = exit_code
-        if error is not None:
-            update_data["error"] = error
-        if metadata is not None:
-            update_data["metadata"] = json.dumps(metadata)
-
-        self.db.aql.execute(
-            """
-            FOR health IN health
-                FILTER health.component_id == @component_id
-                UPDATE health WITH @update_data IN health
-            """,
-            bind_vars=cast(
-                dict[str, Any],
-                {
-                    "component_id": component_id,
-                    "update_data": update_data,
-                },
-            ),
-        )
 
     def increment_restart_count(self, component_id: str) -> dict[str, Any]:
         """Increment restart counter for component.
@@ -350,41 +248,6 @@ class HealthOperations:
                 UPDATE health WITH {restart_count: 0} IN health
             """,
             bind_vars=cast(dict[str, Any], {"component_id": component_id}),
-        )
-
-    def mark_failed(self, component_id: str, error: str | None = None, metadata: dict[str, Any] | None = None) -> None:
-        """Mark component as permanently failed (will not auto-restart).
-
-        Args:
-            component_id: Component identifier
-            error: Failure reason (e.g., "restart limit exceeded")
-            metadata: Structured failure context
-        """
-        import json
-
-        update_data: dict[str, Any] = {
-            "status": "failed",
-            "last_heartbeat": now_ms().value,
-        }
-
-        if error is not None:
-            update_data["error"] = error
-        if metadata is not None:
-            update_data["metadata"] = json.dumps(metadata)
-
-        self.db.aql.execute(
-            """
-            FOR health IN health
-                FILTER health.component_id == @component_id
-                UPDATE health WITH @update_data IN health
-            """,
-            bind_vars=cast(
-                dict[str, Any],
-                {
-                    "component_id": component_id,
-                    "update_data": update_data,
-                },
-            ),
         )
 
     def mark_starting(self, component_id: str, component_type: str) -> None:

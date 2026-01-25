@@ -75,6 +75,7 @@ from nomarr.components.tagging.tagging_aggregation_comp import (
 from nomarr.helpers.dto.ml_dto import ComputeEmbeddingsForBackboneParams
 from nomarr.helpers.dto.path_dto import LibraryPath
 from nomarr.helpers.dto.processing_dto import ProcessFileResult, ProcessorConfig
+from nomarr.helpers.dto.tags_dto import Tags
 from nomarr.helpers.time_helper import internal_s
 
 if TYPE_CHECKING:
@@ -676,5 +677,5 @@ def process_file_workflow(
         tags_written=len(tags_accum),
         head_results=all_head_results,
         mood_aggregations=mood_info if mood_info else None,
-        tags=dict(tags_accum),  # Include actual tags for CLI display
+        tags=Tags.from_dict(dict(tags_accum)),  # Include actual tags for CLI display
     )

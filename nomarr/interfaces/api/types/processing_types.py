@@ -62,7 +62,7 @@ class ProcessFileResponse(BaseModel):
             tags_written=result.tags_written,
             head_results=result.head_results,
             mood_aggregations=result.mood_aggregations,
-            tags=result.tags,
+            tags=result.tags.to_dict(),
         )
 
 

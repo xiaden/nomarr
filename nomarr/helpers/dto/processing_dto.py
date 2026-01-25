@@ -12,7 +12,10 @@ Rules:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from nomarr.helpers.dto.tags_dto import Tags
 
 
 @dataclass
@@ -122,4 +125,4 @@ class ProcessFileResult:
     tags_written: int
     head_results: dict[str, dict[str, Any]]
     mood_aggregations: dict[str, int] | None
-    tags: dict[str, Any]
+    tags: Tags

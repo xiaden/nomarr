@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING, Any
 
 from mutagen import MutagenError
 
+from nomarr.helpers.dto.tags_dto import Tags
+
 if TYPE_CHECKING:
     from nomarr.components.tagging.safe_write_comp import SafeWriteResult
     from nomarr.helpers.dto.path_dto import LibraryPath
@@ -295,25 +297,28 @@ class TagWriter:
         else:
             raise RuntimeError(f"Unsupported file type for writing: .{ext}")
 
-    def write(self, path: LibraryPath, tags: dict[str, Any]) -> None:
+    def write(self, path: LibraryPath, tags: Tags) -> None:
         """Write tags directly to file (no safety verification)."""
         if not path.is_valid():
             raise ValueError(f"Cannot write tags to invalid path ({path.status}): {path.absolute} - {path.reason}")
 
+        # Convert Tags DTO to dict for internal writers
+        tags_dict = tags.to_dict()
+
         ext = str(path.absolute).lower().rsplit(".", 1)[-1]
         if ext == "mp3":
-            self._mp3.write(path, tags)
+            self._mp3.write(path, tags_dict)
         elif ext in ("m4a", "mp4", "m4b"):
-            self._mp4.write(path, tags)
+            self._mp4.write(path, tags_dict)
         elif ext in ("flac", "ogg", "opus"):
-            self._vorbis.write(path, tags)
+            self._vorbis.write(path, tags_dict)
         else:
             raise RuntimeError(f"Unsupported file type for writing: .{ext}")
 
     def write_safe(
         self,
         path: LibraryPath,
-        tags: dict[str, Any],
+        tags: Tags,
         library_root: Path,
         chromaprint: str,
     ) -> SafeWriteResult:
@@ -325,7 +330,7 @@ class TagWriter:
 
         Args:
             path: LibraryPath to the file to modify
-            tags: Tags to write
+            tags: Tags DTO to write
             library_root: Root path of the library (for temp folder)
             chromaprint: Chromaprint of original file for verification
 
@@ -345,7 +350,10 @@ class TagWriter:
                 error=f"Invalid path: {path.reason}",
             )
 
+        # Convert Tags DTO to dict for internal writer
+        tags_dict = tags.to_dict()
+
         def write_fn(temp_path: PathLib) -> None:
-            self._write_to_path(str(temp_path), tags)
+            self._write_to_path(str(temp_path), tags_dict)
 
         return safe_write_tags(path, library_root, chromaprint, write_fn)

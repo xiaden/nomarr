@@ -228,3 +228,105 @@ async def get_histogram_calibration_progress(
         raise HTTPException(
             status_code=500, detail=sanitize_exception_message(e, "Failed to get calibration progress")
         ) from e
+
+
+
+@router.get("/history", dependencies=[Depends(verify_session)])
+async def get_calibration_history_all(
+    limit: int = 100,
+    calibration_service: "CalibrationService" = Depends(get_calibration_service),
+) -> dict[str, Any]:
+    """
+    Get calibration convergence history for all heads.
+
+    Query params:
+        limit: Max snapshots per head (default 100)
+
+    Returns:
+        {
+          "all_heads": {
+            "calibration_key": [
+              {snapshot_at, p5, p95, n, p5_delta, p95_delta, n_delta},
+              ...
+            ],
+            ...
+          }
+        }
+    """
+    try:
+        history = calibration_service.get_calibration_history(limit=limit)
+        return history
+
+    except Exception as e:
+        logging.error(f"[Web] Failed to get calibration history: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Failed to get calibration history")
+        ) from e
+
+
+@router.get("/history/{calibration_key:path}", dependencies=[Depends(verify_session)])
+async def get_calibration_history_single(
+    calibration_key: str,
+    limit: int = 100,
+    calibration_service: "CalibrationService" = Depends(get_calibration_service),
+) -> dict[str, Any]:
+    """
+    Get calibration convergence history for a specific head.
+
+    Path params:
+        calibration_key: Head identifier (e.g., "effnet-20220825:mood_happy")
+
+    Query params:
+        limit: Max snapshots to return (default 100)
+
+    Returns:
+        {
+          "calibration_key": str,
+          "history": [
+            {snapshot_at, p5, p95, n, p5_delta, p95_delta, n_delta, underflow_count, overflow_count},
+            ...
+          ]
+        }
+    """
+    try:
+        history = calibration_service.get_calibration_history(
+            calibration_key=calibration_key,
+            limit=limit,
+        )
+        return history
+
+    except Exception as e:
+        logging.error(f"[Web] Failed to get calibration history for {calibration_key}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Failed to get calibration history")
+        ) from e
+
+
+@router.get("/convergence", dependencies=[Depends(verify_session)])
+async def get_convergence_status(
+    calibration_service: "CalibrationService" = Depends(get_calibration_service),
+) -> dict[str, Any]:
+    """
+    Get latest convergence status for all heads.
+
+    Returns:
+        {
+          "head_key": {
+            "latest_snapshot": {...},
+            "p5_delta": float | None,
+            "p95_delta": float | None,
+            "n": int,
+            "converged": bool (deltas < 0.01)
+          },
+          ...
+        }
+    """
+    try:
+        status = calibration_service.get_latest_convergence_status()
+        return status
+
+    except Exception as e:
+        logging.error(f"[Web] Failed to get convergence status: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Failed to get convergence status")
+        ) from e

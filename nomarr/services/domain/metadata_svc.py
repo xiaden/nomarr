@@ -156,20 +156,21 @@ class MetadataService:
         for song_id in song_ids:
             artist_tags = self.db.tags.get_song_tags(song_id, rel="artist")
             for artist_tag in artist_tags:
-                # Need to find the tag _id for this artist value
-                tag_id = self.db.tags.find_or_create_tag("artist", artist_tag["value"])
-                if tag_id not in artist_ids_seen:
-                    artist_ids_seen.add(tag_id)
-                    tag = self.db.tags.get_tag(tag_id)
-                    if tag:
-                        artists.append(
-                            EntityDict(
-                                _id=tag["_id"],
-                                _key=tag["_key"],
-                                display_name=str(tag["value"]),
-                                song_count=None,
+                # Get the first value from the tag (always a list now)
+                for value in artist_tag.value:
+                    tag_id = self.db.tags.find_or_create_tag("artist", value)
+                    if tag_id not in artist_ids_seen:
+                        artist_ids_seen.add(tag_id)
+                        tag = self.db.tags.get_tag(tag_id)
+                        if tag:
+                            artists.append(
+                                EntityDict(
+                                    _id=tag["_id"],
+                                    _key=tag["_key"],
+                                    display_name=str(tag["value"]),
+                                    song_count=None,
+                                )
                             )
-                        )
 
         # Sort by display_name and limit
         artists.sort(key=lambda a: a["display_name"])
@@ -198,26 +199,27 @@ class MetadataService:
         for song_id in song_ids:
             album_tags = self.db.tags.get_song_tags(song_id, rel="album")
             for album_tag in album_tags:
-                # Need to find the tag _id for this album value
-                tag_id = self.db.tags.find_or_create_tag("album", album_tag["value"])
-                if tag_id not in album_ids_seen:
-                    album_ids_seen.add(tag_id)
-                    tag = self.db.tags.get_tag(tag_id)
-                    if tag:
-                        # Count songs in this album that are also by this artist
-                        album_song_count = sum(
-                            1
-                            for s in song_ids
-                            if any(t["value"] == tag["value"] for t in self.db.tags.get_song_tags(s, rel="album"))
-                        )
-                        albums.append(
-                            EntityDict(
-                                _id=tag["_id"],
-                                _key=tag["_key"],
-                                display_name=str(tag["value"]),
-                                song_count=album_song_count,
+                # Get the first value from the tag (always a list now)
+                for value in album_tag.value:
+                    tag_id = self.db.tags.find_or_create_tag("album", value)
+                    if tag_id not in album_ids_seen:
+                        album_ids_seen.add(tag_id)
+                        tag = self.db.tags.get_tag(tag_id)
+                        if tag:
+                            # Count songs in this album that are also by this artist
+                            album_song_count = sum(
+                                1
+                                for s in song_ids
+                                if any(value in t.value for t in self.db.tags.get_song_tags(s, rel="album"))
                             )
-                        )
+                            albums.append(
+                                EntityDict(
+                                    _id=tag["_id"],
+                                    _key=tag["_key"],
+                                    display_name=str(tag["value"]),
+                                    song_count=album_song_count,
+                                )
+                            )
 
         # Sort by display_name and limit
         albums.sort(key=lambda a: a["display_name"])

@@ -23,6 +23,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 from arango.cursor import Cursor
 
+from nomarr.helpers.dto.tags_dto import Tags, TagValue
+
 if TYPE_CHECKING:
     from arango.database import StandardDatabase
 
@@ -30,8 +32,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Type alias for scalar values allowed in tags
-TagValue = str | int | float | bool
+# TagValue is imported from nomarr.helpers.dto.tags_dto
 
 
 class TagOperations:
@@ -290,7 +291,7 @@ class TagOperations:
         song_id: str,
         rel: str | None = None,
         nomarr_only: bool = False,
-    ) -> list[dict[str, Any]]:
+    ) -> Tags:
         """Get all tags for a song, optionally filtered by rel or Nomarr prefix.
 
         Args:
@@ -299,7 +300,7 @@ class TagOperations:
             nomarr_only: If True, filter by STARTS_WITH(rel, "nom:")
 
         Returns:
-            List of {rel, value} dicts
+            Tags collection (use .to_dict() for dict format)
         """
         if rel:
             query = """
@@ -333,39 +334,27 @@ class TagOperations:
             Cursor,
             self._db.aql.execute(query, bind_vars=cast(dict[str, Any], bind_vars)),
         )
-        return list(cursor)
+        return Tags.from_db_rows(list(cursor))
 
     def get_song_tags_as_dict(
         self,
         song_id: str,
         nomarr_only: bool = False,
-    ) -> dict[str, Any]:
+    ) -> dict[str, list[TagValue]]:
         """Get all tags for a song as a key→value dict.
 
-        For multi-value tags (same rel), returns a list of values.
+        DEPRECATED: Use get_song_tags().to_dict() directly instead.
+        This method exists for backward compatibility.
 
         Args:
             song_id: Song _id
             nomarr_only: If True, filter by STARTS_WITH(rel, "nom:")
 
         Returns:
-            Dict of {rel: value} or {rel: [values]} for multi-value
+            Dict of {rel: [values]} - always list values per Tags invariant
         """
         tags = self.get_song_tags(song_id, nomarr_only=nomarr_only)
-        result: dict[str, Any] = {}
-        for tag in tags:
-            rel = tag["rel"]
-            value = tag["value"]
-            if rel in result:
-                # Multi-value: convert to list
-                existing = result[rel]
-                if isinstance(existing, list):
-                    existing.append(value)
-                else:
-                    result[rel] = [existing, value]
-            else:
-                result[rel] = value
-        return result
+        return tags.to_dict()
 
     def list_songs_for_tag(
         self,

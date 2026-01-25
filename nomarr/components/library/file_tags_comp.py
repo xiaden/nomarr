@@ -27,17 +27,17 @@ def get_file_tags_with_path(db: Database, file_id: str, nomarr_only: bool = Fals
         return None
 
     # Get tags from unified TagOperations
-    tags_raw = db.tags.get_song_tags(file_id, nomarr_only=nomarr_only)
+    tags = db.tags.get_song_tags(file_id, nomarr_only=nomarr_only)
 
     # Transform to expected format for API compatibility
     tags_data = [
         {
-            "key": tag["rel"],  # API uses "key" for backward compat
-            "rel": tag["rel"],
-            "value": tag["value"],
-            "is_nomarr_tag": tag["rel"].startswith("nom:"),
+            "key": tag.key,  # API uses "key" for backward compat
+            "rel": tag.key,
+            "value": tag.value[0] if len(tag.value) == 1 else tag.value,  # Flatten single values for API
+            "is_nomarr_tag": tag.key.startswith("nom:"),
         }
-        for tag in tags_raw
+        for tag in tags
     ]
 
     return {
