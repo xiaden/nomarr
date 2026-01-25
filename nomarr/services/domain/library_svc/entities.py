@@ -31,10 +31,10 @@ class LibraryEntitiesMixin:
     db: Database
     cfg: LibraryServiceConfig
 
-    # Future methods to be moved from MetadataService:  # noqa: E800
-    # - get_artists()  # noqa: E800
-    # - get_albums()  # noqa: E800
-    # - get_tracks()  # noqa: E800
-    # - get_artist_details()  # noqa: E800
-    # - get_album_details()  # noqa: E800
-    # - get_track_details()  # noqa: E800
+    # Future methods to be moved from MetadataService:
+    # - get_artists()
+    # - get_albums()
+    # - get_tracks()
+    # - get_artist_details()
+    # - get_album_details()
+    # - get_track_details()

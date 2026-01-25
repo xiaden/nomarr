@@ -294,7 +294,7 @@ class TagOperations:
                 bind_vars=cast(dict[str, Any], {"rel": rel, "value": value}),
             ),
         )
-        tag_id = list(cursor)[0]
+        tag_id = next(iter(cursor))
 
         # Then create edge
         edge_query = """

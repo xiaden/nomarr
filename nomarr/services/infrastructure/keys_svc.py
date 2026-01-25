@@ -25,7 +25,7 @@ from nomarr.persistence.db import Database
 SESSION_TIMEOUT_SECONDS = 86400
 
 # In-memory session cache to avoid DB hits on every request
-# Format: {token: expiry_timestamp}  # noqa: E800
+# Format: {token: expiry_timestamp}
 # This cache is module-level for performance but should only be accessed through
 # KeyManagementService instance methods to maintain proper architecture boundaries.
 _session_cache: dict[str, float] = {}

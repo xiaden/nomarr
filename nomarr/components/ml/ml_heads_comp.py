@@ -103,7 +103,7 @@ class Cascade:
                 gap_low=float(levels.get("gap_low", getattr(fallback, "gap_low", 0.05) if fallback else 0.05)),
             )
         if isinstance(levels, list | tuple) and len(levels) >= 3:
-            # allow [high, medium, low]  # noqa: E800
+            # allow [high, medium, low]
             return cls(high=float(levels[0]), medium=float(levels[1]), low=float(levels[2]))
         return fallback or cls()
 
@@ -349,13 +349,13 @@ class HeadDecision:
         """
         tags: dict[str, Any] = {}
         if head_is_regression(self.head):
-            # details is {label: float}  # noqa: E800
+            # details is {label: float}
             for key, value in self.details.items():
                 tag_key = key_builder(key) if key_builder else f"{prefix}{key}"
                 tags[tag_key] = value
             return tags
 
-        # details is {label: {"p": float, "tier": str}}  # noqa: E800
+        # details is {label: {"p": float, "tier": str}}
         # Emit only probability values - tier is accessed via HeadDecision.details or HeadOutput
         if head_is_multiclass(self.head):
             # Emit selected classes

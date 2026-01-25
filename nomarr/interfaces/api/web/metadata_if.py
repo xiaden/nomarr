@@ -39,9 +39,9 @@ async def get_entity_counts(
     return EntityCountsResponse(**counts)
 
 
-# ----------------------------------------------------------------------  # noqa: E800
-#  GET /metadata/{collection}  # noqa: E800
-# ----------------------------------------------------------------------  # noqa: E800
+# ----------------------------------------------------------------------
+#  GET /metadata/{collection}
+# ----------------------------------------------------------------------
 @router.get("/{collection}", dependencies=[Depends(verify_session)])
 async def list_entities(
     collection: EntityCollection,
@@ -55,9 +55,9 @@ async def list_entities(
     return EntityListResponse.from_dto(result)
 
 
-# ----------------------------------------------------------------------  # noqa: E800
-#  GET /metadata/{collection}/{entity_id}  # noqa: E800
-# ----------------------------------------------------------------------  # noqa: E800
+# ----------------------------------------------------------------------
+#  GET /metadata/{collection}/{entity_id}
+# ----------------------------------------------------------------------
 @router.get("/{collection}/{entity_id}", dependencies=[Depends(verify_session)])
 async def get_entity(
     collection: EntityCollection,
@@ -76,9 +76,9 @@ async def get_entity(
     return EntityResponse.from_dto(entity)
 
 
-# ----------------------------------------------------------------------  # noqa: E800
-#  GET /metadata/{collection}/{entity_id}/songs  # noqa: E800
-# ----------------------------------------------------------------------  # noqa: E800
+# ----------------------------------------------------------------------
+#  GET /metadata/{collection}/{entity_id}/songs
+# ----------------------------------------------------------------------
 @router.get("/{collection}/{entity_id}/songs", dependencies=[Depends(verify_session)])
 async def list_songs_for_entity(
     collection: EntityCollection,
@@ -98,9 +98,9 @@ async def list_songs_for_entity(
     return SongListResponse.from_dto(result)
 
 
-# ----------------------------------------------------------------------  # noqa: E800
-#  GET /metadata/albums/{album_id}/artists  # noqa: E800
-# ----------------------------------------------------------------------  # noqa: E800
+# ----------------------------------------------------------------------
+#  GET /metadata/albums/{album_id}/artists
+# ----------------------------------------------------------------------
 @router.get("/albums/{album_id}/artists", dependencies=[Depends(verify_session)])
 async def list_artists_for_album(
     album_id: str,
@@ -116,9 +116,9 @@ async def list_artists_for_album(
     return [EntityResponse.from_dto(a) for a in artists]
 
 
-# ----------------------------------------------------------------------  # noqa: E800
-#  GET /metadata/artists/{artist_id}/albums  # noqa: E800
-# ----------------------------------------------------------------------  # noqa: E800
+# ----------------------------------------------------------------------
+#  GET /metadata/artists/{artist_id}/albums
+# ----------------------------------------------------------------------
 @router.get("/artists/{artist_id}/albums", dependencies=[Depends(verify_session)])
 async def list_albums_for_artist(
     artist_id: str,

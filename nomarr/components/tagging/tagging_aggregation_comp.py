@@ -291,7 +291,7 @@ def add_regression_mood_tiers(
 
 
 # Opposing mood pairs with improved human-readable labels
-# Format: (pos_key_pattern, neg_key_pattern, pos_label, neg_label)  # noqa: E800
+# Format: (pos_key_pattern, neg_key_pattern, pos_label, neg_label)
 LABEL_PAIRS = [
     ("happy", "sad", "peppy", "sombre"),
     ("aggressive", "relaxed", "aggressive", "relaxed"),

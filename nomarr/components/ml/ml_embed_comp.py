@@ -174,7 +174,7 @@ def pool_scores(
             raise ValueError(f"Unknown pooling mode: {mode}")
         return pooled.astype(np.float32, copy=False)
 
-    # nan_policy == "propagate"  # noqa: E800
+    # nan_policy == "propagate"
     if mode == "mean":
         result: np.ndarray = np.mean(scores, axis=0).astype(np.float32, copy=False)
         return result

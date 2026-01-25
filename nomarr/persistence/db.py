@@ -121,9 +121,9 @@ class Database:
         # Unified tag operations (TAG_UNIFICATION_REFACTOR)
         self.tags = TagOperations(self.db)
 
-        # Lazy import to avoid circular dependency  # noqa: E800
-        # from nomarr.persistence.database.joined_queries_aql import JoinedQueryOperations  # noqa: E800
-        # self.joined_queries = JoinedQueryOperations(self.db)  # noqa: E800
+        # Lazy import to avoid circular dependency
+        # from nomarr.persistence.database.joined_queries_aql import JoinedQueryOperations
+        # self.joined_queries = JoinedQueryOperations(self.db)
 
     def ensure_schema_version(self) -> None:
         """Ensure schema version is recorded in meta collection.
