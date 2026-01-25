@@ -520,12 +520,15 @@ class Application:
             logging.info("[Application] Stopping health monitor...")
             self.health_monitor.stop()
 
-        # Mark app as stopping
-        self.db.health.mark_stopping(component_id="app", exit_code=0)
-
-        # Clean ephemeral state (Phase 3: health monitoring)
-        logging.info("[Application] Cleaning ephemeral runtime state...")
-        self.db.health.clean_all()
+        # Mark app as stopping and clean ephemeral state
+        # Wrapped in try/except because DB may already be unavailable during shutdown
+        # (e.g., Docker Compose stopping containers in parallel)
+        try:
+            self.db.health.mark_stopping(component_id="app", exit_code=0)
+            logging.info("[Application] Cleaning ephemeral runtime state...")
+            self.db.health.clean_all()
+        except Exception as e:
+            logging.warning(f"[Application] DB unavailable during shutdown (expected if containers stopping): {e}")
 
         self._running = False
         logging.info("[Application] Shutdown complete - all workers stopped")

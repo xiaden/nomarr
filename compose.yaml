@@ -29,6 +29,8 @@ services:
     # build: .
     container_name: nomarr
     user: "1000:1000"
+    # Graceful shutdown: Give Nomarr 30s to shut down cleanly
+    stop_grace_period: 30s
     networks:
       - front_network
       - internal_network

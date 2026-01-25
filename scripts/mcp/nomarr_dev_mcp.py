@@ -117,7 +117,7 @@ def discover_api(
         str,
         "Fully qualified module name (e.g., 'nomarr.components.ml', 'nomarr.helpers')",
     ],
-) -> str:
+) -> dict:
     """
     Discover the public API of a nomarr module.
 
@@ -128,61 +128,65 @@ def discover_api(
         - discover_api("nomarr.components.ml") - See ML component exports
         - discover_api("nomarr.helpers") - See helper utilities
         - discover_api("nomarr.persistence.arango") - See DB access layer
+
+    Returns structured JSON with:
+        - module: Module name
+        - classes: {name: {methods: {name: signature}, doc: str}}
+        - functions: {name: {signature: str, doc: str}}
+        - constants: {name: value}
+        - error: Optional error message
     """
 
-    def _impl() -> str:
+    def _impl() -> dict:
         from scripts.discover_api import discover_module_api
 
-        api = discover_module_api(module_name)
+        api = discover_module_api(module_name, silent=True)
 
-        # Format output (replicating print_api logic without print)
-        lines = []
-        lines.append("=" * 80)
-        lines.append(f"Module: {module_name}")
-        lines.append("=" * 80)
-        lines.append("")
+        # Return compact structured data
+        result: dict = {"module": module_name}
 
         # Error handling
         if api.get("error"):
-            lines.append(f"ERROR: {api['error']}")
-            return "\n".join(lines)
+            result["error"] = api["error"]
+            return result
+
+        # Classes - compact format: {name: {methods: {name: sig}}}
+        if api.get("classes"):
+            result["classes"] = {}
+            for class_name, class_info in sorted(api["classes"].items()):
+                methods = class_info.get("methods", {})
+                doc = class_info.get("doc", "").split("\n")[0][:80] if class_info.get("doc") else ""
+                result["classes"][class_name] = {
+                    "methods": {m: s for m, s in sorted(methods.items())},
+                }
+                if doc:
+                    result["classes"][class_name]["doc"] = doc
+
+        # Functions - compact format: {name: signature}
+        if api.get("functions"):
+            result["functions"] = {}
+            for func_name, func_info in sorted(api["functions"].items()):
+                sig = func_info.get("signature", "(...)")
+                doc = func_info.get("doc", "").split("\n")[0][:80] if func_info.get("doc") else ""
+                result["functions"][func_name] = {"sig": sig}
+                if doc:
+                    result["functions"][func_name]["doc"] = doc
 
         # Constants
         if api.get("constants"):
-            lines.append("CONSTANTS:\n")
-            for name, value in sorted(api["constants"].items()):
-                lines.append(f"  {name} = {value}")
-            lines.append("")
+            result["constants"] = dict(sorted(api["constants"].items()))
 
-        # Classes
-        if api.get("classes"):
-            lines.append("CLASSES:\n")
-            for class_name, class_info in sorted(api["classes"].items()):
-                lines.append(f"  class {class_name}:")
-                doc = class_info.get("doc", "").split("\n")[0][:60]
-                if doc:
-                    lines.append(f"    {doc}")
-                methods = class_info.get("methods", {})
-                if methods:
-                    lines.append(f"\n    Methods ({len(methods)}):")
-                    for method_name, sig in sorted(methods.items()):
-                        lines.append(f"      • {method_name}{sig}")
-                lines.append("")
+        return result
 
-        # Functions
-        if api.get("functions"):
-            lines.append("FUNCTIONS:\n")
-            for func_name, func_info in sorted(api["functions"].items()):
-                sig = func_info.get("signature", "(...)")
-                lines.append(f"  def {func_name}{sig}:")
-                doc = func_info.get("doc", "").split("\n")[0][:60]
-                if doc:
-                    lines.append(f"      {doc}")
-                lines.append("")
+    # Run with stdout capture (for any print statements in discover_module_api)
+    stdout_capture = io.StringIO()
+    stderr_capture = io.StringIO()
 
-        return "\n".join(lines) if lines else "(empty module)"
-
-    return run_tool(_impl)
+    try:
+        with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
+            return _impl()
+    except Exception as e:
+        return {"module": module_name, "error": f"{type(e).__name__}: {e}"}
 
 
 @mcp.tool()
