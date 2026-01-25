@@ -110,6 +110,9 @@ def run_tool(fn: Callable[[], str]) -> str:
 # Tools
 # ──────────────────────────────────────────────────────────────────────
 
+# Import ML-optimized discover_api (self-contained, no dependency on human script)
+from scripts.mcp.discover_api_ml import discover_api as _discover_api_impl
+
 
 @mcp.tool()
 def discover_api(
@@ -132,59 +135,17 @@ def discover_api(
     Returns structured JSON with:
         - module: Module name
         - classes: {name: {methods: {name: signature}, doc: str}}
-        - functions: {name: {signature: str, doc: str}}
+        - functions: {name: {sig: str, doc: str}}
         - constants: {name: value}
         - error: Optional error message
     """
-
-    def _impl() -> dict:
-        from scripts.discover_api import discover_module_api
-
-        api = discover_module_api(module_name, silent=True)
-
-        # Return compact structured data
-        result: dict = {"module": module_name}
-
-        # Error handling
-        if api.get("error"):
-            result["error"] = api["error"]
-            return result
-
-        # Classes - compact format: {name: {methods: {name: sig}}}
-        if api.get("classes"):
-            result["classes"] = {}
-            for class_name, class_info in sorted(api["classes"].items()):
-                methods = class_info.get("methods", {})
-                doc = class_info.get("doc", "").split("\n")[0][:80] if class_info.get("doc") else ""
-                result["classes"][class_name] = {
-                    "methods": {m: s for m, s in sorted(methods.items())},
-                }
-                if doc:
-                    result["classes"][class_name]["doc"] = doc
-
-        # Functions - compact format: {name: signature}
-        if api.get("functions"):
-            result["functions"] = {}
-            for func_name, func_info in sorted(api["functions"].items()):
-                sig = func_info.get("signature", "(...)")
-                doc = func_info.get("doc", "").split("\n")[0][:80] if func_info.get("doc") else ""
-                result["functions"][func_name] = {"sig": sig}
-                if doc:
-                    result["functions"][func_name]["doc"] = doc
-
-        # Constants
-        if api.get("constants"):
-            result["constants"] = dict(sorted(api["constants"].items()))
-
-        return result
-
-    # Run with stdout capture (for any print statements in discover_module_api)
+    # Run with stdout capture (in case any imports print)
     stdout_capture = io.StringIO()
     stderr_capture = io.StringIO()
 
     try:
         with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
-            return _impl()
+            return _discover_api_impl(module_name)
     except Exception as e:
         return {"module": module_name, "error": f"{type(e).__name__}: {e}"}
 
