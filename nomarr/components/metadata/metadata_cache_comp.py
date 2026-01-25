@@ -27,12 +27,13 @@ def rebuild_song_metadata_cache(db: "Database", song_id: str) -> None:
     tags_dict = db.tags.get_song_tags(song_id).to_dict()
 
     # Extract metadata from tags (using rel names directly)
-    artists_raw: list[str] = list(tags_dict.get("artists", []))
-    artist_raw: list[str] = list(tags_dict.get("artist", []))
-    album_raw: list[str] = list(tags_dict.get("album", []))
-    label_raw: list[str] = list(tags_dict.get("label", []))
-    genre_raw: list[str] = list(tags_dict.get("genre", []))
-    year_raw: list[str] = list(tags_dict.get("year", []))
+    # to_dict() returns tuple | Iterable, so cast to list
+    artists_raw = [str(v) for v in tags_dict.get("artists", [])]
+    artist_raw = [str(v) for v in tags_dict.get("artist", [])]
+    album_raw = [str(v) for v in tags_dict.get("album", [])]
+    label_raw = [str(v) for v in tags_dict.get("label", [])]
+    genre_raw = [str(v) for v in tags_dict.get("genre", [])]
+    year_raw = [str(v) for v in tags_dict.get("year", [])]
 
     # Derive embedded field values
     artist = str(artist_raw[0]) if artist_raw else None
