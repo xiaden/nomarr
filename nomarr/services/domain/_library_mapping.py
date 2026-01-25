@@ -48,7 +48,7 @@ def map_file_with_tags_to_dto(file_dict: dict[str, Any]) -> LibraryFileWithTags:
             FileTag(
                 key=tag["key"],
                 value=tag["value"],
-                type=tag["type"],
+                tag_type=tag["type"],
                 is_nomarr=tag["is_nomarr"],
             )
             for tag in file_dict.get("tags", [])

@@ -132,7 +132,7 @@ class TagCoOccurrencesResponse(BaseModel):
     def from_dto(cls, dto: TagCoOccurrenceData) -> TagCoOccurrencesResponse:
         """Convert TagCoOccurrenceData DTO to Pydantic response model."""
         return cls(
-            x_axis=[TagSpecRequest(key=tag.key, value=tag.value) for tag in dto.x_tags],
-            y_axis=[TagSpecRequest(key=tag.key, value=tag.value) for tag in dto.y_tags],
+            x=[TagSpecRequest(key=tag.key, value=tag.value) for tag in dto.x_tags],
+            y=[TagSpecRequest(key=tag.key, value=tag.value) for tag in dto.y_tags],
             matrix=dto.matrix,
         )

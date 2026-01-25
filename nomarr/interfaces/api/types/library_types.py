@@ -91,7 +91,7 @@ class LibraryResponse(BaseModel):
             scanned_at = scanned_at_raw
 
         return cls(
-            id=encode_id(library._id),
+            library_id=encode_id(library._id),
             name=library.name,
             root_path=library.root_path,
             is_enabled=library.is_enabled,
@@ -295,7 +295,7 @@ class SearchFilesResponse(BaseModel):
         return cls(
             files=[
                 LibraryFileWithTagsResponse(
-                    id=encode_id(f._id),
+                    file_id=encode_id(f._id),
                     path=f.path,
                     library_id=encode_id(f.library_id),
                     file_size=f.file_size,
@@ -313,7 +313,8 @@ class SearchFilesResponse(BaseModel):
                     created_at=f.created_at,
                     updated_at=f.updated_at,
                     tags=[
-                        FileTagResponse(key=t.key, value=t.value, type=t.type, is_nomarr=t.is_nomarr) for t in f.tags
+                        FileTagResponse(key=t.key, value=t.value, tag_type=t.tag_type, is_nomarr=t.is_nomarr)
+                        for t in f.tags
                     ],
                 )
                 for f in result.files
@@ -398,7 +399,10 @@ class FileTagsResponse(BaseModel):
         return cls(
             file_id=result.file_id,
             path=result.path,
-            tags=[FileTagResponse(key=t.key, value=t.value, type=t.type, is_nomarr=t.is_nomarr) for t in result.tags],
+            tags=[
+                FileTagResponse(key=t.key, value=t.value, tag_type=t.tag_type, is_nomarr=t.is_nomarr)
+                for t in result.tags
+            ],
         )
 
 

@@ -71,7 +71,7 @@ class LibraryFilesMixin:
             FileTag(
                 key=tag["key"],
                 value=str(tag["value"]),
-                type=tag["type"],
+                tag_type=tag["type"],
                 is_nomarr=tag["is_nomarr_tag"],
             )
             for tag in result["tags"]

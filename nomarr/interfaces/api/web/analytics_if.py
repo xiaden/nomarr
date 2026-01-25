@@ -95,13 +95,13 @@ async def web_analytics_tag_co_occurrences(
     """
     try:
         # Enforce 16x16 limit
-        x_tags = request.x[:16]
-        y_tags = request.y[:16]
+        x_tags = request.x_axis[:16]
+        y_tags = request.y_axis[:16]
 
-        if len(request.x) > 16 or len(request.y) > 16:
+        if len(request.x_axis) > 16 or len(request.y_axis) > 16:
             logging.warning(
                 f"[Web API] Tag co-occurrence request exceeded 16x16 limit. "
-                f"Trimmed from {len(request.x)}x{len(request.y)} to {len(x_tags)}x{len(y_tags)}"
+                f"Trimmed from {len(request.x_axis)}x{len(request.y_axis)} to {len(x_tags)}x{len(y_tags)}"
             )
 
         # Convert Pydantic models to tuples for service

@@ -341,7 +341,7 @@ class DiscoveryWorker(multiprocessing.Process):
                     logger.debug(
                         "[%s] Completed %s in %.2fs (%d heads, %d tags)",
                         self.worker_id,
-                        result.file,
+                        result.file_path,
                         result.elapsed,
                         result.heads_processed,
                         result.tags_written,

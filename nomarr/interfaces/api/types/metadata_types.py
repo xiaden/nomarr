@@ -17,7 +17,7 @@ class EntityResponse(BaseModel):
     @classmethod
     def from_dto(cls, dto: EntityDict) -> "EntityResponse":
         return cls(
-            id=encode_id(dto["_id"]),
+            entity_id=encode_id(dto["_id"]),
             key=dto["_key"],
             display_name=dto["display_name"],
             song_count=dto.get("song_count"),
