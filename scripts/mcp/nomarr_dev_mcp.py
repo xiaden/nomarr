@@ -128,6 +128,11 @@ def discover_api(
     Shows classes, functions, methods, and constants exported by a module.
     Use this BEFORE writing code that calls a module to understand what's available.
 
+    PREFER THIS OVER read_file:
+    - Returns ~20 lines of structured signatures vs 500+ lines of raw code
+    - Shows WHAT you can call without loading implementation details
+    - Use get_source() after to see specific implementations you need
+
     Examples:
         - discover_api("nomarr.components.ml") - See ML component exports
         - discover_api("nomarr.helpers") - See helper utilities
@@ -164,6 +169,11 @@ def get_source(
     Use after discover_api() when you need to see the actual implementation
     of a specific function/method/class.
 
+    PREFER THIS OVER read_file:
+    - Returns exactly ONE entity (4-50 lines) vs loading entire files (500+ lines)
+    - Includes file path and line number for precise edits
+    - Workflow: discover_api() -> see what exists -> get_source() -> see how it works
+
     Examples:
         - get_source("nomarr.persistence.db.Database.close") - Get method source
         - get_source("nomarr.helpers.time_helper.now_ms") - Get function source
@@ -175,6 +185,7 @@ def get_source(
         - source: The source code
         - file: Source file path
         - line: Starting line number
+        - line_count: Number of lines in the entity
         - error: Optional error message
     """
     stdout_capture = io.StringIO()

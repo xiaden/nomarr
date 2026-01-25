@@ -137,8 +137,9 @@ def get_source(
         try:
             source_file = inspect.getfile(source_obj)
             result["file"] = source_file
-            _, line_number = inspect.getsourcelines(source_obj)
+            source_lines, line_number = inspect.getsourcelines(source_obj)
             result["line"] = line_number
+            result["line_count"] = len(source_lines)
         except (OSError, TypeError):
             pass
 
