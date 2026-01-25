@@ -1,2 +1,0 @@
-# ArangoDB data directory
-# Mounted to /var/lib/arangodb3 in the container
