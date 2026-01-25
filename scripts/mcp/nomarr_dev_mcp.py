@@ -110,8 +110,9 @@ def run_tool(fn: Callable[[], str]) -> str:
 # Tools
 # ──────────────────────────────────────────────────────────────────────
 
-# Import ML-optimized discover_api (self-contained, no dependency on human script)
+# Import ML-optimized tools (self-contained, no dependency on human scripts)
 from scripts.mcp.discover_api_ml import discover_api as _discover_api_impl
+from scripts.mcp.get_source_ml import get_source as _get_source_impl
 
 
 @mcp.tool()
@@ -148,6 +149,42 @@ def discover_api(
             return _discover_api_impl(module_name)
     except Exception as e:
         return {"module": module_name, "error": f"{type(e).__name__}: {e}"}
+
+
+@mcp.tool()
+def get_source(
+    qualified_name: Annotated[
+        str,
+        "Fully qualified name: 'module.Class.method' or 'module.function'",
+    ],
+) -> dict:
+    """
+    Get source code of a specific function, method, or class.
+
+    Use after discover_api() when you need to see the actual implementation
+    of a specific function/method/class.
+
+    Examples:
+        - get_source("nomarr.persistence.db.Database.close") - Get method source
+        - get_source("nomarr.helpers.time_helper.now_ms") - Get function source
+        - get_source("nomarr.helpers.dto.library_dto.LibraryDict") - Get class source
+
+    Returns structured JSON with:
+        - name: The qualified name requested
+        - type: "function", "method", or "class"
+        - source: The source code
+        - file: Source file path
+        - line: Starting line number
+        - error: Optional error message
+    """
+    stdout_capture = io.StringIO()
+    stderr_capture = io.StringIO()
+
+    try:
+        with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
+            return _get_source_impl(qualified_name)
+    except Exception as e:
+        return {"name": qualified_name, "error": f"{type(e).__name__}: {e}"}
 
 
 @mcp.tool()

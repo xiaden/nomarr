@@ -44,7 +44,7 @@ def _mock_unavailable_dependencies() -> None:
 
 
 def _get_signature(obj: Any) -> str:
-    """Get function/method signature as string."""
+    """Get function/method signature as string (includes return type if annotated)."""
     try:
         return str(inspect.signature(obj))
     except (ValueError, TypeError):
