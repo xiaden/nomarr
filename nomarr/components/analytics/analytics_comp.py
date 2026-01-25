@@ -264,9 +264,9 @@ def compute_artist_tag_profile(
                 # Process other tags
                 tag_counts[tag_name] += 1
                 # Try to extract numeric values
-                for val in values:
+                for tag_value in values:
                     try:
-                        numeric_value = float(val)
+                        numeric_value = float(tag_value)
                         tag_values[tag_name].append(numeric_value)
                     except (ValueError, TypeError):
                         pass

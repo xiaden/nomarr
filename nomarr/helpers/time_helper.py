@@ -148,9 +148,9 @@ def ms_to_s(ms: Milliseconds) -> Seconds:
     return Seconds(ms.value // 1000)
 
 
-def s_to_ms(s: Seconds) -> Milliseconds:
+def s_to_ms(secondseconds: Seconds) -> Milliseconds:
     """Convert wall-clock seconds to milliseconds."""
-    return Milliseconds(s.value * 1000)
+    return Milliseconds(seconds.value * 1000)
 
 
 def internal_ms_to_s(ms: InternalMilliseconds) -> InternalSeconds:
@@ -158,9 +158,9 @@ def internal_ms_to_s(ms: InternalMilliseconds) -> InternalSeconds:
     return InternalSeconds(ms.value // 1000)
 
 
-def internal_s_to_ms(s: InternalSeconds) -> InternalMilliseconds:
+def internal_s_to_ms(seconds: InternalSeconds) -> InternalMilliseconds:
     """Convert monotonic seconds to milliseconds."""
-    return InternalMilliseconds(s.value * 1000)
+    return InternalMilliseconds(seconds.value * 1000)
 
 
 # =============================================================================

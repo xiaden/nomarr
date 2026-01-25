@@ -13,6 +13,7 @@ Architecture:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import multiprocessing
@@ -152,10 +153,8 @@ class GPUHealthMonitor(multiprocessing.Process):
 
         # Close pipe on exit
         if self._health_pipe:
-            try:
+            with contextlib.suppress(Exception):
                 self._health_pipe.close()
-            except Exception:
-                pass
 
     def stop(self) -> None:
         """Signal monitor to stop gracefully."""

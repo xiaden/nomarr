@@ -139,7 +139,7 @@ def get_log_context() -> dict[str, Any]:
     return context.copy() if context else {}
 
 
-def sanitize_exception_message(e: Exception, safe_message: str = "An error occurred") -> str:
+def sanitize_exception_message(exception: Exception, safe_message: str = "An error occurred") -> str:
     """
     Sanitize exception message for user display.
 
@@ -147,7 +147,7 @@ def sanitize_exception_message(e: Exception, safe_message: str = "An error occur
     preserving the ability to log full details.
 
     Args:
-        e: The exception to sanitize
+        exception: The exception to sanitize
         safe_message: Generic message to return to users
 
     Returns:
@@ -162,7 +162,7 @@ def sanitize_exception_message(e: Exception, safe_message: str = "An error occur
         ...     return {"error": user_msg}  # Returns generic message
     """
     # Log the full exception for debugging
-    logger.exception(f"[security] Exception sanitized: {e}")
+    logger.exception(f"[security] Exception sanitized: {exception}")
 
     # Return generic message to user
     return safe_message

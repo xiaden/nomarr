@@ -124,18 +124,18 @@ def _discover_and_group_heads(models_dir: str) -> tuple[list[HeadInfo], dict[str
     logging.debug(f"[processor] Heads by backbone: {dict(by_backbone)}")
     logging.debug(f"[processor] Heads by type: {dict(by_type)}")
 
-    for h in heads:
-        logging.debug(f"[processor]   - {h.name} ({h.backbone}/{h.head_type}, {len(h.sidecar.labels)} labels)")
+    for head in heads:
+        logging.debug(
+            f"[processor]   - {head.name} ({head.backbone}/{head.head_type}, {len(head.sidecar.labels)} labels)"
+        )
 
     # Group heads by backbone for embedding reuse
     heads_by_backbone = defaultdict(list)
-    for h in heads:
-        heads_by_backbone[h.backbone].append(h)
+    for head in heads:
+        heads_by_backbone[head.backbone].append(head)
 
-    logging.debug(
-        f"[processor] Grouped {len(heads)} heads into {len(heads_by_backbone)} backbones: "
-        f"{ {k: len(v) for k, v in heads_by_backbone.items()} }"
-    )
+    backbone_counts = {k: len(v) for k, v in heads_by_backbone.items()}
+    logging.debug(f"[processor] Grouped {len(heads)} heads into {len(heads_by_backbone)} backbones: {backbone_counts}")
 
     return heads, dict(heads_by_backbone)
 
@@ -441,17 +441,17 @@ def select_tags_for_file(all_tags: dict[str, Any], file_write_mode: str) -> dict
     if file_write_mode == "minimal":
         # Only high-level summary tags
         filtered = {}
-        for key, val in all_tags.items():
+        for key, tag_value in all_tags.items():
             if not isinstance(key, str):
                 continue
             # Include mood-* tags and version tag
             if key.startswith("mood-") or key.endswith("_version") or "version" in key:
-                filtered[key] = val
+                filtered[key] = tag_value
         return filtered
 
     # "full" mode: Include numeric tags and mood-*, but exclude tiers and calibration
     filtered = {}
-    for key, val in all_tags.items():
+    for key, tag_value in all_tags.items():
         if not isinstance(key, str):
             continue
         # Exclude *_tier tags (internal use only)
@@ -460,7 +460,7 @@ def select_tags_for_file(all_tags: dict[str, Any], file_write_mode: str) -> dict
         # Exclude calibration-related keys
         if "calibration" in key.lower():
             continue
-        filtered[key] = val
+        filtered[key] = tag_value
     return filtered
 
 
@@ -635,9 +635,9 @@ def process_file_workflow(
     mood_keys = [k for k in tags_accum if isinstance(k, str) and k.startswith("mood-")]
     logging.debug(f"[processor] Mood aggregation produced {len(mood_keys)} mood- tags: {mood_keys}")
     for mood_key in mood_keys:
-        val = tags_accum[mood_key]
-        if isinstance(val, list):
-            logging.debug(f"[processor]   {mood_key}: {len(val)} terms")
+        mood_value = tags_accum[mood_key]
+        if isinstance(mood_value, list):
+            logging.debug(f"[processor]   {mood_key}: {len(mood_value)} terms")
 
     # Add version tag
     tags_accum[config.version_tag_key] = config.tagger_version
@@ -665,12 +665,12 @@ def process_file_workflow(
     mood_info = {}
     for key in ["mood-strict", "mood-regular", "mood-loose"]:
         if key in tags_accum:
-            val = tags_accum[key]
-            if isinstance(val, dict | list):
-                mood_info[key] = len(val)
+            mood_value = tags_accum[key]
+            if isinstance(mood_value, dict | list):
+                mood_info[key] = len(mood_value)
 
     return ProcessFileResult(
-        file=path,
+        file_path=path,
         elapsed=elapsed,
         duration=duration_final,
         heads_processed=total_heads_succeeded,

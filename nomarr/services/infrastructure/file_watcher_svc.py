@@ -27,6 +27,7 @@ Must use thread-safe handoff via loop.call_soon_threadsafe().
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import threading
 from collections import defaultdict
@@ -258,11 +259,9 @@ class FileWatcherService:
         """Schedule a library for cleanup (called from polling loop when library not found)."""
         self._pending_cleanups.add(library_id)
         # Schedule actual cleanup on event loop
-        try:
-            self.event_loop.call_soon_threadsafe(self._do_cleanup, library_id)
-        except RuntimeError:
+        with contextlib.suppress(RuntimeError):
             # Event loop not running - just mark for cleanup
-            pass
+            self.event_loop.call_soon_threadsafe(self._do_cleanup, library_id)
 
     def _do_cleanup(self, library_id: str) -> None:
         """Actually stop watching a library (runs on event loop)."""

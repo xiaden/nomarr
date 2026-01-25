@@ -27,9 +27,9 @@ def discover_next_file(db: Database) -> str | None:
     Returns:
         File _id or None if no work available
     """
-    file = db.library_files.discover_next_unprocessed_file()
-    if file:
-        return str(file["_id"])
+    file_doc = db.library_files.discover_next_unprocessed_file()
+    if file_doc:
+        return str(file_doc["_id"])
     return None
 
 

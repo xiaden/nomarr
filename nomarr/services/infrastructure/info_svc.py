@@ -9,6 +9,7 @@ NOT a health service - HealthMonitorService tracks component liveness.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import multiprocessing
 from dataclasses import dataclass
@@ -185,10 +186,8 @@ class InfoService:
 
         # Close pipe
         if self._gpu_pipe_parent:
-            try:
+            with contextlib.suppress(Exception):
                 self._gpu_pipe_parent.close()
-            except Exception:
-                pass
             self._gpu_pipe_parent = None
 
     def _restart_gpu_monitor(self) -> None:

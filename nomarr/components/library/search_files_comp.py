@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 def search_library_files(
     db: Database,
-    q: str = "",
+    query_text: str = "",
     artist: str | None = None,
     album: str | None = None,
     tag_key: str | None = None,
@@ -28,7 +28,7 @@ def search_library_files(
 
     Args:
         db: Database instance
-        q: Text search query for artist/album/title
+        query_text: Text search query for artist/album/title
         artist: Filter by artist name
         album: Filter by album name
         tag_key: Filter by files that have this tag key
@@ -42,7 +42,7 @@ def search_library_files(
     """
     # Use joined queries for efficient file+tag retrieval
     return db.library_files.search_library_files_with_tags(
-        q=q,
+        q=query_text,
         artist=artist,
         album=album,
         tag_key=tag_key,

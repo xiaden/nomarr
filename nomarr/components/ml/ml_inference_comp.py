@@ -23,9 +23,6 @@ except ImportError:
     HAVE_TF = False
     tf = None  # type: ignore
 
-if TYPE_CHECKING:
-    from nomarr.components.ml.models.discovery import HeadInfo
-
 # TensorFlow logging and GPU settings (TF_CPP_MIN_LOG_LEVEL,
 # TF_FORCE_GPU_ALLOW_GROWTH, TF_GPU_THREAD_MODE) are set in Dockerfile
 

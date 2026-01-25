@@ -5,9 +5,10 @@ Nomarr Development MCP Server
 Exposes code discovery tools to AI agents via MCP.
 All tools use static analysis and return structured JSON.
 
-Tools (4 focused tools):
+Tools (5 focused tools):
 - discover_api: Show public API of any nomarr module (signatures, methods, constants)
 - get_source: Get source code of a specific function/method/class
+- find_symbol_at_line: Find which function/class contains a given line number
 - trace_calls: Trace call chains from entry point through layers
 - list_routes: List all API routes by static analysis
 
@@ -47,6 +48,7 @@ mcp = FastMCP(
     instructions="""Tools for navigating nomarr codebase.
 - discover_api: Returns module exports (classes, functions, signatures) in ~20 lines vs reading full files.
 - get_source: Returns a single function/method/class with file path and line number - ideal for targeted edits.
+- find_symbol_at_line: Find which function/class/method contains a specific line number (useful for error messages/stack traces).
 - list_routes: Static analysis of API routes without runtime.
 - trace_calls: Follows call chains from entry points through layers.
 - trace_endpoint: Resolves FastAPI DI to trace full endpoint behavior.""",
@@ -59,6 +61,7 @@ mcp = FastMCP(
 
 # Import ML-optimized tools (self-contained, no dependency on human scripts)
 from scripts.mcp.discover_api_ml import discover_api as _discover_api_impl
+from scripts.mcp.find_symbol_at_line_ml import find_symbol_at_line as _find_symbol_at_line_impl
 from scripts.mcp.get_source_ml import get_source as _get_source_impl
 from scripts.mcp.list_routes_ml import list_routes as _list_routes_impl
 from scripts.mcp.trace_calls_ml import trace_calls as _trace_calls_impl
@@ -112,6 +115,33 @@ def get_source(
             return _get_source_impl(qualified_name, context_lines=context_lines)
     except Exception as e:
         return {"name": qualified_name, "error": f"{type(e).__name__}: {e}"}
+
+
+@mcp.tool()
+def find_symbol_at_line(
+    file_path: Annotated[
+        str,
+        "Absolute or relative path to Python file",
+    ],
+    line_number: Annotated[
+        int,
+        "Line number (1-indexed) to find containing symbol for",
+    ],
+) -> dict:
+    """
+    Find which Python symbol (function/class/method) contains a specific line number.
+
+    Returns the qualified name suitable for use with get_source().
+    Use this when you know a file and line number but need the function/method name for editing.
+    """
+    stdout_capture = io.StringIO()
+    stderr_capture = io.StringIO()
+
+    try:
+        with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
+            return _find_symbol_at_line_impl(file_path, line_number)
+    except Exception as e:
+        return {"file": file_path, "line": line_number, "error": f"{type(e).__name__}: {e}"}
 
 
 @mcp.tool()

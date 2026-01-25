@@ -230,7 +230,6 @@ async def get_histogram_calibration_progress(
         ) from e
 
 
-
 @router.get("/history", dependencies=[Depends(verify_session)])
 async def get_calibration_history_all(
     limit: int = 100,

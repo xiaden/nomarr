@@ -91,7 +91,7 @@ class ComputeEmbeddingsForBackboneParams:
 class SegmentWaveformParams:
     """Parameters for segment_waveform."""
 
-    y: Any  # np.ndarray
+    waveform: Any  # np.ndarray
     sr: int
     segment_s: float
     hop_s: float

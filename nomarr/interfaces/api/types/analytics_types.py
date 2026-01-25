@@ -117,22 +117,22 @@ class TagSpecRequest(BaseModel):
 class TagCoOccurrenceRequest(BaseModel):
     """Request model for tag co-occurrence matrix."""
 
-    x: list[TagSpecRequest] = Field(..., description="X-axis tags (max 16)", max_length=16)
-    y: list[TagSpecRequest] = Field(..., description="Y-axis tags (max 16)", max_length=16)
+    x_axis: list[TagSpecRequest] = Field(..., alias="x", description="X-axis tags (max 16)", max_length=16)
+    y_axis: list[TagSpecRequest] = Field(..., alias="y", description="Y-axis tags (max 16)", max_length=16)
 
 
 class TagCoOccurrencesResponse(BaseModel):
     """Response model for tag co-occurrence matrix."""
 
-    x: list[TagSpecRequest] = Field(..., description="X-axis tags")
-    y: list[TagSpecRequest] = Field(..., description="Y-axis tags")
+    x_axis: list[TagSpecRequest] = Field(..., alias="x", description="X-axis tags")
+    y_axis: list[TagSpecRequest] = Field(..., alias="y", description="Y-axis tags")
     matrix: list[list[int]] = Field(..., description="Co-occurrence matrix where matrix[j][i] = count")
 
     @classmethod
     def from_dto(cls, dto: TagCoOccurrenceData) -> TagCoOccurrencesResponse:
         """Convert TagCoOccurrenceData DTO to Pydantic response model."""
         return cls(
-            x=[TagSpecRequest(key=tag.key, value=tag.value) for tag in dto.x_tags],
-            y=[TagSpecRequest(key=tag.key, value=tag.value) for tag in dto.y_tags],
+            x_axis=[TagSpecRequest(key=tag.key, value=tag.value) for tag in dto.x_tags],
+            y_axis=[TagSpecRequest(key=tag.key, value=tag.value) for tag in dto.y_tags],
             matrix=dto.matrix,
         )

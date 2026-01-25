@@ -33,7 +33,7 @@ class ProcessFileResponse(BaseModel):
     Maps to ProcessFileResult DTO from helpers/dto/processing_dto.py
     """
 
-    file: str
+    file_path: str
     elapsed: float
     duration: float | None
     heads_processed: int
@@ -54,7 +54,7 @@ class ProcessFileResponse(BaseModel):
             API response model
         """
         return cls(
-            file=result.file,
+            file_path=result.file_path,
             elapsed=result.elapsed,
             duration=result.duration,
             heads_processed=result.heads_processed,

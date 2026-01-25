@@ -95,7 +95,7 @@ class GeneratePlaylistResult:
 class TemplateSummaryItem:
     """Single template item from get_template_summary()."""
 
-    id: str
+    template_id: str
     name: str
     description: str
 

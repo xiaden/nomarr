@@ -93,9 +93,7 @@ def _build_artists_list(artists_raw: str | list[str] | None) -> list[str]:
         # Single value or separator-delimited string
         for sep in (";", ",", "/", " / "):
             if sep in artists_raw:
-                artists_list = [
-                    artist.strip() for artist in artists_raw.split(sep) if artist.strip()
-                ]
+                artists_list = [artist.strip() for artist in artists_raw.split(sep) if artist.strip()]
                 break
         else:
             artists_list = [artists_raw.strip()] if artists_raw.strip() else []
@@ -261,10 +259,8 @@ def _extract_mp4_metadata(audio: Any, metadata: dict[str, Any], namespace: str) 
         metadata["all_tags"].get("date")
     )
     if year_str:
-        try:
+        with contextlib.suppress(ValueError, IndexError):
             metadata["year"] = int(year_str[:4])
-        except (ValueError, IndexError):
-            pass
 
     # Parse track number (may be "10/10" format from normalized tags)
     track_str = _parse_single_value(metadata["all_tags"].get("tracknumber"))
@@ -318,10 +314,8 @@ def _extract_flac_metadata(audio: Any, metadata: dict[str, Any], namespace: str)
         metadata["all_tags"].get("date")
     )
     if year_str:
-        try:
+        with contextlib.suppress(ValueError, IndexError):
             metadata["year"] = int(year_str[:4])
-        except (ValueError, IndexError):
-            pass
 
     # Parse track number
     track_str = _parse_single_value(metadata["all_tags"].get("tracknumber"))

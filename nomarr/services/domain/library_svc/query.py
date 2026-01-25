@@ -66,7 +66,7 @@ class LibraryQueryMixin:
 
     def search_files(
         self,
-        q: str = "",
+        query_text: str = "",
         artist: str | None = None,
         album: str | None = None,
         tag_key: str | None = None,
@@ -79,7 +79,9 @@ class LibraryQueryMixin:
         from nomarr.components.library.search_files_comp import search_library_files
         from nomarr.services.domain._library_mapping import map_file_with_tags_to_dto
 
-        files, total = search_library_files(self.db, q, artist, album, tag_key, tag_value, tagged_only, limit, offset)
+        files, total = search_library_files(
+            self.db, query_text, artist, album, tag_key, tag_value, tagged_only, limit, offset
+        )
         files_with_tags = [map_file_with_tags_to_dto(f) for f in files]
         return SearchFilesResult(files=files_with_tags, total=total, limit=limit, offset=offset)
 

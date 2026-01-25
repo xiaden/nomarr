@@ -64,12 +64,12 @@ def _jsonify_for_arango(obj: Any, *, _path: str = "$") -> Any:
     # Wrapper types with .value (Milliseconds, Seconds, InternalMilliseconds, etc.)
     # Only unwrap if .value is a JSON primitive
     if hasattr(obj, "value"):
-        v = obj.value
-        if isinstance(v, _JSON_PRIMITIVES):
-            return v
+        primitive_value = obj.value
+        if isinstance(primitive_value, _JSON_PRIMITIVES):
+            return primitive_value
         # .value exists but isn't a primitive - fail loudly
         raise TypeError(
-            f"Non-primitive .value at {_path}: {type(obj).__name__}.value is {type(v).__name__}, "
+            f"Non-primitive .value at {_path}: {type(obj).__name__}.value is {type(primitive_value).__name__}, "
             f"expected JSON primitive"
         )
 

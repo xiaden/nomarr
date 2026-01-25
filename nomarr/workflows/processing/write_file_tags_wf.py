@@ -232,8 +232,8 @@ def write_file_tags_workflow(
         # Release claim on error
         try:
             db.library_files.release_claim(file_key)
-        except Exception:
-            pass
+        except Exception as release_err:
+            logger.debug(f"[write_file_tags] Failed to release claim for {file_key}: {release_err}")
         return WriteResult(
             file_key=file_key,
             tags_written=0,

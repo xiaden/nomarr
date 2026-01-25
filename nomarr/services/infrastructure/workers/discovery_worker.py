@@ -8,6 +8,7 @@ Health telemetry is sent via pipe to parent process (not DB).
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import multiprocessing
@@ -372,10 +373,8 @@ class DiscoveryWorker(multiprocessing.Process):
 
             # Close health pipe (this signals EOF to parent reader)
             if self._health_pipe is not None:
-                try:
+                with contextlib.suppress(Exception):
                     self._health_pipe.close()
-                except Exception:
-                    pass
 
     def stop(self) -> None:
         """Signal worker to stop gracefully."""

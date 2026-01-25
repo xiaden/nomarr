@@ -118,7 +118,7 @@ class WorkerStatusResult:
 class ProcessFileResult:
     """Result from process_file_workflow."""
 
-    file: str
+    file_path: str
     elapsed: float
     duration: float | None
     heads_processed: int

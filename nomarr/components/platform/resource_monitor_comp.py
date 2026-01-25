@@ -16,6 +16,7 @@ Per GPU_REFACTOR_PLAN.md Section 5:
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import subprocess
@@ -336,7 +337,7 @@ def _get_cgroup_available_mb() -> int:
     cgroup_v2_path = "/sys/fs/cgroup/memory.max"
     cgroup_v2_current = "/sys/fs/cgroup/memory.current"
 
-    try:
+    with contextlib.suppress(Exception):
         if os.path.exists(cgroup_v2_path) and os.path.exists(cgroup_v2_current):
             with open(cgroup_v2_path) as f:
                 max_bytes_str = f.read().strip()
@@ -348,14 +349,12 @@ def _get_cgroup_available_mb() -> int:
             max_bytes = int(max_bytes_str)
             available_bytes = max_bytes - current_bytes
             return max(0, available_bytes // (1024 * 1024))
-    except Exception:
-        pass
 
     # Try cgroup v1
     cgroup_v1_limit = "/sys/fs/cgroup/memory/memory.limit_in_bytes"
     cgroup_v1_usage = "/sys/fs/cgroup/memory/memory.usage_in_bytes"
 
-    try:
+    with contextlib.suppress(Exception):
         if os.path.exists(cgroup_v1_limit) and os.path.exists(cgroup_v1_usage):
             with open(cgroup_v1_limit) as f:
                 limit_bytes = int(f.read().strip())
@@ -368,8 +367,6 @@ def _get_cgroup_available_mb() -> int:
 
             available_bytes = limit_bytes - usage_bytes
             return max(0, available_bytes // (1024 * 1024))
-    except Exception:
-        pass
 
     return 0  # Not in a cgroup or error reading
 

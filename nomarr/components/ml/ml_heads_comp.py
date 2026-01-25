@@ -21,39 +21,39 @@ from nomarr.components.ml.ml_discovery_comp import Sidecar
 # ----------------------------------------------------------------------
 # Utilities
 # ----------------------------------------------------------------------
-def _safe_get(d: dict[str, Any], *keys, default=None):
+def _safe_get(data_dict: dict[str, Any], *keys, default=None):
     """Return first matching key present in dict d (top-level), else default."""
-    for k in keys:
-        if k in d:
-            return d[k]
+    for key in keys:
+        if key in data_dict:
+            return data_dict[key]
     return default
 
 
-def _as_float_list(x: Any) -> list[float]:
-    if x is None:
+def _as_float_list(element: Any) -> list[float]:
+    if element is None:
         return []
-    if isinstance(x, list | tuple | np.ndarray):
-        return [float(v) for v in x]
-    return [float(x)]
+    if isinstance(element, list | tuple | np.ndarray):
+        return [float(vec_element) for vec_element in element]
+    return [float(element)]
 
 
-def _normalize(v: np.ndarray) -> np.ndarray:
+def _normalize(vector: np.ndarray) -> np.ndarray:
     # numerical-safe softmax-like normalization for multiclass if needed
-    vmax = np.max(v)
-    ex = np.exp(v - vmax)
-    s = np.sum(ex)
-    if s <= 0:
-        return np.zeros_like(v)
-    result: np.ndarray = ex / s
+    vmax = np.max(vector)
+    ex = np.exp(vector - vmax)
+    exp_sum = np.sum(ex)
+    if exp_sum <= 0:
+        return np.zeros_like(vector)
+    result: np.ndarray = ex / exp_sum
     return result
 
 
-def _to_prob(v: np.ndarray, already_prob: bool) -> np.ndarray:
+def _to_prob(vector: np.ndarray, already_prob: bool) -> np.ndarray:
     if already_prob:
-        clipped: np.ndarray = np.clip(v, 0.0, 1.0)
+        clipped: np.ndarray = np.clip(vector, 0.0, 1.0)
         return clipped
     # If not probabilities, but look like logits, convert per-dimension sigmoid for multilabel
-    result: np.ndarray = 1.0 / (1.0 + np.exp(-v))
+    result: np.ndarray = 1.0 / (1.0 + np.exp(-vector))
     return result
 
 
@@ -103,7 +103,7 @@ class Cascade:
                 gap_low=float(levels.get("gap_low", getattr(fallback, "gap_low", 0.05) if fallback else 0.05)),
             )
         if isinstance(levels, list | tuple) and len(levels) >= 3:
-            # allow [high, medium, low]
+            # allow [high, medium, low]  # noqa: E800
             return cls(high=float(levels[0]), medium=float(levels[1]), low=float(levels[2]))
         return fallback or cls()
 
@@ -237,17 +237,17 @@ def decide_multilabel(scores: np.ndarray, spec: HeadSpec) -> dict[str, Any]:
     eps = 1e-9
 
     for i, lab in enumerate(spec.labels):
-        p = float(probs[i]) if i < len(probs) else 0.0
+        prob = float(probs[i]) if i < len(probs) else 0.0
 
         # Store ALL raw probabilities regardless of thresholds
-        all_probs[lab] = p
+        all_probs[lab] = prob
 
         # Skip tier assignment if below minimum confidence or threshold
-        if p < spec.min_conf:
+        if prob < spec.min_conf:
             continue
 
         thr = spec.label_thresholds.get(lab, spec.cascade.low)
-        if p < thr:
+        if prob < thr:
             continue
 
         # Find counter-confidence using helper
@@ -300,22 +300,22 @@ def decide_multiclass_adaptive(scores: np.ndarray, spec: HeadSpec) -> dict[str, 
         return out
     top_p = float(probs[order[0]])
     for idx in order:
-        p = float(probs[idx])
+        prob = float(probs[idx])
         # require minimum absolute confidence
-        if p < spec.min_conf:
+        if prob < spec.min_conf:
             break
         # require relative ratio to top probability to avoid writing tiny tail values
-        if p < top_p * spec.top_ratio:
+        if prob < top_p * spec.top_ratio:
             # skip but continue scanning: smaller ones won't pass this either
             continue
         lab = spec.labels[idx] if idx < len(spec.labels) else f"class_{idx}"
         # compute tier as a best-effort but multiclass tiers will not be emitted
         tier = "low"
-        if p >= spec.cascade.high:
+        if prob >= spec.cascade.high:
             tier = "high"
-        elif p >= spec.cascade.medium:
+        elif prob >= spec.cascade.medium:
             tier = "medium"
-        out[lab] = {"p": p, "tier": tier}
+        out[lab] = {"p": prob, "tier": tier}
         emitted += 1
         if emitted >= spec.max_classes:
             break
@@ -349,35 +349,35 @@ class HeadDecision:
         """
         tags: dict[str, Any] = {}
         if head_is_regression(self.head):
-            # details is {label: float}
-            for k, v in self.details.items():
-                tag_key = key_builder(k) if key_builder else f"{prefix}{k}"
-                tags[tag_key] = v
+            # details is {label: float}  # noqa: E800
+            for key, value in self.details.items():
+                tag_key = key_builder(key) if key_builder else f"{prefix}{key}"
+                tags[tag_key] = value
             return tags
 
-        # details is {label: {"p": float, "tier": str}}
+        # details is {label: {"p": float, "tier": str}}  # noqa: E800
         # Emit only probability values - tier is accessed via HeadDecision.details or HeadOutput
         if head_is_multiclass(self.head):
             # Emit selected classes
-            for k, v in self.details.items():
-                tag_key = key_builder(k) if key_builder else f"{prefix}{k}"
-                tags[tag_key] = float(v.get("p", 0.0))
+            for key, value in self.details.items():
+                tag_key = key_builder(key) if key_builder else f"{prefix}{key}"
+                tags[tag_key] = float(value.get("p", 0.0))
             # Additionally emit raw probabilities for all labels if available
-            for lab, p in (self.all_probs or {}).items():
+            for lab, prob in (self.all_probs or {}).items():
                 tag_key = key_builder(lab) if key_builder else f"{prefix}{lab}"
                 if tag_key not in tags:
-                    tags[tag_key] = float(p)
+                    tags[tag_key] = float(prob)
             return tags
 
         # Multilabel heads: emit probability values only (no *_tier tags)
-        for k, v in self.details.items():
-            tag_key = key_builder(k) if key_builder else f"{prefix}{k}"
-            tags[tag_key] = float(v.get("p", 0.0))
+        for key, value in self.details.items():
+            tag_key = key_builder(key) if key_builder else f"{prefix}{key}"
+            tags[tag_key] = float(value.get("p", 0.0))
         # Also emit probabilities for non-selected labels if available
-        for lab, p in (self.all_probs or {}).items():
+        for lab, prob in (self.all_probs or {}).items():
             tag_key = key_builder(lab) if key_builder else f"{prefix}{lab}"
             if tag_key not in tags:
-                tags[tag_key] = float(p)
+                tags[tag_key] = float(prob)
         return tags
 
     def to_head_outputs(
@@ -512,8 +512,8 @@ def run_head_decision(
             if not spec.prob_input:
                 vmax = np.max(probs)
                 ex = np.exp(probs - vmax)
-                s = np.sum(ex)
-                probs = ex / s if s > 0 else np.zeros_like(probs)
+                exp_sum = np.sum(ex)
+                probs = ex / exp_sum if exp_sum > 0 else np.zeros_like(probs)
             all_probs = {lab: float(probs[i]) for i, lab in enumerate(spec.labels) if i < len(probs)}
         return HeadDecision(spec, details, all_probs)
     else:

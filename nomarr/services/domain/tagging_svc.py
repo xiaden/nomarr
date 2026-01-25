@@ -310,8 +310,8 @@ class TaggingService:
                 # Release claim on error
                 try:
                     self.db.library_files.release_claim(file_key)
-                except Exception:
-                    pass
+                except Exception as release_err:
+                    logger.debug(f"[reconcile] Failed to release claim for {file_key}: {release_err}")
 
         # Count remaining files needing reconciliation
         remaining = self.db.library_files.count_files_needing_reconciliation(

@@ -5,6 +5,7 @@ Parses raw tag values read from audio files into typed Python values.
 
 from __future__ import annotations
 
+import contextlib
 import json
 
 from nomarr.helpers.dto.tags_dto import TagValue
@@ -67,12 +68,10 @@ def parse_tag_values(tags: dict[str, str | TagValue | list[TagValue]]) -> dict[s
             continue
 
         # Try to parse as float
-        try:
+        with contextlib.suppress(ValueError):
             if "." in value:
                 parsed[key] = [float(value)]
                 continue
-        except ValueError:
-            pass
 
         # Try to parse as int
         try:

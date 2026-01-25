@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 from collections.abc import Iterable
 from pathlib import Path
@@ -29,18 +30,18 @@ from mutagen.oggopus import OggOpus
 from mutagen.oggvorbis import OggVorbis
 
 
-def _to_text_value(v: Any) -> str:
+def _to_text_value(value: Any) -> str:
     """
     Convert a value to a text representation without losing numeric precision.
     - Numbers: write via JSON to keep a stable, locale-independent representation
     - Dict/List: JSON encode compactly
     - Everything else: str()
     """
-    if isinstance(v, int | float):
-        return json.dumps(v, ensure_ascii=False, separators=(",", ":"))
-    if isinstance(v, dict | list):
-        return json.dumps(v, ensure_ascii=False, separators=(",", ":"))
-    return str(v)
+    if isinstance(value, int | float):
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    if isinstance(value, dict | list):
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    return str(value)
 
 
 def _ns_key(key: str, ns_prefix: str) -> str:
@@ -79,12 +80,10 @@ class _MP3Writer:
             # TXXX(desc=...) holds our "<ns>:<key>"
             if isinstance(frame.desc, str) and frame.desc.startswith(f"{self.ns_prefix}:"):  # type: ignore[attr-defined]
                 to_delete.append(key)
-        for k in to_delete:
-            try:
-                del id3[k]
-            except Exception:
+        for key_to_delete in to_delete:
+            with contextlib.suppress(Exception):
                 # Silently continue on any oddities in old tags
-                pass
+                del id3[key_to_delete]
 
     def write(self, path: LibraryPath, tags: dict[str, Any]) -> None:
         """Write tags as ID3 TXXX frames (one save per file)."""
@@ -102,13 +101,13 @@ class _MP3Writer:
             self._clear_ns(id3)
 
             # Expect a flat dict of keys -> values.
-            for k, v in (tags or {}).items():
-                ns_key = _ns_key(k, self.ns_prefix)
+            for tag_key, tag_value in (tags or {}).items():
+                ns_key = _ns_key(tag_key, self.ns_prefix)
                 # Allow multi-value tags when provided a list of strings
-                if isinstance(v, list) and all(isinstance(x, str) for x in v):
-                    id3.add(TXXX(encoding=3, desc=ns_key, text=v))
+                if isinstance(tag_value, list) and all(isinstance(x, str) for x in tag_value):
+                    id3.add(TXXX(encoding=3, desc=ns_key, text=tag_value))
                 else:
-                    txt = _to_text_value(v)
+                    txt = _to_text_value(tag_value)
                     id3.add(TXXX(encoding=3, desc=ns_key, text=[txt]))
 
             id3.save(path_str, v2_version=4)  # Use ID3v2.4 for proper multi-value support
@@ -144,12 +143,10 @@ class _MP4Writer:
             for k in list(mp4.tags.keys())
             if isinstance(k, str) and k.startswith(f"----:com.apple.iTunes:{self.ns_prefix}:")
         ]
-        for k in to_delete:
-            try:
-                del mp4.tags[k]
-            except Exception:
+        for key_to_delete in to_delete:
+            with contextlib.suppress(Exception):
                 # If a malformed key exists, ignore and continue
-                pass
+                del mp4.tags[key_to_delete]
 
     def write(self, path: LibraryPath, tags: dict[str, Any]) -> None:
         """Write tags as iTunes freeforms with UTF-8 payloads."""
@@ -164,14 +161,14 @@ class _MP4Writer:
 
             self._clear_ns(mp4)
 
-            for k, v in (tags or {}).items():
-                ns_key = _ns_key(k, self.ns_prefix)
+            for tag_key, tag_value in (tags or {}).items():
+                ns_key = _ns_key(tag_key, self.ns_prefix)
                 atom_key = self._ff_key(ns_key)
                 # Multi-value support: list of strings -> multiple freeform atoms
-                if isinstance(v, list) and all(isinstance(x, str) for x in v):
-                    mp4.tags[atom_key] = [MP4FreeForm(x.encode("utf-8")) for x in v]  # type: ignore[index]
+                if isinstance(tag_value, list) and all(isinstance(x, str) for x in tag_value):
+                    mp4.tags[atom_key] = [MP4FreeForm(x.encode("utf-8")) for x in tag_value]  # type: ignore[index]
                 else:
-                    payload = _to_text_value(v).encode("utf-8")
+                    payload = _to_text_value(tag_value).encode("utf-8")
                     mp4.tags[atom_key] = [MP4FreeForm(payload)]  # type: ignore[index]
 
             mp4.save()
@@ -210,11 +207,9 @@ class _VorbisWriter:
         prefix = self._vorbis_key(f"{self.ns_prefix}:")
         to_delete = [k for k in list(vorbis_file.tags.keys()) if k.upper().startswith(prefix)]
 
-        for k in to_delete:
-            try:
-                del vorbis_file.tags[k]
-            except Exception:
-                pass
+        for key_to_delete in to_delete:
+            with contextlib.suppress(Exception):
+                del vorbis_file.tags[key_to_delete]
 
     def write(self, path: LibraryPath, tags: dict[str, Any]) -> None:
         """Write tags as Vorbis comments (native multi-value support)."""
@@ -239,15 +234,15 @@ class _VorbisWriter:
 
             self._clear_ns(vorbis_file)
 
-            for k, v in (tags or {}).items():
-                ns_key = _ns_key(k, self.ns_prefix)
+            for tag_key, tag_value in (tags or {}).items():
+                ns_key = _ns_key(tag_key, self.ns_prefix)
                 vorbis_key = self._vorbis_key(ns_key)
 
                 # Vorbis natively supports multiple values - just assign a list
-                if isinstance(v, list) and all(isinstance(x, str) for x in v):
-                    vorbis_file.tags[vorbis_key] = v  # type: ignore[index]
+                if isinstance(tag_value, list) and all(isinstance(x, str) for x in tag_value):
+                    vorbis_file.tags[vorbis_key] = tag_value  # type: ignore[index]
                 else:
-                    vorbis_file.tags[vorbis_key] = _to_text_value(v)  # type: ignore[index]
+                    vorbis_file.tags[vorbis_key] = _to_text_value(tag_value)  # type: ignore[index]
 
             vorbis_file.save()
         except MutagenError as e:

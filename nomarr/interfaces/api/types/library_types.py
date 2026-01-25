@@ -38,7 +38,7 @@ class LibraryResponse(BaseModel):
     Maps directly to LibraryDict DTO from helpers/dto/library_dto.py
     """
 
-    id: str  # ArangoDB _id
+    library_id: str  # ArangoDB _id
     name: str
     root_path: str
     is_enabled: bool
@@ -250,14 +250,14 @@ class FileTagResponse(BaseModel):
 
     key: str
     value: str
-    type: str
+    tag_type: str
     is_nomarr: bool
 
 
 class LibraryFileWithTagsResponse(BaseModel):
     """Single library file with its tags."""
 
-    id: str  # ArangoDB _id
+    file_id: str  # ArangoDB _id
     path: str
     library_id: str  # ArangoDB _id
     file_size: int | None

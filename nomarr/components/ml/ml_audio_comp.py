@@ -46,9 +46,7 @@ def load_audio_mono(path: LibraryPath | str, target_sr: int = 16000) -> LoadAudi
     else:
         # Enforce validation before file operations for LibraryPath
         if not path.is_valid():
-            raise ValueError(
-                f"Cannot load audio from invalid path ({path.status}): {path.absolute} - {path.reason}"
-            )
+            raise ValueError(f"Cannot load audio from invalid path ({path.status}): {path.absolute} - {path.reason}")
         path_str = str(path.absolute)
 
     if HAVE_ESSENTIA:

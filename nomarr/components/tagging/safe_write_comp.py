@@ -11,6 +11,7 @@ Two strategies:
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import shutil
@@ -171,10 +172,8 @@ def _safe_write_hardlink(
     finally:
         # Clean up temp file
         if temp_path.exists():
-            try:
+            with contextlib.suppress(OSError):
                 temp_path.unlink()
-            except OSError:
-                pass
 
 
 def _safe_write_fallback(
@@ -216,8 +215,6 @@ def _safe_write_fallback(
         logger.error(f"[safe_write] Fallback write failed: {e}")
         # Clean up temp file on failure
         if temp_path.exists():
-            try:
+            with contextlib.suppress(OSError):
                 temp_path.unlink()
-            except OSError:
-                pass
         return SafeWriteResult(success=False, error=str(e))

@@ -45,7 +45,7 @@ def compute_chromaprint(waveform: np.ndarray, sample_rate: int) -> str:
     try:
         # Use first 60 seconds for fingerprinting (balance speed vs accuracy)
         max_samples = 60 * sample_rate
-        y = waveform[:max_samples] if len(waveform) > max_samples else waveform
+        audio_chunk = waveform[:max_samples] if len(waveform) > max_samples else waveform
 
         # Initialize Essentia algorithms via backend module
         windowing = backend_essentia.essentia_tf.Windowing(type="hann", size=2048)
@@ -54,7 +54,7 @@ def compute_chromaprint(waveform: np.ndarray, sample_rate: int) -> str:
         # Extract spectral frames (hop 512 samples = ~32ms at 16kHz)
         hop_size = 512
         frame_size = 2048
-        num_frames = max(0, (len(y) - frame_size) // hop_size)
+        num_frames = max(0, (len(audio_chunk) - frame_size) // hop_size)
 
         # Limit to 200 frames to keep fingerprint size reasonable
         num_frames = min(num_frames, 200)
@@ -63,10 +63,10 @@ def compute_chromaprint(waveform: np.ndarray, sample_rate: int) -> str:
         for i in range(num_frames):
             start = i * hop_size
             end = start + frame_size
-            if end > len(y):
+            if end > len(audio_chunk):
                 break
 
-            frame = y[start:end]
+            frame = audio_chunk[start:end]
             windowed = windowing(frame)
             spec = spectrum(windowed)
             spectra.append(spec)

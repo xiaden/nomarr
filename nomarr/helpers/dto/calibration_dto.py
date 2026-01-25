@@ -43,7 +43,7 @@ class CalibrationRunResult:
     timestamp: int
     p5: float
     p95: float
-    range: float
+    value_range: float
     reference_version: int | None
     apd_p5: float | None
     apd_p95: float | None
@@ -78,7 +78,7 @@ class CalibrationStateDict:
     histogram: dict[str, Any]  # {lo, hi, bins, bin_width}
     p5: float
     p95: float
-    n: int
+    sample_count: int
     underflow_count: int
     overflow_count: int
     created_at: int

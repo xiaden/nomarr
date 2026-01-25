@@ -303,16 +303,16 @@ class ConfigService:
             "cache_idle_timeout": 300,  # Seconds before unloading models (0=never)
         }
 
-    def _deep_merge(self, a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
+    def _deep_merge(self, base_dict: dict[str, Any], override_dict: dict[str, Any]) -> dict[str, Any]:
         """
         Recursively merge dict b into dict a (mutates a, returns it).
         """
-        for k, v in b.items():
-            if isinstance(v, dict) and isinstance(a.get(k), dict):
-                self._deep_merge(a[k], v)
+        for key, value in override_dict.items():
+            if isinstance(value, dict) and isinstance(base_dict.get(key), dict):
+                self._deep_merge(base_dict[key], value)
             else:
-                a[k] = v
-        return a
+                base_dict[key] = value
+        return base_dict
 
     def _load_yaml(self, path: str) -> dict[str, Any]:
         """
@@ -448,13 +448,13 @@ class ConfigService:
             "calibration_repo",
         }
 
-        for k, v in os.environ.items():
+        for env_key, env_value in os.environ.items():
             # Support NOMARR_* prefix (primary), TAGGER_* and AUTOTAG_* (legacy)
-            if not (k.startswith("NOMARR_") or k.startswith("TAGGER_") or k.startswith("AUTOTAG_")):
+            if not (env_key.startswith("NOMARR_") or env_key.startswith("TAGGER_") or env_key.startswith("AUTOTAG_")):
                 continue
 
             # Normalize to lowercase key name
-            key = k.replace("NOMARR_", "").replace("TAGGER_", "").replace("AUTOTAG_", "").lower()
+            key = env_key.replace("NOMARR_", "").replace("TAGGER_", "").replace("AUTOTAG_", "").lower()
 
             # Only allow whitelisted keys
             if key not in ALLOWED_ENV_KEYS:
@@ -463,16 +463,16 @@ class ConfigService:
 
             try:
                 # Parse typed values
-                if v.lower() in ("true", "false"):
-                    val: Any = v.lower() == "true"
-                elif v.isdigit():
-                    val = int(v)
-                elif v.replace(".", "", 1).replace("-", "", 1).isdigit():
-                    val = float(v)
+                if env_value.lower() in ("true", "false"):
+                    parsed_value: Any = env_value.lower() == "true"
+                elif env_value.isdigit():
+                    parsed_value = int(env_value)
+                elif env_value.replace(".", "", 1).replace("-", "", 1).isdigit():
+                    parsed_value = float(env_value)
                 else:
-                    val = v
+                    parsed_value = env_value
 
-                cfg[key] = val
+                cfg[key] = parsed_value
             except Exception:
                 continue
 

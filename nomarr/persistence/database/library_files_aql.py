@@ -956,7 +956,7 @@ class LibraryFilesOperations:
 
     def search_library_files_with_tags(
         self,
-        q: str = "",
+        query_text: str = "",
         artist: str | None = None,
         album: str | None = None,
         tag_key: str | None = None,
@@ -970,7 +970,7 @@ class LibraryFilesOperations:
         Returns files WITH their tags in a single result.
 
         Args:
-            q: Text search query for artist/album/title
+            query_text: Text search query for artist/album/title
             artist: Filter by artist name
             album: Filter by album name
             tag_key: Filter by files that have this tag key (rel)
@@ -1012,7 +1012,7 @@ class LibraryFilesOperations:
             """
             )
 
-        if q:
+        if query_text:
             filters.append(
                 "(LIKE(file.artist, @q_pattern, true) OR "
                 "LIKE(file.album, @q_pattern, true) OR "
@@ -1036,8 +1036,8 @@ class LibraryFilesOperations:
             filter_bind_vars["tag_key"] = tag_key
         if tag_value:
             filter_bind_vars["tag_value"] = tag_value
-        if q:
-            filter_bind_vars["q_pattern"] = f"%{q}%"
+        if query_text:
+            filter_bind_vars["q_pattern"] = f"%{query_text}%"
         if artist:
             filter_bind_vars["artist"] = artist
         if album:

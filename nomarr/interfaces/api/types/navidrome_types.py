@@ -126,7 +126,7 @@ class GeneratePlaylistResponse(BaseModel):
 class TemplateSummaryItemResponse(BaseModel):
     """Pydantic model for TemplateSummaryItem DTO."""
 
-    id: str = Field(..., description="Template ID")
+    template_id: str = Field(..., description="Template ID")
     name: str = Field(..., description="Template display name")
     description: str = Field(..., description="Template description")
 

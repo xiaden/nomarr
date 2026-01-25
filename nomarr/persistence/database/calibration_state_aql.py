@@ -219,7 +219,7 @@ class CalibrationStateOperations:
         histogram_spec: dict[str, Any],
         p5: float,
         p95: float,
-        n: int,
+        sample_count: int,
         underflow_count: int,
         overflow_count: int,
     ) -> None:
@@ -252,7 +252,7 @@ class CalibrationStateOperations:
             "histogram": histogram_spec,
             "p5": p5,
             "p95": p95,
-            "n": n,
+            "n": sample_count,
             "underflow_count": underflow_count,
             "overflow_count": overflow_count,
             "updated_at": now_ms,

@@ -174,7 +174,7 @@ def pool_scores(
             raise ValueError(f"Unknown pooling mode: {mode}")
         return pooled.astype(np.float32, copy=False)
 
-    # nan_policy == "propagate"
+    # nan_policy == "propagate"  # noqa: E800
     if mode == "mean":
         result: np.ndarray = np.mean(scores, axis=0).astype(np.float32, copy=False)
         return result
@@ -204,8 +204,8 @@ def _trimmed_mean(scores: np.ndarray, trim_perc: float, axis: int = 0) -> np.nda
         return np.array([], dtype=np.float32)
 
     result = np.zeros((scores.shape[1],), dtype=np.float32)
-    for j in range(scores.shape[1]):
-        col = scores[:, j]
+    for col_idx in range(scores.shape[1]):
+        col = scores[:, col_idx]
         col = col[~np.isnan(col)]
         if col.size == 0:
             result[j] = 0.0

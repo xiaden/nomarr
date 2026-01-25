@@ -9,6 +9,7 @@ Rationale: Schema bootstrap may evolve to include non-DB setup (directories, def
 Persistence layer is "AQL only" - no upward dependencies.
 """
 
+import contextlib
 import logging
 
 from arango.exceptions import CollectionCreateError, GraphCreateError, IndexCreateError
@@ -54,10 +55,9 @@ def _create_collections(db: DatabaseLike) -> None:
 
     for collection_name in document_collections:
         if not db.has_collection(collection_name):
-            try:
+            with contextlib.suppress(CollectionCreateError):
+                # Collection already exists (race condition)
                 db.create_collection(collection_name)
-            except CollectionCreateError:
-                pass  # Collection already exists (race condition)
 
     # Edge collections
     edge_collections = [
@@ -66,10 +66,9 @@ def _create_collections(db: DatabaseLike) -> None:
 
     for edge_collection_name in edge_collections:
         if not db.has_collection(edge_collection_name):
-            try:
+            with contextlib.suppress(CollectionCreateError):
+                # Collection already exists (race condition)
                 db.create_collection(edge_collection_name, edge=True)
-            except CollectionCreateError:
-                pass  # Collection already exists (race condition)
 
 
 def _create_indexes(db: DatabaseLike) -> None:
@@ -287,7 +286,8 @@ def _create_graphs(db: DatabaseLike) -> None:
     graph_name = "tag_graph"
 
     if not db.has_graph(graph_name):
-        try:
+        with contextlib.suppress(GraphCreateError):
+            # Graph already exists (race condition)
             db.create_graph(
                 name=graph_name,
                 edge_definitions=[
@@ -298,8 +298,6 @@ def _create_graphs(db: DatabaseLike) -> None:
                     }
                 ],
             )
-        except GraphCreateError:
-            pass  # Graph already exists
 
 
 def _validate_no_legacy_calibration(db: DatabaseLike) -> None:

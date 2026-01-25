@@ -7,14 +7,12 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
 
+from nomarr.helpers.dto.ml_dto import HeadOutput
 from nomarr.helpers.dto.tagging_dto import BuildTierTermSetsResult
-
-if TYPE_CHECKING:
-    from nomarr.helpers.dto.ml_dto import HeadOutput
 
 
 def load_calibrations(models_dir: str, calibrate_heads: bool = False) -> dict[str, dict[str, Any]]:
@@ -124,19 +122,19 @@ def normalize_tag_label(label: str) -> str:
 
 def simplify_label(base_key: str) -> str:
     """Map model-prefixed labels to human terms: 'yamnet_non_happy' -> 'not happy', 'effnet_bright' -> 'bright'."""
-    s = base_key.lower()
+    label_stripped = base_key.lower()
     # strip known model prefixes
     for pref in ("yamnet_", "vggish_", "effnet_", "musicnn_"):
-        if s.startswith(pref):
-            s = s[len(pref) :]
+        if label_stripped.startswith(pref):
+            label_stripped = label_stripped[len(pref) :]
             break
-    if s.startswith("non_"):
-        core = s[4:]
+    if label_stripped.startswith("non_"):
+        core = label_stripped[4:]
         return f"not {core.replace('_', ' ')}"
-    if s.startswith("not_"):
-        core = s[4:]
+    if label_stripped.startswith("not_"):
+        core = label_stripped[4:]
         return f"not {core.replace('_', ' ')}"
-    return s.replace("_", " ")
+    return label_stripped.replace("_", " ")
 
 
 def add_regression_mood_tiers(
@@ -167,8 +165,6 @@ def add_regression_mood_tiers(
     """
     if not regression_heads:
         return []
-
-    from nomarr.helpers.dto.ml_dto import HeadOutput
 
     # Intensity thresholds (mean value indicates strength, not probability)
     STRONG_THRESHOLD = 0.7  # Strongly mainstream/engaging
@@ -295,7 +291,7 @@ def add_regression_mood_tiers(
 
 
 # Opposing mood pairs with improved human-readable labels
-# Format: (pos_key_pattern, neg_key_pattern, pos_label, neg_label)
+# Format: (pos_key_pattern, neg_key_pattern, pos_label, neg_label)  # noqa: E800
 LABEL_PAIRS = [
     ("happy", "sad", "peppy", "sombre"),
     ("aggressive", "relaxed", "aggressive", "relaxed"),
@@ -395,11 +391,11 @@ def _compute_suppressed_keys(
             tier_order = {"high": 3, "strict": 3, "medium": 2, "norm": 2, "normal": 2, "low": 1}
             best = None
             best_score: float = 0
-            for k in keys:
-                tier, prob, _label = tier_map[k]
+            for tag_key in keys:
+                tier, prob, _label = tier_map[tag_key]
                 score = tier_order.get(tier, 0) * 100 + prob
                 if score > best_score:
-                    best = k
+                    best = tag_key
                     best_score = score
             return best
 

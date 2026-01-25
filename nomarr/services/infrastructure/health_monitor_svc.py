@@ -35,6 +35,7 @@ HealthMonitor EMITS:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import threading
@@ -181,10 +182,8 @@ class HealthMonitorService:
         with self._lock:
             state = self._components.pop(component_id, None)
             if state:
-                try:
+                with contextlib.suppress(Exception):
                     state.pipe_conn.close()
-                except Exception:
-                    pass
 
         logger.debug("[HealthMonitor] Unregistered component: %s", component_id)
 
@@ -282,10 +281,8 @@ class HealthMonitorService:
         # Close all pipes
         with self._lock:
             for state in self._components.values():
-                try:
+                with contextlib.suppress(Exception):
                     state.pipe_conn.close()
-                except Exception:
-                    pass
 
         if self._monitor_thread:
             self._monitor_thread.join(timeout=2)

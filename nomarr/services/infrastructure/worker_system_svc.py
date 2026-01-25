@@ -376,7 +376,7 @@ class WorkerSystemService(ComponentLifecycleHandler):
         meta = self.db.meta.get("worker_enabled")
         if meta is None:
             return self.default_enabled
-        return bool(meta == "true")
+        return meta == "true"
 
     def enable_worker_system(self) -> None:
         """Enable worker system globally (sets worker_enabled=true in DB meta)."""
