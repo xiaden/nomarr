@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Any
 
 from nomarr.components.tagging.tagging_writer_comp import TagWriter
 from nomarr.helpers.dto.path_dto import LibraryPath
-from nomarr.helpers.dto.tags_dto import Tag, Tags
+from nomarr.helpers.dto.tags_dto import Tags
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database

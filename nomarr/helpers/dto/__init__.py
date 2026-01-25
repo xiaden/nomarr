@@ -93,7 +93,7 @@ __all__ = [
     "TagCondition",
     "TagCorrelationData",
     "TagSpec",
-    "Tags",
     "TagValue",
     "TagWriteProfile",
+    "Tags",
 ]

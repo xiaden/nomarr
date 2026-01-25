@@ -68,15 +68,173 @@ Issues = "https://github.com/xiaden/nomarr/issues"
 include = ["nomarr*"]
 exclude = ["tests*", "scripts*", "frontend*", "models*", "docker*"]
 
+# === Pytest Configuration ===
 [tool.pytest.ini_options]
-# Point to config file in new location
-addopts = "-c tool_configs/pytest.ini"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = [
+    "-v",
+    "--strict-markers",
+    "--tb=short",
+]
+console_output_style = "progress"
+log_cli = false
+log_cli_level = "ERROR"
+markers = [
+    "asyncio: Async tests using pytest-asyncio",
+    "unit: Unit tests (minimal mocking, fast)",
+    "integration: Integration tests (multiple components, real DB)",
+    "e2e: End-to-end tests (full pipeline)",
+    "slow: Slow tests (model loading, heavy computation)",
+    "requires_models: Tests that need model files",
+    "requires_audio: Tests that need audio files",
+    "requires_database: Tests that need Arango to function",
+    "requires_essentia: Tests that need Essentia library",
+    "requires_tensorflow: Tests that need TensorFlow",
+    "container_only: Tests designed to run in Docker container (includes GPU tests, skip in CI)",
+    "code_smell: Architecture/style tests that dont indicate broken functionality (skip in CI)",
+    "mocked: Test uses mocked dependencies (informational)",
+]
 
+# === Mypy Configuration ===
 [tool.mypy]
-# Point to config file in new location  
-config_file = "tool_configs/mypy.ini"
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+check_untyped_defs = true
+exclude = [
+    "^tests/",
+    "^scripts/",
+]
+show_error_codes = true
+show_column_numbers = true
+pretty = true
+ignore_missing_imports = true
+follow_imports = "normal"
 
+[[tool.mypy.overrides]]
+module = [
+    "essentia.*",
+    "scipy.*",
+    "mutagen.*",
+    "soundfile.*",
+    "pydub.*",
+]
+ignore_missing_imports = true
+
+# === Ruff Configuration ===
 [tool.ruff]
-# Ruff configuration (mirrors tool_configs/ruff.toml if it exists)
-line-length = 100
 target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort (import sorting)
+    "N",      # pep8-naming
+    "UP",     # pyupgrade
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "SIM",    # flake8-simplify
+    "RUF",    # Ruff-specific rules
+    "TID",    # flake8-tidy-imports (for banned-api)
+]
+
+ignore = [
+    "E501",   # Line too long (handled by formatter)
+    "B008",   # Do not perform function calls in argument defaults (FastAPI Depends pattern)
+    "N802",   # Function name should be lowercase (allow CamelCase for classes)
+    "N803",   # Argument name should be lowercase (S is convention for score matrices)
+    "N806",   # Variable should be lowercase (S is convention, CONSTANTS are fine)
+    "SIM108", # Use ternary operator instead of if-else-block (sometimes less readable)
+    "SIM105", # Use contextlib.suppress - optional style preference
+    "RUF001", # Ambiguous unicode in strings (intentional for UI icons)
+    "RUF002", # Ambiguous unicode in docstrings (×  is clear for math)
+    "RUF034", # Useless if-else (false positive)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"debug_vram.py" = ["E722"]
+"nomarr/helpers/time_helper.py" = ["TID251"]
+"nomarr/components/workers/worker_crash_comp.py" = ["TID251"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+
+[tool.ruff.lint.isort]
+known-first-party = ["nomarr"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"time.time".msg = "Use now_s() or now_ms() from nomarr.helpers.time_helper for wall-clock time"
+"time.time_ns".msg = "Use now_s() or now_ms() from nomarr.helpers.time_helper for wall-clock time"
+"time.monotonic".msg = "Use internal_s() or internal_ms() from nomarr.helpers.time_helper for monotonic time"
+"time.monotonic_ns".msg = "Use internal_s() or internal_ms() from nomarr.helpers.time_helper for monotonic time"
+"datetime.datetime.now".msg = "Use now_ms() from nomarr.helpers.time_helper, or format_wall_timestamp() for display"
+"datetime.datetime.utcnow".msg = "Use now_ms() from nomarr.helpers.time_helper (utcnow is deprecated in Python 3.12)"
+"builtins.print".msg = "Use logging (logger.info/debug/warning) instead of print() for proper log management"
+
+# === Import Linter Configuration ===
+[tool.importlinter]
+root_packages = ["nomarr"]
+include_external_packages = false
+
+[[tool.importlinter.contracts]]
+name = "Services cannot import from interfaces"
+type = "forbidden"
+source_modules = ["nomarr.services"]
+forbidden_modules = ["nomarr.interfaces"]
+
+[[tool.importlinter.contracts]]
+name = "Workflows cannot import from services or interfaces"
+type = "forbidden"
+source_modules = ["nomarr.workflows"]
+forbidden_modules = ["nomarr.services", "nomarr.interfaces"]
+
+[[tool.importlinter.contracts]]
+name = "Persistence layer cannot import from workflows, services, interfaces, or components"
+type = "forbidden"
+source_modules = ["nomarr.persistence"]
+forbidden_modules = ["nomarr.workflows", "nomarr.services", "nomarr.interfaces", "nomarr.components"]
+
+[[tool.importlinter.contracts]]
+name = "Components are isolated (no imports from workflows, services, or interfaces)"
+type = "forbidden"
+source_modules = ["nomarr.components"]
+forbidden_modules = ["nomarr.services", "nomarr.interfaces", "nomarr.workflows"]
+
+[[tool.importlinter.contracts]]
+name = "Interfaces should be thin (only services + helpers)"
+type = "forbidden"
+source_modules = ["nomarr.interfaces"]
+forbidden_modules = ["nomarr.workflows", "nomarr.persistence", "nomarr.components"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Helpers must be pure (no upward dependencies)"
+type = "forbidden"
+source_modules = ["nomarr.helpers"]
+forbidden_modules = ["nomarr.services", "nomarr.workflows", "nomarr.interfaces", "nomarr.components", "nomarr.persistence"]
+
+[[tool.importlinter.contracts]]
+name = "Only persistence package may import persistence.database"
+type = "forbidden"
+source_modules = ["nomarr.interfaces", "nomarr.services", "nomarr.workflows", "nomarr.components", "nomarr.helpers"]
+forbidden_modules = ["nomarr.persistence.database"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "CLI bootstrap service is only for CLI commands"
+type = "layers"
+layers = [
+    "nomarr.interfaces.cli",
+    "nomarr.services.infrastructure.cli_bootstrap_svc",
+]

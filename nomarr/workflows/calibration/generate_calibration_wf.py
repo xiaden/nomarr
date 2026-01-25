@@ -330,7 +330,6 @@ def generate_histogram_calibration_wf(
           "convergence_history": [{iteration, sample_size, sample_pct, heads: {head_key: deltas}}] (if progressive=True)
         }
     """
-    from nomarr.components.ml.ml_calibration_comp import generate_calibration_from_histogram
     from nomarr.components.ml.ml_discovery_comp import discover_heads
 
     logger.info(
@@ -361,8 +360,8 @@ def generate_histogram_calibration_wf(
         models_dir=models_dir,
         heads=heads,
         namespace=namespace,
-        start_pct=start_pct,
-        increment_pct=increment_pct,
+        start_sample_size=int(start_pct * 1000),  # Convert pct to initial sample size
+        increment_size=int(increment_pct * 1000),
     )
 
 
@@ -503,11 +502,11 @@ def _run_progressive_calibration(
     convergence_history = []
     iteration = 0
 
-    # Progressive loop: start_pct → +increment_pct → until 100%
-    current_pct = start_pct
-    while current_pct <= 1.0:
+    # Progressive loop: start_sample_size → +increment_size → until total_files
+    current_sample_size = start_sample_size
+    while current_sample_size <= total_files:
         iteration += 1
-        current_sample_size = int(total_files * current_pct)
+        current_pct = current_sample_size / total_files
         logger.info(
             f"[progressive_calibration] Iteration {iteration}: {current_sample_size} files ({current_pct * 100:.0f}%)"
         )
@@ -621,11 +620,11 @@ def _run_progressive_calibration(
         # Save results for next iteration's delta calculation
         previous_results = iteration_results
 
-        # Increment percentage
-        current_pct += increment_pct
+        # Increment sample size
+        current_sample_size += increment_size
 
-        # Stop if we've reached or exceeded 100%
-        if current_pct > 1.0 and iteration > 1:
+        # Stop if we've reached or exceeded total files
+        if current_sample_size > total_files and iteration > 1:
             break
 
     logger.info(f"[progressive_calibration] Completed {iteration} iterations")

@@ -13,8 +13,10 @@ Architecture:
 
 from __future__ import annotations
 
+from datetime import UTC
+from typing import Self
+
 from pydantic import BaseModel
-from typing_extensions import Self
 
 from nomarr.helpers.dto.library_dto import (
     LibraryDict,
@@ -69,22 +71,22 @@ class LibraryResponse(BaseModel):
         updated_at = library.updated_at
 
         if isinstance(created_at, int):
-            from datetime import datetime, timezone
+            from datetime import datetime
 
-            created_at = datetime.fromtimestamp(created_at / 1000, tz=timezone.utc).isoformat()
+            created_at = datetime.fromtimestamp(created_at / 1000, tz=UTC).isoformat()
 
         if isinstance(updated_at, int):
-            from datetime import datetime, timezone
+            from datetime import datetime
 
-            updated_at = datetime.fromtimestamp(updated_at / 1000, tz=timezone.utc).isoformat()
+            updated_at = datetime.fromtimestamp(updated_at / 1000, tz=UTC).isoformat()
 
         # Convert scanned_at timestamp if present
         scanned_at_raw = library.scanned_at
         scanned_at: str | None = None
         if isinstance(scanned_at_raw, int):
-            from datetime import datetime, timezone
+            from datetime import datetime
 
-            scanned_at = datetime.fromtimestamp(scanned_at_raw / 1000, tz=timezone.utc).isoformat()
+            scanned_at = datetime.fromtimestamp(scanned_at_raw / 1000, tz=UTC).isoformat()
         elif isinstance(scanned_at_raw, str):
             scanned_at = scanned_at_raw
 

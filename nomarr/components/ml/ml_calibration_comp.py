@@ -17,6 +17,45 @@ from nomarr.helpers.dto.ml_dto import SaveCalibrationSidecarsResult
 from nomarr.persistence.db import Database
 
 
+def _parse_tag_key_components(tag_key: str) -> tuple[str, str, str] | None:
+    """
+    Parse a tag key into (backbone, head_date, label).
+
+    Tag format: label_framework_embedder{date}_head{date}
+    Returns None if parsing fails.
+    """
+    parts = tag_key.split("_")
+    if len(parts) < 4:
+        logging.warning(f"[calibration] Cannot parse tag key: {tag_key}")
+        return None
+
+    head_part = parts[-1]
+
+    # Extract head date (last 8 digits)
+    if len(head_part) < 8 or not head_part[-8:].isdigit():
+        logging.warning(f"[calibration] Cannot find head date in tag key: {tag_key}")
+        return None
+
+    head_date = head_part[-8:]
+    label = head_part[:-8] if len(head_part) > 8 else parts[0]
+
+    # Embedder part is at index -2
+    embedder_part = parts[-2]
+
+    # Extract backbone name
+    backbone = None
+    for i in range(len(embedder_part) - 7):
+        if embedder_part[i : i + 2] == "20" and embedder_part[i : i + 8].isdigit():
+            backbone = embedder_part[:i]
+            break
+
+    if not backbone:
+        logging.warning(f"[calibration] Cannot extract backbone from: {embedder_part}")
+        return None
+
+    return (backbone, head_date, label)
+
+
 def save_calibration_sidecars(
     calibration_data: dict[str, Any],
     models_dir: str,
@@ -47,16 +86,16 @@ def save_calibration_sidecars(
 
     # Build lookup: (backbone, head_date, label) -> head_info
     head_lookup = {}
-    for h in heads:
-        head_date = h.sidecar.data.get("release_date", "").replace("-", "")
+    for head_info in heads:
+        head_date = head_info.sidecar.data.get("release_date", "").replace("-", "")
         # Extract all labels from this head
-        for label in h.sidecar.labels:
+        for label in head_info.sidecar.labels:
             # Normalize label (non_happy -> not_happy)
             from nomarr.components.tagging.tagging_aggregation_comp import normalize_tag_label
 
             norm_label = normalize_tag_label(label)
-            key = (h.backbone, head_date, norm_label)
-            head_lookup[key] = h
+            key = (head_info.backbone, head_date, norm_label)
+            head_lookup[key] = head_info
 
     # Group calibrations by model
     model_calibrations: dict[str, dict[str, Any]] = {}
@@ -65,59 +104,25 @@ def save_calibration_sidecars(
     calibrations = calibration_data.get("calibrations", {})
 
     for tag_key, calib_stats in calibrations.items():
-        # Parse tag key (NEW FORMAT - no calibration suffix):
-        # Format: label_framework_embedder{date}_head{date}
-        # Example: happy_essentia21b6dev1389_yamnet20210604_happy20220825
-        parts = tag_key.split("_")
-        if len(parts) < 4:
-            logging.warning(f"[calibration] Cannot parse tag key: {tag_key}")
+        # Parse tag key components
+        parsed = _parse_tag_key_components(tag_key)
+        if not parsed:
             continue
 
-        # Extract components (work backwards from end)
-        # NEW FORMAT: label_framework_embedder{date}_head{date}
-        # head_part is at index -1 (last component)
-        head_part = parts[-1]  # label{date} like "happy20220825"
-
-        # Extract head date (last 8 digits)
-        if len(head_part) < 8 or not head_part[-8:].isdigit():
-            logging.warning(f"[calibration] Cannot find head date in tag key: {tag_key}")
-            continue
-
-        head_date = head_part[-8:]
-
-        # Extract label from head part (everything before the date)
-        label = head_part[:-8] if len(head_part) > 8 else parts[0]
-
-        # Embedder part is at index -2
-        if len(parts) < 4:
-            logging.warning(f"[calibration] Cannot find embedder in tag key: {tag_key}")
-            continue
-
-        embedder_part = parts[-2]  # backbone{date} like "yamnet20210604"
-
-        # Extract backbone name (everything before the date)
-        # Find where the date starts (first occurrence of "20" followed by 6 more digits)
-        backbone = None
-        for i in range(len(embedder_part) - 7):
-            if embedder_part[i : i + 2] == "20" and embedder_part[i : i + 8].isdigit():
-                backbone = embedder_part[:i]
-                break
-
-        if not backbone:
-            logging.warning(f"[calibration] Cannot extract backbone from: {embedder_part}")
-            continue
+        backbone, head_date, label = parsed
 
         # Look up head
         lookup_key = (backbone, head_date, label)
-        head_info = head_lookup.get(lookup_key)
+        head_info_maybe = head_lookup.get(lookup_key)
 
-        if not head_info:
+        if head_info_maybe is None:
             logging.debug(
                 f"[calibration] No head found for {tag_key} (backbone={backbone}, date={head_date}, label={label})"
             )
             continue
 
-        # Get model path
+        # Get model path (mypy now knows head_info_maybe is not None)
+        head_info = head_info_maybe
         model_path = head_info.sidecar.path
         model_dir = os.path.dirname(model_path)
         model_base = os.path.basename(model_path).rsplit(".", 1)[0]  # Remove .json

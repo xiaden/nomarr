@@ -7,6 +7,7 @@ Uses mutagen library for low-level tag access.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -77,6 +78,41 @@ def _parse_tag_value(value: str | None) -> str | list[str] | None:
     return value
 
 
+def _extract_artist_string(artist_raw: str | list[str] | None) -> str | None:
+    """Extract single artist string from raw value."""
+    if isinstance(artist_raw, list):
+        return artist_raw[0] if artist_raw else None
+    return artist_raw
+
+
+def _build_artists_list(artists_raw: str | list[str] | None) -> list[str]:
+    """Build and deduplicate artists list from raw value."""
+    if isinstance(artists_raw, list):
+        artists_list = artists_raw
+    elif artists_raw:
+        # Single value or separator-delimited string
+        for sep in (";", ",", "/", " / "):
+            if sep in artists_raw:
+                artists_list = [
+                    artist.strip() for artist in artists_raw.split(sep) if artist.strip()
+                ]
+                break
+        else:
+            artists_list = [artists_raw.strip()] if artists_raw.strip() else []
+    else:
+        artists_list = []
+
+    # Deduplicate while preserving order
+    seen: set[str] = set()
+    deduplicated: list[str] = []
+    for artist in artists_list:
+        if artist and artist not in seen:
+            seen.add(artist)
+            deduplicated.append(artist)
+
+    return deduplicated
+
+
 def resolve_artists(all_tags: dict[str, str]) -> tuple[str | None, list[str] | None]:
     """
     Resolve artist and artists tags with deduplication and fallback logic.
@@ -102,32 +138,9 @@ def resolve_artists(all_tags: dict[str, str]) -> tuple[str | None, list[str] | N
     if not artist_raw and not artists_raw:
         return (None, None)
 
-    # Extract artist string
-    if isinstance(artist_raw, list):
-        artist_str = artist_raw[0] if artist_raw else None
-    else:
-        artist_str = artist_raw
-
-    # Build artists list
-    artists_list: list[str] = []
-    if isinstance(artists_raw, list):
-        artists_list = artists_raw
-    elif artists_raw:
-        # Single value or separator-delimited string
-        for sep in (";", ",", "/", " / "):
-            if sep in artists_raw:
-                artists_list = [a.strip() for a in artists_raw.split(sep) if a.strip()]
-                break
-        else:
-            artists_list = [artists_raw.strip()] if artists_raw.strip() else []
-
-    # Deduplicate while preserving order
-    seen: set[str] = set()
-    deduplicated: list[str] = []
-    for a in artists_list:
-        if a and a not in seen:
-            seen.add(a)
-            deduplicated.append(a)
+    # Extract artist string and build artists list
+    artist_str = _extract_artist_string(artist_raw)
+    deduplicated = _build_artists_list(artists_raw)
 
     # Apply fallback logic
     if not artist_str and deduplicated:
@@ -256,10 +269,8 @@ def _extract_mp4_metadata(audio: Any, metadata: dict[str, Any], namespace: str) 
     # Parse track number (may be "10/10" format from normalized tags)
     track_str = _parse_single_value(metadata["all_tags"].get("tracknumber"))
     if track_str:
-        try:
+        with contextlib.suppress(ValueError, IndexError):
             metadata["track_number"] = int(track_str.split("/")[0])
-        except (ValueError, IndexError):
-            pass
 
     # Update all_tags with resolved artist/artists (JSON strings for storage)
     if artist_value:
@@ -315,10 +326,8 @@ def _extract_flac_metadata(audio: Any, metadata: dict[str, Any], namespace: str)
     # Parse track number
     track_str = _parse_single_value(metadata["all_tags"].get("tracknumber"))
     if track_str:
-        try:
+        with contextlib.suppress(ValueError, IndexError):
             metadata["track_number"] = int(track_str.split("/")[0])
-        except (ValueError, IndexError):
-            pass
 
     # Update all_tags with resolved artist/artists (JSON strings for storage)
     if artist_value:
@@ -365,18 +374,14 @@ def _extract_mp3_metadata(file_path: LibraryPath, metadata: dict[str, Any], name
             metadata["all_tags"].get("date")
         )
         if year_str:
-            try:
+            with contextlib.suppress(ValueError, IndexError):
                 metadata["year"] = int(year_str[:4])
-            except (ValueError, IndexError):
-                pass
 
         # Parse track number
         track_str = _parse_single_value(metadata["all_tags"].get("tracknumber"))
         if track_str:
-            try:
+            with contextlib.suppress(ValueError, IndexError):
                 metadata["track_number"] = int(track_str.split("/")[0])
-            except (ValueError, IndexError):
-                pass
 
         # Update all_tags with resolved artist/artists (JSON strings for storage)
         if artist_value:

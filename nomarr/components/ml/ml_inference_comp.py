@@ -21,7 +21,7 @@ try:
     HAVE_TF = True
 except ImportError:
     HAVE_TF = False
-    tf = None
+    tf = None  # type: ignore
 
 if TYPE_CHECKING:
     from nomarr.components.ml.models.discovery import HeadInfo

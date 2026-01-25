@@ -42,7 +42,7 @@ def segment_waveform(
             - hop_s: Hop length in seconds
             - pad_final: If True, zero-pad the last short segment to full length
     """
-    y = params.y
+    waveform = params.y
     sr = params.sr
     segment_s = params.segment_s
     hop_s = params.hop_s
@@ -59,34 +59,34 @@ def segment_waveform(
     waves: list[np.ndarray] = []
     bounds: list[tuple[float, float]] = []
 
-    n = len(y)
-    if n == 0:
+    num_samples = len(waveform)
+    if num_samples == 0:
         return Segments(waves, bounds, sr)
 
     start = 0
-    while start < n:
+    while start < num_samples:
         end = start + seg_len
-        if end <= n:
-            seg = y[start:end]
+        if end <= num_samples:
+            seg = waveform[start:end]
         else:
             # last partial
             if not pad_final:
-                seg = y[start:n]
+                seg = waveform[start:num_samples]
                 if len(seg) == 0:
                     break
             else:
                 seg = np.zeros(seg_len, dtype=np.float32)
-                remain = y[start:n]
+                remain = waveform[start:num_samples]
                 seg[: len(remain)] = remain
-                end = n  # logical end at file end
+                end = num_samples  # logical end at file end
 
         t0 = start / sr
-        t1 = min(end, n) / sr
+        t1 = min(end, num_samples) / sr
         waves.append(np.asarray(seg, dtype=np.float32))
         bounds.append((t0, t1))
 
         # Advance
-        if start + hop_len >= n:
+        if start + hop_len >= num_samples:
             break
         start += hop_len
 
@@ -113,15 +113,15 @@ def score_segments(
     if not outputs:
         return np.zeros((0, 0), dtype=np.float32)
     # Validate consistent dimension
-    dim = max(o.shape[0] for o in outputs)
+    dim = max(output.shape[0] for output in outputs)
     padded = []
-    for o in outputs:
-        if o.shape[0] == dim:
-            padded.append(o)
+    for output in outputs:
+        if output.shape[0] == dim:
+            padded.append(output)
         else:
             # rare: if a backend returns inconsistent dims across segments, pad with NaN then handle in pooling
             tmp = np.full((dim,), np.nan, dtype=np.float32)
-            tmp[: min(dim, o.shape[0])] = o[: min(dim, o.shape[0])]
+            tmp[: min(dim, output.shape[0])] = output[: min(dim, output.shape[0])]
             padded.append(tmp)
     return np.vstack(padded)
 
@@ -130,7 +130,7 @@ def score_segments(
 # Pooling
 # ----------------------------------------------------------------------
 def pool_scores(
-    S: np.ndarray,
+    scores: np.ndarray,
     mode: str = "mean",
     *,
     trim_perc: float = 0.1,
@@ -142,12 +142,12 @@ def pool_scores(
     - trim_perc: for trimmed_mean, fraction to drop from each tail (0..0.4 recommended)
     - nan_policy: "omit" (ignore NaNs) or "propagate"
     """
-    if S.size == 0:
-        return S
+    if scores.size == 0:
+        return scores
 
     if nan_policy == "omit":
         # mask NaNs per-dimension
-        mask = ~np.isnan(S)
+        mask = ~np.isnan(scores)
         # fallback: if a column is all NaN, set mask to zeros; we'll replace later
         col_all_nan = (~mask).all(axis=0)
 
@@ -155,16 +155,16 @@ def pool_scores(
             pooled = np.where(
                 col_all_nan,
                 0.0,
-                np.nanmean(S, axis=0),
+                np.nanmean(scores, axis=0),
             )
         elif mode == "median":
             pooled = np.where(
                 col_all_nan,
                 0.0,
-                np.nanmedian(S, axis=0),
+                np.nanmedian(scores, axis=0),
             )
         elif mode == "trimmed_mean":
-            pooled = _trimmed_mean(S, trim_perc, axis=0)
+            pooled = _trimmed_mean(scores, trim_perc, axis=0)
             pooled = np.where(
                 col_all_nan,
                 0.0,
@@ -176,17 +176,17 @@ def pool_scores(
 
     # nan_policy == "propagate"
     if mode == "mean":
-        result: np.ndarray = np.mean(S, axis=0).astype(np.float32, copy=False)
+        result: np.ndarray = np.mean(scores, axis=0).astype(np.float32, copy=False)
         return result
     if mode == "median":
-        result = np.median(S, axis=0).astype(np.float32, copy=False)
+        result = np.median(scores, axis=0).astype(np.float32, copy=False)
         return result
     if mode == "trimmed_mean":
-        return _trimmed_mean(S, trim_perc, axis=0).astype(np.float32, copy=False)
+        return _trimmed_mean(scores, trim_perc, axis=0).astype(np.float32, copy=False)
     raise ValueError(f"Unknown pooling mode: {mode}")
 
 
-def _trimmed_mean(S: np.ndarray, trim_perc: float, axis: int = 0) -> np.ndarray:
+def _trimmed_mean(scores: np.ndarray, trim_perc: float, axis: int = 0) -> np.ndarray:
     """
     Compute a symmetric trimmed mean along axis, ignoring NaNs.
     Example: trim_perc=0.1 drops lowest 10% and highest 10% per dimension.
@@ -196,23 +196,23 @@ def _trimmed_mean(S: np.ndarray, trim_perc: float, axis: int = 0) -> np.ndarray:
 
     # Work column-wise to support NaN-robust behavior
     if axis != 0:
-        S = np.swapaxes(S, axis, 0)
+        scores = np.swapaxes(scores, axis, 0)
 
-    n = S.shape[0]
-    k = int(np.floor(trim_perc * n))
-    if n == 0:
+    num_rows = scores.shape[0]
+    trim_count = int(np.floor(trim_perc * num_rows))
+    if num_rows == 0:
         return np.array([], dtype=np.float32)
 
-    result = np.zeros((S.shape[1],), dtype=np.float32)
-    for j in range(S.shape[1]):
-        col = S[:, j]
+    result = np.zeros((scores.shape[1],), dtype=np.float32)
+    for j in range(scores.shape[1]):
+        col = scores[:, j]
         col = col[~np.isnan(col)]
         if col.size == 0:
             result[j] = 0.0
             continue
         col.sort()
-        lo = k
-        hi = max(k, col.size - k)
+        lo = trim_count
+        hi = max(trim_count, col.size - trim_count)
         trimmed = col[lo:hi] if hi > lo else col
         result[j] = float(np.mean(trimmed)) if trimmed.size else 0.0
 

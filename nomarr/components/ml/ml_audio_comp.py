@@ -46,7 +46,9 @@ def load_audio_mono(path: LibraryPath | str, target_sr: int = 16000) -> LoadAudi
     else:
         # Enforce validation before file operations for LibraryPath
         if not path.is_valid():
-            raise ValueError(f"Cannot load audio from invalid path ({path.status}): {path.absolute} - {path.reason}")
+            raise ValueError(
+                f"Cannot load audio from invalid path ({path.status}): {path.absolute} - {path.reason}"
+            )
         path_str = str(path.absolute)
 
     if HAVE_ESSENTIA:
@@ -54,29 +56,29 @@ def load_audio_mono(path: LibraryPath | str, target_sr: int = 16000) -> LoadAudi
         loader = MonoLoader(filename=path_str, sampleRate=target_sr, resampleQuality=4)  # type: ignore[misc]
         # Suppress verbose Essentia logs during load
 
-        y = loader()
-        y = np.asarray(y, dtype=np.float32)
+        audio = loader()
+        audio = np.asarray(audio, dtype=np.float32)
         sr = int(target_sr)
-        duration = float(len(y)) / float(sr) if sr > 0 else 0.0
-        return LoadAudioMonoResult(waveform=y, sample_rate=sr, duration=duration)
+        duration = float(len(audio)) / float(sr) if sr > 0 else 0.0
+        return LoadAudioMonoResult(waveform=audio, sample_rate=sr, duration=duration)
     else:
         # Fallback to soundfile (limited format support)
-        y, sr = sf.read(path, always_2d=False)
+        audio, sr = sf.read(path, always_2d=False)
         # Convert to mono
-        if hasattr(y, "ndim") and y.ndim == 2:
-            y = np.mean(y, axis=1)
-        y = np.asarray(y, dtype=np.float32)
+        if hasattr(audio, "ndim") and audio.ndim == 2:
+            audio = np.mean(audio, axis=1)
+        audio = np.asarray(audio, dtype=np.float32)
 
         # Resample if needed (polyphase is robust + fast)
         if sr != target_sr:
             # gcd for rational factor
-            g = np.gcd(int(sr), int(target_sr))
-            up, down = int(target_sr) // g, int(sr) // g
-            y = resample_poly(y, up, down).astype(np.float32, copy=False)
+            gcd = np.gcd(int(sr), int(target_sr))
+            up, down = int(target_sr) // gcd, int(sr) // gcd
+            audio = resample_poly(audio, up, down).astype(np.float32, copy=False)
             sr = int(target_sr)
 
-        duration = float(len(y)) / float(sr) if sr > 0 else 0.0
-        return LoadAudioMonoResult(waveform=y, sample_rate=sr, duration=duration)
+        duration = float(len(audio)) / float(sr) if sr > 0 else 0.0
+        return LoadAudioMonoResult(waveform=audio, sample_rate=sr, duration=duration)
 
 
 def should_skip_short(duration_s: float, min_duration_s: int, allow_short: bool) -> bool:

@@ -50,7 +50,8 @@ def _normalize(v: np.ndarray) -> np.ndarray:
 
 def _to_prob(v: np.ndarray, already_prob: bool) -> np.ndarray:
     if already_prob:
-        return np.clip(v, 0.0, 1.0)
+        clipped: np.ndarray = np.clip(v, 0.0, 1.0)
+        return clipped
     # If not probabilities, but look like logits, convert per-dimension sigmoid for multilabel
     result: np.ndarray = 1.0 / (1.0 + np.exp(-v))
     return result

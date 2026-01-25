@@ -13,8 +13,7 @@ on:
       - "dockerfile"
       - "compose.yaml"
       - "requirements.txt"
-      - "pytest.ini"
-      - "ruff.toml"
+      - "pyproject.toml"
       - ".github/workflows/ci.yml"
   pull_request:
     branches: [main]
@@ -26,8 +25,7 @@ on:
       - "dockerfile"
       - "docker/compose.yaml"
       - "requirements.txt"
-      - "tool_configs/pytest.ini"
-      - "tool_configs/ruff.toml"
+      - "pyproject.toml"
       - ".github/workflows/ci.yml"
   workflow_dispatch:
     inputs:

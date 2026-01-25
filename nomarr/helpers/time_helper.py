@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 # Duration constants (self-documenting)
 SECONDS_PER_MINUTE = 60
@@ -199,7 +199,7 @@ def to_wall_s(internal: InternalSeconds) -> Seconds:
 
 def format_wall_timestamp(ms: Milliseconds, fmt: str = "%Y-%m-%d %H:%M:%S") -> str:
     """Format wall-clock milliseconds as a human-readable timestamp string (UTC)."""
-    dt = datetime.fromtimestamp(ms.value / 1000, tz=timezone.utc)
+    dt = datetime.fromtimestamp(ms.value / 1000, tz=UTC)
     return dt.strftime(fmt)
 
 
@@ -216,7 +216,7 @@ def format_internal_timestamp(internal_ms_val: InternalMilliseconds, fmt: str = 
     Only accurate at the moment of call.
     """
     wall = to_wall_ms(internal_ms_val)
-    dt = datetime.fromtimestamp(wall.value / 1000, tz=timezone.utc)
+    dt = datetime.fromtimestamp(wall.value / 1000, tz=UTC)
     return dt.strftime(fmt)
 
 
