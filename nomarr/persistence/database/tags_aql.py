@@ -19,7 +19,7 @@ Provenance Convention:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from arango.cursor import Cursor
 
@@ -63,7 +63,13 @@ class TagOperations:
         IN tags
         RETURN NEW._id
         """
-        cursor: Cursor = self._db.aql.execute(query, bind_vars={"rel": rel, "value": value})
+        cursor = cast(
+            Cursor,
+            self._db.aql.execute(
+                query,
+                bind_vars=cast(dict[str, Any], {"rel": rel, "value": value}),
+            ),
+        )
         result = list(cursor)
         return str(result[0])
 
@@ -72,7 +78,13 @@ class TagOperations:
         query = """
         RETURN DOCUMENT(@tag_id)
         """
-        cursor: Cursor = self._db.aql.execute(query, bind_vars={"tag_id": tag_id})
+        cursor = cast(
+            Cursor,
+            self._db.aql.execute(
+                query,
+                bind_vars=cast(dict[str, Any], {"tag_id": tag_id}),
+            ),
+        )
         result = list(cursor)
         return result[0] if result and result[0] else None
 
@@ -136,7 +148,10 @@ class TagOperations:
             """
             bind_vars = {"rel": rel, "limit": limit, "offset": offset}
 
-        cursor: Cursor = self._db.aql.execute(query, bind_vars=bind_vars)
+        cursor = cast(
+            Cursor,
+            self._db.aql.execute(query, bind_vars=cast(dict[str, Any], bind_vars)),
+        )
         return list(cursor)
 
     def count_tags_by_rel(self, rel: str, search: str | None = None) -> int:
@@ -169,7 +184,10 @@ class TagOperations:
             """
             bind_vars = {"rel": rel}
 
-        cursor: Cursor = self._db.aql.execute(query, bind_vars=bind_vars)
+        cursor = cast(
+            Cursor,
+            self._db.aql.execute(query, bind_vars=cast(dict[str, Any], bind_vars)),
+        )
         result = list(cursor)
         return result[0] if result else 0
 
@@ -206,7 +224,10 @@ class TagOperations:
             FILTER tag != null AND tag.rel == @rel
             REMOVE edge IN song_tag_edges
         """
-        self._db.aql.execute(delete_query, bind_vars={"song_id": song_id, "rel": rel})
+        self._db.aql.execute(
+            delete_query,
+            bind_vars=cast(dict[str, Any], {"song_id": song_id, "rel": rel}),
+        )
 
         # Then create new edges for each value (with UPSERT for idempotency)
         if values:
@@ -227,7 +248,7 @@ class TagOperations:
             """
             self._db.aql.execute(
                 insert_query,
-                bind_vars={"song_id": song_id, "rel": rel, "values": values},
+                bind_vars=cast(dict[str, Any], {"song_id": song_id, "rel": rel, "values": values}),
             )
 
     def add_song_tag(
@@ -261,7 +282,7 @@ class TagOperations:
         """
         self._db.aql.execute(
             query,
-            bind_vars={"song_id": song_id, "rel": rel, "value": value},
+            bind_vars=cast(dict[str, Any], {"song_id": song_id, "rel": rel, "value": value}),
         )
 
     def get_song_tags(
@@ -308,7 +329,10 @@ class TagOperations:
             """
             bind_vars = {"song_id": song_id}
 
-        cursor: Cursor = self._db.aql.execute(query, bind_vars=bind_vars)
+        cursor = cast(
+            Cursor,
+            self._db.aql.execute(query, bind_vars=cast(dict[str, Any], bind_vars)),
+        )
         return list(cursor)
 
     def get_song_tags_as_dict(
@@ -366,7 +390,13 @@ class TagOperations:
             LIMIT @offset, @limit
             RETURN edge._from
         """
-        cursor: Cursor = self._db.aql.execute(query, bind_vars={"tag_id": tag_id, "limit": limit, "offset": offset})
+        cursor = cast(
+            Cursor,
+            self._db.aql.execute(
+                query,
+                bind_vars=cast(dict[str, Any], {"tag_id": tag_id, "limit": limit, "offset": offset}),
+            ),
+        )
         return list(cursor)
 
     def count_songs_for_tag(self, tag_id: str) -> int:
@@ -385,7 +415,13 @@ class TagOperations:
                 RETURN 1
         )
         """
-        cursor: Cursor = self._db.aql.execute(query, bind_vars={"tag_id": tag_id})
+        cursor = cast(
+            Cursor,
+            self._db.aql.execute(
+                query,
+                bind_vars=cast(dict[str, Any], {"tag_id": tag_id}),
+            ),
+        )
         result = list(cursor)
         return result[0] if result else 0
 
@@ -400,7 +436,10 @@ class TagOperations:
             FILTER edge._from == @song_id
             REMOVE edge IN song_tag_edges
         """
-        self._db.aql.execute(query, bind_vars={"song_id": song_id})
+        self._db.aql.execute(
+            query,
+            bind_vars=cast(dict[str, Any], {"song_id": song_id}),
+        )
 
     def cleanup_orphaned_tags(self) -> int:
         """Delete tags with no edges. Returns count deleted.
@@ -423,7 +462,7 @@ class TagOperations:
             REMOVE { _key: key } IN tags
         RETURN LENGTH(orphans)
         """
-        cursor: Cursor = self._db.aql.execute(query)
+        cursor = cast(Cursor, self._db.aql.execute(query))
         result = list(cursor)
         return result[0] if result else 0
 
@@ -442,7 +481,7 @@ class TagOperations:
                 RETURN 1
         )
         """
-        cursor: Cursor = self._db.aql.execute(query)
+        cursor = cast(Cursor, self._db.aql.execute(query))
         result = list(cursor)
         return result[0] if result else 0
 
@@ -472,7 +511,7 @@ class TagOperations:
                 COLLECT rel = tag.rel
                 RETURN rel
             """
-        cursor: Cursor = self._db.aql.execute(query)
+        cursor = cast(Cursor, self._db.aql.execute(query))
         return list(cursor)
 
     def get_tag_value_counts(self, rel: str) -> dict[Any, int]:
@@ -494,7 +533,13 @@ class TagOperations:
             )
             RETURN { value: tag.value, count: song_count }
         """
-        cursor: Cursor = self._db.aql.execute(query, bind_vars={"rel": rel})
+        cursor = cast(
+            Cursor,
+            self._db.aql.execute(
+                query,
+                bind_vars=cast(dict[str, Any], {"rel": rel}),
+            ),
+        )
         return {row["value"]: row["count"] for row in cursor}
 
     def get_file_ids_matching_tag(self, rel: str, operator: str, value: TagValue) -> set[str]:
@@ -531,7 +576,13 @@ class TagOperations:
                     RETURN DISTINCT edge._from
             """
 
-        cursor: Cursor = self._db.aql.execute(query, bind_vars={"rel": rel, "value": value})
+        cursor = cast(
+            Cursor,
+            self._db.aql.execute(
+                query,
+                bind_vars=cast(dict[str, Any], {"rel": rel, "value": value}),
+            ),
+        )
         return set(cursor)
 
     # ──────────────────────────────────────────────────────────────────────
@@ -565,7 +616,13 @@ class TagOperations:
             LIMIT @limit
             RETURN [tag_key_value, tag_count]
         """
-        cursor: Cursor = self._db.aql.execute(query, bind_vars={"prefix": namespace_prefix, "limit": limit})
+        cursor = cast(
+            Cursor,
+            self._db.aql.execute(
+                query,
+                bind_vars=cast(dict[str, Any], {"prefix": namespace_prefix, "limit": limit}),
+            ),
+        )
         nom_tag_rows = [tuple(row) for row in cursor]
 
         # Count genre tags (rel == "genre", non-Nomarr)
@@ -583,7 +640,13 @@ class TagOperations:
             LIMIT @limit
             RETURN [genre, count]
         """
-        cursor = self._db.aql.execute(query, bind_vars={"limit": limit})
+        cursor = cast(
+            Cursor,
+            self._db.aql.execute(
+                query,
+                bind_vars=cast(dict[str, Any], {"limit": limit}),
+            ),
+        )
         genre_rows = [tuple(row) for row in cursor]
 
         return {
@@ -609,7 +672,13 @@ class TagOperations:
                     FILTER edge._to == tag._id
                     RETURN [edge._from, tag.value]
             """
-            cursor: Cursor = self._db.aql.execute(query, bind_vars={"rel": rel})
+            cursor = cast(
+                Cursor,
+                self._db.aql.execute(
+                    query,
+                    bind_vars=cast(dict[str, Any], {"rel": rel}),
+                ),
+            )
             mood_tag_rows.extend([tuple(row) for row in cursor])
 
         # Get all *_tier tag rels (nomarr only)
@@ -619,7 +688,7 @@ class TagOperations:
             COLLECT tier_rel = tag.rel
             RETURN tier_rel
         """
-        cursor = self._db.aql.execute(query)
+        cursor = cast(Cursor, self._db.aql.execute(query))
         tier_tag_keys = list(cursor)
 
         # Get tier tag data for each rel
@@ -632,7 +701,13 @@ class TagOperations:
                     FILTER edge._to == tag._id
                     RETURN [edge._from, tag.value]
             """
-            cursor = self._db.aql.execute(query, bind_vars={"tier_rel": tier_rel})
+            cursor = cast(
+                Cursor,
+                self._db.aql.execute(
+                    query,
+                    bind_vars=cast(dict[str, Any], {"tier_rel": tier_rel}),
+                ),
+            )
             tier_tag_rows[tier_rel] = [tuple(row) for row in cursor]
 
         return {
@@ -656,7 +731,13 @@ class TagOperations:
                     FILTER edge._to == tag._id
                     RETURN tag.value
             """
-            cursor: Cursor = self._db.aql.execute(query, bind_vars={"mood_type": mood_type})
+            cursor = cast(
+                Cursor,
+                self._db.aql.execute(
+                    query,
+                    bind_vars=cast(dict[str, Any], {"mood_type": mood_type}),
+                ),
+            )
             for tag_value in cursor:
                 mood_rows.append((mood_type, str(tag_value)))
 
@@ -681,7 +762,13 @@ class TagOperations:
                     FILTER edge._to == tag._id
                     RETURN edge._from
             """
-            cursor: Cursor = self._db.aql.execute(query, bind_vars={"rel": rel, "value": value})
+            cursor = cast(
+                Cursor,
+                self._db.aql.execute(
+                    query,
+                    bind_vars=cast(dict[str, Any], {"rel": rel, "value": value}),
+                ),
+            )
             result[(rel, value)] = set(cursor)
 
         return result
