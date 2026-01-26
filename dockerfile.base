@@ -15,8 +15,14 @@ ENV DEBIAN_FRONTEND=noninteractive \
 #  Install system packages and Python dependencies in single layer
 # ----------------------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-pip cron \
-    libsndfile1 ffmpeg sox ca-certificates curl tini \
+    software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    python3.12 python3.12-dev python3.12-distutils \
+    cron libsndfile1 ffmpeg sox ca-certificates curl tini \
+    && curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12 \
+    && ln -sf /usr/bin/python3.12 /usr/bin/python3 \
+    && ln -sf /usr/bin/python3.12 /usr/bin/python \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* \
     # Install Python packages
     && python3 -m pip install --upgrade pip \
