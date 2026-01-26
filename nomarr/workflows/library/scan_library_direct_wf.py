@@ -15,9 +15,10 @@ from collections import defaultdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.library.folder_analysis_comp import analyze_folders_for_scan
 from nomarr.components.library.file_batch_scanner_comp import scan_folder_files
+from nomarr.components.library.folder_analysis_comp import analyze_folders_for_scan
 from nomarr.components.library.move_detection_comp import detect_file_moves
+from nomarr.components.library.scan_target_validator_comp import validate_scan_targets
 from nomarr.components.metadata import rebuild_song_metadata_cache, seed_song_entities_from_tags
 from nomarr.helpers.dto import ScanTarget
 from nomarr.helpers.time_helper import internal_s, now_ms
@@ -28,9 +29,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _seed_and_rebuild_batch(
-    db: Database, file_paths: list[str], metadata_map: dict[str, dict[str, Any]]
-) -> None:
+def _seed_and_rebuild_batch(db: Database, file_paths: list[str], metadata_map: dict[str, dict[str, Any]]) -> None:
     """
     Seed entities and rebuild metadata caches for a batch of files.
 
@@ -136,16 +135,8 @@ def scan_library_direct_workflow(
     db.libraries.mark_scan_started(library_id, full_scan=is_full_scan)
 
     try:
-        # PHASE 1: Determine scan paths and validate targets
-        scan_paths: list[Path] = []
-        for target in scan_targets:
-            target_path = library_root / target.folder_path if target.folder_path else library_root
-            if not target_path.exists():
-                warning = f"Scan target does not exist: {target_path}"
-                warnings.append(warning)
-                logger.warning(f"[scan_library] {warning}")
-                continue
-            scan_paths.append(target_path)
+        # PHASE 1: Validate scan targets - COMPONENT CALL
+        scan_paths = validate_scan_targets(scan_targets, library_root)
 
         if not scan_paths:
             raise ValueError("No valid scan paths found in scan_targets")
@@ -174,9 +165,7 @@ def scan_library_direct_workflow(
         has_tagged_files = db.library_files.library_has_tagged_files(library_id)
         enable_move_detection = has_tagged_files
 
-        logger.info(
-            f"[scan_library] Move detection: {'enabled' if enable_move_detection else 'disabled'}"
-        )
+        logger.info(f"[scan_library] Move detection: {'enabled' if enable_move_detection else 'disabled'}")
 
         # Get existing files for comparison
         existing_files_tuple = db.library_files.list_library_files(limit=1000000, offset=0)
@@ -211,8 +200,7 @@ def scan_library_direct_workflow(
             # Track new files for move detection
             if enable_move_detection:
                 new_entries = [
-                    entry for entry in batch_result.file_entries
-                    if entry["path"] in batch_result.new_file_paths
+                    entry for entry in batch_result.file_entries if entry["path"] in batch_result.new_file_paths
                 ]
                 new_file_entries_for_move_detection.extend(new_entries)
 
@@ -230,9 +218,7 @@ def scan_library_direct_workflow(
                 _seed_and_rebuild_batch(db, file_paths, batch_result.metadata_map)
 
             # Update folder cache
-            db.library_folders.upsert_folder(
-                library_id, folder.rel_path, folder.mtime, folder.file_count
-            )
+            db.library_folders.upsert_folder(library_id, folder.rel_path, folder.mtime, folder.file_count)
 
             # Update progress
             db.libraries.update_scan_status(library_id, progress=len(all_discovered_paths))
@@ -273,30 +259,28 @@ def scan_library_direct_workflow(
                         seed_song_entities_from_tags(db, move.file_id, entity_tags)
                         rebuild_song_metadata_cache(db, move.file_id)
                     except Exception as entity_error:
-                        logger.warning(
-                            f"Failed to update entities for moved file {move.new_path}: {entity_error}"
-                        )
+                        logger.warning(f"Failed to update entities for moved file {move.new_path}: {entity_error}")
 
             stats["files_moved"] = move_result.files_moved_count
 
-            # Remove unmatched files
+            # Delete unmatched files (move detection failed or truly deleted)
             unmatched_paths = missing_paths - {move.old_path for move in move_result.moves}
             if unmatched_paths:
-                logger.info(f"[scan_library] Removing {len(unmatched_paths)} deleted files from library")
-                db.library_files.bulk_mark_invalid(list(unmatched_paths))
-                stats["files_removed"] += len(unmatched_paths)
+                deleted = db.library_files.bulk_delete_files(list(unmatched_paths))
+                logger.info(f"[scan_library] Deleted {deleted} files from library")
+                stats["files_removed"] += deleted
 
-        # PHASE 6: Mark missing files (ONLY for full scans)
+        # PHASE 6: Delete missing files (ONLY for full scans)
         if is_full_scan:
-            logger.info("[scan_library] Full scan complete - marking missing files")
+            logger.info("[scan_library] Full scan complete - deleting missing files")
             try:
-                missing_count = db.library_files.mark_missing_for_library(library_id, scan_id)
-                if missing_count > 0:
-                    logger.info(f"[scan_library] Marked {missing_count} missing files as invalid")
-                    stats["files_removed"] += missing_count
+                deleted = db.library_files.delete_missing_for_library(library_id, scan_id)
+                if deleted > 0:
+                    logger.info(f"[scan_library] Deleted {deleted} missing files")
+                    stats["files_removed"] += deleted
             except Exception as e:
-                logger.error(f"[scan_library] Failed to mark missing files: {e}")
-                warnings.append(f"Failed to mark missing files: {str(e)[:100]}")
+                logger.error(f"[scan_library] Failed to delete missing files: {e}")
+                warnings.append(f"Failed to delete missing files: {str(e)[:100]}")
 
             # Clean up folder records for deleted folders
             existing_folder_paths = {f.rel_path for f in folder_plan.all_folders}

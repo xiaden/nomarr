@@ -125,11 +125,6 @@ class GPUHealthMonitor(multiprocessing.Process):
                     # Send healthy heartbeat after successful probe + write
                     self._send_heartbeat("healthy")
 
-                    if result["gpu_available"]:
-                        logging.debug(f"[GPUHealthMonitor] GPU available ({result['duration_ms']:.1f}ms)")
-                    else:
-                        logging.warning(f"[GPUHealthMonitor] GPU unavailable: {result['error_summary']}")
-
                 except Exception as db_error:
                     logging.error(f"[GPUHealthMonitor] Failed to write GPU state to DB: {db_error}")
                     consecutive_errors += 1

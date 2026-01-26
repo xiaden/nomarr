@@ -68,10 +68,10 @@ class TestNormalizedPathInvariant:
 
 
 class TestFullScanMissingMarkInvariant:
-    """Test mark_missing_for_library called ONLY for full scans using real fixtures."""
+    """Test delete_missing_for_library called ONLY for full scans using real fixtures."""
 
     def test_full_scan_calls_mark_missing(self, good_library_root):
-        """Full scan (folder_path='') calls mark_missing_for_library."""
+        """Full scan (folder_path='') calls delete_missing_for_library."""
         # Setup: Mock only database calls
         db = MagicMock()
         library_root_str = str(good_library_root.resolve())
@@ -81,20 +81,20 @@ class TestFullScanMissingMarkInvariant:
         }
         # Return empty tuple for list_library_files (not get_library_files!)
         db.library_files.list_library_files.return_value = ([], 0)
-        db.library_files.mark_missing_for_library.return_value = 0
+        db.library_files.delete_missing_for_library.return_value = 0
 
         # Execute: Full scan (real filesystem walk will happen)
         scan_targets = [ScanTarget(library_id="lib1", folder_path="")]
         scan_library_direct_workflow(db, "lib1", scan_targets, tagger_version="test123")
 
-        # Assert: mark_missing_for_library was called
-        db.library_files.mark_missing_for_library.assert_called_once()
-        call_args = db.library_files.mark_missing_for_library.call_args
+        # Assert: delete_missing_for_library was called
+        db.library_files.delete_missing_for_library.assert_called_once()
+        call_args = db.library_files.delete_missing_for_library.call_args
         assert call_args[0][0] == "lib1"  # library_id
         assert isinstance(call_args[0][1], str)  # scan_id
 
     def test_targeted_scan_does_not_call_mark_missing(self, good_library_root):
-        """Targeted scan (folder_path='Some/Subdir') does NOT call mark_missing_for_library."""
+        """Targeted scan (folder_path='Some/Subdir') does NOT call delete_missing_for_library."""
         # Setup: Mock only database calls
         db = MagicMock()
         library_root_str = str(good_library_root.resolve())
@@ -108,11 +108,11 @@ class TestFullScanMissingMarkInvariant:
         scan_targets = [ScanTarget(library_id="lib1", folder_path="Rock/Beatles")]
         scan_library_direct_workflow(db, "lib1", scan_targets, tagger_version="test123")
 
-        # Assert: mark_missing_for_library was NOT called
-        db.library_files.mark_missing_for_library.assert_not_called()
+        # Assert: delete_missing_for_library was NOT called
+        db.library_files.delete_missing_for_library.assert_not_called()
 
     def test_multiple_targets_does_not_call_mark_missing(self, good_library_root):
-        """Multiple scan targets does NOT call mark_missing_for_library."""
+        """Multiple scan targets does NOT call delete_missing_for_library."""
         # Setup: Mock only database calls
         db = MagicMock()
         library_root_str = str(good_library_root.resolve())
@@ -129,8 +129,8 @@ class TestFullScanMissingMarkInvariant:
         ]
         scan_library_direct_workflow(db, "lib1", scan_targets, tagger_version="test123")
 
-        # Assert: mark_missing_for_library was NOT called
-        db.library_files.mark_missing_for_library.assert_not_called()
+        # Assert: delete_missing_for_library was NOT called
+        db.library_files.delete_missing_for_library.assert_not_called()
 
 
 class TestUpsertBatchUsesNormalizedPath:

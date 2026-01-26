@@ -585,6 +585,8 @@ class LibraryFilesOperations:
     def bulk_mark_invalid(self, paths: list[str]) -> None:
         """Mark multiple files as invalid.
 
+        DEPRECATED: Use bulk_delete_files instead. Soft deletes create state explosion.
+
         Args:
             paths: List of file paths to mark invalid
         """
@@ -599,6 +601,48 @@ class LibraryFilesOperations:
             """,
             bind_vars={"paths": paths},
         )
+
+    def bulk_delete_files(self, paths: list[str]) -> int:
+        """Delete multiple files by path and clean up entity edges.
+
+        Args:
+            paths: List of file paths to delete
+
+        Returns:
+            Number of files deleted
+        """
+        if not paths:
+            return 0
+
+        # Delete edges first
+        self.db.aql.execute(
+            """
+            FOR file IN library_files
+                FILTER file.path IN @paths
+                FOR edge IN song_tag_edges
+                    FILTER edge._to == file._id
+                    REMOVE edge IN song_tag_edges
+            """,
+            bind_vars={"paths": paths},
+        )
+
+        # Delete files and count
+        cursor = cast(
+            Cursor,
+            self.db.aql.execute(
+                """
+                FOR file IN library_files
+                    FILTER file.path IN @paths
+                    REMOVE file IN library_files
+                    COLLECT WITH COUNT INTO deleted
+                    RETURN deleted
+                """,
+                bind_vars={"paths": paths},
+            ),
+        )
+
+        results = list(cursor)
+        return results[0] if results else 0
 
     def update_file_path(
         self,
@@ -1132,6 +1176,8 @@ class LibraryFilesOperations:
     def mark_missing_for_library(self, library_id: str, scan_id: str) -> int:
         """Mark files not seen in this scan as invalid.
 
+        DEPRECATED: Use delete_missing_for_library instead. Soft deletes create state explosion.
+
         Args:
             library_id: Library that was scanned (full scan only)
             scan_id: Identifier of this scan (timestamp or unique ID)
@@ -1153,6 +1199,57 @@ class LibraryFilesOperations:
                     UPDATE file WITH { is_valid: 0 } IN library_files
                     COLLECT WITH COUNT INTO marked
                     RETURN marked
+                """,
+                bind_vars={
+                    "library_id": library_id,
+                    "scan_id": scan_id,
+                },
+            ),
+        )
+
+        results = list(cursor)
+        return results[0] if results else 0
+
+    def delete_missing_for_library(self, library_id: str, scan_id: str) -> int:
+        """Delete files not seen in this scan.
+
+        Args:
+            library_id: Library that was scanned (full scan only)
+            scan_id: Identifier of this scan (timestamp or unique ID)
+
+        Returns:
+            Number of files deleted
+
+        Files with last_seen_scan_id != scan_id are assumed deleted.
+        Only call this for FULL library scans (not targeted scans).
+        """
+        # Delete edges first
+        self.db.aql.execute(
+            """
+            FOR file IN library_files
+                FILTER file.library_id == @library_id
+                FILTER file.last_seen_scan_id != @scan_id
+                FOR edge IN song_tag_edges
+                    FILTER edge._to == file._id
+                    REMOVE edge IN song_tag_edges
+            """,
+            bind_vars={
+                "library_id": library_id,
+                "scan_id": scan_id,
+            },
+        )
+
+        # Delete files and count
+        cursor = cast(
+            Cursor,
+            self.db.aql.execute(
+                """
+                FOR file IN library_files
+                    FILTER file.library_id == @library_id
+                    FILTER file.last_seen_scan_id != @scan_id
+                    REMOVE file IN library_files
+                    COLLECT WITH COUNT INTO deleted
+                    RETURN deleted
                 """,
                 bind_vars={
                     "library_id": library_id,
