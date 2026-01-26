@@ -77,7 +77,7 @@ class Tags:
         items: list[Tag] = []
         for key, value in data.items():
             # Normalize to tuple
-            if isinstance(value, (list, tuple)):
+            if isinstance(value, list | tuple):
                 items.append(Tag(key=key, value=tuple(value)))
             else:
                 items.append(Tag(key=key, value=(value,)))
