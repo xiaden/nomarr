@@ -26,7 +26,7 @@ COPY build_resources/scripts/ /app/scripts/
 COPY docs/ /app/docs/
 COPY tests/ /app/tests/
 # Copy individual files in one layer
-COPY tool_configs/pytest.ini readme.md /app/
+COPY readme.md pyproject.toml /app/
 COPY build_resources/scripts/*.sh /app/docker/
 RUN cp /app/docker/cleanup-cron.sh /app/ && \
     cp /app/docker/nom-cli.sh /usr/local/bin/nom
