@@ -21,7 +21,7 @@ export async function getStats(): Promise<LibraryStats> {
 }
 
 interface LibraryResponse {
-  id: string;
+  library_id: string;
   name: string;
   root_path: string;
   is_enabled: boolean;
@@ -40,7 +40,7 @@ interface LibraryResponse {
 
 function mapLibraryResponse(lib: LibraryResponse): Library {
   return {
-    id: lib.id,
+    library_id: lib.library_id,
     name: lib.name,
     rootPath: lib.root_path,
     isEnabled: lib.is_enabled,

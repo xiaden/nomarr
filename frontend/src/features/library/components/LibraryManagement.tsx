@@ -92,12 +92,12 @@ export function LibraryManagement() {
           return freshData;
         }
         // Build lookup for quick access
-        const freshMap = new Map(freshData.map(lib => [lib.id, lib]));
+        const freshMap = new Map(freshData.map(lib => [lib.library_id, lib]));
         
         // Check if any library actually changed
         let hasChanges = false;
         for (const lib of prev) {
-          const fresh = freshMap.get(lib.id);
+          const fresh = freshMap.get(lib.library_id);
           if (!fresh) {
             // Library removed
             hasChanges = true;
@@ -125,7 +125,7 @@ export function LibraryManagement() {
         
         // Merge: keep existing objects where unchanged, update only changed libraries
         return prev.map(lib => {
-          const fresh = freshMap.get(lib.id);
+          const fresh = freshMap.get(lib.library_id);
           if (!fresh) return lib;
           
           // Check if this specific library changed
@@ -240,7 +240,7 @@ export function LibraryManagement() {
     setFormIsEnabled(library.isEnabled);
     setFormWatchMode(library.watchMode);
     setFormFileWriteMode(library.fileWriteMode);
-    setEditingId(library.id);
+    setEditingId(library.library_id);
     setIsCreating(false);
   };
 
@@ -597,7 +597,7 @@ export function LibraryManagement() {
       {!loading && !isFormMode && libraries.length > 0 && (
         <Stack spacing={2}>
           {libraries.map((lib) => (
-            <Panel key={lib.id}>
+            <Panel key={lib.library_id}>
               <Stack
                 direction="row"
                 justifyContent="space-between"
@@ -666,10 +666,10 @@ export function LibraryManagement() {
                     <FormControl size="small" sx={{ minWidth: 120 }}>
                       <Select
                         value={lib.watchMode}
-                        onChange={(e) => handleWatchModeChange(lib.id, e.target.value)}
+                        onChange={(e) => handleWatchModeChange(lib.library_id, e.target.value)}
                         size="small"
                         sx={{ fontSize: "0.75rem" }}
-                        disabled={scanningId === lib.id}
+                        disabled={scanningId === lib.library_id}
                       >
                         <MenuItem value="off">Off</MenuItem>
                         <MenuItem value="event">Event</MenuItem>
@@ -708,9 +708,9 @@ export function LibraryManagement() {
                         size="small"
                       />
                     </Tooltip>
-                    {reconcileStatus[lib.id]?.pending > 0 && (
+                    {reconcileStatus[lib.library_id]?.pending > 0 && (
                       <Chip 
-                        label={`${reconcileStatus[lib.id].pending} pending`}
+                        label={`${reconcileStatus[lib.library_id].pending} pending`}
                         color="warning"
                         size="small"
                       />
@@ -737,7 +737,7 @@ export function LibraryManagement() {
                   variant="outlined"
                   size="small"
                   onClick={() => startEdit(lib)}
-                  disabled={scanningId === lib.id}
+                  disabled={scanningId === lib.library_id}
                 >
                   Edit
                 </Button>
@@ -745,10 +745,10 @@ export function LibraryManagement() {
                   variant="outlined"
                   color="success"
                   size="small"
-                  onClick={() => handleScan(lib.id, "quick")}
+                  onClick={() => handleScan(lib.library_id, "quick")}
                   disabled={
                     !lib.isEnabled || 
-                    scanningId === lib.id || 
+                    scanningId === lib.library_id || 
                     lib.scanStatus === "scanning" ||
                     isOutsideLibraryRoot(lib.rootPath) ||
                     !lib.scannedAt  // Disable if never scanned
@@ -763,7 +763,7 @@ export function LibraryManagement() {
                       : "Scan only new and modified files"
                   }
                 >
-                  {scanningId === lib.id || lib.scanStatus === "scanning"
+                  {scanningId === lib.library_id || lib.scanStatus === "scanning"
                     ? "Scanning..."
                     : "Quick Scan"}
                 </Button>
@@ -771,10 +771,10 @@ export function LibraryManagement() {
                   variant="contained"
                   color="success"
                   size="small"
-                  onClick={() => handleScan(lib.id, "full")}
+                  onClick={() => handleScan(lib.library_id, "full")}
                   disabled={
                     !lib.isEnabled || 
-                    scanningId === lib.id || 
+                    scanningId === lib.library_id || 
                     lib.scanStatus === "scanning" ||
                     isOutsideLibraryRoot(lib.rootPath)
                   }
@@ -786,7 +786,7 @@ export function LibraryManagement() {
                       : "Rescan all files in the library"
                   }
                 >
-                  {scanningId === lib.id || lib.scanStatus === "scanning"
+                  {scanningId === lib.library_id || lib.scanStatus === "scanning"
                     ? "Scanning..."
                     : "Full Scan"}
                 </Button>
@@ -794,20 +794,20 @@ export function LibraryManagement() {
                   variant="outlined"
                   color="secondary"
                   size="small"
-                  onClick={() => handleReconcileTags(lib.id)}
+                  onClick={() => handleReconcileTags(lib.library_id)}
                   disabled={
                     !lib.isEnabled || 
-                    reconcilingId === lib.id ||
+                    reconcilingId === lib.library_id ||
                     lib.scanStatus === "scanning"
                   }
                   title={
-                    reconcilingId === lib.id
+                    reconcilingId === lib.library_id
                       ? "Reconciling tags..."
                       : "Write tags from database to audio files"
                   }
-                  onMouseEnter={() => loadReconcileStatus(lib.id)}
+                  onMouseEnter={() => loadReconcileStatus(lib.library_id)}
                 >
-                  {reconcilingId === lib.id
+                  {reconcilingId === lib.library_id
                     ? "Reconciling..."
                     : "Reconcile Tags"}
                 </Button>
@@ -815,8 +815,8 @@ export function LibraryManagement() {
                   variant="contained"
                   color="error"
                   size="small"
-                  onClick={() => handleDelete(lib.id, lib.name)}
-                  disabled={scanningId === lib.id}
+                  onClick={() => handleDelete(lib.library_id, lib.name)}
+                  disabled={scanningId === lib.library_id}
                 >
                   Delete
                 </Button>
