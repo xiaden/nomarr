@@ -1,6 +1,6 @@
 """
 Admin API endpoints for system control.
-Routes: /v1/admin/cache/*, /v1/admin/worker/*, /v1/admin/calibration/*
+Routes: /v1/admin/worker/*, /v1/admin/calibration/*
 
 These routes will be mounted under /api/v1/admin via the integration router.
 
@@ -16,37 +16,16 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_key
-from nomarr.interfaces.api.types.admin_types import (
-    CacheRefreshResponse,
-    WorkerOperationResponse,
-)
+from nomarr.interfaces.api.types.admin_types import WorkerOperationResponse
 from nomarr.interfaces.api.web.dependencies import (
     get_calibration_service,
-    get_ml_service,
     get_workers_coordinator,
 )
 from nomarr.services.domain.calibration_svc import CalibrationService
-from nomarr.services.infrastructure.ml_svc import MLService
 from nomarr.services.infrastructure.worker_system_svc import WorkerSystemService
 
 # Router instance (will be included under /api/v1/admin)
 router = APIRouter(tags=["admin"], prefix="/v1/admin")
-
-
-# ----------------------------------------------------------------------
-#  POST /admin/cache/refresh
-# ----------------------------------------------------------------------
-@router.post("/cache/refresh", dependencies=[Depends(verify_key)])
-async def admin_cache_refresh(
-    ml_service: MLService = Depends(get_ml_service),
-) -> CacheRefreshResponse:
-    """Force rebuild of the predictor cache (discover heads and load missing)."""
-    try:
-        result = ml_service.warmup_cache_for_admin()
-        return CacheRefreshResponse.from_dto(result)
-    except Exception as e:
-        logging.exception("[Admin API] Cache refresh failed")
-        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Cache refresh failed")) from e
 
 
 # ----------------------------------------------------------------------

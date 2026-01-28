@@ -19,14 +19,6 @@ class JobRemovalResult:
 
 
 @dataclass
-class CacheRefreshResult:
-    """Result from cache refresh operations."""
-
-    status: str
-    message: str
-
-
-@dataclass
 class WorkerOperationResult:
     """Result from worker control operations (pause/resume)."""
 

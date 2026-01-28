@@ -3,7 +3,6 @@ Types package.
 """
 
 from .admin_types import (
-    CacheRefreshResponse,
     CalibrationHistoryResponse,
     JobRemovalResponse,
     RetagAllResponse,
@@ -88,7 +87,6 @@ __all__ = [
     "BatchPathResult",
     "BatchProcessRequest",
     "BatchProcessResponse",
-    "CacheRefreshResponse",
     "CalibrationHistoryResponse",
     "CalibrationRequest",
     "ConfigInfoResponse",

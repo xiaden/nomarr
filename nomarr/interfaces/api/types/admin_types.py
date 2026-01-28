@@ -11,7 +11,6 @@ from typing import Any
 from pydantic import BaseModel
 
 from nomarr.helpers.dto.admin_dto import (
-    CacheRefreshResult,
     CalibrationHistoryResult,
     JobRemovalResult,
     RetagAllResult,
@@ -30,18 +29,6 @@ class JobRemovalResponse(BaseModel):
     def from_dto(cls, dto: JobRemovalResult) -> JobRemovalResponse:
         """Convert DTO to Pydantic response model."""
         return cls(removed=dto.removed, message=dto.message)
-
-
-class CacheRefreshResponse(BaseModel):
-    """Response model for cache refresh operations."""
-
-    status: str
-    message: str
-
-    @classmethod
-    def from_dto(cls, dto: CacheRefreshResult) -> CacheRefreshResponse:
-        """Convert DTO to Pydantic response model."""
-        return cls(status=dto.status, message=dto.message)
 
 
 class WorkerOperationResponse(BaseModel):
