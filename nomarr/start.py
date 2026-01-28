@@ -94,6 +94,7 @@ if __name__ == "__main__":
             port=application.api_port,
             timeout_keep_alive=90,
             log_level="info",
+            access_log=False,  # Disable uvicorn access logs (200 OK spam)
         )
     finally:
         # Cleanup after uvicorn stops (Ctrl+C, etc.)

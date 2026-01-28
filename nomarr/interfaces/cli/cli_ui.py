@@ -72,4 +72,4 @@ def print_warning(message: str):
 
 def print_info(message: str):
     """Print an info message."""
-    console.print(f"[{COLOR_INFO}]ℹ[/{COLOR_INFO}] {message}")
+    console.print(f"[{COLOR_INFO}][i][/{COLOR_INFO}] {message}")

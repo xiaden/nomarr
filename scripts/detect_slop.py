@@ -5,7 +5,7 @@ Automated Slop & Drift Detection
 Uses existing tools to discover code quality issues:
 - radon: Complexity metrics
 - import-linter: Architecture violations
-- flake8 + plugins: Code smells, overcomplicated patterns, commented code
+- ruff: Code smells, overcomplicated patterns, commented code (ERA rules)
 - Custom analysis: AI slop patterns
 
 Output is designed to TEACH you what patterns exist in your codebase.
@@ -182,18 +182,18 @@ def normalize_import_linter(stdout: str, stderr: str) -> tuple[list[str], str]:
     return issues[:20], f"Found {len(issues)} architecture violation(s)"  # Limit to 20
 
 
-def normalize_flake8(stdout: str, stderr: str, returncode: int) -> tuple[list[str], str]:
-    """Parse flake8 output to extract code smell issues or tool failures.
+def normalize_ruff(stdout: str, stderr: str, returncode: int) -> tuple[list[str], str]:
+    """Parse ruff output to extract code smell issues or tool failures.
 
     Args:
-        stdout: Raw stdout from flake8 command
-        stderr: Raw stderr from flake8 command
-        returncode: Exit code from flake8 command
+        stdout: Raw stdout from ruff command
+        stderr: Raw stderr from ruff command
+        returncode: Exit code from ruff command
 
     Returns:
         Tuple of (issues list, summary string)
     """
-    # Handle tool failures (plugin errors, config issues, etc.)
+    # Handle tool failures (config issues, crashes, etc.)
     if returncode != 0 and not stdout.strip():
         # Tool failed without producing normal output - likely a crash or config error
         issues = []
@@ -204,10 +204,32 @@ def normalize_flake8(stdout: str, stderr: str, returncode: int) -> tuple[list[st
         if stderr_lines:
             issues = stderr_lines[-15:]
 
-        summary = f"Flake8 failed with exit code {returncode}; no results. Likely plugin or config error - see stderr."
+        summary = f"Ruff failed with exit code {returncode}; no results. Likely config error - see stderr."
         return issues, summary
 
-    # Normal flake8 output - parse code smells
+    # Normal ruff output - parse JSON format
+    if stdout.strip():
+        try:
+            import json
+            ruff_output = json.loads(stdout)
+            issues = []
+            for item in ruff_output:
+                file_path = item.get("filename", "")
+                line = item.get("location", {}).get("row", "")
+                col = item.get("location", {}).get("column", "")
+                code = item.get("code", "")
+                message = item.get("message", "")
+                issues.append(f"{file_path}:{line}:{col}: {code} {message}")
+            
+            if not issues:
+                return [], "No code smells detected"
+            
+            return issues[:50], f"Found {len(issues)} code smell(s)"  # Limit to 50
+        except json.JSONDecodeError:
+            # Fallback to line-by-line parsing if JSON fails
+            pass
+    
+    # Fallback: line-by-line parsing
     issues = []
     lines = stdout.strip().split("\n")
 
@@ -219,22 +241,6 @@ def normalize_flake8(stdout: str, stderr: str, returncode: int) -> tuple[list[st
         return [], "No code smells detected"
 
     return issues[:50], f"Found {len(issues)} code smell(s)"  # Limit to 50
-
-
-def normalize_eradicate(stdout: str) -> tuple[list[str], str]:
-    """Parse eradicate output to extract commented code."""
-    issues = []
-    lines = stdout.strip().split("\n")
-
-    for line in lines:
-        if line.strip() and ":" in line:
-            issues.append(line.strip())
-
-    if not issues:
-        return [], "No commented-out code found"
-
-    return issues[:30], f"Found {len(issues)} instance(s) of commented code"  # Limit to 30
-
 
 # ──────────────────────────────────────────────────────────────────────
 # Severity Calculator
@@ -273,24 +279,11 @@ def calculate_severity(tool_name: str, issues: list[str], returncode: int) -> st
             return "high"
         return "low"
 
-    elif "flake8" in tool_name.lower():
+    elif "ruff" in tool_name.lower():
         # Code smells: Many issues = medium, few = low
-        if "strict" in tool_name.lower():
-            # Strict complexity check - more lenient on severity
-            if issue_count > 20:
-                return "medium"
-            return "low"
-        else:
-            # General code smells
-            if issue_count > 30:
-                return "high"
-            elif issue_count > 10:
-                return "medium"
-            return "low"
-
-    elif "eradicate" in tool_name.lower():
-        # Commented code: Low priority
-        if issue_count > 20:
+        if issue_count > 30:
+            return "high"
+        elif issue_count > 10:
             return "medium"
         return "low"
 
@@ -586,7 +579,7 @@ def run_command(cmd: list[str], description: str, tool_id: str = "") -> dict[str
     Args:
         cmd: Command and arguments to execute
         description: Human-readable description of what the command does
-        tool_id: Stable identifier for tool-specific parsing (e.g., "radon_cc", "flake8")
+        tool_id: Stable identifier for tool-specific parsing (e.g., "radon_cc", "ruff")
 
     Returns:
         Dictionary with command results and metadata
@@ -739,51 +732,19 @@ def main():
         run_command(
             [
                 sys.executable,
-                "-m",
-                "flake8",
-                str(target_path),
-                "--max-complexity",
-                "20",
-                "--max-cognitive-complexity",
-                "20",
-                "--extend-ignore",
-                "E501,W503,E203",
-            ],
-            "Flake8: Code smells",
-            tool_id="flake8",
-        )
-    )
-
-    # 6. Flake8 - Strict Complexity
+    # 5. Ruff - Code smells & commented code
     raw_results.append(
         run_command(
             [
                 sys.executable,
                 "-m",
-                "flake8",
+                "ruff",
+                "check",
                 str(target_path),
-                "--max-complexity",
-                "15",
-                "--max-cognitive-complexity",
-                "15",
-                "--select",
-                "C901,CCR001",
-                "--extend-ignore",
-                "E501,W503,E203",
+                "--output-format=json",
             ],
-            "Flake8: Strict complexity check",
-            tool_id="flake8_strict",
-        )
-    )
-
-    # 7. Eradicate - Commented Code
-    raw_results.append(
-        run_command(
-            [sys.executable, "-m", "eradicate", str(target_path), "--recursive"]
-            if target_path.is_dir()
-            else [sys.executable, "-m", "eradicate", str(target_path)],
-            "Eradicate: Commented-out code",
-            tool_id="eradicate",
+            "Ruff: Code smells & commented code (ERA)",
+            tool_id="ruff",
         )
     )
 
@@ -807,10 +768,8 @@ def main():
             issues, summary = [], "Raw code metrics (informational)"
         elif tool == "import_linter":
             issues, summary = normalize_import_linter(stdout, stderr)
-        elif tool == "flake8" or tool == "flake8_strict":
-            issues, summary = normalize_flake8(stdout, stderr, returncode)
-        elif tool == "eradicate":
-            issues, summary = normalize_eradicate(stdout)
+        elif tool == "ruff":
+            issues, summary = normalize_ruff(stdout, stderr, returncode)
         else:
             # Unknown tool - generic handling
             issues, summary = [], "No issues detected"
@@ -818,9 +777,9 @@ def main():
         # Calculate severity
         severity = calculate_severity(name, issues, returncode)
 
-        # Override severity for flake8 tool failures - these are high priority
+        # Override severity for ruff tool failures - these are high priority
         # because they indicate the quality signal is completely missing
-        if (tool == "flake8" or tool == "flake8_strict") and returncode != 0 and not stdout.strip():
+        if tool == "ruff" and returncode != 0 and not stdout.strip():
             severity = "high"
 
         analyzed_results.append(

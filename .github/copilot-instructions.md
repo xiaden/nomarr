@@ -64,6 +64,72 @@ If the skill specifies additional checks (lint, mypy, build), run them before co
 
 ---
 
+## TOOL USAGE HIERARCHY (MANDATORY)
+
+**These tool selection rules are NOT optional. Violating them wastes tokens and ignores purpose-built capabilities.**
+
+### Rule: Use Specialized MCP Tools BEFORE Standard Tools
+
+Check this hierarchy before reaching for `read_file`, `grep_search`, or `semantic_search`:
+
+#### 1. Python Code Navigation in Nomarr (ALWAYS FIRST)
+
+**Before reading any Python file, use:**
+
+- `mcp_nomarrdev_discover_api(module_name)` - See exported classes/functions/signatures (~20 lines vs full file)
+- `mcp_nomarrdev_locate_symbol(symbol_name)` - Find where something is defined
+- `mcp_nomarrdev_get_source(qualified_name)` - Get exact function/class with line numbers
+- `mcp_nomarrdev_trace_endpoint(endpoint)` - Trace FastAPI routes through DI layers
+- `mcp_nomarrdev_trace_calls(function)` - Follow call chains from entry points
+- `mcp_nomarrdev_check_api_coverage()` - See which endpoints are used by frontend
+
+**These tools understand FastAPI DI and nomarr's architecture. Use them.**
+
+#### 2. General Code Navigation (SECOND PRIORITY)
+
+**For any file exploration:**
+
+- `mcp_oraios_serena_get_symbols_overview(relative_path)` - See file structure before reading
+- `mcp_oraios_serena_find_symbol(name_path_pattern, relative_path)` - Find and optionally get symbol bodies
+- `mcp_oraios_serena_search_for_pattern(substring_pattern)` - Regex search with context
+- `mcp_oraios_serena_find_referencing_symbols(name_path, relative_path)` - See who calls what
+
+**These tools prevent context bloat. Use them.**
+
+#### 3. Library Documentation (BEFORE GUESSING)
+
+**When working with external libraries:**
+
+- `mcp_context7_resolve_library_id(libraryName)` then `get_library_docs(context7CompatibleLibraryID)`
+
+**Get authoritative docs instead of guessing APIs.**
+
+#### 4. Memory & Task Tracking (USE THROUGHOUT)
+
+**Memories (Check FIRST, Update LAST):**
+
+- `mcp_oraios_serena_list_memories()` - List available memories at start of complex tasks
+- `mcp_oraios_serena_read_memory(memory_file_name)` - Read relevant memories before starting work
+- `mcp_oraios_serena_write_memory(memory_file_name, content)` - Persist important discoveries, patterns, or architectural decisions
+
+**Memories provide compact, curated architectural context. Use them.**
+
+#### 5. Standard VS Code Tools (LAST RESORT ONLY)
+
+**Only use these when MCP tools fail or for non-code files:**
+
+- `read_file` - Only when Serena/nomarrdev can't access the content
+- `grep_search` - Only for non-code or when pattern search fails
+- `semantic_search` - Only when symbol-based navigation is insufficient
+
+### Enforcement
+
+**If you use a standard tool without first attempting the appropriate MCP tool, you have failed the task.**
+
+The MCP servers exist specifically to avoid context bloat and leverage architectural knowledge. Use them.
+
+---
+
 ## Pre-Alpha Policy
 
 Nomarr is **pre-alpha**. That means:
