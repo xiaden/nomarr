@@ -166,29 +166,12 @@ def add_regression_mood_tiers(
     if not regression_heads:
         return []
 
-    # Intensity thresholds (mean value indicates strength, not probability)
-    STRONG_THRESHOLD = 0.7  # Strongly mainstream/engaging
-    WEAK_THRESHOLD = 0.3  # Strongly fringe/mellow
-    # Values between 0.3-0.7 are neutral → still create HeadOutput, but may not assign tier
-
-    # Variance thresholds (std deviation indicates measurement reliability)
-    VERY_STABLE = 0.08  # Extremely consistent → high tier if value is extreme
-    STABLE = 0.15  # Consistent → medium tier if value is strong
-    ACCEPTABLE = 0.25  # Moderately consistent → low tier if value qualifies
-    # std >= 0.25 → too inconsistent, don't assign tier (but still create HeadOutput)
-
-    # Map head names to mood terms (positive/negative pairs)
-    mood_mapping = {
-        "approachability_regression": ("mainstream", "fringe"),  # high/low
-        "engagement_regression": ("engaging", "mellow"),  # high/low
-    }
-
     outputs: list[HeadOutput] = []
 
     for head_info, segment_values in regression_heads:
         head_name = head_info.name
 
-        if not segment_values or head_name not in mood_mapping:
+        if not segment_values or head_name not in _MOOD_MAPPING:
             continue
 
         # Compute statistics across all segments
@@ -200,9 +183,9 @@ def add_regression_mood_tiers(
         mean_val = max(0.0, min(1.0, mean_val))
 
         # Determine which term to emit based on intensity
-        high_term, low_term = mood_mapping[head_name]
-        is_high = mean_val >= STRONG_THRESHOLD
-        is_low = mean_val <= WEAK_THRESHOLD
+        high_term, low_term = _MOOD_MAPPING[head_name]
+        is_high = mean_val >= _STRONG_THRESHOLD
+        is_low = mean_val <= _WEAK_THRESHOLD
 
         # ALWAYS create HeadOutput (even if neutral or high variance)
         if is_high:
@@ -251,7 +234,7 @@ def add_regression_mood_tiers(
 
         # Only assign tier if variance is acceptable AND value is non-neutral
         tier: str | None = None
-        if std_val >= ACCEPTABLE:
+        if std_val >= _ACCEPTABLE:
             logging.debug(
                 f"[aggregation] Regression no tier: {head_name} → {mood_term} "
                 f"(mean={mean_val:.3f}, std={std_val:.3f} - high variance)"
@@ -261,10 +244,10 @@ def add_regression_mood_tiers(
             # More extreme values + lower variance → higher tier (more confident)
             intensity = abs(mean_val - 0.5) * 2  # Normalize distance from neutral (0-1 scale)
 
-            if std_val < VERY_STABLE and intensity >= 0.8:
+            if std_val < _VERY_STABLE and intensity >= 0.8:
                 # Very stable AND very extreme → strict tier
                 tier = "high"
-            elif std_val < STABLE and intensity >= 0.6:
+            elif std_val < _STABLE and intensity >= 0.6:
                 # Stable AND strong → regular tier
                 tier = "medium"
             else:
@@ -304,10 +287,24 @@ LABEL_PAIRS = [
     ("instrumental", "voice", "instrumental only", "has vocals"),
 ]
 
+# Intensity thresholds for regression head aggregation (mean value)
+_STRONG_THRESHOLD = 0.7  # Strongly mainstream/engaging
+_WEAK_THRESHOLD = 0.3  # Strongly fringe/mellow
+
+# Variance thresholds for regression head aggregation (std deviation)
+_VERY_STABLE = 0.08  # Extremely consistent
+_STABLE = 0.15  # Consistent
+_ACCEPTABLE = 0.25  # Moderately consistent
+
+# Map head names to mood terms (positive/negative pairs)
+_MOOD_MAPPING = {
+    "approachability_regression": ("mainstream", "fringe"),  # high/low
+    "engagement_regression": ("engaging", "mellow"),  # high/low
+}
+
 
 def _build_tier_map(
-    head_outputs: list[Any],
-    calibrations: dict[str, dict[str, Any]] | None,
+    head_outputs: list[Any], calibrations: dict[str, dict[str, Any]] | None
 ) -> dict[str, tuple[str, float, str]]:
     """
     Build tier map from HeadOutput objects, applying calibration when available.
@@ -349,8 +346,7 @@ def _build_tier_map(
 
 
 def _compute_suppressed_keys(
-    tier_map: dict[str, tuple[str, float, str]],
-    label_pairs: list[tuple[str, str, str, str]],
+    tier_map: dict[str, tuple[str, float, str]], label_pairs: list[tuple[str, str, str, str]]
 ) -> set[str]:
     """
     Identify conflicting mood pairs and return keys to suppress.
@@ -417,8 +413,7 @@ def _compute_suppressed_keys(
 
 
 def _build_label_map(
-    tier_map: dict[str, tuple[str, float, str]],
-    label_pairs: list[tuple[str, str, str, str]],
+    tier_map: dict[str, tuple[str, float, str]], label_pairs: list[tuple[str, str, str, str]]
 ) -> dict[str, str]:
     """
     Build label map for improved human-readable mood terms.
@@ -447,9 +442,7 @@ def _build_label_map(
 
 
 def _build_tier_term_sets(
-    tier_map: dict[str, tuple[str, float, str]],
-    suppressed_keys: set[str],
-    label_map: dict[str, str],
+    tier_map: dict[str, tuple[str, float, str]], suppressed_keys: set[str], label_map: dict[str, str]
 ) -> BuildTierTermSetsResult:
     """
     Build strict, regular, and loose term sets from tier map.
@@ -485,18 +478,10 @@ def _build_tier_term_sets(
         f"[aggregation] Mood aggregation: strict={len(strict_terms)}, regular={len(regular_terms)}, loose={len(loose_terms)}"
     )
 
-    return BuildTierTermSetsResult(
-        strict_terms=strict_terms,
-        regular_terms=regular_terms,
-        loose_terms=loose_terms,
-    )
+    return BuildTierTermSetsResult(strict_terms=strict_terms, regular_terms=regular_terms, loose_terms=loose_terms)
 
 
-def _make_inclusive_mood_tags(
-    strict_terms: set[str],
-    regular_terms: set[str],
-    loose_terms: set[str],
-) -> dict[str, Any]:
+def _make_inclusive_mood_tags(strict_terms: set[str], regular_terms: set[str], loose_terms: set[str]) -> dict[str, Any]:
     """
     Build final mood tag dictionary with inclusive tier expansion.
 

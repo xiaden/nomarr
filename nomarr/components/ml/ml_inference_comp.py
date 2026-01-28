@@ -166,9 +166,7 @@ def make_predictor_uncached(head_info: HeadInfo) -> Callable[[np.ndarray, int], 
     return predict_fn
 
 
-def compute_embeddings_for_backbone(
-    params: ComputeEmbeddingsForBackboneParams,
-) -> tuple[np.ndarray, float, str]:
+def compute_embeddings_for_backbone(params: ComputeEmbeddingsForBackboneParams) -> tuple[np.ndarray, float, str]:
     """
     Compute embeddings for an audio file using a specific backbone.
 
@@ -271,7 +269,7 @@ def compute_embeddings_for_backbone(
         embeddings_2d = emb.reshape(1, -1)
     elif emb.ndim == 2:
         # Native 2D patches - use directly
-        logging.debug(f"[inference] Backbone returned 2D patches: {emb.shape[0]} patches × {emb.shape[1]} dims")
+        logging.debug(f"[inference] Backbone returned 2D patches: {emb.shape[0]} patches x {emb.shape[1]} dims")
         embeddings_2d = emb
     elif emb.ndim == 3:
         # 3D output (rare) - average first two dimensions

@@ -142,11 +142,7 @@ class HeadInfo:
         return self.sidecar.labels
 
     def build_versioned_tag_key(
-        self,
-        label: str,
-        framework_version: str,
-        calib_method: str = "none",
-        calib_version: int = 0,
+        self, label: str, framework_version: str, calib_method: str = "none", calib_version: int = 0
     ) -> tuple[str, str]:
         """
         Build versioned tag key from model metadata and runtime framework version.
@@ -233,6 +229,10 @@ def get_head_output_node(head_type: str, sidecar: Sidecar) -> str:
     return "model/Softmax"
 
 
+# Known regression heads that feed mood tiers
+_REGRESSION_MOOD_HEADS = {"approachability_regression", "engagement_regression"}
+
+
 def discover_heads(models_dir: str) -> list[HeadInfo]:
     """
     Discover all classification/regression heads using folder structure.
@@ -245,9 +245,6 @@ def discover_heads(models_dir: str) -> list[HeadInfo]:
     Sets is_mood_source and is_regression_mood_source flags based on sidecar metadata.
     """
     heads: list[HeadInfo] = []
-
-    # Known regression heads that feed mood tiers
-    REGRESSION_MOOD_HEADS = {"approachability_regression", "engagement_regression"}
 
     for backbone_dir in glob.glob(os.path.join(models_dir, "*")):
         if not os.path.isdir(backbone_dir):
@@ -306,7 +303,7 @@ def discover_heads(models_dir: str) -> list[HeadInfo]:
                     is_mood_source = "mood_" in name_normalized
 
                     # Check if this is a regression head that feeds mood tiers
-                    is_regression_mood_source = head_name in REGRESSION_MOOD_HEADS
+                    is_regression_mood_source = head_name in _REGRESSION_MOOD_HEADS
 
                     head_info = HeadInfo(
                         sidecar=sidecar,

@@ -61,7 +61,7 @@ def _create_collections(db: DatabaseLike) -> None:
 
     # Edge collections
     edge_collections = [
-        "song_tag_edges",  # song→tag relationships (unified)
+        "song_tag_edges"  # song→tag relationships (unified)
     ]
 
     for edge_collection_name in edge_collections:
@@ -83,13 +83,7 @@ def _create_indexes(db: DatabaseLike) -> None:
 
     # library_files indexes
     _ensure_index(db, "library_files", "persistent", ["library_id"])
-    _ensure_index(
-        db,
-        "library_files",
-        "persistent",
-        ["library_id", "path"],
-        unique=True,
-    )
+    _ensure_index(db, "library_files", "persistent", ["library_id", "path"], unique=True)
     _ensure_index(
         db,
         "library_files",
@@ -123,13 +117,7 @@ def _create_indexes(db: DatabaseLike) -> None:
 
     # library_folders indexes
     _ensure_index(db, "library_folders", "persistent", ["library_id"])
-    _ensure_index(
-        db,
-        "library_folders",
-        "persistent",
-        ["library_id", "path"],
-        unique=True,
-    )
+    _ensure_index(db, "library_folders", "persistent", ["library_id", "path"], unique=True)
 
     # sessions TTL index (auto-expire based on expiry_timestamp)
     _ensure_index(
@@ -155,40 +143,12 @@ def _create_indexes(db: DatabaseLike) -> None:
     _ensure_index(db, "worker_restart_policy", "persistent", ["component_id"])
 
     # calibration_state indexes (NEW - histogram-based calibration)
-    _ensure_index(
-        db,
-        "calibration_state",
-        "persistent",
-        ["calibration_def_hash"],
-        unique=True,
-        sparse=False,
-    )
-    _ensure_index(
-        db,
-        "calibration_state",
-        "persistent",
-        ["updated_at"],
-        unique=False,
-        sparse=False,
-    )
+    _ensure_index(db, "calibration_state", "persistent", ["calibration_def_hash"], unique=True, sparse=False)
+    _ensure_index(db, "calibration_state", "persistent", ["updated_at"], unique=False, sparse=False)
 
     # calibration_history indexes (NEW - optional drift tracking)
-    _ensure_index(
-        db,
-        "calibration_history",
-        "persistent",
-        ["calibration_key"],
-        unique=False,
-        sparse=False,
-    )
-    _ensure_index(
-        db,
-        "calibration_history",
-        "persistent",
-        ["snapshot_at"],
-        unique=False,
-        sparse=False,
-    )
+    _ensure_index(db, "calibration_history", "persistent", ["calibration_key"], unique=False, sparse=False)
+    _ensure_index(db, "calibration_history", "persistent", ["snapshot_at"], unique=False, sparse=False)
 
     # ─────────────────────────────────────────────────────────────────────
     # Unified tag schema indexes (TAG_UNIFICATION_REFACTOR)
@@ -246,7 +206,7 @@ def _ensure_index(
     fields: list[str],
     unique: bool = False,
     sparse: bool = False,
-    expireAfter: int | None = None,
+    expireAfter: int | None = None,  # noqa: N803
 ) -> None:
     """Create index if it doesn't exist.
 
@@ -263,12 +223,7 @@ def _ensure_index(
         coll = db.collection(collection)
 
         # Build index spec
-        spec = {
-            "type": index_type,
-            "fields": fields,
-            "unique": unique,
-            "sparse": sparse,
-        }
+        spec = {"type": index_type, "fields": fields, "unique": unique, "sparse": sparse}
 
         if index_type == "ttl" and expireAfter is not None:
             spec["expireAfter"] = expireAfter
@@ -318,15 +273,7 @@ def _validate_no_legacy_calibration(db: DatabaseLike) -> None:
         )
 
     # TAG_UNIFICATION_REFACTOR: Legacy tag collections
-    legacy_tag_collections = [
-        "library_tags",
-        "file_tags",
-        "artists",
-        "albums",
-        "genres",
-        "labels",
-        "years",
-    ]
+    legacy_tag_collections = ["library_tags", "file_tags", "artists", "albums", "genres", "labels", "years"]
     found_legacy_tags = [name for name in legacy_tag_collections if db.has_collection(name)]
 
     if found_legacy_tags:
