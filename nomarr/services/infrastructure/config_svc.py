@@ -61,6 +61,23 @@ INTERNAL_CALIBRATION_MEDIAN_THRESHOLD = 0.05  # Max median drift (5%)
 INTERNAL_CALIBRATION_IQR_THRESHOLD = 0.1  # Max IQR drift (10%)
 
 
+# Whitelist of allowed config keys for DB and environment overrides
+_ALLOWED_CONFIG_KEYS = {
+    "models_dir",
+    "db_path",
+    "library_root",
+    "library_auto_tag",
+    "library_ignore_patterns",
+    "file_write_mode",
+    "overwrite_tags",
+    "admin_password",
+    "cache_idle_timeout",
+    "tagger_worker_count",
+    "calibrate_heads",
+    "calibration_repo",
+}
+
+
 class ConfigService:
     """
     Service for loading and caching application configuration.
@@ -181,11 +198,7 @@ class ConfigService:
         internal_info = self.get_internal_info()
         worker_enabled = worker_service.is_worker_system_enabled() if worker_service else internal_info.worker_enabled
 
-        return WebConfigResult(
-            config=config_dto.config,
-            internal_info=internal_info,
-            worker_enabled=worker_enabled,
-        )
+        return WebConfigResult(config=config_dto.config, internal_info=internal_info, worker_enabled=worker_enabled)
 
     def get_worker_count(self, kind: Literal["tagger"] = "tagger") -> int:
         """
@@ -342,21 +355,6 @@ class ConfigService:
         Returns:
             dict: Config overrides from DB meta table (empty if unavailable)
         """
-        # Whitelist of allowed DB config overrides (matches user-facing config)
-        ALLOWED_DB_KEYS = {
-            "models_dir",
-            "db_path",
-            "library_root",
-            "library_auto_tag",
-            "library_ignore_patterns",
-            "file_write_mode",
-            "overwrite_tags",
-            "admin_password",
-            "cache_idle_timeout",
-            "tagger_worker_count",
-            "calibrate_heads",
-            "calibration_repo",
-        }
 
         if not db_path:
             self._logger.debug("DB config skipped: no db_path provided")
@@ -383,7 +381,7 @@ class ConfigService:
                     config_key = key[7:]  # len('config_') == 7
 
                     # Only allow whitelisted keys
-                    if config_key not in ALLOWED_DB_KEYS:
+                    if config_key not in _ALLOWED_CONFIG_KEYS:
                         self._logger.debug(f"Ignoring DB config for internal key: {config_key}")
                         continue
 
@@ -432,22 +430,6 @@ class ConfigService:
 
         Internal constants cannot be overridden via environment.
         """
-        # Whitelist of allowed env overrides
-        ALLOWED_ENV_KEYS = {
-            "models_dir",
-            "db_path",
-            "library_root",
-            "library_auto_tag",
-            "library_ignore_patterns",
-            "file_write_mode",
-            "overwrite_tags",
-            "admin_password",
-            "cache_idle_timeout",
-            "worker_count",
-            "calibrate_heads",
-            "calibration_repo",
-        }
-
         for env_key, env_value in os.environ.items():
             # Support NOMARR_* prefix (primary), TAGGER_* and AUTOTAG_* (legacy)
             if not (env_key.startswith("NOMARR_") or env_key.startswith("TAGGER_") or env_key.startswith("AUTOTAG_")):
@@ -457,7 +439,7 @@ class ConfigService:
             key = env_key.replace("NOMARR_", "").replace("TAGGER_", "").replace("AUTOTAG_", "").lower()
 
             # Only allow whitelisted keys
-            if key not in ALLOWED_ENV_KEYS:
+            if key not in _ALLOWED_CONFIG_KEYS:
                 self._logger.debug(f"Ignoring environment override for internal key: {key}")
                 continue
 

@@ -11,8 +11,6 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from nomarr.helpers.dto.admin_dto import CacheRefreshResult
-
 if TYPE_CHECKING:
     pass
 
@@ -66,22 +64,6 @@ class MLService:
         except Exception as e:
             logger.exception("[MLService] Cache warmup failed")
             raise RuntimeError(f"Failed to warm up ML cache: {e}") from e
-
-    def warmup_cache_for_admin(self) -> CacheRefreshResult:
-        """
-        Pre-load all model predictors into cache for admin operations.
-
-        Returns:
-            CacheRefreshResult with status and message
-
-        Raises:
-            RuntimeError: If cache warmup fails
-        """
-        num = self.warmup_cache()
-        return CacheRefreshResult(
-            status="success",
-            message=f"Cache refreshed ({num} predictors)",
-        )
 
     def get_cache_size(self) -> int:
         """
