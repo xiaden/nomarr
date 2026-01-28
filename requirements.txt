@@ -32,13 +32,6 @@ pydub>=0.25.1            # Audio file generation for tests (requires ffmpeg)
 radon>=5.1.0,<5.2        # Cyclomatic complexity, maintainability index
 import-linter>=2.0       # Enforce layered architecture rules
 
-# Pattern Detection & Code Smells
-flake8>=7.0.0                       # Base linter
-flake8-cognitive-complexity>=0.1.0  # Measures code understandability
-flake8-simplify>=0.21.0             # Detects overcomplicated patterns
-flake8-eradicate>=1.5.0             # Finds commented-out code
-flake8-variables-names>=0.0.6       # Generic variable name detection
-
 # Type stubs for better mypy support
 types-PyYAML
 types-requests

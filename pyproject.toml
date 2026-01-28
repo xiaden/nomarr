@@ -49,11 +49,6 @@ dev = [
     "pydub==0.25.1",
     "radon==5.1.0",
     "import-linter==2.6",
-    "flake8==7.3.0",
-    "flake8-cognitive-complexity==0.1.0",
-    "flake8-simplify==0.30.0",
-    "flake8-eradicate==1.5.0",
-    "flake8-variables-names==0.0.6",
     "types-PyYAML==6.0.12.20250915",
     "types-requests==2.32.4.20260107",
     "mcp>=1.0.0",
@@ -131,6 +126,8 @@ ignore_missing_imports = true
 [tool.ruff]
 target-version = "py312"
 line-length = 120
+fix = true
+output-format = "json"
 
 [tool.ruff.lint]
 select = [
@@ -145,19 +142,14 @@ select = [
     "SIM",    # flake8-simplify
     "RUF",    # Ruff-specific rules
     "TID",    # flake8-tidy-imports (for banned-api)
+    "ERA",    # eradicate (commented-out code)
 ]
 
 ignore = [
     "E501",   # Line too long (handled by formatter)
     "B008",   # Do not perform function calls in argument defaults (FastAPI Depends pattern)
     "N802",   # Function name should be lowercase (allow CamelCase for classes)
-    "N803",   # Argument name should be lowercase (S is convention for score matrices)
-    "N806",   # Variable should be lowercase (S is convention, CONSTANTS are fine)
     "SIM108", # Use ternary operator instead of if-else-block (sometimes less readable)
-    "SIM105", # Use contextlib.suppress - optional style preference
-    "RUF001", # Ambiguous unicode in strings (intentional for UI icons)
-    "RUF002", # Ambiguous unicode in docstrings (×  is clear for math)
-    "RUF034", # Useless if-else (false positive)
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -169,6 +161,7 @@ ignore = [
 quote-style = "double"
 indent-style = "space"
 docstring-code-format = true
+skip-magic-trailing-comma = true
 
 [tool.ruff.lint.isort]
 known-first-party = ["nomarr"]

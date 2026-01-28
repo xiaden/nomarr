@@ -130,3 +130,10 @@ $RECYCLE.BIN/
 .directory
 .Trash-*
 fpcalc.exe
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
