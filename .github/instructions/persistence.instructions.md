@@ -12,6 +12,7 @@ Persistence is the **data access layer**:
 - `Database` class owns the connection
 - `*Operations` classes own SQL for specific tables
 - External code accesses via `db.queue.enqueue()`, `db.tags.get_track_tags()`
+- Returns [DTOs defined in helpers](./helpers.instructions.md)
 
 ---
 
@@ -48,6 +49,18 @@ from nomarr.workflows import ...     # No workflows
 from nomarr.components import ...    # No components
 from nomarr.interfaces import ...    # No interfaces
 ```
+
+---
+
+## MCP Server Tools
+
+**Use the Nomarr MCP server to navigate this layer efficiently:**
+
+- `discover_api(module_name)` - See AQL operations before reading full files
+- `locate_symbol(symbol_name)` - Find where database operations are defined
+- `get_source(qualified_name)` - Get exact query method source with line numbers
+
+**Before modifying database operations, run `discover_api` to understand the interface.**
 
 ---
 
@@ -161,31 +174,11 @@ Before committing persistence code, verify:
 - [ ] Are `_id` and `_key` preserved as-is? **→ Required**
 - [ ] Is external code importing from `database/*` directly? **→ Access via `Database`**
 - [ ] Is health/liveness logic here instead of in services? **→ Move to service**
+- [ ] **Does `lint_backend(path="nomarr/persistence")` pass with zero errors?** **→ MANDATORY**
 
 ---
 
 ## Layer Scripts
 
-This skill includes validation scripts in `.github/skills/layer-persistence/scripts/`:
-
-### `lint.py`
-
-Runs all linters on the persistence layer:
-
-```powershell
-python .github/skills/layer-persistence/scripts/lint.py
-```
-
-Executes: ruff, mypy, vulture, bandit, radon, lint-imports
-
-### `check_naming.py`
-
-Validates persistence naming conventions:
-
-```powershell
-python .github/skills/layer-persistence/scripts/check_naming.py
-```
-
-Checks:
-- Database module files must end in `_aql.py`
-- Classes must end in `Operations` (e.g., `LibraryFilesOperations`)
+- `lint.py` - Runs ruff, mypy, vulture, bandit, radon, lint-imports
+- `check_naming.py` - Validates `_aql.py` suffix, `Operations` class suffix

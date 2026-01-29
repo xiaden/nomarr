@@ -219,11 +219,24 @@ source_modules = ["nomarr.helpers"]
 forbidden_modules = ["nomarr.services", "nomarr.workflows", "nomarr.interfaces", "nomarr.components", "nomarr.persistence"]
 
 [[tool.importlinter.contracts]]
-name = "Only components may import persistence"
+name = "Only components and services may import persistence"
 type = "forbidden"
-source_modules = ["nomarr.interfaces", "nomarr.services", "nomarr.workflows", "nomarr.helpers"]
+source_modules = ["nomarr.interfaces", "nomarr.workflows", "nomarr.helpers"]
 forbidden_modules = ["nomarr.persistence"]
 allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Services may only import Database for type hints"
+type = "forbidden"
+source_modules = ["nomarr.services"]
+forbidden_modules = [
+    "nomarr.persistence.database",
+    "nomarr.persistence.arango_client",
+]
+allow_indirect_imports = true
+# Note: import-linter cannot enforce TYPE_CHECKING-only imports.
+# Services should only import Database from nomarr.persistence.db for type annotations.
+# App.py (composition root) is the only place that should construct Database instances.
 
 [[tool.importlinter.contracts]]
 name = "CLI bootstrap service is only for CLI commands"

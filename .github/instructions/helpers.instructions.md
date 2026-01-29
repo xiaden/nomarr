@@ -73,6 +73,18 @@ This is a **hard rule**. Helpers are the foundation—they cannot depend on anyt
 
 ---
 
+## MCP Server Tools
+
+**Use the Nomarr MCP server to navigate this layer efficiently:**
+
+- `discover_api(module_name)` - See exported functions/classes before reading full files
+- `locate_symbol(symbol_name)` - Find where utilities are defined
+- `get_source(qualified_name)` - Get exact function/class source with line numbers
+
+**Before modifying any helper, run `discover_api` to understand its shape.**
+
+---
+
 ## No Config at Import Time
 
 Helpers must **never** read config files or environment variables at import time:
@@ -193,32 +205,11 @@ Before committing helper code, verify:
 - [ ] Does this construct or validate library paths? **→ Violation (use path_comp)**
 - [ ] Is this DTO used across layers? **→ Put in `helpers/dto/`**
 - [ ] Are functions pure (no hidden state)? **→ Preferred**
+- [ ] **Does `lint_backend(path="nomarr/helpers")` pass with zero errors?** **→ MANDATORY**
 
 ---
 
 ## Layer Scripts
 
-This skill includes validation scripts in `.github/skills/layer-helpers/scripts/`:
-
-### `lint.py`
-
-Runs all linters on the helpers layer:
-
-```powershell
-python .github/skills/layer-helpers/scripts/lint.py
-```
-
-Executes: ruff, mypy, vulture, bandit, radon, lint-imports
-
-### `check_naming.py`
-
-Validates helpers naming conventions:
-
-```powershell
-python .github/skills/layer-helpers/scripts/check_naming.py
-```
-
-Checks:
-- Files must end in `_helper.py` or `_dto.py` (exceptions: `exceptions.py`, `dataclasses.py`)
-- No stateful classes (classes with `__init__` storing state)
-- No `nomarr.*` imports (hard rule)
+- `lint.py` - Runs ruff, mypy, vulture, bandit, radon, lint-imports
+- `check_naming.py` - Validates `_helper.py`/`_dto.py` suffix, no stateful classes, no `nomarr.*` imports

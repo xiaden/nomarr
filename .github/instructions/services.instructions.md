@@ -10,8 +10,8 @@ applyTo: nomarr/services/**
 
 Services are:
 - **Dependency coordinators** (wire config, DB, ML backends, queues, workers)
-- **Thin orchestrators** (call workflows, aggregate results)
-- **DTO providers** (shape data for interfaces)
+- **Thin orchestrators** (call [workflows](./workflows.instructions.md), aggregate results)
+- **DTO providers** (shape data for interfaces using [helpers DTOs](./helpers.instructions.md))
 
 **No complex business logic lives here.** That belongs in workflows.
 
@@ -107,6 +107,19 @@ from nomarr.interfaces import ...     # Services don't know about HTTP/CLI
 from fastapi import HTTPException     # No HTTP semantics
 from pydantic import BaseModel        # No Pydantic models
 ```
+
+---
+
+## MCP Server Tools
+
+**Use the Nomarr MCP server to navigate this layer efficiently:**
+
+- `discover_api(module_name)` - See service methods before reading full files
+- `locate_symbol(symbol_name)` - Find where services are defined
+- `get_source(qualified_name)` - Get exact service method source with line numbers
+- `trace_calls(function)` - Follow call chains from service methods through workflows
+
+**Before modifying services, run `discover_api` to understand the public interface.**
 
 ---
 
@@ -224,38 +237,11 @@ Before committing service code, verify:
 - [ ] Does this method call components directly? **→ Should call workflow instead**
 - [ ] Are public methods returning DTOs for structured data? **→ Required**
 - [ ] Is the method name `<verb>_<noun>`? **→ Required pattern**
+- [ ] **Does `lint_backend(path="nomarr/services")` pass with zero errors?** **→ MANDATORY**
 
 ---
 
 ## Layer Scripts
 
-This skill includes validation scripts in `.github/skills/layer-services/scripts/`:
-
-### `lint.py`
-
-Runs all linters on the services layer:
-
-```powershell
-python .github/skills/layer-services/scripts/lint.py
-```
-
-Executes: ruff, mypy, vulture, bandit, radon, lint-imports
-
-### `check_naming.py`
-
-Validates services naming conventions:
-
-```powershell
-python .github/skills/layer-services/scripts/check_naming.py
-```
-
-Checks:
-- Standalone service files must end in `_svc.py`
-- Service **packages** (folders ending in `_svc/`) exempt their internal files from suffix rule
-- Infrastructure packages (e.g., `workers/`) are exempt from service naming rules
-- Classes must end in `Service`
-- Methods must follow `<verb>_<noun>` pattern
-
-**Package vs File:**
-- Simple service: `processing_svc.py` → `ProcessingService`
-- Complex service: `library_svc/` folder with `admin.py`, `scan.py`, `query.py` mixins
+- `lint.py` - Runs ruff, mypy, vulture, bandit, radon, lint-imports
+- `check_naming.py` - Validates `_svc.py` suffix (or `_svc/` packages), `Service` class suffix, `<verb>_<noun>` method pattern

@@ -10,11 +10,10 @@ This package provides a modular LibraryService composed from focused mixins:
 
 from __future__ import annotations
 
-from nomarr.components.infrastructure.health_comp import HealthComp
-from nomarr.components.library.get_library_comp import GetLibraryComp
-from nomarr.components.library.get_library_counts_comp import GetLibraryCountsComp
-from nomarr.components.library.list_libraries_comp import ListLibrariesComp
-from nomarr.components.library.update_library_metadata_comp import UpdateLibraryMetadataComp
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from nomarr.persistence.db import Database
 
 from .admin import LibraryAdminMixin
 from .config import LibraryServiceConfig
@@ -57,34 +56,17 @@ class LibraryService(LibraryAdminMixin, LibraryScanMixin, LibraryQueryMixin, Lib
         service.cleanup_orphaned_tags()
     """
 
-    def __init__(
-        self,
-        cfg: LibraryServiceConfig,
-        get_library: GetLibraryComp,
-        list_libraries: ListLibrariesComp,
-        get_library_counts: GetLibraryCountsComp,
-        update_library_metadata: UpdateLibraryMetadataComp,
-        health: HealthComp,
-        background_tasks: object | None = None,
-    ) -> None:
+    def __init__(self, cfg: LibraryServiceConfig, db: Database, background_tasks: object | None = None) -> None:
         """
         Initialize LibraryService.
 
         Args:
             cfg: Service configuration (namespace, library_root)
-            get_library: Component for fetching library records
-            list_libraries: Component for listing libraries
-            get_library_counts: Component for file/folder counts
-            update_library_metadata: Component for updating library metadata
-            health: Component for health monitoring
+            db: Database instance
             background_tasks: BackgroundTaskService for async scan operations
         """
         self.cfg = cfg
-        self.get_library = get_library
-        self.list_libraries = list_libraries
-        self.get_library_counts = get_library_counts
-        self.update_library_metadata = update_library_metadata
-        self.health = health
+        self.db = db
         self.background_tasks = background_tasks
 
 

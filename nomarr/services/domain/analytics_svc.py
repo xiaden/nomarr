@@ -56,7 +56,7 @@ class AnalyticsService:
         Initialize analytics service.
 
         Args:
-            db: Database instance for accessing persistence layer
+            db: Database instance
             cfg: Analytics configuration
         """
         self._db = db
@@ -166,9 +166,7 @@ class AnalyticsService:
 
         return [
             MoodDistributionItem(
-                mood=mood,
-                count=count,
-                percentage=round((count / total_moods * 100), 2) if total_moods > 0 else 0,
+                mood=mood, count=count, percentage=round((count / total_moods * 100), 2) if total_moods > 0 else 0
             )
             for mood, count in top_moods
         ]
@@ -184,9 +182,7 @@ class AnalyticsService:
         return MoodDistributionResult(mood_distribution=mood_distribution)
 
     def get_tag_co_occurrence(
-        self,
-        x_tags: list[tuple[str, str]],
-        y_tags: list[tuple[str, str]],
+        self, x_tags: list[tuple[str, str]], y_tags: list[tuple[str, str]]
     ) -> TagCoOccurrenceData:
         """
         Get co-occurrence matrix for two sets of tag specifications.
@@ -208,9 +204,5 @@ class AnalyticsService:
         all_specs = x_tags + y_tags
         tag_data = self._db.tags.get_file_ids_for_tags(tag_specs=all_specs)
 
-        params = ComputeTagCoOccurrenceParams(
-            x_tags=x_tag_specs,
-            y_tags=y_tag_specs,
-            tag_data=tag_data,
-        )
+        params = ComputeTagCoOccurrenceParams(x_tags=x_tag_specs, y_tags=y_tag_specs, tag_data=tag_data)
         return cast(TagCoOccurrenceData, compute_tag_co_occurrence(params=params))

@@ -10,8 +10,8 @@ applyTo: nomarr/workflows/**
 
 Workflows contain the **story** of how Nomarr performs operations. They are recipes that:
 1. Accept dependencies as parameters (DB, config, ML backends)
-2. Orchestrate components to perform work
-3. Return DTOs
+2. Orchestrate [components](./components.instructions.md) to perform work
+3. Return [DTOs](./helpers.instructions.md)
 
 ---
 
@@ -33,6 +33,19 @@ from nomarr.services import ProcessingService  # Workflows don't call services
 from nomarr.interfaces import ...              # No interface imports
 from pydantic import BaseModel                 # No Pydantic
 ```
+
+---
+
+## MCP Server Tools
+
+**Use the Nomarr MCP server to navigate this layer efficiently:**
+
+- `discover_api(module_name)` - See workflow signatures before reading full files
+- `locate_symbol(symbol_name)` - Find where workflows are defined
+- `get_source(qualified_name)` - Get exact workflow source with line numbers
+- `trace_calls(function)` - Follow call chains from workflows to components
+
+**Before modifying workflows, run `discover_api` to understand dependencies and return types.**
 
 ---
 
@@ -145,32 +158,11 @@ Before committing workflow code, verify:
 - [ ] Does the function return a DTO? **→ Required**
 - [ ] Is there one public workflow per file? **→ Required**
 - [ ] Does the file name end in `_wf.py`? **→ Convention**
+- [ ] **Does `lint_backend(path="nomarr/workflows")` pass with zero errors?** **→ MANDATORY**
 
 ---
 
 ## Layer Scripts
 
-This skill includes validation scripts in `.github/skills/layer-workflows/scripts/`:
-
-### `lint.py`
-
-Runs all linters on the workflows layer:
-
-```powershell
-python .github/skills/layer-workflows/scripts/lint.py
-```
-
-Executes: ruff, mypy, vulture, bandit, radon, lint-imports
-
-### `check_naming.py`
-
-Validates workflows naming conventions:
-
-```powershell
-python .github/skills/layer-workflows/scripts/check_naming.py
-```
-
-Checks:
-- Files must end in `_wf.py`
-- Each file must have exactly one `*_workflow` function
-- Internal helpers must be `_private`
+- `lint.py` - Runs ruff, mypy, vulture, bandit, radon, lint-imports
+- `check_naming.py` - Validates `_wf.py` suffix, one `*_workflow` function per file, `_private` helpers

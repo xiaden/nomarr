@@ -107,24 +107,5 @@ Adding endpoints:
 
 ## Layer Scripts
 
-This skill includes validation scripts in `.github/skills/layer-frontend/scripts/`:
-
-### `lint.py`
-
-Runs ESLint and TypeScript type checking:
-
-```powershell
-python .github/skills/layer-frontend/scripts/lint.py
-```
-
-Runs `npm run lint` from the frontend directory.
-
-### `build.py`
-
-Runs the full build (typecheck + Vite):
-
-```powershell
-python .github/skills/layer-frontend/scripts/build.py
-```
-
-Runs `npm run build` from the frontend directory.
+- `lint.py` - ESLint and TypeScript type checking
+- `build.py` - Full build (typecheck + Vite)

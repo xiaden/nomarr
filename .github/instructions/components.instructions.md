@@ -13,6 +13,8 @@ Components are the **workhorses** that do the real computational work:
 - Tag aggregation and resolution
 - Statistical analysis
 - Complex data transformations
+- Return [DTOs](./helpers.instructions.md)
+- May call [persistence](./persistence.instructions.md) and [helper utilities](./helpers.instructions.md)
 
 **Rule:** Heavy business logic lives here. Wiring lives in services. Control flow lives in workflows.
 
@@ -57,6 +59,19 @@ from pydantic import BaseModel       # No Pydantic
 # ❌ ESSENTIA ONLY IN backend_essentia.py
 import essentia_tensorflow  # Only in ml_backend_essentia_comp.py
 ```
+
+---
+
+## MCP Server Tools
+
+**Use the Nomarr MCP server to navigate this layer efficiently:**
+
+- `discover_api(module_name)` - See exported functions/classes before reading full files
+- `locate_symbol(symbol_name)` - Find where components are defined
+- `get_source(qualified_name)` - Get exact function/class source with line numbers
+- `trace_calls(function)` - Follow call chains from components
+
+**Before modifying any component, run `discover_api` to understand its shape.**
 
 ---
 
@@ -188,6 +203,7 @@ Before committing component code, verify:
 - [ ] Is this doing orchestration instead of computation? **→ Should be a workflow**
 - [ ] Are heavy functions split into `_private` helpers? **→ Recommended**
 - [ ] Does the module name end in `_comp.py`? **→ Convention**
+- [ ] **Does `lint_backend(path="nomarr/components")` pass with zero errors?** **→ MANDATORY**
 
 ---
 

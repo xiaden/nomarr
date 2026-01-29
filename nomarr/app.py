@@ -48,9 +48,7 @@ def validate_environment() -> None:
     Note: ARANGO_ROOT_PASSWORD is only needed on first run (provisioning).
     After first run, credentials are read from config file.
     """
-    required_vars = [
-        "ARANGO_HOST",
-    ]
+    required_vars = ["ARANGO_HOST"]
 
     missing = [var for var in required_vars if not os.getenv(var)]
 
@@ -249,10 +247,7 @@ class Application:
 
         # Write password to config
         # Note: Host comes from ARANGO_HOST env var, not written to config
-        write_db_config(
-            config_path=config_path,
-            password=app_password,
-        )
+        write_db_config(config_path=config_path, password=app_password)
 
         logging.info("Database provisioned successfully")
 
@@ -267,10 +262,7 @@ class Application:
             while self._running:
                 try:
                     # Periodic heartbeat update (status="healthy" by default)
-                    heartbeat_db.health.update_heartbeat(
-                        component_id="app",
-                        status="healthy",
-                    )
+                    heartbeat_db.health.update_heartbeat(component_id="app", status="healthy")
                 except Exception as e:
                     logging.error(f"[Application] Heartbeat error: {e}")
                 time.sleep(5)
@@ -328,10 +320,7 @@ class Application:
         # Register ML service
         from nomarr.services.infrastructure.ml_svc import MLConfig, MLService
 
-        ml_cfg = MLConfig(
-            models_dir=str(self.models_dir),
-            cache_idle_timeout=self.cache_idle_timeout,
-        )
+        ml_cfg = MLConfig(models_dir=str(self.models_dir), cache_idle_timeout=self.cache_idle_timeout)
         ml_service = MLService(cfg=ml_cfg)
         self.register_service("ml", ml_service)
 
@@ -356,10 +345,7 @@ class Application:
         logging.info("[Application] Initializing CalibrationService...")
         from nomarr.services.domain.calibration_svc import CalibrationConfig
 
-        calibration_cfg = CalibrationConfig(
-            models_dir=str(self.models_dir),
-            namespace=self.namespace,
-        )
+        calibration_cfg = CalibrationConfig(models_dir=str(self.models_dir), namespace=self.namespace)
         calibration_service = CalibrationService(db=self.db, cfg=calibration_cfg)
         self.register_service("calibration", calibration_service)
 
@@ -404,33 +390,10 @@ class Application:
         if self.library_root:
             logging.info(f"[Application] Registering LibraryService with namespace={self.namespace}")
             library_cfg = LibraryServiceConfig(
-                namespace=self.namespace,
-                tagger_version=self.tagger_version,
-                library_root=self.library_root,
+                namespace=self.namespace, tagger_version=self.tagger_version, library_root=self.library_root
             )
-            
-            # Create library components
-            from nomarr.components.library.get_library_comp import GetLibraryComp
-            from nomarr.components.library.list_libraries_comp import ListLibrariesComp
-            from nomarr.components.library.get_library_counts_comp import GetLibraryCountsComp
-            from nomarr.components.library.update_library_metadata_comp import UpdateLibraryMetadataComp
-            from nomarr.components.infrastructure.health_comp import HealthComp
-            
-            get_library = GetLibraryComp(self.db)
-            list_libraries = ListLibrariesComp(self.db)
-            get_library_counts = GetLibraryCountsComp(self.db)
-            update_library_metadata = UpdateLibraryMetadataComp(self.db)
-            health = HealthComp(self.db)
-            
-            library_service = LibraryService(
-                cfg=library_cfg,
-                get_library=get_library,
-                list_libraries=list_libraries,
-                get_library_counts=get_library_counts,
-                update_library_metadata=update_library_metadata,
-                health=health,
-                background_tasks=background_tasks,
-            )
+
+            library_service = LibraryService(cfg=library_cfg, db=self.db, background_tasks=background_tasks)
             self.register_service("library", library_service)
 
             # Initialize FileWatcherService for automatic incremental scanning
@@ -461,13 +424,7 @@ class Application:
         self.register_service("metadata", metadata_service)
 
         # Register tagging service
-        self.register_service(
-            "tagging",
-            TaggingService(
-                database=self.db,
-                library_service=self.services.get("library"),
-            ),
-        )
+        self.register_service("tagging", TaggingService(database=self.db, library_service=self.services.get("library")))
 
         # Initialize discovery-based WorkerSystemService
         # Per DISCOVERY_WORKER_REFACTOR.md, workers:

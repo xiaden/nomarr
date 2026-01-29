@@ -10,7 +10,7 @@ applyTo: nomarr/interfaces/**
 
 Interfaces are **thin adapters**. They do three things:
 1. Validate inputs
-2. Call **one** service method
+2. Call **one** service method (see [services.instructions.md](./services.instructions.md))
 3. Serialize outputs
 
 **No business logic lives here.**
@@ -34,6 +34,19 @@ from nomarr.workflows import ...      # Call services, not workflows
 from nomarr.components import ...     # Call services, not components
 from nomarr.persistence import ...    # No direct DB access
 ```
+
+---
+
+## MCP Server Tools
+
+**Use the Nomarr MCP server to navigate this layer efficiently:**
+
+- `trace_endpoint(endpoint)` - Trace FastAPI routes through DI to service methods
+- `check_api_coverage()` - See which backend endpoints are used by frontend
+- `discover_api(module_name)` - See service interfaces before calling them
+- `locate_symbol(symbol_name)` - Find route definitions
+
+**Before adding routes, use `trace_endpoint` and `check_api_coverage` to understand existing patterns.**
 
 ---
 
@@ -133,31 +146,11 @@ Before committing interface code, verify:
 - [ ] Is the DTO-to-Pydantic conversion explicit? **→ Use `.from_dto()`**
 - [ ] Does this route have authentication? **→ Add `verify_session` (web) or `verify_key` (v1)**
 - [ ] Is the frontend calling `/api/v1/*`? **→ Create web API route instead**
+- [ ] **Does `lint_backend(path="nomarr/interfaces")` pass with zero errors?** **→ MANDATORY**
 
 ---
 
 ## Layer Scripts
 
-This skill includes validation scripts in `.github/skills/layer-interfaces/scripts/`:
-
-### `lint.py`
-
-Runs all linters on the interfaces layer:
-
-```powershell
-python .github/skills/layer-interfaces/scripts/lint.py
-```
-
-Executes: ruff, mypy, vulture, bandit, radon, lint-imports
-
-### `check_naming.py`
-
-Validates interfaces naming conventions:
-
-```powershell
-python .github/skills/layer-interfaces/scripts/check_naming.py
-```
-
-Checks:
-- Files must end in `_if.py`
-- Route handlers should be thin (validate, call service, serialize)
+- `lint.py` - Runs ruff, mypy, vulture, bandit, radon, lint-imports
+- `check_naming.py` - Validates `_if.py` suffix, thin route handlers

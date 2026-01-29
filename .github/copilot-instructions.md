@@ -1,6 +1,6 @@
 # Copilot Instructions for Nomarr
 
-These are the **always-on** hard rules. Layer-specific guidance lives in `.github/skills/`.
+These are the **always-on** hard rules. Layer-specific guidance auto-applies based on file paths.
 
 ---
 
@@ -8,27 +8,30 @@ These are the **always-on** hard rules. Layer-specific guidance lives in `.githu
 
 **These requirements are NOT optional. Skipping them creates architectural debt and bugs.**
 
-### 1. Read Layer Skills BEFORE Editing
+### 1. Layer-Specific Instructions (Auto-Applied)
 
-**You MUST read the relevant skill file BEFORE editing any code in that layer.**
+**Layer-specific instructions automatically apply when editing files in their target directories.**
 
-Do not skip this step to save time. Skills contain:
+Instructions are stored in `.github/instructions/` and use the `applyTo` frontmatter property to auto-apply:
+
+| Path Pattern | Instruction File | Auto-Applies To |
+|--------------|------------------|-----------------|
+| `nomarr/interfaces/` | `interfaces.instructions.md` | `nomarr/interfaces/**` |
+| `nomarr/services/` | `services.instructions.md` | `nomarr/services/**` |
+| `nomarr/workflows/` | `workflows.instructions.md` | `nomarr/workflows/**` |
+| `nomarr/components/` | `components.instructions.md` | `nomarr/components/**` |
+| `nomarr/persistence/` | `persistence.instructions.md` | `nomarr/persistence/**` |
+| `nomarr/helpers/` | `helpers.instructions.md` | `nomarr/helpers/**` |
+| `frontend/` | `frontend.instructions.md` | `frontend/**` |
+
+These instructions contain:
 - Layer-specific conventions and patterns
-- Required validation steps
+- Required validation steps (including mandatory `lint_backend`)
 - Common mistakes to avoid
 - File naming and structure rules
+- MCP server tools relevant to the layer
 
-| Path Pattern | Skill to Read |
-|--------------|---------------|
-| `nomarr/interfaces/` | `.github/skills/layer-interfaces/SKILL.md` |
-| `nomarr/services/` | `.github/skills/layer-services/SKILL.md` |
-| `nomarr/workflows/` | `.github/skills/layer-workflows/SKILL.md` |
-| `nomarr/components/` | `.github/skills/layer-components/SKILL.md` |
-| `nomarr/persistence/` | `.github/skills/layer-persistence/SKILL.md` |
-| `nomarr/helpers/` | `.github/skills/layer-helpers/SKILL.md` |
-| `frontend/` | `.github/skills/layer-frontend/SKILL.md` |
-
-The skill guidance is **authoritative** for naming, boundaries, and allowed imports. Do not proceed without consulting it.
+**You do not need to manually read these files** - they are automatically included in context when working in their target directories.
 
 ### 2. Use MCP `discover_api` Before Editing Modules
 
@@ -45,22 +48,27 @@ mcp_nomarrdev_discover_api("nomarr.services.infrastructure.file_watcher_svc")
 
 ### 3. Run Layer Validation Scripts
 
-**You MUST NOT skip validation steps required by the skill.**
+**You MUST verify code quality before committing.**
 
-After making changes, run the layer's naming checker:
+All Python layers require `lint_backend` to pass with zero errors:
 
-```powershell
-# Services layer
-python .github/skills/layer-services/scripts/check_naming.py
-
-# Persistence layer
-python .github/skills/layer-persistence/scripts/check_naming.py
-
-# Interfaces layer
-python .github/skills/layer-interfaces/scripts/check_naming.py
+```python
+# Via MCP tool (preferred)
+lint_backend(path="nomarr/interfaces")
+lint_backend(path="nomarr/services")
+lint_backend(path="nomarr/workflows")
+lint_backend(path="nomarr/components")
+lint_backend(path="nomarr/persistence")
+lint_backend(path="nomarr/helpers")
 ```
 
-If the skill specifies additional checks (lint, mypy, build), run them before committing.
+Each layer also has naming convention checkers in `.github/skills/layer-*/scripts/check_naming.py`.
+
+**Frontend validation:**
+
+```powershell
+Push-Location frontend; npm run lint; npm run build; Pop-Location
+```
 
 ---
 
@@ -201,19 +209,45 @@ python scripts/detect_slop.py nomarr/workflows/some_wf.py
 
 ---
 
-## Layer-Specific Skills Reference
+## Available Instructions Files
 
-Skills contain mandatory conventions, patterns, and verification steps:
+Instructions auto-apply when editing matching files, but you can reference or manually attach them during discussion.
 
-| Skill | Purpose |
-|-------|---------|
-| `layer-interfaces/` | API routes, CLI commands |
-| `layer-services/` | DI wiring, orchestration, worker processes |
-| `layer-workflows/` | Use case implementation |
-| `layer-components/` | Heavy domain logic |
-| `layer-persistence/` | Database access |
-| `layer-helpers/` | Pure utilities, DTOs |
-| `layer-frontend/` | React + TypeScript UI |
+### Layer-Specific Instructions
+
+| File | Auto-Applies To | Purpose |
+|------|-----------------|---------|
+| [interfaces.instructions.md](instructions/interfaces.instructions.md) | `nomarr/interfaces/**` | API routes, CLI commands, authentication |
+| [services.instructions.md](instructions/services.instructions.md) | `nomarr/services/**` | DI wiring, orchestration, worker processes |
+| [workflows.instructions.md](instructions/workflows.instructions.md) | `nomarr/workflows/**` | Use case implementation |
+| [components.instructions.md](instructions/components.instructions.md) | `nomarr/components/**` | Heavy domain logic, computation |
+| [persistence.instructions.md](instructions/persistence.instructions.md) | `nomarr/persistence/**` | Database access, AQL queries |
+| [helpers.instructions.md](instructions/helpers.instructions.md) | `nomarr/helpers/**` | Pure utilities, DTOs, exceptions |
+| [frontend.instructions.md](instructions/frontend.instructions.md) | `frontend/**` | React + TypeScript UI |
+
+### MCP Server Instructions
+
+| File | Auto-Applies To | Purpose |
+|------|-----------------|---------|
+| [mcp-basics.instructions.md](instructions/mcp-basics.instructions.md) | `scripts/mcp/**` | MCP server fundamentals and setup |
+| [mcp-tools.instructions.md](instructions/mcp-tools.instructions.md) | `scripts/mcp/tools/**` | MCP tool implementation patterns |
+| [mcp-resources.instructions.md](instructions/mcp-resources.instructions.md) | `scripts/mcp/resources/**` | MCP resource implementation patterns |
+| [mcp-prompts.instructions.md](instructions/mcp-prompts.instructions.md) | `scripts/mcp/prompts/**` | MCP prompt implementation patterns |
+| [mcp-context.instructions.md](instructions/mcp-context.instructions.md) | `scripts/mcp/context/**` | MCP context provider patterns |
+
+### Meta Instructions
+
+| File | Auto-Applies To | Purpose |
+|------|-----------------|---------|
+| [instructions.instructions.md](instructions/instructions.instructions.md) | `.github/instructions/**/*.instructions.md` | Guidelines for creating instruction files |
+
+**Each layer instruction includes:**
+- Allowed/forbidden imports
+- MCP server tools for that layer
+- Naming conventions
+- Validation checklist with mandatory `lint_backend` requirement
+
+**During discussion:** Reference these files when planning changes. Suggest manual attachment if deeper context needed.
 
 ---
 
