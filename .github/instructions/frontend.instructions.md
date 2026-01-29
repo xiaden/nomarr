@@ -1,6 +1,7 @@
 ---
-name: layer-frontend
-description: Use when creating or modifying code in frontend/. Covers React components, hooks, API clients, and TypeScript code. All frontend changes require lint, typecheck, and build verification before completion.
+name: Frontend Layer
+description: Auto-applied when working with frontend/ - React + TypeScript UI
+applyTo: frontend/**
 ---
 
 # Frontend Layer

@@ -1,6 +1,7 @@
 ---
-name: layer-workflows
-description: Use when creating or modifying code in nomarr/workflows/. Workflows implement use cases, accept dependencies as parameters, orchestrate components, and return DTOs.
+name: Workflows Layer
+description: Auto-applied when working with nomarr/workflows/ - Use case implementation
+applyTo: nomarr/workflows/**
 ---
 
 # Workflows Layer

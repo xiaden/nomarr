@@ -1,6 +1,7 @@
 ---
-name: layer-persistence
-description: Use when creating or modifying code in nomarr/persistence/. Persistence handles database and queue access. Never stores business logic.
+name: Persistence Layer
+description: Auto-applied when working with nomarr/persistence/ - Database access
+applyTo: nomarr/persistence/**
 ---
 
 # Persistence Layer

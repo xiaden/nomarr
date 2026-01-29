@@ -8,35 +8,38 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-def get_library(db: Database, library_id: str) -> dict[str, Any] | None:
-    """
-    Get a library by ID.
+class GetLibraryComp:
+    """Component for fetching library records."""
 
-    Args:
-        db: Database instance
-        library_id: Library _id or _key
+    def __init__(self, db: Database) -> None:
+        self.db = db
 
-    Returns:
-        Library dict or None if not found
-    """
-    return db.libraries.get_library(library_id)
+    def get(self, library_id: str) -> dict[str, Any] | None:
+        """
+        Get a library by ID.
 
+        Args:
+            library_id: Library _id or _key
 
-def get_library_or_error(db: Database, library_id: str) -> dict[str, Any]:
-    """
-    Get a library by ID or raise an error.
+        Returns:
+            Library dict or None if not found
+        """
+        return self.db.libraries.get_library(library_id)
 
-    Args:
-        db: Database instance
-        library_id: Library _id or _key
+    def get_or_error(self, library_id: str) -> dict[str, Any]:
+        """
+        Get a library by ID or raise an error.
 
-    Returns:
-        Library dict
+        Args:
+            library_id: Library _id or _key
 
-    Raises:
-        ValueError: If library not found
-    """
-    library = db.libraries.get_library(library_id)
-    if not library:
-        raise ValueError(f"Library not found: {library_id}")
-    return library
+        Returns:
+            Library dict
+
+        Raises:
+            ValueError: If library not found
+        """
+        library = self.db.libraries.get_library(library_id)
+        if not library:
+            raise ValueError(f"Library not found: {library_id}")
+        return library

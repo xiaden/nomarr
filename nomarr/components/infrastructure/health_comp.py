@@ -8,25 +8,29 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-def get_all_workers(db: Database) -> list[dict[str, Any]]:
-    """
-    Get all registered workers from health monitoring.
+class HealthComp:
+    """Component for health monitoring operations."""
 
-    Returns:
-        List of worker health records
-    """
-    return db.health.get_all_workers()
+    def __init__(self, db: Database) -> None:
+        self.db = db
 
+    def get_all_workers(self) -> list[dict[str, Any]]:
+        """
+        Get all registered workers from health monitoring.
 
-def get_component_health(db: Database, component: str) -> dict[str, Any] | None:
-    """
-    Get health status for a specific component.
+        Returns:
+            List of worker health records
+        """
+        return self.db.health.get_all_workers()
 
-    Args:
-        db: Database instance
-        component: Component name (e.g., "worker:library:scan")
+    def get_component(self, component: str) -> dict[str, Any] | None:
+        """
+        Get health status for a specific component.
 
-    Returns:
-        Health record or None if not found
-    """
-    return db.health.get_component(component)
+        Args:
+            component: Component name (e.g., "worker:library:scan")
+
+        Returns:
+            Health record or None if not found
+        """
+        return self.db.health.get_component(component)

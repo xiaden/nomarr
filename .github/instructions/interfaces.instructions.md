@@ -1,6 +1,7 @@
 ---
-name: layer-interfaces
-description: Use when creating or modifying code in nomarr/interfaces/. Covers API routes, CLI commands, and web handlers. Interfaces are thin adapters that validate inputs, call services, and serialize outputs.
+name: Interfaces Layer
+description: Auto-applied when working with nomarr/interfaces/ - API routes, CLI commands, and web handlers
+applyTo: nomarr/interfaces/**
 ---
 
 # Interfaces Layer

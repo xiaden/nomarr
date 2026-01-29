@@ -1,6 +1,7 @@
 ---
-name: layer-components
-description: Use when creating or modifying code in nomarr/components/. Components contain heavy domain logic (ML, analytics, tagging). Only ml/backend_essentia.py may import Essentia.
+name: Components Layer
+description: Auto-applied when working with nomarr/components/ - Heavy domain logic
+applyTo: nomarr/components/**
 ---
 
 # Components Layer
@@ -192,26 +193,10 @@ Before committing component code, verify:
 
 ## Layer Scripts
 
-This skill includes validation scripts in `.github/skills/layer-components/scripts/`:
+Validation scripts in `.github/skills/layer-components/scripts/`:
 
 ### `lint.py`
-
-Runs all linters on the components layer:
-
-```powershell
-python .github/skills/layer-components/scripts/lint.py
-```
-
-Executes: ruff, mypy, vulture, bandit, radon, lint-imports
+Runs all linters on the components layer: ruff, mypy, vulture, bandit, radon, lint-imports
 
 ### `check_naming.py`
-
-Validates components naming conventions:
-
-```powershell
-python .github/skills/layer-components/scripts/check_naming.py
-```
-
-Checks:
-- Files must end in `_comp.py`
-- Essentia imports only allowed in `ml_backend_essentia_comp.py`
+Validates components naming conventions: Files must end in `_comp.py`, Essentia imports only allowed in `ml_backend_essentia_comp.py`

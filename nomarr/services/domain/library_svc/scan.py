@@ -14,7 +14,9 @@ from typing import TYPE_CHECKING, Any
 from nomarr.helpers.dto.library_dto import LibraryScanStatusResult, ScanTarget, StartScanResult
 
 if TYPE_CHECKING:
-    from nomarr.persistence.db import Database
+    from nomarr.components.infrastructure.health_comp import HealthComp
+    from nomarr.components.library.get_library_comp import GetLibraryComp
+    from nomarr.components.library.list_libraries_comp import ListLibrariesComp
 
     from .config import LibraryServiceConfig
 
@@ -22,15 +24,16 @@ if TYPE_CHECKING:
 class LibraryScanMixin:
     """Mixin providing library scanning methods."""
 
-    db: Database
+    # Component dependencies
+    get_library: GetLibraryComp
+    list_libraries: ListLibrariesComp
+    health: HealthComp
     cfg: LibraryServiceConfig
     background_tasks: Any | None
 
     def _get_library_or_error(self, library_id: str) -> dict[str, Any]:
         """Get a library by ID or raise an error."""
-        from nomarr.components.library.get_library_comp import get_library_or_error
-
-        return get_library_or_error(self.db, library_id)
+        return self.get_library.get_or_error(library_id)
 
     def _has_healthy_library_workers(self) -> bool:
         """
@@ -39,9 +42,7 @@ class LibraryScanMixin:
         Returns:
             True if at least one library worker has a recent heartbeat
         """
-        from nomarr.components.infrastructure.health_comp import get_all_workers, get_component_health
-
-        workers = get_all_workers(self.db)
+        workers = self.health.get_all_workers()
 
         for worker in workers:
             component = worker.get("component")
@@ -51,7 +52,7 @@ class LibraryScanMixin:
             # Check if worker is healthy (heartbeat within 30 seconds)
             from nomarr.helpers.time_helper import now_ms
 
-            health = get_component_health(self.db, component)
+            health = self.health.get_component(component)
             if health and health.get("status") == "healthy":
                 last_heartbeat = health.get("last_heartbeat", 0)
                 if now_ms().value - last_heartbeat < 30_000:  # 30 seconds
@@ -68,16 +69,11 @@ class LibraryScanMixin:
         Returns:
             True if any library has scan_status='scanning'
         """
-        from nomarr.components.library.list_libraries_comp import list_libraries
-
-        libraries = list_libraries(self.db, enabled_only=False)
+        libraries = self.list_libraries.list(enabled_only=False)
         return any(lib.get("scan_status") == "scanning" for lib in libraries)
 
     def scan_targets(
-        self,
-        targets: list[ScanTarget],
-        batch_size: int = 200,
-        force_rescan: bool = False,
+        self, targets: list[ScanTarget], batch_size: int = 200, force_rescan: bool = False
     ) -> StartScanResult:
         """
         Scan specific folders within libraries.
@@ -131,11 +127,7 @@ class LibraryScanMixin:
             force_rescan=force_rescan,
         )
 
-    def start_scan_for_library(
-        self,
-        library_id: str,
-        force_rescan: bool = False,
-    ) -> StartScanResult:
+    def start_scan_for_library(self, library_id: str, force_rescan: bool = False) -> StartScanResult:
         """
         Start a full library scan for a specific library.
 
@@ -162,10 +154,7 @@ class LibraryScanMixin:
         target = ScanTarget(library_id=library_id, folder_path="")
         return self.scan_targets([target], force_rescan=force_rescan)
 
-    def start_scan(
-        self,
-        library_id: str,
-    ) -> StartScanResult:
+    def start_scan(self, library_id: str) -> StartScanResult:
         """
         Start a library scan.
 
@@ -287,9 +276,7 @@ class LibraryScanMixin:
         Returns:
             List of scan info dicts with library_id, name, scanned_at, scan_status
         """
-        from nomarr.components.library.list_libraries_comp import list_libraries
-
-        libraries = list_libraries(self.db, enabled_only=False)
+        libraries = self.list_libraries.list(enabled_only=False)
         return [
             {
                 "library_id": lib["_id"],

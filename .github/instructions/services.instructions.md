@@ -1,6 +1,7 @@
 ---
-name: layer-services
-description: Use when creating or modifying code in nomarr/services/. Services own runtime wiring, long-lived resources (DB, queues, workers), and call workflows. No complex business logic here.
+name: Services Layer
+description: Auto-applied when working with nomarr/services/ - DI wiring, orchestration, worker processes
+applyTo: nomarr/services/**
 ---
 
 # Services Layer

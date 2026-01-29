@@ -408,9 +408,27 @@ class Application:
                 tagger_version=self.tagger_version,
                 library_root=self.library_root,
             )
+            
+            # Create library components
+            from nomarr.components.library.get_library_comp import GetLibraryComp
+            from nomarr.components.library.list_libraries_comp import ListLibrariesComp
+            from nomarr.components.library.get_library_counts_comp import GetLibraryCountsComp
+            from nomarr.components.library.update_library_metadata_comp import UpdateLibraryMetadataComp
+            from nomarr.components.infrastructure.health_comp import HealthComp
+            
+            get_library = GetLibraryComp(self.db)
+            list_libraries = ListLibrariesComp(self.db)
+            get_library_counts = GetLibraryCountsComp(self.db)
+            update_library_metadata = UpdateLibraryMetadataComp(self.db)
+            health = HealthComp(self.db)
+            
             library_service = LibraryService(
-                db=self.db,
                 cfg=library_cfg,
+                get_library=get_library,
+                list_libraries=list_libraries,
+                get_library_counts=get_library_counts,
+                update_library_metadata=update_library_metadata,
+                health=health,
                 background_tasks=background_tasks,
             )
             self.register_service("library", library_service)

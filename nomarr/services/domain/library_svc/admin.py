@@ -13,7 +13,10 @@ from typing import TYPE_CHECKING, Any
 from nomarr.helpers.dto.library_dto import LibraryDict
 
 if TYPE_CHECKING:
-    from nomarr.persistence.db import Database
+    from nomarr.components.library.get_library_comp import GetLibraryComp
+    from nomarr.components.library.get_library_counts_comp import GetLibraryCountsComp
+    from nomarr.components.library.list_libraries_comp import ListLibrariesComp
+    from nomarr.components.library.update_library_metadata_comp import UpdateLibraryMetadataComp
 
     from .config import LibraryServiceConfig
 
@@ -21,7 +24,11 @@ if TYPE_CHECKING:
 class LibraryAdminMixin:
     """Mixin providing library administration methods."""
 
-    db: Database
+    # Component dependencies
+    get_library: GetLibraryComp
+    list_libraries: ListLibrariesComp
+    get_library_counts: GetLibraryCountsComp
+    update_library_metadata: UpdateLibraryMetadataComp
     cfg: LibraryServiceConfig
 
     def _get_library_or_error(self, library_id: str) -> dict[str, Any]:
@@ -41,9 +48,7 @@ class LibraryAdminMixin:
         Raises:
             ValueError: If library does not exist
         """
-        from nomarr.components.library.get_library_comp import get_library_or_error
-
-        return get_library_or_error(self.db, library_id)
+        return self.get_library.get_or_error(library_id)
 
     def is_library_root_configured(self) -> bool:
         """
@@ -64,13 +69,10 @@ class LibraryAdminMixin:
         Returns:
             List of LibraryDict DTOs with file/folder counts
         """
-        from nomarr.components.library.list_libraries_comp import list_libraries
-        from nomarr.components.library.get_library_counts_comp import get_library_counts
-
-        libraries = list_libraries(self.db, enabled_only=enabled_only)
+        libraries = self.list_libraries.list(enabled_only=enabled_only)
 
         # Get file/folder counts for all libraries
-        counts = get_library_counts(self.db)
+        counts = self.get_library_counts.get()
 
         result = []
         for lib in libraries:
@@ -96,17 +98,11 @@ class LibraryAdminMixin:
         Raises:
             ValueError: If library not found
         """
-        from nomarr.components.library.get_library_comp import get_library_or_error
-
-        library = get_library_or_error(self.db, library_id)
+        library = self.get_library.get_or_error(library_id)
         return LibraryDict(**library)
 
     def create_library(
-        self,
-        name: str | None,
-        root_path: str,
-        is_enabled: bool = True,
-        watch_mode: str = "off",
+        self, name: str | None, root_path: str, is_enabled: bool = True, watch_mode: str = "off"
     ) -> LibraryDict:
         """Create a new library."""
         from nomarr.components.library.library_admin_comp import create_library
@@ -120,9 +116,7 @@ class LibraryAdminMixin:
             watch_mode=watch_mode,
         )
 
-        from nomarr.components.library.get_library_comp import get_library_or_error
-
-        library = get_library_or_error(self.db, library_id)
+        library = self.get_library.get_or_error(library_id)
         return LibraryDict(**library)
 
     def update_library_root(self, library_id: str, root_path: str) -> LibraryDict:
@@ -130,10 +124,7 @@ class LibraryAdminMixin:
         from nomarr.components.library.library_admin_comp import update_library_root
 
         update_library_root(
-            db=self.db,
-            base_library_root=self.cfg.library_root,
-            library_id=library_id,
-            root_path=root_path,
+            db=self.db, base_library_root=self.cfg.library_root, library_id=library_id, root_path=root_path
         )
 
         from nomarr.components.library.get_library_comp import get_library_or_error
@@ -181,12 +172,17 @@ class LibraryAdminMixin:
         file_write_mode: str | None = None,
     ) -> LibraryDict:
         """Update library metadata (name, enabled, watch_mode, file_write_mode)."""
-        from nomarr.components.library.update_library_metadata_comp import update_library_metadata
         from nomarr.components.library.get_library_comp import get_library_or_error
+        from nomarr.components.library.update_library_metadata_comp import update_library_metadata
 
         self._get_library_or_error(library_id)
         update_library_metadata(
-            self.db, library_id, name=name, is_enabled=is_enabled, watch_mode=watch_mode, file_write_mode=file_write_mode
+            self.db,
+            library_id,
+            name=name,
+            is_enabled=is_enabled,
+            watch_mode=watch_mode,
+            file_write_mode=file_write_mode,
         )
 
         updated = get_library_or_error(self.db, library_id)

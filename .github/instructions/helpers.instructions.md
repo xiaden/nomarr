@@ -1,6 +1,7 @@
 ---
-name: layer-helpers
-description: Use when creating or modifying code in nomarr/helpers/. Helpers are pure utilities with NO nomarr.* imports. Only stdlib and third-party libraries allowed.
+name: Helpers Layer
+description: Auto-applied when working with nomarr/helpers/ - Pure utilities, DTOs
+applyTo: nomarr/helpers/**
 ---
 
 # Helpers Layer
