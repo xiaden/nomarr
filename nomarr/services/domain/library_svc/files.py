@@ -8,13 +8,14 @@ This module handles:
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING
 
-from nomarr.components.library.reconcile_paths_comp import ReconcileResult
 from nomarr.helpers.dto.library_dto import FileTagsResult, TagCleanupResult
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
+    from nomarr.components.library.reconcile_paths_comp import ReconcileResult
     from nomarr.persistence.db import Database
 
     from .config import LibraryServiceConfig
@@ -27,14 +28,14 @@ class LibraryFilesMixin:
     cfg: LibraryServiceConfig
 
     def cleanup_orphaned_tags(self, dry_run: bool = False) -> TagCleanupResult:
-        """
-        Clean up orphaned tags from the database.
+        """Clean up orphaned tags from the database.
 
         Args:
             dry_run: If True, count orphaned tags but don't delete them
 
         Returns:
             TagCleanupResult DTO with orphaned_count and deleted_count
+
         """
         from nomarr.workflows.library.cleanup_orphaned_tags_wf import cleanup_orphaned_tags_workflow
 
@@ -45,8 +46,7 @@ class LibraryFilesMixin:
         )
 
     def get_file_tags(self, file_id: str, nomarr_only: bool = False) -> FileTagsResult:
-        """
-        Get all tags for a specific file.
+        """Get all tags for a specific file.
 
         Args:
             file_id: Library file ID
@@ -57,6 +57,7 @@ class LibraryFilesMixin:
 
         Raises:
             ValueError: If file not found
+
         """
         from nomarr.components.library.file_tags_comp import get_file_tags_with_path
         from nomarr.helpers.dto.library_dto import FileTag
@@ -64,7 +65,8 @@ class LibraryFilesMixin:
         # Get file and tags from component
         result = get_file_tags_with_path(self.db, file_id, nomarr_only=nomarr_only)
         if not result:
-            raise ValueError(f"File with ID {file_id} not found")
+            msg = f"File with ID {file_id} not found"
+            raise ValueError(msg)
 
         # Convert to FileTag DTOs
         tags = [
@@ -88,8 +90,7 @@ class LibraryFilesMixin:
         policy: str = "mark_invalid",
         batch_size: int = 1000,
     ) -> ReconcileResult:
-        """
-        Re-validate all library paths against current configuration.
+        """Re-validate all library paths against current configuration.
 
         This checks all files in library_files table to detect paths that have
         become invalid due to config changes (library root moves, deletions, etc.).
@@ -122,6 +123,7 @@ class LibraryFilesMixin:
                 batch_size=500
             )
             print(f"Cleaned up {result['deleted_files']} invalid files")
+
         """
         from nomarr.workflows.library.reconcile_paths_wf import reconcile_library_paths_workflow
 
@@ -140,8 +142,7 @@ class LibraryFilesMixin:
         must_exist: bool = True,
         must_be_file: bool | None = None,
     ) -> Path:
-        """
-        Resolve and validate a user path within library boundaries.
+        """Resolve and validate a user path within library boundaries.
 
         Args:
             library_root: Library root path
@@ -154,6 +155,7 @@ class LibraryFilesMixin:
 
         Raises:
             ValueError: If path is outside library_root or validation fails
+
         """
         from nomarr.components.library.library_root_comp import resolve_path_within_library
 

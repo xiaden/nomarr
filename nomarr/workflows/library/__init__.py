@@ -1,6 +1,4 @@
-"""
-Library package.
-"""
+"""Library package."""
 
 from .cleanup_orphaned_tags_wf import cleanup_orphaned_tags_workflow
 from .file_tags_io_wf import read_file_tags_workflow, remove_file_tags_workflow

@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""
-Main CLI entry point with argument parser and command dispatch.
-"""
+"""Main CLI entry point with argument parser and command dispatch."""
 
 from __future__ import annotations
 

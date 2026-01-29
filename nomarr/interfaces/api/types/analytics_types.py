@@ -1,5 +1,4 @@
-"""
-Analytics API types - Pydantic models for Analytics domain.
+"""Analytics API types - Pydantic models for Analytics domain.
 
 External API contracts for analytics endpoints.
 These models are thin adapters around DTOs from helpers/dto/analytics_dto.py.
@@ -12,16 +11,19 @@ Architecture:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from pydantic import BaseModel, Field
 
-from nomarr.helpers.dto.analytics_dto import (
-    MoodDistributionItem,
-    MoodDistributionResult,
-    TagCoOccurrenceData,
-    TagCorrelationData,
-    TagFrequenciesResult,
-    TagFrequencyItem,
-)
+if TYPE_CHECKING:
+    from nomarr.helpers.dto.analytics_dto import (
+        MoodDistributionItem,
+        MoodDistributionResult,
+        TagCoOccurrenceData,
+        TagCorrelationData,
+        TagFrequenciesResult,
+        TagFrequencyItem,
+    )
 
 # ──────────────────────────────────────────────────────────────────────
 # Response Models
@@ -49,7 +51,7 @@ class TagFrequenciesResponse(BaseModel):
     """Response for tag frequencies endpoint."""
 
     tag_frequencies: list[TagFrequencyItemResponse] = Field(
-        default_factory=list, description="List of tag frequency statistics"
+        default_factory=list, description="List of tag frequency statistics",
     )
 
     @classmethod
@@ -79,7 +81,7 @@ class MoodDistributionResponse(BaseModel):
     """Response for mood distribution endpoint."""
 
     mood_distribution: list[MoodDistributionItemResponse] = Field(
-        default_factory=list, description="Mood distribution statistics"
+        default_factory=list, description="Mood distribution statistics",
     )
 
     @classmethod
@@ -92,10 +94,10 @@ class TagCorrelationsResponse(BaseModel):
     """Pydantic model for TagCorrelationData DTO."""
 
     mood_correlations: dict[str, dict[str, float]] = Field(
-        default_factory=dict, description="Mood-to-mood correlation matrix"
+        default_factory=dict, description="Mood-to-mood correlation matrix",
     )
     mood_tier_correlations: dict[str, dict[str, float]] = Field(
-        default_factory=dict, description="Mood-to-tier correlation matrix"
+        default_factory=dict, description="Mood-to-tier correlation matrix",
     )
 
     @classmethod

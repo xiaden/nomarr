@@ -29,12 +29,13 @@ class TaggingService:
     - Threading/background execution should be in workflow layer, not service layer
     """
 
-    def __init__(self, database: Database, library_service: LibraryService | None = None):
+    def __init__(self, database: Database, library_service: LibraryService | None = None) -> None:
         """Initialize the tagging service.
 
         Args:
             database: Database instance for persistence operations
             library_service: LibraryService instance (optional, for library operations)
+
         """
         self.db = database
         self.library_service = library_service
@@ -43,7 +44,8 @@ class TaggingService:
     def namespace(self) -> str:
         """Get the tag namespace from library service config."""
         if self.library_service is None:
-            raise ValueError("LibraryService not configured. Cannot determine namespace.")
+            msg = "LibraryService not configured. Cannot determine namespace."
+            raise ValueError(msg)
         return self.library_service.cfg.namespace
 
     def tag_file(
@@ -65,6 +67,7 @@ class TaggingService:
 
         Raises:
             ValueError: If file doesn't have existing tags
+
         """
         from nomarr.helpers.dto.calibration_dto import WriteCalibratedTagsParams
         from nomarr.workflows.calibration.write_calibrated_tags_wf import write_calibrated_tags_wf
@@ -105,9 +108,11 @@ class TaggingService:
 
         Raises:
             ValueError: If library_service not configured
+
         """
         if self.library_service is None:
-            raise ValueError("LibraryService not configured. Cannot get library paths.")
+            msg = "LibraryService not configured. Cannot get library paths."
+            raise ValueError(msg)
 
         # Get only TAGGED library file paths (needs existing tags)
         paths = self.library_service.get_tagged_library_paths()
@@ -150,6 +155,7 @@ class TaggingService:
 
         Returns:
             Dict representation of GlobalCalibrationStatus DTO
+
         """
         from dataclasses import asdict
 
@@ -188,7 +194,7 @@ class TaggingService:
                             current_count=current,
                             outdated_count=outdated,
                             percentage=round(percentage, 1),
-                        )
+                        ),
                     )
 
         result = GlobalCalibrationStatus(
@@ -202,8 +208,7 @@ class TaggingService:
         return result_dict
 
     def read_file_tags(self, path: str, namespace: str) -> dict[str, Any]:
-        """
-        Read tags from an audio file.
+        """Read tags from an audio file.
 
         Args:
             path: Absolute file path
@@ -215,14 +220,14 @@ class TaggingService:
         Raises:
             ValueError: If path is invalid
             RuntimeError: If file cannot be read
+
         """
         from nomarr.workflows.library.file_tags_io_wf import read_file_tags_workflow
 
         return read_file_tags_workflow(db=self.db, path=path, namespace=namespace)
 
     def remove_file_tags(self, path: str, namespace: str) -> int:
-        """
-        Remove all namespaced tags from an audio file.
+        """Remove all namespaced tags from an audio file.
 
         Args:
             path: Absolute file path
@@ -234,6 +239,7 @@ class TaggingService:
         Raises:
             ValueError: If path is invalid
             RuntimeError: If file cannot be modified
+
         """
         from nomarr.workflows.library.file_tags_io_wf import remove_file_tags_workflow
 
@@ -245,8 +251,7 @@ class TaggingService:
         batch_size: int = 100,
         namespace: str = "nom",
     ) -> ReconcileTagsResult:
-        """
-        Reconcile file tags for a library based on its file_write_mode.
+        """Reconcile file tags for a library based on its file_write_mode.
 
         Claims files with mismatched projection state and writes tags according
         to the library's current mode and calibration. This handles:
@@ -261,13 +266,15 @@ class TaggingService:
 
         Returns:
             ReconcileTagsResult with processed, remaining, and failed counts
+
         """
         from nomarr.workflows.processing.write_file_tags_wf import write_file_tags_workflow
 
         # Get library settings
         library = self.db.libraries.get_library(library_id)
         if not library:
-            raise ValueError(f"Library not found: {library_id}")
+            msg = f"Library not found: {library_id}"
+            raise ValueError(msg)
 
         target_mode = library.get("file_write_mode", "full")
 
@@ -332,19 +339,20 @@ class TaggingService:
         self,
         library_id: str,
     ) -> dict[str, Any]:
-        """
-        Get reconciliation status for a library.
+        """Get reconciliation status for a library.
 
         Args:
             library_id: Library document _id
 
         Returns:
             Dict with pending_count and in_progress status
+
         """
         # Get library settings
         library = self.db.libraries.get_library(library_id)
         if not library:
-            raise ValueError(f"Library not found: {library_id}")
+            msg = f"Library not found: {library_id}"
+            raise ValueError(msg)
 
         target_mode = library.get("file_write_mode", "full")
         calibration_hash = self.db.meta.get("calibration_version")

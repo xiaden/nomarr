@@ -1,5 +1,4 @@
-"""
-Library API response types.
+"""Library API response types.
 
 External API contracts for library endpoints.
 These are Pydantic models that transform internal DTOs into API responses.
@@ -14,17 +13,19 @@ Architecture:
 from __future__ import annotations
 
 from datetime import UTC
-from typing import Self
+from typing import TYPE_CHECKING, Self
 
 from pydantic import BaseModel
 
-from nomarr.helpers.dto.library_dto import (
-    LibraryDict,
-    LibraryStatsResult,
-    ReconcileResult,
-    StartScanResult,
-)
 from nomarr.interfaces.api.id_codec import encode_id
+
+if TYPE_CHECKING:
+    from nomarr.helpers.dto.library_dto import (
+        LibraryDict,
+        LibraryStatsResult,
+        ReconcileResult,
+        StartScanResult,
+    )
 
 # ──────────────────────────────────────────────────────────────────────
 # Library Response Types (DTO → Pydantic mappings)
@@ -32,8 +33,7 @@ from nomarr.interfaces.api.id_codec import encode_id
 
 
 class LibraryResponse(BaseModel):
-    """
-    Single library response.
+    """Single library response.
 
     Maps directly to LibraryDict DTO from helpers/dto/library_dto.py
     """
@@ -57,14 +57,14 @@ class LibraryResponse(BaseModel):
 
     @classmethod
     def from_dto(cls, library: LibraryDict) -> Self:
-        """
-        Transform internal LibraryDict DTO to external API response.
+        """Transform internal LibraryDict DTO to external API response.
 
         Args:
             library: Internal library DTO from service layer
 
         Returns:
             API response model
+
         """
         # Convert timestamps: if int (ms), convert to ISO format; if already string, pass through
         created_at = library.created_at
@@ -110,8 +110,7 @@ class LibraryResponse(BaseModel):
 
 
 class LibraryStatsResponse(BaseModel):
-    """
-    Response for library statistics endpoint.
+    """Response for library statistics endpoint.
 
     Maps to LibraryStatsResult DTO from helpers/dto/library_dto.py.
     Field names match frontend expectations.
@@ -124,14 +123,14 @@ class LibraryStatsResponse(BaseModel):
 
     @classmethod
     def from_dto(cls, stats: LibraryStatsResult) -> Self:
-        """
-        Transform internal LibraryStatsResult DTO to external API response.
+        """Transform internal LibraryStatsResult DTO to external API response.
 
         Args:
             stats: Internal library stats from service layer
 
         Returns:
             API response model with frontend-compatible field names
+
         """
         return cls(
             total_files=stats.total_files,
@@ -142,8 +141,7 @@ class LibraryStatsResponse(BaseModel):
 
 
 class StartScanResponse(BaseModel):
-    """
-    Response for start scan operation.
+    """Response for start scan operation.
 
     Maps to StartScanResult DTO from helpers/dto/library_dto.py
     """
@@ -156,14 +154,14 @@ class StartScanResponse(BaseModel):
 
     @classmethod
     def from_dto(cls, result: StartScanResult) -> Self:
-        """
-        Transform internal StartScanResult DTO to external API response.
+        """Transform internal StartScanResult DTO to external API response.
 
         Args:
             result: Internal scan result from service layer
 
         Returns:
             API response model
+
         """
         return cls(
             files_discovered=result.files_discovered,
@@ -175,8 +173,7 @@ class StartScanResponse(BaseModel):
 
 
 class StartScanWithStatusResponse(BaseModel):
-    """
-    Response wrapper for start scan operation with status message.
+    """Response wrapper for start scan operation with status message.
 
     Used by library scan endpoint to provide contextual status information.
     """
@@ -187,8 +184,7 @@ class StartScanWithStatusResponse(BaseModel):
 
     @classmethod
     def from_dto(cls, result: StartScanResult, library_id: str) -> Self:
-        """
-        Transform internal StartScanResult DTO to wrapped API response.
+        """Transform internal StartScanResult DTO to wrapped API response.
 
         Args:
             result: Internal scan result from service layer
@@ -196,6 +192,7 @@ class StartScanWithStatusResponse(BaseModel):
 
         Returns:
             API response model with status wrapper
+
         """
         stats = StartScanResponse.from_dto(result)
         return cls(

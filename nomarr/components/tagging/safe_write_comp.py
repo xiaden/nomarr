@@ -16,12 +16,13 @@ import logging
 import os
 import shutil
 import uuid
-from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
+
     from nomarr.helpers.dto.path_dto import LibraryPath
 
 logger = logging.getLogger(__name__)
@@ -84,8 +85,7 @@ def safe_write_tags(
     original_chromaprint: str,
     write_fn: Callable[[Path], None],
 ) -> SafeWriteResult:
-    """
-    Safely write tags to an audio file using copy-modify-verify-replace.
+    """Safely write tags to an audio file using copy-modify-verify-replace.
 
     Args:
         library_path: The original file to modify
@@ -99,6 +99,7 @@ def safe_write_tags(
     The write_fn receives a Path to the temp copy and should write tags to it.
     After write_fn completes, we verify the audio content hasn't changed by
     comparing chromaprints, then atomically replace the original.
+
     """
     if not library_path.is_valid():
         return SafeWriteResult(
@@ -115,8 +116,7 @@ def safe_write_tags(
 
     if use_hardlink:
         return _safe_write_hardlink(original_path, temp_folder, filename, original_chromaprint, write_fn)
-    else:
-        return _safe_write_fallback(original_path, original_chromaprint, write_fn)
+    return _safe_write_fallback(original_path, original_chromaprint, write_fn)
 
 
 def _safe_write_hardlink(
@@ -161,12 +161,13 @@ def _safe_write_hardlink(
             # Restore backup if hardlink failed
             if backup_path.exists() and not original_path.exists():
                 os.rename(backup_path, original_path)
-            raise RuntimeError(f"Hardlink replacement failed: {e}") from e
+            msg = f"Hardlink replacement failed: {e}"
+            raise RuntimeError(msg) from e
 
         return SafeWriteResult(success=True)
 
     except Exception as e:
-        logger.error(f"[safe_write] Hardlink write failed: {e}")
+        logger.exception(f"[safe_write] Hardlink write failed: {e}")
         return SafeWriteResult(success=False, error=str(e))
 
     finally:
@@ -212,7 +213,7 @@ def _safe_write_fallback(
         return SafeWriteResult(success=True)
 
     except Exception as e:
-        logger.error(f"[safe_write] Fallback write failed: {e}")
+        logger.exception(f"[safe_write] Fallback write failed: {e}")
         # Clean up temp file on failure
         if temp_path.exists():
             with contextlib.suppress(OSError):

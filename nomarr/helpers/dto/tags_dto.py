@@ -32,8 +32,7 @@ TagValue = str | int | float | bool
 
 @dataclass(frozen=True)
 class Tag:
-    """
-    Single tag entry: one key, N values (N >= 0).
+    """Single tag entry: one key, N values (N >= 0).
 
     Invariant: value is ALWAYS a tuple, even for single values.
     This eliminates scalar/list branching throughout the codebase.
@@ -46,8 +45,7 @@ class Tag:
 
 @dataclass(frozen=True)
 class Tags:
-    """
-    Collection of tags, sorted by key for deterministic output.
+    """Collection of tags, sorted by key for deterministic output.
 
     One class, one invariant, one affordance (key sort).
     No filtering, no grouping, no business logic.
@@ -69,8 +67,7 @@ class Tags:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Tags:
-        """
-        Create Tags from dict (common workflow format).
+        """Create Tags from dict (common workflow format).
 
         Normalizes scalars to tuples automatically.
         """
@@ -85,13 +82,13 @@ class Tags:
 
     @classmethod
     def from_db_rows(cls, db_rows: list[dict[str, Any]]) -> Tags:
-        """
-        Create Tags from DB query results.
+        """Create Tags from DB query results.
 
         Aggregates multiple rows with same key into single Tag.
 
         Args:
             db_rows: List of {rel, value} dicts from get_song_tags()
+
         """
         # Group by key
         aggregated: dict[str, list[TagValue]] = {}
@@ -107,19 +104,18 @@ class Tags:
         return cls(items=tuple(items))
 
     def to_dict(self) -> dict[str, tuple[TagValue, ...]]:
-        """
-        Convert to dict.
+        """Convert to dict.
 
         Returns always-tuple format (consumers handle single-value ergonomics).
         """
         return {tag.key: tag.value for tag in self.items}
 
     def to_db_rows(self) -> list[tuple[str, tuple[TagValue, ...]]]:
-        """
-        Convert to DB write format.
+        """Convert to DB write format.
 
         Returns:
             List of (key, values) tuples for db.tags.set_song_tags()
+
         """
         return [(tag.key, tag.value) for tag in self.items]
 

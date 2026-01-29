@@ -8,8 +8,7 @@ def build_library_path_from_input(
     raw_path: str,
     db: Database,
 ) -> LibraryPath:
-    """
-    Build LibraryPath from user input (API, CLI, etc.).
+    """Build LibraryPath from user input (API, CLI, etc.).
 
     This is the primary entry point for external path inputs.
     It validates the path against current library configuration and sets status:
@@ -32,6 +31,7 @@ def build_library_path_from_input(
         else:
             # Handle error based on status
             log.error(f"Invalid path: {path.reason}")
+
     """
     from nomarr.helpers.files_helper import is_audio_file
 
@@ -118,8 +118,7 @@ def build_library_path_from_db(
     library_id: str | None = None,
     check_disk: bool = True,
 ) -> LibraryPath:
-    """
-    Build LibraryPath from database-stored path.
+    """Build LibraryPath from database-stored path.
 
     This is used when reading paths from queue tables, library_files, etc.
     The stored path may be absolute or relative depending on storage format.
@@ -144,6 +143,7 @@ def build_library_path_from_db(
             # Config changed, path no longer valid
             db.files.mark_invalid(file_id, path.reason)
             return
+
     """
     from nomarr.helpers.files_helper import is_audio_file
 
@@ -260,8 +260,7 @@ def build_library_path_from_db(
 
 
 def get_library_root(library_path: LibraryPath, db: Database) -> Path | None:
-    """
-    Get the library root path for a given LibraryPath.
+    """Get the library root path for a given LibraryPath.
 
     Args:
         library_path: A validated LibraryPath
@@ -269,6 +268,7 @@ def get_library_root(library_path: LibraryPath, db: Database) -> Path | None:
 
     Returns:
         Path to library root, or None if library_id is unknown or library not found
+
     """
     if not library_path.library_id:
         return None

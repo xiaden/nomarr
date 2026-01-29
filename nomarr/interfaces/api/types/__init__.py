@@ -1,6 +1,4 @@
-"""
-Types package.
-"""
+"""Types package."""
 
 from .admin_types import (
     CalibrationHistoryResponse,

@@ -1,5 +1,4 @@
-"""
-Unit tests for nomarr.helpers.dto.library_dto module.
+"""Unit tests for nomarr.helpers.dto.library_dto module.
 
 Tests library-related DTOs for proper structure and behavior.
 """

@@ -1,5 +1,4 @@
-"""
-Direct library scan workflow without worker/queue overhead.
+"""Direct library scan workflow without worker/queue overhead.
 
 Implements fast, read-only metadata extraction. Move detection happens during
 ML processing when chromaprint is computed.
@@ -20,18 +19,17 @@ from nomarr.components.library.folder_analysis_comp import analyze_folders_for_s
 from nomarr.components.library.move_detection_comp import detect_file_moves
 from nomarr.components.library.scan_target_validator_comp import validate_scan_targets
 from nomarr.components.metadata import rebuild_song_metadata_cache, seed_song_entities_from_tags
-from nomarr.helpers.dto import ScanTarget
 from nomarr.helpers.time_helper import internal_s, now_ms
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dto import ScanTarget
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
 
 
 def _seed_and_rebuild_batch(db: Database, file_paths: list[str], metadata_map: dict[str, dict[str, Any]]) -> None:
-    """
-    Seed entities and rebuild metadata caches for a batch of files.
+    """Seed entities and rebuild metadata caches for a batch of files.
 
     Workflow helper for entity seeding after file upsert.
 
@@ -39,6 +37,7 @@ def _seed_and_rebuild_batch(db: Database, file_paths: list[str], metadata_map: d
         db: Database instance
         file_paths: List of file paths that were just upserted
         metadata_map: Map of file_path -> metadata dict
+
     """
     for file_path in file_paths:
         metadata = metadata_map.get(file_path)
@@ -74,8 +73,7 @@ def _seed_and_rebuild_batch(db: Database, file_paths: list[str], metadata_map: d
 
 # Exported for tests
 def _compute_normalized_path(absolute_path: Path, library_root: Path) -> str:
-    """
-    Compute normalized POSIX-style path relative to library root.
+    """Compute normalized POSIX-style path relative to library root.
 
     Note: Kept in workflow for test compatibility.
     Component version exists in file_batch_scanner_comp.
@@ -89,6 +87,7 @@ def _compute_normalized_path(absolute_path: Path, library_root: Path) -> str:
 
     Raises:
         ValueError: If absolute_path is not under library_root
+
     """
     relative = absolute_path.relative_to(library_root)
     return relative.as_posix()
@@ -102,8 +101,7 @@ def scan_library_direct_workflow(
     batch_size: int = 200,
     force_rescan: bool = False,
 ) -> dict[str, Any]:
-    """
-    Scan specific folders within a library.
+    """Scan specific folders within a library.
 
     Orchestrates component calls for folder analysis, file scanning, and move detection.
 
@@ -118,6 +116,7 @@ def scan_library_direct_workflow(
     Returns:
         Dict with scan results (files_discovered, files_added, files_updated, files_moved,
         files_removed, files_failed, scan_duration_s, warnings, scan_id)
+
     """
     start_time = internal_s()
     stats: dict[str, int] = defaultdict(int)
@@ -127,7 +126,8 @@ def scan_library_direct_workflow(
     # Setup
     library = db.libraries.get_library(library_id)
     if not library:
-        raise ValueError(f"Library {library_id} not found")
+        msg = f"Library {library_id} not found"
+        raise ValueError(msg)
 
     library_root = Path(library["root_path"]).resolve()
     is_full_scan = len(scan_targets) == 1 and scan_targets[0].folder_path == ""
@@ -139,7 +139,8 @@ def scan_library_direct_workflow(
         scan_paths = validate_scan_targets(scan_targets, library_root)
 
         if not scan_paths:
-            raise ValueError("No valid scan paths found in scan_targets")
+            msg = "No valid scan paths found in scan_targets"
+            raise ValueError(msg)
 
         # PHASE 2: Analyze folders - COMPONENT CALL
         cached_folders = db.library_folders.get_all_folders_for_library(library_id)
@@ -158,7 +159,7 @@ def scan_library_direct_workflow(
 
         logger.info(
             f"[scan_library] {stats['folders_scanned']}/{len(folder_plan.all_folders)} folders need scanning "
-            f"({folder_plan.total_files_to_scan} files)"
+            f"({folder_plan.total_files_to_scan} files)",
         )
 
         # PHASE 3: Determine if move detection is needed
@@ -279,7 +280,7 @@ def scan_library_direct_workflow(
                     logger.info(f"[scan_library] Deleted {deleted} missing files")
                     stats["files_removed"] += deleted
             except Exception as e:
-                logger.error(f"[scan_library] Failed to delete missing files: {e}")
+                logger.exception(f"[scan_library] Failed to delete missing files: {e}")
                 warnings.append(f"Failed to delete missing files: {str(e)[:100]}")
 
             # Clean up folder records for deleted folders
@@ -318,7 +319,7 @@ def scan_library_direct_workflow(
             f"folders={stats['folders_scanned']}/{stats['folders_scanned'] + stats['folders_skipped']} scanned, "
             f"files: added={stats['files_added']}, updated={stats['files_updated']}, "
             f"moved={stats['files_moved']}, removed={stats['files_removed']}, "
-            f"failed={stats['files_failed']}"
+            f"failed={stats['files_failed']}",
         )
 
         return {

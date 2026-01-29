@@ -10,9 +10,10 @@ USAGE:
 - Share calibrations between installations
 - Backup calibrations for migration
 
-IMPORTANT:
+Important:
 - Bundles are DERIVED from database, never authoritative
 - Production code never reads bundles directly
+
 """
 
 from __future__ import annotations
@@ -68,6 +69,7 @@ def export_calibration_bundle_wf(
 
     Raises:
         ValueError: If no calibrations exist in database
+
     """
     logger.info(f"[export_calibration] Exporting calibrations to {output_path}")
 
@@ -75,7 +77,8 @@ def export_calibration_bundle_wf(
     calibration_states = db.calibration_state.get_all_calibration_states()
 
     if not calibration_states:
-        raise ValueError("No calibrations in database to export")
+        msg = "No calibrations in database to export"
+        raise ValueError(msg)
 
     # Build bundle structure
     labels: dict[str, dict[str, Any]] = {}
@@ -149,6 +152,7 @@ def export_calibration_bundles_to_directory_wf(
             - bundles_created: Number of bundle files created
             - total_exported: Total calibrations exported
             - output_paths: List of created bundle paths
+
     """
     logger.info(f"[export_calibration] Exporting calibrations to {models_dir}")
 
@@ -167,7 +171,7 @@ def export_calibration_bundles_to_directory_wf(
         }
 
     except Exception as e:
-        logger.error(f"[export_calibration] Export failed: {e}")
+        logger.exception(f"[export_calibration] Export failed: {e}")
         return {
             "bundles_created": 0,
             "total_exported": 0,

@@ -1,6 +1,4 @@
-"""
-Output and reporting utilities.
-"""
+"""Output and reporting utilities."""
 
 import json
 import sys
@@ -17,8 +15,7 @@ def write_json_output(
     output_path: Path,
     project_root: Path,
 ) -> None:
-    """
-    Write classification results to JSON file and print to stdout.
+    """Write classification results to JSON file and print to stdout.
 
     Args:
         dataclasses: List of classified DataclassInfo objects
@@ -26,6 +23,7 @@ def write_json_output(
         missing_candidates: List of missing dataclass candidates
         output_path: Path to output JSON file
         project_root: Root directory of the project
+
     """
     data = {
         "dataclasses": [dc.to_dict(project_root) for dc in dataclasses],
@@ -60,13 +58,13 @@ def print_summary(
     suspect_imports: list[ImportEdge],
     missing_candidates: list[MissingDataclassCandidate],
 ) -> None:
-    """
-    Print human-readable summary to stdout.
+    """Print human-readable summary to stdout.
 
     Args:
         dataclasses: List of classified DataclassInfo objects
         suspect_imports: List of suspect import edges
         missing_candidates: List of missing dataclass candidates
+
     """
     # Group by classification
     by_classification: dict[str, list[DataclassInfo]] = defaultdict(list)
@@ -184,14 +182,14 @@ def write_text_output(
     missing_candidates: list[MissingDataclassCandidate],
     output_path: Path,
 ) -> None:
-    """
-    Write human-readable summary to text file and print to stdout.
+    """Write human-readable summary to text file and print to stdout.
 
     Args:
         dataclasses: List of classified DataclassInfo objects
         suspect_imports: List of suspect import edges
         missing_candidates: List of missing dataclass candidates
         output_path: Path to output text file
+
     """
     # Print to stdout
     print_summary(dataclasses, suspect_imports, missing_candidates)

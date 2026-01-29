@@ -1,5 +1,4 @@
-"""
-File batch scanner component for library scanning.
+"""File batch scanner component for library scanning.
 
 Scans a single folder and returns batch-ready file data for DB upsert.
 """
@@ -42,8 +41,7 @@ def scan_folder_files(
     scan_id: str,
     db: Database,
 ) -> FileBatchResult:
-    """
-    Scan all files in a single folder and return batch-ready data.
+    """Scan all files in a single folder and return batch-ready data.
 
     Args:
         folder_path: Absolute folder path to scan
@@ -57,6 +55,7 @@ def scan_folder_files(
 
     Returns:
         FileBatchResult with file entries ready for upsert and metadata
+
     """
     file_entries: list[dict[str, Any]] = []
     metadata_map: dict[str, dict[str, Any]] = {}
@@ -74,7 +73,7 @@ def scan_folder_files(
             if is_audio_file(f) and os.path.isfile(os.path.join(str(folder_path), f))
         ]
     except OSError as e:
-        logger.error(f"Cannot read folder {folder_path}: {e}")
+        logger.exception(f"Cannot read folder {folder_path}: {e}")
         return FileBatchResult(
             file_entries=file_entries,
             metadata_map=metadata_map,
@@ -152,7 +151,7 @@ def scan_folder_files(
                 stats["files_updated"] += 1
 
         except Exception as e:
-            logger.error(f"Failed to process {file_path}: {e}")
+            logger.exception(f"Failed to process {file_path}: {e}")
             stats["files_failed"] += 1
             warnings.append(f"Extraction failed: {file_path} - {str(e)[:100]}")
             continue
@@ -169,8 +168,7 @@ def scan_folder_files(
 
 # Helper function (component-private)
 def _compute_normalized_path(absolute_path: Path, library_root: Path) -> str:
-    """
-    Compute normalized POSIX-style path relative to library root.
+    """Compute normalized POSIX-style path relative to library root.
 
     Args:
         absolute_path: Absolute file path
@@ -181,6 +179,7 @@ def _compute_normalized_path(absolute_path: Path, library_root: Path) -> str:
 
     Raises:
         ValueError: If absolute_path is not under library_root
+
     """
     relative = absolute_path.relative_to(library_root)
     return relative.as_posix()

@@ -1,5 +1,4 @@
-"""
-Component for reconciling library paths after configuration changes.
+"""Component for reconciling library paths after configuration changes.
 
 This component re-validates all paths in the library_files table against
 the current library configuration. It detects paths that have become invalid
@@ -12,10 +11,10 @@ import logging
 from typing import TYPE_CHECKING, Literal
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_db
-from nomarr.helpers.dto.library_dto import ReconcileResult
-from nomarr.helpers.dto.path_dto import LibraryPath
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dto.library_dto import ReconcileResult
+    from nomarr.helpers.dto.path_dto import LibraryPath
     from nomarr.persistence.db import Database
 
 
@@ -27,8 +26,7 @@ def reconcile_library_paths(
     policy: ReconcilePolicy = "mark_invalid",
     batch_size: int = 1000,
 ) -> ReconcileResult:
-    """
-    Re-validate all library paths against current configuration.
+    """Re-validate all library paths against current configuration.
 
     This component scans the library_files table and re-validates each path
     using build_library_path_from_db() to check against current config.
@@ -55,6 +53,7 @@ def reconcile_library_paths(
             batch_size=500
         )
         print(f"Cleaned up {result['deleted_files']} invalid files")
+
     """
     logging.info(f"[reconcile_library_paths] Starting reconciliation with policy={policy}")
 
@@ -116,7 +115,7 @@ def reconcile_library_paths(
 
             except Exception as e:
                 result["errors"] += 1
-                logging.error(f"[reconcile_library_paths] Error validating {file_path}: {e}")
+                logging.exception(f"[reconcile_library_paths] Error validating {file_path}: {e}")
 
         offset += len(files)
 
@@ -124,7 +123,7 @@ def reconcile_library_paths(
         if offset % (batch_size * 5) == 0:
             logging.info(
                 f"[reconcile_library_paths] Progress: {offset}/{total_count} "
-                f"(valid={result['valid_files']}, invalid={result['invalid_config'] + result['not_found']})"
+                f"(valid={result['valid_files']}, invalid={result['invalid_config'] + result['not_found']})",
             )
 
     # Final summary
@@ -133,13 +132,13 @@ def reconcile_library_paths(
         f"[reconcile_library_paths] Reconciliation complete: "
         f"total={result['total_files']}, valid={result['valid_files']}, "
         f"invalid_config={result['invalid_config']}, not_found={result['not_found']}, "
-        f"deleted={result['deleted_files']}, errors={result['errors']}"
+        f"deleted={result['deleted_files']}, errors={result['errors']}",
     )
 
     if policy == "dry_run":
         logging.info(
             f"[reconcile_library_paths] DRY RUN: Would have affected {total_invalid} files "
-            f"(use policy='delete_invalid' to actually remove them)"
+            f"(use policy='delete_invalid' to actually remove them)",
         )
 
     return result
@@ -152,8 +151,7 @@ def _handle_invalid_path(
     policy: ReconcilePolicy,
     result: ReconcileResult,
 ) -> None:
-    """
-    Handle an invalid path based on policy.
+    """Handle an invalid path based on policy.
 
     Args:
         db: Database instance
@@ -161,6 +159,7 @@ def _handle_invalid_path(
         library_path: Re-validated LibraryPath with status
         policy: Reconciliation policy
         result: Result dict to update
+
     """
     # Build diagnostic message
     reason = library_path.reason or "unknown"
@@ -179,5 +178,5 @@ def _handle_invalid_path(
             result["deleted_files"] += 1
             logging.info(f"[reconcile_library_paths] Deleted invalid path ({status}): {file_path} - {reason}")
         except Exception as e:
-            logging.error(f"[reconcile_library_paths] Failed to delete {file_path}: {e}")
+            logging.exception(f"[reconcile_library_paths] Failed to delete {file_path}: {e}")
             result["errors"] += 1

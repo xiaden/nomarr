@@ -1,5 +1,4 @@
-"""
-Health monitoring service.
+"""Health monitoring service.
 
 ## Health Monitoring Contract
 
@@ -85,8 +84,7 @@ class _ComponentState:
 
 
 class HealthMonitorService:
-    """
-    Health monitor that owns component status registry.
+    """Health monitor that owns component status registry.
 
     Uses a single consolidated monitor thread to:
     - Poll all pipes for health frames using multiprocessing.connection.wait()
@@ -102,13 +100,13 @@ class HealthMonitorService:
       no further health checks, callbacks, or state transitions occur.
     """
 
-    def __init__(self, cfg: HealthMonitorConfig, db: Database | None = None):
-        """
-        Initialize health monitor.
+    def __init__(self, cfg: HealthMonitorConfig, db: Database | None = None) -> None:
+        """Initialize health monitor.
 
         Args:
             cfg: Health monitor configuration
             db: Optional database for history snapshots (can be None to disable)
+
         """
         self.cfg = cfg
         self.db = db
@@ -131,14 +129,14 @@ class HealthMonitorService:
         pipe_conn: Any,
         policy: ComponentPolicy | None = None,
     ) -> None:
-        """
-        Register a component to monitor.
+        """Register a component to monitor.
 
         Args:
             component_id: Unique component identifier (e.g., "worker:tag:0")
             handler: Lifecycle handler to receive callbacks
             pipe_conn: Parent end of the pipe (read-only)
             policy: Monitoring policy (uses defaults if None)
+
         """
         if policy is None:
             policy = ComponentPolicy()
@@ -171,13 +169,13 @@ class HealthMonitorService:
         logger.debug("[HealthMonitor] Registered component: %s", component_id)
 
     def unregister_component(self, component_id: str) -> None:
-        """
-        Unregister a component.
+        """Unregister a component.
 
         Closes pipe and removes from monitoring.
 
         Args:
             component_id: Component to unregister
+
         """
         with self._lock:
             state = self._components.pop(component_id, None)
@@ -188,8 +186,7 @@ class HealthMonitorService:
         logger.debug("[HealthMonitor] Unregistered component: %s", component_id)
 
     def set_failed(self, component_id: str) -> None:
-        """
-        Mark a component as permanently failed.
+        """Mark a component as permanently failed.
 
         Calling set_failed permanently transitions the component to failed;
         no further health checks, callbacks, or state transitions occur.
@@ -198,6 +195,7 @@ class HealthMonitorService:
 
         Args:
             component_id: Component to mark as failed
+
         """
         with self._lock:
             state = self._components.get(component_id)
@@ -224,14 +222,14 @@ class HealthMonitorService:
     # ------------------------------ Status API -------------------------------
 
     def get_status(self, component_id: str) -> ComponentStatus | None:
-        """
-        Get current status for a component.
+        """Get current status for a component.
 
         Args:
             component_id: Component identifier
 
         Returns:
             Status if known, None if component not registered
+
         """
         with self._lock:
             state = self._components.get(component_id)
@@ -294,8 +292,7 @@ class HealthMonitorService:
     # ------------------------- Monitor Loop ----------------------------------
 
     def _monitor_loop(self) -> None:
-        """
-        Consolidated monitoring loop.
+        """Consolidated monitoring loop.
 
         Polls all pipes and checks deadlines/staleness in a single thread.
         """
@@ -438,7 +435,7 @@ class HealthMonitorService:
 
         with self._lock:
             for component_id, state in self._components.items():
-                if state.status == "failed" or state.status == "dead":
+                if state.status in {"failed", "dead"}:
                     continue  # Don't check failed/dead
 
                 change = self._check_component_deadline(component_id, state, now)
@@ -450,7 +447,7 @@ class HealthMonitorService:
             self._emit_status_change(component_id, old_status, new_status, handler, state)
 
     def _check_component_deadline(
-        self, component_id: str, state: _ComponentState, now: InternalSeconds
+        self, component_id: str, state: _ComponentState, now: InternalSeconds,
     ) -> tuple[str, ComponentStatus, ComponentStatus, ComponentLifecycleHandler, _ComponentState] | None:
         """Check deadlines for a single component. Returns state change if any."""
         policy = state.policy
@@ -496,7 +493,7 @@ class HealthMonitorService:
                         state.consecutive_misses,
                     )
                     return (component_id, prev_status, "dead", state.handler, state)
-                elif state.status == "healthy":
+                if state.status == "healthy":
                     prev_healthy: ComponentStatus = state.status
                     state.status = "unhealthy"
                     logger.debug(
@@ -529,7 +526,7 @@ class HealthMonitorService:
         try:
             handler.on_status_change(component_id, old_status, new_status, context)
         except Exception as e:
-            logger.error("[HealthMonitor] Handler error on status change: %s", e)
+            logger.exception("[HealthMonitor] Handler error on status change: %s", e)
 
     # ------------------------- History Writer --------------------------------
 

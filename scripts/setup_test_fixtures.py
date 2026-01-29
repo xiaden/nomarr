@@ -1,5 +1,4 @@
-"""
-Create test fixture library structure for Nomarr e2e tests
+"""Create test fixture library structure for Nomarr e2e tests
 
 This script:
 1. Creates Test-Songs directory with a curated subset

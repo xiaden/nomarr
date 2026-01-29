@@ -1,5 +1,4 @@
-"""
-Delete all tags from a specific namespace in audio files.
+"""Delete all tags from a specific namespace in audio files.
 
 This script:
 1. Scans all audio files in a directory
@@ -86,8 +85,7 @@ def delete_m4a_namespace(file_path: str, namespace: str) -> int:
 
 
 def delete_flac_namespace(file_path: str, namespace: str) -> int:
-    """
-    Delete all tags with the given namespace prefix from a FLAC file.
+    """Delete all tags with the given namespace prefix from a FLAC file.
 
     FLAC uses Vorbis comments where each key maps to a list of strings.
     We delete any keys that start with the namespace prefix (case-insensitive).
@@ -98,6 +96,7 @@ def delete_flac_namespace(file_path: str, namespace: str) -> int:
 
     Returns:
         Number of tags deleted
+
     """
     try:
         audio = FLAC(file_path)
@@ -130,11 +129,11 @@ def delete_flac_namespace(file_path: str, namespace: str) -> int:
 
 
 def scan_and_delete(music_dir: str, namespace: str, dry_run: bool = False) -> dict:
-    """
-    Scan directory and delete namespace tags from all audio files.
+    """Scan directory and delete namespace tags from all audio files.
 
     Returns:
         Dict with stats: files_processed, files_modified, tags_deleted
+
     """
     stats = {"files_processed": 0, "files_modified": 0, "tags_deleted": 0, "files_skipped": 0}
 

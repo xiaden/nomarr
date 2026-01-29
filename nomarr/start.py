@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Nomarr Application Starter
+"""Nomarr Application Starter
 Initializes the Application (workers, services, etc.) then starts the API server.
 """
 
@@ -54,7 +53,7 @@ logging.basicConfig(
 )
 
 
-def shutdown_handler(signum, frame):
+def shutdown_handler(signum, frame) -> None:
     """Handle shutdown signals gracefully."""
     logging.info(f"Received signal {signum}, shutting down...")
     application.stop()

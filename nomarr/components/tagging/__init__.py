@@ -1,6 +1,4 @@
-"""
-Tagging package.
-"""
+"""Tagging package."""
 
 from .tag_normalization_comp import (
     CANONICAL_TAGS,

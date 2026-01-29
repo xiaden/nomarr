@@ -1,5 +1,4 @@
-"""
-Smart Playlist query parser.
+"""Smart Playlist query parser.
 
 Parses Smart Playlist query syntax into structured filter objects.
 This module is PURE - no SQL, no Database, no sqlite3 imports.
@@ -28,6 +27,7 @@ Examples:
     tag:mood_happy > 0.7 AND tag:energy > 0.6
     tag:genre = Rock OR tag:genre = Metal
     tag:bpm > 120 AND tag:danceability > 0.8
+
 """
 
 from __future__ import annotations
@@ -42,8 +42,7 @@ MAX_QUERY_LENGTH = 4096
 
 
 def parse_smart_playlist_query(query: str, namespace: str = "nom") -> SmartPlaylistFilter:
-    """
-    Parse Smart Playlist query into structured filter object.
+    """Parse Smart Playlist query into structured filter object.
 
     This is a PURE function - no SQL generation, no database access.
 
@@ -62,13 +61,16 @@ def parse_smart_playlist_query(query: str, namespace: str = "nom") -> SmartPlayl
         >>> filter = parse_smart_playlist_query("tag:mood_happy > 0.7 AND tag:energy > 0.6")
         >>> print(filter.all_conditions)
         >>> print(filter.is_simple_and)
+
     """
     if not query or not query.strip():
-        raise PlaylistQueryError("Query cannot be empty")
+        msg = "Query cannot be empty"
+        raise PlaylistQueryError(msg)
 
     # Enforce query length limit to prevent ReDoS attacks
     if len(query) > MAX_QUERY_LENGTH:
-        raise PlaylistQueryError(f"Query too long (max {MAX_QUERY_LENGTH} characters)")
+        msg = f"Query too long (max {MAX_QUERY_LENGTH} characters)"
+        raise PlaylistQueryError(msg)
 
     # Normalize whitespace
     query = " ".join(query.split())
@@ -77,7 +79,8 @@ def parse_smart_playlist_query(query: str, namespace: str = "nom") -> SmartPlayl
     condition_strings, operators = _tokenize_query(query)
 
     if not condition_strings:
-        raise PlaylistQueryError("No valid conditions found in query")
+        msg = "No valid conditions found in query"
+        raise PlaylistQueryError(msg)
 
     # Parse each condition
     conditions: list[tuple[TagCondition, str | None]] = []
@@ -91,7 +94,8 @@ def parse_smart_playlist_query(query: str, namespace: str = "nom") -> SmartPlayl
         conditions.append((tag_cond, logic))
 
     if not conditions:
-        raise PlaylistQueryError("No valid conditions found in query")
+        msg = "No valid conditions found in query"
+        raise PlaylistQueryError(msg)
 
     # Group conditions by logic operator
     logic_types = {logic for _, logic in conditions[1:] if logic}
@@ -107,16 +111,16 @@ def parse_smart_playlist_query(query: str, namespace: str = "nom") -> SmartPlayl
     else:
         # Mixed AND/OR logic is not supported
         # Reject with clear error message
+        msg = "Mixed AND/OR operators are not supported. Use either all AND or all OR in your query."
         raise PlaylistQueryError(
-            "Mixed AND/OR operators are not supported. Use either all AND or all OR in your query."
+            msg,
         )
 
     return SmartPlaylistFilter(all_conditions=all_conds, any_conditions=any_conds)
 
 
 def _tokenize_query(query: str) -> tuple[list[str], list[str]]:
-    """
-    Tokenize query into conditions and logic operators using linear-time algorithm.
+    """Tokenize query into conditions and logic operators using linear-time algorithm.
 
     This replaces re.split() to avoid ReDoS vulnerabilities from nested quantifiers.
 
@@ -131,6 +135,7 @@ def _tokenize_query(query: str) -> tuple[list[str], list[str]]:
     Example:
         >>> _tokenize_query("tag:a > 1 AND tag:b < 2 OR tag:c = 3")
         (["tag:a > 1", "tag:b < 2", "tag:c = 3"], ["AND", "OR"])
+
     """
     conditions = []
     operators = []
@@ -159,8 +164,7 @@ def _tokenize_query(query: str) -> tuple[list[str], list[str]]:
 
 
 def _parse_condition(condition: str, namespace: str) -> TagCondition:
-    """
-    Parse a single condition string into TagCondition.
+    """Parse a single condition string into TagCondition.
 
     Args:
         condition: Single condition string (e.g., "tag:mood_happy > 0.7")
@@ -171,6 +175,7 @@ def _parse_condition(condition: str, namespace: str) -> TagCondition:
 
     Raises:
         PlaylistQueryError: If condition syntax is invalid
+
     """
     # Pattern: tag:KEY OPERATOR VALUE
     # Use [^\s].* instead of .+ to prevent ReDoS (catastrophic backtracking)
@@ -178,16 +183,14 @@ def _parse_condition(condition: str, namespace: str) -> TagCondition:
     match = re.match(pattern, condition.strip(), re.IGNORECASE)
 
     if not match:
-        raise PlaylistQueryError(f"Invalid condition syntax: {condition}")
+        msg = f"Invalid condition syntax: {condition}"
+        raise PlaylistQueryError(msg)
 
     tag_key, operator, value = match.groups()
     operator = operator.lower()
 
     # Add namespace prefix if not present
-    if not tag_key.startswith(f"{namespace}:"):
-        full_tag_key = f"{namespace}:{tag_key}"
-    else:
-        full_tag_key = tag_key
+    full_tag_key = f"{namespace}:{tag_key}" if not tag_key.startswith(f"{namespace}:") else tag_key
 
     # Convert value to appropriate type
     value = value.strip().strip('"').strip("'")
@@ -195,10 +198,7 @@ def _parse_condition(condition: str, namespace: str) -> TagCondition:
     # Try to convert to number
     typed_value: float | int | str
     try:
-        if "." in value:
-            typed_value = float(value)
-        else:
-            typed_value = int(value)
+        typed_value = float(value) if "." in value else int(value)
     except ValueError:
         # Keep as string
         typed_value = value

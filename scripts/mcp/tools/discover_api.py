@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-ML-optimized API Discovery Tool (Standalone)
+"""ML-optimized API Discovery Tool (Standalone)
 
 Self-contained module for discovering Python module APIs.
 Returns structured JSON optimized for LLM consumption.

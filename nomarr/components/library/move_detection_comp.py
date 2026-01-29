@@ -1,5 +1,4 @@
-"""
-Move detection component for library scanning.
+"""Move detection component for library scanning.
 
 Detects file moves by comparing chromaprints between removed and new files.
 """
@@ -45,8 +44,7 @@ def detect_file_moves(
     new_file_entries: list[dict[str, Any]],
     db: Database,
 ) -> MoveDetectionResult:
-    """
-    Detect file moves by comparing chromaprints.
+    """Detect file moves by comparing chromaprints.
 
     Computes chromaprints for new files and matches against removed files.
     Only processes files if chromaprints exist in the library (fast-fail).
@@ -58,6 +56,7 @@ def detect_file_moves(
 
     Returns:
         MoveDetectionResult with detected moves and statistics
+
     """
     # Fast path: No files to analyze
     if not files_to_remove or not new_file_entries:
@@ -136,14 +135,13 @@ def detect_file_moves(
                         moves.append(move)
                         matched_indices.add(idx)
                         break
-                    else:
-                        # Chromaprint collision - different songs with same fingerprint
-                        collisions_detected += 1
-                        logger.warning(
-                            f"Chromaprint collision detected: "
-                            f"{removed_file['path']} vs {new_path} "
-                            f"(duration: {removed_duration}s vs {new_duration}s)"
-                        )
+                    # Chromaprint collision - different songs with same fingerprint
+                    collisions_detected += 1
+                    logger.warning(
+                        f"Chromaprint collision detected: "
+                        f"{removed_file['path']} vs {new_path} "
+                        f"(duration: {removed_duration}s vs {new_duration}s)",
+                    )
 
         except Exception as e:
             logger.warning(f"Failed to compute chromaprint for {new_path}: {e}")
@@ -152,7 +150,7 @@ def detect_file_moves(
     logger.info(
         f"Move detection complete: {len(moves)} moves found, "
         f"{chromaprints_computed} chromaprints computed, "
-        f"{collisions_detected} collisions detected"
+        f"{collisions_detected} collisions detected",
     )
 
     return MoveDetectionResult(

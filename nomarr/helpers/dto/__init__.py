@@ -1,5 +1,4 @@
-"""
-Domain-specific DTOs (Data Transfer Objects) used across multiple layers.
+"""Domain-specific DTOs (Data Transfer Objects) used across multiple layers.
 
 Domain-specific DTOs live in helpers/dto/<domain>_dto.py and form cross-layer contracts
 within that domain (interfaces → services → workflows → components).

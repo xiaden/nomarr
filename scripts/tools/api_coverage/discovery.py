@@ -11,11 +11,11 @@ sys.path.insert(0, str(project_root))
 
 
 def get_backend_routes() -> list[tuple[str, str, str | None, str | None, str | None, int | None]]:
-    """
-    Get all routes from FastAPI application.
+    """Get all routes from FastAPI application.
 
     Returns:
         List of (method, path, summary, description, file_path, line_number) tuples
+
     """
     # Ignore list: FastAPI auto-generated docs and root endpoint
     ignored_routes = {
@@ -74,11 +74,11 @@ def get_backend_routes() -> list[tuple[str, str, str | None, str | None, str | N
 
 
 def scan_frontend_usage(frontend_dir: Path) -> dict[str, list[tuple[str, int]]]:
-    """
-    Scan frontend TypeScript files for API endpoint usage.
+    """Scan frontend TypeScript files for API endpoint usage.
 
     Returns:
         Dict mapping endpoint patterns to list of (file_path, line_number) tuples
+
     """
     usage_map: dict[str, list[tuple[str, int]]] = defaultdict(list)
 

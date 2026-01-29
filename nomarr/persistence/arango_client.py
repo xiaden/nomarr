@@ -6,12 +6,14 @@ Thread-safe within a single process. Each process creates its own pool.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from arango import ArangoClient
-from arango.aql import AQL
-from arango.collection import StandardCollection
 from arango.database import StandardDatabase
+
+if TYPE_CHECKING:
+    from arango.aql import AQL
+    from arango.collection import StandardCollection
 
 # =============================================================================
 # JSON Serialization Boundary
@@ -50,6 +52,7 @@ def _jsonify_for_arango(obj: Any, *, _path: str = "$") -> Any:
 
     Raises:
         TypeError: If obj contains non-serializable types (with path context)
+
     """
     # Fast path: primitives pass through unchanged
     if isinstance(obj, _JSON_PRIMITIVES):
@@ -68,15 +71,21 @@ def _jsonify_for_arango(obj: Any, *, _path: str = "$") -> Any:
         if isinstance(primitive_value, _JSON_PRIMITIVES):
             return primitive_value
         # .value exists but isn't a primitive - fail loudly
-        raise TypeError(
+        msg = (
             f"Non-primitive .value at {_path}: {type(obj).__name__}.value is {type(primitive_value).__name__}, "
             f"expected JSON primitive"
         )
+        raise TypeError(
+            msg,
+        )
 
     # Everything else is rejected - call sites must convert explicitly
-    raise TypeError(
+    msg = (
         f"Object at {_path} not JSON-serializable for Arango: {type(obj).__name__}. "
         f"Convert to primitive before passing to persistence layer."
+    )
+    raise TypeError(
+        msg,
     )
 
 
@@ -164,6 +173,7 @@ def create_arango_client(
     Raises:
         DatabaseGetError: If database doesn't exist (signals first-run needed)
         ServerConnectionError: If cannot connect to ArangoDB service
+
     """
     client = ArangoClient(hosts=hosts)
     db = client.db(db_name, username=username, password=password)

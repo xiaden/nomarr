@@ -9,8 +9,7 @@ if TYPE_CHECKING:
 
 
 def get_file_tags_with_path(db: Database, file_id: str, nomarr_only: bool = False) -> dict[str, Any] | None:
-    """
-    Get all tags for a file along with file path.
+    """Get all tags for a file along with file path.
 
     Args:
         db: Database instance
@@ -20,6 +19,7 @@ def get_file_tags_with_path(db: Database, file_id: str, nomarr_only: bool = Fals
     Returns:
         Dict with 'path' and 'tags' keys, or None if file not found.
         'tags' is a list of dicts with 'rel', 'value', 'is_nomarr_tag'.
+
     """
     # Get file info from persistence
     file_record = db.library_files.get_file_by_id(file_id)

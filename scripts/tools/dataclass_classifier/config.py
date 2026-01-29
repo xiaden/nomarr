@@ -1,6 +1,4 @@
-"""
-Configuration loading and module resolution utilities.
-"""
+"""Configuration loading and module resolution utilities."""
 
 import json
 import sys
@@ -9,14 +7,14 @@ from typing import Any
 
 
 def get_config_paths(script_path: Path) -> tuple[Path, Path, Path]:
-    """
-    Compute standard paths relative to the script location.
+    """Compute standard paths relative to the script location.
 
     Args:
         script_path: Path to the main script
 
     Returns:
         Tuple of (OUTPUTS_DIR, CONFIG_FILE, SCRIPT_DIR)
+
     """
     script_dir = script_path.parent
     outputs_dir = script_dir / "outputs"
@@ -25,8 +23,7 @@ def get_config_paths(script_path: Path) -> tuple[Path, Path, Path]:
 
 
 def load_config(config_file: Path) -> dict[str, Any]:
-    """
-    Load configuration from scripts/configs/dataclass_classifier.json.
+    """Load configuration from scripts/configs/dataclass_classifier.json.
 
     If the file is missing or invalid, returns a reasonable default config.
 
@@ -35,6 +32,7 @@ def load_config(config_file: Path) -> dict[str, Any]:
 
     Returns:
         Dict with keys: project_root, search_paths, layer_map, domain_map, allowed_imports, ignore_prefixes
+
     """
     default_config: dict[str, Any] = {
         "project_root": "..",
@@ -71,8 +69,7 @@ def load_config(config_file: Path) -> dict[str, Any]:
 
 
 def resolve_layer(module_path: str, layer_map: dict[str, str]) -> str:
-    """
-    Resolve the layer name for a module based on its package path.
+    """Resolve the layer name for a module based on its package path.
 
     Layer is determined purely by the top-level package structure:
     - nomarr.interfaces.* → "interfaces"
@@ -91,6 +88,7 @@ def resolve_layer(module_path: str, layer_map: dict[str, str]) -> str:
 
     Returns:
         Layer name (e.g., "services", "workflows", "helpers", "unknown")
+
     """
     # Direct layer resolution based on package structure
     if module_path.startswith("nomarr.interfaces"):
@@ -122,8 +120,7 @@ def resolve_layer(module_path: str, layer_map: dict[str, str]) -> str:
 
 
 def resolve_domain(module_path: str, domain_map: dict[str, str]) -> str:
-    """
-    Resolve the domain name for a module using suffix-aware heuristics.
+    """Resolve the domain name for a module using suffix-aware heuristics.
 
     Algorithm:
     1. Identify the layer segment (services, workflows, components, etc.)
@@ -145,6 +142,7 @@ def resolve_domain(module_path: str, domain_map: dict[str, str]) -> str:
 
     Returns:
         Domain name (e.g., "navidrome", "queue", "analytics", "unknown")
+
     """
     # Known suffixes to strip when deriving domain from module name
     KNOWN_SUFFIXES = [
@@ -249,8 +247,7 @@ def resolve_domain(module_path: str, domain_map: dict[str, str]) -> str:
 
 
 def is_ignored_module(module_path: str, ignore_prefixes: list[str]) -> bool:
-    """
-    Check if a module should be ignored based on ignore_prefixes config.
+    """Check if a module should be ignored based on ignore_prefixes config.
 
     Args:
         module_path: Full module path (e.g., "tests.unit.test_foo")
@@ -258,5 +255,6 @@ def is_ignored_module(module_path: str, ignore_prefixes: list[str]) -> bool:
 
     Returns:
         True if module should be ignored, False otherwise
+
     """
     return any(module_path == prefix or module_path.startswith(prefix + ".") for prefix in ignore_prefixes)

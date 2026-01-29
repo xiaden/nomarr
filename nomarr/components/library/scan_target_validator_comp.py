@@ -1,5 +1,4 @@
-"""
-Scan target validation component.
+"""Scan target validation component.
 
 Validates scan targets and resolves them to absolute paths.
 """
@@ -7,9 +6,12 @@ Validates scan targets and resolves them to absolute paths.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-from nomarr.helpers.dto import ScanTarget
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from nomarr.helpers.dto import ScanTarget
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +20,7 @@ def validate_scan_targets(
     scan_targets: list[ScanTarget],
     library_root: Path,
 ) -> list[Path]:
-    """
-    Validate scan targets and return valid absolute paths.
+    """Validate scan targets and return valid absolute paths.
 
     Args:
         scan_targets: List of scan targets (empty folder_path = library root)
@@ -27,6 +28,7 @@ def validate_scan_targets(
 
     Returns:
         List of valid absolute paths ready for scanning
+
     """
     valid_paths: list[Path] = []
 

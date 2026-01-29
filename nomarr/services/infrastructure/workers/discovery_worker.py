@@ -15,12 +15,13 @@ import multiprocessing
 import threading
 import time
 from multiprocessing import Event
-from multiprocessing.synchronize import Event as EventType
 from typing import TYPE_CHECKING, Any
 
 from nomarr.helpers.time_helper import internal_s
 
 if TYPE_CHECKING:
+    from multiprocessing.synchronize import Event as EventType
+
     from nomarr.helpers.dto.processing_dto import ProcessorConfig
 
 logger = logging.getLogger(__name__)
@@ -73,6 +74,7 @@ class DiscoveryWorker(multiprocessing.Process):
             health_pipe: Pipe write-end for health telemetry to parent
             execution_tier: Execution tier (0-4) from admission control
             prefer_gpu: Whether to prefer GPU for backbone execution
+
         """
         super().__init__()
         self.worker_id = worker_id
@@ -137,6 +139,7 @@ class DiscoveryWorker(multiprocessing.Process):
 
         Args:
             status: Health status (pending, healthy, unhealthy, failed)
+
         """
         if self._health_pipe is None:
             return
@@ -145,7 +148,7 @@ class DiscoveryWorker(multiprocessing.Process):
             {
                 "component_id": self.worker_id,
                 "status": status,
-            }
+            },
         )
         try:
             self._health_pipe.send(frame)
@@ -232,11 +235,10 @@ class DiscoveryWorker(multiprocessing.Process):
                         # Still recovering - sleep briefly and recheck
                         time.sleep(1.0)
                         continue
-                    else:
-                        # Recovery window expired - check resources again
-                        recovering_until = None
-                        self._current_status = "healthy"
-                        logger.info("[%s] Recovery window expired, resuming work", self.worker_id)
+                    # Recovery window expired - check resources again
+                    recovering_until = None
+                    self._current_status = "healthy"
+                    logger.info("[%s] Recovery window expired, resuming work", self.worker_id)
 
                 # Discover and claim next file
                 logger.debug("[%s] Polling for work...", self.worker_id)
@@ -305,7 +307,7 @@ class DiscoveryWorker(multiprocessing.Process):
                             )
                             logger.info("[%s] ML cache ready: %d predictors loaded", self.worker_id, count)
                         except Exception as e:
-                            logger.error("[%s] Failed to warm ML cache: %s", self.worker_id, e)
+                            logger.exception("[%s] Failed to warm ML cache: %s", self.worker_id, e)
                             # Continue anyway - workflow will create predictors inline (slower but works)
                     cache_warmed = True
 
@@ -355,7 +357,7 @@ class DiscoveryWorker(multiprocessing.Process):
                     release_claim(db, file_id)
 
                     if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
-                        logger.error(
+                        logger.exception(
                             "[%s] Too many consecutive errors (%d), shutting down",
                             self.worker_id,
                             consecutive_errors,
@@ -405,6 +407,7 @@ def create_discovery_worker(
 
     Returns:
         Configured DiscoveryWorker process (not started)
+
     """
     worker_id = f"worker:tag:{worker_index}"
 

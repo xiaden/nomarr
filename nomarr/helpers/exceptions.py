@@ -1,5 +1,4 @@
-"""
-Custom exceptions used across multiple layers.
+"""Custom exceptions used across multiple layers.
 
 Rules:
 - Only put exceptions here if they need to be raised in one layer and caught in another.
@@ -13,4 +12,3 @@ from __future__ import annotations
 class PlaylistQueryError(Exception):
     """Raised when a smart playlist query is invalid or cannot be parsed."""
 
-    pass

@@ -1,6 +1,4 @@
-"""
-Calibration package.
-"""
+"""Calibration package."""
 
 from .backfill_calibration_hash_wf import backfill_calibration_hashes_wf
 from .calibration_loader_wf import load_calibrations_from_db_wf

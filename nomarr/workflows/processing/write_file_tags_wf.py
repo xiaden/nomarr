@@ -1,5 +1,4 @@
-"""
-File tag writing workflow - writes DB tags to audio files.
+"""File tag writing workflow - writes DB tags to audio files.
 
 This workflow writes tags from the database to audio files based on
 the library's file_write_mode setting. It handles mode filtering,
@@ -25,10 +24,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.tagging.tagging_writer_comp import TagWriter
-from nomarr.helpers.dto.path_dto import LibraryPath
 from nomarr.helpers.dto.tags_dto import Tags
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dto.path_dto import LibraryPath
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
@@ -50,8 +49,7 @@ def _filter_tags_for_mode(
     target_mode: str,
     has_calibration: bool,
 ) -> Tags:
-    """
-    Filter tags based on target mode and calibration state.
+    """Filter tags based on target mode and calibration state.
 
     Args:
         db_tags: All tags from database (Tags DTO)
@@ -60,6 +58,7 @@ def _filter_tags_for_mode(
 
     Returns:
         Filtered Tags DTO for file writing
+
     """
     # Filter out mood tags if uncalibrated (applies to ALL modes)
     if not has_calibration:
@@ -106,8 +105,7 @@ def write_file_tags_workflow(
     has_calibration: bool,
     namespace: str = "nom",
 ) -> WriteResult:
-    """
-    Write tags from database to an audio file based on mode.
+    """Write tags from database to an audio file based on mode.
 
     This workflow reads tags from the database and writes them to the audio
     file using the appropriate mode filtering. It uses atomic safe writes
@@ -129,6 +127,7 @@ def write_file_tags_workflow(
         - "minimal" writes only mood-tier tags
         - "full" writes all DB tags
         - Mood tags are filtered if calibration is empty (any mode)
+
     """
     try:
         # Normalize file_key
@@ -217,7 +216,7 @@ def write_file_tags_workflow(
 
         logger.debug(
             f"[write_file_tags] Wrote {len(tags_to_write)} tags to {library_path.relative} "
-            f"(mode={target_mode}, filtered={tags_filtered})"
+            f"(mode={target_mode}, filtered={tags_filtered})",
         )
 
         return WriteResult(

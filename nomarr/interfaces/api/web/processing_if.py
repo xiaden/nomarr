@@ -6,7 +6,7 @@ Files are marked as needing processing during library scans.
 """
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -27,7 +27,7 @@ router = APIRouter(prefix="/processing", tags=["Processing"])
 
 @router.get("/status", dependencies=[Depends(verify_session)])
 async def web_processing_status(
-    library_service: "LibraryService" = Depends(get_library_service),
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
 ) -> dict[str, int]:
     """Get current processing status (files pending processing).
 
@@ -47,5 +47,5 @@ async def web_processing_status(
     except Exception as e:
         logging.exception("[Web API] Error getting processing status")
         raise HTTPException(
-            status_code=500, detail=sanitize_exception_message(e, "Failed to get processing status")
+            status_code=500, detail=sanitize_exception_message(e, "Failed to get processing status"),
         ) from e

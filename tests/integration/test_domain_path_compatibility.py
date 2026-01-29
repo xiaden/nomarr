@@ -1,5 +1,4 @@
-"""
-Integration tests verifying that all domains can still access absolute paths after Phase 1-3 changes.
+"""Integration tests verifying that all domains can still access absolute paths after Phase 1-3 changes.
 
 Validates that the dual-path strategy (absolute + normalized) preserves backward compatibility:
 - path field: absolute path (for file access by domains)

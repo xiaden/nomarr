@@ -283,6 +283,7 @@ def extract_calls_from_function(
                        for resolving attribute calls across modules.
         module_imports: Optional dict of module-level imports {name -> full_path}
                        for resolving Depends() calls.
+
     """
 
     # Extract local imports from this function

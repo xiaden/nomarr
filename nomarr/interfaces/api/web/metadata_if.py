@@ -5,7 +5,7 @@ Provides entity listing, song-entity relationships, and traversal queries
 for the web frontend using session authentication.
 """
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -32,7 +32,7 @@ EntityCollection = Literal["artists", "albums", "labels", "genres", "years"]
 # ----------------------------------------------------------------------
 @router.get("/counts", dependencies=[Depends(verify_session)])
 async def get_entity_counts(
-    metadata_service: MetadataService = Depends(get_metadata_service),
+    metadata_service: Annotated[MetadataService, Depends(get_metadata_service)],
 ) -> EntityCountsResponse:
     """Get total counts for all entity collections (artists, albums, etc.)."""
     counts = metadata_service.get_entity_counts()
@@ -45,9 +45,9 @@ async def get_entity_counts(
 @router.get("/{collection}", dependencies=[Depends(verify_session)])
 async def list_entities(
     collection: EntityCollection,
-    limit: int = Query(100, ge=1, le=1000),
-    offset: int = Query(0, ge=0),
-    search: str | None = Query(None, description="Substring search on display_name"),
+    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    search: Annotated[str | None, Query(description="Substring search on display_name")] = None,
     metadata_service: MetadataService = Depends(get_metadata_service),
 ) -> EntityListResponse:
     """List entities from a collection (artists, albums, labels, genres, years)."""
@@ -62,7 +62,7 @@ async def list_entities(
 async def get_entity(
     collection: EntityCollection,
     entity_id: str,
-    metadata_service: MetadataService = Depends(get_metadata_service),
+    metadata_service: Annotated[MetadataService, Depends(get_metadata_service)],
 ) -> EntityResponse:
     """Get entity details by _id.
 
@@ -83,9 +83,9 @@ async def get_entity(
 async def list_songs_for_entity(
     collection: EntityCollection,
     entity_id: str,
-    rel: str = Query(..., description="Relation type (artist, artists, album, label, genres, year)"),
-    limit: int = Query(100, ge=1, le=1000),
-    offset: int = Query(0, ge=0),
+    rel: Annotated[str, Query(description="Relation type (artist, artists, album, label, genres, year)")],
+    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
     metadata_service: MetadataService = Depends(get_metadata_service),
 ) -> SongListResponse:
     """List songs connected to an entity.
@@ -104,7 +104,7 @@ async def list_songs_for_entity(
 @router.get("/albums/{album_id}/artists", dependencies=[Depends(verify_session)])
 async def list_artists_for_album(
     album_id: str,
-    limit: int = Query(100, ge=1, le=1000),
+    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
     metadata_service: MetadataService = Depends(get_metadata_service),
 ) -> list[EntityResponse]:
     """List artists for an album via traversal (album→songs→artists).
@@ -122,7 +122,7 @@ async def list_artists_for_album(
 @router.get("/artists/{artist_id}/albums", dependencies=[Depends(verify_session)])
 async def list_albums_for_artist(
     artist_id: str,
-    limit: int = Query(100, ge=1, le=1000),
+    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
     metadata_service: MetadataService = Depends(get_metadata_service),
 ) -> list[EntityResponse]:
     """List albums for an artist via traversal (artist→songs→albums).

@@ -1,5 +1,4 @@
-"""
-Chromaprint (audio fingerprinting) component for move detection.
+"""Chromaprint (audio fingerprinting) component for move detection.
 
 Computes content-based audio fingerprints using spectral analysis.
 These fingerprints are used to detect when files have been moved/renamed
@@ -19,8 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 def compute_chromaprint(waveform: np.ndarray, sample_rate: int) -> str:
-    """
-    Compute audio fingerprint (chromaprint) from waveform.
+    """Compute audio fingerprint (chromaprint) from waveform.
 
     Uses Essentia's spectral analysis to create a content-based hash that:
     - Is identical for the same audio content
@@ -39,6 +37,7 @@ def compute_chromaprint(waveform: np.ndarray, sample_rate: int) -> str:
 
     Raises:
         RuntimeError: If Essentia is not available
+
     """
     backend_essentia.require()
 
@@ -94,6 +93,6 @@ def compute_chromaprint(waveform: np.ndarray, sample_rate: int) -> str:
         return hashlib.md5(fingerprint_data).hexdigest()
 
     except Exception as e:
-        logger.error(f"Failed to compute chromaprint: {e}")
+        logger.exception(f"Failed to compute chromaprint: {e}")
         # Fallback: hash the raw waveform (less robust but still works)
         return hashlib.md5(waveform.tobytes()).hexdigest()

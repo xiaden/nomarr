@@ -1,5 +1,4 @@
-"""
-Processing domain DTOs.
+"""Processing domain DTOs.
 
 Data transfer objects for audio processing configuration and tag writing.
 These form cross-layer contracts between interfaces, services, and workflows.
@@ -20,8 +19,7 @@ if TYPE_CHECKING:
 
 @dataclass
 class TagWriteProfile:
-    """
-    Controls what tags are written to media files vs stored only in DB.
+    """Controls what tags are written to media files vs stored only in DB.
 
     Similar to a logging level - allows configuration-driven control over
     tag verbosity in media files.
@@ -31,6 +29,7 @@ class TagWriteProfile:
             - "none": No tags written to files (DB only)
             - "minimal": Only high-level summary tags (mood-*, genre, etc.)
             - "full": Rich tag set including numeric scores (but never *_tier or calibration)
+
     """
 
     file_write_mode: Literal["none", "minimal", "full"] = "minimal"
@@ -38,8 +37,7 @@ class TagWriteProfile:
 
 @dataclass
 class ResourceManagementConfig:
-    """
-    Configuration for GPU/CPU adaptive resource management.
+    """Configuration for GPU/CPU adaptive resource management.
 
     Per GPU_REFACTOR_PLAN.md Section 13:
     - enabled: Whether resource management is active
@@ -56,8 +54,7 @@ class ResourceManagementConfig:
 
 @dataclass
 class ProcessorConfig:
-    """
-    Configuration for the audio processing pipeline.
+    """Configuration for the audio processing pipeline.
 
     All fields are required to ensure explicit configuration.
     Validation should happen at the service layer when constructing this.

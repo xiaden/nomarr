@@ -6,8 +6,7 @@ import ast
 
 
 def extract_type_names_from_annotation(annotation: ast.expr) -> list[str]:
-    """
-    Extract class/type names from a type annotation.
+    """Extract class/type names from a type annotation.
 
     Handles:
     - Simple: Foo
@@ -85,8 +84,7 @@ def extract_type_annotations_from_function(
     graph,
     callable_index: dict[str, list[str]] | None = None,
 ) -> None:
-    """
-    Extract USES_TYPE edges from function type annotations.
+    """Extract USES_TYPE edges from function type annotations.
 
     Creates edges from the function to any classes used in:
     - Parameter type hints

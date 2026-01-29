@@ -95,5 +95,6 @@ class ComponentLifecycleHandler(Protocol):
             old_status: Previous status
             new_status: New status
             context: Additional context about the transition
+
         """
         ...

@@ -13,8 +13,7 @@ if TYPE_CHECKING:
 
 
 def read_file_tags_workflow(db: Database, path: str, namespace: str) -> dict[str, Any]:
-    """
-    Read tags from an audio file.
+    """Read tags from an audio file.
 
     Args:
         db: Database instance
@@ -27,12 +26,14 @@ def read_file_tags_workflow(db: Database, path: str, namespace: str) -> dict[str
     Raises:
         ValueError: If path is outside library_root or invalid
         RuntimeError: If file cannot be read
+
     """
     # Build and validate LibraryPath
     library_path = build_library_path_from_input(raw_path=path, db=db)
 
     if not library_path.is_valid():
-        raise ValueError(f"Invalid path: {library_path.reason}")
+        msg = f"Invalid path: {library_path.reason}"
+        raise ValueError(msg)
 
     # Read tags using component
     tags = read_tags_from_file(library_path, namespace)
@@ -42,8 +43,7 @@ def read_file_tags_workflow(db: Database, path: str, namespace: str) -> dict[str
 
 
 def remove_file_tags_workflow(db: Database, path: str, namespace: str) -> int:
-    """
-    Remove all namespaced tags from an audio file.
+    """Remove all namespaced tags from an audio file.
 
     Args:
         db: Database instance
@@ -56,14 +56,15 @@ def remove_file_tags_workflow(db: Database, path: str, namespace: str) -> int:
     Raises:
         ValueError: If path is outside library_root or invalid
         RuntimeError: If file cannot be modified
+
     """
     # Build and validate LibraryPath
     library_path = build_library_path_from_input(raw_path=path, db=db)
 
     if not library_path.is_valid():
-        raise ValueError(f"Invalid path: {library_path.reason}")
+        msg = f"Invalid path: {library_path.reason}"
+        raise ValueError(msg)
 
     # Remove tags using component
-    count = remove_tags_from_file(library_path, namespace)
+    return remove_tags_from_file(library_path, namespace)
 
-    return count

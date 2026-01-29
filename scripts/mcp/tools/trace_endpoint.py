@@ -206,8 +206,7 @@ def _extract_service_method_calls(
 
 
 def trace_endpoint(qualified_name: str, project_root: Path | None = None) -> dict[str, Any]:
-    """
-    Trace an API endpoint through DI to service methods.
+    """Trace an API endpoint through DI to service methods.
 
     This is a higher-level tool that:
     1. Finds the endpoint function
@@ -227,6 +226,7 @@ def trace_endpoint(qualified_name: str, project_root: Path | None = None) -> dic
             - service_calls: Methods called on each injected service
             - traces: Call traces for each service method
             - error: Optional error message
+
     """
     _mock_unavailable_dependencies()
 

@@ -1,6 +1,4 @@
-"""
-Ml package.
-"""
+"""Ml package."""
 
 from .ml_audio_comp import HAVE_ESSENTIA, load_audio_mono, should_skip_short
 from .ml_cache_comp import (

@@ -1,5 +1,4 @@
-"""
-Unit tests for nomarr.helpers.file_validation_helper module.
+"""Unit tests for nomarr.helpers.file_validation_helper module.
 
 Tests file validation and skip logic utilities.
 Note: These tests mock filesystem and mutagen operations to remain local-safe.

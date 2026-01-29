@@ -1,6 +1,4 @@
-"""
-Analytics package.
-"""
+"""Analytics package."""
 
 # Re-export DTOs from helpers/dto for backward compatibility
 from nomarr.helpers.dto.analytics_dto import (

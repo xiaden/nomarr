@@ -7,17 +7,13 @@ to maintain clean layer boundaries.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from nomarr.helpers.dto.library_dto import FileTag, LibraryFileWithTags
 
-if TYPE_CHECKING:
-    pass
-
 
 def map_file_with_tags_to_dto(file_dict: dict[str, Any]) -> LibraryFileWithTags:
-    """
-    Convert a raw file dictionary (with tags) to LibraryFileWithTags DTO.
+    """Convert a raw file dictionary (with tags) to LibraryFileWithTags DTO.
 
     Args:
         file_dict: Dictionary from search_library_files_with_tags query
@@ -25,6 +21,7 @@ def map_file_with_tags_to_dto(file_dict: dict[str, Any]) -> LibraryFileWithTags:
 
     Returns:
         LibraryFileWithTags DTO
+
     """
     return LibraryFileWithTags(
         _id=file_dict["_id"],

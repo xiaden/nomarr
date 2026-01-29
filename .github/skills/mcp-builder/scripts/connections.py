@@ -129,6 +129,7 @@ def create_connection(
 
     Returns:
         MCPConnection instance
+
     """
     transport = transport.lower()
 

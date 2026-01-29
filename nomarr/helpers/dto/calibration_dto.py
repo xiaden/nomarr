@@ -1,5 +1,4 @@
-"""
-DTOs for calibration-related operations.
+"""DTOs for calibration-related operations.
 
 Cross-layer data contracts for calibration service operations (used by services and interfaces).
 """

@@ -1,5 +1,4 @@
-"""
-Predictor cache management for TensorFlow models.
+"""Predictor cache management for TensorFlow models.
 
 Manages global cache of model predictors to avoid repeated model loading overhead.
 Supports automatic cache eviction after idle timeout to free GPU memory.
@@ -15,14 +14,15 @@ from __future__ import annotations
 
 import logging
 import threading
-from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
-
-import numpy as np
 
 from nomarr.helpers.time_helper import internal_s
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    import numpy as np
+
     from nomarr.components.ml.ml_discovery_comp import HeadInfo
 
 # Global predictor cache: {cache_key: predict_fn}
@@ -58,13 +58,13 @@ def warmup_predictor_cache(
     models_dir: str,
     cache_idle_timeout: int = 300,
 ) -> int:
-    """
-    Pre-load all model predictors into cache to avoid loading overhead during processing.
+    """Pre-load all model predictors into cache to avoid loading overhead during processing.
     Returns the number of predictors cached.
 
     Args:
         models_dir: Directory containing model files
         cache_idle_timeout: Seconds before idle cache eviction (0 = never evict, default: 300)
+
     """
     global _PREDICTOR_CACHE, _CACHE_INITIALIZED, _CACHE_LAST_ACCESS
     global _CACHE_TIMEOUT
@@ -98,16 +98,16 @@ def warmup_predictor_cache(
             key = cache_key(head_info)
             _PREDICTOR_CACHE[key] = predictor
             logging.info(
-                f"[cache] Cached [{idx}/{len(heads)}]: '{head_info.name}' ({head_info.backbone}/{head_info.head_type})"
+                f"[cache] Cached [{idx}/{len(heads)}]: '{head_info.name}' ({head_info.backbone}/{head_info.head_type})",
             )
         except Exception as e:
-            logging.error(f"[cache] Failed to cache predictor for {head_info.name}: {e}")
+            logging.exception(f"[cache] Failed to cache predictor for {head_info.name}: {e}")
 
     elapsed = internal_s().value - start.value
     _CACHE_INITIALIZED = True
     _CACHE_LAST_ACCESS = internal_s().value
     logging.info(
-        f"[cache] Predictor cache ready: {len(_PREDICTOR_CACHE)}/{len(heads)} predictors loaded in {elapsed:.1f}s"
+        f"[cache] Predictor cache ready: {len(_PREDICTOR_CACHE)}/{len(heads)} predictors loaded in {elapsed:.1f}s",
     )
     if len(_PREDICTOR_CACHE) != len(heads):
         cached = set(_PREDICTOR_CACHE.keys())
@@ -117,8 +117,7 @@ def warmup_predictor_cache(
 
 
 def clear_predictor_cache() -> int:
-    """
-    Clear all caches (predictor and backbone) and free GPU memory.
+    """Clear all caches (predictor and backbone) and free GPU memory.
     Returns the number of predictors that were cleared.
     """
     global _PREDICTOR_CACHE, _BACKBONE_CACHE, _CACHE_INITIALIZED, _CACHE_LAST_ACCESS
@@ -159,8 +158,7 @@ def get_cache_idle_time() -> float:
 
 
 def check_and_evict_idle_cache() -> bool:
-    """
-    Check if cache has been idle longer than timeout and evict if needed.
+    """Check if cache has been idle longer than timeout and evict if needed.
     Returns True if cache was evicted, False otherwise.
 
     If _CACHE_TIMEOUT is 0, cache is never evicted.
@@ -191,8 +189,7 @@ def backbone_cache_key(backbone: str, emb_graph: str) -> str:
 
 
 def get_cached_backbone_predictor(backbone: str, emb_graph: str) -> Any | None:
-    """
-    Get cached backbone predictor if available.
+    """Get cached backbone predictor if available.
 
     Args:
         backbone: Backbone name (effnet, musicnn, etc.)
@@ -200,19 +197,20 @@ def get_cached_backbone_predictor(backbone: str, emb_graph: str) -> Any | None:
 
     Returns:
         Cached predictor object or None if not cached
+
     """
     key = backbone_cache_key(backbone, emb_graph)
     return _BACKBONE_CACHE.get(key)
 
 
 def cache_backbone_predictor(backbone: str, emb_graph: str, predictor: Any) -> None:
-    """
-    Cache a backbone predictor for reuse.
+    """Cache a backbone predictor for reuse.
 
     Args:
         backbone: Backbone name
         emb_graph: Path to embedding graph file
         predictor: The Essentia predictor object to cache
+
     """
     key = backbone_cache_key(backbone, emb_graph)
     with _CACHE_LOCK:

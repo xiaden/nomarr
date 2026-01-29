@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""
-Rich UI components for CLI - consistent, professional interface across all commands.
-"""
+"""Rich UI components for CLI - consistent, professional interface across all commands."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from rich import box
 from rich.console import Console
 from rich.panel import Panel
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 console = Console()
 
@@ -24,18 +25,16 @@ COLOR_DONE = "green"
 
 
 class InfoPanel:
-    """
-    Simple panel for displaying status/info without progress tracking.
-    """
+    """Simple panel for displaying status/info without progress tracking."""
 
     @staticmethod
-    def show(title: str, content: str, border_style: str = COLOR_INFO):
+    def show(title: str, content: str, border_style: str = COLOR_INFO) -> None:
         """Show a single info panel."""
         panel = Panel(content, title=f"[bold]{title}[/bold]", border_style=border_style, box=box.ROUNDED)
         console.print(panel)
 
     @staticmethod
-    def show_multiple(panels: list[dict[str, str]]):
+    def show_multiple(panels: list[dict[str, str]]) -> None:
         """Show multiple panels vertically."""
         for panel_info in panels:
             InfoPanel.show(
@@ -47,29 +46,28 @@ class InfoPanel:
 
 
 def show_spinner(message: str, task_fn: Callable, *args, **kwargs):
-    """
-    Show a spinner while executing a task.
+    """Show a spinner while executing a task.
     Returns the result of task_fn.
     """
     with console.status(f"[bold {COLOR_INFO}]{message}[/bold {COLOR_INFO}]"):
         return task_fn(*args, **kwargs)
 
 
-def print_success(message: str):
+def print_success(message: str) -> None:
     """Print a success message."""
     console.print(f"[bold {COLOR_SUCCESS}]✓[/bold {COLOR_SUCCESS}] {message}")
 
 
-def print_error(message: str):
+def print_error(message: str) -> None:
     """Print an error message."""
     console.print(f"[bold {COLOR_ERROR}]✗[/bold {COLOR_ERROR}] {message}")
 
 
-def print_warning(message: str):
+def print_warning(message: str) -> None:
     """Print a warning message."""
     console.print(f"[bold {COLOR_WARNING}]⚠[/bold {COLOR_WARNING}] {message}")
 
 
-def print_info(message: str):
+def print_info(message: str) -> None:
     """Print an info message."""
     console.print(f"[{COLOR_INFO}][i][/{COLOR_INFO}] {message}")

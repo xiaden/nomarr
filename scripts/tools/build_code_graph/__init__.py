@@ -1,5 +1,4 @@
-"""
-Code graph builder tool for Nomarr.
+"""Code graph builder tool for Nomarr.
 
 Builds AST-based call graphs with reachability analysis.
 """

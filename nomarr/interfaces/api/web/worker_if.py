@@ -64,7 +64,7 @@ async def web_admin_restart() -> RestartResponse:
     logging.info("[Web API] Restart requested - restarting server...")
 
     # Use a background task to allow the response to be sent before restart
-    async def do_restart():
+    async def do_restart() -> None:
         await asyncio.sleep(1)  # Give time for response to be sent
         logging.info("[Web API] Executing restart now")
         os.execv(sys.executable, [sys.executable, *sys.argv])

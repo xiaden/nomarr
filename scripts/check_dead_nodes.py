@@ -1,5 +1,4 @@
-"""
-Analyze potentially dead code using the code graph.
+"""Analyze potentially dead code using the code graph.
 
 This script identifies unreachable nodes (functions, methods, classes) that are
 not reachable from interface entrypoints and analyzes whether they're truly dead
@@ -28,8 +27,7 @@ _ast_cache: dict[str, tuple[ast.AST | None, set[tuple[int, int]]]] = {}
 
 
 def get_docstring_ranges(file_path: Path) -> set[tuple[int, int]]:
-    """
-    Get line ranges for all docstrings in a Python file.
+    """Get line ranges for all docstrings in a Python file.
 
     Returns a set of (start_line, end_line) tuples for module, class, and function docstrings.
     Uses cached results if available.
@@ -82,8 +80,7 @@ def get_docstring_ranges(file_path: Path) -> set[tuple[int, int]]:
 
 
 def classify_grep_hit(hit: dict[str, Any], project_root: Path) -> str:
-    """
-    Classify a grep hit as: code, comment, docstring, non_code, or unknown.
+    """Classify a grep hit as: code, comment, docstring, non_code, or unknown.
 
     Args:
         hit: Dict with 'file', 'lineno', 'line' keys
@@ -91,6 +88,7 @@ def classify_grep_hit(hit: dict[str, Any], project_root: Path) -> str:
 
     Returns:
         Classification string: "code", "comment", "docstring", "non_code", "unknown"
+
     """
     file_path = hit["file"]
     lineno = hit["lineno"]
@@ -128,8 +126,7 @@ def analyze_dead_node(
     nodes_by_id: dict[str, dict[str, Any]],
     project_root: Path,
 ) -> dict[str, Any]:
-    """
-    Analyze a single potentially dead node.
+    """Analyze a single potentially dead node.
 
     Args:
         node: Node from code graph
@@ -139,6 +136,7 @@ def analyze_dead_node(
 
     Returns:
         Analysis dict with metadata, edge counts, detailed usages, grep hits, and dead assessment
+
     """
     node_id = node["id"]
     node_name = node["name"]
@@ -290,8 +288,7 @@ def analyze_dead_node(
 
 
 def should_analyze_node(node: dict[str, Any]) -> bool:
-    """
-    Determine if a node should be analyzed for dead code.
+    """Determine if a node should be analyzed for dead code.
 
     Filters out:
     - Private names (start with "_")
@@ -322,11 +319,11 @@ def should_analyze_node(node: dict[str, Any]) -> bool:
 
 
 def print_analysis(analysis: dict[str, Any]) -> None:
-    """
-    Print detailed analysis for a single node.
+    """Print detailed analysis for a single node.
 
     Args:
         analysis: Analysis dict from analyze_dead_node
+
     """
     node = analysis["node"]
     edges_info = analysis["edges"]

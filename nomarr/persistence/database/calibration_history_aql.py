@@ -43,6 +43,7 @@ class CalibrationHistoryOperations:
 
         Returns:
             Document _id of created snapshot
+
         """
         now_ms = int(__import__("time").time() * 1000)
 
@@ -75,6 +76,7 @@ class CalibrationHistoryOperations:
 
         Returns:
             List of snapshot documents, sorted by snapshot_at descending
+
         """
         cursor = self.db.aql.execute(
             """
@@ -85,7 +87,7 @@ class CalibrationHistoryOperations:
                 RETURN h
             """,
             bind_vars=cast(
-                dict[str, Any],
+                "dict[str, Any]",
                 {
                     "calibration_key": calibration_key,
                     "limit": limit,
@@ -105,6 +107,7 @@ class CalibrationHistoryOperations:
 
         Returns:
             Latest snapshot document or None if no history exists
+
         """
         cursor = self.db.aql.execute(
             """
@@ -115,7 +118,7 @@ class CalibrationHistoryOperations:
                 RETURN h
             """,
             bind_vars=cast(
-                dict[str, Any],
+                "dict[str, Any]",
                 {"calibration_key": calibration_key},
             ),
         )
@@ -135,6 +138,7 @@ class CalibrationHistoryOperations:
 
         Returns:
             List of snapshot documents, sorted by snapshot_at descending
+
         """
         if since_ms:
             cursor = self.db.aql.execute(
@@ -146,7 +150,7 @@ class CalibrationHistoryOperations:
                     RETURN h
                 """,
                 bind_vars=cast(
-                    dict[str, Any],
+                    "dict[str, Any]",
                     {
                         "since_ms": since_ms,
                         "limit": limit,
@@ -162,7 +166,7 @@ class CalibrationHistoryOperations:
                     RETURN h
                 """,
                 bind_vars=cast(
-                    dict[str, Any],
+                    "dict[str, Any]",
                     {"limit": limit},
                 ),
             )
@@ -181,6 +185,7 @@ class CalibrationHistoryOperations:
 
         Returns:
             Number of snapshots deleted
+
         """
         cursor = self.db.aql.execute(
             """
@@ -196,7 +201,7 @@ class CalibrationHistoryOperations:
             RETURN 1
             """,
             bind_vars=cast(
-                dict[str, Any],
+                "dict[str, Any]",
                 {
                     "calibration_key": calibration_key,
                     "keep_count": keep_count,

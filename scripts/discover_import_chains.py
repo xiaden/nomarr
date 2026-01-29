@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Import Chain Discovery and Architecture Violation Detector.
+"""Import Chain Discovery and Architecture Violation Detector.
 
 Traces full import chains starting from a root module and identifies
 violations of Nomarr's layered architecture rules.
@@ -43,14 +42,14 @@ LAYER_VIOLATIONS = {
 
 
 def extract_layer(module_path: str) -> str | None:
-    """
-    Extract the architecture layer from a module path.
+    """Extract the architecture layer from a module path.
 
     Args:
         module_path: Fully qualified module path (e.g., "nomarr.services.queue")
 
     Returns:
         Layer name or None if not a nomarr module
+
     """
     if not module_path.startswith("nomarr."):
         return None
@@ -80,8 +79,7 @@ def extract_layer(module_path: str) -> str | None:
 
 
 def check_violation(from_module: str, to_module: str) -> str | None:
-    """
-    Check if an import violates architecture rules.
+    """Check if an import violates architecture rules.
 
     Args:
         from_module: Module doing the importing
@@ -89,6 +87,7 @@ def check_violation(from_module: str, to_module: str) -> str | None:
 
     Returns:
         Violation message or None if allowed
+
     """
     from_layer = extract_layer(from_module)
     to_layer = extract_layer(to_module)
@@ -107,8 +106,7 @@ def check_violation(from_module: str, to_module: str) -> str | None:
 
 
 def resolve_module_to_path(module_name: str, project_root: Path) -> Path | None:
-    """
-    Resolve a module name to a file path.
+    """Resolve a module name to a file path.
 
     Args:
         module_name: Fully qualified module name (e.g., "nomarr.services.queue")
@@ -116,6 +114,7 @@ def resolve_module_to_path(module_name: str, project_root: Path) -> Path | None:
 
     Returns:
         Path to the module file or None if not found
+
     """
     # Convert module path to file path
     parts = module_name.split(".")
@@ -135,8 +134,7 @@ def resolve_module_to_path(module_name: str, project_root: Path) -> Path | None:
 
 
 def extract_imports_from_file(file_path: Path, current_module: str) -> list[str]:
-    """
-    Extract all imports from a Python file using AST.
+    """Extract all imports from a Python file using AST.
 
     Args:
         file_path: Path to the Python file
@@ -144,6 +142,7 @@ def extract_imports_from_file(file_path: Path, current_module: str) -> list[str]
 
     Returns:
         List of absolute module names imported
+
     """
     try:
         with open(file_path, encoding="utf-8") as f:
@@ -200,8 +199,7 @@ def discover_import_chains(
     depth: int = 0,
     chain: list[str] | None = None,
 ) -> dict[str, Any]:
-    """
-    Recursively discover import chains starting from a root module.
+    """Recursively discover import chains starting from a root module.
 
     Args:
         root_module: Starting module name
@@ -212,6 +210,7 @@ def discover_import_chains(
 
     Returns:
         Dictionary containing chains and violations
+
     """
     if visited is None:
         visited = set()
@@ -335,8 +334,7 @@ def format_json_output(root_module: str, result: dict[str, Any]) -> str:
 
 
 def resolve_input_to_module(input_path: str, project_root: Path) -> str:
-    """
-    Resolve input (module path or file path) to a module name.
+    """Resolve input (module path or file path) to a module name.
 
     Args:
         input_path: User input (e.g., "nomarr.services.queue" or "nomarr/services/queue.py")
@@ -344,6 +342,7 @@ def resolve_input_to_module(input_path: str, project_root: Path) -> str:
 
     Returns:
         Fully qualified module name
+
     """
     # If it looks like a file path, convert to module path
     if "/" in input_path or "\\" in input_path or input_path.endswith(".py"):

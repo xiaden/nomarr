@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-ML-optimized Call Chain Tracer (Standalone)
+"""ML-optimized Call Chain Tracer (Standalone)
 
 Traces function call chains starting from a given function/method.
 Returns the complete call tree with file locations.
@@ -606,8 +605,7 @@ def _flatten_chain(info: CallInfo, prefix: str = "") -> list[dict[str, Any]]:
 
 
 def trace_calls(qualified_name: str, project_root: Path | None = None) -> dict[str, Any]:
-    """
-    Trace the call chain starting from a function/method.
+    """Trace the call chain starting from a function/method.
 
     Args:
         qualified_name: Fully qualified function name
@@ -624,6 +622,7 @@ def trace_calls(qualified_name: str, project_root: Path | None = None) -> dict[s
             - depth: Maximum call depth found
             - call_count: Total unique calls traced
             - error: Optional error message
+
     """
     _mock_unavailable_dependencies()
 

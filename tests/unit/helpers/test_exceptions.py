@@ -1,5 +1,4 @@
-"""
-Unit tests for nomarr.helpers.exceptions module.
+"""Unit tests for nomarr.helpers.exceptions module.
 
 Tests custom exception classes.
 """

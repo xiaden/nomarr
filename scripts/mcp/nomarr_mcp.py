@@ -1,27 +1,30 @@
 #!/usr/bin/env python3
 """Nomarr Coding Tools MCP Server.
 
-Exposes code discovery tools to AI agents via MCP.
+Exposes code discovery tools and resources to AI agents via MCP.
 All tools use static analysis and return structured JSON.
+
+File system:
+- list_dir: List directory contents with smart filtering
 
 Python code navigation:
 - discover_api: Show public API of any nomarr module (signatures, methods, constants)
+- locate_symbol: Find where a symbol is defined (by simple or partially qualified name)
 - get_source: Get source code of a specific function/method/class
 - symbol_at_line: Get full function/class containing a line (for contextual error fixes)
-- locate_symbol: Find where a symbol is defined (by simple or partially qualified name)
 - trace_calls: Trace call chains from entry point through layers
 - trace_endpoint: Resolve FastAPI DI to trace full endpoint behavior
+
+Nomarr-specific tools:
 - list_routes: List all API routes by static analysis
 - check_api_coverage: Check which backend endpoints are used by frontend
-
-Non-Python file utilities:
-- read_file: Read line range from non-Python files (YAML, TS, CSS, configs) or when Python tools return 'too large'
-- read_line: Quick error context (1 line + 2 around) for trivial fixes. Use symbol_at_line for complex errors
-- search_text: Find exact text in non-Python files (configs, frontend, logs) and show 2-line context
-
-Quality checks:
 - lint_backend: Run ruff, mypy, and import-linter on specified path
 - lint_frontend: Run ESLint and TypeScript type checking on frontend
+
+Fallback utilities:
+- search_text: Find exact text in files and show 2-line context
+- read_line: Quick error context (1 line + 2 around) for trivial fixes
+- read_file: Read line range from any file (YAML, TS, CSS, configs, etc.)
 
 Usage:
     python -m scripts.mcp.nomarr_mcp
@@ -58,8 +61,8 @@ mcp = FastMCP(
     name="nom:coding-tools",
     instructions=(
         "Provides read-only, static analysis access to the Nomarr codebase. "
-        "Use these tools to inspect real source code, discover actual APIs, trace call relationships, "
-        "and understand application structure. All results reflect the current repository state. "
+        "Tool priority: list_dir → discover_api → locate_symbol → get_source → symbol_at_line → trace_calls/trace_endpoint. "
+        "Use structured Python tools first; read_line/read_file/search_text are fallbacks for non-Python files or when structured tools fail. "
         "No tools execute code, modify files, or infer behavior beyond what is statically observable."
     ),
 )
@@ -67,6 +70,26 @@ mcp = FastMCP(
 
 # ──────────────────────────────────────────────────────────────────────
 # Tools
+# ──────────────────────────────────────────────────────────────────────
+
+
+@mcp.tool()
+def list_dir(
+    folder: Annotated[
+        str, "Subfolder path relative to workspace root (empty for root). Use forward slashes: 'nomarr/services'"
+    ] = "",
+) -> dict:
+    """List directory contents with smart filtering.
+
+    Root call: shows only top-level files + folder tree (minimal tokens).
+    Specific folder: shows files at that level.
+    Excludes: .venv, node_modules, __pycache__, etc.
+    """
+    return tools.list_dir(folder, workspace_root=ROOT)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Python Code Navigation Tools
 # ──────────────────────────────────────────────────────────────────────
 
 # Import ML-optimized tools (self-contained, no dependency on human scripts)

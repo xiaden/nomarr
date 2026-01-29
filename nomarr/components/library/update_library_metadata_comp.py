@@ -23,8 +23,7 @@ class UpdateLibraryMetadataComp:
         watch_mode: str | None = None,
         file_write_mode: str | None = None,
     ) -> None:
-        """
-        Update library metadata fields.
+        """Update library metadata fields.
 
         Args:
             library_id: Library _id
@@ -32,7 +31,8 @@ class UpdateLibraryMetadataComp:
             is_enabled: New enabled status (optional)
             watch_mode: New watch mode (optional)
             file_write_mode: New file write mode (optional)
+
         """
         self.db.libraries.update_library(
-            library_id, name=name, is_enabled=is_enabled, watch_mode=watch_mode, file_write_mode=file_write_mode
+            library_id, name=name, is_enabled=is_enabled, watch_mode=watch_mode, file_write_mode=file_write_mode,
         )

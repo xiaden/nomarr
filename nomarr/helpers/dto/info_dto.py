@@ -1,5 +1,4 @@
-"""
-Info domain DTOs.
+"""Info domain DTOs.
 
 Data transfer objects for system info and health status endpoints.
 """
@@ -34,8 +33,7 @@ class HealthStatusResult:
 
 @dataclass
 class GPUHealthResult:
-    """
-    Result from get_gpu_health service method.
+    """Result from get_gpu_health service method.
 
     Contains GPU resource snapshot and monitor liveness.
     Monitor liveness is determined by HealthMonitorService, not DB.
@@ -118,8 +116,7 @@ class ScanningLibraryInfo:
 
 @dataclass
 class WorkStatusResult:
-    """
-    Result from get_work_status service method.
+    """Result from get_work_status service method.
 
     Unified work status for the system: scanning, processing, tagging.
     """

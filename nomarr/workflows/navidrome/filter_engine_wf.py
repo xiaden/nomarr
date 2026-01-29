@@ -1,5 +1,4 @@
-"""
-Smart Playlist Filter Engine
+"""Smart Playlist Filter Engine.
 
 Executes parsed smart playlist filters using set operations.
 This module sits in the workflows layer and orchestrates:
@@ -9,13 +8,15 @@ This module sits in the workflows layer and orchestrates:
 
 from __future__ import annotations
 
-from nomarr.helpers.dto.navidrome_dto import SmartPlaylistFilter, TagCondition
-from nomarr.persistence.db import Database
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from nomarr.helpers.dto.navidrome_dto import SmartPlaylistFilter, TagCondition
+    from nomarr.persistence.db import Database
 
 
 def execute_smart_playlist_filter(db: Database, playlist_filter: SmartPlaylistFilter) -> set[str]:
-    """
-    Execute a smart playlist filter and return matching file IDs.
+    """Execute a smart playlist filter and return matching file IDs.
 
     Uses Python set operations to combine conditions:
     - AND conditions: intersection of sets
@@ -27,6 +28,7 @@ def execute_smart_playlist_filter(db: Database, playlist_filter: SmartPlaylistFi
 
     Returns:
         Set of file IDs matching the filter
+
     """
     # Handle AND conditions (intersection)
     if playlist_filter.all_conditions:
@@ -41,7 +43,7 @@ def execute_smart_playlist_filter(db: Database, playlist_filter: SmartPlaylistFi
         return set()
 
     # Handle OR conditions (union)
-    elif playlist_filter.any_conditions:
+    if playlist_filter.any_conditions:
         result_sets = []
         for condition in playlist_filter.any_conditions:
             file_ids = _execute_single_condition(db, condition)
@@ -57,8 +59,7 @@ def execute_smart_playlist_filter(db: Database, playlist_filter: SmartPlaylistFi
 
 
 def _execute_single_condition(db: Database, condition: TagCondition) -> set[str]:
-    """
-    Execute a single tag condition and return matching file IDs.
+    """Execute a single tag condition and return matching file IDs.
 
     Args:
         db: Database instance
@@ -66,6 +67,7 @@ def _execute_single_condition(db: Database, condition: TagCondition) -> set[str]
 
     Returns:
         Set of file IDs matching the condition
+
     """
     # Use unified TagOperations for tag queries
     # Tag key needs "nom:" prefix for nomarr tags
@@ -85,11 +87,10 @@ def _execute_single_condition(db: Database, condition: TagCondition) -> set[str]
             value=str(condition.value),
         )
         return set(result) if not isinstance(result, set) else result
-    else:
-        # Numeric comparison query
-        result = db.tags.get_file_ids_matching_tag(
-            rel=rel,
-            operator=condition.operator,
-            value=condition.value,
-        )
-        return set(result) if not isinstance(result, set) else result
+    # Numeric comparison query
+    result = db.tags.get_file_ids_matching_tag(
+        rel=rel,
+        operator=condition.operator,
+        value=condition.value,
+    )
+    return set(result) if not isinstance(result, set) else result

@@ -1,5 +1,4 @@
-"""
-Application composition root and dependency injection container.
+"""Application composition root and dependency injection container.
 
 This module defines the Application class, which serves as the strict DI container
 and lifecycle manager for the Nomarr application. All services, workers, and infrastructure
@@ -23,10 +22,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    pass
+from typing import Any
 
 from nomarr.persistence.db import Database
 from nomarr.services.domain.analytics_svc import AnalyticsService
@@ -53,11 +49,6 @@ def validate_environment() -> None:
     missing = [var for var in required_vars if not os.getenv(var)]
 
     if missing:
-        print(f"ERROR: Missing required environment variables: {', '.join(missing)}", file=sys.stderr)
-        print("\nRequired for ArangoDB connection:", file=sys.stderr)
-        print("  ARANGO_HOST - Database server URL (e.g., http://nomarr-arangodb:8529)", file=sys.stderr)
-        print("\nFirst-run only:", file=sys.stderr)
-        print("  ARANGO_ROOT_PASSWORD - Root password for initial provisioning", file=sys.stderr)
         sys.exit(1)
 
 
@@ -65,8 +56,7 @@ def validate_environment() -> None:
 #  Application Class - Composition Root & DI Container
 # ----------------------------------------------------------------------
 class Application:
-    """
-    Application composition root and dependency injection container.
+    """Application composition root and dependency injection container.
 
     This class is the single source of truth for all application dependencies:
     - Configuration values (extracted from ConfigService)
@@ -91,9 +81,8 @@ class Application:
     The singleton instance is available as `application` at module level.
     """
 
-    def __init__(self):
-        """
-        Initialize application with core dependencies.
+    def __init__(self) -> None:
+        """Initialize application with core dependencies.
 
         Loads configuration and creates database and queue immediately.
         Services are initialized later during start().
@@ -177,18 +166,17 @@ class Application:
         self._running = False
 
     def register_service(self, name: str, service: Any) -> None:
-        """
-        Register a service in the DI container.
+        """Register a service in the DI container.
 
         Args:
             name: Service name for lookup
             service: Service instance
+
         """
         self.services[name] = service
 
     def get_service(self, name: str) -> Any:
-        """
-        Get a service from the DI container.
+        """Get a service from the DI container.
 
         Args:
             name: Service name
@@ -198,9 +186,11 @@ class Application:
 
         Raises:
             KeyError: If service not found
+
         """
         if name not in self.services:
-            raise KeyError(f"Service '{name}' not found. Available services: {list(self.services.keys())}")
+            msg = f"Service '{name}' not found. Available services: {list(self.services.keys())}"
+            raise KeyError(msg)
         return self.services[name]
 
     def _ensure_database_provisioned(self) -> None:
@@ -231,7 +221,8 @@ class Application:
 
         # Wait for ArangoDB to be ready BEFORE any checks or provisioning
         if not _wait_for_arango(hosts):
-            raise RuntimeError(f"Cannot connect to ArangoDB at {hosts} after 60 seconds")
+            msg = f"Cannot connect to ArangoDB at {hosts} after 60 seconds"
+            raise RuntimeError(msg)
 
         if not is_first_run(config_path, hosts=hosts):
             logging.debug("Database already provisioned, skipping first-run setup")
@@ -255,7 +246,7 @@ class Application:
         """Start background thread to write app heartbeat (Phase 3: DB-based IPC)."""
         from nomarr.persistence.db import Database
 
-        def heartbeat_loop():
+        def heartbeat_loop() -> None:
             # Use dedicated DB connection for this thread to avoid transaction conflicts
             heartbeat_db = Database()
 
@@ -264,7 +255,7 @@ class Application:
                     # Periodic heartbeat update (status="healthy" by default)
                     heartbeat_db.health.update_heartbeat(component_id="app", status="healthy")
                 except Exception as e:
-                    logging.error(f"[Application] Heartbeat error: {e}")
+                    logging.exception(f"[Application] Heartbeat error: {e}")
                 time.sleep(5)
 
             # Close connection when thread exits
@@ -274,9 +265,8 @@ class Application:
         self._heartbeat_thread.start()
         logging.info("[Application] App heartbeat started")
 
-    def start(self):
-        """
-        Start the application - initialize all services, workers, and background tasks.
+    def start(self) -> None:
+        """Start the application - initialize all services, workers, and background tasks.
 
         This method:
         1. Cleans up orphaned jobs and stuck scans from previous sessions
@@ -390,7 +380,7 @@ class Application:
         if self.library_root:
             logging.info(f"[Application] Registering LibraryService with namespace={self.namespace}")
             library_cfg = LibraryServiceConfig(
-                namespace=self.namespace, tagger_version=self.tagger_version, library_root=self.library_root
+                namespace=self.namespace, tagger_version=self.tagger_version, library_root=self.library_root,
             )
 
             library_service = LibraryService(cfg=library_cfg, db=self.db, background_tasks=background_tasks)
@@ -413,7 +403,7 @@ class Application:
                 file_watcher.sync_watchers()
                 logging.info("[Application] File watchers synced with library collection")
             except Exception as e:
-                logging.error(f"[Application] Failed to sync file watchers: {e}")
+                logging.exception(f"[Application] Failed to sync file watchers: {e}")
         else:
             logging.info("[Application] No library root configured, library service not started")
 
@@ -466,8 +456,7 @@ class Application:
         logging.info("[Application] Started successfully")
 
     def stop(self) -> None:
-        """
-        Stop the application - clean shutdown of all services and workers.
+        """Stop the application - clean shutdown of all services and workers.
 
         This replaces the shutdown logic that was in api_app.py:lifespan().
         """
@@ -518,15 +507,15 @@ class Application:
         return self._running
 
     def warmup_cache(self) -> None:
-        """
-        Warmup the ML predictor cache.
+        """Warmup the ML predictor cache.
 
         Interfaces should call this method rather than importing ml.cache directly.
         Uses instance config attributes.
         """
         ml_service = self.services.get("ml")
         if ml_service is None:
-            raise RuntimeError("ML service not initialized")
+            msg = "ML service not initialized"
+            raise RuntimeError(msg)
         ml_service.warmup_cache()
 
 

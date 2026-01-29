@@ -24,8 +24,7 @@ from .scan import LibraryScanMixin
 
 
 class LibraryService(LibraryAdminMixin, LibraryScanMixin, LibraryQueryMixin, LibraryFilesMixin, LibraryEntitiesMixin):
-    """
-    Unified library management service.
+    """Unified library management service.
 
     This service composes functionality from multiple focused mixins:
     - Admin: Library CRUD, configuration checks, clear data
@@ -57,13 +56,13 @@ class LibraryService(LibraryAdminMixin, LibraryScanMixin, LibraryQueryMixin, Lib
     """
 
     def __init__(self, cfg: LibraryServiceConfig, db: Database, background_tasks: object | None = None) -> None:
-        """
-        Initialize LibraryService.
+        """Initialize LibraryService.
 
         Args:
             cfg: Service configuration (namespace, library_root)
             db: Database instance
             background_tasks: BackgroundTaskService for async scan operations
+
         """
         self.cfg = cfg
         self.db = db

@@ -32,8 +32,7 @@ class LibraryAdminMixin:
     cfg: LibraryServiceConfig
 
     def _get_library_or_error(self, library_id: str) -> dict[str, Any]:
-        """
-        Get a library by ID or raise an error.
+        """Get a library by ID or raise an error.
 
         Libraries are used only to determine scan roots. This method retrieves
         library metadata (name, root_path, enabled status) but does NOT propagate
@@ -47,27 +46,28 @@ class LibraryAdminMixin:
 
         Raises:
             ValueError: If library does not exist
+
         """
         return self.get_library.get_or_error(library_id)
 
     def is_library_root_configured(self) -> bool:
-        """
-        Check if library_root is configured.
+        """Check if library_root is configured.
 
         Returns:
             True if library_root is set in config
+
         """
         return self.cfg.library_root is not None
 
     def list_libraries(self, enabled_only: bool = False) -> list[LibraryDict]:
-        """
-        List all configured libraries.
+        """List all configured libraries.
 
         Args:
             enabled_only: Only return enabled libraries
 
         Returns:
             List of LibraryDict DTOs with file/folder counts
+
         """
         libraries = self.list_libraries.list(enabled_only=enabled_only)
 
@@ -86,8 +86,7 @@ class LibraryAdminMixin:
         return result
 
     def get_library(self, library_id: str) -> LibraryDict:
-        """
-        Get a library by ID.
+        """Get a library by ID.
 
         Args:
             library_id: Library ID
@@ -97,12 +96,13 @@ class LibraryAdminMixin:
 
         Raises:
             ValueError: If library not found
+
         """
         library = self.get_library.get_or_error(library_id)
         return LibraryDict(**library)
 
     def create_library(
-        self, name: str | None, root_path: str, is_enabled: bool = True, watch_mode: str = "off"
+        self, name: str | None, root_path: str, is_enabled: bool = True, watch_mode: str = "off",
     ) -> LibraryDict:
         """Create a new library."""
         from nomarr.components.library.library_admin_comp import create_library
@@ -124,7 +124,7 @@ class LibraryAdminMixin:
         from nomarr.components.library.library_admin_comp import update_library_root
 
         update_library_root(
-            db=self.db, base_library_root=self.cfg.library_root, library_id=library_id, root_path=root_path
+            db=self.db, base_library_root=self.cfg.library_root, library_id=library_id, root_path=root_path,
         )
 
         from nomarr.components.library.get_library_comp import get_library_or_error
@@ -151,7 +151,7 @@ class LibraryAdminMixin:
 
         if name is not None or is_enabled is not None or watch_mode is not None or file_write_mode is not None:
             self.update_library_metadata(
-                library_id, name=name, is_enabled=is_enabled, watch_mode=watch_mode, file_write_mode=file_write_mode
+                library_id, name=name, is_enabled=is_enabled, watch_mode=watch_mode, file_write_mode=file_write_mode,
             )
 
         return self.get_library(library_id)

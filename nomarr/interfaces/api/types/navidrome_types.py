@@ -1,5 +1,4 @@
-"""
-Navidrome API types - Pydantic models for Navidrome domain.
+"""Navidrome API types - Pydantic models for Navidrome domain.
 
 External API contracts for Navidrome integration endpoints.
 These models are thin adapters around DTOs from helpers/dto/navidrome_dto.py.
@@ -12,19 +11,20 @@ Architecture:
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field
 
-from nomarr.helpers.dto.navidrome_dto import (
-    GeneratePlaylistResult,
-    GetTemplateSummaryResult,
-    PlaylistPreviewResult,
-    PreviewTagStatsResult,
-    SmartPlaylistFilter,
-    TagCondition,
-    TemplateSummaryItem,
-)
+if TYPE_CHECKING:
+    from nomarr.helpers.dto.navidrome_dto import (
+        GeneratePlaylistResult,
+        GetTemplateSummaryResult,
+        PlaylistPreviewResult,
+        PreviewTagStatsResult,
+        SmartPlaylistFilter,
+        TagCondition,
+        TemplateSummaryItem,
+    )
 
 # ──────────────────────────────────────────────────────────────────────
 # Response Models
@@ -52,10 +52,10 @@ class SmartPlaylistFilterResponse(BaseModel):
     """Pydantic model for SmartPlaylistFilter DTO."""
 
     all_conditions: list[TagConditionResponse] = Field(
-        default_factory=list, description="Conditions joined by AND (all must match)"
+        default_factory=list, description="Conditions joined by AND (all must match)",
     )
     any_conditions: list[TagConditionResponse] = Field(
-        default_factory=list, description="Conditions joined by OR (any must match)"
+        default_factory=list, description="Conditions joined by OR (any must match)",
     )
 
     @classmethod
@@ -72,7 +72,7 @@ class PlaylistPreviewResponse(BaseModel):
 
     total_count: int = Field(..., description="Total number of tracks matching the query")
     sample_tracks: list[dict[str, str]] = Field(
-        default_factory=list, description="Sample of matching tracks (path, title, artist, album)"
+        default_factory=list, description="Sample of matching tracks (path, title, artist, album)",
     )
     query: str = Field(..., description="Original query string")
 
@@ -90,7 +90,7 @@ class PreviewTagStatsResponse(BaseModel):
     """Pydantic model for PreviewTagStatsResult DTO."""
 
     stats: dict[str, dict[str, str | int | float]] = Field(
-        default_factory=dict, description="Tag statistics keyed by tag name"
+        default_factory=dict, description="Tag statistics keyed by tag name",
     )
 
     @classmethod
@@ -114,7 +114,7 @@ class GeneratePlaylistResponse(BaseModel):
     """Pydantic model for GeneratePlaylistResult DTO."""
 
     playlist_structure: dict[str, str | int | list[dict[str, str]]] = Field(
-        ..., description="Navidrome .nsp playlist structure"
+        ..., description="Navidrome .nsp playlist structure",
     )
 
     @classmethod
@@ -144,7 +144,7 @@ class GetTemplateSummaryResponse(BaseModel):
     """Pydantic model for GetTemplateSummaryResult DTO."""
 
     templates: list[TemplateSummaryItemResponse] = Field(
-        default_factory=list, description="List of available templates"
+        default_factory=list, description="List of available templates",
     )
 
     @classmethod

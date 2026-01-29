@@ -1,22 +1,22 @@
-"""
-Admin API response models.
+"""Admin API response models.
 
 Pydantic models for admin endpoints (job management, cache, worker operations, calibration).
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
-from nomarr.helpers.dto.admin_dto import (
-    CalibrationHistoryResult,
-    JobRemovalResult,
-    RetagAllResult,
-    RunCalibrationResult,
-    WorkerOperationResult,
-)
+if TYPE_CHECKING:
+    from nomarr.helpers.dto.admin_dto import (
+        CalibrationHistoryResult,
+        JobRemovalResult,
+        RetagAllResult,
+        RunCalibrationResult,
+        WorkerOperationResult,
+    )
 
 
 class JobRemovalResponse(BaseModel):

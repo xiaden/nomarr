@@ -31,8 +31,7 @@ def create_library(
     is_enabled: bool = True,
     watch_mode: str = "off",
 ) -> str:
-    """
-    Create a new library with validation and name generation.
+    """Create a new library with validation and name generation.
 
     Args:
         db: Database instance
@@ -47,6 +46,7 @@ def create_library(
 
     Raises:
         ValueError: If name already exists or path is invalid
+
     """
     base_root = get_base_library_root(base_library_root)
     abs_path = normalize_library_root(base_root, root_path)
@@ -62,7 +62,8 @@ def create_library(
             watch_mode=watch_mode,
         )
     except Exception as e:
-        raise ValueError(f"Failed to create library: {e}") from e
+        msg = f"Failed to create library: {e}"
+        raise ValueError(msg) from e
 
     logging.info(f"[LibraryAdmin] Created library: {resolved_name} at {abs_path}")
     return library_id
@@ -74,8 +75,7 @@ def update_library_root(
     library_id: str,
     root_path: str,
 ) -> None:
-    """
-    Update a library's root path with validation.
+    """Update a library's root path with validation.
 
     Args:
         db: Database instance
@@ -85,10 +85,12 @@ def update_library_root(
 
     Raises:
         ValueError: If library not found or path is invalid
+
     """
     library = db.libraries.get_library(library_id)
     if not library:
-        raise ValueError(f"Library not found: {library_id}")
+        msg = f"Library not found: {library_id}"
+        raise ValueError(msg)
 
     base_root = get_base_library_root(base_library_root)
     abs_path = normalize_library_root(base_root, root_path)
@@ -99,8 +101,7 @@ def update_library_root(
 
 
 def delete_library(db: Database, library_id: str) -> bool:
-    """
-    Delete a library.
+    """Delete a library.
 
     Args:
         db: Database instance
@@ -108,6 +109,7 @@ def delete_library(db: Database, library_id: str) -> bool:
 
     Returns:
         True if deleted, False if not found
+
     """
     library = db.libraries.get_library(library_id)
     if not library:
@@ -119,8 +121,7 @@ def delete_library(db: Database, library_id: str) -> bool:
 
 
 def clear_library_data(db: Database, library_root: str | None) -> None:
-    """
-    Clear all library data with precondition checks.
+    """Clear all library data with precondition checks.
 
     Preconditions:
     - library_root must be configured
@@ -133,12 +134,15 @@ def clear_library_data(db: Database, library_root: str | None) -> None:
     Raises:
         ValueError: If library_root not configured
         RuntimeError: If scan jobs are running
+
     """
     if not library_root:
-        raise ValueError("Library root not configured")
+        msg = "Library root not configured"
+        raise ValueError(msg)
 
     if _is_scan_running(db):
-        raise RuntimeError("Cannot clear library while scan jobs are running. Cancel scans first.")
+        msg = "Cannot clear library while scan jobs are running. Cancel scans first."
+        raise RuntimeError(msg)
 
     db.library_files.clear_library_data()
     logging.info("[LibraryAdmin] Library data cleared")
@@ -157,7 +161,8 @@ def _resolve_library_name(db: Database, name: str | None, abs_path: str) -> str:
 
     existing = db.libraries.get_library_by_name(name)
     if existing:
-        raise ValueError(f"Library name already exists: {name}")
+        msg = f"Library name already exists: {name}"
+        raise ValueError(msg)
     return name
 
 

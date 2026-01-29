@@ -1,5 +1,4 @@
-"""
-Services package.
+"""Services package.
 
 Organized into domain (business logic) and infrastructure (runtime plumbing) services.
 """

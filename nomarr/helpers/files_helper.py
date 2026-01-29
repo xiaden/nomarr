@@ -1,5 +1,4 @@
-"""
-File system helpers for audio file operations.
+"""File system helpers for audio file operations.
 
 This module provides the secure, library-scoped filesystem API for Nomarr.
 All path operations enforce validation to prevent traversal attacks and
@@ -24,8 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 def validate_library_path(file_path: str, library_path: str) -> str:
-    """
-    Validate that a file path is within the configured library directory.
+    """Validate that a file path is within the configured library directory.
 
     This is a thin wrapper around resolve_library_path that ensures:
     1. Path is within library boundary (prevents traversal attacks)
@@ -50,6 +48,7 @@ def validate_library_path(file_path: str, library_path: str) -> str:
 
         >>> validate_library_path("/music/../etc/passwd", "/music")
         ValueError: Access denied
+
     """
     # Delegate to resolve_library_path for consistent validation
     resolved = resolve_library_path(
@@ -67,8 +66,7 @@ def resolve_library_path(
     must_exist: bool = True,
     must_be_file: bool | None = None,
 ) -> Path:
-    """
-    Safely resolve and validate a path within the library root.
+    r"""Safely resolve and validate a path within the library root.
 
     This function prevents path traversal attacks using CodeQL's recommended pattern
     with structural validation (no character whitelists - supports Unicode/kanji):
@@ -111,19 +109,22 @@ def resolve_library_path(
 
         >>> resolve_library_path("/music", "album", must_be_file=False)
         Path("/music/album")
+
     """
     import os
     from pathlib import PurePath
 
     if not library_root:
-        raise ValueError("Library root not configured")
+        msg = "Library root not configured"
+        raise ValueError(msg)
 
     # Step 1: Convert library_root to absolute path string (CodeQL pattern)
     try:
         base = os.path.abspath(str(library_root))
     except (OSError, ValueError) as e:
         logger.warning(f"[security] Failed to resolve library root {library_root!r}: {e}")
-        raise ValueError("Invalid library configuration") from e
+        msg = "Invalid library configuration"
+        raise ValueError(msg) from e
 
     # Step 2: Convert user_path to string
     user_path_string = str(user_path)
@@ -135,39 +136,45 @@ def resolve_library_path(
     # Reject NUL bytes (can cause issues with filesystem operations)
     if "\x00" in user_path_string:
         logger.warning(f"[security] NUL byte detected in path: {user_path_string!r}")
-        raise ValueError("Access denied")
+        msg = "Access denied"
+        raise ValueError(msg)
 
     # Build PurePath for structural validation (platform-independent)
     try:
         pure_path = PurePath(user_path_string)
     except (ValueError, TypeError) as e:
         logger.warning(f"[security] Invalid path structure: {user_path_string!r}: {e}")
-        raise ValueError("Access denied") from e
+        msg = "Access denied"
+        raise ValueError(msg) from e
 
     # Reject absolute paths
     if pure_path.is_absolute():
         logger.warning(f"[security] Absolute path rejected: {user_path_string!r}")
-        raise ValueError("Access denied")
+        msg = "Access denied"
+        raise ValueError(msg)
 
     # Reject any path component that is exactly ".."
     if ".." in pure_path.parts:
         logger.warning(f"[security] Path traversal component '..' detected in: {user_path_string!r}")
-        raise ValueError("Access denied")
+        msg = "Access denied"
+        raise ValueError(msg)
 
     # Step 3: Join and normalize (CodeQL pattern)
     try:
         fullpath = os.path.normpath(os.path.join(base, user_path_string))
     except (OSError, ValueError) as e:
         logger.warning(f"[security] Failed to join paths {base!r} + {user_path_string!r}: {e}")
-        raise ValueError("Access denied") from e
+        msg = "Access denied"
+        raise ValueError(msg) from e
 
     # Step 4: Verify fullpath is within base boundary (CodeQL pattern)
     # Must check: fullpath == base OR fullpath.startswith(base + os.sep)
     if fullpath != base and not fullpath.startswith(base + os.sep):
         logger.warning(
-            f"[security] Path traversal attempt: {user_path_string!r} resolved outside library {library_root!r}"
+            f"[security] Path traversal attempt: {user_path_string!r} resolved outside library {library_root!r}",
         )
-        raise ValueError("Access denied")
+        msg = "Access denied"
+        raise ValueError(msg)
 
     # Step 6: Convert to Path and resolve symlinks for canonical path validation
     candidate = Path(fullpath)
@@ -177,42 +184,46 @@ def resolve_library_path(
         resolved_candidate = candidate.resolve(strict=must_exist)
     except (OSError, RuntimeError) as e:
         logger.warning(f"[security] Failed to resolve symlink for {candidate!r}: {e}")
-        raise ValueError("Access denied") from e
+        msg = "Access denied"
+        raise ValueError(msg) from e
 
     # Ensure symlinks don't escape the root
     try:
         resolved_candidate.relative_to(resolved_base)
     except ValueError as e:
         logger.warning(
-            f"[security] Symlink traversal detected: {resolved_candidate!r} is outside library {resolved_base!r}"
+            f"[security] Symlink traversal detected: {resolved_candidate!r} is outside library {resolved_base!r}",
         )
-        raise ValueError("Access denied") from e
+        msg = "Access denied"
+        raise ValueError(msg) from e
 
     # Validate existence if required
     if must_exist and not resolved_candidate.exists():
         logger.debug(f"[security] Path does not exist: {resolved_candidate}")
-        raise ValueError("Access denied")
+        msg = "Access denied"
+        raise ValueError(msg)
 
     # Validate file/directory type if specified
     if must_be_file is True and not resolved_candidate.is_file():
         logger.debug(f"[security] Path is not a file: {resolved_candidate}")
-        raise ValueError("Access denied")
-    elif must_be_file is False and not resolved_candidate.is_dir():
+        msg = "Access denied"
+        raise ValueError(msg)
+    if must_be_file is False and not resolved_candidate.is_dir():
         logger.debug(f"[security] Path is not a directory: {resolved_candidate}")
-        raise ValueError("Access denied")
+        msg = "Access denied"
+        raise ValueError(msg)
 
     return resolved_candidate
 
 
 # Supported audio file extensions (immutable)
 AUDIO_EXTENSIONS = frozenset(
-    {".mp3", ".m4a", ".mp4", ".flac", ".ogg", ".wav", ".aac", ".opus", ".wv", ".ape", ".aiff", ".aif"}
+    {".mp3", ".m4a", ".mp4", ".flac", ".ogg", ".wav", ".aac", ".opus", ".wv", ".ape", ".aiff", ".aif"},
 )
 
 
 def collect_audio_files(paths: list[str] | str, recursive: bool = True) -> list[str]:
-    """
-    Collect audio files from one or more paths (files or directories).
+    """Collect audio files from one or more paths (files or directories).
 
     Args:
         paths: Single path string or list of path strings
@@ -225,6 +236,7 @@ def collect_audio_files(paths: list[str] | str, recursive: bool = True) -> list[
         This function returns raw strings. Callers must validate these paths
         into LibraryPath objects using build_library_path_from_input() or
         build_library_path_from_db() before performing file operations.
+
     """
     # Normalize to list
     if isinstance(paths, str):
@@ -255,13 +267,13 @@ def collect_audio_files(paths: list[str] | str, recursive: bool = True) -> list[
 
 
 def is_audio_file(path: str) -> bool:
-    """
-    Check if a file path is a supported audio file.
+    """Check if a file path is a supported audio file.
 
     Args:
         path: File path to check
 
     Returns:
         True if the file extension is in AUDIO_EXTENSIONS, False otherwise.
+
     """
     return Path(path).suffix.lower() in AUDIO_EXTENSIONS

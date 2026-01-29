@@ -14,8 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 def cleanup_orphaned_entities_workflow(db: Database, dry_run: bool = False) -> dict[str, int | dict[str, int]]:
-    """
-    Clean up orphaned tags from the tags collection.
+    """Clean up orphaned tags from the tags collection.
 
     Removes tags that have no incoming edges from songs. This happens when
     songs are deleted or metadata is updated.
@@ -32,6 +31,7 @@ def cleanup_orphaned_entities_workflow(db: Database, dry_run: bool = False) -> d
         - 'deleted_counts': Dict with 'tags' -> count of tags deleted (0 if dry_run)
         - 'total_orphaned': Total orphaned tags
         - 'total_deleted': Total deleted tags (0 if dry_run)
+
     """
     logger.info("[tag_cleanup] Starting orphaned tag cleanup workflow")
 

@@ -1,5 +1,4 @@
-"""
-Find which Python symbol (function/class/method) contains a specific line number.
+"""Find which Python symbol (function/class/method) contains a specific line number.
 
 Returns the qualified name suitable for use with get_source().
 """
@@ -9,8 +8,7 @@ from pathlib import Path
 
 
 def find_symbol_at_line(file_path: str, line_number: int) -> dict:
-    """
-    Find the qualified name of the symbol containing the given line number.
+    """Find the qualified name of the symbol containing the given line number.
 
     Args:
         file_path: Absolute or relative path to Python file
@@ -25,6 +23,7 @@ def find_symbol_at_line(file_path: str, line_number: int) -> dict:
         - start_line: Where the symbol definition starts
         - end_line: Where the symbol definition ends
         - error: Error message if lookup fails
+
     """
     path = Path(file_path).resolve()
 
@@ -79,8 +78,7 @@ def find_symbol_at_line(file_path: str, line_number: int) -> dict:
 
 
 def _find_containing_node(tree: ast.AST, line_number: int, module_name: str) -> dict | None:
-    """
-    Recursively find the deepest AST node containing the line number.
+    """Recursively find the deepest AST node containing the line number.
 
     Returns dict with qualified_name, symbol_type, start_line, end_line or None.
     """

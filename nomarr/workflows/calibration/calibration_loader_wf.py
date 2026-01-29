@@ -43,6 +43,7 @@ def load_calibrations_from_db_wf(db: Database) -> dict[str, dict[str, float]]:
     Note:
         If no calibrations exist, aggregation will use raw scores without normalization.
         This is expected behavior during initial library setup.
+
     """
     try:
         calibration_states = db.calibration_state.get_all_calibration_states()
@@ -69,5 +70,5 @@ def load_calibrations_from_db_wf(db: Database) -> dict[str, dict[str, float]]:
         return calibrations
 
     except Exception as e:
-        logger.error(f"[calibration_loader] Failed to load calibrations: {e}")
+        logger.exception(f"[calibration_loader] Failed to load calibrations: {e}")
         return {}

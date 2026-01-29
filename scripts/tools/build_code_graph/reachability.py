@@ -8,8 +8,7 @@ from .models import CodeGraph
 
 
 def compute_reachability(graph: CodeGraph, entrypoints: set[str]) -> None:
-    """
-    Compute reachability from interface entrypoints using BFS.
+    """Compute reachability from interface entrypoints using BFS.
 
     Updates node.reachable_from_interface in place.
     """

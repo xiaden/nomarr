@@ -1,5 +1,4 @@
-"""
-Key Management Service
+"""Key Management Service.
 
 Centralized service for managing authentication credentials:
 - Public API keys (for Lidarr/external integrations)
@@ -17,9 +16,12 @@ from __future__ import annotations
 
 import logging
 import secrets
+from typing import TYPE_CHECKING
 
 from nomarr.helpers.time_helper import now_s
-from nomarr.persistence.db import Database
+
+if TYPE_CHECKING:
+    from nomarr.persistence.db import Database
 
 # Session timeout (24 hours)
 SESSION_TIMEOUT_SECONDS = 86400
@@ -32,23 +34,22 @@ _session_cache: dict[str, float] = {}
 
 
 class KeyManagementService:
-    """
-    Service for managing API keys, passwords, and sessions.
+    """Service for managing API keys, passwords, and sessions.
 
     This service requires Database injection at construction time.
     Do NOT construct this service directly in interface layer code.
     Use the singleton instance from Application.services["keys"].
     """
 
-    def __init__(self, db: Database):
-        """
-        Initialize the key management service with injected dependencies.
+    def __init__(self, db: Database) -> None:
+        """Initialize the key management service with injected dependencies.
 
         Args:
             db: Database instance for persistence (injected by Application during startup)
 
         Note:
             This service should be instantiated once during app wiring, not per-request.
+
         """
         self._db = db
 
@@ -57,24 +58,24 @@ class KeyManagementService:
     # ----------------------------------------------------------------------
 
     def get_api_key(self) -> str | None:
-        """
-        Get the public API key (returns None if not found).
+        """Get the public API key (returns None if not found).
 
         Returns:
             API key string if it exists, None otherwise
 
         Note:
             Use this for validation. Use get_or_create_api_key() during initialization.
+
         """
         return self._db.meta.get("api_key")
 
     def get_or_create_api_key(self) -> str:
-        """
-        Get or create the public API key for external endpoints.
+        """Get or create the public API key for external endpoints.
         This key is used by Lidarr and other external integrations.
 
         Returns:
             API key string (existing or newly generated)
+
         """
         key = self._db.meta.get("api_key")
         if key:
@@ -90,14 +91,14 @@ class KeyManagementService:
 
     @staticmethod
     def hash_password(password: str) -> str:
-        """
-        Hash a password using bcrypt (secure password hashing).
+        """Hash a password using bcrypt (secure password hashing).
 
         Args:
             password: Plaintext password
 
         Returns:
             Bcrypt password hash
+
         """
         import bcrypt
 
@@ -109,8 +110,7 @@ class KeyManagementService:
 
     @staticmethod
     def verify_password(password: str, password_hash: str) -> bool:
-        """
-        Verify a password against a stored bcrypt hash.
+        """Verify a password against a stored bcrypt hash.
 
         Args:
             password: Plaintext password to verify
@@ -118,6 +118,7 @@ class KeyManagementService:
 
         Returns:
             True if password matches, False otherwise
+
         """
         try:
             import bcrypt
@@ -129,23 +130,23 @@ class KeyManagementService:
             return False
 
     def get_admin_password_hash(self) -> str:
-        """
-        Get admin password hash from DB (raises if not found).
+        """Get admin password hash from DB (raises if not found).
 
         Returns:
             Password hash string
 
         Raises:
             RuntimeError: If password not found in database
+
         """
         password_hash = self._db.meta.get("admin_password_hash")
         if not password_hash:
-            raise RuntimeError("Admin password not found in DB. Password should be generated during initialization.")
+            msg = "Admin password not found in DB. Password should be generated during initialization."
+            raise RuntimeError(msg)
         return password_hash
 
     def get_or_create_admin_password(self, config_password: str | None = None) -> str:
-        """
-        Get or create the admin password hash for web UI authentication.
+        """Get or create the admin password hash for web UI authentication.
 
         On first run:
         - If config_password is provided, hash and store it
@@ -159,6 +160,7 @@ class KeyManagementService:
 
         Returns:
             Plaintext password if auto-generated (for logging), empty string otherwise
+
         """
         existing_hash = self._db.meta.get("admin_password_hash")
         if existing_hash:
@@ -172,27 +174,26 @@ class KeyManagementService:
             self._db.meta.set("admin_password_hash", password_hash)
             logging.info("[KeyManagement] Admin password set from config file.")
             return ""  # Don't log config password
-        else:
-            # Generate random password
-            random_password = secrets.token_urlsafe(16)
-            password_hash = self.hash_password(random_password)
-            self._db.meta.set("admin_password_hash", password_hash)
-            logging.warning("[KeyManagement] ========================================")
-            logging.warning("[KeyManagement] AUTO-GENERATED ADMIN PASSWORD:")
-            logging.warning(f"[KeyManagement]   {random_password}")
-            logging.warning("[KeyManagement] ========================================")
-            logging.warning("[KeyManagement] Save this password - it won't be shown again!")
-            return random_password
+        # Generate random password
+        random_password = secrets.token_urlsafe(16)
+        password_hash = self.hash_password(random_password)
+        self._db.meta.set("admin_password_hash", password_hash)
+        logging.warning("[KeyManagement] ========================================")
+        logging.warning("[KeyManagement] AUTO-GENERATED ADMIN PASSWORD:")
+        logging.warning(f"[KeyManagement]   {random_password}")
+        logging.warning("[KeyManagement] ========================================")
+        logging.warning("[KeyManagement] Save this password - it won't be shown again!")
+        return random_password
 
     def reset_admin_password(self, new_password: str) -> None:
-        """
-        Reset the admin password to a new value.
+        """Reset the admin password to a new value.
 
         Args:
             new_password: New plaintext password
 
         Warning:
             This invalidates all existing web UI sessions.
+
         """
         password_hash = self.hash_password(new_password)
         self._db.meta.set("admin_password_hash", password_hash)
@@ -203,12 +204,12 @@ class KeyManagementService:
     # ----------------------------------------------------------------------
 
     def create_session(self) -> str:
-        """
-        Create a new session token with expiry.
+        """Create a new session token with expiry.
         Write-through cache: stores in both memory (fast reads) and DB (persistence).
 
         Returns:
             Session token string
+
         """
         session_token = secrets.token_urlsafe(32)
         expiry = now_s().value + SESSION_TIMEOUT_SECONDS
@@ -227,8 +228,7 @@ class KeyManagementService:
         return session_token
 
     def validate_session(self, session_token: str) -> bool:
-        """
-        Validate a session token and check if it's expired.
+        """Validate a session token and check if it's expired.
         Uses in-memory cache for performance (no DB hit per request).
 
         Args:
@@ -240,6 +240,7 @@ class KeyManagementService:
         Note:
             This method accesses the module-level session cache but should only be called
             through service instances to maintain proper architecture boundaries.
+
         """
         # Check memory cache
         expiry = _session_cache.get(session_token)
@@ -256,12 +257,12 @@ class KeyManagementService:
         return True
 
     def invalidate_session(self, session_token: str) -> None:
-        """
-        Invalidate a session (logout).
+        """Invalidate a session (logout).
         Removes from both memory cache and DB.
 
         Args:
             session_token: Session token to invalidate
+
         """
         # Remove from memory cache
         _session_cache.pop(session_token, None)
@@ -272,11 +273,11 @@ class KeyManagementService:
         logging.info("[KeyManagement] Session invalidated (logout)")
 
     def cleanup_expired_sessions(self) -> int:
-        """
-        Remove all expired sessions from both memory cache and DB.
+        """Remove all expired sessions from both memory cache and DB.
 
         Returns:
             Number of sessions cleaned up from cache
+
         """
         now = now_s().value
         expired = [token for token, expiry in _session_cache.items() if expiry < now]
@@ -294,11 +295,11 @@ class KeyManagementService:
         return len(expired)
 
     def load_sessions_from_db(self) -> int:
-        """
-        Load all non-expired sessions from DB into memory cache on startup.
+        """Load all non-expired sessions from DB into memory cache on startup.
 
         Returns:
             Number of sessions loaded
+
         """
         sessions = self._db.sessions.load_all()
         # Transform session documents to cache format: {session_id: expiry_timestamp_seconds}

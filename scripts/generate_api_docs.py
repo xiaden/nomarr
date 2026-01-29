@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Generate API documentation from source code.
+"""Generate API documentation from source code.
 
 Uses scripts/discover_api.py as backend to extract API information,
 then generates simple Markdown files for each architectural layer.
@@ -16,8 +15,7 @@ from typing import Any
 
 
 def enumerate_modules(root_module: str) -> list[str]:
-    """
-    Enumerate all Python modules under a root package.
+    """Enumerate all Python modules under a root package.
 
     Does NOT import nomarr.*; uses filesystem introspection only.
 
@@ -27,6 +25,7 @@ def enumerate_modules(root_module: str) -> list[str]:
     Returns:
         Sorted list of module names, e.g.:
         ["nomarr.workflows", "nomarr.workflows.processor", ...]
+
     """
     # Convert module name to filesystem path
     # e.g. "nomarr.workflows" -> "nomarr/workflows"
@@ -63,8 +62,7 @@ def enumerate_modules(root_module: str) -> list[str]:
 
 
 def discover_module(module_name: str) -> dict[str, Any] | None:
-    """
-    Run discover_api.py with --summary and parse JSON output.
+    """Run discover_api.py with --summary and parse JSON output.
 
     Returns None if module import fails.
     """
@@ -106,8 +104,7 @@ def discover_module(module_name: str) -> dict[str, Any] | None:
 
 
 def render_markdown(api: dict[str, Any]) -> str:
-    """
-    Convert API dict to Markdown.
+    """Convert API dict to Markdown.
 
     Returns complete Markdown document as string.
     """
@@ -196,8 +193,7 @@ def render_markdown(api: dict[str, Any]) -> str:
 
 
 def generate_docs_for_module(module_name: str, output_dir: Path) -> bool:
-    """
-    Generate Markdown documentation for a single module.
+    """Generate Markdown documentation for a single module.
 
     Writes to output_dir/<module_name_with_underscores>.md
     Returns True if successful, False otherwise.
@@ -227,8 +223,7 @@ def generate_docs_for_module(module_name: str, output_dir: Path) -> bool:
 
 
 def main() -> int:
-    """
-    Generate API documentation for all architectural layers.
+    """Generate API documentation for all architectural layers.
 
     Uses architecture_manifest.LAYERS as source of truth.
     """

@@ -1,5 +1,4 @@
-"""
-Processing API response types.
+"""Processing API response types.
 
 External API contracts for processing and worker endpoints.
 These are Pydantic models that transform internal DTOs into API responses.
@@ -13,13 +12,14 @@ Architecture:
 
 from __future__ import annotations
 
-from typing import Any, Self
+from typing import TYPE_CHECKING, Any, Self
 
 from pydantic import BaseModel
 
-from nomarr.helpers.dto.processing_dto import (
-    ProcessFileResult,
-)
+if TYPE_CHECKING:
+    from nomarr.helpers.dto.processing_dto import (
+        ProcessFileResult,
+    )
 
 # ──────────────────────────────────────────────────────────────────────
 # Processing Response Types (DTO → Pydantic mappings)
@@ -27,8 +27,7 @@ from nomarr.helpers.dto.processing_dto import (
 
 
 class ProcessFileResponse(BaseModel):
-    """
-    Response for process file operation.
+    """Response for process file operation.
 
     Maps to ProcessFileResult DTO from helpers/dto/processing_dto.py
     """
@@ -44,14 +43,14 @@ class ProcessFileResponse(BaseModel):
 
     @classmethod
     def from_dto(cls, result: ProcessFileResult) -> Self:
-        """
-        Transform internal ProcessFileResult DTO to external API response.
+        """Transform internal ProcessFileResult DTO to external API response.
 
         Args:
             result: Internal process result from workflow
 
         Returns:
             API response model
+
         """
         return cls(
             file_path=result.file_path,

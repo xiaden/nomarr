@@ -20,8 +20,7 @@ DEFAULT_NAMESPACE = "nom"
 
 
 def read_nomarr_namespace(path: LibraryPath, namespace: str = DEFAULT_NAMESPACE) -> set[str]:
-    """
-    Check which nomarr tags exist in an audio file.
+    """Check which nomarr tags exist in an audio file.
 
     Returns the set of tag names found under the specified namespace.
     Used to detect if files have been written to by nomarr, and to
@@ -38,6 +37,7 @@ def read_nomarr_namespace(path: LibraryPath, namespace: str = DEFAULT_NAMESPACE)
     Note:
         Does not raise exceptions - returns empty set on any error.
         This is intentional for scanning performance.
+
     """
     try:
         if not path.is_valid():
@@ -54,8 +54,7 @@ MOOD_TIER_TAGS = {"mood-strict", "mood-regular", "mood-loose"}
 
 
 def infer_write_mode_from_tags(tag_names: set[str]) -> str | None:
-    """
-    Infer what write mode was used based on the tags present.
+    """Infer what write mode was used based on the tags present.
 
     Args:
         tag_names: Set of tag names found in the file
@@ -65,6 +64,7 @@ def infer_write_mode_from_tags(tag_names: set[str]) -> str | None:
         "minimal" if only mood tags found
         "full" if any non-mood tags found
         None if indeterminate
+
     """
     if not tag_names:
         return "none"
@@ -74,15 +74,13 @@ def infer_write_mode_from_tags(tag_names: set[str]) -> str | None:
 
     if has_non_mood:
         return "full"
-    elif tag_names & MOOD_TIER_TAGS:  # Has at least one mood tag
+    if tag_names & MOOD_TIER_TAGS:  # Has at least one mood tag
         return "minimal"
-    else:
-        return None
+    return None
 
 
 def read_tags_from_file(path: LibraryPath, namespace: str) -> Tags:
-    """
-    Read namespaced tags from an audio file.
+    """Read namespaced tags from an audio file.
 
     Args:
         path: LibraryPath to audio file (must be valid)
@@ -94,10 +92,12 @@ def read_tags_from_file(path: LibraryPath, namespace: str) -> Tags:
     Raises:
         ValueError: If path is invalid or file format is unsupported
         RuntimeError: If file cannot be read
+
     """
     # Enforce validation before file operations
     if not path.is_valid():
-        raise ValueError(f"Cannot read tags from invalid path ({path.status}): {path.absolute} - {path.reason}")
+        msg = f"Cannot read tags from invalid path ({path.status}): {path.absolute} - {path.reason}"
+        raise ValueError(msg)
 
     try:
         # Infer format from file extension - faster than loading file
@@ -108,36 +108,40 @@ def read_tags_from_file(path: LibraryPath, namespace: str) -> Tags:
         if ext == ".mp3":
             audio = mutagen.File(path_str)  # type: ignore[attr-defined]
             if audio is None:
-                raise ValueError(f"Failed to load MP3 file: {path_str}")
+                msg = f"Failed to load MP3 file: {path_str}"
+                raise ValueError(msg)
             tag_dict = _extract_id3_tags(audio, namespace)
 
         elif ext in (".m4a", ".mp4", ".m4b", ".m4p"):
             audio = mutagen.File(path_str)  # type: ignore[attr-defined]
             if audio is None:
-                raise ValueError(f"Failed to load MP4 file: {path_str}")
+                msg = f"Failed to load MP4 file: {path_str}"
+                raise ValueError(msg)
             tag_dict = _extract_mp4_tags(audio, namespace)
 
         elif ext in (".flac", ".ogg", ".opus"):
             audio = mutagen.File(path_str)  # type: ignore[attr-defined]
             if audio is None:
-                raise ValueError(f"Failed to load Vorbis file: {path_str}")
+                msg = f"Failed to load Vorbis file: {path_str}"
+                raise ValueError(msg)
             tag_dict = _extract_vorbis_tags(audio, namespace)
 
         else:
-            raise ValueError(f"Unsupported audio format: {ext}")
+            msg = f"Unsupported audio format: {ext}"
+            raise ValueError(msg)
 
         # Convert dict to Tags DTO (already has list values from extractors)
-        items = tuple(Tag(key=k, value=tuple(cast(list[TagValue], v))) for k, v in tag_dict.items())
+        items = tuple(Tag(key=k, value=tuple(cast("list[TagValue]", v))) for k, v in tag_dict.items())
         return Tags(items=items)
 
     except Exception as e:
         logger.exception(f"[TagReader] Failed to read tags from {path_str}")
-        raise RuntimeError(f"Failed to read tags: {e}") from e
+        msg = f"Failed to read tags: {e}"
+        raise RuntimeError(msg) from e
 
 
 def _extract_id3_tags(audio: Any, namespace: str) -> dict[str, list[str]]:
-    """
-    Extract tags from ID3v2 format (MP3).
+    """Extract tags from ID3v2 format (MP3).
 
     Reads TXXX (user-defined text) frames with namespace prefix.
     Returns always-list format per Tags invariant.
@@ -164,8 +168,7 @@ def _extract_id3_tags(audio: Any, namespace: str) -> dict[str, list[str]]:
 
 
 def _extract_mp4_tags(audio: Any, namespace: str) -> dict[str, list[str]]:
-    """
-    Extract tags from MP4/M4A format.
+    """Extract tags from MP4/M4A format.
 
     Reads iTunes freeform atoms (----:com.apple.iTunes:) with namespace prefix.
     Returns always-list format per Tags invariant.
@@ -208,8 +211,7 @@ def _extract_mp4_tags(audio: Any, namespace: str) -> dict[str, list[str]]:
 
 
 def _extract_vorbis_tags(audio: Any, namespace: str) -> dict[str, list[str]]:
-    """
-    Extract tags from Vorbis comments format (FLAC, OGG, Opus).
+    """Extract tags from Vorbis comments format (FLAC, OGG, Opus).
 
     Vorbis tags use uppercase keys with underscores.
     Example: "ESSENTIA_YAMNET_HAPPY" for namespace "essentia"

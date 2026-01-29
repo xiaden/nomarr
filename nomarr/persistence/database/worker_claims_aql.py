@@ -4,13 +4,15 @@ Manages ephemeral claim documents for discovery-based workers.
 Claims are temporary leases, not authoritative state.
 """
 
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
-from arango.cursor import Cursor
 from arango.exceptions import DocumentInsertError
 
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.arango_client import DatabaseLike
+
+if TYPE_CHECKING:
+    from arango.cursor import Cursor
 
 
 class WorkerClaimsOperations:
@@ -39,6 +41,7 @@ class WorkerClaimsOperations:
 
         Returns:
             True if claim successful, False if file already claimed
+
         """
         # Extract file _key from _id (e.g., "library_files/12345" -> "12345")
         file_key = file_id.split("/")[1] if "/" in file_id else file_id
@@ -51,7 +54,7 @@ class WorkerClaimsOperations:
                     "file_id": file_id,
                     "worker_id": worker_id,
                     "claimed_at": now_ms().value,
-                }
+                },
             )
             return True
         except DocumentInsertError:
@@ -68,6 +71,7 @@ class WorkerClaimsOperations:
 
         Returns:
             True if claim was released, False if no claim existed
+
         """
         file_key = file_id.split("/")[1] if "/" in file_id else file_id
         claim_key = f"claim_{file_key}"
@@ -86,12 +90,13 @@ class WorkerClaimsOperations:
 
         Returns:
             Claim document or None if not claimed
+
         """
         file_key = file_id.split("/")[1] if "/" in file_id else file_id
         claim_key = f"claim_{file_key}"
 
         try:
-            return cast(dict[str, Any], self.collection.get(claim_key))
+            return cast("dict[str, Any]", self.collection.get(claim_key))
         except Exception:
             return None
 
@@ -104,9 +109,10 @@ class WorkerClaimsOperations:
 
         Returns:
             Number of claims removed
+
         """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
                 LET active_workers = (
@@ -120,7 +126,7 @@ class WorkerClaimsOperations:
                     REMOVE claim IN worker_claims
                     RETURN 1
                 """,
-                bind_vars=cast(dict[str, Any], {"heartbeat_cutoff": heartbeat_cutoff_ms}),
+                bind_vars=cast("dict[str, Any]", {"heartbeat_cutoff": heartbeat_cutoff_ms}),
             ),
         )
         return sum(cursor)
@@ -130,9 +136,10 @@ class WorkerClaimsOperations:
 
         Returns:
             Number of claims removed
+
         """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
                 FOR claim IN worker_claims
@@ -140,7 +147,7 @@ class WorkerClaimsOperations:
                     FILTER file.tagged == 1 OR file.needs_tagging == 0
                     REMOVE claim IN worker_claims
                     RETURN 1
-                """
+                """,
             ),
         )
         return sum(cursor)
@@ -155,9 +162,10 @@ class WorkerClaimsOperations:
 
         Returns:
             Number of claims removed
+
         """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
                 FOR claim IN worker_claims
@@ -165,7 +173,7 @@ class WorkerClaimsOperations:
                     FILTER file == null OR file.needs_tagging == 0 OR file.is_valid == 0
                     REMOVE claim IN worker_claims
                     RETURN 1
-                """
+                """,
             ),
         )
         return sum(cursor)
@@ -183,6 +191,7 @@ class WorkerClaimsOperations:
 
         Returns:
             Total number of claims removed
+
         """
         heartbeat_cutoff = now_ms().value - heartbeat_timeout_ms
         removed = 0
@@ -196,13 +205,14 @@ class WorkerClaimsOperations:
 
         Returns:
             Number of active claim documents
+
         """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
                 RETURN LENGTH(worker_claims)
-                """
+                """,
             ),
         )
         return next(cursor, 0)
@@ -215,16 +225,17 @@ class WorkerClaimsOperations:
 
         Returns:
             List of claim documents
+
         """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
                 FOR claim IN worker_claims
                     FILTER claim.worker_id == @worker_id
                     RETURN claim
                 """,
-                bind_vars=cast(dict[str, Any], {"worker_id": worker_id}),
+                bind_vars=cast("dict[str, Any]", {"worker_id": worker_id}),
             ),
         )
         return list(cursor)

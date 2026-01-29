@@ -1,5 +1,4 @@
-"""
-DTOs for recalibration service operations.
+"""DTOs for recalibration service operations.
 
 Cross-layer data contracts for recalibration service (used by services and interfaces).
 """

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Check API endpoint coverage - which backend routes are used by the frontend.
+"""Check API endpoint coverage - which backend routes are used by the frontend.
 
 Generates an HTML report showing:
 - All backend API endpoints (from FastAPI routes)

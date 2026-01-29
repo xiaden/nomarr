@@ -1,5 +1,4 @@
-"""
-CalibrationService - Thin orchestration wrapper for calibration generation workflow.
+"""CalibrationService - Thin orchestration wrapper for calibration generation workflow.
 
 This service delegates to workflows.calibration_generation for the actual calibration logic.
 It provides dependency injection (db, models_dir, namespace, thresholds) from the application
@@ -31,8 +30,7 @@ class CalibrationConfig:
 
 
 class CalibrationService:
-    """
-    Service for orchestrating calibration generation.
+    """Service for orchestrating calibration generation.
 
     Thin wrapper that provides DI to the calibration workflow.
     All domain logic lives in workflows.calibration_generation.
@@ -42,13 +40,13 @@ class CalibrationService:
         self,
         db: Database,
         cfg: CalibrationConfig,
-    ):
-        """
-        Initialize calibration service.
+    ) -> None:
+        """Initialize calibration service.
 
         Args:
             db: Database instance
             cfg: Calibration configuration
+
         """
         self._db = db
         self.cfg = cfg
@@ -61,8 +59,7 @@ class CalibrationService:
     # -------------------------------------------------------------------------
 
     def generate_histogram_calibration(self) -> dict[str, Any]:
-        """
-        Generate calibrations using sparse uniform histogram approach.
+        """Generate calibrations using sparse uniform histogram approach.
 
         Stateless, idempotent. Always computes from current DB state.
         Uses 10,000 uniform bins per head, sparse results only.
@@ -75,6 +72,7 @@ class CalibrationService:
               "heads_failed": int,
               "results": {head_key: {p5, p95, n, underflow_count, overflow_count}}
             }
+
         """
         from nomarr.workflows.calibration.generate_calibration_wf import generate_histogram_calibration_wf
 
@@ -87,8 +85,7 @@ class CalibrationService:
         )
 
     def start_histogram_calibration_background(self) -> None:
-        """
-        Start histogram-based calibration generation in background thread.
+        """Start histogram-based calibration generation in background thread.
 
         Follows threading pattern from design document.
         Thread-safe: can check is_generation_running() and get_generation_result().
@@ -118,7 +115,7 @@ class CalibrationService:
             self._generation_result = result
             logger.info(
                 f"[CalibrationService] Background generation completed: "
-                f"{result['heads_success']} success, {result['heads_failed']} failed"
+                f"{result['heads_success']} success, {result['heads_failed']} failed",
             )
         except Exception as e:
             logger.error(f"[CalibrationService] Background generation failed: {e}", exc_info=True)
@@ -129,26 +126,25 @@ class CalibrationService:
         return self._generation_thread is not None and self._generation_thread.is_alive()
 
     def get_generation_result(self) -> dict[str, Any] | None:
-        """
-        Get result of last histogram calibration generation.
+        """Get result of last histogram calibration generation.
 
         Returns:
             Result dict if generation completed successfully, None if still running or failed
+
         """
         return self._generation_result
 
     def get_generation_error(self) -> Exception | None:
-        """
-        Get error from last histogram calibration generation.
+        """Get error from last histogram calibration generation.
 
         Returns:
             Exception if generation failed, None if still running or succeeded
+
         """
         return self._generation_error
 
     def get_generation_status(self) -> dict[str, Any]:
-        """
-        Get current status of histogram calibration generation.
+        """Get current status of histogram calibration generation.
 
         Returns:
             {
@@ -157,6 +153,7 @@ class CalibrationService:
               "error": str | None,
               "result": dict | None
             }
+
         """
         running = self.is_generation_running()
         completed = self._generation_result is not None
@@ -170,8 +167,7 @@ class CalibrationService:
         }
 
     def get_generation_progress(self) -> dict[str, Any]:
-        """
-        Get calibration generation progress (per-head completion).
+        """Get calibration generation progress (per-head completion).
 
         Returns:
             {
@@ -181,6 +177,7 @@ class CalibrationService:
               "last_updated": int | None,
               "is_running": bool
             }
+
         """
         from nomarr.components.ml.ml_discovery_comp import discover_heads
         from nomarr.helpers.time_helper import now_ms
@@ -202,7 +199,7 @@ class CalibrationService:
                     RETURN 1
             )
             """,
-            bind_vars=type_cast(dict[str, Any], {"threshold": recent_threshold}),
+            bind_vars=type_cast("dict[str, Any]", {"threshold": recent_threshold}),
         )
         completed = next(cursor, 0)  # type: ignore
 
@@ -213,7 +210,7 @@ class CalibrationService:
                 SORT c.updated_at DESC
                 LIMIT 1
                 RETURN c.updated_at
-            """
+            """,
         )
         last_updated = next(cursor, None)  # type: ignore
 
@@ -230,8 +227,7 @@ class CalibrationService:
         calibration_key: str | None = None,
         limit: int = 100,
     ) -> dict[str, Any]:
-        """
-        Get calibration convergence history.
+        """Get calibration convergence history.
 
         Args:
             calibration_key: Specific head (e.g., "effnet-20220825:mood_happy") or None for all
@@ -242,6 +238,7 @@ class CalibrationService:
               "calibration_key": [...snapshots...] or
               "all": {calibration_key: [...snapshots...]}
             }
+
         """
         if calibration_key:
             # Single head history
@@ -250,25 +247,23 @@ class CalibrationService:
                 limit=limit,
             )
             return {"calibration_key": calibration_key, "history": history}
-        else:
-            # All heads - get recent snapshots and group by calibration_key
-            recent = self._db.calibration_history.get_all_recent_snapshots(limit=limit * 10)
-            grouped: dict[str, list[dict[str, Any]]] = {}
-            for snapshot in recent:
-                key = snapshot["calibration_key"]
-                if key not in grouped:
-                    grouped[key] = []
-                grouped[key].append(snapshot)
+        # All heads - get recent snapshots and group by calibration_key
+        recent = self._db.calibration_history.get_all_recent_snapshots(limit=limit * 10)
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for snapshot in recent:
+            key = snapshot["calibration_key"]
+            if key not in grouped:
+                grouped[key] = []
+            grouped[key].append(snapshot)
 
-            # Trim each group to limit
-            for key in grouped:
-                grouped[key] = sorted(grouped[key], key=lambda x: x["snapshot_at"], reverse=True)[:limit]
+        # Trim each group to limit
+        for key in grouped:
+            grouped[key] = sorted(grouped[key], key=lambda x: x["snapshot_at"], reverse=True)[:limit]
 
-            return {"all_heads": grouped}
+        return {"all_heads": grouped}
 
     def get_latest_convergence_status(self) -> dict[str, Any]:
-        """
-        Get latest convergence metrics for all heads.
+        """Get latest convergence metrics for all heads.
 
         Returns:
             {
@@ -280,6 +275,7 @@ class CalibrationService:
                 "converged": bool (|p5_delta| < 0.01 and |p95_delta| < 0.01)
               }
             }
+
         """
         all_states = self._db.calibration_state.get_all_calibration_states()
         convergence_status = {}

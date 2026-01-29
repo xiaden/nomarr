@@ -36,11 +36,11 @@ class LibraryScanMixin:
         return self.get_library.get_or_error(library_id)
 
     def _has_healthy_library_workers(self) -> bool:
-        """
-        Check if any library workers are healthy and available.
+        """Check if any library workers are healthy and available.
 
         Returns:
             True if at least one library worker has a recent heartbeat
+
         """
         workers = self.health.get_all_workers()
 
@@ -61,22 +61,21 @@ class LibraryScanMixin:
         return False
 
     def _is_scan_running(self) -> bool:
-        """
-        Check if any scan is currently running.
+        """Check if any scan is currently running.
 
         Uses library.scan_status field instead of queue jobs.
 
         Returns:
             True if any library has scan_status='scanning'
+
         """
         libraries = self.list_libraries.list(enabled_only=False)
         return any(lib.get("scan_status") == "scanning" for lib in libraries)
 
     def scan_targets(
-        self, targets: list[ScanTarget], batch_size: int = 200, force_rescan: bool = False
+        self, targets: list[ScanTarget], batch_size: int = 200, force_rescan: bool = False,
     ) -> StartScanResult:
-        """
-        Scan specific folders within libraries.
+        """Scan specific folders within libraries.
 
         This is the core scanning method that supports both full library scans
         and targeted/incremental scans. Use this when you want fine-grained control
@@ -97,17 +96,20 @@ class LibraryScanMixin:
             ValueError: If any library_id not found
             ValueError: If scan already running for any target library
             ValueError: If multiple targets reference the same library
+
         """
         from nomarr.workflows.library.start_scan_wf import start_scan_workflow
 
         # Validation: targets must not be empty
         if not targets:
-            raise ValueError("Cannot scan: targets list is empty")
+            msg = "Cannot scan: targets list is empty"
+            raise ValueError(msg)
 
         # Validation: check for duplicate library_ids in targets
         library_ids = [t.library_id for t in targets]
         if len(library_ids) != len(set(library_ids)):
-            raise ValueError("Cannot scan: multiple targets reference the same library")
+            msg = "Cannot scan: multiple targets reference the same library"
+            raise ValueError(msg)
 
         # Validation: ensure all libraries exist
         for target in targets:
@@ -128,8 +130,7 @@ class LibraryScanMixin:
         )
 
     def start_scan_for_library(self, library_id: str, force_rescan: bool = False) -> StartScanResult:
-        """
-        Start a full library scan for a specific library.
+        """Start a full library scan for a specific library.
 
         This is a convenience method that delegates to scan_targets()
         with a full library scan target (empty folder_path).
@@ -149,14 +150,14 @@ class LibraryScanMixin:
 
         Raises:
             ValueError: If library not found or scan already running
+
         """
         # Delegate to scan_targets with full library scan
         target = ScanTarget(library_id=library_id, folder_path="")
         return self.scan_targets([target], force_rescan=force_rescan)
 
     def start_scan(self, library_id: str) -> StartScanResult:
-        """
-        Start a library scan.
+        """Start a library scan.
 
         Scans the entire library root recursively and marks missing files as invalid.
 
@@ -174,6 +175,7 @@ class LibraryScanMixin:
 
         Raises:
             ValueError: If library not found
+
         """
         from nomarr.workflows.library.start_scan_wf import start_scan_workflow
 
@@ -185,8 +187,7 @@ class LibraryScanMixin:
         )
 
     def cancel_scan(self, library_id: str | None = None) -> bool:
-        """
-        Cancel the currently running scan.
+        """Cancel the currently running scan.
 
         Note: Cancellation support not yet implemented for direct scans.
         This method is kept for API compatibility but currently returns False.
@@ -199,9 +200,11 @@ class LibraryScanMixin:
 
         Raises:
             ValueError: If library not configured
+
         """
         if not self.cfg.library_root:
-            raise ValueError("Library scanning not configured")
+            msg = "Library scanning not configured"
+            raise ValueError(msg)
 
         # TODO: Implement scan cancellation for BackgroundTaskService
         # For now, scans run to completion
@@ -209,14 +212,14 @@ class LibraryScanMixin:
         return False
 
     def get_status(self, library_id: str | None = None) -> LibraryScanStatusResult:
-        """
-        Get current library scan status.
+        """Get current library scan status.
 
         Args:
             library_id: Library ID to check scan status for
 
         Returns:
             LibraryScanStatusResult with configured, library_path, enabled, scan_status, progress, total
+
         """
         if not self.cfg.library_root:
             return LibraryScanStatusResult(
@@ -264,8 +267,7 @@ class LibraryScanMixin:
         )
 
     def get_scan_history(self, limit: int = 100) -> list[dict[str, Any]]:
-        """
-        Get recent library scan history from library records.
+        """Get recent library scan history from library records.
 
         Note: Queue-based job history removed in favor of library.scanned_at field.
         Returns simplified scan info from library records.
@@ -275,6 +277,7 @@ class LibraryScanMixin:
 
         Returns:
             List of scan info dicts with library_id, name, scanned_at, scan_status
+
         """
         libraries = self.list_libraries.list(enabled_only=False)
         return [

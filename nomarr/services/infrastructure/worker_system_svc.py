@@ -1,5 +1,4 @@
-"""
-Worker System Service - Discovery-based worker management.
+"""Worker System Service - Discovery-based worker management.
 
 Manages discovery workers that query library_files directly instead of
 polling a queue. Workers claim files via worker_claims collection.
@@ -68,8 +67,7 @@ WORKER_STAGGER_DELAY_S = 2.0
 
 
 class WorkerSystemService(ComponentLifecycleHandler):
-    """
-    Discovery-based worker system service with admission control.
+    """Discovery-based worker system service with admission control.
 
     Manages worker processes that:
     1. Query library_files for files with needs_tagging=1
@@ -96,9 +94,8 @@ class WorkerSystemService(ComponentLifecycleHandler):
         health_monitor: HealthMonitorService | None = None,
         worker_count: int = 1,
         default_enabled: bool = True,
-    ):
-        """
-        Initialize worker system service.
+    ) -> None:
+        """Initialize worker system service.
 
         Args:
             db: Database instance
@@ -106,6 +103,7 @@ class WorkerSystemService(ComponentLifecycleHandler):
             health_monitor: HealthMonitor to register workers with
             worker_count: Number of worker processes to spawn (max)
             default_enabled: Default worker_enabled flag if not in DB
+
         """
         self.db = db
         self.processor_config = processor_config
@@ -115,7 +113,8 @@ class WorkerSystemService(ComponentLifecycleHandler):
 
         # Get DB connection info for workers (required for subprocess connections)
         if not db.hosts or not db.password:
-            raise ValueError("Database hosts and password required for worker system")
+            msg = "Database hosts and password required for worker system"
+            raise ValueError(msg)
         self._db_hosts: str = db.hosts
         self._db_password: str = db.password
 
@@ -135,8 +134,7 @@ class WorkerSystemService(ComponentLifecycleHandler):
     # ------------------- Resource Management ------------------
 
     def _check_gpu_capability(self) -> bool:
-        """
-        Check NVIDIA GPU capability once at startup.
+        """Check NVIDIA GPU capability once at startup.
 
         Per GPU_REFACTOR_PLAN.md Section 5:
         - A container is GPU-capable iff nvidia-smi succeeds
@@ -144,6 +142,7 @@ class WorkerSystemService(ComponentLifecycleHandler):
 
         Returns:
             True if GPU is available, False otherwise
+
         """
         if self._gpu_capable is None:
             self._gpu_capable = check_nvidia_gpu_capability()
@@ -154,8 +153,7 @@ class WorkerSystemService(ComponentLifecycleHandler):
         return self._gpu_capable
 
     def _run_admission_control(self) -> TierSelection:
-        """
-        Run admission control to determine execution tier and worker count.
+        """Run admission control to determine execution tier and worker count.
 
         Per GPU_REFACTOR_PLAN.md Section 10:
         1. Check GPU capability
@@ -165,6 +163,7 @@ class WorkerSystemService(ComponentLifecycleHandler):
 
         Returns:
             TierSelection with tier and calculated worker count
+
         """
         # Get resource management config
         rm_config = self.processor_config.resource_management
@@ -231,6 +230,7 @@ class WorkerSystemService(ComponentLifecycleHandler):
             old_status: Previous status
             new_status: New status
             context: Additional context (consecutive_misses, recovery_deadline, etc.)
+
         """
         logger.info(
             "[WorkerSystemService] %s: %s -> %s (misses=%d)",
@@ -277,7 +277,7 @@ class WorkerSystemService(ComponentLifecycleHandler):
                 if self.health_monitor:
                     self.health_monitor.set_failed(component_id)
                 self.db.worker_restart_policy.mark_failed_permanent(
-                    component_id, decision.failure_reason or "Restart limit exceeded"
+                    component_id, decision.failure_reason or "Restart limit exceeded",
                 )
                 logger.error(
                     "[WorkerSystemService] Worker %s marked as permanently failed: %s",
@@ -301,6 +301,7 @@ class WorkerSystemService(ComponentLifecycleHandler):
 
         Args:
             component_id: Worker component ID (e.g., "discovery_worker_0")
+
         """
         # Remove timer from pending dict (already executed)
         self._pending_restart_timers.pop(component_id, None)
@@ -317,7 +318,7 @@ class WorkerSystemService(ComponentLifecycleHandler):
         try:
             worker_index = int(component_id.split("_")[-1])
         except (ValueError, IndexError):
-            logger.error("[WorkerSystemService] Invalid component_id format: %s", component_id)
+            logger.exception("[WorkerSystemService] Invalid component_id format: %s", component_id)
             return
 
         # Spawn replacement worker
@@ -367,11 +368,11 @@ class WorkerSystemService(ComponentLifecycleHandler):
     # ---------------------------- Control Methods ----------------------------
 
     def is_worker_system_enabled(self) -> bool:
-        """
-        Check if worker system is globally enabled.
+        """Check if worker system is globally enabled.
 
         Returns:
             True if worker_enabled=true in DB meta, or default if not set
+
         """
         meta = self.db.meta.get("worker_enabled")
         if meta is None:
@@ -389,11 +390,11 @@ class WorkerSystemService(ComponentLifecycleHandler):
         logger.info("[WorkerSystemService] Worker system globally disabled")
 
     def pause_worker_system(self) -> WorkerOperationResult:
-        """
-        Pause worker system - disables processing and stops workers.
+        """Pause worker system - disables processing and stops workers.
 
         Returns:
             WorkerOperationResult with success status
+
         """
         self.disable_worker_system()
         self.stop_all_workers()
@@ -404,11 +405,11 @@ class WorkerSystemService(ComponentLifecycleHandler):
         )
 
     def resume_worker_system(self) -> WorkerOperationResult:
-        """
-        Resume worker system - enables processing and starts workers.
+        """Resume worker system - enables processing and starts workers.
 
         Returns:
             WorkerOperationResult with success status
+
         """
         self.enable_worker_system()
         self.start_all_workers()
@@ -511,6 +512,7 @@ class WorkerSystemService(ComponentLifecycleHandler):
 
         Args:
             timeout: Seconds to wait for graceful shutdown before force kill
+
         """
         if not self._workers:
             logger.debug("[WorkerSystemService] No workers to stop")
@@ -554,11 +556,11 @@ class WorkerSystemService(ComponentLifecycleHandler):
     # ---------------------------- Status Methods ----------------------------
 
     def get_workers_status(self) -> dict[str, Any]:
-        """
-        Get worker system status.
+        """Get worker system status.
 
         Returns:
             Dict with worker pool status
+
         """
         alive_workers = [w for w in self._workers if w.is_alive()]
 
@@ -587,11 +589,11 @@ class WorkerSystemService(ComponentLifecycleHandler):
         }
 
     def get_resource_status(self) -> dict[str, Any]:
-        """
-        Get GPU/CPU resource management status.
+        """Get GPU/CPU resource management status.
 
         Returns:
             Dict with resource management status including tier, capacity, and GPU capability
+
         """
         return {
             "gpu_capable": self._gpu_capable,
@@ -612,13 +614,13 @@ class WorkerSystemService(ComponentLifecycleHandler):
     # ---------------------------- Claim Cleanup ----------------------------
 
     def cleanup_stale_claims(self) -> int:
-        """
-        Run claim cleanup to remove stale/orphaned claims.
+        """Run claim cleanup to remove stale/orphaned claims.
 
         This should be called periodically (e.g., in health monitor cycle).
 
         Returns:
             Number of claims removed
+
         """
         from nomarr.components.workers.worker_discovery_comp import cleanup_stale_claims
 

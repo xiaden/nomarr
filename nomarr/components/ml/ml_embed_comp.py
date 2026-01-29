@@ -7,13 +7,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 # Local modules
-from nomarr.helpers.dto.ml_dto import SegmentWaveformParams
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from nomarr.helpers.dto.ml_dto import SegmentWaveformParams
 
 
 # ----------------------------------------------------------------------
@@ -31,8 +35,7 @@ class Segments:
 def segment_waveform(
     params: SegmentWaveformParams,
 ) -> Segments:
-    """
-    Slice a mono waveform into overlapping fixed-length segments.
+    """Slice a mono waveform into overlapping fixed-length segments.
 
     Args:
         params: SegmentWaveformParams with:
@@ -41,6 +44,7 @@ def segment_waveform(
             - segment_s: Window length in seconds
             - hop_s: Hop length in seconds
             - pad_final: If True, zero-pad the last short segment to full length
+
     """
     waveform = params.waveform
     sr = params.sr
@@ -49,12 +53,14 @@ def segment_waveform(
     pad_final = params.pad_final
 
     if segment_s <= 0 or hop_s <= 0:
-        raise ValueError("segment_s and hop_s must be > 0")
+        msg = "segment_s and hop_s must be > 0"
+        raise ValueError(msg)
 
     seg_len = round(segment_s * sr)
     hop_len = round(hop_s * sr)
     if seg_len <= 0 or hop_len <= 0:
-        raise ValueError("segment length/hop too small for given sr")
+        msg = "segment length/hop too small for given sr"
+        raise ValueError(msg)
 
     waves: list[np.ndarray] = []
     bounds: list[tuple[float, float]] = []
@@ -68,17 +74,16 @@ def segment_waveform(
         end = start + seg_len
         if end <= num_samples:
             seg = waveform[start:end]
+        # last partial
+        elif not pad_final:
+            seg = waveform[start:num_samples]
+            if len(seg) == 0:
+                break
         else:
-            # last partial
-            if not pad_final:
-                seg = waveform[start:num_samples]
-                if len(seg) == 0:
-                    break
-            else:
-                seg = np.zeros(seg_len, dtype=np.float32)
-                remain = waveform[start:num_samples]
-                seg[: len(remain)] = remain
-                end = num_samples  # logical end at file end
+            seg = np.zeros(seg_len, dtype=np.float32)
+            remain = waveform[start:num_samples]
+            seg[: len(remain)] = remain
+            end = num_samples  # logical end at file end
 
         t0 = start / sr
         t1 = min(end, num_samples) / sr
@@ -100,10 +105,9 @@ def score_segments(
     segments: Segments,
     predict_fn: Callable[[np.ndarray, int], np.ndarray],
 ) -> np.ndarray:
-    """
-    Apply predict_fn to each segment waveform.
+    """Apply predict_fn to each segment waveform.
     predict_fn signature: (wave_mono_float32, sr) -> 1D np.ndarray (scores/logits/probs)
-    Returns a 2D array: (num_segments, dim)
+    Returns a 2D array: (num_segments, dim).
     """
     outputs: list[np.ndarray] = []
     for seg in segments.waves:
@@ -136,11 +140,10 @@ def pool_scores(
     trim_perc: float = 0.1,
     nan_policy: str = "omit",
 ) -> np.ndarray:
-    """
-    Pool segment-level scores into a single vector.
+    """Pool segment-level scores into a single vector.
     - mode: "mean", "median", or "trimmed_mean"
     - trim_perc: for trimmed_mean, fraction to drop from each tail (0..0.4 recommended)
-    - nan_policy: "omit" (ignore NaNs) or "propagate"
+    - nan_policy: "omit" (ignore NaNs) or "propagate".
     """
     if scores.size == 0:
         return scores
@@ -171,7 +174,8 @@ def pool_scores(
                 pooled,
             )
         else:
-            raise ValueError(f"Unknown pooling mode: {mode}")
+            msg = f"Unknown pooling mode: {mode}"
+            raise ValueError(msg)
         return pooled.astype(np.float32, copy=False)
 
     # nan_policy == "propagate"
@@ -179,20 +183,20 @@ def pool_scores(
         result: np.ndarray = np.mean(scores, axis=0).astype(np.float32, copy=False)
         return result
     if mode == "median":
-        result = np.median(scores, axis=0).astype(np.float32, copy=False)
-        return result
+        return np.median(scores, axis=0).astype(np.float32, copy=False)
     if mode == "trimmed_mean":
         return _trimmed_mean(scores, trim_perc, axis=0).astype(np.float32, copy=False)
-    raise ValueError(f"Unknown pooling mode: {mode}")
+    msg = f"Unknown pooling mode: {mode}"
+    raise ValueError(msg)
 
 
 def _trimmed_mean(scores: np.ndarray, trim_perc: float, axis: int = 0) -> np.ndarray:
-    """
-    Compute a symmetric trimmed mean along axis, ignoring NaNs.
+    """Compute a symmetric trimmed mean along axis, ignoring NaNs.
     Example: trim_perc=0.1 drops lowest 10% and highest 10% per dimension.
     """
     if not (0.0 <= trim_perc < 0.5):
-        raise ValueError("trim_perc must be in [0, 0.5)")
+        msg = "trim_perc must be in [0, 0.5)"
+        raise ValueError(msg)
 
     # Work column-wise to support NaN-robust behavior
     if axis != 0:

@@ -1,5 +1,4 @@
-"""
-Metadata extraction component for audio files.
+"""Metadata extraction component for audio files.
 
 Handles format-specific tag extraction for MP4/M4A, FLAC, MP3, and other audio formats.
 Uses mutagen library for low-level tag access.
@@ -36,6 +35,7 @@ def _parse_single_value(value: str | None) -> str | None:
 
     Returns:
         First element as string if JSON array, otherwise the value itself
+
     """
     if not value:
         return None
@@ -62,6 +62,7 @@ def _parse_tag_value(value: str | None) -> str | list[str] | None:
         - None if value is empty/None
         - list[str] if value is a JSON array
         - str if value is a plain string
+
     """
     if not value:
         return None
@@ -112,8 +113,7 @@ def _build_artists_list(artists_raw: str | list[str] | None) -> list[str]:
 
 
 def resolve_artists(all_tags: dict[str, str]) -> tuple[str | None, list[str] | None]:
-    """
-    Resolve artist and artists tags with deduplication and fallback logic.
+    """Resolve artist and artists tags with deduplication and fallback logic.
 
     Handles JSON array values from normalization (e.g., '["Artist1", "Artist2"]').
 
@@ -128,6 +128,7 @@ def resolve_artists(all_tags: dict[str, str]) -> tuple[str | None, list[str] | N
 
     Returns:
         Tuple of (artist_str, artists_list) - single artist string and list of all artists
+
     """
     artist_raw = _parse_tag_value(all_tags.get("artist"))
     artists_raw = _parse_tag_value(all_tags.get("artists"))
@@ -152,8 +153,7 @@ def resolve_artists(all_tags: dict[str, str]) -> tuple[str | None, list[str] | N
 
 
 def extract_metadata(file_path: LibraryPath, namespace: str = "nom") -> dict[str, Any]:
-    """
-    Extract metadata and tags from an audio file.
+    """Extract metadata and tags from an audio file.
 
     Handles format-specific tag extraction based on file extension.
     Extracts both standard metadata (artist, album, etc.) and namespace-specific
@@ -184,11 +184,13 @@ def extract_metadata(file_path: LibraryPath, namespace: str = "nom") -> dict[str
     Note:
         Handles MP3 (ID3), M4A/MP4, FLAC, and other mutagen-supported formats.
         Multi-value tags in MP3/FLAC are stored as JSON array strings.
+
     """
     # Enforce validation before file operations
     if not file_path.is_valid():
+        msg = f"Cannot extract metadata from invalid path ({file_path.status}): {file_path.absolute} - {file_path.reason}"
         raise ValueError(
-            f"Cannot extract metadata from invalid path ({file_path.status}): {file_path.absolute} - {file_path.reason}"
+            msg,
         )
 
     path_str = str(file_path.absolute)
@@ -256,7 +258,7 @@ def _extract_mp4_metadata(audio: Any, metadata: dict[str, Any], namespace: str) 
 
     # Parse year from date (may be JSON array)
     year_str = _parse_single_value(metadata["all_tags"].get("year")) or _parse_single_value(
-        metadata["all_tags"].get("date")
+        metadata["all_tags"].get("date"),
     )
     if year_str:
         with contextlib.suppress(ValueError, IndexError):
@@ -311,7 +313,7 @@ def _extract_flac_metadata(audio: Any, metadata: dict[str, Any], namespace: str)
 
     # Parse year from date (may be JSON array)
     year_str = _parse_single_value(metadata["all_tags"].get("year")) or _parse_single_value(
-        metadata["all_tags"].get("date")
+        metadata["all_tags"].get("date"),
     )
     if year_str:
         with contextlib.suppress(ValueError, IndexError):
@@ -365,7 +367,7 @@ def _extract_mp3_metadata(file_path: LibraryPath, metadata: dict[str, Any], name
 
         # Parse year from date (may be JSON array)
         year_str = _parse_single_value(metadata["all_tags"].get("year")) or _parse_single_value(
-            metadata["all_tags"].get("date")
+            metadata["all_tags"].get("date"),
         )
         if year_str:
             with contextlib.suppress(ValueError, IndexError):
@@ -403,8 +405,7 @@ def _extract_mp3_metadata(file_path: LibraryPath, metadata: dict[str, Any], name
 
 
 def _get_first(tags: Any, key: str) -> str | None:
-    """
-    Get first value from a tag dict.
+    """Get first value from a tag dict.
 
     Handles both mutagen tag dicts (which store values as lists) and regular dicts.
 
@@ -414,6 +415,7 @@ def _get_first(tags: Any, key: str) -> str | None:
 
     Returns:
         First value as string, or None if not found
+
     """
     value = tags.get(key)
     if value is None:
@@ -426,8 +428,7 @@ def _get_first(tags: Any, key: str) -> str | None:
 
 
 def _serialize_mutagen_value(value: Any) -> str:
-    """
-    Serialize a mutagen tag value to a string.
+    """Serialize a mutagen tag value to a string.
 
     Handles various mutagen types:
     - MP4FreeForm: Extract bytes and decode
@@ -443,6 +444,7 @@ def _serialize_mutagen_value(value: Any) -> str:
 
     Returns:
         String representation of the value
+
     """
     # Handle MP4FreeForm values (bytes wrapped in a list-like object)
     if hasattr(value, "__iter__") and not isinstance(value, str | bytes):
@@ -476,8 +478,7 @@ def _serialize_mutagen_value(value: Any) -> str:
 
 
 def compute_chromaprint_for_file(path: LibraryPath) -> str:
-    """
-    Compute chromaprint for an audio file.
+    """Compute chromaprint for an audio file.
 
     Single component call that handles audio loading and chromaprint computation.
     Standardizes on 16kHz sample rate for consistent fingerprinting.
@@ -491,6 +492,7 @@ def compute_chromaprint_for_file(path: LibraryPath) -> str:
     Raises:
         RuntimeError: If audio loading or chromaprint computation fails
         ValueError: If path is invalid
+
     """
     from nomarr.components.ml.chromaprint_comp import compute_chromaprint
     from nomarr.components.ml.ml_audio_comp import load_audio_mono

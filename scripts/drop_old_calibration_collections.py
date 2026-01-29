@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Drop old calibration collections after histogram refactor.
+"""Drop old calibration collections after histogram refactor.
 
 This script removes the legacy collections:
 - calibration_queue (replaced by stateless computation)

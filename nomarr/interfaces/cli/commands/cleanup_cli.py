@@ -1,5 +1,4 @@
-"""
-Cleanup command: Remove orphaned entities from the metadata graph.
+"""Cleanup command: Remove orphaned entities from the metadata graph.
 
 Architecture:
 - Uses CLI bootstrap service to get MetadataService instance
@@ -10,15 +9,17 @@ Architecture:
 
 from __future__ import annotations
 
-import argparse
+from typing import TYPE_CHECKING
 
 from nomarr.interfaces.cli.cli_ui import InfoPanel, print_error
 from nomarr.services.infrastructure.cli_bootstrap_svc import get_metadata_service
 
+if TYPE_CHECKING:
+    import argparse
+
 
 def cmd_cleanup(args: argparse.Namespace) -> int:
-    """
-    Remove orphaned entities (artists, albums, genres, labels, years) that have no songs.
+    """Remove orphaned entities (artists, albums, genres, labels, years) that have no songs.
     Runs standalone without requiring the app to be running.
     """
     # Get standalone service instance (no running Application required)

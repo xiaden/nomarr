@@ -1,11 +1,12 @@
 """Health operations for ArangoDB (component health monitoring)."""
 
-from typing import Any, cast
-
-from arango.cursor import Cursor
+from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.arango_client import DatabaseLike
+
+if TYPE_CHECKING:
+    from arango.cursor import Cursor
 
 
 class HealthOperations:
@@ -22,6 +23,7 @@ class HealthOperations:
             component: Component name (e.g., 'database', 'ml', 'queue')
             status: Status ('healthy', 'degraded', 'unhealthy')
             message: Optional status message
+
         """
         ts = now_ms().value
         self.db.aql.execute(
@@ -41,7 +43,7 @@ class HealthOperations:
             }
             IN health
             """,
-            bind_vars=cast(dict[str, Any], {"component": component, "status": status, "message": message, "ts": ts}),
+            bind_vars=cast("dict[str, Any]", {"component": component, "status": status, "message": message, "ts": ts}),
         )
 
     def get_health(self, component: str) -> dict[str, Any] | None:
@@ -52,9 +54,10 @@ class HealthOperations:
 
         Returns:
             Health dict or None if not found
+
         """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
             FOR health IN health
@@ -73,15 +76,16 @@ class HealthOperations:
 
         Returns:
             List of health dicts
+
         """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
             FOR health IN health
                 SORT health.component ASC
                 RETURN health
-            """
+            """,
             ),
         )
         return list(cursor)
@@ -91,6 +95,7 @@ class HealthOperations:
 
         Args:
             component: Component name
+
         """
         self.db.aql.execute(
             """
@@ -104,14 +109,14 @@ class HealthOperations:
     def get_all_workers(self) -> list[dict[str, Any]]:
         """Get all worker health records."""
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
             FOR health IN health
                 FILTER health.component_type == 'worker'
                 SORT health.last_heartbeat DESC
                 RETURN health
-            """
+            """,
             ),
         )
         return list(cursor)
@@ -123,6 +128,7 @@ class HealthOperations:
             component_id: Component identifier
             component_type: Type of component (worker, service, etc.)
             data: Dict with component, status, current_job, metadata, pid, etc.
+
         """
         ts = now_ms().value
 
@@ -134,7 +140,7 @@ class HealthOperations:
             IN health
             """,
             bind_vars=cast(
-                dict[str, Any],
+                "dict[str, Any]",
                 {
                     "component_id": component_id,
                     "component_type": component_type,
@@ -157,7 +163,7 @@ class HealthOperations:
                 UPDATE health WITH @data IN health
             """,
             bind_vars=cast(
-                dict[str, Any],
+                "dict[str, Any]",
                 {
                     "component_id": component_id,
                     "data": update_data,
@@ -187,7 +193,7 @@ class HealthOperations:
             IN health
             """,
             bind_vars=cast(
-                dict[str, Any],
+                "dict[str, Any]",
                 {
                     "component_id": component_id,
                     "data": update_data,
@@ -198,14 +204,14 @@ class HealthOperations:
     def get_component(self, component_id: str) -> dict[str, Any] | None:
         """Get component health record."""
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
             FOR health IN health
                 FILTER health.component_id == @component_id
                 RETURN health
             """,
-                bind_vars=cast(dict[str, Any], {"component_id": component_id}),
+                bind_vars=cast("dict[str, Any]", {"component_id": component_id}),
             ),
         )
         results = list(cursor)
@@ -216,6 +222,7 @@ class HealthOperations:
 
         Returns:
             Dict with updated restart_count and last_restart timestamp
+
         """
         ts = now_ms().value
         self.db.aql.execute(
@@ -228,7 +235,7 @@ class HealthOperations:
                 } IN health
             """,
             bind_vars=cast(
-                dict[str, Any],
+                "dict[str, Any]",
                 {
                     "component_id": component_id,
                     "timestamp": ts,
@@ -247,7 +254,7 @@ class HealthOperations:
                 FILTER health.component_id == @component_id
                 UPDATE health WITH {restart_count: 0} IN health
             """,
-            bind_vars=cast(dict[str, Any], {"component_id": component_id}),
+            bind_vars=cast("dict[str, Any]", {"component_id": component_id}),
         )
 
     def mark_starting(self, component_id: str, component_type: str) -> None:
@@ -268,7 +275,7 @@ class HealthOperations:
             IN health
             """,
             bind_vars=cast(
-                dict[str, Any],
+                "dict[str, Any]",
                 {
                     "component_id": component_id,
                     "component_type": component_type,
@@ -290,7 +297,7 @@ class HealthOperations:
                 } IN health
             """,
             bind_vars=cast(
-                dict[str, Any],
+                "dict[str, Any]",
                 {
                     "component_id": component_id,
                     "timestamp": now_ms().value,
@@ -313,6 +320,7 @@ class HealthOperations:
             component_id: Component identifier
             status: Current status (pending, healthy, unhealthy, failed)
             timestamp: Timestamp in milliseconds
+
         """
         self.db.aql.execute(
             """
@@ -331,7 +339,7 @@ class HealthOperations:
             IN health
             """,
             bind_vars=cast(
-                dict[str, Any],
+                "dict[str, Any]",
                 {
                     "component_id": component_id,
                     "status": status,
@@ -345,15 +353,16 @@ class HealthOperations:
 
         Returns:
             Number of records deleted
+
         """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
             FOR health IN health
                 REMOVE health IN health
                 RETURN 1
-            """
+            """,
             ),
         )
         return len(list(cursor))

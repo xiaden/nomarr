@@ -26,6 +26,7 @@ def discover_next_file(db: Database) -> str | None:
 
     Returns:
         File _id or None if no work available
+
     """
     file_doc = db.library_files.discover_next_unprocessed_file()
     if file_doc:
@@ -46,6 +47,7 @@ def claim_file(db: Database, file_id: str, worker_id: str) -> bool:
 
     Returns:
         True if claim successful, False if already claimed
+
     """
     return db.worker_claims.try_claim_file(file_id, worker_id)
 
@@ -56,6 +58,7 @@ def release_claim(db: Database, file_id: str) -> None:
     Args:
         db: Database instance
         file_id: Full file document _id
+
     """
     db.worker_claims.release_claim(file_id)
 
@@ -74,6 +77,7 @@ def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
 
     Returns:
         Number of claims removed
+
     """
     return db.worker_claims.cleanup_all_stale_claims(heartbeat_timeout_ms)
 
@@ -94,6 +98,7 @@ def discover_and_claim_file(db: Database, worker_id: str) -> str | None:
 
     Returns:
         Claimed file _id or None if no work available or claim failed
+
     """
     file_id = discover_next_file(db)
     if not file_id:
@@ -103,10 +108,9 @@ def discover_and_claim_file(db: Database, worker_id: str) -> str | None:
     if claim_file(db, file_id, worker_id):
         logger.debug("[Discovery] Claimed file %s for worker %s", file_id, worker_id)
         return file_id
-    else:
-        # Another worker claimed this file - caller should retry
-        logger.debug("[Discovery] File %s already claimed, retrying discovery", file_id)
-        return None
+    # Another worker claimed this file - caller should retry
+    logger.debug("[Discovery] File %s already claimed, retrying discovery", file_id)
+    return None
 
 
 def get_active_claim_count(db: Database) -> int:
@@ -117,5 +121,6 @@ def get_active_claim_count(db: Database) -> int:
 
     Returns:
         Number of active claim documents
+
     """
     return db.worker_claims.get_active_claim_count()

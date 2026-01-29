@@ -1,5 +1,4 @@
-"""
-Workers package - Discovery-based worker system.
+"""Workers package - Discovery-based worker system.
 
 This package contains the discovery-based ML processing workers that
 query library_files directly instead of using a queue.

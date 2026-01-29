@@ -1,5 +1,4 @@
-"""
-InfoService - System information.
+"""InfoService - System information.
 
 Provides consolidated system information for API endpoints.
 Owns GPUHealthMonitor lifecycle as it produces system resource facts.
@@ -64,7 +63,7 @@ GPU_MONITOR_COMPONENT_ID = "gpu_monitor"
 class _GPUMonitorLifecycleHandler(ComponentLifecycleHandler):
     """Lifecycle handler for GPUHealthMonitor - receives callbacks from HealthMonitorService."""
 
-    def __init__(self, info_service: InfoService):
+    def __init__(self, info_service: InfoService) -> None:
         self.info_service = info_service
 
     def on_status_change(
@@ -84,8 +83,7 @@ class _GPUMonitorLifecycleHandler(ComponentLifecycleHandler):
 
 
 class InfoService:
-    """
-    Service for system information.
+    """Service for system information.
 
     Owns GPUHealthMonitor lifecycle - starts/stops the subprocess and
     registers it with HealthMonitorService for liveness tracking.
@@ -99,14 +97,14 @@ class InfoService:
         cfg: InfoConfig,
         workers_coordinator: Any = None,
         ml_service: MLService | None = None,
-    ):
-        """
-        Initialize info service.
+    ) -> None:
+        """Initialize info service.
 
         Args:
             cfg: Info configuration (includes health_monitor for GPU registration)
             workers_coordinator: Worker system service instance (optional)
             ml_service: ML service instance (optional)
+
         """
         self.cfg = cfg
         self.workers_coordinator = workers_coordinator
@@ -120,17 +118,14 @@ class InfoService:
     # ----------------------------- Lifecycle ---------------------------------
 
     def start(self) -> None:
-        """
-        Start InfoService - initializes GPU monitor subprocess.
+        """Start InfoService - initializes GPU monitor subprocess.
 
         Call this after all services are registered.
         """
         self._start_gpu_monitor()
 
     def stop(self) -> None:
-        """
-        Stop InfoService - gracefully shuts down GPU monitor.
-        """
+        """Stop InfoService - gracefully shuts down GPU monitor."""
         self._stop_gpu_monitor()
 
     def _start_gpu_monitor(self) -> None:
@@ -199,11 +194,11 @@ class InfoService:
     # ----------------------------- Query Methods -----------------------------
 
     def get_system_info(self) -> SystemInfoResult:
-        """
-        Get system information for API endpoints.
+        """Get system information for API endpoints.
 
         Returns:
             SystemInfoResult DTO with version, namespace, models_dir, worker status
+
         """
         worker_enabled = self.workers_coordinator.is_worker_system_enabled() if self.workers_coordinator else False
         # For worker_count, get from workers_coordinator
@@ -221,14 +216,14 @@ class InfoService:
         )
 
     def get_health_status(self) -> HealthStatusResult:
-        """
-        Get health status with warnings and diagnostics.
+        """Get health status with warnings and diagnostics.
 
         Analyzes worker status and generates warnings for potential issues.
         Queue-based statistics removed in favor of discovery workers.
 
         Returns:
             HealthStatusResult DTO with status, warnings, worker count
+
         """
         # Compute worker count from worker system
         worker_count = 0
@@ -251,8 +246,7 @@ class InfoService:
         )
 
     def get_public_info(self) -> PublicInfoResult:
-        """
-        Get comprehensive public info for API endpoint.
+        """Get comprehensive public info for API endpoint.
 
         Orchestrates calls to multiple services and computes:
         - Worker enabled/alive status and heartbeat
@@ -262,6 +256,7 @@ class InfoService:
 
         Returns:
             PublicInfoResult DTO with config, models, queue, worker sections
+
         """
         # Worker status computation
         worker_enabled = self.workers_coordinator.is_worker_system_enabled() if self.workers_coordinator else False
@@ -316,8 +311,7 @@ class InfoService:
         )
 
     def get_gpu_health(self) -> GPUHealthResult:
-        """
-        Get GPU resource snapshot and monitor liveness.
+        """Get GPU resource snapshot and monitor liveness.
 
         Reads cached GPU probe results written by GPUHealthMonitor process.
         Does NOT run nvidia-smi inline (non-blocking).
@@ -326,6 +320,7 @@ class InfoService:
 
         Returns:
             GPUHealthResult with GPU resource snapshot and monitor liveness
+
         """
         import json
 

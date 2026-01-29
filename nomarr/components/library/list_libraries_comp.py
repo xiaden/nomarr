@@ -15,13 +15,13 @@ class ListLibrariesComp:
         self.db = db
 
     def list(self, enabled_only: bool = False) -> list[dict[str, Any]]:
-        """
-        List all libraries.
+        """List all libraries.
 
         Args:
             enabled_only: If True, only return enabled libraries
 
         Returns:
             List of library dicts
+
         """
         return self.db.libraries.list_libraries(enabled_only=enabled_only)

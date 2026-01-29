@@ -1,6 +1,4 @@
-"""
-AST parsing and dataclass discovery across the codebase.
-"""
+"""AST parsing and dataclass discovery across the codebase."""
 
 import ast
 import sys
@@ -11,14 +9,14 @@ from .model import DataclassInfo, ImportEdge, MissingDataclassCandidate
 
 
 def find_dataclass_definitions(file_path: Path) -> list[tuple[str, int]]:
-    """
-    Parse a Python file and find all @dataclass definitions.
+    """Parse a Python file and find all @dataclass definitions.
 
     Args:
         file_path: Path to Python file
 
     Returns:
         List of (class_name, line_number) tuples for each dataclass found
+
     """
     try:
         source = file_path.read_text(encoding="utf-8")
@@ -52,8 +50,7 @@ def find_dataclass_definitions(file_path: Path) -> list[tuple[str, int]]:
 
 
 def path_to_module(file_path: Path, project_root: Path) -> str:
-    """
-    Convert file path to Python module path.
+    """Convert file path to Python module path.
 
     Args:
         file_path: Absolute path to Python file
@@ -61,6 +58,7 @@ def path_to_module(file_path: Path, project_root: Path) -> str:
 
     Returns:
         Module path (e.g., "nomarr.helpers.dto.navidrome")
+
     """
     try:
         rel_path = file_path.relative_to(project_root)
@@ -85,8 +83,7 @@ def discover_all_dataclasses(
     domain_map: dict[str, str],
     ignore_prefixes: list[str],
 ) -> list[DataclassInfo]:
-    """
-    Walk the codebase and discover all @dataclass definitions.
+    """Walk the codebase and discover all @dataclass definitions.
 
     Args:
         project_root: Root directory of the project
@@ -97,6 +94,7 @@ def discover_all_dataclasses(
 
     Returns:
         List of DataclassInfo objects
+
     """
     dataclasses: list[DataclassInfo] = []
 
@@ -128,8 +126,7 @@ def discover_all_dataclasses(
 
 
 def file_imports_name(file_path: Path, name: str, defining_module: str) -> bool:
-    """
-    Check if a file imports a specific name from a module.
+    """Check if a file imports a specific name from a module.
 
     This is a best-effort heuristic check using AST parsing.
 
@@ -140,6 +137,7 @@ def file_imports_name(file_path: Path, name: str, defining_module: str) -> bool:
 
     Returns:
         True if file likely imports the name
+
     """
     try:
         source = file_path.read_text(encoding="utf-8")
@@ -178,8 +176,7 @@ def find_imports_of_dataclass(
     domain_map: dict[str, str],
     ignore_prefixes: list[str],
 ) -> tuple[list[str], set[str], set[str], set[str], list[ImportEdge], int]:
-    """
-    Find all modules that import a specific dataclass.
+    """Find all modules that import a specific dataclass.
 
     Args:
         project_root: Root directory of the project
@@ -199,6 +196,7 @@ def find_imports_of_dataclass(
             list of ImportEdge objects (excluding ignored),
             count of ignored imports
         )
+
     """
     importing_modules: list[str] = []
     importing_packages: set[str] = set()
@@ -267,8 +265,7 @@ def analyze_usage(
     domain_map: dict[str, str],
     ignore_prefixes: list[str],
 ) -> list[ImportEdge]:
-    """
-    Analyze usage patterns for all dataclasses (mutates DataclassInfo objects).
+    """Analyze usage patterns for all dataclasses (mutates DataclassInfo objects).
 
     Args:
         project_root: Root directory of the project
@@ -280,6 +277,7 @@ def analyze_usage(
 
     Returns:
         List of all ImportEdge objects found during analysis
+
     """
     all_edges: list[ImportEdge] = []
 
@@ -316,11 +314,11 @@ def _to_pascal_case(snake_str: str) -> str:
 
 
 def _has_dict_return(func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[bool, list[str]]:
-    """
-    Check if function returns a literal dict with >= 3 string keys.
+    """Check if function returns a literal dict with >= 3 string keys.
 
     Returns:
         Tuple of (has_dict_return, list_of_key_names)
+
     """
     for node in ast.walk(func_node):
         if (
@@ -343,11 +341,11 @@ def _has_dict_return(func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple
 
 
 def _has_tuple_return(func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[bool, int]:
-    """
-    Check if function returns a literal tuple with >= 3 elements.
+    """Check if function returns a literal tuple with >= 3 elements.
 
     Returns:
         Tuple of (has_tuple_return, element_count)
+
     """
     for node in ast.walk(func_node):
         if (
@@ -361,11 +359,11 @@ def _has_tuple_return(func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> tupl
 
 
 def _has_wide_params(func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[bool, list[str]]:
-    """
-    Check if function has wide parameter list (>= 5 params or >= 4 snake_case params).
+    """Check if function has wide parameter list (>= 5 params or >= 4 snake_case params).
 
     Returns:
         Tuple of (has_wide_params, list_of_param_names)
+
     """
     func_args = [arg.arg for arg in func_node.args.args if arg.arg not in ("self", "cls")]
 
@@ -384,8 +382,7 @@ def _has_wide_params(func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple
 def _looks_like_structured_return_annotation(
     func_node: ast.FunctionDef | ast.AsyncFunctionDef,
 ) -> tuple[bool, str]:
-    """
-    Check if function has a return annotation suggesting structured data.
+    """Check if function has a return annotation suggesting structured data.
 
     Detects return types like:
     - dict, Dict[...], Mapping[...]
@@ -398,6 +395,7 @@ def _looks_like_structured_return_annotation(
     Returns:
         Tuple of (has_structured_return, description)
         where description is a string like "dict[str, Any]" or "list[dict]"
+
     """
     if not func_node.returns:
         return False, ""
@@ -457,8 +455,7 @@ def discover_missing_dataclasses(
     domain_map: dict[str, str],
     ignore_prefixes: list[str],
 ) -> list[MissingDataclassCandidate]:
-    """
-    Walk the codebase and find functions that might benefit from dataclass/DTO.
+    """Walk the codebase and find functions that might benefit from dataclass/DTO.
 
     Detects three patterns:
     1. Functions returning literal dicts with >= 3 string keys
@@ -477,6 +474,7 @@ def discover_missing_dataclasses(
 
     Returns:
         List of MissingDataclassCandidate objects (deduplicated by module + function)
+
     """
     candidates: list[MissingDataclassCandidate] = []
     seen: set[tuple[str, str]] = set()  # Track (module, function) pairs

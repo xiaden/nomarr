@@ -1,5 +1,4 @@
-"""
-Quick text search with context - find a string, get 2 lines around it.
+"""Quick text search with context - find a string, get 2 lines around it.
 
 Simple search tool for config files, logs, and non-Python text.
 """
@@ -10,8 +9,7 @@ from pathlib import Path
 
 
 def search_text(file_path: str, search_string: str, workspace_root: Path) -> dict:
-    """
-    Search for exact string match and return each occurrence with 2 lines of context.
+    """Search for exact string match and return each occurrence with 2 lines of context.
 
     Args:
         file_path: Workspace-relative or absolute path to the file
@@ -27,6 +25,7 @@ def search_text(file_path: str, search_string: str, workspace_root: Path) -> dic
             - line_range: Range label (e.g., "48-52")
         - total_matches: Count of matches found
         - error: Error message if search fails
+
     """
     # Guard against empty search string
     if not search_string:

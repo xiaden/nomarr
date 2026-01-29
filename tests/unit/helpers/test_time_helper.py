@@ -1,5 +1,4 @@
-"""
-Unit tests for nomarr.helpers.time_helper module.
+"""Unit tests for nomarr.helpers.time_helper module.
 
 Tests the time utility functions.
 """

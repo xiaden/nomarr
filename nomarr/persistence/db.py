@@ -64,7 +64,7 @@ class Database:
         self,
         hosts: str | None = None,
         password: str | None = None,
-    ):
+    ) -> None:
         """Initialize database connection.
 
         Args:
@@ -73,15 +73,19 @@ class Database:
 
         Raises:
             RuntimeError: If password not available or ARANGO_HOST not set
+
         """
         import os
 
         # Host is REQUIRED - no silent default to avoid dev env footguns
         self.hosts = hosts or os.getenv("ARANGO_HOST")
         if not self.hosts:
-            raise RuntimeError(
+            msg = (
                 "ARANGO_HOST environment variable required. "
                 "Set to 'http://nomarr-arangodb:8529' for Docker Compose or 'http://localhost:8529' for dev."
+            )
+            raise RuntimeError(
+                msg,
             )
 
         # Username and db_name are hardcoded
@@ -92,10 +96,13 @@ class Database:
         self.password = password or self._load_password_from_config()
 
         if not self.password:
-            raise RuntimeError(
+            msg = (
                 "Database password not available. "
                 "On first run, ensure ARANGO_ROOT_PASSWORD is set for provisioning. "
                 "After first run, password is read from /app/config/nomarr.yaml."
+            )
+            raise RuntimeError(
+                msg,
             )
 
         # Create ArangoDB connection (SafeDatabase wraps StandardDatabase with JSON serialization)
@@ -134,10 +141,9 @@ class Database:
         if not current_version:
             self.meta.set("schema_version", str(SCHEMA_VERSION))
 
-    def close(self):
+    def close(self) -> None:
         """Close database connection (cleanup)."""
         # ArangoDB client handles connection cleanup automatically
-        pass
 
     @staticmethod
     def _load_password_from_config() -> str | None:
@@ -149,6 +155,7 @@ class Database:
 
         Returns:
             Password string if found, None otherwise
+
         """
         import os
 

@@ -1,6 +1,5 @@
-"""
-Admin API endpoints for system control.
-Routes: /v1/admin/worker/*, /v1/admin/calibration/*
+"""Admin API endpoints for system control.
+Routes: /v1/admin/worker/*, /v1/admin/calibration/*.
 
 These routes will be mounted under /api/v1/admin via the integration router.
 
@@ -11,6 +10,7 @@ Processing state is now managed directly via library_files.needs_tagging field.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -21,8 +21,10 @@ from nomarr.interfaces.api.web.dependencies import (
     get_calibration_service,
     get_workers_coordinator,
 )
-from nomarr.services.domain.calibration_svc import CalibrationService
-from nomarr.services.infrastructure.worker_system_svc import WorkerSystemService
+
+if TYPE_CHECKING:
+    from nomarr.services.domain.calibration_svc import CalibrationService
+    from nomarr.services.infrastructure.worker_system_svc import WorkerSystemService
 
 # Router instance (will be included under /api/v1/admin)
 router = APIRouter(tags=["admin"], prefix="/v1/admin")
@@ -33,7 +35,7 @@ router = APIRouter(tags=["admin"], prefix="/v1/admin")
 # ----------------------------------------------------------------------
 @router.post("/worker/pause", dependencies=[Depends(verify_key)])
 async def admin_pause_worker(
-    workers_coordinator: WorkerSystemService = Depends(get_workers_coordinator),
+    workers_coordinator: Annotated[WorkerSystemService, Depends(get_workers_coordinator)],
 ) -> WorkerOperationResponse:
     """Pause all background workers (stops processing new jobs)."""
     result = workers_coordinator.pause_worker_system()
@@ -45,7 +47,7 @@ async def admin_pause_worker(
 # ----------------------------------------------------------------------
 @router.post("/worker/resume", dependencies=[Depends(verify_key)])
 async def admin_resume_worker(
-    workers_coordinator: WorkerSystemService = Depends(get_workers_coordinator),
+    workers_coordinator: Annotated[WorkerSystemService, Depends(get_workers_coordinator)],
 ) -> WorkerOperationResponse:
     """Resume all background workers (starts processing again)."""
     result = workers_coordinator.resume_worker_system()
@@ -57,16 +59,16 @@ async def admin_resume_worker(
 # ----------------------------------------------------------------------
 @router.post("/calibration/run", dependencies=[Depends(verify_key)])
 async def admin_run_calibration(
-    calibration_service: CalibrationService = Depends(get_calibration_service),
+    calibration_service: Annotated[CalibrationService, Depends(get_calibration_service)],
 ):
-    """
-    Generate calibrations using histogram-based approach.
+    """Generate calibrations using histogram-based approach.
 
     Analyzes library tags using DB histogram queries (memory-bounded).
     Computes p5/p95 percentiles for each head.
 
     Returns:
         Calibration summary with per-head results
+
     """
     try:
         if not calibration_service.cfg.calibrate_heads:
@@ -75,14 +77,13 @@ async def admin_run_calibration(
                 detail="Calibration generation disabled. Set calibrate_heads: true in config to enable.",
             )
 
-        result = calibration_service.generate_histogram_calibration()
-        return result
+        return calibration_service.generate_histogram_calibration()
     except HTTPException:
         raise
     except Exception as e:
         logging.exception("[Admin API] Calibration generation failed")
         raise HTTPException(
-            status_code=500, detail=sanitize_exception_message(e, "Calibration generation failed")
+            status_code=500, detail=sanitize_exception_message(e, "Calibration generation failed"),
         ) from e
 
 
@@ -97,8 +98,7 @@ async def admin_backfill_calibration_hashes(
     set_to_current: bool = False,
     calibration_service: CalibrationService = Depends(get_calibration_service),
 ):
-    """
-    Backfill calibration_hash for files currently showing as NULL.
+    """Backfill calibration_hash for files currently showing as NULL.
 
     Two strategies:
     - set_to_current=False (default): Leave as NULL, users must recalibrate
@@ -106,12 +106,12 @@ async def admin_backfill_calibration_hashes(
 
     Returns:
         Summary of backfill operation
+
     """
     try:
         from nomarr.workflows.calibration.backfill_calibration_hash_wf import backfill_calibration_hashes_wf
 
-        result = backfill_calibration_hashes_wf(db=calibration_service._db, set_to_current=set_to_current)
-        return result
+        return backfill_calibration_hashes_wf(db=calibration_service._db, set_to_current=set_to_current)
     except Exception as e:
         logging.exception("[Admin API] Backfill failed")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Backfill failed")) from e

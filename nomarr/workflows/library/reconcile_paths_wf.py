@@ -6,9 +6,9 @@ import logging
 from typing import TYPE_CHECKING
 
 from nomarr.components.library.reconcile_paths_comp import ReconcilePolicy, reconcile_library_paths
-from nomarr.helpers.dto.library_dto import ReconcileResult
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dto.library_dto import ReconcileResult
     from nomarr.persistence.db import Database
 
 
@@ -18,8 +18,7 @@ def reconcile_library_paths_workflow(
     policy: ReconcilePolicy = "mark_invalid",
     batch_size: int = 1000,
 ) -> ReconcileResult:
-    """
-    Re-validate all library paths against current configuration.
+    """Re-validate all library paths against current configuration.
 
     This checks all files in library_files table to detect paths that have
     become invalid due to config changes (library root moves, deletions, etc.).
@@ -46,15 +45,18 @@ def reconcile_library_paths_workflow(
 
     Raises:
         ValueError: If library_root not configured or invalid policy
+
     """
     # Validate configuration
     if not library_root:
-        raise ValueError("Library root not configured")
+        msg = "Library root not configured"
+        raise ValueError(msg)
 
     # Validate policy
     valid_policies: set[ReconcilePolicy] = {"dry_run", "mark_invalid", "delete_invalid"}
     if policy not in valid_policies:
-        raise ValueError(f"Invalid policy '{policy}'. Must be one of: {valid_policies}")
+        msg = f"Invalid policy '{policy}'. Must be one of: {valid_policies}"
+        raise ValueError(msg)
 
     logging.info(f"[reconcile_paths] Starting reconciliation: policy={policy}, batch_size={batch_size}")
 
@@ -67,7 +69,7 @@ def reconcile_library_paths_workflow(
 
     logging.info(
         f"[reconcile_paths] Reconciliation complete: {result['total_files']} files checked, "
-        f"{result['valid_files']} valid, {result['deleted_files']} deleted"
+        f"{result['valid_files']} valid, {result['deleted_files']} deleted",
     )
 
     return result

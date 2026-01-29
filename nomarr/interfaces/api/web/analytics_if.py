@@ -1,7 +1,7 @@
 """Analytics endpoints for web UI."""
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -40,13 +40,13 @@ async def web_analytics_tag_frequencies(
     except Exception as e:
         logging.exception("[Web API] Error getting tag frequencies")
         raise HTTPException(
-            status_code=500, detail=sanitize_exception_message(e, "Failed to get tag frequencies")
+            status_code=500, detail=sanitize_exception_message(e, "Failed to get tag frequencies"),
         ) from e
 
 
 @router.get("/mood-distribution", dependencies=[Depends(verify_session)])
 async def web_analytics_mood_distribution(
-    analytics_service: "AnalyticsService" = Depends(get_analytics_service),
+    analytics_service: Annotated["AnalyticsService", Depends(get_analytics_service)],
 ) -> MoodDistributionResponse:
     """Get mood tag distribution."""
     try:
@@ -56,7 +56,7 @@ async def web_analytics_mood_distribution(
     except Exception as e:
         logging.exception("[Web API] Error getting mood distribution")
         raise HTTPException(
-            status_code=500, detail=sanitize_exception_message(e, "Failed to get mood distribution")
+            status_code=500, detail=sanitize_exception_message(e, "Failed to get mood distribution"),
         ) from e
 
 
@@ -65,8 +65,7 @@ async def web_analytics_tag_correlations(
     top_n: int = 20,
     analytics_service: "AnalyticsService" = Depends(get_analytics_service),
 ) -> TagCorrelationsResponse:
-    """
-    Get VALUE-based correlation matrix for mood values, genres, and attributes.
+    """Get VALUE-based correlation matrix for mood values, genres, and attributes.
     Returns mood-to-mood, mood-to-genre, and mood-to-tier correlations.
     """
     try:
@@ -78,17 +77,16 @@ async def web_analytics_tag_correlations(
     except Exception as e:
         logging.exception("[Web API] Error getting tag correlations")
         raise HTTPException(
-            status_code=500, detail=sanitize_exception_message(e, "Failed to get tag correlations")
+            status_code=500, detail=sanitize_exception_message(e, "Failed to get tag correlations"),
         ) from e
 
 
 @router.post("/tag-co-occurrences", dependencies=[Depends(verify_session)])
 async def web_analytics_tag_co_occurrences(
     request: TagCoOccurrenceRequest,
-    analytics_service: "AnalyticsService" = Depends(get_analytics_service),
+    analytics_service: Annotated["AnalyticsService", Depends(get_analytics_service)],
 ) -> TagCoOccurrencesResponse:
-    """
-    Get tag co-occurrence matrix for arbitrary tag sets.
+    """Get tag co-occurrence matrix for arbitrary tag sets.
 
     Computes a matrix where matrix[j][i] = count of files having both x[i] and y[j].
     Maximum 16x16 matrix size. Inputs exceeding limits are trimmed with warning.
@@ -101,7 +99,7 @@ async def web_analytics_tag_co_occurrences(
         if len(request.x_axis) > 16 or len(request.y_axis) > 16:
             logging.warning(
                 f"[Web API] Tag co-occurrence request exceeded 16x16 limit. "
-                f"Trimmed from {len(request.x_axis)}x{len(request.y_axis)} to {len(x_tags)}x{len(y_tags)}"
+                f"Trimmed from {len(request.x_axis)}x{len(request.y_axis)} to {len(x_tags)}x{len(y_tags)}",
             )
 
         # Convert Pydantic models to tuples for service
@@ -116,5 +114,5 @@ async def web_analytics_tag_co_occurrences(
     except Exception as e:
         logging.exception("[Web API] Error getting tag co-occurrences")
         raise HTTPException(
-            status_code=500, detail=sanitize_exception_message(e, "Failed to get tag co-occurrences")
+            status_code=500, detail=sanitize_exception_message(e, "Failed to get tag co-occurrences"),
         ) from e

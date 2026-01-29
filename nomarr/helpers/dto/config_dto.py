@@ -1,5 +1,4 @@
-"""
-Config domain DTOs.
+"""Config domain DTOs.
 
 Data transfer objects for configuration service results.
 These form cross-layer contracts between services and interfaces.

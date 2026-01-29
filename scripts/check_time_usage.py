@@ -11,6 +11,7 @@ Examples:
     python scripts/check_time_usage.py nomarr/
     python scripts/check_time_usage.py nomarr/services/infrastructure/
     python scripts/check_time_usage.py --format=json nomarr/
+
 """
 
 from __future__ import annotations

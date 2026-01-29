@@ -1,5 +1,4 @@
-"""
-Idempotent virtual environment setup for Nomarr workspace.
+"""Idempotent virtual environment setup for Nomarr workspace.
 
 This script ensures the Python virtual environment exists and dependencies
 are installed only when requirements.txt has changed.

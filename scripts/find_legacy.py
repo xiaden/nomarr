@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Find all references to "legacy" or "backwards compatibility" in the codebase.
+"""Find all references to "legacy" or "backwards compatibility" in the codebase.
 
 Pre-alpha software should NOT have legacy code or backwards compatibility layers.
 This script helps identify and remove such technical debt before it accumulates.
@@ -48,14 +47,14 @@ def should_exclude(path: Path) -> bool:
 
 
 def find_legacy_references(search_paths: list[str] | None = None):
-    """
-    Find all legacy references in the codebase.
+    """Find all legacy references in the codebase.
 
     Args:
         search_paths: Optional list of paths to search. If None, uses default SEARCH_DIRS.
 
     Returns:
         List of violation dicts with keys: file, line, pattern, description, content
+
     """
     if search_paths is None:
         search_paths = SEARCH_DIRS

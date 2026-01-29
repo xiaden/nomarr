@@ -1,5 +1,4 @@
-"""
-Dataclass Classification Toolkit
+"""Dataclass Classification Toolkit
 
 A toolkit for analyzing and classifying @dataclass definitions in the Nomarr codebase
 according to architectural principles.

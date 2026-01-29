@@ -1,5 +1,4 @@
-"""
-High-level audio file processing workflow.
+"""High-level audio file processing workflow.
 
 This is a PURE WORKFLOW module that orchestrates the ML audio tagging pipeline:
 - Model discovery and backbone grouping
@@ -73,12 +72,12 @@ from nomarr.components.tagging.tagging_aggregation_comp import (
     normalize_tag_label,
 )
 from nomarr.helpers.dto.ml_dto import ComputeEmbeddingsForBackboneParams
-from nomarr.helpers.dto.path_dto import LibraryPath
 from nomarr.helpers.dto.processing_dto import ProcessFileResult, ProcessorConfig
 from nomarr.helpers.dto.tags_dto import Tags
 from nomarr.helpers.time_helper import internal_s
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dto.path_dto import LibraryPath
     from nomarr.persistence.db import Database
 
 
@@ -98,8 +97,7 @@ class ProcessHeadPredictionsResult:
 
 
 def _discover_and_group_heads(models_dir: str) -> tuple[list[HeadInfo], dict[str, list[HeadInfo]]]:
-    """
-    Discover head models and group them by backbone for embedding reuse.
+    """Discover head models and group them by backbone for embedding reuse.
 
     Args:
         models_dir: Directory containing model files
@@ -109,10 +107,12 @@ def _discover_and_group_heads(models_dir: str) -> tuple[list[HeadInfo], dict[str
 
     Raises:
         RuntimeError: If no heads found in models_dir
+
     """
     heads = discover_heads(models_dir)
     if not heads:
-        raise RuntimeError(f"No head models found under {models_dir}")
+        msg = f"No head models found under {models_dir}"
+        raise RuntimeError(msg)
 
     logging.debug(f"[processor] Discovered {len(heads)} heads")
 
@@ -126,7 +126,7 @@ def _discover_and_group_heads(models_dir: str) -> tuple[list[HeadInfo], dict[str
 
     for head in heads:
         logging.debug(
-            f"[processor]   - {head.name} ({head.backbone}/{head.head_type}, {len(head.sidecar.labels)} labels)"
+            f"[processor]   - {head.name} ({head.backbone}/{head.head_type}, {len(head.sidecar.labels)} labels)",
         )
 
     # Group heads by backbone for embedding reuse
@@ -147,8 +147,7 @@ def _compute_embeddings_for_backbone(
     config: ProcessorConfig,
     db: Database | None,  # Required for LibraryPath validation
 ) -> tuple[np.ndarray, float, str]:
-    """
-    Compute embeddings for a single backbone.
+    """Compute embeddings for a single backbone.
 
     Args:
         backbone: Name of the backbone model
@@ -162,6 +161,7 @@ def _compute_embeddings_for_backbone(
 
     Raises:
         RuntimeError: If audio is too short or embedding computation fails
+
     """
     target_sr = first_head.sidecar.sr
     seg_len, hop_len = first_head.sidecar.segment_hop
@@ -174,7 +174,8 @@ def _compute_embeddings_for_backbone(
 
     library_path = build_library_path_from_input(path, db) if db else None
     if not library_path or not library_path.is_valid():
-        raise ValueError(f"Cannot compute embeddings for invalid path: {path}")
+        msg = f"Cannot compute embeddings for invalid path: {path}"
+        raise ValueError(msg)
 
     t_emb = internal_s()
     params = ComputeEmbeddingsForBackboneParams(
@@ -190,7 +191,7 @@ def _compute_embeddings_for_backbone(
     embeddings_2d, duration, chromaprint = compute_embeddings_for_backbone(params=params)
 
     logging.debug(
-        f"[processor] Embeddings for {backbone} computed in {internal_s().value - t_emb.value:.1f}s: shape={embeddings_2d.shape}"
+        f"[processor] Embeddings for {backbone} computed in {internal_s().value - t_emb.value:.1f}s: shape={embeddings_2d.shape}",
     )
 
     return embeddings_2d, duration, chromaprint
@@ -202,8 +203,7 @@ def _process_head_predictions(
     config: ProcessorConfig,
     tags_accum: dict[str, Any],
 ) -> ProcessHeadPredictionsResult:
-    """
-    Process all head predictions for a single backbone using cached embeddings.
+    """Process all head predictions for a single backbone using cached embeddings.
 
     Args:
         backbone_heads: List of heads for this backbone
@@ -213,6 +213,7 @@ def _process_head_predictions(
 
     Returns:
         Tuple of (heads_succeeded, head_results, regression_heads, all_head_outputs)
+
     """
     heads_succeeded = 0
     head_results: dict[str, Any] = {}
@@ -274,7 +275,7 @@ def _process_head_predictions(
             # Combined log: processing complete + tags produced
             logging.debug(
                 f"[processor] Head {head_name} complete: {len(segment_scores)} patches → {len(head_tags)} tags "
-                f"in {internal_s().value - t_head.value:.1f}s"
+                f"in {internal_s().value - t_head.value:.1f}s",
             )
 
             if len(head_tags) == 0:
@@ -294,7 +295,7 @@ def _process_head_predictions(
                 regression_heads.append((head_info, raw_values))
                 logging.debug(
                     f"[processor] Captured {len(raw_values)} segment predictions for {head_name} "
-                    f"(mean={np.mean(raw_values):.3f}, std={np.std(raw_values):.3f})"
+                    f"(mean={np.mean(raw_values):.3f}, std={np.std(raw_values):.3f})",
                 )
 
             # Track success with tag count
@@ -324,8 +325,7 @@ def _collect_mood_outputs(
     config: ProcessorConfig,
     db: Database | None,
 ) -> dict[str, Any]:
-    """
-    Collect and aggregate all mood outputs from classification and regression heads.
+    """Collect and aggregate all mood outputs from classification and regression heads.
 
     Args:
         regression_heads: List of (HeadInfo, segment_values) tuples for regression heads
@@ -336,6 +336,7 @@ def _collect_mood_outputs(
 
     Returns:
         Dict of mood-* tags
+
     """
     # Convert regression head predictions to HeadOutput objects with tier information
     regression_outputs = add_regression_mood_tiers(regression_heads, framework_version=_get_essentia_version())
@@ -356,9 +357,8 @@ def _collect_mood_outputs(
             logging.debug("[aggregation] No calibrations in database (initial state), using raw scores")
 
     # Aggregate HeadOutput objects into mood-* tags
-    mood_tags = aggregate_mood_tiers(all_head_outputs, calibrations=calibrations)
+    return aggregate_mood_tiers(all_head_outputs, calibrations=calibrations)
 
-    return mood_tags
 
 
 def _sync_to_database(
@@ -369,8 +369,7 @@ def _sync_to_database(
     tagger_version: str,
     chromaprint: str | None = None,
 ) -> None:
-    """
-    Sync ML predictions to database only (NO file writes).
+    """Sync ML predictions to database only (NO file writes).
 
     File tag writing is handled separately by write_file_tags_wf based on
     library settings. This decouples ML inference from file I/O failures.
@@ -382,6 +381,7 @@ def _sync_to_database(
         namespace: Tag namespace
         tagger_version: Tagger version string
         chromaprint: Audio fingerprint hash for move detection
+
     """
     if db is None:
         return
@@ -419,8 +419,7 @@ def _sync_to_database(
 
 
 def select_tags_for_file(all_tags: dict[str, Any], file_write_mode: str) -> dict[str, Any]:
-    """
-    Filter tags for file writing based on file_write_mode.
+    """Filter tags for file writing based on file_write_mode.
 
     Args:
         all_tags: Complete tag dict (includes numeric tags, mood-*, version, etc.)
@@ -434,6 +433,7 @@ def select_tags_for_file(all_tags: dict[str, Any], file_write_mode: str) -> dict
         - "minimal": Only mood-* tags and version tag
         - "full": All numeric tags + mood-* + version (but never *_tier or calibration)
         - Never write *_tier tags or calibration_id to files
+
     """
     if file_write_mode == "none":
         return {}
@@ -469,8 +469,7 @@ def process_file_workflow(
     config: ProcessorConfig,
     db: Database | None = None,
 ) -> ProcessFileResult:
-    """
-    Process an audio file through the complete tagging pipeline.
+    """Process an audio file through the complete tagging pipeline.
 
     This is the main workflow entrypoint for audio file processing. It is a pure
     function that orchestrates the entire tagging pipeline without any hidden
@@ -539,6 +538,7 @@ def process_file_workflow(
         >>> config = ProcessorConfig(models_dir="/app/models", namespace="nom", ...)
         >>> result = process_file_workflow("/music/song.mp3", config, db=my_database)
         >>> print(f"Processed {result.file} in {result.elapsed}s")
+
     """
     from nomarr.components.infrastructure.path_comp import build_library_path_from_db
     from nomarr.components.ml.ml_cache_comp import check_and_evict_idle_cache, touch_cache
@@ -593,7 +593,7 @@ def process_file_workflow(
         # Compute embeddings for this backbone
         try:
             embeddings_2d, duration, chromaprint_hash = _compute_embeddings_for_backbone(
-                backbone, first_head, path, config, db
+                backbone, first_head, path, config, db,
             )
             if duration_final is None:
                 duration_final = float(duration)
@@ -625,7 +625,8 @@ def process_file_workflow(
         logging.debug(f"[processor] Released {backbone} embeddings and predictors from memory")
 
     if total_heads_succeeded == 0:
-        raise RuntimeError("No heads produced decisions; refusing to write tags")
+        msg = "No heads produced decisions; refusing to write tags"
+        raise RuntimeError(msg)
 
     # === STEP 3: Aggregate mood tiers from all head outputs ===
     mood_tags = _collect_mood_outputs(regression_heads, all_head_outputs, config.models_dir, config, db)

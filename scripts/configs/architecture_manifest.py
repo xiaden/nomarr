@@ -1,5 +1,4 @@
-"""
-Architecture manifest for Nomarr.
+"""Architecture manifest for Nomarr.
 
 Single source of truth for Nomarr's architectural layers and module organization.
 Other tooling (doc generation, dependency graphs, etc.) imports from here instead

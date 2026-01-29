@@ -1,5 +1,4 @@
-"""
-Unit tests for FileWatcherService (Phase 4).
+"""Unit tests for FileWatcherService (Phase 4).
 
 Tests verify:
 - File event filtering (audio files only, ignore temp/hidden)

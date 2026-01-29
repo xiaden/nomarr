@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Check for naming convention violations in the codebase.
+"""Check for naming convention violations in the codebase.
 
 This script finds common naming anti-patterns that violate our standards.
 Rules are loaded from scripts/configs/naming_rules.yaml.
@@ -12,6 +11,7 @@ Examples:
     python scripts/check_naming.py                    # Human-readable output
     python scripts/check_naming.py --format=json     # Machine-readable JSON
     python scripts/check_naming.py --path=nomarr/    # Check specific directory
+
 """
 
 import argparse
@@ -57,8 +57,7 @@ def should_exclude(file_path: Path, exclude_prefixes: list[str], exclude_extensi
 def check_file(
     file_path: Path, rules: list[dict[str, str]], exclude_prefixes: list[str], exclude_extensions: list[str]
 ) -> list[dict[str, Any]]:
-    """
-    Check a single file for naming violations.
+    """Check a single file for naming violations.
 
     Returns list of violations with file, line, pattern, fix, description, and text.
     """

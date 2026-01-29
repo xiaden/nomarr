@@ -1,5 +1,4 @@
-"""
-Essentia AutoTag - Interfaces Package
+"""Essentia AutoTag - Interfaces Package.
 ======================================
 
 Contains all user-facing interfaces (presentation layer).

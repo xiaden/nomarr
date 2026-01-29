@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
-"""
-Discovery module - finds and organizes model files using folder structure.
-Structure: models/<backbone>/embeddings/*.pb and models/<backbone>/heads/<type>/*.pb
+"""Discovery module - finds and organizes model files using folder structure.
+Structure: models/<backbone>/embeddings/*.pb and models/<backbone>/heads/<type>/*.pb.
 """
 
 import glob
@@ -14,7 +13,7 @@ from typing import Any
 class Sidecar:
     """Represents a model sidecar JSON file (head or embedding extractor)."""
 
-    def __init__(self, path: str, data: dict[str, Any]):
+    def __init__(self, path: str, data: dict[str, Any]) -> None:
         self.path = path
         self.data = data
         self.infer = data.get("inference", {})
@@ -92,8 +91,7 @@ class Sidecar:
 
 
 class HeadInfo:
-    """
-    Container for a head model with its associated embedding model info.
+    """Container for a head model with its associated embedding model info.
     Derived purely from folder structure.
 
     Structured metadata eliminates fragile substring matching in tag keys.
@@ -108,7 +106,7 @@ class HeadInfo:
         embedding_sidecar: Sidecar | None = None,
         is_mood_source: bool = False,
         is_regression_mood_source: bool = False,
-    ):
+    ) -> None:
         self.sidecar = sidecar
         self.backbone = backbone
         self.head_type = head_type
@@ -142,10 +140,9 @@ class HeadInfo:
         return self.sidecar.labels
 
     def build_versioned_tag_key(
-        self, label: str, framework_version: str, calib_method: str = "none", calib_version: int = 0
+        self, label: str, framework_version: str, calib_method: str = "none", calib_version: int = 0,
     ) -> tuple[str, str]:
-        """
-        Build versioned tag key from model metadata and runtime framework version.
+        """Build versioned tag key from model metadata and runtime framework version.
 
         NEW FORMAT (calibration separate):
         - model_key: {label}_{framework}{version}_{embedder}{date}_{head}{date}
@@ -163,6 +160,7 @@ class HeadInfo:
 
         Returns:
             Tuple of (model_tag_key, calibration_id)
+
         """
         # Convert framework version to compact form: "2.1b6.dev1389" -> "21b6dev1389"
         # Keep full version including dev/patch suffixes (TF version changes matter)
@@ -196,8 +194,7 @@ class HeadInfo:
 
 
 def get_embedding_output_node(backbone: str) -> str:
-    """
-    Return the documented output node name for embedding extractors.
+    """Return the documented output node name for embedding extractors.
     Based on modelsinfo.md examples.
     """
     if backbone == "yamnet":
@@ -212,8 +209,7 @@ def get_embedding_output_node(backbone: str) -> str:
 
 
 def get_head_output_node(head_type: str, sidecar: Sidecar) -> str:
-    """
-    Return the documented output node name for classification heads.
+    """Return the documented output node name for classification heads.
     Based on modelsinfo.md examples and folder structure.
     """
     schema_out = sidecar.head_output_name()
@@ -234,8 +230,7 @@ _REGRESSION_MOOD_HEADS = {"approachability_regression", "engagement_regression"}
 
 
 def discover_heads(models_dir: str) -> list[HeadInfo]:
-    """
-    Discover all classification/regression heads using folder structure.
+    """Discover all classification/regression heads using folder structure.
 
     Structure expected:
         models/<backbone>/embeddings/*.pb  (or embedding/*.pb for musicnn)
@@ -324,8 +319,7 @@ def discover_heads(models_dir: str) -> list[HeadInfo]:
 
 
 def compute_model_suite_hash(models_dir: str) -> str:
-    """
-    Compute a deterministic hash representing the installed ML model suite.
+    """Compute a deterministic hash representing the installed ML model suite.
 
     This hash changes when:
     - Model files are added/removed
@@ -341,6 +335,7 @@ def compute_model_suite_hash(models_dir: str) -> str:
     Returns:
         Short hex hash (12 chars) representing the model suite version.
         Returns "unknown" if no models found or discovery fails.
+
     """
     try:
         heads = discover_heads(models_dir)

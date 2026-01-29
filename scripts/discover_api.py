@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-API Discovery Tool - Quickly show the public API of a module.
+"""API Discovery Tool - Quickly show the public API of a module.
 
 This helps developers and AI agents understand what's actually available
 in a module without guessing or reading full source files.
@@ -21,8 +20,7 @@ from typing import Any
 
 
 def discover_module_api(module_name: str, *, silent: bool = False) -> dict[str, Any]:
-    """
-    Discover the public API of a module.
+    """Discover the public API of a module.
 
     Args:
         module_name: Fully qualified module name
@@ -33,6 +31,7 @@ def discover_module_api(module_name: str, *, silent: bool = False) -> dict[str, 
         - functions: list of function names and signatures
         - constants: list of module-level constants
         - error: (optional) error message if import failed
+
     """
     # Mock Docker-only dependencies for discovery
     # Only mock what's NOT available in dev environment (essentia-tensorflow)

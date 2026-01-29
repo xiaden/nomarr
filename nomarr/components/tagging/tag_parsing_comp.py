@@ -7,13 +7,14 @@ from __future__ import annotations
 
 import contextlib
 import json
+from typing import TYPE_CHECKING
 
-from nomarr.helpers.dto.tags_dto import TagValue
+if TYPE_CHECKING:
+    from nomarr.helpers.dto.tags_dto import TagValue
 
 
 def parse_tag_values(tags: dict[str, str | TagValue | list[TagValue]]) -> dict[str, list[TagValue]]:
-    """
-    Parse tag values from strings to appropriate types, always returning lists.
+    """Parse tag values from strings to appropriate types, always returning lists.
 
     Converts string tag values to their proper types and ensures all values
     are wrapped in lists (always-list invariant):
@@ -34,6 +35,7 @@ def parse_tag_values(tags: dict[str, str | TagValue | list[TagValue]]) -> dict[s
     Example:
         >>> parse_tag_values({"tempo": "120", "score": "0.95", "tags": '["pop", "upbeat"]'})
         {"tempo": [120], "score": [0.95], "tags": ["pop", "upbeat"]}
+
     """
     parsed: dict[str, list[TagValue]] = {}
 

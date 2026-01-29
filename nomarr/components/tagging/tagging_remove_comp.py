@@ -19,8 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 def remove_tags_from_file(path: LibraryPath, namespace: str) -> int:
-    """
-    Remove all namespaced tags from an audio file.
+    """Remove all namespaced tags from an audio file.
 
     Args:
         path: LibraryPath to audio file (must be valid)
@@ -32,10 +31,12 @@ def remove_tags_from_file(path: LibraryPath, namespace: str) -> int:
     Raises:
         ValueError: If path is invalid or file format is unsupported
         RuntimeError: If file cannot be modified
+
     """
     # Enforce validation before file operations
     if not path.is_valid():
-        raise ValueError(f"Cannot remove tags from invalid path ({path.status}): {path.absolute} - {path.reason}")
+        msg = f"Cannot remove tags from invalid path ({path.status}): {path.absolute} - {path.reason}"
+        raise ValueError(msg)
 
     try:
         # Infer format from file extension
@@ -44,21 +45,21 @@ def remove_tags_from_file(path: LibraryPath, namespace: str) -> int:
 
         if ext == ".mp3":
             return _remove_id3_tags(path_str, namespace)
-        elif ext in (".m4a", ".mp4", ".m4b", ".m4p"):
+        if ext in (".m4a", ".mp4", ".m4b", ".m4p"):
             return _remove_mp4_tags(path_str, namespace)
-        elif ext in (".flac", ".ogg", ".opus"):
+        if ext in (".flac", ".ogg", ".opus"):
             return _remove_vorbis_tags(path_str, namespace)
-        else:
-            raise ValueError(f"Unsupported audio format: {ext}")
+        msg = f"Unsupported audio format: {ext}"
+        raise ValueError(msg)
 
     except Exception as e:
         logger.exception(f"[TagRemover] Failed to remove tags from {path_str}")
-        raise RuntimeError(f"Failed to remove tags: {e}") from e
+        msg = f"Failed to remove tags: {e}"
+        raise RuntimeError(msg) from e
 
 
 def _remove_id3_tags(path: str, namespace: str) -> int:
-    """
-    Remove namespaced tags from ID3v2 format (MP3).
+    """Remove namespaced tags from ID3v2 format (MP3).
 
     Removes all TXXX frames that start with namespace prefix.
     """
@@ -82,8 +83,7 @@ def _remove_id3_tags(path: str, namespace: str) -> int:
 
 
 def _remove_mp4_tags(path: str, namespace: str) -> int:
-    """
-    Remove namespaced tags from MP4/M4A format.
+    """Remove namespaced tags from MP4/M4A format.
 
     Removes all iTunes freeform atoms that start with namespace prefix.
     """
@@ -106,12 +106,12 @@ def _remove_mp4_tags(path: str, namespace: str) -> int:
         return len(keys_to_remove)
 
     except Exception as e:
-        raise RuntimeError(f"MP4 tag removal failed: {e}") from e
+        msg = f"MP4 tag removal failed: {e}"
+        raise RuntimeError(msg) from e
 
 
 def _remove_vorbis_tags(path: str, namespace: str) -> int:
-    """
-    Remove namespaced tags from Vorbis comments format (FLAC, OGG, Opus).
+    """Remove namespaced tags from Vorbis comments format (FLAC, OGG, Opus).
 
     Vorbis tags use uppercase keys with underscores.
     """
@@ -124,7 +124,8 @@ def _remove_vorbis_tags(path: str, namespace: str) -> int:
         elif ext == ".opus":
             audio = OggOpus(path)
         else:
-            raise ValueError(f"Unexpected extension for Vorbis format: {ext}")
+            msg = f"Unexpected extension for Vorbis format: {ext}"
+            raise ValueError(msg)
 
         if audio.tags is None:
             return 0
@@ -145,4 +146,5 @@ def _remove_vorbis_tags(path: str, namespace: str) -> int:
         return len(keys_to_remove)
 
     except Exception as e:
-        raise RuntimeError(f"Vorbis tag removal failed: {e}") from e
+        msg = f"Vorbis tag removal failed: {e}"
+        raise RuntimeError(msg) from e

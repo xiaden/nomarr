@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Test Generator - Auto-generate test scaffolds with smart assertions.
+"""Test Generator - Auto-generate test scaffolds with smart assertions.
 
 This tool discovers a module's API and generates comprehensive test files
 with fixtures, assertions, and proper structure following project conventions.

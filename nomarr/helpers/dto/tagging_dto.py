@@ -1,5 +1,4 @@
-"""
-Tagging domain DTOs.
+"""Tagging domain DTOs.
 
 Data transfer objects for tagging components and operations.
 These form cross-layer contracts between components, workflows, and services.

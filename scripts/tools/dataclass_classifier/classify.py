@@ -1,6 +1,4 @@
-"""
-Classification logic and suspect import detection.
-"""
+"""Classification logic and suspect import detection."""
 
 from .config import is_ignored_module
 from .model import DataclassInfo, ImportEdge
@@ -9,8 +7,7 @@ from .model import DataclassInfo, ImportEdge
 def detect_suspect_imports(
     import_edges: list[ImportEdge], allowed_imports: list[list[str]], ignore_prefixes: list[str]
 ) -> list[ImportEdge]:
-    """
-    Detect suspect imports based on allowed_imports configuration.
+    """Detect suspect imports based on allowed_imports configuration.
 
     This is for reporting only, not enforcement.
 
@@ -21,6 +18,7 @@ def detect_suspect_imports(
 
     Returns:
         List of ImportEdge objects that are not in allowed_imports (excluding ignored modules)
+
     """
     if not allowed_imports:
         return []
@@ -52,14 +50,14 @@ def detect_suspect_imports(
 
 
 def infer_domain_from_dataclass(dc: DataclassInfo) -> str:
-    """
-    Infer domain from DataclassInfo, preferring defining_domain but falling back to imported_by_domains.
+    """Infer domain from DataclassInfo, preferring defining_domain but falling back to imported_by_domains.
 
     Args:
         dc: DataclassInfo object
 
     Returns:
         Domain name (may be "unknown")
+
     """
     if dc.defining_domain != "unknown":
         return dc.defining_domain
@@ -73,11 +71,11 @@ def infer_domain_from_dataclass(dc: DataclassInfo) -> str:
 
 
 def classify_dataclass(dc: DataclassInfo) -> None:
-    """
-    Classify a dataclass and suggest target location (mutates DataclassInfo).
+    """Classify a dataclass and suggest target location (mutates DataclassInfo).
 
     Args:
         dc: DataclassInfo object to classify
+
     """
     # If dataclass is defined in an ignored module, classify as "Ignored"
     if dc.is_ignored:
@@ -189,11 +187,11 @@ def classify_dataclass(dc: DataclassInfo) -> None:
 
 
 def classify_all(dataclasses: list[DataclassInfo]) -> None:
-    """
-    Classify all dataclasses (mutates DataclassInfo objects).
+    """Classify all dataclasses (mutates DataclassInfo objects).
 
     Args:
         dataclasses: List of DataclassInfo objects to classify
+
     """
     for dc in dataclasses:
         classify_dataclass(dc)

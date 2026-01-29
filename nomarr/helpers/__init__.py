@@ -1,6 +1,4 @@
-"""
-Helpers package.
-"""
+"""Helpers package."""
 
 from .dto.processing_dto import ProcessorConfig, TagWriteProfile
 from .file_validation_helper import (

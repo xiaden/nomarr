@@ -1,5 +1,4 @@
-"""
-Resource monitoring component for GPU/CPU adaptive resource management.
+"""Resource monitoring component for GPU/CPU adaptive resource management.
 
 Provides GPU capability gating and resource telemetry with TTL caching.
 This is a leaf component (no upward imports, no DB access).
@@ -51,6 +50,7 @@ class ResourceStatus:
         vram_used_mb: Current VRAM usage in MB (0 if GPU not available)
         ram_used_mb: Current RAM usage in MB
         gpu_capable: True if nvidia-smi succeeded (GPU available)
+
     """
 
     vram_ok: bool
@@ -61,8 +61,7 @@ class ResourceStatus:
 
 
 def check_nvidia_gpu_capability(timeout: float = NVIDIA_SMI_TIMEOUT_S) -> bool:
-    """
-    Check if NVIDIA GPU is available in-container (capability signal, not telemetry).
+    """Check if NVIDIA GPU is available in-container (capability signal, not telemetry).
 
     Per GPU_REFACTOR_PLAN.md Section 5:
     - A container is GPU-capable iff nvidia-smi succeeds inside the container
@@ -75,6 +74,7 @@ def check_nvidia_gpu_capability(timeout: float = NVIDIA_SMI_TIMEOUT_S) -> bool:
 
     Returns:
         True if GPU is available (nvidia-smi succeeded), False otherwise
+
     """
     global _gpu_capable_cache
 
@@ -144,8 +144,7 @@ def check_nvidia_gpu_capability(timeout: float = NVIDIA_SMI_TIMEOUT_S) -> bool:
 
 
 def get_vram_usage_mb(timeout: float = NVIDIA_SMI_TIMEOUT_S) -> dict[str, Any]:
-    """
-    Query VRAM usage via nvidia-smi (GPU telemetry, cached with TTL).
+    """Query VRAM usage via nvidia-smi (GPU telemetry, cached with TTL).
 
     Only call this after confirming GPU capability via check_nvidia_gpu_capability().
 
@@ -157,6 +156,7 @@ def get_vram_usage_mb(timeout: float = NVIDIA_SMI_TIMEOUT_S) -> dict[str, Any]:
             - used_mb: int - VRAM used in MB
             - total_mb: int - Total VRAM in MB
             - error: str | None - Error message if query failed
+
     """
     global _vram_cache, _vram_cache_ts
 
@@ -218,8 +218,7 @@ def get_vram_usage_mb(timeout: float = NVIDIA_SMI_TIMEOUT_S) -> dict[str, Any]:
 
 
 def get_vram_usage_for_pid_mb(pid: int, timeout: float = NVIDIA_SMI_TIMEOUT_S) -> int:
-    """
-    Query VRAM usage for a specific process via nvidia-smi.
+    """Query VRAM usage for a specific process via nvidia-smi.
 
     Args:
         pid: Process ID to query
@@ -227,6 +226,7 @@ def get_vram_usage_for_pid_mb(pid: int, timeout: float = NVIDIA_SMI_TIMEOUT_S) -
 
     Returns:
         VRAM used by the process in MB, or 0 if not found/error
+
     """
     try:
         result = subprocess.run(
@@ -260,8 +260,7 @@ def get_vram_usage_for_pid_mb(pid: int, timeout: float = NVIDIA_SMI_TIMEOUT_S) -
 
 
 def get_ram_usage_mb(detection_mode: str = "auto") -> dict[str, Any]:
-    """
-    Query RAM usage (process RSS) via psutil with TTL caching.
+    """Query RAM usage (process RSS) via psutil with TTL caching.
 
     Args:
         detection_mode: How to detect RAM usage:
@@ -274,6 +273,7 @@ def get_ram_usage_mb(detection_mode: str = "auto") -> dict[str, Any]:
             - used_mb: int - RAM used by this process in MB
             - available_mb: int - Available system RAM in MB
             - error: str | None - Error message if query failed
+
     """
     global _ram_cache, _ram_cache_ts
 
@@ -315,7 +315,7 @@ def get_ram_usage_mb(detection_mode: str = "auto") -> dict[str, Any]:
         return _ram_cache
 
     except ImportError:
-        logger.error("[resource_monitor] psutil not available - cannot query RAM")
+        logger.exception("[resource_monitor] psutil not available - cannot query RAM")
         _ram_cache = {"used_mb": 0, "available_mb": 0, "error": "psutil not available"}
         _ram_cache_ts = now
         return _ram_cache
@@ -332,6 +332,7 @@ def _get_cgroup_available_mb() -> int:
 
     Returns:
         Available memory in MB, or 0 if not in a cgroup
+
     """
     # Try cgroup v2 first
     cgroup_v2_path = "/sys/fs/cgroup/memory.max"
@@ -378,8 +379,7 @@ def check_resource_headroom(
     ram_estimate_mb: int,
     ram_detection_mode: str = "auto",
 ) -> ResourceStatus:
-    """
-    Check if there's headroom for ML work within configured budgets.
+    """Check if there's headroom for ML work within configured budgets.
 
     Per GPU_REFACTOR_PLAN.md Section 6:
     - Budgets are absolute caps, expressed in MB
@@ -394,6 +394,7 @@ def check_resource_headroom(
 
     Returns:
         ResourceStatus with headroom assessment
+
     """
     gpu_capable = check_nvidia_gpu_capability()
 

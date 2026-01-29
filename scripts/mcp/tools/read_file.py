@@ -1,5 +1,4 @@
-"""
-Read file tool - minimal fallback for non-Python files.
+"""Read file tool - minimal fallback for non-Python files.
 
 Deliberately second-class to encourage AST-based tools for Python code.
 """
@@ -10,8 +9,7 @@ from pathlib import Path
 
 
 def read_file(file_path: str, start_line: int, end_line: int, workspace_root: Path) -> dict:
-    """
-    Read a specific line range from any file in the workspace.
+    """Read a specific line range from any file in the workspace.
 
     Fallback tool for non-Python files or when AST-based tools fail.
     Returns raw file contents without parsing.
@@ -30,6 +28,7 @@ def read_file(file_path: str, start_line: int, end_line: int, workspace_root: Pa
         - end: Only present when clamped/EOF (e.g., "249(clamped)" or "270(EOF)")
         - warning: If lines were reversed or Python file detected
         - error: Error message if reading fails
+
     """
     try:
         # Resolve path relative to workspace root

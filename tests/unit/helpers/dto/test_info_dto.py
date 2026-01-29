@@ -1,5 +1,4 @@
-"""
-Unit tests for nomarr.helpers.dto.info_dto module.
+"""Unit tests for nomarr.helpers.dto.info_dto module.
 
 Tests info-related DTOs for proper structure and behavior.
 """

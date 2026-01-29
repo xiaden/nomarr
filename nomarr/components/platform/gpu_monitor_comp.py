@@ -1,5 +1,4 @@
-"""
-GPU Health Monitor - Independent process for non-blocking GPU availability tracking.
+"""GPU Health Monitor - Independent process for non-blocking GPU availability tracking.
 
 Runs nvidia-smi probes in a completely separate OS process to ensure that
 kernel-level driver deadlocks cannot stall the main application.
@@ -31,8 +30,7 @@ HEALTH_FRAME_PREFIX = "HEALTH|"
 
 
 class GPUHealthMonitor(multiprocessing.Process):
-    """
-    Independent GPU health monitoring process.
+    """Independent GPU health monitoring process.
 
     Continuously probes GPU availability using nvidia-smi and writes results
     to DB gpu_resources collection. Sends heartbeat frames to HealthMonitorService
@@ -50,13 +48,13 @@ class GPUHealthMonitor(multiprocessing.Process):
         self,
         probe_interval: float = GPU_PROBE_INTERVAL_SECONDS,
         health_pipe: Connection | None = None,
-    ):
-        """
-        Initialize GPU health monitor.
+    ) -> None:
+        """Initialize GPU health monitor.
 
         Args:
             probe_interval: Seconds between GPU probes (default: 15.0)
             health_pipe: Child end of pipe to send heartbeats to HealthMonitorService
+
         """
         super().__init__(daemon=True, name="GPUHealthMonitor")
         self.probe_interval = probe_interval
@@ -76,15 +74,14 @@ class GPUHealthMonitor(multiprocessing.Process):
                 {
                     "component_id": "gpu_monitor",
                     "status": status,
-                }
+                },
             )
             self._health_pipe.send(frame)
         except Exception as e:
             logging.warning(f"[GPUHealthMonitor] Failed to send heartbeat: {e}")
 
     def run(self) -> None:
-        """
-        Main monitoring loop (runs in separate process).
+        """Main monitoring loop (runs in separate process).
 
         Continuously probes GPU, writes resource snapshot to DB, and sends
         heartbeat frames to HealthMonitorService.
@@ -99,7 +96,7 @@ class GPUHealthMonitor(multiprocessing.Process):
         try:
             db = Database()
         except Exception as e:
-            logging.error(f"[GPUHealthMonitor] Failed to create DB connection: {e}")
+            logging.exception(f"[GPUHealthMonitor] Failed to create DB connection: {e}")
             self._send_heartbeat("unhealthy")
             return
 
@@ -126,7 +123,7 @@ class GPUHealthMonitor(multiprocessing.Process):
                     self._send_heartbeat("healthy")
 
                 except Exception as db_error:
-                    logging.error(f"[GPUHealthMonitor] Failed to write GPU state to DB: {db_error}")
+                    logging.exception(f"[GPUHealthMonitor] Failed to write GPU state to DB: {db_error}")
                     consecutive_errors += 1
                     self._send_heartbeat("unhealthy")
 
@@ -137,7 +134,7 @@ class GPUHealthMonitor(multiprocessing.Process):
                     self._send_heartbeat("unhealthy")
 
             except Exception as e:
-                logging.error(f"[GPUHealthMonitor] Unexpected error during probe loop: {e}")
+                logging.exception(f"[GPUHealthMonitor] Unexpected error during probe loop: {e}")
                 consecutive_errors += 1
                 self._send_heartbeat("unhealthy")
 

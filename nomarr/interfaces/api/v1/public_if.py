@@ -1,6 +1,5 @@
-"""
-Public API endpoints for system information.
-Routes: /api/v1/info
+"""Public API endpoints for system information.
+Routes: /api/v1/info.
 
 ARCHITECTURE:
 - These endpoints are thin HTTP boundaries
@@ -10,11 +9,15 @@ ARCHITECTURE:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Annotated
+
 from fastapi import APIRouter, Depends
 
 from nomarr.interfaces.api.types.info_types import PublicInfoResponse
 from nomarr.interfaces.api.web.dependencies import get_info_service
-from nomarr.services.infrastructure.info_svc import InfoService
+
+if TYPE_CHECKING:
+    from nomarr.services.infrastructure.info_svc import InfoService
 
 # Router instance (will be included in main app under /api prefix)
 router = APIRouter(prefix="/v1", tags=["public"])
@@ -25,10 +28,9 @@ router = APIRouter(prefix="/v1", tags=["public"])
 # ----------------------------------------------------------------------
 @router.get("/info")
 async def get_info(
-    info_service: InfoService = Depends(get_info_service),
+    info_service: Annotated[InfoService, Depends(get_info_service)],
 ) -> PublicInfoResponse:
-    """
-    Get comprehensive system info: config, models, queue status, workers.
+    """Get comprehensive system info: config, models, queue status, workers.
     Unified schema matching CLI info command.
     """
     result = info_service.get_public_info()

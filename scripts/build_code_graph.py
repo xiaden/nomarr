@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Build code graph for dead code detection.
+"""Build code graph for dead code detection.
 
 This script analyzes Python code using AST parsing to build a directed graph
 of modules, classes, functions, and their relationships (CONTAINS, IMPORTS, CALLS).

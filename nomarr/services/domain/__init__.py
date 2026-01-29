@@ -1,6 +1,4 @@
-"""
-Domain package.
-"""
+"""Domain package."""
 
 from .analytics_svc import AnalyticsConfig, AnalyticsService
 from .calibration_svc import CalibrationConfig, CalibrationService

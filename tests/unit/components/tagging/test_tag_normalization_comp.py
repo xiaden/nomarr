@@ -1,5 +1,4 @@
-"""
-Unit tests for nomarr.components.tagging.tag_normalization_comp module.
+"""Unit tests for nomarr.components.tagging.tag_normalization_comp module.
 
 Tests tag normalization functions for different audio formats.
 """

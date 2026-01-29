@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 PathStatus = Literal["valid", "invalid_config", "not_found", "unknown"]
 
 
 @dataclass(frozen=True)
 class LibraryPath:
-    """
-    Canonical representation of a library file path with validation status.
+    """Canonical representation of a library file path with validation status.
 
     This DTO encodes:
     - relative: Normalized path relative to library root

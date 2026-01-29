@@ -25,8 +25,7 @@ def build_graph_for_file(
     build_calls: bool = True,
     callable_index: dict[str, list[str]] | None = None,
 ) -> CodeGraph:
-    """
-    Parse a Python file and build a subgraph.
+    """Parse a Python file and build a subgraph.
 
     Returns a CodeGraph with nodes and edges for this file.
     """

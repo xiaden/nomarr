@@ -1,6 +1,4 @@
-"""
-Platform package.
-"""
+"""Platform package."""
 
 from .arango_bootstrap_comp import ensure_schema
 from .arango_first_run_comp import (

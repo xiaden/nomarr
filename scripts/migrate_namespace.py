@@ -1,5 +1,4 @@
-"""
-Migrate tags from one namespace to another in all audio files.
+"""Migrate tags from one namespace to another in all audio files.
 
 This script:
 1. Scans all audio files in a directory
@@ -102,11 +101,11 @@ def migrate_m4a_tags(file_path: str, old_ns: str, new_ns: str, delete_old: bool 
 
 
 def scan_and_migrate(music_dir: str, old_ns: str, new_ns: str, delete_old: bool = False, dry_run: bool = False) -> dict:
-    """
-    Scan directory and migrate all audio files.
+    """Scan directory and migrate all audio files.
 
     Returns:
         Dict with stats: files_processed, files_migrated, tags_migrated
+
     """
     stats = {"files_processed": 0, "files_migrated": 0, "tags_migrated": 0, "files_skipped": 0}
 

@@ -1,7 +1,7 @@
 """Library statistics and management endpoints for web UI."""
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -42,7 +42,7 @@ router = APIRouter(prefix="/libraries", tags=["Library"])
 
 @router.get("/stats", dependencies=[Depends(verify_session)])
 async def web_library_stats(
-    library_service: "LibraryService" = Depends(get_library_service),
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
 ) -> LibraryStatsResponse:
     """Get library statistics (total files, artists, albums, duration)."""
     try:
@@ -79,7 +79,7 @@ async def list_libraries(
 @router.get("/{library_id}", dependencies=[Depends(verify_session)])
 async def get_library(
     library_id: str,
-    library_service: "LibraryService" = Depends(get_library_service),
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
 ) -> LibraryResponse:
     """Get a library by ID."""
     library_id = decode_path_id(library_id)
@@ -96,7 +96,7 @@ async def get_library(
 @router.post("", dependencies=[Depends(verify_session)])
 async def create_library(
     request: CreateLibraryRequest,
-    library_service: "LibraryService" = Depends(get_library_service),
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
 ) -> LibraryResponse:
     """Create a new library."""
     try:
@@ -118,7 +118,7 @@ async def create_library(
 async def update_library(
     library_id: str,
     request: UpdateLibraryRequest,
-    library_service: "LibraryService" = Depends(get_library_service),
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
 ) -> LibraryResponse:
     """Update a library's properties."""
     library_id = decode_path_id(library_id)
@@ -144,10 +144,9 @@ async def update_library(
 @router.delete("/{library_id}", dependencies=[Depends(verify_session)])
 async def delete_library(
     library_id: str,
-    library_service: "LibraryService" = Depends(get_library_service),
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
 ) -> dict[str, str]:
-    """
-    Delete a library.
+    """Delete a library.
 
     Removes the library entry but does NOT delete files on disk.
     """
@@ -174,18 +173,17 @@ async def delete_library(
 
 @router.get("/files/search", dependencies=[Depends(verify_session)])
 async def search_library_files(
-    q: str = Query("", description="Search query for artist/album/title"),
-    artist: str | None = Query(None, description="Filter by artist name"),
-    album: str | None = Query(None, description="Filter by album name"),
-    tag_key: str | None = Query(None, description="Filter by files with this tag key"),
-    tag_value: str | None = Query(None, description="Filter by files with tag key=value"),
-    tagged_only: bool = Query(False, description="Only show tagged files"),
-    limit: int = Query(100, ge=1, le=1000, description="Max results"),
-    offset: int = Query(0, ge=0, description="Pagination offset"),
+    q: Annotated[str, Query(description="Search query for artist/album/title")] = "",
+    artist: Annotated[str | None, Query(description="Filter by artist name")] = None,
+    album: Annotated[str | None, Query(description="Filter by album name")] = None,
+    tag_key: Annotated[str | None, Query(description="Filter by files with this tag key")] = None,
+    tag_value: Annotated[str | None, Query(description="Filter by files with tag key=value")] = None,
+    tagged_only: Annotated[bool, Query(description="Only show tagged files")] = False,
+    limit: Annotated[int, Query(ge=1, le=1000, description="Max results")] = 100,
+    offset: Annotated[int, Query(ge=0, description="Pagination offset")] = 0,
     library_service: "LibraryService" = Depends(get_library_service),
 ) -> SearchFilesResponse:
-    """
-    Search library files with optional filtering.
+    """Search library files with optional filtering.
 
     Returns paginated list of files with metadata.
     """
@@ -219,10 +217,9 @@ class FileIdsRequest(BaseModel):
 @router.post("/files/by-ids", dependencies=[Depends(verify_session)])
 async def get_files_by_ids(
     request: FileIdsRequest,
-    library_service: "LibraryService" = Depends(get_library_service),
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
 ) -> SearchFilesResponse:
-    """
-    Get files by their IDs with full metadata and tags.
+    """Get files by their IDs with full metadata and tags.
 
     Used for batch lookup (e.g., when browsing songs for an entity).
     Returns files in same order as input IDs where possible.
@@ -252,10 +249,9 @@ class TagSearchRequest(BaseModel):
 @router.post("/files/by-tag", dependencies=[Depends(verify_session)])
 async def search_files_by_tag(
     request: TagSearchRequest,
-    library_service: "LibraryService" = Depends(get_library_service),
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
 ) -> SearchFilesResponse:
-    """
-    Search files by tag value with distance sorting (float) or exact match (string).
+    """Search files by tag value with distance sorting (float) or exact match (string).
 
     For float values: Returns files sorted by absolute distance from target value.
     For string values: Returns files with exact match on the tag value.
@@ -275,11 +271,10 @@ async def search_files_by_tag(
 
 @router.get("/files/tags/unique-keys", dependencies=[Depends(verify_session)])
 async def get_unique_tag_keys(
-    nomarr_only: bool = Query(False, description="Only show Nomarr tags"),
+    nomarr_only: Annotated[bool, Query(description="Only show Nomarr tags")] = False,
     library_service: "LibraryService" = Depends(get_library_service),
 ) -> UniqueTagKeysResponse:
-    """
-    Get list of unique tag keys for filtering.
+    """Get list of unique tag keys for filtering.
 
     Returns all distinct tag keys found in the database.
     """
@@ -297,12 +292,11 @@ async def get_unique_tag_keys(
 
 @router.get("/files/tags/values", dependencies=[Depends(verify_session)])
 async def get_unique_tag_values(
-    tag_key: str = Query(..., description="Tag key to get values for"),
-    nomarr_only: bool = Query(True, description="Only show Nomarr tag values"),
+    tag_key: Annotated[str, Query(description="Tag key to get values for")],
+    nomarr_only: Annotated[bool, Query(description="Only show Nomarr tag values")] = True,
     library_service: "LibraryService" = Depends(get_library_service),
 ) -> UniqueTagKeysResponse:
-    """
-    Get list of unique values for a specific tag key.
+    """Get list of unique values for a specific tag key.
 
     Returns all distinct values for the given tag key.
     """
@@ -320,11 +314,10 @@ async def get_unique_tag_values(
 
 @router.post("/cleanup-tags", dependencies=[Depends(verify_session)])
 async def cleanup_orphaned_tags(
-    dry_run: bool = Query(False, description="Preview orphaned tags without deleting"),
+    dry_run: Annotated[bool, Query(description="Preview orphaned tags without deleting")] = False,
     library_service: "LibraryService" = Depends(get_library_service),
 ) -> TagCleanupResponse:
-    """
-    Clean up orphaned tags (tags not referenced by any file).
+    """Clean up orphaned tags (tags not referenced by any file).
 
     This endpoint identifies and removes tags from the library_tags table that are
     no longer referenced by any file in file_tags. Useful for database maintenance
@@ -336,6 +329,7 @@ async def cleanup_orphaned_tags(
 
     Returns:
         TagCleanupResponse with orphaned_count and deleted_count
+
     """
     try:
         # Call service layer to cleanup orphaned tags (returns TagCleanupResult DTO)
@@ -351,11 +345,10 @@ async def cleanup_orphaned_tags(
 
 @router.post("/cleanup-entities", dependencies=[Depends(verify_session)])
 async def cleanup_orphaned_entities(
-    dry_run: bool = Query(False, description="Preview orphaned entities without deleting"),
+    dry_run: Annotated[bool, Query(description="Preview orphaned entities without deleting")] = False,
     metadata_service: "MetadataService" = Depends(get_metadata_service),
 ) -> dict[str, int | dict[str, int]]:
-    """
-    Clean up orphaned entities (artists, albums, genres, labels, years).
+    """Clean up orphaned entities (artists, albums, genres, labels, years).
 
     Entities become orphaned when:
     - Songs are deleted from the library
@@ -370,10 +363,10 @@ async def cleanup_orphaned_entities(
 
     Returns:
         Dict with orphaned_counts, deleted_counts, total_orphaned, total_deleted
+
     """
     try:
-        result = metadata_service.cleanup_orphaned_entities(dry_run=dry_run)
-        return result
+        return metadata_service.cleanup_orphaned_entities(dry_run=dry_run)
 
     except Exception as e:
         logging.exception("[Web API] Error cleaning up orphaned entities")
@@ -383,11 +376,10 @@ async def cleanup_orphaned_entities(
 @router.get("/files/{file_id}/tags", dependencies=[Depends(verify_session)])
 async def get_file_tags(
     file_id: str,
-    nomarr_only: bool = Query(False, description="Only return Nomarr-generated tags"),
+    nomarr_only: Annotated[bool, Query(description="Only return Nomarr-generated tags")] = False,
     library_service: "LibraryService" = Depends(get_library_service),
 ) -> FileTagsResponse:
-    """
-    Get all tags for a specific file.
+    """Get all tags for a specific file.
 
     Returns the complete tag data for a library file, including tag keys,
     values, types, and whether they are Nomarr-generated tags.
@@ -402,6 +394,7 @@ async def get_file_tags(
 
     Raises:
         HTTPException: 404 if file not found, 500 for other errors
+
     """
     file_id = decode_path_id(file_id)
     try:
@@ -421,11 +414,10 @@ async def get_file_tags(
 @router.post("/{library_id}/scan", dependencies=[Depends(verify_session)])
 async def scan_library(
     library_id: str,
-    scan_type: str = Query("quick", description="Scan type: 'quick' (skip unchanged files) or 'full' (rescan all)"),
+    scan_type: Annotated[str, Query(description="Scan type: 'quick' (skip unchanged files) or 'full' (rescan all)")] = "quick",
     library_service: "LibraryService" = Depends(get_library_service),
 ) -> StartScanWithStatusResponse:
-    """
-    Start a scan for a specific library.
+    """Start a scan for a specific library.
 
     This endpoint triggers a scan for the specified library, discovering files
     and enqueuing them for background processing. The scan uses the library's
@@ -441,6 +433,7 @@ async def scan_library(
 
     Raises:
         HTTPException: 404 if library not found, 400 for invalid scan_type, 500 for other errors
+
     """
     library_id = decode_path_id(library_id)
     try:
@@ -461,26 +454,24 @@ async def scan_library(
         error_msg = str(e)
         if "not found" in error_msg.lower():
             raise HTTPException(status_code=404, detail="Library not found") from None
-        elif "already being scanned" in error_msg.lower():
+        if "already being scanned" in error_msg.lower():
             raise HTTPException(status_code=409, detail="Library is already being scanned") from None
-        else:
-            raise HTTPException(status_code=400, detail=error_msg) from None
+        raise HTTPException(status_code=400, detail=error_msg) from None
     except Exception as e:
         logging.exception(f"[Web API] Error starting scan for library {library_id}")
         raise HTTPException(
-            status_code=500, detail=sanitize_exception_message(e, "Failed to start library scan")
+            status_code=500, detail=sanitize_exception_message(e, "Failed to start library scan"),
         ) from e
 
 
 @router.post("/{library_id}/reconcile", dependencies=[Depends(verify_session)])
 async def reconcile_library_paths(
     library_id: str,
-    policy: str = Query("mark_invalid", description="Policy for invalid paths: dry_run, mark_invalid, delete_invalid"),
-    batch_size: int = Query(1000, description="Number of files to process per batch", ge=1, le=10000),
+    policy: Annotated[str, Query(description="Policy for invalid paths: dry_run, mark_invalid, delete_invalid")] = "mark_invalid",
+    batch_size: Annotated[int, Query(description="Number of files to process per batch", ge=1, le=10000)] = 1000,
     library_service: "LibraryService" = Depends(get_library_service),
 ) -> ReconcilePathsResponse:
-    """
-    Reconcile library paths after configuration changes.
+    """Reconcile library paths after configuration changes.
 
     Re-validates all file paths in the specified library and handles invalid paths
     according to the specified policy. Useful after changing library root_path or
@@ -502,6 +493,7 @@ async def reconcile_library_paths(
 
     Raises:
         HTTPException: 404 if library not found, 400 for invalid policy, 500 for other errors
+
     """
     library_id = decode_path_id(library_id)
     try:
@@ -523,7 +515,7 @@ async def reconcile_library_paths(
     except Exception as e:
         logging.exception(f"[Web API] Error reconciling paths for library {library_id}")
         raise HTTPException(
-            status_code=500, detail=sanitize_exception_message(e, "Failed to reconcile library paths")
+            status_code=500, detail=sanitize_exception_message(e, "Failed to reconcile library paths"),
         ) from e
 
 
@@ -535,11 +527,10 @@ async def reconcile_library_paths(
 @router.post("/{library_id}/reconcile-tags", dependencies=[Depends(verify_session)])
 async def reconcile_library_tags(
     library_id: str,
-    batch_size: int = Query(100, description="Number of files to process per batch", ge=1, le=1000),
+    batch_size: Annotated[int, Query(description="Number of files to process per batch", ge=1, le=1000)] = 100,
     tagging_service: "TaggingService" = Depends(get_tagging_service),
 ) -> ReconcileTagsResponse:
-    """
-    Reconcile file tags for a library.
+    """Reconcile file tags for a library.
 
     Writes tags from database to audio files based on the library's file_write_mode.
     This handles:
@@ -554,6 +545,7 @@ async def reconcile_library_tags(
 
     Returns:
         ReconcileTagsResponse with processed, remaining, and failed counts
+
     """
     library_id = decode_path_id(library_id)
     try:
@@ -569,10 +561,9 @@ async def reconcile_library_tags(
 @router.get("/{library_id}/reconcile-status", dependencies=[Depends(verify_session)])
 async def get_reconcile_status(
     library_id: str,
-    tagging_service: "TaggingService" = Depends(get_tagging_service),
+    tagging_service: Annotated["TaggingService", Depends(get_tagging_service)],
 ) -> ReconcileStatusResponse:
-    """
-    Get tag reconciliation status for a library.
+    """Get tag reconciliation status for a library.
 
     Returns the count of files needing reconciliation and whether
     a reconciliation operation is currently in progress.
@@ -583,6 +574,7 @@ async def get_reconcile_status(
 
     Returns:
         ReconcileStatusResponse with pending_count and in_progress status
+
     """
     library_id = decode_path_id(library_id)
     try:
@@ -596,19 +588,18 @@ async def get_reconcile_status(
     except Exception as e:
         logging.exception(f"[Web API] Error getting reconcile status for library {library_id}")
         raise HTTPException(
-            status_code=500, detail=sanitize_exception_message(e, "Failed to get reconcile status")
+            status_code=500, detail=sanitize_exception_message(e, "Failed to get reconcile status"),
         ) from e
 
 
 @router.patch("/{library_id}/write-mode", dependencies=[Depends(verify_session)])
 async def update_write_mode(
     library_id: str,
-    file_write_mode: str = Query(..., description="New write mode: 'none', 'minimal', or 'full'"),
-    library_service: "LibraryService" = Depends(get_library_service),
-    tagging_service: "TaggingService" = Depends(get_tagging_service),
+    file_write_mode: Annotated[str, Query(description="New write mode: 'none', 'minimal', or 'full'")],
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
+    tagging_service: Annotated["TaggingService", Depends(get_tagging_service)],
 ) -> UpdateWriteModeResponse:
-    """
-    Update the file write mode for a library.
+    """Update the file write mode for a library.
 
     Changes how tags are written to audio files:
     - 'none': Remove all essentia:* tags
@@ -625,6 +616,7 @@ async def update_write_mode(
 
     Returns:
         UpdateWriteModeResponse with mode, requires_reconciliation, and affected_file_count
+
     """
     library_id = decode_path_id(library_id)
 

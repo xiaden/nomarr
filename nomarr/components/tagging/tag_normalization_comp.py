@@ -1,5 +1,4 @@
-"""
-Tag normalization component for cross-format metadata standardization.
+"""Tag normalization component for cross-format metadata standardization.
 
 Maps format-specific tag names (MP4 atoms, ID3 frames, Vorbis comments) to
 a small canonical set of normalized names.
@@ -125,8 +124,7 @@ VORBIS_TAG_MAP: dict[str, str] = {
 
 
 def normalize_mp4_tags(tags: Any) -> dict[str, str]:
-    """
-    Normalize MP4 tags to canonical tag names only.
+    """Normalize MP4 tags to canonical tag names only.
 
     Only keeps canonical tags (title, artist, album, etc.) and nom:* namespaced tags.
     Drops cover art, sort tags, iTunes metadata, Acoustid fingerprints, etc.
@@ -136,6 +134,7 @@ def normalize_mp4_tags(tags: Any) -> dict[str, str]:
 
     Returns:
         Dict with canonical tag names and serialized values (+ nom:* tags)
+
     """
     normalized: dict[str, str] = {}
 
@@ -183,8 +182,7 @@ def normalize_mp4_tags(tags: Any) -> dict[str, str]:
 
 
 def normalize_id3_tags(tags: Any) -> dict[str, str]:
-    """
-    Normalize ID3 tags to canonical tag names only.
+    """Normalize ID3 tags to canonical tag names only.
 
     Only keeps canonical tags and nom:* namespaced tags.
     Drops cover art (APIC), lyrics (USLT), and other non-canonical frames.
@@ -194,6 +192,7 @@ def normalize_id3_tags(tags: Any) -> dict[str, str]:
 
     Returns:
         Dict with canonical tag names and serialized values (+ nom:* tags)
+
     """
     normalized: dict[str, str] = {}
 
@@ -235,8 +234,7 @@ def normalize_id3_tags(tags: Any) -> dict[str, str]:
 
 
 def normalize_vorbis_tags(tags: Any) -> dict[str, str]:
-    """
-    Normalize Vorbis comments to canonical tag names only.
+    """Normalize Vorbis comments to canonical tag names only.
 
     Only keeps canonical tags and nom:* namespaced tags.
     Drops cover art (METADATA_BLOCK_PICTURE), lyrics, and other non-canonical fields.
@@ -249,6 +247,7 @@ def normalize_vorbis_tags(tags: Any) -> dict[str, str]:
 
     Returns:
         Dict with canonical tag names and serialized values (+ nom:* tags)
+
     """
     normalized: dict[str, str] = {}
 
@@ -288,8 +287,7 @@ def normalize_vorbis_tags(tags: Any) -> dict[str, str]:
 
 
 def _serialize_value(value: Any) -> str:
-    """
-    Serialize a tag value to string.
+    """Serialize a tag value to string.
 
     Handles various mutagen types:
     - MP4FreeForm: Extract bytes and decode
@@ -303,6 +301,7 @@ def _serialize_value(value: Any) -> str:
 
     Returns:
         String representation (JSON only for multi-value lists)
+
     """
     # Handle MP4 track/disc tuples: (track, total)
     if isinstance(value, tuple) and len(value) >= 2 and all(isinstance(x, int) for x in value[:2]):
@@ -338,8 +337,7 @@ def _serialize_value(value: Any) -> str:
 
 
 def _ensure_json_array(value: str) -> str:
-    """
-    Ensure a tag value is stored as a JSON array.
+    """Ensure a tag value is stored as a JSON array.
 
     If the value is already a JSON array, return it as-is.
     Otherwise, wrap it in a single-element array.
@@ -349,6 +347,7 @@ def _ensure_json_array(value: str) -> str:
 
     Returns:
         JSON array string
+
     """
     if not value:
         return "[]"

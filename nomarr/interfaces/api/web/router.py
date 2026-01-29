@@ -1,5 +1,4 @@
-"""
-Combined router for all web UI endpoints.
+"""Combined router for all web UI endpoints.
 
 This module aggregates all web UI routers (auth, analytics, worker, etc.)
 into a single router that can be included in the main FastAPI app.

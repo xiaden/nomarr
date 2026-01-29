@@ -26,11 +26,11 @@ def load_config() -> dict[str, Any]:
 
 
 def resolve_paths(config: dict[str, Any]) -> tuple[Path, list[Path], Path]:
-    """
-    Resolve project root, search paths, and output path from config.
+    """Resolve project root, search paths, and output path from config.
 
     Returns:
         (project_root, search_paths, output_path)
+
     """
     # Resolve project_root (relative to script directory)
     project_root_str = config.get("project_root", "..")

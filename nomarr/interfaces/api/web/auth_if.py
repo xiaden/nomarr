@@ -35,14 +35,13 @@ class LogoutResponse(BaseModel):
 
 @router.post("/login", response_model=LoginResponse)
 async def login(request: LoginRequest):
-    """
-    Authenticate with admin password and receive a session token.
+    """Authenticate with admin password and receive a session token.
     The session token should be used for all subsequent /web/api/* requests.
     """
     try:
         password_hash = get_admin_password_hash()
     except RuntimeError as e:
-        logging.error(f"[Web UI] Admin password not initialized: {e}")
+        logging.exception(f"[Web UI] Admin password not initialized: {e}")
         raise HTTPException(status_code=500, detail="Admin authentication not configured") from None
 
     if not verify_password(request.password, password_hash):
@@ -60,9 +59,7 @@ async def login(request: LoginRequest):
 
 @router.post("/logout", response_model=LogoutResponse, dependencies=[Depends(verify_session)])
 async def logout(creds=Depends(verify_session)):
-    """
-    Invalidate the current session token (logout).
-    """
+    """Invalidate the current session token (logout)."""
     # Extract token from auth header
     bearer = HTTPBearer(auto_error=False)
     auth = await bearer(creds)

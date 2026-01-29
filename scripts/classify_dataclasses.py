@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Classify @dataclass definitions in Nomarr codebase.
+"""Classify @dataclass definitions in Nomarr codebase.
 
 This is a thin CLI wrapper around the dataclass_classifier toolkit.
 All logic lives in scripts/tools/dataclass_classifier/ modules.
@@ -28,11 +27,11 @@ from dataclass_classifier import (  # type: ignore  # noqa: E402
 
 
 def main() -> int:
-    """
-    Main entry point for the script.
+    """Main entry point for the script.
 
     Returns:
         Exit code (0 for success)
+
     """
     parser = argparse.ArgumentParser(
         description="Classify dataclasses in Nomarr codebase according to architecture rules.",

@@ -1,5 +1,4 @@
-"""
-DTOs for library-related operations.
+"""DTOs for library-related operations.
 
 Cross-layer data contracts for library service operations (used by services and interfaces).
 """

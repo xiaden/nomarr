@@ -9,13 +9,15 @@ Per GPU_REFACTOR_PLAN.md Section 7:
 - Results stored as measured_backbone_vram_mb and estimated_worker_ram_mb
 """
 
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
-from arango.cursor import Cursor
 from arango.exceptions import DocumentInsertError
 
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.arango_client import DatabaseLike
+
+if TYPE_CHECKING:
+    from arango.cursor import Cursor
 
 
 class MLCapacityOperations:
@@ -27,8 +29,7 @@ class MLCapacityOperations:
     # ==================== Probe Lock Operations ====================
 
     def try_acquire_probe_lock(self, model_set_hash: str, worker_id: str) -> bool:
-        """
-        Attempt to acquire probe lock for a model_set_hash.
+        """Attempt to acquire probe lock for a model_set_hash.
 
         Uses ArangoDB unique constraint on _key to prevent race conditions.
         Only one worker can acquire the lock at a time.
@@ -39,6 +40,7 @@ class MLCapacityOperations:
 
         Returns:
             True if lock acquired, False if another worker owns the lock
+
         """
         try:
             self.db.aql.execute(
@@ -51,7 +53,7 @@ class MLCapacityOperations:
                 } INTO ml_capacity_probe_locks
                 """,
                 bind_vars=cast(
-                    dict[str, Any],
+                    "dict[str, Any]",
                     {
                         "model_set_hash": model_set_hash,
                         "worker_id": worker_id,
@@ -65,17 +67,17 @@ class MLCapacityOperations:
             return False
 
     def get_probe_lock_status(self, model_set_hash: str) -> dict[str, Any] | None:
-        """
-        Get the status of a probe lock.
+        """Get the status of a probe lock.
 
         Args:
             model_set_hash: Hash of the model set
 
         Returns:
             Lock document or None if not found
+
         """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
                 FOR lock IN ml_capacity_probe_locks
@@ -88,11 +90,11 @@ class MLCapacityOperations:
         return next(cursor, None)
 
     def complete_probe_lock(self, model_set_hash: str) -> None:
-        """
-        Mark a probe lock as complete.
+        """Mark a probe lock as complete.
 
         Args:
             model_set_hash: Hash of the model set
+
         """
         self.db.aql.execute(
             """
@@ -101,7 +103,7 @@ class MLCapacityOperations:
             IN ml_capacity_probe_locks
             """,
             bind_vars=cast(
-                dict[str, Any],
+                "dict[str, Any]",
                 {
                     "model_set_hash": model_set_hash,
                     "completed_at": now_ms().value,
@@ -110,11 +112,11 @@ class MLCapacityOperations:
         )
 
     def release_probe_lock(self, model_set_hash: str) -> None:
-        """
-        Release (delete) a probe lock, typically on failure.
+        """Release (delete) a probe lock, typically on failure.
 
         Args:
             model_set_hash: Hash of the model set
+
         """
         self.db.aql.execute(
             """
@@ -127,17 +129,17 @@ class MLCapacityOperations:
     # ==================== Capacity Estimate Operations ====================
 
     def get_capacity_estimate(self, model_set_hash: str) -> dict[str, Any] | None:
-        """
-        Get capacity estimate for a model_set_hash.
+        """Get capacity estimate for a model_set_hash.
 
         Args:
             model_set_hash: Hash of the model set
 
         Returns:
             Capacity estimate document or None if not found
+
         """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
                 FOR est IN ml_capacity_estimates
@@ -157,8 +159,7 @@ class MLCapacityOperations:
         probe_duration_s: float,
         probed_by_worker: str,
     ) -> None:
-        """
-        Save capacity estimate after successful probe.
+        """Save capacity estimate after successful probe.
 
         Per GPU_REFACTOR_PLAN.md Section 7:
         - measured_backbone_vram_mb: Per-PID VRAM usage via nvidia-smi
@@ -170,6 +171,7 @@ class MLCapacityOperations:
             estimated_worker_ram_mb: Estimated RAM for worker (heads + overhead)
             probe_duration_s: How long the probe took
             probed_by_worker: Worker ID that performed the probe
+
         """
         self.db.aql.execute(
             """
@@ -192,7 +194,7 @@ class MLCapacityOperations:
             IN ml_capacity_estimates
             """,
             bind_vars=cast(
-                dict[str, Any],
+                "dict[str, Any]",
                 {
                     "model_set_hash": model_set_hash,
                     "backbone_vram": measured_backbone_vram_mb,
@@ -205,11 +207,11 @@ class MLCapacityOperations:
         )
 
     def delete_capacity_estimate(self, model_set_hash: str) -> None:
-        """
-        Delete a capacity estimate (for invalidation on model set change).
+        """Delete a capacity estimate (for invalidation on model set change).
 
         Args:
             model_set_hash: Hash of the model set
+
         """
         self.db.aql.execute(
             """

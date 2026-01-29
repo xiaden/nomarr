@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Auto-generate __init__.py files with proper __all__ exports.
+"""Auto-generate __init__.py files with proper __all__ exports.
 Scans Python modules and generates clean __init__.py files.
 """
 

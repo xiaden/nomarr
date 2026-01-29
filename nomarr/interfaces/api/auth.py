@@ -1,5 +1,4 @@
-"""
-Authentication logic for the FastAPI application.
+"""Authentication logic for the FastAPI application.
 Thin wrapper around KeyManagementService for FastAPI dependency injection.
 """
 
@@ -18,14 +17,16 @@ def get_key_service() -> KeyManagementService:
     from nomarr.app import application
 
     if "keys" not in application.services:
-        raise RuntimeError("KeyManagementService not initialized")
+        msg = "KeyManagementService not initialized"
+        raise RuntimeError(msg)
     service = application.services["keys"]
     if not isinstance(service, KeyManagementService):
-        raise RuntimeError("Invalid KeyManagementService instance")
+        msg = "Invalid KeyManagementService instance"
+        raise RuntimeError(msg)
     return service
 
 
-async def verify_key(creds: HTTPAuthorizationCredentials = Depends(auth_scheme)):
+async def verify_key(creds: HTTPAuthorizationCredentials = Depends(auth_scheme)) -> None:
     """Verify API key using KeyManagementService."""
     if creds is None:
         raise HTTPException(status_code=401, detail="Missing Authorization header")
@@ -40,7 +41,7 @@ async def verify_key(creds: HTTPAuthorizationCredentials = Depends(auth_scheme))
         raise HTTPException(status_code=403, detail="Invalid API key")
 
 
-async def verify_session(creds: HTTPAuthorizationCredentials = Depends(auth_scheme)):
+async def verify_session(creds: HTTPAuthorizationCredentials = Depends(auth_scheme)) -> None:
     """Verify session token using the singleton KeyManagementService instance."""
     if creds is None:
         raise HTTPException(status_code=401, detail="Missing Authorization header")
@@ -52,23 +53,21 @@ async def verify_session(creds: HTTPAuthorizationCredentials = Depends(auth_sche
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    """
-    Verify a password against a hash. Pure utility function - stateless.
-    """
+    """Verify a password against a hash. Pure utility function - stateless."""
     from nomarr.services.infrastructure.keys_svc import KeyManagementService
 
     return KeyManagementService.verify_password(password, password_hash)
 
 
 def get_admin_password_hash() -> str:
-    """
-    Get admin password hash using the singleton KeyManagementService instance.
+    """Get admin password hash using the singleton KeyManagementService instance.
 
     Returns:
         Password hash string
 
     Raises:
         RuntimeError: If password not found or service not initialized
+
     """
     return get_key_service().get_admin_password_hash()
 
@@ -79,8 +78,7 @@ def create_session() -> str:
 
 
 def validate_session(session_token: str) -> bool:
-    """
-    Validate a session token using the singleton KeyManagementService instance.
+    """Validate a session token using the singleton KeyManagementService instance.
 
     Note: Use the singleton service instance to maintain proper architecture.
     """

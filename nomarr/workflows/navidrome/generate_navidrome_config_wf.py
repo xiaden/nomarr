@@ -1,5 +1,4 @@
-"""
-Navidrome configuration generation workflow.
+"""Navidrome configuration generation workflow.
 
 Generates navidrome.toml custom tag configuration from tags data.
 """
@@ -7,14 +6,14 @@ Generates navidrome.toml custom tag configuration from tags data.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from nomarr.persistence.db import Database
+if TYPE_CHECKING:
+    from nomarr.persistence.db import Database
 
 
 def generate_navidrome_config_workflow(db: Database, namespace: str = "nom") -> str:
-    """
-    Generate Navidrome TOML configuration for custom tags.
+    """Generate Navidrome TOML configuration for custom tags.
 
     Queries the tags collection to discover all nomarr tags, detects their types,
     and generates proper TOML configuration with all three tag format aliases.
@@ -32,6 +31,7 @@ def generate_navidrome_config_workflow(db: Database, namespace: str = "nom") -> 
         >>> db = Database("/path/to/library.db")
         >>> toml_config = generate_navidrome_config_workflow(db=db, namespace="nom")
         >>> print(toml_config)
+
     """
     logging.info("[navidrome] Generating Navidrome config from library tags")
 
@@ -111,8 +111,7 @@ def _compute_tag_stats(value_counts: dict[Any, int]) -> dict[str, Any]:
 
 
 def _generate_aliases(tag_key: str, namespace: str) -> str:
-    """
-    Generate the three tag format aliases for a tag key.
+    """Generate the three tag format aliases for a tag key.
 
     Args:
         tag_key: Full tag key (e.g., "nom:mood-strict")
@@ -120,6 +119,7 @@ def _generate_aliases(tag_key: str, namespace: str) -> str:
 
     Returns:
         JSON array string for TOML (e.g., '["nom:mood-strict", "----:com.apple.iTunes:nom:mood-strict", "NOM_MOOD_STRICT"]')
+
     """
     # 1. ID3v2/MP3 format: nom:mood-strict
     id3_alias = tag_key

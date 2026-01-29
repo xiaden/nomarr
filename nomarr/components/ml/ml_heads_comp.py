@@ -8,14 +8,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 # Sidecar schema helper
-from nomarr.components.ml.ml_discovery_comp import Sidecar
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from nomarr.components.ml.ml_discovery_comp import Sidecar
 
 
 # ----------------------------------------------------------------------
@@ -62,8 +65,7 @@ def _to_prob(vector: np.ndarray, already_prob: bool) -> np.ndarray:
 # ----------------------------------------------------------------------
 @dataclass
 class Cascade:
-    """
-    Tier thresholds from the original training calibration.
+    """Tier thresholds from the original training calibration.
     - high >= t_high (strict)
     - medium >= t_med (regular)
     - low >= t_low (loose)
@@ -95,7 +97,7 @@ class Cascade:
                 low=float(levels.get("low", fallback.low if fallback else 0.4)),
                 ratio_high=float(levels.get("ratio_high", getattr(fallback, "ratio_high", 1.25) if fallback else 1.25)),
                 ratio_medium=float(
-                    levels.get("ratio_medium", getattr(fallback, "ratio_medium", 1.15) if fallback else 1.15)
+                    levels.get("ratio_medium", getattr(fallback, "ratio_medium", 1.15) if fallback else 1.15),
                 ),
                 ratio_low=float(levels.get("ratio_low", getattr(fallback, "ratio_low", 1.05) if fallback else 1.05)),
                 gap_high=float(levels.get("gap_high", getattr(fallback, "gap_high", 0.20) if fallback else 0.20)),
@@ -181,10 +183,9 @@ def decide_regression(values: np.ndarray, labels: list[str]) -> dict[str, float]
 
 
 def _find_counter_confidence(
-    label: str, label_idx: int, probs: np.ndarray, label_to_idx: dict[str, int], num_labels: int
+    label: str, label_idx: int, probs: np.ndarray, label_to_idx: dict[str, int], num_labels: int,
 ) -> float:
-    """
-    Find counter-confidence for a label.
+    """Find counter-confidence for a label.
 
     Prefers explicit 'non_*' or 'not_*' variants; for binary heads uses the other label;
     otherwise assumes no counterpart and returns 0.0.
@@ -209,8 +210,7 @@ def _find_counter_confidence(
 
 
 def _determine_tier(prob: float, ratio: float, gap: float, cascade: Cascade) -> str | None:
-    """
-    Determine tier (high/medium/low) based on cascade thresholds.
+    """Determine tier (high/medium/low) based on cascade thresholds.
     Returns None if no tier requirements are met.
     """
     if prob >= cascade.high and ratio >= cascade.ratio_high and gap >= cascade.gap_high:
@@ -223,8 +223,7 @@ def _determine_tier(prob: float, ratio: float, gap: float, cascade: Cascade) -> 
 
 
 def decide_multilabel(scores: np.ndarray, spec: HeadSpec) -> dict[str, Any]:
-    """
-    Multilabel: select all labels with score >= (per-label threshold or cascade.low).
+    """Multilabel: select all labels with score >= (per-label threshold or cascade.low).
     Also provide tier mapping (high/medium/low) per selected label.
 
     Returns ALL labels with their probabilities, but only assigns tiers to labels
@@ -268,7 +267,7 @@ def decide_multilabel(scores: np.ndarray, spec: HeadSpec) -> dict[str, Any]:
             logging.debug(
                 f"[heads] Label '{lab}' rejected: p={prob:.3f} (need >={spec.cascade.low:.2f}), "
                 f"ratio={ratio:.2f} (need >={spec.cascade.ratio_low:.2f}), "
-                f"gap={gap:.3f} (need >={spec.cascade.gap_low:.2f})"
+                f"gap={gap:.3f} (need >={spec.cascade.gap_low:.2f})",
             )
 
         # Only add to out if tier was assigned (for tier tags)
@@ -280,8 +279,7 @@ def decide_multilabel(scores: np.ndarray, spec: HeadSpec) -> dict[str, Any]:
 
 
 def decide_multiclass_adaptive(scores: np.ndarray, spec: HeadSpec) -> dict[str, Any]:
-    """
-    Multiclass adaptive top-K:
+    """Multiclass adaptive top-K:
     - Normalize to a probability simplex if needed.
     - Sort by descending p.
     - Emit classes while p_i >= min_conf AND i < max_classes.
@@ -326,19 +324,16 @@ def decide_multiclass_adaptive(scores: np.ndarray, spec: HeadSpec) -> dict[str, 
 # Public API
 # ----------------------------------------------------------------------
 class HeadDecision:
-    """
-    A lightweight container for the decision of a single head.
-    """
+    """A lightweight container for the decision of a single head."""
 
-    def __init__(self, head: HeadSpec, details: dict[str, Any], all_probs: dict[str, float] | None = None):
+    def __init__(self, head: HeadSpec, details: dict[str, Any], all_probs: dict[str, float] | None = None) -> None:
         self.head = head
         self.details = details
         # Optional complete probability map (label -> p)
         self.all_probs = all_probs or {}
 
     def as_tags(self, prefix: str = "", key_builder: Callable[[str], str] | None = None) -> dict[str, Any]:
-        """
-        Produce a flat tag dict with numeric values only.
+        """Produce a flat tag dict with numeric values only.
 
         Tier information is preserved in self.details but not emitted as *_tier tags.
         Use HeadOutput objects to access tier information for aggregation.
@@ -346,6 +341,7 @@ class HeadDecision:
         Args:
             prefix: Legacy simple prefix (e.g., "yamnet_")
             key_builder: Optional function(label) -> versioned_key for modern tag naming
+
         """
         tags: dict[str, Any] = {}
         if head_is_regression(self.head):
@@ -387,8 +383,7 @@ class HeadDecision:
         prefix: str = "",
         key_builder: Callable[[str], str] | None = None,
     ) -> list[Any]:  # Returns list[HeadOutput]
-        """
-        Convert HeadDecision to list of HeadOutput objects.
+        """Convert HeadDecision to list of HeadOutput objects.
 
         For multilabel heads, creates one HeadOutput per selected label with tier information.
         For multiclass heads, creates HeadOutput objects for all emitted labels (no tiers).
@@ -402,6 +397,7 @@ class HeadDecision:
 
         Returns:
             List of HeadOutput objects
+
         """
         from nomarr.helpers.dto.ml_dto import HeadOutput
 
@@ -438,7 +434,7 @@ class HeadDecision:
                     value=prob,
                     tier=tier,
                     calibration_id=calibration_id,
-                )
+                ),
             )
 
         # Also include non-selected labels if available
@@ -462,7 +458,7 @@ class HeadDecision:
                     value=float(prob),
                     tier=None,  # Non-selected labels don't get tiers
                     calibration_id=calibration_id,
-                )
+                ),
             )
 
         return outputs
@@ -483,11 +479,10 @@ def run_head_decision(
     prefix: str = "",
     emit_all_scores: bool = True,
 ) -> HeadDecision:
-    """
-    Turn the raw output vector for a head into a HeadDecision.
+    """Turn the raw output vector for a head into a HeadDecision.
     - sc: Sidecar describing the head (labels, thresholds, cascade)
     - scores: head outputs (logits or probs depending on sidecar)
-    - prefix: optional string to prepend to tag keys (e.g., "yamnet_")
+    - prefix: optional string to prepend to tag keys (e.g., "yamnet_").
     """
     spec = HeadSpec.from_sidecar(sc)
     kind = spec.kind.lower()
@@ -497,13 +492,13 @@ def run_head_decision(
         details = decide_regression(vec, spec.labels)
         # For regression, 'all_probs' concept doesn't apply
         return HeadDecision(spec, details)
-    elif kind == "multilabel":
+    if kind == "multilabel":
         result = decide_multilabel(vec, spec)
         # decide_multilabel now returns {"selected": {...}, "all_probs": {...}}
         details = result.get("selected", {})
         all_probs = result.get("all_probs", {})
         return HeadDecision(spec, details, all_probs)
-    elif kind == "multiclass":
+    if kind == "multiclass":
         details = decide_multiclass_adaptive(vec, spec)
         all_probs = None
         if emit_all_scores:
@@ -516,10 +511,9 @@ def run_head_decision(
                 probs = ex / exp_sum if exp_sum > 0 else np.zeros_like(probs)
             all_probs = {lab: float(probs[i]) for i, lab in enumerate(spec.labels) if i < len(probs)}
         return HeadDecision(spec, details, all_probs)
-    else:
-        # default fail-safe: treat as multilabel
-        result = decide_multilabel(vec, spec)
-        # decide_multilabel now returns {"selected": {...}, "all_probs": {...}}
-        details = result.get("selected", {})
-        all_probs = result.get("all_probs", {})
-        return HeadDecision(spec, details, all_probs)
+    # default fail-safe: treat as multilabel
+    result = decide_multilabel(vec, spec)
+    # decide_multilabel now returns {"selected": {...}, "all_probs": {...}}
+    details = result.get("selected", {})
+    all_probs = result.get("all_probs", {})
+    return HeadDecision(spec, details, all_probs)

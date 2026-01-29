@@ -1,6 +1,4 @@
-"""
-Navidrome package.
-"""
+"""Navidrome package."""
 
 from .templates_comp import (
     generate_template_files,

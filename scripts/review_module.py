@@ -1,5 +1,4 @@
-"""
-Module review assistant.
+"""Module review assistant.
 
 Helps systematically review Python modules against QC checklist.
 """
@@ -10,14 +9,14 @@ from pathlib import Path
 
 
 def analyze_module(file_path: Path) -> dict:
-    """
-    Analyze a Python module for QC metrics.
+    """Analyze a Python module for QC metrics.
 
     Args:
         file_path: Path to Python file
 
     Returns:
         Dictionary of metrics
+
     """
     metrics = {
         "file": str(file_path),

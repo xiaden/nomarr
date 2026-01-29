@@ -1,5 +1,4 @@
-"""
-Preview smart playlist query results workflow.
+"""Preview smart playlist query results workflow.
 
 This workflow previews tracks matching a smart playlist query without generating
 the full .nsp file.
@@ -29,8 +28,7 @@ def preview_smart_playlist_workflow(
     namespace: str = "nom",
     preview_limit: int = 10,
 ) -> PlaylistPreviewResult:
-    """
-    Preview tracks matching a smart playlist query.
+    """Preview tracks matching a smart playlist query.
 
     Args:
         db: Database instance
@@ -43,9 +41,11 @@ def preview_smart_playlist_workflow(
 
     Raises:
         PlaylistQueryError: If query is invalid or empty
+
     """
     if not query or not query.strip():
-        raise PlaylistQueryError("Query cannot be empty")
+        msg = "Query cannot be empty"
+        raise PlaylistQueryError(msg)
 
     # Parse query into filter tree
     playlist_filter = parse_smart_playlist_query(query, namespace)

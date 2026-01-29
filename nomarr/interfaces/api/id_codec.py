@@ -27,7 +27,6 @@ from pydantic import BeforeValidator
 class InvalidIdFormatError(ValueError):
     """Raised when an ID has an invalid format for encoding/decoding."""
 
-    pass
 
 
 def encode_id(arango_id: str) -> str:
@@ -43,11 +42,14 @@ def encode_id(arango_id: str) -> str:
 
     Raises:
         InvalidIdFormatError: If ID contains ":" or doesn't contain "/"
+
     """
     if ":" in arango_id:
-        raise InvalidIdFormatError(f"Cannot encode ID containing ':': {arango_id}")
+        msg = f"Cannot encode ID containing ':': {arango_id}"
+        raise InvalidIdFormatError(msg)
     if "/" not in arango_id:
-        raise InvalidIdFormatError(f"Invalid ArangoDB _id format (missing '/'): {arango_id}")
+        msg = f"Invalid ArangoDB _id format (missing '/'): {arango_id}"
+        raise InvalidIdFormatError(msg)
 
     return arango_id.replace("/", ":")
 
@@ -65,11 +67,14 @@ def decode_id(encoded_id: str) -> str:
 
     Raises:
         InvalidIdFormatError: If ID contains "/" or doesn't contain ":"
+
     """
     if "/" in encoded_id:
-        raise InvalidIdFormatError(f"Cannot decode ID containing '/': {encoded_id}")
+        msg = f"Cannot decode ID containing '/': {encoded_id}"
+        raise InvalidIdFormatError(msg)
     if ":" not in encoded_id:
-        raise InvalidIdFormatError(f"Invalid encoded ID format (missing ':'): {encoded_id}")
+        msg = f"Invalid encoded ID format (missing ':'): {encoded_id}"
+        raise InvalidIdFormatError(msg)
 
     return encoded_id.replace(":", "/")
 
@@ -80,7 +85,8 @@ def _validate_and_decode_id(value: str) -> str:
     Used with Annotated to create the EncodedId type.
     """
     if not isinstance(value, str):
-        raise ValueError(f"ID must be a string, got {type(value).__name__}")
+        msg = f"ID must be a string, got {type(value).__name__}"
+        raise ValueError(msg)
     return decode_id(value)
 
 
@@ -107,6 +113,7 @@ def decode_path_id(encoded_id: str) -> str:
 
     Raises:
         HTTPException: 400 if ID format is invalid
+
     """
     try:
         return decode_id(encoded_id)
@@ -133,6 +140,7 @@ def encode_ids(data: Any) -> Any:
     Note:
         Only encodes string values containing "/" (valid ArangoDB _ids).
         Silently skips values that don't match the expected format.
+
     """
     if data is None:
         return None

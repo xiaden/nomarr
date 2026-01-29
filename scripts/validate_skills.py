@@ -74,6 +74,7 @@ def parse_frontmatter(content: str) -> tuple[dict[str, str], int]:
 
     Returns:
         Tuple of (frontmatter dict, line count of frontmatter)
+
     """
     lines = content.split("\n")
 

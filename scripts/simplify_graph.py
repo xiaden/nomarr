@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Simplify code graph by aggregating methods under classes.
+"""Simplify code graph by aggregating methods under classes.
 
 Takes the detailed method-level graph and creates a coarse class-level view
 suitable for visualization, while preserving method information in edge metadata.
@@ -23,8 +22,7 @@ from tools.build_code_graph.models import CodeGraph, Edge, Node
 
 
 def get_parent_id(node_id: str, node_kind: str) -> str:
-    """
-    Get the parent container for a node.
+    """Get the parent container for a node.
 
     Methods -> their class
     Functions -> their module
@@ -45,8 +43,7 @@ def get_parent_id(node_id: str, node_kind: str) -> str:
 
 
 def simplify_graph(detailed_graph: CodeGraph) -> CodeGraph:
-    """
-    Create simplified graph with methods aggregated under classes.
+    """Create simplified graph with methods aggregated under classes.
 
     Process:
     1. Keep module and class nodes as-is

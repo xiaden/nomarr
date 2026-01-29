@@ -6,8 +6,7 @@ from pathlib import Path
 
 
 def discover_python_files(search_paths: list[Path]) -> list[Path]:
-    """
-    Discover all Python source files under search paths.
+    """Discover all Python source files under search paths.
 
     Skips cache directories and non-source files.
     """

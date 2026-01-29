@@ -1,5 +1,4 @@
-"""
-Extended QC checks that require ML dependencies.
+"""Extended QC checks that require ML dependencies.
 
 Run this script INSIDE the Docker container where essentia-tensorflow is available.
 Do NOT run on Windows dev machine (will fail due to missing essentia).
@@ -15,8 +14,7 @@ from pathlib import Path
 
 
 def run_command(cmd: list[str], description: str) -> tuple[str, int]:
-    """
-    Run a command and capture output.
+    """Run a command and capture output.
 
     Args:
         cmd: Command and arguments
@@ -24,6 +22,7 @@ def run_command(cmd: list[str], description: str) -> tuple[str, int]:
 
     Returns:
         Tuple of (output, return_code)
+
     """
     print(f"\n{'=' * 80}")
     print(f"Running: {description}")

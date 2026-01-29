@@ -1,6 +1,4 @@
-"""
-Data models for the dataclass classifier toolkit.
-"""
+"""Data models for the dataclass classifier toolkit."""
 
 from pathlib import Path
 from typing import Any

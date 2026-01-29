@@ -1,11 +1,12 @@
 """Sessions operations for ArangoDB (web UI sessions with TTL)."""
 
-from typing import Any, cast
-
-from arango.cursor import Cursor
+from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.arango_client import DatabaseLike
+
+if TYPE_CHECKING:
+    from arango.cursor import Cursor
 
 
 class SessionOperations:
@@ -25,16 +26,17 @@ class SessionOperations:
 
         Returns:
             Session _id
+
         """
         result = cast(
-            dict[str, Any],
+            "dict[str, Any]",
             self.collection.insert(
                 {
                     "session_id": session_id,
                     "user_id": user_id,
                     "expiry_timestamp": expiry_timestamp,
                     "created_at": now_ms().value,
-                }
+                },
             ),
         )
         return str(result["_id"])
@@ -47,9 +49,10 @@ class SessionOperations:
 
         Returns:
             Session dict or None if not found/expired
+
         """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
             FOR session IN sessions
@@ -68,6 +71,7 @@ class SessionOperations:
 
         Args:
             session_id: Session ID to delete
+
         """
         self.db.aql.execute(
             """
@@ -86,9 +90,10 @@ class SessionOperations:
 
         Returns:
             Number of sessions deleted
+
         """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
             FOR session IN sessions
@@ -116,13 +121,13 @@ class SessionOperations:
     def load_all(self) -> list[dict[str, Any]]:
         """Load all sessions."""
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
             FOR session IN sessions
                 SORT session.created_at DESC
                 RETURN session
-            """
+            """,
             ),
         )
         return list(cursor)
@@ -132,11 +137,10 @@ class SessionOperations:
 
         Returns:
             Number of sessions deleted
-        """
-        from typing import Any
 
+        """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
             FOR session IN sessions
@@ -144,7 +148,7 @@ class SessionOperations:
                 REMOVE session IN sessions
                 RETURN 1
             """,
-                bind_vars=cast(dict[str, Any], {"now": now_ms().value}),
+                bind_vars=cast("dict[str, Any]", {"now": now_ms().value}),
             ),
         )
         return len(list(cursor))

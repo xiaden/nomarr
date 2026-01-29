@@ -21,8 +21,7 @@ if TYPE_CHECKING:
 
 
 def get_base_library_root(library_root_config: str | None) -> Path:
-    """
-    Get the configured base library_root (security boundary).
+    """Get the configured base library_root (security boundary).
 
     This is the top-level directory that all library roots must be nested under.
     It defines the security boundary for file access.
@@ -35,27 +34,31 @@ def get_base_library_root(library_root_config: str | None) -> Path:
 
     Raises:
         ValueError: If library_root not configured or invalid
+
     """
     if not library_root_config:
-        raise ValueError("Library root not configured")
+        msg = "Library root not configured"
+        raise ValueError(msg)
 
     try:
         base = Path(library_root_config).expanduser().resolve()
 
         if not base.exists():
-            raise ValueError(f"Base library root does not exist: {library_root_config}")
+            msg = f"Base library root does not exist: {library_root_config}"
+            raise ValueError(msg)
         if not base.is_dir():
-            raise ValueError(f"Base library root is not a directory: {library_root_config}")
+            msg = f"Base library root is not a directory: {library_root_config}"
+            raise ValueError(msg)
 
         return base
 
     except Exception as e:
-        raise ValueError(f"Invalid base library root: {e}") from e
+        msg = f"Invalid base library root: {e}"
+        raise ValueError(msg) from e
 
 
 def normalize_library_root(base_library_root: Path, raw_root: str | Path) -> str:
-    """
-    Normalize and validate a user-provided library root path.
+    """Normalize and validate a user-provided library root path.
 
     This ensures the library root:
     - Exists and is a directory
@@ -71,6 +74,7 @@ def normalize_library_root(base_library_root: Path, raw_root: str | Path) -> str
 
     Raises:
         ValueError: If path is invalid or outside base library root
+
     """
     import os
 
@@ -89,7 +93,8 @@ def normalize_library_root(base_library_root: Path, raw_root: str | Path) -> str
             user_path = os.path.relpath(abs_path, base_library_root)
         except (ValueError, OSError) as e:
             # relpath can fail if paths are on different drives on Windows
-            raise ValueError(f"Cannot compute relative path from base root: {e}") from e
+            msg = f"Cannot compute relative path from base root: {e}"
+            raise ValueError(msg) from e
     else:
         # Already relative, use as-is
         user_path = raw_root_str
@@ -104,7 +109,8 @@ def normalize_library_root(base_library_root: Path, raw_root: str | Path) -> str
         )
     except ValueError as e:
         # Re-raise with more context
-        raise ValueError(f"Library root validation failed: {e}") from e
+        msg = f"Library root validation failed: {e}"
+        raise ValueError(msg) from e
 
     return str(resolved)
 
@@ -115,8 +121,7 @@ def ensure_no_overlapping_library_root(
     *,
     ignore_id: str | None = None,
 ) -> None:
-    """
-    Ensure a candidate library root does not overlap with existing libraries.
+    """Ensure a candidate library root does not overlap with existing libraries.
 
     This enforces the business rule that all library roots must be disjoint -
     no library may be nested inside another, and no two libraries may share
@@ -129,6 +134,7 @@ def ensure_no_overlapping_library_root(
 
     Raises:
         ValueError: If candidate_root overlaps with any existing library root
+
     """
     # Resolve candidate to canonical absolute path
     candidate_path = Path(candidate_root).resolve()
@@ -148,10 +154,13 @@ def ensure_no_overlapping_library_root(
         try:
             candidate_path.relative_to(existing_path)
             # If no ValueError raised, candidate is inside existing
-            raise ValueError(
+            msg = (
                 f"Library root '{candidate_root}' is nested inside "
                 f"existing library '{library['name']}' at '{library['root_path']}'. "
                 f"Library roots must be disjoint."
+            )
+            raise ValueError(
+                msg,
             )
         except ValueError as e:
             # relative_to raises ValueError if not a subpath - this is expected for disjoint paths
@@ -164,10 +173,13 @@ def ensure_no_overlapping_library_root(
         try:
             existing_path.relative_to(candidate_path)
             # If no ValueError raised, existing is inside candidate
-            raise ValueError(
+            msg = (
                 f"Existing library '{library['name']}' at '{library['root_path']}' "
                 f"is nested inside new library root '{candidate_root}'. "
                 f"Library roots must be disjoint."
+            )
+            raise ValueError(
+                msg,
             )
         except ValueError as e:
             # relative_to raises ValueError if not a subpath - this is expected for disjoint paths
@@ -184,8 +196,7 @@ def resolve_path_within_library(
     must_exist: bool = True,
     must_be_file: bool | None = None,
 ) -> Path:
-    """
-    Resolve a user-provided path within a library root.
+    """Resolve a user-provided path within a library root.
 
     This is a wrapper around helpers.files.resolve_library_path
     for validating paths within a library (e.g., scanning subdirectories, loading specific files).
@@ -204,6 +215,7 @@ def resolve_path_within_library(
 
     Raises:
         ValueError: If path validation fails
+
     """
     return resolve_library_path(
         library_root=library_root,

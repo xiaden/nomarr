@@ -4,13 +4,14 @@ CRITICAL: All mutations by _id must use PARSE_IDENTIFIER(@id).key
 to extract the document key for UPDATE/REMOVE operations.
 """
 
-from typing import Any, Literal, cast
-
-from arango.cursor import Cursor
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from nomarr.helpers.dto import LibraryPath
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.arango_client import DatabaseLike
+
+if TYPE_CHECKING:
+    from arango.cursor import Cursor
 
 
 class LibraryFilesOperations:
@@ -57,13 +58,15 @@ class LibraryFilesOperations:
 
         Raises:
             ValueError: If path status is not "valid"
+
         """
         if not path.is_valid():
-            raise ValueError(f"Cannot upsert invalid path ({path.status}): {path.reason}")
+            msg = f"Cannot upsert invalid path ({path.status}): {path.reason}"
+            raise ValueError(msg)
 
         scanned_at = now_ms().value
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
             UPSERT { library_id: @library_id, path: @path }
@@ -109,7 +112,7 @@ class LibraryFilesOperations:
             RETURN NEW._id
             """,
                 bind_vars=cast(
-                    dict[str, Any],
+                    "dict[str, Any]",
                     {
                         "library_id": library_id,
                         "path": str(path.relative),  # Store relative path
@@ -139,6 +142,7 @@ class LibraryFilesOperations:
         Args:
             file_id: Document _id (e.g., "library_files/12345")
             tagged_version: Tagged version string
+
         """
         self.db.aql.execute(
             """
@@ -150,7 +154,7 @@ class LibraryFilesOperations:
             } IN library_files
             """,
             bind_vars=cast(
-                dict[str, Any], {"file_id": file_id, "version": tagged_version, "timestamp": now_ms().value}
+                "dict[str, Any]", {"file_id": file_id, "version": tagged_version, "timestamp": now_ms().value},
             ),
         )
 
@@ -162,9 +166,10 @@ class LibraryFilesOperations:
 
         Returns:
             File dict or None if not found
+
         """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
             RETURN DOCUMENT(@file_id)
@@ -189,12 +194,13 @@ class LibraryFilesOperations:
 
         Returns:
             List of file dicts with 'tags' array containing tag details
+
         """
         if not file_ids:
             return []
 
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
             FOR file_id IN @file_ids
@@ -214,7 +220,7 @@ class LibraryFilesOperations:
                 )
                 RETURN MERGE(file, { tags: tags })
             """,
-                bind_vars=cast(dict[str, Any], {"file_ids": file_ids}),
+                bind_vars=cast("dict[str, Any]", {"file_ids": file_ids}),
             ),
         )
         return list(cursor)
@@ -239,13 +245,14 @@ class LibraryFilesOperations:
 
         Returns:
             List of file dicts with 'tags' array, 'matched_tag', and 'distance' (for floats)
+
         """
         is_float = isinstance(target_value, float | int) and not isinstance(target_value, bool)
 
         if is_float:
             # Float: search by distance
             cursor = cast(
-                Cursor,
+                "Cursor",
                 self.db.aql.execute(
                     """
                 FOR tag IN tags
@@ -282,7 +289,7 @@ class LibraryFilesOperations:
                         })
                 """,
                     bind_vars=cast(
-                        dict[str, Any],
+                        "dict[str, Any]",
                         {
                             "tag_key": tag_key,
                             "target_value": float(target_value),
@@ -295,7 +302,7 @@ class LibraryFilesOperations:
         else:
             # String: exact match
             cursor = cast(
-                Cursor,
+                "Cursor",
                 self.db.aql.execute(
                     """
                 FOR tag IN tags
@@ -329,7 +336,7 @@ class LibraryFilesOperations:
                         })
                 """,
                     bind_vars=cast(
-                        dict[str, Any],
+                        "dict[str, Any]",
                         {
                             "tag_key": tag_key,
                             "target_value": str(target_value),
@@ -350,6 +357,7 @@ class LibraryFilesOperations:
 
         Returns:
             File dict or None if not found
+
         """
         query = """
             FOR file IN library_files
@@ -367,7 +375,7 @@ class LibraryFilesOperations:
                 RETURN file
         """
 
-        cursor = cast(Cursor, self.db.aql.execute(query, bind_vars=bind_vars))
+        cursor = cast("Cursor", self.db.aql.execute(query, bind_vars=bind_vars))
         result = list(cursor)
         return result[0] if result else None
 
@@ -376,14 +384,15 @@ class LibraryFilesOperations:
 
         Returns:
             Dict mapping file path to modified_time (milliseconds)
+
         """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
             FOR file IN library_files
                 RETURN { path: file.path, modified_time: file.modified_time }
-            """
+            """,
             ),
         )
         return {item["path"]: item["modified_time"] for item in cursor}
@@ -407,6 +416,7 @@ class LibraryFilesOperations:
 
         Returns:
             Tuple of (files list, total count)
+
         """
         # Build filter conditions
         filters = []
@@ -438,7 +448,7 @@ class LibraryFilesOperations:
                 COLLECT WITH COUNT INTO total
                 RETURN total
         """
-        count_cursor = cast(Cursor, self.db.aql.execute(count_query, bind_vars=filter_bind_vars))
+        count_cursor = cast("Cursor", self.db.aql.execute(count_query, bind_vars=filter_bind_vars))
         total = next(count_cursor, 0)
 
         # Get paginated results (needs filter + pagination bind vars)
@@ -450,7 +460,7 @@ class LibraryFilesOperations:
                 LIMIT @offset, @limit
                 RETURN file
         """
-        cursor = cast(Cursor, self.db.aql.execute(query, bind_vars=paginated_bind_vars))
+        cursor = cast("Cursor", self.db.aql.execute(query, bind_vars=paginated_bind_vars))
         files = list(cursor)
 
         return files, total
@@ -460,14 +470,15 @@ class LibraryFilesOperations:
 
         Returns:
             List of file paths
+
         """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
             FOR file IN library_files
                 RETURN file.path
-            """
+            """,
             ),
         )
         return list(cursor)
@@ -477,15 +488,16 @@ class LibraryFilesOperations:
 
         Returns:
             List of file paths that have been tagged
+
         """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
             FOR file IN library_files
                 FILTER file.tagged == 1
                 RETURN file.path
-            """
+            """,
             ),
         )
         return list(cursor)
@@ -495,6 +507,7 @@ class LibraryFilesOperations:
 
         Args:
             file_id: Document _id (e.g., "library_files/12345")
+
         """
         # Delete entity edges first (referential integrity)
         self.db.aql.execute(
@@ -523,12 +536,13 @@ class LibraryFilesOperations:
         Returns:
             Dict with: total_files, total_artists, total_albums, total_duration, total_size,
                        needs_tagging_count (files awaiting processing)
+
         """
         filter_clause = "FILTER file.library_id == @library_id" if library_id is not None else ""
         bind_vars = {"library_id": library_id} if library_id is not None else {}
 
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 f"""
             FOR file IN library_files
@@ -549,7 +563,7 @@ class LibraryFilesOperations:
                     needs_tagging_count
                 }}
             """,
-                bind_vars=cast(dict[str, Any], bind_vars),
+                bind_vars=cast("dict[str, Any]", bind_vars),
             ),
         )
         result: dict[str, Any] = next(cursor, {})
@@ -572,6 +586,7 @@ class LibraryFilesOperations:
 
         Args:
             path: File path to mark invalid
+
         """
         self.db.aql.execute(
             """
@@ -589,6 +604,7 @@ class LibraryFilesOperations:
 
         Args:
             paths: List of file paths to mark invalid
+
         """
         if not paths:
             return
@@ -610,6 +626,7 @@ class LibraryFilesOperations:
 
         Returns:
             Number of files deleted
+
         """
         if not paths:
             return 0
@@ -628,7 +645,7 @@ class LibraryFilesOperations:
 
         # Delete files and count
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
                 FOR file IN library_files
@@ -668,6 +685,7 @@ class LibraryFilesOperations:
             album: Album name (optional)
             title: Track title (optional)
             duration_seconds: Duration in seconds (optional)
+
         """
         self.db.aql.execute(
             """
@@ -684,7 +702,7 @@ class LibraryFilesOperations:
             } IN library_files
             """,
             bind_vars=cast(
-                dict[str, Any],
+                "dict[str, Any]",
                 {
                     "file_id": file_id,
                     "new_path": new_path,
@@ -707,9 +725,10 @@ class LibraryFilesOperations:
 
         Returns:
             True if library has at least one tagged file
+
         """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
             FOR file IN library_files
@@ -718,7 +737,7 @@ class LibraryFilesOperations:
                 LIMIT 1
                 RETURN 1
             """,
-                bind_vars=cast(dict[str, Any], {"library_id": library_id}),
+                bind_vars=cast("dict[str, Any]", {"library_id": library_id}),
             ),
         )
         result = list(cursor)
@@ -733,6 +752,7 @@ class LibraryFilesOperations:
 
         Returns:
             List of file dicts needing tagging
+
         """
         filters = ["file.needs_tagging == 1", "file.is_valid == 1"]
         bind_vars: dict[str, Any] = {}
@@ -748,7 +768,7 @@ class LibraryFilesOperations:
         filter_clause = " AND ".join(filters)
 
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 f"""
             FOR file IN library_files
@@ -770,9 +790,10 @@ class LibraryFilesOperations:
 
         Returns:
             File dict or None if no work available
+
         """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
                 FOR file IN library_files
@@ -781,7 +802,7 @@ class LibraryFilesOperations:
                     SORT file._key
                     LIMIT 1
                     RETURN file
-                """
+                """,
             ),
         )
         return next(iter(cursor), None)
@@ -795,6 +816,7 @@ class LibraryFilesOperations:
 
         Returns:
             List of file dicts with matching chromaprint
+
         """
         filters = ["file.chromaprint == @chromaprint"]
         bind_vars: dict[str, Any] = {"chromaprint": chromaprint}
@@ -806,7 +828,7 @@ class LibraryFilesOperations:
         filter_clause = " AND ".join(filters)
 
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 f"""
             FOR file IN library_files
@@ -824,6 +846,7 @@ class LibraryFilesOperations:
         Args:
             file_id: Document _id (e.g., "library_files/12345")
             chromaprint: Audio fingerprint hash
+
         """
         self.db.aql.execute(
             """
@@ -848,6 +871,7 @@ class LibraryFilesOperations:
         Args:
             file_id: Document _id (e.g., "library_files/12345")
             calibration_hash: Global calibration version hash from meta collection
+
         """
         self.db.aql.execute(
             """
@@ -868,9 +892,10 @@ class LibraryFilesOperations:
 
         Returns:
             List of {library_id, total_files, current_count, outdated_count}
+
         """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
                 FOR f IN library_files
@@ -886,7 +911,7 @@ class LibraryFilesOperations:
                         outdated_count: outdated
                     }
                 """,
-                bind_vars=cast(dict[str, Any], {"expected_hash": expected_hash}),
+                bind_vars=cast("dict[str, Any]", {"expected_hash": expected_hash}),
             ),
         )
         return list(cursor)
@@ -896,10 +921,11 @@ class LibraryFilesOperations:
 
         Returns:
             Dict with keys: artist_rows, album_rows (each is list of (name, count) tuples)
+
         """
         # Count artists
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
             FOR file IN library_files
@@ -909,14 +935,14 @@ class LibraryFilesOperations:
                 LIMIT @limit
                 RETURN [artist, count]
             """,
-                bind_vars=cast(dict[str, Any], {"limit": limit}),
+                bind_vars=cast("dict[str, Any]", {"limit": limit}),
             ),
         )
         artist_rows = [tuple(row) for row in cursor]
 
         # Count albums
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
             FOR file IN library_files
@@ -926,7 +952,7 @@ class LibraryFilesOperations:
                 LIMIT @limit
                 RETURN [album, count]
             """,
-                bind_vars=cast(dict[str, Any], {"limit": limit}),
+                bind_vars=cast("dict[str, Any]", {"limit": limit}),
             ),
         )
         album_rows = [tuple(row) for row in cursor]
@@ -951,6 +977,7 @@ class LibraryFilesOperations:
 
         Returns:
             List of track dicts with path, title, artist, album
+
         """
         from pathlib import Path
 
@@ -967,7 +994,7 @@ class LibraryFilesOperations:
         limit_clause = f"LIMIT {limit}" if limit else ""
 
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 f"""
             FOR file IN library_files
@@ -981,7 +1008,7 @@ class LibraryFilesOperations:
                     album: file.album
                 }}
             """,
-                bind_vars=cast(dict[str, Any], {"file_ids": list(file_ids)}),
+                bind_vars=cast("dict[str, Any]", {"file_ids": list(file_ids)}),
             ),
         )
 
@@ -993,7 +1020,7 @@ class LibraryFilesOperations:
                     "title": row["title"] if row["title"] else Path(row["path"]).stem,
                     "artist": row["artist"] if row["artist"] else "Unknown Artist",
                     "album": row["album"] if row["album"] else "Unknown Album",
-                }
+                },
             )
 
         return results
@@ -1025,6 +1052,7 @@ class LibraryFilesOperations:
 
         Returns:
             Tuple of (files list with tags, total count)
+
         """
         # Build filter conditions
         filters = []
@@ -1040,7 +1068,7 @@ class LibraryFilesOperations:
                     LIMIT 1
                     RETURN 1
             ) > 0
-            """
+            """,
             )
         elif tag_key:
             filters.append(
@@ -1053,14 +1081,14 @@ class LibraryFilesOperations:
                     LIMIT 1
                     RETURN 1
             ) > 0
-            """
+            """,
             )
 
         if query_text:
             filters.append(
                 "(LIKE(file.artist, @q_pattern, true) OR "
                 "LIKE(file.album, @q_pattern, true) OR "
-                "LIKE(file.title, @q_pattern, true))"
+                "LIKE(file.title, @q_pattern, true))",
             )
 
         if artist:
@@ -1089,7 +1117,7 @@ class LibraryFilesOperations:
 
         # Get total count (without limit/offset)
         count_cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 f"""
             FOR file IN library_files
@@ -1097,7 +1125,7 @@ class LibraryFilesOperations:
                 COLLECT WITH COUNT INTO total
                 RETURN total
             """,
-                bind_vars=cast(dict[str, Any], filter_bind_vars),
+                bind_vars=cast("dict[str, Any]", filter_bind_vars),
             ),
         )
         total = next(count_cursor, 0)
@@ -1107,7 +1135,7 @@ class LibraryFilesOperations:
 
         # Get files with tags (using unified schema)
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 f"""
             FOR file IN library_files
@@ -1128,7 +1156,7 @@ class LibraryFilesOperations:
                 )
                 RETURN MERGE(file, {{ tags: tags }})
             """,
-                bind_vars=cast(dict[str, Any], bind_vars),
+                bind_vars=cast("dict[str, Any]", bind_vars),
             ),
         )
 
@@ -1151,6 +1179,7 @@ class LibraryFilesOperations:
 
         Note: ArangoDB UPSERT does not reliably distinguish inserted vs updated.
         Workflows must not depend on this split for correctness.
+
         """
         if not file_docs:
             return 0
@@ -1187,9 +1216,10 @@ class LibraryFilesOperations:
 
         Files with last_seen_scan_id != scan_id are assumed deleted.
         Only call this for FULL library scans (not targeted scans).
+
         """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
                 FOR file IN library_files
@@ -1222,6 +1252,7 @@ class LibraryFilesOperations:
 
         Files with last_seen_scan_id != scan_id are assumed deleted.
         Only call this for FULL library scans (not targeted scans).
+
         """
         # Delete edges first
         self.db.aql.execute(
@@ -1241,7 +1272,7 @@ class LibraryFilesOperations:
 
         # Delete files and count
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
                 FOR file IN library_files
@@ -1267,9 +1298,10 @@ class LibraryFilesOperations:
         Returns:
             Dict mapping library_id to {"file_count": int, "folder_count": int}
             Only includes valid files (is_valid == true or 1).
+
         """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
                 FOR file IN library_files
@@ -1285,7 +1317,7 @@ class LibraryFilesOperations:
                         file_count: file_count,
                         folder_count: LENGTH(folders)
                     }
-                """
+                """,
             ),
         )
 
@@ -1330,6 +1362,7 @@ class LibraryFilesOperations:
 
         Returns:
             List of claimed file documents
+
         """
         now = now_ms().value
         lease_expiry = now - lease_ms
@@ -1345,7 +1378,7 @@ class LibraryFilesOperations:
             """
 
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 f"""
                 LET now = @now
@@ -1384,7 +1417,7 @@ class LibraryFilesOperations:
                     RETURN NEW
                 """,
                 bind_vars=cast(
-                    dict[str, Any],
+                    "dict[str, Any]",
                     {
                         "library_id": library_id,
                         "target_mode": target_mode,
@@ -1413,6 +1446,7 @@ class LibraryFilesOperations:
             file_key: Document _key or _id
             mode: Write mode used ("none", "minimal", "full")
             calibration_hash: Calibration hash at time of write
+
         """
         # Normalize to just _key if full _id provided
         if file_key.startswith("library_files/"):
@@ -1429,7 +1463,7 @@ class LibraryFilesOperations:
             } IN library_files
             """,
             bind_vars=cast(
-                dict[str, Any],
+                "dict[str, Any]",
                 {
                     "file_key": file_key,
                     "mode": mode,
@@ -1446,6 +1480,7 @@ class LibraryFilesOperations:
 
         Args:
             file_key: Document _key or _id
+
         """
         # Normalize to just _key if full _id provided
         if file_key.startswith("library_files/"):
@@ -1476,6 +1511,7 @@ class LibraryFilesOperations:
 
         Returns:
             Number of files needing reconciliation
+
         """
         calibration_condition = ""
         if calibration_hash and target_mode in ("minimal", "full"):
@@ -1484,7 +1520,7 @@ class LibraryFilesOperations:
             """
 
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 f"""
                 FOR f IN library_files
@@ -1502,7 +1538,7 @@ class LibraryFilesOperations:
                     RETURN count
                 """,
                 bind_vars=cast(
-                    dict[str, Any],
+                    "dict[str, Any]",
                     {
                         "library_id": library_id,
                         "target_mode": target_mode,
@@ -1522,9 +1558,10 @@ class LibraryFilesOperations:
 
         Returns:
             Total count of files with at least one tag in namespace
+
         """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
                 FOR edge IN song_tag_edges
@@ -1533,7 +1570,7 @@ class LibraryFilesOperations:
                   COLLECT file_id = edge._from
                   RETURN 1
                 """,
-                bind_vars=cast(dict[str, Any], {"namespace": namespace}),
+                bind_vars=cast("dict[str, Any]", {"namespace": namespace}),
             ),
         )
         if cursor:
@@ -1547,6 +1584,7 @@ class LibraryFilesOperations:
         Args:
             file_key: Document _key or _id
             has_namespace: Whether file has essentia:* namespace tags
+
         """
         if file_key.startswith("library_files/"):
             file_key = file_key.split("/")[1]
@@ -1572,6 +1610,7 @@ class LibraryFilesOperations:
         Args:
             file_key: Document _key or _id
             mode: Inferred mode ("none", "minimal", "full", "unknown")
+
         """
         if file_key.startswith("library_files/"):
             file_key = file_key.split("/")[1]

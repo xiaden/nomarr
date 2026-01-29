@@ -1,5 +1,4 @@
-"""
-Config API types - Pydantic models for Config domain.
+"""Config API types - Pydantic models for Config domain.
 
 External API contracts for configuration endpoints.
 These models are thin adapters around DTOs from helpers/dto/config_dto.py.
@@ -13,9 +12,12 @@ Architecture:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from pydantic import BaseModel, ConfigDict, Field
 
-from nomarr.helpers.dto.config_dto import WebConfigResult
+if TYPE_CHECKING:
+    from nomarr.helpers.dto.config_dto import WebConfigResult
 
 # ──────────────────────────────────────────────────────────────────────
 # Response Models
@@ -40,6 +42,7 @@ class ConfigResponse(BaseModel):
 
         Returns:
             ConfigResponse: Merged config with all fields flattened
+
         """
         # Merge config dict with internal info fields
         merged = {

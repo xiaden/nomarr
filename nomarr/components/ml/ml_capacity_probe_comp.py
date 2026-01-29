@@ -1,5 +1,4 @@
-"""
-ML Capacity Probe component for GPU/CPU adaptive resource management.
+"""ML Capacity Probe component for GPU/CPU adaptive resource management.
 
 Performs one-time measurement of per-worker resource consumption for admission control.
 Runs once per model_set_hash (not per-worker, not on every startup).
@@ -41,8 +40,7 @@ CONSERVATIVE_WORKER_RAM_MB = 4096  # Default if probe fails
 
 @dataclass
 class CapacityEstimate:
-    """
-    Result from ML capacity probe.
+    """Result from ML capacity probe.
 
     Attributes:
         model_set_hash: Hash identifying the model configuration
@@ -50,6 +48,7 @@ class CapacityEstimate:
         estimated_worker_ram_mb: RAM used by worker (heads + overhead)
         gpu_capable: True if GPU is available
         is_conservative: True if using fallback values (probe failed/timed out)
+
     """
 
     model_set_hash: str
@@ -60,8 +59,7 @@ class CapacityEstimate:
 
 
 def compute_model_set_hash(models_dir: str) -> str:
-    """
-    Compute a hash of the model set for capacity probe invalidation.
+    """Compute a hash of the model set for capacity probe invalidation.
 
     The hash changes when:
     - Model files are added/removed
@@ -72,6 +70,7 @@ def compute_model_set_hash(models_dir: str) -> str:
 
     Returns:
         Hex digest hash of the model set
+
     """
     hasher = hashlib.sha256()
 
@@ -98,8 +97,7 @@ def get_or_run_capacity_probe(
     worker_id: str,
     ram_detection_mode: str = "auto",
 ) -> CapacityEstimate:
-    """
-    Get existing capacity estimate or run a new probe.
+    """Get existing capacity estimate or run a new probe.
 
     Per GPU_REFACTOR_PLAN.md Section 7:
     - Runs once per model_set_hash
@@ -114,6 +112,7 @@ def get_or_run_capacity_probe(
 
     Returns:
         CapacityEstimate with probe results
+
     """
     model_set_hash = compute_model_set_hash(models_dir)
     gpu_capable = check_nvidia_gpu_capability()
@@ -170,8 +169,7 @@ def _run_capacity_probe(
     gpu_capable: bool,
     ram_detection_mode: str,
 ) -> CapacityEstimate:
-    """
-    Execute the actual capacity probe.
+    """Execute the actual capacity probe.
 
     Measures resource usage by processing one file with a backbone model.
 
@@ -185,6 +183,7 @@ def _run_capacity_probe(
 
     Returns:
         CapacityEstimate with measured values
+
     """
     probe_start = internal_s()
 
@@ -278,7 +277,7 @@ def _run_capacity_probe(
         )
 
     except Exception as e:
-        logger.error("[ml_capacity_probe] Probe failed: %s", e)
+        logger.exception("[ml_capacity_probe] Probe failed: %s", e)
         # Release lock on failure so another worker can try
         db.ml_capacity.release_probe_lock(model_set_hash)
 
@@ -297,8 +296,7 @@ def _wait_for_probe_completion(
     model_set_hash: str,
     gpu_capable: bool,
 ) -> CapacityEstimate:
-    """
-    Wait for another worker's probe to complete.
+    """Wait for another worker's probe to complete.
 
     Polls the database at PROBE_POLL_INTERVAL_S until completion or timeout.
 
@@ -309,6 +307,7 @@ def _wait_for_probe_completion(
 
     Returns:
         CapacityEstimate with results or conservative fallback
+
     """
     start_time = internal_s().value
     deadline = start_time + PROBE_TIMEOUT_S
@@ -364,12 +363,12 @@ def _wait_for_probe_completion(
 
 
 def invalidate_capacity_estimate(db: Database, models_dir: str) -> None:
-    """
-    Invalidate cached capacity estimate (e.g., when model set changes).
+    """Invalidate cached capacity estimate (e.g., when model set changes).
 
     Args:
         db: Database instance
         models_dir: Path to models directory
+
     """
     model_set_hash = compute_model_set_hash(models_dir)
     db.ml_capacity.delete_capacity_estimate(model_set_hash)

@@ -27,6 +27,7 @@ def rebuild_all_metadata_caches(db: "Database", limit: int | None = None) -> dic
 
     Returns:
         Dict with "songs_processed" count
+
     """
     logger.info("Starting metadata cache rebuild (limit=%s)", limit)
 

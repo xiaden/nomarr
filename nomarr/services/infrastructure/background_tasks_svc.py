@@ -12,8 +12,7 @@ MAX_TASK_RESULTS = 100
 
 
 class BackgroundTaskService:
-    """
-    Manages background tasks using threading with same DB connection.
+    """Manages background tasks using threading with same DB connection.
 
     This service is designed for fast, reliable operations (like library scanning)
     that don't need the isolation of separate worker processes.
@@ -58,8 +57,7 @@ class BackgroundTaskService:
         *args: Any,
         **kwargs: Any,
     ) -> str:
-        """
-        Start a background task and return task_id.
+        """Start a background task and return task_id.
 
         Args:
             task_id: Unique identifier for the task
@@ -72,6 +70,7 @@ class BackgroundTaskService:
 
         Raises:
             Exception: Re-raises task exceptions to crash container (loud failure)
+
         """
 
         def wrapper() -> None:
@@ -110,8 +109,7 @@ class BackgroundTaskService:
         return task_id
 
     def get_task_status(self, task_id: str) -> dict[str, Any] | None:
-        """
-        Get task status (running, complete, error).
+        """Get task status (running, complete, error).
 
         Args:
             task_id: Task identifier
@@ -119,29 +117,30 @@ class BackgroundTaskService:
         Returns:
             Status dict with keys: status, result, error
             None if task not found
+
         """
         with self._lock:
             return self._task_results.get(task_id)
 
     def list_tasks(self) -> list[str]:
-        """
-        List all task IDs in order (oldest first).
+        """List all task IDs in order (oldest first).
 
         Returns:
             List of task identifiers
+
         """
         with self._lock:
             return list(self._task_order)
 
     def cleanup_completed_tasks(self, max_count: int = 10) -> int:
-        """
-        Remove oldest completed/errored tasks.
+        """Remove oldest completed/errored tasks.
 
         Args:
             max_count: Maximum number of tasks to remove per call
 
         Returns:
             Number of tasks cleaned up
+
         """
         with self._lock:
             removed = 0

@@ -1,5 +1,4 @@
-"""
-Architecture and code quality tests.
+"""Architecture and code quality tests.
 
 These tests enforce architectural boundaries and code patterns through static analysis.
 They should be fast, deterministic, and safe to run on every commit.
@@ -31,8 +30,7 @@ NOMARR_DIR = PROJECT_ROOT / "nomarr"
 
 
 def find_python_files(directory: Path, exclude_dirs: set[str] | None = None) -> Generator[Path, None, None]:
-    """
-    Find all Python files in a directory, excluding specified subdirectories.
+    """Find all Python files in a directory, excluding specified subdirectories.
 
     Args:
         directory: Directory to search
@@ -40,6 +38,7 @@ def find_python_files(directory: Path, exclude_dirs: set[str] | None = None) -> 
 
     Yields:
         Path objects for Python files
+
     """
     exclude_dirs = exclude_dirs or {"__pycache__", "migrations", ".pytest_cache"}
 
@@ -51,8 +50,7 @@ def find_python_files(directory: Path, exclude_dirs: set[str] | None = None) -> 
 
 
 def find_import_violations(file_path: Path, forbidden_imports: list[str]) -> list[tuple[int, str]]:
-    """
-    Find lines that import forbidden modules.
+    """Find lines that import forbidden modules.
 
     Args:
         file_path: Path to Python file
@@ -60,6 +58,7 @@ def find_import_violations(file_path: Path, forbidden_imports: list[str]) -> lis
 
     Returns:
         List of (line_number, line_content) tuples for violations
+
     """
     violations = []
 
@@ -96,8 +95,7 @@ def find_import_violations(file_path: Path, forbidden_imports: list[str]) -> lis
 
 @pytest.mark.code_smell
 def test_no_raw_db_execute_outside_persistence():
-    """
-    Test 1: Ensure raw SQL (db.conn.execute) is only used in persistence layer.
+    """Test 1: Ensure raw SQL (db.conn.execute) is only used in persistence layer.
 
     Raw SQL queries should be encapsulated in the persistence layer for:
     - Maintainability (centralized SQL changes)
@@ -134,8 +132,7 @@ def test_no_raw_db_execute_outside_persistence():
 
 
 def test_workflows_do_not_import_services_or_app():
-    """
-    Test 2: Ensure workflows don't import services or app.
+    """Test 2: Ensure workflows don't import services or app.
 
     Workflows should be pure domain operations that:
     - Accept dependencies as parameters (dependency injection)
@@ -169,8 +166,7 @@ def test_workflows_do_not_import_services_or_app():
 
 
 def test_helpers_do_not_import_upwards():
-    """
-    Test 3: Ensure helpers don't import upward layers.
+    """Test 3: Ensure helpers don't import upward layers.
 
     Helpers should be pure utilities that only depend on:
     - Standard library
@@ -213,8 +209,7 @@ def test_helpers_do_not_import_upwards():
 
 
 def test_leaf_slices_do_not_depend_on_higher_layers():
-    """
-    Test 4: Ensure leaf domain slices don't import orchestration layers.
+    """Test 4: Ensure leaf domain slices don't import orchestration layers.
 
     Leaf slices (ml, tagging, analytics) should be independent domain logic:
     - Pure computation and transformations
@@ -258,8 +253,7 @@ def test_leaf_slices_do_not_depend_on_higher_layers():
 
 
 def test_no_essentia_imports_outside_backend():
-    """
-    Test 5: Ensure Essentia is ONLY imported in components/ml/ml_backend_essentia_comp.py.
+    """Test 5: Ensure Essentia is ONLY imported in components/ml/ml_backend_essentia_comp.py.
 
     Essentia is an optional dependency and must be completely isolated:
     - ONLY components/ml/ml_backend_essentia_comp.py may import essentia/essentia_tensorflow
@@ -314,8 +308,7 @@ def test_no_essentia_imports_outside_backend():
 
 
 def test_persistence_layer_structure():
-    """
-    Sanity check: Verify persistence layer exists and has expected structure.
+    """Sanity check: Verify persistence layer exists and has expected structure.
 
     This test documents the expected structure of the persistence layer.
     """
@@ -332,8 +325,7 @@ def test_persistence_layer_structure():
 
 
 def test_workflows_layer_structure():
-    """
-    Sanity check: Verify workflows layer exists and follows naming convention.
+    """Sanity check: Verify workflows layer exists and follows naming convention.
 
     Workflows should be named as verb_object.py (e.g., process_file.py, scan_library.py)
     """
@@ -353,8 +345,7 @@ def test_workflows_layer_structure():
 
 
 def test_services_do_not_import_interfaces():
-    """
-    Additional check: Ensure services don't import interfaces.
+    """Additional check: Ensure services don't import interfaces.
 
     Services should orchestrate workflows and domain logic, but:
     - Must not import interfaces (presentation layer)

@@ -74,27 +74,27 @@ class InternalSeconds:
 
 
 def now_ms() -> Milliseconds:
-    """
-    Get current wall-clock timestamp in milliseconds since epoch.
+    """Get current wall-clock timestamp in milliseconds since epoch.
 
     Use for: Database timestamps, heartbeats, user-facing "when" information.
     Affected by: NTP adjustments, DST changes, manual clock changes.
 
     Returns:
         Current wall-clock time as integer milliseconds (type-safe)
+
     """
     return Milliseconds(time.time_ns() // NS_PER_MS)
 
 
 def now_s() -> Seconds:
-    """
-    Get current wall-clock timestamp in seconds since epoch.
+    """Get current wall-clock timestamp in seconds since epoch.
 
     Use for: Database timestamps, heartbeats, user-facing "when" information.
     Affected by: NTP adjustments, DST changes, manual clock changes.
 
     Returns:
         Current wall-clock time as integer seconds (type-safe)
+
     """
     return Seconds(time.time_ns() // NS_PER_SECOND)
 
@@ -103,8 +103,7 @@ def now_s() -> Seconds:
 
 
 def internal_ms() -> InternalMilliseconds:
-    """
-    Get current monotonic time in milliseconds.
+    """Get current monotonic time in milliseconds.
 
     Use for: TTL caching, timeouts, backoff, elapsed time, staleness detection.
     Immune to: NTP adjustments, DST changes, manual clock changes.
@@ -116,13 +115,13 @@ def internal_ms() -> InternalMilliseconds:
         Only meaningful for computing intervals (internal_ms() - previous_internal_ms()).
         Absolute value has no meaning and should not be persisted.
         Cannot be mixed with wall-clock Milliseconds (enforced by type system).
+
     """
     return InternalMilliseconds(time.monotonic_ns() // NS_PER_MS)
 
 
 def internal_s() -> InternalSeconds:
-    """
-    Get current monotonic time in seconds.
+    """Get current monotonic time in seconds.
 
     Use for: TTL caching, timeouts, backoff, elapsed time, staleness detection.
     Immune to: NTP adjustments, DST changes, manual clock changes.
@@ -134,6 +133,7 @@ def internal_s() -> InternalSeconds:
         Only meaningful for computing intervals (internal_s() - previous_internal_s()).
         Absolute value has no meaning and should not be persisted.
         Cannot be mixed with wall-clock Seconds (enforced by type system).
+
     """
     return InternalSeconds(time.monotonic_ns() // NS_PER_SECOND)
 

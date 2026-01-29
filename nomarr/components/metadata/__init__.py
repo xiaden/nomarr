@@ -1,6 +1,4 @@
-"""
-Metadata package.
-"""
+"""Metadata package."""
 
 from .entity_cleanup_comp import cleanup_orphaned_tags, get_orphaned_tag_count
 from .entity_keys_comp import (

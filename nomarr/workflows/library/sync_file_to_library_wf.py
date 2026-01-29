@@ -28,8 +28,7 @@ def sync_file_to_library(
     tagged_version: str | None,
     library_id: str | None,
 ) -> None:
-    """
-    Sync a file's metadata and tags to the library database.
+    """Sync a file's metadata and tags to the library database.
 
     This is the canonical workflow for syncing file state to the database,
     used by both the library scanner and the processor after tagging.
@@ -52,6 +51,7 @@ def sync_file_to_library(
 
     Raises:
         Logs warnings on failure but does not raise exceptions
+
     """
     try:
         # Resolve library_id if not provided
@@ -72,7 +72,7 @@ def sync_file_to_library(
         library_path = build_library_path_from_input(file_path, db)
         if not library_path.is_valid():
             logging.warning(
-                f"[sync_file_to_library] Invalid path ({library_path.status}): {file_path} - {library_path.reason}"
+                f"[sync_file_to_library] Invalid path ({library_path.status}): {file_path} - {library_path.reason}",
             )
             return
 

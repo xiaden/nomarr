@@ -1,5 +1,4 @@
-"""
-Components layer - heavy domain logic modules.
+"""Components layer - heavy domain logic modules.
 
 This layer contains "thick" domain modules that implement the heavy lifting:
 - Complex loops, I/O operations, algorithmic logic

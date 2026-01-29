@@ -79,8 +79,7 @@ _ALLOWED_CONFIG_KEYS = {
 
 
 class ConfigService:
-    """
-    Service for loading and caching application configuration.
+    """Service for loading and caching application configuration.
 
     Loads config from multiple sources (defaults → YAML → env → DB),
     caches the result, and provides reload capability.
@@ -97,22 +96,21 @@ class ConfigService:
         self._logger = logging.getLogger(__name__)
 
     def get_config(self, force_reload: bool = False) -> ConfigResult:
-        """
-        Get the composed configuration.
+        """Get the composed configuration.
 
         Args:
             force_reload: If True, bypass cache and reload from sources
 
         Returns:
             ConfigResult wrapping complete configuration dict
+
         """
         if self._config is None or force_reload:
             self._config = self._compose()
         return ConfigResult(config=self._config)
 
     def get(self, key_path: str, default: Any = None) -> Any:
-        """
-        Get a config value by dotted path.
+        """Get a config value by dotted path.
 
         Args:
             key_path: Dotted path like "namespace" or "worker.poll_interval"
@@ -126,6 +124,7 @@ class ConfigService:
             'essentia'
             >>> service.get("worker.poll_interval", 2)
             2
+
         """
         cfg = self.get_config()
         node: Any = cfg.config
@@ -136,8 +135,7 @@ class ConfigService:
         return node
 
     def set_config_value(self, key: str, value: str, db_path: str | None = None) -> None:
-        """
-        Store a user-editable config value in DB meta.
+        """Store a user-editable config value in DB meta.
 
         This persists configuration changes made via web UI. The value is stored
         with a 'config_' prefix and will be picked up on next reload/restart.
@@ -150,12 +148,14 @@ class ConfigService:
         Note:
             Changes take effect after reload() or application restart.
             Caller is responsible for validating that key is editable.
+
         """
         if db_path is None:
             db_path = self.get("db_path")
 
         if not db_path:
-            raise ValueError("Cannot set config value: no db_path available")
+            msg = "Cannot set config value: no db_path available"
+            raise ValueError(msg)
 
         # Create temporary DB connection for write
         db = Database(db_path)
@@ -163,13 +163,13 @@ class ConfigService:
         self._logger.info(f"[ConfigService] Set config_{key} = {value}")
 
     def get_internal_info(self) -> GetInternalInfoResult:
-        """
-        Get internal (read-only) configuration constants.
+        """Get internal (read-only) configuration constants.
 
         These are operational parameters that are not user-configurable.
 
         Returns:
             GetInternalInfoResult with internal constant values
+
         """
         return GetInternalInfoResult(
             namespace=INTERNAL_NAMESPACE,
@@ -182,8 +182,7 @@ class ConfigService:
         )
 
     def get_config_for_web(self, worker_service: Any | None = None) -> WebConfigResult:
-        """
-        Get complete configuration for web UI endpoint.
+        """Get complete configuration for web UI endpoint.
 
         Combines user-editable config, internal constants, and live worker status.
         This is a facade method for the web config endpoint.
@@ -193,6 +192,7 @@ class ConfigService:
 
         Returns:
             WebConfigResult with complete config info
+
         """
         config_dto = self.get_config()
         internal_info = self.get_internal_info()
@@ -201,8 +201,7 @@ class ConfigService:
         return WebConfigResult(config=config_dto.config, internal_info=internal_info, worker_enabled=worker_enabled)
 
     def get_worker_count(self, kind: Literal["tagger"] = "tagger") -> int:
-        """
-        Get worker count for the tagger worker pool.
+        """Get worker count for the tagger worker pool.
 
         Args:
             kind: Worker pool type (only "tagger" is supported)
@@ -213,6 +212,7 @@ class ConfigService:
         Example:
             >>> config_service.get_worker_count("tagger")
             2  # from tagger_worker_count
+
         """
         cfg = self.get_config().config
 
@@ -231,15 +231,14 @@ class ConfigService:
     # ----------------------------------------------------------------------
 
     def _compose(self, overrides: dict[str, Any] | None = None) -> dict[str, Any]:
-        """
-        Load final configuration from:
+        """Load final configuration from:
           1) Built-in defaults
           2) /etc/nomarr/config.yaml  (if present)
           3) /app/config/config.yaml or ./config/config.yaml
           4) $CONFIG_PATH (if set)
           5) overrides dict passed in
           6) Environment variables (TAGGER_* / NOMARR_TAGGER_*)
-          7) Database meta table (config_* keys, user customizations via web UI)
+          7) Database meta table (config_* keys, user customizations via web UI).
 
         Returns merged config as dict.
         """
@@ -285,8 +284,7 @@ class ConfigService:
         return cfg
 
     def _default_config(self) -> dict[str, Any]:
-        """
-        Base defaults for USER-CONFIGURABLE settings only.
+        """Base defaults for USER-CONFIGURABLE settings only.
 
         These settings are exposed to users via config.yaml,
         environment variables, or database overrides.
@@ -317,9 +315,7 @@ class ConfigService:
         }
 
     def _deep_merge(self, base_dict: dict[str, Any], override_dict: dict[str, Any]) -> dict[str, Any]:
-        """
-        Recursively merge dict b into dict a (mutates a, returns it).
-        """
+        """Recursively merge dict b into dict a (mutates a, returns it)."""
         for key, value in override_dict.items():
             if isinstance(value, dict) and isinstance(base_dict.get(key), dict):
                 self._deep_merge(base_dict[key], value)
@@ -328,9 +324,7 @@ class ConfigService:
         return base_dict
 
     def _load_yaml(self, path: str) -> dict[str, Any]:
-        """
-        Load a YAML file; returns {} if not found or invalid.
-        """
+        """Load a YAML file; returns {} if not found or invalid."""
         if not path or not os.path.exists(path):
             return {}
         try:
@@ -340,8 +334,7 @@ class ConfigService:
             return {}
 
     def _load_db_config(self, db_path: str | None) -> dict[str, Any]:
-        """
-        Load configuration overrides from database meta table.
+        """Load configuration overrides from database meta table.
 
         Only allows overrides for the 11 user-configurable keys.
         All other config_* keys in the DB are ignored (internal constants
@@ -354,8 +347,8 @@ class ConfigService:
 
         Returns:
             dict: Config overrides from DB meta table (empty if unavailable)
-        """
 
+        """
         if not db_path:
             self._logger.debug("DB config skipped: no db_path provided")
             return {}
@@ -411,8 +404,7 @@ class ConfigService:
             return {}
 
     def _apply_env_overrides(self, cfg: dict[str, Any]) -> None:
-        """
-        Support environment overrides for the 12 user-configurable keys only.
+        """Support environment overrides for the 12 user-configurable keys only.
 
         Supported formats:
           NOMARR_MODELS_DIR=/custom/path
@@ -432,7 +424,7 @@ class ConfigService:
         """
         for env_key, env_value in os.environ.items():
             # Support NOMARR_* prefix (primary), TAGGER_* and AUTOTAG_* (legacy)
-            if not (env_key.startswith("NOMARR_") or env_key.startswith("TAGGER_") or env_key.startswith("AUTOTAG_")):
+            if not (env_key.startswith(("NOMARR_", "TAGGER_", "AUTOTAG_"))):
                 continue
 
             # Normalize to lowercase key name
@@ -459,8 +451,7 @@ class ConfigService:
                 continue
 
     def make_processor_config(self) -> ProcessorConfig:
-        """
-        Build a ProcessorConfig from the current configuration.
+        """Build a ProcessorConfig from the current configuration.
 
         This is the boundary where we extract and validate processor-specific
         settings from the raw config dict, combining user-configurable settings
@@ -468,6 +459,7 @@ class ConfigService:
 
         Returns:
             ProcessorConfig instance ready for injection into process_file()
+
         """
         from nomarr.components.ml.ml_discovery_comp import compute_model_suite_hash
         from nomarr.helpers.dto.processing_dto import ProcessorConfig

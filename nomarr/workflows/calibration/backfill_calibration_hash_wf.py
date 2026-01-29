@@ -58,6 +58,7 @@ def backfill_calibration_hashes_wf(
             "strategy": "left_null" | "set_to_current",
             "global_version": str | None,
         }
+
     """
     logger.info("[backfill] Starting calibration_hash backfill analysis...")
 

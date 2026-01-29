@@ -1,6 +1,4 @@
-"""
-Commands package.
-"""
+"""Commands package."""
 
 from .admin_reset_cli import cmd_admin_reset
 from .cache_refresh_cli import cmd_cache_refresh

@@ -1,5 +1,4 @@
-"""
-Locate symbol definitions by name across the codebase.
+"""Locate symbol definitions by name across the codebase.
 
 Searches all Python files in nomarr/ for classes, functions, or variables
 matching the given name. Supports partially qualified names for scoped search.
@@ -12,8 +11,7 @@ from typing import Any
 
 
 def locate_symbol(symbol_name: str) -> dict[str, Any]:
-    """
-    Find all definitions of a symbol by name.
+    """Find all definitions of a symbol by name.
 
     Args:
         symbol_name: Symbol name to search for. Can be:
@@ -33,6 +31,7 @@ def locate_symbol(symbol_name: str) -> dict[str, Any]:
             - qualified_name: Full dotted name for use with get_source
         - total_matches: Count of matches found
         - warning: Present if > 5 matches (symbol too common, simplified output)
+
     """
     # Parse partially qualified names
     parts = symbol_name.split(".")
@@ -127,8 +126,7 @@ def locate_symbol(symbol_name: str) -> dict[str, Any]:
 def _search_tree(
     tree: ast.AST, symbol_name: str, file_path: Path, root: Path, parent_filter: str | None = None
 ) -> list[dict]:
-    """
-    Search AST for symbols matching name.
+    """Search AST for symbols matching name.
 
     Args:
         tree: AST to search
@@ -139,6 +137,7 @@ def _search_tree(
 
     Returns:
         List of match dicts with file, line, length, kind, context, qualified_name.
+
     """
     matches = []
     relative_path = file_path.relative_to(root).as_posix()

@@ -9,8 +9,7 @@ if TYPE_CHECKING:
 
 
 def cleanup_orphaned_tags(db: Database) -> int:
-    """
-    Remove tags that are no longer referenced by any song.
+    """Remove tags that are no longer referenced by any song.
 
     This should be run periodically or after bulk delete operations to reclaim space.
 
@@ -19,18 +18,19 @@ def cleanup_orphaned_tags(db: Database) -> int:
 
     Returns:
         Number of orphaned tags deleted
+
     """
     return db.tags.cleanup_orphaned_tags()
 
 
 def get_orphaned_tag_count(db: Database) -> int:
-    """
-    Count tags that are not referenced by any song.
+    """Count tags that are not referenced by any song.
 
     Args:
         db: Database instance
 
     Returns:
         Number of orphaned tags
+
     """
     return db.tags.get_orphaned_tag_count()

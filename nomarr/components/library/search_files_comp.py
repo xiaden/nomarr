@@ -1,5 +1,4 @@
-"""
-Library file search component.
+"""Library file search component.
 
 Provides search functionality for library files with tag filtering.
 """
@@ -23,8 +22,7 @@ def search_library_files(
     limit: int = 100,
     offset: int = 0,
 ) -> tuple[list[dict[str, Any]], int]:
-    """
-    Search library files with optional filtering.
+    """Search library files with optional filtering.
 
     Args:
         db: Database instance
@@ -39,6 +37,7 @@ def search_library_files(
 
     Returns:
         Tuple of (files list with tags, total count)
+
     """
     # Use joined queries for efficient file+tag retrieval
     return db.library_files.search_library_files_with_tags(
@@ -54,8 +53,7 @@ def search_library_files(
 
 
 def get_unique_tag_keys(db: Database, nomarr_only: bool = False) -> list[str]:
-    """
-    Get list of unique tag keys (rel values).
+    """Get list of unique tag keys (rel values).
 
     Args:
         db: Database instance
@@ -63,13 +61,13 @@ def get_unique_tag_keys(db: Database, nomarr_only: bool = False) -> list[str]:
 
     Returns:
         List of unique tag keys (rel values)
+
     """
     return db.tags.get_unique_rels(nomarr_only=nomarr_only)
 
 
 def get_unique_tag_values(db: Database, tag_key: str, nomarr_only: bool = False) -> list[str]:
-    """
-    Get list of unique values for a specific tag key (rel).
+    """Get list of unique values for a specific tag key (rel).
 
     Args:
         db: Database instance
@@ -78,6 +76,7 @@ def get_unique_tag_values(db: Database, tag_key: str, nomarr_only: bool = False)
 
     Returns:
         List of unique tag values
+
     """
     # Get all tags for this rel (limited to reasonable count)
     tags = db.tags.list_tags_by_rel(tag_key, limit=10000)

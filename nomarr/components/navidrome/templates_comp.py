@@ -1,5 +1,4 @@
-"""
-Navidrome smart playlist templates component.
+"""Navidrome smart playlist templates component.
 
 Predefined Smart Playlist templates for Navidrome integration.
 These templates provide common playlist configurations that users can
@@ -47,7 +46,7 @@ def get_mood_templates() -> dict[str, dict[str, Any]]:
                         {"contains": {"mood_strict": "calm"}},
                         {"contains": {"mood_regular": "relaxed"}},
                         {"contains": {"mood_regular": "calm"}},
-                    ]
+                    ],
                 },
                 {"lt": {"engagement": 0.6}},
             ],
@@ -63,7 +62,7 @@ def get_mood_templates() -> dict[str, dict[str, Any]]:
                         {"contains": {"mood_strict": "aggressive"}},
                         {"contains": {"mood_strict": "intense"}},
                         {"contains": {"mood_regular": "aggressive"}},
-                    ]
+                    ],
                 },
                 {"gt": {"engagement": 0.6}},
             ],
@@ -171,7 +170,7 @@ def get_mixed_templates() -> dict[str, dict[str, Any]]:
                         {"contains": {"mood_strict": "happy"}},
                         {"contains": {"mood_strict": "energetic"}},
                         {"contains": {"mood_regular": "happy"}},
-                    ]
+                    ],
                 },
                 {"contains": {"danceability": "danceable"}},
                 {"gt": {"engagement": 0.6}},
@@ -188,7 +187,7 @@ def get_mixed_templates() -> dict[str, dict[str, Any]]:
                         {"contains": {"mood_strict": "relaxed"}},
                         {"contains": {"mood_strict": "calm"}},
                         {"contains": {"mood_regular": "calm"}},
-                    ]
+                    ],
                 },
                 {"contains": {"nsynth_acoustic_electronic": "acoustic"}},
             ],
@@ -203,7 +202,7 @@ def get_mixed_templates() -> dict[str, dict[str, Any]]:
                     "any": [
                         {"contains": {"mood_strict": "happy"}},
                         {"contains": {"mood_regular": "happy"}},
-                    ]
+                    ],
                 },
                 {"contains": {"nsynth_acoustic_electronic": "electronic"}},
                 {"gt": {"engagement": 0.5}},
@@ -219,7 +218,7 @@ def get_mixed_templates() -> dict[str, dict[str, Any]]:
                     "any": [
                         {"contains": {"mood_regular": "calm"}},
                         {"contains": {"mood_regular": "relaxed"}},
-                    ]
+                    ],
                 },
                 {"contains": {"nsynth_acoustic_electronic": "electronic"}},
                 {"lt": {"engagement": 0.5}},
@@ -231,11 +230,11 @@ def get_mixed_templates() -> dict[str, dict[str, Any]]:
 
 
 def get_all_templates() -> dict[str, dict[str, Any]]:
-    """
-    Get all predefined playlist templates.
+    """Get all predefined playlist templates.
 
     Returns:
         Dictionary mapping filename to .nsp content dict
+
     """
     templates = {}
     templates.update(get_mood_templates())
@@ -246,22 +245,22 @@ def get_all_templates() -> dict[str, dict[str, Any]]:
 
 
 def generate_template_files() -> dict[str, str]:
-    """
-    Generate all template files as JSON strings.
+    """Generate all template files as JSON strings.
 
     Returns:
         Dictionary mapping filename to .nsp JSON content
+
     """
     templates = get_all_templates()
     return {filename: json.dumps(content, indent=2) for filename, content in templates.items()}
 
 
 def get_template_summary() -> list[dict[str, str]]:
-    """
-    Get summary of all available templates.
+    """Get summary of all available templates.
 
     Returns:
         List of dicts with filename, name, comment
+
     """
     templates = get_all_templates()
     return [

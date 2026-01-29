@@ -1,5 +1,4 @@
-"""
-Execution Tier Selection for GPU/CPU adaptive resource management.
+"""Execution Tier Selection for GPU/CPU adaptive resource management.
 
 Implements the tier ladder per GPU_REFACTOR_PLAN.md Section 8-9:
 - Tier 0: Fast Path (cached, multi-worker, 2-3s/file)
@@ -25,8 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 class ExecutionTier(IntEnum):
-    """
-    ML execution tiers (higher = faster, more resource-intensive).
+    """ML execution tiers (higher = faster, more resource-intensive).
 
     Per GPU_REFACTOR_PLAN.md Section 8:
     - Tier 0: Fast Path - cached, multi-worker
@@ -45,8 +43,7 @@ class ExecutionTier(IntEnum):
 
 @dataclass
 class TierConfig:
-    """
-    Configuration for an execution tier.
+    """Configuration for an execution tier.
 
     Attributes:
         tier: The execution tier
@@ -55,6 +52,7 @@ class TierConfig:
         head_cache_size: Number of heads to cache (0 = no cache)
         prefer_gpu: Whether to prefer GPU for backbone execution
         description: Human-readable description
+
     """
 
     tier: ExecutionTier
@@ -118,14 +116,14 @@ MIN_RAM_FOR_CPU_ONLY_MB = 4096
 
 @dataclass
 class TierSelection:
-    """
-    Result of tier selection.
+    """Result of tier selection.
 
     Attributes:
         tier: Selected execution tier
         config: Configuration for the tier
         calculated_workers: Actual worker count (may differ from config.max_workers)
         reason: Why this tier was selected
+
     """
 
     tier: ExecutionTier
@@ -140,8 +138,7 @@ def select_execution_tier(
     ram_budget_mb: int,
     config_max_workers: int,
 ) -> TierSelection:
-    """
-    Select the highest-performance tier that fits within resource budgets.
+    """Select the highest-performance tier that fits within resource budgets.
 
     Per GPU_REFACTOR_PLAN.md Section 9:
     - Tier selection is deterministic
@@ -158,6 +155,7 @@ def select_execution_tier(
 
     Returns:
         TierSelection with tier, config, and calculated worker count
+
     """
     gpu_capable = capacity_estimate.gpu_capable
     backbone_vram = capacity_estimate.measured_backbone_vram_mb
@@ -220,8 +218,7 @@ def _evaluate_tier_0(
     ram_budget_mb: int,
     config_max_workers: int,
 ) -> TierSelection | None:
-    """
-    Evaluate Tier 0 (Fast Path) eligibility.
+    """Evaluate Tier 0 (Fast Path) eligibility.
 
     Requirements:
     - VRAM budget >= 2 * backbone_vram (cache 2 backbones)
@@ -229,6 +226,7 @@ def _evaluate_tier_0(
 
     Returns:
         TierSelection if eligible, None otherwise
+
     """
     tier_config = TIER_CONFIGS[ExecutionTier.FAST_PATH]
 
@@ -262,8 +260,7 @@ def _evaluate_tier_1(
     ram_budget_mb: int,
     config_max_workers: int,
 ) -> TierSelection | None:
-    """
-    Evaluate Tier 1 (Reduced Cache) eligibility.
+    """Evaluate Tier 1 (Reduced Cache) eligibility.
 
     Requirements:
     - VRAM budget >= 1 * backbone_vram (cache 1 backbone)
@@ -299,8 +296,7 @@ def _evaluate_tier_2(
     vram_budget_mb: int,
     ram_budget_mb: int,
 ) -> TierSelection | None:
-    """
-    Evaluate Tier 2 (Sequential GPU) eligibility.
+    """Evaluate Tier 2 (Sequential GPU) eligibility.
 
     Requirements:
     - VRAM budget >= backbone_vram (for one backbone at a time)
@@ -329,8 +325,7 @@ def _evaluate_cpu_only_tier(
     ram_budget_mb: int,
     config_max_workers: int,
 ) -> TierSelection:
-    """
-    Evaluate Tier 3/4 (CPU-only) eligibility.
+    """Evaluate Tier 3/4 (CPU-only) eligibility.
 
     Tier 3 requires:
     - RAM budget >= MIN_RAM_FOR_CPU_ONLY_MB (backbone + heads + overhead)

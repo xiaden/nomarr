@@ -1,6 +1,4 @@
-"""
-Library package.
-"""
+"""Library package."""
 
 from .file_tags_comp import get_file_tags_with_path
 from .library_root_comp import (

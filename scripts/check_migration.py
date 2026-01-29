@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Check if a code migration is complete.
+"""Check if a code migration is complete.
 
 Validates that old patterns are fully eliminated:
 - Old module/function deleted

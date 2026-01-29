@@ -1,5 +1,4 @@
-"""
-Navidrome domain DTOs.
+"""Navidrome domain DTOs.
 
 Data transfer objects for smart playlist queries and Navidrome integration.
 These form cross-layer contracts between interfaces, services, and workflows.
@@ -17,8 +16,7 @@ from typing import Literal
 
 @dataclass
 class TagCondition:
-    """
-    A single tag condition in a smart playlist query.
+    """A single tag condition in a smart playlist query.
 
     Represents: tag:KEY OPERATOR VALUE
     """
@@ -35,8 +33,7 @@ class TagCondition:
 
 @dataclass
 class SmartPlaylistFilter:
-    """
-    Structured filter representing a smart playlist query.
+    """Structured filter representing a smart playlist query.
 
     Contains conditions grouped by logic operators (AND/OR).
     """
@@ -60,8 +57,7 @@ class SmartPlaylistFilter:
 
 @dataclass
 class PlaylistPreviewResult:
-    """
-    Result from smart playlist preview operation.
+    """Result from smart playlist preview operation.
 
     Contains both the total count of matching tracks and a sample of tracks
     for preview purposes.

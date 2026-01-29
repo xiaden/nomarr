@@ -1,5 +1,4 @@
-"""
-Logging helpers for safe error handling and message sanitization.
+"""Logging helpers for safe error handling and message sanitization.
 
 This module provides:
 - NomarrLogFilter: Automatic identity/role tags + optional context injection
@@ -30,8 +29,7 @@ _SUFFIX_TO_ROLE: dict[str, str] = {
 
 
 class NomarrLogFilter(logging.Filter):
-    """
-    Unified logging filter that injects identity, role, and context tags.
+    """Unified logging filter that injects identity, role, and context tags.
 
     Automatically derives module identity and role from logger name using
     Nomarr naming conventions. Also injects optional dynamic context.
@@ -62,10 +60,7 @@ class NomarrLogFilter(logging.Filter):
         name = record.name
 
         # Extract basename (after last dot)
-        if "." in name:
-            basename = name.rsplit(".", 1)[1]
-        else:
-            basename = name
+        basename = name.rsplit(".", 1)[1] if "." in name else name
 
         # Check for known suffix
         for suffix, role in _SUFFIX_TO_ROLE.items():
@@ -97,8 +92,7 @@ class NomarrLogFilter(logging.Filter):
 
 
 def set_log_context(**kwargs: Any) -> None:
-    """
-    Set log context for all subsequent logs in this execution context.
+    """Set log context for all subsequent logs in this execution context.
 
     Context is thread-safe via contextvars and automatically propagates
     to child coroutines/tasks.
@@ -109,19 +103,16 @@ def set_log_context(**kwargs: Any) -> None:
     Example:
         >>> set_log_context(worker_id="worker_0", library_id="lib123")
         >>> logger.info("Scanning file")  # Automatically includes worker_id and library_id
+
     """
     current = _log_context.get()
-    if current is None:
-        current = {}
-    else:
-        current = current.copy()
+    current = {} if current is None else current.copy()
     current.update(kwargs)
     _log_context.set(current)
 
 
 def clear_log_context() -> None:
-    """
-    Clear all log conNonext in current execution context.
+    """Clear all log conNonext in current execution context.
 
     Useful for cleanup at worker shutdown or between test cases.
     """
@@ -129,19 +120,18 @@ def clear_log_context() -> None:
 
 
 def get_log_context() -> dict[str, Any]:
-    """
-    Get current log context.
+    """Get current log context.
 
     Returns:
         Copy of current context dict
+
     """
     context = _log_context.get()
     return context.copy() if context else {}
 
 
 def sanitize_exception_message(exception: Exception, safe_message: str = "An error occurred") -> str:
-    """
-    Sanitize exception message for user display.
+    """Sanitize exception message for user display.
 
     Prevents information leakage through detailed error messages while
     preserving the ability to log full details.
@@ -160,6 +150,7 @@ def sanitize_exception_message(exception: Exception, safe_message: str = "An err
         ...     user_msg = sanitize_exception_message(e, "File not found")
         ...     logger.exception("Full error")  # Logs details
         ...     return {"error": user_msg}  # Returns generic message
+
     """
     # Log the full exception for debugging
     logger.exception(f"[security] Exception sanitized: {exception}")

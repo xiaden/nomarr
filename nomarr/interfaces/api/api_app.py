@@ -1,5 +1,4 @@
-"""
-FastAPI application setup and configuration.
+"""FastAPI application setup and configuration.
 Main entry point for the Nomarr API service.
 
 Architecture:
@@ -30,8 +29,7 @@ from nomarr.interfaces.api.v1 import admin_if, public_if
 # ----------------------------------------------------------------------
 @asynccontextmanager
 async def lifespan(_app_instance: FastAPI):
-    """
-    FastAPI lifespan context manager.
+    """FastAPI lifespan context manager.
 
     Note: Application.start() is called by start.py BEFORE uvicorn runs.
     This lifespan is minimal - just handles cleanup on API shutdown.
@@ -115,8 +113,7 @@ if assets_dir.exists():
 # This must be last so it doesn't catch API routes
 @api_app.get("/{full_path:path}")
 async def serve_spa(full_path: str):
-    """
-    Catch-all route for SPA routing.
+    """Catch-all route for SPA routing.
 
     Serves index.html for all paths that aren't API endpoints or static assets.
     This allows client-side React Router to handle routing.

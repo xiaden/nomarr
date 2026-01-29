@@ -1,7 +1,7 @@
 """System info and health endpoints for web UI."""
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -28,7 +28,7 @@ router = APIRouter(prefix="", tags=["Info"])
 
 @router.get("/info", dependencies=[Depends(verify_session)])
 async def web_info(
-    info_service: Any = Depends(get_info_service),
+    info_service: Annotated[Any, Depends(get_info_service)],
 ) -> SystemInfoResponse:
     """Get system info (web UI proxy)."""
     result = info_service.get_system_info()
@@ -37,7 +37,7 @@ async def web_info(
 
 @router.get("/health", dependencies=[Depends(verify_session)])
 async def web_health(
-    info_service: Any = Depends(get_info_service),
+    info_service: Annotated[Any, Depends(get_info_service)],
 ) -> HealthStatusResponse:
     """Health check endpoint (web UI proxy)."""
     result = info_service.get_health_status()
@@ -46,10 +46,9 @@ async def web_health(
 
 @router.get("/health/gpu", dependencies=[Depends(verify_session)])
 async def web_gpu_health(
-    info_service: Any = Depends(get_info_service),
+    info_service: Annotated[Any, Depends(get_info_service)],
 ) -> GPUHealthResponse:
-    """
-    GPU resource snapshot endpoint.
+    """GPU resource snapshot endpoint.
 
     Returns cached GPU probe results from GPUHealthMonitor.
     Does NOT run nvidia-smi inline (non-blocking).
@@ -79,10 +78,9 @@ async def web_gpu_health(
 
 @router.get("/work-status", dependencies=[Depends(verify_session)])
 async def web_work_status(
-    library_service: "LibraryService" = Depends(get_library_service),
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
 ) -> WorkStatusResponse:
-    """
-    Get unified work status for the system.
+    """Get unified work status for the system.
 
     Returns status of:
     - Scanning: Any library currently being scanned

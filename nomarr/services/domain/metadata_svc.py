@@ -35,11 +35,12 @@ COLLECTION_REL_MAP: dict[EntityCollection, str] = {
 class MetadataService:
     """Service for tag-based entity navigation and song-tag relationships."""
 
-    def __init__(self, db: Database):
+    def __init__(self, db: Database) -> None:
         """Initialize metadata service.
 
         Args:
             db: Database instance
+
         """
         self.db = db
 
@@ -60,6 +61,7 @@ class MetadataService:
 
         Returns:
             EntityListResult with entities, total, limit, offset
+
         """
         rel = COLLECTION_REL_MAP[collection]
         tags = self.db.tags.list_tags_by_rel(rel, limit=limit, offset=offset, search=search)
@@ -90,6 +92,7 @@ class MetadataService:
 
         Returns:
             EntityDict or None if not found
+
         """
         tag = self.db.tags.get_tag(entity_id)
         if not tag:
@@ -122,6 +125,7 @@ class MetadataService:
 
         Returns:
             SongListForEntityResult with song_ids, total, limit, offset
+
         """
         song_ids = self.db.tags.list_songs_for_tag(entity_id, limit=limit, offset=offset)
         total = self.db.tags.count_songs_for_tag(entity_id)
@@ -145,6 +149,7 @@ class MetadataService:
 
         Returns:
             List of EntityDict (artists)
+
         """
         # Get all songs for this album
         song_ids = self.db.tags.list_songs_for_tag(album_id, limit=10000)
@@ -169,7 +174,7 @@ class MetadataService:
                                     _key=tag["_key"],
                                     display_name=str(tag["value"]),
                                     song_count=None,
-                                )
+                                ),
                             )
 
         # Sort by display_name and limit
@@ -188,6 +193,7 @@ class MetadataService:
 
         Returns:
             List of EntityDict (albums)
+
         """
         # Get all songs for this artist
         song_ids = self.db.tags.list_songs_for_tag(artist_id, limit=10000)
@@ -218,7 +224,7 @@ class MetadataService:
                                     _key=tag["_key"],
                                     display_name=str(tag["value"]),
                                     song_count=album_song_count,
-                                )
+                                ),
                             )
 
         # Sort by display_name and limit
@@ -230,6 +236,7 @@ class MetadataService:
 
         Returns:
             Dict mapping collection name to count
+
         """
         return {
             "artists": self.db.tags.count_tags_by_rel("artist"),
@@ -247,6 +254,7 @@ class MetadataService:
 
         Returns:
             Dict with orphaned_count and deleted_count
+
         """
         if dry_run:
             orphan_count = self.db.tags.get_orphaned_tag_count()
@@ -254,9 +262,8 @@ class MetadataService:
                 "orphaned_count": orphan_count,
                 "deleted_count": 0,
             }
-        else:
-            deleted_count = self.db.tags.cleanup_orphaned_tags()
-            return {
-                "orphaned_count": deleted_count,  # Was orphaned, now deleted
-                "deleted_count": deleted_count,
-            }
+        deleted_count = self.db.tags.cleanup_orphaned_tags()
+        return {
+            "orphaned_count": deleted_count,  # Was orphaned, now deleted
+            "deleted_count": deleted_count,
+        }

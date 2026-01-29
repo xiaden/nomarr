@@ -1,10 +1,11 @@
 """Meta operations for ArangoDB (key-value config store)."""
 
-from typing import Any, cast
-
-from arango.cursor import Cursor
+from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.persistence.arango_client import DatabaseLike
+
+if TYPE_CHECKING:
+    from arango.cursor import Cursor
 
 
 class MetaOperations:
@@ -22,9 +23,10 @@ class MetaOperations:
 
         Returns:
             Value string or None if not found
+
         """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
             FOR meta IN meta
@@ -44,6 +46,7 @@ class MetaOperations:
         Args:
             key: Configuration key
             value: Configuration value
+
         """
         self.db.aql.execute(
             """
@@ -60,6 +63,7 @@ class MetaOperations:
 
         Args:
             key: Configuration key to delete
+
         """
         self.db.aql.execute(
             """
@@ -75,14 +79,15 @@ class MetaOperations:
 
         Returns:
             Dict of key -> value
+
         """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
             FOR meta IN meta
                 RETURN { key: meta.key, value: meta.value }
-            """
+            """,
             ),
         )
         return {item["key"]: item["value"] for item in cursor}
@@ -92,18 +97,17 @@ class MetaOperations:
 
         Returns:
             Dict mapping keys to values
-        """
-        from typing import Any
 
+        """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
             FOR meta IN meta
                 FILTER STARTS_WITH(meta.key, @prefix)
                 RETURN {key: meta.key, value: meta.value}
             """,
-                bind_vars=cast(dict[str, Any], {"prefix": prefix}),
+                bind_vars=cast("dict[str, Any]", {"prefix": prefix}),
             ),
         )
 
@@ -117,8 +121,7 @@ class MetaOperations:
         self.set(key, value)
 
     def write_gpu_resources(self, data: dict[str, Any]) -> None:
-        """
-        Write GPU resource snapshot atomically.
+        """Write GPU resource snapshot atomically.
 
         The snapshot contains only resource facts (gpu_available, error_summary).
         No timestamps - monitor liveness is tracked by HealthMonitorService.

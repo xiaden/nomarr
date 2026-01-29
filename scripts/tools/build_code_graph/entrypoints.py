@@ -6,8 +6,7 @@ from .models import CodeGraph
 
 
 def find_interface_entrypoints(graph: CodeGraph) -> set[str]:
-    """
-    Find application-level entrypoints.
+    """Find application-level entrypoints.
 
     These are the top-level modules/objects that external runners (uvicorn, CLI, process spawners)
     directly invoke. Everything else must be reachable from these to be considered live code.

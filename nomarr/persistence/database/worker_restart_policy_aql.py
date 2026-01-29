@@ -11,12 +11,13 @@ Architecture:
 - Separate from health collection to enforce separation of concerns
 """
 
-from typing import Any, cast
-
-from arango.cursor import Cursor
+from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.arango_client import DatabaseLike
+
+if TYPE_CHECKING:
+    from arango.cursor import Cursor
 
 
 class WorkerRestartPolicyOperations:
@@ -35,9 +36,10 @@ class WorkerRestartPolicyOperations:
         Returns:
             Tuple of (restart_count, last_restart_wall_ms)
             Returns (0, None) if no record exists
+
         """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
                 FOR doc IN worker_restart_policy
@@ -63,6 +65,7 @@ class WorkerRestartPolicyOperations:
 
         Args:
             component_id: Component identifier (e.g., "worker:tag:0")
+
         """
         ts = now_ms().value
         self.db.aql.execute(
@@ -85,7 +88,7 @@ class WorkerRestartPolicyOperations:
             IN worker_restart_policy
             """,
             bind_vars=cast(
-                dict[str, Any],
+                "dict[str, Any]",
                 {
                     "component_id": component_id,
                     "key": component_id,  # Use component_id as document key
@@ -99,6 +102,7 @@ class WorkerRestartPolicyOperations:
 
         Args:
             component_id: Component identifier (e.g., "worker:tag:0")
+
         """
         ts = now_ms().value
         self.db.aql.execute(
@@ -111,7 +115,7 @@ class WorkerRestartPolicyOperations:
                     updated_at_wall_ms: @timestamp
                 } IN worker_restart_policy
             """,
-            bind_vars=cast(dict[str, Any], {"component_id": component_id, "timestamp": ts}),
+            bind_vars=cast("dict[str, Any]", {"component_id": component_id, "timestamp": ts}),
         )
 
     def mark_failed_permanent(self, component_id: str, failure_reason: str) -> None:
@@ -122,6 +126,7 @@ class WorkerRestartPolicyOperations:
         Args:
             component_id: Component identifier (e.g., "worker:tag:0")
             failure_reason: Human-readable failure explanation
+
         """
         ts = now_ms().value
         self.db.aql.execute(
@@ -144,7 +149,7 @@ class WorkerRestartPolicyOperations:
             IN worker_restart_policy
             """,
             bind_vars=cast(
-                dict[str, Any],
+                "dict[str, Any]",
                 {
                     "component_id": component_id,
                     "key": component_id,

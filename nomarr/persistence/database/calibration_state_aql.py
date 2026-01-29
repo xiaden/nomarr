@@ -39,6 +39,7 @@ class CalibrationStateOperations:
         Returns:
             List of {min_val: float, count: int, underflow_count: int, overflow_count: int}
             Sorted by min_val ascending.
+
         """
         bin_width = (hi - lo) / bins
 
@@ -102,7 +103,7 @@ class CalibrationStateOperations:
         cursor = self.db.aql.execute(
             query,
             bind_vars=cast(
-                dict[str, Any],
+                "dict[str, Any]",
                 {
                     "model_key_for_tag": model_key_for_tag,
                     "head_name": head_name,
@@ -137,6 +138,7 @@ class CalibrationStateOperations:
 
         Returns:
             List of {min_val: float, count: int, underflow_count: int, overflow_count: int}
+
         """
         if limit is None:
             # No limit - use standard method
@@ -195,7 +197,7 @@ class CalibrationStateOperations:
         cursor = self.db.aql.execute(
             query,
             bind_vars=cast(
-                dict[str, Any],
+                "dict[str, Any]",
                 {
                     "model_key_for_tag": model_key_for_tag,
                     "head_name": head_name,
@@ -239,6 +241,7 @@ class CalibrationStateOperations:
             n: Total number of values in histogram
             underflow_count: Count of values < lo
             overflow_count: Count of values > hi
+
         """
         now_ms = int(__import__("time").time() * 1000)
         _key = f"{model_key}:{head_name}"
@@ -279,6 +282,7 @@ class CalibrationStateOperations:
 
         Returns:
             Calibration state document or None if not found
+
         """
         _key = f"{model_key}:{head_name}"
         try:
@@ -291,13 +295,14 @@ class CalibrationStateOperations:
 
         Returns:
             List of calibration state documents
+
         """
         cursor = self.db.aql.execute(
             """
             FOR c IN calibration_state
                 SORT c.updated_at DESC
                 RETURN c
-            """
+            """,
         )
         return list(cursor)  # type: ignore
 
@@ -307,6 +312,7 @@ class CalibrationStateOperations:
         Args:
             model_key: Model identifier
             head_name: Head name
+
         """
         _key = f"{model_key}:{head_name}"
         if self.collection.has(_key):

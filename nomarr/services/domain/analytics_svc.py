@@ -1,5 +1,4 @@
-"""
-Analytics service - orchestrates between persistence and analytics layers.
+"""Analytics service - orchestrates between persistence and analytics layers.
 
 ARCHITECTURE:
 - Fetches raw data from persistence layer (nomarr.persistence.analytics_queries)
@@ -45,26 +44,24 @@ class AnalyticsConfig:
 
 
 class AnalyticsService:
-    """
-    Service for tag analytics and statistics.
+    """Service for tag analytics and statistics.
 
     Orchestrates data flow: persistence (SQL) → analytics (computation) → API-ready results.
     """
 
     def __init__(self, db: Database, cfg: AnalyticsConfig) -> None:
-        """
-        Initialize analytics service.
+        """Initialize analytics service.
 
         Args:
             db: Database instance
             cfg: Analytics configuration
+
         """
         self._db = db
         self.cfg = cfg
 
     def get_tag_frequencies(self, limit: int = 50) -> list[TagFrequencyItem]:
-        """
-        Get frequency counts for tag VALUES in the library (API-ready format).
+        """Get frequency counts for tag VALUES in the library (API-ready format).
 
         Returns counts for mood values (e.g., "happy", "dark"), not tag keys.
 
@@ -73,6 +70,7 @@ class AnalyticsService:
 
         Returns:
             List of TagFrequencyItem DTOs for frontend
+
         """
         namespace_prefix = f"{self.cfg.namespace}:"
         # Get tag frequencies from tags collection
@@ -112,27 +110,27 @@ class AnalyticsService:
         ]
 
     def get_tag_frequencies_with_result(self, limit: int = 50) -> TagFrequenciesResult:
-        """
-        Get frequency counts for all tags with wrapper DTO.
+        """Get frequency counts for all tags with wrapper DTO.
 
         Args:
             limit: Max results per category
 
         Returns:
             TagFrequenciesResult DTO with tag_frequencies list
+
         """
         tag_frequencies = self.get_tag_frequencies(limit=limit)
         return TagFrequenciesResult(tag_frequencies=tag_frequencies)
 
     def get_tag_correlation_matrix(self, top_n: int = 20) -> TagCorrelationData:
-        """
-        Compute VALUE-based correlation matrix for mood tags.
+        """Compute VALUE-based correlation matrix for mood tags.
 
         Args:
             top_n: Number of top moods to analyze
 
         Returns:
             TagCorrelationData with mood-to-mood and mood-to-tier correlations
+
         """
         tag_data = self._db.tags.get_mood_and_tier_tags_for_correlation()
         data = {
@@ -148,14 +146,14 @@ class AnalyticsService:
             tier_tag_keys=data["tier_tag_keys"],
             tier_tag_rows=data["tier_tag_rows"],
         )
-        return cast(TagCorrelationData, compute_tag_correlation_matrix(params=params))
+        return cast("TagCorrelationData", compute_tag_correlation_matrix(params=params))
 
     def get_mood_distribution(self) -> list[MoodDistributionItem]:
-        """
-        Get mood distribution across all tiers.
+        """Get mood distribution across all tiers.
 
         Returns:
             List of MoodDistributionItem DTOs
+
         """
         mood_rows = self._db.tags.get_mood_distribution_data()
         result = compute_mood_distribution(mood_rows=mood_rows)
@@ -166,26 +164,25 @@ class AnalyticsService:
 
         return [
             MoodDistributionItem(
-                mood=mood, count=count, percentage=round((count / total_moods * 100), 2) if total_moods > 0 else 0
+                mood=mood, count=count, percentage=round((count / total_moods * 100), 2) if total_moods > 0 else 0,
             )
             for mood, count in top_moods
         ]
 
     def get_mood_distribution_with_result(self) -> MoodDistributionResult:
-        """
-        Get mood distribution with wrapper DTO.
+        """Get mood distribution with wrapper DTO.
 
         Returns:
             MoodDistributionResult DTO with mood_distribution list
+
         """
         mood_distribution = self.get_mood_distribution()
         return MoodDistributionResult(mood_distribution=mood_distribution)
 
     def get_tag_co_occurrence(
-        self, x_tags: list[tuple[str, str]], y_tags: list[tuple[str, str]]
+        self, x_tags: list[tuple[str, str]], y_tags: list[tuple[str, str]],
     ) -> TagCoOccurrenceData:
-        """
-        Get co-occurrence matrix for two sets of tag specifications.
+        """Get co-occurrence matrix for two sets of tag specifications.
 
         Args:
             x_tags: List of (key, value) tuples for X-axis
@@ -193,6 +190,7 @@ class AnalyticsService:
 
         Returns:
             TagCoOccurrenceData with matrix where matrix[j][i] = count of files with both
+
         """
         from nomarr.helpers.dto import TagSpec
 
@@ -205,4 +203,4 @@ class AnalyticsService:
         tag_data = self._db.tags.get_file_ids_for_tags(tag_specs=all_specs)
 
         params = ComputeTagCoOccurrenceParams(x_tags=x_tag_specs, y_tags=y_tag_specs, tag_data=tag_data)
-        return cast(TagCoOccurrenceData, compute_tag_co_occurrence(params=params))
+        return cast("TagCoOccurrenceData", compute_tag_co_occurrence(params=params))

@@ -14,8 +14,7 @@ def match_endpoint_usage(
     backend_routes: list[tuple[str, str, str | None, str | None, str | None, int | None]],
     frontend_usage: dict[str, list[tuple[str, int]]],
 ) -> list[EndpointUsage]:
-    """
-    Match backend routes to frontend usage.
+    """Match backend routes to frontend usage.
 
     Args:
         backend_routes: List of (method, path, summary, description, file_path, line_number)
@@ -23,6 +22,7 @@ def match_endpoint_usage(
 
     Returns:
         List of EndpointUsage objects
+
     """
     endpoint_usages = []
 

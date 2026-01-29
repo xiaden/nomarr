@@ -1,5 +1,4 @@
-"""
-Get symbol body at line - combines find_symbol_at_line and get_source.
+"""Get symbol body at line - combines find_symbol_at_line and get_source.
 
 Convenience tool to avoid the common two-step hop.
 """
@@ -15,8 +14,7 @@ sys.path.insert(0, str(ROOT))
 
 
 def symbol_at_line(file_path: str, line_number: int, workspace_root: Path) -> dict:
-    """
-    Get source code of the symbol containing a specific line number.
+    """Get source code of the symbol containing a specific line number.
 
     Use this when you have a line number (from error, search result, etc.) and want
     to see the full symbol containing it without two separate calls.
@@ -34,6 +32,7 @@ def symbol_at_line(file_path: str, line_number: int, workspace_root: Path) -> di
 
     Returns:
         dict with source, start/end lines, qualified_name (if symbol), kind, file path
+
     """
     try:
         # Resolve path relative to workspace root

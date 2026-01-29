@@ -1,5 +1,4 @@
-"""
-Calibration API types - Pydantic models for Calibration domain.
+"""Calibration API types - Pydantic models for Calibration domain.
 
 External API contracts for calibration endpoints.
 These models are thin adapters around DTOs from helpers/dto/.
@@ -12,19 +11,20 @@ Architecture:
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
-from nomarr.helpers.dto.ml_dto import (
-    GenerateMinmaxCalibrationResult,
-    SaveCalibrationSidecarsResult,
-)
-from nomarr.helpers.dto.recalibration_dto import (
-    ApplyCalibrationResult,
-    GenerateCalibrationResult,
-    GetStatusResult,
-)
+if TYPE_CHECKING:
+    from nomarr.helpers.dto.ml_dto import (
+        GenerateMinmaxCalibrationResult,
+        SaveCalibrationSidecarsResult,
+    )
+    from nomarr.helpers.dto.recalibration_dto import (
+        ApplyCalibrationResult,
+        GenerateCalibrationResult,
+        GetStatusResult,
+    )
 
 # ──────────────────────────────────────────────────────────────────────
 # Response Models

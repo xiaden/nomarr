@@ -1,5 +1,4 @@
-"""
-Read single line with context - quick inspection tool.
+"""Read single line with context - quick inspection tool.
 
 Deliberately simple for error investigation and search result inspection.
 """
@@ -10,8 +9,7 @@ from pathlib import Path
 
 
 def read_line(file_path: str, line_number: int, workspace_root: Path) -> dict:
-    """
-    Read a single line with 2 lines of context before and after.
+    """Read a single line with 2 lines of context before and after.
 
     Quick inspection tool for error messages, search results, and spot checks.
     For Python code analysis, prefer discover_api, get_source, or locate_symbol.
@@ -28,6 +26,7 @@ def read_line(file_path: str, line_number: int, workspace_root: Path) -> dict:
         - line_range: Actual range returned (e.g., "48-52" or "1-3(start)" or "268-270(EOF)")
         - warning: If Python file detected
         - error: Error message if reading fails
+
     """
     try:
         # Resolve path relative to workspace root

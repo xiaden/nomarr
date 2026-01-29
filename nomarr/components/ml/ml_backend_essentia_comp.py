@@ -1,5 +1,4 @@
-"""
-Essentia Backend Import Layer
+"""Essentia Backend Import Layer.
 
 This module provides a single, safe import layer for Essentia dependencies.
 All Essentia imports in the ML layer must go through this module.
@@ -45,8 +44,7 @@ except ImportError:  # pragma: no cover
 
 
 def is_available() -> bool:
-    """
-    Check if Essentia backend is available.
+    """Check if Essentia backend is available.
 
     Returns:
         True if essentia_tensorflow is installed and importable, False otherwise.
@@ -55,13 +53,13 @@ def is_available() -> bool:
         if not is_available():
             print("Essentia not available - skipping ML operations")
             return
+
     """
     return essentia_tf is not None
 
 
 def require() -> None:
-    """
-    Require Essentia backend to be available, or raise clear error.
+    """Require Essentia backend to be available, or raise clear error.
 
     Raises:
         RuntimeError: If essentia_tensorflow is not installed.
@@ -69,18 +67,21 @@ def require() -> None:
     Example:
         require()  # Fails fast if Essentia missing
         # Proceed with ML operations knowing Essentia is available
+
     """
     if essentia_tf is None:
-        raise RuntimeError(
+        msg = (
             "Essentia backend not installed. "
             "Install essentia-tensorflow to run ML inference. "
             "See installation docs for platform-specific instructions."
         )
+        raise RuntimeError(
+            msg,
+        )
 
 
 def get_version() -> str:
-    """
-    Get Essentia version string.
+    """Get Essentia version string.
 
     Returns:
         Version string if available, "unknown" if Essentia not installed.
@@ -88,6 +89,7 @@ def get_version() -> str:
     Example:
         version = get_version()
         print(f"Using Essentia {version}")
+
     """
     if essentia_tf is None:
         return "unknown"

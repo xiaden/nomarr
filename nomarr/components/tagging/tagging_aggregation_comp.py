@@ -1,6 +1,4 @@
-"""
-Tag aggregation logic - mood tiers, label simplification, and conflict resolution.
-"""
+"""Tag aggregation logic - mood tiers, label simplification, and conflict resolution."""
 
 from __future__ import annotations
 
@@ -16,8 +14,7 @@ from nomarr.helpers.dto.tagging_dto import BuildTierTermSetsResult
 
 
 def load_calibrations(models_dir: str, calibrate_heads: bool = False) -> dict[str, dict[str, Any]]:
-    """
-    DEPRECATED: Load calibration bundles from disk (transport artifacts only).
+    """DEPRECATED: Load calibration bundles from disk (transport artifacts only).
 
     WARNING: This function is for BUNDLE IMPORT/EXPORT workflows only.
     Production processing/recalibration must NEVER call this directly.
@@ -44,6 +41,7 @@ def load_calibrations(models_dir: str, calibrate_heads: bool = False) -> dict[st
     Note:
         This is retained for backward compatibility with import/export workflows.
         Will be moved to workflows/calibration in future refactor.
+
     """
     calibrations: dict[str, Any] = {}
 
@@ -84,7 +82,7 @@ def load_calibrations(models_dir: str, calibrate_heads: bool = False) -> dict[st
         logging.debug(f"[calibration] Loaded calibrations for {len(calibrations)} labels")
 
     except Exception as e:
-        logging.error(f"[calibration] Error loading calibrations: {e}")
+        logging.exception(f"[calibration] Error loading calibrations: {e}")
 
     return calibrations
 
@@ -103,8 +101,7 @@ def get_prefix(backbone: str) -> str:
 
 
 def normalize_tag_label(label: str) -> str:
-    """
-    Normalize model label for tag key consistency.
+    """Normalize model label for tag key consistency.
 
     Converts 'non_*' to 'not_*' for consistent naming.
     Example: 'non_happy' -> 'not_happy'
@@ -114,6 +111,7 @@ def normalize_tag_label(label: str) -> str:
 
     Returns:
         Normalized label for use in tag keys
+
     """
     if label.startswith("non_"):
         return f"not_{label[4:]}"
@@ -141,8 +139,7 @@ def add_regression_mood_tiers(
     regression_heads: list[tuple[Any, list[float]]],  # List of (HeadInfo, segment_values)
     framework_version: str,
 ) -> list[Any]:  # Returns list[HeadOutput]
-    """
-    Convert regression head predictions (approachability, engagement) into HeadOutput objects.
+    """Convert regression head predictions (approachability, engagement) into HeadOutput objects.
 
     Uses versioned tag keys from HeadInfo.build_versioned_tag_key() instead of hardcoded prefixes.
 
@@ -162,6 +159,7 @@ def add_regression_mood_tiers(
 
     Returns:
         List of HeadOutput objects with tier information
+
     """
     if not regression_heads:
         return []
@@ -196,10 +194,10 @@ def add_regression_mood_tiers(
             # Neutral value - create both terms with the value
             # This preserves the raw data even when we can't confidently assign a direction
             model_key_high, calib_id_high = head_info.build_versioned_tag_key(
-                high_term, framework_version=framework_version, calib_method="none", calib_version=0
+                high_term, framework_version=framework_version, calib_method="none", calib_version=0,
             )
             model_key_low, calib_id_low = head_info.build_versioned_tag_key(
-                low_term, framework_version=framework_version, calib_method="none", calib_version=0
+                low_term, framework_version=framework_version, calib_method="none", calib_version=0,
             )
             outputs.append(
                 HeadOutput(
@@ -209,7 +207,7 @@ def add_regression_mood_tiers(
                     value=mean_val,
                     tier=None,  # Neutral, no tier
                     calibration_id=calib_id_high,
-                )
+                ),
             )
             outputs.append(
                 HeadOutput(
@@ -219,17 +217,17 @@ def add_regression_mood_tiers(
                     value=1.0 - mean_val,
                     tier=None,  # Neutral, no tier
                     calibration_id=calib_id_low,
-                )
+                ),
             )
             logging.debug(
                 f"[aggregation] Regression neutral: {head_name} → both {high_term}/{low_term} "
-                f"(mean={mean_val:.3f}, std={std_val:.3f})"
+                f"(mean={mean_val:.3f}, std={std_val:.3f})",
             )
             continue
 
         # Create HeadOutput with clamped mean value using versioned key
         model_key, calibration_id = head_info.build_versioned_tag_key(
-            mood_term, framework_version=framework_version, calib_method="none", calib_version=0
+            mood_term, framework_version=framework_version, calib_method="none", calib_version=0,
         )
 
         # Only assign tier if variance is acceptable AND value is non-neutral
@@ -237,7 +235,7 @@ def add_regression_mood_tiers(
         if std_val >= _ACCEPTABLE:
             logging.debug(
                 f"[aggregation] Regression no tier: {head_name} → {mood_term} "
-                f"(mean={mean_val:.3f}, std={std_val:.3f} - high variance)"
+                f"(mean={mean_val:.3f}, std={std_val:.3f} - high variance)",
             )
         else:
             # Determine tier based on BOTH variance (stability) AND intensity (extremeness)
@@ -256,7 +254,7 @@ def add_regression_mood_tiers(
 
             logging.debug(
                 f"[aggregation] Regression mood: {head_name} → {mood_term} "
-                f"(mean={mean_val:.3f}, std={std_val:.3f}, intensity={intensity:.2f}, tier={tier})"
+                f"(mean={mean_val:.3f}, std={std_val:.3f}, intensity={intensity:.2f}, tier={tier})",
             )
 
         outputs.append(
@@ -267,7 +265,7 @@ def add_regression_mood_tiers(
                 value=mean_val,
                 tier=tier,
                 calibration_id=calibration_id,
-            )
+            ),
         )
 
     return outputs
@@ -304,10 +302,9 @@ _MOOD_MAPPING = {
 
 
 def _build_tier_map(
-    head_outputs: list[Any], calibrations: dict[str, dict[str, Any]] | None
+    head_outputs: list[Any], calibrations: dict[str, dict[str, Any]] | None,
 ) -> dict[str, tuple[str, float, str]]:
-    """
-    Build tier map from HeadOutput objects, applying calibration when available.
+    """Build tier map from HeadOutput objects, applying calibration when available.
 
     Args:
         head_outputs: List of HeadOutput objects
@@ -315,6 +312,7 @@ def _build_tier_map(
 
     Returns:
         Dictionary mapping model_key -> (tier, value, label)
+
     """
     # Filter to only mood-source heads with tiers
     mood_outputs = [ho for ho in head_outputs if ho.head.is_mood_source and ho.tier is not None]
@@ -346,10 +344,9 @@ def _build_tier_map(
 
 
 def _compute_suppressed_keys(
-    tier_map: dict[str, tuple[str, float, str]], label_pairs: list[tuple[str, str, str, str]]
+    tier_map: dict[str, tuple[str, float, str]], label_pairs: list[tuple[str, str, str, str]],
 ) -> set[str]:
-    """
-    Identify conflicting mood pairs and return keys to suppress.
+    """Identify conflicting mood pairs and return keys to suppress.
 
     Args:
         tier_map: Dictionary mapping model_key -> (tier, value, label)
@@ -357,6 +354,7 @@ def _compute_suppressed_keys(
 
     Returns:
         Set of model keys to suppress due to conflicts
+
     """
     suppressed_keys: set[str] = set()
 
@@ -376,7 +374,7 @@ def _compute_suppressed_keys(
         ]
 
         logging.debug(
-            f"[aggregation] Checking pair ({pos_pat}, {neg_pat}): found pos={len(pos_keys)} neg={len(neg_keys)}"
+            f"[aggregation] Checking pair ({pos_pat}, {neg_pat}): found pos={len(pos_keys)} neg={len(neg_keys)}",
         )
 
         if not pos_keys or not neg_keys:
@@ -406,17 +404,16 @@ def _compute_suppressed_keys(
             suppressed_keys.add(pos_key)
             suppressed_keys.add(neg_key)
             logging.info(
-                f"[aggregation] Suppressing conflicting pair: {pos_key} ({pos_tier}) vs {neg_key} ({neg_tier})"
+                f"[aggregation] Suppressing conflicting pair: {pos_key} ({pos_tier}) vs {neg_key} ({neg_tier})",
             )
 
     return suppressed_keys
 
 
 def _build_label_map(
-    tier_map: dict[str, tuple[str, float, str]], label_pairs: list[tuple[str, str, str, str]]
+    tier_map: dict[str, tuple[str, float, str]], label_pairs: list[tuple[str, str, str, str]],
 ) -> dict[str, str]:
-    """
-    Build label map for improved human-readable mood terms.
+    """Build label map for improved human-readable mood terms.
 
     Args:
         tier_map: Dictionary mapping model_key -> (tier, value, label)
@@ -424,10 +421,11 @@ def _build_label_map(
 
     Returns:
         Dictionary mapping simplified keys to human-readable labels
+
     """
     label_map = {}
     for pos_pat, neg_pat, pos_label, neg_label in label_pairs:
-        for _model_key, (_tier, _value, label) in tier_map.items():
+        for (_tier, _value, label) in tier_map.values():
             simplified = simplify_label(label)
             if simplified == pos_pat:
                 label_map[simplified] = pos_label
@@ -442,10 +440,9 @@ def _build_label_map(
 
 
 def _build_tier_term_sets(
-    tier_map: dict[str, tuple[str, float, str]], suppressed_keys: set[str], label_map: dict[str, str]
+    tier_map: dict[str, tuple[str, float, str]], suppressed_keys: set[str], label_map: dict[str, str],
 ) -> BuildTierTermSetsResult:
-    """
-    Build strict, regular, and loose term sets from tier map.
+    """Build strict, regular, and loose term sets from tier map.
 
     Args:
         tier_map: Dictionary mapping model_key -> (tier, value, label)
@@ -454,6 +451,7 @@ def _build_tier_term_sets(
 
     Returns:
         BuildTierTermSetsResult with strict_terms, regular_terms, loose_terms
+
     """
     strict_terms: set[str] = set()
     regular_terms: set[str] = set()
@@ -475,15 +473,14 @@ def _build_tier_term_sets(
             loose_terms.add(term)
 
     logging.debug(
-        f"[aggregation] Mood aggregation: strict={len(strict_terms)}, regular={len(regular_terms)}, loose={len(loose_terms)}"
+        f"[aggregation] Mood aggregation: strict={len(strict_terms)}, regular={len(regular_terms)}, loose={len(loose_terms)}",
     )
 
     return BuildTierTermSetsResult(strict_terms=strict_terms, regular_terms=regular_terms, loose_terms=loose_terms)
 
 
 def _make_inclusive_mood_tags(strict_terms: set[str], regular_terms: set[str], loose_terms: set[str]) -> dict[str, Any]:
-    """
-    Build final mood tag dictionary with inclusive tier expansion.
+    """Build final mood tag dictionary with inclusive tier expansion.
 
     Implements: strict ⊂ regular ⊂ loose
 
@@ -494,6 +491,7 @@ def _make_inclusive_mood_tags(strict_terms: set[str], regular_terms: set[str], l
 
     Returns:
         Dictionary containing mood-strict, mood-regular, mood-loose tags
+
     """
     # Inclusive mood sets: strict ⊂ regular ⊂ loose
     if strict_terms:
@@ -518,8 +516,7 @@ def aggregate_mood_tiers(
     head_outputs: list[Any],  # List of HeadOutput objects
     calibrations: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """
-    Aggregate HeadOutput objects into mood-strict, mood-regular, mood-loose collections.
+    """Aggregate HeadOutput objects into mood-strict, mood-regular, mood-loose collections.
 
     Uses HeadOutput.tier to determine confidence level instead of parsing *_tier tags.
 
@@ -538,10 +535,11 @@ def aggregate_mood_tiers(
 
     Returns:
         Dictionary containing mood-strict, mood-regular, mood-loose tags
+
     """
     logging.debug(
         f"[aggregation] aggregate_mood_tiers called with {len(head_outputs)} HeadOutput objects, "
-        f"calibrations={calibrations is not None}"
+        f"calibrations={calibrations is not None}",
     )
 
     # Build tier map with calibration applied

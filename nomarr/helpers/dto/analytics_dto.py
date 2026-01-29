@@ -1,5 +1,4 @@
-"""
-Analytics domain DTOs.
+"""Analytics domain DTOs.
 
 Data transfer objects for analytics results and statistics.
 These form cross-layer contracts between components, services, and interfaces.
@@ -11,8 +10,11 @@ Rules:
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 @dataclass

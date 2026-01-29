@@ -1,23 +1,23 @@
-"""
-Info API types - Pydantic models for system info and health endpoints.
+"""Info API types - Pydantic models for system info and health endpoints.
 
 External API contracts for info endpoints.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
-from nomarr.helpers.dto.info_dto import (
-    GPUHealthResult,
-    HealthStatusResult,
-    PublicInfoResult,
-    ScanningLibraryInfo,
-    SystemInfoResult,
-    WorkStatusResult,
-)
+if TYPE_CHECKING:
+    from nomarr.helpers.dto.info_dto import (
+        GPUHealthResult,
+        HealthStatusResult,
+        PublicInfoResult,
+        ScanningLibraryInfo,
+        SystemInfoResult,
+        WorkStatusResult,
+    )
 
 
 class SystemInfoResponse(BaseModel):
@@ -63,8 +63,7 @@ class HealthStatusResponse(BaseModel):
 
 
 class GPUHealthResponse(BaseModel):
-    """
-    Response for GPU health endpoint.
+    """Response for GPU health endpoint.
 
     Contains GPU resource snapshot and monitor liveness.
     """
@@ -188,8 +187,7 @@ class ScanningLibraryResponse(BaseModel):
 
 
 class WorkStatusResponse(BaseModel):
-    """
-    Unified work status for the system.
+    """Unified work status for the system.
 
     Indicates if any scanning, ML processing, or tagging is happening.
     Used by frontend for polling and activity indicators.

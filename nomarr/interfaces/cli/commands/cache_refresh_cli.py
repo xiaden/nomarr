@@ -1,13 +1,14 @@
-"""
-Cache-refresh command: Rebuild predictor cache.
-"""
+"""Cache-refresh command: Rebuild predictor cache."""
 
 from __future__ import annotations
 
-import argparse
+from typing import TYPE_CHECKING
 
-import nomarr.app as app
+from nomarr import app
 from nomarr.interfaces.cli.cli_ui import InfoPanel, print_error
+
+if TYPE_CHECKING:
+    import argparse
 
 
 def cmd_cache_refresh(args: argparse.Namespace) -> int:

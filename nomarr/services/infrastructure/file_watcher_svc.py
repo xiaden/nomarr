@@ -31,7 +31,6 @@ import contextlib
 import logging
 import threading
 from collections import defaultdict
-from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -42,6 +41,8 @@ from nomarr.helpers.dto.library_dto import ScanTarget
 from nomarr.helpers.time_helper import InternalSeconds, internal_s
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from nomarr.persistence.db import Database
     from nomarr.services.domain.library_svc import LibraryService
 
@@ -73,7 +74,7 @@ class LibraryEventHandler(FileSystemEventHandler):
         library_id: str,
         library_root: Path,
         callback: Callable[[str, str], None],
-    ):
+    ) -> None:
         super().__init__()
         self.library_id = library_id
         self.library_root = library_root
@@ -123,7 +124,7 @@ class LibraryEventHandler(FileSystemEventHandler):
             return True
 
         # Temp files
-        if name.endswith(".tmp") or name.endswith("~"):
+        if name.endswith((".tmp", "~")):
             return True
 
         # OS-specific
@@ -161,7 +162,7 @@ class FileWatcherService:
         debounce_seconds: float = 2.0,
         event_loop: asyncio.AbstractEventLoop | None = None,
         polling_interval_seconds: float = 60.0,
-    ):
+    ) -> None:
         self.db = db
         self.library_service = library_service
         self.debounce_seconds = debounce_seconds
@@ -188,7 +189,7 @@ class FileWatcherService:
         self._pending_cleanups: set[str] = set()
 
         logger.info(
-            f"FileWatcherService initialized (debounce={debounce_seconds}s, poll_interval={polling_interval_seconds}s)"
+            f"FileWatcherService initialized (debounce={debounce_seconds}s, poll_interval={polling_interval_seconds}s)",
         )
 
     def _reset_stale_scan_statuses(self) -> None:
@@ -208,7 +209,7 @@ class FileWatcherService:
                 library_id = lib["_id"]
                 logger.warning(
                     f"[FileWatcherService] Resetting stale scan_status for library {lib.get('name', library_id)} "
-                    f"(was 'scanning' at startup, likely from interrupted scan)"
+                    f"(was 'scanning' at startup, likely from interrupted scan)",
                 )
                 self.db.libraries.update_scan_status(
                     library_id,
@@ -285,15 +286,18 @@ class FileWatcherService:
 
         Raises:
             ValueError: If library not found or path invalid
+
         """
         # Get library info
         library = self.db.libraries.get_library(library_id)
         if not library:
-            raise ValueError(f"Library {library_id} not found")
+            msg = f"Library {library_id} not found"
+            raise ValueError(msg)
 
         library_root = Path(library["root_path"])
         if not library_root.exists():
-            raise ValueError(f"Library path does not exist: {library_root}")
+            msg = f"Library path does not exist: {library_root}"
+            raise ValueError(msg)
 
         # Get watch mode from library config (default to 'off')
         watch_mode = library.get("watch_mode", "off")
@@ -323,6 +327,7 @@ class FileWatcherService:
         Args:
             library_id: Library document _id
             library_root: Absolute path to library root
+
         """
         # Create handler
         handler = LibraryEventHandler(
@@ -347,6 +352,7 @@ class FileWatcherService:
 
         Args:
             library_id: Library document _id
+
         """
         # Initialize last poll time to now (so first poll happens after interval)
         self.last_poll_time[library_id] = internal_s()
@@ -358,7 +364,7 @@ class FileWatcherService:
             self.observers[library_id] = task
         except RuntimeError:
             # No running event loop - use a background thread with its own loop
-            def run_polling():
+            def run_polling() -> None:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 try:
@@ -371,7 +377,7 @@ class FileWatcherService:
             self.observers[library_id] = thread
 
         logger.info(
-            f"Started polling-based watching for library {library_id} (interval={self.polling_interval_seconds}s)"
+            f"Started polling-based watching for library {library_id} (interval={self.polling_interval_seconds}s)",
         )
 
     async def _polling_loop(self, library_id: str) -> None:
@@ -382,6 +388,7 @@ class FileWatcherService:
 
         Args:
             library_id: Library document _id
+
         """
         try:
             while True:
@@ -440,6 +447,7 @@ class FileWatcherService:
 
         Args:
             library_id: Library document _id
+
         """
         if library_id not in self.observers:
             logger.warning(f"No watcher found for library {library_id}")
@@ -486,15 +494,18 @@ class FileWatcherService:
 
         Raises:
             ValueError: If library not found or new_mode is invalid
+
         """
         # Validate mode
         if new_mode not in ("off", "event", "poll"):
-            raise ValueError(f"Invalid watch_mode: {new_mode}. Must be 'off', 'event', or 'poll'")
+            msg = f"Invalid watch_mode: {new_mode}. Must be 'off', 'event', or 'poll'"
+            raise ValueError(msg)
 
         # Verify library exists
         library = self.db.libraries.get_library(library_id)
         if not library:
-            raise ValueError(f"Library {library_id} not found")
+            msg = f"Library {library_id} not found"
+            raise ValueError(msg)
 
         # Stop existing watcher if any
         if library_id in self.observers:
@@ -524,6 +535,7 @@ class FileWatcherService:
         Args:
             library_id: Library document _id
             relative_path: Path relative to library root
+
         """
         # Add to pending changes (thread-safe)
         with self._lock:
@@ -592,13 +604,14 @@ class FileWatcherService:
 
         Returns:
             List of deduplicated ScanTargets
+
         """
         folders = set()
 
         for path_str in paths:
             path = Path(path_str)
             # Get parent folder
-            folder = str(path.parent) if path.parent != Path(".") else ""
+            folder = str(path.parent) if path.parent != Path() else ""
             folders.add(folder)
 
         # Convert to ScanTargets
@@ -606,9 +619,8 @@ class FileWatcherService:
 
         # Deduplicate: if we're scanning parent, don't scan children
         # Example: ["Rock", "Rock/Beatles"] -> ["Rock"]
-        targets = self._deduplicate_targets(targets)
+        return self._deduplicate_targets(targets)
 
-        return targets
 
     def _deduplicate_targets(self, targets: list[ScanTarget]) -> list[ScanTarget]:
         """Remove redundant targets (child folders when parent is being scanned).
@@ -618,6 +630,7 @@ class FileWatcherService:
 
         Returns:
             Deduplicated list (no child if parent present)
+
         """
         if len(targets) <= 1:
             return targets

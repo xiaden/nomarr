@@ -4,12 +4,13 @@ CRITICAL: All mutations by _id must use PARSE_IDENTIFIER(@id).key
 to extract the document key for UPDATE/REMOVE operations.
 """
 
-from typing import Any, cast
-
-from arango.cursor import Cursor
+from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.arango_client import DatabaseLike
+
+if TYPE_CHECKING:
+    from arango.cursor import Cursor
 
 
 class LibrariesOperations:
@@ -41,11 +42,12 @@ class LibrariesOperations:
 
         Raises:
             Duplicate key error if name already exists
+
         """
         now = now_ms().value
 
         result = cast(
-            dict[str, Any],
+            "dict[str, Any]",
             self.collection.insert(
                 {
                     "name": name,
@@ -60,27 +62,28 @@ class LibrariesOperations:
                     "scan_error": None,
                     "created_at": now,
                     "updated_at": now,
-                }
+                },
             ),
         )
 
         return str(result["_id"])
 
     def get_library(self, library_id: str) -> dict[str, Any] | None:
-        """Get a library by _id or _key.
+        r"""Get a library by _id or _key.
 
         Args:
             library_id: Library _id (e.g., \"libraries/12345\") or just _key (e.g., \"12345\")
 
         Returns:
             Library dict or None if not found
+
         """
         # Normalize: if not prefixed with collection name, add it
         if not library_id.startswith("libraries/"):
             library_id = f"libraries/{library_id}"
 
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
             RETURN DOCUMENT(@library_id)
@@ -99,9 +102,10 @@ class LibrariesOperations:
 
         Returns:
             Library dict or None if not found
+
         """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
             FOR lib IN libraries
@@ -123,18 +127,19 @@ class LibrariesOperations:
 
         Returns:
             List of library dicts
+
         """
         filter_clause = "FILTER lib.is_enabled == true" if enabled_only else ""
 
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 f"""
             FOR lib IN libraries
                 {filter_clause}
                 SORT lib.created_at ASC
                 RETURN lib
-            """
+            """,
             ),
         )
         return list(cursor)
@@ -146,9 +151,10 @@ class LibrariesOperations:
 
         Returns:
             List of library dicts with _id, root_path, watch_mode
+
         """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
             FOR lib IN libraries
@@ -156,7 +162,7 @@ class LibrariesOperations:
                 FILTER lib.watch_mode != null AND lib.watch_mode != "off"
                 SORT lib.created_at ASC
                 RETURN { _id: lib._id, root_path: lib.root_path, watch_mode: lib.watch_mode }
-            """
+            """,
             ),
         )
         return list(cursor)
@@ -179,6 +185,7 @@ class LibrariesOperations:
             is_enabled: New enabled status (optional)
             watch_mode: New watch mode ('off', 'event', 'poll') (optional)
             file_write_mode: New file write mode ('none', 'minimal', 'full') (optional)
+
         """
         update_fields: dict[str, Any] = {"updated_at": now_ms().value}
 
@@ -190,11 +197,13 @@ class LibrariesOperations:
             update_fields["is_enabled"] = is_enabled
         if watch_mode is not None:
             if watch_mode not in ("off", "event", "poll"):
-                raise ValueError(f"Invalid watch_mode: {watch_mode}. Must be 'off', 'event', or 'poll'")
+                msg = f"Invalid watch_mode: {watch_mode}. Must be 'off', 'event', or 'poll'"
+                raise ValueError(msg)
             update_fields["watch_mode"] = watch_mode
         if file_write_mode is not None:
             if file_write_mode not in ("none", "minimal", "full"):
-                raise ValueError(f"Invalid file_write_mode: {file_write_mode}. Must be 'none', 'minimal', or 'full'")
+                msg = f"Invalid file_write_mode: {file_write_mode}. Must be 'none', 'minimal', or 'full'"
+                raise ValueError(msg)
             update_fields["file_write_mode"] = file_write_mode
 
         self.db.aql.execute(
@@ -209,6 +218,7 @@ class LibrariesOperations:
 
         Args:
             library_id: Library _id (e.g., "libraries/12345")
+
         """
         self.db.aql.execute(
             """
@@ -240,6 +250,7 @@ class LibrariesOperations:
             progress or scan_progress: Number of files scanned
             total or scan_total: Total files to scan
             error or scan_error: Error message if status is 'error'
+
         """
         # Support both old and new parameter names
         # IMPORTANT: Only include scan_status if explicitly provided
@@ -269,7 +280,7 @@ class LibrariesOperations:
             """
             UPDATE PARSE_IDENTIFIER(@library_id).key WITH @fields IN libraries
             """,
-            bind_vars=cast(dict[str, Any], {"library_id": library_id, "fields": update_fields}),
+            bind_vars=cast("dict[str, Any]", {"library_id": library_id, "fields": update_fields}),
         )
 
     def find_library_containing_path(self, file_path: str) -> dict[str, Any] | None:
@@ -287,6 +298,7 @@ class LibrariesOperations:
         Example:
             >>> ops.find_library_containing_path("/music/rock/song.mp3")
             {"_id": "libraries/123", "name": "My Music", "root_path": "/music", ...}
+
         """
         from pathlib import Path
 
@@ -299,13 +311,13 @@ class LibrariesOperations:
         # Get all libraries ordered by root_path length (longest first)
         # This ensures we match the most specific library
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
             FOR lib IN libraries
                 SORT LENGTH(lib.root_path) DESC
                 RETURN lib
-            """
+            """,
             ),
         )
 
@@ -333,6 +345,7 @@ class LibrariesOperations:
         Args:
             library_id: Library document _id (e.g., "libraries/12345")
             full_scan: True if scanning entire library, False if targeted scan
+
         """
         now = now_ms().value
 
@@ -344,7 +357,7 @@ class LibrariesOperations:
             } IN libraries
             """,
             bind_vars=cast(
-                dict[str, Any],
+                "dict[str, Any]",
                 {
                     "library_id": library_id,
                     "timestamp": now,
@@ -358,6 +371,7 @@ class LibrariesOperations:
 
         Args:
             library_id: Library document _id (e.g., "libraries/12345")
+
         """
         now = now_ms().value
 
@@ -370,7 +384,7 @@ class LibrariesOperations:
             } IN libraries
             """,
             bind_vars=cast(
-                dict[str, Any],
+                "dict[str, Any]",
                 {
                     "library_id": library_id,
                     "timestamp": now,
@@ -387,9 +401,10 @@ class LibrariesOperations:
         Returns:
             Dict with last_scan_started_at, last_scan_at, full_scan_in_progress
             or None if library not found
+
         """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
                 FOR lib IN libraries
@@ -408,7 +423,7 @@ class LibrariesOperations:
         return results[0] if results else None
 
     def check_interrupted_scan(self, library_id: str) -> tuple[bool, bool]:
-        """Check if a scan was interrupted.
+        r"""Check if a scan was interrupted.
 
         Args:
             library_id: Library document _id (e.g., \"libraries/12345\")
@@ -421,6 +436,7 @@ class LibrariesOperations:
         - last_scan_started_at > last_scan_at (or last_scan_at is null)
 
         Uses integer timestamp comparison.
+
         """
         state = self.get_scan_state(library_id)
         if not state or not state.get("last_scan_started_at"):

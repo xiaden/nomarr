@@ -1,5 +1,4 @@
-"""
-Admin domain DTOs.
+"""Admin domain DTOs.
 
 Data transfer objects for admin endpoints (job management, cache, worker operations).
 """

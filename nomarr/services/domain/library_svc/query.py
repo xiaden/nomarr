@@ -30,11 +30,11 @@ class LibraryQueryMixin:
     cfg: LibraryServiceConfig
 
     def get_library_stats(self) -> LibraryStatsResult:
-        """
-        Get library statistics (total files, total duration, etc.).
+        """Get library statistics (total files, total duration, etc.).
 
         Returns:
             LibraryStatsResult DTO
+
         """
         stats = self.db.library_files.get_library_stats()
         return LibraryStatsResult(
@@ -47,20 +47,20 @@ class LibraryQueryMixin:
         )
 
     def get_all_library_paths(self) -> list[str]:
-        """
-        Get all file paths in the library.
+        """Get all file paths in the library.
 
         Returns:
             List of absolute file paths
+
         """
         return self.db.library_files.get_all_library_paths()
 
     def get_tagged_library_paths(self) -> list[str]:
-        """
-        Get all file paths that have been tagged (have tags in database).
+        """Get all file paths that have been tagged (have tags in database).
 
         Returns:
             List of absolute file paths that have been tagged
+
         """
         return self.db.library_files.get_tagged_file_paths()
 
@@ -80,7 +80,7 @@ class LibraryQueryMixin:
         from nomarr.services.domain._library_mapping import map_file_with_tags_to_dto
 
         files, total = search_library_files(
-            self.db, query_text, artist, album, tag_key, tag_value, tagged_only, limit, offset
+            self.db, query_text, artist, album, tag_key, tag_value, tagged_only, limit, offset,
         )
         files_with_tags = [map_file_with_tags_to_dto(f) for f in files]
         return SearchFilesResult(files=files_with_tags, total=total, limit=limit, offset=offset)
@@ -95,6 +95,7 @@ class LibraryQueryMixin:
 
         Returns:
             SearchFilesResult with files matching the IDs
+
         """
         from nomarr.services.domain._library_mapping import map_file_with_tags_to_dto
 
@@ -122,6 +123,7 @@ class LibraryQueryMixin:
 
         Returns:
             SearchFilesResult with matched files (includes distance for float searches)
+
         """
         from nomarr.services.domain._library_mapping import map_file_with_tags_to_dto
 
@@ -144,8 +146,7 @@ class LibraryQueryMixin:
         return UniqueTagKeysResult(tag_keys=values, count=len(values), calibration=None, library_id=None)
 
     def get_work_status(self) -> WorkStatusResult:
-        """
-        Get unified work status for the system.
+        """Get unified work status for the system.
 
         Returns status of:
         - Scanning: Any library currently being scanned
@@ -155,6 +156,7 @@ class LibraryQueryMixin:
 
         Returns:
             WorkStatusResult DTO with scanning and processing status
+
         """
         # Get all libraries to check scan status
         libraries = self.db.libraries.list_libraries(enabled_only=False)
@@ -168,7 +170,7 @@ class LibraryQueryMixin:
                         name=lib.get("name", "Unknown"),
                         progress=lib.get("scan_progress") or 0,
                         total=lib.get("scan_total") or 0,
-                    )
+                    ),
                 )
 
         is_scanning = len(scanning_libraries) > 0

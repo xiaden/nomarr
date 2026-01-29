@@ -1,5 +1,4 @@
-"""
-Workers package - crash handling, restart logic, and discovery components.
+"""Workers package - crash handling, restart logic, and discovery components.
 
 In the discovery model, workers query library_files directly instead of
 polling a queue. Files with needs_tagging=1 and no active claim are

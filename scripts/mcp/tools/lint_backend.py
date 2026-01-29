@@ -102,14 +102,14 @@ def parse_import_linter_output(stdout: str, stderr: str) -> list[dict[str, Any]]
 
 
 def lint_backend(path: str | None = None) -> dict[str, Any]:
-    """
-    Run backend linting tools on specified path.
+    """Run backend linting tools on specified path.
 
     Args:
         path: Relative path to lint (default: "nomarr/")
 
     Returns:
         Structured JSON with errors or clean status
+
     """
     if path is None:
         path = "nomarr/"

@@ -1,5 +1,4 @@
-"""
-API layer package for Nomarr.
+"""API layer package for Nomarr.
 Exports FastAPI app, auth components, and models.
 """
 

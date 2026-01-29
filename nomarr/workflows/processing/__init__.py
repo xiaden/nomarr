@@ -1,6 +1,4 @@
-"""
-Processing package.
-"""
+"""Processing package."""
 
 from .process_file_wf import (
     ProcessHeadPredictionsResult,

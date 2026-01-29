@@ -1,6 +1,4 @@
-"""
-Cli package.
-"""
+"""Cli package."""
 
 from .cli_ui import (
     COLOR_DONE,

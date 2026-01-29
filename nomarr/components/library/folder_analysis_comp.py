@@ -1,5 +1,4 @@
-"""
-Folder analysis component for library scanning.
+"""Folder analysis component for library scanning.
 
 Analyzes folders to determine which need scanning based on cache comparison.
 """
@@ -42,8 +41,7 @@ def analyze_folders_for_scan(
     cached_folders: dict[str, dict],
     force_rescan: bool = False,
 ) -> FolderScanPlan:
-    """
-    Analyze folders to determine which need scanning.
+    """Analyze folders to determine which need scanning.
 
     Walks the filesystem, computes folder metadata, and compares against
     cached folder data to identify unchanged folders that can be skipped.
@@ -56,6 +54,7 @@ def analyze_folders_for_scan(
 
     Returns:
         FolderScanPlan with folders to scan and statistics
+
     """
     all_folders: list[FolderMetadata] = []
     folders_to_scan: list[FolderMetadata] = []
@@ -127,8 +126,7 @@ def _count_audio_files_in_folder(folder_path: str) -> int:
 
 
 def _compute_folder_path(absolute_folder: Path, library_root: Path) -> str:
-    """
-    Compute POSIX-style relative folder path from library root.
+    """Compute POSIX-style relative folder path from library root.
 
     Args:
         absolute_folder: Absolute folder path
@@ -136,6 +134,7 @@ def _compute_folder_path(absolute_folder: Path, library_root: Path) -> str:
 
     Returns:
         POSIX-style relative path (e.g., "Rock/Beatles"), or "" for root
+
     """
     if absolute_folder == library_root:
         return ""

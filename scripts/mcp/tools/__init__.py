@@ -8,6 +8,7 @@ from .discover_api import *
 from .get_source import *
 from .lint_backend import *
 from .lint_frontend import *
+from .list_dir import *
 from .list_routes import *
 from .locate_symbol import *
 from .read_file import *
@@ -20,6 +21,7 @@ from .trace_endpoint import *
 __all__ = [
     "check_api_coverage",
     "discover_api",
+    "list_dir",
     "get_source",
     "get_symbol_body_at_line",
     "lint_backend",

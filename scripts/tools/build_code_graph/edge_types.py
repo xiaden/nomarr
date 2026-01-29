@@ -45,8 +45,7 @@ REACHABLE_EDGE_TYPES = {
 
 
 def get_edge_type_from_ast_case(ast_case: str | None) -> str:
-    """
-    Get the edge type for a given ast_case.
+    """Get the edge type for a given ast_case.
 
     Returns specific CALLS_* type if known, otherwise "CALLS" as fallback.
     """

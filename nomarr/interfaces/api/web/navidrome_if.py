@@ -1,7 +1,7 @@
 """Navidrome integration endpoints for web UI."""
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -34,7 +34,7 @@ router = APIRouter(prefix="/navidrome", tags=["Navidrome"])
 
 @router.get("/preview", dependencies=[Depends(verify_session)])
 async def web_navidrome_preview(
-    navidrome_service: "NavidromeService" = Depends(get_navidrome_service),
+    navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
 ) -> PreviewTagStatsResponse:
     """Get preview of tags for Navidrome config generation (web UI proxy)."""
     try:
@@ -50,7 +50,7 @@ async def web_navidrome_preview(
 
 @router.get("/config", dependencies=[Depends(verify_session)])
 async def web_navidrome_config(
-    navidrome_service: "NavidromeService" = Depends(get_navidrome_service),
+    navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
 ) -> NavidromeConfigResponse:
     """Generate Navidrome TOML configuration (web UI proxy)."""
     try:
@@ -65,7 +65,7 @@ async def web_navidrome_config(
 @router.post("/playlists/preview", dependencies=[Depends(verify_session)])
 async def web_navidrome_playlist_preview(
     request: PlaylistPreviewRequest,
-    navidrome_service: "NavidromeService" = Depends(get_navidrome_service),
+    navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
 ) -> PlaylistPreviewResponse:
     """Preview Smart Playlist query results."""
     try:
@@ -87,7 +87,7 @@ async def web_navidrome_playlist_preview(
 @router.post("/playlists/generate", dependencies=[Depends(verify_session)])
 async def web_navidrome_playlist_generate(
     request: PlaylistGenerateRequest,
-    navidrome_service: "NavidromeService" = Depends(get_navidrome_service),
+    navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
 ) -> GeneratePlaylistResponse:
     """Generate Navidrome Smart Playlist (.nsp) from query."""
     try:
@@ -114,7 +114,7 @@ async def web_navidrome_playlist_generate(
 
 @router.get("/templates", dependencies=[Depends(verify_session)])
 async def web_navidrome_templates_list(
-    navidrome_service: "NavidromeService" = Depends(get_navidrome_service),
+    navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
 ) -> GetTemplateSummaryResponse:
     """Get list of all available playlist templates."""
     try:
@@ -129,7 +129,7 @@ async def web_navidrome_templates_list(
 @router.post("/templates", dependencies=[Depends(verify_session)])
 async def web_navidrome_templates_generate(
     request: GenerateTemplateFilesRequest,
-    navidrome_service: "NavidromeService" = Depends(get_navidrome_service),
+    navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
 ) -> GenerateTemplateFilesResponse:
     """Generate all playlist templates as a batch."""
     try:
@@ -142,5 +142,5 @@ async def web_navidrome_templates_generate(
     except Exception as e:
         logging.exception("[Web API] Error generating templates")
         raise HTTPException(
-            status_code=500, detail=sanitize_exception_message(e, "Failed to generate templates")
+            status_code=500, detail=sanitize_exception_message(e, "Failed to generate templates"),
         ) from e

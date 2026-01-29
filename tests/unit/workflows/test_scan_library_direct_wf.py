@@ -1,5 +1,4 @@
-"""
-Unit tests for scan_library_direct_workflow Phase 2 behavioral invariants.
+"""Unit tests for scan_library_direct_workflow Phase 2 behavioral invariants.
 
 Tests verify:
 1. normalized_path computation (POSIX relpath, no library root prefix, no leading slash)

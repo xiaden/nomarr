@@ -1,5 +1,4 @@
-"""
-Workflows package.
+"""Workflows package.
 
 Top-level exports of commonly used workflows.
 """

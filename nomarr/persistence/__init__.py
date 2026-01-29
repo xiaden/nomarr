@@ -1,6 +1,4 @@
-"""
-Persistence package.
-"""
+"""Persistence package."""
 
 from nomarr.helpers.time_helper import now_ms
 

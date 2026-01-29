@@ -84,11 +84,11 @@ def parse_typescript_output(stdout: str, stderr: str) -> list[dict[str, Any]]:
 
 
 def lint_frontend() -> dict[str, Any]:
-    """
-    Run frontend linting tools (ESLint and TypeScript).
+    """Run frontend linting tools (ESLint and TypeScript).
 
     Returns:
         Structured JSON with errors or clean status
+
     """
     if not frontend_dir.exists():
         return {"status": "error", "summary": {"error": "Frontend directory not found"}, "errors": []}

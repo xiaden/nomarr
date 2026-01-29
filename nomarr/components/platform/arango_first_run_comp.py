@@ -53,6 +53,7 @@ def provision_database_and_user(
         ServerConnectionError: Cannot connect to ArangoDB
         DatabaseCreateError: Database creation failed
         UserCreateError: User creation failed
+
     """
     client = ArangoClient(hosts=hosts)
     sys_db = client.db("_system", username="root", password=root_password)
@@ -94,6 +95,7 @@ def is_first_run(config_path: Path, hosts: str | None = None) -> bool:
 
     Returns:
         True if first run needed, False if already configured AND database exists
+
     """
     if not config_path.exists():
         return True
@@ -134,6 +136,7 @@ def _wait_for_arango(hosts: str, max_attempts: int = 30, delay_s: float = 2.0) -
 
     Returns:
         True if connected, False if timeout
+
     """
     import logging
     import time
@@ -156,7 +159,7 @@ def _wait_for_arango(hosts: str, max_attempts: int = 30, delay_s: float = 2.0) -
                 logging.info(f"Waiting for ArangoDB... ({attempt}/{max_attempts}): {e}")
                 time.sleep(delay_s)
             else:
-                logging.error(f"ArangoDB connection timeout after {max_attempts} attempts: {e}")
+                logging.exception(f"ArangoDB connection timeout after {max_attempts} attempts: {e}")
                 return False
     return False
 
@@ -172,6 +175,7 @@ def _database_exists(hosts: str | None = None) -> bool:
 
     Returns:
         True if database exists, False otherwise (including connection errors)
+
     """
     import logging
 
@@ -217,6 +221,7 @@ def write_db_config(
     Args:
         config_path: Path to config file (e.g., /app/config/nomarr.yaml)
         password: Generated app password (from provision_database_and_user)
+
     """
     import yaml
 
@@ -247,11 +252,15 @@ def get_root_password_from_env() -> str:
 
     Raises:
         RuntimeError: If ARANGO_ROOT_PASSWORD not set
+
     """
     root_password = os.getenv("ARANGO_ROOT_PASSWORD")
     if not root_password:
-        raise RuntimeError(
+        msg = (
             "ARANGO_ROOT_PASSWORD environment variable not set. "
             "First-run provisioning requires root access to create database and user."
+        )
+        raise RuntimeError(
+            msg,
         )
     return root_password

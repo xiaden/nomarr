@@ -1,5 +1,4 @@
-"""
-Calibration bundle download service - fetch pre-made calibration bundles from GitHub.
+"""Calibration bundle download service - fetch pre-made calibration bundles from GitHub.
 
 ARCHITECTURE:
 - Bundles are TRANSPORT ARTIFACTS for distribution (e.g., from nom-cal repo)
@@ -30,8 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 def download_calibrations(repo_url: str, models_dir: str) -> dict[str, Any]:
-    """
-    Download pre-made calibration bundles from GitHub repository.
+    """Download pre-made calibration bundles from GitHub repository.
 
     NOTE: After download, bundles must be imported to database via
     import_calibration_bundle_wf before use. This function only handles
@@ -57,13 +55,14 @@ def download_calibrations(repo_url: str, models_dir: str) -> dict[str, Any]:
     Example:
         >>> download_calibrations("https://github.com/xiaden/nom-cal", "/app/models")
         NotImplementedError: Calibration bundle download not yet implemented
+
     """
     logger.info(f"[calibration_download] Checking for missing calibration bundle files in {models_dir}")
 
     # This is a stub implementation
     # TODO: Implement actual download logic
     # TODO: After download, call import_calibration_bundle_wf to import to DB
-    raise NotImplementedError(
+    msg = (
         "Calibration bundle download feature is not yet implemented.\n\n"
         "To use nomarr without local calibration generation:\n"
         "1. Manually download calibration files from the repository:\n"
@@ -79,11 +78,13 @@ def download_calibrations(repo_url: str, models_dir: str) -> dict[str, Any]:
         "4. Use generated calibration files\n\n"
         "See documentation for more details: docs/CALIBRATION.md"
     )
+    raise NotImplementedError(
+        msg,
+    )
 
 
 def check_missing_calibrations(models_dir: str) -> list[dict[str, str]]:
-    """
-    Check which heads are missing calibration files.
+    """Check which heads are missing calibration files.
 
     Scans models directory to find all heads and checks if each has
     a calibration.json (or calibration-v*.json) file.
@@ -103,6 +104,7 @@ def check_missing_calibrations(models_dir: str) -> list[dict[str, str]]:
             {"model": "effnet", "head": "mood_happy", "path": "/app/models/effnet/heads/mood_happy-calibration.json"},
             ...
         ]
+
     """
     from nomarr.components.ml.ml_discovery_comp import discover_heads
 
@@ -134,7 +136,7 @@ def check_missing_calibrations(models_dir: str) -> list[dict[str, str]]:
                         "model": head.backbone,
                         "head": head.sidecar.data.get("name", model_base),
                         "path": calib_path,
-                    }
+                    },
                 )
 
     logger.info(f"[calibration_download] Found {len(missing)} heads without calibration files")
@@ -143,10 +145,9 @@ def check_missing_calibrations(models_dir: str) -> list[dict[str, str]]:
 
 
 def ensure_calibrations_exist(
-    repo_url: str, models_dir: str, auto_download: bool = False
+    repo_url: str, models_dir: str, auto_download: bool = False,
 ) -> EnsureCalibrationsExistResult:
-    """
-    Ensure calibration files exist, optionally downloading if missing.
+    """Ensure calibration files exist, optionally downloading if missing.
 
     This is the main entry point for calibration availability checking.
     Called during application startup to verify calibrations are available.
@@ -162,6 +163,7 @@ def ensure_calibrations_exist(
     Example:
         >>> ensure_calibrations_exist("https://github.com/xiaden/nom-cal", "/app/models")
         EnsureCalibrationsExistResult(has_calibrations=False, missing_count=5, ...)
+
     """
     logger.info("[calibration_download] Checking calibration availability")
 

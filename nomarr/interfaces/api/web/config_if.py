@@ -1,7 +1,7 @@
 """Configuration management endpoints for web UI."""
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -27,8 +27,8 @@ router = APIRouter(prefix="/config", tags=["Config"])
 
 @router.get("")
 def get_config(
-    _session: dict = Depends(verify_session),
-    config_service: Any = Depends(get_config_service),
+    _session: Annotated[dict, Depends(verify_session)],
+    config_service: Annotated[Any, Depends(get_config_service)],
 ) -> ConfigResponse:
     """Get current configuration values (Web UI editable subset only)."""
     try:
@@ -68,11 +68,10 @@ def get_config(
 @router.post("")
 def update_config(
     request: ConfigUpdateRequest,
-    _session: dict = Depends(verify_session),
-    config_service: "ConfigService" = Depends(get_config_service),
+    _session: Annotated[dict, Depends(verify_session)],
+    config_service: Annotated["ConfigService", Depends(get_config_service)],
 ) -> ConfigUpdateResponse:
-    """
-    Update a configuration value in the database.
+    """Update a configuration value in the database.
 
     Changes are stored in the DB meta table and will override YAML/env config on restart.
     Only runtime settings appropriate for Web UI can be updated.
@@ -114,5 +113,5 @@ def update_config(
     except Exception as e:
         logging.exception("[Web API] Error updating config")
         raise HTTPException(
-            status_code=500, detail=sanitize_exception_message(e, "Failed to update configuration")
+            status_code=500, detail=sanitize_exception_message(e, "Failed to update configuration"),
         ) from e

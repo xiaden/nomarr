@@ -1,5 +1,4 @@
-"""
-ML domain DTOs.
+"""ML domain DTOs.
 
 Data transfer objects for ML components, inference, and calibration.
 These form cross-layer contracts between components, workflows, and services.
@@ -20,8 +19,7 @@ if TYPE_CHECKING:
 
 @dataclass
 class HeadOutput:
-    """
-    In-memory representation of a head's output with tier information.
+    """In-memory representation of a head's output with tier information.
 
     Tier is computed using calibration (if available) but never persisted
     as a *_tier tag. It's only used for mood aggregation and conflict resolution.
@@ -33,6 +31,7 @@ class HeadOutput:
         value: Numeric score (post-calibration if applied)
         tier: Tier level ("low", "medium", "high", etc.) - internal only
         calibration_id: Which calibration was applied (e.g., "none_0", "platt_1")
+
     """
 
     head: Any  # HeadInfo from components - use Any to avoid circular import

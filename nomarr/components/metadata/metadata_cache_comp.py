@@ -8,6 +8,8 @@ import logging
 from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
+    from arango.cursor import Cursor
+
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
@@ -22,6 +24,7 @@ def rebuild_song_metadata_cache(db: "Database", song_id: str) -> None:
     Args:
         db: Database handle
         song_id: Song _id (e.g., "library_files/12345")
+
     """
     # Fetch all tags for this song as a dict
     tags_dict = db.tags.get_song_tags(song_id).to_dict()
@@ -63,7 +66,7 @@ def rebuild_song_metadata_cache(db: "Database", song_id: str) -> None:
         } IN library_files
         """,
         bind_vars=cast(
-            dict[str, Any],
+            "dict[str, Any]",
             {
                 "song_id": song_id,
                 "artist": artist,
@@ -86,10 +89,10 @@ def rebuild_all_song_metadata_caches(db: "Database", limit: int | None = None) -
 
     Returns:
         Number of songs processed
+
     """
     from typing import cast
 
-    from arango.cursor import Cursor
 
     # Get all song _ids
     query = "FOR file IN library_files SORT file._key"
@@ -97,7 +100,7 @@ def rebuild_all_song_metadata_caches(db: "Database", limit: int | None = None) -
         query += f" LIMIT {limit}"
     query += " RETURN file._id"
 
-    cursor = cast(Cursor, db.db.aql.execute(query))
+    cursor = cast("Cursor", db.db.aql.execute(query))
     song_ids = list(cursor)
 
     for i, song_id in enumerate(song_ids, 1):

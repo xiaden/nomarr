@@ -1,5 +1,4 @@
-"""
-Unit tests for nomarr.helpers.dto.config_dto module.
+"""Unit tests for nomarr.helpers.dto.config_dto module.
 
 Tests the configuration DTOs.
 """

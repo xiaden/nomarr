@@ -1,5 +1,4 @@
-"""
-Workflow for starting library scans (orchestration layer).
+"""Workflow for starting library scans (orchestration layer).
 
 This workflow handles the orchestration of scan initialization:
 - Validates library exists
@@ -36,8 +35,7 @@ def start_scan_workflow(
     batch_size: int = 200,
     force_rescan: bool = False,
 ) -> StartScanResult:
-    """
-    Start a library scan workflow.
+    """Start a library scan workflow.
 
     Supports both full library scans and targeted/incremental scans.
 
@@ -64,16 +62,19 @@ def start_scan_workflow(
 
     Raises:
         ValueError: If library not found or scan already running
+
     """
     # Validate library exists
     library = db.libraries.get_library(library_id)
     if not library:
-        raise ValueError(f"Library not found: {library_id}")
+        msg = f"Library not found: {library_id}"
+        raise ValueError(msg)
 
     # Check if scan already running
     scan_status = library.get("scan_status")
     if scan_status == "scanning":
-        raise ValueError(f"Library {library_id} is already being scanned")
+        msg = f"Library {library_id} is already being scanned"
+        raise ValueError(msg)
 
     # Construct scan_targets if not provided (default to full library scan)
     if not scan_targets:
@@ -85,14 +86,14 @@ def start_scan_workflow(
     if interrupted:
         logger.warning(
             f"[start_scan_workflow] Detected interrupted {'full' if was_full else 'targeted'} scan "
-            f"for library {library['name']} - continuing with new scan"
+            f"for library {library['name']} - continuing with new scan",
         )
 
     from nomarr.workflows.library.scan_library_direct_wf import scan_library_direct_workflow
 
     logger.info(
         f"[start_scan_workflow] Starting scan for library {library_id} ({library['name']}) "
-        f"with {len(scan_targets)} target(s)"
+        f"with {len(scan_targets)} target(s)",
     )
 
     # Set scan_status to 'scanning' BEFORE launching background task
@@ -122,21 +123,20 @@ def start_scan_workflow(
             files_removed=0,
             job_ids=[task_id] if task_id else [],  # Task ID is str
         )
-    else:
-        # Synchronous execution (for testing or no background service)
-        stats = scan_library_direct_workflow(
-            db=db,
-            library_id=library_id,
-            scan_targets=scan_targets,
-            tagger_version=tagger_version,
-            batch_size=batch_size,
-            force_rescan=force_rescan,
-        )
+    # Synchronous execution (for testing or no background service)
+    stats = scan_library_direct_workflow(
+        db=db,
+        library_id=library_id,
+        scan_targets=scan_targets,
+        tagger_version=tagger_version,
+        batch_size=batch_size,
+        force_rescan=force_rescan,
+    )
 
-        return StartScanResult(
-            files_discovered=stats["files_discovered"],
-            files_queued=0,  # Legacy field
-            files_skipped=stats["files_skipped"],
-            files_removed=stats["files_removed"],
-            job_ids=[],  # No background task
-        )
+    return StartScanResult(
+        files_discovered=stats["files_discovered"],
+        files_queued=0,  # Legacy field
+        files_skipped=stats["files_skipped"],
+        files_removed=stats["files_removed"],
+        job_ids=[],  # No background task
+    )

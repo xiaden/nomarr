@@ -27,6 +27,7 @@ def ensure_schema(db: DatabaseLike) -> None:
 
     Args:
         db: ArangoDB database handle
+
     """
     _create_collections(db)
     _create_indexes(db)
@@ -61,7 +62,7 @@ def _create_collections(db: DatabaseLike) -> None:
 
     # Edge collections
     edge_collections = [
-        "song_tag_edges"  # song→tag relationships (unified)
+        "song_tag_edges",  # song→tag relationships (unified)
     ]
 
     for edge_collection_name in edge_collections:
@@ -218,6 +219,7 @@ def _ensure_index(
         unique: Whether index is unique
         sparse: Whether to only index non-null values
         expireAfter: TTL expiration seconds (for ttl indexes)
+
     """
     try:
         coll = db.collection(collection)
@@ -250,7 +252,7 @@ def _create_graphs(db: DatabaseLike) -> None:
                         "edge_collection": "song_tag_edges",
                         "from_vertex_collections": ["library_files"],
                         "to_vertex_collections": ["tags"],
-                    }
+                    },
                 ],
             )
 

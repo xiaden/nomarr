@@ -6,13 +6,13 @@ import ast
 
 
 def get_layer_from_module_path(module_id: str) -> str:
-    """
-    Extract layer from module path.
+    """Extract layer from module path.
 
     Examples:
         "nomarr.interfaces.api.web.router" -> "interfaces"
         "nomarr.services.queue_svc" -> "services"
         "nomarr.workflows.queue.enqueue_files" -> "workflows"
+
     """
     parts = module_id.split(".")
     if len(parts) < 2:
@@ -44,8 +44,7 @@ def get_return_annotation(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str |
 
 
 def extract_return_var_names(node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
-    """
-    Extract variable names from return statements.
+    """Extract variable names from return statements.
 
     Handles:
     - return some_var
@@ -86,8 +85,7 @@ def _extract_names_from_expr(expr: ast.expr) -> list[str]:
 
 
 def extract_class_attributes(class_node: ast.ClassDef) -> list[str]:
-    """
-    Extract attribute names from a class.
+    """Extract attribute names from a class.
 
     Includes:
     - Class-level assignments
@@ -147,13 +145,13 @@ def extract_function_params(func_node: ast.FunctionDef | ast.AsyncFunctionDef) -
 
 
 def is_fastapi_route_decorator(decorator: ast.expr) -> bool:
-    """
-    Check if a decorator is a FastAPI route decorator.
+    """Check if a decorator is a FastAPI route decorator.
 
     Examples:
         @router.get(...)
         @router.post(...)
         @app.get(...)
+
     """
     # Handle @router.get(...) or @router.get
     if isinstance(decorator, ast.Attribute) and decorator.attr in {

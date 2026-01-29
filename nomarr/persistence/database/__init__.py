@@ -1,5 +1,4 @@
-"""
-Database operations package.
+"""Database operations package.
 
 Contains table-specific operations classes (one per table) and joined query operations.
 Each *_aql.py file owns all AQL for that specific table.

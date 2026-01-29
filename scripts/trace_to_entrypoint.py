@@ -66,8 +66,7 @@ def find_entrypoints(graph: dict) -> set[str]:
 def trace_to_entrypoints(
     target_id: str, reverse_edges: dict, entrypoints: set[str], max_paths: int = 10, max_depth: int = 50
 ) -> list[list[tuple[str, str, str]]]:
-    """
-    Find paths from target to entrypoints using reverse BFS.
+    """Find paths from target to entrypoints using reverse BFS.
 
     Returns list of paths, where each path is a list of (node_id, edge_type, ast_case) tuples.
     """

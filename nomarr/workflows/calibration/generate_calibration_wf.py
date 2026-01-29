@@ -1,5 +1,4 @@
-"""
-Calibration generation workflow.
+"""Calibration generation workflow.
 
 This workflow generates calibrations for all model heads with drift tracking:
 - Queries library tags to compute min/max calibrations
@@ -95,8 +94,7 @@ class CalculateHeadDriftResult:
 
 
 def _calculate_apd(old_p5: float, old_p95: float, new_p5: float, new_p95: float) -> tuple[float, float]:
-    """
-    Calculate Absolute Percentile Drift (APD) for P5 and P95.
+    """Calculate Absolute Percentile Drift (APD) for P5 and P95.
 
     APD measures how much the extreme percentiles have shifted between calibrations.
     Lower values indicate stability.
@@ -115,6 +113,7 @@ def _calculate_apd(old_p5: float, old_p95: float, new_p5: float, new_p95: float)
 
     Returns:
         Tuple of (apd_p5, apd_p95)
+
     """
     apd_p5 = abs(new_p5 - old_p5)
     apd_p95 = abs(new_p95 - old_p95)
@@ -122,8 +121,7 @@ def _calculate_apd(old_p5: float, old_p95: float, new_p5: float, new_p95: float)
 
 
 def _calculate_srd(old_p5: float, old_p95: float, new_p5: float, new_p95: float) -> float:
-    """
-    Calculate Scale Range Drift (SRD).
+    """Calculate Scale Range Drift (SRD).
 
     SRD measures how much the calibrated dynamic range has changed.
     Indicates if the scale mapping is stable.
@@ -141,6 +139,7 @@ def _calculate_srd(old_p5: float, old_p95: float, new_p5: float, new_p95: float)
 
     Returns:
         Scale range drift (absolute change in range)
+
     """
     old_range = old_p95 - old_p5
     new_range = new_p95 - new_p5
@@ -148,8 +147,7 @@ def _calculate_srd(old_p5: float, old_p95: float, new_p5: float, new_p95: float)
 
 
 def _calculate_jsd(old_scores: np.ndarray, new_scores: np.ndarray, bins: int = 100) -> float:
-    """
-    Calculate Jensen-Shannon Divergence (JSD) between score distributions.
+    """Calculate Jensen-Shannon Divergence (JSD) between score distributions.
 
     JSD measures the similarity of distribution shapes. It's symmetric and
     bounded [0, 1], making it ideal for comparing calibration runs.
@@ -167,6 +165,7 @@ def _calculate_jsd(old_scores: np.ndarray, new_scores: np.ndarray, bins: int = 1
 
     Returns:
         Jensen-Shannon divergence [0, 1]
+
     """
     # Create histograms with same bin edges
     bin_edges = np.linspace(0, 1, bins + 1)
@@ -183,8 +182,7 @@ def _calculate_jsd(old_scores: np.ndarray, new_scores: np.ndarray, bins: int = 1
 
 
 def _calculate_median_iqr_drift(old_scores: np.ndarray, new_scores: np.ndarray) -> tuple[float, float]:
-    """
-    Calculate median and IQR (Interquartile Range) drift.
+    """Calculate median and IQR (Interquartile Range) drift.
 
     These provide center shift and spread shift measurements that are
     robust to outliers (unlike mean/std).
@@ -199,6 +197,7 @@ def _calculate_median_iqr_drift(old_scores: np.ndarray, new_scores: np.ndarray) 
 
     Returns:
         Tuple of (median_drift, iqr_drift)
+
     """
     old_median = np.median(old_scores)
     new_median = np.median(new_scores)
@@ -218,8 +217,7 @@ def _compare_calibrations(
     new_scores: np.ndarray,
     thresholds: dict[str, float] | None = None,
 ) -> CompareCalibrationsResult:
-    """
-    Compare two calibration runs and calculate all drift metrics.
+    """Compare two calibration runs and calculate all drift metrics.
 
     Args:
         old_calibration: Previous calibration dict with 'p5' and 'p95' keys
@@ -239,6 +237,7 @@ def _compare_calibrations(
             - iqr_drift: IQR shift
             - is_stable: Boolean (True if all metrics under threshold)
             - failed_metrics: List of metric names that exceeded threshold
+
     """
     # Default thresholds (conservative)
     default_thresholds = {
@@ -254,7 +253,7 @@ def _compare_calibrations(
 
     # Calculate all metrics
     apd_p5, apd_p95 = _calculate_apd(
-        old_calibration["p5"], old_calibration["p95"], new_calibration["p5"], new_calibration["p95"]
+        old_calibration["p5"], old_calibration["p95"], new_calibration["p5"], new_calibration["p95"],
     )
     srd = _calculate_srd(old_calibration["p5"], old_calibration["p95"], new_calibration["p5"], new_calibration["p95"])
     jsd = _calculate_jsd(old_scores, new_scores)
@@ -302,8 +301,7 @@ def generate_histogram_calibration_wf(
     start_pct: float = 0.5,
     increment_pct: float = 0.05,
 ) -> dict[str, Any]:
-    """
-    Generate histogram-based calibrations for all model heads.
+    """Generate histogram-based calibrations for all model heads.
 
     Stateless, idempotent workflow. Always computes from current DB state.
     Uses sparse uniform histogram (10,000 bins) to derive p5/p95 percentiles.
@@ -329,11 +327,12 @@ def generate_histogram_calibration_wf(
           "progressive_iterations": int (if progressive=True),
           "convergence_history": [{iteration, sample_size, sample_pct, heads: {head_key: deltas}}] (if progressive=True)
         }
+
     """
     from nomarr.components.ml.ml_discovery_comp import discover_heads
 
     logger.info(
-        f"[histogram_calibration_wf] Starting histogram-based calibration generation (progressive={progressive})"
+        f"[histogram_calibration_wf] Starting histogram-based calibration generation (progressive={progressive})",
     )
 
     # Discover all heads
@@ -434,7 +433,7 @@ def _run_single_calibration(
             success_count += 1
 
         except Exception as e:
-            logger.error(f"[histogram_calibration_wf] Failed to generate calibration for {head_key}: {e}")
+            logger.exception(f"[histogram_calibration_wf] Failed to generate calibration for {head_key}: {e}")
             failed_count += 1
 
     logger.info(f"[histogram_calibration_wf] Completed: {success_count} success, {failed_count} failed")
@@ -469,8 +468,7 @@ def _run_progressive_calibration(
     start_sample_size: int,
     increment_size: int,
 ) -> dict[str, Any]:
-    """
-    Run calibration progressively: start with N files, add M more each iteration.
+    """Run calibration progressively: start with N files, add M more each iteration.
     Store convergence history in calibration_history collection.
     """
     from nomarr.components.ml.ml_calibration_comp import (
@@ -508,7 +506,7 @@ def _run_progressive_calibration(
         iteration += 1
         current_pct = current_sample_size / total_files
         logger.info(
-            f"[progressive_calibration] Iteration {iteration}: {current_sample_size} files ({current_pct * 100:.0f}%)"
+            f"[progressive_calibration] Iteration {iteration}: {current_sample_size} files ({current_pct * 100:.0f}%)",
         )
 
         iteration_results = {}
@@ -598,11 +596,11 @@ def _run_progressive_calibration(
                 logger.debug(
                     f"[progressive_calibration] {head_key}: p5={calib_result['p5']:.4f} "
                     f"(Δ{p5_delta:.4f if p5_delta else 'N/A'}), "
-                    f"p95={calib_result['p95']:.4f} (Δ{p95_delta:.4f if p95_delta else 'N/A'})"
+                    f"p95={calib_result['p95']:.4f} (Δ{p95_delta:.4f if p95_delta else 'N/A'})",
                 )
 
             except Exception as e:
-                logger.error(f"[progressive_calibration] Failed {head_key}: {e}")
+                logger.exception(f"[progressive_calibration] Failed {head_key}: {e}")
                 failed_count += 1
 
         # Store iteration summary
@@ -614,7 +612,7 @@ def _run_progressive_calibration(
                 "heads_success": success_count,
                 "heads_failed": failed_count,
                 "deltas": iteration_deltas,
-            }
+            },
         )
 
         # Save results for next iteration's delta calculation

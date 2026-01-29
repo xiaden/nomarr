@@ -1,5 +1,4 @@
-"""
-Calibrated tags writer workflow.
+"""Calibrated tags writer workflow.
 
 This workflow applies calibration to existing library files without re-running ML inference.
 It reconstructs HeadOutput objects from stored numeric tags and calibration metadata,
@@ -38,18 +37,19 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.ml.ml_discovery_comp import discover_heads
 from nomarr.components.tagging.tagging_aggregation_comp import aggregate_mood_tiers
 from nomarr.components.tagging.tagging_writer_comp import TagWriter
-from nomarr.helpers.dto.calibration_dto import WriteCalibratedTagsParams
 from nomarr.helpers.dto.ml_dto import HeadOutput
-from nomarr.helpers.dto.path_dto import LibraryPath
 from nomarr.helpers.dto.tags_dto import Tags
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
+    from nomarr.helpers.dto.calibration_dto import WriteCalibratedTagsParams
+    from nomarr.helpers.dto.path_dto import LibraryPath
     from nomarr.persistence.db import Database
 
 
@@ -67,8 +67,7 @@ def _load_library_state(
     file_path: str,
     namespace: str,
 ) -> LoadLibraryStateResult:
-    """
-    Load file metadata and tags from library database.
+    """Load file metadata and tags from library database.
 
     Args:
         db: Database instance
@@ -80,12 +79,13 @@ def _load_library_state(
 
     Raises:
         FileNotFoundError: If file not found in library database
-    """
 
+    """
     # Get file from library
     library_file = db.library_files.get_library_file(file_path)
     if not library_file:
-        raise FileNotFoundError(f"File not in library: {file_path}")
+        msg = f"File not in library: {file_path}"
+        raise FileNotFoundError(msg)
 
     file_id = library_file["_id"]
     chromaprint = library_file.get("chromaprint")
@@ -119,8 +119,7 @@ def _filter_numeric_tags(
     all_tags: dict[str, Any],
     version_tag_key: str,
 ) -> dict[str, float | int]:
-    """
-    Filter to numeric tags only, excluding mood-* and version tags.
+    """Filter to numeric tags only, excluding mood-* and version tags.
 
     Args:
         all_tags: All tags for the file
@@ -128,6 +127,7 @@ def _filter_numeric_tags(
 
     Returns:
         Dictionary of numeric tags only
+
     """
 
     def _is_version_key(key: str) -> bool:
@@ -162,8 +162,7 @@ def _discover_head_mappings(
     namespace: str,
     numeric_tags: dict[str, float | int],
 ) -> dict[str, tuple[Any, str]]:
-    """
-    Discover heads and build mapping from tag keys to HeadInfo.
+    """Discover heads and build mapping from tag keys to HeadInfo.
 
     Args:
         models_dir: Path to models directory
@@ -175,11 +174,13 @@ def _discover_head_mappings(
 
     Raises:
         ValueError: If no heads discovered
+
     """
     # Discover HeadInfo from models directory to get metadata
     heads = discover_heads(models_dir)
     if not heads:
-        raise ValueError(f"No heads discovered in {models_dir}")
+        msg = f"No heads discovered in {models_dir}"
+        raise ValueError(msg)
 
     # Build lookup: model_key -> HeadInfo
     head_by_model_key: dict[str, tuple[Any, str]] = {}  # model_key -> (HeadInfo, label)
@@ -202,8 +203,7 @@ def _discover_head_mappings(
 def _load_calibrations_from_db(
     db: Database,
 ) -> dict[str, Any]:
-    """
-    Load calibrations from calibration_state database table.
+    """Load calibrations from calibration_state database table.
 
     Args:
         db: Database instance
@@ -211,6 +211,7 @@ def _load_calibrations_from_db(
     Returns:
         Dictionary of calibration data (label -> {p5, p95})
         Empty dict if no calibrations exist (initial state)
+
     """
     from nomarr.workflows.calibration.calibration_loader_wf import load_calibrations_from_db_wf
 
@@ -230,8 +231,7 @@ def _reconstruct_head_outputs(
     namespace: str,
     calibrations: dict[str, Any],
 ) -> list[HeadOutput]:
-    """
-    Reconstruct HeadOutput objects from numeric tags and calibration data.
+    """Reconstruct HeadOutput objects from numeric tags and calibration data.
 
     Note: calibration_id set to None for all outputs (legacy field, not used).
 
@@ -243,6 +243,7 @@ def _reconstruct_head_outputs(
 
     Returns:
         List of HeadOutput objects
+
     """
     head_outputs: list[HeadOutput] = []
     for tag_key, value in numeric_tags.items():
@@ -281,7 +282,7 @@ def _reconstruct_head_outputs(
                 value=value,
                 tier=tier,
                 calibration_id=None,  # Not used; calibration tracked via calibration_hash
-            )
+            ),
         )
 
     if not head_outputs:
@@ -296,8 +297,7 @@ def _compute_mood_tags(
     head_outputs: list[HeadOutput],
     calibrations: dict[str, Any],
 ) -> Tags:
-    """
-    Aggregate HeadOutput objects into mood-* tags.
+    """Aggregate HeadOutput objects into mood-* tags.
 
     Args:
         head_outputs: List of HeadOutput objects
@@ -305,6 +305,7 @@ def _compute_mood_tags(
 
     Returns:
         Tags DTO with mood tags
+
     """
     mood_tags_dict = aggregate_mood_tiers(head_outputs, calibrations=calibrations)
 
@@ -326,8 +327,7 @@ def _update_db_and_file(
     mood_tags: Tags,
     chromaprint: str | None = None,
 ) -> None:
-    """
-    Update mood-* tags in database and file.
+    """Update mood-* tags in database and file.
 
     Uses atomic safe writes to prevent file corruption.
 
@@ -338,6 +338,7 @@ def _update_db_and_file(
         namespace: Tag namespace
         mood_tags: Tags DTO with mood tags to write
         chromaprint: Audio fingerprint for verification (from library_files)
+
     """
     # Store mood tags in DB with "nom:" prefix (Nomarr provenance)
     for tag in mood_tags:
@@ -357,7 +358,8 @@ def _update_db_and_file(
     if chromaprint and library_root:
         result = writer.write_safe(library_path, mood_tags, library_root, chromaprint)
         if not result.success:
-            raise RuntimeError(f"Safe write failed: {result.error}")
+            msg = f"Safe write failed: {result.error}"
+            raise RuntimeError(msg)
 
         # Always update folder mtime after tag write (write modifies folder mtime)
         if library_path.library_id:
@@ -404,8 +406,7 @@ def write_calibrated_tags_wf(
     db: Database,
     params: WriteCalibratedTagsParams,
 ) -> None:
-    """
-    Write calibrated tags to a file by applying calibration to existing numeric tags.
+    """Write calibrated tags to a file by applying calibration to existing numeric tags.
 
     This workflow:
     1. Loads numeric tags from DB (model_key -> value)
@@ -443,6 +444,7 @@ def write_calibrated_tags_wf(
         ...     calibrate_heads=False,
         ... )
         >>> write_calibrated_tags_wf(db=my_db, params=params)
+
     """
     # Extract params for convenient access
     file_path = params.file_path

@@ -1,5 +1,4 @@
-"""
-FastAPI dependency injection helpers for web endpoints.
+"""FastAPI dependency injection helpers for web endpoints.
 
 These functions provide clean dependency injection for services,
 replacing the old get_state() service locator pattern.

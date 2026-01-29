@@ -12,17 +12,18 @@ from __future__ import annotations
 
 import contextlib
 import json
-from collections.abc import Iterable
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from mutagen import MutagenError
 
-from nomarr.helpers.dto.tags_dto import Tags
-
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+    from pathlib import Path
+    from pathlib import Path as PathLib
+
     from nomarr.components.tagging.safe_write_comp import SafeWriteResult
     from nomarr.helpers.dto.path_dto import LibraryPath
+    from nomarr.helpers.dto.tags_dto import Tags
 from mutagen.flac import FLAC
 from mutagen.id3 import ID3, TXXX, ID3NoHeaderError
 from mutagen.mp4 import MP4, MP4FreeForm
@@ -31,11 +32,10 @@ from mutagen.oggvorbis import OggVorbis
 
 
 def _to_text_value(value: Any) -> str:
-    """
-    Convert a value to a text representation without losing numeric precision.
+    """Convert a value to a text representation without losing numeric precision.
     - Numbers: write via JSON to keep a stable, locale-independent representation
     - Dict/List: JSON encode compactly
-    - Everything else: str()
+    - Everything else: str().
     """
     if isinstance(value, int | float):
         return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
@@ -45,13 +45,13 @@ def _to_text_value(value: Any) -> str:
 
 
 def _ns_key(key: str, ns_prefix: str) -> str:
-    """
-    Ensure 'key' is namespaced with 'ns_prefix' exactly once.
+    """Ensure 'key' is namespaced with 'ns_prefix' exactly once.
 
     Examples:
       _ns_key("yamnet_happy", "essentia")         -> "essentia:yamnet_happy"
       _ns_key("essentia:yamnet_happy", "essentia") -> "essentia:yamnet_happy" (unchanged)
       _ns_key("otherns:key", "essentia")           -> "essentia:otherns:key" (do not strip)
+
     """
     if not ns_prefix:
         return key
@@ -65,7 +65,7 @@ def _ns_key(key: str, ns_prefix: str) -> str:
 # MP3 (ID3 v2.x) writer
 # ----------------------------------------------------------------------
 class _MP3Writer:
-    def __init__(self, overwrite: bool = True, ns_prefix: str = "nom"):
+    def __init__(self, overwrite: bool = True, ns_prefix: str = "nom") -> None:
         self.overwrite = overwrite
         self.ns_prefix = ns_prefix
 
@@ -89,7 +89,8 @@ class _MP3Writer:
         """Write tags as ID3 TXXX frames (one save per file)."""
         # Enforce validation before file operations
         if not path.is_valid():
-            raise ValueError(f"Cannot write tags to invalid path ({path.status}): {path.absolute} - {path.reason}")
+            msg = f"Cannot write tags to invalid path ({path.status}): {path.absolute} - {path.reason}"
+            raise ValueError(msg)
 
         path_str = str(path.absolute)
         try:
@@ -112,21 +113,21 @@ class _MP3Writer:
 
             id3.save(path_str, v2_version=4)  # Use ID3v2.4 for proper multi-value support
         except MutagenError as e:
-            raise RuntimeError(f"MP3 write failed: {e}") from e
+            msg = f"MP3 write failed: {e}"
+            raise RuntimeError(msg) from e
 
 
 # ----------------------------------------------------------------------
 # MP4/M4A (iTunes freeform atoms) writer
 # ----------------------------------------------------------------------
 class _MP4Writer:
-    def __init__(self, overwrite: bool = True, ns_prefix: str = "nom"):
+    def __init__(self, overwrite: bool = True, ns_prefix: str = "nom") -> None:
         self.overwrite = overwrite
         self.ns_prefix = ns_prefix
 
     @staticmethod
     def _ff_key(ns_key: str) -> str:
-        """
-        Build the iTunes freeform key:
+        """Build the iTunes freeform key:
           '----:com.apple.iTunes:<ns_key>'
         where ns_key is '<namespace>:<key>'.
         """
@@ -151,7 +152,8 @@ class _MP4Writer:
     def write(self, path: LibraryPath, tags: dict[str, Any]) -> None:
         """Write tags as iTunes freeforms with UTF-8 payloads."""
         if not path.is_valid():
-            raise ValueError(f"Cannot write tags to invalid path ({path.status}): {path.absolute} - {path.reason}")
+            msg = f"Cannot write tags to invalid path ({path.status}): {path.absolute} - {path.reason}"
+            raise ValueError(msg)
 
         path_str = str(path.absolute)
         try:
@@ -173,26 +175,27 @@ class _MP4Writer:
 
             mp4.save()
         except MutagenError as e:
-            raise RuntimeError(f"MP4/M4A write failed: {e}") from e
+            msg = f"MP4/M4A write failed: {e}"
+            raise RuntimeError(msg) from e
 
 
 # ----------------------------------------------------------------------
 # FLAC/OGG/Opus (Vorbis comments) writer
 # ----------------------------------------------------------------------
 class _VorbisWriter:
-    def __init__(self, overwrite: bool = True, ns_prefix: str = "nom"):
+    def __init__(self, overwrite: bool = True, ns_prefix: str = "nom") -> None:
         self.overwrite = overwrite
         self.ns_prefix = ns_prefix
 
     @staticmethod
     def _vorbis_key(ns_key: str) -> str:
-        """
-        Convert namespaced key to Vorbis-compatible format.
+        """Convert namespaced key to Vorbis-compatible format.
         Replace ':' and '-' with '_', then uppercase.
 
         Examples:
           'essentia:mood-strict' -> 'ESSENTIA_MOOD_STRICT'
           'essentia:yamnet_happy' -> 'ESSENTIA_YAMNET_HAPPY'
+
         """
         return ns_key.replace(":", "_").replace("-", "_").upper()
 
@@ -214,7 +217,8 @@ class _VorbisWriter:
     def write(self, path: LibraryPath, tags: dict[str, Any]) -> None:
         """Write tags as Vorbis comments (native multi-value support)."""
         if not path.is_valid():
-            raise ValueError(f"Cannot write tags to invalid path ({path.status}): {path.absolute} - {path.reason}")
+            msg = f"Cannot write tags to invalid path ({path.status}): {path.absolute} - {path.reason}"
+            raise ValueError(msg)
 
         path_str = str(path.absolute)
         try:
@@ -227,7 +231,8 @@ class _VorbisWriter:
             elif ext == "opus":
                 vorbis_file = OggOpus(path_str)  # type: ignore[assignment]
             else:
-                raise RuntimeError(f"Unsupported Vorbis file type: .{ext}")
+                msg = f"Unsupported Vorbis file type: .{ext}"
+                raise RuntimeError(msg)
 
             if vorbis_file.tags is None:
                 vorbis_file.add_tags()
@@ -246,21 +251,21 @@ class _VorbisWriter:
 
             vorbis_file.save()
         except MutagenError as e:
-            raise RuntimeError(f"Vorbis write failed: {e}") from e
+            msg = f"Vorbis write failed: {e}"
+            raise RuntimeError(msg) from e
 
 
 # ----------------------------------------------------------------------
 # Public, format-aware writer
 # ----------------------------------------------------------------------
 class TagWriter:
-    """
-    Format-aware tag writer that respects:
-      - overwrite: if True, clears only existing '<namespace>:' tags before writing
-      - full precision: numeric values are written as unrounded strings
-      - namespace: every key is written as '<namespace>:<key>' exactly once
+    """Format-aware tag writer that respects:
+    - overwrite: if True, clears only existing '<namespace>:' tags before writing
+    - full precision: numeric values are written as unrounded strings
+    - namespace: every key is written as '<namespace>:<key>' exactly once.
     """
 
-    def __init__(self, overwrite: bool = True, namespace: str = "nom"):
+    def __init__(self, overwrite: bool = True, namespace: str = "nom") -> None:
         self.overwrite = overwrite
         self.namespace = namespace
         self._mp3 = _MP3Writer(overwrite=overwrite, ns_prefix=namespace)
@@ -290,12 +295,14 @@ class TagWriter:
         elif ext in ("flac", "ogg", "opus"):
             self._vorbis.write(temp_lib_path, tags)
         else:
-            raise RuntimeError(f"Unsupported file type for writing: .{ext}")
+            msg = f"Unsupported file type for writing: .{ext}"
+            raise RuntimeError(msg)
 
     def write(self, path: LibraryPath, tags: Tags) -> None:
         """Write tags directly to file (no safety verification)."""
         if not path.is_valid():
-            raise ValueError(f"Cannot write tags to invalid path ({path.status}): {path.absolute} - {path.reason}")
+            msg = f"Cannot write tags to invalid path ({path.status}): {path.absolute} - {path.reason}"
+            raise ValueError(msg)
 
         # Convert Tags DTO to dict for internal writers
         tags_dict = tags.to_dict()
@@ -308,7 +315,8 @@ class TagWriter:
         elif ext in ("flac", "ogg", "opus"):
             self._vorbis.write(path, tags_dict)
         else:
-            raise RuntimeError(f"Unsupported file type for writing: .{ext}")
+            msg = f"Unsupported file type for writing: .{ext}"
+            raise RuntimeError(msg)
 
     def write_safe(
         self,
@@ -317,8 +325,7 @@ class TagWriter:
         library_root: Path,
         chromaprint: str,
     ) -> SafeWriteResult:
-        """
-        Write tags using atomic copy-modify-verify-replace pattern.
+        """Write tags using atomic copy-modify-verify-replace pattern.
 
         This prevents file corruption if a crash occurs during write.
         Verifies audio content hasn't changed by comparing chromaprints.
@@ -334,9 +341,8 @@ class TagWriter:
 
         The caller should always update folder mtime after a successful write
         since all write strategies modify folder mtime.
-        """
-        from pathlib import Path as PathLib
 
+        """
         from nomarr.components.tagging.safe_write_comp import SafeWriteResult, safe_write_tags
 
         if not path.is_valid():

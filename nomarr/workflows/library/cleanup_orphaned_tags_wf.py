@@ -12,8 +12,7 @@ if TYPE_CHECKING:
 
 
 def cleanup_orphaned_tags_workflow(db: Database, dry_run: bool = False) -> dict[str, int]:
-    """
-    Clean up orphaned tags from the database.
+    """Clean up orphaned tags from the database.
 
     Args:
         db: Database instance
@@ -21,6 +20,7 @@ def cleanup_orphaned_tags_workflow(db: Database, dry_run: bool = False) -> dict[
 
     Returns:
         Dict with 'orphaned_count' and 'deleted_count' keys
+
     """
     logging.info("[tag_cleanup] Starting orphaned tag cleanup workflow")
 

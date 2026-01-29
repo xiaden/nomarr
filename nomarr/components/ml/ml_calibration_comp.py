@@ -1,5 +1,4 @@
-"""
-Calibration module - generates and applies calibrations from library data.
+"""Calibration module - generates and applies calibrations from library data.
 
 Min-max calibration normalizes raw model outputs to a common scale [0, 1] based on
 the empirical distribution of predictions across the user's library. This ensures
@@ -11,15 +10,16 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.helpers.dto.ml_dto import SaveCalibrationSidecarsResult
-from nomarr.persistence.db import Database
+
+if TYPE_CHECKING:
+    from nomarr.persistence.db import Database
 
 
 def _parse_tag_key_components(tag_key: str) -> tuple[str, str, str] | None:
-    """
-    Parse a tag key into (backbone, head_date, label).
+    """Parse a tag key into (backbone, head_date, label).
 
     Tag format: label_framework_embedder{date}_head{date}
     Returns None if parsing fails.
@@ -61,8 +61,7 @@ def save_calibration_sidecars(
     models_dir: str,
     version: int = 1,
 ) -> SaveCalibrationSidecarsResult:
-    """
-    Save calibration data as JSON sidecars next to model files.
+    """Save calibration data as JSON sidecars next to model files.
 
     Parses versioned tag keys to determine which model (embedder + head) generated each tag,
     then saves calibration data as <model>-calibration-v{version}.json sidecars.
@@ -74,6 +73,7 @@ def save_calibration_sidecars(
 
     Returns:
         Summary of saved files with paths and tag counts
+
     """
     from nomarr.components.ml.ml_discovery_comp import discover_heads
 
@@ -82,7 +82,8 @@ def save_calibration_sidecars(
     # Discover all heads to map tag keys to model paths
     heads = discover_heads(models_dir)
     if not heads:
-        raise ValueError(f"No heads found in {models_dir}")
+        msg = f"No heads found in {models_dir}"
+        raise ValueError(msg)
 
     # Build lookup: (backbone, head_date, label) -> head_info
     head_lookup = {}
@@ -117,7 +118,7 @@ def save_calibration_sidecars(
 
         if head_info_maybe is None:
             logging.debug(
-                f"[calibration] No head found for {tag_key} (backbone={backbone}, date={head_date}, label={label})"
+                f"[calibration] No head found for {tag_key} (backbone={backbone}, date={head_date}, label={label})",
             )
             continue
 
@@ -177,7 +178,7 @@ def save_calibration_sidecars(
             logging.info(f"[calibration] Saved {calibration_path} ({len(calib_data['labels'])} labels)")
 
         except Exception as e:
-            logging.error(f"[calibration] Failed to save {calibration_path}: {e}")
+            logging.exception(f"[calibration] Failed to save {calibration_path}: {e}")
 
     logging.info(f"[calibration] Saved {len(saved_files)} calibration sidecars")
 
@@ -185,7 +186,7 @@ def save_calibration_sidecars(
     total_labels = 0
     for file_data in saved_files.values():
         label_count = file_data.get("label_count", 0)
-        total_labels += int(cast(int, label_count))
+        total_labels += int(cast("int", label_count))
 
     return SaveCalibrationSidecarsResult(
         saved_files=saved_files,
@@ -195,8 +196,7 @@ def save_calibration_sidecars(
 
 
 def apply_minmax_calibration(raw_score: float, calibration: dict[str, Any]) -> float:
-    """
-    Apply min-max scale calibration to a raw model score.
+    """Apply min-max scale calibration to a raw model score.
 
     Normalizes raw score to [0, 1] range based on the model's empirical output distribution
     (5th and 95th percentiles). This makes scores from different models comparable without
@@ -210,6 +210,7 @@ def apply_minmax_calibration(raw_score: float, calibration: dict[str, Any]) -> f
 
     Returns:
         Calibrated score in [0, 1] range
+
     """
     if calibration.get("method") != "minmax":
         return raw_score
@@ -236,8 +237,7 @@ def apply_minmax_calibration(raw_score: float, calibration: dict[str, Any]) -> f
 
 
 def compute_calibration_def_hash(model_key: str, head_name: str, version: int) -> str:
-    """
-    Compute calibration definition hash from model metadata.
+    """Compute calibration definition hash from model metadata.
 
     Stable identifier for a calibration configuration. Changes when version bumps.
 
@@ -248,6 +248,7 @@ def compute_calibration_def_hash(model_key: str, head_name: str, version: int) -
 
     Returns:
         MD5 hash of calibration definition
+
     """
     import hashlib
 
@@ -256,8 +257,7 @@ def compute_calibration_def_hash(model_key: str, head_name: str, version: int) -
 
 
 def get_default_histogram_spec(head_name: str) -> dict[str, Any]:
-    """
-    Get default histogram specification for a head type.
+    """Get default histogram specification for a head type.
 
     All heads use same histogram parameters:
     - lo = 0.0 (minimum calibrated value)
@@ -273,6 +273,7 @@ def get_default_histogram_spec(head_name: str) -> dict[str, Any]:
 
     Returns:
         {"lo": float, "hi": float, "bins": int}
+
     """
     # All heads use same histogram parameters
     # (Future: could differentiate by head type if needed)
@@ -287,8 +288,7 @@ def derive_percentiles_from_sparse_histogram(
     p5_target: float = 0.05,
     p95_target: float = 0.95,
 ) -> dict[str, Any]:
-    """
-    Derive p5/p95 from sparse histogram (only non-zero bins).
+    """Derive p5/p95 from sparse histogram (only non-zero bins).
 
     Args:
         sparse_bins: AQL query result - list of {min_val: float, count: int, underflow_count: int, overflow_count: int}
@@ -304,6 +304,7 @@ def derive_percentiles_from_sparse_histogram(
     Note:
         Approximation error bounded by bin_width.
         Exact quantiles are not a goal; bin-level precision is sufficient.
+
     """
     # Sort sparse bins by min_val (already sorted if query used ORDER BY)
     sorted_bins = sorted(sparse_bins, key=lambda x: x["min_val"])
@@ -356,8 +357,7 @@ def generate_calibration_from_histogram(
     hi: float = 1.0,
     bins: int = 10000,
 ) -> dict[str, Any]:
-    """
-    Generate calibration for a single head using DB histogram query.
+    """Generate calibration for a single head using DB histogram query.
 
     Stateless, idempotent computation. Always computes from current file_tags.
 
@@ -372,6 +372,7 @@ def generate_calibration_from_histogram(
 
     Returns:
         {p5: float, p95: float, n: int, underflow_count: int, overflow_count: int}
+
     """
     bin_width = (hi - lo) / bins
 
@@ -406,7 +407,7 @@ def generate_calibration_from_histogram(
     )
 
     logging.info(
-        f"[calibration] {model_key}:{head_name} -> p5={result['p5']:.4f}, p95={result['p95']:.4f}, n={result['n']}"
+        f"[calibration] {model_key}:{head_name} -> p5={result['p5']:.4f}, p95={result['p95']:.4f}, n={result['n']}",
     )
 
     return result
@@ -422,8 +423,7 @@ def generate_calibration_from_histogram_with_limit(
     bins: int = 10000,
     sample_limit: int | None = None,
 ) -> dict[str, Any]:
-    """
-    Generate calibration for a single head using DB histogram query with sample limiting.
+    """Generate calibration for a single head using DB histogram query with sample limiting.
 
     Progressive calibration variant: limits sample size for convergence tracking.
 
@@ -439,6 +439,7 @@ def generate_calibration_from_histogram_with_limit(
 
     Returns:
         {p5: float, p95: float, n: int, underflow_count: int, overflow_count: int}
+
     """
     bin_width = (hi - lo) / bins
 
@@ -474,15 +475,14 @@ def generate_calibration_from_histogram_with_limit(
     )
 
     logging.info(
-        f"[calibration] {model_key}:{head_name} (n={result['n']}) -> p5={result['p5']:.4f}, p95={result['p95']:.4f}"
+        f"[calibration] {model_key}:{head_name} (n={result['n']}) -> p5={result['p5']:.4f}, p95={result['p95']:.4f}",
     )
 
     return result
 
 
 def export_calibration_state_to_json(db: Database, output_path: str) -> dict[str, Any]:
-    """
-    Export all calibration_state documents to a single JSON file.
+    """Export all calibration_state documents to a single JSON file.
 
     Exports the full calibration state collection for backup or distribution.
     The JSON file can be imported into another Nomarr instance.
@@ -496,6 +496,7 @@ def export_calibration_state_to_json(db: Database, output_path: str) -> dict[str
 
     Raises:
         IOError: If file cannot be written
+
     """
     logging.info(f"[calibration] Exporting calibration_state to {output_path}")
 
@@ -542,8 +543,7 @@ def export_calibration_state_to_json(db: Database, output_path: str) -> dict[str
 
 
 def import_calibration_state_from_json(db: Database, input_path: str, overwrite: bool = False) -> dict[str, Any]:
-    """
-    Import calibration_state documents from a JSON file.
+    """Import calibration_state documents from a JSON file.
 
     Imports calibrations exported by export_calibration_state_to_json().
     By default, skips calibrations that already exist (based on calibration_def_hash).
@@ -559,8 +559,8 @@ def import_calibration_state_from_json(db: Database, input_path: str, overwrite:
     Raises:
         ValueError: If file format is invalid
         IOError: If file cannot be read
-    """
 
+    """
     logging.info(f"[calibration] Importing calibration_state from {input_path}")
 
     # Read file
@@ -569,11 +569,13 @@ def import_calibration_state_from_json(db: Database, input_path: str, overwrite:
 
     # Validate format
     if not isinstance(data, dict) or data.get("format") != "nomarr_calibration_state":
-        raise ValueError("Invalid calibration export format")
+        msg = "Invalid calibration export format"
+        raise ValueError(msg)
 
     calibrations = data.get("calibrations", [])
     if not isinstance(calibrations, list):
-        raise ValueError("Invalid calibrations field in export file")
+        msg = "Invalid calibrations field in export file"
+        raise ValueError(msg)
 
     # Import each calibration
     imported_count = 0
@@ -616,7 +618,7 @@ def import_calibration_state_from_json(db: Database, input_path: str, overwrite:
             skipped_count += 1
             continue
         except Exception as e:
-            logging.error(f"[calibration] Failed to import calibration: {e}")
+            logging.exception(f"[calibration] Failed to import calibration: {e}")
             skipped_count += 1
             continue
 
@@ -629,8 +631,7 @@ def import_calibration_state_from_json(db: Database, input_path: str, overwrite:
 
 
 def compute_global_calibration_hash(calibration_states: list[dict[str, Any]]) -> str:
-    """
-    Compute global calibration version hash from all calibration states.
+    """Compute global calibration version hash from all calibration states.
 
     This hash changes whenever any head's calibration changes (version bump,
     p5/p95 update, etc). Used to detect if files need recalibration.
@@ -640,6 +641,7 @@ def compute_global_calibration_hash(calibration_states: list[dict[str, Any]]) ->
 
     Returns:
         MD5 hash representing the combined calibration version
+
     """
     import hashlib
 

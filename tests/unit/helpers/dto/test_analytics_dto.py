@@ -1,5 +1,4 @@
-"""
-Unit tests for nomarr.helpers.dto.analytics_dto module.
+"""Unit tests for nomarr.helpers.dto.analytics_dto module.
 
 Tests analytics-related DTOs for proper structure and behavior.
 """

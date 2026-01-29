@@ -1,5 +1,4 @@
-"""
-Analytics computation functions - pure data processing for tag statistics.
+"""Analytics computation functions - pure data processing for tag statistics.
 
 PURE LEAF-DOMAIN - These functions operate on in-memory data only:
 - Take raw data (rows, dicts, lists) as input
@@ -20,7 +19,7 @@ from __future__ import annotations
 import json
 import logging
 from collections import Counter, defaultdict
-from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 from nomarr.helpers.dto.analytics_dto import (
     ArtistTagProfile,
@@ -34,6 +33,9 @@ from nomarr.helpers.dto.analytics_dto import (
     TagCorrelationData,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
 # ──────────────────────────────────────────────────────────────────────
 # Analytics Computation Functions
 # ──────────────────────────────────────────────────────────────────────
@@ -42,8 +44,7 @@ from nomarr.helpers.dto.analytics_dto import (
 def compute_tag_frequencies(
     params: ComputeTagFrequenciesParams,
 ) -> ComputeTagFrequenciesResult:
-    """
-    Compute frequency counts from raw tag data.
+    """Compute frequency counts from raw tag data.
 
     Input tag rows are already in "key:value" format (e.g., "mood-strict:happy").
     This function just passes them through with minimal processing.
@@ -53,6 +54,7 @@ def compute_tag_frequencies(
 
     Returns:
         ComputeTagFrequenciesResult with nom_tags (as key:value), standard_tags, total_files
+
     """
     logging.info("[analytics] Computing tag frequencies")
 
@@ -74,14 +76,14 @@ def compute_tag_frequencies(
 def compute_tag_correlation_matrix(
     params: ComputeTagCorrelationMatrixParams,
 ) -> TagCorrelationData:
-    """
-    Compute VALUE-based correlation matrix from raw tag data.
+    """Compute VALUE-based correlation matrix from raw tag data.
 
     Args:
         params: Parameters containing namespace, top_n, and tag data
 
     Returns:
         TagCorrelationData with mood-to-mood and mood-to-tier correlations
+
     """
     logging.info(f"[analytics] Computing VALUE-based correlation matrix (top {params.top_n} moods)")
 
@@ -170,8 +172,7 @@ def compute_tag_correlation_matrix(
 def compute_mood_distribution(
     mood_rows: Sequence[tuple[str, str]],
 ) -> MoodDistributionData:
-    """
-    Compute mood distribution from raw mood tag data.
+    """Compute mood distribution from raw mood tag data.
 
     All tag values are now stored as JSON arrays.
 
@@ -180,6 +181,7 @@ def compute_mood_distribution(
 
     Returns:
         MoodDistributionData with mood tier distributions and top moods
+
     """
     logging.info("[analytics] Computing mood distribution")
 
@@ -223,14 +225,14 @@ def compute_mood_distribution(
 def compute_artist_tag_profile(
     params: ComputeArtistTagProfileParams,
 ) -> ArtistTagProfile:
-    """
-    Compute tag profile for an artist from raw tag data.
+    """Compute tag profile for an artist from raw tag data.
 
     Args:
         params: Parameters containing artist info, namespace, and tag data
 
     Returns:
         ArtistTagProfile with artist info, top tags, and mood statistics
+
     """
     logging.info(f"[analytics] Computing tag profile for artist: {params.artist}")
 
@@ -295,8 +297,7 @@ def compute_artist_tag_profile(
 def compute_tag_co_occurrence(
     params: ComputeTagCoOccurrenceParams,
 ) -> TagCoOccurrenceData:
-    """
-    Compute tag co-occurrence matrix from tag file sets.
+    """Compute tag co-occurrence matrix from tag file sets.
 
     Builds a matrix where matrix[j][i] = count of files having both x_tags[i] and y_tags[j].
 
@@ -305,6 +306,7 @@ def compute_tag_co_occurrence(
 
     Returns:
         TagCoOccurrenceData with X/Y tags and co-occurrence matrix
+
     """
     logging.info(f"[analytics] Computing tag co-occurrence matrix: {len(params.x_tags)}x{len(params.y_tags)}")
 

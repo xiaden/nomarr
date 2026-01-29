@@ -1,5 +1,4 @@
-"""
-Unit tests for LibraryService scan_targets() Phase 3 implementation.
+"""Unit tests for LibraryService scan_targets() Phase 3 implementation.
 
 Tests verify:
 - scan_targets() validates inputs correctly

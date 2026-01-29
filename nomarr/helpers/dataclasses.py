@@ -1,5 +1,4 @@
-"""
-Shared dataclasses used across multiple layers.
+"""Shared dataclasses used across multiple layers.
 
 This file is reserved for truly cross-domain dataclasses shared by multiple domains.
 For domain-specific DTOs, use helpers/dto/<domain>.py instead.

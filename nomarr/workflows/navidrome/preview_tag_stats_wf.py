@@ -1,5 +1,4 @@
-"""
-Preview tag statistics workflow.
+"""Preview tag statistics workflow.
 
 This workflow computes statistics for all tags in the library, useful for
 debugging and understanding tag data before generating Navidrome config.
@@ -12,8 +11,7 @@ from nomarr.persistence.db import Database
 
 
 def preview_tag_stats_workflow(db: Database, namespace: str = "nom") -> dict[str, dict[str, Any]]:
-    """
-    Preview statistics for all tags in the library.
+    """Preview statistics for all tags in the library.
 
     Useful for debugging and understanding your tag data before generating config.
 
@@ -23,6 +21,7 @@ def preview_tag_stats_workflow(db: Database, namespace: str = "nom") -> dict[str
 
     Returns:
         Dict of tag_key -> stats dict (type, is_multivalue, summary, count)
+
     """
     # Get unique rels for nomarr tags
     all_rels = db.tags.get_unique_rels(nomarr_only=True)
@@ -58,10 +57,7 @@ def preview_tag_stats_workflow(db: Database, namespace: str = "nom") -> dict[str
             # Build summary
             if tag_type in ("float", "integer"):
                 values = list(value_counts.keys())
-                if values:
-                    summary = f"min={min(values)}, max={max(values)}, unique={len(values)}"
-                else:
-                    summary = "no values"
+                summary = f"min={min(values)}, max={max(values)}, unique={len(values)}" if values else "no values"
             else:
                 summary = f"unique={len(value_counts)}"
 
@@ -72,7 +68,7 @@ def preview_tag_stats_workflow(db: Database, namespace: str = "nom") -> dict[str
                 "total_count": total_count,
             }
         except Exception as e:
-            logging.error(f"[navidrome] Error computing summary for {rel}: {e}")
+            logging.exception(f"[navidrome] Error computing summary for {rel}: {e}")
             stats_by_tag[rel] = {
                 "type": "string",
                 "is_multivalue": False,

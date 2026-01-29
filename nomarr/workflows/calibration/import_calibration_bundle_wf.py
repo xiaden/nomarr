@@ -9,9 +9,10 @@ USAGE:
 - Pre-alpha: Download bundles from nom-cal repo for users without local generation
 - Post-1.0: Allow importing calibrations from external sources
 
-IMPORTANT:
+Important:
 - Production processing/recalibration NEVER reads bundles directly
 - After import, all code uses calibration_loader_wf to read from DB
+
 """
 
 from __future__ import annotations
@@ -64,24 +65,28 @@ def import_calibration_bundle_wf(
     Raises:
         FileNotFoundError: If bundle file doesn't exist
         ValueError: If bundle format invalid
+
     """
     logger.info(f"[import_calibration] Importing bundle from {bundle_path}")
 
     path = Path(bundle_path)
     if not path.exists():
-        raise FileNotFoundError(f"Bundle file not found: {bundle_path}")
+        msg = f"Bundle file not found: {bundle_path}"
+        raise FileNotFoundError(msg)
 
     # Parse bundle JSON
     try:
         with open(path, encoding="utf-8") as f:
             bundle_data = json.load(f)
     except json.JSONDecodeError as e:
-        raise ValueError(f"Invalid JSON in bundle: {e}") from e
+        msg = f"Invalid JSON in bundle: {e}"
+        raise ValueError(msg) from e
 
     # Extract calibrations
     labels = bundle_data.get("labels", {})
     if not labels:
-        raise ValueError("Bundle contains no calibrations (missing 'labels' key)")
+        msg = "Bundle contains no calibrations (missing 'labels' key)"
+        raise ValueError(msg)
 
     # Import calibrations to database
     imported_count = 0
@@ -138,7 +143,7 @@ def import_calibration_bundle_wf(
         except Exception as e:
             errors.append(f"Label '{label}': {e}")
             skipped_count += 1
-            logger.error(f"[import_calibration] Failed to import {label}: {e}")
+            logger.exception(f"[import_calibration] Failed to import {label}: {e}")
 
     # Update global calibration version
     from nomarr.components.ml.ml_calibration_comp import compute_global_calibration_hash
@@ -149,7 +154,7 @@ def import_calibration_bundle_wf(
 
     logger.info(
         f"[import_calibration] Import complete: {imported_count} imported, "
-        f"{skipped_count} skipped, {len(errors)} errors"
+        f"{skipped_count} skipped, {len(errors)} errors",
     )
 
     return {
@@ -184,6 +189,7 @@ def import_calibration_bundles_from_directory_wf(
             - total_imported: Total calibrations imported
             - total_skipped: Total calibrations skipped
             - global_version: Final global calibration hash
+
     """
     logger.info(f"[import_calibration] Scanning {models_dir} for calibration bundles")
 
@@ -228,7 +234,7 @@ def import_calibration_bundles_from_directory_wf(
             total_skipped += result["skipped_count"]
             bundles_processed += 1
         except Exception as e:
-            logger.error(f"[import_calibration] Failed to import {bundle_file}: {e}")
+            logger.exception(f"[import_calibration] Failed to import {bundle_file}: {e}")
             total_skipped += 1
 
     # Final global version (computed after all imports)
@@ -239,7 +245,7 @@ def import_calibration_bundles_from_directory_wf(
 
     logger.info(
         f"[import_calibration] Directory import complete: "
-        f"{bundles_processed} bundles processed, {total_imported} calibrations imported"
+        f"{bundles_processed} bundles processed, {total_imported} calibrations imported",
     )
 
     return {

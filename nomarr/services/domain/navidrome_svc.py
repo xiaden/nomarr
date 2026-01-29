@@ -1,5 +1,4 @@
-"""
-Navidrome integration service - facade for Navidrome utilities.
+"""Navidrome integration service - facade for Navidrome utilities.
 
 This service owns the Database dependency and provides methods for
 Navidrome config/playlist generation without exposing DB to interfaces.
@@ -30,19 +29,18 @@ class NavidromeConfig:
 
 
 class NavidromeService:
-    """
-    Service for Navidrome integration (config, playlists, templates).
+    """Service for Navidrome integration (config, playlists, templates).
 
     Wraps workflows from workflows/navidrome/* to hide DB dependency from interfaces.
     """
 
     def __init__(self, db: Database, cfg: NavidromeConfig) -> None:
-        """
-        Initialize Navidrome service.
+        """Initialize Navidrome service.
 
         Args:
             db: Database instance
             cfg: Navidrome configuration
+
         """
         self._db = db
         self.cfg = cfg
@@ -65,8 +63,7 @@ class NavidromeService:
         query: str,
         preview_limit: int = 10,
     ) -> PlaylistPreviewResult:
-        """
-        Preview Smart Playlist query results.
+        """Preview Smart Playlist query results.
 
         Args:
             query: Smart playlist query string
@@ -74,6 +71,7 @@ class NavidromeService:
 
         Returns:
             PlaylistPreviewResult with track info and query metadata
+
         """
         from nomarr.workflows.navidrome import preview_smart_playlist_workflow
 
@@ -92,8 +90,7 @@ class NavidromeService:
         sort: str | None = None,
         limit: int | None = None,
     ) -> GeneratePlaylistResult:
-        """
-        Generate Navidrome Smart Playlist (.nsp) structure.
+        """Generate Navidrome Smart Playlist (.nsp) structure.
 
         Args:
             query: Smart playlist query string
@@ -104,6 +101,7 @@ class NavidromeService:
 
         Returns:
             GeneratePlaylistResult DTO with .nsp structure
+
         """
         from nomarr.workflows.navidrome import generate_smart_playlist_workflow
 

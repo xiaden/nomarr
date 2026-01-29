@@ -1,5 +1,4 @@
-"""
-File validation and skip logic utilities.
+"""File validation and skip logic utilities.
 
 Pure utility functions for:
 - File existence/readability checks
@@ -17,8 +16,7 @@ from typing import Any
 
 
 def validate_file_exists(path: str) -> None:
-    """
-    Check if file exists and is readable.
+    """Check if file exists and is readable.
 
     This function operates on paths that are already in the processing queue/database.
     For user-supplied paths, validate through helpers.files first.
@@ -28,18 +26,22 @@ def validate_file_exists(path: str) -> None:
 
     Raises:
         RuntimeError: If file doesn't exist or isn't readable
+
     """
     # Use Path for safer filesystem checks
     file_path = Path(path)
     if not file_path.exists():
-        raise RuntimeError(f"File not found: {path}")
+        msg = f"File not found: {path}"
+        raise RuntimeError(msg)
     if not file_path.is_file():
-        raise RuntimeError(f"Not a file: {path}")
+        msg = f"Not a file: {path}"
+        raise RuntimeError(msg)
     # Check readability using os.access for platform compatibility
     import os
 
     if not os.access(path, os.R_OK):
-        raise RuntimeError(f"File not readable: {path}")
+        msg = f"File not readable: {path}"
+        raise RuntimeError(msg)
 
 
 def check_already_tagged(
@@ -48,8 +50,7 @@ def check_already_tagged(
     version_tag_key: str,
     current_version: str,
 ) -> bool:
-    """
-    Check if file already has the correct version tag.
+    """Check if file already has the correct version tag.
 
     This determines whether processing should be skipped.
 
@@ -61,6 +62,7 @@ def check_already_tagged(
 
     Returns:
         True if file is already tagged with current version, False otherwise
+
     """
     try:
         from mutagen._file import File as MutagenFile
@@ -97,8 +99,7 @@ def should_skip_processing(
     version_tag_key: str,
     tagger_version: str,
 ) -> tuple[bool, str | None]:
-    """
-    Determine if processing should be skipped for this file.
+    """Determine if processing should be skipped for this file.
 
     Centralizes all skip logic so process_file() doesn't need to decide.
 
@@ -113,6 +114,7 @@ def should_skip_processing(
         Tuple of (should_skip, skip_reason)
         - If should_skip is True, caller should not call process_file()
         - skip_reason explains why (for logging/reporting)
+
     """
     # Force mode: never skip
     if force:
@@ -127,8 +129,7 @@ def should_skip_processing(
 
 
 def make_skip_result(path: str, skip_reason: str) -> dict[str, Any]:
-    """
-    Create a standardized result dict for skipped files.
+    """Create a standardized result dict for skipped files.
 
     This matches the format returned by process_file() so callers
     can handle skipped and processed files uniformly.
@@ -139,6 +140,7 @@ def make_skip_result(path: str, skip_reason: str) -> dict[str, Any]:
 
     Returns:
         Result dict matching process_file() output format
+
     """
     return {
         "file": path,

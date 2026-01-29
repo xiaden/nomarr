@@ -4,12 +4,13 @@ Tracks folder metadata for quick scan optimization.
 Quick scans check folder mtime and file_count to skip unchanged folders.
 """
 
-from typing import Any, cast
-
-from arango.cursor import Cursor
+from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.arango_client import DatabaseLike
+
+if TYPE_CHECKING:
+    from arango.cursor import Cursor
 
 
 class LibraryFoldersOperations:
@@ -36,10 +37,11 @@ class LibraryFoldersOperations:
 
         Returns:
             Document _id
+
         """
         scanned_at = now_ms().value
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
                 UPSERT { library_id: @library_id, path: @path }
@@ -59,7 +61,7 @@ class LibraryFoldersOperations:
                 RETURN NEW._id
                 """,
                 bind_vars=cast(
-                    dict[str, Any],
+                    "dict[str, Any]",
                     {
                         "library_id": library_id,
                         "path": folder_path,
@@ -86,9 +88,10 @@ class LibraryFoldersOperations:
 
         Returns:
             Folder dict or None if not found
+
         """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
                 FOR folder IN library_folders
@@ -116,9 +119,10 @@ class LibraryFoldersOperations:
 
         Returns:
             Dict mapping path to folder record
+
         """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
                 FOR folder IN library_folders
@@ -138,9 +142,10 @@ class LibraryFoldersOperations:
 
         Returns:
             Number of folders deleted
+
         """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
                 FOR folder IN library_folders
@@ -168,9 +173,10 @@ class LibraryFoldersOperations:
 
         Returns:
             Number of folders deleted
+
         """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
                 FOR folder IN library_folders
@@ -197,9 +203,10 @@ class LibraryFoldersOperations:
 
         Returns:
             Number of folders tracked
+
         """
         cursor = cast(
-            Cursor,
+            "Cursor",
             self.db.aql.execute(
                 """
                 RETURN LENGTH(
