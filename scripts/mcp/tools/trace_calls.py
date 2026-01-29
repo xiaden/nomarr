@@ -13,14 +13,15 @@ Usage:
     python scripts/mcp/trace_calls_ml.py nomarr.interfaces.api.web.library_if.scan_library
 
     # As module
-    from scripts.mcp.trace_calls_ml import trace_calls
+    from scripts.mcp.tools.trace_calls import trace_calls
     result = trace_calls("nomarr.interfaces.api.web.library_if.scan_library")
 """
 
 from __future__ import annotations
 
+__all__ = ["trace_calls"]
+
 import ast
-import json
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -39,7 +40,7 @@ class CallInfo:
     resolved: str | None  # Fully qualified name if resolved
     file: str | None  # File where the called function is defined
     line: int | None  # Line number of the definition
-    calls: list["CallInfo"] = field(default_factory=list)  # Nested calls
+    calls: list[CallInfo] = field(default_factory=list)  # Nested calls
 
 
 def _mock_unavailable_dependencies() -> None:
@@ -63,11 +64,9 @@ def _mock_unavailable_dependencies() -> None:
             parent_mock = MagicMock()
             sys.modules[parent] = parent_mock
         else:
-            parent_mock = sys.modules[parent]
+            parent_mock = sys.modules[parent]  # type: ignore[assignment]
 
-        # Attach child modules to parent
-        for child in children:
-            full_name = f"{parent}.{child}"
+        for child, full_name in children.items():
             if full_name not in sys.modules:
                 child_mock = MagicMock()
                 sys.modules[full_name] = child_mock
@@ -115,19 +114,16 @@ def _extract_imports(tree: ast.Module) -> dict[str, str]:
                 local_name = alias.asname or alias.name.split(".")[-1]
                 imports[local_name] = alias.name
 
-        elif isinstance(node, ast.ImportFrom):
-            if node.module:
-                for alias in node.names:
-                    local_name = alias.asname or alias.name
-                    imports[local_name] = f"{node.module}.{alias.name}"
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            for alias in node.names:
+                local_name = alias.asname or alias.name
+                imports[local_name] = f"{node.module}.{alias.name}"
 
     return imports
 
 
 def _extract_param_types(
-    func_node: ast.FunctionDef | ast.AsyncFunctionDef,
-    imports: dict[str, str],
-    project_root: Path | None = None,
+    func_node: ast.FunctionDef | ast.AsyncFunctionDef, imports: dict[str, str], project_root: Path | None = None
 ) -> dict[str, str]:
     """Extract parameter type annotations, including FastAPI Depends() patterns.
 
@@ -192,20 +188,17 @@ def _extract_depends_function(node: ast.expr) -> str | None:
         return None
 
     # Check if it's Depends(...)
-    if isinstance(node.func, ast.Name) and node.func.id == "Depends":
-        if node.args:
-            return _call_to_string(node.args[0])
-    elif isinstance(node.func, ast.Attribute) and node.func.attr == "Depends":
-        if node.args:
-            return _call_to_string(node.args[0])
+    if (
+        (isinstance(node.func, ast.Name) and node.func.id == "Depends")
+        or (isinstance(node.func, ast.Attribute) and node.func.attr == "Depends")
+    ) and node.args:
+        return _call_to_string(node.args[0])
 
     return None
 
 
 def _resolve_depends_return_type(
-    depends_func: str,
-    imports: dict[str, str],
-    project_root: Path | None = None,
+    depends_func: str, imports: dict[str, str], project_root: Path | None = None
 ) -> str | None:
     """Resolve the return type of a dependency function.
 
@@ -237,20 +230,18 @@ def _resolve_depends_return_type(
 
     # Find the function and extract return annotation
     for node in ast.iter_child_nodes(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            if node.name == func_name:
-                if node.returns:
-                    return_type = _annotation_to_string(node.returns)
-                    if return_type:
-                        # Resolve the return type through the deps module's imports
-                        deps_imports = _extract_imports(tree)
-                        type_parts = return_type.split(".")
-                        if type_parts[0] in deps_imports:
-                            resolved = deps_imports[type_parts[0]]
-                            if len(type_parts) > 1:
-                                resolved = f"{resolved}.{'.'.join(type_parts[1:])}"
-                            return resolved
-                        return return_type
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == func_name and node.returns:
+            return_type = _annotation_to_string(node.returns)
+            if return_type:
+                # Resolve the return type through the deps module's imports
+                deps_imports = _extract_imports(tree)
+                type_parts = return_type.split(".")
+                if type_parts[0] in deps_imports:
+                    resolved = deps_imports[type_parts[0]]
+                    if len(type_parts) > 1:
+                        resolved = f"{resolved}.{'.'.join(type_parts[1:])}"
+                    return resolved
+                return return_type
 
     return None
 
@@ -280,15 +271,13 @@ def _find_function_node(tree: ast.Module, func_name: str) -> ast.FunctionDef | a
         for node in ast.walk(tree):
             if isinstance(node, ast.ClassDef) and node.name == class_name:
                 for item in node.body:
-                    if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                        if item.name == method_name:
-                            return item
+                    if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and item.name == method_name:
+                        return item
     else:
         # Top-level function
         for node in ast.iter_child_nodes(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                if node.name == func_name:
-                    return node
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == func_name:
+                return node
 
     return None
 
@@ -304,9 +293,7 @@ def _find_class_node(tree: ast.Module, class_name: str) -> tuple[ast.ClassDef | 
     return None, None
 
 
-def _extract_calls_from_function(
-    func_node: ast.FunctionDef | ast.AsyncFunctionDef,
-) -> list[tuple[str, int]]:
+def _extract_calls_from_function(func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[tuple[str, int]]:
     """Extract all function calls from a function body.
 
     Returns list of (call_expression, line_number).
@@ -337,11 +324,7 @@ def _call_to_string(node: ast.expr) -> str | None:
 
 
 def _resolve_call(
-    call_expr: str,
-    imports: dict[str, str],
-    param_types: dict[str, str],
-    current_module: str,
-    project_root: Path,
+    call_expr: str, imports: dict[str, str], param_types: dict[str, str], current_module: str, project_root: Path
 ) -> tuple[str | None, Path | None, int | None]:
     """Resolve a call expression to its definition.
 
@@ -383,15 +366,14 @@ def _resolve_call(
                         for node in ast.walk(tree):
                             if isinstance(node, ast.ClassDef):
                                 for item in node.body:
-                                    if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                                        if item.name == method_name:
-                                            rel_path = py_file.relative_to(project_root)
-                                            submod = ".".join(rel_path.with_suffix("").parts)
-                                            found_qualified = f"{submod}.{node.name}.{method_name}"
-                                            return found_qualified, py_file, item.lineno
-
-        return full_qualified, None, None
-
+                                    if (
+                                        isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+                                        and item.name == method_name
+                                    ):
+                                        rel_path = py_file.relative_to(project_root)
+                                        submod = ".".join(rel_path.with_suffix("").parts)
+                                        found_qualified = f"{submod}.{node.name}.{method_name}"
+                                        return found_qualified, py_file, item.lineno
     # Check if first part is an imported name
     if parts[0] in imports:
         base_module = imports[parts[0]]
@@ -446,12 +428,7 @@ def _is_nomarr_call(resolved: str | None) -> bool:
     return resolved is not None and resolved.startswith("nomarr.")
 
 
-def _trace_calls_recursive(
-    qualified_name: str,
-    project_root: Path,
-    visited: set[str],
-    depth: int,
-) -> CallInfo | None:
+def _trace_calls_recursive(qualified_name: str, project_root: Path, visited: set[str], depth: int) -> CallInfo | None:
     """Recursively trace calls from a function."""
     if depth >= MAX_DEPTH:
         return None
@@ -479,21 +456,11 @@ def _trace_calls_recursive(
             break
 
     if not file_path or not func_name:
-        return CallInfo(
-            name=qualified_name,
-            resolved=qualified_name,
-            file=None,
-            line=None,
-        )
+        return CallInfo(name=qualified_name, resolved=qualified_name, file=None, line=None)
 
     tree = _parse_file(file_path)
     if not tree:
-        return CallInfo(
-            name=qualified_name,
-            resolved=qualified_name,
-            file=str(file_path),
-            line=None,
-        )
+        return CallInfo(name=qualified_name, resolved=qualified_name, file=str(file_path), line=None)
 
     func_node = _find_function_node(tree, func_name)
 
@@ -517,13 +484,14 @@ def _trace_calls_recursive(
                 for node in ast.walk(mixin_tree):
                     if isinstance(node, ast.ClassDef):
                         for item in node.body:
-                            if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                                if item.name == method_name or (class_name and item.name == method_name):
-                                    # Found it in a mixin
-                                    file_path = py_file
-                                    tree = mixin_tree
-                                    func_node = item
-                                    break
+                            if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and (
+                                item.name == method_name or (class_name and item.name == method_name)
+                            ):
+                                # Found it in a mixin
+                                file_path = py_file
+                                tree = mixin_tree
+                                func_node = item
+                                break
                     if func_node:
                         break
             if func_node:
@@ -545,12 +513,7 @@ def _trace_calls_recursive(
                 )
 
         # Neither function nor class found
-        return CallInfo(
-            name=qualified_name,
-            resolved=qualified_name,
-            file=str(file_path),
-            line=None,
-        )
+        return CallInfo(name=qualified_name, resolved=qualified_name, file=str(file_path), line=None)
 
     # Extract imports for resolution
     imports = _extract_imports(tree)
@@ -614,12 +577,7 @@ def _trace_calls_recursive(
 
 def _call_info_to_dict(info: CallInfo) -> dict[str, Any]:
     """Convert CallInfo to dict for JSON serialization."""
-    result: dict[str, Any] = {
-        "name": info.name,
-        "resolved": info.resolved,
-        "file": info.file,
-        "line": info.line,
-    }
+    result: dict[str, Any] = {"name": info.name, "resolved": info.resolved, "file": info.file, "line": info.line}
 
     if info.calls:
         result["calls"] = [_call_info_to_dict(c) for c in info.calls]
@@ -647,10 +605,7 @@ def _flatten_chain(info: CallInfo, prefix: str = "") -> list[dict[str, Any]]:
     return result
 
 
-def trace_calls(
-    qualified_name: str,
-    project_root: Path | None = None,
-) -> dict[str, Any]:
+def trace_calls(qualified_name: str, project_root: Path | None = None) -> dict[str, Any]:
     """
     Trace the call chain starting from a function/method.
 
@@ -700,45 +655,4 @@ def trace_calls(
 
     call_count, depth = count_calls(result)
 
-    return {
-        "root": qualified_name,
-        "tree": tree,
-        "flat": flat,
-        "depth": depth,
-        "call_count": call_count,
-    }
-
-
-def main() -> int:
-    """CLI entry point."""
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Trace function call chains")
-    parser.add_argument(
-        "function",
-        help="Fully qualified function name (e.g., nomarr.interfaces.api.web.library_if.scan_library)",
-    )
-    parser.add_argument(
-        "--flat",
-        action="store_true",
-        help="Show flattened output instead of tree",
-    )
-
-    args = parser.parse_args()
-
-    project_root = Path(__file__).parent.parent.parent
-    result = trace_calls(args.function, project_root)
-
-    if args.flat and "flat" in result:
-        # Pretty print flat format
-        for item in result["flat"]:
-            loc = item["location"] or "?"
-            print(f"{item['indent']}{item['name']} ({loc})")
-    else:
-        print(json.dumps(result, indent=2))
-
-    return 1 if "error" in result else 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+    return {"root": qualified_name, "tree": tree, "flat": flat, "depth": depth, "call_count": call_count}

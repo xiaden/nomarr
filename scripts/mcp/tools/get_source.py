@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-ML-optimized Source Code Retrieval Tool (Standalone)
+"""ML-optimized Source Code Retrieval Tool (Standalone).
 
 Self-contained module for retrieving source code of Python functions,
 methods, and classes. Returns the actual implementation.
@@ -12,11 +11,13 @@ Usage:
     python scripts/mcp/get_source_ml.py nomarr.persistence.db.Database.close
 
     # As module
-    from scripts.mcp.get_source_ml import get_source
+    from scripts.mcp.tools.get_source import get_source
     result = get_source("nomarr.persistence.db.Database.close")
 """
 
 from __future__ import annotations
+
+__all__ = ["get_source"]
 
 import importlib
 import inspect
@@ -25,6 +26,17 @@ import sys
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
+
+try:
+    from scripts.mcp.tools.helpers.log_suppressor import suppress_logs
+except ImportError:
+    # Fallback if not available (standalone mode)
+    from contextlib import contextmanager
+    from typing import Iterator
+
+    @contextmanager
+    def suppress_logs() -> Iterator[None]:
+        yield
 
 
 def _mock_unavailable_dependencies() -> None:
@@ -59,14 +71,8 @@ def _mock_unavailable_dependencies() -> None:
                 setattr(parent_mock, child, child_mock)
 
 
-def get_source(
-    qualified_name: str,
-    *,
-    context_lines: int = 0,
-    max_lines: int | None = None,
-) -> dict[str, Any]:
-    """
-    Get source code of a Python function, method, or class.
+def get_source(qualified_name: str, *, context_lines: int = 0, max_lines: int | None = None) -> dict[str, Any]:
+    """Get source code of a Python function, method, or class.
 
     Args:
         qualified_name: Fully qualified name with dots
@@ -86,6 +92,7 @@ def get_source(
             - line: Starting line number (of context if included)
             - line_count: Total lines returned
             - error: Optional error message
+
     """
     _mock_unavailable_dependencies()
 
@@ -105,7 +112,8 @@ def get_source(
 
     # First, try treating parent_path as a module
     try:
-        module = importlib.import_module(parent_path)
+        with suppress_logs():
+            module = importlib.import_module(parent_path)
         if hasattr(module, target_name):
             obj = getattr(module, target_name)
             if inspect.isclass(obj):
@@ -121,7 +129,8 @@ def get_source(
         if len(parent_parts) == 2:
             module_path, class_name = parent_parts
             try:
-                module = importlib.import_module(module_path)
+                with suppress_logs():
+                    module = importlib.import_module(module_path)
                 if hasattr(module, class_name):
                     cls = getattr(module, class_name)
                     if inspect.isclass(cls) and hasattr(cls, target_name):
@@ -181,22 +190,11 @@ def main() -> int:
     import argparse
 
     parser = argparse.ArgumentParser(description="Get source code of a Python function/method/class")
+    parser.add_argument("name", help="Qualified name (e.g., nomarr.persistence.db.Database.close)")
     parser.add_argument(
-        "name",
-        help="Qualified name (e.g., nomarr.persistence.db.Database.close)",
+        "--context-lines", type=int, default=0, help="Include N lines before the entity (for edit context)"
     )
-    parser.add_argument(
-        "--context-lines",
-        type=int,
-        default=0,
-        help="Include N lines before the entity (for edit context)",
-    )
-    parser.add_argument(
-        "--max-lines",
-        type=int,
-        default=None,
-        help="Truncate to N lines (default: full source)",
-    )
+    parser.add_argument("--max-lines", type=int, default=None, help="Truncate to N lines (default: full source)")
 
     args = parser.parse_args()
 

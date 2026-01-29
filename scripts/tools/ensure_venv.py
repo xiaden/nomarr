@@ -16,6 +16,7 @@ Behavior:
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import subprocess
 import sys
@@ -78,12 +79,7 @@ def create_venv(venv_path: Path) -> bool:
     print("Creating virtual environment...")
     try:
         # Use current Python to create the venv
-        subprocess.run(
-            [sys.executable, "-m", "venv", str(venv_path)],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+        subprocess.run([sys.executable, "-m", "venv", str(venv_path)], check=True, capture_output=True, text=True)
         print("✓ Created virtual environment")
         return True
     except subprocess.CalledProcessError as e:
@@ -104,10 +100,7 @@ def install_requirements(venv_python: Path, requirements_path: Path) -> bool:
     try:
         # Upgrade pip first
         subprocess.run(
-            [str(venv_python), "-m", "pip", "install", "--upgrade", "pip"],
-            check=True,
-            capture_output=True,
-            text=True,
+            [str(venv_python), "-m", "pip", "install", "--upgrade", "pip"], check=True, capture_output=True, text=True
         )
 
         # Install requirements
@@ -129,6 +122,11 @@ def install_requirements(venv_python: Path, requirements_path: Path) -> bool:
 
 def main() -> int:
     """Main entry point."""
+    # Parse arguments (accept but ignore --command for VS Code compatibility)
+    parser = argparse.ArgumentParser(description="Setup Python virtual environment")
+    parser.add_argument("--command", "-Command", help="Ignored (for VS Code compatibility)", default=None)
+    parser.parse_args()
+
     project_root = get_project_root()
     venv_path = get_venv_path(project_root)
     requirements_path = project_root / "requirements.txt"

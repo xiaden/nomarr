@@ -6,6 +6,8 @@ Returns structured JSON with errors or clean status.
 
 from __future__ import annotations
 
+__all__ = ["lint_frontend"]
+
 import re
 import subprocess
 from pathlib import Path
@@ -89,24 +91,14 @@ def lint_frontend() -> dict[str, Any]:
         Structured JSON with errors or clean status
     """
     if not frontend_dir.exists():
-        return {
-            "status": "error",
-            "summary": {"error": "Frontend directory not found"},
-            "errors": [],
-        }
+        return {"status": "error", "summary": {"error": "Frontend directory not found"}, "errors": []}
 
     all_errors = []
     tools_run = []
 
     # 1. Run ESLint
     try:
-        result = subprocess.run(
-            ["npm", "run", "lint"],
-            capture_output=True,
-            text=True,
-            cwd=frontend_dir,
-            shell=True,
-        )
+        result = subprocess.run(["npm", "run", "lint"], capture_output=True, text=True, cwd=frontend_dir, shell=True)
         tools_run.append("eslint")
         all_errors.extend(parse_eslint_output(result.stdout, result.stderr))
     except Exception as e:
@@ -126,11 +118,7 @@ def lint_frontend() -> dict[str, Any]:
     # 2. Run TypeScript type checking
     try:
         result = subprocess.run(
-            ["npx", "tsc", "-b", "--noEmit"],
-            capture_output=True,
-            text=True,
-            cwd=frontend_dir,
-            shell=True,
+            ["npx", "tsc", "-b", "--noEmit"], capture_output=True, text=True, cwd=frontend_dir, shell=True
         )
         tools_run.append("typescript")
         all_errors.extend(parse_typescript_output(result.stdout, result.stderr))
@@ -153,24 +141,15 @@ def lint_frontend() -> dict[str, Any]:
 
     if all_errors:
         # Group errors by tool
-        by_tool = {}
+        by_tool: dict[str, int] = {}
         for error in all_errors:
             tool = error["tool"]
             by_tool[tool] = by_tool.get(tool, 0) + 1
 
         return {
             "status": "errors",
-            "summary": {
-                "total_errors": len(all_errors),
-                "by_tool": by_tool,
-            },
+            "summary": {"total_errors": len(all_errors), "by_tool": by_tool},
             "errors": all_errors,
         }
     else:
-        return {
-            "status": "clean",
-            "summary": {
-                "tools_run": tools_run,
-                "files_checked": ts_files,
-            },
-        }
+        return {"status": "clean", "summary": {"tools_run": tools_run, "files_checked": ts_files}}

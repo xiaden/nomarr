@@ -4,6 +4,7 @@ Get symbol body at line - combines find_symbol_at_line and get_source.
 Convenience tool to avoid the common two-step hop.
 """
 
+__all__ = ["symbol_at_line"]
 import ast
 import sys
 from pathlib import Path
@@ -13,7 +14,7 @@ ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
 
-def get_symbol_body_at_line(file_path: str, line_number: int, workspace_root: Path) -> dict:
+def symbol_at_line(file_path: str, line_number: int, workspace_root: Path) -> dict:
     """
     Get source code of the symbol containing a specific line number.
 

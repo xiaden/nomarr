@@ -6,6 +6,8 @@ Returns structured JSON with errors or clean status.
 
 from __future__ import annotations
 
+__all__ = ["lint_backend"]
+
 import re
 import subprocess
 import sys
@@ -114,11 +116,7 @@ def lint_backend(path: str | None = None) -> dict[str, Any]:
 
     target_path = project_root / path
     if not target_path.exists():
-        return {
-            "status": "error",
-            "summary": {"error": f"Path not found: {path}"},
-            "errors": [],
-        }
+        return {"status": "error", "summary": {"error": f"Path not found: {path}"}, "errors": []}
 
     all_errors = []
     tools_run = []
@@ -130,9 +128,23 @@ def lint_backend(path: str | None = None) -> dict[str, Any]:
             capture_output=True,
             text=True,
             cwd=project_root,
+            timeout=30,
         )
         tools_run.append("ruff")
         all_errors.extend(parse_ruff_output(result.stdout, result.stderr))
+    except subprocess.TimeoutExpired:
+        all_errors.append(
+            {
+                "tool": "ruff",
+                "file": None,
+                "line": None,
+                "column": None,
+                "code": "tool-timeout",
+                "severity": "warning",
+                "message": "ruff timed out after 30 seconds",
+                "fix_available": False,
+            }
+        )
     except Exception as e:
         all_errors.append(
             {
@@ -154,9 +166,23 @@ def lint_backend(path: str | None = None) -> dict[str, Any]:
             capture_output=True,
             text=True,
             cwd=project_root,
+            timeout=60,
         )
         tools_run.append("mypy")
         all_errors.extend(parse_mypy_output(result.stdout, result.stderr))
+    except subprocess.TimeoutExpired:
+        all_errors.append(
+            {
+                "tool": "mypy",
+                "file": None,
+                "line": None,
+                "column": None,
+                "code": "tool-timeout",
+                "severity": "warning",
+                "message": "mypy timed out after 60 seconds",
+                "fix_available": False,
+            }
+        )
     except Exception as e:
         all_errors.append(
             {
@@ -174,14 +200,25 @@ def lint_backend(path: str | None = None) -> dict[str, Any]:
     # 3. Run import-linter (only if linting a directory, not a single file)
     if target_path.is_dir():
         try:
-            result = subprocess.run(
-                ["lint-imports"],
-                capture_output=True,
-                text=True,
-                cwd=project_root,
-            )
+            # Use venv path for lint-imports
+            venv_script = project_root / ".venv" / "Scripts" / "lint-imports.exe"
+            lint_imports_cmd = str(venv_script) if venv_script.exists() else "lint-imports"
+            result = subprocess.run([lint_imports_cmd], capture_output=True, text=True, cwd=project_root, timeout=30)
             tools_run.append("import-linter")
             all_errors.extend(parse_import_linter_output(result.stdout, result.stderr))
+        except subprocess.TimeoutExpired:
+            all_errors.append(
+                {
+                    "tool": "import-linter",
+                    "file": None,
+                    "line": None,
+                    "column": None,
+                    "code": "tool-timeout",
+                    "severity": "warning",
+                    "message": "import-linter timed out after 30 seconds",
+                    "fix_available": False,
+                }
+            )
         except Exception as e:
             all_errors.append(
                 {
@@ -204,24 +241,15 @@ def lint_backend(path: str | None = None) -> dict[str, Any]:
 
     if all_errors:
         # Group errors by tool
-        by_tool = {}
+        by_tool: dict[str, int] = {}
         for error in all_errors:
             tool = error["tool"]
             by_tool[tool] = by_tool.get(tool, 0) + 1
 
         return {
             "status": "errors",
-            "summary": {
-                "total_errors": len(all_errors),
-                "by_tool": by_tool,
-            },
+            "summary": {"total_errors": len(all_errors), "by_tool": by_tool},
             "errors": all_errors,
         }
     else:
-        return {
-            "status": "clean",
-            "summary": {
-                "tools_run": tools_run,
-                "files_checked": files_checked,
-            },
-        }
+        return {"status": "clean", "summary": {"tools_run": tools_run, "files_checked": files_checked}}

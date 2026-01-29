@@ -5,6 +5,7 @@ Searches all Python files in nomarr/ for classes, functions, or variables
 matching the given name. Supports partially qualified names for scoped search.
 """
 
+__all__ = ["locate_symbol"]
 import ast
 from pathlib import Path
 from typing import Any
@@ -40,12 +41,12 @@ def locate_symbol(symbol_name: str) -> dict[str, Any]:
     target_name = symbol_name
 
     # Top-level folders under nomarr/
-    TOP_LEVEL_FOLDERS = {"interfaces", "services", "workflows", "components", "persistence", "helpers"}
+    top_level_folders = {"interfaces", "services", "workflows", "components", "persistence", "helpers"}
 
     if len(parts) == 2:
         # Disambiguate: path filter vs parent scope
         # If first token is a top-level folder, treat as path filter only
-        if parts[0] in TOP_LEVEL_FOLDERS:
+        if parts[0] in top_level_folders:
             path_filter = parts[0]
             target_name = parts[1]
         else:
@@ -109,12 +110,7 @@ def locate_symbol(symbol_name: str) -> dict[str, Any]:
     # If too many matches (> 5), return simplified output
     if len(matches) > 5:
         simplified = [
-            {
-                "file": m["file"],
-                "line": m["line"],
-                "qualified_name": m["qualified_name"],
-                "kind": m["kind"],
-            }
+            {"file": m["file"], "line": m["line"], "qualified_name": m["qualified_name"], "kind": m["kind"]}
             for m in matches
         ]
         return {
@@ -125,11 +121,7 @@ def locate_symbol(symbol_name: str) -> dict[str, Any]:
             f"Showing file, line, and qualified name only. Use a more specific query (e.g., 'services.{target_name}').",
         }
 
-    return {
-        "query": symbol_name,
-        "matches": matches,
-        "total_matches": len(matches),
-    }
+    return {"query": symbol_name, "matches": matches, "total_matches": len(matches)}
 
 
 def _search_tree(

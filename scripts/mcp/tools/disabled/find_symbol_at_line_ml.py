@@ -6,7 +6,6 @@ Returns the qualified name suitable for use with get_source().
 
 import ast
 from pathlib import Path
-from typing import Optional
 
 
 def find_symbol_at_line(file_path: str, line_number: int) -> dict:
@@ -30,21 +29,13 @@ def find_symbol_at_line(file_path: str, line_number: int) -> dict:
     path = Path(file_path).resolve()
 
     if not path.exists():
-        return {
-            "file": str(path),
-            "line": line_number,
-            "error": f"File not found: {path}",
-        }
+        return {"file": str(path), "line": line_number, "error": f"File not found: {path}"}
 
     try:
         source = path.read_text(encoding="utf-8")
         tree = ast.parse(source, filename=str(path))
     except Exception as e:
-        return {
-            "file": str(path),
-            "line": line_number,
-            "error": f"Failed to parse file: {e}",
-        }
+        return {"file": str(path), "line": line_number, "error": f"Failed to parse file: {e}"}
 
     # Convert file path to module name (relative to project root)
     # Assume ROOT is grandparent of scripts/mcp/
@@ -63,11 +54,7 @@ def find_symbol_at_line(file_path: str, line_number: int) -> dict:
         module_parts = list(rel_path.with_suffix("").parts)
         base_module = ".".join(module_parts)
     except ValueError:
-        return {
-            "file": str(path),
-            "line": line_number,
-            "error": f"File is outside project root: {path}",
-        }
+        return {"file": str(path), "line": line_number, "error": f"File is outside project root: {path}"}
 
     # Walk AST to find containing symbol
     result = _find_containing_node(tree, line_number, base_module)
@@ -91,7 +78,7 @@ def find_symbol_at_line(file_path: str, line_number: int) -> dict:
         }
 
 
-def _find_containing_node(tree: ast.AST, line_number: int, module_name: str) -> Optional[dict]:
+def _find_containing_node(tree: ast.AST, line_number: int, module_name: str) -> dict | None:
     """
     Recursively find the deepest AST node containing the line number.
 
@@ -122,7 +109,7 @@ def _find_containing_node(tree: ast.AST, line_number: int, module_name: str) -> 
         if node_start <= line_number <= node_end:
             # This node contains the line
             current_name = node.name
-            full_name = ".".join(parent_names + [current_name])
+            full_name = ".".join([*parent_names, current_name])
             qualified_name = f"{module_name}.{full_name}" if parent_names else f"{module_name}.{current_name}"
 
             symbol_type = "class" if isinstance(node, ast.ClassDef) else "function"
@@ -140,7 +127,7 @@ def _find_containing_node(tree: ast.AST, line_number: int, module_name: str) -> 
                 }
 
             # Recurse to find deeper matches (e.g., nested functions)
-            new_parent_names = parent_names + [current_name]
+            new_parent_names = [*parent_names, current_name]
             for child in ast.iter_child_nodes(node):
                 visit_node(child, new_parent_names)
         else:

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-ML-optimized Endpoint Tracer (Standalone)
+"""ML-optimized Endpoint Tracer (Standalone).
 
 Higher-level tool that traces API endpoints through FastAPI DI to services.
 Automatically resolves Depends() injection and follows service method calls.
@@ -13,11 +12,13 @@ Usage:
     python scripts/mcp/trace_endpoint_ml.py nomarr.interfaces.api.web.info_if.web_info
 
     # As module
-    from scripts.mcp.trace_endpoint_ml import trace_endpoint
+    from scripts.mcp.tools.trace_endpoint import trace_endpoint
     result = trace_endpoint("nomarr.interfaces.api.web.info_if.web_info")
 """
 
 from __future__ import annotations
+
+__all__ = ["trace_endpoint"]
 
 import ast
 import json
@@ -28,7 +29,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 # Import tracing utilities from trace_calls_ml
-from scripts.mcp.trace_calls_ml import (
+from scripts.mcp.tools.trace_calls import (
     CallInfo,
     _call_info_to_dict,
     _extract_imports,
@@ -90,9 +91,7 @@ def _call_to_string(node: ast.expr) -> str | None:
 
 
 def _extract_depends_info(
-    func_node: ast.FunctionDef | ast.AsyncFunctionDef,
-    imports: dict[str, str],
-    project_root: Path,
+    func_node: ast.FunctionDef | ast.AsyncFunctionDef, imports: dict[str, str], project_root: Path
 ) -> list[InjectedDependency]:
     """Extract all Depends() injections from a function's parameters."""
     dependencies: list[InjectedDependency] = []
@@ -136,17 +135,14 @@ def _extract_depends_function(node: ast.expr) -> str | None:
     if isinstance(node.func, ast.Name) and node.func.id == "Depends":
         if node.args:
             return _call_to_string(node.args[0])
-    elif isinstance(node.func, ast.Attribute) and node.func.attr == "Depends":
-        if node.args:
-            return _call_to_string(node.args[0])
+    elif isinstance(node.func, ast.Attribute) and node.func.attr == "Depends" and node.args:
+        return _call_to_string(node.args[0])
 
     return None
 
 
 def _resolve_depends_return_type_with_source(
-    depends_func: str,
-    imports: dict[str, str],
-    project_root: Path,
+    depends_func: str, imports: dict[str, str], project_root: Path
 ) -> tuple[str | None, str | None]:
     """Resolve the return type of a dependency function with source file.
 
@@ -172,26 +168,23 @@ def _resolve_depends_return_type_with_source(
     deps_imports = _extract_imports(tree)
 
     for node in ast.iter_child_nodes(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            if node.name == func_name:
-                if node.returns:
-                    return_type = _annotation_to_string(node.returns)
-                    if return_type:
-                        type_parts = return_type.split(".")
-                        if type_parts[0] in deps_imports:
-                            resolved = deps_imports[type_parts[0]]
-                            if len(type_parts) > 1:
-                                resolved = f"{resolved}.{'.'.join(type_parts[1:])}"
-                            rel_path = file_path.relative_to(project_root)
-                            return resolved, str(rel_path).replace("\\", "/")
-                        return return_type, str(file_path.relative_to(project_root)).replace("\\", "/")
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == func_name and node.returns:
+            return_type = _annotation_to_string(node.returns)
+            if return_type:
+                type_parts = return_type.split(".")
+                if type_parts[0] in deps_imports:
+                    resolved = deps_imports[type_parts[0]]
+                    if len(type_parts) > 1:
+                        resolved = f"{resolved}.{'.'.join(type_parts[1:])}"
+                    rel_path = file_path.relative_to(project_root)
+                    return resolved, str(rel_path).replace("\\", "/")
+                return return_type, str(file_path.relative_to(project_root)).replace("\\", "/")
 
     return None, None
 
 
 def _extract_service_method_calls(
-    func_node: ast.FunctionDef | ast.AsyncFunctionDef,
-    dependencies: list[InjectedDependency],
+    func_node: ast.FunctionDef | ast.AsyncFunctionDef, dependencies: list[InjectedDependency]
 ) -> dict[str, list[str]]:
     """Extract method calls on injected dependencies.
 
@@ -202,21 +195,17 @@ def _extract_service_method_calls(
     service_calls: dict[str, list[str]] = {name: [] for name in param_names}
 
     for node in ast.walk(func_node):
-        if isinstance(node, ast.Call):
-            if isinstance(node.func, ast.Attribute):
-                value_str = _call_to_string(node.func.value)
-                if value_str in param_names:
-                    method_name = node.func.attr
-                    if method_name not in service_calls[value_str]:
-                        service_calls[value_str].append(method_name)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            value_str = _call_to_string(node.func.value)
+            if value_str in param_names:
+                method_name = node.func.attr
+                if method_name not in service_calls[value_str]:
+                    service_calls[value_str].append(method_name)
 
     return service_calls
 
 
-def trace_endpoint(
-    qualified_name: str,
-    project_root: Path | None = None,
-) -> dict[str, Any]:
+def trace_endpoint(qualified_name: str, project_root: Path | None = None) -> dict[str, Any]:
     """
     Trace an API endpoint through DI to service methods.
 
@@ -281,11 +270,7 @@ def trace_endpoint(
     rel_path = file_path.relative_to(project_root)
 
     result: dict[str, Any] = {
-        "endpoint": {
-            "name": qualified_name,
-            "file": str(rel_path).replace("\\", "/"),
-            "line": func_node.lineno,
-        },
+        "endpoint": {"name": qualified_name, "file": str(rel_path).replace("\\", "/"), "line": func_node.lineno},
         "dependencies": [
             {
                 "param": dep.param_name,
@@ -319,8 +304,7 @@ def main() -> int:
 
     parser = argparse.ArgumentParser(description="Trace API endpoint through DI")
     parser.add_argument(
-        "endpoint",
-        help="Fully qualified endpoint name (e.g., nomarr.interfaces.api.web.info_if.web_info)",
+        "endpoint", help="Fully qualified endpoint name (e.g., nomarr.interfaces.api.web.info_if.web_info)"
     )
 
     args = parser.parse_args()

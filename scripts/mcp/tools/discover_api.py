@@ -13,11 +13,13 @@ Usage:
     python scripts/mcp/discover_api_ml.py nomarr.helpers.dto.library_dto
 
     # As module
-    from scripts.mcp.discover_api_ml import discover_api
+    from scripts.mcp.tools.discover_api import discover_api
     result = discover_api("nomarr.helpers.dto")
 """
 
 from __future__ import annotations
+
+__all__ = ["discover_api"]
 
 import importlib
 import inspect
@@ -26,6 +28,17 @@ import sys
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
+
+try:
+    from scripts.mcp.tools.helpers.log_suppressor import suppress_logs
+except ImportError:
+    # Fallback if not available (standalone mode)
+    from contextlib import contextmanager
+    from typing import Iterator
+
+    @contextmanager
+    def suppress_logs() -> Iterator[None]:
+        yield
 
 
 def _mock_unavailable_dependencies() -> None:
@@ -78,14 +91,8 @@ def _get_docstring(obj: Any, max_lines: int = 1) -> str:
     return " ".join(line.strip() for line in lines) if max_lines == 1 else "\n".join(line.strip() for line in lines)
 
 
-def discover_api(
-    module_name: str,
-    *,
-    include_docstrings: bool = True,
-    max_doc_lines: int = 1,
-) -> dict[str, Any]:
-    """
-    Discover the public API of a Python module.
+def discover_api(module_name: str, *, include_docstrings: bool = True, max_doc_lines: int = 1) -> dict[str, Any]:
+    """Discover the entire API of any Python module.
 
     Returns structured JSON with classes, functions, methods, and constants.
     Optimized for LLM consumption with compact format.
@@ -102,13 +109,15 @@ def discover_api(
             - functions: {name: {sig: str, doc?: str}}
             - constants: {name: value}
             - error: Optional error message if import failed
+
     """
     _mock_unavailable_dependencies()
 
     result: dict[str, Any] = {"module": module_name}
 
     try:
-        module = importlib.import_module(module_name)
+        with suppress_logs():
+            module = importlib.import_module(module_name)
     except ImportError as e:
         result["error"] = str(e)
         return result
@@ -185,16 +194,9 @@ def main() -> int:
 
     parser = argparse.ArgumentParser(description="Discover module API (ML-optimized output)")
     parser.add_argument("module", help="Module name (e.g., nomarr.helpers.dto)")
+    parser.add_argument("--no-docs", action="store_true", help="Omit docstrings from output")
     parser.add_argument(
-        "--no-docs",
-        action="store_true",
-        help="Omit docstrings from output",
-    )
-    parser.add_argument(
-        "--max-doc-lines",
-        type=int,
-        default=1,
-        help="Max docstring lines (default: 1 = first line only)",
+        "--max-doc-lines", type=int, default=1, help="Max docstring lines (default: 1 = first line only)"
     )
 
     args = parser.parse_args()
@@ -203,11 +205,7 @@ def main() -> int:
     project_root = Path(__file__).parent.parent.parent
     sys.path.insert(0, str(project_root))
 
-    result = discover_api(
-        args.module,
-        include_docstrings=not args.no_docs,
-        max_doc_lines=args.max_doc_lines,
-    )
+    result = discover_api(args.module, include_docstrings=not args.no_docs, max_doc_lines=args.max_doc_lines)
 
     print(json.dumps(result, indent=2))
 

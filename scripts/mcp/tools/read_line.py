@@ -4,14 +4,12 @@ Read single line with context - quick inspection tool.
 Deliberately simple for error investigation and search result inspection.
 """
 
+__all__ = ["read_line"]
+
 from pathlib import Path
 
 
-def read_line(
-    file_path: str,
-    line_number: int,
-    workspace_root: Path,
-) -> dict:
+def read_line(file_path: str, line_number: int, workspace_root: Path) -> dict:
     """
     Read a single line with 2 lines of context before and after.
 
@@ -91,8 +89,9 @@ def read_line(
         # Add Python file suggestion
         if target_path.suffix == ".py":
             result["warning"] = (
-                "Tip: For Python files, prefer discover_api, get_source, or locate_symbol "
-                "for structured code navigation instead of raw line reading."
+                "WARNING: Reading Python files with read_line wastes tokens and loses structure. "
+                "Use discover_api (module overview), locate_symbol (find definitions), or "
+                "get_symbol_body_at_line (get function/class at line) instead."
             )
 
         return result

@@ -28,11 +28,9 @@ class LibraryScanMixin:
 
     def _get_library_or_error(self, library_id: str) -> dict[str, Any]:
         """Get a library by ID or raise an error."""
-        # This method is defined in admin.py mixin, but we reference it here
-        library = self.db.libraries.get_library(library_id)
-        if not library:
-            raise ValueError(f"Library not found: {library_id}")
-        return library
+        from nomarr.components.library.get_library_comp import get_library_or_error
+
+        return get_library_or_error(self.db, library_id)
 
     def _has_healthy_library_workers(self) -> bool:
         """
@@ -41,7 +39,9 @@ class LibraryScanMixin:
         Returns:
             True if at least one library worker has a recent heartbeat
         """
-        workers = self.db.health.get_all_workers()
+        from nomarr.components.infrastructure.health_comp import get_all_workers, get_component_health
+
+        workers = get_all_workers(self.db)
 
         for worker in workers:
             component = worker.get("component")
@@ -51,7 +51,7 @@ class LibraryScanMixin:
             # Check if worker is healthy (heartbeat within 30 seconds)
             from nomarr.helpers.time_helper import now_ms
 
-            health = self.db.health.get_component(component)
+            health = get_component_health(self.db, component)
             if health and health.get("status") == "healthy":
                 last_heartbeat = health.get("last_heartbeat", 0)
                 if now_ms().value - last_heartbeat < 30_000:  # 30 seconds
@@ -68,7 +68,9 @@ class LibraryScanMixin:
         Returns:
             True if any library has scan_status='scanning'
         """
-        libraries = self.db.libraries.list_libraries(enabled_only=False)
+        from nomarr.components.library.list_libraries_comp import list_libraries
+
+        libraries = list_libraries(self.db, enabled_only=False)
         return any(lib.get("scan_status") == "scanning" for lib in libraries)
 
     def scan_targets(
@@ -285,7 +287,9 @@ class LibraryScanMixin:
         Returns:
             List of scan info dicts with library_id, name, scanned_at, scan_status
         """
-        libraries = self.db.libraries.list_libraries(enabled_only=False)
+        from nomarr.components.library.list_libraries_comp import list_libraries
+
+        libraries = list_libraries(self.db, enabled_only=False)
         return [
             {
                 "library_id": lib["_id"],

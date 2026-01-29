@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-ML-optimized Route Discovery Tool (Standalone)
+"""ML-optimized Route Discovery Tool (Standalone).
 
 Self-contained module for discovering API routes by static analysis.
 Parses route decorators without importing the FastAPI app (which hangs in MCP).
@@ -12,16 +11,16 @@ Usage:
     python scripts/mcp/list_routes_ml.py
 
     # As module
-    from scripts.mcp.list_routes_ml import list_routes
+    from scripts.mcp.tools.list_routes import list_routes
     result = list_routes()
 """
 
 from __future__ import annotations
 
+__all__ = ["list_routes"]
+
 import ast
-import json
 import re
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -81,9 +80,7 @@ def _call_to_string(node: ast.expr) -> str | None:
     return None
 
 
-def _extract_injected_services(
-    func_node: ast.FunctionDef | ast.AsyncFunctionDef,
-) -> list[dict[str, str]]:
+def _extract_injected_services(func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[dict[str, str]]:
     """Extract Depends() injected services from function parameters."""
     services: list[dict[str, str]] = []
 
@@ -104,21 +101,16 @@ def _extract_injected_services(
             default = func_node.args.defaults[default_index]
             if isinstance(default, ast.Call):
                 func_name = None
-                if isinstance(default.func, ast.Name) and default.func.id == "Depends":
-                    if default.args:
-                        func_name = _call_to_string(default.args[0])
-                elif isinstance(default.func, ast.Attribute) and default.func.attr == "Depends":
-                    if default.args:
-                        func_name = _call_to_string(default.args[0])
+                if (
+                    (isinstance(default.func, ast.Name) and default.func.id == "Depends")
+                    or (isinstance(default.func, ast.Attribute) and default.func.attr == "Depends")
+                ) and default.args:
+                    func_name = _call_to_string(default.args[0])
                 if func_name:
                     depends_func = func_name
 
         if depends_func:
-            services.append({
-                "param": arg.arg,
-                "depends_on": depends_func,
-                "type": type_str or "Any",
-            })
+            services.append({"param": arg.arg, "depends_on": depends_func, "type": type_str or "Any"})
 
     return services
 
@@ -268,8 +260,7 @@ def _build_full_paths(routers: list[RouterInfo], project_root: Path) -> list[dic
 
 
 def list_routes(project_root: Path | None = None) -> dict[str, Any]:
-    """
-    List all API routes by static analysis.
+    """List all API routes by static analysis.
 
     Args:
         project_root: Path to project root. Defaults to auto-detect.
@@ -280,6 +271,7 @@ def list_routes(project_root: Path | None = None) -> dict[str, Any]:
             - by_prefix: Routes grouped by API prefix
             - total: Total route count
             - error: Optional error message
+
     """
     if project_root is None:
         project_root = Path(__file__).parent.parent.parent
@@ -327,49 +319,3 @@ def list_routes(project_root: Path | None = None) -> dict[str, Any]:
             "other": len(by_prefix["other"]),
         },
     }
-
-
-def main() -> int:
-    """CLI entry point."""
-    import argparse
-
-    parser = argparse.ArgumentParser(description="List API routes by static analysis")
-    parser.add_argument(
-        "--format",
-        choices=["json", "text"],
-        default="json",
-        help="Output format (default: json)",
-    )
-
-    args = parser.parse_args()
-
-    project_root = Path(__file__).parent.parent.parent
-    result = list_routes(project_root)
-
-    if args.format == "json":
-        print(json.dumps(result, indent=2))
-    else:
-        # Text format
-        if "error" in result:
-            print(f"ERROR: {result['error']}")
-            return 1
-
-        for prefix_name, routes in result["by_prefix"].items():
-            if not routes:
-                continue
-            print(f"\n{'=' * 60}")
-            print(f"{prefix_name.upper()} ({len(routes)} routes)")
-            print("=" * 60)
-            for r in routes:
-                print(f"  {r['method']:7s} {r['path']}")
-                print(f"          -> {r['function']}() in {r['file']}:{r['line']}")
-
-        print(f"\n{'=' * 60}")
-        print(f"TOTAL: {result['total']} routes")
-        print("=" * 60)
-
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())

@@ -41,10 +41,9 @@ class LibraryAdminMixin:
         Raises:
             ValueError: If library does not exist
         """
-        library = self.db.libraries.get_library(library_id)
-        if not library:
-            raise ValueError(f"Library not found: {library_id}")
-        return library
+        from nomarr.components.library.get_library_comp import get_library_or_error
+
+        return get_library_or_error(self.db, library_id)
 
     def is_library_root_configured(self) -> bool:
         """
@@ -65,10 +64,13 @@ class LibraryAdminMixin:
         Returns:
             List of LibraryDict DTOs with file/folder counts
         """
-        libraries = self.db.libraries.list_libraries(enabled_only=enabled_only)
+        from nomarr.components.library.list_libraries_comp import list_libraries
+        from nomarr.components.library.get_library_counts_comp import get_library_counts
+
+        libraries = list_libraries(self.db, enabled_only=enabled_only)
 
         # Get file/folder counts for all libraries
-        counts = self.db.library_files.get_library_counts()
+        counts = get_library_counts(self.db)
 
         result = []
         for lib in libraries:
@@ -94,9 +96,9 @@ class LibraryAdminMixin:
         Raises:
             ValueError: If library not found
         """
-        library = self.db.libraries.get_library(library_id)
-        if not library:
-            raise ValueError(f"Library not found: {library_id}")
+        from nomarr.components.library.get_library_comp import get_library_or_error
+
+        library = get_library_or_error(self.db, library_id)
         return LibraryDict(**library)
 
     def create_library(
@@ -118,9 +120,9 @@ class LibraryAdminMixin:
             watch_mode=watch_mode,
         )
 
-        library = self.db.libraries.get_library(library_id)
-        if not library:
-            raise RuntimeError("Failed to retrieve created library")
+        from nomarr.components.library.get_library_comp import get_library_or_error
+
+        library = get_library_or_error(self.db, library_id)
         return LibraryDict(**library)
 
     def update_library_root(self, library_id: str, root_path: str) -> LibraryDict:
@@ -134,9 +136,9 @@ class LibraryAdminMixin:
             root_path=root_path,
         )
 
-        updated = self.db.libraries.get_library(library_id)
-        if not updated:
-            raise RuntimeError("Failed to retrieve updated library")
+        from nomarr.components.library.get_library_comp import get_library_or_error
+
+        updated = get_library_or_error(self.db, library_id)
         return LibraryDict(**updated)
 
     def update_library(
@@ -179,14 +181,15 @@ class LibraryAdminMixin:
         file_write_mode: str | None = None,
     ) -> LibraryDict:
         """Update library metadata (name, enabled, watch_mode, file_write_mode)."""
+        from nomarr.components.library.update_library_metadata_comp import update_library_metadata
+        from nomarr.components.library.get_library_comp import get_library_or_error
+
         self._get_library_or_error(library_id)
-        self.db.libraries.update_library(
-            library_id, name=name, is_enabled=is_enabled, watch_mode=watch_mode, file_write_mode=file_write_mode
+        update_library_metadata(
+            self.db, library_id, name=name, is_enabled=is_enabled, watch_mode=watch_mode, file_write_mode=file_write_mode
         )
 
-        updated = self.db.libraries.get_library(library_id)
-        if not updated:
-            raise RuntimeError("Failed to retrieve updated library")
+        updated = get_library_or_error(self.db, library_id)
         return LibraryDict(**updated)
 
     def clear_library_data(self) -> None:

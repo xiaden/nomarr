@@ -6,7 +6,7 @@
 	],
 	"settings": {
 		"python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
-		"python.terminal.activateEnvironment": true,
+		"python.terminal.activateEnvironment": false,
 		"python.testing.pytestEnabled": true,
 		"python.testing.unittestEnabled": false,
 		"python.testing.pytestArgs": [
@@ -15,8 +15,8 @@
 		"terminal.integrated.defaultProfile.windows": "PowerShell",
 		"terminal.integrated.profiles.windows": {
 			"PowerShell": {
-				"source": "PowerShell",
-				"args": ["-NoExit", "-Command", "& '${workspaceFolder}/.venv/Scripts/Activate.ps1'"]
+				"path": "pwsh.exe",
+				"args": ["-NoExit", "-File", "${workspaceFolder}/.venv/Scripts/Activate.ps1"]
 			}
 		},
 		"terminal.integrated.windowsEnableConpty": true,
@@ -64,8 +64,9 @@
 			{
 				"label": "Setup Python Environment",
 				"type": "shell",
-				"command": "${config:python.defaultInterpreterPath}",
+				"command": "py",
 				"args": [
+					"-3",
 					"scripts/tools/ensure_venv.py"
 				],
 				"problemMatcher": [],
@@ -79,6 +80,12 @@
 				},
 				"runOptions": {
 					"runOn": "folderOpen"
+				},
+				"options": {
+					"env": {
+						"PYTHONPATH": "",
+						"VIRTUAL_ENV": ""
+					}
 				}
 			}
 		]

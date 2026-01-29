@@ -4,15 +4,12 @@ Read file tool - minimal fallback for non-Python files.
 Deliberately second-class to encourage AST-based tools for Python code.
 """
 
+__all__ = ["read_file"]
+
 from pathlib import Path
 
 
-def read_file(
-    file_path: str,
-    start_line: int,
-    end_line: int,
-    workspace_root: Path,
-) -> dict:
+def read_file(file_path: str, start_line: int, end_line: int, workspace_root: Path) -> dict:
     """
     Read a specific line range from any file in the workspace.
 
@@ -85,10 +82,7 @@ def read_file(
         result_content = "".join(requested_lines)
 
         # Build minimal response
-        result = {
-            "path": str(target_path.relative_to(workspace_root)),
-            "content": result_content,
-        }
+        result = {"path": str(target_path.relative_to(workspace_root)), "content": result_content}
 
         # Add warning if lines were reversed
         if warning:
@@ -97,8 +91,9 @@ def read_file(
         # Add Python file suggestion
         if target_path.suffix == ".py":
             suggestion = (
-                "Tip: For Python files, prefer discover_api, get_source, or locate_symbol "
-                "for structured code navigation instead of raw file reading."
+                "WARNING: Reading Python files with read_file wastes tokens and loses structure. "
+                "Use discover_api (module overview), locate_symbol (find definitions), or "
+                "get_symbol_body_at_line (get function/class at line) instead."
             )
             result["warning"] = f"{warning}. {suggestion}" if warning else suggestion
 

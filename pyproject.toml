@@ -150,6 +150,7 @@ ignore = [
     "B008",   # Do not perform function calls in argument defaults (FastAPI Depends pattern)
     "N802",   # Function name should be lowercase (allow CamelCase for classes)
     "SIM108", # Use ternary operator instead of if-else-block (sometimes less readable)
+    "ERA001", # Commented-out code detection (too many false positives)
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -218,10 +219,10 @@ source_modules = ["nomarr.helpers"]
 forbidden_modules = ["nomarr.services", "nomarr.workflows", "nomarr.interfaces", "nomarr.components", "nomarr.persistence"]
 
 [[tool.importlinter.contracts]]
-name = "Only persistence package may import persistence.database"
+name = "Only components may import persistence"
 type = "forbidden"
-source_modules = ["nomarr.interfaces", "nomarr.services", "nomarr.workflows", "nomarr.components", "nomarr.helpers"]
-forbidden_modules = ["nomarr.persistence.database"]
+source_modules = ["nomarr.interfaces", "nomarr.services", "nomarr.workflows", "nomarr.helpers"]
+forbidden_modules = ["nomarr.persistence"]
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
