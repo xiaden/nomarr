@@ -101,19 +101,22 @@ def parse_import_linter_output(stdout: str, stderr: str) -> list[dict[str, Any]]
     return errors
 
 
-def lint_backend(path: str | None = None, only_modified: bool = False) -> dict[str, Any]:
+def lint_backend(path: str | None = None, check_all: bool = False) -> dict[str, Any]:
     """Run backend linting tools on specified path.
+
+    By default, only lints Python files modified since last commit (fast, incremental).
+    Use check_all=True to lint entire codebase (slow, comprehensive).
 
     Args:
         path: Relative path to lint (default: "nomarr/"). Use empty string "" to lint entire project.
-        only_modified: If True, only lint Python files modified since last commit (ignores path parameter)
+        check_all: If True, lint all files in path instead of only modified ones
 
     Returns:
         Structured JSON with errors or clean status
 
     """
     # Get list of files to lint
-    if only_modified:
+    if not check_all:
         # Get modified Python files from git
         try:
             result = subprocess.run(
@@ -236,8 +239,8 @@ def lint_backend(path: str | None = None, only_modified: bool = False) -> dict[s
             }
         )
 
-    # 3. Run import-linter (only if linting a directory or when only_modified=False)
-    if not only_modified and (target_files is None or (target_path and target_path.is_dir())):
+    # 3. Run import-linter (only if linting a directory or when check_all=True)
+    if check_all and (target_files is None or (target_path and target_path.is_dir())):
         try:
             # Use venv path for lint-imports
             venv_script = project_root / ".venv" / "Scripts" / "lint-imports.exe"
@@ -273,7 +276,7 @@ def lint_backend(path: str | None = None, only_modified: bool = False) -> dict[s
             )
 
     # Count files checked
-    if only_modified:
+    if not check_all:
         files_checked = len(target_files)
     elif target_files and len(target_files) == 1 and target_files[0].is_file():
         files_checked = 1
