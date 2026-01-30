@@ -30,6 +30,9 @@ class RootLoggerFixer(ast.NodeTransformer):
         for alias in node.names:
             if alias.name == "logging":
                 self.has_logger_import = True
+                # Also check if we're importing as logging
+                if alias.asname is None or alias.asname == "logging":
+                    self.has_logger_import = True
         return node
 
     def visit_ImportFrom(self, node):
@@ -99,7 +102,7 @@ def fix_file(file_path: Path, dry_run: bool = False) -> bool:
     except Exception as e:
         print(f"Skip {file_path}: Cannot read file - {e}", file=sys.stderr)
         return False
-    
+
     try:
         tree = ast.parse(source, filename=str(file_path))
     except SyntaxError as e:
@@ -135,8 +138,24 @@ def fix_file(file_path: Path, dry_run: bool = False) -> bool:
 
     # Need to add logger = logging.getLogger(__name__)
     if not fixer.has_logger_import:
-        print(f"Skip {file_path}: no logging import", file=sys.stderr)
-        return False
+        # No logging import found - need to add both import and logger
+        # Find insertion point for import (after __future__ imports)
+        import_insert_pos = 0
+        for i, node in enumerate(tree.body):
+            if isinstance(node, ast.ImportFrom) and node.module == "__future__":
+                import_insert_pos = i + 1
+            elif isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant):
+                # Skip module docstring
+                if i == 0:
+                    import_insert_pos = 1
+
+        # Create import logging statement
+        import_logging = ast.Import(names=[ast.alias(name="logging", asname=None)])
+        new_tree.body.insert(import_insert_pos, import_logging)
+
+        # Adjust logger position if needed
+        if import_insert_pos <= insert_pos:
+            insert_pos += 1
 
     # Find insertion point (after imports, before first non-import statement)
     insert_pos = 0
@@ -162,7 +181,7 @@ def fix_file(file_path: Path, dry_run: bool = False) -> bool:
 
     # Insert into tree
     new_tree.body.insert(insert_pos, logger_assign)
-    
+
     # Fix missing line numbers and other location info
     ast.fix_missing_locations(new_tree)
 
