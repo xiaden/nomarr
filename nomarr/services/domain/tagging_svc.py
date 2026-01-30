@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 
+from nomarr.helpers.dto.calibration_dto import (
+    WriteCalibratedTagsParams,
+)
 from nomarr.helpers.dto.library_dto import ReconcileTagsResult
 from nomarr.helpers.dto.recalibration_dto import ApplyCalibrationResult
+from nomarr.workflows.library.file_tags_io_wf import read_file_tags_workflow, remove_file_tags_workflow
+from nomarr.workflows.processing.write_file_tags_wf import write_file_tags_workflow
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -69,7 +75,7 @@ class TaggingService:
             ValueError: If file doesn't have existing tags
 
         """
-        from nomarr.helpers.dto.calibration_dto import WriteCalibratedTagsParams
+
         from nomarr.workflows.calibration.write_calibrated_tags_wf import write_calibrated_tags_wf
 
         logger.info(f"Writing calibrated tags to file: {file_path}")
@@ -125,7 +131,6 @@ class TaggingService:
 
         logger.info(f"Writing calibrated tags to {len(paths)} files...")
 
-        from nomarr.helpers.dto.calibration_dto import WriteCalibratedTagsParams
         from nomarr.workflows.calibration.write_calibrated_tags_wf import write_calibrated_tags_wf
 
         success_count = 0
@@ -157,8 +162,6 @@ class TaggingService:
             Dict representation of GlobalCalibrationStatus DTO
 
         """
-        from dataclasses import asdict
-
         from nomarr.helpers.dto.calibration_dto import (
             GlobalCalibrationStatus,
             LibraryCalibrationStatus,
@@ -222,8 +225,6 @@ class TaggingService:
             RuntimeError: If file cannot be read
 
         """
-        from nomarr.workflows.library.file_tags_io_wf import read_file_tags_workflow
-
         return read_file_tags_workflow(db=self.db, path=path, namespace=namespace)
 
     def remove_file_tags(self, path: str, namespace: str) -> int:
@@ -241,8 +242,6 @@ class TaggingService:
             RuntimeError: If file cannot be modified
 
         """
-        from nomarr.workflows.library.file_tags_io_wf import remove_file_tags_workflow
-
         return remove_file_tags_workflow(db=self.db, path=path, namespace=namespace)
 
     def reconcile_library(
@@ -268,8 +267,6 @@ class TaggingService:
             ReconcileTagsResult with processed, remaining, and failed counts
 
         """
-        from nomarr.workflows.processing.write_file_tags_wf import write_file_tags_workflow
-
         # Get library settings
         library = self.db.libraries.get_library(library_id)
         if not library:

@@ -17,7 +17,8 @@ before filesystem operations. See .github/codeql/codeql-config.yml for suppressi
 from __future__ import annotations
 
 import logging
-from pathlib import Path
+import os
+from pathlib import Path, PurePath
 
 logger = logging.getLogger(__name__)
 
@@ -51,20 +52,12 @@ def validate_library_path(file_path: str, library_path: str) -> str:
 
     """
     # Delegate to resolve_library_path for consistent validation
-    resolved = resolve_library_path(
-        library_root=library_path,
-        user_path=file_path,
-        must_exist=True,
-        must_be_file=True,
-    )
+    resolved = resolve_library_path(library_root=library_path, user_path=file_path, must_exist=True, must_be_file=True)
     return str(resolved)
 
 
 def resolve_library_path(
-    library_root: str | Path,
-    user_path: str | Path,
-    must_exist: bool = True,
-    must_be_file: bool | None = None,
+    library_root: str | Path, user_path: str | Path, must_exist: bool = True, must_be_file: bool | None = None,
 ) -> Path:
     r"""Safely resolve and validate a path within the library root.
 
@@ -111,9 +104,6 @@ def resolve_library_path(
         Path("/music/album")
 
     """
-    import os
-    from pathlib import PurePath
-
     if not library_root:
         msg = "Library root not configured"
         raise ValueError(msg)

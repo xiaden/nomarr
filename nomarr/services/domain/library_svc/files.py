@@ -10,7 +10,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from nomarr.helpers.dto.library_dto import FileTagsResult, TagCleanupResult
+from nomarr.components.library.file_tags_comp import get_file_tags_with_path
+from nomarr.components.library.library_root_comp import resolve_path_within_library
+from nomarr.helpers.dto.library_dto import FileTag, FileTagsResult, TagCleanupResult
+from nomarr.workflows.library.cleanup_orphaned_tags_wf import cleanup_orphaned_tags_workflow
+from nomarr.workflows.library.reconcile_paths_wf import reconcile_library_paths_workflow
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -37,8 +41,6 @@ class LibraryFilesMixin:
             TagCleanupResult DTO with orphaned_count and deleted_count
 
         """
-        from nomarr.workflows.library.cleanup_orphaned_tags_wf import cleanup_orphaned_tags_workflow
-
         result = cleanup_orphaned_tags_workflow(self.db, dry_run=dry_run)
         return TagCleanupResult(
             orphaned_count=result["orphaned_count"],
@@ -59,9 +61,6 @@ class LibraryFilesMixin:
             ValueError: If file not found
 
         """
-        from nomarr.components.library.file_tags_comp import get_file_tags_with_path
-        from nomarr.helpers.dto.library_dto import FileTag
-
         # Get file and tags from component
         result = get_file_tags_with_path(self.db, file_id, nomarr_only=nomarr_only)
         if not result:
@@ -125,8 +124,6 @@ class LibraryFilesMixin:
             print(f"Cleaned up {result['deleted_files']} invalid files")
 
         """
-        from nomarr.workflows.library.reconcile_paths_wf import reconcile_library_paths_workflow
-
         return reconcile_library_paths_workflow(
             db=self.db,
             library_root=self.cfg.library_root,
@@ -157,6 +154,4 @@ class LibraryFilesMixin:
             ValueError: If path is outside library_root or validation fails
 
         """
-        from nomarr.components.library.library_root_comp import resolve_path_within_library
-
         return resolve_path_within_library(library_root, user_path, must_exist=must_exist, must_be_file=must_be_file)

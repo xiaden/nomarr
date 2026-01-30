@@ -2,6 +2,7 @@
 
 Handles embedding computation, head prediction, and batched processing.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -11,14 +12,16 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from nomarr.components.ml import ml_backend_essentia_comp as backend_essentia
+
 logger = logging.getLogger(__name__)
 try:
     import tensorflow as tf
+
     HAVE_TF = True
 except ImportError:
     HAVE_TF = False
-    tf = None
-from nomarr.components.ml import ml_backend_essentia_comp as backend_essentia
+    tf = None  # type: ignore[assignment]
 
 if backend_essentia.essentia_tf is not None:
     TensorflowPredict2D = backend_essentia.essentia_tf.TensorflowPredict2D
@@ -50,6 +53,7 @@ if TYPE_CHECKING:
     from nomarr.components.ml.ml_discovery_comp import HeadInfo
     from nomarr.helpers.dto.ml_dto import ComputeEmbeddingsForBackboneParams
 
+
 def make_predictor_uncached(head_info: HeadInfo) -> Callable[[np.ndarray, int], np.ndarray]:
     """Build full two-stage predictor (waveform -> embedding -> head predictions).
 
@@ -58,6 +62,7 @@ def make_predictor_uncached(head_info: HeadInfo) -> Callable[[np.ndarray, int], 
     """
     backend_essentia.require()
     from nomarr.components.ml.ml_discovery_comp import get_embedding_output_node, get_head_output_node
+
     backbone = head_info.backbone
     emb_graph = head_info.embedding_graph
     head_graph = head_info.sidecar.graph_abs("")
@@ -96,7 +101,9 @@ def make_predictor_uncached(head_info: HeadInfo) -> Callable[[np.ndarray, int], 
     else:
         head_predictor = TensorflowPredict2D(graphFilename=head_graph, output=head_output)
     embed_dim = head_info.sidecar.input_dim()
-    logger.info(f"[inference] Built predictor for {head_info.name}: {backbone} ({emb_output}) -> {head_info.head_type} ({head_output})")
+    logger.info(
+        f"[inference] Built predictor for {head_info.name}: {backbone} ({emb_output}) -> {head_info.head_type} ({head_output})",
+    )
 
     def predict_fn(wave: np.ndarray, sr: int) -> np.ndarray:
         """Two-stage predictor: wave -> embeddings -> predictions."""
@@ -124,7 +131,9 @@ def make_predictor_uncached(head_info: HeadInfo) -> Callable[[np.ndarray, int], 
             predictions = predictions.reshape(-1)
         result: np.ndarray = predictions
         return result
+
     return predict_fn
+
 
 def compute_embeddings_for_backbone(params: ComputeEmbeddingsForBackboneParams) -> tuple[np.ndarray, float, str]:
     """Compute embeddings for an audio file using a specific backbone.
@@ -147,13 +156,17 @@ def compute_embeddings_for_backbone(params: ComputeEmbeddingsForBackboneParams) 
     from nomarr.components.ml.ml_audio_comp import load_audio_mono, should_skip_short
     from nomarr.components.ml.ml_cache_comp import cache_backbone_predictor, get_cached_backbone_predictor
     from nomarr.components.ml.ml_discovery_comp import get_embedding_output_node
+
     audio_result = load_audio_mono(params.path, target_sr=params.target_sr)
     if should_skip_short(audio_result.duration, params.min_duration_s, params.allow_short):
         msg = f"audio too short ({audio_result.duration:.2f}s < {params.min_duration_s}s)"
         raise RuntimeError(msg)
     from nomarr.components.ml.chromaprint_comp import compute_chromaprint
+
     chromaprint = compute_chromaprint(audio_result.waveform, audio_result.sample_rate)
-    logger.debug(f"[inference] Processing full track: {audio_result.duration:.1f}s ({len(audio_result.waveform)} samples @ {audio_result.sample_rate}Hz)")
+    logger.debug(
+        f"[inference] Processing full track: {audio_result.duration:.1f}s ({len(audio_result.waveform)} samples @ {audio_result.sample_rate}Hz)",
+    )
     emb_output = get_embedding_output_node(params.backbone)
     if not params.prefer_gpu:
         logger.info(f"[inference] CPU spill requested for {params.backbone} (GPU VRAM pressure detected)")
@@ -164,7 +177,9 @@ def compute_embeddings_for_backbone(params: ComputeEmbeddingsForBackboneParams) 
             if TensorflowPredictVGGish is None:
                 msg = "TensorflowPredictVGGish not available"
                 raise RuntimeError(msg)
-            emb_predictor = TensorflowPredictVGGish(graphFilename=params.emb_graph, input="melspectrogram", output=emb_output)
+            emb_predictor = TensorflowPredictVGGish(
+                graphFilename=params.emb_graph, input="melspectrogram", output=emb_output,
+            )
         elif params.backbone == "vggish":
             if TensorflowPredictVGGish is None:
                 msg = "TensorflowPredictVGGish not available"
@@ -189,7 +204,9 @@ def compute_embeddings_for_backbone(params: ComputeEmbeddingsForBackboneParams) 
     wave_f32 = audio_result.waveform.astype(np.float32)
     emb = emb_predictor(wave_f32)
     emb = np.asarray(emb, dtype=np.float32)
-    logger.debug(f"[inference] {params.backbone} backbone output shape: {emb.shape} (audio input: {len(wave_f32)} samples @ {audio_result.sample_rate}Hz = {len(wave_f32) / audio_result.sample_rate:.2f}s)")
+    logger.debug(
+        f"[inference] {params.backbone} backbone output shape: {emb.shape} (audio input: {len(wave_f32)} samples @ {audio_result.sample_rate}Hz = {len(wave_f32) / audio_result.sample_rate:.2f}s)",
+    )
     embeddings_2d: np.ndarray
     if emb.ndim == 1:
         logger.debug("[inference] Backbone returned 1D embedding (already pooled)")
@@ -203,10 +220,15 @@ def compute_embeddings_for_backbone(params: ComputeEmbeddingsForBackboneParams) 
     else:
         logger.warning(f"[inference] Unexpected backbone output shape: {emb.shape}, flattening to 1D")
         embeddings_2d = emb.reshape(1, -1)
-    logger.debug(f"[inference] Computed {embeddings_2d.shape[0]} patches for {params.backbone}: shape={embeddings_2d.shape} duration={audio_result.duration:.1f}s")
+    logger.debug(
+        f"[inference] Computed {embeddings_2d.shape[0]} patches for {params.backbone}: shape={embeddings_2d.shape} duration={audio_result.duration:.1f}s",
+    )
     return (embeddings_2d, audio_result.duration, chromaprint)
 
-def make_head_only_predictor_batched(head_info: HeadInfo, embeddings_2d: np.ndarray, batch_size: int=11) -> Callable[[], np.ndarray]:
+
+def make_head_only_predictor_batched(
+    head_info: HeadInfo, embeddings_2d: np.ndarray, batch_size: int = 11,
+) -> Callable[[], np.ndarray]:
     """Create a batched predictor that processes segments in fixed-size batches.
     Returns a function that takes no args and returns predictions for all segments.
 
@@ -226,6 +248,7 @@ def make_head_only_predictor_batched(head_info: HeadInfo, embeddings_2d: np.ndar
     """
     backend_essentia.require()
     from nomarr.components.ml.ml_discovery_comp import get_head_output_node
+
     head_graph = head_info.sidecar.graph_abs("")
     head_output = get_head_output_node(head_info.head_type, head_info.sidecar)
     head_input = head_info.sidecar.head_input_name()
@@ -242,7 +265,9 @@ def make_head_only_predictor_batched(head_info: HeadInfo, embeddings_2d: np.ndar
         batch_emb = embeddings_2d
         if embed_dim and batch_emb.shape[1] != embed_dim:
             if batch_emb.shape[1] > embed_dim:
-                logger.warning(f"[inference] ⚠️  DIMENSION TRUNCATION: {head_info.name} expects {embed_dim} dims but embeddings are {batch_emb.shape[1]} dims. Truncating batch.")
+                logger.warning(
+                    f"[inference] ⚠️  DIMENSION TRUNCATION: {head_info.name} expects {embed_dim} dims but embeddings are {batch_emb.shape[1]} dims. Truncating batch.",
+                )
                 batch_emb = batch_emb[:, :embed_dim]
             else:
                 msg = f"Embedding dimension mismatch for {head_info.name}: got {batch_emb.shape[1]}, expected {embed_dim} (cannot pad)"
@@ -250,11 +275,12 @@ def make_head_only_predictor_batched(head_info: HeadInfo, embeddings_2d: np.ndar
         num_segments = batch_emb.shape[0]
         all_predictions = []
         for i in range(0, num_segments, batch_size):
-            batch_slice = batch_emb[i:i + batch_size]
+            batch_slice = batch_emb[i : i + batch_size]
             batch_preds = head_predictor(batch_slice)
             batch_preds = np.asarray(batch_preds, dtype=np.float32)
             if batch_preds.ndim == 1:
                 batch_preds = batch_preds.reshape(-1, 1)
             all_predictions.append(batch_preds)
         return np.vstack(all_predictions)
+
     return predict_all_segments

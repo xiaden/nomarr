@@ -71,7 +71,7 @@ def _supports_hardlinks(source: Path, temp_folder: Path) -> bool:
 
 def _compute_chromaprint_for_path(path: Path) -> str:
     """Compute chromaprint for a file path (not LibraryPath)."""
-    # Import here to avoid circular imports and heavy deps at module load
+
     from nomarr.components.ml.chromaprint_comp import compute_chromaprint
     from nomarr.components.ml.ml_audio_comp import load_audio_mono
 
@@ -102,10 +102,7 @@ def safe_write_tags(
 
     """
     if not library_path.is_valid():
-        return SafeWriteResult(
-            success=False,
-            error=f"Invalid path: {library_path.reason}",
-        )
+        return SafeWriteResult(success=False, error=f"Invalid path: {library_path.reason}")
 
     original_path = library_path.absolute
     filename = original_path.name

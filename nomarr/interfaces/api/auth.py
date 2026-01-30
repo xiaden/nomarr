@@ -54,8 +54,6 @@ async def verify_session(creds: HTTPAuthorizationCredentials = Depends(auth_sche
 
 def verify_password(password: str, password_hash: str) -> bool:
     """Verify a password against a hash. Pure utility function - stateless."""
-    from nomarr.services.infrastructure.keys_svc import KeyManagementService
-
     return KeyManagementService.verify_password(password, password_hash)
 
 

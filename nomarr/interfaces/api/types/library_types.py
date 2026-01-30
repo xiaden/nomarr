@@ -12,20 +12,22 @@ Architecture:
 
 from __future__ import annotations
 
-from datetime import UTC
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Self
 
 from pydantic import BaseModel
 
+from nomarr.helpers.dto.library_dto import (
+    FileTagsResult,
+    ReconcileTagsResult,
+    SearchFilesResult,
+    TagCleanupResult,
+    UniqueTagKeysResult,
+)
 from nomarr.interfaces.api.id_codec import encode_id
 
 if TYPE_CHECKING:
-    from nomarr.helpers.dto.library_dto import (
-        LibraryDict,
-        LibraryStatsResult,
-        ReconcileResult,
-        StartScanResult,
-    )
+    from nomarr.helpers.dto.library_dto import LibraryDict, LibraryStatsResult, ReconcileResult, StartScanResult
 
 # ──────────────────────────────────────────────────────────────────────
 # Library Response Types (DTO → Pydantic mappings)
@@ -71,21 +73,15 @@ class LibraryResponse(BaseModel):
         updated_at = library.updated_at
 
         if isinstance(created_at, int):
-            from datetime import datetime
-
             created_at = datetime.fromtimestamp(created_at / 1000, tz=UTC).isoformat()
 
         if isinstance(updated_at, int):
-            from datetime import datetime
-
             updated_at = datetime.fromtimestamp(updated_at / 1000, tz=UTC).isoformat()
 
         # Convert scanned_at timestamp if present
         scanned_at_raw = library.scanned_at
         scanned_at: str | None = None
         if isinstance(scanned_at_raw, int):
-            from datetime import datetime
-
             scanned_at = datetime.fromtimestamp(scanned_at_raw / 1000, tz=UTC).isoformat()
         elif isinstance(scanned_at_raw, str):
             scanned_at = scanned_at_raw
@@ -285,8 +281,6 @@ class SearchFilesResponse(BaseModel):
     @classmethod
     def from_dto(cls, result) -> SearchFilesResponse:
         """Transform SearchFilesResult DTO to API response."""
-        from nomarr.helpers.dto.library_dto import SearchFilesResult
-
         assert isinstance(result, SearchFilesResult)
 
         return cls(
@@ -331,8 +325,6 @@ class UniqueTagKeysResponse(BaseModel):
     @classmethod
     def from_dto(cls, result) -> UniqueTagKeysResponse:
         """Transform UniqueTagKeysResult DTO to API response."""
-        from nomarr.helpers.dto.library_dto import UniqueTagKeysResult
-
         assert isinstance(result, UniqueTagKeysResult)
 
         return cls(tag_keys=result.tag_keys, count=result.count)
@@ -347,8 +339,6 @@ class TagCleanupResponse(BaseModel):
     @classmethod
     def from_dto(cls, result) -> TagCleanupResponse:
         """Transform TagCleanupResult DTO to API response."""
-        from nomarr.helpers.dto.library_dto import TagCleanupResult
-
         assert isinstance(result, TagCleanupResult)
 
         return cls(orphaned_count=result.orphaned_count, deleted_count=result.deleted_count)
@@ -389,8 +379,6 @@ class FileTagsResponse(BaseModel):
     @classmethod
     def from_dto(cls, result) -> FileTagsResponse:
         """Transform FileTagsResult DTO to API response."""
-        from nomarr.helpers.dto.library_dto import FileTagsResult
-
         assert isinstance(result, FileTagsResult)
 
         return cls(
@@ -418,14 +406,8 @@ class ReconcileTagsResponse(BaseModel):
     @classmethod
     def from_dto(cls, result) -> ReconcileTagsResponse:
         """Transform ReconcileTagsResult DTO to API response."""
-        from nomarr.helpers.dto.library_dto import ReconcileTagsResult
-
         assert isinstance(result, ReconcileTagsResult)
-        return cls(
-            processed=result.processed,
-            remaining=result.remaining,
-            failed=result.failed,
-        )
+        return cls(processed=result.processed, remaining=result.remaining, failed=result.failed)
 
 
 class ReconcileStatusResponse(BaseModel):

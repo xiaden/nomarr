@@ -10,13 +10,17 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from nomarr.components.library.get_library_comp import get_library_or_error
+from nomarr.components.library.library_admin_comp import (
+    clear_library_data,
+    create_library,
+    delete_library,
+    update_library_root,
+)
 from nomarr.helpers.dto.library_dto import LibraryDict
 
 if TYPE_CHECKING:
-    from nomarr.components.library.get_library_comp import GetLibraryComp
-    from nomarr.components.library.get_library_counts_comp import GetLibraryCountsComp
-    from nomarr.components.library.list_libraries_comp import ListLibrariesComp
-    from nomarr.components.library.update_library_metadata_comp import UpdateLibraryMetadataComp
+    from nomarr.persistence.db import Database
 
     from .config import LibraryServiceConfig
 
@@ -24,12 +28,9 @@ if TYPE_CHECKING:
 class LibraryAdminMixin:
     """Mixin providing library administration methods."""
 
-    # Component dependencies
-    get_library: GetLibraryComp
-    list_libraries: ListLibrariesComp
-    get_library_counts: GetLibraryCountsComp
-    update_library_metadata: UpdateLibraryMetadataComp
+    # Attributes provided by composed class (LibraryService)
     cfg: LibraryServiceConfig
+    db: Database
 
     def _get_library_or_error(self, library_id: str) -> dict[str, Any]:
         """Get a library by ID or raise an error.
@@ -48,7 +49,8 @@ class LibraryAdminMixin:
             ValueError: If library does not exist
 
         """
-        return self.get_library.get_or_error(library_id)
+        result: dict[str, Any] = get_library_or_error(self.db, library_id)
+        return result
 
     def is_library_root_configured(self) -> bool:
         """Check if library_root is configured.
@@ -69,10 +71,10 @@ class LibraryAdminMixin:
             List of LibraryDict DTOs with file/folder counts
 
         """
-        libraries = self.list_libraries.list(enabled_only=enabled_only)
+        libraries = self.db.libraries.list_libraries(enabled_only=enabled_only)
 
         # Get file/folder counts for all libraries
-        counts = self.get_library_counts.get()
+        counts = self.db.library_files.get_library_counts()
 
         result = []
         for lib in libraries:
@@ -98,15 +100,17 @@ class LibraryAdminMixin:
             ValueError: If library not found
 
         """
-        library = self.get_library.get_or_error(library_id)
+        library = self._get_library_or_error(library_id)
         return LibraryDict(**library)
 
     def create_library(
-        self, name: str | None, root_path: str, is_enabled: bool = True, watch_mode: str = "off",
+        self,
+        name: str | None,
+        root_path: str,
+        is_enabled: bool = True,
+        watch_mode: str = "off",
     ) -> LibraryDict:
         """Create a new library."""
-        from nomarr.components.library.library_admin_comp import create_library
-
         library_id = create_library(
             db=self.db,
             base_library_root=self.cfg.library_root,
@@ -116,19 +120,17 @@ class LibraryAdminMixin:
             watch_mode=watch_mode,
         )
 
-        library = self.get_library.get_or_error(library_id)
+        library = self._get_library_or_error(library_id)
         return LibraryDict(**library)
 
     def update_library_root(self, library_id: str, root_path: str) -> LibraryDict:
         """Update a library's root path."""
-        from nomarr.components.library.library_admin_comp import update_library_root
-
         update_library_root(
-            db=self.db, base_library_root=self.cfg.library_root, library_id=library_id, root_path=root_path,
+            db=self.db,
+            base_library_root=self.cfg.library_root,
+            library_id=library_id,
+            root_path=root_path,
         )
-
-        from nomarr.components.library.get_library_comp import get_library_or_error
-
         updated = get_library_or_error(self.db, library_id)
         return LibraryDict(**updated)
 
@@ -151,15 +153,17 @@ class LibraryAdminMixin:
 
         if name is not None or is_enabled is not None or watch_mode is not None or file_write_mode is not None:
             self.update_library_metadata(
-                library_id, name=name, is_enabled=is_enabled, watch_mode=watch_mode, file_write_mode=file_write_mode,
+                library_id,
+                name=name,
+                is_enabled=is_enabled,
+                watch_mode=watch_mode,
+                file_write_mode=file_write_mode,
             )
 
         return self.get_library(library_id)
 
     def delete_library(self, library_id: str) -> bool:
         """Delete a library."""
-        from nomarr.components.library.library_admin_comp import delete_library
-
         return delete_library(db=self.db, library_id=library_id)
 
     def update_library_metadata(
@@ -172,12 +176,8 @@ class LibraryAdminMixin:
         file_write_mode: str | None = None,
     ) -> LibraryDict:
         """Update library metadata (name, enabled, watch_mode, file_write_mode)."""
-        from nomarr.components.library.get_library_comp import get_library_or_error
-        from nomarr.components.library.update_library_metadata_comp import update_library_metadata
-
         self._get_library_or_error(library_id)
-        update_library_metadata(
-            self.db,
+        self.db.libraries.update_library(
             library_id,
             name=name,
             is_enabled=is_enabled,
@@ -190,6 +190,4 @@ class LibraryAdminMixin:
 
     def clear_library_data(self) -> None:
         """Clear all library data (files, tags, scan queue)."""
-        from nomarr.components.library.library_admin_comp import clear_library_data
-
         clear_library_data(db=self.db, library_root=self.cfg.library_root)

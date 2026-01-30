@@ -5,10 +5,50 @@ Deliberately second-class to encourage AST-based tools for Python code.
 
 __all__ = ["read_file"]
 
+import ast
 from pathlib import Path
 
+from scripts.mcp.tools.helpers.file_lines import read_raw_line_range
+from scripts.mcp.tools.helpers.semantic_tool_examples import get_semantic_tool_examples
 
-def read_file(file_path: str, start_line: int, end_line: int, workspace_root: Path) -> dict:
+
+def _find_imports_end(all_lines: list[str]) -> int:
+    """Find the last line of the imports block at the top of a Python file.
+
+    Returns the 1-indexed line number of the last import statement,
+    or 0 if no imports found.
+    """
+    # Join and parse to find import statements
+    content = "".join(all_lines)
+    try:
+        tree = ast.parse(content)
+    except SyntaxError:
+        return 0
+
+    last_import_line = 0
+    for node in ast.iter_child_nodes(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            # end_lineno is the last line of this import statement
+            end = getattr(node, "end_lineno", node.lineno)
+            last_import_line = max(last_import_line, end)
+        elif isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant):
+            # Skip module docstrings at the top
+            continue
+        elif last_import_line > 0:
+            # First non-import after imports - stop
+            break
+
+    return last_import_line
+
+
+def read_file(
+    file_path: str,
+    start_line: int,
+    end_line: int,
+    workspace_root: Path,
+    *,
+    include_imports: bool = False,
+) -> dict:
     """Read a specific line range from any file in the workspace.
 
     Fallback tool for non-Python files or when AST-based tools fail.
@@ -20,12 +60,15 @@ def read_file(file_path: str, start_line: int, end_line: int, workspace_root: Pa
         file_path: Workspace-relative or absolute path to the file
         start_line: Starting line number (1-indexed, inclusive)
         end_line: Ending line number (1-indexed, inclusive)
+        include_imports: If True and file is Python, prepend the imports block
+            (plus 2 lines of context) to the output. Useful for debugging
+            undefined symbol errors. Merges with requested range if overlapping.
 
     Returns:
         dict with:
         - path: The resolved workspace-relative path
-        - content: The requested lines as a string
-        - end: Only present when clamped/EOF (e.g., "249(clamped)" or "270(EOF)")
+        - requested: {content, start, end} - The requested lines
+        - imports: {content, start, end} - Imports block (only when non-overlapping)
         - warning: If lines were reversed or Python file detected
         - error: Error message if reading fails
 
@@ -76,32 +119,69 @@ def read_file(file_path: str, start_line: int, end_line: int, workspace_root: Pa
         # Clamp to file length
         actual_end = min(requested_end, total_lines)
 
-        # Extract requested lines (convert to 0-indexed)
-        requested_lines = all_lines[start_line - 1 : actual_end]
-        result_content = "".join(requested_lines)
+        # Handle include_imports for Python files
+        imports_included = False
+        effective_start = start_line
+        if include_imports and target_path.suffix == ".py":
+            imports_end = _find_imports_end(all_lines)
+            if imports_end > 0:
+                # Add 2 lines of context after imports
+                imports_block_end = min(imports_end + 2, total_lines)
+                # Merge if overlapping, otherwise prepend
+                if imports_block_end >= start_line:
+                    # Overlapping - extend start to include imports
+                    effective_start = 1
+                else:
+                    # Non-overlapping - will read both ranges
+                    effective_start = 1
+                imports_included = True
+
+        # Extract requested lines using raw bytes (preserves exact line endings)
+        if imports_included and effective_start == 1 and start_line > 1:
+            imports_end = _find_imports_end(all_lines)
+            imports_block_end = min(imports_end + 2, total_lines)
+            if imports_block_end < start_line:
+                # Non-overlapping: return both ranges as separate structured blocks
+                imports_content = read_raw_line_range(str(target_path), 1, imports_block_end)
+                main_content = read_raw_line_range(str(target_path), start_line, actual_end)
+
+                result: dict = {
+                    "path": str(target_path.relative_to(workspace_root)),
+                    "imports": {"content": imports_content, "start": 1, "end": imports_block_end},
+                    "requested": {"content": main_content, "start": start_line, "end": actual_end},
+                }
+
+                if warning:
+                    result["warning"] = warning
+
+                if target_path.suffix == ".py":
+                    result["semantic_tools_available"] = {
+                        "hint": "Python files: semantic tools provide structured output",
+                        "example_outputs": get_semantic_tool_examples(),
+                    }
+
+                return result
+            # Overlapping: single contiguous read from line 1
+            result_content = read_raw_line_range(str(target_path), 1, actual_end)
+        else:
+            result_content = read_raw_line_range(str(target_path), start_line, actual_end)
 
         # Build minimal response
-        result = {"path": str(target_path.relative_to(workspace_root)), "content": result_content}
+        result = {
+            "path": str(target_path.relative_to(workspace_root)),
+            "requested": {"content": result_content, "start": start_line, "end": actual_end},
+        }
 
         # Add warning if lines were reversed
         if warning:
             result["warning"] = warning
 
-        # Add Python file suggestion
+        # Add Python file semantic tool guidance
         if target_path.suffix == ".py":
-            suggestion = (
-                "WARNING: Reading Python files with read_file wastes tokens and loses structure. "
-                "Use discover_api (module overview), locate_symbol (find definitions), or "
-                "get_symbol_body_at_line (get function/class at line) instead."
-            )
-            result["warning"] = f"{warning}. {suggestion}" if warning else suggestion
-
-        # Only include 'end' if it differs from request
-        if actual_end != end_line:
-            if actual_end == total_lines:
-                result["end"] = f"{actual_end}(EOF)"
-            else:
-                result["end"] = f"{actual_end}(clamped)"
+            result["semantic_tools_available"] = {
+                "hint": "Python files: semantic tools provide structured output",
+                "example_outputs": get_semantic_tool_examples(),
+            }
 
         return result
 

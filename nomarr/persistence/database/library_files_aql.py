@@ -4,6 +4,7 @@ CRITICAL: All mutations by _id must use PARSE_IDENTIFIER(@id).key
 to extract the document key for UPDATE/REMOVE operations.
 """
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 from nomarr.helpers.dto import LibraryPath
@@ -154,7 +155,8 @@ class LibraryFilesOperations:
             } IN library_files
             """,
             bind_vars=cast(
-                "dict[str, Any]", {"file_id": file_id, "version": tagged_version, "timestamp": now_ms().value},
+                "dict[str, Any]",
+                {"file_id": file_id, "version": tagged_version, "timestamp": now_ms().value},
             ),
         )
 
@@ -180,10 +182,7 @@ class LibraryFilesOperations:
         result: dict[str, Any] = next(cursor, {})
         return result if result else None
 
-    def get_files_by_ids_with_tags(
-        self,
-        file_ids: list[str],
-    ) -> list[dict[str, Any]]:
+    def get_files_by_ids_with_tags(self, file_ids: list[str]) -> list[dict[str, Any]]:
         """Get files by IDs with their associated tags.
 
         Used for batch lookup of files (e.g., for browse UI).
@@ -290,12 +289,7 @@ class LibraryFilesOperations:
                 """,
                     bind_vars=cast(
                         "dict[str, Any]",
-                        {
-                            "tag_key": tag_key,
-                            "target_value": float(target_value),
-                            "limit": limit,
-                            "offset": offset,
-                        },
+                        {"tag_key": tag_key, "target_value": float(target_value), "limit": limit, "offset": offset},
                     ),
                 ),
             )
@@ -337,12 +331,7 @@ class LibraryFilesOperations:
                 """,
                     bind_vars=cast(
                         "dict[str, Any]",
-                        {
-                            "tag_key": tag_key,
-                            "target_value": str(target_value),
-                            "limit": limit,
-                            "offset": offset,
-                        },
+                        {"tag_key": tag_key, "target_value": str(target_value), "limit": limit, "offset": offset},
                     ),
                 ),
             )
@@ -957,10 +946,7 @@ class LibraryFilesOperations:
         )
         album_rows = [tuple(row) for row in cursor]
 
-        return {
-            "artist_rows": artist_rows,
-            "album_rows": album_rows,
-        }
+        return {"artist_rows": artist_rows, "album_rows": album_rows}
 
     def get_tracks_by_file_ids(
         self,
@@ -979,8 +965,6 @@ class LibraryFilesOperations:
             List of track dicts with path, title, artist, album
 
         """
-        from pathlib import Path
-
         if not file_ids:
             return []
 
@@ -1012,18 +996,15 @@ class LibraryFilesOperations:
             ),
         )
 
-        results = []
-        for row in cursor:
-            results.append(
-                {
-                    "path": row["path"],
-                    "title": row["title"] if row["title"] else Path(row["path"]).stem,
-                    "artist": row["artist"] if row["artist"] else "Unknown Artist",
-                    "album": row["album"] if row["album"] else "Unknown Album",
-                },
-            )
-
-        return results
+        return [
+            {
+                "path": row["path"],
+                "title": row["title"] if row["title"] else Path(row["path"]).stem,
+                "artist": row["artist"] if row["artist"] else "Unknown Artist",
+                "album": row["album"] if row["album"] else "Unknown Album",
+            }
+            for row in cursor
+        ]
 
     def search_library_files_with_tags(
         self,
@@ -1230,10 +1211,7 @@ class LibraryFilesOperations:
                     COLLECT WITH COUNT INTO marked
                     RETURN marked
                 """,
-                bind_vars={
-                    "library_id": library_id,
-                    "scan_id": scan_id,
-                },
+                bind_vars={"library_id": library_id, "scan_id": scan_id},
             ),
         )
 
@@ -1264,10 +1242,7 @@ class LibraryFilesOperations:
                     FILTER edge._to == file._id
                     REMOVE edge IN song_tag_edges
             """,
-            bind_vars={
-                "library_id": library_id,
-                "scan_id": scan_id,
-            },
+            bind_vars={"library_id": library_id, "scan_id": scan_id},
         )
 
         # Delete files and count
@@ -1282,10 +1257,7 @@ class LibraryFilesOperations:
                     COLLECT WITH COUNT INTO deleted
                     RETURN deleted
                 """,
-                bind_vars={
-                    "library_id": library_id,
-                    "scan_id": scan_id,
-                },
+                bind_vars={"library_id": library_id, "scan_id": scan_id},
             ),
         )
 
@@ -1324,10 +1296,7 @@ class LibraryFilesOperations:
         result: dict[str, dict[str, int]] = {}
         for row in cursor:
             lib_id = row["library_id"]
-            result[lib_id] = {
-                "file_count": row["file_count"],
-                "folder_count": row["folder_count"],
-            }
+            result[lib_id] = {"file_count": row["file_count"], "folder_count": row["folder_count"]}
         return result
 
     # ──────────────────────────────────────────────────────────────────────
@@ -1432,12 +1401,7 @@ class LibraryFilesOperations:
         )
         return list(cursor)
 
-    def set_file_written(
-        self,
-        file_key: str,
-        mode: str,
-        calibration_hash: str | None,
-    ) -> None:
+    def set_file_written(self, file_key: str, mode: str, calibration_hash: str | None) -> None:
         """Update file projection state after successful tag write.
 
         Clears write claim and updates last_written_* fields.
@@ -1464,12 +1428,7 @@ class LibraryFilesOperations:
             """,
             bind_vars=cast(
                 "dict[str, Any]",
-                {
-                    "file_key": file_key,
-                    "mode": mode,
-                    "calibration_hash": calibration_hash,
-                    "timestamp": now_ms().value,
-                },
+                {"file_key": file_key, "mode": mode, "calibration_hash": calibration_hash, "timestamp": now_ms().value},
             ),
         )
 
@@ -1539,11 +1498,7 @@ class LibraryFilesOperations:
                 """,
                 bind_vars=cast(
                     "dict[str, Any]",
-                    {
-                        "library_id": library_id,
-                        "target_mode": target_mode,
-                        "calibration_hash": calibration_hash,
-                    },
+                    {"library_id": library_id, "target_mode": target_mode, "calibration_hash": calibration_hash},
                 ),
             ),
         )
@@ -1598,11 +1553,7 @@ class LibraryFilesOperations:
             bind_vars={"file_key": file_key, "has_namespace": has_namespace},
         )
 
-    def infer_last_written_mode(
-        self,
-        file_key: str,
-        mode: str,
-    ) -> None:
+    def infer_last_written_mode(self, file_key: str, mode: str) -> None:
         """Infer and set last_written_mode from on-disk tag patterns during scan.
 
         Used during bootstrap to infer projection state from existing files.

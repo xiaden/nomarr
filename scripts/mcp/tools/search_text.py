@@ -7,6 +7,9 @@ __all__ = ["search_text"]
 
 from pathlib import Path
 
+from scripts.mcp.tools.helpers.file_lines import read_raw_line_range
+from scripts.mcp.tools.helpers.semantic_tool_examples import get_semantic_tool_examples
+
 
 def search_text(file_path: str, search_string: str, workspace_root: Path) -> dict:
     """Search for exact string match and return each occurrence with 2 lines of context.
@@ -66,9 +69,8 @@ def search_text(file_path: str, search_string: str, workspace_root: Path) -> dic
                 start = max(1, line_number - 2)
                 end = min(total_lines, line_number + 2)
 
-                # Extract lines with context
-                context_lines = all_lines[start - 1 : end]
-                context_content = "".join(context_lines)
+                # Extract lines with context using raw bytes (preserves exact line endings)
+                context_content = read_raw_line_range(str(target_path), start, end)
 
                 # Build line range label
                 if start == 1 and end < total_lines:
@@ -89,12 +91,12 @@ def search_text(file_path: str, search_string: str, workspace_root: Path) -> dic
             "total_matches": len(matches),
         }
 
-        # Add Python file suggestion
+        # Add Python file semantic tool guidance
         if target_path.suffix == ".py":
-            result["warning"] = (
-                "Tip: For Python files, prefer discover_api, get_source, or locate_symbol "
-                "for structured code navigation instead of text search."
-            )
+            result["semantic_tools_available"] = {
+                "hint": "Python files: semantic tools provide structured output",
+                "example_outputs": get_semantic_tool_examples(),
+            }
 
         return result
 

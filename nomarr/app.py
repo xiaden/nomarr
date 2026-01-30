@@ -13,6 +13,7 @@ Architecture:
 
 The singleton instance is available as `application` at module level.
 """
+
 from __future__ import annotations
 
 import logging
@@ -32,8 +33,10 @@ from nomarr.services.domain.tagging_svc import TaggingService
 from nomarr.services.infrastructure.config_svc import ConfigService
 from nomarr.services.infrastructure.health_monitor_svc import HealthMonitorService
 from nomarr.services.infrastructure.keys_svc import KeyManagementService
+from nomarr.services.infrastructure.worker_system_svc import WorkerSystemService
 
 logger = logging.getLogger(__name__)
+
 
 def validate_environment() -> None:
     """Validate required environment variables at startup.
@@ -48,6 +51,7 @@ def validate_environment() -> None:
     missing = [var for var in required_vars if not os.getenv(var)]
     if missing:
         sys.exit(1)
+
 
 class Application:
     """Application composition root and dependency injection container.
@@ -93,6 +97,7 @@ class Application:
             INTERNAL_VERSION_TAG,
             INTERNAL_WORKER_ENABLED,
         )
+
         self.db_path: str = str(self._config["db_path"])
         self.library_root: str | None = self._config.get("library_root")
         self.models_dir: str = str(self._config.get("models_dir", "/app/models"))
@@ -109,16 +114,18 @@ class Application:
         self.namespace: str = INTERNAL_NAMESPACE
         self.version_tag_key: str = INTERNAL_VERSION_TAG
         from nomarr.components.ml.ml_discovery_comp import compute_model_suite_hash
+
         self.tagger_version: str = compute_model_suite_hash(self.models_dir)
         logger.info(f"[Application] Model suite hash (tagger_version): {self.tagger_version}")
         self._ensure_database_provisioned()
         self.db = Database()
         from nomarr.components.platform.arango_bootstrap_comp import ensure_schema
+
         ensure_schema(self.db.db)
         self.db.ensure_schema_version()
         self._config_service = config_service
         self.services: dict[str, Any] = {}
-        self.worker_system = None
+        self.worker_system: WorkerSystemService | None = None
         self.health_monitor: HealthMonitorService | None = None
         self._heartbeat_thread: threading.Thread | None = None
         self.api_key: str | None = None
@@ -171,6 +178,7 @@ class Application:
             provision_database_and_user,
             write_db_config,
         )
+
         config_path = Path("/app/config/nomarr.yaml")
         if not config_path.exists():
             config_path = Path.cwd() / "config" / "nomarr.yaml"
@@ -200,6 +208,7 @@ class Application:
                     logger.exception(f"[Application] Heartbeat error: {e}")
                 time.sleep(5)
             heartbeat_db.close()
+
         self._heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True, name="AppHeartbeat")
         self._heartbeat_thread.start()
         logger.info("[Application] App heartbeat started")
@@ -233,10 +242,12 @@ class Application:
         self.register_service("config", self._config_service)
         logger.info("[Application] Initializing services...")
         from nomarr.services.infrastructure.ml_svc import MLConfig, MLService
+
         ml_cfg = MLConfig(models_dir=str(self.models_dir), cache_idle_timeout=self.cache_idle_timeout)
         ml_service = MLService(cfg=ml_cfg)
         self.register_service("ml", ml_service)
         from nomarr.services.infrastructure.health_monitor_svc import HealthMonitorConfig
+
         health_cfg = HealthMonitorConfig()
         self.health_monitor = HealthMonitorService(cfg=health_cfg, db=self.db)
         self.health_monitor.start()
@@ -244,33 +255,53 @@ class Application:
         logger.info("[Application] HealthMonitorService started")
         logger.info("[Application] Initializing AnalyticsService...")
         from nomarr.services.domain.analytics_svc import AnalyticsConfig
+
         analytics_cfg = AnalyticsConfig(namespace=self.namespace)
         analytics_service = AnalyticsService(db=self.db, cfg=analytics_cfg)
         self.register_service("analytics", analytics_service)
         logger.info("[Application] Initializing CalibrationService...")
         from nomarr.services.domain.calibration_svc import CalibrationConfig
+
         calibration_cfg = CalibrationConfig(models_dir=str(self.models_dir), namespace=self.namespace)
         calibration_service = CalibrationService(db=self.db, cfg=calibration_cfg)
         self.register_service("calibration", calibration_service)
         logger.info("[Application] Initializing NavidromeService...")
         from nomarr.services.domain.navidrome_svc import NavidromeConfig
+
         navidrome_cfg = NavidromeConfig(namespace=self.namespace)
         navidrome_service = NavidromeService(db=self.db, cfg=navidrome_cfg)
         self.register_service("navidrome", navidrome_service)
         from nomarr.services.infrastructure.info_svc import InfoConfig, InfoService
-        info_cfg = InfoConfig(version="1.2", namespace=self.namespace, models_dir=str(self.models_dir), db=self.db, health_monitor=self.health_monitor, db_path=self.db_path, api_host=self.api_host, api_port=self.api_port, worker_enabled_default=self.worker_enabled_default, tagger_worker_count=self._config_service.get_worker_count("tagger"), poll_interval=float(self.worker_poll_interval))
+
+        info_cfg = InfoConfig(
+            version="1.2",
+            namespace=self.namespace,
+            models_dir=str(self.models_dir),
+            db=self.db,
+            health_monitor=self.health_monitor,
+            db_path=self.db_path,
+            api_host=self.api_host,
+            api_port=self.api_port,
+            worker_enabled_default=self.worker_enabled_default,
+            tagger_worker_count=self._config_service.get_worker_count("tagger"),
+            poll_interval=float(self.worker_poll_interval),
+        )
         info_service = InfoService(cfg=info_cfg, workers_coordinator=self.worker_system, ml_service=ml_service)
         self.register_service("info", info_service)
         from nomarr.services.infrastructure.background_tasks_svc import BackgroundTaskService
+
         background_tasks = BackgroundTaskService()
         self.register_service("background_tasks", background_tasks)
         if self.library_root:
             logger.info(f"[Application] Registering LibraryService with namespace={self.namespace}")
-            library_cfg = LibraryServiceConfig(namespace=self.namespace, tagger_version=self.tagger_version, library_root=self.library_root)
+            library_cfg = LibraryServiceConfig(
+                namespace=self.namespace, tagger_version=self.tagger_version, library_root=self.library_root,
+            )
             library_service = LibraryService(cfg=library_cfg, db=self.db, background_tasks=background_tasks)
             self.register_service("library", library_service)
             logger.info("[Application] Initializing FileWatcherService...")
             from nomarr.services.infrastructure.file_watcher_svc import FileWatcherService
+
             file_watcher = FileWatcherService(db=self.db, library_service=library_service, debounce_seconds=2.0)
             self.register_service("file_watcher", file_watcher)
             try:
@@ -281,14 +312,19 @@ class Application:
         else:
             logger.info("[Application] No library root configured, library service not started")
         from nomarr.services.domain.metadata_svc import MetadataService
+
         metadata_service = MetadataService(db=self.db)
         self.register_service("metadata", metadata_service)
         self.register_service("tagging", TaggingService(database=self.db, library_service=self.services.get("library")))
         logger.info("[Application] Initializing discovery-based worker system...")
-        from nomarr.services.infrastructure.worker_system_svc import WorkerSystemService
         processor_config = self._config_service.make_processor_config()
         worker_count = self._config_service.get_worker_count("tagger")
-        self.worker_system = WorkerSystemService(db=self.db, processor_config=processor_config, worker_count=worker_count, default_enabled=self.worker_enabled_default)
+        self.worker_system = WorkerSystemService(
+            db=self.db,
+            processor_config=processor_config,
+            worker_count=worker_count,
+            default_enabled=self.worker_enabled_default,
+        )
         self.register_service("worker_system", self.worker_system)
         if self.worker_system.is_worker_system_enabled():
             logger.info("[Application] Starting discovery workers...")
@@ -350,7 +386,12 @@ class Application:
             msg = "ML service not initialized"
             raise RuntimeError(msg)
         ml_service.warmup_cache()
+
+
+# Module-level singleton, initialized at import time (except during tests)
+# Type is Application at runtime, None only during pytest
+application: Application
 if os.environ.get("PYTEST_CURRENT_TEST") is None:
     application = Application()
 else:
-    application = None
+    application = None  # type: ignore[assignment]  # Tests don't use the singleton

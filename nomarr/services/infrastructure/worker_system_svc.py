@@ -277,7 +277,8 @@ class WorkerSystemService(ComponentLifecycleHandler):
                 if self.health_monitor:
                     self.health_monitor.set_failed(component_id)
                 self.db.worker_restart_policy.mark_failed_permanent(
-                    component_id, decision.failure_reason or "Restart limit exceeded",
+                    component_id,
+                    decision.failure_reason or "Restart limit exceeded",
                 )
                 logger.error(
                     "[WorkerSystemService] Worker %s marked as permanently failed: %s",
@@ -324,8 +325,6 @@ class WorkerSystemService(ComponentLifecycleHandler):
         # Spawn replacement worker
         logger.info("[WorkerSystemService] Restarting worker %d", worker_index)
         try:
-            from multiprocessing import Pipe
-
             # Create dedicated pipe for this worker's health telemetry
             parent_conn, child_conn = Pipe(duplex=False)
 

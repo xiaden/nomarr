@@ -50,6 +50,7 @@ USAGE:
         db=database_instance  # optional
     )
 """
+
 from __future__ import annotations
 
 import gc
@@ -80,9 +81,11 @@ if TYPE_CHECKING:
     from nomarr.helpers.dto.path_dto import LibraryPath
     from nomarr.persistence.db import Database
 
+
 def _get_essentia_version() -> str:
     """Get Essentia version lazily (only when needed)."""
     return backend_essentia.get_version()
+
 
 @dataclass
 class ProcessHeadPredictionsResult:
@@ -92,6 +95,7 @@ class ProcessHeadPredictionsResult:
     head_results: dict[str, Any]
     regression_heads: list[tuple[Any, list[float]]]
     all_head_outputs: list[Any]
+
 
 def _discover_and_group_heads(models_dir: str) -> tuple[list[HeadInfo], dict[str, list[HeadInfo]]]:
     """Discover head models and group them by backbone for embedding reuse.
@@ -112,12 +116,15 @@ def _discover_and_group_heads(models_dir: str) -> tuple[list[HeadInfo], dict[str
         raise RuntimeError(msg)
     logger.debug(f"[processor] Discovered {len(heads)} heads")
     from collections import Counter
+
     by_backbone = Counter(h.backbone for h in heads)
     by_type = Counter(h.head_type for h in heads)
     logger.debug(f"[processor] Heads by backbone: {dict(by_backbone)}")
     logger.debug(f"[processor] Heads by type: {dict(by_type)}")
     for head in heads:
-        logger.debug(f"[processor]   - {head.name} ({head.backbone}/{head.head_type}, {len(head.sidecar.labels)} labels)")
+        logger.debug(
+            f"[processor]   - {head.name} ({head.backbone}/{head.head_type}, {len(head.sidecar.labels)} labels)",
+        )
     heads_by_backbone = defaultdict(list)
     for head in heads:
         heads_by_backbone[head.backbone].append(head)
@@ -125,7 +132,10 @@ def _discover_and_group_heads(models_dir: str) -> tuple[list[HeadInfo], dict[str
     logger.debug(f"[processor] Grouped {len(heads)} heads into {len(heads_by_backbone)} backbones: {backbone_counts}")
     return (heads, dict(heads_by_backbone))
 
-def _compute_embeddings_for_backbone(backbone: str, first_head: HeadInfo, path: str, config: ProcessorConfig, db: Database | None) -> tuple[np.ndarray, float, str]:
+
+def _compute_embeddings_for_backbone(
+    backbone: str, first_head: HeadInfo, path: str, config: ProcessorConfig, db: Database | None,
+) -> tuple[np.ndarray, float, str]:
     """Compute embeddings for a single backbone.
 
     Args:
@@ -147,17 +157,32 @@ def _compute_embeddings_for_backbone(backbone: str, first_head: HeadInfo, path: 
     emb_graph = first_head.embedding_graph
     logger.debug(f"[processor] Computing embeddings for {backbone}: sr={target_sr}")
     from nomarr.components.infrastructure.path_comp import build_library_path_from_input
+
     library_path = build_library_path_from_input(path, db) if db else None
     if not library_path or not library_path.is_valid():
         msg = f"Cannot compute embeddings for invalid path: {path}"
         raise ValueError(msg)
     t_emb = internal_s()
-    params = ComputeEmbeddingsForBackboneParams(backbone=backbone, emb_graph=emb_graph, target_sr=target_sr, segment_s=seg_len, hop_s=hop_len, path=library_path, min_duration_s=config.min_duration_s, allow_short=config.allow_short)
+    params = ComputeEmbeddingsForBackboneParams(
+        backbone=backbone,
+        emb_graph=emb_graph,
+        target_sr=target_sr,
+        segment_s=seg_len,
+        hop_s=hop_len,
+        path=library_path,
+        min_duration_s=config.min_duration_s,
+        allow_short=config.allow_short,
+    )
     embeddings_2d, duration, chromaprint = compute_embeddings_for_backbone(params=params)
-    logger.debug(f"[processor] Embeddings for {backbone} computed in {internal_s().value - t_emb.value:.1f}s: shape={embeddings_2d.shape}")
+    logger.debug(
+        f"[processor] Embeddings for {backbone} computed in {internal_s().value - t_emb.value:.1f}s: shape={embeddings_2d.shape}",
+    )
     return (embeddings_2d, duration, chromaprint)
 
-def _process_head_predictions(backbone_heads: list[HeadInfo], embeddings_2d: np.ndarray, config: ProcessorConfig, tags_accum: dict[str, Any]) -> ProcessHeadPredictionsResult:
+
+def _process_head_predictions(
+    backbone_heads: list[HeadInfo], embeddings_2d: np.ndarray, config: ProcessorConfig, tags_accum: dict[str, Any],
+) -> ProcessHeadPredictionsResult:
     """Process all head predictions for a single backbone using cached embeddings.
 
     Args:
@@ -188,17 +213,27 @@ def _process_head_predictions(backbone_heads: list[HeadInfo], embeddings_2d: np.
         try:
             decision = run_head_decision(head_info.sidecar, pooled_vec, prefix="")
 
-            def _build_key(label: str, head: HeadInfo=head_info) -> str:
-                model_key, _ = head.build_versioned_tag_key(normalize_tag_label(label), framework_version=_get_essentia_version(), calib_method="none", calib_version=0)
+            def _build_key(label: str, head: HeadInfo = head_info) -> str:
+                model_key, _ = head.build_versioned_tag_key(
+                    normalize_tag_label(label),
+                    framework_version=_get_essentia_version(),
+                    calib_method="none",
+                    calib_version=0,
+                )
                 return model_key
-            head_outputs = decision.to_head_outputs(head_info=head_info, framework_version=_get_essentia_version(), key_builder=_build_key)
+
+            head_outputs = decision.to_head_outputs(
+                head_info=head_info, framework_version=_get_essentia_version(), key_builder=_build_key,
+            )
             all_head_outputs.extend(head_outputs)
             head_tags = decision.as_tags(key_builder=_build_key)
             logger.debug(f"[processor] Head {head_name} ({head_info.head_type}) produced {len(head_tags)} tags")
             if head_tags:
                 sample_keys = list(head_tags.keys())[:3]
                 logger.debug(f"[processor]   Sample keys: {sample_keys}")
-            logger.debug(f"[processor] Head {head_name} complete: {len(segment_scores)} patches → {len(head_tags)} tags in {internal_s().value - t_head.value:.1f}s")
+            logger.debug(
+                f"[processor] Head {head_name} complete: {len(segment_scores)} patches → {len(head_tags)} tags in {internal_s().value - t_head.value:.1f}s",
+            )
             if len(head_tags) == 0:
                 logger.warning(f"[processor] Head {head_name} produced ZERO tags")
             tags_accum.update(head_tags)
@@ -209,15 +244,33 @@ def _process_head_predictions(backbone_heads: list[HeadInfo], embeddings_2d: np.
                 else:
                     raw_values = [float(x) for x in segment_scores]
                 regression_heads.append((head_info, raw_values))
-                logger.debug(f"[processor] Captured {len(raw_values)} segment predictions for {head_name} (mean={np.mean(raw_values):.3f}, std={np.std(raw_values):.3f})")
-            head_results[head_name] = {"status": "success", "tags_written": len(head_tags), "decisions": len(decision.details)}
+                logger.debug(
+                    f"[processor] Captured {len(raw_values)} segment predictions for {head_name} (mean={np.mean(raw_values):.3f}, std={np.std(raw_values):.3f})",
+                )
+            head_results[head_name] = {
+                "status": "success",
+                "tags_written": len(head_tags),
+                "decisions": len(decision.details),
+            }
         except Exception as e:
             logger.error(f"[processor] Aggregation error for {head_name}: {e}", exc_info=True)
             head_results[head_name] = {"status": "error", "error": str(e), "stage": "aggregation"}
             continue
-    return ProcessHeadPredictionsResult(heads_succeeded=heads_succeeded, head_results=head_results, regression_heads=regression_heads, all_head_outputs=all_head_outputs)
+    return ProcessHeadPredictionsResult(
+        heads_succeeded=heads_succeeded,
+        head_results=head_results,
+        regression_heads=regression_heads,
+        all_head_outputs=all_head_outputs,
+    )
 
-def _collect_mood_outputs(regression_heads: list[tuple[HeadInfo, list[float]]], all_head_outputs: list[Any], models_dir: str, config: ProcessorConfig, db: Database | None) -> dict[str, Any]:
+
+def _collect_mood_outputs(
+    regression_heads: list[tuple[HeadInfo, list[float]]],
+    all_head_outputs: list[Any],
+    models_dir: str,
+    config: ProcessorConfig,
+    db: Database | None,
+) -> dict[str, Any]:
     """Collect and aggregate all mood outputs from classification and regression heads.
 
     Args:
@@ -237,6 +290,7 @@ def _collect_mood_outputs(regression_heads: list[tuple[HeadInfo, list[float]]], 
     calibrations = {}
     if db is not None:
         from nomarr.workflows.calibration.calibration_loader_wf import load_calibrations_from_db_wf
+
         calibrations = load_calibrations_from_db_wf(db)
         if calibrations:
             logger.debug(f"[aggregation] Loaded {len(calibrations)} calibrations from database")
@@ -244,7 +298,15 @@ def _collect_mood_outputs(regression_heads: list[tuple[HeadInfo, list[float]]], 
             logger.debug("[aggregation] No calibrations in database (initial state), using raw scores")
     return aggregate_mood_tiers(all_head_outputs, calibrations=calibrations)
 
-def _sync_to_database(db: Database | None, path: str, db_tags: dict[str, Any], namespace: str, tagger_version: str, chromaprint: str | None=None) -> None:
+
+def _sync_to_database(
+    db: Database | None,
+    path: str,
+    db_tags: dict[str, Any],
+    namespace: str,
+    tagger_version: str,
+    chromaprint: str | None = None,
+) -> None:
     """Sync ML predictions to database only (NO file writes).
 
     File tag writing is handled separately by write_file_tags_wf based on
@@ -265,14 +327,23 @@ def _sync_to_database(db: Database | None, path: str, db_tags: dict[str, Any], n
         from nomarr.components.infrastructure.path_comp import build_library_path_from_input
         from nomarr.components.library.metadata_extraction_comp import extract_metadata
         from nomarr.workflows.library.sync_file_to_library_wf import sync_file_to_library
+
         library_path = build_library_path_from_input(path, db)
         metadata = extract_metadata(library_path, namespace=namespace)
         if chromaprint:
             metadata["chromaprint"] = chromaprint
-        sync_file_to_library(db=db, file_path=path, metadata=metadata, namespace=namespace, tagged_version=tagger_version, library_id=None)
+        sync_file_to_library(
+            db=db,
+            file_path=path,
+            metadata=metadata,
+            namespace=namespace,
+            tagged_version=tagger_version,
+            library_id=None,
+        )
         logger.debug(f"[processor] Updated library database for {path} with {len(db_tags)} tags")
     except Exception as e:
         logger.warning(f"[processor] Failed to update library database: {e}")
+
 
 def select_tags_for_file(all_tags: dict[str, Any], file_write_mode: str) -> dict[str, Any]:
     """Filter tags for file writing based on file_write_mode.
@@ -312,7 +383,8 @@ def select_tags_for_file(all_tags: dict[str, Any], file_write_mode: str) -> dict
         filtered[key] = tag_value
     return filtered
 
-def process_file_workflow(path: str, config: ProcessorConfig, db: Database | None=None) -> ProcessFileResult:
+
+def process_file_workflow(path: str, config: ProcessorConfig, db: Database | None = None) -> ProcessFileResult:
     """Process an audio file through the complete tagging pipeline.
 
     This is the main workflow entrypoint for audio file processing. It is a pure
@@ -360,7 +432,7 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
                 Must include: models_dir, namespace, batch_size, tagger_version,
                 min_duration_s, allow_short, overwrite_tags, version_tag_key,
                 calibrate_heads
-        db: Optional Database instance for updating library_files and library_tags
+        db: Optional Database instance for updating library_files and tags
             after successful processing. If None, library updates are skipped.
 
     Returns:
@@ -386,6 +458,7 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
     """
     from nomarr.components.infrastructure.path_comp import build_library_path_from_db
     from nomarr.components.ml.ml_cache_comp import check_and_evict_idle_cache, touch_cache
+
     library_path: LibraryPath | None = None
     if db is not None:
         library_path = build_library_path_from_db(stored_path=path, db=db, library_id=None, check_disk=True)
@@ -402,6 +475,7 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
 
     class TagAccumulator(dict):
         pass
+
     tags_accum = TagAccumulator()
     all_head_results: dict[str, Any] = {}
     chromaprint_from_ml: str | None = None
@@ -413,7 +487,9 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
     for backbone, backbone_heads in heads_by_backbone.items():
         first_head = backbone_heads[0]
         try:
-            embeddings_2d, duration, chromaprint_hash = _compute_embeddings_for_backbone(backbone, first_head, path, config, db)
+            embeddings_2d, duration, chromaprint_hash = _compute_embeddings_for_backbone(
+                backbone, first_head, path, config, db,
+            )
             if duration_final is None:
                 duration_final = float(duration)
             if chromaprint_from_ml is None:
@@ -456,4 +532,13 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
             mood_value = tags_accum[key]
             if isinstance(mood_value, dict | list):
                 mood_info[key] = len(mood_value)
-    return ProcessFileResult(file_path=path, elapsed=elapsed, duration=duration_final, heads_processed=total_heads_succeeded, tags_written=len(tags_accum), head_results=all_head_results, mood_aggregations=mood_info if mood_info else None, tags=Tags.from_dict(dict(tags_accum)))
+    return ProcessFileResult(
+        file_path=path,
+        elapsed=elapsed,
+        duration=duration_final,
+        heads_processed=total_heads_succeeded,
+        tags_written=len(tags_accum),
+        head_results=all_head_results,
+        mood_aggregations=mood_info if mood_info else None,
+        tags=Tags.from_dict(dict(tags_accum)),
+    )

@@ -10,12 +10,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from nomarr.components.library.search_files_comp import get_unique_tag_keys, get_unique_tag_values, search_library_files
 from nomarr.helpers.dto.info_dto import ScanningLibraryInfo, WorkStatusResult
-from nomarr.helpers.dto.library_dto import (
-    LibraryStatsResult,
-    SearchFilesResult,
-    UniqueTagKeysResult,
-)
+from nomarr.helpers.dto.library_dto import LibraryStatsResult, SearchFilesResult, UniqueTagKeysResult
+from nomarr.services.domain._library_mapping import map_file_with_tags_to_dto
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -76,9 +74,6 @@ class LibraryQueryMixin:
         offset: int = 0,
     ) -> SearchFilesResult:
         """Search library files with optional filters."""
-        from nomarr.components.library.search_files_comp import search_library_files
-        from nomarr.services.domain._library_mapping import map_file_with_tags_to_dto
-
         files, total = search_library_files(
             self.db, query_text, artist, album, tag_key, tag_value, tagged_only, limit, offset,
         )
@@ -97,18 +92,12 @@ class LibraryQueryMixin:
             SearchFilesResult with files matching the IDs
 
         """
-        from nomarr.services.domain._library_mapping import map_file_with_tags_to_dto
-
         files = self.db.library_files.get_files_by_ids_with_tags(file_ids)
         files_with_tags = [map_file_with_tags_to_dto(f) for f in files]
         return SearchFilesResult(files=files_with_tags, total=len(files), limit=len(file_ids), offset=0)
 
     def search_files_by_tag(
-        self,
-        tag_key: str,
-        target_value: float | str,
-        limit: int = 100,
-        offset: int = 0,
+        self, tag_key: str, target_value: float | str, limit: int = 100, offset: int = 0,
     ) -> SearchFilesResult:
         """Search files by tag value with distance sorting (float) or exact match (string).
 
@@ -125,23 +114,17 @@ class LibraryQueryMixin:
             SearchFilesResult with matched files (includes distance for float searches)
 
         """
-        from nomarr.services.domain._library_mapping import map_file_with_tags_to_dto
-
         files = self.db.library_files.search_files_by_tag(tag_key, target_value, limit, offset)
         files_with_tags = [map_file_with_tags_to_dto(f) for f in files]
         return SearchFilesResult(files=files_with_tags, total=len(files), limit=limit, offset=offset)
 
     def get_unique_tag_keys(self, nomarr_only: bool = False) -> UniqueTagKeysResult:
         """Get all unique tag keys across the library."""
-        from nomarr.components.library.search_files_comp import get_unique_tag_keys
-
         keys = get_unique_tag_keys(self.db, nomarr_only)
         return UniqueTagKeysResult(tag_keys=keys, count=len(keys), calibration=None, library_id=None)
 
     def get_unique_tag_values(self, tag_key: str, nomarr_only: bool = False) -> UniqueTagKeysResult:
         """Get all unique values for a specific tag key."""
-        from nomarr.components.library.search_files_comp import get_unique_tag_values
-
         values = get_unique_tag_values(self.db, tag_key, nomarr_only)
         return UniqueTagKeysResult(tag_keys=values, count=len(values), calibration=None, library_id=None)
 
@@ -161,17 +144,16 @@ class LibraryQueryMixin:
         # Get all libraries to check scan status
         libraries = self.db.libraries.list_libraries(enabled_only=False)
 
-        scanning_libraries: list[ScanningLibraryInfo] = []
-        for lib in libraries:
-            if lib.get("scan_status") == "scanning":
-                scanning_libraries.append(
-                    ScanningLibraryInfo(
-                        library_id=lib["_id"],
-                        name=lib.get("name", "Unknown"),
-                        progress=lib.get("scan_progress") or 0,
-                        total=lib.get("scan_total") or 0,
-                    ),
-                )
+        scanning_libraries = [
+            ScanningLibraryInfo(
+                library_id=lib["_id"],
+                name=lib.get("name", "Unknown"),
+                progress=lib.get("scan_progress") or 0,
+                total=lib.get("scan_total") or 0,
+            )
+            for lib in libraries
+            if lib.get("scan_status") == "scanning"
+        ]
 
         is_scanning = len(scanning_libraries) > 0
 

@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from fastapi import HTTPException
+
 if TYPE_CHECKING:
     from nomarr.services.domain.analytics_svc import AnalyticsService
     from nomarr.services.domain.calibration_svc import CalibrationService
@@ -37,8 +39,6 @@ def get_config() -> dict[str, Any]:
 
 def get_workers_coordinator() -> WorkerSystemService:
     """Get WorkerSystemService instance."""
-    from fastapi import HTTPException
-
     from nomarr.app import application
 
     service = application.services.get("workers")
@@ -53,16 +53,12 @@ def get_library_service() -> LibraryService:
 
     service = application.services.get("library")
     if not service:
-        from fastapi import HTTPException
-
         raise HTTPException(status_code=503, detail="Library service not available")
     return service  # type: ignore[no-any-return]
 
 
 def get_analytics_service() -> AnalyticsService:
     """Get AnalyticsService instance."""
-    from fastapi import HTTPException
-
     from nomarr.app import application
 
     service = application.services.get("analytics")
@@ -73,8 +69,6 @@ def get_analytics_service() -> AnalyticsService:
 
 def get_calibration_service() -> CalibrationService:
     """Get CalibrationService instance."""
-    from fastapi import HTTPException
-
     from nomarr.app import application
 
     service = application.services.get("calibration")
@@ -85,8 +79,6 @@ def get_calibration_service() -> CalibrationService:
 
 def get_config_service() -> ConfigService:
     """Get ConfigService instance."""
-    from fastapi import HTTPException
-
     from nomarr.app import application
 
     service = application.services.get("config")
@@ -97,8 +89,6 @@ def get_config_service() -> ConfigService:
 
 def get_navidrome_service() -> NavidromeService:
     """Get NavidromeService instance."""
-    from fastapi import HTTPException
-
     from nomarr.app import application
 
     service = application.services.get("navidrome")
@@ -109,8 +99,6 @@ def get_navidrome_service() -> NavidromeService:
 
 def get_ml_service() -> Any:
     """Get ML service instance."""
-    from fastapi import HTTPException
-
     from nomarr.app import application
 
     service = application.services.get("ml")
@@ -121,8 +109,6 @@ def get_ml_service() -> Any:
 
 def get_tagging_service() -> TaggingService:
     """Get TaggingService instance."""
-    from fastapi import HTTPException
-
     from nomarr.app import application
 
     service = application.services.get("tagging")
@@ -133,8 +119,6 @@ def get_tagging_service() -> TaggingService:
 
 def get_info_service() -> InfoService:
     """Get info service instance."""
-    from fastapi import HTTPException
-
     from nomarr.app import application
 
     service = application.services.get("info")
@@ -145,8 +129,6 @@ def get_info_service() -> InfoService:
 
 def get_metadata_service() -> MetadataService:
     """Get MetadataService instance."""
-    from fastapi import HTTPException
-
     from nomarr.app import application
 
     service = application.services.get("metadata")

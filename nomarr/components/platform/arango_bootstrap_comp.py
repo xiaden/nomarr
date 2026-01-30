@@ -273,15 +273,3 @@ def _validate_no_legacy_calibration(db: DatabaseLike) -> None:
             "To remove them, run: python scripts/drop_old_calibration_collections.py",
             ", ".join(found_legacy),
         )
-
-    # TAG_UNIFICATION_REFACTOR: Legacy tag collections
-    legacy_tag_collections = ["library_tags", "file_tags", "artists", "albums", "genres", "labels", "years"]
-    found_legacy_tags = [name for name in legacy_tag_collections if db.has_collection(name)]
-
-    if found_legacy_tags:
-        logger.error(
-            "Legacy tag collections detected: %s. "
-            "These have been replaced by the unified 'tags' + 'song_tag_edges' schema. "
-            "Drop them manually and rescan libraries.",
-            ", ".join(found_legacy_tags),
-        )

@@ -1,5 +1,9 @@
 """Database layer for Nomarr (ArangoDB)."""
 
+import os
+
+import yaml
+
 from nomarr.persistence.arango_client import SafeDatabase, create_arango_client
 
 # Import operation classes (AQL versions)
@@ -75,8 +79,6 @@ class Database:
             RuntimeError: If password not available or ARANGO_HOST not set
 
         """
-        import os
-
         # Host is REQUIRED - no silent default to avoid dev env footguns
         self.hosts = hosts or os.getenv("ARANGO_HOST")
         if not self.hosts:
@@ -157,9 +159,6 @@ class Database:
             Password string if found, None otherwise
 
         """
-        import os
-
-        import yaml
 
         config_paths = [
             "/app/config/nomarr.yaml",

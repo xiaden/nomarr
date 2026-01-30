@@ -9,6 +9,7 @@ NOT a health service - HealthMonitorService tracks component liveness.
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import multiprocessing
 from dataclasses import dataclass
@@ -322,8 +323,6 @@ class InfoService:
             GPUHealthResult with GPU resource snapshot and monitor liveness
 
         """
-        import json
-
         # Check monitor liveness via HealthMonitorService
         monitor_healthy = False
         if self.cfg.health_monitor:

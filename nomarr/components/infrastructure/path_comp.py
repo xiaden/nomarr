@@ -1,13 +1,11 @@
 from pathlib import Path
 
 from nomarr.helpers.dto.path_dto import LibraryPath
+from nomarr.helpers.files_helper import is_audio_file
 from nomarr.persistence.db import Database
 
 
-def build_library_path_from_input(
-    raw_path: str,
-    db: Database,
-) -> LibraryPath:
+def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
     """Build LibraryPath from user input (API, CLI, etc.).
 
     This is the primary entry point for external path inputs.
@@ -33,8 +31,6 @@ def build_library_path_from_input(
             log.error(f"Invalid path: {path.reason}")
 
     """
-    from nomarr.helpers.files_helper import is_audio_file
-
     # Resolve to absolute path
     try:
         absolute = Path(raw_path).resolve()
@@ -103,20 +99,11 @@ def build_library_path_from_input(
         )
 
     # All checks passed
-    return LibraryPath(
-        relative=relative_str,
-        absolute=absolute,
-        library_id=library["_id"],
-        status="valid",
-        reason=None,
-    )
+    return LibraryPath(relative=relative_str, absolute=absolute, library_id=library["_id"], status="valid", reason=None)
 
 
 def build_library_path_from_db(
-    stored_path: str,
-    db: Database,
-    library_id: str | None = None,
-    check_disk: bool = True,
+    stored_path: str, db: Database, library_id: str | None = None, check_disk: bool = True,
 ) -> LibraryPath:
     """Build LibraryPath from database-stored path.
 
@@ -145,8 +132,6 @@ def build_library_path_from_db(
             return
 
     """
-    from nomarr.helpers.files_helper import is_audio_file
-
     # If we have a library_id, fetch that library's configuration
     if library_id:
         library = db.libraries.get_library(library_id)

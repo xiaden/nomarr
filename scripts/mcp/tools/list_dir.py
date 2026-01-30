@@ -64,7 +64,10 @@ def list_dir(folder: str = "", *, workspace_root: Path) -> dict[str, Any]:
         return False
 
     def build_tree(
-        root: Path, max_depth: int | None, current_depth: int = 0, show_files_at_root_only: bool = False
+        root: Path,
+        max_depth: int | None,
+        current_depth: int = 0,
+        show_files_at_root_only: bool = False,
     ) -> dict[str, Any]:
         if not root.is_dir():
             return {"error": "not a directory"}
@@ -92,10 +95,9 @@ def list_dir(folder: str = "", *, workspace_root: Path) -> dict[str, Any]:
                 # Only show files at depth 0 (workspace root)
                 if current_depth == 0 and item.suffix in {".md", ".py", ".json", ".toml", ".yaml", ".yml", ".txt"}:
                     tree[item.name] = 1
-            else:
-                # Normal mode: show files at current level with suffix filter
-                if current_depth == 0 or item.suffix in {".md", ".py", ".json", ".toml", ".yaml", ".yml", ".txt"}:
-                    tree[item.name] = 1
+            # Normal mode: show files at current level with suffix filter
+            elif current_depth == 0 or item.suffix in {".md", ".py", ".json", ".toml", ".yaml", ".yml", ".txt"}:
+                tree[item.name] = 1
 
         return tree
 
@@ -113,7 +115,7 @@ def list_dir(folder: str = "", *, workspace_root: Path) -> dict[str, Any]:
             target.relative_to(workspace_root)
         except ValueError:
             msg = f"Path traversal attempt detected: {folder}"
-            raise ValueError(msg)
+            raise ValueError(msg) from None
     else:
         target = workspace_root
 

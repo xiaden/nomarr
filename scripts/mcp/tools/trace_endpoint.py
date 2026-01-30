@@ -20,13 +20,13 @@ from __future__ import annotations
 
 __all__ = ["trace_endpoint"]
 
+import argparse
 import ast
 import json
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
 
 # Import tracing utilities from trace_calls_ml
 from scripts.mcp.tools.trace_calls import (
@@ -34,7 +34,6 @@ from scripts.mcp.tools.trace_calls import (
     _call_info_to_dict,
     _extract_imports,
     _find_function_node,
-    _flatten_chain,
     _mock_unavailable_dependencies,
     _parse_file,
     _resolve_module_to_path,
@@ -68,9 +67,9 @@ def _annotation_to_string(node: ast.expr) -> str | None:
     """Convert type annotation to string."""
     if isinstance(node, ast.Name):
         return node.id
-    elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
-    elif isinstance(node, ast.Attribute):
+    if isinstance(node, ast.Attribute):
         value_str = _annotation_to_string(node.value)
         if value_str:
             return f"{value_str}.{node.attr}"
@@ -83,7 +82,7 @@ def _call_to_string(node: ast.expr) -> str | None:
     """Convert a call expression to a string."""
     if isinstance(node, ast.Name):
         return node.id
-    elif isinstance(node, ast.Attribute):
+    if isinstance(node, ast.Attribute):
         value_str = _call_to_string(node.value)
         if value_str:
             return f"{value_str}.{node.attr}"
@@ -91,17 +90,18 @@ def _call_to_string(node: ast.expr) -> str | None:
 
 
 def _extract_depends_info(
-    func_node: ast.FunctionDef | ast.AsyncFunctionDef, imports: dict[str, str], project_root: Path
+    func_node: ast.FunctionDef | ast.AsyncFunctionDef,
+    imports: dict[str, str],
+    project_root: Path,
 ) -> list[InjectedDependency]:
     """Extract all Depends() injections from a function's parameters."""
     dependencies: list[InjectedDependency] = []
 
     for arg in func_node.args.args:
-        type_str = None
         depends_func = None
 
         if arg.annotation:
-            type_str = _annotation_to_string(arg.annotation)
+            _annotation_to_string(arg.annotation)
 
         # Find default value (aligned from right)
         arg_index = func_node.args.args.index(arg)
@@ -121,7 +121,7 @@ def _extract_depends_info(
                     depends_function=depends_func,
                     resolved_type=resolved_type,
                     source_file=source_file,
-                )
+                ),
             )
 
     return dependencies
@@ -142,7 +142,9 @@ def _extract_depends_function(node: ast.expr) -> str | None:
 
 
 def _resolve_depends_return_type_with_source(
-    depends_func: str, imports: dict[str, str], project_root: Path
+    depends_func: str,
+    imports: dict[str, str],
+    project_root: Path,
 ) -> tuple[str | None, str | None]:
     """Resolve the return type of a dependency function with source file.
 
@@ -158,33 +160,35 @@ def _resolve_depends_return_type_with_source(
 
     mod_path, func_name = parts
     file_path = _resolve_module_to_path(mod_path, project_root)
-    if not file_path:
-        return None, None
-
-    tree = _parse_file(file_path)
-    if not tree:
+    tree = _parse_file(file_path) if file_path else None
+    if not file_path or not tree:
         return None, None
 
     deps_imports = _extract_imports(tree)
 
     for node in ast.iter_child_nodes(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == func_name and node.returns:
-            return_type = _annotation_to_string(node.returns)
-            if return_type:
-                type_parts = return_type.split(".")
-                if type_parts[0] in deps_imports:
-                    resolved = deps_imports[type_parts[0]]
-                    if len(type_parts) > 1:
-                        resolved = f"{resolved}.{'.'.join(type_parts[1:])}"
-                    rel_path = file_path.relative_to(project_root)
-                    return resolved, str(rel_path).replace("\\", "/")
-                return return_type, str(file_path.relative_to(project_root)).replace("\\", "/")
+        if not (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == func_name and node.returns):
+            continue
+
+        return_type = _annotation_to_string(node.returns)
+        if not return_type:
+            continue
+
+        rel_path = str(file_path.relative_to(project_root)).replace("\\", "/")
+        type_parts = return_type.split(".")
+        if type_parts[0] in deps_imports:
+            resolved = deps_imports[type_parts[0]]
+            if len(type_parts) > 1:
+                resolved = f"{resolved}.{'.'.join(type_parts[1:])}"
+            return resolved, rel_path
+        return return_type, rel_path
 
     return None, None
 
 
 def _extract_service_method_calls(
-    func_node: ast.FunctionDef | ast.AsyncFunctionDef, dependencies: list[InjectedDependency]
+    func_node: ast.FunctionDef | ast.AsyncFunctionDef,
+    dependencies: list[InjectedDependency],
 ) -> dict[str, list[str]]:
     """Extract method calls on injected dependencies.
 
@@ -300,11 +304,10 @@ def trace_endpoint(qualified_name: str, project_root: Path | None = None) -> dic
 
 def main() -> int:
     """CLI entry point."""
-    import argparse
-
     parser = argparse.ArgumentParser(description="Trace API endpoint through DI")
     parser.add_argument(
-        "endpoint", help="Fully qualified endpoint name (e.g., nomarr.interfaces.api.web.info_if.web_info)"
+        "endpoint",
+        help="Fully qualified endpoint name (e.g., nomarr.interfaces.api.web.info_if.web_info)",
     )
 
     args = parser.parse_args()
@@ -312,7 +315,7 @@ def main() -> int:
     project_root = Path(__file__).parent.parent.parent
     result = trace_endpoint(args.endpoint, project_root)
 
-    print(json.dumps(result, indent=2))
+    sys.stdout.write(json.dumps(result, indent=2) + "\n")
 
     return 1 if "error" in result else 0
 

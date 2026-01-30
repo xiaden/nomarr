@@ -39,7 +39,8 @@ def parse_eslint_output(stdout: str, stderr: str) -> list[dict[str, Any]]:
                 {
                     "tool": "eslint",
                     "file": current_file.replace(str(frontend_dir) + "\\", "frontend/").replace(
-                        str(frontend_dir) + "/", "frontend/"
+                        str(frontend_dir) + "/",
+                        "frontend/",
                     ),
                     "line": int(line_num),
                     "column": int(column),
@@ -47,7 +48,7 @@ def parse_eslint_output(stdout: str, stderr: str) -> list[dict[str, Any]]:
                     "severity": severity,
                     "message": message.strip(),
                     "fix_available": False,
-                }
+                },
             )
 
     return errors
@@ -69,7 +70,8 @@ def parse_typescript_output(stdout: str, stderr: str) -> list[dict[str, Any]]:
                 {
                     "tool": "typescript",
                     "file": file_path.replace(str(frontend_dir) + "\\", "frontend/").replace(
-                        str(frontend_dir) + "/", "frontend/"
+                        str(frontend_dir) + "/",
+                        "frontend/",
                     ),
                     "line": int(line_num),
                     "column": int(column),
@@ -77,7 +79,7 @@ def parse_typescript_output(stdout: str, stderr: str) -> list[dict[str, Any]]:
                     "severity": severity,
                     "message": message.strip(),
                     "fix_available": False,
-                }
+                },
             )
 
     return errors
@@ -112,13 +114,17 @@ def lint_frontend() -> dict[str, Any]:
                 "severity": "error",
                 "message": f"Failed to run eslint: {e}",
                 "fix_available": False,
-            }
+            },
         )
 
     # 2. Run TypeScript type checking
     try:
         result = subprocess.run(
-            ["npx", "tsc", "-b", "--noEmit"], capture_output=True, text=True, cwd=frontend_dir, shell=True
+            ["npx", "tsc", "-b", "--noEmit"],
+            capture_output=True,
+            text=True,
+            cwd=frontend_dir,
+            shell=True,
         )
         tools_run.append("typescript")
         all_errors.extend(parse_typescript_output(result.stdout, result.stderr))
@@ -133,7 +139,7 @@ def lint_frontend() -> dict[str, Any]:
                 "severity": "error",
                 "message": f"Failed to run typescript: {e}",
                 "fix_available": False,
-            }
+            },
         )
 
     # Count files checked
@@ -151,5 +157,4 @@ def lint_frontend() -> dict[str, Any]:
             "summary": {"total_errors": len(all_errors), "by_tool": by_tool},
             "errors": all_errors,
         }
-    else:
-        return {"status": "clean", "summary": {"tools_run": tools_run, "files_checked": ts_files}}
+    return {"status": "clean", "summary": {"tools_run": tools_run, "files_checked": ts_files}}

@@ -1,5 +1,6 @@
 """Meta operations for ArangoDB (key-value config store)."""
 
+import json
 from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.persistence.arango_client import DatabaseLike
@@ -126,6 +127,4 @@ class MetaOperations:
         The snapshot contains only resource facts (gpu_available, error_summary).
         No timestamps - monitor liveness is tracked by HealthMonitorService.
         """
-        import json
-
         self.set_key(key="gpu_resources", value=json.dumps(data))

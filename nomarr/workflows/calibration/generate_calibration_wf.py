@@ -201,13 +201,13 @@ def _calculate_median_iqr_drift(old_scores: np.ndarray, new_scores: np.ndarray) 
     """
     old_median = np.median(old_scores)
     new_median = np.median(new_scores)
-    median_drift = abs(new_median - old_median)
+    median_drift = float(abs(new_median - old_median))
 
-    old_iqr = iqr(old_scores)
-    new_iqr = iqr(new_scores)
+    old_iqr = float(iqr(old_scores))
+    new_iqr = float(iqr(new_scores))
     iqr_drift = abs(new_iqr - old_iqr)
 
-    return float(median_drift), float(iqr_drift)
+    return median_drift, iqr_drift
 
 
 def _compare_calibrations(
@@ -240,14 +240,7 @@ def _compare_calibrations(
 
     """
     # Default thresholds (conservative)
-    default_thresholds = {
-        "apd_p5": 0.01,
-        "apd_p95": 0.01,
-        "srd": 0.05,
-        "jsd": 0.1,
-        "median": 0.05,
-        "iqr": 0.1,
-    }
+    default_thresholds = {"apd_p5": 0.01, "apd_p95": 0.01, "srd": 0.05, "jsd": 0.1, "median": 0.05, "iqr": 0.1}
     if thresholds:
         default_thresholds.update(thresholds)
 
@@ -339,13 +332,7 @@ def generate_histogram_calibration_wf(
     heads = discover_heads(models_dir)
     if not heads:
         logger.warning("[histogram_calibration_wf] No heads found in models directory")
-        return {
-            "version": 0,
-            "heads_processed": 0,
-            "heads_success": 0,
-            "heads_failed": 0,
-            "results": {},
-        }
+        return {"version": 0, "heads_processed": 0, "heads_success": 0, "heads_failed": 0, "results": {}}
 
     logger.info(f"[histogram_calibration_wf] Discovered {len(heads)} heads")
 
@@ -364,12 +351,7 @@ def generate_histogram_calibration_wf(
     )
 
 
-def _run_single_calibration(
-    db: Database,
-    models_dir: str,
-    heads: list[Any],
-    namespace: str,
-) -> dict[str, Any]:
+def _run_single_calibration(db: Database, models_dir: str, heads: list[Any], namespace: str) -> dict[str, Any]:
     """Run calibration once over all available data (legacy mode)."""
     from nomarr.components.ml.ml_calibration_comp import generate_calibration_from_histogram
 
@@ -396,13 +378,7 @@ def _run_single_calibration(
         try:
             # Generate calibration from histogram
             calib_result = generate_calibration_from_histogram(
-                db=db,
-                model_key=model_key,
-                head_name=head_name,
-                version=version,
-                lo=0.0,
-                hi=1.0,
-                bins=10000,
+                db=db, model_key=model_key, head_name=head_name, version=version, lo=0.0, hi=1.0, bins=10000,
             )
 
             # Compute calibration definition hash
@@ -416,12 +392,7 @@ def _run_single_calibration(
                 head_name=head_name,
                 calibration_def_hash=calib_def_hash,
                 version=version,
-                histogram_spec={
-                    "lo": 0.0,
-                    "hi": 1.0,
-                    "bins": 10000,
-                    "bin_width": 0.0001,
-                },
+                histogram_spec={"lo": 0.0, "hi": 1.0, "bins": 10000, "bin_width": 0.0001},
                 p5=calib_result["p5"],
                 p95=calib_result["p95"],
                 sample_count=calib_result["n"],
@@ -461,12 +432,7 @@ def _run_single_calibration(
 
 
 def _run_progressive_calibration(
-    db: Database,
-    models_dir: str,
-    heads: list[Any],
-    namespace: str,
-    start_sample_size: int,
-    increment_size: int,
+    db: Database, models_dir: str, heads: list[Any], namespace: str, start_sample_size: int, increment_size: int,
 ) -> dict[str, Any]:
     """Run calibration progressively: start with N files, add M more each iteration.
     Store convergence history in calibration_history collection.
@@ -572,12 +538,7 @@ def _run_progressive_calibration(
                     head_name=head_name,
                     calibration_def_hash=calib_def_hash,
                     version=version,
-                    histogram_spec={
-                        "lo": 0.0,
-                        "hi": 1.0,
-                        "bins": 10000,
-                        "bin_width": 0.0001,
-                    },
+                    histogram_spec={"lo": 0.0, "hi": 1.0, "bins": 10000, "bin_width": 0.0001},
                     p5=calib_result["p5"],
                     p95=calib_result["p95"],
                     sample_count=calib_result["n"],
@@ -586,11 +547,7 @@ def _run_progressive_calibration(
                 )
 
                 iteration_results[head_key] = calib_result
-                iteration_deltas[head_key] = {
-                    "p5_delta": p5_delta,
-                    "p95_delta": p95_delta,
-                    "n_delta": n_delta,
-                }
+                iteration_deltas[head_key] = {"p5_delta": p5_delta, "p95_delta": p95_delta, "n_delta": n_delta}
                 success_count += 1
 
                 logger.debug(

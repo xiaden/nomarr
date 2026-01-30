@@ -32,8 +32,8 @@ try:
     from scripts.mcp.tools.helpers.log_suppressor import suppress_logs
 except ImportError:
     # Fallback if not available (standalone mode)
+    from collections.abc import Iterator
     from contextlib import contextmanager
-    from typing import Iterator
 
     @contextmanager
     def suppress_logs() -> Iterator[None]:
@@ -61,7 +61,7 @@ def _mock_unavailable_dependencies() -> None:
             parent_mock = MagicMock()
             sys.modules[parent] = parent_mock
         else:
-            parent_mock = sys.modules[parent]
+            parent_mock = sys.modules[parent]  # type: ignore[assignment]
 
         # Attach child modules to parent
         for child in children:
@@ -195,7 +195,7 @@ def main() -> int:
     parser.add_argument("module", help="Module name (e.g., nomarr.helpers.dto)")
     parser.add_argument("--no-docs", action="store_true", help="Omit docstrings from output")
     parser.add_argument(
-        "--max-doc-lines", type=int, default=1, help="Max docstring lines (default: 1 = first line only)"
+        "--max-doc-lines", type=int, default=1, help="Max docstring lines (default: 1 = first line only)",
     )
 
     args = parser.parse_args()

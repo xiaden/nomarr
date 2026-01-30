@@ -1,4 +1,5 @@
 """Library statistics and management endpoints for web UI."""
+
 import logging
 from typing import TYPE_CHECKING, Annotated
 
@@ -24,7 +25,12 @@ from nomarr.interfaces.api.types.library_types import (
     UpdateLibraryRequest,
     UpdateWriteModeResponse,
 )
-from nomarr.interfaces.api.web.dependencies import get_library_service, get_metadata_service, get_tagging_service
+from nomarr.interfaces.api.web.dependencies import (
+    get_file_watcher_service,
+    get_library_service,
+    get_metadata_service,
+    get_tagging_service,
+)
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
@@ -33,8 +39,11 @@ if TYPE_CHECKING:
     from nomarr.services.domain.tagging_svc import TaggingService
 router = APIRouter(prefix="/libraries", tags=["Library"])
 
+
 @router.get("/stats", dependencies=[Depends(verify_session)])
-async def web_library_stats(library_service: Annotated["LibraryService", Depends(get_library_service)]) -> LibraryStatsResponse:
+async def web_library_stats(
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
+) -> LibraryStatsResponse:
     """Get library statistics (total files, artists, albums, duration)."""
     try:
         stats = library_service.get_library_stats()
@@ -43,8 +52,12 @@ async def web_library_stats(library_service: Annotated["LibraryService", Depends
         logger.exception("[Web API] Error getting library stats")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get library stats")) from e
 
+
 @router.get("", dependencies=[Depends(verify_session)])
-async def list_libraries(enabled_only: bool=False, library_service: "LibraryService"=Depends(get_library_service)) -> ListLibrariesResponse:
+async def list_libraries(
+    enabled_only: bool = False,
+    library_service: "LibraryService" = Depends(get_library_service),
+) -> ListLibrariesResponse:
     """List all configured libraries."""
     try:
         libraries = library_service.list_libraries(enabled_only=enabled_only)
@@ -53,8 +66,12 @@ async def list_libraries(enabled_only: bool=False, library_service: "LibraryServ
         logger.exception("[Web API] Error listing libraries")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to list libraries")) from e
 
+
 @router.get("/{library_id}", dependencies=[Depends(verify_session)])
-async def get_library(library_id: str, library_service: Annotated["LibraryService", Depends(get_library_service)]) -> LibraryResponse:
+async def get_library(
+    library_id: str,
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
+) -> LibraryResponse:
     """Get a library by ID."""
     library_id = decode_path_id(library_id)
     try:
@@ -66,11 +83,20 @@ async def get_library(library_id: str, library_service: Annotated["LibraryServic
         logger.exception(f"[Web API] Error getting library {library_id}")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get library")) from e
 
+
 @router.post("", dependencies=[Depends(verify_session)])
-async def create_library(request: CreateLibraryRequest, library_service: Annotated["LibraryService", Depends(get_library_service)]) -> LibraryResponse:
+async def create_library(
+    request: CreateLibraryRequest,
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
+) -> LibraryResponse:
     """Create a new library."""
     try:
-        library = library_service.create_library(name=request.name, root_path=request.root_path, is_enabled=request.is_enabled, watch_mode=request.watch_mode)
+        library = library_service.create_library(
+            name=request.name,
+            root_path=request.root_path,
+            is_enabled=request.is_enabled,
+            watch_mode=request.watch_mode,
+        )
         return LibraryResponse.from_dto(library)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid library configuration") from None
@@ -78,12 +104,23 @@ async def create_library(request: CreateLibraryRequest, library_service: Annotat
         logger.exception("[Web API] Error creating library")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to create library")) from e
 
+
 @router.patch("/{library_id}", dependencies=[Depends(verify_session)])
-async def update_library(library_id: str, request: UpdateLibraryRequest, library_service: Annotated["LibraryService", Depends(get_library_service)]) -> LibraryResponse:
+async def update_library(
+    library_id: str,
+    request: UpdateLibraryRequest,
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
+) -> LibraryResponse:
     """Update a library's properties."""
     library_id = decode_path_id(library_id)
     try:
-        library = library_service.update_library(library_id, name=request.name, root_path=request.root_path, is_enabled=request.is_enabled, watch_mode=request.watch_mode)
+        library = library_service.update_library(
+            library_id,
+            name=request.name,
+            root_path=request.root_path,
+            is_enabled=request.is_enabled,
+            watch_mode=request.watch_mode,
+        )
         return LibraryResponse.from_dto(library)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid library update") from None
@@ -93,13 +130,16 @@ async def update_library(library_id: str, request: UpdateLibraryRequest, library
         logger.exception(f"[Web API] Error updating library {library_id}")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to update library")) from e
 
+
 @router.delete("/{library_id}", dependencies=[Depends(verify_session)])
-async def delete_library(library_id: str, library_service: Annotated["LibraryService", Depends(get_library_service)]) -> dict[str, str]:
+async def delete_library(
+    library_id: str,
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
+) -> dict[str, str]:
     """Delete a library.
 
     Removes the library entry but does NOT delete files on disk.
     """
-    from nomarr.interfaces.api.web.dependencies import get_file_watcher_service
     library_id = decode_path_id(library_id)
     try:
         file_watcher = get_file_watcher_service()
@@ -116,26 +156,51 @@ async def delete_library(library_id: str, library_service: Annotated["LibrarySer
         logger.exception(f"[Web API] Error deleting library {library_id}")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to delete library")) from e
 
+
 @router.get("/files/search", dependencies=[Depends(verify_session)])
-async def search_library_files(q: Annotated[str, Query(description="Search query for artist/album/title")]="", artist: Annotated[str | None, Query(description="Filter by artist name")]=None, album: Annotated[str | None, Query(description="Filter by album name")]=None, tag_key: Annotated[str | None, Query(description="Filter by files with this tag key")]=None, tag_value: Annotated[str | None, Query(description="Filter by files with tag key=value")]=None, tagged_only: Annotated[bool, Query(description="Only show tagged files")]=False, limit: Annotated[int, Query(ge=1, le=1000, description="Max results")]=100, offset: Annotated[int, Query(ge=0, description="Pagination offset")]=0, library_service: "LibraryService"=Depends(get_library_service)) -> SearchFilesResponse:
+async def search_library_files(
+    q: Annotated[str, Query(description="Search query for artist/album/title")] = "",
+    artist: Annotated[str | None, Query(description="Filter by artist name")] = None,
+    album: Annotated[str | None, Query(description="Filter by album name")] = None,
+    tag_key: Annotated[str | None, Query(description="Filter by files with this tag key")] = None,
+    tag_value: Annotated[str | None, Query(description="Filter by files with tag key=value")] = None,
+    tagged_only: Annotated[bool, Query(description="Only show tagged files")] = False,
+    limit: Annotated[int, Query(ge=1, le=1000, description="Max results")] = 100,
+    offset: Annotated[int, Query(ge=0, description="Pagination offset")] = 0,
+    library_service: "LibraryService" = Depends(get_library_service),
+) -> SearchFilesResponse:
     """Search library files with optional filtering.
 
     Returns paginated list of files with metadata.
     """
     try:
-        result = library_service.search_files(query_text=q, artist=artist, album=album, tag_key=tag_key, tag_value=tag_value, tagged_only=tagged_only, limit=limit, offset=offset)
+        result = library_service.search_files(
+            query_text=q,
+            artist=artist,
+            album=album,
+            tag_key=tag_key,
+            tag_value=tag_value,
+            tagged_only=tagged_only,
+            limit=limit,
+            offset=offset,
+        )
         return SearchFilesResponse.from_dto(result)
     except Exception as e:
         logger.exception("[Web API] Error searching library files")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to search files")) from e
+
 
 class FileIdsRequest(BaseModel):
     """Request body for fetching files by IDs."""
 
     file_ids: list[str] = Field(..., description="List of file _ids to fetch", max_length=500)
 
+
 @router.post("/files/by-ids", dependencies=[Depends(verify_session)])
-async def get_files_by_ids(request: FileIdsRequest, library_service: Annotated["LibraryService", Depends(get_library_service)]) -> SearchFilesResponse:
+async def get_files_by_ids(
+    request: FileIdsRequest,
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
+) -> SearchFilesResponse:
     """Get files by their IDs with full metadata and tags.
 
     Used for batch lookup (e.g., when browsing songs for an entity).
@@ -152,6 +217,7 @@ async def get_files_by_ids(request: FileIdsRequest, library_service: Annotated["
         logger.exception("[Web API] Error getting files by IDs")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get files")) from e
 
+
 class TagSearchRequest(BaseModel):
     """Request body for searching files by tag value."""
 
@@ -160,22 +226,35 @@ class TagSearchRequest(BaseModel):
     limit: int = Field(100, ge=1, le=500, description="Maximum results")
     offset: int = Field(0, ge=0, description="Pagination offset")
 
+
 @router.post("/files/by-tag", dependencies=[Depends(verify_session)])
-async def search_files_by_tag(request: TagSearchRequest, library_service: Annotated["LibraryService", Depends(get_library_service)]) -> SearchFilesResponse:
+async def search_files_by_tag(
+    request: TagSearchRequest,
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
+) -> SearchFilesResponse:
     """Search files by tag value with distance sorting (float) or exact match (string).
 
     For float values: Returns files sorted by absolute distance from target value.
     For string values: Returns files with exact match on the tag value.
     """
     try:
-        result = library_service.search_files_by_tag(tag_key=request.tag_key, target_value=request.target_value, limit=request.limit, offset=request.offset)
+        result = library_service.search_files_by_tag(
+            tag_key=request.tag_key,
+            target_value=request.target_value,
+            limit=request.limit,
+            offset=request.offset,
+        )
         return SearchFilesResponse.from_dto(result)
     except Exception as e:
         logger.exception("[Web API] Error searching files by tag")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to search files")) from e
 
+
 @router.get("/files/tags/unique-keys", dependencies=[Depends(verify_session)])
-async def get_unique_tag_keys(nomarr_only: Annotated[bool, Query(description="Only show Nomarr tags")]=False, library_service: "LibraryService"=Depends(get_library_service)) -> UniqueTagKeysResponse:
+async def get_unique_tag_keys(
+    nomarr_only: Annotated[bool, Query(description="Only show Nomarr tags")] = False,
+    library_service: "LibraryService" = Depends(get_library_service),
+) -> UniqueTagKeysResponse:
     """Get list of unique tag keys for filtering.
 
     Returns all distinct tag keys found in the database.
@@ -187,8 +266,13 @@ async def get_unique_tag_keys(nomarr_only: Annotated[bool, Query(description="On
         logger.exception("[Web API] Error getting unique tag keys")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get tag keys")) from e
 
+
 @router.get("/files/tags/values", dependencies=[Depends(verify_session)])
-async def get_unique_tag_values(tag_key: Annotated[str, Query(description="Tag key to get values for")], nomarr_only: Annotated[bool, Query(description="Only show Nomarr tag values")]=True, library_service: "LibraryService"=Depends(get_library_service)) -> UniqueTagKeysResponse:
+async def get_unique_tag_values(
+    tag_key: Annotated[str, Query(description="Tag key to get values for")],
+    nomarr_only: Annotated[bool, Query(description="Only show Nomarr tag values")] = True,
+    library_service: "LibraryService" = Depends(get_library_service),
+) -> UniqueTagKeysResponse:
     """Get list of unique values for a specific tag key.
 
     Returns all distinct values for the given tag key.
@@ -200,12 +284,16 @@ async def get_unique_tag_values(tag_key: Annotated[str, Query(description="Tag k
         logger.exception("[Web API] Error getting unique tag values")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get tag values")) from e
 
+
 @router.post("/cleanup-tags", dependencies=[Depends(verify_session)])
-async def cleanup_orphaned_tags(dry_run: Annotated[bool, Query(description="Preview orphaned tags without deleting")]=False, library_service: "LibraryService"=Depends(get_library_service)) -> TagCleanupResponse:
+async def cleanup_orphaned_tags(
+    dry_run: Annotated[bool, Query(description="Preview orphaned tags without deleting")] = False,
+    library_service: "LibraryService" = Depends(get_library_service),
+) -> TagCleanupResponse:
     """Clean up orphaned tags (tags not referenced by any file).
 
-    This endpoint identifies and removes tags from the library_tags table that are
-    no longer referenced by any file in file_tags. Useful for database maintenance
+    This endpoint identifies and removes tags from the tags collection that are
+    no longer referenced by any file via song_tag_edges. Useful for database maintenance
     after deleting files or changing tag structures.
 
     Args:
@@ -223,8 +311,12 @@ async def cleanup_orphaned_tags(dry_run: Annotated[bool, Query(description="Prev
         logger.exception("[Web API] Error cleaning up orphaned tags")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to clean up tags")) from e
 
+
 @router.post("/cleanup-entities", dependencies=[Depends(verify_session)])
-async def cleanup_orphaned_entities(dry_run: Annotated[bool, Query(description="Preview orphaned entities without deleting")]=False, metadata_service: "MetadataService"=Depends(get_metadata_service)) -> dict[str, int | dict[str, int]]:
+async def cleanup_orphaned_entities(
+    dry_run: Annotated[bool, Query(description="Preview orphaned entities without deleting")] = False,
+    metadata_service: "MetadataService" = Depends(get_metadata_service),
+) -> dict[str, int | dict[str, int]]:
     """Clean up orphaned entities (artists, albums, genres, labels, years).
 
     Entities become orphaned when:
@@ -248,8 +340,13 @@ async def cleanup_orphaned_entities(dry_run: Annotated[bool, Query(description="
         logger.exception("[Web API] Error cleaning up orphaned entities")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to clean up entities")) from e
 
+
 @router.get("/files/{file_id}/tags", dependencies=[Depends(verify_session)])
-async def get_file_tags(file_id: str, nomarr_only: Annotated[bool, Query(description="Only return Nomarr-generated tags")]=False, library_service: "LibraryService"=Depends(get_library_service)) -> FileTagsResponse:
+async def get_file_tags(
+    file_id: str,
+    nomarr_only: Annotated[bool, Query(description="Only return Nomarr-generated tags")] = False,
+    library_service: "LibraryService" = Depends(get_library_service),
+) -> FileTagsResponse:
     """Get all tags for a specific file.
 
     Returns the complete tag data for a library file, including tag keys,
@@ -277,8 +374,16 @@ async def get_file_tags(file_id: str, nomarr_only: Annotated[bool, Query(descrip
         logger.exception(f"[Web API] Error getting tags for file {file_id}")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get file tags")) from e
 
+
 @router.post("/{library_id}/scan", dependencies=[Depends(verify_session)])
-async def scan_library(library_id: str, scan_type: Annotated[str, Query(description="Scan type: 'quick' (skip unchanged files) or 'full' (rescan all)")]="quick", library_service: "LibraryService"=Depends(get_library_service)) -> StartScanWithStatusResponse:
+async def scan_library(
+    library_id: str,
+    scan_type: Annotated[
+        str,
+        Query(description="Scan type: 'quick' (skip unchanged files) or 'full' (rescan all)"),
+    ] = "quick",
+    library_service: "LibraryService" = Depends(get_library_service),
+) -> StartScanWithStatusResponse:
     """Start a scan for a specific library.
 
     This endpoint triggers a scan for the specified library, discovering files
@@ -313,10 +418,22 @@ async def scan_library(library_id: str, scan_type: Annotated[str, Query(descript
         raise HTTPException(status_code=400, detail=error_msg) from None
     except Exception as e:
         logger.exception(f"[Web API] Error starting scan for library {library_id}")
-        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to start library scan")) from e
+        raise HTTPException(
+            status_code=500,
+            detail=sanitize_exception_message(e, "Failed to start library scan"),
+        ) from e
+
 
 @router.post("/{library_id}/reconcile", dependencies=[Depends(verify_session)])
-async def reconcile_library_paths(library_id: str, policy: Annotated[str, Query(description="Policy for invalid paths: dry_run, mark_invalid, delete_invalid")]="mark_invalid", batch_size: Annotated[int, Query(description="Number of files to process per batch", ge=1, le=10000)]=1000, library_service: "LibraryService"=Depends(get_library_service)) -> ReconcilePathsResponse:
+async def reconcile_library_paths(
+    library_id: str,
+    policy: Annotated[
+        str,
+        Query(description="Policy for invalid paths: dry_run, mark_invalid, delete_invalid"),
+    ] = "mark_invalid",
+    batch_size: Annotated[int, Query(description="Number of files to process per batch", ge=1, le=10000)] = 1000,
+    library_service: "LibraryService" = Depends(get_library_service),
+) -> ReconcilePathsResponse:
     """Reconcile library paths after configuration changes.
 
     Re-validates all file paths in the specified library and handles invalid paths
@@ -352,10 +469,18 @@ async def reconcile_library_paths(library_id: str, policy: Annotated[str, Query(
         raise HTTPException(status_code=404, detail="Library not found") from None
     except Exception as e:
         logger.exception(f"[Web API] Error reconciling paths for library {library_id}")
-        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to reconcile library paths")) from e
+        raise HTTPException(
+            status_code=500,
+            detail=sanitize_exception_message(e, "Failed to reconcile library paths"),
+        ) from e
+
 
 @router.post("/{library_id}/reconcile-tags", dependencies=[Depends(verify_session)])
-async def reconcile_library_tags(library_id: str, batch_size: Annotated[int, Query(description="Number of files to process per batch", ge=1, le=1000)]=100, tagging_service: "TaggingService"=Depends(get_tagging_service)) -> ReconcileTagsResponse:
+async def reconcile_library_tags(
+    library_id: str,
+    batch_size: Annotated[int, Query(description="Number of files to process per batch", ge=1, le=1000)] = 100,
+    tagging_service: "TaggingService" = Depends(get_tagging_service),
+) -> ReconcileTagsResponse:
     """Reconcile file tags for a library.
 
     Writes tags from database to audio files based on the library's file_write_mode.
@@ -383,8 +508,12 @@ async def reconcile_library_tags(library_id: str, batch_size: Annotated[int, Que
         logger.exception(f"[Web API] Error reconciling tags for library {library_id}")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to reconcile tags")) from e
 
+
 @router.get("/{library_id}/reconcile-status", dependencies=[Depends(verify_session)])
-async def get_reconcile_status(library_id: str, tagging_service: Annotated["TaggingService", Depends(get_tagging_service)]) -> ReconcileStatusResponse:
+async def get_reconcile_status(
+    library_id: str,
+    tagging_service: Annotated["TaggingService", Depends(get_tagging_service)],
+) -> ReconcileStatusResponse:
     """Get tag reconciliation status for a library.
 
     Returns the count of files needing reconciliation and whether
@@ -406,10 +535,19 @@ async def get_reconcile_status(library_id: str, tagging_service: Annotated["Tagg
         raise HTTPException(status_code=404, detail="Library not found") from None
     except Exception as e:
         logger.exception(f"[Web API] Error getting reconcile status for library {library_id}")
-        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get reconcile status")) from e
+        raise HTTPException(
+            status_code=500,
+            detail=sanitize_exception_message(e, "Failed to get reconcile status"),
+        ) from e
+
 
 @router.patch("/{library_id}/write-mode", dependencies=[Depends(verify_session)])
-async def update_write_mode(library_id: str, file_write_mode: Annotated[str, Query(description="New write mode: 'none', 'minimal', or 'full'")], library_service: Annotated["LibraryService", Depends(get_library_service)], tagging_service: Annotated["TaggingService", Depends(get_tagging_service)]) -> UpdateWriteModeResponse:
+async def update_write_mode(
+    library_id: str,
+    file_write_mode: Annotated[str, Query(description="New write mode: 'none', 'minimal', or 'full'")],
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
+    tagging_service: Annotated["TaggingService", Depends(get_tagging_service)],
+) -> UpdateWriteModeResponse:
     """Update the file write mode for a library.
 
     Changes how tags are written to audio files:
@@ -435,7 +573,11 @@ async def update_write_mode(library_id: str, file_write_mode: Annotated[str, Que
     try:
         library_service.update_library(library_id, file_write_mode=file_write_mode)
         status = tagging_service.get_reconcile_status(library_id=library_id)
-        return UpdateWriteModeResponse(file_write_mode=file_write_mode, requires_reconciliation=status["pending_count"] > 0, affected_file_count=status["pending_count"])
+        return UpdateWriteModeResponse(
+            file_write_mode=file_write_mode,
+            requires_reconciliation=status["pending_count"] > 0,
+            affected_file_count=status["pending_count"],
+        )
     except ValueError:
         raise HTTPException(status_code=404, detail="Library not found") from None
     except Exception as e:

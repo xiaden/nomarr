@@ -124,7 +124,7 @@ def locate_symbol(symbol_name: str) -> dict[str, Any]:
 
 
 def _search_tree(
-    tree: ast.AST, symbol_name: str, file_path: Path, root: Path, parent_filter: str | None = None
+    tree: ast.AST, symbol_name: str, file_path: Path, root: Path, parent_filter: str | None = None,
 ) -> list[dict]:
     """Search AST for symbols matching name.
 
@@ -165,7 +165,7 @@ def _search_tree(
                             "length": (node.end_lineno or node.lineno) - node.lineno + 1,
                             "kind": "Class",
                             "qualified_name": qualified,
-                        }
+                        },
                     )
             # Recurse into class body with context
             for child in node.body:
@@ -206,7 +206,7 @@ def _search_tree(
                             "length": (node.end_lineno or node.lineno) - node.lineno + 1,
                             "kind": "Assignment",
                             "qualified_name": qualified,
-                        }
+                        },
                     )
 
         # AnnAssign for type-annotated module variables (e.g., logger: Logger = ...)
@@ -220,13 +220,13 @@ def _search_tree(
                         "length": (node.end_lineno or node.lineno) - node.lineno + 1,
                         "kind": "Variable",
                         "qualified_name": qualified,
-                    }
+                    },
                 )
 
         # Recurse for other node types
         else:
-            for child in ast.iter_child_nodes(node):
-                visit_node(child, parent_class)
+            for sub_node in ast.iter_child_nodes(node):
+                visit_node(sub_node, parent_class)
 
     # Start traversal
     for node in ast.iter_child_nodes(tree):

@@ -8,6 +8,8 @@ import ast
 import sys
 from pathlib import Path
 
+from scripts.mcp.tools.helpers.file_lines import read_raw_line_range
+
 # Project root (would be set by caller, but for imports)
 ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT))
@@ -107,8 +109,8 @@ def symbol_at_line(file_path: str, line_number: int, workspace_root: Path) -> di
             context_start = max(1, line_number - 2)
             context_end = min(total_lines, line_number + 2)
 
-            # Extract the lines with context
-            context_source = "".join(source_lines[context_start - 1 : context_end])
+            # Extract the lines with context using raw bytes
+            context_source = read_raw_line_range(str(target_path), context_start, context_end)
 
             return {
                 "error": f"No symbol contains line {line_number} in {file_path}",
@@ -130,7 +132,8 @@ def symbol_at_line(file_path: str, line_number: int, workspace_root: Path) -> di
         context_start = max(1, start_line - 2)
         context_end = min(total_lines, end_line + 2)
 
-        symbol_source = "".join(source_lines[context_start - 1 : context_end])
+        # Extract source with context using raw bytes (preserves exact line endings)
+        symbol_source = read_raw_line_range(str(target_path), context_start, context_end)
 
         return {
             "qualified_name": qualified_name,

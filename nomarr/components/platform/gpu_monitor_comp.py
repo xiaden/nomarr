@@ -9,6 +9,7 @@ Architecture:
 - Sends heartbeat frames via pipe to HealthMonitorService for liveness tracking
 - If probe hangs despite timeout, HealthMonitorService detects and restarts
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -23,6 +24,7 @@ if TYPE_CHECKING:
 GPU_PROBE_INTERVAL_SECONDS = 15.0
 GPU_PROBE_TIMEOUT_SECONDS = 5.0
 HEALTH_FRAME_PREFIX = "HEALTH|"
+
 
 class GPUHealthMonitor(multiprocessing.Process):
     """Independent GPU health monitoring process.
@@ -39,7 +41,9 @@ class GPUHealthMonitor(multiprocessing.Process):
     to the main application.
     """
 
-    def __init__(self, probe_interval: float=GPU_PROBE_INTERVAL_SECONDS, health_pipe: Connection | None=None) -> None:
+    def __init__(
+        self, probe_interval: float = GPU_PROBE_INTERVAL_SECONDS, health_pipe: Connection | None = None
+    ) -> None:
         """Initialize GPU health monitor.
 
         Args:
@@ -52,7 +56,7 @@ class GPUHealthMonitor(multiprocessing.Process):
         self._health_pipe = health_pipe
         self._shutdown = multiprocessing.Event()
 
-    def _send_heartbeat(self, status: str="healthy") -> None:
+    def _send_heartbeat(self, status: str = "healthy") -> None:
         """Send heartbeat frame to HealthMonitorService via pipe.
 
         Frames use JSON format: HEALTH|{"component_id": "gpu_monitor", "status": "..."}
@@ -71,8 +75,10 @@ class GPUHealthMonitor(multiprocessing.Process):
         Continuously probes GPU, writes resource snapshot to DB, and sends
         heartbeat frames to HealthMonitorService.
         """
+
         from nomarr.components.platform import probe_gpu_availability
         from nomarr.persistence.db import Database
+
         logger.info("[GPUHealthMonitor] Starting GPU health monitoring process")
         try:
             db = Database()
@@ -85,7 +91,10 @@ class GPUHealthMonitor(multiprocessing.Process):
         while not self._shutdown.is_set():
             try:
                 result = probe_gpu_availability(timeout=GPU_PROBE_TIMEOUT_SECONDS)
-                resource_snapshot = {"gpu_available": result["gpu_available"], "error_summary": result.get("error_summary")}
+                resource_snapshot = {
+                    "gpu_available": result["gpu_available"],
+                    "error_summary": result.get("error_summary"),
+                }
                 try:
                     db.meta.write_gpu_resources(resource_snapshot)
                     consecutive_errors = 0

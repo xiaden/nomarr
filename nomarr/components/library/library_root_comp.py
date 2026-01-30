@@ -11,6 +11,7 @@ Architecture:
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -76,8 +77,6 @@ def normalize_library_root(base_library_root: Path, raw_root: str | Path) -> str
         ValueError: If path is invalid or outside base library root
 
     """
-    import os
-
     # Convert raw_root to string for processing
     raw_root_str = str(raw_root)
 
@@ -102,10 +101,7 @@ def normalize_library_root(base_library_root: Path, raw_root: str | Path) -> str
     # Validate using resolve_library_path
     try:
         resolved = resolve_library_path(
-            library_root=base_library_root,
-            user_path=user_path,
-            must_exist=True,
-            must_be_file=False,
+            library_root=base_library_root, user_path=user_path, must_exist=True, must_be_file=False,
         )
     except ValueError as e:
         # Re-raise with more context
@@ -115,12 +111,7 @@ def normalize_library_root(base_library_root: Path, raw_root: str | Path) -> str
     return str(resolved)
 
 
-def ensure_no_overlapping_library_root(
-    db: Database,
-    candidate_root: str,
-    *,
-    ignore_id: str | None = None,
-) -> None:
+def ensure_no_overlapping_library_root(db: Database, candidate_root: str, *, ignore_id: str | None = None) -> None:
     """Ensure a candidate library root does not overlap with existing libraries.
 
     This enforces the business rule that all library roots must be disjoint -
@@ -159,9 +150,7 @@ def ensure_no_overlapping_library_root(
                 f"existing library '{library['name']}' at '{library['root_path']}'. "
                 f"Library roots must be disjoint."
             )
-            raise ValueError(
-                msg,
-            )
+            raise ValueError(msg)
         except ValueError as e:
             # relative_to raises ValueError if not a subpath - this is expected for disjoint paths
             if "is nested inside" in str(e):
@@ -178,9 +167,7 @@ def ensure_no_overlapping_library_root(
                 f"is nested inside new library root '{candidate_root}'. "
                 f"Library roots must be disjoint."
             )
-            raise ValueError(
-                msg,
-            )
+            raise ValueError(msg)
         except ValueError as e:
             # relative_to raises ValueError if not a subpath - this is expected for disjoint paths
             if "is nested inside" in str(e):
@@ -190,11 +177,7 @@ def ensure_no_overlapping_library_root(
 
 
 def resolve_path_within_library(
-    library_root: str,
-    user_path: str | Path,
-    *,
-    must_exist: bool = True,
-    must_be_file: bool | None = None,
+    library_root: str, user_path: str | Path, *, must_exist: bool = True, must_be_file: bool | None = None,
 ) -> Path:
     """Resolve a user-provided path within a library root.
 
@@ -218,8 +201,5 @@ def resolve_path_within_library(
 
     """
     return resolve_library_path(
-        library_root=library_root,
-        user_path=user_path,
-        must_exist=must_exist,
-        must_be_file=must_be_file,
+        library_root=library_root, user_path=user_path, must_exist=must_exist, must_be_file=must_be_file,
     )

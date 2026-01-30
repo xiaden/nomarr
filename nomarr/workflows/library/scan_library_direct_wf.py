@@ -20,6 +20,7 @@ from nomarr.components.library.move_detection_comp import detect_file_moves
 from nomarr.components.library.scan_target_validator_comp import validate_scan_targets
 from nomarr.components.metadata import rebuild_song_metadata_cache, seed_song_entities_from_tags
 from nomarr.helpers.time_helper import internal_s, now_ms
+from nomarr.workflows.metadata.cleanup_orphaned_entities_wf import cleanup_orphaned_entities_workflow
 
 if TYPE_CHECKING:
     from nomarr.helpers.dto import ScanTarget
@@ -294,8 +295,6 @@ def scan_library_direct_workflow(
 
         # PHASE 7: Entity graph cleanup
         try:
-            from nomarr.workflows.metadata.cleanup_orphaned_entities_wf import cleanup_orphaned_entities_workflow
-
             cleanup_result = cleanup_orphaned_entities_workflow(db, dry_run=False)
             total_deleted = cleanup_result.get("total_deleted", 0)
             if total_deleted:

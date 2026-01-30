@@ -32,9 +32,7 @@ class Segments:
     sr: int
 
 
-def segment_waveform(
-    params: SegmentWaveformParams,
-) -> Segments:
+def segment_waveform(params: SegmentWaveformParams) -> Segments:
     """Slice a mono waveform into overlapping fixed-length segments.
 
     Args:
@@ -101,10 +99,7 @@ def segment_waveform(
 # ----------------------------------------------------------------------
 # Scoring over segments
 # ----------------------------------------------------------------------
-def score_segments(
-    segments: Segments,
-    predict_fn: Callable[[np.ndarray, int], np.ndarray],
-) -> np.ndarray:
+def score_segments(segments: Segments, predict_fn: Callable[[np.ndarray, int], np.ndarray]) -> np.ndarray:
     """Apply predict_fn to each segment waveform.
     predict_fn signature: (wave_mono_float32, sr) -> 1D np.ndarray (scores/logits/probs)
     Returns a 2D array: (num_segments, dim).
@@ -134,11 +129,7 @@ def score_segments(
 # Pooling
 # ----------------------------------------------------------------------
 def pool_scores(
-    scores: np.ndarray,
-    mode: str = "mean",
-    *,
-    trim_perc: float = 0.1,
-    nan_policy: str = "omit",
+    scores: np.ndarray, mode: str = "mean", *, trim_perc: float = 0.1, nan_policy: str = "omit",
 ) -> np.ndarray:
     """Pool segment-level scores into a single vector.
     - mode: "mean", "median", or "trimmed_mean"
@@ -155,24 +146,12 @@ def pool_scores(
         col_all_nan = (~mask).all(axis=0)
 
         if mode == "mean":
-            pooled = np.where(
-                col_all_nan,
-                0.0,
-                np.nanmean(scores, axis=0),
-            )
+            pooled = np.where(col_all_nan, 0.0, np.nanmean(scores, axis=0))
         elif mode == "median":
-            pooled = np.where(
-                col_all_nan,
-                0.0,
-                np.nanmedian(scores, axis=0),
-            )
+            pooled = np.where(col_all_nan, 0.0, np.nanmedian(scores, axis=0))
         elif mode == "trimmed_mean":
             pooled = _trimmed_mean(scores, trim_perc, axis=0)
-            pooled = np.where(
-                col_all_nan,
-                0.0,
-                pooled,
-            )
+            pooled = np.where(col_all_nan, 0.0, pooled)
         else:
             msg = f"Unknown pooling mode: {mode}"
             raise ValueError(msg)
@@ -183,7 +162,8 @@ def pool_scores(
         result: np.ndarray = np.mean(scores, axis=0).astype(np.float32, copy=False)
         return result
     if mode == "median":
-        return np.median(scores, axis=0).astype(np.float32, copy=False)
+        median_result: np.ndarray = np.median(scores, axis=0).astype(np.float32, copy=False)
+        return median_result
     if mode == "trimmed_mean":
         return _trimmed_mean(scores, trim_perc, axis=0).astype(np.float32, copy=False)
     msg = f"Unknown pooling mode: {mode}"

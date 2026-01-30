@@ -5,9 +5,8 @@ This prevents logs from interfering with MCP's JSON-RPC communication over stdio
 """
 
 import logging
-import sys
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Iterator
 
 
 @contextmanager

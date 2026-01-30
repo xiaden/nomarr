@@ -4,6 +4,7 @@ CRITICAL: All mutations by _id must use PARSE_IDENTIFIER(@id).key
 to extract the document key for UPDATE/REMOVE operations.
 """
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.helpers.time_helper import now_ms
@@ -300,8 +301,6 @@ class LibrariesOperations:
             {"_id": "libraries/123", "name": "My Music", "root_path": "/music", ...}
 
         """
-        from pathlib import Path
-
         # Normalize the input path
         try:
             normalized_path = Path(file_path).resolve()

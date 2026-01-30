@@ -12,17 +12,18 @@ from __future__ import annotations
 
 import contextlib
 import json
+from pathlib import Path as PathLib
 from typing import TYPE_CHECKING, Any
 
 from mutagen import MutagenError
 
+from nomarr.components.tagging.safe_write_comp import SafeWriteResult, safe_write_tags
+from nomarr.helpers.dto.path_dto import LibraryPath
+
 if TYPE_CHECKING:
     from collections.abc import Iterable
     from pathlib import Path
-    from pathlib import Path as PathLib
 
-    from nomarr.components.tagging.safe_write_comp import SafeWriteResult
-    from nomarr.helpers.dto.path_dto import LibraryPath
     from nomarr.helpers.dto.tags_dto import Tags
 from mutagen.flac import FLAC
 from mutagen.id3 import ID3, TXXX, ID3NoHeaderError
@@ -274,18 +275,9 @@ class TagWriter:
 
     def _write_to_path(self, path_str: str, tags: dict[str, Any]) -> None:
         """Internal write method that works with string paths (for temp files)."""
-        from pathlib import Path as PathLib
-
-        from nomarr.helpers.dto.path_dto import LibraryPath
-
         # Create a minimal LibraryPath for internal writers
         # Status is "valid" since we're writing to a known good temp file
-        temp_lib_path = LibraryPath(
-            relative="",
-            absolute=PathLib(path_str),
-            library_id=None,
-            status="valid",
-        )
+        temp_lib_path = LibraryPath(relative="", absolute=PathLib(path_str), library_id=None, status="valid")
 
         ext = path_str.lower().rsplit(".", 1)[-1]
         if ext == "mp3":
@@ -318,13 +310,7 @@ class TagWriter:
             msg = f"Unsupported file type for writing: .{ext}"
             raise RuntimeError(msg)
 
-    def write_safe(
-        self,
-        path: LibraryPath,
-        tags: Tags,
-        library_root: Path,
-        chromaprint: str,
-    ) -> SafeWriteResult:
+    def write_safe(self, path: LibraryPath, tags: Tags, library_root: Path, chromaprint: str) -> SafeWriteResult:
         """Write tags using atomic copy-modify-verify-replace pattern.
 
         This prevents file corruption if a crash occurs during write.
@@ -343,13 +329,8 @@ class TagWriter:
         since all write strategies modify folder mtime.
 
         """
-        from nomarr.components.tagging.safe_write_comp import SafeWriteResult, safe_write_tags
-
         if not path.is_valid():
-            return SafeWriteResult(
-                success=False,
-                error=f"Invalid path: {path.reason}",
-            )
+            return SafeWriteResult(success=False, error=f"Invalid path: {path.reason}")
 
         # Convert Tags DTO to dict for internal writer
         tags_dict = tags.to_dict()

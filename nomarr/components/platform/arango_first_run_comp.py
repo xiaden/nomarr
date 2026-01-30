@@ -18,8 +18,10 @@ This is not "lazy provisioning" - it's explicit onboarding.
 import logging
 import os
 import secrets
+import time
 from pathlib import Path
 
+import yaml
 from arango import ArangoClient
 
 logger = logging.getLogger(__name__)
@@ -89,8 +91,6 @@ def _has_db_config(config_path: Path) -> bool:
 
     Username and db_name are hardcoded as 'nomarr', so only password matters.
     """
-    import yaml
-
     try:
         with open(config_path) as f:
             config = yaml.safe_load(f)
@@ -111,8 +111,6 @@ def _wait_for_arango(hosts: str, max_attempts: int = 30, delay_s: float = 2.0) -
         True if connected, False if timeout
 
     """
-    import time
-
     root_password = os.getenv("ARANGO_ROOT_PASSWORD")
     if not root_password:
         logger.debug("ARANGO_ROOT_PASSWORD not set, skipping connection wait")
@@ -180,8 +178,6 @@ def write_db_config(config_path: Path, password: str) -> None:
         password: Generated app password (from provision_database_and_user)
 
     """
-    import yaml
-
     if config_path.exists():
         with open(config_path) as f:
             config = yaml.safe_load(f) or {}

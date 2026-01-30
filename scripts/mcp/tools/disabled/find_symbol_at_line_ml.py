@@ -67,14 +67,13 @@ def find_symbol_at_line(file_path: str, line_number: int) -> dict:
             "start_line": result["start_line"],
             "end_line": result["end_line"],
         }
-    else:
-        return {
-            "file": str(path),
-            "line": line_number,
-            "qualified_name": base_module,
-            "symbol_type": "module",
-            "error": f"Line {line_number} is at module level (not inside any function or class)",
-        }
+    return {
+        "file": str(path),
+        "line": line_number,
+        "qualified_name": base_module,
+        "symbol_type": "module",
+        "error": f"Line {line_number} is at module level (not inside any function or class)",
+    }
 
 
 def _find_containing_node(tree: ast.AST, line_number: int, module_name: str) -> dict | None:

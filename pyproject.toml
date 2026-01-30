@@ -143,6 +143,14 @@ select = [
     "RUF",    # Ruff-specific rules
     "TID",    # flake8-tidy-imports (for banned-api)
     "ERA",    # eradicate (commented-out code)
+    "PERF",   # Perflint (performance anti-patterns)
+    "ASYNC",  # flake8-async (async anti-patterns)
+    "PIE",    # flake8-pie (misc code quality)
+    "RET",    # flake8-return (return statement issues)
+    "LOG",    # flake8-logging (logging best practices)
+    "FURB",   # refurb (modernization)
+    "TC",     # flake8-type-checking (TYPE_CHECKING imports)
+    "ARG",    # flake8-unused-arguments
 ]
 
 ignore = [
@@ -151,18 +159,36 @@ ignore = [
     "N802",   # Function name should be lowercase (allow CamelCase for classes)
     "SIM108", # Use ternary operator instead of if-else-block (sometimes less readable)
     "ERA001", # Commented-out code detection (too many false positives)
+    # TODO: Fix these incrementally, then remove from ignore
+    "ARG001", # Unused function argument (26 existing violations)
+    "ARG002", # Unused method argument (10 existing violations)
+    "TC001",  # Move import into TYPE_CHECKING block
+    "TC002",  # Move third-party import into TYPE_CHECKING block
+    "TC003",  # Move stdlib import into TYPE_CHECKING block
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "debug_vram.py" = ["E722"]
 "nomarr/helpers/time_helper.py" = ["TID251"]
 "nomarr/components/workers/worker_crash_comp.py" = ["TID251"]
+# ML components use intentional lazy imports to avoid loading TF/numpy until needed
+"nomarr/components/ml/*.py" = ["PLC0415"]
+# DI wiring file uses lazy imports by design
+"nomarr/app.py" = ["PLC0415"]
+# FastAPI DI getters must import application lazily to avoid circular deps
+"nomarr/interfaces/api/web/dependencies.py" = ["PLC0415"]
+# Discovery workers run in separate processes - imports deferred until worker starts
+"nomarr/services/infrastructure/workers/*.py" = ["PLC0415"]
+# ML processing workflows defer imports to control TF/ML component loading order
+"nomarr/workflows/processing/*.py" = ["PLC0415"]
+# Calibration workflows are tightly coupled with ML layer
+"nomarr/workflows/calibration/*.py" = ["PLC0415"]
 
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
 docstring-code-format = true
-skip-magic-trailing-comma = true
+skip-magic-trailing-comma = false
 
 [tool.ruff.lint.isort]
 known-first-party = ["nomarr"]

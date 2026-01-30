@@ -461,6 +461,7 @@ class ConfigService:
             ProcessorConfig instance ready for injection into process_file()
 
         """
+
         from nomarr.components.ml.ml_discovery_comp import compute_model_suite_hash
         from nomarr.helpers.dto.processing_dto import ProcessorConfig
 

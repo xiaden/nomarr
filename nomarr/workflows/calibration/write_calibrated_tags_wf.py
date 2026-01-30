@@ -85,10 +85,7 @@ def _load_library_state(db: Database, file_path: str, namespace: str) -> LoadLib
     all_tags = {}
     for tag in tags:
         rel = tag.key
-        if rel.startswith("nom:"):
-            key = rel[4:]
-        else:
-            key = rel
+        key = rel.removeprefix("nom:")
         all_tags[key] = tag.value[0] if len(tag.value) == 1 else tag.value
     if not all_tags:
         logger.warning(f"[calibrated_tags] No tags found for {file_path}")

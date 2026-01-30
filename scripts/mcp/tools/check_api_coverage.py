@@ -15,8 +15,8 @@ try:
     from scripts.mcp.tools.helpers.log_suppressor import suppress_logs
 except ImportError:
     # Fallback if not available (standalone mode)
+    from collections.abc import Iterator
     from contextlib import contextmanager
-    from typing import Iterator
 
     @contextmanager
     def suppress_logs() -> Iterator[None]:  # type: ignore[no-redef]
@@ -146,7 +146,7 @@ def check_api_coverage(filter_mode: str | None = None, route_path: str | None = 
                 "used": used,
                 "usage_count": len(unique_usages),
                 "locations": [{"file": f, "line": ln} for f, ln in unique_usages],
-            }
+            },
         )
 
     # Calculate stats

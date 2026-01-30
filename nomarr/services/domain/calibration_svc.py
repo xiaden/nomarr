@@ -11,6 +11,9 @@ import logging
 import threading
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
+from typing import cast as type_cast
+
+from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -74,7 +77,10 @@ class CalibrationService:
             }
 
         """
-        from nomarr.workflows.calibration.generate_calibration_wf import generate_histogram_calibration_wf
+
+        from nomarr.workflows.calibration.generate_calibration_wf import (
+            generate_histogram_calibration_wf,
+        )
 
         logger.debug("[CalibrationService] Delegating to histogram calibration workflow")
 
@@ -180,7 +186,6 @@ class CalibrationService:
 
         """
         from nomarr.components.ml.ml_discovery_comp import discover_heads
-        from nomarr.helpers.time_helper import now_ms
 
         # Discover all heads from models
         heads = discover_heads(self.cfg.models_dir)
@@ -188,8 +193,6 @@ class CalibrationService:
 
         # Count heads with recent calibration_state (within 24 hours)
         recent_threshold = now_ms().value - (24 * 60 * 60 * 1000)
-
-        from typing import cast as type_cast
 
         cursor = self._db.db.aql.execute(
             """

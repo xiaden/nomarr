@@ -7,13 +7,18 @@ Pure utility functions for:
 
 These are stateless helpers that only depend on stdlib and third-party libraries.
 """
+
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
+from mutagen._file import File as MutagenFile
+
 logger = logging.getLogger(__name__)
+
 
 def validate_file_exists(path: str) -> None:
     """Check if file exists and is readable.
@@ -35,10 +40,10 @@ def validate_file_exists(path: str) -> None:
     if not file_path.is_file():
         msg = f"Not a file: {path}"
         raise RuntimeError(msg)
-    import os
     if not os.access(path, os.R_OK):
         msg = f"File not readable: {path}"
         raise RuntimeError(msg)
+
 
 def check_already_tagged(path: str, namespace: str, version_tag_key: str, current_version: str) -> bool:
     """Check if file already has the correct version tag.
@@ -56,7 +61,6 @@ def check_already_tagged(path: str, namespace: str, version_tag_key: str, curren
 
     """
     try:
-        from mutagen._file import File as MutagenFile
         audio = MutagenFile(path)
         if not audio or not hasattr(audio, "tags") or (not audio.tags):
             return False
@@ -66,7 +70,7 @@ def check_already_tagged(path: str, namespace: str, version_tag_key: str, curren
                 values = audio.tags[key]
                 if values and hasattr(values[0], "decode"):
                     existing_version = values[0].decode("utf-8", errors="replace")
-                    return existing_version == current_version
+                    return bool(existing_version == current_version)
             elif key_str == f"TXXX:{namespace}:{version_tag_key}":
                 values = audio.tags[key]
                 if hasattr(values, "text") and values.text:
@@ -76,7 +80,10 @@ def check_already_tagged(path: str, namespace: str, version_tag_key: str, curren
         logger.debug(f"[validation] Could not check version tag for {path}: {e}")
         return False
 
-def should_skip_processing(path: str, force: bool, namespace: str, version_tag_key: str, tagger_version: str) -> tuple[bool, str | None]:
+
+def should_skip_processing(
+    path: str, force: bool, namespace: str, version_tag_key: str, tagger_version: str,
+) -> tuple[bool, str | None]:
     """Determine if processing should be skipped for this file.
 
     Centralizes all skip logic so process_file() doesn't need to decide.
@@ -100,6 +107,7 @@ def should_skip_processing(path: str, force: bool, namespace: str, version_tag_k
         return (True, f"already_tagged_v{tagger_version}")
     return (False, None)
 
+
 def make_skip_result(path: str, skip_reason: str) -> dict[str, Any]:
     """Create a standardized result dict for skipped files.
 
@@ -114,4 +122,13 @@ def make_skip_result(path: str, skip_reason: str) -> dict[str, Any]:
         Result dict matching process_file() output format
 
     """
-    return {"file": path, "elapsed": 0.0, "duration": 0.0, "heads_processed": 0, "tags_written": 0, "skipped": True, "skip_reason": skip_reason, "tags": {}}
+    return {
+        "file": path,
+        "elapsed": 0.0,
+        "duration": 0.0,
+        "heads_processed": 0,
+        "tags_written": 0,
+        "skipped": True,
+        "skip_reason": skip_reason,
+        "tags": {},
+    }

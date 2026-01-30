@@ -3,6 +3,7 @@
 Handles format-specific tag extraction for MP4/M4A, FLAC, MP3, and other audio formats.
 Uses mutagen library for low-level tag access.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -16,6 +17,8 @@ from mutagen.flac import FLAC
 from mutagen.id3 import ID3
 from mutagen.mp4 import MP4
 
+from nomarr.components.ml.chromaprint_comp import compute_chromaprint
+from nomarr.components.ml.ml_audio_comp import load_audio_mono
 from nomarr.components.tagging.tag_normalization_comp import (
     normalize_id3_tags,
     normalize_mp4_tags,
@@ -25,6 +28,7 @@ from nomarr.components.tagging.tag_normalization_comp import (
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from nomarr.helpers.dto.path_dto import LibraryPath
+
 
 def _parse_single_value(value: str | None) -> str | None:
     """Parse a tag value that may be a JSON array, returning the first element.
@@ -46,6 +50,7 @@ def _parse_single_value(value: str | None) -> str | None:
         except json.JSONDecodeError:
             pass
     return value
+
 
 def _parse_tag_value(value: str | None) -> str | list[str] | None:
     """Parse a tag value that may be a JSON array or plain string.
@@ -70,11 +75,13 @@ def _parse_tag_value(value: str | None) -> str | list[str] | None:
             pass
     return value
 
+
 def _extract_artist_string(artist_raw: str | list[str] | None) -> str | None:
     """Extract single artist string from raw value."""
     if isinstance(artist_raw, list):
         return artist_raw[0] if artist_raw else None
     return artist_raw
+
 
 def _build_artists_list(artists_raw: str | list[str] | None) -> list[str]:
     """Build and deduplicate artists list from raw value."""
@@ -96,6 +103,7 @@ def _build_artists_list(artists_raw: str | list[str] | None) -> list[str]:
             seen.add(artist)
             deduplicated.append(artist)
     return deduplicated
+
 
 def resolve_artists(all_tags: dict[str, str]) -> tuple[str | None, list[str] | None]:
     """Resolve artist and artists tags with deduplication and fallback logic.
@@ -127,7 +135,8 @@ def resolve_artists(all_tags: dict[str, str]) -> tuple[str | None, list[str] | N
         deduplicated = [artist_str]
     return (artist_str, deduplicated if deduplicated else None)
 
-def extract_metadata(file_path: LibraryPath, namespace: str="nom") -> dict[str, Any]:
+
+def extract_metadata(file_path: LibraryPath, namespace: str = "nom") -> dict[str, Any]:
     """Extract metadata and tags from an audio file.
 
     Handles format-specific tag extraction based on file extension.
@@ -162,10 +171,22 @@ def extract_metadata(file_path: LibraryPath, namespace: str="nom") -> dict[str, 
 
     """
     if not file_path.is_valid():
-        msg = f"Cannot extract metadata from invalid path ({file_path.status}): {file_path.absolute} - {file_path.reason}"
+        msg = (
+            f"Cannot extract metadata from invalid path ({file_path.status}): {file_path.absolute} - {file_path.reason}"
+        )
         raise ValueError(msg)
     path_str = str(file_path.absolute)
-    metadata: dict[str, Any] = {"duration": None, "artist": None, "album": None, "title": None, "genre": None, "year": None, "track_number": None, "all_tags": {}, "nom_tags": {}}
+    metadata: dict[str, Any] = {
+        "duration": None,
+        "artist": None,
+        "album": None,
+        "title": None,
+        "genre": None,
+        "year": None,
+        "track_number": None,
+        "all_tags": {},
+        "nom_tags": {},
+    }
     file_ext = os.path.splitext(path_str)[1].lower()
     try:
         audio = mutagen.File(path_str)
@@ -183,6 +204,7 @@ def extract_metadata(file_path: LibraryPath, namespace: str="nom") -> dict[str, 
         logger.debug(f"[metadata_extraction] Failed to extract metadata from {file_path}: {e}")
     return metadata
 
+
 def _extract_mp4_metadata(audio: Any, metadata: dict[str, Any], namespace: str) -> None:
     """Extract metadata from M4A/MP4 files using MP4 atoms."""
     if not isinstance(audio, MP4) or not audio.tags:
@@ -194,7 +216,9 @@ def _extract_mp4_metadata(audio: Any, metadata: dict[str, Any], namespace: str) 
     metadata["artists"] = artists_value
     metadata["album"] = _parse_single_value(metadata["all_tags"].get("album"))
     metadata["genre"] = _parse_single_value(metadata["all_tags"].get("genre"))
-    year_str = _parse_single_value(metadata["all_tags"].get("year")) or _parse_single_value(metadata["all_tags"].get("date"))
+    year_str = _parse_single_value(metadata["all_tags"].get("year")) or _parse_single_value(
+        metadata["all_tags"].get("date"),
+    )
     if year_str:
         with contextlib.suppress(ValueError, IndexError):
             metadata["year"] = int(year_str[:4])
@@ -210,12 +234,13 @@ def _extract_mp4_metadata(audio: Any, metadata: dict[str, Any], namespace: str) 
     keys_to_remove = []
     for key, value in metadata["all_tags"].items():
         if isinstance(key, str) and key.lower().startswith(f"{namespace.lower()}:"):
-            tag_key = key[len(namespace) + 1:]
+            tag_key = key[len(namespace) + 1 :]
             nom_tags[tag_key] = value
             keys_to_remove.append(key)
     for key in keys_to_remove:
         del metadata["all_tags"][key]
     metadata["nom_tags"] = nom_tags
+
 
 def _extract_flac_metadata(audio: Any, metadata: dict[str, Any], namespace: str) -> None:
     """Extract metadata from FLAC files using Vorbis comments."""
@@ -228,7 +253,9 @@ def _extract_flac_metadata(audio: Any, metadata: dict[str, Any], namespace: str)
     metadata["artists"] = artists_value
     metadata["album"] = _parse_single_value(metadata["all_tags"].get("album"))
     metadata["genre"] = _parse_single_value(metadata["all_tags"].get("genre"))
-    year_str = _parse_single_value(metadata["all_tags"].get("year")) or _parse_single_value(metadata["all_tags"].get("date"))
+    year_str = _parse_single_value(metadata["all_tags"].get("year")) or _parse_single_value(
+        metadata["all_tags"].get("date"),
+    )
     if year_str:
         with contextlib.suppress(ValueError, IndexError):
             metadata["year"] = int(year_str[:4])
@@ -244,12 +271,13 @@ def _extract_flac_metadata(audio: Any, metadata: dict[str, Any], namespace: str)
     keys_to_remove = []
     for key, value in metadata["all_tags"].items():
         if isinstance(key, str) and key.lower().startswith(f"{namespace.lower()}:"):
-            tag_key = key[len(namespace) + 1:]
+            tag_key = key[len(namespace) + 1 :]
             nom_tags[tag_key] = value
             keys_to_remove.append(key)
     for key in keys_to_remove:
         del metadata["all_tags"][key]
     metadata["nom_tags"] = nom_tags
+
 
 def _extract_mp3_metadata(file_path: LibraryPath, metadata: dict[str, Any], namespace: str) -> None:
     """Extract metadata from MP3 files using ID3 tags."""
@@ -262,7 +290,9 @@ def _extract_mp3_metadata(file_path: LibraryPath, metadata: dict[str, Any], name
         metadata["artists"] = artists_value
         metadata["album"] = _parse_single_value(metadata["all_tags"].get("album"))
         metadata["genre"] = _parse_single_value(metadata["all_tags"].get("genre"))
-        year_str = _parse_single_value(metadata["all_tags"].get("year")) or _parse_single_value(metadata["all_tags"].get("date"))
+        year_str = _parse_single_value(metadata["all_tags"].get("year")) or _parse_single_value(
+            metadata["all_tags"].get("date"),
+        )
         if year_str:
             with contextlib.suppress(ValueError, IndexError):
                 metadata["year"] = int(year_str[:4])
@@ -278,7 +308,7 @@ def _extract_mp3_metadata(file_path: LibraryPath, metadata: dict[str, Any], name
         keys_to_remove = []
         for key, value in metadata["all_tags"].items():
             if isinstance(key, str) and key.lower().startswith(f"{namespace.lower()}:"):
-                tag_key = key[len(namespace) + 1:]
+                tag_key = key[len(namespace) + 1 :]
                 nom_tags[tag_key] = value
                 keys_to_remove.append(key)
         for key in keys_to_remove:
@@ -286,6 +316,7 @@ def _extract_mp3_metadata(file_path: LibraryPath, metadata: dict[str, Any], name
         metadata["nom_tags"] = nom_tags
     except Exception:
         pass
+
 
 def _get_first(tags: Any, key: str) -> str | None:
     """Get first value from a tag dict.
@@ -308,6 +339,7 @@ def _get_first(tags: Any, key: str) -> str | None:
     if isinstance(value, str | int | float):
         return str(value)
     return None
+
 
 def _serialize_mutagen_value(value: Any) -> str:
     """Serialize a mutagen tag value to a string.
@@ -351,6 +383,7 @@ def _serialize_mutagen_value(value: Any) -> str:
         return value.decode("utf-8", errors="replace")
     return str(value)
 
+
 def compute_chromaprint_for_file(path: LibraryPath) -> str:
     """Compute chromaprint for an audio file.
 
@@ -368,7 +401,5 @@ def compute_chromaprint_for_file(path: LibraryPath) -> str:
         ValueError: If path is invalid
 
     """
-    from nomarr.components.ml.chromaprint_comp import compute_chromaprint
-    from nomarr.components.ml.ml_audio_comp import load_audio_mono
     result = load_audio_mono(path, target_sr=16000)
     return compute_chromaprint(result.waveform, result.sample_rate)

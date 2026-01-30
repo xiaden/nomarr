@@ -65,7 +65,9 @@ def _mock_unavailable_dependencies() -> None:
         else:
             parent_mock = sys.modules[parent]  # type: ignore[assignment]
 
-        for child, full_name in children.items():
+        # Attach child modules to parent
+        for child in children:
+            full_name = f"{parent}.{child}"
             if full_name not in sys.modules:
                 child_mock = MagicMock()
                 sys.modules[full_name] = child_mock
@@ -122,7 +124,7 @@ def _extract_imports(tree: ast.Module) -> dict[str, str]:
 
 
 def _extract_param_types(
-    func_node: ast.FunctionDef | ast.AsyncFunctionDef, imports: dict[str, str], project_root: Path | None = None
+    func_node: ast.FunctionDef | ast.AsyncFunctionDef, imports: dict[str, str], project_root: Path | None = None,
 ) -> dict[str, str]:
     """Extract parameter type annotations, including FastAPI Depends() patterns.
 
@@ -197,7 +199,7 @@ def _extract_depends_function(node: ast.expr) -> str | None:
 
 
 def _resolve_depends_return_type(
-    depends_func: str, imports: dict[str, str], project_root: Path | None = None
+    depends_func: str, imports: dict[str, str], project_root: Path | None = None,
 ) -> str | None:
     """Resolve the return type of a dependency function.
 
@@ -249,10 +251,10 @@ def _annotation_to_string(node: ast.expr) -> str | None:
     """Convert type annotation to string."""
     if isinstance(node, ast.Name):
         return node.id
-    elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
         # Handle string annotations like "LibraryService"
         return node.value
-    elif isinstance(node, ast.Attribute):
+    if isinstance(node, ast.Attribute):
         value_str = _annotation_to_string(node.value)
         if value_str:
             return f"{value_str}.{node.attr}"
@@ -312,7 +314,7 @@ def _call_to_string(node: ast.expr) -> str | None:
     """Convert a call expression to a string."""
     if isinstance(node, ast.Name):
         return node.id
-    elif isinstance(node, ast.Attribute):
+    if isinstance(node, ast.Attribute):
         value_str = _call_to_string(node.value)
         if value_str:
             return f"{value_str}.{node.attr}"
@@ -323,7 +325,7 @@ def _call_to_string(node: ast.expr) -> str | None:
 
 
 def _resolve_call(
-    call_expr: str, imports: dict[str, str], param_types: dict[str, str], current_module: str, project_root: Path
+    call_expr: str, imports: dict[str, str], param_types: dict[str, str], current_module: str, project_root: Path,
 ) -> tuple[str | None, Path | None, int | None]:
     """Resolve a call expression to its definition.
 
@@ -539,14 +541,14 @@ def _trace_calls_recursive(qualified_name: str, project_root: Path, visited: set
     seen_calls: set[str] = set()
     for call_expr, _call_line in raw_calls:
         resolved, resolved_path, resolved_line = _resolve_call(
-            call_expr, imports, param_types, current_module, project_root
+            call_expr, imports, param_types, current_module, project_root,
         )
 
         # Skip non-nomarr calls and duplicates
         if not _is_nomarr_call(resolved):
             continue
 
-        if resolved in seen_calls:
+        if resolved is None or resolved in seen_calls:
             continue
         seen_calls.add(resolved)
 
@@ -568,7 +570,7 @@ def _trace_calls_recursive(qualified_name: str, project_root: Path, visited: set
                     resolved=resolved,
                     file=(str(resolved_path.relative_to(project_root)).replace("\\", "/") if resolved_path else None),
                     line=resolved_line,
-                )
+                ),
             )
 
     return call_info
@@ -595,7 +597,7 @@ def _flatten_chain(info: CallInfo, prefix: str = "") -> list[dict[str, Any]]:
             "name": info.name,
             "resolved": info.resolved,
             "location": f"{info.file}:{info.line}" if info.file and info.line else None,
-        }
+        },
     )
 
     for call in info.calls:

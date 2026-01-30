@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any
 
 from nomarr.helpers.dto import ScanTarget
 from nomarr.helpers.dto.library_dto import StartScanResult
+from nomarr.workflows.library.scan_library_direct_wf import scan_library_direct_workflow
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -88,8 +89,6 @@ def start_scan_workflow(
             f"[start_scan_workflow] Detected interrupted {'full' if was_full else 'targeted'} scan "
             f"for library {library['name']} - continuing with new scan",
         )
-
-    from nomarr.workflows.library.scan_library_direct_wf import scan_library_direct_workflow
 
     logger.info(
         f"[start_scan_workflow] Starting scan for library {library_id} ({library['name']}) "

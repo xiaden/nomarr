@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from nomarr.helpers.dto.ml_dto import HeadOutput
+
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -79,7 +81,7 @@ class Cascade:
                 low=float(levels.get("low", fallback.low if fallback else 0.4)),
                 ratio_high=float(levels.get("ratio_high", getattr(fallback, "ratio_high", 1.25) if fallback else 1.25)),
                 ratio_medium=float(
-                    levels.get("ratio_medium", getattr(fallback, "ratio_medium", 1.15) if fallback else 1.15)
+                    levels.get("ratio_medium", getattr(fallback, "ratio_medium", 1.15) if fallback else 1.15),
                 ),
                 ratio_low=float(levels.get("ratio_low", getattr(fallback, "ratio_low", 1.05) if fallback else 1.05)),
                 gap_high=float(levels.get("gap_high", getattr(fallback, "gap_high", 0.2) if fallback else 0.2)),
@@ -147,7 +149,7 @@ def decide_regression(values: np.ndarray, labels: list[str]) -> dict[str, float]
 
 
 def _find_counter_confidence(
-    label: str, label_idx: int, probs: np.ndarray, label_to_idx: dict[str, int], num_labels: int
+    label: str, label_idx: int, probs: np.ndarray, label_to_idx: dict[str, int], num_labels: int,
 ) -> float:
     """Find counter-confidence for a label.
 
@@ -207,7 +209,7 @@ def decide_multilabel(scores: np.ndarray, spec: HeadSpec) -> dict[str, Any]:
         tier = _determine_tier(prob, ratio, gap, spec.cascade)
         if tier is None and prob >= 0.1:
             logger.debug(
-                f"[heads] Label '{lab}' rejected: p={prob:.3f} (need >={spec.cascade.low:.2f}), ratio={ratio:.2f} (need >={spec.cascade.ratio_low:.2f}), gap={gap:.3f} (need >={spec.cascade.gap_low:.2f})"
+                f"[heads] Label '{lab}' rejected: p={prob:.3f} (need >={spec.cascade.low:.2f}), ratio={ratio:.2f} (need >={spec.cascade.ratio_low:.2f}), gap={gap:.3f} (need >={spec.cascade.gap_low:.2f})",
             )
         if tier is not None:
             out[lab] = {"p": prob, "tier": tier}
@@ -293,7 +295,7 @@ class HeadDecision:
         return tags
 
     def to_head_outputs(
-        self, head_info: Any, framework_version: str, prefix: str = "", key_builder: Callable[[str], str] | None = None
+        self, head_info: Any, framework_version: str, prefix: str = "", key_builder: Callable[[str], str] | None = None,
     ) -> list[Any]:
         """Convert HeadDecision to list of HeadOutput objects.
 
@@ -311,8 +313,6 @@ class HeadDecision:
             List of HeadOutput objects
 
         """
-        from nomarr.helpers.dto.ml_dto import HeadOutput
-
         outputs: list[HeadOutput] = []
         if head_is_regression(self.head):
             return outputs
@@ -331,8 +331,8 @@ class HeadDecision:
                 tier = None
             outputs.append(
                 HeadOutput(
-                    head=head_info, model_key=tag_key, label=label, value=prob, tier=tier, calibration_id=calibration_id
-                )
+                    head=head_info, model_key=tag_key, label=label, value=prob, tier=tier, calibration_id=calibration_id,
+                ),
             )
         for label, prob in self.all_probs.items():
             if label in self.details:
@@ -351,7 +351,7 @@ class HeadDecision:
                     value=float(prob),
                     tier=None,
                     calibration_id=calibration_id,
-                )
+                ),
             )
         return outputs
 
@@ -365,7 +365,7 @@ def head_is_multiclass(spec: HeadSpec) -> bool:
 
 
 def run_head_decision(
-    sc: Sidecar, scores: np.ndarray, *, prefix: str = "", emit_all_scores: bool = True
+    sc: Sidecar, scores: np.ndarray, *, prefix: str = "", emit_all_scores: bool = True,
 ) -> HeadDecision:
     """Turn the raw output vector for a head into a HeadDecision.
     - sc: Sidecar describing the head (labels, thresholds, cascade)

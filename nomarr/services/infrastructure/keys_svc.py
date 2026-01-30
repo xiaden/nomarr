@@ -11,11 +11,14 @@ Architecture Notes:
 - Services are instantiated once during app wiring (see Application.start() in app.py).
 - Session cache is module-level for performance but accessed only through instance methods.
 """
+
 from __future__ import annotations
 
 import logging
 import secrets
 from typing import TYPE_CHECKING
+
+import bcrypt
 
 from nomarr.helpers.time_helper import now_s
 
@@ -24,6 +27,7 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 SESSION_TIMEOUT_SECONDS = 86400
 _session_cache: dict[str, float] = {}
+
 
 class KeyManagementService:
     """Service for managing API keys, passwords, and sessions.
@@ -84,7 +88,6 @@ class KeyManagementService:
             Bcrypt password hash
 
         """
-        import bcrypt
         pwd_bytes = password.encode("utf-8")
         salt = bcrypt.gensalt(rounds=12)
         pwd_hash = bcrypt.hashpw(pwd_bytes, salt)
@@ -103,7 +106,6 @@ class KeyManagementService:
 
         """
         try:
-            import bcrypt
             pwd_bytes = password.encode("utf-8")
             hash_bytes = password_hash.encode("utf-8")
             return bool(bcrypt.checkpw(pwd_bytes, hash_bytes))
@@ -126,7 +128,7 @@ class KeyManagementService:
             raise RuntimeError(msg)
         return password_hash
 
-    def get_or_create_admin_password(self, config_password: str | None=None) -> str:
+    def get_or_create_admin_password(self, config_password: str | None = None) -> str:
         """Get or create the admin password hash for web UI authentication.
 
         On first run:
@@ -252,4 +254,6 @@ class KeyManagementService:
         _session_cache.update((s["session_id"], s["expiry_timestamp"] / 1000.0) for s in sessions)
         logger.info(f"[KeyManagement] Loaded {len(sessions)} active session(s) from database")
         return len(sessions)
+
+
 _sessions = _session_cache

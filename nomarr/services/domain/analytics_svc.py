@@ -20,6 +20,7 @@ from nomarr.components.analytics.analytics_comp import (
     compute_tag_correlation_matrix,
     compute_tag_frequencies,
 )
+from nomarr.helpers.dto import TagSpec
 from nomarr.helpers.dto.analytics_dto import (
     ComputeTagCoOccurrenceParams,
     ComputeTagCorrelationMatrixParams,
@@ -164,7 +165,9 @@ class AnalyticsService:
 
         return [
             MoodDistributionItem(
-                mood=mood, count=count, percentage=round((count / total_moods * 100), 2) if total_moods > 0 else 0,
+                mood=mood,
+                count=count,
+                percentage=round((count / total_moods * 100), 2) if total_moods > 0 else 0,
             )
             for mood, count in top_moods
         ]
@@ -180,7 +183,9 @@ class AnalyticsService:
         return MoodDistributionResult(mood_distribution=mood_distribution)
 
     def get_tag_co_occurrence(
-        self, x_tags: list[tuple[str, str]], y_tags: list[tuple[str, str]],
+        self,
+        x_tags: list[tuple[str, str]],
+        y_tags: list[tuple[str, str]],
     ) -> TagCoOccurrenceData:
         """Get co-occurrence matrix for two sets of tag specifications.
 
@@ -192,8 +197,6 @@ class AnalyticsService:
             TagCoOccurrenceData with matrix where matrix[j][i] = count of files with both
 
         """
-        from nomarr.helpers.dto import TagSpec
-
         # Convert tuples to TagSpec objects
         x_tag_specs = [TagSpec(key=k, value=v) for k, v in x_tags]
         y_tag_specs = [TagSpec(key=k, value=v) for k, v in y_tags]

@@ -8,304 +8,329 @@ from __future__ import annotations
 
 __all__ = ["lint_backend"]
 
+import json
 import re
+import shutil
 import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
-project_root = Path(__file__).parent.parent.parent
+# DEBUG: Set to "ruff", "mypy", "import-linter", "mock", or None to run all
+DEBUG_LINTER: str | None = None
+
+project_root = Path(__file__).parent.parent.parent.parent
 
 
-def parse_ruff_output(stdout: str, stderr: str) -> list[dict[str, Any]]:
-    """Parse ruff output into structured errors."""
-    errors = []
+def parse_raw_errors(stdout: str, stderr: str, tool: str) -> list[dict[str, Any]]:
+    """Parse raw linter output into normalized error list.
 
-    # Ruff format: path/file.py:line:column: CODE message
-    pattern = r"^(.+?):(\d+):(\d+):\s+([A-Z]\d+)\s+(.+?)(?:\s+\[(.+?)\])?$"
+    Returns list of dicts with: code, description, file, line, fix_available
+    """
+    errors: list[dict[str, Any]] = []
 
-    for line in stdout.splitlines():
-        match = re.match(pattern, line.strip())
-        if match:
-            file_path, line_num, column, code, message, fix_hint = match.groups()
-            errors.append(
+    if tool == "ruff":
+        # Ruff JSON output format (requires --output-format=json)
+        try:
+            ruff_errors = json.loads(stdout)
+            errors.extend(
                 {
-                    "tool": "ruff",
-                    "file": file_path,
-                    "line": int(line_num),
-                    "column": int(column),
-                    "code": code,
-                    "severity": "error",
-                    "message": message.strip(),
-                    "fix_available": fix_hint is not None or "[*]" in line,
+                    "code": error["code"],
+                    "description": error["message"],
+                    "file": error["filename"],
+                    "line": error["location"]["row"],
+                    "fix_available": error.get("fix") is not None,
                 }
+                for error in ruff_errors
             )
+        except (json.JSONDecodeError, KeyError):
+            # Fallback: ruff returned no errors or invalid JSON
+            pass
 
-    return errors
+    elif tool == "mypy":
+        # Mypy JSON format: --output json (newline-delimited JSON, one object per line)
+        for line in stdout.splitlines():
+            if not line.strip():
+                continue
+            try:
+                error = json.loads(line)
+                # Skip if not a dict (non-JSON output parsed as string)
+                if not isinstance(error, dict):
+                    continue
+                # Skip notes
+                if error.get("severity") == "note":
+                    continue
 
-
-def parse_mypy_output(stdout: str, stderr: str) -> list[dict[str, Any]]:
-    """Parse mypy output into structured errors."""
-    errors = []
-
-    # Mypy format: path/file.py:line: error: message [error-code]
-    pattern = r"^(.+?):(\d+):\s+(error|warning|note):\s+(.+?)(?:\s+\[(.+?)\])?$"
-
-    for line in stdout.splitlines():
-        match = re.match(pattern, line.strip())
-        if match:
-            file_path, line_num, severity, message, error_code = match.groups()
-            if severity != "note":  # Skip notes
                 errors.append(
                     {
-                        "tool": "mypy",
-                        "file": file_path,
-                        "line": int(line_num),
-                        "column": None,
-                        "code": error_code or "mypy",
-                        "severity": severity,
-                        "message": message.strip(),
+                        "code": error.get("code") or "mypy-error",
+                        "description": error.get("message", "").strip(),
+                        "file": error.get("file"),
+                        "line": error.get("line"),
                         "fix_available": False,
-                    }
+                    },
+                )
+            except (json.JSONDecodeError, KeyError):
+                # Skip invalid lines
+                continue
+
+    elif tool == "import-linter":
+        # Import-linter format: module.name imports module.other (broken contract)
+        combined = stdout + "\n" + stderr
+        pattern = r"(.+?)\s+imports\s+(.+?)\s+\(broken"
+        for line in combined.splitlines():
+            match = re.search(pattern, line)
+            if match:
+                importer, imported = match.groups()
+                errors.append(
+                    {
+                        "code": "architecture",
+                        "description": f"{importer} imports {imported} (architecture violation)",
+                        "file": None,
+                        "line": None,
+                        "fix_available": False,
+                    },
                 )
 
     return errors
 
 
-def parse_import_linter_output(stdout: str, stderr: str) -> list[dict[str, Any]]:
-    """Parse import-linter output into structured errors."""
-    errors = []
-    combined = stdout + "\n" + stderr
+def _is_valid_mypy_json(stdout: str) -> bool:
+    """Check if mypy output is valid JSON format.
 
-    # Look for contract violations
-    # Format: module.name imports module.other (broken contract)
-    pattern = r"(.+?)\s+imports\s+(.+?)\s+\(broken"
+    Mypy JSON output should be newline-delimited JSON objects.
+    If we get plain text errors, it's likely a cache or config issue.
+    """
+    if not stdout.strip():
+        return True  # Empty output is valid (no errors)
 
-    for line in combined.splitlines():
-        match = re.search(pattern, line)
-        if match:
-            importer, imported = match.groups()
-            errors.append(
-                {
-                    "tool": "import-linter",
-                    "file": None,
-                    "line": None,
-                    "column": None,
-                    "code": "architecture",
-                    "severity": "error",
-                    "message": f"{importer} imports {imported} (architecture violation)",
-                    "fix_available": False,
-                }
-            )
+    for line in stdout.splitlines():
+        if not line.strip():
+            continue
+        try:
+            parsed = json.loads(line)
+            if not isinstance(parsed, dict):
+                return False
+        except json.JSONDecodeError:
+            return False
+    return True
 
-    return errors
+
+def _run_mypy(
+    venv_mypy: Path, target_files: list[str], project_root: Path, clear_cache: bool = False,
+) -> tuple[str, str]:
+    """Run mypy and return stdout, stderr.
+
+    If clear_cache=True, deletes .mypy_cache before running.
+    """
+    if clear_cache:
+        cache_dir = project_root / ".mypy_cache"
+        if cache_dir.exists():
+            shutil.rmtree(cache_dir)
+
+    try:
+        result = subprocess.run(
+            [str(venv_mypy), "--output", "json", "--explicit-package-bases", *target_files],
+            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            cwd=project_root,
+        )
+        return result.stdout.decode(), result.stderr.decode()
+    except subprocess.CalledProcessError as e:
+        return e.stdout.decode(), e.stderr.decode()
+
+
+def normalize_to_json_structure(errors: list[dict[str, Any]], tool: str) -> dict[str, Any]:
+    """Convert error list to standardized JSON structure.
+
+    Returns:
+    {
+      "CODE": {
+        "description": "...",
+        "fix_available": bool,
+        "occurrences": [{"file": "...", "line": 123}, ...]
+      }
+    }
+
+    """
+    result = {}
+
+    for error in errors:
+        code = error["code"]
+        if code not in result:
+            result[code] = {
+                "description": error["description"],
+                "fix_available": error["fix_available"],
+                "occurrences": [],
+            }
+
+        # Add occurrence (skip if no file/line for import-linter)
+        if error["file"] is not None and error["line"] is not None:
+            result[code]["occurrences"].append({"file": error["file"], "line": error["line"]})
+        elif error["file"] is None and error["line"] is None and not result[code]["occurrences"]:
+            # For import-linter violations without specific location
+            result[code]["occurrences"].append({"file": None, "line": None})
+
+    return result
 
 
 def lint_backend(path: str | None = None, check_all: bool = False) -> dict[str, Any]:
     """Run backend linting tools on specified path.
 
-    By default, only lints Python files modified since last commit (fast, incremental).
-    Use check_all=True to lint entire codebase (slow, comprehensive).
+    Default behavior: Only lints modified and untracked files in the scope.
+    Use check_all=True to lint all files in the path.
 
     Args:
-        path: Relative path to lint (default: "nomarr/"). Use empty string "" to lint entire project.
-        check_all: If True, lint all files in path instead of only modified ones
+        path: Relative path to lint (default: "nomarr/"). Only files in this path are checked.
+        check_all: If True, lint all files in path; if False (default), only modified/untracked files
 
     Returns:
-        Structured JSON with errors or clean status
+        Structured JSON:
+        {
+          "ruff": {"E501": {"description": "...", "fix_available": true, "occurrences": [...]}},
+          "mypy": {...},
+          "summary": {"total_errors": 3, "clean": false, "files_checked": 5}
+        }
 
     """
-    # Get list of files to lint
-    if not check_all:
-        # Get modified Python files from git
+    # Mock mode for testing return without running linters
+    if DEBUG_LINTER == "mock":
+        return {
+            "ruff": {
+                "E501": {
+                    "description": "Line too long (88 > 79 characters)",
+                    "fix_available": False,
+                    "occurrences": [{"file": "nomarr/services/test.py", "line": 42}],
+                },
+            },
+            "mypy": {
+                "arg-type": {
+                    "description": "Argument 1 has incompatible type",
+                    "fix_available": False,
+                    "occurrences": [{"file": "nomarr/workflows/test_wf.py", "line": 15}],
+                },
+            },
+            "summary": {"total_errors": 2, "clean": False, "files_checked": 10},
+        }
+
+    # Determine target path
+    if path is None:
+        path = "nomarr/"
+
+    target_path = project_root / path if path else project_root
+
+    if not target_path.exists():
+        raise FileNotFoundError(f"Path not found: {path}")
+
+    # Get files to lint
+    if check_all:
+        target_files = [str(target_path)]
+    else:
+        # Get modified tracked files
+        result = subprocess.run(
+            ["git", "diff", "--name-only", "--diff-filter=ACMR", "HEAD"],
+            check=True,
+            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            cwd=project_root,
+        )
+        modified = result.stdout.decode().strip().split("\n")
+
+        # Get untracked files (new files not yet added)
+        result = subprocess.run(
+            ["git", "ls-files", "--others", "--exclude-standard"],
+            check=True,
+            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            cwd=project_root,
+        )
+        untracked = result.stdout.decode().strip().split("\n")
+
+        # Combine and filter for Python files in specified path
+        all_files = modified + untracked
+        modified_py = [f for f in all_files if f and f.endswith(".py") and f.startswith(path)]
+
+        if not modified_py:
+            return {"summary": {"total_errors": 0, "clean": True, "files_checked": 0}}
+
+        target_files = [str(project_root / f) for f in modified_py]
+
+    # Initialize result structure
+    result_json: dict[str, Any] = {}
+    total_errors = 0
+
+    # Run ruff
+    if DEBUG_LINTER is None or DEBUG_LINTER == "ruff":
+        venv_ruff = project_root / ".venv" / "Scripts" / "ruff.exe"
         try:
             result = subprocess.run(
-                ["git", "diff", "--name-only", "--diff-filter=ACMR", "HEAD"],
+                [str(venv_ruff), "check", "--output-format=json", *target_files],
                 capture_output=True,
-                text=True,
+                stdin=subprocess.DEVNULL,
                 cwd=project_root,
-                timeout=5,
             )
-            if result.returncode != 0:
-                return {"status": "error", "summary": {"error": "Failed to get modified files from git"}, "errors": []}
+            stdout = result.stdout.decode()
+            stderr = result.stderr.decode()
+        except subprocess.CalledProcessError as e:
+            stdout = e.stdout.decode()
+            stderr = e.stderr.decode()
 
-            # Filter to Python files, optionally within specified path
-            if path is None:
-                path = ""
-            
-            modified_files = [
-                f
-                for f in result.stdout.strip().split("\n")
-                if f and f.endswith(".py") and (f.startswith("nomarr/") or f.startswith("scripts/"))
-            ]
-            
-            # Further filter by path if specified
-            if path:
-                modified_files = [f for f in modified_files if f.startswith(path)]
+        raw_errors = parse_raw_errors(stdout, stderr, "ruff")
+        if raw_errors:
+            result_json["ruff"] = normalize_to_json_structure(raw_errors, "ruff")
+            total_errors += sum(len(v["occurrences"]) for v in result_json["ruff"].values())
 
-            if not modified_files:
-                return {
-                    "status": "clean",
-                    "summary": {"message": "No modified Python files to lint", "files_checked": 0},
-                }
+    # Run mypy
+    if DEBUG_LINTER is None or DEBUG_LINTER == "mypy":
+        venv_mypy = project_root / ".venv" / "Scripts" / "mypy.exe"
+        stdout, stderr = _run_mypy(venv_mypy, target_files, project_root)
 
-            # Convert to absolute paths
-            target_files = [project_root / f for f in modified_files]
-        except subprocess.TimeoutExpired:
-            return {"status": "error", "summary": {"error": "Git command timed out"}, "errors": []}
-        except Exception as e:
-            return {"status": "error", "summary": {"error": f"Failed to get modified files: {e}"}, "errors": []}
-    else:
-        # Use path-based linting
-        if path is None:
-            path = "nomarr/"
+        # Check if output is valid JSON; if not, likely cache issue
+        if not _is_valid_mypy_json(stdout):
+            # Retry with cache cleared
+            stdout, stderr = _run_mypy(venv_mypy, target_files, project_root, clear_cache=True)
 
-        target_path = project_root / path
-        if not target_path.exists():
-            return {"status": "error", "summary": {"error": f"Path not found: {path}"}, "errors": []}
+            if not _is_valid_mypy_json(stdout):
+                # Still not JSON - this is a real error
+                combined_output = f"stdout: {stdout}\nstderr: {stderr}"
+                raise RuntimeError(
+                    f"mypy failed to produce JSON output after cache clear. "
+                    f"This may indicate a configuration or module resolution issue.\n{combined_output}",
+                )
 
-        target_files = [target_path] if target_path.is_file() else None
+        raw_errors = parse_raw_errors(stdout, stderr, "mypy")
+        if raw_errors:
+            result_json["mypy"] = normalize_to_json_structure(raw_errors, "mypy")
+            total_errors += sum(len(v["occurrences"]) for v in result_json["mypy"].values())
 
-    all_errors = []
-    tools_run = []
-
-    # 1. Run ruff
-    try:
-        if target_files:
-            # Lint specific files
-            ruff_cmd = [sys.executable, "-m", "ruff", "check"] + [str(f) for f in target_files]
-        else:
-            # Lint directory
-            ruff_cmd = [sys.executable, "-m", "ruff", "check", str(target_path)]
-
-        result = subprocess.run(ruff_cmd, capture_output=True, text=True, cwd=project_root, timeout=30)
-        tools_run.append("ruff")
-        all_errors.extend(parse_ruff_output(result.stdout, result.stderr))
-    except subprocess.TimeoutExpired:
-        all_errors.append(
-            {
-                "tool": "ruff",
-                "file": None,
-                "line": None,
-                "column": None,
-                "code": "tool-timeout",
-                "severity": "warning",
-                "message": "ruff timed out after 30 seconds",
-                "fix_available": False,
-            }
-        )
-    except Exception as e:
-        all_errors.append(
-            {
-                "tool": "ruff",
-                "file": None,
-                "line": None,
-                "column": None,
-                "code": "tool-error",
-                "severity": "error",
-                "message": f"Failed to run ruff: {e}",
-                "fix_available": False,
-            }
-        )
-
-    # 2. Run mypy
-    try:
-        if target_files:
-            # Lint specific files
-            mypy_cmd = [sys.executable, "-m", "mypy"] + [str(f) for f in target_files]
-        else:
-            # Lint directory
-            mypy_cmd = [sys.executable, "-m", "mypy", str(target_path)]
-
-        result = subprocess.run(mypy_cmd, capture_output=True, text=True, cwd=project_root, timeout=60)
-        tools_run.append("mypy")
-        all_errors.extend(parse_mypy_output(result.stdout, result.stderr))
-    except subprocess.TimeoutExpired:
-        all_errors.append(
-            {
-                "tool": "mypy",
-                "file": None,
-                "line": None,
-                "column": None,
-                "code": "tool-timeout",
-                "severity": "warning",
-                "message": "mypy timed out after 60 seconds",
-                "fix_available": False,
-            }
-        )
-    except Exception as e:
-        all_errors.append(
-            {
-                "tool": "mypy",
-                "file": None,
-                "line": None,
-                "column": None,
-                "code": "tool-error",
-                "severity": "error",
-                "message": f"Failed to run mypy: {e}",
-                "fix_available": False,
-            }
-        )
-
-    # 3. Run import-linter (only if linting a directory or when check_all=True)
-    if check_all and (target_files is None or (target_path and target_path.is_dir())):
+    # Run import-linter (only on full check)
+    if check_all and (DEBUG_LINTER is None or DEBUG_LINTER == "import-linter"):
+        venv_lint_imports = project_root / ".venv" / "Scripts" / "lint-imports.exe"
         try:
-            # Use venv path for lint-imports
-            venv_script = project_root / ".venv" / "Scripts" / "lint-imports.exe"
-            lint_imports_cmd = str(venv_script) if venv_script.exists() else "lint-imports"
-            result = subprocess.run([lint_imports_cmd], capture_output=True, text=True, cwd=project_root, timeout=30)
-            tools_run.append("import-linter")
-            all_errors.extend(parse_import_linter_output(result.stdout, result.stderr))
-        except subprocess.TimeoutExpired:
-            all_errors.append(
-                {
-                    "tool": "import-linter",
-                    "file": None,
-                    "line": None,
-                    "column": None,
-                    "code": "tool-timeout",
-                    "severity": "warning",
-                    "message": "import-linter timed out after 30 seconds",
-                    "fix_available": False,
-                }
+            result = subprocess.run(
+                [str(venv_lint_imports)], capture_output=True, stdin=subprocess.DEVNULL, cwd=project_root,
             )
-        except Exception as e:
-            all_errors.append(
-                {
-                    "tool": "import-linter",
-                    "file": None,
-                    "line": None,
-                    "column": None,
-                    "code": "tool-error",
-                    "severity": "error",
-                    "message": f"Failed to run import-linter: {e}",
-                    "fix_available": False,
-                }
-            )
+            stdout = result.stdout.decode()
+            stderr = result.stderr.decode()
+        except subprocess.CalledProcessError as e:
+            stdout = e.stdout.decode()
+            stderr = e.stderr.decode()
 
-    # Count files checked
-    if not check_all:
-        files_checked = len(target_files)
-    elif target_files and len(target_files) == 1 and target_files[0].is_file():
-        files_checked = 1
-    elif target_path and target_path.is_file():
-        files_checked = 1
-    elif target_path:
-        files_checked = len(list(target_path.rglob("*.py")))
-    else:
-        files_checked = 0
+        raw_errors = parse_raw_errors(stdout, stderr, "import-linter")
+        if raw_errors:
+            result_json["import-linter"] = normalize_to_json_structure(raw_errors, "import-linter")
+            total_errors += sum(len(v["occurrences"]) for v in result_json["import-linter"].values())
 
-    if all_errors:
-        # Group errors by tool
-        by_tool: dict[str, int] = {}
-        for error in all_errors:
-            tool = error["tool"]
-            by_tool[tool] = by_tool.get(tool, 0) + 1
+    # Add summary
+    result_json["summary"] = {
+        "total_errors": total_errors,
+        "clean": total_errors == 0,
+        "files_checked": len(target_files),
+    }
 
-        return {
-            "status": "errors",
-            "summary": {"total_errors": len(all_errors), "by_tool": by_tool},
-            "errors": all_errors,
-        }
-    else:
-        return {"status": "clean", "summary": {"tools_run": tools_run, "files_checked": files_checked}}
+    # Validate JSON serialization
+    try:
+        json.dumps(result_json)
+    except (TypeError, ValueError) as e:
+        raise ValueError(f"Failed to serialize lint results to JSON: {e}") from e
+
+    return result_json

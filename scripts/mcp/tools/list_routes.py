@@ -58,9 +58,9 @@ def _annotation_to_string(node: ast.expr) -> str | None:
     """Convert type annotation to string."""
     if isinstance(node, ast.Name):
         return node.id
-    elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
-    elif isinstance(node, ast.Attribute):
+    if isinstance(node, ast.Attribute):
         value_str = _annotation_to_string(node.value)
         if value_str:
             return f"{value_str}.{node.attr}"
@@ -73,7 +73,7 @@ def _call_to_string(node: ast.expr) -> str | None:
     """Convert a call expression to string."""
     if isinstance(node, ast.Name):
         return node.id
-    elif isinstance(node, ast.Attribute):
+    if isinstance(node, ast.Attribute):
         value_str = _call_to_string(node.value)
         if value_str:
             return f"{value_str}.{node.attr}"
@@ -142,7 +142,8 @@ def _parse_router_definition(node: ast.Assign, file_path: Path) -> RouterInfo | 
 
 
 def _parse_route_decorator(
-    decorator: ast.expr, func_def: ast.FunctionDef | ast.AsyncFunctionDef
+    decorator: ast.expr,
+    func_def: ast.FunctionDef | ast.AsyncFunctionDef,
 ) -> tuple[str, str] | None:
     """Parse @router.get("/path") style decorators."""
     if not isinstance(decorator, ast.Call):
@@ -207,7 +208,7 @@ def _parse_file(file_path: Path) -> RouterInfo | None:
                             file=str(file_path),
                             line=node.lineno,
                             injected_services=injected,
-                        )
+                        ),
                     )
 
     return router_info if router_info.routes else None
@@ -251,7 +252,7 @@ def _build_full_paths(routers: list[RouterInfo], project_root: Path) -> list[dic
                     "file": file_str,
                     "line": route.line,
                     "injected_services": route.injected_services,
-                }
+                },
             )
 
     # Sort by path, then method

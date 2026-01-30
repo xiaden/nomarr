@@ -9,11 +9,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from nomarr.components.navidrome.templates_comp import generate_template_files, get_template_summary
 from nomarr.helpers.dto.navidrome_dto import (
     GeneratePlaylistResult,
     GenerateTemplateFilesResult,
     GetTemplateSummaryResult,
     PreviewTagStatsResult,
+    TemplateSummaryItem,
+)
+from nomarr.workflows.navidrome import (
+    generate_navidrome_config_workflow,
+    generate_smart_playlist_workflow,
+    preview_smart_playlist_workflow,
+    preview_tag_stats_workflow,
 )
 
 if TYPE_CHECKING:
@@ -47,15 +55,11 @@ class NavidromeService:
 
     def preview_tag_stats(self) -> PreviewTagStatsResult:
         """Get preview of tags for Navidrome config generation."""
-        from nomarr.workflows.navidrome import preview_tag_stats_workflow
-
         stats = preview_tag_stats_workflow(self._db, namespace=self.cfg.namespace)
         return PreviewTagStatsResult(stats=stats)
 
     def generate_navidrome_config(self) -> str:
         """Generate Navidrome config file content."""
-        from nomarr.workflows.navidrome import generate_navidrome_config_workflow
-
         return generate_navidrome_config_workflow(self._db, namespace=self.cfg.namespace)
 
     def preview_playlist(
@@ -73,8 +77,6 @@ class NavidromeService:
             PlaylistPreviewResult with track info and query metadata
 
         """
-        from nomarr.workflows.navidrome import preview_smart_playlist_workflow
-
         return preview_smart_playlist_workflow(
             db=self._db,
             query=query,
@@ -103,8 +105,6 @@ class NavidromeService:
             GeneratePlaylistResult DTO with .nsp structure
 
         """
-        from nomarr.workflows.navidrome import generate_smart_playlist_workflow
-
         playlist_structure = generate_smart_playlist_workflow(
             db=self._db,
             query=query,
@@ -118,9 +118,6 @@ class NavidromeService:
 
     def get_template_summary(self) -> GetTemplateSummaryResult:
         """Get list of available Navidrome templates."""
-        from nomarr.components.navidrome.templates_comp import get_template_summary
-        from nomarr.helpers.dto.navidrome_dto import TemplateSummaryItem
-
         templates_list = get_template_summary()
         # Convert list of dicts to list of TemplateSummaryItem DTOs
         templates = [TemplateSummaryItem(**t) for t in templates_list]
@@ -132,7 +129,5 @@ class NavidromeService:
         output_dir: str,
     ) -> GenerateTemplateFilesResult:
         """Generate files from a template."""
-        from nomarr.components.navidrome.templates_comp import generate_template_files
-
         files_generated = generate_template_files()
         return GenerateTemplateFilesResult(files_generated=files_generated)
