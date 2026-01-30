@@ -3,7 +3,6 @@
 Handles format-specific tag extraction for MP4/M4A, FLAC, MP3, and other audio formats.
 Uses mutagen library for low-level tag access.
 """
-
 from __future__ import annotations
 
 import contextlib
@@ -12,7 +11,7 @@ import logging
 import os
 from typing import TYPE_CHECKING, Any
 
-import mutagen  # type: ignore[import-untyped]
+import mutagen
 from mutagen.flac import FLAC
 from mutagen.id3 import ID3
 from mutagen.mp4 import MP4
@@ -23,9 +22,9 @@ from nomarr.components.tagging.tag_normalization_comp import (
     normalize_vorbis_tags,
 )
 
+logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from nomarr.helpers.dto.path_dto import LibraryPath
-
 
 def _parse_single_value(value: str | None) -> str | None:
     """Parse a tag value that may be a JSON array, returning the first element.
@@ -39,8 +38,6 @@ def _parse_single_value(value: str | None) -> str | None:
     """
     if not value:
         return None
-
-    # Try to parse as JSON array and return first element
     if value.startswith("[") and value.endswith("]"):
         try:
             parsed = json.loads(value)
@@ -48,9 +45,7 @@ def _parse_single_value(value: str | None) -> str | None:
                 return str(parsed[0])
         except json.JSONDecodeError:
             pass
-
     return value
-
 
 def _parse_tag_value(value: str | None) -> str | list[str] | None:
     """Parse a tag value that may be a JSON array or plain string.
@@ -66,8 +61,6 @@ def _parse_tag_value(value: str | None) -> str | list[str] | None:
     """
     if not value:
         return None
-
-    # Try to parse as JSON array
     if value.startswith("[") and value.endswith("]"):
         try:
             parsed = json.loads(value)
@@ -75,9 +68,7 @@ def _parse_tag_value(value: str | None) -> str | list[str] | None:
                 return [str(v) for v in parsed if v]
         except json.JSONDecodeError:
             pass
-
     return value
-
 
 def _extract_artist_string(artist_raw: str | list[str] | None) -> str | None:
     """Extract single artist string from raw value."""
@@ -85,13 +76,11 @@ def _extract_artist_string(artist_raw: str | list[str] | None) -> str | None:
         return artist_raw[0] if artist_raw else None
     return artist_raw
 
-
 def _build_artists_list(artists_raw: str | list[str] | None) -> list[str]:
     """Build and deduplicate artists list from raw value."""
     if isinstance(artists_raw, list):
         artists_list = artists_raw
     elif artists_raw:
-        # Single value or separator-delimited string
         for sep in (";", ",", "/", " / "):
             if sep in artists_raw:
                 artists_list = [artist.strip() for artist in artists_raw.split(sep) if artist.strip()]
@@ -100,17 +89,13 @@ def _build_artists_list(artists_raw: str | list[str] | None) -> list[str]:
             artists_list = [artists_raw.strip()] if artists_raw.strip() else []
     else:
         artists_list = []
-
-    # Deduplicate while preserving order
     seen: set[str] = set()
     deduplicated: list[str] = []
     for artist in artists_list:
         if artist and artist not in seen:
             seen.add(artist)
             deduplicated.append(artist)
-
     return deduplicated
-
 
 def resolve_artists(all_tags: dict[str, str]) -> tuple[str | None, list[str] | None]:
     """Resolve artist and artists tags with deduplication and fallback logic.
@@ -132,27 +117,17 @@ def resolve_artists(all_tags: dict[str, str]) -> tuple[str | None, list[str] | N
     """
     artist_raw = _parse_tag_value(all_tags.get("artist"))
     artists_raw = _parse_tag_value(all_tags.get("artists"))
-
-    # Neither exists - return None for both
-    if not artist_raw and not artists_raw:
+    if not artist_raw and (not artists_raw):
         return (None, None)
-
-    # Extract artist string and build artists list
     artist_str = _extract_artist_string(artist_raw)
     deduplicated = _build_artists_list(artists_raw)
-
-    # Apply fallback logic
     if not artist_str and deduplicated:
-        # Only artists exists - extract first as artist
         artist_str = deduplicated[0]
-    elif artist_str and not deduplicated:
-        # Only artist exists - use as single-item list
+    elif artist_str and (not deduplicated):
         deduplicated = [artist_str]
-
     return (artist_str, deduplicated if deduplicated else None)
 
-
-def extract_metadata(file_path: LibraryPath, namespace: str = "nom") -> dict[str, Any]:
+def extract_metadata(file_path: LibraryPath, namespace: str="nom") -> dict[str, Any]:
     """Extract metadata and tags from an audio file.
 
     Handles format-specific tag extraction based on file extension.
@@ -186,223 +161,131 @@ def extract_metadata(file_path: LibraryPath, namespace: str = "nom") -> dict[str
         Multi-value tags in MP3/FLAC are stored as JSON array strings.
 
     """
-    # Enforce validation before file operations
     if not file_path.is_valid():
         msg = f"Cannot extract metadata from invalid path ({file_path.status}): {file_path.absolute} - {file_path.reason}"
-        raise ValueError(
-            msg,
-        )
-
+        raise ValueError(msg)
     path_str = str(file_path.absolute)
-
-    metadata: dict[str, Any] = {
-        "duration": None,
-        "artist": None,
-        "album": None,
-        "title": None,
-        "genre": None,
-        "year": None,
-        "track_number": None,
-        "all_tags": {},
-        "nom_tags": {},
-    }
-
-    # Get file extension to determine tag format
+    metadata: dict[str, Any] = {"duration": None, "artist": None, "album": None, "title": None, "genre": None, "year": None, "track_number": None, "all_tags": {}, "nom_tags": {}}
     file_ext = os.path.splitext(path_str)[1].lower()
-
     try:
-        audio = mutagen.File(path_str)  # type: ignore[attr-defined]
+        audio = mutagen.File(path_str)
         if audio is None:
             return metadata
-
-        # Get duration (format-agnostic)
         if hasattr(audio.info, "length"):
             metadata["duration"] = audio.info.length
-
-        # Extract tags based on file extension
         if file_ext in (".m4a", ".mp4", ".m4p", ".m4b"):
-            # M4A/MP4 files - use MP4 atoms
             _extract_mp4_metadata(audio, metadata, namespace)
-
         elif file_ext == ".flac":
-            # FLAC files - use Vorbis comments
             _extract_flac_metadata(audio, metadata, namespace)
-
         elif file_ext in (".mp3", ".mp2", ".aac"):
-            # MP3 and similar - use ID3 tags
             _extract_mp3_metadata(file_path, metadata, namespace)
-
     except Exception as e:
-        logging.debug(f"[metadata_extraction] Failed to extract metadata from {file_path}: {e}")
-
+        logger.debug(f"[metadata_extraction] Failed to extract metadata from {file_path}: {e}")
     return metadata
-
 
 def _extract_mp4_metadata(audio: Any, metadata: dict[str, Any], namespace: str) -> None:
     """Extract metadata from M4A/MP4 files using MP4 atoms."""
     if not isinstance(audio, MP4) or not audio.tags:
         return
-
-    # Normalize ALL tags to canonical names first (for file_tags table)
     metadata["all_tags"] = normalize_mp4_tags(audio.tags)
-
-    # Resolve artist/artists with deduplication
     artist_value, artists_value = resolve_artists(metadata["all_tags"])
-
-    # Set standard metadata for library_files table (parse JSON arrays to get first value)
     metadata["title"] = _parse_single_value(metadata["all_tags"].get("title"))
     metadata["artist"] = artist_value
-    metadata["artists"] = artists_value  # List for entity seeding
+    metadata["artists"] = artists_value
     metadata["album"] = _parse_single_value(metadata["all_tags"].get("album"))
     metadata["genre"] = _parse_single_value(metadata["all_tags"].get("genre"))
-
-    # Parse year from date (may be JSON array)
-    year_str = _parse_single_value(metadata["all_tags"].get("year")) or _parse_single_value(
-        metadata["all_tags"].get("date"),
-    )
+    year_str = _parse_single_value(metadata["all_tags"].get("year")) or _parse_single_value(metadata["all_tags"].get("date"))
     if year_str:
         with contextlib.suppress(ValueError, IndexError):
             metadata["year"] = int(year_str[:4])
-
-    # Parse track number (may be "10/10" format from normalized tags)
     track_str = _parse_single_value(metadata["all_tags"].get("tracknumber"))
     if track_str:
         with contextlib.suppress(ValueError, IndexError):
             metadata["track_number"] = int(track_str.split("/")[0])
-
-    # Update all_tags with resolved artist/artists (JSON strings for storage)
     if artist_value:
         metadata["all_tags"]["artist"] = json.dumps([artist_value], ensure_ascii=False)
     if artists_value:
         metadata["all_tags"]["artists"] = json.dumps(artists_value, ensure_ascii=False)
-
-    # Extract namespace tags (nom:*) - store WITHOUT namespace prefix
-    # and REMOVE from all_tags to prevent duplication
     nom_tags: dict[str, str] = {}
     keys_to_remove = []
     for key, value in metadata["all_tags"].items():
         if isinstance(key, str) and key.lower().startswith(f"{namespace.lower()}:"):
-            tag_key = key[len(namespace) + 1 :]  # Remove "nom:" prefix
+            tag_key = key[len(namespace) + 1:]
             nom_tags[tag_key] = value
             keys_to_remove.append(key)
-
-    # Remove namespace tags from all_tags
     for key in keys_to_remove:
         del metadata["all_tags"][key]
-
     metadata["nom_tags"] = nom_tags
-
 
 def _extract_flac_metadata(audio: Any, metadata: dict[str, Any], namespace: str) -> None:
     """Extract metadata from FLAC files using Vorbis comments."""
     if not isinstance(audio, FLAC):
         return
-
-    # Normalize ALL tags to canonical names first (for file_tags table)
     metadata["all_tags"] = normalize_vorbis_tags(dict(audio))
-
-    # Resolve artist/artists with deduplication
     artist_value, artists_value = resolve_artists(metadata["all_tags"])
-
-    # Set standard metadata for library_files table (parse JSON arrays to get first value)
     metadata["title"] = _parse_single_value(metadata["all_tags"].get("title"))
     metadata["artist"] = artist_value
-    metadata["artists"] = artists_value  # List for entity seeding
+    metadata["artists"] = artists_value
     metadata["album"] = _parse_single_value(metadata["all_tags"].get("album"))
     metadata["genre"] = _parse_single_value(metadata["all_tags"].get("genre"))
-
-    # Parse year from date (may be JSON array)
-    year_str = _parse_single_value(metadata["all_tags"].get("year")) or _parse_single_value(
-        metadata["all_tags"].get("date"),
-    )
+    year_str = _parse_single_value(metadata["all_tags"].get("year")) or _parse_single_value(metadata["all_tags"].get("date"))
     if year_str:
         with contextlib.suppress(ValueError, IndexError):
             metadata["year"] = int(year_str[:4])
-
-    # Parse track number
     track_str = _parse_single_value(metadata["all_tags"].get("tracknumber"))
     if track_str:
         with contextlib.suppress(ValueError, IndexError):
             metadata["track_number"] = int(track_str.split("/")[0])
-
-    # Update all_tags with resolved artist/artists (JSON strings for storage)
     if artist_value:
         metadata["all_tags"]["artist"] = json.dumps([artist_value], ensure_ascii=False)
     if artists_value:
         metadata["all_tags"]["artists"] = json.dumps(artists_value, ensure_ascii=False)
-
-    # Extract namespace tags (nom:*) - store WITHOUT namespace prefix
-    # and REMOVE from all_tags to prevent duplication
     nom_tags: dict[str, str] = {}
     keys_to_remove = []
     for key, value in metadata["all_tags"].items():
         if isinstance(key, str) and key.lower().startswith(f"{namespace.lower()}:"):
-            tag_key = key[len(namespace) + 1 :]  # Remove "nom:" prefix
+            tag_key = key[len(namespace) + 1:]
             nom_tags[tag_key] = value
             keys_to_remove.append(key)
-
-    # Remove namespace tags from all_tags
     for key in keys_to_remove:
         del metadata["all_tags"][key]
-
     metadata["nom_tags"] = nom_tags
-
 
 def _extract_mp3_metadata(file_path: LibraryPath, metadata: dict[str, Any], namespace: str) -> None:
     """Extract metadata from MP3 files using ID3 tags."""
-    # Use ID3 for detailed tags - normalize to canonical names (for file_tags table)
     try:
         id3 = ID3(str(file_path.absolute))
         metadata["all_tags"] = normalize_id3_tags(dict(id3))
-
-        # Resolve artist/artists with deduplication
         artist_value, artists_value = resolve_artists(metadata["all_tags"])
-
-        # Set standard metadata for library_files table (parse JSON arrays to get first value)
         metadata["title"] = _parse_single_value(metadata["all_tags"].get("title"))
         metadata["artist"] = artist_value
-        metadata["artists"] = artists_value  # List for entity seeding
+        metadata["artists"] = artists_value
         metadata["album"] = _parse_single_value(metadata["all_tags"].get("album"))
         metadata["genre"] = _parse_single_value(metadata["all_tags"].get("genre"))
-
-        # Parse year from date (may be JSON array)
-        year_str = _parse_single_value(metadata["all_tags"].get("year")) or _parse_single_value(
-            metadata["all_tags"].get("date"),
-        )
+        year_str = _parse_single_value(metadata["all_tags"].get("year")) or _parse_single_value(metadata["all_tags"].get("date"))
         if year_str:
             with contextlib.suppress(ValueError, IndexError):
                 metadata["year"] = int(year_str[:4])
-
-        # Parse track number
         track_str = _parse_single_value(metadata["all_tags"].get("tracknumber"))
         if track_str:
             with contextlib.suppress(ValueError, IndexError):
                 metadata["track_number"] = int(track_str.split("/")[0])
-
-        # Update all_tags with resolved artist/artists (JSON strings for storage)
         if artist_value:
             metadata["all_tags"]["artist"] = json.dumps([artist_value], ensure_ascii=False)
         if artists_value:
             metadata["all_tags"]["artists"] = json.dumps(artists_value, ensure_ascii=False)
-
-        # Extract namespace tags (nom:*) - store WITHOUT namespace prefix
-        # and REMOVE from all_tags to prevent duplication
         nom_tags: dict[str, str] = {}
         keys_to_remove = []
         for key, value in metadata["all_tags"].items():
             if isinstance(key, str) and key.lower().startswith(f"{namespace.lower()}:"):
-                tag_key = key[len(namespace) + 1 :]  # Remove "nom:" prefix
+                tag_key = key[len(namespace) + 1:]
                 nom_tags[tag_key] = value
                 keys_to_remove.append(key)
-
-        # Remove namespace tags from all_tags
         for key in keys_to_remove:
             del metadata["all_tags"][key]
-
         metadata["nom_tags"] = nom_tags
     except Exception:
         pass
-
 
 def _get_first(tags: Any, key: str) -> str | None:
     """Get first value from a tag dict.
@@ -426,7 +309,6 @@ def _get_first(tags: Any, key: str) -> str | None:
         return str(value)
     return None
 
-
 def _serialize_mutagen_value(value: Any) -> str:
     """Serialize a mutagen tag value to a string.
 
@@ -446,19 +328,16 @@ def _serialize_mutagen_value(value: Any) -> str:
         String representation of the value
 
     """
-    # Handle MP4FreeForm values (bytes wrapped in a list-like object)
-    if hasattr(value, "__iter__") and not isinstance(value, str | bytes):
+    if hasattr(value, "__iter__") and (not isinstance(value, str | bytes)):
         try:
             items = list(value)
             if len(items) == 0:
                 return ""
-            # If single item, unwrap and serialize it
             if len(items) == 1:
                 item = items[0]
                 if isinstance(item, bytes):
                     return item.decode("utf-8", errors="replace")
                 return str(item)
-            # Multiple items - JSON encode
             decoded = []
             for item in items:
                 if isinstance(item, bytes):
@@ -468,14 +347,9 @@ def _serialize_mutagen_value(value: Any) -> str:
             return json.dumps(decoded, ensure_ascii=False)
         except Exception:
             return str(value)
-
-    # Handle bytes directly
     if isinstance(value, bytes):
         return value.decode("utf-8", errors="replace")
-
-    # Everything else
     return str(value)
-
 
 def compute_chromaprint_for_file(path: LibraryPath) -> str:
     """Compute chromaprint for an audio file.
@@ -496,9 +370,5 @@ def compute_chromaprint_for_file(path: LibraryPath) -> str:
     """
     from nomarr.components.ml.chromaprint_comp import compute_chromaprint
     from nomarr.components.ml.ml_audio_comp import load_audio_mono
-
-    # Load audio at standardized 16kHz for chromaprint
     result = load_audio_mono(path, target_sr=16000)
-
-    # Compute and return chromaprint
     return compute_chromaprint(result.waveform, result.sample_rate)

@@ -1,5 +1,4 @@
 """Reconcile library paths workflow - validate all library paths against current config."""
-
 from __future__ import annotations
 
 import logging
@@ -7,17 +6,12 @@ from typing import TYPE_CHECKING
 
 from nomarr.components.library.reconcile_paths_comp import ReconcilePolicy, reconcile_library_paths
 
+logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from nomarr.helpers.dto.library_dto import ReconcileResult
     from nomarr.persistence.db import Database
 
-
-def reconcile_library_paths_workflow(
-    db: Database,
-    library_root: str | None,
-    policy: ReconcilePolicy = "mark_invalid",
-    batch_size: int = 1000,
-) -> ReconcileResult:
+def reconcile_library_paths_workflow(db: Database, library_root: str | None, policy: ReconcilePolicy="mark_invalid", batch_size: int=1000) -> ReconcileResult:
     """Re-validate all library paths against current configuration.
 
     This checks all files in library_files table to detect paths that have
@@ -47,29 +41,14 @@ def reconcile_library_paths_workflow(
         ValueError: If library_root not configured or invalid policy
 
     """
-    # Validate configuration
     if not library_root:
         msg = "Library root not configured"
         raise ValueError(msg)
-
-    # Validate policy
     valid_policies: set[ReconcilePolicy] = {"dry_run", "mark_invalid", "delete_invalid"}
     if policy not in valid_policies:
         msg = f"Invalid policy '{policy}'. Must be one of: {valid_policies}"
         raise ValueError(msg)
-
-    logging.info(f"[reconcile_paths] Starting reconciliation: policy={policy}, batch_size={batch_size}")
-
-    # Call component to perform reconciliation
-    result = reconcile_library_paths(
-        db=db,
-        policy=policy,
-        batch_size=batch_size,
-    )
-
-    logging.info(
-        f"[reconcile_paths] Reconciliation complete: {result['total_files']} files checked, "
-        f"{result['valid_files']} valid, {result['deleted_files']} deleted",
-    )
-
+    logger.info(f"[reconcile_paths] Starting reconciliation: policy={policy}, batch_size={batch_size}")
+    result = reconcile_library_paths(db=db, policy=policy, batch_size=batch_size)
+    logger.info(f"[reconcile_paths] Reconciliation complete: {result['total_files']} files checked, {result['valid_files']} valid, {result['deleted_files']} deleted")
     return result

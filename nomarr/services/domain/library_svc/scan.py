@@ -5,7 +5,6 @@ This module handles:
 - Scan status and history
 - Worker health checks for scanning
 """
-
 from __future__ import annotations
 
 import logging
@@ -13,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from nomarr.helpers.dto.library_dto import LibraryScanStatusResult, ScanTarget, StartScanResult
 
+logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from nomarr.components.infrastructure.health_comp import HealthComp
     from nomarr.components.library.get_library_comp import GetLibraryComp
@@ -20,11 +20,9 @@ if TYPE_CHECKING:
 
     from .config import LibraryServiceConfig
 
-
 class LibraryScanMixin:
     """Mixin providing library scanning methods."""
 
-    # Component dependencies
     get_library: GetLibraryComp
     list_libraries: ListLibrariesComp
     health: HealthComp
@@ -43,21 +41,16 @@ class LibraryScanMixin:
 
         """
         workers = self.health.get_all_workers()
-
         for worker in workers:
             component = worker.get("component")
             if not isinstance(component, str) or not component.startswith("worker:library:"):
                 continue
-
-            # Check if worker is healthy (heartbeat within 30 seconds)
             from nomarr.helpers.time_helper import now_ms
-
             health = self.health.get_component(component)
             if health and health.get("status") == "healthy":
                 last_heartbeat = health.get("last_heartbeat", 0)
-                if now_ms().value - last_heartbeat < 30_000:  # 30 seconds
+                if now_ms().value - last_heartbeat < 30000:
                     return True
-
         return False
 
     def _is_scan_running(self) -> bool:
@@ -72,9 +65,7 @@ class LibraryScanMixin:
         libraries = self.list_libraries.list(enabled_only=False)
         return any(lib.get("scan_status") == "scanning" for lib in libraries)
 
-    def scan_targets(
-        self, targets: list[ScanTarget], batch_size: int = 200, force_rescan: bool = False,
-    ) -> StartScanResult:
+    def scan_targets(self, targets: list[ScanTarget], batch_size: int=200, force_rescan: bool=False) -> StartScanResult:
         """Scan specific folders within libraries.
 
         This is the core scanning method that supports both full library scans
@@ -99,37 +90,19 @@ class LibraryScanMixin:
 
         """
         from nomarr.workflows.library.start_scan_wf import start_scan_workflow
-
-        # Validation: targets must not be empty
         if not targets:
             msg = "Cannot scan: targets list is empty"
             raise ValueError(msg)
-
-        # Validation: check for duplicate library_ids in targets
         library_ids = [t.library_id for t in targets]
         if len(library_ids) != len(set(library_ids)):
             msg = "Cannot scan: multiple targets reference the same library"
             raise ValueError(msg)
-
-        # Validation: ensure all libraries exist
         for target in targets:
             self._get_library_or_error(target.library_id)
-
-        # Use first target's library_id for orchestration
-        # (start_scan_workflow expects a primary library_id)
         primary_library_id = targets[0].library_id
+        return start_scan_workflow(db=self.db, background_tasks=self.background_tasks, tagger_version=self.cfg.tagger_version, library_id=primary_library_id, scan_targets=targets, batch_size=batch_size, force_rescan=force_rescan)
 
-        return start_scan_workflow(
-            db=self.db,
-            background_tasks=self.background_tasks,
-            tagger_version=self.cfg.tagger_version,
-            library_id=primary_library_id,
-            scan_targets=targets,
-            batch_size=batch_size,
-            force_rescan=force_rescan,
-        )
-
-    def start_scan_for_library(self, library_id: str, force_rescan: bool = False) -> StartScanResult:
+    def start_scan_for_library(self, library_id: str, force_rescan: bool=False) -> StartScanResult:
         """Start a full library scan for a specific library.
 
         This is a convenience method that delegates to scan_targets()
@@ -152,7 +125,6 @@ class LibraryScanMixin:
             ValueError: If library not found or scan already running
 
         """
-        # Delegate to scan_targets with full library scan
         target = ScanTarget(library_id=library_id, folder_path="")
         return self.scan_targets([target], force_rescan=force_rescan)
 
@@ -178,15 +150,9 @@ class LibraryScanMixin:
 
         """
         from nomarr.workflows.library.start_scan_wf import start_scan_workflow
+        return start_scan_workflow(db=self.db, background_tasks=self.background_tasks, tagger_version=self.cfg.tagger_version, library_id=library_id)
 
-        return start_scan_workflow(
-            db=self.db,
-            background_tasks=self.background_tasks,
-            tagger_version=self.cfg.tagger_version,
-            library_id=library_id,
-        )
-
-    def cancel_scan(self, library_id: str | None = None) -> bool:
+    def cancel_scan(self, library_id: str | None=None) -> bool:
         """Cancel the currently running scan.
 
         Note: Cancellation support not yet implemented for direct scans.
@@ -205,13 +171,10 @@ class LibraryScanMixin:
         if not self.cfg.library_root:
             msg = "Library scanning not configured"
             raise ValueError(msg)
-
-        # TODO: Implement scan cancellation for BackgroundTaskService
-        # For now, scans run to completion
-        logging.warning("[LibraryService] Scan cancellation not yet implemented for direct scans")
+        logger.warning("[LibraryService] Scan cancellation not yet implemented for direct scans")
         return False
 
-    def get_status(self, library_id: str | None = None) -> LibraryScanStatusResult:
+    def get_status(self, library_id: str | None=None) -> LibraryScanStatusResult:
         """Get current library scan status.
 
         Args:
@@ -222,51 +185,19 @@ class LibraryScanMixin:
 
         """
         if not self.cfg.library_root:
-            return LibraryScanStatusResult(
-                configured=False,
-                library_path=None,
-                enabled=False,
-                pending_jobs=0,  # Legacy field
-                running_jobs=0,  # Legacy field
-            )
-
-        # Get library to check scan status
+            return LibraryScanStatusResult(configured=False, library_path=None, enabled=False, pending_jobs=0, running_jobs=0)
         if library_id is None:
-            # No library specified - return basic status
-            return LibraryScanStatusResult(
-                configured=True,
-                library_path=self.cfg.library_root,
-                enabled=self.background_tasks is not None,
-                pending_jobs=0,
-                running_jobs=0,
-            )
-
+            return LibraryScanStatusResult(configured=True, library_path=self.cfg.library_root, enabled=self.background_tasks is not None, pending_jobs=0, running_jobs=0)
         library = self._get_library_or_error(library_id)
-
-        # Check scan status from library record
         scan_status = library.get("scan_status", "idle")
         scan_progress = library.get("scan_progress", 0)
         scan_total = library.get("scan_total", 0)
         scanned_at = library.get("scanned_at")
         scan_error = library.get("scan_error")
-
-        # Determine if scanning is enabled (background tasks available)
         enabled = self.background_tasks is not None
+        return LibraryScanStatusResult(configured=True, library_path=self.cfg.library_root, enabled=enabled, pending_jobs=0, running_jobs=1 if scan_status == "scanning" else 0, scan_status=scan_status, scan_progress=scan_progress, scan_total=scan_total, scanned_at=scanned_at, scan_error=scan_error)
 
-        return LibraryScanStatusResult(
-            configured=True,
-            library_path=self.cfg.library_root,
-            enabled=enabled,
-            pending_jobs=0,  # Legacy field (no queue)
-            running_jobs=1 if scan_status == "scanning" else 0,  # Legacy field
-            scan_status=scan_status,
-            scan_progress=scan_progress,
-            scan_total=scan_total,
-            scanned_at=scanned_at,
-            scan_error=scan_error,
-        )
-
-    def get_scan_history(self, limit: int = 100) -> list[dict[str, Any]]:
+    def get_scan_history(self, limit: int=100) -> list[dict[str, Any]]:
         """Get recent library scan history from library records.
 
         Note: Queue-based job history removed in favor of library.scanned_at field.
@@ -280,12 +211,4 @@ class LibraryScanMixin:
 
         """
         libraries = self.list_libraries.list(enabled_only=False)
-        return [
-            {
-                "library_id": lib["_id"],
-                "name": lib.get("name", "Unknown"),
-                "scanned_at": lib.get("scanned_at"),
-                "scan_status": lib.get("scan_status", "idle"),
-            }
-            for lib in libraries[:limit]
-        ]
+        return [{"library_id": lib["_id"], "name": lib.get("name", "Unknown"), "scanned_at": lib.get("scanned_at"), "scan_status": lib.get("scan_status", "idle")} for lib in libraries[:limit]]

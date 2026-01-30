@@ -6,7 +6,6 @@ This component handles library CRUD operations with validation:
 - Delete library with policy checks
 - Clear library data with precondition checks
 """
-
 from __future__ import annotations
 
 import logging
@@ -19,18 +18,11 @@ from nomarr.components.library.library_root_comp import (
     normalize_library_root,
 )
 
+logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
-
-def create_library(
-    db: Database,
-    base_library_root: str | None,
-    name: str | None,
-    root_path: str,
-    is_enabled: bool = True,
-    watch_mode: str = "off",
-) -> str:
+def create_library(db: Database, base_library_root: str | None, name: str | None, root_path: str, is_enabled: bool=True, watch_mode: str="off") -> str:
     """Create a new library with validation and name generation.
 
     Args:
@@ -51,30 +43,16 @@ def create_library(
     base_root = get_base_library_root(base_library_root)
     abs_path = normalize_library_root(base_root, root_path)
     ensure_no_overlapping_library_root(db, abs_path, ignore_id=None)
-
     resolved_name = _resolve_library_name(db, name, abs_path)
-
     try:
-        library_id = db.libraries.create_library(
-            name=resolved_name,
-            root_path=abs_path,
-            is_enabled=is_enabled,
-            watch_mode=watch_mode,
-        )
+        library_id = db.libraries.create_library(name=resolved_name, root_path=abs_path, is_enabled=is_enabled, watch_mode=watch_mode)
     except Exception as e:
         msg = f"Failed to create library: {e}"
         raise ValueError(msg) from e
-
-    logging.info(f"[LibraryAdmin] Created library: {resolved_name} at {abs_path}")
+    logger.info(f"[LibraryAdmin] Created library: {resolved_name} at {abs_path}")
     return library_id
 
-
-def update_library_root(
-    db: Database,
-    base_library_root: str | None,
-    library_id: str,
-    root_path: str,
-) -> None:
+def update_library_root(db: Database, base_library_root: str | None, library_id: str, root_path: str) -> None:
     """Update a library's root path with validation.
 
     Args:
@@ -91,14 +69,11 @@ def update_library_root(
     if not library:
         msg = f"Library not found: {library_id}"
         raise ValueError(msg)
-
     base_root = get_base_library_root(base_library_root)
     abs_path = normalize_library_root(base_root, root_path)
     ensure_no_overlapping_library_root(db, abs_path, ignore_id=library_id)
-
     db.libraries.update_library(library_id, root_path=abs_path)
-    logging.info(f"[LibraryAdmin] Updated library {library_id} root path to {abs_path}")
-
+    logger.info(f"[LibraryAdmin] Updated library {library_id} root path to {abs_path}")
 
 def delete_library(db: Database, library_id: str) -> bool:
     """Delete a library.
@@ -114,11 +89,9 @@ def delete_library(db: Database, library_id: str) -> bool:
     library = db.libraries.get_library(library_id)
     if not library:
         return False
-
     db.libraries.delete_library(library_id)
-    logging.info(f"[LibraryAdmin] Deleted library {library_id}: {library.get('name')}")
+    logger.info(f"[LibraryAdmin] Deleted library {library_id}: {library.get('name')}")
     return True
-
 
 def clear_library_data(db: Database, library_root: str | None) -> None:
     """Clear all library data with precondition checks.
@@ -139,14 +112,11 @@ def clear_library_data(db: Database, library_root: str | None) -> None:
     if not library_root:
         msg = "Library root not configured"
         raise ValueError(msg)
-
     if _is_scan_running(db):
         msg = "Cannot clear library while scan jobs are running. Cancel scans first."
         raise RuntimeError(msg)
-
     db.library_files.clear_library_data()
-    logging.info("[LibraryAdmin] Library data cleared")
-
+    logger.info("[LibraryAdmin] Library data cleared")
 
 def _resolve_library_name(db: Database, name: str | None, abs_path: str) -> str:
     """Resolve library name - generate from path or validate uniqueness."""
@@ -158,13 +128,11 @@ def _resolve_library_name(db: Database, name: str | None, abs_path: str) -> str:
             counter += 1
             generated_name = f"{base_name} ({counter})"
         return generated_name
-
     existing = db.libraries.get_library_by_name(name)
     if existing:
         msg = f"Library name already exists: {name}"
         raise ValueError(msg)
     return name
-
 
 def _is_scan_running(db: Database) -> bool:
     """Check if any library has an active scan."""

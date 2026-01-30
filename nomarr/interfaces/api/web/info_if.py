@@ -1,5 +1,4 @@
 """System info and health endpoints for web UI."""
-
 import logging
 from typing import TYPE_CHECKING, Annotated, Any
 
@@ -15,39 +14,25 @@ from nomarr.interfaces.api.types.info_types import (
 )
 from nomarr.interfaces.api.web.dependencies import get_info_service, get_library_service
 
+logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from nomarr.services.domain.library_svc import LibraryService
-
 router = APIRouter(prefix="", tags=["Info"])
 
-
-# ──────────────────────────────────────────────────────────────────────
-# Endpoints
-# ──────────────────────────────────────────────────────────────────────
-
-
 @router.get("/info", dependencies=[Depends(verify_session)])
-async def web_info(
-    info_service: Annotated[Any, Depends(get_info_service)],
-) -> SystemInfoResponse:
+async def web_info(info_service: Annotated[Any, Depends(get_info_service)]) -> SystemInfoResponse:
     """Get system info (web UI proxy)."""
     result = info_service.get_system_info()
     return SystemInfoResponse.from_dto(result)
 
-
 @router.get("/health", dependencies=[Depends(verify_session)])
-async def web_health(
-    info_service: Annotated[Any, Depends(get_info_service)],
-) -> HealthStatusResponse:
+async def web_health(info_service: Annotated[Any, Depends(get_info_service)]) -> HealthStatusResponse:
     """Health check endpoint (web UI proxy)."""
     result = info_service.get_health_status()
     return HealthStatusResponse.from_dto(result)
 
-
 @router.get("/health/gpu", dependencies=[Depends(verify_session)])
-async def web_gpu_health(
-    info_service: Annotated[Any, Depends(get_info_service)],
-) -> GPUHealthResponse:
+async def web_gpu_health(info_service: Annotated[Any, Depends(get_info_service)]) -> GPUHealthResponse:
     """GPU resource snapshot endpoint.
 
     Returns cached GPU probe results from GPUHealthMonitor.
@@ -63,23 +48,10 @@ async def web_gpu_health(
         result = info_service.get_gpu_health()
         return GPUHealthResponse.from_dto(result)
     except RuntimeError:
-        # Event broker not configured - GPU monitoring disabled
-        return GPUHealthResponse(
-            available=False,
-            error_summary="GPU monitoring not available",
-            monitor_healthy=False,
-        )
-
-
-# ──────────────────────────────────────────────────────────────────────
-# Work Status Endpoint
-# ──────────────────────────────────────────────────────────────────────
-
+        return GPUHealthResponse(available=False, error_summary="GPU monitoring not available", monitor_healthy=False)
 
 @router.get("/work-status", dependencies=[Depends(verify_session)])
-async def web_work_status(
-    library_service: Annotated["LibraryService", Depends(get_library_service)],
-) -> WorkStatusResponse:
+async def web_work_status(library_service: Annotated["LibraryService", Depends(get_library_service)]) -> WorkStatusResponse:
     """Get unified work status for the system.
 
     Returns status of:
@@ -93,5 +65,5 @@ async def web_work_status(
         result = library_service.get_work_status()
         return WorkStatusResponse.from_dto(result)
     except Exception as e:
-        logging.exception("[Web API] Error getting work status")
+        logger.exception("[Web API] Error getting work status")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get work status")) from e

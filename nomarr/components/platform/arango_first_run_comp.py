@@ -14,22 +14,17 @@ CRITICAL INVARIANTS:
 
 This is not "lazy provisioning" - it's explicit onboarding.
 """
-
 import os
 import secrets
 from pathlib import Path
 
 from arango import ArangoClient
 
-# Hardcoded credentials (not user-configurable)
+logger = logging.getLogger(__name__)
 USERNAME = "nomarr"
 DB_NAME = "nomarr"
 
-
-def provision_database_and_user(
-    hosts: str,
-    root_password: str,
-) -> str:
+def provision_database_and_user(hosts: str, root_password: str) -> str:
     """Provision database and user (first-run only).
 
     Creates database, generates random password for app user, grants permissions.
@@ -57,36 +52,17 @@ def provision_database_and_user(
     """
     client = ArangoClient(hosts=hosts)
     sys_db = client.db("_system", username="root", password=root_password)
-
-    # Create database (hardcoded name)
     if not sys_db.has_database(DB_NAME):
         sys_db.create_database(DB_NAME)
-
-    # Generate strong random password for app user
-    app_password = secrets.token_hex(32)  # 64-character hex string
-
-    # Create user with generated password (hardcoded username)
+    app_password = secrets.token_hex(32)
     if not sys_db.has_user(USERNAME):
-        sys_db.create_user(
-            username=USERNAME,
-            password=app_password,
-            active=True,
-        )
+        sys_db.create_user(username=USERNAME, password=app_password, active=True)
     else:
-        # User exists, update password
         sys_db.update_user(username=USERNAME, password=app_password)
-
-    # Grant permissions
-    sys_db.update_permission(
-        username=USERNAME,
-        permission="rw",  # Read-write access
-        database=DB_NAME,
-    )
-
+    sys_db.update_permission(username=USERNAME, permission="rw", database=DB_NAME)
     return app_password
 
-
-def is_first_run(config_path: Path, hosts: str | None = None) -> bool:
+def is_first_run(config_path: Path, hosts: str | None=None) -> bool:
     """Check if this is first run (no config exists, no DB credentials, or DB missing).
 
     Args:
@@ -99,15 +75,9 @@ def is_first_run(config_path: Path, hosts: str | None = None) -> bool:
     """
     if not config_path.exists():
         return True
-
-    # Check if config has ArangoDB credentials
     if not _has_db_config(config_path):
         return True
-
-    # Config exists with password - verify database actually exists
-    # (handles case where DB was reset but config still has old password)
     return not _database_exists(hosts)
-
 
 def _has_db_config(config_path: Path) -> bool:
     """Check if config file has ArangoDB password (the only required field).
@@ -115,18 +85,14 @@ def _has_db_config(config_path: Path) -> bool:
     Username and db_name are hardcoded as 'nomarr', so only password matters.
     """
     import yaml
-
     try:
         with open(config_path) as f:
             config = yaml.safe_load(f)
-
-        # Only password is required - username/db_name are hardcoded
         return bool(config.get("arango_password"))
     except Exception:
         return False
 
-
-def _wait_for_arango(hosts: str, max_attempts: int = 30, delay_s: float = 2.0) -> bool:
+def _wait_for_arango(hosts: str, max_attempts: int=30, delay_s: float=2.0) -> bool:
     """Wait for ArangoDB to become available.
 
     Args:
@@ -138,33 +104,28 @@ def _wait_for_arango(hosts: str, max_attempts: int = 30, delay_s: float = 2.0) -
         True if connected, False if timeout
 
     """
-    import logging
     import time
-
     root_password = os.getenv("ARANGO_ROOT_PASSWORD")
     if not root_password:
-        logging.debug("ARANGO_ROOT_PASSWORD not set, skipping connection wait")
+        logger.debug("ARANGO_ROOT_PASSWORD not set, skipping connection wait")
         return True
-
     for attempt in range(1, max_attempts + 1):
         try:
             client = ArangoClient(hosts=hosts)
             sys_db = client.db("_system", username="root", password=root_password)
-            # Simple connectivity check
             sys_db.properties()
-            logging.info(f"ArangoDB connection established (attempt {attempt}/{max_attempts})")
+            logger.info(f"ArangoDB connection established (attempt {attempt}/{max_attempts})")
             return True
         except Exception as e:
             if attempt < max_attempts:
-                logging.info(f"Waiting for ArangoDB... ({attempt}/{max_attempts}): {e}")
+                logger.info(f"Waiting for ArangoDB... ({attempt}/{max_attempts}): {e}")
                 time.sleep(delay_s)
             else:
-                logging.exception(f"ArangoDB connection timeout after {max_attempts} attempts: {e}")
+                logger.exception(f"ArangoDB connection timeout after {max_attempts} attempts: {e}")
                 return False
     return False
 
-
-def _database_exists(hosts: str | None = None) -> bool:
+def _database_exists(hosts: str | None=None) -> bool:
     """Check if the 'nomarr' database exists in ArangoDB.
 
     Uses root credentials from environment to check system database.
@@ -177,37 +138,23 @@ def _database_exists(hosts: str | None = None) -> bool:
         True if database exists, False otherwise (including connection errors)
 
     """
-    import logging
-
-    # actual_hosts is always a str: either `hosts` (if str), or getenv with default
     actual_hosts: str = hosts or os.getenv("ARANGO_HOST") or "http://nomarr-arangodb:8529"
-
-    # Wait for ArangoDB to be ready before checking
     if not _wait_for_arango(actual_hosts):
-        logging.error("Cannot check database existence - ArangoDB not available")
+        logger.error("Cannot check database existence - ArangoDB not available")
         return False
-
     try:
         root_password = os.getenv("ARANGO_ROOT_PASSWORD")
         if not root_password:
-            # Can't check without root password - assume DB exists
-            # (will fail later with clear error if it doesn't)
-            logging.debug("ARANGO_ROOT_PASSWORD not set, skipping database existence check")
+            logger.debug("ARANGO_ROOT_PASSWORD not set, skipping database existence check")
             return True
-
         client = ArangoClient(hosts=actual_hosts)
         sys_db = client.db("_system", username="root", password=root_password)
         return bool(sys_db.has_database(DB_NAME))
     except Exception as e:
-        # Connection error or auth failure - assume needs provisioning
-        logging.warning(f"Database existence check failed: {e}")
+        logger.warning(f"Database existence check failed: {e}")
         return False
 
-
-def write_db_config(
-    config_path: Path,
-    password: str,
-) -> None:
+def write_db_config(config_path: Path, password: str) -> None:
     """Write auto-generated ArangoDB password to config file.
 
     Creates/updates config with generated app password.
@@ -224,25 +171,15 @@ def write_db_config(
 
     """
     import yaml
-
-    # Load existing config or create new
     if config_path.exists():
         with open(config_path) as f:
             config = yaml.safe_load(f) or {}
     else:
         config = {}
-
-    # Only write the auto-generated password
-    # Host comes from ARANGO_HOST env var, not config file
     config["arango_password"] = password
-
-    # Ensure directory exists
     config_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Write config
     with open(config_path, "w") as f:
         yaml.dump(config, f, default_flow_style=False)
-
 
 def get_root_password_from_env() -> str:
     """Get root password from environment variable.
@@ -256,11 +193,6 @@ def get_root_password_from_env() -> str:
     """
     root_password = os.getenv("ARANGO_ROOT_PASSWORD")
     if not root_password:
-        msg = (
-            "ARANGO_ROOT_PASSWORD environment variable not set. "
-            "First-run provisioning requires root access to create database and user."
-        )
-        raise RuntimeError(
-            msg,
-        )
+        msg = "ARANGO_ROOT_PASSWORD environment variable not set. First-run provisioning requires root access to create database and user."
+        raise RuntimeError(msg)
     return root_password

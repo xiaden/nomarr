@@ -3,14 +3,14 @@
 This workflow computes statistics for all tags in the library, useful for
 debugging and understanding tag data before generating Navidrome config.
 """
-
 import logging
 from typing import Any
 
 from nomarr.persistence.db import Database
 
+logger = logging.getLogger(__name__)
 
-def preview_tag_stats_workflow(db: Database, namespace: str = "nom") -> dict[str, dict[str, Any]]:
+def preview_tag_stats_workflow(db: Database, namespace: str="nom") -> dict[str, dict[str, Any]]:
     """Preview statistics for all tags in the library.
 
     Useful for debugging and understanding your tag data before generating config.
@@ -23,26 +23,17 @@ def preview_tag_stats_workflow(db: Database, namespace: str = "nom") -> dict[str
         Dict of tag_key -> stats dict (type, is_multivalue, summary, count)
 
     """
-    # Get unique rels for nomarr tags
     all_rels = db.tags.get_unique_rels(nomarr_only=True)
     f"nom:{namespace}:" if not namespace.startswith("nom:") else f"{namespace}:"
-    # Also match simple "nom:" prefix
     filtered_rels = [rel for rel in all_rels if rel.startswith("nom:")]
-
-    logging.info(f"[navidrome] Computing summaries for {len(filtered_rels)} tag types...")
-
+    logger.info(f"[navidrome] Computing summaries for {len(filtered_rels)} tag types...")
     stats_by_tag = {}
-
     for idx, rel in enumerate(filtered_rels, 1):
         try:
             if idx % 10 == 0:
-                logging.info(f"[navidrome] Progress: {idx}/{len(filtered_rels)} tags processed...")
-
-            # Get value counts for this rel
+                logger.info(f"[navidrome] Progress: {idx}/{len(filtered_rels)} tags processed...")
             value_counts = db.tags.get_tag_value_counts(rel)
             total_count = sum(value_counts.values())
-
-            # Infer type from first value
             if value_counts:
                 first_value = next(iter(value_counts.keys()))
                 if isinstance(first_value, float):
@@ -53,28 +44,14 @@ def preview_tag_stats_workflow(db: Database, namespace: str = "nom") -> dict[str
                     tag_type = "string"
             else:
                 tag_type = "unknown"
-
-            # Build summary
             if tag_type in ("float", "integer"):
                 values = list(value_counts.keys())
                 summary = f"min={min(values)}, max={max(values)}, unique={len(values)}" if values else "no values"
             else:
                 summary = f"unique={len(value_counts)}"
-
-            stats_by_tag[rel] = {
-                "type": tag_type,
-                "is_multivalue": len(value_counts) > 1,
-                "summary": summary,
-                "total_count": total_count,
-            }
+            stats_by_tag[rel] = {"type": tag_type, "is_multivalue": len(value_counts) > 1, "summary": summary, "total_count": total_count}
         except Exception as e:
-            logging.exception(f"[navidrome] Error computing summary for {rel}: {e}")
-            stats_by_tag[rel] = {
-                "type": "string",
-                "is_multivalue": False,
-                "summary": f"Error: {e!s}",
-                "total_count": 0,
-            }
-
-    logging.info(f"[navidrome] Completed {len(stats_by_tag)} tag summaries")
+            logger.exception(f"[navidrome] Error computing summary for {rel}: {e}")
+            stats_by_tag[rel] = {"type": "string", "is_multivalue": False, "summary": f"Error: {e!s}", "total_count": 0}
+    logger.info(f"[navidrome] Completed {len(stats_by_tag)} tag summaries")
     return stats_by_tag

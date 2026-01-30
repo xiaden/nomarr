@@ -11,7 +11,6 @@ Architecture Notes:
 - Services are instantiated once during app wiring (see Application.start() in app.py).
 - Session cache is module-level for performance but accessed only through instance methods.
 """
-
 from __future__ import annotations
 
 import logging
@@ -20,18 +19,11 @@ from typing import TYPE_CHECKING
 
 from nomarr.helpers.time_helper import now_s
 
+logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
-
-# Session timeout (24 hours)
 SESSION_TIMEOUT_SECONDS = 86400
-
-# In-memory session cache to avoid DB hits on every request
-# Format: {token: expiry_timestamp}
-# This cache is module-level for performance but should only be accessed through
-# KeyManagementService instance methods to maintain proper architecture boundaries.
 _session_cache: dict[str, float] = {}
-
 
 class KeyManagementService:
     """Service for managing API keys, passwords, and sessions.
@@ -52,10 +44,6 @@ class KeyManagementService:
 
         """
         self._db = db
-
-    # ----------------------------------------------------------------------
-    # Public API Key Management
-    # ----------------------------------------------------------------------
 
     def get_api_key(self) -> str | None:
         """Get the public API key (returns None if not found).
@@ -82,12 +70,8 @@ class KeyManagementService:
             return key
         new_key = secrets.token_urlsafe(32)
         self._db.meta.set("api_key", new_key)
-        logging.info("[KeyManagement] Generated new API key on first run.")
+        logger.info("[KeyManagement] Generated new API key on first run.")
         return new_key
-
-    # ----------------------------------------------------------------------
-    # Admin Password Management
-    # ----------------------------------------------------------------------
 
     @staticmethod
     def hash_password(password: str) -> str:
@@ -101,10 +85,8 @@ class KeyManagementService:
 
         """
         import bcrypt
-
-        # bcrypt handles salt generation internally
         pwd_bytes = password.encode("utf-8")
-        salt = bcrypt.gensalt(rounds=12)  # 2^12 iterations
+        salt = bcrypt.gensalt(rounds=12)
         pwd_hash = bcrypt.hashpw(pwd_bytes, salt)
         return str(pwd_hash.decode("utf-8"))
 
@@ -122,7 +104,6 @@ class KeyManagementService:
         """
         try:
             import bcrypt
-
             pwd_bytes = password.encode("utf-8")
             hash_bytes = password_hash.encode("utf-8")
             return bool(bcrypt.checkpw(pwd_bytes, hash_bytes))
@@ -145,7 +126,7 @@ class KeyManagementService:
             raise RuntimeError(msg)
         return password_hash
 
-    def get_or_create_admin_password(self, config_password: str | None = None) -> str:
+    def get_or_create_admin_password(self, config_password: str | None=None) -> str:
         """Get or create the admin password hash for web UI authentication.
 
         On first run:
@@ -164,25 +145,20 @@ class KeyManagementService:
         """
         existing_hash = self._db.meta.get("admin_password_hash")
         if existing_hash:
-            # Password already set in DB - ignore config
             return ""
-
-        # First run - initialize password
         if config_password:
-            # Use config password
             password_hash = self.hash_password(config_password)
             self._db.meta.set("admin_password_hash", password_hash)
-            logging.info("[KeyManagement] Admin password set from config file.")
-            return ""  # Don't log config password
-        # Generate random password
+            logger.info("[KeyManagement] Admin password set from config file.")
+            return ""
         random_password = secrets.token_urlsafe(16)
         password_hash = self.hash_password(random_password)
         self._db.meta.set("admin_password_hash", password_hash)
-        logging.warning("[KeyManagement] ========================================")
-        logging.warning("[KeyManagement] AUTO-GENERATED ADMIN PASSWORD:")
-        logging.warning(f"[KeyManagement]   {random_password}")
-        logging.warning("[KeyManagement] ========================================")
-        logging.warning("[KeyManagement] Save this password - it won't be shown again!")
+        logger.warning("[KeyManagement] ========================================")
+        logger.warning("[KeyManagement] AUTO-GENERATED ADMIN PASSWORD:")
+        logger.warning(f"[KeyManagement]   {random_password}")
+        logger.warning("[KeyManagement] ========================================")
+        logger.warning("[KeyManagement] Save this password - it won't be shown again!")
         return random_password
 
     def reset_admin_password(self, new_password: str) -> None:
@@ -197,11 +173,7 @@ class KeyManagementService:
         """
         password_hash = self.hash_password(new_password)
         self._db.meta.set("admin_password_hash", password_hash)
-        logging.warning("[KeyManagement] Admin password reset - all sessions invalidated")
-
-    # ----------------------------------------------------------------------
-    # Session Management (Web UI)
-    # ----------------------------------------------------------------------
+        logger.warning("[KeyManagement] Admin password reset - all sessions invalidated")
 
     def create_session(self) -> str:
         """Create a new session token with expiry.
@@ -213,18 +185,9 @@ class KeyManagementService:
         """
         session_token = secrets.token_urlsafe(32)
         expiry = now_s().value + SESSION_TIMEOUT_SECONDS
-
-        # Write to memory cache (fast reads)
         _session_cache[session_token] = expiry
-
-        # Write to DB (persistence across restarts)
-        self._db.sessions.create_session(
-            session_id=session_token,
-            user_id="admin",  # Web UI sessions are for admin user
-            expiry_timestamp=int(expiry * 1000),  # Convert seconds to ms
-        )
-
-        logging.info(f"[KeyManagement] Created new session (expires in {SESSION_TIMEOUT_SECONDS}s)")
+        self._db.sessions.create_session(session_id=session_token, user_id="admin", expiry_timestamp=int(expiry * 1000))
+        logger.info(f"[KeyManagement] Created new session (expires in {SESSION_TIMEOUT_SECONDS}s)")
         return session_token
 
     def validate_session(self, session_token: str) -> bool:
@@ -242,18 +205,12 @@ class KeyManagementService:
             through service instances to maintain proper architecture boundaries.
 
         """
-        # Check memory cache
         expiry = _session_cache.get(session_token)
-
         if expiry is None:
             return False
-
-        # Check if expired
         if now_s().value > expiry:
-            # Expired - remove from cache
             _session_cache.pop(session_token, None)
             return False
-
         return True
 
     def invalidate_session(self, session_token: str) -> None:
@@ -264,13 +221,9 @@ class KeyManagementService:
             session_token: Session token to invalidate
 
         """
-        # Remove from memory cache
         _session_cache.pop(session_token, None)
-
-        # Remove from DB
         self._db.sessions.delete(session_token)
-
-        logging.info("[KeyManagement] Session invalidated (logout)")
+        logger.info("[KeyManagement] Session invalidated (logout)")
 
     def cleanup_expired_sessions(self) -> int:
         """Remove all expired sessions from both memory cache and DB.
@@ -281,17 +234,11 @@ class KeyManagementService:
         """
         now = now_s().value
         expired = [token for token, expiry in _session_cache.items() if expiry < now]
-
-        # Remove from memory cache
         for token in expired:
             _session_cache.pop(token, None)
-
-        # Cleanup DB (get actual count from DB operation)
         db_count = self._db.sessions.cleanup_expired()
-
         if expired or db_count:
-            logging.info(f"[KeyManagement] Cleaned up {len(expired)} expired session(s) from cache, {db_count} from DB")
-
+            logger.info(f"[KeyManagement] Cleaned up {len(expired)} expired session(s) from cache, {db_count} from DB")
         return len(expired)
 
     def load_sessions_from_db(self) -> int:
@@ -302,11 +249,7 @@ class KeyManagementService:
 
         """
         sessions = self._db.sessions.load_all()
-        # Transform session documents to cache format: {session_id: expiry_timestamp_seconds}
         _session_cache.update((s["session_id"], s["expiry_timestamp"] / 1000.0) for s in sessions)
-        logging.info(f"[KeyManagement] Loaded {len(sessions)} active session(s) from database")
+        logger.info(f"[KeyManagement] Loaded {len(sessions)} active session(s) from database")
         return len(sessions)
-
-
-# Backward compatibility: expose session cache for tests
 _sessions = _session_cache
