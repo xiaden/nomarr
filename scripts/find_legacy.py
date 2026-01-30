@@ -84,7 +84,7 @@ def find_legacy_references(search_paths: list[str] | None = None):
                                     "pattern": pattern_name,
                                     "description": description,
                                     "content": line.strip(),
-                                }
+                                },
                             )
 
             except Exception as e:

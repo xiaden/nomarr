@@ -257,7 +257,7 @@ def discover_import_chains(
                     "chain": new_chain,
                     "from": root_module,
                     "to": imported_module,
-                }
+                },
             )
 
         # Recursively discover imports from this module

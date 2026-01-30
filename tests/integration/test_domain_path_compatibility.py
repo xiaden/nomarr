@@ -189,7 +189,7 @@ class TestSearchDomain:
                     "album": "Test Album",
                     "title": "Test Song",
                     "tags": [],
-                }
+                },
             ],
             1,  # Total count
         )

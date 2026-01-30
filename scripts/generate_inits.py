@@ -47,7 +47,7 @@ def get_public_names(file_path: Path, banned_exports: set[str]) -> set[str]:
 
 
 def generate_init_for_package(
-    package_dir: Path, custom_exports: dict[str, list[str]] | None = None, config: dict | None = None
+    package_dir: Path, custom_exports: dict[str, list[str]] | None = None, config: dict | None = None,
 ) -> str:
     """Generate __init__.py content for a package directory."""
     custom_exports = custom_exports or {}

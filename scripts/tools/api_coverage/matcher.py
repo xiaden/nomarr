@@ -33,10 +33,7 @@ def match_endpoint_usage(
         frontend_files = []
         for frontend_path in frontend_usage:
             # Try exact match first
-            if frontend_path == path:
-                frontend_files.extend(frontend_usage[frontend_path])
-            # Try normalized match (for path params)
-            elif normalize_path_params(frontend_path) == normalized:
+            if frontend_path == path or normalize_path_params(frontend_path) == normalized:
                 frontend_files.extend(frontend_usage[frontend_path])
 
         used = len(frontend_files) > 0
@@ -50,7 +47,7 @@ def match_endpoint_usage(
                 description=description,
                 backend_file=backend_file,
                 backend_line=backend_line,
-            )
+            ),
         )
 
     return endpoint_usages

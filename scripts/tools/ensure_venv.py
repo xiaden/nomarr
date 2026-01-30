@@ -99,7 +99,7 @@ def install_requirements(venv_python: Path, requirements_path: Path) -> bool:
     try:
         # Upgrade pip first
         subprocess.run(
-            [str(venv_python), "-m", "pip", "install", "--upgrade", "pip"], check=True, capture_output=True, text=True
+            [str(venv_python), "-m", "pip", "install", "--upgrade", "pip"], check=True, capture_output=True, text=True,
         )
 
         # Install requirements

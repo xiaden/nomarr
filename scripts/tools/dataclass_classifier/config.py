@@ -93,19 +93,19 @@ def resolve_layer(module_path: str, layer_map: dict[str, str]) -> str:
     # Direct layer resolution based on package structure
     if module_path.startswith("nomarr.interfaces"):
         return "interfaces"
-    elif module_path.startswith("nomarr.services"):
+    if module_path.startswith("nomarr.services"):
         return "services"
-    elif module_path.startswith("nomarr.workflows"):
+    if module_path.startswith("nomarr.workflows"):
         return "workflows"
-    elif module_path.startswith("nomarr.components"):
+    if module_path.startswith("nomarr.components"):
         return "components"
-    elif module_path.startswith("nomarr.persistence"):
+    if module_path.startswith("nomarr.persistence"):
         return "persistence"
-    elif module_path.startswith("nomarr.helpers"):
+    if module_path.startswith("nomarr.helpers"):
         return "helpers"
-    elif module_path.startswith("tests"):
+    if module_path.startswith("tests"):
         return "tests"
-    elif module_path.startswith("nomarr.app"):
+    if module_path.startswith("nomarr.app"):
         return "services"  # app is considered part of services
 
     # Fallback to layer_map for any special cases

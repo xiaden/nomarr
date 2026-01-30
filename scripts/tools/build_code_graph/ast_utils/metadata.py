@@ -206,5 +206,5 @@ def extract_decorator_targets(
                     linenos=[lineno] if lineno else [],
                     details=["decorator_registration"],
                     ast_case="DecoratorRegistration",
-                )
+                ),
             )

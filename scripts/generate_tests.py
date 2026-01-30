@@ -112,24 +112,23 @@ def detect_operation_type(method_name: str) -> str:
 
     if any(x in method_lower for x in ["add", "create", "insert", "queue"]):
         return "add"
-    elif any(x in method_lower for x in ["get", "find", "fetch", "retrieve"]):
+    if any(x in method_lower for x in ["get", "find", "fetch", "retrieve"]):
         return "get"
-    elif any(x in method_lower for x in ["delete", "remove", "clear"]):
+    if any(x in method_lower for x in ["delete", "remove", "clear"]):
         return "delete"
-    elif any(x in method_lower for x in ["list", "all", "filter", "search"]):
+    if any(x in method_lower for x in ["list", "all", "filter", "search"]):
         return "list"
-    elif any(x in method_lower for x in ["update", "set", "change", "modify", "mark"]):
+    if any(x in method_lower for x in ["update", "set", "change", "modify", "mark"]):
         return "update"
-    elif any(x in method_lower for x in ["reset", "cleanup", "purge"]):
+    if any(x in method_lower for x in ["reset", "cleanup", "purge"]):
         return "reset"
-    elif any(x in method_lower for x in ["wait", "poll"]):
+    if any(x in method_lower for x in ["wait", "poll"]):
         return "wait"
-    elif any(x in method_lower for x in ["count", "depth", "size"]):
+    if any(x in method_lower for x in ["count", "depth", "size"]):
         return "count"
-    elif any(x in method_lower for x in ["start", "stop", "pause", "resume", "enable", "disable"]):
+    if any(x in method_lower for x in ["start", "stop", "pause", "resume", "enable", "disable"]):
         return "control"
-    else:
-        return "other"
+    return "other"
 
 
 def infer_return_type(sig) -> str:
@@ -198,7 +197,7 @@ def generate_assertions(method_name: str, operation_type: str, return_type: str,
                 "# Verify item was added",
                 "# TODO: Check item can be retrieved",
                 "# TODO: Verify count/depth increased",
-            ]
+            ],
         )
 
     elif operation_type == "get":
@@ -206,13 +205,13 @@ def generate_assertions(method_name: str, operation_type: str, return_type: str,
             assertions.extend(
                 [
                     "# TODO: Verify returned object has expected attributes",
-                ]
+                ],
             )
         else:
             assertions.extend(
                 [
                     "# TODO: Verify returned data is correct",
-                ]
+                ],
             )
 
     elif operation_type == "delete":
@@ -220,7 +219,7 @@ def generate_assertions(method_name: str, operation_type: str, return_type: str,
             [
                 "# TODO: Verify item was removed",
                 "# TODO: Verify get() returns None after delete",
-            ]
+            ],
         )
 
     elif operation_type == "list":
@@ -228,7 +227,7 @@ def generate_assertions(method_name: str, operation_type: str, return_type: str,
             [
                 "# TODO: Verify list contents",
                 "# TODO: Test with filters if applicable",
-            ]
+            ],
         )
 
     elif operation_type == "update":
@@ -236,14 +235,14 @@ def generate_assertions(method_name: str, operation_type: str, return_type: str,
             [
                 "# TODO: Verify state changed",
                 "# TODO: Verify get() reflects new state",
-            ]
+            ],
         )
 
     elif operation_type == "count":
         assertions.extend(
             [
                 "assert result >= 0  # Count is non-negative",
-            ]
+            ],
         )
 
     return assertions
@@ -313,16 +312,15 @@ def generate_test_cases(class_name: str, method_name: str, method_info: dict) ->
                 param_value = generate_param_values(param_name, param_type_str)
                 params.append(f"{param_name}={param_value}")
                 param_list.append((param_name, param_type_str, param_value, True))
+            # Optional parameter - include for certain methods
+            # remove_jobs needs one of: job_id, status, or all=True
+            elif (method_lower == "remove_jobs" and param_name == "all") or (
+                method_lower == "reset_jobs" and param_name == "stuck"
+            ):
+                params.append(f"{param_name}=True")
+                param_list.append((param_name, param_type_str, "True", True))
             else:
-                # Optional parameter - include for certain methods
-                # remove_jobs needs one of: job_id, status, or all=True
-                if (method_lower == "remove_jobs" and param_name == "all") or (
-                    method_lower == "reset_jobs" and param_name == "stuck"
-                ):
-                    params.append(f"{param_name}=True")
-                    param_list.append((param_name, param_type_str, "True", True))
-                else:
-                    param_list.append((param_name, param_type_str, "", False))
+                param_list.append((param_name, param_type_str, "", False))
 
     test_cases = []
 
@@ -649,7 +647,7 @@ def main():
     parser.add_argument("module", help="Module name (e.g., nomarr.services.queue)")
     parser.add_argument("--output", "-o", help="Output file path")
     parser.add_argument(
-        "--layer", choices=["data", "services", "ml", "interfaces"], help="Layer type (auto-detected if not specified)"
+        "--layer", choices=["data", "services", "ml", "interfaces"], help="Layer type (auto-detected if not specified)",
     )
     parser.add_argument("--preview", action="store_true", help="Preview without writing file")
 

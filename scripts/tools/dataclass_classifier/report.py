@@ -104,11 +104,10 @@ def print_summary(
                 print(f"    Used by: {', '.join(sorted(dc.imported_by_packages))}")
                 if dc.ignored_import_count > 0:
                     print(f"    (ignored {dc.ignored_import_count} import(s) from config)")
+            elif dc.ignored_import_count > 0:
+                print(f"    Used by: (none - ignored {dc.ignored_import_count} import(s) from config)")
             else:
-                if dc.ignored_import_count > 0:
-                    print(f"    Used by: (none - ignored {dc.ignored_import_count} import(s) from config)")
-                else:
-                    print("    Used by: (none - local only)")
+                print("    Used by: (none - local only)")
             print(f"    Suggested: {dc.suggested_target}")
             if dc.notes:
                 print(f"    Notes: {dc.notes}")

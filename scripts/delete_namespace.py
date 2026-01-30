@@ -12,12 +12,15 @@ Usage:
 import argparse
 import logging
 from pathlib import Path
+
 from mutagen.flac import FLAC
 from mutagen.id3 import ID3
 from mutagen.mp4 import MP4
+
 from nomarr.helpers import AUDIO_EXTENSIONS
+
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
+logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 
 def delete_mp3_namespace(file_path: str, namespace: str) -> int:
     """Delete all TXXX tags from specified namespace in MP3 file."""
@@ -25,8 +28,8 @@ def delete_mp3_namespace(file_path: str, namespace: str) -> int:
         id3 = ID3(file_path)
         deleted = 0
         frames_to_delete = []
-        for frame in id3.getall('TXXX'):
-            if frame.desc.startswith(f'{namespace}:'):
+        for frame in id3.getall("TXXX"):
+            if frame.desc.startswith(f"{namespace}:"):
                 frames_to_delete.append(frame)
                 deleted += 1
         if deleted == 0:
@@ -36,7 +39,7 @@ def delete_mp3_namespace(file_path: str, namespace: str) -> int:
         id3.save(file_path, v2_version=3)
         return deleted
     except Exception as e:
-        logger.error(f'Failed to process {file_path}: {e}')
+        logger.error(f"Failed to process {file_path}: {e}")
         return 0
 
 def delete_m4a_namespace(file_path: str, namespace: str) -> int:
@@ -48,7 +51,7 @@ def delete_m4a_namespace(file_path: str, namespace: str) -> int:
         deleted = 0
         keys_to_delete = []
         for key in m4a.tags:
-            if key.startswith(f'----:com.apple.iTunes:{namespace}:'):
+            if key.startswith(f"----:com.apple.iTunes:{namespace}:"):
                 keys_to_delete.append(key)
                 deleted += 1
         if deleted == 0:
@@ -58,7 +61,7 @@ def delete_m4a_namespace(file_path: str, namespace: str) -> int:
         m4a.save()
         return deleted
     except Exception as e:
-        logger.error(f'Failed to process {file_path}: {e}')
+        logger.error(f"Failed to process {file_path}: {e}")
         return 0
 
 def delete_flac_namespace(file_path: str, namespace: str) -> int:
@@ -83,7 +86,7 @@ def delete_flac_namespace(file_path: str, namespace: str) -> int:
         namespace_lower = namespace.lower()
         keys_to_delete = []
         for key in audio.tags:
-            if key.lower().startswith(f'{namespace_lower}:'):
+            if key.lower().startswith(f"{namespace_lower}:"):
                 keys_to_delete.append(key)
         for key in keys_to_delete:
             del audio.tags[key]
@@ -92,7 +95,7 @@ def delete_flac_namespace(file_path: str, namespace: str) -> int:
             audio.save()
         return deleted
     except Exception as e:
-        logger.error(f'Failed to process {file_path}: {e}')
+        logger.error(f"Failed to process {file_path}: {e}")
         return 0
 
 def scan_and_delete(music_dir: str, namespace: str, dry_run: bool=False) -> dict:
@@ -102,60 +105,60 @@ def scan_and_delete(music_dir: str, namespace: str, dry_run: bool=False) -> dict
         Dict with stats: files_processed, files_modified, tags_deleted
 
     """
-    stats = {'files_processed': 0, 'files_modified': 0, 'tags_deleted': 0, 'files_skipped': 0}
+    stats = {"files_processed": 0, "files_modified": 0, "tags_deleted": 0, "files_skipped": 0}
     music_path = Path(music_dir)
     if not music_path.exists():
-        logger.error(f'Directory does not exist: {music_dir}')
+        logger.error(f"Directory does not exist: {music_dir}")
         return stats
-    logger.info(f'Scanning {music_dir}...')
-    all_files = list(music_path.rglob('*'))
+    logger.info(f"Scanning {music_dir}...")
+    all_files = list(music_path.rglob("*"))
     audio_files = [f for f in all_files if f.suffix.lower() in AUDIO_EXTENSIONS]
-    logger.info(f'Found {len(audio_files)} audio files')
+    logger.info(f"Found {len(audio_files)} audio files")
     for idx, file_path in enumerate(audio_files, 1):
         if idx % 100 == 0:
-            logger.info(f'Progress: {idx}/{len(audio_files)} files processed...')
-        stats['files_processed'] += 1
+            logger.info(f"Progress: {idx}/{len(audio_files)} files processed...")
+        stats["files_processed"] += 1
         if dry_run:
-            logger.debug(f'[DRY RUN] Would delete {namespace}: tags from: {file_path}')
+            logger.debug(f"[DRY RUN] Would delete {namespace}: tags from: {file_path}")
             continue
         try:
             deleted = 0
-            if file_path.suffix.lower() == '.mp3':
+            if file_path.suffix.lower() == ".mp3":
                 deleted = delete_mp3_namespace(str(file_path), namespace)
-            elif file_path.suffix.lower() == '.m4a':
+            elif file_path.suffix.lower() == ".m4a":
                 deleted = delete_m4a_namespace(str(file_path), namespace)
-            elif file_path.suffix.lower() == '.flac':
+            elif file_path.suffix.lower() == ".flac":
                 deleted = delete_flac_namespace(str(file_path), namespace)
             if deleted > 0:
-                stats['files_modified'] += 1
-                stats['tags_deleted'] += deleted
-                logger.debug(f'Deleted {deleted} tags from {file_path}')
+                stats["files_modified"] += 1
+                stats["tags_deleted"] += deleted
+                logger.debug(f"Deleted {deleted} tags from {file_path}")
             else:
-                stats['files_skipped'] += 1
+                stats["files_skipped"] += 1
         except Exception as e:
-            logger.error(f'Error processing {file_path}: {e}')
-            stats['files_skipped'] += 1
+            logger.error(f"Error processing {file_path}: {e}")
+            stats["files_skipped"] += 1
     return stats
 
 def main():
-    parser = argparse.ArgumentParser(description='Delete all tags from a specific namespace in audio files')
-    parser.add_argument('music_dir', help='Path to music directory')
-    parser.add_argument('--namespace', default='essentia', help='Namespace prefix to delete (default: essentia)')
-    parser.add_argument('--dry-run', action='store_true', help='Preview changes without modifying files')
+    parser = argparse.ArgumentParser(description="Delete all tags from a specific namespace in audio files")
+    parser.add_argument("music_dir", help="Path to music directory")
+    parser.add_argument("--namespace", default="essentia", help="Namespace prefix to delete (default: essentia)")
+    parser.add_argument("--dry-run", action="store_true", help="Preview changes without modifying files")
     args = parser.parse_args()
     if args.dry_run:
-        logger.info('=== DRY RUN MODE - No files will be modified ===')
+        logger.info("=== DRY RUN MODE - No files will be modified ===")
     logger.warning(f"This will DELETE ALL '{args.namespace}:*' tags from your audio files!")
     if not args.dry_run:
-        response = input('Are you sure you want to continue? (yes/no): ')
-        if response.lower() not in ('yes', 'y'):
-            logger.info('Operation cancelled')
+        response = input("Are you sure you want to continue? (yes/no): ")
+        if response.lower() not in ("yes", "y"):
+            logger.info("Operation cancelled")
             return
     stats = scan_and_delete(args.music_dir, args.namespace, args.dry_run)
-    logger.info('\n=== Deletion Complete ===')
+    logger.info("\n=== Deletion Complete ===")
     logger.info(f"Files processed: {stats['files_processed']}")
     logger.info(f"Files modified: {stats['files_modified']}")
     logger.info(f"Files skipped: {stats['files_skipped']}")
     logger.info(f"Tags deleted: {stats['tags_deleted']}")
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

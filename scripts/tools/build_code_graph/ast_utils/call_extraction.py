@@ -29,7 +29,7 @@ def _add_call_edges(
                 type=edge_type,
                 linenos=[lineno] if lineno else [],
                 ast_case=ast_case,
-            )
+            ),
         )
 
 
@@ -285,7 +285,6 @@ def extract_calls_from_function(
                        for resolving Depends() calls.
 
     """
-
     # Extract local imports from this function
     function_imports = extract_imports_from_function(func_node)
 

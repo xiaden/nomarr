@@ -9,7 +9,7 @@ project_root = Path(__file__).parent.parent.parent.parent
 
 
 def generate_html_report(
-    endpoint_usages: list[EndpointUsage], output_file: Path, filter_mode: str | None = None
+    endpoint_usages: list[EndpointUsage], output_file: Path, filter_mode: str | None = None,
 ) -> None:
     """Generate interactive HTML report with collapsible groups."""
     # Apply filters

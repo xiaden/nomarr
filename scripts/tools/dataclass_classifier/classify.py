@@ -5,7 +5,7 @@ from .model import DataclassInfo, ImportEdge
 
 
 def detect_suspect_imports(
-    import_edges: list[ImportEdge], allowed_imports: list[list[str]], ignore_prefixes: list[str]
+    import_edges: list[ImportEdge], allowed_imports: list[list[str]], ignore_prefixes: list[str],
 ) -> list[ImportEdge]:
     """Detect suspect imports based on allowed_imports configuration.
 
@@ -32,7 +32,7 @@ def detect_suspect_imports(
     for edge in import_edges:
         # Skip edges involving ignored modules
         if is_ignored_module(edge.importer_module, ignore_prefixes) or is_ignored_module(
-            edge.imported_module, ignore_prefixes
+            edge.imported_module, ignore_prefixes,
         ):
             continue
 

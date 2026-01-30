@@ -70,7 +70,7 @@ def main():
     # 1. Type checking with mypy
     if check_tool_available("mypy"):
         output, code = run_command(
-            [sys.executable, "-m", "mypy", "nomarr/", "--ignore-missing-imports"], "Type Checking (mypy)"
+            [sys.executable, "-m", "mypy", "nomarr/", "--ignore-missing-imports"], "Type Checking (mypy)",
         )
         results.append("## 1. Type Checking (mypy)")
         results.append(output)
@@ -84,7 +84,7 @@ def main():
     # 2. Security scanning with bandit
     if check_tool_available("bandit"):
         output, code = run_command(
-            [sys.executable, "-m", "bandit", "-r", "nomarr/", "-ll"], "Security Scanning (bandit)"
+            [sys.executable, "-m", "bandit", "-r", "nomarr/", "-ll"], "Security Scanning (bandit)",
         )
         results.append("## 2. Security Scanning (bandit)")
         results.append(output)
@@ -98,7 +98,7 @@ def main():
     # 3. Dead code detection with vulture
     if check_tool_available("vulture"):
         output, code = run_command(
-            [sys.executable, "-m", "vulture", "nomarr/", "--min-confidence", "80"], "Dead Code Detection (vulture)"
+            [sys.executable, "-m", "vulture", "nomarr/", "--min-confidence", "80"], "Dead Code Detection (vulture)",
         )
         results.append("## 3. Dead Code Detection (vulture)")
         results.append(output)

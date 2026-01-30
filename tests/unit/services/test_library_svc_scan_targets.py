@@ -76,7 +76,7 @@ class TestScanTargetsValidation:
                 is_enabled=True,
                 created_at=1000000,
                 updated_at=1000000,
-            )
+            ),
         )
 
         # Mock start_scan_workflow
@@ -87,7 +87,7 @@ class TestScanTargetsValidation:
                 files_skipped=30,
                 files_removed=20,
                 job_ids=["task_123"],
-            )
+            ),
         )
 
         # Patch where start_scan_workflow is imported and used
@@ -142,7 +142,7 @@ class TestScanTargetsValidation:
                 files_skipped=50,
                 files_removed=50,
                 job_ids=["task_456"],
-            )
+            ),
         )
 
         # Patch where start_scan_workflow is imported and used
@@ -182,7 +182,7 @@ class TestStartScanForLibraryDelegation:
                 files_skipped=50,
                 files_removed=25,
                 job_ids=["task_789"],
-            )
+            ),
         )
 
         service.scan_targets = mock_scan_targets  # type: ignore[method-assign]

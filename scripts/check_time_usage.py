@@ -193,7 +193,7 @@ class TimeUsageChecker(ast.NodeVisitor):
                                 context=self._get_line(node.lineno),
                                 reason=f"Variable '{var_name}' suggests interval/duration usage, but uses wall-clock {wall_func}(). Use internal_s() or internal_ms() instead.",
                                 severity="error",
-                            )
+                            ),
                         )
 
         # Check for monotonic assigned to wall-clock-like variable
@@ -214,7 +214,7 @@ class TimeUsageChecker(ast.NodeVisitor):
                                 context=self._get_line(node.lineno),
                                 reason=f"Variable '{var_name}' suggests timestamp storage, but uses monotonic {mono_func}(). Use now_ms() or now_s() instead.",
                                 severity="error",
-                            )
+                            ),
                         )
 
         self.generic_visit(node)
@@ -240,7 +240,7 @@ class TimeUsageChecker(ast.NodeVisitor):
                                 context=self._get_line(node.lineno),
                                 reason=f"Elapsed time calculation uses wall-clock {wall_func}(). Use internal_s() or internal_ms() for duration/interval measurements.",
                                 severity="error",
-                            )
+                            ),
                         )
                 elif isinstance(node.right, ast.Attribute):
                     attr_name = node.right.attr
@@ -254,7 +254,7 @@ class TimeUsageChecker(ast.NodeVisitor):
                                 context=self._get_line(node.lineno),
                                 reason=f"Elapsed time calculation uses wall-clock {wall_func}(). Use internal_s() or internal_ms() for duration/interval measurements.",
                                 severity="error",
-                            )
+                            ),
                         )
 
         self.generic_visit(node)
@@ -282,7 +282,7 @@ class TimeUsageChecker(ast.NodeVisitor):
                             context=self._get_line(node.lineno),
                             reason=f"Dict key '{key_name}' suggests DB timestamp, but uses monotonic {mono_func}(). Use now_ms() for persistence.",
                             severity="error",
-                        )
+                        ),
                     )
 
         self.generic_visit(node)
@@ -305,7 +305,7 @@ def check_file(filepath: Path) -> CheckResult:
                 context="",
                 reason=f"Could not parse file: {e}",
                 severity="warning",
-            )
+            ),
         )
         return result
 
@@ -377,7 +377,7 @@ def format_json(results: list[CheckResult]) -> str:
                     "context": issue.context,
                     "reason": issue.reason,
                     "severity": issue.severity,
-                }
+                },
             )
 
     return json.dumps({"issues": issues, "total": len(issues)}, indent=2)

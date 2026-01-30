@@ -33,13 +33,12 @@ def get_parent_id(node_id: str, node_kind: str) -> str:
         # Remove method name: "module.Class.method" -> "module.Class"
         parts = node_id.rsplit(".", 1)
         return parts[0] if len(parts) > 1 else node_id
-    elif node_kind == "function":
+    if node_kind == "function":
         # Remove function name: "module.function" -> "module"
         parts = node_id.rsplit(".", 1)
         return parts[0] if len(parts) > 1 else node_id
-    else:
-        # Classes and modules stay as-is
-        return node_id
+    # Classes and modules stay as-is
+    return node_id
 
 
 def simplify_graph(detailed_graph: CodeGraph) -> CodeGraph:
@@ -93,7 +92,7 @@ def simplify_graph(detailed_graph: CodeGraph) -> CodeGraph:
         lineno = edge.linenos[0] if edge.linenos else 0
 
         edge_groups[(source_parent, target_parent, edge.type)].append(
-            (source_method, target_method, lineno, edge.ast_case)
+            (source_method, target_method, lineno, edge.ast_case),
         )
 
     # Create simplified edges
@@ -127,7 +126,7 @@ def simplify_graph(detailed_graph: CodeGraph) -> CodeGraph:
                 type=edge_type,
                 linenos=sorted(set(all_linenos)),
                 details=details,
-            )
+            ),
         )
 
     # Update reachability: class is reachable if ANY of its methods are reachable
@@ -177,7 +176,7 @@ def main() -> int:
     reachable = sum(1 for n in simplified_graph.nodes if n.reachable_from_interface)
 
     print(
-        f"  {len(simplified_graph.nodes)} nodes (reduced by {len(detailed_graph.nodes) - len(simplified_graph.nodes)})"
+        f"  {len(simplified_graph.nodes)} nodes (reduced by {len(detailed_graph.nodes) - len(simplified_graph.nodes)})",
     )
     print(f"  {len(simplified_graph.edges)} edges")
     print(f"  {reachable} nodes reachable from interface")

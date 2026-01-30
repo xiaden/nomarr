@@ -113,9 +113,8 @@ def classify_grep_hit(hit: dict[str, Any], project_root: Path) -> str:
                     return "docstring"
             # Not in docstring and not a comment, must be code
             return "code"
-        else:
-            # AST parse failed, but we can still detect comments
-            return "unknown"
+        # AST parse failed, but we can still detect comments
+        return "unknown"
 
     return "unknown"
 
@@ -160,7 +159,7 @@ def analyze_dead_node(
                     "source_id": source_id,
                     "file": source_node.get("file", ""),
                     "lineno": e.get("lineno", 0),
-                }
+                },
             )
         return usages
 
@@ -256,13 +255,12 @@ def analyze_dead_node(
         if non_code_hits and not (comment_hits or docstring_hits):
             parts.append("only in non-Python files")
         reason = "; ".join(parts) if parts else "likely dead"
+    elif has_usage_edges:
+        reason = "has usage edges in graph"
+    elif code_hits or unknown_hits:
+        reason = f"has {len(code_hits) + len(unknown_hits)} potential code references"
     else:
-        if has_usage_edges:
-            reason = "has usage edges in graph"
-        elif code_hits or unknown_hits:
-            reason = f"has {len(code_hits) + len(unknown_hits)} potential code references"
-        else:
-            reason = "unclear"
+        reason = "unclear"
 
     return {
         "node": node,

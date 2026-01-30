@@ -81,7 +81,7 @@ class MCPConnectionStdio(MCPConnection):
 
     def _create_context(self):
         return stdio_client(
-            StdioServerParameters(command=self.command, args=self.args, env=self.env)
+            StdioServerParameters(command=self.command, args=self.args, env=self.env),
         )
 
 
@@ -138,15 +138,14 @@ def create_connection(
             raise ValueError("Command is required for stdio transport")
         return MCPConnectionStdio(command=command, args=args, env=env)
 
-    elif transport == "sse":
+    if transport == "sse":
         if not url:
             raise ValueError("URL is required for sse transport")
         return MCPConnectionSSE(url=url, headers=headers)
 
-    elif transport in ["http", "streamable_http", "streamable-http"]:
+    if transport in ["http", "streamable_http", "streamable-http"]:
         if not url:
             raise ValueError("URL is required for http transport")
         return MCPConnectionHTTP(url=url, headers=headers)
 
-    else:
-        raise ValueError(f"Unsupported transport type: {transport}. Use 'stdio', 'sse', or 'http'")
+    raise ValueError(f"Unsupported transport type: {transport}. Use 'stdio', 'sse', or 'http'")

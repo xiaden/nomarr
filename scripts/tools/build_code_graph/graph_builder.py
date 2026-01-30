@@ -98,7 +98,7 @@ def build_graph_for_file(
                             type="IMPORTS",
                             linenos=[node.lineno],
                             ast_case="Import",
-                        )
+                        ),
                     )
             elif isinstance(node, ast.ImportFrom) and node.module:
                 # from X import Y -> we import X (or X.Y)
@@ -114,7 +114,7 @@ def build_graph_for_file(
                             type="IMPORTS",
                             linenos=[node.lineno],
                             ast_case="ImportFrom",
-                        )
+                        ),
                     )
 
     # Process top-level classes and functions
@@ -145,7 +145,7 @@ def build_graph_for_file(
                         type="CONTAINS",
                         linenos=[stmt.lineno],
                         ast_case="ClassContainment",
-                    )
+                    ),
                 )
 
             # Track methods for this class (needed for CALLS resolution in second pass)
@@ -181,7 +181,7 @@ def build_graph_for_file(
                                 type="CONTAINS",
                                 linenos=[item.lineno],
                                 ast_case="MethodContainment",
-                            )
+                            ),
                         )
 
                     methods_in_class[item.name] = method_id
@@ -216,7 +216,7 @@ def build_graph_for_file(
                         type="CONTAINS",
                         linenos=[stmt.lineno],
                         ast_case="FunctionContainment",
-                    )
+                    ),
                 )
 
             module_functions[stmt.name] = func_id
@@ -246,7 +246,7 @@ def build_graph_for_file(
                         extract_type_annotations_from_function(item, method_id, module_id, graph, callable_index)
                         # Extract calls from method body
                         extract_calls_from_function(
-                            item, method_id, module_functions, class_methods_dict, graph, callable_index, module_imports
+                            item, method_id, module_functions, class_methods_dict, graph, callable_index, module_imports,
                         )
 
         # 2b: Extract module-level function calls
@@ -286,7 +286,7 @@ def build_graph_for_file(
                                     type=edge_type,
                                     linenos=[lineno] if lineno else [],
                                     ast_case=ast_case,
-                                )
+                                ),
                             )
 
                 # Check for module attribute accesses in call arguments
@@ -314,7 +314,7 @@ def build_graph_for_file(
                                         type=edge_type,
                                         linenos=[lineno] if lineno else [],
                                         ast_case=ast_case,
-                                    )
+                                    ),
                                 )
 
     return graph

@@ -70,8 +70,7 @@ def path_to_module(file_path: Path, project_root: Path) -> str:
     module_path = ".".join(module_parts)
 
     # Remove __init__ if present
-    if module_path.endswith(".__init__"):
-        module_path = module_path[:-9]
+    module_path = module_path.removesuffix(".__init__")
 
     return module_path
 
@@ -407,19 +406,18 @@ def _looks_like_structured_return_annotation(
         """Convert annotation node to readable string."""
         if isinstance(node, ast.Name):
             return node.id
-        elif isinstance(node, ast.Subscript):
+        if isinstance(node, ast.Subscript):
             base = annotation_to_string(node.value)
             if isinstance(node.slice, ast.Tuple):
                 args = ", ".join(annotation_to_string(elt) for elt in node.slice.elts)
             else:
                 args = annotation_to_string(node.slice)
             return f"{base}[{args}]"
-        elif isinstance(node, ast.Attribute):
+        if isinstance(node, ast.Attribute):
             return node.attr
-        elif isinstance(node, ast.Constant):
+        if isinstance(node, ast.Constant):
             return str(node.value)
-        else:
-            return "..."
+        return "..."
 
     # Check for dict-like returns
     if isinstance(returns, ast.Name):
@@ -435,7 +433,7 @@ def _looks_like_structured_return_annotation(
             # Check if the element type is dict-like
             if isinstance(returns.slice, ast.Name) and returns.slice.id in ("dict", "Dict"):
                 return True, f"{base_name}[dict]"
-            elif isinstance(returns.slice, ast.Subscript):
+            if isinstance(returns.slice, ast.Subscript):
                 elem_base = annotation_to_string(returns.slice.value)
                 if elem_base in ("dict", "Dict"):
                     full_type = annotation_to_string(returns)
@@ -559,7 +557,7 @@ def discover_missing_dataclasses(
                                 fields=dict_keys,
                                 suggested_name=suggested_name,
                                 is_private=is_private,
-                            )
+                            ),
                         )
                         seen.add(key)
                         continue
@@ -581,7 +579,7 @@ def discover_missing_dataclasses(
                                 fields=fields,
                                 suggested_name=suggested_name,
                                 is_private=is_private,
-                            )
+                            ),
                         )
                         seen.add(key)
                         continue
@@ -602,7 +600,7 @@ def discover_missing_dataclasses(
                                 fields=[],  # Can't infer fields from annotation alone
                                 suggested_name=suggested_name,
                                 is_private=is_private,
-                            )
+                            ),
                         )
                         seen.add(key)
                         continue
@@ -625,7 +623,7 @@ def discover_missing_dataclasses(
                             fields=dict_keys,
                             suggested_name=suggested_name,
                             is_private=is_private,
-                        )
+                        ),
                     )
                     seen.add(key)
                     continue  # Only one candidate per function
@@ -648,7 +646,7 @@ def discover_missing_dataclasses(
                             fields=fields,
                             suggested_name=suggested_name,
                             is_private=is_private,
-                        )
+                        ),
                     )
                     seen.add(key)
                     continue  # Only one candidate per function
@@ -671,7 +669,7 @@ def discover_missing_dataclasses(
                                 fields=param_names,
                                 suggested_name=suggested_name,
                                 is_private=is_private,
-                            )
+                            ),
                         )
                         seen.add(key)
 

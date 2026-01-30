@@ -6,7 +6,6 @@ This script:
 3. Creates edge cases (missing metadata, etc.)
 """
 
-import os
 import shutil
 from pathlib import Path
 
@@ -68,7 +67,7 @@ for source_rel, category in test_sources:
             elif dest.suffix == ".mp3":
                 audio["COMM::XXX"] = "nom:genre:rock nom:mood:energetic nom:theme:party"
             audio.save()
-            print(f"  → Added nom: tags")
+            print("  → Added nom: tags")
 
         # Remove ALL tags from "without-tags" files (to trigger ML)
         elif category == "without-tags":
@@ -79,7 +78,7 @@ for source_rel, category in test_sources:
                 audio["\xa9nam"] = [source.stem]
                 audio["\xa9ART"] = ["Unknown Artist"]
             audio.save()
-            print(f"  → Stripped tags (will need ML)")
+            print("  → Stripped tags (will need ML)")
 
         # Edge case: corrupt or minimal metadata
         elif category == "edge-case":
@@ -87,7 +86,7 @@ for source_rel, category in test_sources:
                 audio["\xa9nam"] = [source.stem]
                 # Missing artist, album, etc.
             audio.save()
-            print(f"  → Created edge case (minimal metadata)")
+            print("  → Created edge case (minimal metadata)")
 
     except Exception as e:
         print(f"  ⚠️ Tag manipulation failed: {e}")

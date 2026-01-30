@@ -98,7 +98,7 @@ def main() -> int:
     print("Deduplicating edges...")
     edges_before = len(graph.edges)
     edge_map: dict[
-        tuple[str, str, str], tuple[list[int], list[str], str | None]
+        tuple[str, str, str], tuple[list[int], list[str], str | None],
     ] = {}  # (source, target, type) -> ([line numbers], [details], ast_case)
 
     for edge in graph.edges:
@@ -135,7 +135,7 @@ def main() -> int:
                 linenos=unique_linenos,
                 details=unique_details,
                 ast_case=ast_case,
-            )
+            ),
         )
 
     graph.edges = deduplicated_edges

@@ -211,17 +211,16 @@ def main():
             api = alt_api
             if output_format == "text":
                 print(f"[i] Note: Using '{alt_module}' (you typed '{args.module}')\n")
+        # Both failed - handle error based on format
+        elif output_format == "json":
+            # Combine error messages and emit JSON
+            api["error"] = f"{api['error']} (also tried {alt_module})"
+            print_json_summary(module_name, api)
+            return 1
         else:
-            # Both failed - handle error based on format
-            if output_format == "json":
-                # Combine error messages and emit JSON
-                api["error"] = f"{api['error']} (also tried {alt_module})"
-                print_json_summary(module_name, api)
-                return 1
-            else:
-                # Text mode: already printed error in discover_module_api
-                print(f"[!] Also tried '{alt_module}' but import failed")
-                return 1
+            # Text mode: already printed error in discover_module_api
+            print(f"[!] Also tried '{alt_module}' but import failed")
+            return 1
 
     # Output based on format
     if output_format == "json":

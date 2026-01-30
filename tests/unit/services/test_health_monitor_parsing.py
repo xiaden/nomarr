@@ -52,7 +52,7 @@ class TestHandleFrameParsing:
             {
                 "component_id": "test:component:0",
                 "status": "healthy",
-            }
+            },
         )
 
         # Initial status is pending
@@ -75,7 +75,7 @@ class TestHandleFrameParsing:
                 "component_id": "test:component:0",
                 "status": "recovering",
                 "recover_for_s": 10.0,
-            }
+            },
         )
 
         monitor._handle_frame("test:component:0", frame)
@@ -92,7 +92,7 @@ class TestHandleFrameParsing:
             {
                 "component_id": "test:component:0",
                 "status": "healthy",
-            }
+            },
         )
 
         # Process frame
@@ -153,7 +153,7 @@ class TestHandleFrameParsing:
             {
                 "component_id": "test:component:0",
                 "status": "unknown_status_value",
-            }
+            },
         )
 
         monitor._handle_frame("test:component:0", frame)
@@ -171,7 +171,7 @@ class TestHandleFrameParsing:
             {
                 "component_id": "gpu_monitor",
                 "status": "healthy",
-            }
+            },
         )
 
         # Register gpu_monitor component

@@ -127,7 +127,7 @@ Output files are written to scripts/outputs/:
     # Discover missing dataclass candidates
     print("Discovering missing dataclass candidates...")
     missing_candidates = discover_missing_dataclasses(
-        project_root, search_paths, layer_map, domain_map, ignore_prefixes
+        project_root, search_paths, layer_map, domain_map, ignore_prefixes,
     )
     if missing_candidates:
         print(f"Found {len(missing_candidates)} candidate(s)")

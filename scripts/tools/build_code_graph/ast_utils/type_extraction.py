@@ -136,5 +136,5 @@ def extract_type_annotations_from_function(
                         type="USES_TYPE",
                         linenos=[func_node.lineno],
                         ast_case="TypeAnnotation",
-                    )
+                    ),
                 )

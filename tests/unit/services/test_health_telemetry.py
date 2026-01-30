@@ -30,7 +30,7 @@ class TestHealthFrameParsing:
             {
                 "component_id": "worker:tag:0",
                 "status": "healthy",
-            }
+            },
         )
 
         assert frame.startswith(HEALTH_FRAME_PREFIX)
@@ -46,7 +46,7 @@ class TestHealthFrameParsing:
                 "component_id": "worker:tag:0",
                 "status": "recovering",
                 "recover_for_s": 15.0,
-            }
+            },
         )
 
         json_str = frame[len(HEALTH_FRAME_PREFIX) :]

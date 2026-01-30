@@ -37,7 +37,7 @@ LEGACY_COLLECTIONS = frozenset(
         "years",
         "calibration_queue",
         "calibration_runs",
-    }
+    },
 )
 
 # Valid collections in current schema
@@ -57,7 +57,7 @@ VALID_COLLECTIONS = frozenset(
         "worker_restart_policy",
         "ml_capacity_estimates",
         "ml_capacity_probe_locks",
-    }
+    },
 )
 
 
@@ -145,7 +145,7 @@ def parse_bootstrap_indexes() -> list[IndexSpec]:
                 unique=unique,
                 sparse=sparse,
                 source=str(BOOTSTRAP_FILE.relative_to(REPO_ROOT)),
-            )
+            ),
         )
 
     return indexes
@@ -212,7 +212,7 @@ def analyze_query_patterns(query: str, source_file: str, line_num: int) -> list[
                     source_file=source_file,
                     line_number=line_num,
                     query_snippet=match.group(0)[:80],
-                )
+                ),
             )
 
     # Detect compound filters: FILTER a.x == @y AND a.z == @w
@@ -236,7 +236,7 @@ def analyze_query_patterns(query: str, source_file: str, line_num: int) -> list[
                     source_file=source_file,
                     line_number=line_num,
                     query_snippet=match.group(0)[:80],
-                )
+                ),
             )
 
     return patterns
@@ -278,7 +278,7 @@ def recommend_indexes(queries: list[QueryPattern]) -> list[IndexSpec]:
                 unique=False,
                 sparse=False,
                 source=", ".join(sorted(sources)),
-            )
+            ),
         )
 
     return recommendations

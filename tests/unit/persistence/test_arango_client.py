@@ -140,14 +140,14 @@ class TestWrapperUnwrap:
             "docs": [
                 {"path": "/a", "ts": MockMilliseconds(111)},
                 {"path": "/b", "ts": MockMilliseconds(222)},
-            ]
+            ],
         }
         result = _jsonify_for_arango(data)
         assert result == {
             "docs": [
                 {"path": "/a", "ts": 111},
                 {"path": "/b", "ts": 222},
-            ]
+            ],
         }
 
 

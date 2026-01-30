@@ -103,7 +103,7 @@ class MigrationChecker:
                     parent_mod = NOMARR_ROOT / "/".join(parts[1:-1]) / "__init__.py"
                 if parent_mod.exists():
                     self.issues.append(
-                        f"Old function/class '{parts[-1]}' still exists in {parent_mod}"
+                        f"Old function/class '{parts[-1]}' still exists in {parent_mod}",
                     )
 
     def _check_old_code_exists(self) -> bool:
@@ -206,7 +206,7 @@ class MigrationChecker:
 
         if hits:
             self.warnings.append(
-                f"Found {len(hits)} possible reference(s) to '{leaf_name}' (review manually)"
+                f"Found {len(hits)} possible reference(s) to '{leaf_name}' (review manually)",
             )
             self.details["references"] = hits[:10]
 
@@ -245,7 +245,7 @@ class MigrationChecker:
 
         if not RUFF_TOML.exists():
             self.issues.append(
-                f"Expected ruff ban for '{self.old_pattern}' but ruff.toml not found"
+                f"Expected ruff ban for '{self.old_pattern}' but ruff.toml not found",
             )
             return
 

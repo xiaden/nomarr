@@ -213,7 +213,7 @@ def validate_skill(skill_dir: Path, repo_root: Path, check_refs: bool = False) -
     line_count = len(lines)
     if line_count > MAX_LINE_COUNT:
         result.add_warning(
-            f"SKILL.md exceeds {MAX_LINE_COUNT} lines ({line_count}). Consider moving content to references/"
+            f"SKILL.md exceeds {MAX_LINE_COUNT} lines ({line_count}). Consider moving content to references/",
         )
 
     # Check code references if requested
