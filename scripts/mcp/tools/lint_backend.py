@@ -129,11 +129,19 @@ def lint_backend(path: str | None = None, check_all: bool = False) -> dict[str, 
             if result.returncode != 0:
                 return {"status": "error", "summary": {"error": "Failed to get modified files from git"}, "errors": []}
 
+            # Filter to Python files, optionally within specified path
+            if path is None:
+                path = ""
+            
             modified_files = [
                 f
                 for f in result.stdout.strip().split("\n")
                 if f and f.endswith(".py") and (f.startswith("nomarr/") or f.startswith("scripts/"))
             ]
+            
+            # Further filter by path if specified
+            if path:
+                modified_files = [f for f in modified_files if f.startswith(path)]
 
             if not modified_files:
                 return {
