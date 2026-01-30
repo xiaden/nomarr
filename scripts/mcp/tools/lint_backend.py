@@ -101,35 +101,73 @@ def parse_import_linter_output(stdout: str, stderr: str) -> list[dict[str, Any]]
     return errors
 
 
-def lint_backend(path: str | None = None) -> dict[str, Any]:
+def lint_backend(path: str | None = None, only_modified: bool = False) -> dict[str, Any]:
     """Run backend linting tools on specified path.
 
     Args:
-        path: Relative path to lint (default: "nomarr/")
+        path: Relative path to lint (default: "nomarr/"). Use empty string "" to lint entire project.
+        only_modified: If True, only lint Python files modified since last commit (ignores path parameter)
 
     Returns:
         Structured JSON with errors or clean status
 
     """
-    if path is None:
-        path = "nomarr/"
+    # Get list of files to lint
+    if only_modified:
+        # Get modified Python files from git
+        try:
+            result = subprocess.run(
+                ["git", "diff", "--name-only", "--diff-filter=ACMR", "HEAD"],
+                capture_output=True,
+                text=True,
+                cwd=project_root,
+                timeout=5,
+            )
+            if result.returncode != 0:
+                return {"status": "error", "summary": {"error": "Failed to get modified files from git"}, "errors": []}
 
-    target_path = project_root / path
-    if not target_path.exists():
-        return {"status": "error", "summary": {"error": f"Path not found: {path}"}, "errors": []}
+            modified_files = [
+                f
+                for f in result.stdout.strip().split("\n")
+                if f and f.endswith(".py") and (f.startswith("nomarr/") or f.startswith("scripts/"))
+            ]
+
+            if not modified_files:
+                return {
+                    "status": "clean",
+                    "summary": {"message": "No modified Python files to lint", "files_checked": 0},
+                }
+
+            # Convert to absolute paths
+            target_files = [project_root / f for f in modified_files]
+        except subprocess.TimeoutExpired:
+            return {"status": "error", "summary": {"error": "Git command timed out"}, "errors": []}
+        except Exception as e:
+            return {"status": "error", "summary": {"error": f"Failed to get modified files: {e}"}, "errors": []}
+    else:
+        # Use path-based linting
+        if path is None:
+            path = "nomarr/"
+
+        target_path = project_root / path
+        if not target_path.exists():
+            return {"status": "error", "summary": {"error": f"Path not found: {path}"}, "errors": []}
+
+        target_files = [target_path] if target_path.is_file() else None
 
     all_errors = []
     tools_run = []
 
     # 1. Run ruff
     try:
-        result = subprocess.run(
-            [sys.executable, "-m", "ruff", "check", str(target_path)],
-            capture_output=True,
-            text=True,
-            cwd=project_root,
-            timeout=30,
-        )
+        if target_files:
+            # Lint specific files
+            ruff_cmd = [sys.executable, "-m", "ruff", "check"] + [str(f) for f in target_files]
+        else:
+            # Lint directory
+            ruff_cmd = [sys.executable, "-m", "ruff", "check", str(target_path)]
+
+        result = subprocess.run(ruff_cmd, capture_output=True, text=True, cwd=project_root, timeout=30)
         tools_run.append("ruff")
         all_errors.extend(parse_ruff_output(result.stdout, result.stderr))
     except subprocess.TimeoutExpired:
@@ -161,13 +199,14 @@ def lint_backend(path: str | None = None) -> dict[str, Any]:
 
     # 2. Run mypy
     try:
-        result = subprocess.run(
-            [sys.executable, "-m", "mypy", str(target_path)],
-            capture_output=True,
-            text=True,
-            cwd=project_root,
-            timeout=60,
-        )
+        if target_files:
+            # Lint specific files
+            mypy_cmd = [sys.executable, "-m", "mypy"] + [str(f) for f in target_files]
+        else:
+            # Lint directory
+            mypy_cmd = [sys.executable, "-m", "mypy", str(target_path)]
+
+        result = subprocess.run(mypy_cmd, capture_output=True, text=True, cwd=project_root, timeout=60)
         tools_run.append("mypy")
         all_errors.extend(parse_mypy_output(result.stdout, result.stderr))
     except subprocess.TimeoutExpired:
@@ -197,8 +236,8 @@ def lint_backend(path: str | None = None) -> dict[str, Any]:
             }
         )
 
-    # 3. Run import-linter (only if linting a directory, not a single file)
-    if target_path.is_dir():
+    # 3. Run import-linter (only if linting a directory or when only_modified=False)
+    if not only_modified and (target_files is None or (target_path and target_path.is_dir())):
         try:
             # Use venv path for lint-imports
             venv_script = project_root / ".venv" / "Scripts" / "lint-imports.exe"
@@ -233,11 +272,17 @@ def lint_backend(path: str | None = None) -> dict[str, Any]:
                 }
             )
 
-    # Count files checked (approximate from path)
-    if target_path.is_file():
+    # Count files checked
+    if only_modified:
+        files_checked = len(target_files)
+    elif target_files and len(target_files) == 1 and target_files[0].is_file():
         files_checked = 1
-    else:
+    elif target_path and target_path.is_file():
+        files_checked = 1
+    elif target_path:
         files_checked = len(list(target_path.rglob("*.py")))
+    else:
+        files_checked = 0
 
     if all_errors:
         # Group errors by tool

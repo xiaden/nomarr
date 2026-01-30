@@ -14,6 +14,8 @@ CRITICAL INVARIANTS:
 
 This is not "lazy provisioning" - it's explicit onboarding.
 """
+
+import logging
 import os
 import secrets
 from pathlib import Path
@@ -23,6 +25,7 @@ from arango import ArangoClient
 logger = logging.getLogger(__name__)
 USERNAME = "nomarr"
 DB_NAME = "nomarr"
+
 
 def provision_database_and_user(hosts: str, root_password: str) -> str:
     """Provision database and user (first-run only).
@@ -62,7 +65,8 @@ def provision_database_and_user(hosts: str, root_password: str) -> str:
     sys_db.update_permission(username=USERNAME, permission="rw", database=DB_NAME)
     return app_password
 
-def is_first_run(config_path: Path, hosts: str | None=None) -> bool:
+
+def is_first_run(config_path: Path, hosts: str | None = None) -> bool:
     """Check if this is first run (no config exists, no DB credentials, or DB missing).
 
     Args:
@@ -79,12 +83,14 @@ def is_first_run(config_path: Path, hosts: str | None=None) -> bool:
         return True
     return not _database_exists(hosts)
 
+
 def _has_db_config(config_path: Path) -> bool:
     """Check if config file has ArangoDB password (the only required field).
 
     Username and db_name are hardcoded as 'nomarr', so only password matters.
     """
     import yaml
+
     try:
         with open(config_path) as f:
             config = yaml.safe_load(f)
@@ -92,7 +98,8 @@ def _has_db_config(config_path: Path) -> bool:
     except Exception:
         return False
 
-def _wait_for_arango(hosts: str, max_attempts: int=30, delay_s: float=2.0) -> bool:
+
+def _wait_for_arango(hosts: str, max_attempts: int = 30, delay_s: float = 2.0) -> bool:
     """Wait for ArangoDB to become available.
 
     Args:
@@ -105,6 +112,7 @@ def _wait_for_arango(hosts: str, max_attempts: int=30, delay_s: float=2.0) -> bo
 
     """
     import time
+
     root_password = os.getenv("ARANGO_ROOT_PASSWORD")
     if not root_password:
         logger.debug("ARANGO_ROOT_PASSWORD not set, skipping connection wait")
@@ -125,7 +133,8 @@ def _wait_for_arango(hosts: str, max_attempts: int=30, delay_s: float=2.0) -> bo
                 return False
     return False
 
-def _database_exists(hosts: str | None=None) -> bool:
+
+def _database_exists(hosts: str | None = None) -> bool:
     """Check if the 'nomarr' database exists in ArangoDB.
 
     Uses root credentials from environment to check system database.
@@ -154,6 +163,7 @@ def _database_exists(hosts: str | None=None) -> bool:
         logger.warning(f"Database existence check failed: {e}")
         return False
 
+
 def write_db_config(config_path: Path, password: str) -> None:
     """Write auto-generated ArangoDB password to config file.
 
@@ -171,6 +181,7 @@ def write_db_config(config_path: Path, password: str) -> None:
 
     """
     import yaml
+
     if config_path.exists():
         with open(config_path) as f:
             config = yaml.safe_load(f) or {}
@@ -180,6 +191,7 @@ def write_db_config(config_path: Path, password: str) -> None:
     config_path.parent.mkdir(parents=True, exist_ok=True)
     with open(config_path, "w") as f:
         yaml.dump(config, f, default_flow_style=False)
+
 
 def get_root_password_from_env() -> str:
     """Get root password from environment variable.
