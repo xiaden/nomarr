@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.library.get_library_comp import get_library_or_error
 from nomarr.components.library.library_admin_comp import (
     clear_library_data,
     create_library,
@@ -49,7 +48,10 @@ class LibraryAdminMixin:
             ValueError: If library does not exist
 
         """
-        result: dict[str, Any] = get_library_or_error(self.db, library_id)
+        result = self.db.libraries.get_library(library_id)
+        if result is None:
+            msg = f"Library not found: {library_id}"
+            raise ValueError(msg)
         return result
 
     def is_library_root_configured(self) -> bool:
@@ -131,7 +133,7 @@ class LibraryAdminMixin:
             library_id=library_id,
             root_path=root_path,
         )
-        updated = get_library_or_error(self.db, library_id)
+        updated = self._get_library_or_error(library_id)
         return LibraryDict(**updated)
 
     def update_library(
@@ -185,7 +187,7 @@ class LibraryAdminMixin:
             file_write_mode=file_write_mode,
         )
 
-        updated = get_library_or_error(self.db, library_id)
+        updated = self._get_library_or_error(library_id)
         return LibraryDict(**updated)
 
     def clear_library_data(self) -> None:

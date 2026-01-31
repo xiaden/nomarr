@@ -2,50 +2,37 @@
 
 Checks which backend API endpoints are used by the frontend.
 Returns structured JSON for AI consumption.
+
+Uses static AST parsing via helpers/route_parser.py - no app import required.
 """
 
 __all__ = ["check_api_coverage"]
 import re
-import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-try:
-    from scripts.mcp.tools.helpers.log_suppressor import suppress_logs
-except ImportError:
-    # Fallback if not available (standalone mode)
-    from collections.abc import Iterator
-    from contextlib import contextmanager
-
-    @contextmanager
-    def suppress_logs() -> Iterator[None]:  # type: ignore[no-redef]
-        yield
-
+from scripts.mcp.tools.helpers.route_parser import build_full_paths, parse_interface_files
 
 # Project root
-ROOT = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(ROOT))
-
-# Import with logging suppressed
-with suppress_logs():
-    from nomarr.interfaces.api.api_app import api_app
+ROOT = Path(__file__).parent.parent.parent.parent
 
 
 def get_backend_routes() -> list[tuple[str, str]]:
-    """Get all routes from FastAPI application.
+    """Get all routes from static AST analysis.
 
     Returns:
         List of (method, path) tuples
 
     """
-    routes = [
-        (method, getattr(route, "path", ""))
-        for route in api_app.routes
-        if hasattr(route, "methods") and hasattr(route, "path")
-        for method in sorted(getattr(route, "methods", set()))
-        if method != "OPTIONS"
-    ]
+    interfaces_dir = ROOT / "nomarr" / "interfaces" / "api"
+    if not interfaces_dir.exists():
+        return []
+
+    routers = parse_interface_files(interfaces_dir)
+    routes_data = build_full_paths(routers, ROOT)
+
+    routes = [(route["method"], route["path"]) for route in routes_data if route.get("method") != "OPTIONS"]
 
     return sorted(routes, key=lambda x: (x[1], x[0]))
 

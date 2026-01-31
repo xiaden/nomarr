@@ -11,7 +11,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.library.get_library_comp import get_library_or_error
 from nomarr.helpers.dto.library_dto import LibraryScanStatusResult, ScanTarget, StartScanResult
 from nomarr.helpers.time_helper import now_ms
 from nomarr.workflows.library.start_scan_wf import start_scan_workflow
@@ -32,7 +31,10 @@ class LibraryScanMixin:
 
     def _get_library_or_error(self, library_id: str) -> dict[str, Any]:
         """Get a library by ID or raise an error."""
-        result: dict[str, Any] = get_library_or_error(self.db, library_id)
+        result = self.db.libraries.get_library(library_id)
+        if result is None:
+            msg = f"Library not found: {library_id}"
+            raise ValueError(msg)
         return result
 
     def _has_healthy_library_workers(self) -> bool:
