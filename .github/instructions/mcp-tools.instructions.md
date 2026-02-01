@@ -397,8 +397,8 @@ def trace_calls(function: str) -> dict:
 ```
 
 AI agents can chain tools:
-1. `discover_api("nomarr.services")` → see available services
-2. `get_source("nomarr.services.ConfigService")` → see implementation
+1. `module_discover_api("nomarr.services")` → see available services
+2. `module_get_source("nomarr.services.ConfigService")` → see implementation
 3. `trace_calls("ConfigService.load_config")` → see how it's used
 
 ---

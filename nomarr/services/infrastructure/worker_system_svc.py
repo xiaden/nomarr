@@ -25,12 +25,14 @@ from nomarr.components.ml.ml_capacity_probe_comp import (
     get_or_run_capacity_probe,
 )
 from nomarr.components.ml.ml_tier_selection_comp import (
+    TIER_CONFIGS,
     ExecutionTier,
     TierSelection,
     select_execution_tier,
 )
 from nomarr.components.platform.resource_monitor_comp import check_nvidia_gpu_capability
 from nomarr.components.workers import should_restart_worker
+from nomarr.components.workers.worker_discovery_comp import cleanup_stale_claims
 from nomarr.helpers.dto.admin_dto import WorkerOperationResult
 from nomarr.helpers.dto.health_dto import (
     ComponentLifecycleHandler,
@@ -170,7 +172,6 @@ class WorkerSystemService(ComponentLifecycleHandler):
         if rm_config is None or not rm_config.enabled:
             # Resource management disabled - use configured worker count
             logger.info("[WorkerSystemService] Resource management disabled, using configured worker count")
-            from nomarr.components.ml.ml_tier_selection_comp import TIER_CONFIGS
 
             # Return Tier 0 with configured workers
             return TierSelection(
@@ -621,6 +622,4 @@ class WorkerSystemService(ComponentLifecycleHandler):
             Number of claims removed
 
         """
-        from nomarr.components.workers.worker_discovery_comp import cleanup_stale_claims
-
         return cleanup_stale_claims(self.db, DEFAULT_HEARTBEAT_TIMEOUT_MS)

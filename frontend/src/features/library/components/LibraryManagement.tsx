@@ -38,6 +38,7 @@ import {
   reconcileTags,
   scan as scanLibrary,
   update as updateLibrary,
+  updateWriteMode,
 } from "../../../shared/api/library";
 import { getWorkStatus } from "../../../shared/api/processing";
 import { ServerFilePicker } from "../../../shared/components/ServerFilePicker";
@@ -64,6 +65,7 @@ export function LibraryManagement() {
   const [showPathPicker, setShowPathPicker] = useState(false);
   const [reconcilingId, setReconcilingId] = useState<string | null>(null);
   const [reconcileStatus, setReconcileStatus] = useState<Record<string, { pending: number; inProgress: boolean }>>({});
+  const [originalFileWriteMode, setOriginalFileWriteMode] = useState<"none" | "minimal" | "full">("full");
 
   // Initial load - shows loading state
   const loadLibraries = useCallback(async () => {
@@ -224,6 +226,7 @@ export function LibraryManagement() {
     setFormIsEnabled(true);
     setFormWatchMode("off");
     setFormFileWriteMode("full");
+    setOriginalFileWriteMode("full");
     setShowPathPicker(false);
     setIsCreating(false);
     setEditingId(null);
@@ -240,6 +243,7 @@ export function LibraryManagement() {
     setFormIsEnabled(library.isEnabled);
     setFormWatchMode(library.watchMode);
     setFormFileWriteMode(library.fileWriteMode);
+    setOriginalFileWriteMode(library.fileWriteMode);
     setEditingId(library.library_id);
     setIsCreating(false);
   };
@@ -275,15 +279,34 @@ export function LibraryManagement() {
       return;
     }
 
+    const writeModeChanged = formFileWriteMode !== originalFileWriteMode;
+
     try {
       setError(null);
+      // Update all fields except fileWriteMode (handled separately if changed)
       await updateLibrary(editingId, {
         name: formName.trim() || undefined,  // Keep existing name if empty
         rootPath: formRootPath,
         isEnabled: formIsEnabled,
         watchMode: formWatchMode,
-        fileWriteMode: formFileWriteMode,
+        ...(writeModeChanged ? {} : { fileWriteMode: formFileWriteMode }),
       });
+
+      // Handle write mode change separately to check for reconciliation
+      if (writeModeChanged) {
+        const result = await updateWriteMode(editingId, formFileWriteMode);
+        if (result.requires_reconciliation && result.affected_file_count > 0) {
+          const confirmed = await confirm({
+            title: "Reconcile Tags?",
+            message: `${result.affected_file_count} files need to be rewritten with the new tag format. Reconcile now?`,
+            severity: "info",
+          });
+          if (confirmed) {
+            await handleReconcileTags(editingId);
+          }
+        }
+      }
+
       await loadLibraries();
       resetForm();
     } catch (err) {

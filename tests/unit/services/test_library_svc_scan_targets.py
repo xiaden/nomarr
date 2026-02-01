@@ -90,9 +90,9 @@ class TestScanTargetsValidation:
             ),
         )
 
-        # Patch where start_scan_workflow is imported and used
+        # Patch where start_scan_workflow is imported and used (in the service module)
         monkeypatch.setattr(
-            "nomarr.workflows.library.start_scan_wf.start_scan_workflow",
+            "nomarr.services.domain.library_svc.scan.start_scan_workflow",
             mock_start_scan,
         )
 
@@ -145,9 +145,9 @@ class TestScanTargetsValidation:
             ),
         )
 
-        # Patch where start_scan_workflow is imported and used
+        # Patch where start_scan_workflow is imported and used (in the service module)
         monkeypatch.setattr(
-            "nomarr.workflows.library.start_scan_wf.start_scan_workflow",
+            "nomarr.services.domain.library_svc.scan.start_scan_workflow",
             mock_start_scan,
         )
 

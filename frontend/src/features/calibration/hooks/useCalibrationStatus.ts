@@ -13,6 +13,7 @@ import {
     generate,
     getStatus,
 } from "../../../shared/api/calibration";
+import { reconcileTags } from "../../../shared/api/library";
 
 export function useCalibrationStatus() {
   const { showSuccess, showError, showInfo } = useNotification();
@@ -65,6 +66,44 @@ export function useCalibrationStatus() {
       
       showSuccess(message);
       await loadStatus();
+      
+      // Check if reconciliation is needed for affected libraries
+      if (result.requires_reconciliation && result.affected_libraries?.length) {
+        const affected = result.affected_libraries;
+        const totalOutdated = affected.reduce((sum, lib) => sum + lib.outdated_files, 0);
+        const libraryNames = affected.map((lib) => lib.name).join(", ");
+        const reconcileConfirmed = await confirm({
+          title: "Reconcile File Tags?",
+          message: `Calibration changed for ${affected.length} ${affected.length === 1 ? "library" : "libraries"} (${libraryNames}). ` +
+            `${totalOutdated} files need to be rewritten to reflect the new calibration. Reconcile now?`,
+          confirmLabel: "Reconcile",
+          cancelLabel: "Later",
+          severity: "info",
+        });
+        
+        if (reconcileConfirmed) {
+          setActionLoading(true);
+          let totalProcessed = 0;
+          let totalFailed = 0;
+          
+          for (const lib of affected) {
+            try {
+              const reconcileResult = await reconcileTags(lib.library_id);
+              totalProcessed += reconcileResult.processed;
+              totalFailed += reconcileResult.failed;
+            } catch (err) {
+              console.error(`[Calibration] Reconcile error for library ${lib.name}:`, err);
+              totalFailed += 1;
+            }
+          }
+          
+          if (totalFailed > 0) {
+            showError(`Reconciled ${totalProcessed} files, ${totalFailed} failed`);
+          } else {
+            showSuccess(`Reconciled ${totalProcessed} files across ${affected.length} ${affected.length === 1 ? "library" : "libraries"}`);
+          }
+        }
+      }
     } catch (err) {
       showError(
         err instanceof Error ? err.message : "Failed to generate calibration"

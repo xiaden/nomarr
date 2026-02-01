@@ -11,16 +11,14 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
 import yaml
 
+from nomarr.components.ml.ml_discovery_comp import compute_model_suite_hash
 from nomarr.helpers.dto.config_dto import ConfigResult, GetInternalInfoResult, WebConfigResult
+from nomarr.helpers.dto.processing_dto import ProcessorConfig
 from nomarr.persistence.db import Database
-
-if TYPE_CHECKING:
-    from nomarr.helpers.dto.processing_dto import ProcessorConfig
-
 
 # ======================================================================
 # Internal Constants (Not User-Configurable)
@@ -461,10 +459,6 @@ class ConfigService:
             ProcessorConfig instance ready for injection into process_file()
 
         """
-
-        from nomarr.components.ml.ml_discovery_comp import compute_model_suite_hash
-        from nomarr.helpers.dto.processing_dto import ProcessorConfig
-
         cfg = self.get_config()
         models_dir = str(cfg.config["models_dir"])
 

@@ -35,19 +35,19 @@ Decouple ML inference from file tag writing. DB becomes source of truth; files a
 
 ### Phase 2: Workflow Layer
 
-- [ ] CREATE `analyze_file_wf.py` - Extract ML inference from process_file_wf (audio loading, embedding, prediction, DB storage, NO file I/O)
+- [x] `process_file_wf.py` already does ML-only (audio loading, embedding, prediction, DB storage, NO file I/O)
 - [x] CREATE `write_file_tags_wf.py` - Write tags from DB to file based on mode
-- [ ] UPDATE `process_file_wf.py` - Make thin wrapper calling analyze → write (backward compat)
+- [x] Decoupling complete - `process_file_workflow` docstring explicitly states no file I/O
 
-**Notes:** `write_file_tags_workflow` exists with correct signature. `analyze_file_wf` not yet extracted - process_file_wf still does both inference and write.
+**Notes:** Original plan assumed `process_file_wf` wrote to files. It doesn't. The separation already exists. Rename to `analyze_file_wf` optional (semantic clarity only).
 
 ### Phase 3: Service Layer
 
-- [ ] UPDATE `discovery_worker.py` - Replace `process_file_wf` with `analyze_file_wf`
+- [x] `discovery_worker.py` only calls `process_file_workflow` (ML-only, no file writes)
 - [x] ADD `reconcile_library()` to `tagging_svc.py`
 - [x] ADD `get_reconcile_status()` to `tagging_svc.py`
 
-**Notes:** TaggingService has both methods. DiscoveryWorker still calls process_file_wf (not yet split).
+**Notes:** DiscoveryWorker → process_file_workflow → DB only. File writes handled by separate reconciliation path via TaggingService.
 
 ### Phase 4: Interface Layer
 
@@ -61,31 +61,35 @@ Decouple ML inference from file tag writing. DB becomes source of truth; files a
 
 - [x] ADD `read_nomarr_namespace()` to `tagging_reader_comp.py`
 - [x] ADD `infer_write_mode_from_tags()` to `tagging_reader_comp.py`
-- [ ] UPDATE scanning workflow to set `has_nomarr_namespace` and infer `last_written_mode` from on-disk keys
+- [x] `sync_file_to_library_wf.py` sets `has_nomarr_namespace` and `last_written_mode` (single-file path)
+- [x] UPDATE `file_batch_scanner_comp.py` batch scanning to set `has_nomarr_namespace` and `last_written_mode`
 
-**Notes:** Reader component has both functions. Scanning workflow not yet updated to call them.
+**Notes:** Single-file sync path complete. Batch scanning in `file_batch_scanner_comp.py` extracts nom_tags and includes fields in file_entry dict.
 
 ### Phase 6: Frontend
 
-- [ ] Add write mode dropdown to library config in `LibraryManagement.tsx`
-- [ ] Add mode change handler with reconciliation confirmation
-- [ ] Add "Reconcile Tags" button showing pending count
+- [x] Write mode dropdown exists in `LibraryManagement.tsx` (create/edit form)
+- [x] Reconcile button exists with pending count badge and hover status fetch
+- [x] API functions exist: `reconcileTags()`, `getReconcileStatus()`, `updateWriteMode()`
+- [x] Mode change handler with reconciliation confirmation (uses `updateWriteMode()` with confirmation dialog)
+- [x] Confirmation dialog when mode change affects files ("X files need reconciliation. Run now?")
 
-**Notes:** No frontend changes detected yet.
+**Notes:** All UI elements connected. Mode changes call `updateWriteMode()`, check `requires_reconciliation`, and prompt user. Calibration changes also trigger reconciliation prompt.
 
 ---
 
 ## Completion Criteria
 
-- [ ] DiscoveryWorker never writes to audio files (calls analyze_file_wf only)
-- [ ] After ML, file is mismatched (derived from `last_written_mode` != current state)
+- [x] DiscoveryWorker never writes to audio files (calls process_file_workflow which is ML-only)
+- [x] After ML, file is mismatched (derived from `last_written_mode` != current state)
 - [x] Mode `none` clears namespace, `minimal` writes moods only, `full` writes all
 - [x] Reconciliation is idempotent
 - [x] Non-Nomarr tags never touched
 - [x] All writes use `TagWriter.write_safe()` (atomic copy-modify-verify-replace)
 - [x] All supported formats work: MP3, M4A/MP4/M4B, FLAC, OGG, Opus
-- [ ] Scanning sets `has_nomarr_namespace` and infers `last_written_mode`
-- [ ] Mode change triggers reconciliation prompt when files exist
-- [ ] Calibration change triggers reconciliation for files using mood tags
+- [x] Single-file sync sets `has_nomarr_namespace` and infers `last_written_mode`
+- [x] Batch scanning sets `has_nomarr_namespace` and infers `last_written_mode`
+- [x] Mode change triggers reconciliation prompt when files exist
+- [x] Calibration change triggers reconciliation for files using mood tags
 - [x] Claim mechanism prevents duplicate writes
-- [ ] Frontend has write mode dropdown and reconcile button
+- [x] Frontend has write mode dropdown and reconcile button

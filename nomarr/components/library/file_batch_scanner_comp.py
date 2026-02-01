@@ -11,6 +11,7 @@ from typing import Any
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_input
 from nomarr.components.library.metadata_extraction_comp import extract_metadata
+from nomarr.components.tagging.tagging_reader_comp import infer_write_mode_from_tags
 from nomarr.helpers.files_helper import is_audio_file
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence import Database
@@ -125,6 +126,11 @@ def scan_folder_files(
                 or file_version != tagger_version  # Tagged with different model suite
             )
 
+            # Compute namespace tracking fields
+            nom_tags = metadata.get("nom_tags", {})
+            has_nomarr_namespace = bool(nom_tags)
+            last_written_mode = infer_write_mode_from_tags(set(nom_tags.keys())) if has_nomarr_namespace else None
+
             # Prepare batch entry with normalized_path for identity
             file_entry = {
                 "path": file_path_str,  # Absolute path for access
@@ -138,6 +144,8 @@ def scan_folder_files(
                 "is_valid": True,
                 "scanned_at": now_ms().value,
                 "last_seen_scan_id": scan_id,  # Mark as seen in this scan
+                "has_nomarr_namespace": has_nomarr_namespace,
+                "last_written_mode": last_written_mode,
             }
             file_entries.append(file_entry)
 

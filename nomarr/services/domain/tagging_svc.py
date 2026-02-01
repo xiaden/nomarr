@@ -7,10 +7,13 @@ from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 
 from nomarr.helpers.dto.calibration_dto import (
+    GlobalCalibrationStatus,
+    LibraryCalibrationStatus,
     WriteCalibratedTagsParams,
 )
 from nomarr.helpers.dto.library_dto import ReconcileTagsResult
 from nomarr.helpers.dto.recalibration_dto import ApplyCalibrationResult
+from nomarr.workflows.calibration.write_calibrated_tags_wf import write_calibrated_tags_wf
 from nomarr.workflows.library.file_tags_io_wf import read_file_tags_workflow, remove_file_tags_workflow
 from nomarr.workflows.processing.write_file_tags_wf import write_file_tags_workflow
 
@@ -76,10 +79,6 @@ class TaggingService:
 
         """
 
-        from nomarr.workflows.calibration.write_calibrated_tags_wf import write_calibrated_tags_wf
-
-        logger.info(f"Writing calibrated tags to file: {file_path}")
-
         params = WriteCalibratedTagsParams(
             file_path=file_path,
             models_dir=models_dir,
@@ -131,8 +130,6 @@ class TaggingService:
 
         logger.info(f"Writing calibrated tags to {len(paths)} files...")
 
-        from nomarr.workflows.calibration.write_calibrated_tags_wf import write_calibrated_tags_wf
-
         success_count = 0
         for file_path in paths:
             try:
@@ -162,11 +159,6 @@ class TaggingService:
             Dict representation of GlobalCalibrationStatus DTO
 
         """
-        from nomarr.helpers.dto.calibration_dto import (
-            GlobalCalibrationStatus,
-            LibraryCalibrationStatus,
-        )
-
         # Get global calibration version from meta
         global_version = self.db.meta.get("calibration_version")
         last_run_str = self.db.meta.get("calibration_last_run")

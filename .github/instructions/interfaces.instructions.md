@@ -42,11 +42,11 @@ from nomarr.persistence import ...    # No direct DB access
 **Use the Nomarr MCP server to navigate this layer efficiently:**
 
 - `trace_endpoint(endpoint)` - Trace FastAPI routes through DI to service methods
-- `check_api_coverage()` - See which backend endpoints are used by frontend
-- `discover_api(module_name)` - See service interfaces before calling them
-- `locate_symbol(symbol_name)` - Find route definitions
+- `project_check_api_coverage()` - See which backend endpoints are used by frontend
+- `module_discover_api(module_name)` - See service interfaces before calling them
+- `module_locate_symbol(symbol_name)` - Find route definitions
 
-**Before adding routes, use `trace_endpoint` and `check_api_coverage` to understand existing patterns.**
+**Before adding routes, use `trace_endpoint` and `project_check_api_coverage` to understand existing patterns.**
 
 ---
 

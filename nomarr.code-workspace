@@ -37,9 +37,7 @@
 		"git.ignoredRepositories": [],
 		"git.scanRepositories": [],
 		"editor.formatOnSave": false,
-		"editor.codeActionsOnSave": {
-			"source.organizeImports": "explicit"
-		},
+		"editor.codeActionsOnSave": {},
 		"[python]": {
 			"editor.defaultFormatter": "charliermarsh.ruff",
 			"editor.formatOnSave": true
@@ -91,3 +89,4 @@
 		]
 	}
 }
+

@@ -4,32 +4,37 @@
 Exposes code discovery tools and resources to AI agents via MCP.
 All tools use static analysis and return structured JSON.
 
-File system:
-- list_dir: List directory contents with smart filtering
+Project navigation:
+- project_list_dir: List directory contents with smart filtering
+- project_list_routes: List all API routes by static analysis
+- project_check_api_coverage: Check which backend endpoints are used by frontend
 
-Python code navigation:
-- discover_api: Show public API of any nomarr module (signatures, methods, constants)
-- locate_symbol: Find where a symbol is defined (by simple or partially qualified name)
-- get_source: Get source code of a specific function/method/class
-- symbol_at_line: Get full function/class containing a line (for contextual error fixes)
+Python module navigation:
+- module_discover_api: Show public API of any nomarr module (signatures, methods, constants)
+- module_locate_symbol: Find where a symbol is defined (by simple or partially qualified name)
+- module_get_source: Get source code of a specific function/method/class
+
+File operations:
+- file_symbol_at_line: Get full function/class containing a line (for contextual error fixes)
+- file_read_range: Read line range from any file (YAML, TS, CSS, configs, etc.)
+- file_read_line: Quick error context (1 line + 2 around) for trivial fixes
+- file_search_text: Find exact text in files and show 2-line context
+
+Call tracing:
 - trace_calls: Trace call chains from entry point through layers
 - trace_endpoint: Resolve FastAPI DI to trace full endpoint behavior
 
-Nomarr-specific tools:
-- list_routes: List all API routes by static analysis
-- check_api_coverage: Check which backend endpoints are used by frontend
+Quality validation:
 - lint_backend: Run ruff, mypy, and import-linter on specified path
 - lint_frontend: Run ESLint and TypeScript type checking on frontend
 
 Task plan tools:
-- read_plan: Read a task plan as structured JSON
-- get_steps: Get focused view of a single phase
-- complete_step: Mark a step complete and get next step
+- plan_read: Read a task plan as structured JSON
+- plan_complete_step: Mark a step complete and get next step
 
-Fallback utilities:
-- search_text: Find exact text in files and show 2-line context
-- read_line: Quick error context (1 line + 2 around) for trivial fixes
-- read_file: Read line range from any file (YAML, TS, CSS, configs, etc.)
+File editing tools:
+- edit_atomic_replace: Apply multiple string replacements atomically (single write)
+- edit_move_text: Move lines within a file or between files atomically
 
 Usage:
     python -m scripts.mcp.nomarr_mcp
@@ -39,6 +44,8 @@ import logging
 import sys
 from pathlib import Path
 from typing import Annotated
+
+from pydantic import BaseModel, Field
 
 from mcp.server.fastmcp import FastMCP
 from scripts.mcp import tools
@@ -61,14 +68,26 @@ ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
 
+# ──────────────────────────────────────────────────────────────────────
+# Pydantic Models for Complex Tool Parameters
+# ──────────────────────────────────────────────────────────────────────
+
+
+class StepAnnotation(BaseModel):
+    """Annotation to add under a completed step."""
+
+    marker: str = Field(description="Alphanumeric marker word (e.g., 'Notes', 'Warning', 'Blocked')")
+    text: str = Field(description="Annotation text to add under the step")
+
+
 # Initialize MCP server
 mcp = FastMCP(
     name="nom:coding-tools",
     instructions=(
         "Provides read-only, static analysis access to the Nomarr codebase. "
-        "Tool priority: list_dir → discover_api → locate_symbol → get_source → "
-        "symbol_at_line → trace_calls/trace_endpoint. "
-        "Use structured Python tools first; read_line/read_file/search_text are "
+        "Tool priority: project_list_dir → module_discover_api → module_locate_symbol → module_get_source → "
+        "file_symbol_at_line → trace_calls/trace_endpoint. "
+        "Use structured Python tools first; file_read_line/file_read_range/file_search_text are "
         "fallbacks for non-Python files or when structured tools fail. "
         "No tools execute code, modify files, or infer behavior beyond what is "
         "statically observable."
@@ -82,7 +101,7 @@ mcp = FastMCP(
 
 
 @mcp.tool()
-def list_dir(
+def project_list_dir(
     folder: Annotated[
         str,
         "Subfolder path relative to workspace root (empty for root). Useforward slashes: 'nomarr/services'",
@@ -94,7 +113,7 @@ def list_dir(
     Specific folder: shows files at that level.
     Excludes: .venv, node_modules, __pycache__, etc.
     """
-    return tools.list_dir(folder, workspace_root=ROOT)
+    return tools.project_list_dir(folder, workspace_root=ROOT)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -105,13 +124,15 @@ def list_dir(
 
 
 @mcp.tool()
-def discover_api(module_name: Annotated[str, "Fully qualified module name (e.g., 'nomarr.components.ml')"]) -> dict:
+def module_discover_api(
+    module_name: Annotated[str, "Fully qualified module name (e.g., 'nomarr.components.ml')"],
+) -> dict:
     """Discover the entire API of any Python module."""
-    return tools.discover_api(module_name)
+    return tools.module_discover_api(module_name)
 
 
 @mcp.tool()
-def get_source(
+def module_get_source(
     qualified_name: Annotated[str, "Python dotted path: 'module.function' or 'module.Class.method'"],
     *,
     large_context: Annotated[bool, "If True, include 10 lines context (default: 2 lines)"] = False,
@@ -121,11 +142,11 @@ def get_source(
     Uses static AST parsing (no code execution). Always includes 2 lines of context
     before/after for edit operations. Set large_context=True for 10 lines.
     """
-    return tools.get_source(qualified_name, large_context=large_context)
+    return tools.module_get_source(qualified_name, large_context=large_context)
 
 
 @mcp.tool()
-def symbol_at_line(
+def file_symbol_at_line(
     file_path: Annotated[str, "Absolute or relative path to Python file"],
     line_number: Annotated[int, "Line number (1-indexed) from error message or trace"],
 ) -> dict:
@@ -136,11 +157,11 @@ def symbol_at_line(
 
     Returns the innermost containing symbol so you can reason about full context.
     """
-    return tools.symbol_at_line(file_path, line_number, ROOT)
+    return tools.file_symbol_at_line(file_path, line_number, ROOT)
 
 
 @mcp.tool()
-def locate_symbol(
+def module_locate_symbol(
     symbol_name: Annotated[
         str,
         "Symbol name (simple or partially qualified): 'ApplyCalibrationResponse', "
@@ -152,7 +173,7 @@ def locate_symbol(
     Searches all Python files in nomarr/ for classes, functions, or variables.
     Supports partially qualified names for scoping (e.g., 'services.ConfigService').
     """
-    return tools.locate_symbol(symbol_name)
+    return tools.module_locate_symbol(symbol_name)
 
 
 @mcp.tool()
@@ -170,12 +191,12 @@ def trace_calls(
 
 
 @mcp.tool()
-def list_routes() -> dict:
+def project_list_routes() -> dict:
     """List all API routes by static analysis.
 
     Parses @router decorators from source files. Returns routes with method, path, function, file, and line.
     """
-    return tools.list_routes(ROOT)
+    return tools.project_list_routes(ROOT)
 
 
 @mcp.tool()
@@ -196,7 +217,7 @@ def trace_endpoint(
 
 
 @mcp.tool()
-def check_api_coverage(
+def project_check_api_coverage(
     filter_mode: Annotated[
         str | None,
         "Filter: 'used' (only used endpoints), 'unused' (only unused), or None (all)",
@@ -207,7 +228,7 @@ def check_api_coverage(
 
     Filter modes: 'used', 'unused', or None for all endpoints.
     """
-    return tools.check_api_coverage(filter_mode=filter_mode, route_path=route_path)
+    return tools.project_check_api_coverage(filter_mode=filter_mode, route_path=route_path)
 
 
 @mcp.tool()
@@ -233,7 +254,7 @@ def lint_frontend() -> dict:
 
 
 @mcp.tool()
-def read_file(
+def file_read_range(
     file_path: Annotated[str, "Workspace-relative or absolute path to the file to read"],
     start_line: Annotated[int, "Starting line number (1-indexed, inclusive)"],
     end_line: Annotated[int, "Ending line number (1-indexed, inclusive). Clamped to 100 lines max."],
@@ -246,13 +267,13 @@ def read_file(
     """Read line range from non-Python files (YAML, TS, CSS, configs) or when Python tools return 'too large'.
 
     Fallback tool for non-Python files. Maximum 100 lines per read.
-    Warns when used on Python files - prefer discover_api, get_source, or locate_symbol instead.
+    Warns when used on Python files - prefer module_discover_api, module_get_source, or module_locate_symbol instead.
     """
-    return tools.read_file(file_path, start_line, end_line, ROOT, include_imports=include_imports)
+    return tools.file_read_range(file_path, start_line, end_line, ROOT, include_imports=include_imports)
 
 
 @mcp.tool()
-def read_line(
+def file_read_line(
     file_path: Annotated[str, "Workspace-relative or absolute path to the file to read"],
     line_number: Annotated[int, "Line number to read (1-indexed)"],
     *,
@@ -261,20 +282,62 @@ def read_line(
         "If True and file is Python, prepend imports block. Useful for debugging undefined symbols.",
     ] = False,
 ) -> dict:
-    """Quick error context (1 line + 2 around) for trivial fixes. Use symbol_at_line for complex errors.
+    """Quick error context (1 line + 2 around) for trivial fixes. Use file_symbol_at_line for complex errors.
 
-    For Python files, prefer discover_api, get_source, or locate_symbol for structured navigation.
+    For Python files, prefer module_discover_api, module_get_source, or module_locate_symbol for structured navigation.
     """
-    return tools.read_line(file_path, line_number, ROOT, include_imports=include_imports)
+    return tools.file_read_line(file_path, line_number, ROOT, include_imports=include_imports)
 
 
 @mcp.tool()
-def search_text(
+def file_search_text(
     file_path: Annotated[str, "Workspace-relative or absolute path to the file to search"],
     search_string: Annotated[str, "Exact text to search for (case-sensitive)"],
 ) -> dict:
     """Find exact text in non-Python files (configs, frontend, logs) and show 2-line context."""
-    return tools.search_text(file_path, search_string, ROOT)
+    return tools.file_search_text(file_path, search_string, ROOT)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# File Editing Tools
+# ──────────────────────────────────────────────────────────────────────
+
+
+@mcp.tool()
+def edit_atomic_replace(
+    file_path: Annotated[str, "Workspace-relative or absolute path to the file to edit"],
+    replacements: Annotated[
+        list[dict],
+        "List of {old_string, new_string} dicts. Applied in order, each on result of previous.",
+    ],
+) -> dict:
+    """Apply multiple string replacements atomically (single write).
+
+    All replacements are applied in-memory before writing to disk.
+    This avoids issues with auto-formatters running between edits.
+    Each old_string must match exactly once (ambiguous matches are skipped).
+    """
+    return tools.edit_atomic_replace(file_path, replacements, ROOT)
+
+
+@mcp.tool()
+def edit_move_text(
+    file_path: Annotated[str, "Workspace-relative or absolute path to the source file"],
+    source_start: Annotated[int, "First line to move (1-indexed, inclusive)"],
+    source_end: Annotated[int, "Last line to move (1-indexed, inclusive)"],
+    target_line: Annotated[int, "Line number to insert BEFORE (use line_count+1 to append)"],
+    target_file: Annotated[
+        str | None,
+        "Target file for cross-file moves. If None, moves within the same file.",
+    ] = None,
+) -> dict:
+    """Move lines within a file or between files.
+
+    Same-file: Extracts source lines and inserts them before target_line.
+    Cross-file: Removes lines from source file and inserts into target file.
+    Atomic operation - each file is only written once after all changes computed.
+    """
+    return tools.edit_move_text(file_path, source_start, source_end, target_line, ROOT, target_file)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -283,7 +346,7 @@ def search_text(
 
 
 @mcp.tool()
-def read_plan(
+def plan_read(
     plan_name: Annotated[str, "Plan name (with or without .md extension), e.g., 'TASK-refactor-library'"],
 ) -> dict:
     """Read a task plan and return structured JSON summary.
@@ -291,39 +354,28 @@ def read_plan(
     Parses the entire plan markdown into a structured representation.
     Returns phases with steps, completion status, notes, and next step info.
     """
-    return tools.read_plan(plan_name, workspace_root=ROOT)
+    return tools.plan_read(plan_name, workspace_root=ROOT)
 
 
 @mcp.tool()
-def get_steps(
-    plan_name: Annotated[str, "Plan name (with or without .md extension)"],
-    phase_name: Annotated[str | None, "Specific phase name to view, or None for active phase"] = None,
-) -> dict:
-    """Get steps for a specific phase of a task plan.
-
-    Returns focused view of one phase with step details.
-    If phase_name is None, returns the currently active phase.
-    """
-    return tools.get_steps(plan_name, workspace_root=ROOT, phase_name=phase_name)
-
-
-@mcp.tool()
-def complete_step(
+def plan_complete_step(
     plan_name: Annotated[str, "Plan name (with or without .md extension)"],
     step_id: Annotated[str, "Step ID in format P<phase>-S<step> (e.g., 'P1-S3' for Phase 1, Step 3)"],
     annotation: Annotated[
-        tuple[str, str] | None,
-        "Optional (marker, text) tuple to add under the step. "
-        "Marker must be alphanumeric (e.g., ('Notes', 'Found edge case')).",
+        StepAnnotation | None,
+        "Optional annotation to add under the step after marking complete.",
     ] = None,
 ) -> dict:
     """Mark a step as complete in a task plan.
 
+    Idempotent: safe to call multiple times on the same step.
     Updates the plan file by checking the step's checkbox.
     Optionally adds an annotation block directly under the completed step.
     Returns the next incomplete step in the plan.
     """
-    return tools.complete_step(plan_name, step_id, workspace_root=ROOT, annotation=annotation)
+    # Convert Pydantic model to dict for the implementation
+    ann_dict = annotation.model_dump() if annotation else None
+    return tools.plan_complete_step(plan_name, step_id, workspace_root=ROOT, annotation=ann_dict)
 
 
 # ──────────────────────────────────────────────────────────────────────

@@ -22,6 +22,8 @@ import subprocess
 from dataclasses import dataclass
 from typing import Any
 
+import psutil
+
 from nomarr.helpers.time_helper import internal_ms
 
 logger = logging.getLogger(__name__)
@@ -284,8 +286,6 @@ def get_ram_usage_mb(detection_mode: str = "auto") -> dict[str, Any]:
         return _ram_cache
 
     try:
-        import psutil
-
         # Get current process RSS
         process = psutil.Process(os.getpid())
         rss_bytes = process.memory_info().rss

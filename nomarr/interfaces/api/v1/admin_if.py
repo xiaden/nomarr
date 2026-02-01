@@ -18,6 +18,7 @@ from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_key
 from nomarr.interfaces.api.types.admin_types import WorkerOperationResponse
 from nomarr.interfaces.api.web.dependencies import get_calibration_service, get_workers_coordinator
+from nomarr.workflows.calibration.backfill_calibration_hash_wf import backfill_calibration_hashes_wf
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
@@ -86,11 +87,6 @@ async def admin_backfill_calibration_hashes(
 
     """
     try:
-
-        from nomarr.workflows.calibration.backfill_calibration_hash_wf import (
-            backfill_calibration_hashes_wf,
-        )
-
         return backfill_calibration_hashes_wf(db=calibration_service._db, set_to_current=set_to_current)
     except Exception as e:
         logger.exception("[Admin API] Backfill failed")

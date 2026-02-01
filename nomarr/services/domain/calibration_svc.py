@@ -13,7 +13,11 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 from typing import cast as type_cast
 
+from nomarr.components.ml.ml_discovery_comp import discover_heads
 from nomarr.helpers.time_helper import now_ms
+from nomarr.workflows.calibration.generate_calibration_wf import (
+    generate_histogram_calibration_wf,
+)
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -73,22 +77,27 @@ class CalibrationService:
               "heads_processed": int,
               "heads_success": int,
               "heads_failed": int,
-              "results": {head_key: {p5, p95, n, underflow_count, overflow_count}}
+              "results": {head_key: {p5, p95, n, underflow_count, overflow_count}},
+              "global_version": str,
+              "requires_reconciliation": bool,
+              "affected_libraries": [{library_id, name, outdated_files}]
             }
 
         """
-
-        from nomarr.workflows.calibration.generate_calibration_wf import (
-            generate_histogram_calibration_wf,
-        )
-
         logger.debug("[CalibrationService] Delegating to histogram calibration workflow")
 
-        return generate_histogram_calibration_wf(
+        result = generate_histogram_calibration_wf(
             db=self._db,
             models_dir=self.cfg.models_dir,
             namespace=self.cfg.namespace,
         )
+
+        # Compute reconciliation info after calibration completes
+        reconciliation_info = self._compute_reconciliation_info(result.get("global_version"))
+        result["requires_reconciliation"] = reconciliation_info["requires_reconciliation"]
+        result["affected_libraries"] = reconciliation_info["affected_libraries"]
+
+        return result
 
     def start_histogram_calibration_background(self) -> None:
         """Start histogram-based calibration generation in background thread.
@@ -185,8 +194,6 @@ class CalibrationService:
             }
 
         """
-        from nomarr.components.ml.ml_discovery_comp import discover_heads
-
         # Discover all heads from models
         heads = discover_heads(self.cfg.models_dir)
         total_heads = len(heads)
@@ -303,3 +310,70 @@ class CalibrationService:
                 }
 
         return convergence_status
+
+    # -------------------------------------------------------------------------
+    #  Reconciliation Info
+    # -------------------------------------------------------------------------
+
+    def _compute_reconciliation_info(self, global_version: str | None) -> dict[str, Any]:
+        """Compute which libraries need reconciliation after calibration.
+
+        Checks all libraries with file_write_mode in ('minimal', 'full') and
+        counts files with outdated calibration_hash.
+
+        Args:
+            global_version: The new global calibration version hash
+
+        Returns:
+            {
+              "requires_reconciliation": bool,
+              "affected_libraries": [
+                {"library_id": str, "name": str, "outdated_files": int}
+              ]
+            }
+
+        """
+        if not global_version:
+            logger.debug("[CalibrationService] No global version, no reconciliation needed")
+            return {"requires_reconciliation": False, "affected_libraries": []}
+
+        # Get libraries with write modes that use mood tags
+        all_libraries = self._db.libraries.list_libraries()
+        writable_libraries = {
+            lib["_id"]: lib for lib in all_libraries if lib.get("file_write_mode") in ("minimal", "full")
+        }
+
+        if not writable_libraries:
+            logger.debug("[CalibrationService] No libraries with minimal/full write mode")
+            return {"requires_reconciliation": False, "affected_libraries": []}
+
+        # Get calibration status by library
+        calibration_status = self._db.library_files.get_calibration_status_by_library(global_version)
+
+        affected_libraries = []
+        for status in calibration_status:
+            library_id = status["library_id"]
+            if library_id in writable_libraries and status["outdated_count"] > 0:
+                lib = writable_libraries[library_id]
+                affected_libraries.append(
+                    {
+                        "library_id": library_id,
+                        "name": lib.get("name", "Unknown"),
+                        "outdated_files": status["outdated_count"],
+                        "file_write_mode": lib.get("file_write_mode"),
+                    }
+                )
+
+        requires_reconciliation = len(affected_libraries) > 0
+
+        if requires_reconciliation:
+            total_outdated = sum(lib["outdated_files"] for lib in affected_libraries)
+            logger.info(
+                f"[CalibrationService] Reconciliation needed: {len(affected_libraries)} libraries, "
+                f"{total_outdated} files with outdated calibration",
+            )
+
+        return {
+            "requires_reconciliation": requires_reconciliation,
+            "affected_libraries": affected_libraries,
+        }

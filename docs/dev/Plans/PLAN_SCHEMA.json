@@ -1,0 +1,110 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://nomarr.dev/schemas/task-plan.json",
+  "title": "Nomarr Task Plan",
+  "description": "Schema for task plan markdown files in docs/dev/plans/. A plan is a static job card composed of ordered phases and flat step lists. Plans describe outcomes and constraints, not implementation procedures.",
+  "type": "object",
+  "required": ["title", "phases"],
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Task title extracted from '# Task: <title>' or '# <title>' heading"
+    },
+
+    "Problem Statement": {
+      "type": ["string", "array"],
+      "description": "Content under '## Problem Statement'. Describes why the task exists, not how it will be executed."
+    },
+
+    "phases": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Ordered list of semantic work phases. Phases are numbered sequentially starting from 1.",
+      "items": { "$ref": "#/definitions/phase" }
+    },
+
+    "Completion Criteria": {
+      "type": ["string", "array"],
+      "description": "Conditions that define when the task is complete. Must be outcome-based, not procedural."
+    },
+
+    "References": {
+      "type": ["string", "array"],
+      "description": "Optional references to related docs, issues, or prior plans."
+    },
+
+    "next_incomplete_step": {
+      "type": ["string", "null"],
+      "description": "Derived field populated by the parser indicating the first unchecked step. Ignored if present in source markdown."
+    }
+  },
+
+  "additionalProperties": {
+    "description": "Additional '## Section' headers become top-level properties. Their presence does not imply execution order."
+  },
+
+  "definitions": {
+    "phase": {
+      "type": "object",
+      "required": ["number", "title", "steps"],
+      "properties": {
+        "number": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Phase number extracted from '### Phase N:'. Must be sequential with no gaps."
+        },
+
+        "title": {
+          "type": "string",
+          "description": "Semantic phase title. Describes an outcome, not an action list."
+        },
+
+        "steps": {
+          "type": "array",
+          "description": "Flat list of checklist steps. Steps MUST NOT be nested.",
+          "items": { "$ref": "#/definitions/step" }
+        },
+
+        "completed": {
+          "type": "boolean",
+          "description": "Derived field: true if all steps in this phase are done. Ignored if present in source."
+        },
+
+        "annotations": {
+          "type": "object",
+          "description": "Optional phase-level annotations (Notes, Warnings, Constraints). Must not encode execution order.",
+          "additionalProperties": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "step": {
+      "type": "object",
+      "required": ["id", "text", "done"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Step identifier. Auto-generated as 'P{phase}-S{index}' unless explicitly provided via bold marker."
+        },
+
+        "text": {
+          "type": "string",
+          "description": "Human-readable description of the step. Must describe a checkable outcome."
+        },
+
+        "done": {
+          "type": "boolean",
+          "description": "True if checkbox is marked '[x]' or '[X]'."
+        },
+
+        "annotations": {
+          "type": "object",
+          "description": "Step-level annotations such as Notes, Warning, or Blocked. Informational only.",
+          "additionalProperties": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

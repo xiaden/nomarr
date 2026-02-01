@@ -1,1 +1,0 @@
-"""API coverage analysis tool."""

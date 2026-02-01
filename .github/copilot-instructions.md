@@ -51,17 +51,17 @@ These instructions contain:
 
 **You do not need to manually read these files** - they are automatically included in context when working in their target directories.
 
-### 2. Use MCP `discover_api` Before Editing Modules
+### 2. Use MCP `module_discover_api` Before Editing Modules
 
-**You MUST use the MCP `discover_api` tool to inspect module shapes before editing.**
+**You MUST use the MCP `module_discover_api` tool to inspect module shapes before editing.**
 
-- Run `discover_api` for each module you will modify
+- Run `module_discover_api` for each module you will modify
 - Use the discovered function/class signatures as the source of truth
 - Do not guess at existing APIs — verify them
 
 ```
 # Example: discover API before modifying
-mcp_nomarrdev_discover_api("nomarr.services.infrastructure.file_watcher_svc")
+module_discover_api("nomarr.services.infrastructure.file_watcher_svc")
 ```
 
 ### 3. Run Layer Validation Scripts
@@ -80,12 +80,12 @@ lint_backend(path="nomarr/persistence")
 lint_backend(path="nomarr/helpers")
 ```
 
-Each layer also has naming convention checkers in `.github/skills/layer-*/scripts/check_naming.py`.
-
 **Frontend validation:**
 
-```powershell
-Push-Location frontend; npm run lint; npm run build; Pop-Location
+
+```python
+# Via MCP tool (preferred)
+lint_frontend()
 ```
 
 ---
@@ -96,32 +96,32 @@ Push-Location frontend; npm run lint; npm run build; Pop-Location
 
 ### Rule: Use Specialized MCP Tools BEFORE Standard Tools
 
-Check this hierarchy before reaching for `read_file`, `grep_search`, or `semantic_search`:
+Check this hierarchy before reaching for `file_read_range`, `grep_search`, or `semantic_search`:
 
 #### 1. Python Code Navigation in Nomarr (ALWAYS FIRST)
 
-**`mcp_nomarrdev_*` is the first-class MCP server for Python code in this codebase.** Before reading any Python file, use:
+**nomarr-dev MCP tools are the first-class way to navigate Python code in this codebase.** Before reading any Python file, use:
 
-- `mcp_nomarrdev_discover_api(module_name)` - See exported classes/functions/signatures (~20 lines vs full file)
-- `mcp_nomarrdev_locate_symbol(symbol_name)` - Find where something is defined
-- `mcp_nomarrdev_get_source(qualified_name)` - Get exact function/class with line numbers
-- `mcp_nomarrdev_trace_endpoint(endpoint)` - Trace FastAPI routes through DI layers
-- `mcp_nomarrdev_trace_calls(function)` - Follow call chains from entry points
-- `mcp_nomarrdev_check_api_coverage()` - See which endpoints are used by frontend
+- `module_discover_api(module_name)` - See exported classes/functions/signatures (~20 lines vs full file)
+- `module_locate_symbol(symbol_name)` - Find where something is defined
+- `module_get_source(qualified_name)` - Get exact function/class with line numbers
+- `trace_endpoint(endpoint)` - Trace FastAPI routes through DI layers
+- `trace_calls(function)` - Follow call chains from entry points
+- `project_check_api_coverage()` - See which endpoints are used by frontend
 
-These tools understand FastAPI DI and nomarr's architecture. Serena is a fallback for non-Python or when nomarrdev tools are insufficient.
+These tools understand FastAPI DI and nomarr's architecture. Serena is a fallback for non-Python or when nomarr-dev tools are insufficient.
 
 #### 2. General Code Navigation (SECOND PRIORITY)
 
 **For file discovery and non-Python exploration:**
 
-- `mcp_nomarrdev_list_dir(folder)` - Smart directory listing with filtering (preferred for file discovery)
+- `project_list_dir(folder)` - Smart directory listing with filtering (preferred for file discovery)
 - `mcp_oraios_serena_get_symbols_overview(relative_path)` - See file structure before reading
 - `mcp_oraios_serena_find_symbol(name_path_pattern, relative_path)` - Find and optionally get symbol bodies
 - `mcp_oraios_serena_search_for_pattern(substring_pattern)` - Regex search with context
 - `mcp_oraios_serena_find_referencing_symbols(name_path, relative_path)` - See who calls what
 
-**Use nomarr's `list_dir` for finding files. Use Serena for symbol-based navigation in non-nomarr code.**
+**Use nomarr's `project_list_dir` for finding files. Use Serena for symbol-based navigation in non-nomarr code.**
 
 #### 3. Library Documentation (BEFORE GUESSING)
 
@@ -135,21 +135,46 @@ These tools understand FastAPI DI and nomarr's architecture. Serena is a fallbac
 
 **For multi-step edits that may exceed your context window:**
 
-Create a task file in `docs/dev/plans/` (e.g., `TASK-refactor-library-service.md`) with:
-- Problem statement
-- Phases/sections with checkboxes
-- Notes on issues encountered
-- Completion status per phase
+Create a task plan in `docs/dev/plans/` (e.g., `TASK-refactor-library-service.md`) following the **mandatory schema** defined in `scripts/mcp/tools/schemas/PLAN_MARKDOWN_SCHEMA.json`.
 
-These files are created by you, for you. Mark completion as you go. Note blockers or decisions.
+**Required structure:**
+```markdown
+# Task: <title>
 
-**Serena memories have proven ineffective for cross-session context in this codebase** - the instructions file and task files serve that purpose better.
+## Problem Statement
+<why this task exists, context for fresh models>
+
+## Phases
+
+### Phase 1: <semantic outcome>
+- [ ] Step description (flat list, no nesting)
+- [x] Completed step
+  **Notes:** annotations go here
+  **Warning:** risks or blockers
+
+### Phase 2: <next outcome>
+- [ ] More steps
+
+## Completion Criteria
+<outcome-based success conditions>
+```
+
+**Critical rules:**
+- Steps MUST be flat lists - nested checkboxes will cause parser errors
+- If substeps are needed → they're actually separate steps or phase-level notes
+- Use `**Notes:**`, `**Warning:**`, `**Blocked:**` annotations after steps
+- Phase numbers must be sequential starting from 1
+- Steps auto-generate IDs like `P1-S1`, `P2-S3`
+
+These files are parsed by `scripts/mcp/tools/helpers/plan_md.py` and consumed by plan MCP tools. Invalid structure = task blocked.
+
+**Serena memories have proven ineffective for cross-session context in this codebase** - the instructions file and task plans serve that purpose better.
 
 #### 5. Standard VS Code Tools (LAST RESORT ONLY)
 
 **Only use these when MCP tools fail or for non-code files:**
 
-- `read_file` - Only when Serena/nomarrdev can't access the content
+- `read_file` - Only when Serena/nomarr-dev can't access the content
 - `grep_search` - Only for non-code or when pattern search fails
 - `semantic_search` - Only when symbol-based navigation is insufficient
 
@@ -159,21 +184,19 @@ These files are created by you, for you. Mark completion as you go. Note blocker
 
 The MCP servers exist specifically to avoid context bloat and leverage architectural knowledge. Use them.
 
-See [Meta: Tool Usage Conclusions From Experience](#meta-tool-usage-conclusions-from-experience) for evidence of why this hierarchy works, derived from actual usage.
-
 ### Why This Hierarchy Works
 
 The semantic tools answer the *real* question, not the proxy question:
 
 | You think you need... | You're actually asking... | Use this instead |
 |-----------------------|--------------------------|------------------|
-| Read file imports | "What does this module depend on?" | `trace_calls`, `discover_api` |
-| Read top of file | "What are the class attributes?" | `get_source` on the class |
-| Search for import statement | "Where is X defined?" | `locate_symbol` |
-| Read file to find function | "What's the module API?" | `discover_api` |
+| Read file imports | "What does this module depend on?" | `trace_calls`, `module_discover_api` |
+| Read top of file | "What are the class attributes?" | `module_get_source` on the class |
+| Search for import statement | "Where is X defined?" | `module_locate_symbol` |
+| Read file to find function | "What's the module API?" | `module_discover_api` |
 | Check if import is wrong | "Is there a layer violation?" | `lint_backend` |
 
-The `read_file` warning on Python files isn't naggy - it's catching you using the wrong tool. Imports are never the question. Relationships are the question.
+The `file_read_range` warning on Python files isn't naggy - it's catching you using the wrong tool. Imports are never the question. Relationships are the question.
 
 **After fully completing a task**, if you reached a conclusion about tool usage that isn't captured here, add a new row. This is collective model wisdom—don't update mid-task.
 
@@ -181,11 +204,7 @@ The `read_file` warning on Python files isn't naggy - it's catching you using th
 
 ## Pre-Alpha Policy
 
-Nomarr is **pre-alpha**. That means:
-
-- Breaking schemas and APIs is acceptable
-- **No** migrations, legacy shims, or compatibility layers
-- Priority: clean architecture, not preserving old data
+Nomarr is **pre-alpha**. Break things if it makes the architecture cleaner. No migrations, legacy shims, or backwards compatibility. When you change contracts and something breaks, you fix the breakage—not by reverting, but by updating the callers. Priority is always clean architecture over preserving old code.
 
 ---
 
@@ -222,7 +241,7 @@ Import-linter enforces layer boundaries.
 
 - Use dependency injection for major resources (db, config, backends) — not every operation
 - Write fully type-annotated code
-- Use MCP `discover_api` before calling unfamiliar APIs (the script version is legacy fallback)
+- Use MCP `module_discover_api` before calling unfamiliar APIs (the script version is legacy fallback)
 - Check venv is active before running Python commands
 
 ---
@@ -236,7 +255,7 @@ If `lint_backend` reports errors, you caused them—either in this context or a 
 ### Required Behavior When Errors Exist
 
 1. **Assume you caused it.** Do not dismiss errors as "pre-existing" or "outside scope."
-2. **Investigate before fixing.** Use `symbol_at_line`, `get_source`, `trace_calls` to understand *why* the error exists.
+2. **Investigate before fixing.** Use `file_symbol_at_line`, `module_get_source`, `trace_calls` to understand *why* the error exists.
 3. **Fix the code, not the symptoms.** Change the implementation to satisfy the checker. Do not add `# noqa` or `# type: ignore` to silence it.
 4. **Verify the fix.** Run `lint_backend` again. Zero errors is the only acceptable state.
 
@@ -269,64 +288,38 @@ Config is loaded once by `ConfigService` and passed via parameters. No global si
 
 ---
 
-## Quality Scripts
+## Meta: Tool Usage Patterns
 
-For detailed tool usage, see `.github/skills/quality-analysis/` and `.github/skills/code-discovery/`.
+**This section is living documentation.** When you complete a task and discover a pattern worth remembering, add it here. These are lessons for future contexts—including yourself.
 
-Quick reference:
+**Threshold for adding entries:** If you caught yourself reaching for the wrong tool and had to course-correct, add it. One costly mistake is enough. If the existing instructions would have prevented it, don't add—the instructions already work.
 
-```bash
-# Discover module API before calling it
-python scripts/discover_api.py nomarr.components.ml
+### Proxy Questions: What Are You Actually Asking?
 
-# Run all QC checks
-python scripts/run_qc.py
-
-# Find complexity/violations in specific file
-python scripts/detect_slop.py nomarr/workflows/some_wf.py
-```
-
----
-
-## Meta: Tool Usage Conclusions From Experience
-
-This section captures working conclusions about when tools are effective vs ineffective, derived from actual usage. These are **patterns for recognition**, not enforcement rules. Update this section only when you have strong evidence from a completed task.
-
-**Governance:**
-- Stability threshold: Only add entries after 3+ confirmed uses showing consistent pattern
-- Update existing entries only when new evidence contradicts or significantly extends them
-- Usage counts are approximate and should reflect order of magnitude, not exact tallies
-- If unsure whether to edit: **do not edit**. Ask the user explicitly.
-
-### Tool Effectiveness Matrix
-
-| Tool | Effective When | Ineffective When | Approx. Uses |
-|------|----------------|------------------|--------------|
-| `lint_backend` | Validating changes, finding type errors, checking layer violations. Use `check_all=true` for full codebase scan. | Quick syntax checks (ruff alone is faster) | 10+ |
-| `discover_api` | Understanding module shape before reading source. First step for any unfamiliar module. | When you need implementation details, not just signatures | 20+ |
-| `get_source` | Reading specific function/class body with context. Follow-up to discover_api. | When you don't know the qualified name yet | 15+ |
-| `locate_symbol` | Finding where something is defined when you know the name but not the file. Verifying code deletion (0 matches proves removal). | When you need to understand usage patterns (use trace_calls instead) | 12+ |
-| `symbol_at_line` | Understanding context around a specific error line. Good for NameError, TypeError debugging. | For simple typos or syntax errors (read_line is enough) | 5+ |
-| `trace_calls` | Understanding call chains from an entry point through the codebase | When you need to understand who calls a function (that's referencing, not tracing) | 5+ |
-| `read_file` | Non-Python files (YAML, configs, markdown). Large context reads when semantic tools return "too large" | Python source code - always try semantic tools first | 10+ |
-| `read_line` | Quick peek at specific error location with minimal context | When you need to understand the full function (use symbol_at_line) | 3+ |
-| `search_text` | Finding patterns in non-code files, configs, logs | Python code - use locate_symbol or discover_api instead | 5+ |
-| `list_dir` | Understanding project structure, finding files in unfamiliar areas | When you know the file you need (just read it directly) | 5+ |
-
-### Key Insight: Proxy Questions vs Real Questions
-
-When you reach for `read_file` on Python code, stop and ask: **what am I actually trying to learn?**
+When you reach for `file_read_range` on Python code, stop and ask: **what am I actually trying to learn?**
 
 | You think you need... | You're actually asking... | Use this instead |
 |-----------------------|--------------------------|------------------|
-| Read file imports | "What does this module depend on?" | `trace_calls`, `discover_api` |
-| Read top of file | "What are the class attributes?" | `get_source` on the class |
-| Search for import statement | "Where is X defined?" | `locate_symbol` |
-| Read file to find function | "What's the module API?" | `discover_api` |
+| Read file imports | "What does this module depend on?" | `trace_calls`, `module_discover_api` |
+| Read top of file | "What are the class attributes?" | `module_get_source` on the class |
+| Search for import statement | "Where is X defined?" | `module_locate_symbol` |
+| Read file to find function | "What's the module API?" | `module_discover_api` |
 | Check if import is wrong | "Is there a layer violation?" | `lint_backend` |
-| Verify code was deleted | "Does this symbol still exist anywhere?" | `locate_symbol` (0 matches = deleted) |
+| Verify code was deleted | "Does this symbol still exist anywhere?" | `module_locate_symbol` (0 matches = deleted) |
 
-**Add to this table.** When you reach a conclusion about tool usage that isn't captured here, add a new row. This is collective model wisdom—conclusions reached through actual usage that future contexts should inherit.
+### Tool Gotchas
+
+- `module_discover_api` is AST-based; won't catch import errors. Use `python -c "import X"` for runtime verification.
+- When a tool fails, don't swap to a familiar fallback—ask if you're using the wrong tool for the question. Example: `module_discover_api` returns nothing → try `module_locate_symbol` or verify module path.
+- `file_read_range` warnings on Python files aren't naggy—they're catching you using the wrong tool. Imports are never the question; relationships are.
+
+**Add to these tables when you discover new patterns.** Keep entries concise and actionable.
+
+---
+
+## Docker Test Environment
+
+Use `.docker/compose.yaml` to run containerized test environment (app + ArangoDB). **Primary use case: reproducing prod-reported issues that don't appear in native dev.** Also runs Playwright e2e tests (`npx playwright test`). See `.docker/` directory for compose files and commands.
 
 ---
 

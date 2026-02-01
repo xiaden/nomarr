@@ -56,11 +56,11 @@ from nomarr.interfaces import ...    # No interfaces
 
 **Use the Nomarr MCP server to navigate this layer efficiently:**
 
-- `discover_api(module_name)` - See AQL operations before reading full files
-- `locate_symbol(symbol_name)` - Find where database operations are defined
-- `get_source(qualified_name)` - Get exact query method source with line numbers
+- `module_discover_api(module_name)` - See AQL operations before reading full files
+- `module_locate_symbol(symbol_name)` - Find where database operations are defined
+- `module_get_source(qualified_name)` - Get exact query method source with line numbers
 
-**Before modifying database operations, run `discover_api` to understand the interface.**
+**Before modifying database operations, run `module_discover_api` to understand the interface.**
 
 ---
 

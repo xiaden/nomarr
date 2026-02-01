@@ -76,7 +76,9 @@ class GPUHealthMonitor(multiprocessing.Process):
         heartbeat frames to HealthMonitorService.
         """
 
-        from nomarr.components.platform import probe_gpu_availability
+        from nomarr.components.platform import (
+            probe_gpu_availability,
+        )
         from nomarr.persistence.db import Database
 
         logger.info("[GPUHealthMonitor] Starting GPU health monitoring process")

@@ -25,6 +25,9 @@ if TYPE_CHECKING:
 
     from nomarr.helpers.dto.path_dto import LibraryPath
 
+from nomarr.components.ml.chromaprint_comp import compute_chromaprint
+from nomarr.components.ml.ml_audio_comp import load_audio_mono
+
 logger = logging.getLogger(__name__)
 
 # Temp folder name - ignored by music libraries and git
@@ -71,10 +74,6 @@ def _supports_hardlinks(source: Path, temp_folder: Path) -> bool:
 
 def _compute_chromaprint_for_path(path: Path) -> str:
     """Compute chromaprint for a file path (not LibraryPath)."""
-
-    from nomarr.components.ml.chromaprint_comp import compute_chromaprint
-    from nomarr.components.ml.ml_audio_comp import load_audio_mono
-
     result = load_audio_mono(str(path), target_sr=16000)
     return compute_chromaprint(result.waveform, result.sample_rate)
 

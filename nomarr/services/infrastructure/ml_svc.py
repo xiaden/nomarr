@@ -10,6 +10,9 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from nomarr.components.ml.ml_cache_comp import get_cache_size, warmup_predictor_cache
+from nomarr.components.ml.ml_discovery_comp import discover_heads
+
 logger = logging.getLogger(__name__)
 
 
@@ -47,7 +50,6 @@ class MLService:
             RuntimeError: If cache warmup fails
 
         """
-        from nomarr.components.ml.ml_cache_comp import warmup_predictor_cache
 
         try:
             count = warmup_predictor_cache(
@@ -68,8 +70,6 @@ class MLService:
             Number of cached predictors
 
         """
-        from nomarr.components.ml.ml_cache_comp import get_cache_size
-
         return get_cache_size()
 
     def discover_heads(self) -> list[Any]:
@@ -82,7 +82,6 @@ class MLService:
             RuntimeError: If model discovery fails
 
         """
-        from nomarr.components.ml.ml_discovery_comp import discover_heads
 
         try:
             heads = discover_heads(self.cfg.models_dir)

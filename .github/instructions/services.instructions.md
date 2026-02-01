@@ -114,12 +114,12 @@ from pydantic import BaseModel        # No Pydantic models
 
 **Use the Nomarr MCP server to navigate this layer efficiently:**
 
-- `discover_api(module_name)` - See service methods before reading full files
-- `locate_symbol(symbol_name)` - Find where services are defined
-- `get_source(qualified_name)` - Get exact service method source with line numbers
+- `module_discover_api(module_name)` - See service methods before reading full files
+- `module_locate_symbol(symbol_name)` - Find where services are defined
+- `module_get_source(qualified_name)` - Get exact service method source with line numbers
 - `trace_calls(function)` - Follow call chains from service methods through workflows
 
-**Before modifying services, run `discover_api` to understand the public interface.**
+**Before modifying services, run `module_discover_api` to understand the public interface.**
 
 ---
 

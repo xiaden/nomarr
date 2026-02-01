@@ -18,10 +18,19 @@ export interface SavedFiles {
   total_labels: number;
 }
 
+export interface AffectedLibrary {
+  library_id: string;
+  name: string;
+  outdated_files: number;
+  file_write_mode: string;
+}
+
 export interface GenerateCalibrationResponse {
   status: string;
   data: CalibrationData;
   saved_files?: SavedFiles;
+  requires_reconciliation?: boolean;
+  affected_libraries?: AffectedLibrary[];
 }
 
 /**

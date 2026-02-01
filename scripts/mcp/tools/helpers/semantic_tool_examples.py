@@ -13,10 +13,10 @@ sys.path.insert(0, str(project_root))
 
 # Import tools after path setup
 # ruff: noqa: E402
-from scripts.mcp.tools.discover_api import discover_api
-from scripts.mcp.tools.get_source import get_source
-from scripts.mcp.tools.locate_symbol import locate_symbol
-from scripts.mcp.tools.symbol_at_line import symbol_at_line
+from scripts.mcp.tools.file_symbol_at_line import file_symbol_at_line
+from scripts.mcp.tools.module_discover_api import module_discover_api
+from scripts.mcp.tools.module_get_source import module_get_source
+from scripts.mcp.tools.module_locate_symbol import module_locate_symbol
 
 # Example module that tools will analyze
 EXAMPLE_CODE = '''"""Example for tool demonstrations."""
@@ -54,21 +54,21 @@ def get_semantic_tool_examples() -> dict:
 
         # 1. discover_api - shows module structure without reading full source
         try:
-            result = discover_api(module_name=module_name)
+            result = module_discover_api(module_name=module_name)
             examples["discover_api"] = result
         except Exception as e:
             examples["discover_api"] = {"error": str(e)}
 
         # 2. locate_symbol - finds where something is defined
         try:
-            result = locate_symbol(symbol_name="calculate_sum")
+            result = module_locate_symbol(symbol_name="calculate_sum")
             examples["locate_symbol"] = result
         except Exception as e:
             examples["locate_symbol"] = {"error": str(e)}
 
         # 3. get_source - gets exact function/class with line numbers
         try:
-            result = get_source(qualified_name=f"{module_name}.calculate_sum")
+            result = module_get_source(qualified_name=f"{module_name}.calculate_sum")
             # Truncate source for display
             if "source" in result:
                 result["source"] = result["source"][:100] + "..." if len(result["source"]) > 100 else result["source"]
@@ -78,7 +78,7 @@ def get_semantic_tool_examples() -> dict:
 
         # 4. symbol_at_line - gets full context around a specific line
         try:
-            result = symbol_at_line(file_path=str(temp_path), line_number=3, workspace_root=temp_dir)
+            result = file_symbol_at_line(file_path=str(temp_path), line_number=3, workspace_root=temp_dir)
             # Truncate source for display
             if "source" in result:
                 result["source"] = result["source"][:100] + "..." if len(result["source"]) > 100 else result["source"]

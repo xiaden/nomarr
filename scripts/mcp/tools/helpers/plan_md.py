@@ -5,11 +5,14 @@ All functions operate on strings and return structured data or modified strings.
 
 Generic markdown-to-JSON parsing:
 - Headers create nodes keyed to their value
-- Checkboxes become steps with id/text/done
+- Checkboxes become steps with id/text/done (nested checkboxes become children)
 - **Key:** patterns become keyed nodes (arrays if repeated)
 - Bulleted lists become arrays
 - Phase headers (### Phase N: Title) are collected into a phases array
 - Raw text becomes multi-line string values
+
+Uses tree-sitter-markdown for proper nested list parsing when available.
+Falls back to indentation-based depth calculation if tree-sitter is not installed.
 """
 
 from __future__ import annotations
@@ -18,13 +21,21 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+try:
+    from tree_sitter import Language, Parser
+    from tree_sitter_markdown import language as md_language
+
+    HAS_TREE_SITTER = True
+except ImportError:
+    HAS_TREE_SITTER = False
+
 # --- Regex patterns ---
 
 TITLE_PATTERN = re.compile(r"^#\s+(?:Task:\s*)?(.+)$", re.IGNORECASE)
 H2_PATTERN = re.compile(r"^##\s+(.+)$")
 PHASE_PATTERN = re.compile(r"^###\s+[Pp]hase\s+(\d+)\s*[:\s]\s*(.+)$")
 H3_PATTERN = re.compile(r"^###\s+(.+)$")
-STEP_PATTERN = re.compile(r"^-\s*\[([ xX])\]\s+(.+)$")
+STEP_PATTERN = re.compile(r"^\s*-\s*\[([ xX])\]\s+(.+)$")  # Allow leading whitespace
 BULLET_PATTERN = re.compile(r"^-\s+(.+)$")
 BOLD_KEY_PATTERN = re.compile(r"^\*\*([a-zA-Z0-9_]+):\*\*\s*(.*)$")
 
@@ -39,6 +50,9 @@ class Step:
     text: str
     checked: bool
     line_number: int  # 0-indexed line in original markdown
+    depth: int = 0  # Nesting depth (0 = top-level, 1 = first indent, etc.)
+    children: list[Step] = field(default_factory=list)  # Nested sub-steps
+    properties: dict[str, Any] = field(default_factory=dict)  # **Notes:**, **Blocked:**, etc.
 
 
 @dataclass
@@ -101,6 +115,88 @@ def _finalize_content(lines: list[str]) -> str | list[str] | None:
     return text if text else None
 
 
+def _parse_steps_with_tree_sitter(phase_heading_line: int, raw_lines: list[str]) -> list[Step]:
+    """Parse steps for a phase using tree-sitter for proper nested list handling.
+
+    Args:
+        phase_heading_line: 0-indexed line where phase heading starts
+        raw_lines: All markdown lines
+
+    Returns:
+        List of Steps with proper parent-child relationships
+    """
+    if not HAS_TREE_SITTER:
+        return []
+
+    # Extract phase content (from heading to next heading or end)
+    phase_end = len(raw_lines)
+    for i in range(phase_heading_line + 1, len(raw_lines)):
+        if raw_lines[i].strip().startswith("###"):
+            phase_end = i
+            break
+
+    phase_markdown = "".join(raw_lines[phase_heading_line:phase_end])
+
+    parser = Parser(Language(md_language()))
+    tree = parser.parse(bytes(phase_markdown, "utf8"))
+
+    steps: list[Step] = []
+
+    def extract_checkbox_from_item(node, parent_step: Step | None = None) -> Step | None:
+        """Recursively extract checkbox from list_item node."""
+        # Find task list marker and paragraph content
+        has_checkbox = False
+        is_checked = False
+        text_content = ""
+
+        for child in node.children:
+            if child.type == "task_list_marker":
+                has_checkbox = True
+                marker_text = phase_markdown[child.start_byte : child.end_byte]
+                is_checked = "x" in marker_text.lower()
+            elif child.type == "paragraph":
+                # Extract text from paragraph
+                para_text = phase_markdown[child.start_byte : child.end_byte].strip()
+                # Remove checkbox marker if present
+                para_text = re.sub(r"^\[([ xX])\]\s*", "", para_text)
+                text_content = para_text
+
+        if not has_checkbox:
+            return None
+
+        # Calculate absolute line number
+        line_num = phase_heading_line + node.start_point[0]
+
+        step = Step(text=text_content, checked=is_checked, line_number=line_num, depth=0)
+
+        # Look for nested list as child
+        for child in node.children:
+            if child.type == "list":
+                # Process nested items
+                for nested_item in child.children:
+                    if nested_item.type == "list_item":
+                        nested_step = extract_checkbox_from_item(nested_item, step)
+                        if nested_step:
+                            step.children.append(nested_step)
+
+        return step
+
+    def walk_node(node):
+        """Walk AST looking for top-level list items."""
+        if node.type == "list":
+            for child in node.children:
+                if child.type == "list_item":
+                    step = extract_checkbox_from_item(child)
+                    if step:
+                        steps.append(step)
+
+        for child in node.children:
+            walk_node(child)
+
+    walk_node(tree.root_node)
+    return steps
+
+
 def parse_plan(markdown: str) -> Plan:
     """Parse plan markdown into a mutable Plan structure.
 
@@ -108,7 +204,7 @@ def parse_plan(markdown: str) -> Plan:
     - # Title → plan.title
     - ## Header → sections["Header"] = content
     - ### Phase N: Title → phases array
-    - - [x] / - [ ] → steps
+    - - [x] / - [ ] → steps (with nested children if tree-sitter available)
     - **Key:** value → properties dict
     - - bullet → array items
     - raw text → multi-line string
@@ -190,13 +286,15 @@ def parse_plan(markdown: str) -> Plan:
             target_dict = plan.sections
             continue
 
-        # Step: - [x] or - [ ]
+        # Step: - [x] or - [ ] (now matches indented)
         step_match = STEP_PATTERN.match(line)
         if step_match and current_phase is not None:
             flush_content()
             checked = step_match.group(1).lower() == "x"
             text = step_match.group(2).strip()
-            current_phase.steps.append(Step(text=text, checked=checked, line_number=line_num))
+            # Calculate depth from leading whitespace
+            depth = (len(line) - len(line.lstrip())) // 2  # Assume 2-space indents
+            current_phase.steps.append(Step(text=text, checked=checked, line_number=line_num, depth=depth))
             continue
 
         # Bold key: **Key:** value
@@ -221,7 +319,131 @@ def parse_plan(markdown: str) -> Plan:
             content_buffer.append(line)
 
     flush_content()
+
+    # Post-process: Validate no nested steps exist
+    for phase in plan.phases:
+        for step in phase.steps:
+            if step.depth > 0:
+                raise ValueError(
+                    f"Plan contains nested steps, which are not allowed per PLAN_SCHEMA.json.\n"
+                    f"Found indented step at line {step.line_number + 1}: '{step.text}'\n"
+                    f"Phase {phase.number}: {phase.title}\n\n"
+                    f"Nested steps create ambiguous execution models:\n"
+                    f"  - If substeps are distinct outcomes → unnest them as separate steps\n"
+                    f"  - If substeps are implementation details → convert to **Notes:** annotations\n"
+                    f"  - If substeps need grouping → they belong in a separate phase\n\n"
+                    f"Please flatten the plan structure and try again."
+                )
+
+        # Capture annotations under each step
+        _capture_step_annotations(phase.steps, plan.raw_lines)
+
     return plan
+
+
+def _capture_step_annotations(steps: list[Step], raw_lines: list[str]) -> None:
+    """Capture annotation properties under each step from raw markdown.
+
+    Mutates steps in place to add properties like Notes, Blocked, Warning, etc.
+
+    Format expected:
+        - [x] Step text
+            **Notes:** annotation text
+            **Blocked:** reason text
+
+    Args:
+        steps: List of steps (with nested children) to annotate
+        raw_lines: Raw markdown lines
+    """
+
+    def process_step(step: Step) -> None:
+        """Process one step and its children recursively."""
+        step_line_idx = step.line_number
+
+        # Find the extent of indented content under this step
+        # (until we hit a line that's not more indented than the step itself)
+        step_indent = len(raw_lines[step_line_idx]) - len(raw_lines[step_line_idx].lstrip())
+
+        # Scan lines after the step
+        for i in range(step_line_idx + 1, len(raw_lines)):
+            line = raw_lines[i]
+            if not line.strip():
+                continue  # Skip blank lines
+
+            line_indent = len(line) - len(line.lstrip())
+
+            # If this line is not more indented, we've left this step's block
+            if line_indent <= step_indent:
+                break
+
+            # Check if it's a nested checkbox (child step) - skip those
+            if STEP_PATTERN.match(line):
+                break
+
+            # Check for bold key pattern: **Key:** value
+            bold_match = BOLD_KEY_PATTERN.match(line.strip())
+            if bold_match:
+                key = bold_match.group(1)
+                value = bold_match.group(2).strip()
+
+                # Collect continuation lines (more deeply indented)
+                continuation_lines = [value] if value else []
+                for j in range(i + 1, len(raw_lines)):
+                    cont_line = raw_lines[j]
+                    if not cont_line.strip():
+                        continue
+                    cont_indent = len(cont_line) - len(cont_line.lstrip())
+                    # Continuation must be more indented than the marker line
+                    # and not start with a new marker
+                    if cont_indent > line_indent and not cont_line.strip().startswith("**"):
+                        continuation_lines.append(cont_line.strip())
+                    else:
+                        break
+
+                # Store in properties
+                full_value = " ".join(continuation_lines).strip()
+                if full_value:
+                    _add_to_dict(step.properties, key, full_value)
+
+        # Process children recursively
+        for child in step.children:
+            process_step(child)
+
+    for step in steps:
+        process_step(step)
+
+
+def _build_step_tree(flat_steps: list[Step]) -> list[Step]:
+    """Convert flat steps with depth info into nested tree structure.
+
+    Args:
+        flat_steps: List of steps with depth attribute
+
+    Returns:
+        List of top-level steps with children properly nested
+    """
+    if not flat_steps:
+        return []
+
+    root_steps: list[Step] = []
+    stack: list[tuple[int, Step]] = []  # (depth, step)
+
+    for step in flat_steps:
+        # Pop stack until we find the parent level
+        while stack and stack[-1][0] >= step.depth:
+            stack.pop()
+
+        if not stack:
+            # Top-level step
+            root_steps.append(step)
+        else:
+            # Child of the last step in stack
+            parent = stack[-1][1]
+            parent.children.append(step)
+
+        stack.append((step.depth, step))
+
+    return root_steps
 
 
 def plan_to_dict(plan: Plan) -> dict[str, Any]:
@@ -250,7 +472,7 @@ def plan_to_dict(plan: Plan) -> dict[str, Any]:
         for phase in plan.phases:
             phase_dict: dict[str, Any] = {"number": phase.number, "title": phase.title}
 
-            # Steps
+            # Steps (flat list only - nesting is rejected during parsing)
             if phase.steps:
                 steps_out: list[dict[str, Any]] = []
                 for step_idx, step in enumerate(phase.steps, start=1):
@@ -258,7 +480,10 @@ def plan_to_dict(plan: Plan) -> dict[str, Any]:
                     step_dict: dict[str, Any] = {"id": step_id, "text": step.text}
                     if step.checked:
                         step_dict["done"] = True
-                    elif next_step_id is None:
+                    # Add step annotations (Notes, Blocked, Warning, etc.)
+                    step_dict.update(step.properties)
+
+                    if not step.checked and next_step_id is None:
                         next_step_id = step_id
                     steps_out.append(step_dict)
                 phase_dict["steps"] = steps_out
@@ -329,7 +554,7 @@ def get_next_step_info(plan: Plan) -> tuple[str | None, str | None, dict[str, st
     return (None, None, None)
 
 
-def mark_step_complete(plan: Plan, step_id: str, annotation: tuple[str, str] | None = None) -> tuple[str, bool, bool]:
+def mark_step_complete(plan: Plan, step_id: str, annotation: dict[str, str] | None = None) -> tuple[str, bool, bool]:
     """Mark a step as complete and optionally add an annotation.
 
     Mutates plan.raw_lines in place.
@@ -337,7 +562,7 @@ def mark_step_complete(plan: Plan, step_id: str, annotation: tuple[str, str] | N
     Args:
         plan: Parsed plan (will be mutated)
         step_id: Step ID to mark complete
-        annotation: Optional (marker, text) tuple to attach directly under the step
+        annotation: Optional {marker, text} dict to attach directly under the step
 
     Returns:
         Tuple of (updated_markdown, was_already_complete, annotation_written)
@@ -365,10 +590,18 @@ def mark_step_complete(plan: Plan, step_id: str, annotation: tuple[str, str] | N
     # Add annotation if provided - attach directly to the step, not phase
     annotation_written = False
     if annotation:
-        marker, text = annotation
+        marker = annotation["marker"]
+        text = annotation["text"]
         annotation_written = _add_annotation_to_step(plan, step, marker, text)
 
-    return "".join(plan.raw_lines), was_already_complete, annotation_written
+    # Re-parse from raw_lines to capture any annotations in structure
+    updated_markdown = "".join(plan.raw_lines)
+    reparsed = parse_plan(updated_markdown)
+    # Update plan in place with reparsed structure
+    plan.phases = reparsed.phases
+    plan.sections = reparsed.sections
+
+    return updated_markdown, was_already_complete, annotation_written
 
 
 def _add_annotation_to_step(plan: Plan, step: Step, marker: str, text: str) -> bool:

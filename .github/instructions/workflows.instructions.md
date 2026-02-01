@@ -40,12 +40,12 @@ from pydantic import BaseModel                 # No Pydantic
 
 **Use the Nomarr MCP server to navigate this layer efficiently:**
 
-- `discover_api(module_name)` - See workflow signatures before reading full files
-- `locate_symbol(symbol_name)` - Find where workflows are defined
-- `get_source(qualified_name)` - Get exact workflow source with line numbers
+- `module_discover_api(module_name)` - See workflow signatures before reading full files
+- `module_locate_symbol(symbol_name)` - Find where workflows are defined
+- `module_get_source(qualified_name)` - Get exact workflow source with line numbers
 - `trace_calls(function)` - Follow call chains from workflows to components
 
-**Before modifying workflows, run `discover_api` to understand dependencies and return types.**
+**Before modifying workflows, run `module_discover_api` to understand dependencies and return types.**
 
 ---
 

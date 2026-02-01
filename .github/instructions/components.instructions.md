@@ -66,12 +66,12 @@ import essentia_tensorflow  # Only in ml_backend_essentia_comp.py
 
 **Use the Nomarr MCP server to navigate this layer efficiently:**
 
-- `discover_api(module_name)` - See exported functions/classes before reading full files
-- `locate_symbol(symbol_name)` - Find where components are defined
-- `get_source(qualified_name)` - Get exact function/class source with line numbers
+- `module_discover_api(module_name)` - See exported functions/classes before reading full files
+- `module_locate_symbol(symbol_name)` - Find where components are defined
+- `module_get_source(qualified_name)` - Get exact function/class source with line numbers
 - `trace_calls(function)` - Follow call chains from components
 
-**Before modifying any component, run `discover_api` to understand its shape.**
+**Before modifying any component, run `module_discover_api` to understand its shape.**
 
 ---
 

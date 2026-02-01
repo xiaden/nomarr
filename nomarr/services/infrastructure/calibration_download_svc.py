@@ -23,6 +23,7 @@ import logging
 import os
 from typing import Any
 
+from nomarr.components.ml.ml_discovery_comp import discover_heads
 from nomarr.helpers.dto.calibration_dto import EnsureCalibrationsExistResult
 
 logger = logging.getLogger(__name__)
@@ -106,8 +107,6 @@ def check_missing_calibrations(models_dir: str) -> list[dict[str, str]]:
         ]
 
     """
-    from nomarr.components.ml.ml_discovery_comp import discover_heads
-
     logger.info(f"[calibration_download] Scanning for heads in {models_dir}")
 
     # Discover all heads
