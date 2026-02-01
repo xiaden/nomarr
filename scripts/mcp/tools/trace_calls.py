@@ -666,7 +666,7 @@ def _flatten_chain(info: CallInfo, prefix: str = "") -> list[dict[str, Any]]:
     return result
 
 
-def trace_calls(qualified_name: str, project_root: Path | None = None, config: dict | None = None) -> dict[str, Any]:
+def trace_calls(qualified_name: str, project_root: Path | str | None = None, config: dict | None = None) -> dict[str, Any]:
     """Trace the call chain starting from a function/method.
 
     Uses configuration to determine which modules to include in the call trace.
@@ -685,7 +685,7 @@ def trace_calls(qualified_name: str, project_root: Path | None = None, config: d
             Examples:
             - "nomarr.interfaces.api.web.library_if.scan_library"
             - "nomarr.services.domain.library_svc.LibraryService.scan"
-        project_root: Path to project root. Defaults to auto-detect.
+        project_root: Path to project root (str or Path). Defaults to auto-detect.
         config: Optional config dict. If not provided, loaded from project_root.
             Can be obtained from: load_config(project_root)
 
@@ -703,6 +703,8 @@ def trace_calls(qualified_name: str, project_root: Path | None = None, config: d
 
     if project_root is None:
         project_root = Path(__file__).parent.parent.parent.parent
+    else:
+        project_root = Path(project_root)
 
     # Load config if not provided (dependency injection)
     if config is None:

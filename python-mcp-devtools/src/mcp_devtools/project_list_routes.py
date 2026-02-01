@@ -53,7 +53,7 @@ def _get_interfaces_dir(project_root: Path) -> Path:
 
 
 def project_list_routes(
-    project_root: Path | None = None, config: dict | None = None
+    project_root: Path | str | None = None, config: dict | None = None
 ) -> dict[str, Any]:
     """List all API routes by static analysis.
 
@@ -66,7 +66,7 @@ def project_list_routes(
             Default: ["@router.get", "@router.post", "@router.put", "@router.delete", "@router.patch"]
 
     Args:
-        project_root: Path to project root. Defaults to auto-detect.
+        project_root: Path to project root (str or Path). Defaults to auto-detect.
         config: Optional config dict. If not provided, loaded from project_root.
             Can be obtained from: load_config(project_root)
 
@@ -81,6 +81,8 @@ def project_list_routes(
     """
     if project_root is None:
         project_root = Path(__file__).parent.parent.parent.parent
+    else:
+        project_root = Path(project_root)
 
     interfaces_dir = _get_interfaces_dir(project_root)
 
