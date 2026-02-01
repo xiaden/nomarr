@@ -1,0 +1,41 @@
+NOMARR FRONTEND STRUCTURE
+=========================
+
+Stack: React + TypeScript + Vite + MUI (Material UI) + TanStack Query
+
+src/
+├── features/           # Feature modules (domain-sliced)
+│   ├── admin/          # Worker controls, calibration admin
+│   ├── analytics/      # Tag frequencies, correlations, charts
+│   ├── auth/           # Login/logout
+│   ├── browse/         # File browser
+│   ├── calibration/    # Calibration UI, histogram wizard
+│   ├── config/         # Settings management
+│   ├── dashboard/      # Main dashboard
+│   ├── insights/       # Mood distribution, visualizations
+│   ├── inspect/        # File inspection
+│   ├── library/        # Library CRUD, scanning
+│   └── navidrome/      # Smart playlist builder
+│
+├── shared/
+│   ├── api/            # API client modules (one per domain)
+│   │   ├── client.ts   # Axios instance, auth interceptors
+│   │   ├── library.ts  # Library endpoints
+│   │   ├── calibration.ts
+│   │   ├── analytics.ts
+│   │   ├── metadata.ts
+│   │   ├── navidrome.ts
+│   │   └── ...
+│   └── components/
+│       └── ui/         # Reusable UI components
+│
+├── hooks/              # Global React hooks
+├── router/             # React Router config
+└── App.tsx             # Root component
+
+FRONTEND CONVENTIONS:
+- Each feature has: components/, hooks/, index.ts
+- API calls go through shared/api/*.ts (typed clients)
+- TanStack Query for server state (useQuery, useMutation)
+- MUI for styling
+- Feature-local state via hooks; global state avoided

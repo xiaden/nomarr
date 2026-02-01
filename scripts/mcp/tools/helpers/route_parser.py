@@ -135,13 +135,29 @@ def _parse_router_definition(node: ast.Assign, file_path: Path) -> RouterInfo | 
     return RouterInfo(prefix=prefix, file=str(file_path))
 
 
-def _parse_route_decorator(decorator: ast.expr) -> tuple[str, str] | None:
-    """Parse @router.get("/path") style decorators."""
+def _parse_route_decorator(
+    decorator: ast.expr,
+    route_objects: set[str] | None = None,
+) -> tuple[str, str] | None:
+    """Parse route decorators like @router.get("/path").
+
+    Args:
+        decorator: AST decorator node
+        route_objects: Set of object names that have route methods (e.g., {"router", "app"})
+                      Defaults to {"router"}
+
+    Returns:
+        Tuple of (HTTP_METHOD, path) or None if not a route decorator
+
+    """
+    if route_objects is None:
+        route_objects = {"router"}
+
     if not isinstance(decorator, ast.Call) or not isinstance(decorator.func, ast.Attribute):
         return None
 
     attr = decorator.func
-    if not isinstance(attr.value, ast.Name) or attr.value.id != "router":
+    if not isinstance(attr.value, ast.Name) or attr.value.id not in route_objects:
         return None
 
     method = attr.attr.upper()
@@ -156,8 +172,21 @@ def _parse_route_decorator(decorator: ast.expr) -> tuple[str, str] | None:
     return (method, path) if path is not None else None
 
 
-def _parse_file(file_path: Path) -> RouterInfo | None:
-    """Parse a single Python file for router and route definitions."""
+def _parse_file(
+    file_path: Path,
+    route_objects: set[str] | None = None,
+) -> RouterInfo | None:
+    """Parse a single Python file for router and route definitions.
+
+    Args:
+        file_path: Path to Python file
+        route_objects: Set of object names that have route methods (e.g., {"router", "app"})
+                      Defaults to {"router"}
+
+    """
+    if route_objects is None:
+        route_objects = {"router"}
+
     try:
         source = file_path.read_text(encoding="utf-8")
         tree = ast.parse(source, filename=str(file_path))
@@ -180,7 +209,7 @@ def _parse_file(file_path: Path) -> RouterInfo | None:
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             for decorator in node.decorator_list:
-                route = _parse_route_decorator(decorator)
+                route = _parse_route_decorator(decorator, route_objects=route_objects)
                 if route:
                     method, path = route
                     # Extract injected services from this route handler
@@ -199,19 +228,27 @@ def _parse_file(file_path: Path) -> RouterInfo | None:
     return router_info if router_info.routes else None
 
 
-def parse_interface_files(interfaces_dir: Path) -> list[RouterInfo]:
+def parse_interface_files(
+    interfaces_dir: Path,
+    route_objects: set[str] | None = None,
+) -> list[RouterInfo]:
     """Parse all *_if.py files in the interfaces directory.
 
     Args:
-        interfaces_dir: Path to nomarr/interfaces/api/
+        interfaces_dir: Path to interfaces/api/ directory
+        route_objects: Set of object names that have route methods (e.g., {"router", "app"})
+                      Defaults to {"router"}
 
     Returns:
         List of RouterInfo with parsed routes
 
     """
+    if route_objects is None:
+        route_objects = {"router"}
+
     routers: list[RouterInfo] = []
     for file_path in interfaces_dir.rglob("*_if.py"):
-        router = _parse_file(file_path)
+        router = _parse_file(file_path, route_objects=route_objects)
         if router:
             routers.append(router)
     return routers

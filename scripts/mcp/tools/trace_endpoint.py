@@ -28,7 +28,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-# Import tracing utilities from trace_calls_ml
+from scripts.mcp.tools.helpers.config_loader import (
+    get_backend_config,
+    load_config,
+)
 from scripts.mcp.tools.trace_calls import (
     CallInfo,
     _call_info_to_dict,
@@ -93,8 +96,20 @@ def _extract_depends_info(
     func_node: ast.FunctionDef | ast.AsyncFunctionDef,
     imports: dict[str, str],
     project_root: Path,
+    di_patterns: list[str] | None = None,
 ) -> list[InjectedDependency]:
-    """Extract all Depends() injections from a function's parameters."""
+    """Extract all DI injections from a function's parameters.
+
+    Args:
+        func_node: AST node for the function
+        imports: Dictionary of imports
+        project_root: Path to project root
+        di_patterns: List of DI patterns like ["Depends(", "Inject("]
+
+    """
+    if di_patterns is None:
+        di_patterns = ["Depends("]
+
     dependencies: list[InjectedDependency] = []
 
     for arg in func_node.args.args:
@@ -111,7 +126,7 @@ def _extract_depends_info(
 
         if default_index >= 0:
             default = func_node.args.defaults[default_index]
-            depends_func = _extract_depends_function(default)
+            depends_func = _extract_depends_function(default, di_patterns=[p.rstrip("(") for p in di_patterns])
 
         if depends_func:
             resolved_type, source_file = _resolve_depends_return_type_with_source(depends_func, imports, project_root)
@@ -127,15 +142,31 @@ def _extract_depends_info(
     return dependencies
 
 
-def _extract_depends_function(node: ast.expr) -> str | None:
-    """Extract the function name from a Depends(func) call."""
+def _extract_depends_function(node: ast.expr, di_patterns: list[str] | None = None) -> str | None:
+    """Extract the function name from a Depends(func) or similar DI call.
+
+    Args:
+        node: AST node to check for DI pattern
+        di_patterns: List of DI patterns like ["Depends", "Inject"]
+                     If None, defaults to ["Depends"]
+
+    Returns:
+        Function name if DI pattern is found, otherwise None
+
+    """
+    if di_patterns is None:
+        di_patterns = ["Depends"]
+
     if not isinstance(node, ast.Call):
         return None
 
-    if isinstance(node.func, ast.Name) and node.func.id == "Depends":
+    # Check for patterns like Depends(), Inject(), etc.
+    di_function_names = {pattern.rstrip("(") for pattern in di_patterns}
+
+    if isinstance(node.func, ast.Name) and node.func.id in di_function_names:
         if node.args:
             return _call_to_string(node.args[0])
-    elif isinstance(node.func, ast.Attribute) and node.func.attr == "Depends" and node.args:
+    elif isinstance(node.func, ast.Attribute) and node.func.attr in di_function_names and node.args:
         return _call_to_string(node.args[0])
 
     return None
@@ -212,9 +243,11 @@ def _extract_service_method_calls(
 def trace_endpoint(qualified_name: str, project_root: Path | None = None) -> dict[str, Any]:
     """Trace an API endpoint through DI to service methods.
 
+    Loads configuration to determine DI patterns (e.g., Depends, Inject).
+
     This is a higher-level tool that:
     1. Finds the endpoint function
-    2. Extracts Depends() injections
+    2. Extracts DI injections using configurable patterns
     3. Resolves service types
     4. Traces calls on those services
 
@@ -235,7 +268,13 @@ def trace_endpoint(qualified_name: str, project_root: Path | None = None) -> dic
     _mock_unavailable_dependencies()
 
     if project_root is None:
-        project_root = Path(__file__).parent.parent.parent
+        project_root = Path(__file__).parent.parent.parent.parent
+
+    # Load config to get DI patterns
+    config = load_config(project_root)
+    backend_config = get_backend_config(config)
+    di_config = backend_config.get("dependency_injection", {})
+    di_patterns: list[str] = di_config.get("patterns", ["Depends("])
 
     # Parse the qualified name to find the file
     parts = qualified_name.split(".")
@@ -264,8 +303,8 @@ def trace_endpoint(qualified_name: str, project_root: Path | None = None) -> dic
 
     imports = _extract_imports(tree)
 
-    # Extract DI info
-    dependencies = _extract_depends_info(func_node, imports, project_root)
+    # Extract DI info with configurable patterns
+    dependencies = _extract_depends_info(func_node, imports, project_root, di_patterns=di_patterns)
 
     # Extract method calls on injected services
     service_method_calls = _extract_service_method_calls(func_node, dependencies)

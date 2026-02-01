@@ -1,0 +1,100 @@
+testing
+nomarr\components\ml\ml_embed_comp.py:186:9: error: Returning Any from function
+declared to return "ndarray[Any, Any]"  [no-any-return]
+            return np.median(scores, axis=0).astype(np.float32, copy=False...
+            ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+nomarr\workflows\calibration\generate_calibration_wf.py:210:39: error: Argument
+1 to "float" has incompatible type "_ArrayOrScalarCommon"; expected
+"str | Buffer | SupportsFloat | SupportsIndex"  [arg-type]
+        return float(median_drift), float(iqr_drift)
+                                          ^~~~~~~~~
+testing
+nomarr\services\domain\library_svc\admin.py:51:9: error: Returning Any from
+function declared to return "dict[str, Any]"  [no-any-return]
+            return self.get_library.get_or_error(library_id)
+            ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+nomarr\services\domain\library_svc\admin.py:62:5: error: Name "list_libraries"
+already defined on line 29  [no-redef]
+        def list_libraries(self, enabled_only: bool = False) -> list[Libra...
+        ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~...
+nomarr\services\domain\library_svc\admin.py:88:5: error: Name "get_library"
+already defined on line 28  [no-redef]
+        def get_library(self, library_id: str) -> LibraryDict:
+        ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+nomarr\services\domain\library_svc\admin.py:111:16: error: "LibraryAdminMixin"
+has no attribute "db"  [attr-defined]
+                db=self.db,
+                   ^~~~~~~
+nomarr\services\domain\library_svc\admin.py:127:16: error: "LibraryAdminMixin"
+has no attribute "db"  [attr-defined]
+                db=self.db, base_library_root=self.cfg.library_root, libra...
+                   ^~~~~~~
+nomarr\services\domain\library_svc\admin.py:132:40: error: "LibraryAdminMixin"
+has no attribute "db"  [attr-defined]
+            updated = get_library_or_error(self.db, library_id)
+                                           ^~~~~~~
+nomarr\services\domain\library_svc\admin.py:153:13: error:
+"UpdateLibraryMetadataComp" not callable  [operator]
+                self.update_library_metadata(
+                ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+nomarr\services\domain\library_svc\admin.py:157:9: error: Returning Any from
+function declared to return "LibraryDict"  [no-any-return]
+            return self.get_library(library_id)
+            ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+nomarr\services\domain\library_svc\admin.py:163:34: error: "LibraryAdminMixin"
+has no attribute "db"  [attr-defined]
+            return delete_library(db=self.db, library_id=library_id)
+                                     ^~~~~~~
+nomarr\services\domain\library_svc\admin.py:165:5: error: Name
+"update_library_metadata" already defined on line 31  [no-redef]
+        def update_library_metadata(
+        ^~~~~~~~~~~~~~~~~~~~~~~~~~~~
+nomarr\services\domain\library_svc\admin.py:176:9: error: Module
+"nomarr.components.library.update_library_metadata_comp" has no attribute
+"update_library_metadata"  [attr-defined]
+            from nomarr.components.library.update_library_metadata_comp im...
+            ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~...
+nomarr\services\domain\library_svc\admin.py:180:13: error: "LibraryAdminMixin"
+has no attribute "db"  [attr-defined]
+                self.db,
+                ^~~~~~~
+nomarr\services\domain\library_svc\admin.py:188:40: error: "LibraryAdminMixin"
+has no attribute "db"  [attr-defined]
+            updated = get_library_or_error(self.db, library_id)
+                                           ^~~~~~~
+nomarr\services\domain\library_svc\admin.py:195:31: error: "LibraryAdminMixin"
+has no attribute "db"  [attr-defined]
+            clear_library_data(db=self.db, library_root=self.cfg.library_r...
+                                  ^~~~~~~
+nomarr\services\domain\library_svc\scan.py:34:9: error: Returning Any from
+function declared to return "dict[str, Any]"  [no-any-return]
+            return self.get_library.get_or_error(library_id)
+            ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+nomarr\services\domain\library_svc\scan.py:103:39: error: "LibraryScanMixin"
+has no attribute "db"  [attr-defined]
+            return start_scan_workflow(db=self.db, background_tasks=self.b...
+                                          ^~~~~~~
+nomarr\services\domain\library_svc\scan.py:153:39: error: "LibraryScanMixin"
+has no attribute "db"  [attr-defined]
+            return start_scan_workflow(db=self.db, background_tasks=self.b...
+                                          ^~~~~~~
+nomarr\app.py:291:30: error: Incompatible types in assignment (expression has
+type "WorkerSystemService", variable has type "None")  [assignment]
+            self.worker_system = WorkerSystemService(db=self.db, processor...
+                                 ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~...
+nomarr\app.py:293:12: error: "None" has no attribute "is_worker_system_enabled"
+ [attr-defined]
+            if self.worker_system.is_worker_system_enabled():
+               ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+nomarr\app.py:295:13: error: "None" has no attribute "start_all_workers" 
+[attr-defined]
+                self.worker_system.start_all_workers()
+                ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+testing
+        application = None
+                      ^~~~
+nomarr\interfaces\api\web\library_if.py:50:21: error: "ListLibrariesComp" not
+callable  [operator]
+            libraries = library_service.list_libraries(enabled_only=enable...
+                        ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~...
+Found 26 errors in 8 files (checked 194 source files)

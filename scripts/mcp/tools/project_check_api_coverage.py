@@ -12,33 +12,71 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from scripts.mcp.tools.helpers.config_loader import (
+    get_frontend_config,
+    load_config,
+)
 from scripts.mcp.tools.helpers.route_parser import build_full_paths, parse_interface_files
 
 # Project root
 ROOT = Path(__file__).parent.parent.parent.parent
 
 
-def get_backend_routes() -> list[tuple[str, str]]:
+def _build_endpoint_patterns(api_call_config: dict) -> tuple[re.Pattern, re.Pattern]:
+    """Build regex patterns for endpoint detection from config.
+
+    Args:
+        api_call_config: Frontend API call configuration from config
+
+    Returns:
+        Tuple of (endpoint_pattern, template_pattern)
+
+    """
+    # Default: look for /api/ endpoints in strings and templates
+    endpoint_pattern = re.compile(r"""[\"'`](/api/[^\"'`\s]+)[\"'`]""")
+    template_pattern = re.compile(r"`(/api/[^`]+)`")
+
+    return endpoint_pattern, template_pattern
+
+
+def get_backend_routes(project_root: Path | None = None) -> list[tuple[str, str]]:
     """Get all routes from static AST analysis.
+
+    Args:
+        project_root: Path to project root. Defaults to ROOT constant.
 
     Returns:
         List of (method, path) tuples
 
     """
-    interfaces_dir = ROOT / "nomarr" / "interfaces" / "api"
+    if project_root is None:
+        project_root = ROOT
+
+    interfaces_dir = project_root / "nomarr" / "interfaces" / "api"
     if not interfaces_dir.exists():
         return []
 
     routers = parse_interface_files(interfaces_dir)
-    routes_data = build_full_paths(routers, ROOT)
+    routes_data = build_full_paths(routers, project_root)
 
     routes = [(route["method"], route["path"]) for route in routes_data if route.get("method") != "OPTIONS"]
 
     return sorted(routes, key=lambda x: (x[1], x[0]))
 
 
-def scan_frontend_usage(frontend_dir: Path) -> tuple[dict[str, list[tuple[str, int]]], list[str]]:
-    """Scan frontend TypeScript files for API endpoint usage.
+def scan_frontend_usage(
+    frontend_dir: Path,
+    file_extensions: list[str] | None = None,
+    endpoint_pattern: re.Pattern | None = None,
+    template_pattern: re.Pattern | None = None,
+) -> tuple[dict[str, list[tuple[str, int]]], list[str]]:
+    """Scan frontend files for API endpoint usage.
+
+    Args:
+        frontend_dir: Path to frontend source directory
+        file_extensions: List of file extensions to scan (default: [\"ts\"])
+        endpoint_pattern: Regex pattern for endpoint strings (default: /api/...)
+        template_pattern: Regex pattern for template literals (default: `/api/...`)
 
     Returns:
         Tuple of (usage_map, errors) where:
@@ -46,16 +84,23 @@ def scan_frontend_usage(frontend_dir: Path) -> tuple[dict[str, list[tuple[str, i
         - errors: List of error messages for files that couldn't be scanned
 
     """
+    if file_extensions is None:
+        file_extensions = ["ts"]
+    if endpoint_pattern is None:
+        endpoint_pattern = re.compile(r"""[\"'`](/api/[^\"'`\s]+)[\"'`]""")
+    if template_pattern is None:
+        template_pattern = re.compile(r"`(/api/[^`]+)`")
+
     usage_map: dict[str, list[tuple[str, int]]] = defaultdict(list)
     errors: list[str] = []
 
-    # Pattern to match API endpoint strings in TypeScript
-    endpoint_pattern = re.compile(r"""["'`](/api/[^"'`\s]+)["'`]""")
-    template_pattern = re.compile(r"`(/api/[^`]+)`")
+    # Build glob patterns from file extensions
+    glob_patterns = [f"*.{ext}" for ext in file_extensions]
 
-    for ts_file in frontend_dir.rglob("*.ts"):
-        if "node_modules" in str(ts_file):
-            continue
+    for glob_pattern in glob_patterns:
+        for ts_file in frontend_dir.rglob(glob_pattern):
+            if "node_modules" in str(ts_file):
+                continue
 
         try:
             content = ts_file.read_text(encoding="utf-8")
@@ -88,6 +133,8 @@ def normalize_path(path: str) -> str:
 def project_check_api_coverage(filter_mode: str | None = None, route_path: str | None = None) -> dict[str, Any]:
     """Check API coverage between backend and frontend.
 
+    Loads configuration to determine frontend source paths and API call patterns.
+
     Args:
         filter_mode: "used", "unused", or None for all
         route_path: Filter to specific route path (e.g., "/api/web/libraries")
@@ -96,9 +143,23 @@ def project_check_api_coverage(filter_mode: str | None = None, route_path: str |
         Dict with endpoints, stats, and usage information
 
     """
-    backend_routes = get_backend_routes()
+    # Load config
+    config = load_config(ROOT)
+    frontend_config = get_frontend_config(config)
+
+    # Get patterns from config
+    api_calls_config = frontend_config.get("api_calls", {})
+    endpoint_pattern, template_pattern = _build_endpoint_patterns(api_calls_config)
+
+    # Get routes and scan frontend
+    backend_routes = get_backend_routes(ROOT)
     frontend_dir = ROOT / "frontend" / "src"
-    frontend_usage, scan_errors = scan_frontend_usage(frontend_dir)
+    frontend_usage, scan_errors = scan_frontend_usage(
+        frontend_dir,
+        file_extensions=["ts", "tsx", "js", "jsx"],
+        endpoint_pattern=endpoint_pattern,
+        template_pattern=template_pattern,
+    )
 
     results = []
 

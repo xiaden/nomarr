@@ -27,6 +27,11 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
+from scripts.mcp.tools.helpers.config_loader import (
+    get_tracing_config,
+    load_config,
+)
+
 # Maximum depth to prevent infinite recursion
 MAX_DEPTH = 8
 
@@ -124,7 +129,9 @@ def _extract_imports(tree: ast.Module) -> dict[str, str]:
 
 
 def _extract_param_types(
-    func_node: ast.FunctionDef | ast.AsyncFunctionDef, imports: dict[str, str], project_root: Path | None = None,
+    func_node: ast.FunctionDef | ast.AsyncFunctionDef,
+    imports: dict[str, str],
+    project_root: Path | None = None,
 ) -> dict[str, str]:
     """Extract parameter type annotations, including FastAPI Depends() patterns.
 
@@ -199,7 +206,9 @@ def _extract_depends_function(node: ast.expr) -> str | None:
 
 
 def _resolve_depends_return_type(
-    depends_func: str, imports: dict[str, str], project_root: Path | None = None,
+    depends_func: str,
+    imports: dict[str, str],
+    project_root: Path | None = None,
 ) -> str | None:
     """Resolve the return type of a dependency function.
 
@@ -325,7 +334,11 @@ def _call_to_string(node: ast.expr) -> str | None:
 
 
 def _resolve_call(
-    call_expr: str, imports: dict[str, str], param_types: dict[str, str], current_module: str, project_root: Path,
+    call_expr: str,
+    imports: dict[str, str],
+    param_types: dict[str, str],
+    current_module: str,
+    project_root: Path,
 ) -> tuple[str | None, Path | None, int | None]:
     """Resolve a call expression to its definition.
 
@@ -424,13 +437,55 @@ def _resolve_call(
     return None, None, None
 
 
-def _is_nomarr_call(resolved: str | None) -> bool:
-    """Check if a resolved call is within the nomarr package."""
-    return resolved is not None and resolved.startswith("nomarr.")
+def _is_nomarr_call(resolved: str | None, include_patterns: list[str] | None = None) -> bool:
+    """Check if a resolved call matches configured include patterns.
+
+    Args:
+        resolved: Fully qualified name of the call
+        include_patterns: List of patterns like ["nomarr.*", "myapp.*"]
+                         If None, defaults to ["nomarr.*"]
+
+    Returns:
+        True if resolved matches any pattern
+
+    """
+    if resolved is None:
+        return False
+
+    if include_patterns is None:
+        include_patterns = ["nomarr.*"]
+
+    for pattern in include_patterns:
+        # Simple pattern matching: convert "nomarr.*" to prefix check
+        if pattern.endswith(".*"):
+            prefix = pattern[:-2]  # Remove ".*"
+            if resolved.startswith(prefix + "."):
+                return True
+        else:
+            # Exact match
+            if resolved == pattern:
+                return True
+
+    return False
 
 
-def _trace_calls_recursive(qualified_name: str, project_root: Path, visited: set[str], depth: int) -> CallInfo | None:
-    """Recursively trace calls from a function."""
+def _trace_calls_recursive(
+    qualified_name: str,
+    project_root: Path,
+    visited: set[str],
+    depth: int,
+    include_patterns: list[str] | None = None,
+) -> CallInfo | None:
+    """Recursively trace calls from a function.
+
+    Args:
+        qualified_name: Fully qualified function name
+        project_root: Path to project root
+        visited: Set of already visited functions to prevent cycles
+        depth: Current recursion depth
+        include_patterns: List of module patterns to include (e.g., ["nomarr.*"])
+
+    """
     if depth >= MAX_DEPTH:
         return None
 
@@ -541,11 +596,15 @@ def _trace_calls_recursive(qualified_name: str, project_root: Path, visited: set
     seen_calls: set[str] = set()
     for call_expr, _call_line in raw_calls:
         resolved, resolved_path, resolved_line = _resolve_call(
-            call_expr, imports, param_types, current_module, project_root,
+            call_expr,
+            imports,
+            param_types,
+            current_module,
+            project_root,
         )
 
-        # Skip non-nomarr calls and duplicates
-        if not _is_nomarr_call(resolved):
+        # Skip non-matching calls and duplicates
+        if not _is_nomarr_call(resolved, include_patterns):
             continue
 
         if resolved is None or resolved in seen_calls:
@@ -558,6 +617,7 @@ def _trace_calls_recursive(qualified_name: str, project_root: Path, visited: set
             project_root,
             visited.copy(),  # Copy to allow different branches
             depth + 1,
+            include_patterns=include_patterns,
         )
 
         if nested:
@@ -609,6 +669,8 @@ def _flatten_chain(info: CallInfo, prefix: str = "") -> list[dict[str, Any]]:
 def trace_calls(qualified_name: str, project_root: Path | None = None) -> dict[str, Any]:
     """Trace the call chain starting from a function/method.
 
+    Loads configuration to determine which modules to include in the trace.
+
     Args:
         qualified_name: Fully qualified function name
             Examples:
@@ -629,10 +691,15 @@ def trace_calls(qualified_name: str, project_root: Path | None = None) -> dict[s
     _mock_unavailable_dependencies()
 
     if project_root is None:
-        project_root = Path(__file__).parent.parent.parent
+        project_root = Path(__file__).parent.parent.parent.parent
+
+    # Load config to get tracing patterns
+    config = load_config(project_root)
+    tracing_config = get_tracing_config(config)
+    include_patterns: list[str] | None = tracing_config.get("include_patterns")
 
     # Trace the calls
-    result = _trace_calls_recursive(qualified_name, project_root, set(), 0)
+    result = _trace_calls_recursive(qualified_name, project_root, set(), 0, include_patterns=include_patterns)
 
     if result is None:
         return {"error": f"Could not find function: {qualified_name}"}

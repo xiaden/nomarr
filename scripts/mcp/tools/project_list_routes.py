@@ -20,7 +20,31 @@ __all__ = ["project_list_routes"]
 from pathlib import Path
 from typing import Any
 
+from scripts.mcp.tools.helpers.config_loader import (
+    get_backend_config,
+    load_config,
+)
 from scripts.mcp.tools.helpers.route_parser import build_full_paths, parse_interface_files
+
+
+def _extract_route_objects(decorators: list[str]) -> set[str]:
+    """Extract route object names from decorator patterns.
+
+    Args:
+        decorators: List of decorator patterns like ["@router.get", "@router.post"]
+
+    Returns:
+        Set of object names like {"router"}
+
+    """
+    route_objects: set[str] = set()
+    for decorator in decorators:
+        # Strip @ and extract object name before first dot
+        # E.g., "@router.get" -> "router"
+        if "@" in decorator and "." in decorator:
+            obj_name = decorator.replace("@", "").split(".")[0]
+            route_objects.add(obj_name)
+    return route_objects if route_objects else {"router"}
 
 
 def _get_interfaces_dir(project_root: Path) -> Path:
@@ -50,8 +74,16 @@ def project_list_routes(project_root: Path | None = None) -> dict[str, Any]:
     if not interfaces_dir.exists():
         return {"error": f"Interfaces directory not found: {interfaces_dir}"}
 
-    # Parse all interface files
-    routers = parse_interface_files(interfaces_dir)
+    # Load config to determine route decorators
+    config = load_config(project_root)
+    backend_config = get_backend_config(config)
+
+    # Extract route object names from decorator patterns
+    decorators: list[str] = backend_config.get("routes", {}).get("decorators", [])
+    route_objects = _extract_route_objects(decorators)
+
+    # Parse all interface files with config-based route objects
+    routers = parse_interface_files(interfaces_dir, route_objects=route_objects)
 
     # Build full paths
     routes = build_full_paths(routers, project_root)

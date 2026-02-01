@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>Nomarr Code Graph Viewer</title>
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <link rel="stylesheet" href="css/viewer.css">
+</head>
+<body>
+    <div id="loading">
+        <div style="text-align: center; color: #cccccc; padding: 32px;">
+            <div class="spinner"></div>
+            <div style="margin-top: 16px;">Initializing...</div>
+        </div>
+    </div>
+
+    <div id="loadingBar" style="display: none;">
+        <div id="loadingBarFill"></div>
+        <div id="loadingBarText">Loading nodes...</div>
+    </div>
+
+    <div id="container" style="display: none;">
+        <div id="sidebar">
+            <div id="controls">
+                <h1>🔍 Code Graph Explorer</h1>
+
+                <div class="control-group">
+                    <label for="graphSelector">Graph File:</label>
+                    <select id="graphSelector">
+                        <option value="../../outputs/code_graph.json" selected>Detailed (methods visible)</option>
+                        <option value="../../outputs/code_graph_simplified.json">Simplified (class-level only)</option>
+                    </select>
+                </div>
+
+
+
+                <div class="stats" id="stats">
+                    <div class="stat-row">
+                        <span class="stat-label">Total Nodes:</span>
+                        <span class="stat-value" id="totalNodes">-</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Total Edges:</span>
+                        <span class="stat-value" id="totalEdges">-</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Visible Nodes:</span>
+                        <span class="stat-value" id="visibleNodes">-</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Visible Edges:</span>
+                        <span class="stat-value" id="visibleEdges">-</span>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label for="search">Search Nodes:</label>
+                    <input type="text" id="search" placeholder="Type to filter nodes...">
+                </div>
+
+                <div class="control-group">
+                    <label for="interfaceFilter">Filter by Entrypoint:</label>
+                    <select id="interfaceFilter">
+                        <option value="">All (Warning: May be slow!)</option>
+                        <option value="__unreachable__">Unreachable (dead code)</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label>Layers:</label>
+                    <div class="checkbox-group" id="layerFilters"></div>
+                </div>
+
+                <div class="control-group">
+                    <label>Kinds:</label>
+                    <div class="checkbox-group" id="kindFilters"></div>
+                </div>
+
+                <div class="control-group">
+                    <label>Edge Types:</label>
+                    <div class="checkbox-group" id="edgeTypeFilters"></div>
+                </div>
+
+                <div class="control-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="showTransitiveEdges" checked>
+                        Show connections through hidden nodes
+                    </label>
+                </div>
+
+                <div class="control-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="enablePhysics" checked>
+                        Enable physics simulation
+                    </label>
+                </div>
+
+                <button id="resetViewBtn">Reset View</button>
+                <button id="fitNetworkBtn">Fit to Screen</button>
+                <button id="clearSelectionBtn">Clear Selection</button>
+                <button id="reheatPhysicsBtn">Reheat Physics</button>
+                
+                <div style="margin-top: 20px; padding: 10px; background: #1e1e1e; border-radius: 4px; font-size: 11px; color: #858585;">
+                    <strong style="color: #cccccc;">Interactions:</strong><br>
+                    • Click: Expand node<br>
+                    • Double-click: Collapse node<br>
+                    • Shift+click: Trace paths<br>
+                    • Ctrl+click: Select only<br>
+                    • Panel links: Focus node
+                </div>
+            </div>
+
+            <div id="info">
+                <div id="nodeInfo">
+                    <p style="color: #858585; font-size: 13px; font-style: italic;">
+                        Click on a node to view details
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div id="network"></div>
+    </div>
+
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>
