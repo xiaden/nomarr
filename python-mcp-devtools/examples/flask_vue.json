@@ -1,0 +1,106 @@
+{
+  "backend": {
+    "routes": {
+      "decorators": [
+        "@app.route",
+        "@bp.route",
+        "@flask.route",
+        "@app.get",
+        "@app.post",
+        "@app.put",
+        "@app.delete",
+        "@bp.get",
+        "@bp.post",
+        "@bp.put",
+        "@bp.delete"
+      ],
+      "decorator_patterns": [
+        ".*@(?:app|bp|flask)\\.(?:route|get|post|put|delete|patch).*"
+      ]
+    },
+    "interface_globs": [
+      "app/routes/**/*.py",
+      "app/api/**/*.py",
+      "app/blueprints/**/*.py",
+      "routes/**/*.py",
+      "api/**/*.py"
+    ],
+    "service_globs": [
+      "app/services/**/*.py",
+      "services/**/*.py"
+    ],
+    "component_globs": [
+      "app/models/**/*.py",
+      "app/utils/**/*.py",
+      "models/**/*.py",
+      "utils/**/*.py"
+    ],
+    "workflow_globs": [
+      "app/tasks/**/*.py",
+      "tasks/**/*.py"
+    ],
+    "exclude_patterns": [
+      "**/__pycache__",
+      "**/*.pyc",
+      "**/.*",
+      "**/test_*",
+      "**/tests/**",
+      "**/.venv",
+      "**/venv",
+      "**/*.egg-info"
+    ]
+  },
+  "frontend": {
+    "api_calls": {
+      "patterns": [
+        "fetch\\(['\"](?:/[^'\"]*)",
+        "axios\\.(get|post|put|delete|patch)\\(['\"](?:/[^'\"]*)",
+        "this\\.\\$http\\.(?:get|post|put|delete)\\(['\"](?:/[^'\"]*)",
+        "Vue\\.prototype\\.\\$http.*(?:get|post|put|delete).*['\"](?:/[^'\"]*)"
+      ]
+    },
+    "search_roots": [
+      "app/static",
+      "frontend/",
+      "src/",
+      "public/"
+    ],
+    "file_patterns": [
+      "**/*.vue",
+      "**/*.js",
+      "**/*.jsx",
+      "**/*.ts",
+      "**/*.tsx"
+    ],
+    "exclude_patterns": [
+      "**/node_modules",
+      "**/dist",
+      "**/build",
+      "**/.venv",
+      "**/.*",
+      "**/*.test.js",
+      "**/*.spec.js"
+    ]
+  },
+  "tracing": {
+    "max_depth": 10,
+    "include_patterns": [
+      "app.*",
+      "routes.*",
+      "services.*"
+    ],
+    "exclude_modules": [
+      "logging",
+      "sys",
+      "os",
+      "json",
+      "pathlib",
+      "typing",
+      "functools",
+      "operator"
+    ],
+    "follow_imports": true,
+    "show_external": false,
+    "show_stdlib": false
+  }
+}

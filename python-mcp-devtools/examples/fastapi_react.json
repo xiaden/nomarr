@@ -1,0 +1,121 @@
+{
+  "backend": {
+    "routes": {
+      "decorators": [
+        "@router.get",
+        "@router.post",
+        "@router.put",
+        "@router.delete",
+        "@router.patch",
+        "@router.head",
+        "@router.options",
+        "@app.get",
+        "@app.post",
+        "@app.put",
+        "@app.delete",
+        "@app.patch"
+      ],
+      "decorator_patterns": [
+        ".*@.*\\.(?:get|post|put|delete|patch|head|options).*"
+      ]
+    },
+    "interface_globs": [
+      "src/interfaces/**/*.py",
+      "app/routes/**/*.py",
+      "api/**/*.py",
+      "routes/**/*.py"
+    ],
+    "service_globs": [
+      "src/services/**/*.py",
+      "app/services/**/*.py",
+      "services/**/*.py"
+    ],
+    "component_globs": [
+      "src/components/**/*.py",
+      "app/components/**/*.py",
+      "components/**/*.py"
+    ],
+    "workflow_globs": [
+      "src/workflows/**/*.py",
+      "app/workflows/**/*.py",
+      "workflows/**/*.py"
+    ],
+    "dependency_injection": {
+      "patterns": [
+        "Depends\\(",
+        "dependency\\(",
+        "inject\\(",
+        "get_.*\\(.*Depends"
+      ]
+    },
+    "exclude_patterns": [
+      "**/__pycache__",
+      "**/*.pyc",
+      "**/.*",
+      "**/test_*",
+      "**/tests/**",
+      "**/.venv",
+      "**/venv",
+      "**/*.egg-info"
+    ]
+  },
+  "frontend": {
+    "api_calls": {
+      "patterns": [
+        "fetch\\(['\"](?:/[^'\"]*)",
+        "axios\\.(get|post|put|delete|patch)\\(['\"](?:/[^'\"]*)",
+        "api\\.(?:get|post|put|delete|patch)\\(['\"](?:/[^'\"]*)",
+        "http\\.(?:get|post|put|delete|patch)\\(['\"](?:/[^'\"]*)"
+      ],
+      "method_patterns": {
+        "fetch": "GET|POST|DELETE|PATCH|PUT",
+        "axios": "method_parameter",
+        "custom_client": "method_from_name"
+      }
+    },
+    "search_roots": [
+      "src/",
+      "frontend/",
+      "app/static",
+      "public/"
+    ],
+    "file_patterns": [
+      "**/*.tsx",
+      "**/*.jsx",
+      "**/*.ts",
+      "**/*.js"
+    ],
+    "exclude_patterns": [
+      "**/node_modules",
+      "**/.next",
+      "**/dist",
+      "**/build",
+      "**/.venv",
+      "**/.*",
+      "**/*.test.ts",
+      "**/*.spec.ts"
+    ]
+  },
+  "tracing": {
+    "max_depth": 10,
+    "include_patterns": [
+      "app.*",
+      "src.*"
+    ],
+    "exclude_modules": [
+      "logging",
+      "sys",
+      "os",
+      "json",
+      "pathlib",
+      "typing",
+      "dataclasses",
+      "asyncio",
+      "functools",
+      "operator"
+    ],
+    "follow_imports": true,
+    "show_external": false,
+    "show_stdlib": false
+  }
+}
