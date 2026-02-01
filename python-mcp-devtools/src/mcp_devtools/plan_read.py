@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from scripts.mcp.tools.helpers.plan_md import parse_plan, plan_to_dict
+from .helpers.plan_md import parse_plan, plan_to_dict
 
 PLANS_DIR = "docs/dev/plans"
 

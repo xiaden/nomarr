@@ -5,29 +5,28 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "python-mcp-devtools"
 version = "0.1.0"
-description = "Reusable MCP tools for Python project analysis and code tracing"
+description = "MCP server with development tools for Python projects - route discovery, call tracing, linting, and more"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 authors = [
-    {name = "Nomarr Contributors", email = "dev@nomarr.dev"},
+    {name = "Nomarr Contributors"},
 ]
 license = {text = "MIT"}
-keywords = ["mcp", "model-context-protocol", "python", "code-analysis", "tracing"]
+keywords = ["mcp", "model-context-protocol", "python", "code-analysis", "development-tools"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: Libraries",
     "Topic :: Software Development :: Tools",
 ]
 
 dependencies = [
+    "mcp>=1.9.0",
     "pydantic>=2.0",
-    "pathlib-relative",
+    "fastmcp>=0.1.0",
 ]
 
 [project.optional-dependencies]
@@ -36,29 +35,33 @@ dev = [
     "pytest-cov",
     "ruff>=0.1.0",
     "mypy>=1.0",
-    "black>=23.0",
 ]
+lint = [
+    "ruff>=0.1.0",
+    "mypy>=1.0",
+    "import-linter>=2.0",
+]
+
+[project.scripts]
+mcp-devtools = "mcp_devtools.server:main"
 
 [project.urls]
 Repository = "https://github.com/nomarr-dev/python-mcp-devtools"
-Documentation = "https://github.com/nomarr-dev/python-mcp-devtools/blob/main/README.md"
-Issues = "https://github.com/nomarr-dev/python-mcp-devtools/issues"
 
 [tool.setuptools]
-packages = ["mcp_devtools", "mcp_devtools.helpers"]
+packages = ["mcp_devtools", "mcp_devtools.helpers", "mcp_devtools.schemas"]
 package-dir = {"" = "src"}
 
-[tool.black]
-line-length = 100
-target-version = ["py310", "py311", "py312"]
+[tool.setuptools.package-data]
+mcp_devtools = ["schemas/*.json"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py312"
 select = ["E", "F", "W", "I", "UP"]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.12"
 strict = false
 warn_return_any = true
 warn_unused_configs = true

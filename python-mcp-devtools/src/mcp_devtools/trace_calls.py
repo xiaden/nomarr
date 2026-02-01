@@ -12,7 +12,7 @@ Usage:
     python scripts/mcp/trace_calls_ml.py nomarr.interfaces.api.web.library_if.scan_library
 
     # As module
-    from scripts.mcp.tools.trace_calls import trace_calls
+    from .trace_calls import trace_calls
     result = trace_calls("nomarr.interfaces.api.web.library_if.scan_library")
 """
 
@@ -240,11 +240,7 @@ def _resolve_depends_return_type(
 
     # Find the function and extract return annotation
     for node in ast.iter_child_nodes(tree):
-        if (
-            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-            and node.name == func_name
-            and node.returns
-        ):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == func_name and node.returns:
             return_type = _annotation_to_string(node.returns)
             if return_type:
                 # Resolve the return type through the deps module's imports
@@ -277,9 +273,7 @@ def _annotation_to_string(node: ast.expr) -> str | None:
     return None
 
 
-def _find_function_node(
-    tree: ast.Module, func_name: str
-) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
+def _find_function_node(tree: ast.Module, func_name: str) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
     """Find a function or method definition in AST."""
     # Check if it's a method (contains a dot suggesting Class.method)
     if "." in func_name:
@@ -287,10 +281,7 @@ def _find_function_node(
         for node in ast.walk(tree):
             if isinstance(node, ast.ClassDef) and node.name == class_name:
                 for item in node.body:
-                    if (
-                        isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
-                        and item.name == method_name
-                    ):
+                    if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and item.name == method_name:
                         return item
     else:
         # Top-level function
@@ -312,9 +303,7 @@ def _find_class_node(tree: ast.Module, class_name: str) -> tuple[ast.ClassDef | 
     return None, None
 
 
-def _extract_calls_from_function(
-    func_node: ast.FunctionDef | ast.AsyncFunctionDef,
-) -> list[tuple[str, int]]:
+def _extract_calls_from_function(func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[tuple[str, int]]:
     """Extract all function calls from a function body.
 
     Returns list of (call_expression, line_number).
@@ -527,9 +516,7 @@ def _trace_calls_recursive(
 
     tree = _parse_file(file_path)
     if not tree:
-        return CallInfo(
-            name=qualified_name, resolved=qualified_name, file=str(file_path), line=None
-        )
+        return CallInfo(name=qualified_name, resolved=qualified_name, file=str(file_path), line=None)
 
     func_node = _find_function_node(tree, func_name)
 
@@ -554,8 +541,7 @@ def _trace_calls_recursive(
                     if isinstance(node, ast.ClassDef):
                         for item in node.body:
                             if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and (
-                                item.name == method_name
-                                or (class_name and item.name == method_name)
+                                item.name == method_name or (class_name and item.name == method_name)
                             ):
                                 # Found it in a mixin
                                 file_path = py_file
@@ -583,9 +569,7 @@ def _trace_calls_recursive(
                 )
 
         # Neither function nor class found
-        return CallInfo(
-            name=qualified_name, resolved=qualified_name, file=str(file_path), line=None
-        )
+        return CallInfo(name=qualified_name, resolved=qualified_name, file=str(file_path), line=None)
 
     # Extract imports for resolution
     imports = _extract_imports(tree)
@@ -644,11 +628,7 @@ def _trace_calls_recursive(
                 CallInfo(
                     name=call_expr,
                     resolved=resolved,
-                    file=(
-                        str(resolved_path.relative_to(project_root)).replace("\\", "/")
-                        if resolved_path
-                        else None
-                    ),
+                    file=(str(resolved_path.relative_to(project_root)).replace("\\", "/") if resolved_path else None),
                     line=resolved_line,
                 ),
             )
@@ -658,12 +638,7 @@ def _trace_calls_recursive(
 
 def _call_info_to_dict(info: CallInfo) -> dict[str, Any]:
     """Convert CallInfo to dict for JSON serialization."""
-    result: dict[str, Any] = {
-        "name": info.name,
-        "resolved": info.resolved,
-        "file": info.file,
-        "line": info.line,
-    }
+    result: dict[str, Any] = {"name": info.name, "resolved": info.resolved, "file": info.file, "line": info.line}
 
     if info.calls:
         result["calls"] = [_call_info_to_dict(c) for c in info.calls]
@@ -740,9 +715,7 @@ def trace_calls(
     include_patterns: list[str] | None = tracing_config.get("include_patterns")
 
     # Trace the calls
-    result = _trace_calls_recursive(
-        qualified_name, project_root, set(), 0, include_patterns=include_patterns
-    )
+    result = _trace_calls_recursive(qualified_name, project_root, set(), 0, include_patterns=include_patterns)
 
     if result is None:
         return {"error": f"Could not find function: {qualified_name}"}
@@ -766,10 +739,4 @@ def trace_calls(
 
     call_count, depth = count_calls(result)
 
-    return {
-        "root": qualified_name,
-        "tree": tree,
-        "flat": flat,
-        "depth": depth,
-        "call_count": call_count,
-    }
+    return {"root": qualified_name, "tree": tree, "flat": flat, "depth": depth, "call_count": call_count}

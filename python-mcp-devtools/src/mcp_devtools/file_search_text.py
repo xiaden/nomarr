@@ -7,8 +7,8 @@ __all__ = ["file_search_text"]
 
 from pathlib import Path
 
-from scripts.mcp.tools.helpers.file_lines import read_raw_line_range
-from scripts.mcp.tools.helpers.semantic_tool_examples import get_semantic_tool_examples
+from .helpers.file_lines import read_raw_line_range
+from .helpers.semantic_tool_examples import get_semantic_tool_examples
 
 
 def file_search_text(file_path: str, search_string: str, workspace_root: Path) -> dict:

@@ -45,11 +45,57 @@ import sys
 from pathlib import Path
 from typing import Annotated
 
+from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
-from mcp.server.fastmcp import FastMCP
-from scripts.mcp import tools
-from scripts.mcp.tools.helpers.config_loader import load_config
+from . import (
+    edit_atomic_replace,
+    edit_move_text,
+    file_read_line,
+    file_read_range,
+    file_search_text,
+    file_symbol_at_line,
+    lint_backend,
+    lint_frontend,
+    module_discover_api,
+    module_get_source,
+    module_locate_symbol,
+    plan_complete_step,
+    plan_read,
+    project_check_api_coverage,
+    project_list_dir,
+    project_list_routes,
+    trace_calls,
+    trace_endpoint,
+)
+from .helpers.config_loader import load_config
+
+
+# Create tools namespace for compatibility
+class _ToolsNamespace:
+    """Namespace to access tool functions like tools.function_name()."""
+
+    project_list_dir = staticmethod(project_list_dir)
+    module_discover_api = staticmethod(module_discover_api)
+    module_get_source = staticmethod(module_get_source)
+    file_symbol_at_line = staticmethod(file_symbol_at_line)
+    module_locate_symbol = staticmethod(module_locate_symbol)
+    trace_calls = staticmethod(trace_calls)
+    project_list_routes = staticmethod(project_list_routes)
+    trace_endpoint = staticmethod(trace_endpoint)
+    project_check_api_coverage = staticmethod(project_check_api_coverage)
+    lint_backend = staticmethod(lint_backend)
+    lint_frontend = staticmethod(lint_frontend)
+    file_read_range = staticmethod(file_read_range)
+    file_read_line = staticmethod(file_read_line)
+    file_search_text = staticmethod(file_search_text)
+    edit_atomic_replace = staticmethod(edit_atomic_replace)
+    edit_move_text = staticmethod(edit_move_text)
+    plan_read = staticmethod(plan_read)
+    plan_complete_step = staticmethod(plan_complete_step)
+
+
+tools = _ToolsNamespace()
 
 # ──────────────────────────────────────────────────────────────────────
 # Early Setup: Configure logging to stderr (NEVER stdout for MCP stdio)
@@ -142,7 +188,9 @@ def _validate_config_on_startup() -> dict:
 class StepAnnotation(BaseModel):
     """Annotation to add under a completed step."""
 
-    marker: str = Field(description="Alphanumeric marker word (e.g., 'Notes', 'Warning', 'Blocked')")
+    marker: str = Field(
+        description="Alphanumeric marker word (e.g., 'Notes', 'Warning', 'Blocked')"
+    )
     text: str = Field(description="Annotation text to add under the step")
 
 
@@ -202,7 +250,9 @@ def module_discover_api(
 
 @mcp.tool()
 def module_get_source(
-    qualified_name: Annotated[str, "Python dotted path: 'module.function' or 'module.Class.method'"],
+    qualified_name: Annotated[
+        str, "Python dotted path: 'module.function' or 'module.Class.method'"
+    ],
     *,
     large_context: Annotated[bool, "If True, include 10 lines context (default: 2 lines)"] = False,
 ) -> dict:
@@ -270,7 +320,9 @@ def project_list_routes() -> dict:
 
 @mcp.tool()
 def trace_endpoint(
-    endpoint: Annotated[str, "Fully qualified endpoint name (e.g., 'nomarr.interfaces.api.web.info_if.web_info')"],
+    endpoint: Annotated[
+        str, "Fully qualified endpoint name (e.g., 'nomarr.interfaces.api.web.info_if.web_info')"
+    ],
 ) -> dict:
     """Trace an API endpoint through FastAPI DI to service methods.
 
@@ -291,18 +343,24 @@ def project_check_api_coverage(
         str | None,
         "Filter: 'used' (only used endpoints), 'unused' (only unused), or None (all)",
     ] = None,
-    route_path: Annotated[str | None, "Specific route to check (e.g., '/api/web/libraries')"] = None,
+    route_path: Annotated[
+        str | None, "Specific route to check (e.g., '/api/web/libraries')"
+    ] = None,
 ) -> dict:
     """Check which backend API endpoints are used by the frontend.
 
     Filter modes: 'used', 'unused', or None for all endpoints.
     """
-    return tools.project_check_api_coverage(filter_mode=filter_mode, route_path=route_path, config=_config)
+    return tools.project_check_api_coverage(
+        filter_mode=filter_mode, route_path=route_path, config=_config
+    )
 
 
 @mcp.tool()
 def lint_backend(
-    path: Annotated[str | None, "Relative path to lint (e.g., 'nomarr/services'). Default: 'nomarr/'"] = None,
+    path: Annotated[
+        str | None, "Relative path to lint (e.g., 'nomarr/services'). Default: 'nomarr/'"
+    ] = None,
     *,
     check_all: Annotated[
         bool,
@@ -326,7 +384,9 @@ def lint_frontend() -> dict:
 def file_read_range(
     file_path: Annotated[str, "Workspace-relative or absolute path to the file to read"],
     start_line: Annotated[int, "Starting line number (1-indexed, inclusive)"],
-    end_line: Annotated[int, "Ending line number (1-indexed, inclusive). Clamped to 100 lines max."],
+    end_line: Annotated[
+        int, "Ending line number (1-indexed, inclusive). Clamped to 100 lines max."
+    ],
     *,
     include_imports: Annotated[
         bool,
@@ -338,7 +398,9 @@ def file_read_range(
     Fallback tool for non-Python files. Maximum 100 lines per read.
     Warns when used on Python files - prefer module_discover_api, module_get_source, or module_locate_symbol instead.
     """
-    return tools.file_read_range(file_path, start_line, end_line, ROOT, include_imports=include_imports)
+    return tools.file_read_range(
+        file_path, start_line, end_line, ROOT, include_imports=include_imports
+    )
 
 
 @mcp.tool()
@@ -416,7 +478,9 @@ def edit_move_text(
 
 @mcp.tool()
 def plan_read(
-    plan_name: Annotated[str, "Plan name (with or without .md extension), e.g., 'TASK-refactor-library'"],
+    plan_name: Annotated[
+        str, "Plan name (with or without .md extension), e.g., 'TASK-refactor-library'"
+    ],
 ) -> dict:
     """Read a task plan and return structured JSON summary.
 
@@ -429,7 +493,9 @@ def plan_read(
 @mcp.tool()
 def plan_complete_step(
     plan_name: Annotated[str, "Plan name (with or without .md extension)"],
-    step_id: Annotated[str, "Step ID in format P<phase>-S<step> (e.g., 'P1-S3' for Phase 1, Step 3)"],
+    step_id: Annotated[
+        str, "Step ID in format P<phase>-S<step> (e.g., 'P1-S3' for Phase 1, Step 3)"
+    ],
     annotation: Annotated[
         StepAnnotation | None,
         "Optional annotation to add under the step after marking complete.",
@@ -445,6 +511,11 @@ def plan_complete_step(
     # Convert Pydantic model to dict for the implementation
     ann_dict = annotation.model_dump() if annotation else None
     return tools.plan_complete_step(plan_name, step_id, workspace_root=ROOT, annotation=ann_dict)
+
+
+def main() -> None:
+    """Run the MCP server."""
+    mcp.run()
 
 
 # ──────────────────────────────────────────────────────────────────────

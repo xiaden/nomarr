@@ -8,7 +8,7 @@ __all__ = ["file_read_line"]
 import ast
 from pathlib import Path
 
-from scripts.mcp.tools.helpers.file_lines import read_raw_line_range
+from .helpers.file_lines import read_raw_line_range
 
 
 def _find_imports_end(all_lines: list[str]) -> int:

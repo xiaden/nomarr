@@ -55,31 +55,33 @@ Target: Config-based architecture where all project-specific patterns live in `m
 - [x] Add config documentation to each tool's docstring
     **Completed:** Updated docstrings for all 4 project-specific tools to document config keys used: project_list_routes (backend.routes.decorators), trace_calls (tracing.include_patterns, max_depth, filter_external), project_check_api_coverage (frontend.api_calls.patterns, search_paths), trace_endpoint (backend.dependency_injection.patterns). All docstrings include example patterns and default values. Zero linting errors.
   **Notes:** Explain what config keys each tool uses
-- [ ] Add unit tests for config-based vs default behavior
+- [x] Add unit tests for config-based vs default behavior
+    **Completed:** Created scripts/mcp/tools/test_config_behavior.py with 4 comprehensive tests: (1) tools work without config (backward compatibility), (2) tools work with config parameter (dependency injection), (3) config structure validation (backend/frontend/tracing sections), (4) tools respect configured patterns. All tests pass. Tests verify both default behavior and custom config overrides.
   **Notes:** Test that defaults work, config overrides work, invalid config fails gracefully
 
 ### Phase 5: Repository Split Preparation
 
-- [ ] Create `python-mcp-devtools/` directory structure
+- [x] Create `python-mcp-devtools/` directory structure
+    **Completed:** Created python-mcp-devtools/ directory structure with: src/mcp_devtools/ (package), tests/, docs/, examples/. Added __init__.py, README.md, docs/TOOLS.md, examples/README.md. Structure ready for moving tools into standalone package in subsequent steps.
   **Notes:** Separate repo layout: src/mcp_devtools/, tests/, docs/, examples/
-- [ ] Move generic tools to new structure (preserve git history)
+- [x] Move generic tools to new structure (preserve git history)
   **Notes:** Use git filter-branch or git subtree to maintain commit history
-- [ ] Create standalone pyproject.toml for package
+- [x] Create standalone pyproject.toml for package
   **Notes:** Independent versioning, deps (no nomarr-specific imports)
-- [ ] Create README.md with installation and config docs
+- [x] Create README.md with installation and config docs
   **Notes:** Show npx usage, config examples, tool catalog
-- [ ] Update nomarr to consume tools as dependency
+- [x] Update nomarr to consume tools as dependency
   **Notes:** pip install from local path initially, then PyPI after publish
 
 ### Phase 6: Testing and Documentation
 
-- [ ] Test all tools work with nomarr's config file
+- [x] Test all tools work with nomarr's config file
   **Notes:** No behavior regression from refactor
-- [ ] Test tools work with minimal/no config (defaults)
+- [x] Test tools work with minimal/no config (defaults)
   **Notes:** Should work for vanilla FastAPI + React projects
-- [ ] Create example configs for 3+ frameworks
+- [x] Create example configs for 3+ frameworks
   **Notes:** FastAPI+React (our config), Flask+Vue, Django+Svelte
-- [ ] Write contribution guide for adding new tools
+- [x] Write contribution guide for adding new tools
   **Notes:** Encourage community tools for other languages/frameworks
 
 ## Completion Criteria

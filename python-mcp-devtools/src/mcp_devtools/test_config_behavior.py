@@ -8,11 +8,11 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
-from scripts.mcp.tools.project_list_routes import project_list_routes
-from scripts.mcp.tools.trace_calls import trace_calls
-from scripts.mcp.tools.project_check_api_coverage import project_check_api_coverage
-from scripts.mcp.tools.trace_endpoint import trace_endpoint
-from scripts.mcp.tools.helpers.config_loader import load_config
+from .helpers.config_loader import load_config
+from .project_check_api_coverage import project_check_api_coverage
+from .project_list_routes import project_list_routes
+from .trace_calls import trace_calls
+from .trace_endpoint import trace_endpoint
 
 
 def test_all_tools_work_without_config():

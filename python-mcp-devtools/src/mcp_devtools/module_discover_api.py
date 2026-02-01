@@ -16,7 +16,7 @@ Usage:
     python scripts/mcp/tools/discover_api.py nomarr.helpers.dto.library_dto
 
     # As module
-    from scripts.mcp.tools.discover_api import discover_api
+    from .discover_api import discover_api
     result = discover_api("nomarr.helpers.dto")
 """
 

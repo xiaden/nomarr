@@ -6,7 +6,7 @@ Supports both same-file moves and cross-file moves.
 
 from pathlib import Path
 
-from scripts.mcp.tools.file_helpers import (
+from .file_helpers import (
     normalize_eol,
     read_file_with_metadata,
     resolve_file_path,
@@ -219,7 +219,7 @@ def _cross_file_move(
 
     if isinstance(resolved_target, dict):
         # Target doesn't exist - try to resolve for creation
-        from scripts.mcp.tools.file_helpers import resolve_path_for_create
+        from .file_helpers import resolve_path_for_create
 
         create_result = resolve_path_for_create(target_file, workspace_root)
         if isinstance(create_result, dict):

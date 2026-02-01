@@ -9,7 +9,7 @@ Usage:
     python scripts/mcp/tools/list_routes.py
 
     # As module
-    from scripts.mcp.tools.list_routes import list_routes
+    from .list_routes import list_routes
     result = list_routes()
 """
 
@@ -52,9 +52,7 @@ def _get_interfaces_dir(project_root: Path) -> Path:
     return project_root / "nomarr" / "interfaces" / "api"
 
 
-def project_list_routes(
-    project_root: Path | str | None = None, config: dict | None = None
-) -> dict[str, Any]:
+def project_list_routes(project_root: Path | str | None = None, config: dict | None = None) -> dict[str, Any]:
     """List all API routes by static analysis.
 
     Parses route decorators from source files to discover API endpoints.

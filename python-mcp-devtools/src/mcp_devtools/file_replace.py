@@ -13,12 +13,12 @@ from pydantic import BaseModel, Field
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from scripts.mcp.tools.file_helpers import (
+from .file_helpers import (
     atomic_write,
     format_context_with_line_numbers,
     resolve_file_path,
 )
-from scripts.mcp.tools.response_models import (
+from .response_models import (
     AppliedOp,
     BatchResponse,
     FailedOp,

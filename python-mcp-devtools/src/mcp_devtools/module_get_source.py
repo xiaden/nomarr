@@ -9,7 +9,7 @@ Usage:
     python scripts/mcp/tools/get_source.py nomarr.app.Application.__init__
 
     # As module
-    from scripts.mcp.tools.get_source import get_source
+    from .get_source import get_source
     result = get_source("nomarr.app.Application.__init__")
 """
 
@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from scripts.mcp.tools.helpers.file_lines import read_raw_line_range
+from .helpers.file_lines import read_raw_line_range
 
 # Default context lines for edit operations
 DEFAULT_CONTEXT_LINES = 2

@@ -8,7 +8,7 @@ import ast
 import sys
 from pathlib import Path
 
-from scripts.mcp.tools.helpers.file_lines import read_raw_line_range
+from .helpers.file_lines import read_raw_line_range
 
 # Project root (would be set by caller, but for imports)
 ROOT = Path(__file__).parent.parent.parent

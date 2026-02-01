@@ -6,7 +6,7 @@ All replacements are validated upfront and applied only if ALL succeed.
 
 from pathlib import Path
 
-from scripts.mcp.tools.file_helpers import (
+from .file_helpers import (
     normalize_eol,
     read_file_with_metadata,
     resolve_file_path,

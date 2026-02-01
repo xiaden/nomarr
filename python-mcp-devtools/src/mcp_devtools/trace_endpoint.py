@@ -12,7 +12,7 @@ Usage:
     python scripts/mcp/trace_endpoint_ml.py nomarr.interfaces.api.web.info_if.web_info
 
     # As module
-    from scripts.mcp.tools.trace_endpoint import trace_endpoint
+    from .trace_endpoint import trace_endpoint
     result = trace_endpoint("nomarr.interfaces.api.web.info_if.web_info")
 """
 
@@ -32,7 +32,7 @@ from .helpers.config_loader import (
     get_backend_config,
     load_config,
 )
-from scripts.mcp.tools.trace_calls import (
+from .trace_calls import (
     CallInfo,
     _call_info_to_dict,
     _extract_imports,
@@ -50,9 +50,7 @@ class InjectedDependency:
 
     param_name: str  # Parameter name in function signature
     depends_function: str  # e.g., "get_library_service"
-    resolved_type: (
-        str | None
-    )  # Fully qualified type e.g., "nomarr.services.domain.library_svc.LibraryService"
+    resolved_type: str | None  # Fully qualified type e.g., "nomarr.services.domain.library_svc.LibraryService"
     source_file: str | None  # Dependencies file where the getter is defined
 
 
@@ -128,14 +126,10 @@ def _extract_depends_info(
 
         if default_index >= 0:
             default = func_node.args.defaults[default_index]
-            depends_func = _extract_depends_function(
-                default, di_patterns=[p.rstrip("(") for p in di_patterns]
-            )
+            depends_func = _extract_depends_function(default, di_patterns=[p.rstrip("(") for p in di_patterns])
 
         if depends_func:
-            resolved_type, source_file = _resolve_depends_return_type_with_source(
-                depends_func, imports, project_root
-            )
+            resolved_type, source_file = _resolve_depends_return_type_with_source(depends_func, imports, project_root)
             dependencies.append(
                 InjectedDependency(
                     param_name=arg.arg,
@@ -204,11 +198,7 @@ def _resolve_depends_return_type_with_source(
     deps_imports = _extract_imports(tree)
 
     for node in ast.iter_child_nodes(tree):
-        if not (
-            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-            and node.name == func_name
-            and node.returns
-        ):
+        if not (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == func_name and node.returns):
             continue
 
         return_type = _annotation_to_string(node.returns)
@@ -250,9 +240,7 @@ def _extract_service_method_calls(
     return service_calls
 
 
-def trace_endpoint(
-    qualified_name: str, project_root: Path | None = None, config: dict | None = None
-) -> dict[str, Any]:
+def trace_endpoint(qualified_name: str, project_root: Path | None = None, config: dict | None = None) -> dict[str, Any]:
     """Trace an API endpoint through DI to service methods.
 
     This is a higher-level tool that traces the complete call chain for an endpoint:
@@ -333,11 +321,7 @@ def trace_endpoint(
     rel_path = file_path.relative_to(project_root)
 
     result: dict[str, Any] = {
-        "endpoint": {
-            "name": qualified_name,
-            "file": str(rel_path).replace("\\", "/"),
-            "line": func_node.lineno,
-        },
+        "endpoint": {"name": qualified_name, "file": str(rel_path).replace("\\", "/"), "line": func_node.lineno},
         "dependencies": [
             {
                 "param": dep.param_name,

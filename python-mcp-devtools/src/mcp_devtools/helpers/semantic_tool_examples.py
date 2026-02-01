@@ -13,10 +13,10 @@ sys.path.insert(0, str(project_root))
 
 # Import tools after path setup
 # ruff: noqa: E402
-from scripts.mcp.tools.file_symbol_at_line import file_symbol_at_line
-from scripts.mcp.tools.module_discover_api import module_discover_api
-from scripts.mcp.tools.module_get_source import module_get_source
-from scripts.mcp.tools.module_locate_symbol import module_locate_symbol
+from ..file_symbol_at_line import file_symbol_at_line
+from ..module_discover_api import module_discover_api
+from ..module_get_source import module_get_source
+from ..module_locate_symbol import module_locate_symbol
 
 # Example module that tools will analyze
 EXAMPLE_CODE = '''"""Example for tool demonstrations."""

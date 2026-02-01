@@ -16,7 +16,7 @@ from .helpers.config_loader import (
     get_frontend_config,
     load_config,
 )
-from scripts.mcp.tools.helpers.route_parser import build_full_paths, parse_interface_files
+from .helpers.route_parser import build_full_paths, parse_interface_files
 
 # Project root
 ROOT = Path(__file__).parent.parent.parent.parent
@@ -59,11 +59,7 @@ def get_backend_routes(project_root: Path | None = None) -> list[tuple[str, str]
     routers = parse_interface_files(interfaces_dir)
     routes_data = build_full_paths(routers, project_root)
 
-    routes = [
-        (route["method"], route["path"])
-        for route in routes_data
-        if route.get("method") != "OPTIONS"
-    ]
+    routes = [(route["method"], route["path"]) for route in routes_data if route.get("method") != "OPTIONS"]
 
     return sorted(routes, key=lambda x: (x[1], x[0]))
 
@@ -134,9 +130,7 @@ def normalize_path(path: str) -> str:
     return re.sub(r"\{[^}]+\}", "{param}", path)
 
 
-def project_check_api_coverage(
-    filter_mode: str | None = None, route_path: str | None = None, config: dict | None = None
-) -> dict[str, Any]:
+def project_check_api_coverage(filter_mode: str | None = None, route_path: str | None = None, config: dict | None = None) -> dict[str, Any]:
     """Check API coverage between backend and frontend.
 
     Analyzes which backend API endpoints are actually used by frontend code.
@@ -225,12 +219,7 @@ def project_check_api_coverage(
     coverage_pct = (used_count / total * 100) if total > 0 else 0
 
     result: dict[str, Any] = {
-        "stats": {
-            "total": total,
-            "used": used_count,
-            "unused": unused_count,
-            "coverage_pct": round(coverage_pct, 1),
-        },
+        "stats": {"total": total, "used": used_count, "unused": unused_count, "coverage_pct": round(coverage_pct, 1)},
         "endpoints": results,
     }
 

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from scripts.mcp.tools.helpers.plan_md import find_step, mark_step_complete, parse_plan, plan_to_dict
+from .helpers.plan_md import find_step, mark_step_complete, parse_plan, plan_to_dict
 
 PLANS_DIR = "docs/dev/plans"
 
