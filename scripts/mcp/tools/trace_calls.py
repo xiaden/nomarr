@@ -666,10 +666,19 @@ def _flatten_chain(info: CallInfo, prefix: str = "") -> list[dict[str, Any]]:
     return result
 
 
-def trace_calls(qualified_name: str, project_root: Path | None = None) -> dict[str, Any]:
+def trace_calls(qualified_name: str, project_root: Path | None = None, config: dict | None = None) -> dict[str, Any]:
     """Trace the call chain starting from a function/method.
 
-    Loads configuration to determine which modules to include in the trace.
+    Uses configuration to determine which modules to include in the call trace.
+
+    Configuration used:
+        tracing.include_patterns: List of module name patterns to include in trace
+            Example: ["nomarr.*", "custom_module.*"]
+            Default: ["nomarr.*"]
+        tracing.max_depth: Maximum recursion depth for call tracing
+            Default: 10
+        tracing.filter_external: Whether to filter external (non-project) calls
+            Default: true
 
     Args:
         qualified_name: Fully qualified function name
@@ -677,6 +686,8 @@ def trace_calls(qualified_name: str, project_root: Path | None = None) -> dict[s
             - "nomarr.interfaces.api.web.library_if.scan_library"
             - "nomarr.services.domain.library_svc.LibraryService.scan"
         project_root: Path to project root. Defaults to auto-detect.
+        config: Optional config dict. If not provided, loaded from project_root.
+            Can be obtained from: load_config(project_root)
 
     Returns:
         Dict with:
@@ -693,8 +704,9 @@ def trace_calls(qualified_name: str, project_root: Path | None = None) -> dict[s
     if project_root is None:
         project_root = Path(__file__).parent.parent.parent.parent
 
-    # Load config to get tracing patterns
-    config = load_config(project_root)
+    # Load config if not provided (dependency injection)
+    if config is None:
+        config = load_config(project_root)
     tracing_config = get_tracing_config(config)
     include_patterns: list[str] | None = tracing_config.get("include_patterns")
 

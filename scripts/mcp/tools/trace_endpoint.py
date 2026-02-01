@@ -240,28 +240,35 @@ def _extract_service_method_calls(
     return service_calls
 
 
-def trace_endpoint(qualified_name: str, project_root: Path | None = None) -> dict[str, Any]:
+def trace_endpoint(qualified_name: str, project_root: Path | None = None, config: dict | None = None) -> dict[str, Any]:
     """Trace an API endpoint through DI to service methods.
 
-    Loads configuration to determine DI patterns (e.g., Depends, Inject).
-
-    This is a higher-level tool that:
+    This is a higher-level tool that traces the complete call chain for an endpoint:
     1. Finds the endpoint function
     2. Extracts DI injections using configurable patterns
     3. Resolves service types
     4. Traces calls on those services
 
+    Configuration used:
+        backend.dependency_injection.patterns: List of DI patterns to detect
+            Example: ["Depends(", "Inject(", "autowire"]
+            Default: ["Depends("]
+        backend.dependency_injection.module_resolution: How to map types to modules
+            Example: {"Service": "nomarr.services"}
+
     Args:
         qualified_name: Fully qualified endpoint name
             Example: "nomarr.interfaces.api.web.info_if.web_info"
         project_root: Path to project root. Defaults to auto-detect.
+        config: Optional config dict. If not provided, loaded from project_root.
+            Can be obtained from: load_config(project_root)
 
     Returns:
         Dict with:
-            - endpoint: The endpoint function info
-            - dependencies: List of injected dependencies with types
-            - service_calls: Methods called on each injected service
-            - traces: Call traces for each service method
+            - endpoint: {name, file, line} - The endpoint function location
+            - dependencies: [{param, depends_on, resolved_type, source_file}] - Injected dependencies
+            - service_calls: {param_name: [method_names]} - Methods called on services
+            - traces: Call traces for each service method call
             - error: Optional error message
 
     """
@@ -270,8 +277,9 @@ def trace_endpoint(qualified_name: str, project_root: Path | None = None) -> dic
     if project_root is None:
         project_root = Path(__file__).parent.parent.parent.parent
 
-    # Load config to get DI patterns
-    config = load_config(project_root)
+    # Load config if not provided (dependency injection)
+    if config is None:
+        config = load_config(project_root)
     backend_config = get_backend_config(config)
     di_config = backend_config.get("dependency_injection", {})
     di_patterns: list[str] = di_config.get("patterns", ["Depends("])

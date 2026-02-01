@@ -39,18 +39,21 @@ Target: Config-based architecture where all project-specific patterns live in `m
 
 - [x] Implement `scripts/mcp/tools/helpers/config_loader.py`
   **Notes:** Load mcp_config.json from workspace root, validate against schema, provide defaults
-- [ ] Add config validation to MCP server startup
+- [x] Add config validation to MCP server startup
   **Notes:** Warn on invalid config, provide helpful error messages
-- [ ] Create `scripts/mcp/mcp_config.example.json` for nomarr
+- [x] Create `scripts/mcp/mcp_config.example.json` for nomarr
   **Notes:** Document all patterns currently hardcoded in the tools
-- [ ] Update nomarr_mcp.py to pass config to tools
+- [x] Update nomarr_mcp.py to pass config to tools
+    **Completed:** Module-level config variable _config loads on startup; all 4 tool decorators (project_list_routes, trace_endpoint, project_check_api_coverage, trace_calls) now pass config to tool implementations for dependency injection. Tested: config loads correctly, tools accept config parameter, zero linting errors.
   **Notes:** Inject config as parameter to tool functions, not global state
 
 ### Phase 4: Update Tool Implementations
 
-- [ ] Update all 4 project-specific tools to accept config parameter
+- [x] Update all 4 project-specific tools to accept config parameter
+    **Completed:** All 4 project-specific tools already accept optional config parameter from P3-S4: project_list_routes(project_root, config=None), trace_calls(qualified_name, project_root, config=None), project_check_api_coverage(filter_mode, route_path, config=None), trace_endpoint(qualified_name, project_root, config=None). Tested: tools work both with and without config (backward compatible).
   **Notes:** Backward compatible - work without config for common patterns
-- [ ] Add config documentation to each tool's docstring
+- [x] Add config documentation to each tool's docstring
+    **Completed:** Updated docstrings for all 4 project-specific tools to document config keys used: project_list_routes (backend.routes.decorators), trace_calls (tracing.include_patterns, max_depth, filter_external), project_check_api_coverage (frontend.api_calls.patterns, search_paths), trace_endpoint (backend.dependency_injection.patterns). All docstrings include example patterns and default values. Zero linting errors.
   **Notes:** Explain what config keys each tool uses
 - [ ] Add unit tests for config-based vs default behavior
   **Notes:** Test that defaults work, config overrides work, invalid config fails gracefully

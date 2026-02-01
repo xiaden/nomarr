@@ -130,21 +130,36 @@ def normalize_path(path: str) -> str:
     return re.sub(r"\{[^}]+\}", "{param}", path)
 
 
-def project_check_api_coverage(filter_mode: str | None = None, route_path: str | None = None) -> dict[str, Any]:
+def project_check_api_coverage(filter_mode: str | None = None, route_path: str | None = None, config: dict | None = None) -> dict[str, Any]:
     """Check API coverage between backend and frontend.
 
-    Loads configuration to determine frontend source paths and API call patterns.
+    Analyzes which backend API endpoints are actually used by frontend code.
+    Uses configuration to determine frontend source paths and API call patterns.
+
+    Configuration used:
+        frontend.api_calls.patterns: List of API call patterns to match
+            Example: ["api.get", "api.post", "fetch(", "axios.get"]
+            Default: ["api.get", "api.post", "api.put", "api.delete", "fetch(", "axios.get"]
+        frontend.api_calls.search_paths: Directories to scan for frontend code
+            Example: ["src", "components", "pages"]
+            Default: ["src"]
 
     Args:
         filter_mode: "used", "unused", or None for all
         route_path: Filter to specific route path (e.g., "/api/web/libraries")
+        config: Optional config dict. If not provided, loaded from workspace.
+            Can be obtained from: load_config(project_root)
 
     Returns:
         Dict with endpoints, stats, and usage information
+            - stats: {total, used, unused, coverage_pct}
+            - endpoints: [{method, path, used, usage_count, locations}]
+            - scan_errors: Optional list of errors during frontend scan
 
     """
-    # Load config
-    config = load_config(ROOT)
+    # Load config if not provided (dependency injection)
+    if config is None:
+        config = load_config(ROOT)
     frontend_config = get_frontend_config(config)
 
     # Get patterns from config

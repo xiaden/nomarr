@@ -52,17 +52,28 @@ def _get_interfaces_dir(project_root: Path) -> Path:
     return project_root / "nomarr" / "interfaces" / "api"
 
 
-def project_list_routes(project_root: Path | None = None) -> dict[str, Any]:
+def project_list_routes(project_root: Path | None = None, config: dict | None = None) -> dict[str, Any]:
     """List all API routes by static analysis.
+
+    Parses route decorators from source files to discover API endpoints.
+    Uses configuration to determine which decorator patterns to look for.
+
+    Configuration used:
+        backend.routes.decorators: List of route decorator patterns
+            Example: ["@router.get", "@router.post", "@app.get", "@app.post"]
+            Default: ["@router.get", "@router.post", "@router.put", "@router.delete", "@router.patch"]
 
     Args:
         project_root: Path to project root. Defaults to auto-detect.
+        config: Optional config dict. If not provided, loaded from project_root.
+            Can be obtained from: load_config(project_root)
 
     Returns:
         Dict with:
             - routes: List of {method, path, function, file, line}
             - by_prefix: Routes grouped by API prefix
             - total: Total route count
+            - summary: Count per prefix (integration, web, other)
             - error: Optional error message
 
     """
@@ -74,8 +85,9 @@ def project_list_routes(project_root: Path | None = None) -> dict[str, Any]:
     if not interfaces_dir.exists():
         return {"error": f"Interfaces directory not found: {interfaces_dir}"}
 
-    # Load config to determine route decorators
-    config = load_config(project_root)
+    # Load config if not provided (dependency injection)
+    if config is None:
+        config = load_config(project_root)
     backend_config = get_backend_config(config)
 
     # Extract route object names from decorator patterns

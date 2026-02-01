@@ -49,6 +49,7 @@ from pydantic import BaseModel, Field
 
 from mcp.server.fastmcp import FastMCP
 from scripts.mcp import tools
+from scripts.mcp.tools.helpers.config_loader import load_config
 
 # ──────────────────────────────────────────────────────────────────────
 # Early Setup: Configure logging to stderr (NEVER stdout for MCP stdio)
@@ -66,6 +67,71 @@ for noisy_logger in ["asyncio", "urllib3", "httpcore", "httpx"]:
 # Project root (parent of scripts/)
 ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT))
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Configuration Validation
+# ──────────────────────────────────────────────────────────────────────
+
+logger = logging.getLogger(__name__)
+
+
+# Global config loaded at startup (can be overridden by tools via dependency injection)
+_config: dict = {}
+
+
+def _validate_config_on_startup() -> dict:
+    """Validate MCP configuration on startup.
+
+    Loads and validates the configuration file. Logs warnings for invalid config
+    but does not block startup to allow tools to work with defaults.
+
+    Returns:
+        The loaded configuration dict, or empty dict if loading fails.
+    """
+    try:
+        config = load_config(ROOT)
+        logger.info(f"✓ Configuration loaded successfully from {ROOT}")
+
+        # Log which configuration source was used
+        config_file = ROOT / "mcp_config.json"
+        if config_file.exists():
+            logger.info(f"  Using project config: {config_file}")
+        else:
+            config_dir = ROOT / ".mcp"
+            if (config_dir / "config.json").exists():
+                logger.info(f"  Using MCP config: {config_dir / 'config.json'}")
+            else:
+                logger.info("  Using default configuration (no mcp_config.json found)")
+
+        # Validate backend config
+        backend = config.get("backend", {})
+        if backend:
+            logger.debug(f"  Backend framework: {backend.get('framework', 'fastapi')}")
+            routes = backend.get("routes", {})
+            if routes.get("decorators"):
+                logger.debug(f"  Route decorators: {len(routes['decorators'])} patterns configured")
+
+        # Validate frontend config
+        frontend = config.get("frontend", {})
+        if frontend:
+            logger.debug(f"  Frontend framework: {frontend.get('framework', 'react')}")
+            api_calls = frontend.get("api_calls", {})
+            if api_calls.get("patterns"):
+                logger.debug(f"  API patterns: {len(api_calls['patterns'])} patterns configured")
+
+        # Validate tracing config
+        tracing = config.get("tracing", {})
+        if tracing.get("include_patterns"):
+            logger.debug(f"  Tracing patterns: {tracing['include_patterns']}")
+
+        return config
+
+    except Exception as e:
+        logger.warning(f"⚠ Configuration validation error: {type(e).__name__}: {e}")
+        logger.warning("  Proceeding with default configuration")
+        logger.warning("  For configuration guide, see: scripts/mcp/config_schema.json")
+        return {}
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -93,6 +159,9 @@ mcp = FastMCP(
         "statically observable."
     ),
 )
+
+# Validate configuration on startup and store globally for tools
+_config = _validate_config_on_startup()
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -187,7 +256,7 @@ def trace_calls(
 
     Shows every nomarr function it calls, recursively, with file paths and line numbers.
     """
-    return tools.trace_calls(function, ROOT)
+    return tools.trace_calls(function, ROOT, config=_config)
 
 
 @mcp.tool()
@@ -196,7 +265,7 @@ def project_list_routes() -> dict:
 
     Parses @router decorators from source files. Returns routes with method, path, function, file, and line.
     """
-    return tools.project_list_routes(ROOT)
+    return tools.project_list_routes(ROOT, config=_config)
 
 
 @mcp.tool()
@@ -213,7 +282,7 @@ def trace_endpoint(
 
     Use this for interface endpoints to get the complete picture without manual DI resolution.
     """
-    return tools.trace_endpoint(endpoint, ROOT)
+    return tools.trace_endpoint(endpoint, ROOT, config=_config)
 
 
 @mcp.tool()
@@ -228,7 +297,7 @@ def project_check_api_coverage(
 
     Filter modes: 'used', 'unused', or None for all endpoints.
     """
-    return tools.project_check_api_coverage(filter_mode=filter_mode, route_path=route_path)
+    return tools.project_check_api_coverage(filter_mode=filter_mode, route_path=route_path, config=_config)
 
 
 @mcp.tool()
