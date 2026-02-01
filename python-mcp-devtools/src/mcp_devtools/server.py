@@ -48,54 +48,51 @@ from typing import Annotated
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
-from . import (
-    edit_atomic_replace,
-    edit_move_text,
-    file_read_line,
-    file_read_range,
-    file_search_text,
-    file_symbol_at_line,
-    lint_backend,
-    lint_frontend,
-    module_discover_api,
-    module_get_source,
-    module_locate_symbol,
-    plan_complete_step,
-    plan_read,
-    project_check_api_coverage,
-    project_list_dir,
-    project_list_routes,
-    trace_calls,
-    trace_endpoint,
-)
+# Import tool implementations with _impl suffix to avoid name collision
+# with MCP-decorated wrapper functions defined below
+from .edit_atomic_replace import edit_atomic_replace as edit_atomic_replace_impl
+from .edit_move_text import edit_move_text as edit_move_text_impl
+from .file_read_line import file_read_line as file_read_line_impl
+from .file_read_range import file_read_range as file_read_range_impl
+from .file_search_text import file_search_text as file_search_text_impl
+from .file_symbol_at_line import file_symbol_at_line as file_symbol_at_line_impl
 from .helpers.config_loader import load_config
+from .lint_backend import lint_backend as lint_backend_impl
+from .lint_frontend import lint_frontend as lint_frontend_impl
+from .module_discover_api import module_discover_api as module_discover_api_impl
+from .module_get_source import module_get_source as module_get_source_impl
+from .module_locate_symbol import module_locate_symbol as module_locate_symbol_impl
+from .plan_complete_step import plan_complete_step as plan_complete_step_impl
+from .plan_read import plan_read as plan_read_impl
+from .project_check_api_coverage import (
+    project_check_api_coverage as project_check_api_coverage_impl,
+)
+from .project_list_dir import project_list_dir as project_list_dir_impl
+from .project_list_routes import project_list_routes as project_list_routes_impl
+from .trace_calls import trace_calls as trace_calls_impl
+from .trace_endpoint import trace_endpoint as trace_endpoint_impl
 
-
-# Create tools namespace for compatibility
-class _ToolsNamespace:
-    """Namespace to access tool functions like tools.function_name()."""
-
-    project_list_dir = staticmethod(project_list_dir)
-    module_discover_api = staticmethod(module_discover_api)
-    module_get_source = staticmethod(module_get_source)
-    file_symbol_at_line = staticmethod(file_symbol_at_line)
-    module_locate_symbol = staticmethod(module_locate_symbol)
-    trace_calls = staticmethod(trace_calls)
-    project_list_routes = staticmethod(project_list_routes)
-    trace_endpoint = staticmethod(trace_endpoint)
-    project_check_api_coverage = staticmethod(project_check_api_coverage)
-    lint_backend = staticmethod(lint_backend)
-    lint_frontend = staticmethod(lint_frontend)
-    file_read_range = staticmethod(file_read_range)
-    file_read_line = staticmethod(file_read_line)
-    file_search_text = staticmethod(file_search_text)
-    edit_atomic_replace = staticmethod(edit_atomic_replace)
-    edit_move_text = staticmethod(edit_move_text)
-    plan_read = staticmethod(plan_read)
-    plan_complete_step = staticmethod(plan_complete_step)
-
-
-tools = _ToolsNamespace()
+# Tool registry for programmatic access (replaces _ToolsNamespace)
+TOOL_IMPLS: dict[str, object] = {
+    "edit_atomic_replace": edit_atomic_replace_impl,
+    "edit_move_text": edit_move_text_impl,
+    "file_read_line": file_read_line_impl,
+    "file_read_range": file_read_range_impl,
+    "file_search_text": file_search_text_impl,
+    "file_symbol_at_line": file_symbol_at_line_impl,
+    "lint_backend": lint_backend_impl,
+    "lint_frontend": lint_frontend_impl,
+    "module_discover_api": module_discover_api_impl,
+    "module_get_source": module_get_source_impl,
+    "module_locate_symbol": module_locate_symbol_impl,
+    "plan_complete_step": plan_complete_step_impl,
+    "plan_read": plan_read_impl,
+    "project_check_api_coverage": project_check_api_coverage_impl,
+    "project_list_dir": project_list_dir_impl,
+    "project_list_routes": project_list_routes_impl,
+    "trace_calls": trace_calls_impl,
+    "trace_endpoint": trace_endpoint_impl,
+}
 
 # ──────────────────────────────────────────────────────────────────────
 # Early Setup: Configure logging to stderr (NEVER stdout for MCP stdio)
@@ -230,7 +227,7 @@ def project_list_dir(
     Specific folder: shows files at that level.
     Excludes: .venv, node_modules, __pycache__, etc.
     """
-    return tools.project_list_dir(folder, workspace_root=ROOT)
+    return project_list_dir_impl(folder, workspace_root=ROOT)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -245,7 +242,7 @@ def module_discover_api(
     module_name: Annotated[str, "Fully qualified module name (e.g., 'nomarr.components.ml')"],
 ) -> dict:
     """Discover the entire API of any Python module."""
-    return tools.module_discover_api(module_name)
+    return module_discover_api_impl(module_name)
 
 
 @mcp.tool()
@@ -261,7 +258,7 @@ def module_get_source(
     Uses static AST parsing (no code execution). Always includes 2 lines of context
     before/after for edit operations. Set large_context=True for 10 lines.
     """
-    return tools.module_get_source(qualified_name, large_context=large_context)
+    return module_get_source_impl(qualified_name, large_context=large_context)
 
 
 @mcp.tool()
@@ -276,7 +273,7 @@ def file_symbol_at_line(
 
     Returns the innermost containing symbol so you can reason about full context.
     """
-    return tools.file_symbol_at_line(file_path, line_number, ROOT)
+    return file_symbol_at_line_impl(file_path, line_number, ROOT)
 
 
 @mcp.tool()
@@ -292,7 +289,7 @@ def module_locate_symbol(
     Searches all Python files in nomarr/ for classes, functions, or variables.
     Supports partially qualified names for scoping (e.g., 'services.ConfigService').
     """
-    return tools.module_locate_symbol(symbol_name)
+    return module_locate_symbol_impl(symbol_name)
 
 
 @mcp.tool()
@@ -306,7 +303,7 @@ def trace_calls(
 
     Shows every nomarr function it calls, recursively, with file paths and line numbers.
     """
-    return tools.trace_calls(function, ROOT, config=_config)
+    return trace_calls_impl(function, ROOT, config=_config)
 
 
 @mcp.tool()
@@ -315,7 +312,7 @@ def project_list_routes() -> dict:
 
     Parses @router decorators from source files. Returns routes with method, path, function, file, and line.
     """
-    return tools.project_list_routes(ROOT, config=_config)
+    return project_list_routes_impl(ROOT, config=_config)
 
 
 @mcp.tool()
@@ -334,7 +331,7 @@ def trace_endpoint(
 
     Use this for interface endpoints to get the complete picture without manual DI resolution.
     """
-    return tools.trace_endpoint(endpoint, ROOT, config=_config)
+    return trace_endpoint_impl(endpoint, ROOT, config=_config)
 
 
 @mcp.tool()
@@ -351,7 +348,7 @@ def project_check_api_coverage(
 
     Filter modes: 'used', 'unused', or None for all endpoints.
     """
-    return tools.project_check_api_coverage(
+    return project_check_api_coverage_impl(
         filter_mode=filter_mode, route_path=route_path, config=_config
     )
 
@@ -371,13 +368,13 @@ def lint_backend(
 
     Runs ruff, mypy, and import-linter (for directories only).
     """
-    return tools.lint_backend(path, check_all)
+    return lint_backend_impl(path, check_all)
 
 
 @mcp.tool()
 def lint_frontend() -> dict:
     """Run frontend linting tools (ESLint and TypeScript)."""
-    return tools.lint_frontend()
+    return lint_frontend_impl()
 
 
 @mcp.tool()
@@ -398,7 +395,7 @@ def file_read_range(
     Fallback tool for non-Python files. Maximum 100 lines per read.
     Warns when used on Python files - prefer module_discover_api, module_get_source, or module_locate_symbol instead.
     """
-    return tools.file_read_range(
+    return file_read_range_impl(
         file_path, start_line, end_line, ROOT, include_imports=include_imports
     )
 
@@ -417,7 +414,7 @@ def file_read_line(
 
     For Python files, prefer module_discover_api, module_get_source, or module_locate_symbol for structured navigation.
     """
-    return tools.file_read_line(file_path, line_number, ROOT, include_imports=include_imports)
+    return file_read_line_impl(file_path, line_number, ROOT, include_imports=include_imports)
 
 
 @mcp.tool()
@@ -426,7 +423,7 @@ def file_search_text(
     search_string: Annotated[str, "Exact text to search for (case-sensitive)"],
 ) -> dict:
     """Find exact text in non-Python files (configs, frontend, logs) and show 2-line context."""
-    return tools.file_search_text(file_path, search_string, ROOT)
+    return file_search_text_impl(file_path, search_string, ROOT)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -448,7 +445,7 @@ def edit_atomic_replace(
     This avoids issues with auto-formatters running between edits.
     Each old_string must match exactly once (ambiguous matches are skipped).
     """
-    return tools.edit_atomic_replace(file_path, replacements, ROOT)
+    return edit_atomic_replace_impl(file_path, replacements, ROOT)
 
 
 @mcp.tool()
@@ -468,7 +465,7 @@ def edit_move_text(
     Cross-file: Removes lines from source file and inserts into target file.
     Atomic operation - each file is only written once after all changes computed.
     """
-    return tools.edit_move_text(file_path, source_start, source_end, target_line, ROOT, target_file)
+    return edit_move_text_impl(file_path, source_start, source_end, target_line, ROOT, target_file)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -487,7 +484,7 @@ def plan_read(
     Parses the entire plan markdown into a structured representation.
     Returns phases with steps, completion status, notes, and next step info.
     """
-    return tools.plan_read(plan_name, workspace_root=ROOT)
+    return plan_read_impl(plan_name, workspace_root=ROOT)
 
 
 @mcp.tool()
@@ -510,7 +507,7 @@ def plan_complete_step(
     """
     # Convert Pydantic model to dict for the implementation
     ann_dict = annotation.model_dump() if annotation else None
-    return tools.plan_complete_step(plan_name, step_id, workspace_root=ROOT, annotation=ann_dict)
+    return plan_complete_step_impl(plan_name, step_id, workspace_root=ROOT, annotation=ann_dict)
 
 
 def main() -> None:
