@@ -1,0 +1,300 @@
+"""Static AST parsing for FastAPI routes.
+
+Parses route decorators without importing the FastAPI app.
+Provides dataclasses and parsing functions for route discovery.
+"""
+
+from __future__ import annotations
+
+import ast
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+__all__ = [
+    "RouteInfo",
+    "RouterInfo",
+    "build_full_paths",
+    "parse_interface_files",
+]
+
+
+@dataclass
+class RouteInfo:
+    """Information about a single route."""
+
+    method: str
+    path: str
+    function: str
+    file: str
+    line: int
+    injected_services: list[dict[str, str]] = field(default_factory=list)
+
+
+@dataclass
+class RouterInfo:
+    """Information about a router and its routes."""
+
+    prefix: str
+    file: str
+    routes: list[RouteInfo] = field(default_factory=list)
+
+
+def _extract_string_value(node: ast.expr) -> str | None:
+    """Extract string value from AST node."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
+
+
+def _annotation_to_string(node: ast.expr) -> str | None:
+    """Convert type annotation to string."""
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.Attribute):
+        value_str = _annotation_to_string(node.value)
+        if value_str:
+            return f"{value_str}.{node.attr}"
+    elif isinstance(node, ast.Subscript):
+        return _annotation_to_string(node.value)
+    return None
+
+
+def _call_to_string(node: ast.expr) -> str | None:
+    """Convert a call expression to string."""
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        value_str = _call_to_string(node.value)
+        if value_str:
+            return f"{value_str}.{node.attr}"
+    return None
+
+
+def _extract_injected_services(func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[dict[str, str]]:
+    """Extract Depends() injected services from function parameters."""
+    services: list[dict[str, str]] = []
+
+    for arg in func_node.args.args:
+        type_str = None
+        depends_func = None
+
+        if arg.annotation:
+            type_str = _annotation_to_string(arg.annotation)
+
+        # Find default value (aligned from right)
+        arg_index = func_node.args.args.index(arg)
+        num_defaults = len(func_node.args.defaults)
+        num_args = len(func_node.args.args)
+        default_index = arg_index - (num_args - num_defaults)
+
+        if default_index >= 0:
+            default = func_node.args.defaults[default_index]
+            if isinstance(default, ast.Call):
+                func_name = None
+                if (
+                    (isinstance(default.func, ast.Name) and default.func.id == "Depends")
+                    or (isinstance(default.func, ast.Attribute) and default.func.attr == "Depends")
+                ) and default.args:
+                    func_name = _call_to_string(default.args[0])
+                if func_name:
+                    depends_func = func_name
+
+        if depends_func:
+            services.append({"param": arg.arg, "depends_on": depends_func, "type": type_str or "Any"})
+
+    return services
+
+
+def _parse_router_definition(node: ast.Assign, file_path: Path) -> RouterInfo | None:
+    """Parse APIRouter() definition to extract prefix."""
+    if not node.targets or not isinstance(node.targets[0], ast.Name):
+        return None
+
+    var_name = node.targets[0].id
+    if var_name != "router":
+        return None
+
+    if not isinstance(node.value, ast.Call):
+        return None
+
+    call = node.value
+    if not isinstance(call.func, ast.Name) or call.func.id != "APIRouter":
+        return None
+
+    # Extract prefix from keywords
+    prefix = ""
+    for kw in call.keywords:
+        if kw.arg == "prefix":
+            prefix = _extract_string_value(kw.value) or ""
+            break
+
+    return RouterInfo(prefix=prefix, file=str(file_path))
+
+
+def _parse_route_decorator(
+    decorator: ast.expr,
+    route_objects: set[str] | None = None,
+) -> tuple[str, str] | None:
+    """Parse route decorators like @router.get("/path").
+
+    Args:
+        decorator: AST decorator node
+        route_objects: Set of object names that have route methods (e.g., {"router", "app"})
+                      Defaults to {"router"}
+
+    Returns:
+        Tuple of (HTTP_METHOD, path) or None if not a route decorator
+
+    """
+    if route_objects is None:
+        route_objects = {"router"}
+
+    if not isinstance(decorator, ast.Call) or not isinstance(decorator.func, ast.Attribute):
+        return None
+
+    attr = decorator.func
+    if not isinstance(attr.value, ast.Name) or attr.value.id not in route_objects:
+        return None
+
+    method = attr.attr.upper()
+    if method not in {"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"}:
+        return None
+
+    # Get path from first positional argument
+    if not decorator.args:
+        return None
+
+    path = _extract_string_value(decorator.args[0])
+    return (method, path) if path is not None else None
+
+
+def _parse_file(
+    file_path: Path,
+    route_objects: set[str] | None = None,
+) -> RouterInfo | None:
+    """Parse a single Python file for router and route definitions.
+
+    Args:
+        file_path: Path to Python file
+        route_objects: Set of object names that have route methods (e.g., {"router", "app"})
+                      Defaults to {"router"}
+
+    """
+    if route_objects is None:
+        route_objects = {"router"}
+
+    try:
+        source = file_path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(file_path))
+    except (SyntaxError, UnicodeDecodeError):
+        return None
+
+    router_info: RouterInfo | None = None
+
+    for node in ast.walk(tree):
+        # Look for router = APIRouter(prefix="/...")
+        if isinstance(node, ast.Assign):
+            parsed = _parse_router_definition(node, file_path)
+            if parsed:
+                router_info = parsed
+
+    if router_info is None:
+        return None
+
+    # Now walk again for route decorators
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            for decorator in node.decorator_list:
+                route = _parse_route_decorator(decorator, route_objects=route_objects)
+                if route:
+                    method, path = route
+                    # Extract injected services from this route handler
+                    injected = _extract_injected_services(node)
+                    router_info.routes.append(
+                        RouteInfo(
+                            method=method,
+                            path=path,
+                            function=node.name,
+                            file=str(file_path),
+                            line=node.lineno,
+                            injected_services=injected,
+                        ),
+                    )
+
+    return router_info if router_info.routes else None
+
+
+def parse_interface_files(
+    interfaces_dir: Path,
+    route_objects: set[str] | None = None,
+) -> list[RouterInfo]:
+    """Parse all *_if.py files in the interfaces directory.
+
+    Args:
+        interfaces_dir: Path to interfaces/api/ directory
+        route_objects: Set of object names that have route methods (e.g., {"router", "app"})
+                      Defaults to {"router"}
+
+    Returns:
+        List of RouterInfo with parsed routes
+
+    """
+    if route_objects is None:
+        route_objects = {"router"}
+
+    routers: list[RouterInfo] = []
+    for file_path in interfaces_dir.rglob("*_if.py"):
+        router = _parse_file(file_path, route_objects=route_objects)
+        if router:
+            routers.append(router)
+    return routers
+
+
+def build_full_paths(routers: list[RouterInfo], project_root: Path) -> list[dict[str, Any]]:
+    """Build full paths by combining parent router prefixes.
+
+    Args:
+        routers: List of parsed RouterInfo objects
+        project_root: Path to project root for relative path calculation
+
+    Returns:
+        List of route dicts with full paths
+
+    """
+    result: list[dict[str, Any]] = []
+
+    for router in routers:
+        file_rel = Path(router.file).relative_to(project_root)
+        file_str = str(file_rel).replace("\\", "/")
+
+        # Determine parent prefix based on file location
+        if "/api/web/" in file_str:
+            parent_prefix = "/api/web"
+        elif "/api/v1/" in file_str:
+            parent_prefix = "/api"
+        else:
+            parent_prefix = ""
+
+        for route in router.routes:
+            full_path = parent_prefix + router.prefix + route.path
+            # Clean up double slashes
+            full_path = re.sub(r"//+", "/", full_path)
+
+            result.append(
+                {
+                    "method": route.method,
+                    "path": full_path,
+                    "function": route.function,
+                    "file": file_str,
+                    "line": route.line,
+                    "injected_services": route.injected_services,
+                },
+            )
+
+    # Sort by path, then method
+    result.sort(key=lambda x: (x["path"], x["method"]))
+    return result

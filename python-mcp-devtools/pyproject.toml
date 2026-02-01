@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "python-mcp-devtools"
+version = "0.1.0"
+description = "Reusable MCP tools for Python project analysis and code tracing"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    {name = "Nomarr Contributors", email = "dev@nomarr.dev"},
+]
+license = {text = "MIT"}
+keywords = ["mcp", "model-context-protocol", "python", "code-analysis", "tracing"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Software Development :: Tools",
+]
+
+dependencies = [
+    "pydantic>=2.0",
+    "pathlib-relative",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",
+    "ruff>=0.1.0",
+    "mypy>=1.0",
+    "black>=23.0",
+]
+
+[project.urls]
+Repository = "https://github.com/nomarr-dev/python-mcp-devtools"
+Documentation = "https://github.com/nomarr-dev/python-mcp-devtools/blob/main/README.md"
+Issues = "https://github.com/nomarr-dev/python-mcp-devtools/issues"
+
+[tool.setuptools]
+packages = ["mcp_devtools", "mcp_devtools.helpers"]
+package-dir = {"" = "src"}
+
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311", "py312"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+select = ["E", "F", "W", "I", "UP"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = false
+warn_return_any = true
+warn_unused_configs = true
