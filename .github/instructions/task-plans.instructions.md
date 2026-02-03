@@ -1,14 +1,14 @@
 ---
 name: Task Plans
-description: Valid syntax for task plan markdown files parsed by scripts/mcp/tools/helpers/plan_md.py
-applyTo: docs/dev/plans/**
+description: Valid syntax for task plan markdown files parsed by mcp_code_intel
+applyTo: plans/**
 ---
 
 # Task Plan Creation and Syntax Guide
 
-**Auto-applies when creating or editing files in `docs/dev/plans/`**
+**Auto-applies when creating or editing files in `plans/`**
 
-Plans are parsed by `scripts/mcp/tools/helpers/plan_md.py` according to `scripts/mcp/tools/schemas/PLAN_MARKDOWN_SCHEMA.json`. Invalid structure causes `ValueError`.
+Plans are parsed by `mcp_code_intel.helpers.plan_md` according to `code-intel/src/mcp_code_intel/schemas/PLAN_MARKDOWN_SCHEMA.json`. Invalid structure causes `ValueError`.
 
 ---
 
@@ -186,7 +186,7 @@ Parser expects phases numbered 1, 2, 3... with no gaps.
 
 ## Complete Example
 
-See `docs/dev/plans/TASK-example-comprehensive.md` for a fully-formed plan demonstrating all patterns.
+See `plans/TASK-example-comprehensive.md` for a fully-formed plan demonstrating all patterns.
 
 **Key characteristics of a good plan:**
 - Problem statement assumes reader has no context

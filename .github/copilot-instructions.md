@@ -135,7 +135,7 @@ These tools understand FastAPI DI and nomarr's architecture. Serena is a fallbac
 
 **For multi-step edits that may exceed your context window:**
 
-Create a task plan in `docs/dev/plans/` (e.g., `TASK-refactor-library-service.md`) following the **mandatory schema** defined in `scripts/mcp/tools/schemas/PLAN_MARKDOWN_SCHEMA.json`.
+Create a task plan in `plans/` (e.g., `TASK-refactor-library-service.md`) following the **mandatory schema** defined in `code-intel/schemas/PLAN_MARKDOWN_SCHEMA.json`.
 
 **Required structure:**
 ```markdown
@@ -166,7 +166,7 @@ Create a task plan in `docs/dev/plans/` (e.g., `TASK-refactor-library-service.md
 - Phase numbers must be sequential starting from 1
 - Steps auto-generate IDs like `P1-S1`, `P2-S3`
 
-These files are parsed by `scripts/mcp/tools/helpers/plan_md.py` and consumed by plan MCP tools. Invalid structure = task blocked.
+These files are parsed by `code-intel/src/mcp_code_intel/helpers/plan_md.py` and consumed by plan MCP tools. Invalid structure = task blocked.
 
 **Serena memories have proven ineffective for cross-session context in this codebase** - the instructions file and task plans serve that purpose better.
 
