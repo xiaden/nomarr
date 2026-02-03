@@ -27,6 +27,9 @@ jobs:
                   package-type: "container"
                   min-versions-to-keep: ${{ github.event.inputs.keep_count || 5 }}
                   delete-only-untagged-versions: "true"
+                  # CRITICAL: Don't delete attestation manifests (provenance/SBOM)
+                  # These are stored as untagged images but are referenced by tagged images
+                  ignore-versions-with-attestations: "true"
 
             - name: Delete old nomarr-base untagged images
               uses: actions/delete-package-versions@v5
@@ -35,3 +38,5 @@ jobs:
                   package-type: "container"
                   min-versions-to-keep: 3
                   delete-only-untagged-versions: "true"
+                  # CRITICAL: Don't delete attestation manifests (provenance/SBOM)
+                  ignore-versions-with-attestations: "true"
