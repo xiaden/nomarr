@@ -225,6 +225,23 @@ Each numeric tag includes the full model head identifier (model version, backbon
 
 ---
 
+## 🗂️ Repository Structure
+
+This is currently a **monorepo** containing multiple independent projects:
+
+| Directory | Purpose | Future |
+|-----------|---------|--------|
+| `nomarr/` | Python backend (FastAPI, clean architecture) | Core project |
+| `frontend/` | React/TypeScript SPA | Core project |
+| `code-intel/` | MCP server for Python code navigation | → Separate repo |
+| `.github/skills/` | GitHub Copilot skill definitions | → Separate repo or archive |
+| `scripts/` | Build tools, viewers, analysis scripts | Part of core |
+| `e2e/`, `tests/` | Integration and unit tests | Part of core |
+
+**Note:** `code-intel/` is architecturally independent and will eventually split into its own repository. Until then, it's tracked in the main git history but maintains its own `pyproject.toml`, tests, and documentation.
+
+---
+
 ## ⚠️ License & Usage
 
 **Nomarr is licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) - Non-Commercial use only**

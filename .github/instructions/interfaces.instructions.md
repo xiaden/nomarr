@@ -41,12 +41,12 @@ from nomarr.persistence import ...    # No direct DB access
 
 **Use the Nomarr MCP server to navigate this layer efficiently:**
 
-- `trace_endpoint(endpoint)` - Trace FastAPI routes through DI to service methods
-- `project_check_api_coverage()` - See which backend endpoints are used by frontend
-- `module_discover_api(module_name)` - See service interfaces before calling them
-- `module_locate_symbol(symbol_name)` - Find route definitions
+- `trace_project_endpoint(endpoint)` - Trace FastAPI routes through DI to service methods
+- `analyze_project_api_coverage()` - See which backend endpoints are used by frontend
+- `read_module_api(module_name)` - See service interfaces before calling them
+- `locate_module_symbol(symbol_name)` - Find route definitions
 
-**Before adding routes, use `trace_endpoint` and `project_check_api_coverage` to understand existing patterns.**
+**Before adding routes, use `trace_project_endpoint` and `analyze_project_api_coverage` to understand existing patterns.**
 
 ---
 
@@ -146,7 +146,7 @@ Before committing interface code, verify:
 - [ ] Is the DTO-to-Pydantic conversion explicit? **→ Use `.from_dto()`**
 - [ ] Does this route have authentication? **→ Add `verify_session` (web) or `verify_key` (v1)**
 - [ ] Is the frontend calling `/api/v1/*`? **→ Create web API route instead**
-- [ ] **Does `lint_backend(path="nomarr/interfaces")` pass with zero errors?** **→ MANDATORY**
+- [ ] **Does `lint_project_backend(path="nomarr/interfaces")` pass with zero errors?** **→ MANDATORY**
 
 ---
 

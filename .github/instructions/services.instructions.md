@@ -114,12 +114,12 @@ from pydantic import BaseModel        # No Pydantic models
 
 **Use the Nomarr MCP server to navigate this layer efficiently:**
 
-- `module_discover_api(module_name)` - See service methods before reading full files
-- `module_locate_symbol(symbol_name)` - Find where services are defined
-- `module_get_source(qualified_name)` - Get exact service method source with line numbers
-- `trace_calls(function)` - Follow call chains from service methods through workflows
+- `read_module_api(module_name)` - See service methods before reading full files
+- `locate_module_symbol(symbol_name)` - Find where services are defined
+- `read_module_source(qualified_name)` - Get exact service method source with line numbers
+- `trace_module_calls(function)` - Follow call chains from service methods through workflows
 
-**Before modifying services, run `module_discover_api` to understand the public interface.**
+**Before modifying services, run `read_module_api` to understand the public interface.**
 
 ---
 
@@ -237,7 +237,7 @@ Before committing service code, verify:
 - [ ] Does this method call components directly? **→ Should call workflow instead**
 - [ ] Are public methods returning DTOs for structured data? **→ Required**
 - [ ] Is the method name `<verb>_<noun>`? **→ Required pattern**
-- [ ] **Does `lint_backend(path="nomarr/services")` pass with zero errors?** **→ MANDATORY**
+- [ ] **Does `lint_project_backend(path="nomarr/services")` pass with zero errors?** **→ MANDATORY**
 
 ---
 

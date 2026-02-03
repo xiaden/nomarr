@@ -94,7 +94,7 @@ def get_source(qualified_name: str, context_lines: int = 0) -> dict:
 
 ```python
 @mcp.tool()
-def trace_endpoint(endpoint: str) -> dict:
+def trace_project_endpoint(endpoint: str) -> dict:
     """Trace FastAPI endpoint through DI to service methods.
     
     Higher-level tool that:
@@ -117,7 +117,7 @@ def trace_endpoint(endpoint: str) -> dict:
 
 ```python
 @mcp.tool()
-def lint_backend(path: str | None = None) -> dict:
+def lint_project_backend(path: str | None = None) -> dict:
     """Run ruff, mypy, and import-linter.
     
     Args:
@@ -356,7 +356,7 @@ def discover_api(module_name: str) -> dict:
 
 ```python
 @mcp.tool()
-def trace_calls(function: str) -> dict:
+def trace_module_calls(function: str) -> dict:
     """Trace call chain with lazy loading."""
     # Don't load all files upfront
     entry_point = locate_function(function)
@@ -391,15 +391,15 @@ def get_source(qualified_name: str) -> dict:
 
 # Step 3: Understand how it's used
 @mcp.tool()
-def trace_calls(function: str) -> dict:
+def trace_module_calls(function: str) -> dict:
     """Takes function name from get_source output."""
     return {"call_chain": [...]}
 ```
 
 AI agents can chain tools:
-1. `module_discover_api("nomarr.services")` → see available services
-2. `module_get_source("nomarr.services.ConfigService")` → see implementation
-3. `trace_calls("ConfigService.load_config")` → see how it's used
+1. `read_module_api("nomarr.services")` → see available services
+2. `read_module_source("nomarr.services.ConfigService")` → see implementation
+3. `trace_module_calls("ConfigService.load_config")` → see how it's used
 
 ---
 

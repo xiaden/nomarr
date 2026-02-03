@@ -44,48 +44,48 @@ Instructions are stored in `.github/instructions/` and use the `applyTo` frontma
 
 These instructions contain:
 - Layer-specific conventions and patterns
-- Required validation steps (including mandatory `lint_backend`)
+- Required validation steps (including mandatory `lint_project_backend`)
 - Common mistakes to avoid
 - File naming and structure rules
 - MCP server tools relevant to the layer
 
 **You do not need to manually read these files** - they are automatically included in context when working in their target directories.
 
-### 2. Use MCP `module_discover_api` Before Editing Modules
+### 2. Use MCP `read_module_api` Before Editing Modules
 
-**You MUST use the MCP `module_discover_api` tool to inspect module shapes before editing.**
+**You MUST use the MCP `read_module_api` tool to inspect module shapes before editing.**
 
-- Run `module_discover_api` for each module you will modify
+- Run `read_module_api` for each module you will modify
 - Use the discovered function/class signatures as the source of truth
 - Do not guess at existing APIs — verify them
 
 ```
 # Example: discover API before modifying
-module_discover_api("nomarr.services.infrastructure.file_watcher_svc")
+read_module_api("nomarr.services.infrastructure.file_watcher_svc")
 ```
 
-### 3. Run Layer Validation Scripts
+### 3. Validate All Python Code
 
-**You MUST verify code quality before committing.**
+**You MUST verify code quality after editing ANY Python file.**
 
-All Python layers require `lint_backend` to pass with zero errors:
+**This is NOT optional. This applies to:**
+- All nomarr backend layers (interfaces, services, workflows, components, persistence, helpers)
+- code-intel Python code
+- Scripts, tests, tooling - any `.py` file you touch
+
+**Zero errors is the only acceptable state.** If `lint_project_backend` reports errors, you caused them. Fix them before moving on.
 
 ```python
 # Via MCP tool (preferred)
-lint_backend(path="nomarr/interfaces")
-lint_backend(path="nomarr/services")
-lint_backend(path="nomarr/workflows")
-lint_backend(path="nomarr/components")
-lint_backend(path="nomarr/persistence")
-lint_backend(path="nomarr/helpers")
+lint_project_backend(path="nomarr/interfaces")  # or any specific path
+lint_project_backend(path="code-intel/src/mcp_code_intel")  # works for code-intel too
+lint_project_backend()  # no path = lint entire workspace
 ```
 
 **Frontend validation:**
 
-
 ```python
-# Via MCP tool (preferred)
-lint_frontend()
+lint_project_frontend()
 ```
 
 ---
@@ -94,20 +94,24 @@ lint_frontend()
 
 **These tool selection rules are NOT optional. Violating them wastes tokens and ignores purpose-built capabilities.**
 
+### MCP Tool Availability
+
+**All nomarr_dev MCP tools (`mcp_nomarr_dev_*`) are always enabled.** If you see them as disabled, activate tool groups until they appear. These tools are critical infrastructure for this codebase.
+
 ### Rule: Use Specialized MCP Tools BEFORE Standard Tools
 
-Check this hierarchy before reaching for `file_read_range`, `grep_search`, or `semantic_search`:
+Check this hierarchy before reaching for `read_file_range`, `grep_search`, or `semantic_search`:
 
 #### 1. Python Code Navigation in Nomarr (ALWAYS FIRST)
 
 **nomarr-dev MCP tools are the first-class way to navigate Python code in this codebase.** Before reading any Python file, use:
 
-- `module_discover_api(module_name)` - See exported classes/functions/signatures (~20 lines vs full file)
-- `module_locate_symbol(symbol_name)` - Find where something is defined
-- `module_get_source(qualified_name)` - Get exact function/class with line numbers
-- `trace_endpoint(endpoint)` - Trace FastAPI routes through DI layers
-- `trace_calls(function)` - Follow call chains from entry points
-- `project_check_api_coverage()` - See which endpoints are used by frontend
+- `read_module_api(module_name)` - See exported classes/functions/signatures (~20 lines vs full file)
+- `locate_module_symbol(symbol_name)` - Find where something is defined
+- `read_module_source(qualified_name)` - Get exact function/class with line numbers
+- `trace_project_endpoint(endpoint)` - Trace FastAPI routes through DI layers
+- `trace_module_calls(function)` - Follow call chains from entry points
+- `analyze_project_api_coverage()` - See which endpoints are used by frontend
 
 These tools understand FastAPI DI and nomarr's architecture. Serena is a fallback for non-Python or when nomarr-dev tools are insufficient.
 
@@ -115,13 +119,13 @@ These tools understand FastAPI DI and nomarr's architecture. Serena is a fallbac
 
 **For file discovery and non-Python exploration:**
 
-- `project_list_dir(folder)` - Smart directory listing with filtering (preferred for file discovery)
+- `list_project_directory_tree(folder)` - Smart directory listing with filtering (preferred for file discovery)
 - `mcp_oraios_serena_get_symbols_overview(relative_path)` - See file structure before reading
 - `mcp_oraios_serena_find_symbol(name_path_pattern, relative_path)` - Find and optionally get symbol bodies
 - `mcp_oraios_serena_search_for_pattern(substring_pattern)` - Regex search with context
 - `mcp_oraios_serena_find_referencing_symbols(name_path, relative_path)` - See who calls what
 
-**Use nomarr's `project_list_dir` for finding files. Use Serena for symbol-based navigation in non-nomarr code.**
+**Use nomarr's `list_project_directory_tree` for finding files. Use Serena for symbol-based navigation in non-nomarr code.**
 
 #### 3. Library Documentation (BEFORE GUESSING)
 
@@ -131,7 +135,56 @@ These tools understand FastAPI DI and nomarr's architecture. Serena is a fallbac
 
 **Get authoritative docs instead of guessing APIs.**
 
-#### 4. Task Tracking for Long Operations
+#### 4. File Mutation Tools (FOR BULK OPERATIONS)
+
+**When creating, modifying, or reorganizing multiple files:**
+
+- `edit_file_create` - Create new files atomically with mkdir -p behavior
+- `edit_file_replace_content` - Replace entire file contents (use for small files or complete rewrites)
+- `edit_file_insert_text` - Insert at precise positions (bof, eof, before_line, after_line) without string matching
+- `edit_file_copy_paste_text` - Copy text from sources to targets with caching (batch boilerplate duplication)
+
+**When to use each tool:**
+
+| Use Case | Tool | Why |
+|----------|------|-----|
+| Create multiple new files | `edit_file_create` | Atomic batch creation with automatic directory creation |
+| Replace entire file | `edit_file_replace_content` | Atomic replacement with context validation (first 2 + last 2 lines) |
+| Add import at top of file | `edit_file_insert_text` | Use `at: "bof"` or `at: "before_line"` with `line: 1` |
+| Add function at end of file | `edit_file_insert_text` | Use `at: "eof"` for appending |
+| Insert between existing lines | `edit_file_insert_text` | Use `at: "after_line"` with specific line number |
+| Copy same code to many places | `edit_file_copy_paste_text` | Source cached once, pasted to multiple targets efficiently |
+| Copy boilerplate code to multiple places | `edit_file_copy_paste_text` | Primary use case - read once, paste everywhere |
+
+**Critical rule: Coordinate space preservation**
+
+When batching operations on the same file, all line/col numbers refer to the ORIGINAL file state:
+```python
+# Example: Insert 3 things into same file
+edit_file_insert_text([
+    {"path": "service.py", "at": "after_line", "line": 10, "content": "# Comment 1\n"},
+    {"path": "service.py", "at": "after_line", "line": 20, "content": "# Comment 2\n"},
+    {"path": "service.py", "at": "after_line", "line": 30, "content": "# Comment 3\n"}
+])
+# Line 10, 20, 30 all refer to ORIGINAL file before any edits
+# Tool applies bottom-to-top automatically
+```
+
+**Batch boilerplate duplication example:**
+```python
+# Copy error handling pattern from helpers.py lines 5-7 to multiple methods
+edit_file_copy_paste_text([
+    {"source_path": "helpers.py", "source_start_line": 5, "source_end_line": 7,
+     "target_path": "service1.py", "target_line": 10},
+    {"source_path": "helpers.py", "source_start_line": 5, "source_end_line": 7,
+     "target_path": "service1.py", "target_line": 25},
+    {"source_path": "helpers.py", "source_start_line": 5, "source_end_line": 7,
+     "target_path": "service2.py", "target_line": 15},
+])
+# helpers.py read once, cached, pasted to all targets
+```
+
+#### 5. Task Tracking for Long Operations
 
 **For multi-step edits that may exceed your context window:**
 
@@ -162,7 +215,8 @@ Create a task plan in `plans/` (e.g., `TASK-refactor-library-service.md`) follow
 **Critical rules:**
 - Steps MUST be flat lists - nested checkboxes will cause parser errors
 - If substeps are needed → they're actually separate steps or phase-level notes
-- Use `**Notes:**`, `**Warning:**`, `**Blocked:**` annotations after steps
+- Use `**Notes:**`, `**Warning:**`, `**Blocked:**` annotations after steps (or phases)
+- Annotations: pure bullet lists → parsed as arrays; mixed content → string with `\n`
 - Phase numbers must be sequential starting from 1
 - Steps auto-generate IDs like `P1-S1`, `P2-S3`
 
@@ -170,7 +224,7 @@ These files are parsed by `code-intel/src/mcp_code_intel/helpers/plan_md.py` and
 
 **Serena memories have proven ineffective for cross-session context in this codebase** - the instructions file and task plans serve that purpose better.
 
-#### 5. Standard VS Code Tools (LAST RESORT ONLY)
+#### 6. Standard VS Code Tools (LAST RESORT ONLY)
 
 **Only use these when MCP tools fail or for non-code files:**
 
@@ -190,13 +244,13 @@ The semantic tools answer the *real* question, not the proxy question:
 
 | You think you need... | You're actually asking... | Use this instead |
 |-----------------------|--------------------------|------------------|
-| Read file imports | "What does this module depend on?" | `trace_calls`, `module_discover_api` |
-| Read top of file | "What are the class attributes?" | `module_get_source` on the class |
-| Search for import statement | "Where is X defined?" | `module_locate_symbol` |
-| Read file to find function | "What's the module API?" | `module_discover_api` |
-| Check if import is wrong | "Is there a layer violation?" | `lint_backend` |
+| Read file imports | "What does this module depend on?" | `trace_module_calls`, `read_module_api` |
+| Read top of file | "What are the class attributes?" | `read_module_source` on the class |
+| Search for import statement | "Where is X defined?" | `locate_module_symbol` |
+| Read file to find function | "What's the module API?" | `read_module_api` |
+| Check if import is wrong | "Is there a layer violation?" | `lint_project_backend` |
 
-The `file_read_range` warning on Python files isn't naggy - it's catching you using the wrong tool. Imports are never the question. Relationships are the question.
+The `read_file_range` warning on Python files isn't naggy - it's catching you using the wrong tool. Imports are never the question. Relationships are the question.
 
 **After fully completing a task**, if you reached a conclusion about tool usage that isn't captured here, add a new row. This is collective model wisdom—don't update mid-task.
 
@@ -241,7 +295,7 @@ Import-linter enforces layer boundaries.
 
 - Use dependency injection for major resources (db, config, backends) — not every operation
 - Write fully type-annotated code
-- Use MCP `module_discover_api` before calling unfamiliar APIs (the script version is legacy fallback)
+- Use MCP `read_module_api` before calling unfamiliar APIs (the script version is legacy fallback)
 - Check venv is active before running Python commands
 
 ---
@@ -250,14 +304,14 @@ Import-linter enforces layer boundaries.
 
 **You are the only one writing code in this codebase. There are no "pre-existing errors."**
 
-If `lint_backend` reports errors, you caused them—either in this context or a previous one. The chat being new does not absolve you. A previous context that broke things and hit its limit is still *you*.
+If `lint_project_backend` reports errors, you caused them—either in this context or a previous one. The chat being new does not absolve you. A previous context that broke things and hit its limit is still *you*.
 
 ### Required Behavior When Errors Exist
 
 1. **Assume you caused it.** Do not dismiss errors as "pre-existing" or "outside scope."
-2. **Investigate before fixing.** Use `file_symbol_at_line`, `module_get_source`, `trace_calls` to understand *why* the error exists.
+2. **Investigate before fixing.** Use `read_file_symbol_at_line`, `read_module_source`, `trace_module_calls` to understand *why* the error exists.
 3. **Fix the code, not the symptoms.** Change the implementation to satisfy the checker. Do not add `# noqa` or `# type: ignore` to silence it.
-4. **Verify the fix.** Run `lint_backend` again. Zero errors is the only acceptable state.
+4. **Verify the fix.** Run `lint_project_backend` again. Zero errors is the only acceptable state.
 
 ### Suppression Comments Are Admission of Failure
 
@@ -296,22 +350,22 @@ Config is loaded once by `ConfigService` and passed via parameters. No global si
 
 ### Proxy Questions: What Are You Actually Asking?
 
-When you reach for `file_read_range` on Python code, stop and ask: **what am I actually trying to learn?**
+When you reach for `read_file_range` on Python code, stop and ask: **what am I actually trying to learn?**
 
 | You think you need... | You're actually asking... | Use this instead |
 |-----------------------|--------------------------|------------------|
-| Read file imports | "What does this module depend on?" | `trace_calls`, `module_discover_api` |
-| Read top of file | "What are the class attributes?" | `module_get_source` on the class |
-| Search for import statement | "Where is X defined?" | `module_locate_symbol` |
-| Read file to find function | "What's the module API?" | `module_discover_api` |
-| Check if import is wrong | "Is there a layer violation?" | `lint_backend` |
-| Verify code was deleted | "Does this symbol still exist anywhere?" | `module_locate_symbol` (0 matches = deleted) |
+| Read file imports | "What does this module depend on?" | `trace_module_calls`, `read_module_api` |
+| Read top of file | "What are the class attributes?" | `read_module_source` on the class |
+| Search for import statement | "Where is X defined?" | `locate_module_symbol` |
+| Read file to find function | "What's the module API?" | `read_module_api` |
+| Check if import is wrong | "Is there a layer violation?" | `lint_project_backend` |
+| Verify code was deleted | "Does this symbol still exist anywhere?" | `locate_module_symbol` (0 matches = deleted) |
 
 ### Tool Gotchas
 
-- `module_discover_api` is AST-based; won't catch import errors. Use `python -c "import X"` for runtime verification.
-- When a tool fails, don't swap to a familiar fallback—ask if you're using the wrong tool for the question. Example: `module_discover_api` returns nothing → try `module_locate_symbol` or verify module path.
-- `file_read_range` warnings on Python files aren't naggy—they're catching you using the wrong tool. Imports are never the question; relationships are.
+- `read_module_api` is AST-based; won't catch import errors. Use `python -c "import X"` for runtime verification.
+- When a tool fails, don't swap to a familiar fallback—ask if you're using the wrong tool for the question. Example: `read_module_api` returns nothing → try `locate_module_symbol` or verify module path.
+- `read_file_range` warnings on Python files aren't naggy—they're catching you using the wrong tool. Imports are never the question; relationships are.
 
 **Add to these tables when you discover new patterns.** Keep entries concise and actionable.
 

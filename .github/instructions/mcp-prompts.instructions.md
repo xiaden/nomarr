@@ -19,7 +19,7 @@ Prompts are **interaction templates** that help AI agents perform consistent, we
 | **Purpose** | Task templates | Actions | Data |
 | **Returns** | Messages for LLM | Structured data | Content |
 | **Use When** | Standardize workflows | Execute operations | Access information |
-| **Example** | "Review code" | `lint_backend()` | `file://code.py` |
+| **Example** | "Review code" | `lint_project_backend()` | `file://code.py` |
 
 ---
 
@@ -458,7 +458,7 @@ Prompts can reference tools and resources:
 def trace_and_document(endpoint: str) -> list[PromptMessage]:
     """Trace endpoint and generate documentation.
     
-    Uses trace_endpoint tool and file resources.
+    Uses trace_project_endpoint tool and file resources.
     """
     # This prompt instructs AI to use other capabilities
     return [
@@ -467,7 +467,7 @@ def trace_and_document(endpoint: str) -> list[PromptMessage]:
             content=TextContent(
                 type="text",
                 text="""You have access to:
-- trace_endpoint tool
+- trace_project_endpoint tool
 - file:// resources  
 - get_source tool
 
@@ -481,7 +481,7 @@ Use these to understand the endpoint fully.
                 type="text",
                 text=f"""Document the {endpoint} API endpoint:
 
-1. Use trace_endpoint("{endpoint}") to see the call flow
+1. Use trace_project_endpoint("{endpoint}") to see the call flow
 2. Use get_source() to read each function in the chain
 3. Document:
    - Purpose
@@ -689,7 +689,7 @@ def review_service(service_file: str) -> list[PromptMessage]:
     instructions = Path(".github/instructions/services.instructions.md").read_text()
     
     # Get related workflow/component info
-    calls = trace_calls_from_file(service_file)
+    calls = trace_module_calls_from_file(service_file)
     
     return [
         PromptMessage(

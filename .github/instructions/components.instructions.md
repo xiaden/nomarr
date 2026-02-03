@@ -66,12 +66,12 @@ import essentia_tensorflow  # Only in ml_backend_essentia_comp.py
 
 **Use the Nomarr MCP server to navigate this layer efficiently:**
 
-- `module_discover_api(module_name)` - See exported functions/classes before reading full files
-- `module_locate_symbol(symbol_name)` - Find where components are defined
-- `module_get_source(qualified_name)` - Get exact function/class source with line numbers
-- `trace_calls(function)` - Follow call chains from components
+- `read_module_api(module_name)` - See exported functions/classes before reading full files
+- `locate_module_symbol(symbol_name)` - Find where components are defined
+- `read_module_source(qualified_name)` - Get exact function/class source with line numbers
+- `trace_module_calls(function)` - Follow call chains from components
 
-**Before modifying any component, run `module_discover_api` to understand its shape.**
+**Before modifying any component, run `read_module_api` to understand its shape.**
 
 ---
 
@@ -203,7 +203,7 @@ Before committing component code, verify:
 - [ ] Is this doing orchestration instead of computation? **→ Should be a workflow**
 - [ ] Are heavy functions split into `_private` helpers? **→ Recommended**
 - [ ] Does the module name end in `_comp.py`? **→ Convention**
-- [ ] **Does `lint_backend(path="nomarr/components")` pass with zero errors?** **→ MANDATORY**
+- [ ] **Does `lint_project_backend(path="nomarr/components")` pass with zero errors?** **→ MANDATORY**
 
 ---
 

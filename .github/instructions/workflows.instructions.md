@@ -40,12 +40,12 @@ from pydantic import BaseModel                 # No Pydantic
 
 **Use the Nomarr MCP server to navigate this layer efficiently:**
 
-- `module_discover_api(module_name)` - See workflow signatures before reading full files
-- `module_locate_symbol(symbol_name)` - Find where workflows are defined
-- `module_get_source(qualified_name)` - Get exact workflow source with line numbers
-- `trace_calls(function)` - Follow call chains from workflows to components
+- `read_module_api(module_name)` - See workflow signatures before reading full files
+- `locate_module_symbol(symbol_name)` - Find where workflows are defined
+- `read_module_source(qualified_name)` - Get exact workflow source with line numbers
+- `trace_module_calls(function)` - Follow call chains from workflows to components
 
-**Before modifying workflows, run `module_discover_api` to understand dependencies and return types.**
+**Before modifying workflows, run `read_module_api` to understand dependencies and return types.**
 
 ---
 
@@ -158,7 +158,7 @@ Before committing workflow code, verify:
 - [ ] Does the function return a DTO? **→ Required**
 - [ ] Is there one public workflow per file? **→ Required**
 - [ ] Does the file name end in `_wf.py`? **→ Convention**
-- [ ] **Does `lint_backend(path="nomarr/workflows")` pass with zero errors?** **→ MANDATORY**
+- [ ] **Does `lint_project_backend(path="nomarr/workflows")` pass with zero errors?** **→ MANDATORY**
 
 ---
 

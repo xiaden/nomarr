@@ -1,0 +1,94 @@
+{
+  "$schema": "./config_schema.json",
+  "backend": {
+    "framework": "fastapi",
+    "routes": {
+      "decorators": [
+        "@router.get",
+        "@router.post",
+        "@router.put",
+        "@router.patch",
+        "@router.delete",
+        "@app.get",
+        "@app.post",
+        "@app.put",
+        "@app.patch",
+        "@app.delete"
+      ],
+      "search_paths": [
+        "**/*_if.py",
+        "**/api/**/*.py"
+      ],
+      "exclude_paths": [
+        "**/test_*.py",
+        "**/__pycache__/**"
+      ]
+    },
+    "modules": {
+      "root_package": null,
+      "search_paths": [
+        "nomarr",
+        "code-intel/src/mcp_code_intel"
+      ]
+    },
+    "dependency_injection": {
+      "patterns": [
+        "Depends(",
+        "Annotated["
+      ],
+      "resolver_functions": [
+        "get_",
+        "resolve_"
+      ]
+    }
+  },
+  "frontend": {
+    "framework": "react",
+    "api_calls": {
+      "patterns": [
+        "api.get(",
+        "api.post(",
+        "api.put(",
+        "api.patch(",
+        "api.delete(",
+        "fetch(",
+        "axios.get(",
+        "axios.post("
+      ],
+      "search_paths": [
+        "src/**/*.{ts,tsx,js,jsx}",
+        "**/*.vue",
+        "**/*.svelte"
+      ],
+      "exclude_paths": [
+        "**/node_modules/**",
+        "**/dist/**",
+        "**/build/**"
+      ]
+    }
+  },
+  "project": {
+    "backend_path": ".",
+    "frontend_path": "frontend",
+    "ignore_patterns": [
+      ".venv",
+      "node_modules",
+      "__pycache__",
+      ".git",
+      "dist",
+      "build"
+    ]
+  },
+  "tracing": {
+    "max_depth": 10,
+    "filter_external": true,
+    "include_patterns": [
+      "nomarr.*",
+      "mcp_code_intel.*"
+    ]
+  },
+  "tools": {
+    "disabled": [],
+    "custom": {}
+  }
+}

@@ -30,9 +30,9 @@ Plans are JSON-serializable with this structure:
           "text": "string",
           "done": false,
           "annotations": {
-            "Notes": "optional",
-            "Warning": "optional",
-            "Blocked": "optional"
+            "Notes": "string or array (pure bullets → array, mixed → string)",
+            "Warning": "string or array",
+            "Blocked": "string or array"
           }
         }
       ],
@@ -48,6 +48,7 @@ Plans are JSON-serializable with this structure:
 - Steps MUST be flat (no nesting/children)
 - Phase numbers MUST be sequential integers starting at 1
 - Step IDs auto-generated as `P{phase}-S{index}`
+- **Annotations:** Pure bullet lists → arrays; mixed content (text + bullets) → string with `\n`
 
 ---
 
@@ -81,8 +82,8 @@ Plans are JSON-serializable with this structure:
 | Title | `# Task: <title>` or `# <title>` | `# Task: Refactor Auth` |
 | Section | `## <name>` | `## Problem Statement` |
 | Phase | `### Phase N: <title>` | `### Phase 1: Discovery` |
-| Step (incomplete) | `- [ ] <text>` | `- [ ] Run lint_backend` |
-| Step (complete) | `- [x] <text>` | `- [x] Run lint_backend` |
+| Step (incomplete) | `- [ ] <text>` | `- [ ] Run lint_project_backend` |
+| Step (complete) | `- [x] <text>` | `- [x] Run lint_project_backend` |
 | Annotation | `**Marker:** <text>` | `**Notes:** Found 3 issues` |
 
 **Phase numbers MUST be integers.** The parser uses regex `### Phase (\d+): (.+)`.
@@ -126,7 +127,7 @@ These are parsed and returned by `plan_read`.
 ## Writing Quality Steps
 
 **Good steps are:**
-- **Actionable** - Clear what needs doing (`Run lint_backend on helpers/`)
+- **Actionable** - Clear what needs doing (`Run lint_project_backend on helpers/`)
 - **Verifiable** - Can confirm completion (`All tests pass`, not "improve tests")
 - **Atomic** - One logical outcome per step
 - **Appropriately scoped** - Not too granular ("add import") or vague ("fix auth")
@@ -138,7 +139,7 @@ These are parsed and returned by `plan_read`.
 | Work on auth middleware | Implement SessionAuthMiddleware class in interfaces/api/middleware/ |
 | Fix issues | Resolve mypy errors in persistence/models/library.py |
 | Add imports | Create config_service module with ConfigService class |
-| Test stuff | Verify lint_backend passes on nomarr/services |
+| Test stuff | Verify lint_project_backend passes on nomarr/services |
 | Make it work | Update all callers of get_library() to use new signature |
 
 **Phase Design:**

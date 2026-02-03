@@ -1,0 +1,206 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MCP DevTools Configuration",
+  "description": "Configuration for python-mcp-devtools server to customize tool behavior for different project structures",
+  "type": "object",
+  "properties": {
+    "backend": {
+      "type": "object",
+      "description": "Backend-specific patterns for route discovery and code analysis",
+      "properties": {
+        "framework": {
+          "type": "string",
+          "enum": ["fastapi", "flask", "django", "custom"],
+          "default": "fastapi",
+          "description": "Backend framework type"
+        },
+        "routes": {
+          "type": "object",
+          "description": "Route discovery configuration",
+          "properties": {
+            "decorators": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": [
+                "@router.get",
+                "@router.post",
+                "@router.put",
+                "@router.patch",
+                "@router.delete",
+                "@app.get",
+                "@app.post",
+                "@app.put",
+                "@app.patch",
+                "@app.delete"
+              ],
+              "description": "Route decorator patterns to search for"
+            },
+            "search_paths": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": ["**/*_if.py", "**/api/**/*.py"],
+              "description": "Glob patterns for files containing routes"
+            },
+            "exclude_paths": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": ["**/test_*.py", "**/__pycache__/**"],
+              "description": "Glob patterns to exclude from route search"
+            }
+          }
+        },
+        "modules": {
+          "type": "object",
+          "description": "Module structure configuration",
+          "properties": {
+            "root_package": {
+              "type": "string",
+              "description": "Root package name for import resolution (e.g., 'nomarr', 'myapp')"
+            },
+            "search_paths": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": ["src/**/*.py", "**/*.py"],
+              "description": "Paths to search for Python modules"
+            }
+          }
+        },
+        "dependency_injection": {
+          "type": "object",
+          "description": "Dependency injection pattern detection",
+          "properties": {
+            "patterns": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": ["Depends(", "Annotated["],
+              "description": "Patterns indicating DI usage"
+            },
+            "resolver_functions": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": ["get_", "resolve_"],
+              "description": "Function name prefixes for DI resolvers"
+            }
+          }
+        }
+      }
+    },
+    "frontend": {
+      "type": "object",
+      "description": "Frontend-specific patterns for API call detection",
+      "properties": {
+        "framework": {
+          "type": "string",
+          "enum": ["react", "vue", "svelte", "angular", "custom"],
+          "default": "react",
+          "description": "Frontend framework type"
+        },
+        "api_calls": {
+          "type": "object",
+          "description": "API call pattern detection",
+          "properties": {
+            "patterns": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": [
+                "api.get(",
+                "api.post(",
+                "api.put(",
+                "api.patch(",
+                "api.delete(",
+                "fetch(",
+                "axios.get(",
+                "axios.post("
+              ],
+              "description": "Patterns indicating API calls in frontend code"
+            },
+            "search_paths": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": ["src/**/*.{ts,tsx,js,jsx}", "**/*.vue", "**/*.svelte"],
+              "description": "Glob patterns for frontend source files"
+            },
+            "exclude_paths": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": ["**/node_modules/**", "**/dist/**", "**/build/**"],
+              "description": "Paths to exclude from API call search"
+            }
+          }
+        }
+      }
+    },
+    "project": {
+      "type": "object",
+      "description": "Project structure and workspace configuration",
+      "properties": {
+        "workspace_root": {
+          "type": "string",
+          "description": "Relative path to workspace root from config file location (default: current dir)"
+        },
+        "backend_path": {
+          "type": "string",
+          "description": "Relative path to backend code from workspace root"
+        },
+        "frontend_path": {
+          "type": "string",
+          "description": "Relative path to frontend code from workspace root"
+        },
+        "ignore_patterns": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [
+            "**/__pycache__/**",
+            "**/node_modules/**",
+            "**/.venv/**",
+            "**/venv/**",
+            "**/.git/**",
+            "**/dist/**",
+            "**/build/**"
+          ],
+          "description": "Global ignore patterns for all tools"
+        }
+      }
+    },
+    "tracing": {
+      "type": "object",
+      "description": "Call tracing and dependency analysis configuration",
+      "properties": {
+        "max_depth": {
+          "type": "integer",
+          "default": 10,
+          "minimum": 1,
+          "maximum": 50,
+          "description": "Maximum depth for call chain tracing"
+        },
+        "filter_external": {
+          "type": "boolean",
+          "default": true,
+          "description": "Filter out stdlib and third-party library calls"
+        },
+        "include_patterns": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Module patterns to include in traces (e.g., ['myapp.*'])"
+        }
+      }
+    },
+    "tools": {
+      "type": "object",
+      "description": "Tool-specific overrides and extensions",
+      "properties": {
+        "disabled": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "List of tool names to disable"
+        },
+        "custom": {
+          "type": "object",
+          "description": "Custom tool configurations",
+          "additionalProperties": true
+        }
+      }
+    }
+  }
+}

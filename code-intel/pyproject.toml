@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "code-intel"
+version = "0.1.0"
+description = "Codebase intelligence layer for agentic analysis, planning, and mutation"
+requires-python = ">=3.12"
+authors = [
+    {name = "Nomarr Contributors"},
+]
+license = "MIT"
+keywords = ["mcp", "model-context-protocol", "python", "code-analysis", "ai-agents", "planning"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Software Development :: Tools",
+]
+
+dependencies = [
+    "mcp>=1.9.0",
+    "pydantic>=2.0",
+    "fastmcp>=0.1.0",
+    "tree-sitter>=0.21.0",
+    "tree-sitter-markdown>=0.2.0",
+    "jsonschema>=4.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",
+    "ruff>=0.1.0",
+    "mypy>=1.0",
+]
+lint = [
+    "ruff>=0.1.0",
+    "mypy>=1.0",
+    "import-linter>=2.0",
+]
+
+[project.scripts]
+mcp-code-intel = "mcp_code_intel.server:main"
+
+[project.urls]
+Repository = "https://github.com/nomarr-dev/code-intel"
+
+[tool.setuptools]
+packages = ["mcp_code_intel", "mcp_code_intel.helpers", "mcp_code_intel.schemas"]
+package-dir = {"" = "src"}
+
+[tool.setuptools.package-data]
+mcp_code_intel = ["schemas/*.json"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = false
+warn_return_any = true
+warn_unused_configs = true

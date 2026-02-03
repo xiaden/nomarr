@@ -56,11 +56,11 @@ from nomarr.interfaces import ...    # No interfaces
 
 **Use the Nomarr MCP server to navigate this layer efficiently:**
 
-- `module_discover_api(module_name)` - See AQL operations before reading full files
-- `module_locate_symbol(symbol_name)` - Find where database operations are defined
-- `module_get_source(qualified_name)` - Get exact query method source with line numbers
+- `read_module_api(module_name)` - See AQL operations before reading full files
+- `locate_module_symbol(symbol_name)` - Find where database operations are defined
+- `read_module_source(qualified_name)` - Get exact query method source with line numbers
 
-**Before modifying database operations, run `module_discover_api` to understand the interface.**
+**Before modifying database operations, run `read_module_api` to understand the interface.**
 
 ---
 
@@ -174,7 +174,7 @@ Before committing persistence code, verify:
 - [ ] Are `_id` and `_key` preserved as-is? **→ Required**
 - [ ] Is external code importing from `database/*` directly? **→ Access via `Database`**
 - [ ] Is health/liveness logic here instead of in services? **→ Move to service**
-- [ ] **Does `lint_backend(path="nomarr/persistence")` pass with zero errors?** **→ MANDATORY**
+- [ ] **Does `lint_project_backend(path="nomarr/persistence")` pass with zero errors?** **→ MANDATORY**
 
 ---
 

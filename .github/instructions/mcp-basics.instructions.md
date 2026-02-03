@@ -31,7 +31,7 @@ AI Application (Client) ←→ MCP Server ←→ Your Application (Nomarr)
 MCP servers can expose three types of capabilities:
 
 1. **Tools** - Functions the AI can call (with side effects allowed)
-   - Example: `lint_backend()`, `trace_endpoint()`
+   - Example: `lint_project_backend()`, `trace_project_endpoint()`
    - Use `@mcp.tool()` decorator
 
 2. **Resources** - Data the AI can read (via URIs)
@@ -74,7 +74,7 @@ def analyze_code(action: str, target: str, options: dict) -> Any:
     """Do various code analysis tasks."""
     # Too generic, unclear purpose
     if action == "get_source": ...
-    elif action == "trace_calls": ...
+    elif action == "trace_module_calls": ...
 ```
 
 ### Return Structured Data
@@ -153,7 +153,7 @@ scripts/mcp/
 ├── tools/                 # Tool implementations
 │   ├── __init__.py
 │   ├── discover_api.py
-│   ├── trace_endpoint.py
+│   ├── trace_project_endpoint.py
 │   └── helpers/           # Shared utilities
 ├── resources/             # Resource providers (future)
 ├── prompts/               # Prompt templates (future)

@@ -77,11 +77,11 @@ This is a **hard rule**. Helpers are the foundation—they cannot depend on anyt
 
 **Use the Nomarr MCP server to navigate this layer efficiently:**
 
-- `module_discover_api(module_name)` - See exported functions/classes before reading full files
-- `module_locate_symbol(symbol_name)` - Find where utilities are defined
-- `module_get_source(qualified_name)` - Get exact function/class source with line numbers
+- `read_module_api(module_name)` - See exported functions/classes before reading full files
+- `locate_module_symbol(symbol_name)` - Find where utilities are defined
+- `read_module_source(qualified_name)` - Get exact function/class source with line numbers
 
-**Before modifying any helper, run `module_discover_api` to understand its shape.**
+**Before modifying any helper, run `read_module_api` to understand its shape.**
 
 ---
 
@@ -205,7 +205,7 @@ Before committing helper code, verify:
 - [ ] Does this construct or validate library paths? **→ Violation (use path_comp)**
 - [ ] Is this DTO used across layers? **→ Put in `helpers/dto/`**
 - [ ] Are functions pure (no hidden state)? **→ Preferred**
-- [ ] **Does `lint_backend(path="nomarr/helpers")` pass with zero errors?** **→ MANDATORY**
+- [ ] **Does `lint_project_backend(path="nomarr/helpers")` pass with zero errors?** **→ MANDATORY**
 
 ---
 

@@ -27,8 +27,8 @@ This folder contains the interop layer between TypeScript extension code and Pyt
 ## Reference (non-prescriptive)
 
 ### Python Tools Called
-- `scripts/mcp/tools/lint_backend.py` - Ruff + mypy
-- `scripts/mcp/tools/lint_frontend.py` - ESLint + TypeScript
+- `scripts/mcp/tools/lint_project_backend.py` - Ruff + mypy
+- `scripts/mcp/tools/lint_project_frontend.py` - ESLint + TypeScript
 
 ### Python Path
 ```typescript
