@@ -21,12 +21,12 @@ _LOG_FORMAT = "%(asctime)s %(levelname)s %(nomarr_identity_tag)s %(nomarr_role_t
 file_handler = logging.handlers.RotatingFileHandler(log_dir / "nomarr.log", maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8")
 file_handler.setLevel(logging.INFO)
 file_handler.setFormatter(logging.Formatter(_LOG_FORMAT))
+file_handler.addFilter(NomarrLogFilter())  # Add filter to handler
 console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setLevel(logging.INFO)
 console_handler.setFormatter(logging.Formatter(_LOG_FORMAT))
-logging.root.addFilter(NomarrLogFilter())
+console_handler.addFilter(NomarrLogFilter())  # Add filter to handler
 logging.basicConfig(level=logging.INFO, handlers=[file_handler, console_handler])
-
 def shutdown_handler(signum, frame) -> None:
     """Handle shutdown signals gracefully."""
     logger.info(f"Received signal {signum}, shutting down...")
