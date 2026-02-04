@@ -1,0 +1,124 @@
+# Dependabot configuration for Nomarr
+# Automates dependency updates for Python (pip) and JavaScript (npm)
+
+version: 2
+updates:
+  # Backend - Python dependencies via pip
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "03:00"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "backend"
+    commit-message:
+      prefix: "deps(backend)"
+    reviewers:
+      - "xiaden"
+    # Group minor/patch updates for common packages
+    groups:
+      fastapi-ecosystem:
+        patterns:
+          - "fastapi*"
+          - "pydantic*"
+          - "starlette*"
+          - "uvicorn*"
+      ml-stack:
+        patterns:
+          - "tensorflow*"
+          - "numpy*"
+          - "scipy*"
+      testing:
+        patterns:
+          - "pytest*"
+          - "coverage*"
+    # Allow pre-release versions for these packages (pre-alpha project)
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    # Version pinning strategy: allow minor/patch updates only
+    versioning-strategy: increase
+
+  # Frontend - npm dependencies
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "03:00"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "frontend"
+    commit-message:
+      prefix: "deps(frontend)"
+    reviewers:
+      - "xiaden"
+    groups:
+      react-ecosystem:
+        patterns:
+          - "react*"
+          - "@types/react*"
+      build-tools:
+        patterns:
+          - "vite*"
+          - "@vitejs/*"
+          - "typescript*"
+      linting:
+        patterns:
+          - "eslint*"
+          - "prettier*"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    versioning-strategy: increase
+
+  # GitHub Actions - workflow dependencies
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "03:00"
+    labels:
+      - "dependencies"
+      - "ci"
+    commit-message:
+      prefix: "ci"
+    reviewers:
+      - "xiaden"
+
+  # Docker - Dockerfile base images
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "03:00"
+    labels:
+      - "dependencies"
+      - "docker"
+    commit-message:
+      prefix: "docker"
+    reviewers:
+      - "xiaden"
+
+  # code-intel - Independent MCP server (will be split to separate repo)
+  - package-ecosystem: "pip"
+    directory: "/code-intel"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "03:00"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "code-intel"
+    commit-message:
+      prefix: "deps(code-intel)"
+    reviewers:
+      - "xiaden"
+    versioning-strategy: increase
