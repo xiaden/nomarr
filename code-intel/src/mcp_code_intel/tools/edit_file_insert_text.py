@@ -41,10 +41,10 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
-from mcp_code_intel.file_helpers import (
+from mcp_code_intel.helpers.file_helpers import (
     atomic_write,
+    check_mtime,
     extract_context,
-    format_context_with_line_numbers,
     group_ops_by_file,
     read_file_with_metadata,
     resolve_file_path,
@@ -219,6 +219,7 @@ def _apply_insertions_to_file(
 
     content = file_data["content"]
     eol = file_data["eol"]
+    original_mtime = file_data["mtime"]
     lines = content.split("\n")
 
     # Parse operations and sort bottom-to-top (descending line order)
@@ -244,7 +245,7 @@ def _apply_insertions_to_file(
 
         # Extract context (changed region ± 2 lines)
         context_lines, context_start = extract_context(lines, start_line, end_line)
-        formatted_context = format_context_with_line_numbers(context_lines, context_start)
+        formatted_context = "\n".join(context_lines)
 
         applied_ops.append(
             AppliedOp(
@@ -256,6 +257,18 @@ def _apply_insertions_to_file(
                 bytes_written=None,  # Not computed for insertions
             ),
         )
+
+
+    # Check mtime before write (detect concurrent modification)
+    mtime_error = check_mtime(file_path, original_mtime)
+    if mtime_error:
+        return [], [
+            FailedOp(
+                index=ops_for_file[0][0],
+                filepath=str(file_path),
+                reason=mtime_error,
+            ),
+        ]
 
     # Write modified content atomically
     new_content = "\n".join(lines)

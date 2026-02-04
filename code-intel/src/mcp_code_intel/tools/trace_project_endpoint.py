@@ -18,7 +18,7 @@ Usage:
 
 from __future__ import annotations
 
-__all__ = ["trace_endpoint"]
+__all__ = ["trace_project_endpoint"]
 
 import argparse
 import ast
@@ -378,7 +378,7 @@ def main() -> int:
 
     args = parser.parse_args()
 
-    result = trace_endpoint(args.endpoint)
+    result = trace_project_endpoint(args.endpoint)
 
     sys.stdout.write(json.dumps(result, indent=2) + "\n")
 

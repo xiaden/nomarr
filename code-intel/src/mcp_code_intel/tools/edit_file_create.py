@@ -33,9 +33,8 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 from pydantic import ValidationError as PydanticValidationError
 
-from mcp_code_intel.file_helpers import (
+from mcp_code_intel.helpers.file_helpers import (
     atomic_write,
-    format_context_with_line_numbers,
     resolve_path_for_create,
 )
 from mcp_code_intel.response_models import (
@@ -159,37 +158,38 @@ def _create_files_atomically(
 def _build_success_response(
     validated_ops: list[tuple[int, CreateOp, Path]],
 ) -> list[AppliedOp]:
-    """Build success response with context for all created files."""
+    """Build success response for all created files."""
     applied_ops: list[AppliedOp] = []
 
     for idx, _create_op, resolved_path in validated_ops:
-        # Read created file to extract context
+        # Read created file to extract metadata
         content = resolved_path.read_text(encoding="utf-8")
         lines = content.split("\n")
+        line_count = len(lines)
+        bytes_written = len(content.encode("utf-8"))
 
-        # Return first ~52 lines
-        context_lines = lines[:52]
-        formatted_context = format_context_with_line_numbers(context_lines, 1)
+        # Simple validation context: "Created <path> (<bytes> bytes, <lines> lines)"
+        validation_msg = f"Created {resolved_path.name} ({bytes_written} bytes, {line_count} lines)"
 
         applied_ops.append(
             AppliedOp(
                 index=idx,
                 filepath=str(resolved_path),
                 start_line=1,
-                end_line=len(lines),
-                new_context=formatted_context,
-                bytes_written=len(content.encode("utf-8")),
+                end_line=line_count,
+                new_context=validation_msg,
+                bytes_written=bytes_written,
             ),
         )
 
     return applied_ops
 
 
-def edit_file_create(ops: list[dict], workspace_root: Path) -> dict:
+def edit_file_create(files: list[dict], workspace_root: Path) -> dict:
     """Create new files atomically with automatic parent directory creation.
 
     Args:
-        ops: List of CreateOp dicts
+        files: List of file dicts with 'path' and 'content'
         workspace_root: Workspace root path for resolution and security
 
     Returns:
@@ -199,11 +199,11 @@ def edit_file_create(ops: list[dict], workspace_root: Path) -> dict:
         - Creates parent directories automatically (mkdir -p always on)
         - Fails if any target file already exists
         - Atomic: all files created or none (complete rollback on failure)
-        - Returns first ~52 lines of each created file with line numbers
+        - Returns simple validation message with bytes and line count for each file
 
     """
     # Phase 1: Validate all operations
-    validated_ops, failed_ops = _validate_operations(ops, workspace_root)
+    validated_ops, failed_ops = _validate_operations(files, workspace_root)
 
     if failed_ops:
         return BatchResponse(

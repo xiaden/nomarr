@@ -172,7 +172,7 @@ Parser expects phases numbered 1, 2, 3... with no gaps.
 
 ## Complete Example
 
-If available, `plans/TASK-example-comprehensive.md` demonstrates all patterns.
+If available, `plans/examples/TASK-example-comprehensive.md` demonstrates all patterns.
 
 **Key characteristics of a good plan:**
 - Problem statement assumes reader has no context

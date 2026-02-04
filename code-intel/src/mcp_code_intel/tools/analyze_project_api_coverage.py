@@ -6,19 +6,8 @@ Returns structured JSON for AI consumption.
 Uses static AST parsing via helpers/route_parser.py - no app import required.
 """
 
-__all__ = ["project_check_api_coverage"]
-import re
-from collections import defaultdict
-from pathlib import Path
-from typing import Any
-
-from ..helpers.config_loader import (
-    get_frontend_config,
-    load_config,
-)
-from ..helpers.route_parser import build_full_paths, parse_interface_files
-
-# Project root
+__all__ = ["analyze_project_api_coverage"]
+import refrom collections import defaultdictfrom pathlib import Pathfrom typing import Anyfrom ..helpers.config_loader import (    get_frontend_config,    load_config,)from ..helpers.route_parser import build_full_paths, parse_interface_files# Project root
 ROOT = Path(__file__).parent.parent.parent.parent
 
 
@@ -100,32 +89,30 @@ def scan_frontend_usage(
 
     # Build glob patterns from file extensions
     glob_patterns = [f"*.{ext}" for ext in file_extensions]
-
     for glob_pattern in glob_patterns:
         for ts_file in frontend_dir.rglob(glob_pattern):
             if "node_modules" in str(ts_file):
                 continue
 
-        try:
-            content = ts_file.read_text(encoding="utf-8")
-            lines = content.split("\n")
+            try:
+                content = ts_file.read_text(encoding="utf-8")
+                lines = content.split("\n")
 
-            for line_num, line in enumerate(lines, start=1):
-                for match in endpoint_pattern.finditer(line):
-                    endpoint = match.group(1).split("?")[0]
-                    rel_path = ts_file.relative_to(ROOT).as_posix()
-                    usage_map[endpoint].append((rel_path, line_num))
+                for line_num, line in enumerate(lines, start=1):
+                    for match in endpoint_pattern.finditer(line):
+                        endpoint = match.group(1).split("?")[0]
+                        rel_path = ts_file.relative_to(ROOT).as_posix()
+                        usage_map[endpoint].append((rel_path, line_num))
 
-                for match in template_pattern.finditer(line):
-                    endpoint = match.group(1)
-                    endpoint_base = re.sub(r"\$\{[^}]+\}", "{param}", endpoint).split("?")[0]
-                    rel_path = ts_file.relative_to(ROOT).as_posix()
-                    usage_map[endpoint_base].append((rel_path, line_num))
+                    for match in template_pattern.finditer(line):
+                        endpoint = match.group(1)
+                        endpoint_base = re.sub(r"\$\{[^}]+\}", "{param}", endpoint).split("?")[0]
+                        rel_path = ts_file.relative_to(ROOT).as_posix()
+                        usage_map[endpoint_base].append((rel_path, line_num))
 
-        except (UnicodeDecodeError, OSError) as e:
-            rel_path = ts_file.relative_to(ROOT).as_posix()
-            errors.append(f"{rel_path}: {type(e).__name__}: {e}")
-
+            except (UnicodeDecodeError, OSError) as e:
+                rel_path = ts_file.relative_to(ROOT).as_posix()
+                errors.append(f"{rel_path}: {type(e).__name__}: {e}")
     return dict(usage_map), errors
 
 

@@ -6,7 +6,8 @@ All replacements are validated upfront and applied only if ALL succeed.
 
 from pathlib import Path
 
-from ..file_helpers import (
+from ..helpers.file_helpers import (
+    check_mtime,
     normalize_eol,
     read_file_with_metadata,
     resolve_file_path,
@@ -249,23 +250,17 @@ def _write_and_build_result(
 ) -> dict:
     """Check mtime, write if changed, and build result dict with new_context."""
     # Check mtime before write (detect concurrent modification)
-    current_mtime = target_path.stat().st_mtime
-    if current_mtime != original_mtime:
+    mtime_error = check_mtime(target_path, original_mtime)
+    if mtime_error:
         return {
             "path": rel_path,
-            "error": (
-                f"MTIME MISMATCH: File may have changed during operation. "
-                f"Expected mtime {original_mtime}, got {current_mtime}. "
-                f"Aborting to prevent data loss - re-read and retry if needed."
-            ),
+            "error": mtime_error,
             "changed": False,
             "details": [{
                 "old_string_preview": d.get("old_string_preview", ""),
                 "status": d["status"]
             } for d in details],
         }
-
-    # Check if content actually changed
     if new_content == content:
         return {
             "path": rel_path,

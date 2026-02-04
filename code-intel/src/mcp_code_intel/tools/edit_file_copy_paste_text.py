@@ -64,10 +64,10 @@ from typing import Any
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
-from mcp_code_intel.file_helpers import (
+from mcp_code_intel.helpers.file_helpers import (
     atomic_write,
+    check_mtime,
     extract_context,
-    format_context_with_line_numbers,
     read_file_with_metadata,
     resolve_file_path,
     validate_col,
@@ -388,6 +388,7 @@ def edit_file_copy_paste_text(ops: list[dict[str, Any]], workspace_root: Path) -
     # Phase 4: Apply insertions bottom-to-top per target file
     all_applied_ops: list[AppliedOp] = []
     original_contents: dict[Path, bytes] = {}
+    target_mtimes: dict[Path, float] = {}
 
     for target_path, target_ops in ops_by_target.items():
         # Backup original content
@@ -431,6 +432,7 @@ def edit_file_copy_paste_text(ops: list[dict[str, Any]], workspace_root: Path) -
 
         target_content = target_data["content"]
         target_eol = target_data["eol"]
+        target_mtimes[target_path] = target_data["mtime"]
         target_lines = target_content.split("\n")
 
         # Sort operations by target_line descending (bottom-to-top)
@@ -500,7 +502,7 @@ def edit_file_copy_paste_text(ops: list[dict[str, Any]], workspace_root: Path) -
 
             # Extract context for this operation
             context_lines, context_start = extract_context(target_lines, start_line, end_line)
-            formatted_context = format_context_with_line_numbers(context_lines, context_start)
+            formatted_context = "\n".join(context_lines)
 
             all_applied_ops.append(
                 AppliedOp(
@@ -513,7 +515,27 @@ def edit_file_copy_paste_text(ops: list[dict[str, Any]], workspace_root: Path) -
                 ),
             )
 
-        # Phase 5: Write modified target file atomically
+
+        # Phase 5: Check mtime, then write modified target file atomically
+        mtime_error = check_mtime(target_path, target_mtimes[target_path])
+        if mtime_error:
+            # Rollback
+            for path, backup in original_contents.items():
+                with contextlib.suppress(OSError):
+                    path.write_bytes(backup)
+
+            return BatchResponse(
+                status="failed",
+                failed_ops=[
+                    FailedOp(
+                        index=target_ops[0][0],
+                        filepath=str(target_path),
+                        reason=mtime_error,
+                    ),
+                ],
+            ).model_dump(exclude_none=True)
+
+
         new_content = "\n".join(target_lines)
         write_error = atomic_write(target_path, new_content, eol=target_eol)
         if write_error:

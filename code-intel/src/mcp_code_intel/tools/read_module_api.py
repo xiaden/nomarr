@@ -22,7 +22,7 @@ Usage:
 
 from __future__ import annotations
 
-__all__ = ["module_discover_api"]
+__all__ = ["read_module_api"]
 
 import argparse
 import ast
@@ -560,7 +560,7 @@ def main() -> int:
 
     args = parser.parse_args()
 
-    result = module_discover_api(
+    result = read_module_api(
         args.module,
         include_docstrings=not args.no_docs,
         include_inherited=not args.no_inherited,

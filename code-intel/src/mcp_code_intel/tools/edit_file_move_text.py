@@ -6,7 +6,10 @@ Supports both same-file moves and cross-file moves.
 
 from pathlib import Path
 
-from ..file_helpers import (
+from ..helpers.file_helpers import (
+    build_content,
+    check_mtime,
+    ensure_trailing_newline,
     normalize_eol,
     read_file_with_metadata,
     resolve_file_path,
@@ -64,8 +67,12 @@ def _perform_same_file_move(
     source_start: int,
     source_end: int,
     target_line: int,
-) -> list[str]:
-    """Extract lines from source and insert at target in same file."""
+) -> tuple[list[str], int]:
+    """Extract lines from source and insert at target in same file.
+
+    Returns:
+        Tuple of (modified lines, actual insertion line in final file)
+    """
     # Extract the lines to move
     lines_to_move = _extract_lines(lines, source_start, source_end)
 
@@ -78,38 +85,31 @@ def _perform_same_file_move(
         adjusted_target -= source_end - source_start + 1
 
     # Insert at target location
-    return _insert_lines(result, adjusted_target, lines_to_move)
+    return _insert_lines(result, adjusted_target, lines_to_move), adjusted_target
 
 
-def _check_mtime(path: Path, expected: float, label: str) -> dict | None:
-    """Check if file mtime matches expected. Returns error dict or None."""
-    current = path.stat().st_mtime
-    if current != expected:
-        return {
-            "error": (
-                f"MTIME MISMATCH: {label} may have changed during operation. "
-                f"Expected mtime {expected}, got {current}. "
-                f"Aborting to prevent data loss - re-read and retry if needed."
-            ),
-            "changed": False,
-        }
-    return None
 
+def _generate_context(lines: list[str], target_line: int, context_lines: int = 2) -> str:
+    """Generate context showing lines around target insertion point.
 
-def _ensure_trailing_newline(lines: list[str]) -> list[str]:
-    """Ensure last line has a newline for consistent handling."""
-    if lines and not lines[-1].endswith(("\n", "\r")):
-        lines = lines.copy()
-        lines[-1] += "\n"
-    return lines
+    Args:
+        lines: File lines after the move operation
+        target_line: Line where content was inserted (1-indexed)
+        context_lines: Number of lines to show before/after (default: 2)
 
+    Returns:
+        Formatted string with line numbers and content
+    """
+    start = max(1, target_line - context_lines)
+    end = min(len(lines), target_line + context_lines)
 
-def _build_content(lines: list[str], *, had_trailing_newline: bool) -> str:
-    """Join lines and optionally strip trailing newline."""
-    content = "".join(lines)
-    if not had_trailing_newline and content.endswith(("\n", "\r")):
-        content = content.rstrip("\r\n")
-    return content
+    context_parts = []
+    for i in range(start - 1, end):
+        line_num = i + 1
+        line_content = lines[i].rstrip('\n\r')
+        context_parts.append(f"   {line_num:3d} | {line_content}")
+
+    return "\n".join(context_parts)
 
 
 def _same_file_move(
@@ -139,7 +139,7 @@ def _same_file_move(
     had_trailing_newline = content.endswith(("\n", "\r"))
 
     lines = content.splitlines(keepends=True)
-    lines = _ensure_trailing_newline(lines)
+    lines = ensure_trailing_newline(lines)
     total_lines = len(lines)
 
     # Validate ranges
@@ -165,13 +165,13 @@ def _same_file_move(
         }
 
     # Perform the move
-    new_lines = _perform_same_file_move(lines, source_start, source_end, target_line)
-    new_content = _build_content(new_lines, had_trailing_newline=had_trailing_newline)
+    new_lines, actual_target = _perform_same_file_move(lines, source_start, source_end, target_line)
+    new_content = build_content(new_lines, had_trailing_newline=had_trailing_newline)
 
     # Check mtime before write
-    mtime_error = _check_mtime(source_path, original_mtime, "Source file")
+    mtime_error = check_mtime(source_path, original_mtime)
     if mtime_error:
-        return mtime_error
+        return {"error": mtime_error, "changed": False}
 
     # Check if content actually changed
     if new_content == content:
@@ -187,12 +187,16 @@ def _same_file_move(
     # Write
     source_path.write_bytes(new_content.encode("utf-8"))
 
+    # Generate context showing the result at actual insertion location
+    context = _generate_context(new_lines, actual_target)
+
     return {
         "path": rel_path,
         "changed": True,
         "lines_moved": source_end - source_start + 1,
         "source_range": {"start": source_start, "end": source_end},
         "target_line": target_line,
+        "new_context": context,
     }
 
 
@@ -219,7 +223,7 @@ def _cross_file_move(
 
     if isinstance(resolved_target, dict):
         # Target doesn't exist - try to resolve for creation
-        from ..file_helpers import resolve_path_for_create
+        from ..helpers.file_helpers import resolve_path_for_create
 
         create_result = resolve_path_for_create(target_file, workspace_root)
         if isinstance(create_result, dict):
@@ -256,7 +260,7 @@ def _cross_file_move(
         target_had_trailing = target_content.endswith(("\n", "\r"))
 
         target_lines = target_content.splitlines(keepends=True)
-        target_lines = _ensure_trailing_newline(target_lines)
+        target_lines = ensure_trailing_newline(target_lines)
     # Read source file
     source_data = read_file_with_metadata(source_path)
     if "error" in source_data:
@@ -268,7 +272,7 @@ def _cross_file_move(
     source_had_trailing = source_content.endswith(("\n", "\r"))
 
     source_lines = source_content.splitlines(keepends=True)
-    source_lines = _ensure_trailing_newline(source_lines)
+    source_lines = ensure_trailing_newline(source_lines)
     source_total = len(source_lines)
 
     target_total = len(target_lines)
@@ -293,28 +297,31 @@ def _cross_file_move(
 
     # Build new source content (lines removed)
     new_source_lines = _remove_lines(source_lines, source_start, source_end)
-    new_source_content = _build_content(new_source_lines, had_trailing_newline=source_had_trailing)
+    new_source_content = build_content(new_source_lines, had_trailing_newline=source_had_trailing)
 
     # Build new target content (lines inserted)
     new_target_lines = _insert_lines(target_lines, target_line, normalized_lines)
-    new_target_content = _build_content(new_target_lines, had_trailing_newline=target_had_trailing)
+    new_target_content = build_content(new_target_lines, had_trailing_newline=target_had_trailing)
 
     # Check both mtimes BEFORE writing either file
-    source_mtime_error = _check_mtime(source_path, source_mtime, "Source file")
+    source_mtime_error = check_mtime(source_path, source_mtime)
     if source_mtime_error:
-        return source_mtime_error
+        return {"error": source_mtime_error, "changed": False}
 
     # Only check target mtime if file existed (not if we just created it)
     if not target_created:
-        target_mtime_error = _check_mtime(target_path, target_mtime, "Target file")
+        target_mtime_error = check_mtime(target_path, target_mtime)
         if target_mtime_error:
-            return target_mtime_error
+            return {"error": target_mtime_error, "changed": False}
 
     # Write target first (if failure, we have duplication not loss)
     target_path.write_bytes(new_target_content.encode("utf-8"))
 
     # Write source second
     source_path.write_bytes(new_source_content.encode("utf-8"))
+
+    # Generate context showing the result at target location
+    context = _generate_context(new_target_lines, target_line)
 
     result = {
         "source_file": source_rel,
@@ -324,6 +331,7 @@ def _cross_file_move(
         "source_range": {"start": source_start, "end": source_end},
         "target_line": target_line,
         "target_created": target_created,
+        "new_context": context,
     }
 
     if target_created:
@@ -363,6 +371,7 @@ def edit_file_move_text(
         - lines_moved: Number of lines moved
         - source_range: {start, end} - original location in source
         - target_line: Line number where text was inserted
+        - new_context: Formatted context (2 lines before/after target location)
         - path: (same-file only) The file path
         - source_file, target_file: (cross-file only) Both file paths
         - error: Error message if operation fails

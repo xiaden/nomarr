@@ -18,8 +18,8 @@ class AppliedOp(BaseModel):
     filepath: str = Field(description="Absolute path to the file that was modified")
     start_line: int = Field(description="First line of changed region (post-change, 1-indexed)")
     end_line: int = Field(description="Last line of changed region (post-change, 1-indexed)")
-    new_context: list[str] = Field(
-        description="Changed region ±2 lines with line number prefixes",
+    new_context: str = Field(
+        description="Changed region preview (raw text)",
     )
     bytes_written: int | None = Field(None, description="Total bytes written to file")
 

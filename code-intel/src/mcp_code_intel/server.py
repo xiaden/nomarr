@@ -34,6 +34,7 @@ Task plan tools:
 
 File editing tools:
 - edit_file_replace_string: Apply multiple string replacements atomically (single write)
+- edit_file_replace_line_range: Replace line range with new content (line-anchored)
 - edit_file_move_text: Move lines within a file or between files atomically
 - edit_file_create: Create new files with mkdir -p behavior (atomic batch)
 - edit_file_replace_content: Replace entire file contents atomically
@@ -64,6 +65,9 @@ from .tools.edit_file_insert_text import edit_file_insert_text as edit_file_inse
 from .tools.edit_file_move_text import edit_file_move_text as edit_file_move_text_impl
 from .tools.edit_file_replace_content import (
     edit_file_replace_content as edit_file_replace_content_impl,
+)
+from .tools.edit_file_replace_line_range import (
+    edit_file_replace_line_range as edit_file_replace_line_range_impl,
 )
 
 # Import tool implementations with _impl suffix to avoid name collision
@@ -101,6 +105,7 @@ TOOL_IMPLS: dict[str, object] = {
     "read_file_line": read_file_line_impl,
     "read_file_line_range": read_file_range_impl,
     "edit_file_replace_content": edit_file_replace_content_impl,
+    "edit_file_replace_line_range": edit_file_replace_line_range_impl,
     "search_file_text": search_file_text_impl,
     "read_file_symbol_at_line": read_file_symbol_at_line_impl,
     "lint_project_backend": lint_project_backend_impl,
@@ -555,38 +560,44 @@ def plan_complete_step(
 
 @mcp.tool()
 def edit_file_create(
-    ops: Annotated[
+    files: Annotated[
         list[dict],
-        "List of CreateOp dicts with 'path' (str) and 'content' (str, default=\"\")",
+        "List of file dicts with 'path' (str) and 'content' (str, default=\"\")",
     ],
 ) -> dict:
     """Create new files atomically with automatic parent directory creation.
 
     Creates files in batch with mkdir -p behavior. Fails if any file exists.
     All files created or none (atomic rollback on any failure).
-    Returns first ~52 lines of each created file with line numbers.
+    Returns first 2 + last 2 lines of each created file for validation.
     """
-    return edit_file_create_impl(ops, workspace_root=ROOT)
+    return edit_file_create_impl(files, workspace_root=ROOT)
 
 
 @mcp.tool()
 def edit_file_replace_content(
     ops: Annotated[
         list[dict],
-        "List of ReplaceOp dicts with 'path' (str) and 'content' (str)",
+        "List of file dicts with 'path' (str) and 'content' (str)",
     ],
 ) -> dict:
     """Replace entire file contents atomically.
 
     Fails if any file doesn't exist. Overwrites entire contents.
     All files replaced or none (atomic rollback on any failure).
-    Returns first 2 + last 2 lines with line numbers (not entire file).
+    Returns first 2 + last 2 lines for validation.
     """
-    from .tools.file_replace import ReplaceOp
+    from .tools.edit_file_replace_content import (
+        ReplaceOp,
+    )
+    from .tools.edit_file_replace_content import (
+        edit_file_replace_content as edit_file_replace_content_impl,
+    )
 
     parsed_ops = [ReplaceOp(**op) for op in ops]
-    response = file_replace_impl(parsed_ops, workspace_root=ROOT)
-    return response.model_dump(exclude_none=True)
+    return edit_file_replace_content_impl(parsed_ops, workspace_root=ROOT).model_dump(
+        exclude_none=True
+    )
 
 
 @mcp.tool()
@@ -632,6 +643,28 @@ def edit_file_copy_paste_text(
 def main() -> None:
     """Run the MCP server."""
     mcp.run()
+
+@mcp.tool()
+def edit_file_replace_line_range(
+    file_path: Annotated[str, "Workspace-relative or absolute path to the file to edit"],
+    start_line: Annotated[int, "First line to replace (1-indexed, inclusive)"],
+    end_line: Annotated[int, "Last line to replace (1-indexed, inclusive)"],
+    new_content: Annotated[str, "New content to insert (can be multiple lines)"],
+) -> dict:
+    """Replace a line range with new content.
+
+    Line-anchored replacement for deterministic edits when line numbers are known
+    from prior read operations. Removes ambiguity of string matching and reduces
+    blast radius compared to large block string replacements.
+
+    Use when:
+    - You just read a function with read_module_source and have exact line numbers
+    - You want to rewrite a specific block without string matching
+    - Formatters make string matching fragile
+
+    Returns context showing 2 lines before/after replaced region.
+    """
+    return edit_file_replace_line_range_impl(file_path, start_line, end_line, new_content, ROOT)
 
 
 # ──────────────────────────────────────────────────────────────────────

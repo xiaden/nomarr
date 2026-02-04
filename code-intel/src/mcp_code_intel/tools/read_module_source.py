@@ -15,7 +15,7 @@ Usage:
 
 from __future__ import annotations
 
-__all__ = ["module_get_source"]
+__all__ = ["read_module_source"]
 
 import ast
 import json
@@ -209,7 +209,7 @@ def main() -> int:
 
     args = parser.parse_args()
 
-    result = module_get_source(args.name, large_context=args.large_context)
+    result = read_module_source(args.name, large_context=args.large_context)
 
     print(json.dumps(result, indent=2))
 

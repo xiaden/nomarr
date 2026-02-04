@@ -13,9 +13,8 @@ from pydantic import BaseModel, Field
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from mcp_code_intel.file_helpers import (
+from mcp_code_intel.helpers.file_helpers import (
     atomic_write,
-    format_context_with_line_numbers,
     resolve_file_path,
 )
 from mcp_code_intel.response_models import AppliedOp, BatchResponse, FailedOp
@@ -163,16 +162,16 @@ def edit_file_replace_content(ops: list[ReplaceOp], workspace_root: Path) -> Bat
                 start_line = 1
                 end_line = len(lines)
 
-        # Format with line numbers (for display purposes)
+        # Format for display
         if context_lines and "..." not in context_lines:
-            formatted_context = format_context_with_line_numbers(context_lines, start_line)
+            formatted_context = "\n".join(context_lines)
         elif context_lines:
-            # Mixed with ellipsis - format parts separately
-            formatted_first = format_context_with_line_numbers(first_2, 1)
-            formatted_last = format_context_with_line_numbers(last_2, len(lines) - 1)
-            formatted_context = [*formatted_first, "...", "", *formatted_last]
+            # Mixed with ellipsis - format parts separately then join
+            formatted_first = "\n".join(first_2)
+            formatted_last = "\n".join(last_2)
+            formatted_context = f"{formatted_first}\n...\n\n{formatted_last}"
         else:
-            formatted_context = []
+            formatted_context = ""
 
         applied_ops.append(
             AppliedOp(
@@ -206,11 +205,11 @@ def main(ops: list[dict]) -> dict:
     # Parse ops into Pydantic models
     parsed_ops = [ReplaceOp(**op) for op in ops]
 
-    # Get workspace root (assume we're in scripts/mcp/tools/)
+    # Get workspace root (assume we're in tools/)
     workspace_root = Path(__file__).parent.parent.parent
 
     # Execute
-    response = file_replace(parsed_ops, workspace_root)
+    response = edit_file_replace_content(parsed_ops, workspace_root)
 
     return response.model_dump(exclude_none=True)
 

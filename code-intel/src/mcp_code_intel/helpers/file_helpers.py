@@ -48,26 +48,32 @@ def normalize_eol(text: str, target_eol: str) -> str:
         return normalized.replace("\n", "\r")
 
     return normalized
+def detect_eol(file_path: Path) -> str:
+    """Detect the line ending style used in a file.
 
-
-def detect_eol(content: str) -> str:
-    """Detect the line ending style used in content.
+    Uses binary read to detect line endings before decoding,
+    avoiding assumptions about file encoding.
 
     Args:
-        content: File content
+        file_path: Path to file
 
     Returns:
-        Detected EOL (CRLF, LF, or CR). Defaults to LF if no line endings found
+        Detected EOL (\r\n, \n, or \r). Defaults to \n if no line endings found
 
     """
-    if "\r\n" in content:
+    try:
+        raw_bytes = file_path.read_bytes()
+    except OSError:
+        return "\n"  # Default on read error
+
+    if b"\r\n" in raw_bytes:
         return "\r\n"
-    if "\n" in content:
+    if b"\n" in raw_bytes:
         return "\n"
-    if "\r" in content:
+    if b"\r" in raw_bytes:
         return "\r"
     return "\n"  # Default to Unix
-
+    return "\n"  # Default to Unix
 
 def read_file_with_metadata(file_path: Path) -> dict:
     """Read file and return content with metadata.
@@ -79,10 +85,14 @@ def read_file_with_metadata(file_path: Path) -> dict:
         dict with:
         - content: str - File content as UTF-8 text
         - mtime: float - File modification time
-        - eol: str - Detected line ending style
+        - eol: str - Detected line ending style (detected on raw bytes before decode)
         - error: str - Error message if read failed
 
     """
+    # Detect EOL on raw bytes first (before any encoding assumptions)
+    eol = detect_eol(file_path)
+
+    # Then read and decode content
     read_result = _try_read_file(file_path)
     if "error" in read_result:
         return read_result
@@ -93,8 +103,6 @@ def read_file_with_metadata(file_path: Path) -> dict:
         mtime = file_path.stat().st_mtime
     except OSError as e:
         return {"error": f"Failed to get file metadata: {e}"}
-
-    eol = detect_eol(content)
 
     # Check for tabs in leading whitespace
     lines = content.split("\n")
@@ -117,6 +125,7 @@ def read_file_with_metadata(file_path: Path) -> dict:
         "mtime": mtime,
         "eol": eol,
     }
+
 
 
 def resolve_file_path(file_path: str, workspace_root: Path) -> Path | dict:
@@ -354,3 +363,55 @@ def format_context_with_line_numbers(lines: list[str], start_line: int) -> list[
         formatted.append(f"{line_num:>{padding}} | {line}")
 
     return formatted
+
+
+
+def ensure_trailing_newline(lines: list[str]) -> list[str]:
+    """Ensure last line has a newline for consistent handling.
+
+    Args:
+        lines: List of lines (may or may not have trailing newlines)
+
+    Returns:
+        Copy of lines with trailing newline ensured on last line
+    """
+    if lines and not lines[-1].endswith(("\n", "\r")):
+        lines = lines.copy()
+        lines[-1] += "\n"
+    return lines
+
+
+def build_content(lines: list[str], *, had_trailing_newline: bool) -> str:
+    """Join lines and optionally strip trailing newline.
+
+    Args:
+        lines: List of lines to join
+        had_trailing_newline: Whether original file had trailing newline
+
+    Returns:
+        Joined content with trailing newline preserved per original
+    """
+    content = "".join(lines)
+    if not had_trailing_newline and content.endswith(("\n", "\r")):
+        content = content.rstrip("\r\n")
+    return content
+
+
+def check_mtime(path: Path, expected: float) -> str | None:
+    """Check if file mtime matches expected.
+
+    Args:
+        path: File path to check
+        expected: Expected mtime from prior read
+
+    Returns:
+        Error message if mismatch, None if matches
+    """
+    current = path.stat().st_mtime
+    if current != expected:
+        return (
+            f"MTIME MISMATCH: File may have changed during operation. "
+            f"Expected mtime {expected}, got {current}. "
+            f"Aborting to prevent data loss - re-read and retry if needed."
+        )
+    return None
