@@ -322,6 +322,7 @@ class Application:
         self.worker_system = WorkerSystemService(
             db=self.db,
             processor_config=processor_config,
+            health_monitor=self.health_monitor,
             worker_count=worker_count,
             default_enabled=self.worker_enabled_default,
         )

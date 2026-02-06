@@ -119,15 +119,18 @@ class SessionOperations:
         return self.delete_expired_sessions()
 
     def load_all(self) -> list[dict[str, Any]]:
-        """Load all sessions."""
+        """Load all non-expired sessions."""
+        now = now_ms().value
         cursor = cast(
             "Cursor",
             self.db.aql.execute(
                 """
             FOR session IN sessions
+                FILTER session.expiry_timestamp > @now
                 SORT session.created_at DESC
                 RETURN session
             """,
+                bind_vars=cast("dict[str, Any]", {"now": now}),
             ),
         )
         return list(cursor)

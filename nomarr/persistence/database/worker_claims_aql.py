@@ -144,7 +144,7 @@ class WorkerClaimsOperations:
                 """
                 FOR claim IN worker_claims
                     LET file = DOCUMENT(claim.file_id)
-                    FILTER file.tagged == 1 OR file.needs_tagging == 0
+                    FILTER file.tagged == true OR file.needs_tagging == false
                     REMOVE claim IN worker_claims
                     RETURN 1
                 """,
@@ -170,7 +170,7 @@ class WorkerClaimsOperations:
                 """
                 FOR claim IN worker_claims
                     LET file = DOCUMENT(claim.file_id)
-                    FILTER file == null OR file.needs_tagging == 0 OR file.is_valid == 0
+                    FILTER file == null OR file.needs_tagging == false OR file.is_valid == false
                     REMOVE claim IN worker_claims
                     RETURN 1
                 """,

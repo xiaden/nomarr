@@ -152,7 +152,7 @@ class InfoService:
             self._gpu_lifecycle_handler = _GPUMonitorLifecycleHandler(self)
             policy = ComponentPolicy(
                 startup_timeout_s=30.0,  # GPU probe may take time on cold start
-                staleness_interval_s=GPU_PROBE_INTERVAL_SECONDS,  # Check at probe interval
+                staleness_interval_s=GPU_PROBE_INTERVAL_SECONDS * 2.0,  # 2x interval for jitter tolerance
                 max_consecutive_misses=3,  # 3 missed probes = dead
             )
             self.cfg.health_monitor.register_component(

@@ -224,15 +224,15 @@ def _ensure_index(
     try:
         coll = db.collection(collection)
 
-        # Build index spec
-        spec = {"type": index_type, "fields": fields, "unique": unique, "sparse": sparse}
-
-        if index_type == "ttl" and expireAfter is not None:
-            spec["expireAfter"] = expireAfter
-
-        coll.add_persistent_index(fields=fields, unique=unique, sparse=sparse)
+        if index_type == "ttl":
+            # TTL indexes use a different method
+            expiry_time = expireAfter if expireAfter is not None else 0
+            coll.add_ttl_index(fields=fields, expiry_time=expiry_time)
+        else:
+            # Persistent, hash, etc.
+            coll.add_persistent_index(fields=fields, unique=unique, sparse=sparse)
     except IndexCreateError:
-        pass  # Index already exists
+        pass  # Index already exists  # Index already exists  # Index already exists  # Index already exists  # Index already exists  # Index already exists
 
 
 def _create_graphs(db: DatabaseLike) -> None:

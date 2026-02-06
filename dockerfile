@@ -52,7 +52,8 @@ ENV NOMARR_MODELS=/app/models \
     PORT=8356 \
     TF_CPP_MIN_LOG_LEVEL=2 \
     TF_FORCE_GPU_ALLOW_GROWTH=true \
-    TF_GPU_THREAD_MODE=gpu_private
+    TF_GPU_THREAD_MODE=gpu_private \
+    TF_DISABLE_JIT=1
 
 # ----------------------------------------------------------------------
 #  Healthcheck (internal)

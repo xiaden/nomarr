@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Worker configuration
-HEALTH_FRAME_INTERVAL_S = 5.0  # Send health frame every 5 seconds
+HEALTH_FRAME_INTERVAL_S = 3.0  # Send health frame every 3 seconds (faster than 5s staleness check)
 IDLE_SLEEP_S = 1.0  # Sleep when no work available
 MAX_CONSECUTIVE_ERRORS = 10  # Shutdown after this many consecutive failures
 CACHE_IDLE_TIMEOUT_S = 300  # Evict cache after 5 minutes of no work (matches default)
@@ -331,23 +331,38 @@ class DiscoveryWorker(multiprocessing.Process):
                         db=db,
                     )
 
-                    # Mark file as tagged (this sets needs_tagging=0, tagged=1)
-                    db.library_files.mark_file_tagged(file_id, config.tagger_version)
+                    # Check if file was skipped (e.g., audio too short)
+                    if result.heads_processed == 0 and result.tags_written == 0:
+                        # File was skipped - mark as tagged with special reason to avoid infinite retries
+                        logger.info(
+                            "[%s] Skipped %s (all heads skipped - likely too short)",
+                            self.worker_id,
+                            file_path,
+                        )
+                        # Mark as tagged so it doesn't get retried
+                        db.library_files.mark_file_tagged(file_id, config.tagger_version)
+                        release_claim(db, file_id)
+                        files_processed += 1
+                        consecutive_errors = 0  # Reset error counter - skip is not an error
+                    else:
+                        # File was successfully processed
+                        # Mark file as tagged (this sets needs_tagging=0, tagged=1)
+                        db.library_files.mark_file_tagged(file_id, config.tagger_version)
 
-                    # Release claim AFTER marking tagged
-                    release_claim(db, file_id)
+                        # Release claim AFTER marking tagged
+                        release_claim(db, file_id)
 
-                    files_processed += 1
-                    consecutive_errors = 0
+                        files_processed += 1
+                        consecutive_errors = 0
 
-                    logger.debug(
-                        "[%s] Completed %s in %.2fs (%d heads, %d tags)",
-                        self.worker_id,
-                        result.file_path,
-                        result.elapsed,
-                        result.heads_processed,
-                        result.tags_written,
-                    )
+                        logger.debug(
+                            "[%s] Completed %s in %.2fs (%d heads, %d tags)",
+                            self.worker_id,
+                            result.file_path,
+                            result.elapsed,
+                            result.heads_processed,
+                            result.tags_written,
+                        )
 
                 except Exception as e:
                     logger.exception("[%s] Error processing %s: %s", self.worker_id, file_id, e)

@@ -512,6 +512,29 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
         gc.collect()
         logger.debug(f"[processor] Released {backbone} embeddings and predictors from memory")
     if total_heads_succeeded == 0:
+        # Check if all heads were skipped (vs failed)
+        all_skipped = all(
+            result.get("status") == "skipped"
+            for result in all_head_results.values()
+        )
+        if all_skipped:
+            # All heads skipped due to short audio or other valid reasons
+            # Return early with skipped result instead of raising error
+            elapsed = round(internal_s().value - start_all.value, 2)
+            logger.info(
+                f"[processor] All heads skipped for {path} (e.g., audio too short) - returning empty result"
+            )
+            return ProcessFileResult(
+                file_path=path,
+                elapsed=elapsed,
+                duration=duration_final,
+                heads_processed=0,
+                tags_written=0,
+                head_results=all_head_results,
+                mood_aggregations=None,
+                tags=Tags.from_dict({}),
+            )
+        # Some heads failed (not skipped) - this is an error
         msg = "No heads produced decisions; refusing to write tags"
         raise RuntimeError(msg)
     mood_tags = _collect_mood_outputs(regression_heads, all_head_outputs, config.models_dir, config, db)

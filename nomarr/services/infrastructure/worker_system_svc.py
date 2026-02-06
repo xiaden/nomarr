@@ -56,6 +56,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_HEARTBEAT_TIMEOUT_MS = 30_000
 
 # Default worker health monitoring policy
+# NOTE: Worker sends heartbeats every 3s, monitor checks every 5s
+# This 3s < 5s relationship provides buffer for timing jitter and prevents false unhealthy states
 DEFAULT_WORKER_POLICY = ComponentPolicy(
     startup_timeout_s=60.0,  # Workers may take time to load models
     staleness_interval_s=5.0,  # Expect health frame every 5s
