@@ -329,6 +329,7 @@ class DiscoveryWorker(multiprocessing.Process):
                         path=file_path,
                         config=config,
                         db=db,
+                        file_id=file_id,
                     )
 
                     # Check if file was skipped (e.g., audio too short)

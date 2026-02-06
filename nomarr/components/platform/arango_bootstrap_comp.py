@@ -85,6 +85,8 @@ def _create_indexes(db: DatabaseLike) -> None:
     # library_files indexes
     _ensure_index(db, "library_files", "persistent", ["library_id"])
     _ensure_index(db, "library_files", "persistent", ["library_id", "path"], unique=True)
+    _ensure_index(db, "library_files", "persistent", ["library_id", "normalized_path"], unique=True)
+    _ensure_index(db, "library_files", "persistent", ["normalized_path"])  # Normalized path lookups
     _ensure_index(
         db,
         "library_files",

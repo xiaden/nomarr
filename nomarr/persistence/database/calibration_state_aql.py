@@ -74,7 +74,7 @@ class CalibrationStateOperations:
 
               // Compute integer bin index (avoid floating-point drift)
               LET bin_idx_raw = FLOOR((value - lo) / bin_width)
-              LET bin_idx = MIN(MAX(bin_idx_raw, 0), @max_bin)
+              LET bin_idx = MIN([MAX([bin_idx_raw, 0]), @max_bin])
 
               // Out-of-range flags
               LET is_underflow = value < lo
@@ -171,7 +171,7 @@ class CalibrationStateOperations:
               LET value = tag.value
 
               LET bin_idx_raw = FLOOR((value - lo) / bin_width)
-              LET bin_idx = MIN(MAX(bin_idx_raw, 0), @max_bin)
+              LET bin_idx = MIN([MAX([bin_idx_raw, 0]), @max_bin])
 
               LET is_underflow = value < lo
               LET is_overflow = value > hi

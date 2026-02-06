@@ -38,6 +38,10 @@ class LibraryFilesOperations:
     ) -> str:
         """Insert or update a library file entry.
 
+        Uses (library_id, normalized_path) as upsert key, matching batch upsert.
+        Stores both absolute path (for filesystem access) and normalized_path
+        (POSIX relative path for identity).
+
         Note: calibration_hash field remains NULL until first recalibration.
         Initial processing stores raw scores only.
 
@@ -66,14 +70,17 @@ class LibraryFilesOperations:
             raise ValueError(msg)
 
         scanned_at = now_ms().value
+        normalized_path = str(path.relative)
+        absolute_path = str(path.absolute)
         cursor = cast(
             "Cursor",
             self.db.aql.execute(
                 """
-            UPSERT { library_id: @library_id, path: @path }
+            UPSERT { library_id: @library_id, normalized_path: @normalized_path }
             INSERT {
                 library_id: @library_id,
                 path: @path,
+                normalized_path: @normalized_path,
                 file_size: @file_size,
                 modified_time: @modified_time,
                 duration_seconds: @duration_seconds,
@@ -98,6 +105,7 @@ class LibraryFilesOperations:
             }
             UPDATE {
                 library_id: @library_id,
+                path: @path,
                 file_size: @file_size,
                 modified_time: @modified_time,
                 duration_seconds: @duration_seconds,
@@ -116,7 +124,8 @@ class LibraryFilesOperations:
                     "dict[str, Any]",
                     {
                         "library_id": library_id,
-                        "path": str(path.relative),  # Store relative path
+                        "path": absolute_path,
+                        "normalized_path": normalized_path,
                         "file_size": file_size,
                         "modified_time": modified_time,
                         "duration_seconds": duration_seconds,
@@ -133,7 +142,7 @@ class LibraryFilesOperations:
         )
 
         result = next(cursor)
-        return str(result)  # Returns _id (e.g., "library_files/12345")  # Returns _id (e.g., "library_files/12345")
+        return str(result)  # Returns _id (e.g., "library_files/12345")  # Returns _id (e.g., "library_files/12345")  # Returns _id (e.g., "library_files/12345")
 
     def mark_file_tagged(self, file_id: str, tagged_version: str) -> None:
         """Mark file as tagged.
@@ -213,7 +222,7 @@ class LibraryFilesOperations:
                         RETURN {
                             key: tag.rel,
                             value: tag.value,
-                            type: "string",
+                            type: IS_NUMBER(tag.value) ? "float" : "string",
                             is_nomarr: STARTS_WITH(tag.rel, "nom:")
                         }
                 )
@@ -277,6 +286,7 @@ class LibraryFilesOperations:
                                 RETURN {
                                     key: t2.rel,
                                     value: t2.value,
+                                    type: IS_NUMBER(t2.value) ? "float" : "string",
                                     is_nomarr: STARTS_WITH(t2.rel, "nom:")
                                 }
                         )
@@ -320,6 +330,7 @@ class LibraryFilesOperations:
                                 RETURN {
                                     key: t2.rel,
                                     value: t2.value,
+                                    type: IS_NUMBER(t2.value) ? "float" : "string",
                                     is_nomarr: STARTS_WITH(t2.rel, "nom:")
                                 }
                         )
@@ -340,22 +351,26 @@ class LibraryFilesOperations:
     def get_library_file(self, path: str, library_id: int | None = None) -> dict[str, Any] | None:
         """Get library file by path.
 
+        Searches by normalized_path first (canonical identity), then falls back
+        to absolute path for compatibility with existing documents.
+
         Args:
-            path: File path (relative to library root)
+            path: File path (absolute or relative to library root)
             library_id: Optional library ID to restrict search
 
         Returns:
             File dict or None if not found
 
         """
+        # Search by normalized_path first, then fall back to absolute path
         query = """
             FOR file IN library_files
-                FILTER file.path == @path
+                FILTER file.normalized_path == @path OR file.path == @path
         """
         bind_vars: dict[str, Any] = {"path": path}
 
         if library_id is not None:
-            query += " AND file.library_id == @library_id"
+            query += " FILTER file.library_id == @library_id"
             bind_vars["library_id"] = library_id
 
         query += """
@@ -1132,6 +1147,7 @@ class LibraryFilesOperations:
                         RETURN {{
                             key: tag.rel,
                             value: tag.value,
+                            type: IS_NUMBER(tag.value) ? "float" : "string",
                             is_nomarr: STARTS_WITH(tag.rel, "nom:")
                         }}
                 )

@@ -19,14 +19,67 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
-def sync_file_to_library(db: Database, file_path: str, metadata: dict[str, Any], namespace: str, tagged_version: str | None, library_id: str | None) -> None:
+
+def _sync_tags_and_entities(
+    db: Database,
+    file_id: str,
+    file_path: str,
+    metadata: dict[str, Any],
+    namespace: str,
+    tagged_version: str | None,
+) -> None:
+    """Write tags, seed entities, and update metadata for a known file.
+
+    Internal helper — assumes file_id is valid. Called by sync_file_to_library
+    for both the fast path (file_id known) and slow path (after upsert).
+
+    Args:
+        db: Database instance
+        file_id: Document _id (e.g., "library_files/12345")
+        file_path: Absolute path (for logging only)
+        metadata: Pre-extracted metadata dict
+        namespace: Tag namespace
+        tagged_version: Tagger version if file was tagged
+
+    """
+    all_tags = metadata.get("all_tags", {})
+    nom_tags = metadata.get("nom_tags", {})
+    if metadata.get("genre"):
+        all_tags["genre"] = metadata["genre"]
+    if metadata.get("year"):
+        all_tags["year"] = metadata["year"]
+    if metadata.get("track_number"):
+        all_tags["track_number"] = metadata["track_number"]
+    parsed_all_tags = parse_tag_values(all_tags) if all_tags else {}
+    parsed_nom_tags = parse_tag_values(nom_tags) if nom_tags else {}
+    for rel, values in parsed_all_tags.items():
+        db.tags.set_song_tags(file_id, rel, values)
+    for rel, values in parsed_nom_tags.items():
+        nomarr_rel = f"nom:{rel}" if not rel.startswith("nom:") else rel
+        db.tags.set_song_tags(file_id, nomarr_rel, values)
+    try:
+        entity_tags = {"artist": metadata.get("artist"), "artists": metadata.get("artists"), "album": metadata.get("album"), "label": metadata.get("label"), "genre": metadata.get("genre"), "year": metadata.get("year")}
+        seed_song_entities_from_tags(db, file_id, entity_tags)
+        rebuild_song_metadata_cache(db, file_id)
+        logger.debug(f"[sync_file_to_library] Seeded entities for {file_path}")
+    except Exception as entity_error:
+        logger.warning(f"[sync_file_to_library] Failed to seed entities: {entity_error}")
+    chromaprint = metadata.get("chromaprint")
+    if chromaprint:
+        db.library_files.set_chromaprint(file_id, chromaprint)
+        logger.debug(f"[sync_file_to_library] Stored chromaprint for {file_path}")
+    if tagged_version:
+        db.library_files.mark_file_tagged(file_id, tagged_version)
+    logger.debug(f"[sync_file_to_library] Synced {file_path}")
+
+def sync_file_to_library(db: Database, file_path: str, metadata: dict[str, Any], namespace: str, tagged_version: str | None, library_id: str | None, file_id: str | None = None) -> None:
     """Sync a file's metadata and tags to the library database.
 
     This is the canonical workflow for syncing file state to the database,
     used by both the library scanner and the processor after tagging.
 
     Orchestrates:
-    1. Library domain: Validate path, upsert library_files record
+    1. Library domain: Update library_files record (by _id when available)
     2. Tagging domain: Parse and upsert file_tags (external + nomarr tags)
     3. Metadata domain: Seed entity graph and rebuild cache
 
@@ -37,6 +90,8 @@ def sync_file_to_library(db: Database, file_path: str, metadata: dict[str, Any],
         namespace: Tag namespace (e.g., "nom")
         tagged_version: Tagger version if file was tagged, None otherwise
         library_id: Optional library ID (will auto-detect if None)
+        file_id: Document _id from library_files. When provided, skips
+            path-based upsert and uses direct _id lookup instead.
 
     Returns:
         None (updates database in-place)
@@ -46,6 +101,14 @@ def sync_file_to_library(db: Database, file_path: str, metadata: dict[str, Any],
 
     """
     try:
+        if file_id is not None:
+            # Fast path: we already know the document _id (from worker flow)
+            # Skip path-based upsert — the scanner already created this document
+            _sync_tags_and_entities(db, file_id, file_path, metadata, namespace, tagged_version)
+            return
+
+        # Slow path: no file_id provided, need path-based lookup
+        # This path is used by the scanner's initial sync
         if library_id is None:
             library = db.libraries.find_library_containing_path(file_path)
             if not library:
@@ -68,35 +131,7 @@ def sync_file_to_library(db: Database, file_path: str, metadata: dict[str, Any],
         if not file_record:
             logger.warning(f"[sync_file_to_library] File record not found after upsert: {file_path}")
             return
-        file_id = str(file_record["_id"])
-        all_tags = metadata.get("all_tags", {})
-        nom_tags = metadata.get("nom_tags", {})
-        if metadata.get("genre"):
-            all_tags["genre"] = metadata["genre"]
-        if metadata.get("year"):
-            all_tags["year"] = metadata["year"]
-        if metadata.get("track_number"):
-            all_tags["track_number"] = metadata["track_number"]
-        parsed_all_tags = parse_tag_values(all_tags) if all_tags else {}
-        parsed_nom_tags = parse_tag_values(nom_tags) if nom_tags else {}
-        for rel, values in parsed_all_tags.items():
-            db.tags.set_song_tags(file_id, rel, values)
-        for rel, values in parsed_nom_tags.items():
-            nomarr_rel = f"nom:{rel}" if not rel.startswith("nom:") else rel
-            db.tags.set_song_tags(file_id, nomarr_rel, values)
-        try:
-            entity_tags = {"artist": metadata.get("artist"), "artists": metadata.get("artists"), "album": metadata.get("album"), "label": metadata.get("label"), "genre": metadata.get("genre"), "year": metadata.get("year")}
-            seed_song_entities_from_tags(db, file_id, entity_tags)
-            rebuild_song_metadata_cache(db, file_id)
-            logger.debug(f"[sync_file_to_library] Seeded entities for {file_path}")
-        except Exception as entity_error:
-            logger.warning(f"[sync_file_to_library] Failed to seed entities: {entity_error}")
-        chromaprint = metadata.get("chromaprint")
-        if chromaprint:
-            db.library_files.set_chromaprint(file_id, chromaprint)
-            logger.debug(f"[sync_file_to_library] Stored chromaprint for {file_path}")
-        if tagged_version:
-            db.library_files.mark_file_tagged(file_id, tagged_version)
-        logger.debug(f"[sync_file_to_library] Synced {file_path}")
+        resolved_file_id = str(file_record["_id"])
+        _sync_tags_and_entities(db, resolved_file_id, file_path, metadata, namespace, tagged_version)
     except Exception as e:
         logger.warning(f"[sync_file_to_library] Failed to sync {file_path}: {e}")
