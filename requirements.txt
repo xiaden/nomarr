@@ -14,7 +14,7 @@ requests==2.32.3
 bcrypt==4.2.1
 python-arango==7.9.0
 watchdog==6.0.0
-psutil==7.2.1
+psutil==7.2.2
 
 # Testing dependencies
 pytest==8.3.3
