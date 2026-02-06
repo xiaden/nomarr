@@ -51,9 +51,16 @@ from pathlib import Path
 from typing import Annotated
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import CallToolResult
 from pydantic import BaseModel, Field
 
 from .helpers.config_loader import load_config
+from .helpers.mcp_output_helper import (
+    format_file_link,
+    format_file_range_link,
+    wrap_mcp_result,
+    wrap_mcp_result_with_file_link,
+)
 from .tools.analyze_project_api_coverage import (
     analyze_project_api_coverage as analyze_project_api_coverage_impl,
 )
@@ -252,14 +259,19 @@ def list_project_directory_tree(
             "Use forward slashes: 'nomarr/services'"
         ),
     ] = "",
-) -> dict:
+) -> CallToolResult:
     """List directory contents with smart filtering.
 
     Root call: shows only top-level files + folder tree (minimal tokens).
     Specific folder: shows files at that level.
     Excludes: .venv, node_modules, __pycache__, etc.
     """
-    return list_project_directory_tree_impl(folder, workspace_root=ROOT)
+    result = list_project_directory_tree_impl(folder, workspace_root=ROOT)
+    return wrap_mcp_result(
+        result,
+        user_summary=f"Listed directory: {folder or 'root'}",
+        tool_name="list_project_directory_tree",
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -272,9 +284,14 @@ def list_project_directory_tree(
 @mcp.tool()
 def read_module_api(
     module_name: Annotated[str, "Fully qualified module name (e.g., 'nomarr.components.ml')"],
-) -> dict:
+) -> CallToolResult:
     """Discover the entire API of any Python module."""
-    return read_module_api_impl(module_name)
+    result = read_module_api_impl(module_name)
+    return wrap_mcp_result(
+        result,
+        user_summary=f"Read API for module: {module_name}",
+        tool_name="read_module_api",
+    )
 
 
 @mcp.tool()
@@ -284,20 +301,29 @@ def read_module_source(
     ],
     *,
     large_context: Annotated[bool, "If True, include 10 lines context (default: 2 lines)"] = False,
-) -> dict:
+) -> CallToolResult:
     """Get source code of a Python function, method, or class by import path.
 
-    Uses static AST parsing (no code execution). Always includes 2 lines of context
-    before/after for edit operations. Set large_context=True for 10 lines.
+    Uses static AST parsing (no code execution). Returns symbol with context lines
+    plus exact symbol boundaries for precise replacements.
+
+    Returns:
+        - line/line_count: Context range (includes surrounding lines for reading)
+        - symbol_start_line/symbol_end_line: Actual symbol boundaries (use for replacements)
     """
-    return read_module_source_impl(qualified_name, large_context=large_context)
+    result = read_module_source_impl(qualified_name, large_context=large_context)
+    return wrap_mcp_result(
+        result,
+        user_summary=f"Read source: {qualified_name}",
+        tool_name="read_module_source",
+    )
 
 
 @mcp.tool()
 def read_file_symbol_at_line(
     file_path: Annotated[str, "Absolute or relative path to Python file"],
     line_number: Annotated[int, "Line number (1-indexed) from error message or trace"],
-) -> dict:
+) -> CallToolResult:
     """Get full function/method/class containing a line for contextual understanding.
 
     Use for: NameError, TypeError, logic errors, or understanding behavior at a specific line.
@@ -305,7 +331,15 @@ def read_file_symbol_at_line(
 
     Returns the innermost containing symbol so you can reason about full context.
     """
-    return read_file_symbol_at_line_impl(file_path, line_number, ROOT)
+    result = read_file_symbol_at_line_impl(file_path, line_number, ROOT)
+    return wrap_mcp_result_with_file_link(
+        result,
+        file_path=file_path,
+        start_line=line_number,
+        end_line=line_number,
+        action="Read symbol at",
+        tool_name="read_file_symbol_at_line",
+    )
 
 
 @mcp.tool()
@@ -315,13 +349,18 @@ def locate_module_symbol(
         "Symbol name (simple or partially qualified): 'ApplyCalibrationResponse', "
         "'components.FolderScanPlan', 'ConfigService.get_config'",
     ],
-) -> dict:
+) -> CallToolResult:
     """Find all definitions of a symbol by name across the codebase.
 
     Searches all Python files in configured search paths for classes, functions, or variables.
     Supports partially qualified names for scoping (e.g., 'services.ConfigService').
     """
-    return locate_module_symbol_impl(symbol_name)
+    result = locate_module_symbol_impl(symbol_name)
+    return wrap_mcp_result(
+        result,
+        user_summary=f"Located symbol: {symbol_name}",
+        tool_name="locate_module_symbol",
+    )
 
 
 @mcp.tool()
@@ -333,22 +372,32 @@ def trace_module_calls(
             "(e.g., 'nomarr.services.domain.library_svc.LibraryService.start_scan')"
         ),
     ],
-) -> dict:
+) -> CallToolResult:
     """Trace the call chain from a function down through the codebase.
 
     Shows every nomarr function it calls, recursively, with file paths and line numbers.
     """
-    return trace_module_calls_impl(function, ROOT, config=_config)
+    result = trace_module_calls_impl(function, ROOT, config=_config)
+    return wrap_mcp_result(
+        result,
+        user_summary=f"Traced calls from: {function}",
+        tool_name="trace_module_calls",
+    )
 
 
 @mcp.tool()
-def list_project_routes() -> dict:
+def list_project_routes() -> CallToolResult:
     """List all API routes by static analysis.
 
     Parses @router decorators from source files. Returns routes with method, path,
     function, file, and line.
     """
-    return list_project_routes_impl(ROOT, config=_config)
+    result = list_project_routes_impl(ROOT, config=_config)
+    return wrap_mcp_result(
+        result,
+        user_summary="Listed all API routes",
+        tool_name="list_project_routes",
+    )
 
 
 @mcp.tool()
@@ -356,7 +405,7 @@ def trace_project_endpoint(
     endpoint: Annotated[
         str, "Fully qualified endpoint name (e.g., 'nomarr.interfaces.api.web.info_if.web_info')"
     ],
-) -> dict:
+) -> CallToolResult:
     """Trace an API endpoint through FastAPI DI to service methods.
 
     Higher-level tool that:
@@ -367,7 +416,12 @@ def trace_project_endpoint(
 
     Use this for interface endpoints to get the complete picture without manual DI resolution.
     """
-    return trace_project_endpoint_impl(endpoint, ROOT, config=_config)
+    result = trace_project_endpoint_impl(endpoint, ROOT, config=_config)
+    return wrap_mcp_result(
+        result,
+        user_summary=f"Traced endpoint: {endpoint}",
+        tool_name="trace_project_endpoint",
+    )
 
 
 @mcp.tool()
@@ -379,13 +433,18 @@ def analyze_project_api_coverage(
     route_path: Annotated[
         str | None, "Specific route to check (e.g., '/api/web/libraries')"
     ] = None,
-) -> dict:
+) -> CallToolResult:
     """Check which backend API endpoints are used by the frontend.
 
     Filter modes: 'used', 'unused', or None for all endpoints.
     """
-    return analyze_project_api_coverage_impl(
+    result = analyze_project_api_coverage_impl(
         filter_mode=filter_mode, route_path=route_path, config=_config
+    )
+    return wrap_mcp_result(
+        result,
+        user_summary="Analyzed API coverage",
+        tool_name="analyze_project_api_coverage",
     )
 
 
@@ -397,20 +456,30 @@ def lint_project_backend(
     *,
     check_all: Annotated[
         bool,
-        "If True, lint all files in path; if False, only lint modified files (git diff).",
+        "If True, lint all files in path; if False, only lint modified and untracked files.",
     ] = False,
-) -> dict:
+) -> CallToolResult:
     """Run backend linting tools on specified path.
 
     Runs ruff, mypy, and import-linter (for directories only).
     """
-    return lint_project_backend_impl(path, check_all)
+    result = lint_project_backend_impl(path, check_all)
+    return wrap_mcp_result(
+        result,
+        user_summary=f"Linted backend: {path or 'nomarr/'}",
+        tool_name="lint_project_backend",
+    )
 
 
 @mcp.tool()
-def lint_project_frontend() -> dict:
+def lint_project_frontend() -> CallToolResult:
     """Run frontend linting tools (ESLint and TypeScript)."""
-    return lint_project_frontend_impl()
+    result = lint_project_frontend_impl()
+    return wrap_mcp_result(
+        result,
+        user_summary="Linted frontend",
+        tool_name="lint_project_frontend",
+    )
 
 
 @mcp.tool()
@@ -428,16 +497,27 @@ def read_file_line_range(
             "Useful for debugging undefined symbols."
         ),
     ] = False,
-) -> dict:
-    """Read line range from non-Python files (YAML, TS, CSS, configs) or when Python tools
-    return 'too large'.
+) -> CallToolResult:
+    """Read line range from non-Python files (YAML, TS, CSS, configs) or when Python AST
+    tools cannot parse the file (syntax errors, malformed code).
 
-    Fallback tool for non-Python files. Maximum 100 lines per read.
+    Returns requested range PLUS 2 lines of context before/after for replacement safety.
+    Example: Request lines 10-20 → Returns lines 8-22 (if file has enough lines).
+
+    Fallback tool for non-Python files. Maximum 100 lines per read (including context).
     Warns when used on Python files - prefer module_discover_api, module_get_source,
     or module_locate_symbol instead.
     """
-    return read_file_range_impl(
+    result = read_file_range_impl(
         file_path, start_line, end_line, ROOT, include_imports=include_imports
+    )
+    return wrap_mcp_result_with_file_link(
+        result,
+        file_path=file_path,
+        start_line=start_line,
+        end_line=end_line,
+        action="Read",
+        tool_name="read_file_line_range",
     )
 
 
@@ -453,23 +533,39 @@ def read_file_line(
             "Useful for debugging undefined symbols."
         ),
     ] = False,
-) -> dict:
-    """Quick error context (1 line + 2 around) for trivial fixes.
+) -> CallToolResult:
+    """Quick error context - returns target line with 2 lines before/after (5 lines total).
+
+    Example: Request line 50 → Returns lines 48-52.
     Use file_symbol_at_line for complex errors.
 
     For Python files, prefer module_discover_api, module_get_source, or module_locate_symbol
     for structured navigation.
     """
-    return read_file_line_impl(file_path, line_number, ROOT, include_imports=include_imports)
+    result = read_file_line_impl(file_path, line_number, ROOT, include_imports=include_imports)
+    return wrap_mcp_result_with_file_link(
+        result,
+        file_path=file_path,
+        start_line=line_number,
+        end_line=line_number,
+        action="Read",
+        tool_name="read_file_line",
+    )
 
 
 @mcp.tool()
 def search_file_text(
     file_path: Annotated[str, "Workspace-relative or absolute path to the file to search"],
     search_string: Annotated[str, "Exact text to search for (case-sensitive)"],
-) -> dict:
+) -> CallToolResult:
     """Find exact text in non-Python files (configs, frontend, logs) and show 2-line context."""
-    return search_file_text_impl(file_path, search_string, ROOT)
+    result = search_file_text_impl(file_path, search_string, ROOT)
+    file_link = format_file_link(file_path, ROOT)
+    return wrap_mcp_result(
+        result,
+        user_summary=f"Searched {file_link} for: {search_string}",
+        tool_name="search_file_text",
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -484,14 +580,20 @@ def edit_file_replace_string(
         list[dict],
         "List of {old_string, new_string} dicts. Applied in order, each on result of previous.",
     ],
-) -> dict:
+) -> CallToolResult:
     """Apply multiple string replacements atomically (single write).
 
     All replacements are applied in-memory before writing to disk.
     This avoids issues with auto-formatters running between edits.
     Each old_string must match exactly once (ambiguous matches are skipped).
     """
-    return edit_file_replace_string_impl(file_path, replacements, ROOT)
+    result = edit_file_replace_string_impl(file_path, replacements, ROOT)
+    file_link = format_file_link(file_path, ROOT)
+    return wrap_mcp_result(
+        result,
+        user_summary=f"Edited {file_link}: {len(replacements)} replacements",
+        tool_name="edit_file_replace_string",
+    )
 
 
 @mcp.tool()
@@ -504,15 +606,47 @@ def edit_file_move_text(
         str | None,
         "Target file for cross-file moves. If None, moves within the same file.",
     ] = None,
-) -> dict:
+) -> CallToolResult:
     """Move lines within a file or between files.
 
     Same-file: Extracts source lines and inserts them before target_line.
     Cross-file: Removes lines from source file and inserts into target file.
     Atomic operation - each file is only written once after all changes computed.
     """
-    return edit_file_move_text_impl(
+    result = edit_file_move_text_impl(
         file_path, source_start, source_end, target_line, ROOT, target_file
+    )
+    file_link = format_file_link(file_path, ROOT)
+    return wrap_mcp_result(
+        result,
+        user_summary=f"Moved lines {source_start}-{source_end} in {file_link}",
+        tool_name="edit_file_move_text",
+    )
+
+
+@mcp.tool()
+def edit_file_replace_line_range(
+    file_path: Annotated[str, "Workspace-relative or absolute path to the file to edit"],
+    start_line: Annotated[int, "First line to replace (1-indexed, inclusive)"],
+    end_line: Annotated[int, "Last line to replace (1-indexed, inclusive)"],
+    new_content: Annotated[str, "New content to insert (can be multiple lines)"],
+) -> CallToolResult:
+    """Replace a line range with new content.
+
+    Line-anchored replacement for deterministic edits when line numbers are known
+    from prior read operations. Removes ambiguity of string matching and reduces
+    blast radius compared to large block string replacements.
+
+    Use when:
+    - You just read a function with read_module_source and have exact line numbers
+    - You want to rewrite a specific block without string matching
+    - Formatters make string matching fragile
+    Returns context showing 2 lines before/after replaced region.
+    """
+    result = edit_file_replace_line_range_impl(file_path, start_line, end_line, new_content, ROOT)
+    file_link = format_file_range_link(file_path, start_line, end_line, ROOT)
+    return wrap_mcp_result(
+        result, user_summary=f"Replaced {file_link}", tool_name="edit_file_replace_line_range"
     )
 
 
@@ -526,13 +660,18 @@ def plan_read(
     plan_name: Annotated[
         str, "Plan name (with or without .md extension), e.g., 'TASK-refactor-library'"
     ],
-) -> dict:
+) -> CallToolResult:
     """Read a task plan and return structured JSON summary.
 
     Parses the entire plan markdown into a structured representation.
     Returns phases with steps, completion status, notes, and next step info.
     """
-    return plan_read_impl(plan_name, workspace_root=ROOT)
+    result = plan_read_impl(plan_name, workspace_root=ROOT)
+    return wrap_mcp_result(
+        result,
+        user_summary=f"Read plan: {plan_name}",
+        tool_name="plan_read",
+    )
 
 
 @mcp.tool()
@@ -545,7 +684,7 @@ def plan_complete_step(
         StepAnnotation | None,
         "Optional annotation to add under the step after marking complete.",
     ] = None,
-) -> dict:
+) -> CallToolResult:
     """Mark a step as complete in a task plan.
 
     Idempotent: safe to call multiple times on the same step.
@@ -555,7 +694,12 @@ def plan_complete_step(
     """
     # Convert Pydantic model to dict for the implementation
     ann_dict = annotation.model_dump() if annotation else None
-    return plan_complete_step_impl(plan_name, step_id, workspace_root=ROOT, annotation=ann_dict)
+    result = plan_complete_step_impl(plan_name, step_id, workspace_root=ROOT, annotation=ann_dict)
+    return wrap_mcp_result(
+        result,
+        user_summary=f"Completed step {step_id} in {plan_name}",
+        tool_name="plan_complete_step",
+    )
 
 
 @mcp.tool()
@@ -564,14 +708,16 @@ def edit_file_create(
         list[dict],
         "List of file dicts with 'path' (str) and 'content' (str, default=\"\")",
     ],
-) -> dict:
+) -> CallToolResult:
     """Create new files atomically with automatic parent directory creation.
 
     Creates files in batch with mkdir -p behavior. Fails if any file exists.
     All files created or none (atomic rollback on any failure).
     Returns first 2 + last 2 lines of each created file for validation.
     """
-    return edit_file_create_impl(files, workspace_root=ROOT)
+    result = edit_file_create_impl(files, workspace_root=ROOT)
+    user_summary = f"Created {len(files)} file(s)"
+    return wrap_mcp_result(result, user_summary, tool_name="edit_file_create")
 
 
 @mcp.tool()
@@ -580,7 +726,7 @@ def edit_file_replace_content(
         list[dict],
         "List of file dicts with 'path' (str) and 'content' (str)",
     ],
-) -> dict:
+) -> CallToolResult:
     """Replace entire file contents atomically.
 
     Fails if any file doesn't exist. Overwrites entire contents.
@@ -595,9 +741,11 @@ def edit_file_replace_content(
     )
 
     parsed_ops = [ReplaceOp(**op) for op in ops]
-    return edit_file_replace_content_impl(parsed_ops, workspace_root=ROOT).model_dump(
+    result = edit_file_replace_content_impl(parsed_ops, workspace_root=ROOT).model_dump(
         exclude_none=True
     )
+    user_summary = f"Replaced content in {len(ops)} file(s)"
+    return wrap_mcp_result(result, user_summary, tool_name="edit_file_replace_content")
 
 
 @mcp.tool()
@@ -610,7 +758,7 @@ def edit_file_insert_text(
             "optional 'col' (int, None=BOL, -1=EOL)"
         ),
     ],
-) -> dict:
+) -> CallToolResult:
     """Insert text at specific positions without string matching.
 
     Supports 4 insertion modes: bof, eof, before_line, after_line.
@@ -618,7 +766,9 @@ def edit_file_insert_text(
     Row+col mode: Character-precise insertion.
     For same-file ops: coordinates refer to ORIGINAL state, applied bottom-to-top.
     """
-    return edit_file_insert_text_impl(ops, workspace_root=ROOT)
+    result = edit_file_insert_text_impl(ops, workspace_root=ROOT)
+    user_summary = f"Inserted text in {len(ops)} location(s)"
+    return wrap_mcp_result(result, user_summary, tool_name="edit_file_insert_text")
 
 
 @mcp.tool()
@@ -628,43 +778,17 @@ def edit_file_copy_paste_text(
         "List of CopyPasteOp dicts with source_path, source_start_line, source_end_line, "
         "target_path, target_line, optional source_start_col/source_end_col/target_col",
     ],
-) -> dict:
+) -> CallToolResult:
     """Copy text from sources and paste to targets atomically.
 
-    Primary use case: 'stamp decorator 50 times' across files.
     Sources read-only (cached per unique range). Targets must exist.
     Line-only mode (all col=None): Copy/paste full lines.
     Row+col mode: Character-precise copy/paste.
     For same-file targets: coordinates refer to ORIGINAL state.
     """
-    return edit_file_copy_paste_text_impl(ops, workspace_root=ROOT)
-
-
-def main() -> None:
-    """Run the MCP server."""
-    mcp.run()
-
-@mcp.tool()
-def edit_file_replace_line_range(
-    file_path: Annotated[str, "Workspace-relative or absolute path to the file to edit"],
-    start_line: Annotated[int, "First line to replace (1-indexed, inclusive)"],
-    end_line: Annotated[int, "Last line to replace (1-indexed, inclusive)"],
-    new_content: Annotated[str, "New content to insert (can be multiple lines)"],
-) -> dict:
-    """Replace a line range with new content.
-
-    Line-anchored replacement for deterministic edits when line numbers are known
-    from prior read operations. Removes ambiguity of string matching and reduces
-    blast radius compared to large block string replacements.
-
-    Use when:
-    - You just read a function with read_module_source and have exact line numbers
-    - You want to rewrite a specific block without string matching
-    - Formatters make string matching fragile
-
-    Returns context showing 2 lines before/after replaced region.
-    """
-    return edit_file_replace_line_range_impl(file_path, start_line, end_line, new_content, ROOT)
+    result = edit_file_copy_paste_text_impl(ops, workspace_root=ROOT)
+    user_summary = f"Copied and pasted text in {len(ops)} operation(s)"
+    return wrap_mcp_result(result, user_summary, tool_name="edit_file_copy_paste_text")
 
 
 # ──────────────────────────────────────────────────────────────────────
