@@ -308,7 +308,7 @@ class TestRealWorldPlans:
         if not plan_path.exists():
             pytest.skip("Example plan not found")
 
-        content = plan_path.read_text(encoding="utf-8")
+        content = plan_path.read_bytes().decode("utf-8")
         plan = parse_plan(content)
 
         # Basic structure checks
@@ -327,7 +327,7 @@ class TestRealWorldPlans:
         if not plan_path.exists():
             pytest.skip("Example plan not found")
 
-        content = plan_path.read_text(encoding="utf-8")
+        content = plan_path.read_bytes().decode("utf-8")
         plan = parse_plan(content)
 
         # Should have step with annotations
@@ -347,7 +347,7 @@ class TestRealWorldPlans:
         if not plan_path.exists():
             pytest.skip("Example plan not found")
 
-        content = plan_path.read_text(encoding="utf-8")
+        content = plan_path.read_bytes().decode("utf-8")
         # This file has no phases, should parse without error (just unusual structure)
         plan = parse_plan(content)
         assert len(plan.phases) == 0  # No valid phase headers
