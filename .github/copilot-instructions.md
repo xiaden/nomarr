@@ -26,21 +26,21 @@ Layer-specific guidance auto-applies based on file paths. What follows are the h
 
 **These requirements are NOT optional. Skipping them creates architectural debt and bugs.**
 
-### 1. Layer-Specific Instructions (Auto-Applied)
+### 1. Layer-Specific Instructions
 
-**Layer-specific instructions automatically apply when editing files in their target directories.**
+**When editing files in layer directories, consult the corresponding instruction file if the patterns or requirements are unclear.**
 
-Instructions are stored in `.github/instructions/` and use the `applyTo` frontmatter property to auto-apply:
+Instructions are stored in `.github/instructions/` and organized by layer:
 
-| Path Pattern | Instruction File | Auto-Applies To |
-|--------------|------------------|-----------------|
-| `nomarr/interfaces/` | `interfaces.instructions.md` | `nomarr/interfaces/**` |
-| `nomarr/services/` | `services.instructions.md` | `nomarr/services/**` |
-| `nomarr/workflows/` | `workflows.instructions.md` | `nomarr/workflows/**` |
-| `nomarr/components/` | `components.instructions.md` | `nomarr/components/**` |
-| `nomarr/persistence/` | `persistence.instructions.md` | `nomarr/persistence/**` |
-| `nomarr/helpers/` | `helpers.instructions.md` | `nomarr/helpers/**` |
-| `frontend/` | `frontend.instructions.md` | `frontend/**` |
+| Path Pattern | Instruction File |
+|--------------|------------------|
+| `nomarr/interfaces/` | `interfaces.instructions.md` |
+| `nomarr/services/` | `services.instructions.md` |
+| `nomarr/workflows/` | `workflows.instructions.md` |
+| `nomarr/components/` | `components.instructions.md` |
+| `nomarr/persistence/` | `persistence.instructions.md` |
+| `nomarr/helpers/` | `helpers.instructions.md` |
+| `frontend/` | `frontend.instructions.md` |
 
 These instructions contain:
 - Layer-specific conventions and patterns
@@ -49,7 +49,7 @@ These instructions contain:
 - File naming and structure rules
 - MCP server tools relevant to the layer
 
-**You do not need to manually read these files** - they are automatically included in context when working in their target directories.
+**These files may be automatically loaded based on file paths being edited. If you're uncertain about layer requirements, explicitly read the file.**
 
 ### 2. Use MCP `read_module_api` Before Editing Modules
 
@@ -144,6 +144,17 @@ These tools understand FastAPI DI and nomarr's architecture. Serena is a fallbac
 - `edit_file_insert_text` - Insert at precise positions (bof, eof, before_line, after_line) without string matching
 - `edit_file_copy_paste_text` - Copy text from sources to targets with caching (batch boilerplate duplication)
 
+**Additional atomic edit operations:**
+
+- `edit_file_replace_string` - Apply multiple string replacements atomically (single write, avoids formatter issues)
+- `edit_file_replace_line_range` - Replace specific line range with new content (use when you have exact line numbers)
+- `edit_file_move_text` - Move lines within same file or across files atomically
+
+**Discovery tools:**
+
+- `list_project_routes` - List all FastAPI routes from @router decorators
+- `search_file_text` - Find exact text in non-Python files with 2-line context
+
 **When to use each tool:**
 
 | Use Case | Tool | Why |
@@ -222,8 +233,6 @@ Create a task plan in `plans/` (e.g., `TASK-refactor-library-service.md`) follow
 
 These files are parsed by `code-intel/src/mcp_code_intel/helpers/plan_md.py` and consumed by plan MCP tools. Invalid structure = task blocked.
 
-**Serena memories have proven ineffective for cross-session context in this codebase** - the instructions file and task plans serve that purpose better.
-
 #### 6. Standard VS Code Tools (LAST RESORT ONLY)
 
 **Only use these when MCP tools fail or for non-code files:**
@@ -250,6 +259,12 @@ The semantic tools answer the *real* question, not the proxy question:
 | Read file to find function | "What's the module API?" | `read_module_api` |
 | Check if import is wrong | "Is there a layer violation?" | `lint_project_backend` |
 
+**Common anti-pattern: Reading imports**
+- Imports are implementation details, not architectural facts
+- `trace_module_calls` shows actual call chains
+- `read_module_api` shows exported contract
+- Layer violations caught by `lint_project_backend`, not by inspecting imports
+
 The `read_file_range` warning on Python files isn't naggy - it's catching you using the wrong tool. Imports are never the question. Relationships are the question.
 
 **After fully completing a task**, if you reached a conclusion about tool usage that isn't captured here, add a new row. This is collective model wisdom—don't update mid-task.
@@ -259,6 +274,22 @@ The `read_file_range` warning on Python files isn't naggy - it's catching you us
 ## Pre-Alpha Policy
 
 Nomarr is **pre-alpha**. Break things if it makes the architecture cleaner. No migrations, legacy shims, or backwards compatibility. When you change contracts and something breaks, you fix the breakage—not by reverting, but by updating the callers. Priority is always clean architecture over preserving old code.
+
+**Do break:**
+- Change service method signatures to fix layer violations
+- Rename modules to match actual responsibilities
+- Delete unused code even if recently added
+- Refactor workflows to eliminate temporal coupling
+
+**Fix the breakage by:**
+- Updating all callers (use `find_referencing_symbols`)
+- Running `lint_project_backend` to find compile errors
+- Updating tests to match new contracts
+
+**Priority order:**
+1. Clean architecture (proper layers, clear contracts)
+2. Working code (passes lint + tests)
+3. Git history / preserving old code (irrelevant)
 
 ---
 
@@ -383,6 +414,15 @@ def my_tool(...) -> CallToolResult:
 
 **Use breadcrumb helpers for all file paths and qualified names in user summaries.**
 
+### Where Wrapping Happens
+
+**Automatic wrapping** in [code-intel/src/mcp_code_intel/server.py](code-intel/src/mcp_code_intel/server.py):
+- Every `@mcp.tool()` decorated function's return value passes through wrapper
+- Tool implementations in `tools/*.py` return raw domain objects
+- Server.py intercepts and adds audience targeting before returning to MCP client
+
+**You don't call `wrap_with_audience_targeting()` directly** - it's middleware in the MCP server request handler.
+
 ---
 ## Meta: Tool Usage Patterns
 
@@ -411,11 +451,40 @@ When you reach for `read_file_range` on Python code, stop and ask: **what am I a
 
 **Add to these tables when you discover new patterns.** Keep entries concise and actionable.
 
+### When to Update These Instructions
+
+**Add to copilot-instructions.md when:**
+- You made a tool choice mistake that wasted >5 minutes
+- You discovered a pattern that would help future contexts
+- A hard rule was missing and caused architectural violations
+
+**Don't add to instructions:**
+- Project-specific details (those go in layer-specific .instructions.md)
+- One-off workarounds for external library bugs
+- Temporary states during refactors
+
+**How to edit:**
+Use Serena's `insert_after_symbol` or `replace_symbol_body` on the markdown file, or `edit_file_replace_string` for targeted changes. Treat this file as code: test your change by re-reading the instructions to verify they parse correctly.
+
 ---
 
 ## Docker Test Environment
 
-Use `.docker/compose.yaml` to run containerized test environment (app + ArangoDB). **Primary use case: reproducing prod-reported issues that don't appear in native dev.** Also runs Playwright e2e tests (`npx playwright test`). See `.docker/` directory for compose files and commands.
+Use `.docker/compose.yaml` to run containerized test environment (app + ArangoDB). See `.docker/` directory for compose files and commands.
+
+### Docker vs Native Dev
+
+**Use Docker when:**
+- Reproducing prod-reported issues not visible in native dev
+- Running e2e tests with Playwright (`npx playwright test` in container)
+- Testing DB migration behavior
+- Verifying essentia audio analysis in prod-like environment
+
+**Use native dev when:**
+- Writing/debugging backend services (faster iteration)
+- Running lint/type checks
+- Unit/integration tests
+- Iterating on frontend components
 
 ---
 
