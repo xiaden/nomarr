@@ -47,7 +47,8 @@
 		"ruff.format.enable": true,
 		"diffEditor.experimental.showMoves": true,
 		"diffEditor.hideUnchangedRegions.enabled": true,
-		"task.autoDetect": "on"
+		"task.autoDetect": "on",
+		"codeIntel.mcpServerPath": "D:\\Github\\nomarr\\code-intel\\src\\mcp_code_intel"
 	},
 	"extensions": {
 		"recommendations": [
