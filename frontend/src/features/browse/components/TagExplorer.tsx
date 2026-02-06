@@ -222,7 +222,7 @@ export function TagExplorer({ track }: TagExplorerProps) {
         <Panel sx={{ mt: 2 }}>
           <SimilarTracks
             tag={selectedTag}
-            currentTrackId={track.id}
+            currentTrackId={track.file_id}
             isNumeric={isNumericTag(selectedTag)}
           />
         </Panel>

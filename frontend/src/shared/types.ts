@@ -110,7 +110,7 @@ export interface ScanResult {
 }
 
 export interface LibraryFile {
-  id: string; // HTTP-encoded Arango _id (e.g., "library_files:123")
+  file_id: string; // HTTP-encoded Arango _id (e.g., "library_files:123")
   library_id: string; // HTTP-encoded Arango _id (e.g., "libraries:123")
   path: string;
   file_size?: number;
@@ -186,7 +186,7 @@ export interface FsListResponse {
 // ──────────────────────────────────────────────────────────────────────
 
 export interface Entity {
-  id: string; // Entity _id (e.g., 'artists/v1_abc123...')
+  entity_id: string; // Entity _id (e.g., 'artists:v1_abc123...')
   key: string; // Entity _key
   display_name: string; // Display string
   song_count?: number; // Optional song count

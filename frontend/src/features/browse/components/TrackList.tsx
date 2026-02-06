@@ -57,7 +57,7 @@ export function TrackList({
 
       // Preserve order from song_ids
       const trackMap = new Map(
-        filesResult.files.map((f: LibraryFile) => [f.id, f])
+        filesResult.files.map((f: LibraryFile) => [f.file_id, f])
       );
 
       const orderedTracks = songResult.song_ids
@@ -174,7 +174,7 @@ export function TrackList({
       <Stack spacing={1}>
         {filteredTracks.map((track, index) => (
           <Box
-            key={track.id}
+            key={track.file_id}
             sx={{
               bgcolor: "background.paper",
               border: 1,
@@ -184,7 +184,7 @@ export function TrackList({
             }}
           >
             <Box
-              onClick={() => toggleTrackDetails(track.id)}
+              onClick={() => toggleTrackDetails(track.file_id)}
               sx={{
                 display: "flex",
                 justifyContent: "space-between",
@@ -227,11 +227,11 @@ export function TrackList({
               </Box>
 
               <Typography color="text.disabled" sx={{ ml: 1 }}>
-                {expandedTrackId === track.id ? "▼" : "▶"}
+                {expandedTrackId === track.file_id ? "▼" : "▶"}
               </Typography>
             </Box>
 
-            {expandedTrackId === track.id && (
+            {expandedTrackId === track.file_id && (
               <Box
                 sx={{
                   p: 2,

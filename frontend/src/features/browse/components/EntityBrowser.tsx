@@ -169,8 +169,8 @@ export function EntityBrowser({ collection }: EntityBrowserProps) {
           <List dense>
             {entities.map((entity) => (
               <ListItemButton
-                key={entity.id}
-                selected={selectedEntity?.id === entity.id}
+                key={entity.entity_id}
+                selected={selectedEntity?.entity_id === entity.entity_id}
                 onClick={() => handleEntityClick(entity)}
               >
                 <ListItemText
@@ -216,7 +216,7 @@ export function EntityBrowser({ collection }: EntityBrowserProps) {
           </Panel>
         ) : (
           <TrackList
-            entityId={selectedEntity.id}
+            entityId={selectedEntity.entity_id}
             entityName={selectedEntity.display_name}
             collection={collection}
             relationType={getRelationType()}

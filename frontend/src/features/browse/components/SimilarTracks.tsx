@@ -46,7 +46,7 @@ export function SimilarTracks({
 
         const targetValue = parseFloat(tag.value);
         const tracksWithTag = result.files
-          .filter((f: LibraryFile) => f.id !== currentTrackId)
+          .filter((f: LibraryFile) => f.file_id !== currentTrackId)
           .map((track: LibraryFile) => {
             const trackTag = track.tags?.find((t: FileTag) => t.key === tag.key);
             const trackValue = trackTag ? parseFloat(trackTag.value) : null;
@@ -64,7 +64,7 @@ export function SimilarTracks({
             if (titleCmp !== 0) return titleCmp;
             const artistCmp = (a.track.artist || "").localeCompare(b.track.artist || "");
             if (artistCmp !== 0) return artistCmp;
-            return a.track.id.localeCompare(b.track.id);
+            return a.track.file_id.localeCompare(b.track.file_id);
           });
 
         setAllTracks(tracksWithTag);
@@ -76,7 +76,7 @@ export function SimilarTracks({
         });
 
         const filteredTracks = result.files
-          .filter((f: LibraryFile) => f.id !== currentTrackId)
+          .filter((f: LibraryFile) => f.file_id !== currentTrackId)
           .map((track: LibraryFile) => ({ track, diff: 0 }));
 
         setAllTracks(filteredTracks);
@@ -222,7 +222,7 @@ export function SimilarTracks({
             const tagValue = getTagValue(track);
             return (
               <Box
-                key={track.id}
+                key={track.file_id}
                 sx={{
                   p: 1.5,
                   bgcolor: "background.default",

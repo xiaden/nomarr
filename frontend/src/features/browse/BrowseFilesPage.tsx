@@ -244,7 +244,7 @@ export function BrowseFilesPage() {
         <Stack spacing={1}>
           {files.map((file) => (
             <Box
-              key={file.id}
+              key={file.file_id}
               sx={{
                 bgcolor: "background.paper",
                 border: 1,
@@ -254,7 +254,7 @@ export function BrowseFilesPage() {
               }}
             >
               <Box
-                onClick={() => toggleFileDetails(file.id)}
+                onClick={() => toggleFileDetails(file.file_id)}
                 sx={{
                   display: "flex",
                   justifyContent: "space-between",
@@ -291,11 +291,11 @@ export function BrowseFilesPage() {
                   </Typography>
                 </Box>
                 <Typography color="text.disabled">
-                  {expandedFileId === file.id ? "▼" : "▶"}
+                  {expandedFileId === file.file_id ? "▼" : "▶"}
                 </Typography>
               </Box>
 
-              {expandedFileId === file.id && (
+              {expandedFileId === file.file_id && (
                 <Box
                   sx={{
                     p: 2,

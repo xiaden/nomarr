@@ -12,7 +12,7 @@ export interface FileTag {
 }
 
 export interface LibraryFile {
-  id: string;
+  file_id: string;
   path: string;
   library_id: string;
   file_size?: number;

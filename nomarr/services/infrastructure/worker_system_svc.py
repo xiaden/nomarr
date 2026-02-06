@@ -60,8 +60,8 @@ DEFAULT_HEARTBEAT_TIMEOUT_MS = 30_000
 # This 3s < 5s relationship provides buffer for timing jitter and prevents false unhealthy states
 DEFAULT_WORKER_POLICY = ComponentPolicy(
     startup_timeout_s=60.0,  # Workers may take time to load models
-    staleness_interval_s=5.0,  # Expect health frame every 5s
-    max_consecutive_misses=3,  # 3 misses = 15s before dead
+    staleness_interval_s=9.0,  # Expect health frame every 9s
+    max_consecutive_misses=3,  # 3 misses = 27s before dead
     min_recovery_s=5.0,
     max_recovery_s=120.0,  # Allow up to 2 min recovery for heavy operations
 )

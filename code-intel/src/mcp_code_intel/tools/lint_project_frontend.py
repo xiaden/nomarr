@@ -10,10 +10,11 @@ __all__ = ["lint_project_frontend"]
 
 import re
 import subprocess
-from pathlib import Path
 from typing import Any
 
-project_root = Path(__file__).parent.parent.parent
+from mcp_code_intel.helpers.config_loader import get_workspace_root
+
+project_root = get_workspace_root()
 frontend_dir = project_root / "frontend"
 
 
@@ -108,7 +109,12 @@ def lint_project_frontend() -> dict[str, Any]:
     # 1. Run ESLint
     try:
         result = subprocess.run(
-            ["npm", "run", "lint"], capture_output=True, text=True, cwd=frontend_dir, shell=True
+            ["npm", "run", "lint"],
+            capture_output=True,
+            text=True,
+            cwd=frontend_dir,
+            stdin=subprocess.DEVNULL,
+            shell=True,
         )
         tools_run.append("eslint")
         all_errors.extend(parse_eslint_output(result.stdout, result.stderr))
@@ -133,6 +139,7 @@ def lint_project_frontend() -> dict[str, Any]:
             capture_output=True,
             text=True,
             cwd=frontend_dir,
+            stdin=subprocess.DEVNULL,
             shell=True,
         )
         tools_run.append("typescript")
@@ -151,9 +158,6 @@ def lint_project_frontend() -> dict[str, Any]:
             },
         )
 
-    # Count files checked
-    ts_files = len(list(frontend_dir.rglob("*.ts"))) + len(list(frontend_dir.rglob("*.tsx")))
-
     if all_errors:
         # Group errors by tool
         by_tool: dict[str, int] = {}
@@ -166,4 +170,4 @@ def lint_project_frontend() -> dict[str, Any]:
             "summary": {"total_errors": len(all_errors), "by_tool": by_tool},
             "errors": all_errors,
         }
-    return {"status": "clean", "summary": {"tools_run": tools_run, "files_checked": ts_files}}
+    return {"status": "clean", "summary": {"tools_run": tools_run}}

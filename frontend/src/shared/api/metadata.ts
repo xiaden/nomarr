@@ -78,7 +78,7 @@ export async function listSongsForEntity(
 }
 
 export interface Album {
-  id: string;
+  entity_id: string;
   display_name: string;
   song_count?: number;
 }

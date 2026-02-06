@@ -137,11 +137,11 @@ export function LibraryBrowser({ initialStep }: LibraryBrowserProps) {
         setTagBreadcrumbs([]);
         break;
       case "albums":
-        loadAlbums(step.artist.id);
+        loadAlbums(step.artist.entity_id);
         setTagBreadcrumbs([]);
         break;
       case "tracks":
-        loadTracks(step.album.id);
+        loadTracks(step.album.entity_id);
         setTagBreadcrumbs([]);
         break;
       case "tags":
@@ -174,8 +174,8 @@ export function LibraryBrowser({ initialStep }: LibraryBrowserProps) {
       // For tag-search results, we show tags but keep the tag breadcrumbs
       setStep({
         type: "tags",
-        artist: { id: "", key: "", display_name: artistName },
-        album: { id: "", display_name: albumName },
+        artist: { entity_id: "", key: "", display_name: artistName },
+        album: { entity_id: "", display_name: albumName },
         track,
       });
     }
@@ -281,7 +281,7 @@ export function LibraryBrowser({ initialStep }: LibraryBrowserProps) {
           <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
             <List dense sx={{ flex: 1, overflow: "auto" }}>
               {artists.map((artist) => (
-                <ListItemButton key={artist.id} onClick={() => handleArtistClick(artist)}>
+                <ListItemButton key={artist.entity_id} onClick={() => handleArtistClick(artist)}>
                   <ListItemIcon>
                     <Person />
                   </ListItemIcon>
@@ -335,7 +335,7 @@ export function LibraryBrowser({ initialStep }: LibraryBrowserProps) {
         return (
           <List dense>
             {albums.map((album) => (
-              <ListItemButton key={album.id} onClick={() => handleAlbumClick(album)}>
+              <ListItemButton key={album.entity_id} onClick={() => handleAlbumClick(album)}>
                 <ListItemIcon>
                   <AudioFile />
                 </ListItemIcon>
@@ -359,7 +359,7 @@ export function LibraryBrowser({ initialStep }: LibraryBrowserProps) {
         return (
           <List dense>
             {tracks.map((track) => (
-              <ListItemButton key={track.id} onClick={() => handleTrackClick(track)}>
+              <ListItemButton key={track.file_id} onClick={() => handleTrackClick(track)}>
                 <ListItemIcon>
                   <MusicNote />
                 </ListItemIcon>
