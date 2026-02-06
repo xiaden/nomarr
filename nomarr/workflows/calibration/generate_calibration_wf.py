@@ -563,8 +563,8 @@ def _run_progressive_calibration(
 
                 logger.debug(
                     f"[progressive_calibration] {head_key}: p5={calib_result['p5']:.4f} "
-                    f"(Δ{p5_delta:.4f if p5_delta else 'N/A'}), "
-                    f"p95={calib_result['p95']:.4f} (Δ{p95_delta:.4f if p95_delta else 'N/A'})",
+                    f"(Δ{f'{p5_delta:.4f}' if p5_delta is not None else 'N/A'}), "
+                    f"p95={calib_result['p95']:.4f} (Δ{f'{p95_delta:.4f}' if p95_delta is not None else 'N/A'})",
                 )
 
             except Exception as e:

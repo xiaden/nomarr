@@ -212,6 +212,18 @@ class CalibrationStateOperations:
 
         return list(cursor)  # type: ignore
 
+    @staticmethod
+    def _make_key(model_key: str, head_name: str) -> str:
+        """Build an ArangoDB-safe _key from model_key and head_name.
+
+        ArangoDB keys must not contain '/' or spaces.
+        Replaces '/' with '_', spaces with '_', colons kept (allowed).
+        """
+        import re
+
+        raw = f"{model_key}:{head_name}"
+        return re.sub(r"[^a-zA-Z0-9_:.@()+,=;$!*'%-]", "_", raw)
+
     def upsert_calibration_state(
         self,
         model_key: str,
@@ -227,7 +239,7 @@ class CalibrationStateOperations:
     ) -> None:
         """Upsert calibration_state document for a head.
 
-        Uses _key = "model_key:head_name" for stable identity.
+        Uses _key = sanitized "model_key:head_name" for stable identity.
         Overwrites existing document on version bump.
 
         Args:
@@ -244,7 +256,7 @@ class CalibrationStateOperations:
 
         """
         now_ms = int(__import__("time").time() * 1000)
-        _key = f"{model_key}:{head_name}"
+        _key = self._make_key(model_key, head_name)
 
         doc = {
             "_key": _key,
@@ -284,7 +296,7 @@ class CalibrationStateOperations:
             Calibration state document or None if not found
 
         """
-        _key = f"{model_key}:{head_name}"
+        _key = self._make_key(model_key, head_name)
         try:
             return self.collection.get(_key)  # type: ignore
         except Exception:
