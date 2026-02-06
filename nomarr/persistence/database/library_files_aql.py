@@ -542,7 +542,7 @@ class LibraryFilesOperations:
                     total_albums = COUNT_DISTINCT(file.album),
                     total_duration = SUM(file.duration_seconds),
                     total_size = SUM(file.file_size),
-                    needs_tagging_count = SUM(file.needs_tagging == 1 ? 1 : 0)
+                    needs_tagging_count = SUM(file.needs_tagging == true ? 1 : 0)
                 RETURN {{
                     total_files,
                     total_artists,
@@ -743,7 +743,7 @@ class LibraryFilesOperations:
             List of file dicts needing tagging
 
         """
-        filters = ["file.needs_tagging == 1", "file.is_valid == 1"]
+        filters = ["file.needs_tagging == true", "file.is_valid == true"]
         bind_vars: dict[str, Any] = {}
 
         if library_id is not None:
@@ -773,7 +773,7 @@ class LibraryFilesOperations:
         """Discover next file needing ML tagging for worker discovery.
 
         Query optimized for discovery-based workers:
-        - Filters: needs_tagging=1, is_valid=1
+        - Filters: needs_tagging=true, is_valid=true
         - Deterministic ordering by _key for consistent work distribution
         - LIMIT 1 for single-file claiming
 
@@ -1206,7 +1206,7 @@ class LibraryFilesOperations:
                 FOR file IN library_files
                     FILTER file.library_id == @library_id
                     FILTER file.last_seen_scan_id != @scan_id
-                    FILTER file.is_valid == 1
+                    FILTER file.is_valid == true
                     UPDATE file WITH { is_valid: 0 } IN library_files
                     COLLECT WITH COUNT INTO marked
                     RETURN marked
@@ -1277,7 +1277,7 @@ class LibraryFilesOperations:
             self.db.aql.execute(
                 """
                 FOR file IN library_files
-                    FILTER file.is_valid == true OR file.is_valid == 1
+                    FILTER file.is_valid == true
                     COLLECT library_id = file.library_id
                     AGGREGATE
                         file_count = COUNT(1),
