@@ -304,11 +304,20 @@ class Application:
 
             file_watcher = FileWatcherService(db=self.db, library_service=library_service, debounce_seconds=2.0)
             self.register_service("file_watcher", file_watcher)
-            try:
-                file_watcher.sync_watchers()
-                logger.info("[Application] File watchers synced with library collection")
-            except Exception as e:
-                logger.exception(f"[Application] Failed to sync file watchers: {e}")
+
+            # Sync watchers in background - observer.start() traverses the entire
+            # directory tree to register inotify watches, which blocks for large libraries.
+            # Nothing downstream depends on watchers being active at startup.
+            import threading
+
+            def _sync_watchers_bg() -> None:
+                try:
+                    file_watcher.sync_watchers()
+                    logger.info("[Application] File watchers synced with library collection")
+                except Exception:
+                    logger.exception("[Application] Failed to sync file watchers")
+
+            threading.Thread(target=_sync_watchers_bg, name="file-watcher-sync", daemon=True).start()
         else:
             logger.info("[Application] No library root configured, library service not started")
         from nomarr.services.domain.metadata_svc import MetadataService
