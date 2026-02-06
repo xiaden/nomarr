@@ -306,6 +306,7 @@ def _sync_to_database(
     namespace: str,
     tagger_version: str,
     chromaprint: str | None = None,
+    file_id: str | None = None,
 ) -> None:
     """Sync ML predictions to database only (NO file writes).
 
@@ -319,6 +320,7 @@ def _sync_to_database(
         namespace: Tag namespace
         tagger_version: Tagger version string
         chromaprint: Audio fingerprint hash for move detection
+        file_id: Document _id from library_files (avoids path-based re-lookup)
 
     """
     if db is None:
@@ -345,10 +347,11 @@ def _sync_to_database(
             namespace=namespace,
             tagged_version=tagger_version,
             library_id=None,
+            file_id=file_id,
         )
         logger.debug(f"[processor] Updated library database for {path} with {len(db_tags)} tags")
     except Exception as e:
-        logger.warning(f"[processor] Failed to update library database: {e}")
+        logger.exception(f"[processor] Failed to update library database for {path}: {e}")
 
 
 def select_tags_for_file(all_tags: dict[str, Any], file_write_mode: str) -> dict[str, Any]:
@@ -390,7 +393,7 @@ def select_tags_for_file(all_tags: dict[str, Any], file_write_mode: str) -> dict
     return filtered
 
 
-def process_file_workflow(path: str, config: ProcessorConfig, db: Database | None = None) -> ProcessFileResult:
+def process_file_workflow(path: str, config: ProcessorConfig, db: Database | None = None, file_id: str | None = None) -> ProcessFileResult:
     """Process an audio file through the complete tagging pipeline.
 
     This is the main workflow entrypoint for audio file processing. It is a pure
@@ -440,6 +443,8 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
                 calibrate_heads
         db: Optional Database instance for updating library_files and tags
             after successful processing. If None, library updates are skipped.
+        file_id: Document _id from library_files. When provided, avoids
+            path-based upsert/lookup during DB sync (prevents duplicates).
 
     Returns:
         ProcessFileResult with:
@@ -553,7 +558,7 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
             logger.debug(f"[processor]   {mood_key}: {len(mood_value)} terms")
     tags_accum[config.version_tag_key] = config.tagger_version
     db_tags = dict(tags_accum)
-    _sync_to_database(db, path, db_tags, config.namespace, config.tagger_version, chromaprint_from_ml)
+    _sync_to_database(db, path, db_tags, config.namespace, config.tagger_version, chromaprint_from_ml, file_id=file_id)
     elapsed = round(internal_s().value - start_all.value, 2)
     mood_info = {}
     for key in ["mood-strict", "mood-regular", "mood-loose"]:
