@@ -68,7 +68,7 @@ def plan_read(plan_name: str, workspace_root: Path) -> dict[str, Any]:
 
     # Parse and convert
     try:
-        markdown = plan_path.read_text(encoding="utf-8")
+        markdown = plan_path.read_bytes().decode("utf-8")
         plan = parse_plan(markdown)
         return plan_to_dict(plan)
     except Exception as e:

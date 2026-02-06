@@ -170,7 +170,7 @@ def plan_complete_step(
         }
 
     # Parse plan and convert to dict (single source of truth)
-    markdown = plan_path.read_text(encoding="utf-8")
+    markdown = plan_path.read_bytes().decode("utf-8")
     plan = parse_plan(markdown)
     plan_dict = plan_to_dict(plan)
 
@@ -199,10 +199,10 @@ def plan_complete_step(
 
     # Write back if step was marked complete or annotation was written
     if not was_already_complete or annotation_written:
-        plan_path.write_text(updated_markdown, encoding="utf-8")
+        plan_path.write_bytes(updated_markdown.encode("utf-8"))
 
     # Re-parse updated file and convert to dict (single source of truth for response)
-    updated_markdown = plan_path.read_text(encoding="utf-8")
+    updated_markdown = plan_path.read_bytes().decode("utf-8")
     updated_plan = parse_plan(updated_markdown)
     updated_dict = plan_to_dict(updated_plan)
 
