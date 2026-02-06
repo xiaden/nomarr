@@ -66,8 +66,8 @@ from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 from mcp_code_intel.helpers.file_helpers import (
     atomic_write,
+    build_new_context,
     check_mtime,
-    extract_context,
     read_file_with_metadata,
     resolve_file_path,
     validate_col,
@@ -501,8 +501,7 @@ def edit_file_copy_paste_text(ops: list[dict[str, Any]], workspace_root: Path) -
             target_lines, start_line, end_line = result
 
             # Extract context for this operation
-            context_lines, context_start = extract_context(target_lines, start_line, end_line)
-            formatted_context = "\n".join(context_lines)
+            formatted_context = build_new_context(target_lines, start_line, end_line)
 
             all_applied_ops.append(
                 AppliedOp(
@@ -514,7 +513,6 @@ def edit_file_copy_paste_text(ops: list[dict[str, Any]], workspace_root: Path) -
                     bytes_written=None,
                 ),
             )
-
 
         # Phase 5: Check mtime, then write modified target file atomically
         mtime_error = check_mtime(target_path, target_mtimes[target_path])
@@ -534,7 +532,6 @@ def edit_file_copy_paste_text(ops: list[dict[str, Any]], workspace_root: Path) -
                     ),
                 ],
             ).model_dump(exclude_none=True)
-
 
         new_content = "\n".join(target_lines)
         write_error = atomic_write(target_path, new_content, eol=target_eol)

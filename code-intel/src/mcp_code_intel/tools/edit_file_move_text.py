@@ -236,7 +236,7 @@ def _cross_file_move(
 
         # Create empty target file
         target_path.parent.mkdir(parents=True, exist_ok=True)
-        target_path.write_text("", encoding="utf-8")
+        target_path.write_bytes(b"")
 
         # Initialize target as empty
         target_content = ""

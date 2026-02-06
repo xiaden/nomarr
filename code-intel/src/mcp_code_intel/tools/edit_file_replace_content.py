@@ -223,8 +223,8 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
 
     # First create test files
-    Path("test_replace_1.txt").write_text("Original content\n")
-    Path("test_replace_2.txt").write_text("Line 1\nLine 2\nLine 3\n")
+    Path("test_replace_1.txt").write_bytes(b"Original content\n")
+    Path("test_replace_2.txt").write_bytes(b"Line 1\nLine 2\nLine 3\n")
 
     test_ops = [
         {"path": "test_replace_1.txt", "content": "Replaced content!\n"},

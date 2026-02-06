@@ -43,8 +43,8 @@ from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 from mcp_code_intel.helpers.file_helpers import (
     atomic_write,
+    build_new_context,
     check_mtime,
-    extract_context,
     group_ops_by_file,
     read_file_with_metadata,
     resolve_file_path,
@@ -243,9 +243,8 @@ def _apply_insertions_to_file(
 
         lines, start_line, end_line = result
 
-        # Extract context (changed region ± 2 lines)
-        context_lines, context_start = extract_context(lines, start_line, end_line)
-        formatted_context = "\n".join(context_lines)
+        # Build context using standard helper
+        formatted_context = build_new_context(lines, start_line, end_line)
 
         applied_ops.append(
             AppliedOp(
@@ -257,7 +256,6 @@ def _apply_insertions_to_file(
                 bytes_written=None,  # Not computed for insertions
             ),
         )
-
 
     # Check mtime before write (detect concurrent modification)
     mtime_error = check_mtime(file_path, original_mtime)

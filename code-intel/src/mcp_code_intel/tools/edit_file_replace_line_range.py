@@ -9,10 +9,9 @@ from pathlib import Path
 from ..helpers.file_helpers import (
     atomic_write,
     build_content,
+    build_new_context,
     check_mtime,
     ensure_trailing_newline,
-    extract_context,
-    format_context_with_line_numbers,
     read_file_with_metadata,
     resolve_file_path,
     validate_line_range,
@@ -157,14 +156,8 @@ def edit_file_replace_line_range(
     final_start = start_line
     final_end = start_line + new_line_count - 1
 
-    # Generate context using standard helpers
-    context_lines, context_start = extract_context(
-        result_lines, final_start, final_end, context_before=2, context_after=2
-    )
-    # Strip trailing newlines for formatting
-    context_lines_stripped = [line.rstrip("\n\r") for line in context_lines]
-    formatted_lines = format_context_with_line_numbers(context_lines_stripped, context_start)
-    context = "\n".join(formatted_lines)
+    # Build context using standard helper
+    context = build_new_context(result_lines, final_start, final_end)
 
     # Build response
     applied_op = AppliedOp(
