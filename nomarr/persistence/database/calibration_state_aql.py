@@ -88,7 +88,7 @@ class CalibrationStateOperations:
                 overflow_count = SUM(is_overflow ? 1 : 0)
 
               // Derive min_val from integer bin index (stable floating-point)
-              LET min_val = lo + (bin_index * bin_width)
+              LET min_val = @lo + (bin_index * @bin_width)
 
               SORT min_val ASC
 
@@ -182,7 +182,7 @@ class CalibrationStateOperations:
                 underflow_count = SUM(is_underflow ? 1 : 0),
                 overflow_count = SUM(is_overflow ? 1 : 0)
 
-              LET min_val = lo + (bin_index * bin_width)
+              LET min_val = @lo + (bin_index * @bin_width)
 
               SORT min_val ASC
 
