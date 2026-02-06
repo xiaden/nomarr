@@ -355,7 +355,7 @@ class DiscoveryWorker(multiprocessing.Process):
                         files_processed += 1
                         consecutive_errors = 0
 
-                        logger.debug(
+                        logger.info(
                             "[%s] Completed %s in %.2fs (%d heads, %d tags)",
                             self.worker_id,
                             result.file_path,
