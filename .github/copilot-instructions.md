@@ -342,6 +342,48 @@ Config is loaded once by `ConfigService` and passed via parameters. No global si
 
 ---
 
+## MCP Tool Return Pattern
+
+**All nomarr MCP tools use audience-targeted responses** to provide different content for users vs assistants.
+
+### Architecture
+
+- **Tools return domain objects only** (BatchResponse, dicts, Pydantic models)
+- **Server adds presentation layer** via `wrap_with_audience_targeting()` in `code-intel/src/mcp_code_intel/server.py`
+- **NO MCP protocol awareness in tool implementations** (`code-intel/src/mcp_code_intel/tools/`)
+
+### User Experience
+
+- **Users see summaries with breadcrumbs**: `"Edited 3 files: nomarr/services/domain/library_svc.py:142"`
+- **Assistants get structured data**: Full JSON with all details for reasoning
+- **Lint tools**: `"✓ All checks passed"` or `"✗ Lint failed: 5 errors in 3 files"` with breadcrumbs
+- **Trace tools**: `"LibraryService.scan_folder() calls 5 functions"` with call chains
+
+### Breadcrumb Helpers (server.py)
+
+- `make_workspace_relative(path)` - Strip workspace root, normalize to forward slashes
+- `format_qualified_name_breadcrumb(qualified_name)` - Shorten to `Class.method`
+- `format_file_location_breadcrumb(file, line)` - Format as `path/to/file.py:42`
+- `format_call_chain_breadcrumb(calls)` - Format as `A.method → B.method → C.method`
+
+### Implementation Pattern
+
+```python
+@mcp.tool()
+def my_tool(...) -> CallToolResult:
+    # Call domain tool implementation
+    result = my_tool_impl(...)
+    
+    # Format user-friendly summary with breadcrumbs
+    user_summary = format_result_for_user(result)
+    
+    # Wrap with audience targeting
+    return wrap_with_audience_targeting(result, user_summary, is_error=...)
+```
+
+**Use breadcrumb helpers for all file paths and qualified names in user summaries.**
+
+---
 ## Meta: Tool Usage Patterns
 
 **This section is living documentation.** When you complete a task and discover a pattern worth remembering, add it here. These are lessons for future contexts—including yourself.

@@ -1,8 +1,11 @@
 ---
-name: Task Plans
-description: Valid syntax for task plan markdown files parsed by mcp_code_intel
-applyTo: plans/**
+name: create-plan
+description: Create a valid task plan in plans/ following the schema
+agent: agent
+tools:
+  ['context7/*', 'nomarr_dev/analyze_project_api_coverage', 'nomarr_dev/edit_file_create', 'nomarr_dev/edit_file_insert_text', 'nomarr_dev/edit_file_replace_content', 'nomarr_dev/list_project_directory_tree', 'nomarr_dev/locate_module_symbol', 'nomarr_dev/plan_read', 'nomarr_dev/read_file_line_range', 'nomarr_dev/read_file_symbol_at_line', 'nomarr_dev/read_module_api', 'nomarr_dev/read_module_source', 'nomarr_dev/search_file_text', 'nomarr_dev/trace_module_calls', 'nomarr_dev/trace_project_endpoint', 'nomarr_dev/edit_file_replace_line_range']
 ---
+
 
 # Task Plan Creation and Syntax Guide
 
