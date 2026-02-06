@@ -6,6 +6,39 @@ Common file operations for reading, writing, and validating files.
 from pathlib import Path
 
 
+def read_text_safe(file_path: Path) -> str:
+    """Read text file using binary mode (no line ending conversion).
+
+    Use this instead of Path.read_text() to avoid Windows converting \r\n → \n.
+
+    Args:
+        file_path: Path to file
+
+    Returns:
+        File content as UTF-8 string
+
+    Raises:
+        FileNotFoundError, UnicodeDecodeError, PermissionError, OSError
+    """
+    return file_path.read_bytes().decode("utf-8")
+
+
+def write_text_safe(file_path: Path, content: str) -> None:
+    """Write text file using binary mode (no line ending conversion).
+
+    Use this instead of Path.write_text() to avoid Windows converting \n → \r\n,
+    which would turn existing \r\n into \r\r\n.
+
+    Args:
+        file_path: Path to file
+        content: Content to write (line endings preserved as-is)
+
+    Raises:
+        PermissionError, OSError
+    """
+    file_path.write_bytes(content.encode("utf-8"))
+
+
 def _try_read_file(file_path: Path) -> dict[str, str]:
     """Attempt to read file and return content or error.
 
@@ -14,7 +47,9 @@ def _try_read_file(file_path: Path) -> dict[str, str]:
 
     """
     try:
-        content = file_path.read_text(encoding="utf-8")
+        # Use binary mode to avoid Windows text mode line ending conversion
+        raw_bytes = file_path.read_bytes()
+        content = raw_bytes.decode("utf-8")
     except UnicodeDecodeError:
         return {"error": f"File is not valid UTF-8: {file_path}"}
     except FileNotFoundError:
@@ -48,6 +83,8 @@ def normalize_eol(text: str, target_eol: str) -> str:
         return normalized.replace("\n", "\r")
 
     return normalized
+
+
 def detect_eol(file_path: Path) -> str:
     """Detect the line ending style used in a file.
 
@@ -74,6 +111,7 @@ def detect_eol(file_path: Path) -> str:
         return "\r"
     return "\n"  # Default to Unix
     return "\n"  # Default to Unix
+
 
 def read_file_with_metadata(file_path: Path) -> dict:
     """Read file and return content with metadata.
@@ -125,7 +163,6 @@ def read_file_with_metadata(file_path: Path) -> dict:
         "mtime": mtime,
         "eol": eol,
     }
-
 
 
 def resolve_file_path(file_path: str, workspace_root: Path) -> Path | dict:
@@ -219,7 +256,8 @@ def atomic_write(file_path: Path, content: str, eol: str = "\n") -> dict | None:
     normalized_content = normalize_eol(content, eol)
 
     try:
-        file_path.write_text(normalized_content, encoding="utf-8")
+        # Use binary mode to avoid Windows text mode line ending conversion
+        file_path.write_bytes(normalized_content.encode("utf-8"))
     except PermissionError:
         return {"error": f"Permission denied: {file_path}"}
     except OSError as e:
@@ -364,6 +402,43 @@ def format_context_with_line_numbers(lines: list[str], start_line: int) -> list[
 
     return formatted
 
+
+def build_new_context(
+    result_lines: list[str],
+    changed_start: int,
+    changed_end: int,
+    context_before: int = 2,
+    context_after: int = 2,
+) -> str:
+    """Build new_context string for tool responses.
+
+    THIS IS THE ONLY FUNCTION THAT SHOULD BUILD new_context FOR TOOL RESPONSES.
+    All editing tools must use this to ensure consistent output formatting.
+
+    Args:
+        result_lines: All lines in file after edit (with line endings preserved)
+        changed_start: First line that was changed (1-indexed)
+        changed_end: Last line that was changed (1-indexed)
+        context_before: Lines of context before changed region
+        context_after: Lines of context after changed region
+
+    Returns:
+        Formatted context string with line numbers, line endings normalized to \\n
+
+    """
+    # Extract context
+    context_lines, context_start = extract_context(
+        result_lines, changed_start, changed_end, context_before, context_after
+    )
+
+    # Strip line endings for display (normalize to LF for consistency)
+    context_lines_stripped = [line.rstrip("\n\r") for line in context_lines]
+
+    # Format with line numbers
+    formatted_lines = format_context_with_line_numbers(context_lines_stripped, context_start)
+
+    # Join with LF
+    return "\n".join(formatted_lines)
 
 
 def ensure_trailing_newline(lines: list[str]) -> list[str]:

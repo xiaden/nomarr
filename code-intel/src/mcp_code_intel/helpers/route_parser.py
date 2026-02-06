@@ -192,7 +192,7 @@ def _parse_file(
         route_objects = {"router"}
 
     try:
-        source = file_path.read_text(encoding="utf-8")
+        source = file_path.read_bytes().decode("utf-8")
         tree = ast.parse(source, filename=str(file_path))
     except (SyntaxError, UnicodeDecodeError):
         return None

@@ -9,6 +9,52 @@ from __future__ import annotations
 from pathlib import Path
 
 
+def calculate_range_with_context(
+    target_line: int | None,
+    start_line: int | None,
+    end_line: int | None,
+    total_lines: int,
+    context_lines: int = 2,
+) -> tuple[int, int]:
+    """Calculate line range with context padding for replacement safety.
+
+    Provides consistent context padding across all file read tools to ensure
+    replacements have enough surrounding context to match uniquely.
+
+    This is used by read_file_line and read_file_line_range to automatically
+    return extra context around the requested range.
+
+    Args:
+        target_line: Single target line (for read_file_line)
+        start_line: Range start (for read_file_line_range)
+        end_line: Range end (for read_file_line_range)
+        total_lines: Total lines in file
+        context_lines: Lines of context to add before/after (default: 2)
+
+    Returns:
+        Tuple of (effective_start, effective_end) clamped to [1, total_lines]
+
+    Examples:
+        # Single line with 2 context: Request line 50 → Returns lines 48-52
+        calculate_range_with_context(50, None, None, 100)  # (48, 52)
+
+        # Range with 2 context: Request lines 20-25 → Returns lines 18-27
+        calculate_range_with_context(None, 20, 25, 100)  # (18, 27)
+    """
+    if target_line is not None:
+        # Single line mode - add context around target
+        start = max(1, target_line - context_lines)
+        end = min(total_lines, target_line + context_lines)
+    else:
+        # Range mode - add context around requested range
+        if start_line is None or end_line is None:
+            raise ValueError("Must provide either target_line or (start_line, end_line)")
+        start = max(1, start_line - context_lines)
+        end = min(total_lines, end_line + context_lines)
+
+    return start, end
+
+
 def read_raw_lines(file_path: str | Path, start_line: int, total_lines: int) -> str:
     """Read raw lines from a file, preserving exact bytes.
 

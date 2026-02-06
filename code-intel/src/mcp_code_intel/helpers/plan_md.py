@@ -46,6 +46,7 @@ except ImportError:
 TITLE_PATTERN = re.compile(r"^#\s+(?:Task:\s*)?(.+)$", re.IGNORECASE)
 H2_PATTERN = re.compile(r"^##\s+(.+)$")
 PHASE_PATTERN = re.compile(r"^###\s+[Pp]hase\s+(\d+)\s*[:\s]\s*(.+)$")
+MALFORMED_PHASE_PATTERN = re.compile(r"^###\s+[Pp]hase\s+([^:\s]+)", re.IGNORECASE)
 H3_PATTERN = re.compile(r"^###\s+(.+)$")
 # Valid step: exactly "- [ ] text" or "- [x] text"
 # (one space before [, one space/x/X inside, space after])
@@ -379,6 +380,23 @@ def parse_plan(markdown: str) -> Plan:
                 current_section = None
             continue
 
+        # Check for malformed phase headers (non-integer phase numbers)
+        if not phase_match:
+            malformed_phase_match = MALFORMED_PHASE_PATTERN.match(line)
+            if malformed_phase_match:
+                phase_value = malformed_phase_match.group(1)
+                raise ValueError(
+                    f"Invalid phase number at line {line_num + 1}: '{line.strip()}'\n\n"
+                    f"Phase numbers must be sequential integers (1, 2, 3, ...).\n"
+                    f"Found: 'Phase {phase_value}'\n\n"
+                    f"Common mistakes:\n"
+                    f"  - Phase 1.5 → Split into Phase 2 or merge with Phase 1\n"
+                    f"  - Phase 1a → Use Phase 1 and Phase 2\n"
+                    f"  - Phase A → Use Phase 1, Phase 2, etc.\n\n"
+                    f"If you need partial work, use step annotations like "
+                    f"**Notes:** or **Blocked:**"
+                )
+
         # H3 (non-phase): ### Subsection - treat as section
         h3_match = H3_PATTERN.match(line)
         if h3_match and not phase_match:
@@ -660,7 +678,7 @@ def _build_step_tree(flat_steps: list[Step]) -> list[Step]:
 def _load_plan_schema() -> dict[str, Any]:
     """Load the plan schema from the package's schemas directory."""
     schema_path = Path(__file__).parent.parent / "schemas" / "PLAN_MARKDOWN_SCHEMA.json"
-    schema: dict[str, Any] = json.loads(schema_path.read_text(encoding="utf-8"))
+    schema: dict[str, Any] = json.loads(schema_path.read_bytes().decode("utf-8"))
     return schema
 
 

@@ -13,10 +13,10 @@ sys.path.insert(0, str(project_root))
 
 # Import tools after path setup
 # ruff: noqa: E402
+from ..tools.locate_module_symbol import locate_module_symbol
 from ..tools.read_file_symbol_at_line import read_file_symbol_at_line
 from ..tools.read_module_api import read_module_api
 from ..tools.read_module_source import read_module_source
-from ..tools.locate_module_symbol import locate_module_symbol
 
 # Example module that tools will analyze
 EXAMPLE_CODE = '''"""Example for tool demonstrations."""
