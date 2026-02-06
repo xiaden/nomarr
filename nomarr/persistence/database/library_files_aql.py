@@ -82,12 +82,12 @@ class LibraryFilesOperations:
                 title: @title,
                 scanned_at: @scanned_at,
                 last_tagged_at: @last_tagged_at,
-                tagged: 0,
+                tagged: null,
                 tagged_version: null,
                 chromaprint: null,
                 calibration_hash: null,
-                needs_tagging: 1,
-                is_valid: 1,
+                needs_tagging: true,
+                is_valid: true,
                 // Tag writing projection state fields
                 last_written_mode: @last_written_mode,
                 last_written_calibration_hash: null,
@@ -133,7 +133,7 @@ class LibraryFilesOperations:
         )
 
         result = next(cursor)
-        return str(result)  # Returns _id (e.g., "library_files/12345")
+        return str(result)  # Returns _id (e.g., "library_files/12345")  # Returns _id (e.g., "library_files/12345")
 
     def mark_file_tagged(self, file_id: str, tagged_version: str) -> None:
         """Mark file as tagged.
@@ -148,10 +148,10 @@ class LibraryFilesOperations:
         self.db.aql.execute(
             """
             UPDATE PARSE_IDENTIFIER(@file_id).key WITH {
-                tagged: 1,
+                tagged: true,
                 tagged_version: @version,
                 last_tagged_at: @timestamp,
-                needs_tagging: 0
+                needs_tagging: false
             } IN library_files
             """,
             bind_vars=cast(
@@ -484,7 +484,7 @@ class LibraryFilesOperations:
             self.db.aql.execute(
                 """
             FOR file IN library_files
-                FILTER file.tagged == 1
+                FILTER file.tagged == true
                 RETURN file.path
             """,
             ),
@@ -581,7 +581,7 @@ class LibraryFilesOperations:
             """
             FOR file IN library_files
                 FILTER file.path == @path
-                UPDATE file WITH { is_valid: 0 } IN library_files
+                UPDATE file WITH { is_valid: false } IN library_files
             """,
             bind_vars={"path": path},
         )
@@ -602,7 +602,7 @@ class LibraryFilesOperations:
             """
             FOR file IN library_files
                 FILTER file.path IN @paths
-                UPDATE file WITH { is_valid: 0 } IN library_files
+                UPDATE file WITH { is_valid: false } IN library_files
             """,
             bind_vars={"paths": paths},
         )
@@ -721,7 +721,7 @@ class LibraryFilesOperations:
             self.db.aql.execute(
                 """
             FOR file IN library_files
-                FILTER file.library_id == @library_id AND file.tagged == 1
+                FILTER file.library_id == @library_id AND file.tagged == true
                 SORT file._key
                 LIMIT 1
                 RETURN 1
@@ -784,10 +784,10 @@ class LibraryFilesOperations:
         cursor = cast(
             "Cursor",
             self.db.aql.execute(
-                """
+                """\
                 FOR file IN library_files
-                    FILTER file.needs_tagging == 1
-                    FILTER file.is_valid == 1
+                    FILTER file.needs_tagging == true
+                    FILTER file.is_valid == true
                     SORT file._key
                     LIMIT 1
                     RETURN file
@@ -1079,7 +1079,7 @@ class LibraryFilesOperations:
             filters.append("file.album == @album")
 
         if tagged_only:
-            filters.append("file.tagged == 1")
+            filters.append("file.tagged == true")
 
         filter_clause = f"FILTER {' AND '.join(filters)}" if filters else ""
 
@@ -1341,10 +1341,23 @@ class LibraryFilesOperations:
         # Calibration mismatch: applies only when target uses mood tags
         # Bootstrap: has namespace but never tracked
         calibration_condition = ""
-        if calibration_hash and target_mode in ("minimal", "full"):
+        use_calibration = calibration_hash and target_mode in ("minimal", "full")
+
+        if use_calibration:
             calibration_condition = """
                 OR (f.last_written_calibration_hash != @calibration_hash)
             """
+
+        bind_vars: dict[str, Any] = {
+            "library_id": library_id,
+            "target_mode": target_mode,
+            "worker_id": worker_id,
+            "batch_size": batch_size,
+            "now": now,
+            "lease_expiry": lease_expiry,
+        }
+        if use_calibration:
+            bind_vars["calibration_hash"] = calibration_hash
 
         cursor = cast(
             "Cursor",
@@ -1355,8 +1368,8 @@ class LibraryFilesOperations:
 
                 FOR f IN library_files
                     FILTER f.library_id == @library_id
-                    FILTER f.is_valid == 1
-                    FILTER f.tagged == 1  // Only reconcile files with ML tags
+                    FILTER f.is_valid == true
+                    FILTER f.tagged == true  // Only reconcile files with ML tags
 
                     // Unclaimed or stale claim
                     FILTER f.write_claimed_by == null
@@ -1385,18 +1398,7 @@ class LibraryFilesOperations:
 
                     RETURN NEW
                 """,
-                bind_vars=cast(
-                    "dict[str, Any]",
-                    {
-                        "library_id": library_id,
-                        "target_mode": target_mode,
-                        "calibration_hash": calibration_hash,
-                        "worker_id": worker_id,
-                        "batch_size": batch_size,
-                        "now": now,
-                        "lease_expiry": lease_expiry,
-                    },
-                ),
+                bind_vars=cast("dict[str, Any]", bind_vars),
             ),
         )
         return list(cursor)
@@ -1473,10 +1475,19 @@ class LibraryFilesOperations:
 
         """
         calibration_condition = ""
-        if calibration_hash and target_mode in ("minimal", "full"):
+        use_calibration = calibration_hash and target_mode in ("minimal", "full")
+
+        if use_calibration:
             calibration_condition = """
                 OR (f.last_written_calibration_hash != @calibration_hash)
             """
+
+        bind_vars: dict[str, Any] = {
+            "library_id": library_id,
+            "target_mode": target_mode,
+        }
+        if use_calibration:
+            bind_vars["calibration_hash"] = calibration_hash
 
         cursor = cast(
             "Cursor",
@@ -1484,8 +1495,8 @@ class LibraryFilesOperations:
                 f"""
                 FOR f IN library_files
                     FILTER f.library_id == @library_id
-                    FILTER f.is_valid == 1
-                    FILTER f.tagged == 1
+                    FILTER f.is_valid == true
+                    FILTER f.tagged == true
 
                     FILTER (
                         f.last_written_mode != @target_mode
@@ -1496,10 +1507,7 @@ class LibraryFilesOperations:
                     COLLECT WITH COUNT INTO count
                     RETURN count
                 """,
-                bind_vars=cast(
-                    "dict[str, Any]",
-                    {"library_id": library_id, "target_mode": target_mode, "calibration_hash": calibration_hash},
-                ),
+                bind_vars=cast("dict[str, Any]", bind_vars),
             ),
         )
         result = next(cursor, 0)
