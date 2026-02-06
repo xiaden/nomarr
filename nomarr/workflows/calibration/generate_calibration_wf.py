@@ -466,8 +466,19 @@ def _run_progressive_calibration(
     convergence_history = []
     iteration = 0
 
+    # Refuse to run progressive calibration without enough data
+    if total_files < start_sample_size:
+        msg = (
+            f"Not enough tagged files for progressive calibration: "
+            f"{total_files} files < {start_sample_size} required minimum"
+        )
+        logger.error(f"[progressive_calibration] {msg}")
+        raise ValueError(msg)
+
     # Progressive loop: start_sample_size → +increment_size → until total_files
     current_sample_size = start_sample_size
+    success_count = 0
+    failed_count = 0
     while current_sample_size <= total_files:
         iteration += 1
         current_pct = current_sample_size / total_files

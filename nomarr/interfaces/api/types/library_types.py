@@ -304,7 +304,7 @@ class SearchFilesResponse(BaseModel):
                     created_at=f.created_at,
                     updated_at=f.updated_at,
                     tags=[
-                        FileTagResponse(key=t.key, value=t.value, tag_type=t.tag_type, is_nomarr=t.is_nomarr)
+                        FileTagResponse(key=t.key, value=str(t.value), tag_type=t.tag_type, is_nomarr=t.is_nomarr)
                         for t in f.tags
                     ],
                 )
@@ -385,7 +385,7 @@ class FileTagsResponse(BaseModel):
             file_id=result.file_id,
             path=result.path,
             tags=[
-                FileTagResponse(key=t.key, value=t.value, tag_type=t.tag_type, is_nomarr=t.is_nomarr)
+                FileTagResponse(key=t.key, value=str(t.value), tag_type=t.tag_type, is_nomarr=t.is_nomarr)
                 for t in result.tags
             ],
         )

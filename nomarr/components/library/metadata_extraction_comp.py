@@ -52,6 +52,54 @@ def _parse_single_value(value: str | None) -> str | None:
     return value
 
 
+def _parse_multi_values(value: str | None) -> list[str]:
+    """Parse a tag value into a list of individual values.
+
+    Handles:
+    - JSON array strings: '["Pop; Rock"]' or '["Pop", "Rock"]'
+    - Semicolon-delimited strings: "Pop; Rock; Electronic"
+    - Single values: "Pop"
+    - None/empty: returns []
+
+    Each element is further split on semicolons to handle the common case
+    where taggers store multiple values as "Value1; Value2; Value3" in a
+    single tag field.
+
+    Args:
+        value: Raw tag value (may be JSON array string, semicolon-delimited, or plain string)
+
+    Returns:
+        List of individual values, stripped of whitespace
+
+    """
+    if not value:
+        return []
+
+    # Try to parse as JSON array first
+    raw_values: list[str] = []
+    if value.startswith("[") and value.endswith("]"):
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, list):
+                raw_values = [str(v) for v in parsed if v]
+            else:
+                raw_values = [value]
+        except json.JSONDecodeError:
+            raw_values = [value]
+    else:
+        raw_values = [value]
+
+    # Split each value by semicolons and flatten
+    genres: list[str] = []
+    for v in raw_values:
+        for part in v.split(";"):
+            stripped = part.strip()
+            if stripped:
+                genres.append(stripped)
+
+    return genres
+
+
 def _parse_tag_value(value: str | None) -> str | list[str] | None:
     """Parse a tag value that may be a JSON array or plain string.
 
@@ -156,7 +204,7 @@ def extract_metadata(file_path: LibraryPath, namespace: str = "nom") -> dict[str
         - artist: str | None
         - album: str | None
         - title: str | None
-        - genre: str | None
+        - genre: list[str] (individual genres, split from semicolons)
         - year: int | None
         - track_number: int | None
         - all_tags: dict[str, str] (all tags as strings)
@@ -181,7 +229,7 @@ def extract_metadata(file_path: LibraryPath, namespace: str = "nom") -> dict[str
         "artist": None,
         "album": None,
         "title": None,
-        "genre": None,
+        "genre": [],
         "year": None,
         "track_number": None,
         "all_tags": {},
@@ -215,7 +263,7 @@ def _extract_mp4_metadata(audio: Any, metadata: dict[str, Any], namespace: str) 
     metadata["artist"] = artist_value
     metadata["artists"] = artists_value
     metadata["album"] = _parse_single_value(metadata["all_tags"].get("album"))
-    metadata["genre"] = _parse_single_value(metadata["all_tags"].get("genre"))
+    metadata["genre"] = _parse_multi_values(metadata["all_tags"].get("genre"))
     year_str = _parse_single_value(metadata["all_tags"].get("year")) or _parse_single_value(
         metadata["all_tags"].get("date"),
     )
@@ -252,7 +300,7 @@ def _extract_flac_metadata(audio: Any, metadata: dict[str, Any], namespace: str)
     metadata["artist"] = artist_value
     metadata["artists"] = artists_value
     metadata["album"] = _parse_single_value(metadata["all_tags"].get("album"))
-    metadata["genre"] = _parse_single_value(metadata["all_tags"].get("genre"))
+    metadata["genre"] = _parse_multi_values(metadata["all_tags"].get("genre"))
     year_str = _parse_single_value(metadata["all_tags"].get("year")) or _parse_single_value(
         metadata["all_tags"].get("date"),
     )
@@ -289,7 +337,7 @@ def _extract_mp3_metadata(file_path: LibraryPath, metadata: dict[str, Any], name
         metadata["artist"] = artist_value
         metadata["artists"] = artists_value
         metadata["album"] = _parse_single_value(metadata["all_tags"].get("album"))
-        metadata["genre"] = _parse_single_value(metadata["all_tags"].get("genre"))
+        metadata["genre"] = _parse_multi_values(metadata["all_tags"].get("genre"))
         year_str = _parse_single_value(metadata["all_tags"].get("year")) or _parse_single_value(
             metadata["all_tags"].get("date"),
         )

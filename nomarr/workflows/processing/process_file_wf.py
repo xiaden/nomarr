@@ -315,7 +315,7 @@ def _sync_to_database(
     Args:
         db: Optional Database instance
         path: Path to audio file
-        db_tags: Tags to write to database
+        db_tags: ML prediction tags to write to database
         namespace: Tag namespace
         tagger_version: Tagger version string
         chromaprint: Audio fingerprint hash for move detection
@@ -332,6 +332,12 @@ def _sync_to_database(
         metadata = extract_metadata(library_path, namespace=namespace)
         if chromaprint:
             metadata["chromaprint"] = chromaprint
+
+        # Merge ML prediction tags into nom_tags so sync_file_to_library writes them to DB
+        nom_tags = metadata.get("nom_tags", {})
+        nom_tags.update(db_tags)
+        metadata["nom_tags"] = nom_tags
+
         sync_file_to_library(
             db=db,
             file_path=path,

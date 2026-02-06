@@ -1527,19 +1527,19 @@ class LibraryFilesOperations:
             "Cursor",
             self.db.aql.execute(
                 """
-                FOR edge IN song_tag_edges
-                  LET tag = DOCUMENT(edge._to)
-                  FILTER STARTS_WITH(tag.rel, CONCAT(@namespace, ":"))
-                  COLLECT file_id = edge._from
-                  RETURN 1
+                RETURN LENGTH(
+                  FOR edge IN song_tag_edges
+                    LET tag = DOCUMENT(edge._to)
+                    FILTER STARTS_WITH(tag.rel, CONCAT(@namespace, ":"))
+                    COLLECT file_id = edge._from
+                    RETURN 1
+                )
                 """,
                 bind_vars=cast("dict[str, Any]", {"namespace": namespace}),
             ),
         )
-        if cursor:
-            results: list[Any] = list(cursor)
-            return len(results)
-        return 0
+        result = next(cursor, 0)
+        return int(result)
 
     def update_nomarr_namespace_flag(self, file_key: str, has_namespace: bool) -> None:
         """Update the has_nomarr_namespace flag during scanning.
