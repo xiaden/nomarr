@@ -7,7 +7,18 @@ Uses static AST parsing via helpers/route_parser.py - no app import required.
 """
 
 __all__ = ["analyze_project_api_coverage"]
-import refrom collections import defaultdictfrom pathlib import Pathfrom typing import Anyfrom ..helpers.config_loader import (    get_frontend_config,    load_config,)from ..helpers.route_parser import build_full_paths, parse_interface_files# Project root
+import re
+from collections import defaultdict
+from pathlib import Path
+from typing import Any
+
+from ..helpers.config_loader import (
+    get_frontend_config,
+    load_config,
+)
+from ..helpers.route_parser import build_full_paths, parse_interface_files
+
+# Project root
 ROOT = Path(__file__).parent.parent.parent.parent
 
 
@@ -42,6 +53,7 @@ def get_backend_routes(project_root: Path | None = None) -> list[tuple[str, str]
         project_root = ROOT
 
     interfaces_dir = project_root / "nomarr" / "interfaces" / "api"
+
     if not interfaces_dir.exists():
         return []
 
@@ -63,7 +75,7 @@ def scan_frontend_usage(
     endpoint_pattern: re.Pattern | None = None,
     template_pattern: re.Pattern | None = None,
 ) -> tuple[dict[str, list[tuple[str, int]]], list[str]]:
-    """Scan frontend files for API endpoint usage.
+    r"""Scan frontend files for API endpoint usage.
 
     Args:
         frontend_dir: Path to frontend source directory
@@ -89,27 +101,24 @@ def scan_frontend_usage(
 
     # Build glob patterns from file extensions
     glob_patterns = [f"*.{ext}" for ext in file_extensions]
+
     for glob_pattern in glob_patterns:
         for ts_file in frontend_dir.rglob(glob_pattern):
             if "node_modules" in str(ts_file):
                 continue
-
             try:
-                content = ts_file.read_text(encoding="utf-8")
+                content = ts_file.read_bytes().decode("utf-8")
                 lines = content.split("\n")
-
                 for line_num, line in enumerate(lines, start=1):
                     for match in endpoint_pattern.finditer(line):
                         endpoint = match.group(1).split("?")[0]
                         rel_path = ts_file.relative_to(ROOT).as_posix()
                         usage_map[endpoint].append((rel_path, line_num))
-
                     for match in template_pattern.finditer(line):
                         endpoint = match.group(1)
                         endpoint_base = re.sub(r"\$\{[^}]+\}", "{param}", endpoint).split("?")[0]
                         rel_path = ts_file.relative_to(ROOT).as_posix()
                         usage_map[endpoint_base].append((rel_path, line_num))
-
             except (UnicodeDecodeError, OSError) as e:
                 rel_path = ts_file.relative_to(ROOT).as_posix()
                 errors.append(f"{rel_path}: {type(e).__name__}: {e}")
@@ -118,6 +127,7 @@ def scan_frontend_usage(
 
 def normalize_path(path: str) -> str:
     """Normalize FastAPI path params like {library_id} to {param}."""
+
     return re.sub(r"\{[^}]+\}", "{param}", path)
 
 
@@ -130,6 +140,7 @@ def analyze_project_api_coverage(
     Uses configuration to determine frontend source paths and API call patterns.
 
     Configuration used:
+
         frontend.api_calls.patterns: List of API call patterns to match
             Example: ["api.get", "api.post", "fetch(", "axios.get"]
             Default: ["api.get", "api.post", "api.put", "api.delete", "fetch(", "axios.get"]

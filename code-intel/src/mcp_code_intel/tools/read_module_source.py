@@ -112,8 +112,14 @@ def read_module_source(qualified_name: str, *, large_context: bool = False) -> d
             - source: The source code as a string (with context lines)
             - file: Source file path
             - line: Starting line number (includes context)
-            - line_count: Total lines returned
+            - line_count: Total lines returned (includes context)
+            - symbol_start_line: First line of actual symbol definition (1-indexed)
+            - symbol_end_line: Last line of actual symbol definition (1-indexed)
             - error: Optional error message if resolution failed
+
+    Usage:
+        For replacements, use symbol_start_line and symbol_end_line.
+        The line/line_count fields include surrounding context for reading.
 
     """
     result: dict[str, Any] = {"name": qualified_name}
@@ -189,6 +195,10 @@ def read_module_source(qualified_name: str, *, large_context: bool = False) -> d
     result["source"] = read_raw_line_range(str(file_path), context_start, context_end)
     result["line"] = context_start
     result["line_count"] = context_end - context_start + 1
+
+    # Add actual symbol boundaries (for replacement operations)
+    result["symbol_start_line"] = start_line
+    result["symbol_end_line"] = end_line
 
     return result
 

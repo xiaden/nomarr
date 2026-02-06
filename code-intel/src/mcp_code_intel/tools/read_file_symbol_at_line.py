@@ -3,7 +3,7 @@
 Convenience tool to avoid the common two-step hop.
 """
 
-__all__ = ["file_symbol_at_line"]
+__all__ = ["read_file_symbol_at_line"]
 import ast
 import sys
 from pathlib import Path
@@ -61,7 +61,7 @@ def read_file_symbol_at_line(file_path: str, line_number: int, workspace_root: P
             return {"error": f"File is not a Python file: {file_path}"}
 
         # Read and parse file
-        source_code = target_path.read_text(encoding="utf-8")
+        source_code = target_path.read_bytes().decode("utf-8")
         try:
             tree = ast.parse(source_code, filename=str(target_path))
         except SyntaxError as e:

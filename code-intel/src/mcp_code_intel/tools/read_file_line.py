@@ -3,12 +3,12 @@
 Deliberately simple for error investigation and search result inspection.
 """
 
-__all__ = ["file_read_line"]
+__all__ = ["read_file_line"]
 
 import ast
 from pathlib import Path
 
-from ..helpers.file_lines import read_raw_line_range
+from ..helpers.file_lines import calculate_range_with_context, read_raw_line_range
 
 
 def _find_imports_end(all_lines: list[str]) -> int:
@@ -41,6 +41,8 @@ def read_file_line(
     file_path: str, line_number: int, workspace_root: Path, *, include_imports: bool = False
 ) -> dict:
     """Read a single line with 2 lines of context before and after.
+
+    Returns 5 lines total: target line ± 2 context lines. Example: Request line 50 → Returns lines 48-52.
 
     Quick inspection tool for error messages, search results, and spot checks.
     For Python code analysis, prefer discover_api, get_source, or locate_symbol.
@@ -82,7 +84,7 @@ def read_file_line(
             return {"error": f"Path is not a file: {file_path}"}
 
         # Read file
-        content = target_path.read_text(encoding="utf-8")
+        content = target_path.read_bytes().decode("utf-8")
         all_lines = content.splitlines(keepends=True)
         total_lines = len(all_lines)
 
@@ -94,8 +96,9 @@ def read_file_line(
             return {"error": f"line_number {line_number} exceeds file length ({total_lines} lines)"}
 
         # Calculate range with 2-line context
-        start = max(1, line_number - 2)
-        end = min(total_lines, line_number + 2)
+        start, end = calculate_range_with_context(
+            target_line=line_number, start_line=None, end_line=None, total_lines=total_lines
+        )
 
         # Handle include_imports for Python files
         if include_imports and target_path.suffix == ".py":

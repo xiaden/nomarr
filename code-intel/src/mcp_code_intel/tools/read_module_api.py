@@ -335,7 +335,7 @@ def _resolve_base_classes(
         base_is_package = source_path.name == "__init__.py"
 
         try:
-            source = source_path.read_text(encoding="utf-8")
+            source = source_path.read_bytes().decode("utf-8")
             tree = ast.parse(source)
         except (SyntaxError, OSError):
             continue
@@ -443,7 +443,7 @@ def read_module_api(
 
     # Read and parse source
     try:
-        source = source_path.read_text(encoding="utf-8")
+        source = source_path.read_bytes().decode("utf-8")
         tree = ast.parse(source)
     except SyntaxError as e:
         result["error"] = f"Syntax error in {source_path}: {e}"

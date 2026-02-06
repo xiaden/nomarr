@@ -15,7 +15,7 @@ Usage:
 
 from __future__ import annotations
 
-__all__ = ["project_list_routes"]
+__all__ = ["list_project_routes"]
 
 from pathlib import Path
 from typing import Any

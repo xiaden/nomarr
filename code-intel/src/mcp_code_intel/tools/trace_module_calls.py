@@ -18,7 +18,7 @@ Usage:
 
 from __future__ import annotations
 
-__all__ = ["trace_calls"]
+__all__ = ["trace_module_calls"]
 
 import ast
 import sys
@@ -101,7 +101,7 @@ def _resolve_module_to_path(module_name: str, project_root: Path) -> Path | None
 def _parse_file(file_path: Path) -> ast.Module | None:
     """Parse a Python file into AST."""
     try:
-        source = file_path.read_text(encoding="utf-8")
+        source = file_path.read_bytes().decode("utf-8")
         return ast.parse(source, filename=str(file_path))
     except (SyntaxError, UnicodeDecodeError):
         return None

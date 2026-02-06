@@ -6,7 +6,7 @@ Returns directory tree structure with blacklist filtering for .venv, node_module
 
 from __future__ import annotations
 
-__all__ = ["project_list_dir"]
+__all__ = ["list_project_directory_tree"]
 
 from fnmatch import fnmatch
 from pathlib import Path

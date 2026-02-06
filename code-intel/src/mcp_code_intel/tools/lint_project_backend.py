@@ -6,7 +6,7 @@ Returns structured JSON with errors or clean status.
 
 from __future__ import annotations
 
-__all__ = ["lint_backend"]
+__all__ = ["lint_project_backend"]
 
 import json
 import re

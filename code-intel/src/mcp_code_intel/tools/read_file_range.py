@@ -8,7 +8,7 @@ __all__ = ["read_file_range"]
 import ast
 from pathlib import Path
 
-from ..helpers.file_lines import read_raw_line_range
+from ..helpers.file_lines import calculate_range_with_context, read_raw_line_range
 from ..helpers.semantic_tool_examples import get_semantic_tool_examples
 
 
@@ -51,10 +51,13 @@ def read_file_range(
 ) -> dict:
     """Read a specific line range from any file in the workspace.
 
+    Automatically adds 2 lines of context before/after the requested range for
+    replacement safety. Example: Request 10-20 → Returns 8-22.
+
     Fallback tool for non-Python files or when AST-based tools fail.
     Returns raw file contents without parsing.
 
-    Maximum 100 lines per read. Only returns 'end' field when clamped.
+    Maximum 100 lines per read (including context). Only returns 'end' field when clamped.
 
     Args:
         file_path: Workspace-relative or absolute path to the file
@@ -94,7 +97,7 @@ def read_file_range(
             return {"error": f"Path is not a file: {file_path}"}
 
         # Read file
-        content = target_path.read_text(encoding="utf-8")
+        content = target_path.read_bytes().decode("utf-8")
         all_lines = content.splitlines(keepends=True)
         total_lines = len(all_lines)
 
@@ -113,13 +116,29 @@ def read_file_range(
                 f"Line range reversed: was {end_line}-{start_line}, reading {start_line}-{end_line}"
             )
 
-        # Clamp to 100 lines max
-        requested_end = end_line
-        if requested_end - start_line + 1 > 100:
-            requested_end = start_line + 99
+        # Add context padding for replacement safety (2 lines before/after)
+        padded_start, padded_end = calculate_range_with_context(
+            target_line=None,
+            start_line=start_line,
+            end_line=end_line,
+            total_lines=total_lines,
+            context_lines=2,
+        )
 
-        # Clamp to file length
-        actual_end = min(requested_end, total_lines)
+        # Clamp to 100 lines max (including context)
+        if padded_end - padded_start + 1 > 100:
+            # If too large with context, try without context first
+            if end_line - start_line + 1 <= 100:
+                # Original request fits in 100 lines, use original range
+                padded_start = start_line
+                padded_end = min(start_line + 99, total_lines)
+            else:
+                # Original request exceeds 100 lines, clamp from start
+                padded_start = start_line
+                padded_end = min(start_line + 99, total_lines)
+
+        # Use padded range for reading
+        actual_end = padded_end
 
         # Handle include_imports for Python files
         imports_included = False
@@ -139,18 +158,22 @@ def read_file_range(
                 imports_included = True
 
         # Extract requested lines using raw bytes (preserves exact line endings)
-        if imports_included and effective_start == 1 and start_line > 1:
+        if imports_included and effective_start == 1 and padded_start > 1:
             imports_end = _find_imports_end(all_lines)
             imports_block_end = min(imports_end + 2, total_lines)
-            if imports_block_end < start_line:
+            if imports_block_end < padded_start:
                 # Non-overlapping: return both ranges as separate structured blocks
                 imports_content = read_raw_line_range(str(target_path), 1, imports_block_end)
-                main_content = read_raw_line_range(str(target_path), start_line, actual_end)
+                main_content = read_raw_line_range(str(target_path), padded_start, actual_end)
 
                 result: dict = {
                     "path": str(target_path.relative_to(workspace_root)),
                     "imports": {"content": imports_content, "start": 1, "end": imports_block_end},
-                    "requested": {"content": main_content, "start": start_line, "end": actual_end},
+                    "requested": {
+                        "content": main_content,
+                        "start": padded_start,
+                        "end": actual_end,
+                    },
                 }
 
                 if warning:
@@ -166,12 +189,12 @@ def read_file_range(
             # Overlapping: single contiguous read from line 1
             result_content = read_raw_line_range(str(target_path), 1, actual_end)
         else:
-            result_content = read_raw_line_range(str(target_path), start_line, actual_end)
+            result_content = read_raw_line_range(str(target_path), padded_start, actual_end)
 
         # Build minimal response
         result = {
             "path": str(target_path.relative_to(workspace_root)),
-            "requested": {"content": result_content, "start": start_line, "end": actual_end},
+            "requested": {"content": result_content, "start": padded_start, "end": actual_end},
         }
 
         # Add warning if lines were reversed

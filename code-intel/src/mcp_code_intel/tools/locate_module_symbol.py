@@ -4,7 +4,7 @@ Searches all Python files in configured search paths for classes, functions, or 
 matching the given name. Supports partially qualified names for scoped search.
 """
 
-__all__ = ["module_locate_symbol"]
+__all__ = ["locate_module_symbol"]
 import ast
 from pathlib import Path
 from typing import Any
@@ -100,7 +100,7 @@ def locate_module_symbol(symbol_name: str) -> dict[str, Any]:
                 continue
 
             try:
-                source = py_file.read_text(encoding="utf-8")
+                source = py_file.read_bytes().decode("utf-8")
                 tree = ast.parse(source, filename=str(py_file))
             except Exception:
                 # Skip unparseable files

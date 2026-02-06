@@ -3,7 +3,7 @@
 Simple search tool for config files, logs, and non-Python text.
 """
 
-__all__ = ["file_search_text"]
+__all__ = ["search_file_text"]
 
 from pathlib import Path
 
@@ -55,7 +55,7 @@ def search_file_text(file_path: str, search_string: str, workspace_root: Path) -
             return {"error": f"Path is not a file: {file_path}"}
 
         # Read file
-        content = target_path.read_text(encoding="utf-8")
+        content = target_path.read_bytes().decode("utf-8")
         all_lines = content.splitlines(keepends=True)
         total_lines = len(all_lines)
 
