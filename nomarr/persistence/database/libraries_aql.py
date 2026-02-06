@@ -245,6 +245,9 @@ class LibrariesOperations:
         Only updates fields that are explicitly provided. Does not reset
         scan_status when only updating progress/total.
 
+        When status is set to 'complete', scan_error is automatically cleared
+        unless an explicit error value is provided.
+
         Args:
             library_id: Library _id (e.g., "libraries/12345")
             status or scan_status: Status ('idle', 'scanning', 'complete', 'error')
@@ -267,6 +270,9 @@ class LibrariesOperations:
             update_fields["scan_status"] = final_status
             if final_status == "complete":
                 update_fields["scanned_at"] = now_ms().value
+                # Clear scan_error on successful completion unless explicitly set
+                if final_error is None:
+                    update_fields["scan_error"] = None
 
         if final_progress is not None:
             update_fields["scan_progress"] = final_progress
