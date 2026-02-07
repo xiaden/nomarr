@@ -369,16 +369,17 @@ def _run_single_calibration(db: Database, models_dir: str, heads: list[Any], nam
                 embedder_date = embedder_release.replace("-", "")
 
         model_key = f"{head_info.backbone}-{embedder_date}"
-        head_name = head_info.name  # Use head name from sidecar
+        head_name = head_info.name  # Display name for logging/state
+        labels = head_info.labels  # Actual tag labels for AQL matching
         version = head_info.sidecar.data.get("version", 1)
         head_key = f"{model_key}:{head_name}"
 
-        logger.info(f"[histogram_calibration_wf] Processing {head_key} (version {version})")
+        logger.info(f"[histogram_calibration_wf] Processing {head_key} (version {version}, labels={labels})")
 
         try:
             # Generate calibration from histogram
             calib_result = generate_calibration_from_histogram(
-                db=db, model_key=model_key, head_name=head_name, version=version, lo=0.0, hi=1.0, bins=10000,
+                db=db, model_key=model_key, head_name=head_name, labels=labels, version=version, lo=0.0, hi=1.0, bins=10000,
             )
 
             # Compute calibration definition hash
@@ -500,7 +501,8 @@ def _run_progressive_calibration(
                     embedder_date = embedder_release.replace("-", "")
 
             model_key = f"{head_info.backbone}-{embedder_date}"
-            head_name = head_info.name
+            head_name = head_info.name  # Display name for logging/state
+            labels = head_info.labels  # Actual tag labels for AQL matching
             version = head_info.sidecar.data.get("version", 1)
             head_key = f"{model_key}:{head_name}"
 
@@ -510,6 +512,7 @@ def _run_progressive_calibration(
                     db=db,
                     model_key=model_key,
                     head_name=head_name,
+                    labels=labels,
                     version=version,
                     lo=0.0,
                     hi=1.0,

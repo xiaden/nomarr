@@ -19,7 +19,7 @@ class CalibrationStateOperations:
     def get_sparse_histogram(
         self,
         model_key: str,
-        head_name: str,
+        labels: list[str],
         lo: float = 0.0,
         hi: float = 1.0,
         bins: int = 10000,
@@ -31,7 +31,7 @@ class CalibrationStateOperations:
 
         Args:
             model_key: Model identifier (e.g., "effnet-discogs-effnet-1")
-            head_name: Head name (e.g., "mood_happy")
+            labels: Head labels to match (e.g., ["happy", "non_happy"])
             lo: Lower bound of calibrated range (default 0.0)
             hi: Upper bound of calibrated range (default 1.0)
             bins: Number of uniform bins (default 10000)
@@ -50,35 +50,30 @@ class CalibrationStateOperations:
         query = """
             FOR edge IN song_tag_edges
               LET tag = DOCUMENT(edge._to)
-              // Match individual head score tags containing model_key and head_name
+              // Match individual head score tags containing model_key and label
               // Versioned tag format: nom:<label>_<framework>_<embedder>_<head>
               // Example: nom:happy_essentia21b6dev1389_yamnet20220825_happy20220825
               // model_key format in DB: <backbone><embedder_date> (e.g., "yamnet20220825")
-              // head_name: label (e.g., "happy")
               FILTER STARTS_WITH(tag.rel, "nom:")
               FILTER IS_NUMBER(tag.value)
-              // Check if tag contains both the model backbone/date and head label
-              // The tag rel should contain model_key parts and start with head_name
+              // Check if tag contains the model backbone/date pattern
               LET rel_without_prefix = SUBSTRING(tag.rel, 4)
-              // Extract label (first segment before first underscore)
-              LET first_underscore = POSITION(rel_without_prefix, "_")
-              LET label = first_underscore > 0 ? SUBSTRING(rel_without_prefix, 0, first_underscore) : rel_without_prefix
-              // Check if tag matches this head by label and contains model_key pattern
-              FILTER label == @head_name
               FILTER CONTAINS(rel_without_prefix, @model_key_for_tag)
+              // Extract label (first segment before first underscore)
+              LET first_underscore = FIND_FIRST(rel_without_prefix, "_")
+              LET label = first_underscore >= 0 ? SUBSTRING(rel_without_prefix, 0, first_underscore) : rel_without_prefix
+              // Check if extracted label matches any of the head's labels
+              FILTER label IN @labels
 
-              LET lo = @lo
-              LET hi = @hi
-              LET bin_width = @bin_width
               LET value = tag.value
 
               // Compute integer bin index (avoid floating-point drift)
-              LET bin_idx_raw = FLOOR((value - lo) / bin_width)
+              LET bin_idx_raw = FLOOR((value - @lo) / @bin_width)
               LET bin_idx = MIN([MAX([bin_idx_raw, 0]), @max_bin])
 
               // Out-of-range flags
-              LET is_underflow = value < lo
-              LET is_overflow = value > hi
+              LET is_underflow = value < @lo
+              LET is_overflow = value > @hi
 
               // Group by integer bin index only (sparse: only bins with data)
               COLLECT bin_index = bin_idx
@@ -106,7 +101,7 @@ class CalibrationStateOperations:
                 "dict[str, Any]",
                 {
                     "model_key_for_tag": model_key_for_tag,
-                    "head_name": head_name,
+                    "labels": labels,
                     "lo": lo,
                     "hi": hi,
                     "bin_width": bin_width,
@@ -115,12 +110,12 @@ class CalibrationStateOperations:
             ),
         )
 
-        return list(cursor)  # type: ignore
+        return list(cursor)  # type: ignore  # type: ignore
 
     def get_sparse_histogram_with_limit(
         self,
         model_key: str,
-        head_name: str,
+        labels: list[str],
         lo: float = 0.0,
         hi: float = 1.0,
         bins: int = 10000,
@@ -130,7 +125,7 @@ class CalibrationStateOperations:
 
         Args:
             model_key: Model identifier
-            head_name: Head name
+            labels: Head labels to match (e.g., ["happy", "non_happy"])
             lo: Lower bound of calibrated range
             hi: Upper bound of calibrated range
             bins: Number of uniform bins
@@ -144,7 +139,7 @@ class CalibrationStateOperations:
             # No limit - use standard method
             return self.get_sparse_histogram(
                 model_key=model_key,
-                head_name=head_name,
+                labels=labels,
                 lo=lo,
                 hi=hi,
                 bins=bins,
@@ -160,21 +155,18 @@ class CalibrationStateOperations:
               FILTER STARTS_WITH(tag.rel, "nom:")
               FILTER IS_NUMBER(tag.value)
               LET rel_without_prefix = SUBSTRING(tag.rel, 4)
-              LET first_underscore = POSITION(rel_without_prefix, "_")
-              LET label = first_underscore > 0 ? SUBSTRING(rel_without_prefix, 0, first_underscore) : rel_without_prefix
-              FILTER label == @head_name
               FILTER CONTAINS(rel_without_prefix, @model_key_for_tag)
+              LET first_underscore = FIND_FIRST(rel_without_prefix, "_")
+              LET label = first_underscore >= 0 ? SUBSTRING(rel_without_prefix, 0, first_underscore) : rel_without_prefix
+              FILTER label IN @labels
 
-              LET lo = @lo
-              LET hi = @hi
-              LET bin_width = @bin_width
               LET value = tag.value
 
-              LET bin_idx_raw = FLOOR((value - lo) / bin_width)
+              LET bin_idx_raw = FLOOR((value - @lo) / @bin_width)
               LET bin_idx = MIN([MAX([bin_idx_raw, 0]), @max_bin])
 
-              LET is_underflow = value < lo
-              LET is_overflow = value > hi
+              LET is_underflow = value < @lo
+              LET is_overflow = value > @hi
 
               COLLECT bin_index = bin_idx
               AGGREGATE
@@ -200,7 +192,7 @@ class CalibrationStateOperations:
                 "dict[str, Any]",
                 {
                     "model_key_for_tag": model_key_for_tag,
-                    "head_name": head_name,
+                    "labels": labels,
                     "lo": lo,
                     "hi": hi,
                     "bin_width": bin_width,
@@ -210,7 +202,7 @@ class CalibrationStateOperations:
             ),
         )
 
-        return list(cursor)  # type: ignore
+        return list(cursor)  # type: ignore  # type: ignore
 
     @staticmethod
     def _make_key(model_key: str, head_name: str) -> str:

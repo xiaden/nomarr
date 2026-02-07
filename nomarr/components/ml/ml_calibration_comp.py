@@ -224,7 +224,7 @@ def derive_percentiles_from_sparse_histogram(sparse_bins: list[dict[str, Any]], 
         p95_value = hi
     return {"p5": p5_value, "p95": p95_value, "n": total_n, "underflow_count": underflow_count, "overflow_count": overflow_count}
 
-def generate_calibration_from_histogram(db: Database, model_key: str, head_name: str, version: int, lo: float=0.0, hi: float=1.0, bins: int=10000) -> dict[str, Any]:
+def generate_calibration_from_histogram(db: Database, model_key: str, head_name: str, labels: list[str], version: int, lo: float=0.0, hi: float=1.0, bins: int=10000) -> dict[str, Any]:
     """Generate calibration for a single head using DB histogram query.
 
     Stateless, idempotent computation. Always computes from current file_tags.
@@ -232,7 +232,8 @@ def generate_calibration_from_histogram(db: Database, model_key: str, head_name:
     Args:
         db: Database instance
         model_key: Model identifier (e.g., "effnet-discogs-effnet-1")
-        head_name: Head name (e.g., "mood_happy")
+        head_name: Head name for logging (e.g., "mood happy")
+        labels: Actual tag labels to match (e.g., ["happy", "non_happy"])
         version: Calibration version
         lo: Lower bound of calibrated range (default 0.0)
         hi: Upper bound of calibrated range (default 1.0)
@@ -243,15 +244,15 @@ def generate_calibration_from_histogram(db: Database, model_key: str, head_name:
 
     """
     bin_width = (hi - lo) / bins
-    sparse_bins = db.calibration_state.get_sparse_histogram(model_key=model_key, head_name=head_name, lo=lo, hi=hi, bins=bins)
+    sparse_bins = db.calibration_state.get_sparse_histogram(model_key=model_key, labels=labels, lo=lo, hi=hi, bins=bins)
     if not sparse_bins:
-        logger.warning(f"[calibration] No data for {model_key}:{head_name}")
+        logger.warning(f"[calibration] No data for {model_key}:{head_name} (labels={labels})")
         return {"p5": lo, "p95": hi, "n": 0, "underflow_count": 0, "overflow_count": 0}
     result = derive_percentiles_from_sparse_histogram(sparse_bins=sparse_bins, lo=lo, hi=hi, bin_width=bin_width, p5_target=0.05, p95_target=0.95)
     logger.info(f"[calibration] {model_key}:{head_name} -> p5={result['p5']:.4f}, p95={result['p95']:.4f}, n={result['n']}")
     return result
 
-def generate_calibration_from_histogram_with_limit(db: Database, model_key: str, head_name: str, version: int, lo: float=0.0, hi: float=1.0, bins: int=10000, sample_limit: int | None=None) -> dict[str, Any]:
+def generate_calibration_from_histogram_with_limit(db: Database, model_key: str, head_name: str, labels: list[str], version: int, lo: float=0.0, hi: float=1.0, bins: int=10000, sample_limit: int | None=None) -> dict[str, Any]:
     """Generate calibration for a single head using DB histogram query with sample limiting.
 
     Progressive calibration variant: limits sample size for convergence tracking.
@@ -259,7 +260,8 @@ def generate_calibration_from_histogram_with_limit(db: Database, model_key: str,
     Args:
         db: Database instance
         model_key: Model identifier (e.g., "effnet-discogs-effnet-1")
-        head_name: Head name (e.g., "mood_happy")
+        head_name: Head name for logging (e.g., "mood happy")
+        labels: Actual tag labels to match (e.g., ["happy", "non_happy"])
         version: Calibration version
         lo: Lower bound of calibrated range (default 0.0)
         hi: Upper bound of calibrated range (default 1.0)
@@ -271,9 +273,9 @@ def generate_calibration_from_histogram_with_limit(db: Database, model_key: str,
 
     """
     bin_width = (hi - lo) / bins
-    sparse_bins = db.calibration_state.get_sparse_histogram_with_limit(model_key=model_key, head_name=head_name, lo=lo, hi=hi, bins=bins, limit=sample_limit)
+    sparse_bins = db.calibration_state.get_sparse_histogram_with_limit(model_key=model_key, labels=labels, lo=lo, hi=hi, bins=bins, limit=sample_limit)
     if not sparse_bins:
-        logger.warning(f"[calibration] No data for {model_key}:{head_name}")
+        logger.warning(f"[calibration] No data for {model_key}:{head_name} (labels={labels})")
         return {"p5": lo, "p95": hi, "n": 0, "underflow_count": 0, "overflow_count": 0}
     result = derive_percentiles_from_sparse_histogram(sparse_bins=sparse_bins, lo=lo, hi=hi, bin_width=bin_width, p5_target=0.05, p95_target=0.95)
     logger.info(f"[calibration] {model_key}:{head_name} (n={result['n']}) -> p5={result['p5']:.4f}, p95={result['p95']:.4f}")
