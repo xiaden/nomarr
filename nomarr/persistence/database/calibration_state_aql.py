@@ -129,7 +129,7 @@ class CalibrationStateOperations:
             lo: Lower bound of calibrated range
             hi: Upper bound of calibrated range
             bins: Number of uniform bins
-            limit: Maximum number of samples to use (None = unlimited)
+            limit: Maximum number of matched tag samples to use (None = unlimited)
 
         Returns:
             List of {min_val: float, count: int, underflow_count: int, overflow_count: int}
@@ -150,7 +150,6 @@ class CalibrationStateOperations:
 
         query = """
             FOR edge IN song_tag_edges
-              LIMIT @limit
               LET tag = DOCUMENT(edge._to)
               FILTER STARTS_WITH(tag.rel, "nom:")
               FILTER IS_NUMBER(tag.value)
@@ -159,6 +158,7 @@ class CalibrationStateOperations:
               LET first_underscore = FIND_FIRST(rel_without_prefix, "_")
               LET label = first_underscore >= 0 ? SUBSTRING(rel_without_prefix, 0, first_underscore) : rel_without_prefix
               FILTER label IN @labels
+              LIMIT @limit
 
               LET value = tag.value
 
@@ -202,7 +202,7 @@ class CalibrationStateOperations:
             ),
         )
 
-        return list(cursor)  # type: ignore  # type: ignore
+        return list(cursor)  # type: ignore  # type: ignore  # type: ignore
 
     @staticmethod
     def _make_key(model_key: str, head_name: str) -> str:
