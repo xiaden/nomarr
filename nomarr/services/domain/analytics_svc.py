@@ -12,7 +12,7 @@ while properly separating persistence (SQL) from computation (analytics).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.analytics.analytics_comp import (
     compute_mood_distribution,
@@ -149,14 +149,17 @@ class AnalyticsService:
         )
         return cast("TagCorrelationData", compute_tag_correlation_matrix(params=params))
 
-    def get_mood_distribution(self) -> list[MoodDistributionItem]:
+    def get_mood_distribution(self, library_id: str | None = None) -> list[MoodDistributionItem]:
         """Get mood distribution across all tiers.
+
+        Args:
+            library_id: Optional library _id to filter by.
 
         Returns:
             List of MoodDistributionItem DTOs
 
         """
-        mood_rows = self._db.tags.get_mood_distribution_data()
+        mood_rows = self._db.tags.get_mood_distribution_data(library_id)
         result = compute_mood_distribution(mood_rows=mood_rows)
 
         # Transform to list format with percentages
@@ -172,26 +175,31 @@ class AnalyticsService:
             for mood, count in top_moods
         ]
 
-    def get_mood_distribution_with_result(self) -> MoodDistributionResult:
+    def get_mood_distribution_with_result(self, library_id: str | None = None) -> MoodDistributionResult:
         """Get mood distribution with wrapper DTO.
+
+        Args:
+            library_id: Optional library _id to filter by.
 
         Returns:
             MoodDistributionResult DTO with mood_distribution list
 
         """
-        mood_distribution = self.get_mood_distribution()
+        mood_distribution = self.get_mood_distribution(library_id=library_id)
         return MoodDistributionResult(mood_distribution=mood_distribution)
 
     def get_tag_co_occurrence(
         self,
         x_tags: list[tuple[str, str]],
         y_tags: list[tuple[str, str]],
+        library_id: str | None = None,
     ) -> TagCoOccurrenceData:
         """Get co-occurrence matrix for two sets of tag specifications.
 
         Args:
             x_tags: List of (key, value) tuples for X-axis
             y_tags: List of (key, value) tuples for Y-axis
+            library_id: Optional library _id to filter by.
 
         Returns:
             TagCoOccurrenceData with matrix where matrix[j][i] = count of files with both
@@ -203,7 +211,96 @@ class AnalyticsService:
 
         # Fetch file ID mappings for all unique tags
         all_specs = x_tags + y_tags
-        tag_data = self._db.tags.get_file_ids_for_tags(tag_specs=all_specs)
+        tag_data = self._db.tags.get_file_ids_for_tags(tag_specs=all_specs, library_id=library_id)
 
         params = ComputeTagCoOccurrenceParams(x_tags=x_tag_specs, y_tags=y_tag_specs, tag_data=tag_data)
         return cast("TagCoOccurrenceData", compute_tag_co_occurrence(params=params))
+
+
+    # ──────────────────────────────────────────────────────────────────────────────
+    # Collection Profile Analytics
+    # ──────────────────────────────────────────────────────────────────────────────
+
+    def get_collection_overview(
+        self, library_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Get collection overview data for Insights tab.
+
+        Orchestrates library stats, year/genre/artist distributions.
+
+        Args:
+            library_id: Optional library _id to filter by.
+
+        Returns:
+            Dict with: stats, year_distribution, genre_distribution, artist_distribution
+        """
+        stats = self._db.tags.get_library_stats(library_id)
+        years = self._db.tags.get_year_distribution(library_id)
+        genres = self._db.tags.get_genre_distribution(library_id, limit=20)
+        artists = self._db.tags.get_artist_distribution(library_id, limit=20)
+
+        return {
+            "stats": stats,
+            "year_distribution": years,
+            "genre_distribution": genres,
+            "artist_distribution": artists,
+        }
+
+    def get_mood_analysis(
+        self, library_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Get mood analysis data for Insights tab.
+
+        Orchestrates coverage, balance, top pairs, and dominant vibes.
+
+        Args:
+            library_id: Optional library _id to filter by.
+
+        Returns:
+            Dict with: coverage, balance, top_pairs, dominant_vibes
+        """
+        coverage = self._db.tags.get_mood_coverage(library_id)
+        balance = self._db.tags.get_mood_balance(library_id)
+        top_pairs = self._db.tags.get_top_mood_pairs(library_id, limit=5)
+
+        # Compute dominant vibes from balance data
+        dominant_vibes = self._compute_dominant_vibes(balance)
+
+        return {
+            "coverage": coverage,
+            "balance": balance,
+            "top_pairs": top_pairs,
+            "dominant_vibes": dominant_vibes,
+        }
+
+    def _compute_dominant_vibes(self, balance: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+        """Compute dominant mood vibes from balance data.
+
+        Args:
+            balance: Mood balance data from get_mood_balance.
+
+        Returns:
+            List of {mood, percentage} for top moods across all tiers.
+        """
+        # Aggregate counts across all tiers
+        mood_totals: dict[str, int] = {}
+        for tier_moods in balance.values():
+            for item in tier_moods:
+                mood = item["mood"]
+                count = item["count"]
+                mood_totals[mood] = mood_totals.get(mood, 0) + count
+
+        if not mood_totals:
+            return []
+
+        total = sum(mood_totals.values())
+        # Sort by count and get top 5
+        sorted_moods = sorted(mood_totals.items(), key=lambda x: x[1], reverse=True)[:5]
+
+        return [
+            {
+                "mood": mood,
+                "percentage": round((count / total) * 100, 1) if total > 0 else 0.0,
+            }
+            for mood, count in sorted_moods
+        ]

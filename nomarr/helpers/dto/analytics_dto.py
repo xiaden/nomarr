@@ -160,3 +160,113 @@ class MoodDistributionResult:
     """Wrapper result from analytics_svc.get_mood_distribution_with_result."""
 
     mood_distribution: list[MoodDistributionItem]
+
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Collection Profile Analytics DTOs
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@dataclass
+class LibraryStatsResult:
+    """Library aggregate statistics."""
+
+    file_count: int
+    total_duration_ms: int
+    total_file_size_bytes: int
+    avg_track_length_ms: float
+
+
+@dataclass
+class YearDistributionItem:
+    """Single year in year distribution."""
+
+    year: int | str
+    count: int
+
+
+@dataclass
+class GenreDistributionItem:
+    """Single genre in genre distribution."""
+
+    genre: str
+    count: int
+
+
+@dataclass
+class ArtistDistributionItem:
+    """Single artist in artist distribution."""
+
+    artist: str
+    count: int
+
+
+@dataclass
+class ArtistDistributionResult:
+    """Artist distribution with long tail count."""
+
+    top_artists: list[ArtistDistributionItem]
+    others_count: int
+    total_artists: int
+
+
+@dataclass
+class CollectionOverviewResult:
+    """Result from analytics_svc.get_collection_overview."""
+
+    stats: LibraryStatsResult
+    year_distribution: list[YearDistributionItem]
+    genre_distribution: list[GenreDistributionItem]
+    artist_distribution: ArtistDistributionResult
+
+
+@dataclass
+class MoodCoverageTier:
+    """Coverage data for a single mood tier."""
+
+    tagged: int
+    percentage: float
+
+
+@dataclass
+class MoodCoverageResult:
+    """Mood coverage across all tiers."""
+
+    total_files: int
+    tiers: dict[str, MoodCoverageTier]
+
+
+@dataclass
+class MoodBalanceItem:
+    """Single mood in balance distribution."""
+
+    mood: str
+    count: int
+
+
+@dataclass
+class MoodPairItem:
+    """Co-occurring mood pair."""
+
+    mood1: str
+    mood2: str
+    count: int
+
+
+@dataclass
+class DominantVibeItem:
+    """Dominant mood vibe."""
+
+    mood: str
+    percentage: float
+
+
+@dataclass
+class MoodAnalysisResult:
+    """Result from analytics_svc.get_mood_analysis."""
+
+    coverage: MoodCoverageResult
+    balance: dict[str, list[MoodBalanceItem]]
+    top_pairs: list[MoodPairItem]
+    dominant_vibes: list[DominantVibeItem]
