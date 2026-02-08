@@ -35,9 +35,13 @@ export interface MoodDistributionResponse {
 
 /**
  * Get mood distribution.
+ * Optionally filtered by libraryId.
  */
-export async function getMoodDistribution(): Promise<MoodDistributionResponse> {
-  return get("/api/web/analytics/mood-distribution");
+export async function getMoodDistribution(
+  libraryId?: string
+): Promise<MoodDistributionResponse> {
+  const params = libraryId ? `?library_id=${encodeURIComponent(libraryId)}` : "";
+  return get(`/api/web/analytics/mood-distribution${params}`);
 }
 
 /**
@@ -104,9 +108,111 @@ export interface TagCoOccurrenceResponse {
  * POST request with X and Y axis tag specifications.
  * Returns matrix where matrix[j][i] = count of files with both y[j] and x[i].
  * Maximum 16x16 matrix size.
+ * Optionally filtered by libraryId.
  */
 export async function getTagCoOccurrence(
-  requestBody: TagCoOccurrenceRequest
+  requestBody: TagCoOccurrenceRequest,
+  libraryId?: string
 ): Promise<TagCoOccurrenceResponse> {
-  return post("/api/web/analytics/tag-co-occurrences", requestBody);
+  const params = libraryId ? `?library_id=${encodeURIComponent(libraryId)}` : "";
+  return post(`/api/web/analytics/tag-co-occurrences${params}`, requestBody);
+}
+
+
+// ──────────────────────────────────────────────────────────────────────
+// Collection Profile Types & API
+// ──────────────────────────────────────────────────────────────────────
+
+export interface LibraryStats {
+  file_count: number;
+  total_duration_ms: number;
+  total_file_size_bytes: number;
+  avg_track_length_ms: number;
+}
+
+export interface YearDistributionItem {
+  year: number | string;
+  count: number;
+}
+
+export interface GenreDistributionItem {
+  genre: string;
+  count: number;
+}
+
+export interface ArtistDistributionItem {
+  artist: string;
+  count: number;
+}
+
+export interface ArtistDistribution {
+  top_artists: ArtistDistributionItem[];
+  others_count: number;
+  total_artists: number;
+}
+
+export interface CollectionOverviewResponse {
+  stats: LibraryStats;
+  year_distribution: YearDistributionItem[];
+  genre_distribution: GenreDistributionItem[];
+  artist_distribution: ArtistDistribution;
+}
+
+/**
+ * Get collection overview statistics.
+ * Optionally filtered by libraryId.
+ */
+export async function getCollectionOverview(
+  libraryId?: string
+): Promise<CollectionOverviewResponse> {
+  const params = libraryId ? `?library_id=${encodeURIComponent(libraryId)}` : "";
+  return get(`/api/web/analytics/collection-overview${params}`);
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Mood Analysis Types & API
+// ──────────────────────────────────────────────────────────────────────
+
+export interface MoodCoverageTier {
+  tagged: number;
+  percentage: number;
+}
+
+export interface MoodCoverage {
+  total_files: number;
+  tiers: Record<string, MoodCoverageTier>;
+}
+
+export interface MoodBalanceItem {
+  mood: string;
+  count: number;
+}
+
+export interface MoodPairItem {
+  mood1: string;
+  mood2: string;
+  count: number;
+}
+
+export interface DominantVibeItem {
+  mood: string;
+  percentage: number;
+}
+
+export interface MoodAnalysisResponse {
+  coverage: MoodCoverage;
+  balance: Record<string, MoodBalanceItem[]>;
+  top_pairs: MoodPairItem[];
+  dominant_vibes: DominantVibeItem[];
+}
+
+/**
+ * Get mood analysis statistics.
+ * Optionally filtered by libraryId.
+ */
+export async function getMoodAnalysis(
+  libraryId?: string
+): Promise<MoodAnalysisResponse> {
+  const params = libraryId ? `?library_id=${encodeURIComponent(libraryId)}` : "";
+  return get(`/api/web/analytics/mood-analysis${params}`);
 }
