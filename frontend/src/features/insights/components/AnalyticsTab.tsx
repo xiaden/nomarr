@@ -1,29 +1,31 @@
 /**
- * Analytics tab - tag statistics and insights.
+ * Analytics tab - collection profile and insights.
+ *
+ * Uses accordion sections for:
+ * - Collection Overview (stats, years, genres, artists)
+ * - Mood Analysis (coverage, balance, vibes, combos)
+ * - Advanced (tag frequencies, co-occurrence matrix)
  */
 
-import { Alert, CircularProgress, Stack } from "@mui/material";
+import { Box, Stack } from "@mui/material";
+import { useState } from "react";
 
-import { MoodDistributionView } from "../../analytics/components/MoodDistributionView";
-import { TagCoOccurrence } from "../../analytics/components/TagCoOccurrence";
-import { TagFrequenciesTable } from "../../analytics/components/TagFrequenciesTable";
-import { useAnalyticsData } from "../../analytics/hooks/useAnalyticsData";
+import { AdvancedAnalytics } from "./AdvancedAnalytics";
+import { CollectionOverview } from "./CollectionOverview";
+import { LibraryFilter } from "./LibraryFilter";
+import { MoodAnalysis } from "./MoodAnalysis";
 
 export function AnalyticsTab() {
-  const { data, loading, error } = useAnalyticsData();
+  const [libraryId, setLibraryId] = useState<string | undefined>(undefined);
 
   return (
-    <>
-      {loading && <CircularProgress />}
-      {error && <Alert severity="error">Error: {error}</Alert>}
-
-      {!loading && !error && (
-        <Stack spacing={2.5}>
-          <MoodDistributionView data={data.moodDistribution} />
-          <TagFrequenciesTable data={data.tagFrequencies} />
-          <TagCoOccurrence />
-        </Stack>
-      )}
-    </>
+    <Stack spacing={0} sx={{ mt: 2 }}>
+      <Box sx={{ mb: 2 }}>
+        <LibraryFilter value={libraryId} onChange={setLibraryId} />
+      </Box>
+      <CollectionOverview libraryId={libraryId} />
+      <MoodAnalysis libraryId={libraryId} />
+      <AdvancedAnalytics libraryId={libraryId} />
+    </Stack>
   );
 }

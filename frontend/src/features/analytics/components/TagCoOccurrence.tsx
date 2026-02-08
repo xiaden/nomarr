@@ -41,7 +41,12 @@ interface TagCoOccurrenceMatrix {
   matrix: number[][];
 }
 
-export function TagCoOccurrence() {
+interface TagCoOccurrenceProps {
+  /** Optional library ID to filter by */
+  libraryId?: string;
+}
+
+export function TagCoOccurrence({ libraryId }: TagCoOccurrenceProps) {
   const [tagKeys, setTagKeys] = useState<string[]>([]);
   const [tagValues, setTagValues] = useState<string[]>([]);
 
@@ -155,10 +160,13 @@ export function TagCoOccurrence() {
       setLoading(true);
       setError(null);
 
-      const result = await getTagCoOccurrence({
-        x: xTags,
-        y: yTags,
-      });
+      const result = await getTagCoOccurrence(
+        {
+          x: xTags,
+          y: yTags,
+        },
+        libraryId
+      );
 
       setMatrix(result);
     } catch (err) {
