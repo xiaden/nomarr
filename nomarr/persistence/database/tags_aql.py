@@ -617,34 +617,53 @@ class TagOperations:
 
         return {"mood_tag_rows": mood_tag_rows, "tier_tag_keys": tier_tag_keys, "tier_tag_rows": tier_tag_rows}
 
-    def get_mood_distribution_data(self) -> list[tuple[str, str]]:
+    def get_mood_distribution_data(
+        self, library_id: str | None = None,
+    ) -> list[tuple[str, str]]:
         """Get mood tag distribution for analytics.
+
+        Args:
+            library_id: Optional library _id to filter by.
 
         Returns:
             List of (mood_type, tag_value) tuples
 
         """
         mood_rows: list[tuple[str, str]] = []
-        for mood_type in ["nom:mood-strict", "nom:mood-regular", "nom:mood-loose"]:
-            query = """
+        for mood_type in ["nom:mood-strict", "nom:mood-relaxed", "nom:mood-genre"]:
+            library_filter = ""
+            bind_vars: dict[str, Any] = {"mood_type": mood_type}
+
+            if library_id:
+                library_filter = """
+                    LET file = DOCUMENT(edge._from)
+                    FILTER file != null AND file.library_id == @library_id
+                """
+                bind_vars["library_id"] = library_id
+
+            query = f"""
             FOR tag IN tags
                 FILTER tag.rel == @mood_type
                 FOR edge IN song_tag_edges
                     FILTER edge._to == tag._id
+                    {library_filter}
                     RETURN tag.value
             """
             cursor = cast(
-                "Cursor", self._db.aql.execute(query, bind_vars=cast("dict[str, Any]", {"mood_type": mood_type})),
+                "Cursor", self._db.aql.execute(query, bind_vars=cast("dict[str, Any]", bind_vars)),
             )
             mood_rows.extend((mood_type, str(tag_value)) for tag_value in cursor)
 
         return mood_rows
 
-    def get_file_ids_for_tags(self, tag_specs: list[tuple[str, str]]) -> dict[tuple[str, str], set[str]]:
+    def get_file_ids_for_tags(
+        self, tag_specs: list[tuple[str, str]], library_id: str | None = None,
+    ) -> dict[tuple[str, str], set[str]]:
         """Get file IDs for tag co-occurrence analysis.
 
         Args:
             tag_specs: List of (rel, value) tuples
+            library_id: Optional library _id to filter by.
 
         Returns:
             Dict mapping (rel, value) -> set of file_ids
@@ -652,17 +671,372 @@ class TagOperations:
         """
         result: dict[tuple[str, str], set[str]] = {}
 
+        library_filter = ""
+        bind_vars_base: dict[str, Any] = {}
+        if library_id:
+            library_filter = """
+                LET file = DOCUMENT(edge._from)
+                FILTER file != null AND file.library_id == @library_id
+            """
+            bind_vars_base["library_id"] = library_id
+
         for rel, value in tag_specs:
-            query = """
+            bind_vars = {**bind_vars_base, "rel": rel, "value": value}
+            query = f"""
             FOR tag IN tags
                 FILTER tag.rel == @rel AND tag.value == @value
                 FOR edge IN song_tag_edges
                     FILTER edge._to == tag._id
+                    {library_filter}
                     RETURN edge._from
             """
             cursor = cast(
-                "Cursor", self._db.aql.execute(query, bind_vars=cast("dict[str, Any]", {"rel": rel, "value": value})),
+                "Cursor", self._db.aql.execute(query, bind_vars=cast("dict[str, Any]", bind_vars)),
             )
             result[(rel, value)] = set(cursor)
 
         return result
+
+
+    # ──────────────────────────────────────────────────────────────────────────────
+    # Collection Profile Analytics (library-filtered)
+    # ──────────────────────────────────────────────────────────────────────────────
+
+    def get_library_stats(self, library_id: str | None = None) -> dict[str, Any]:
+        """Get aggregate library statistics for Collection Overview.
+
+        Args:
+            library_id: Optional library _id to filter by (e.g., "libraries/12345").
+                        If None, returns stats for all libraries.
+
+        Returns:
+            Dict with keys: file_count, total_duration_ms, total_file_size_bytes,
+                           avg_track_length_ms
+        """
+        filter_clause = "FILTER file.library_id == @library_id" if library_id else ""
+        bind_vars: dict[str, Any] = {"library_id": library_id} if library_id else {}
+
+        query = f"""
+        FOR file IN library_files
+            {filter_clause}
+            COLLECT AGGREGATE
+                file_count = COUNT(1),
+                total_duration_s = SUM(file.duration_seconds),
+                total_size = SUM(file.file_size)
+            RETURN {{
+                file_count: file_count,
+                total_duration_ms: (total_duration_s || 0) * 1000,
+                total_file_size_bytes: total_size || 0,
+                avg_track_length_ms: file_count > 0
+                    ? ((total_duration_s || 0) / file_count) * 1000
+                    : 0
+            }}
+        """
+        cursor = cast("Cursor", self._db.aql.execute(query, bind_vars=cast("dict[str, Any]", bind_vars)))
+        result = next(cursor, None)
+        return result or {
+            "file_count": 0,
+            "total_duration_ms": 0,
+            "total_file_size_bytes": 0,
+            "avg_track_length_ms": 0,
+        }
+
+    def get_year_distribution(self, library_id: str | None = None) -> list[dict[str, Any]]:
+        """Get year/decade distribution for Collection Overview.
+
+        Args:
+            library_id: Optional library _id to filter by.
+                        If None, returns stats for all libraries.
+
+        Returns:
+            List of {year: int, count: int} sorted by year ascending.
+        """
+        library_filter = ""
+        bind_vars: dict[str, Any] = {}
+
+        if library_id:
+            library_filter = """
+                LET file = DOCUMENT(edge._from)
+                FILTER file != null AND file.library_id == @library_id
+            """
+            bind_vars["library_id"] = library_id
+
+        query = f"""
+        FOR tag IN tags
+            FILTER tag.rel == "year"
+            LET song_count = LENGTH(
+                FOR edge IN song_tag_edges
+                    FILTER edge._to == tag._id
+                    {library_filter}
+                    RETURN 1
+            )
+            FILTER song_count > 0
+            SORT tag.value ASC
+            RETURN {{
+                year: tag.value,
+                count: song_count
+            }}
+        """
+        cursor = cast("Cursor", self._db.aql.execute(query, bind_vars=cast("dict[str, Any]", bind_vars)))
+        return list(cursor)
+
+    def get_genre_distribution(
+        self, library_id: str | None = None, limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Get genre distribution for Collection Overview.
+
+        Args:
+            library_id: Optional library _id to filter by.
+            limit: Max genres to return (sorted by count desc).
+
+        Returns:
+            List of {genre: str, count: int} sorted by count descending.
+        """
+        library_filter = ""
+        bind_vars: dict[str, Any] = {"limit": limit}
+
+        if library_id:
+            library_filter = """
+                LET file = DOCUMENT(edge._from)
+                FILTER file != null AND file.library_id == @library_id
+            """
+            bind_vars["library_id"] = library_id
+
+        query = f"""
+        FOR tag IN tags
+            FILTER tag.rel == "genre"
+            LET song_count = LENGTH(
+                FOR edge IN song_tag_edges
+                    FILTER edge._to == tag._id
+                    {library_filter}
+                    RETURN 1
+            )
+            FILTER song_count > 0
+            SORT song_count DESC
+            LIMIT @limit
+            RETURN {{
+                genre: tag.value,
+                count: song_count
+            }}
+        """
+        cursor = cast("Cursor", self._db.aql.execute(query, bind_vars=cast("dict[str, Any]", bind_vars)))
+        return list(cursor)
+
+    def get_artist_distribution(
+        self, library_id: str | None = None, limit: int = 20,
+    ) -> dict[str, Any]:
+        """Get artist distribution for Collection Overview.
+
+        Args:
+            library_id: Optional library _id to filter by.
+            limit: Max artists to return in top list.
+
+        Returns:
+            Dict with: top_artists (list of {artist, count}), others_count (int),
+                       total_artists (int)
+        """
+        library_filter = ""
+        bind_vars: dict[str, Any] = {"limit": limit}
+
+        if library_id:
+            library_filter = """
+                LET file = DOCUMENT(edge._from)
+                FILTER file != null AND file.library_id == @library_id
+            """
+            bind_vars["library_id"] = library_id
+
+        # Get all artists with counts
+        query = f"""
+        FOR tag IN tags
+            FILTER tag.rel == "artist"
+            LET song_count = LENGTH(
+                FOR edge IN song_tag_edges
+                    FILTER edge._to == tag._id
+                    {library_filter}
+                    RETURN 1
+            )
+            FILTER song_count > 0
+            SORT song_count DESC
+            RETURN {{
+                artist: tag.value,
+                count: song_count
+            }}
+        """
+        cursor = cast("Cursor", self._db.aql.execute(query, bind_vars=cast("dict[str, Any]", bind_vars)))
+        all_artists = list(cursor)
+
+        total_artists = len(all_artists)
+        top_artists = all_artists[:limit]
+        others_count = sum(a["count"] for a in all_artists[limit:])
+
+        return {
+            "top_artists": top_artists,
+            "others_count": others_count,
+            "total_artists": total_artists,
+        }
+
+
+    def get_mood_coverage(self, library_id: str | None = None) -> dict[str, Any]:
+        """Get percentage of files tagged per mood tier for Mood Analysis.
+
+        Args:
+            library_id: Optional library _id to filter by.
+
+        Returns:
+            Dict with: total_files, tiers (dict of tier_name -> {tagged, percentage})
+        """
+        # First get total file count
+        stats = self.get_library_stats(library_id)
+        total_files = stats["file_count"]
+
+        if total_files == 0:
+            return {
+                "total_files": 0,
+                "tiers": {
+                    "strict": {"tagged": 0, "percentage": 0.0},
+                    "relaxed": {"tagged": 0, "percentage": 0.0},
+                    "genre": {"tagged": 0, "percentage": 0.0},
+                },
+            }
+
+        tier_map = {
+            "strict": "nom:mood-strict",
+            "relaxed": "nom:mood-relaxed",
+            "genre": "nom:mood-genre",
+        }
+
+        tiers: dict[str, dict[str, Any]] = {}
+
+        for tier_name, rel in tier_map.items():
+            library_filter = ""
+            bind_vars: dict[str, Any] = {"rel": rel}
+
+            if library_id:
+                library_filter = "FILTER file.library_id == @library_id"
+                bind_vars["library_id"] = library_id
+
+            query = f"""
+            LET tagged_files = (
+                FOR tag IN tags
+                    FILTER tag.rel == @rel
+                    FOR edge IN song_tag_edges
+                        FILTER edge._to == tag._id
+                        RETURN DISTINCT edge._from
+            )
+            LET filtered = (
+                FOR file_id IN tagged_files
+                    LET file = DOCUMENT(file_id)
+                    FILTER file != null
+                    {library_filter}
+                    RETURN 1
+            )
+            RETURN LENGTH(filtered)
+            """
+            cursor = cast("Cursor", self._db.aql.execute(query, bind_vars=cast("dict[str, Any]", bind_vars)))
+            tagged_count = next(cursor, 0)
+
+            tiers[tier_name] = {
+                "tagged": tagged_count,
+                "percentage": round((tagged_count / total_files) * 100, 1) if total_files > 0 else 0.0,
+            }
+
+        return {
+            "total_files": total_files,
+            "tiers": tiers,
+        }
+
+    def get_mood_balance(self, library_id: str | None = None) -> dict[str, list[dict[str, Any]]]:
+        """Get mood value distribution across tiers for Mood Analysis.
+
+        Args:
+            library_id: Optional library _id to filter by.
+
+        Returns:
+            Dict mapping tier_name -> list of {mood: str, count: int}.
+        """
+        tier_map = {
+            "strict": "nom:mood-strict",
+            "relaxed": "nom:mood-relaxed",
+            "genre": "nom:mood-genre",
+        }
+
+        result: dict[str, list[dict[str, Any]]] = {}
+
+        for tier_name, rel in tier_map.items():
+            library_filter = ""
+            bind_vars: dict[str, Any] = {"rel": rel}
+
+            if library_id:
+                library_filter = """
+                    LET file = DOCUMENT(edge._from)
+                    FILTER file != null AND file.library_id == @library_id
+                """
+                bind_vars["library_id"] = library_id
+
+            query = f"""
+            FOR tag IN tags
+                FILTER tag.rel == @rel
+                LET song_count = LENGTH(
+                    FOR edge IN song_tag_edges
+                        FILTER edge._to == tag._id
+                        {library_filter}
+                        RETURN 1
+                )
+                FILTER song_count > 0
+                SORT song_count DESC
+                RETURN {{
+                    mood: tag.value,
+                    count: song_count
+                }}
+            """
+            cursor = cast("Cursor", self._db.aql.execute(query, bind_vars=cast("dict[str, Any]", bind_vars)))
+            result[tier_name] = list(cursor)
+
+        return result
+
+    def get_top_mood_pairs(
+        self, library_id: str | None = None, limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        """Get top co-occurring mood pairs for Mood Analysis.
+
+        Finds the most common pairs of mood values that appear on the same songs.
+
+        Args:
+            library_id: Optional library _id to filter by.
+            limit: Max pairs to return.
+
+        Returns:
+            List of {mood1: str, mood2: str, count: int} sorted by count DESC.
+        """
+        library_filter = ""
+        bind_vars: dict[str, Any] = {"limit": limit}
+
+        if library_id:
+            library_filter = """
+                LET file = DOCUMENT(edge1._from)
+                FILTER file != null AND file.library_id == @library_id
+            """
+            bind_vars["library_id"] = library_id
+
+        query = f"""
+        FOR tag1 IN tags
+            FILTER STARTS_WITH(tag1.rel, "nom:mood-")
+            FOR edge1 IN song_tag_edges
+                FILTER edge1._to == tag1._id
+                {library_filter}
+                FOR edge2 IN song_tag_edges
+                    FILTER edge2._from == edge1._from AND edge2._to != edge1._to
+                    FOR tag2 IN tags
+                        FILTER tag2._id == edge2._to AND STARTS_WITH(tag2.rel, "nom:mood-")
+                        FILTER tag1.value < tag2.value  // Avoid duplicates (A,B) and (B,A)
+                        COLLECT mood1 = tag1.value, mood2 = tag2.value WITH COUNT INTO pair_count
+                        SORT pair_count DESC
+                        LIMIT @limit
+                        RETURN {{
+                            mood1: mood1,
+                            mood2: mood2,
+                            count: pair_count
+                        }}
+        """
+        cursor = cast("Cursor", self._db.aql.execute(query, bind_vars=cast("dict[str, Any]", bind_vars)))
+        return list(cursor)
