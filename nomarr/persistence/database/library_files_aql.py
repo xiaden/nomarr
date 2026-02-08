@@ -517,7 +517,7 @@ class LibraryFilesOperations:
         self.db.aql.execute(
             """
             FOR edge IN song_tag_edges
-                FILTER edge._to == @file_id
+                FILTER edge._from == @file_id
                 REMOVE edge IN song_tag_edges
             """,
             bind_vars={"file_id": file_id},
