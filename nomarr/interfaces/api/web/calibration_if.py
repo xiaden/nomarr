@@ -1,5 +1,4 @@
 """Calibration management endpoints for web UI."""
-import asyncio
 import logging
 from typing import TYPE_CHECKING, Annotated, Any
 
@@ -65,40 +64,20 @@ async def get_calibration_status(tagging_service: Annotated["TaggingService", De
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get calibration status")) from e
 
 @router.post("/generate", dependencies=[Depends(verify_session)])
-async def generate_calibration(request: CalibrationRequest, calibration_service: Annotated["CalibrationService", Depends(get_calibration_service)]):
-    """DEPRECATED: Use /generate-histogram instead.
+async def generate_calibration(request: CalibrationRequest, calibration_service: Annotated["CalibrationService", Depends(get_calibration_service)]) -> dict[str, Any]:
+    """DEPRECATED: Use /start-histogram instead.
 
-    This endpoint is kept for backward compatibility but now uses histogram calibration internally.
+    This endpoint is kept for backward compatibility. Now starts background generation
+    and returns immediately. Use GET /histogram-status to check progress.
     """
     try:
-        return calibration_service.generate_histogram_calibration()
+        if calibration_service.is_generation_running():
+            return {"status": "already_running", "message": "Calibration generation already in progress"}
+        calibration_service.start_histogram_calibration_background()
+        return {"status": "started", "message": "Calibration generation started in background"}
     except Exception as e:
         logger.error(f"[Web] Calibration generation failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Calibration generation failed")) from e
-
-@router.post("/generate-histogram", dependencies=[Depends(verify_session)])
-async def generate_histogram_calibration(calibration_service: Annotated["CalibrationService", Depends(get_calibration_service)]) -> dict[str, Any]:
-    """Generate calibrations using sparse uniform histogram approach (NEW).
-
-    Stateless, idempotent. Always computes from current DB state.
-    Uses 10,000 uniform bins per head, memory-bounded (~8 MB vs. ~1 GB old approach).
-
-    Returns:
-        {
-          "version": int,
-          "heads_processed": int,
-          "heads_success": int,
-          "heads_failed": int,
-          "results": {head_key: {p5, p95, n, underflow_count, overflow_count}}
-        }
-
-    """
-    try:
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, calibration_service.generate_histogram_calibration)
-    except Exception as e:
-        logger.error(f"[Web] Histogram calibration generation failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Histogram calibration failed")) from e
 
 @router.post("/start-histogram", dependencies=[Depends(verify_session)])
 async def start_histogram_calibration_background(calibration_service: Annotated["CalibrationService", Depends(get_calibration_service)]) -> dict[str, Any]:
