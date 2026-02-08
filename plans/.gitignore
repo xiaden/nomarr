@@ -1,3 +1,7 @@
 # Plan files are transient/personal
 *.md
 *.json
+
+# Keep examples committed
+!examples/
+!examples/*.md

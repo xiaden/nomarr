@@ -4,319 +4,217 @@ description: Valid syntax for task plan markdown files parsed by mcp_code_intel
 applyTo: plans/**
 ---
 
-# Task Plan Creation and Syntax Guide
+# Task Plan Syntax
 
-**Auto-applies when creating or editing files in `plans/`**
-
-Plans are parsed by `mcp_code_intel.helpers.plan_md` according to `code-intel/src/mcp_code_intel/schemas/PLAN_MARKDOWN_SCHEMA.json`. Invalid structure causes `ValueError`.
+Plans are parsed by `mcp_code_intel.helpers.plan_md`. Invalid structure causes `ValueError`.
 
 ---
 
-## Schema Definition
+## Minimal Template (Single Plan)
 
-Plans are JSON-serializable with this structure:
-
-```json
-{
-  "title": "string (required)",
-  "Problem Statement": "string or array (recommended)",
-  "phases": [
-    {
-      "number": 1,
-      "title": "string",
-      "steps": [
-        {
-          "id": "P1-S1",
-          "text": "string",
-          "done": false,
-          "annotations": {
-            "Notes": "string or array (pure bullets → array, mixed → string)",
-            "Warning": "string or array",
-            "Blocked": "string or array"
-          }
-        }
-      ],
-      "annotations": {}
-    }
-  ],
-  "Completion Criteria": "string or array (recommended)",
-  "References": "string or array (optional)"
-}
-```
-
-**Critical rules:**
-- Steps MUST be flat (no nesting/children)
-- Phase numbers MUST be sequential integers starting at 1
-- Step IDs auto-generated as `P{phase}-S{index}`
-- **Annotations:** Pure bullet lists → arrays; mixed content (text + bullets) → string with `\n`
-
----
-
-## Required Structure
-
-### Minimal Template
+Use for tasks with ≤2 phases and ≤12 steps total.
 
 ```markdown
 # Task: <Brief Title>
 
 ## Problem Statement
-<What needs to be done and why. Include any context a fresh model needs.>
+<What and why. Assume reader has zero context.>
 
 ## Phases
 
-### Phase 1: <Name>
-- [ ] Step description
-- [ ] Step description
+### Phase 1: <Outcome Name>
+- [ ] Concrete, verifiable step
+- [ ] Another step
 
-### Phase 2: <Name>
-- [ ] Step description
+### Phase 2: <Outcome Name>
+- [ ] Step
 
 ## Completion Criteria
-<How to know when done.>
+- Measurable success condition
+- Another condition
+
+## References
+- Related issue, ADR, or prior plan
 ```
-
-### Format Rules
-
-| Element | Pattern | Example |
-|---------|---------|---------|
-| Title | `# Task: <title>` or `# <title>` | `# Task: Refactor Auth` |
-| Section | `## <name>` | `## Problem Statement` |
-| Phase | `### Phase N: <title>` | `### Phase 1: Discovery` |
-| Step (incomplete) | `- [ ] <text>` | `- [ ] Run lint_project_backend` |
-| Step (complete) | `- [x] <text>` | `- [x] Run lint_project_backend` |
-| Annotation | `**Marker:** <text>` | `**Notes:** Found 3 issues` |
-
-**Phase numbers MUST be integers.** The parser uses regex `### Phase (\d+): (.+)`.
-
-**Step IDs are auto-generated** as `P<phase>-S<step>`:
-- Phase 1, Step 1 → `P1-S1`
-- Phase 2, Step 3 → `P2-S3`
-
-### Supported Sections
-
-Any `## Header` becomes a key in the parsed output. Common sections:
-- `Problem Statement` - Context for fresh models (can be multi-line)
-- `Completion Criteria` - Success conditions (parsed as bullet list if formatted that way)
-- `References` - Related issues, ADRs, previous attempts
-
-### Annotations (Phase-Level vs Step-Level)
-
-**Phase-level annotations** go after the steps, before the next phase:
-
-```markdown
-### Phase 1: Discovery
-- [x] Find all auth patterns
-- [x] Document endpoints
-
-**Notes:** Found 3 patterns: session, API key, legacy token.
-**Warning:** Legacy token has no tests.
-```
-
-**Step-level annotations** are indented under the step (created by `plan_complete_step`):
-
-```markdown
-- [x] Remove legacy auth
-    **Notes:** Had to update 12 callers
-    **Warning:** One caller in deprecated endpoint, added TODO
-```
-
-These are parsed and returned by `plan_read`.
 
 ---
 
-## Writing Quality Steps
+## Format Rules
 
-**Good steps are:**
-- **Actionable** - Clear what needs doing (`Run lint_project_backend on helpers/`)
-- **Verifiable** - Can confirm completion (`All tests pass`, not "improve tests")
-- **Atomic** - One logical outcome per step
-- **Appropriately scoped** - Not too granular ("add import") or vague ("fix auth")
+| Element | Pattern | Note |
+|---------|---------|------|
+| Title | `# Task: <title>` | |
+| Section | `## <name>` | Any `## Header` becomes a parsed key |
+| Phase | `### Phase N: <title>` | N must be sequential integer (1, 2, 3...) |
+| Step | `- [ ] <text>` or `- [x] <text>` | **Must be flat — no indented checkboxes** |
+| Annotation | `**Notes:**`, `**Warning:**`, `**Blocked:**` | Phase-level (after steps) or step-level (indented under step) |
 
-**Examples:**
+**Step IDs** auto-generate as `P{phase}-S{step}` (e.g., `P1-S1`, `P2-S3`).
+
+---
+
+## Writing Good Steps
 
 | ❌ Bad | ✅ Good |
 |--------|---------|
-| Work on auth middleware | Implement SessionAuthMiddleware class in interfaces/api/middleware/ |
-| Fix issues | Resolve mypy errors in persistence/models/library.py |
-| Add imports | Create config_service module with ConfigService class |
+| Fix auth | Implement SessionAuthMiddleware in interfaces/api/middleware/ |
 | Test stuff | Verify lint_project_backend passes on nomarr/services |
+| Add imports | Create config_service module with ConfigService class |
 | Make it work | Update all callers of get_library() to use new signature |
 
-**Phase Design:**
-- Phases represent **semantic outcomes**, not file boundaries
-- Example: "Discovery", "Implementation", "Validation" not "Edit file 1", "Edit file 2"
-- Group related steps by what they accomplish, not how they're implemented
+**Steps must be:** Actionable (clear action), Verifiable (can confirm done), Atomic (one outcome).
+
+**Phases are semantic outcomes** ("Discovery", "Validation"), not file names ("Edit file 1").
 
 ---
 
-## Plan Size Budget and Splitting
+## When to Split
 
-**Hard rule:** If a plan would exceed chat/tool payload budget, split it into multiple plan files.
+Split into parent→child plans if ANY condition is true:
+- More than 2 phases
+- More than 12 steps total
+- `plan_read` returns a resource link instead of inline content
 
-### When to Split (Deterministic Triggers)
+**Resource link = absolute trigger.** If you see `Large tool result written to file...`, the plan is too large. Split immediately.
 
-Split if ANY of these conditions are true:
-- More than 2 phases, OR
-- More than 12 steps total, OR
-- Combined length of Problem Statement + all Phases + Completion Criteria is estimated as "long" (fallback heuristic after step/phase count)
+---
 
-### How to Split (Strategy)
+## Split Architecture
 
-**Split by semantic outcomes, not file boundaries or implementation details.**
+**Maximum 2 levels.** One parent orchestrator + multiple child plans. Never nest orchestrators.
 
-Each split plan MUST:
-- Be independently executable (can start without other plans completed)
-- Be independently verifiable (has its own Completion Criteria)
-- Have flat steps (no nesting)
-- Follow all schema rules (sequential phase numbers, proper format)
+### Parent (Orchestrator)
 
-**Example of outcome-based splitting:**
-- ❌ Bad: Split by "backend files" vs "frontend files"
-- ✅ Good: Split by "data layer implementation" vs "API wiring" vs "UI components"
-
-### Naming Convention for Split Plans
-
-Use a stable alphabetic suffix pattern:
-```
-TASK-<feature>-A-<outcome1>
-TASK-<feature>-B-<outcome2>
-TASK-<feature>-C-<outcome3>
-```
-
-**Examples:**
-```
-TASK-insights-collection-A-backend-stats.md
-TASK-insights-collection-B-api-wiring.md
-TASK-insights-collection-C-frontend-view.md
-```
-
-### Linking Split Plans
-
-In each plan's frontmatter sections:
-
-**References section** - List all related plans:
 ```markdown
-## References
-- TASK-insights-collection-A-backend-stats.md
-- TASK-insights-collection-B-api-wiring.md
-- TASK-insights-collection-C-frontend-view.md
-```
+# Task: Feature Name (Orchestrator)
 
-**Completion Criteria** - Include cross-plan dependencies:
-```markdown
+## Problem Statement
+High-level overview. Child plans contain details.
+
+## Phases
+
+### Phase 1: Orchestration
+- [ ] TASK-feature-A-discovery complete
+- [ ] TASK-feature-B-implementation complete
+    **Blocked:** Requires A sign-off
+- [ ] TASK-feature-C-validation complete
+
 ## Completion Criteria
-- All steps in this plan completed
-- TASK-insights-collection-A-backend-stats completed (prerequisite)
-- Integration tests pass across plans A+B+C
+- All child plans completed
+
+## References
+- `plans/TASK-feature-A-discovery.md`
+- `plans/TASK-feature-B-implementation.md`
+- `plans/TASK-feature-C-validation.md`
 ```
 
-### Why This Matters
+**Parent rules:**
+- Single phase named "Orchestration"
+- Steps are child completion conditions, not implementation actions
+- Mark step complete when linked child reaches 100%
 
-Deterministic splitting prevents:
-- Token overflow causing execution failures
-- Plan-fragment drift (inconsistent splitting decisions)
-- Hidden dependencies between fragments
-- Arbitrary complexity judgments leading to nested steps
+### Child
 
-**Validation:** Each split plan must pass `plan_read` independently.
+```markdown
+# Task: Feature Name - Discovery
+
+## Problem Statement
+Specific scope. Context for fresh models.
+
+**Parent:** `TASK-feature.md`
+**Prerequisite:** None (or required sibling)
+
+## Phases
+
+### Phase 1: Analysis
+- [ ] Step
+- [ ] Step
+
+### Phase 2: Assessment
+- [ ] Step
+
+## Completion Criteria
+- Criteria
+
+## References
+- Parent: `plans/TASK-feature.md`
+- Siblings: B-implementation, C-validation
+```
+
+**Child rules:**
+- Title: `<Parent Feature> - <Child Outcome>`
+- Problem Statement includes parent reference and prerequisites
+- Can have multiple phases
+
+### Naming Convention
+
+```
+TASK-<feature>.md                 (orchestrator)
+TASK-<feature>-A-<outcome>.md     (first child)
+TASK-<feature>-B-<outcome>.md     (second child)
+```
+
+### If a Child Is Still Too Large
+
+**Add siblings, don't nest deeper.**
+
+```
+Before: TASK-feature-A-discovery.md triggers split
+After:  TASK-feature-A1-discovery-scope.md
+        TASK-feature-A2-discovery-assess.md
+```
+
+Parent gains additional steps. Hierarchy stays at 2 levels.
 
 ---
+
 ## Parser Rejection Rules
 
-The parser will **reject with `ValueError`** if:
-
-### Nested Steps (CRITICAL)
+### Nested Steps ❌
 ```markdown
-### Phase 1: Setup
 - [ ] Create files
-  - [ ] Create auth.py    # ❌ Indented checkbox = NESTED STEP
+  - [ ] Create auth.py    ← REJECTED: indented checkbox
 ```
+Fix: Unnest as flat steps, move to `**Notes:**`, or split into phases.
 
-**Error message:** `"Plan contains nested steps, which are not allowed per PLAN_MARKDOWN_SCHEMA.json"`
-
-**Why rejected:** Nested steps create ambiguous execution models. If substeps are needed:
-- Distinct outcomes → unnest as separate flat steps
-- Implementation details → convert to `**Notes:**` annotation
-- Need grouping → create new phase
-
-### Non-Sequential Phase Numbers
+### Non-Sequential Phases ❌
 ```markdown
 ### Phase 1: Discovery
-### Phase 3: Implementation    # ❌ Skipped Phase 2
+### Phase 3: Implementation   ← REJECTED: skipped 2
 ```
 
-Parser expects phases numbered 1, 2, 3... with no gaps.
-
-### Invalid Phase Header Format
+### Invalid Phase Format ❌
 ```markdown
-### Phase One: Discovery       # ❌ Must be integer
-### Phase 1 - Discovery        # ❌ Must use colon
+### Phase One: Discovery      ← REJECTED: must be integer
+### Phase 1 - Discovery       ← REJECTED: must use colon
 ```
-
-**Required:** `### Phase \d+: <title>` (regex pattern enforced)
 
 ---
 
-## Validating Plans After Creation
+## Validation
 
-**Always validate before executing:**
-
-After writing or modifying a plan, use `plan_read` to verify it parses correctly:
-
-```python
-plan_read(plan_name)
-```
-
-**What this catches:**
-- Invalid phase numbers (1.5, A, 1a, non-sequential)
-- Malformed checkboxes or nested steps
-- Schema violations
-
-**If `plan_read` returns an error:**
-- Fix the plan structure immediately
-- Re-validate with `plan_read` again
-- Only then proceed to execution with `plan_complete_step`
-
-**Example validation flow:**
-```python
-# After creating plans/TASK-new-feature.md
-result = plan_read("TASK-new-feature")
-
-if "error" in result:
-    # Fix the plan file, then validate again
-    print(f"Plan validation failed: {result['message']}")
-else:
-    # Plan is valid, safe to execute
-    print(f"Plan validated: {result['title']}")
-```
-
-**Why this matters:** Parse errors block both reading and step completion. Catching structural issues immediately prevents wasted work on unexecutable plans.
+**Always run `plan_read(plan_name)` after creating a plan.** Fix errors before proceeding. For split plans, validate parent and all children independently.
 
 ---
 
-## Complete Example
+## Complete Examples
 
-See `plans/examples/TASK-example-comprehensive.md` for a fully-formed plan demonstrating all patterns.
-
-**Key characteristics of a good plan:**
-- Problem statement assumes reader has no context
-- Phases are outcome-oriented ("Validation" not "Phase 3")
-- Steps are concrete and verifiable
-- Completion criteria are measurable
-- Annotations capture decisions, blockers, warnings
+See `plans/examples/`:
+- `TASK-example-comprehensive.md` — Parent orchestrator
+- `TASK-example-A-discovery.md` through `D-cleanup.md` — Child plans
 
 ---
 
 ## Common Mistakes
 
-| Don't | Do Instead | Why |
-|-------|------------|-----|
-| Indent checkboxes | Keep all steps flat | Parser rejects nested structure |
-| Skip phase numbers (1→3) | Sequential numbering | Parser validation |
-| Use `### Phase One:` | Use `### Phase 1:` | Regex requires integer |
-| Write vague steps ("fix auth") | Concrete outcomes ("Implement AuthMiddleware in interfaces/api/") | Steps must be verifiable |
-| Skip problem statement | Context for fresh models | Cross-session continuity |
-| Manual checkbox edits | Use `plan_complete_step` | Preserves annotations |
-| Steps like "add import X" | Group into meaningful units | Avoid over-granularity |
-| Split plan arbitrarily | Use deterministic triggers (>2 phases, >12 steps) + outcome-based naming | Prevents plan-fragment drift |
-
+| Don't | Do Instead |
+|-------|------------|
+| Indent checkboxes | Flat steps only |
+| Skip phase numbers (1→3) | Sequential: 1, 2, 3 |
+| `### Phase One:` | `### Phase 1:` |
+| Vague steps ("fix auth") | Concrete ("Implement AuthMiddleware in X") |
+| Skip problem statement | Always include context |
+| Manual checkbox edits | Use `plan_complete_step` |
+| Micro-steps ("add import") | Meaningful units |
+| Multiple orchestrator phases | Single "Orchestration" phase |
+| Nest 3+ levels | Add siblings (A1, A2) instead |
