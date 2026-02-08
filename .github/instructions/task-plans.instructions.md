@@ -149,6 +149,78 @@ These are parsed and returned by `plan_read`.
 
 ---
 
+## Plan Size Budget and Splitting
+
+**Hard rule:** If a plan would exceed chat/tool payload budget, split it into multiple plan files.
+
+### When to Split (Deterministic Triggers)
+
+Split if ANY of these conditions are true:
+- More than 2 phases, OR
+- More than 12 steps total, OR
+- Combined length of Problem Statement + all Phases + Completion Criteria is estimated as "long" (fallback heuristic after step/phase count)
+
+### How to Split (Strategy)
+
+**Split by semantic outcomes, not file boundaries or implementation details.**
+
+Each split plan MUST:
+- Be independently executable (can start without other plans completed)
+- Be independently verifiable (has its own Completion Criteria)
+- Have flat steps (no nesting)
+- Follow all schema rules (sequential phase numbers, proper format)
+
+**Example of outcome-based splitting:**
+- ❌ Bad: Split by "backend files" vs "frontend files"
+- ✅ Good: Split by "data layer implementation" vs "API wiring" vs "UI components"
+
+### Naming Convention for Split Plans
+
+Use a stable alphabetic suffix pattern:
+```
+TASK-<feature>-A-<outcome1>
+TASK-<feature>-B-<outcome2>
+TASK-<feature>-C-<outcome3>
+```
+
+**Examples:**
+```
+TASK-insights-collection-A-backend-stats.md
+TASK-insights-collection-B-api-wiring.md
+TASK-insights-collection-C-frontend-view.md
+```
+
+### Linking Split Plans
+
+In each plan's frontmatter sections:
+
+**References section** - List all related plans:
+```markdown
+## References
+- TASK-insights-collection-A-backend-stats.md
+- TASK-insights-collection-B-api-wiring.md
+- TASK-insights-collection-C-frontend-view.md
+```
+
+**Completion Criteria** - Include cross-plan dependencies:
+```markdown
+## Completion Criteria
+- All steps in this plan completed
+- TASK-insights-collection-A-backend-stats completed (prerequisite)
+- Integration tests pass across plans A+B+C
+```
+
+### Why This Matters
+
+Deterministic splitting prevents:
+- Token overflow causing execution failures
+- Plan-fragment drift (inconsistent splitting decisions)
+- Hidden dependencies between fragments
+- Arbitrary complexity judgments leading to nested steps
+
+**Validation:** Each split plan must pass `plan_read` independently.
+
+---
 ## Parser Rejection Rules
 
 The parser will **reject with `ValueError`** if:
@@ -246,4 +318,5 @@ See `plans/examples/TASK-example-comprehensive.md` for a fully-formed plan demon
 | Skip problem statement | Context for fresh models | Cross-session continuity |
 | Manual checkbox edits | Use `plan_complete_step` | Preserves annotations |
 | Steps like "add import X" | Group into meaningful units | Avoid over-granularity |
+| Split plan arbitrarily | Use deterministic triggers (>2 phases, >12 steps) + outcome-based naming | Prevents plan-fragment drift |
 

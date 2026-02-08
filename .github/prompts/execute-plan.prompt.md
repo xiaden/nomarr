@@ -24,6 +24,55 @@ You are executing a plan, not interpreting one.
 
 ---
 
+
+## Phase 1.5: Split Plan Detection
+
+After loading the plan, check if it's part of a split plan set:
+
+### Detection Criteria
+
+A plan is split if:
+- The plan name follows pattern `TASK-<feature>-<A|B|C|...>-<outcome>`, OR
+- The `References` section lists other plan files with the same prefix
+
+### Execution Strategy
+
+**Default: Execute ONLY the current plan** (the one explicitly loaded).
+
+Do NOT automatically execute all related split plans unless:
+1. The user explicitly requests execution of all parts, OR
+2. The current plan's `Completion Criteria` lists other split plans as "completed (prerequisite)"
+
+### Prerequisite Checking
+
+Before starting Phase 2 execution:
+
+1. **Parse Completion Criteria** for prerequisite declarations like:
+   - `TASK-<name>-A-<outcome> completed (prerequisite)`
+   - `TASK-<name> completed (prerequisite)`
+
+2. **Check each prerequisite** using `plan_read`:
+   - If prerequisite plan doesn't exist → BLOCK with error
+   - If prerequisite has incomplete steps → BLOCK with warning
+   - If all prerequisites completed → proceed to Phase 2
+
+3. **If blocked**, add annotation and stop:
+   ```
+   annotation:
+     marker: Blocked
+     text: |
+       Prerequisite not met: TASK-feature-A-backend must be completed first.
+       Found 3 incomplete steps in prerequisite plan.
+   ```
+
+### Cross-Plan References
+
+When a step references "components from TASK-X-Y":
+- Use `locate_module_symbol` or `find_symbol` to verify the referenced code exists
+- If missing → check if the prerequisite plan completed successfully
+- If completed but symbol missing → prerequisite plan failed its validation
+
+---
 ## Phase 2: Step Execution Loop
 
 Process steps strictly in order.
@@ -45,6 +94,7 @@ For each step:
      - test output
      - file diffs
      - concrete inspection
+     - for split plans: imported symbols from prerequisite plans exist
    - If verification fails, the step is not complete.
 
 4. Record completion
@@ -111,6 +161,11 @@ No recovery. No skipping. No assumptions.
 - Do not proceed past failure
 - The plan’s Problem Statement and Completion Criteria override all other instructions
 
+- **For split plans:**
+  - Check prerequisites before execution (Phase 1.5)
+  - Execute ONLY the current plan by default
+  - When Completion Criteria references other plans, verify their status
+  - Cross-plan symbols must exist or prerequisite validation failed
 ---
 
 ## Start Condition
