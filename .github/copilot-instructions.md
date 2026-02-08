@@ -503,7 +503,7 @@ $token = $login.session_token
 
 # 2. Use token for authenticated requests
 $headers = @{Authorization="Bearer $token"}
-Invoke-RestMethod -Uri "http://localhost:8356/api/web/calibration/histogram/generate" `
+Invoke-RestMethod -Uri "http://localhost:8356/api/web/calibration/generate-histogram" `
   -Method Post -Headers $headers
 ```
 
