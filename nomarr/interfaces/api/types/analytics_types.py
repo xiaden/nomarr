@@ -138,3 +138,115 @@ class TagCoOccurrencesResponse(BaseModel):
             y=[TagSpecRequest(key=tag.key, value=tag.value) for tag in dto.y_tags],
             matrix=dto.matrix,
         )
+
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Collection Profile Response Models
+# ──────────────────────────────────────────────────────────────────────
+
+
+class LibraryStatsResponse(BaseModel):
+    """Library aggregate statistics."""
+
+    file_count: int = Field(..., description="Total number of files")
+    total_duration_ms: int = Field(..., description="Total duration in milliseconds")
+    total_file_size_bytes: int = Field(..., description="Total file size in bytes")
+    avg_track_length_ms: float = Field(..., description="Average track length in milliseconds")
+
+
+class YearDistributionItemResponse(BaseModel):
+    """Single year in year distribution."""
+
+    year: int | str = Field(..., description="Year or 'Unknown'")
+    count: int = Field(..., description="Number of tracks")
+
+
+class GenreDistributionItemResponse(BaseModel):
+    """Single genre in distribution."""
+
+    genre: str = Field(..., description="Genre name")
+    count: int = Field(..., description="Number of tracks")
+
+
+class ArtistDistributionItemResponse(BaseModel):
+    """Single artist in distribution."""
+
+    artist: str = Field(..., description="Artist name")
+    count: int = Field(..., description="Number of tracks")
+
+
+class ArtistDistributionResponse(BaseModel):
+    """Artist distribution with long tail count."""
+
+    top_artists: list[ArtistDistributionItemResponse] = Field(
+        default_factory=list, description="Top artists by track count",
+    )
+    others_count: int = Field(..., description="Track count from remaining artists")
+    total_artists: int = Field(..., description="Total unique artists")
+
+
+class CollectionOverviewResponse(BaseModel):
+    """Response for collection overview endpoint."""
+
+    stats: LibraryStatsResponse = Field(..., description="Library statistics")
+    year_distribution: list[YearDistributionItemResponse] = Field(
+        default_factory=list, description="Year distribution",
+    )
+    genre_distribution: list[GenreDistributionItemResponse] = Field(
+        default_factory=list, description="Genre distribution",
+    )
+    artist_distribution: ArtistDistributionResponse = Field(..., description="Artist distribution")
+
+
+class MoodCoverageTierResponse(BaseModel):
+    """Coverage for a single mood tier."""
+
+    tagged: int = Field(..., description="Number of files with mood tags")
+    percentage: float = Field(..., description="Percentage of files tagged")
+
+
+class MoodCoverageResponse(BaseModel):
+    """Mood coverage across all tiers."""
+
+    total_files: int = Field(..., description="Total files in scope")
+    tiers: dict[str, MoodCoverageTierResponse] = Field(
+        default_factory=dict, description="Coverage per tier (strict, relaxed, genre)",
+    )
+
+
+class MoodBalanceItemResponse(BaseModel):
+    """Single mood in balance distribution."""
+
+    mood: str = Field(..., description="Mood value")
+    count: int = Field(..., description="Number of tracks")
+
+
+class MoodPairItemResponse(BaseModel):
+    """Co-occurring mood pair."""
+
+    mood1: str = Field(..., description="First mood")
+    mood2: str = Field(..., description="Second mood")
+    count: int = Field(..., description="Co-occurrence count")
+
+
+class DominantVibeItemResponse(BaseModel):
+    """Dominant mood vibe."""
+
+    mood: str = Field(..., description="Mood value")
+    percentage: float = Field(..., description="Percentage of tracks")
+
+
+class MoodAnalysisResponse(BaseModel):
+    """Response for mood analysis endpoint."""
+
+    coverage: MoodCoverageResponse = Field(..., description="Mood coverage statistics")
+    balance: dict[str, list[MoodBalanceItemResponse]] = Field(
+        default_factory=dict, description="Mood balance per tier",
+    )
+    top_pairs: list[MoodPairItemResponse] = Field(
+        default_factory=list, description="Top co-occurring mood pairs",
+    )
+    dominant_vibes: list[DominantVibeItemResponse] = Field(
+        default_factory=list, description="Dominant mood vibes",
+    )

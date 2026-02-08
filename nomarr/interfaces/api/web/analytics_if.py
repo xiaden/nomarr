@@ -7,6 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.types.analytics_types import (
+    CollectionOverviewResponse,
+    MoodAnalysisResponse,
     MoodDistributionResponse,
     TagCoOccurrenceRequest,
     TagCoOccurrencesResponse,
@@ -31,10 +33,16 @@ async def web_analytics_tag_frequencies(limit: int=50, analytics_service: "Analy
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get tag frequencies")) from e
 
 @router.get("/mood-distribution", dependencies=[Depends(verify_session)])
-async def web_analytics_mood_distribution(analytics_service: Annotated["AnalyticsService", Depends(get_analytics_service)]) -> MoodDistributionResponse:
-    """Get mood tag distribution."""
+async def web_analytics_mood_distribution(
+    library_id: str | None = None,
+    analytics_service: Annotated["AnalyticsService", Depends(get_analytics_service)] = None,  # type: ignore[assignment]
+) -> MoodDistributionResponse:
+    """Get mood tag distribution.
+
+    Optionally filtered by library_id.
+    """
     try:
-        result = analytics_service.get_mood_distribution_with_result()
+        result = analytics_service.get_mood_distribution_with_result(library_id=library_id)
         return MoodDistributionResponse.from_dto(result)
     except Exception as e:
         logger.exception("[Web API] Error getting mood distribution")
@@ -53,11 +61,16 @@ async def web_analytics_tag_correlations(top_n: int=20, analytics_service: "Anal
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get tag correlations")) from e
 
 @router.post("/tag-co-occurrences", dependencies=[Depends(verify_session)])
-async def web_analytics_tag_co_occurrences(request: TagCoOccurrenceRequest, analytics_service: Annotated["AnalyticsService", Depends(get_analytics_service)]) -> TagCoOccurrencesResponse:
+async def web_analytics_tag_co_occurrences(
+    request: TagCoOccurrenceRequest,
+    library_id: str | None = None,
+    analytics_service: Annotated["AnalyticsService", Depends(get_analytics_service)] = None,  # type: ignore[assignment]
+) -> TagCoOccurrencesResponse:
     """Get tag co-occurrence matrix for arbitrary tag sets.
 
     Computes a matrix where matrix[j][i] = count of files having both x[i] and y[j].
     Maximum 16x16 matrix size. Inputs exceeding limits are trimmed with warning.
+    Optionally filtered by library_id.
     """
     try:
         x_tags = request.x_axis[:16]
@@ -66,8 +79,61 @@ async def web_analytics_tag_co_occurrences(request: TagCoOccurrenceRequest, anal
             logger.warning(f"[Web API] Tag co-occurrence request exceeded 16x16 limit. Trimmed from {len(request.x_axis)}x{len(request.y_axis)} to {len(x_tags)}x{len(y_tags)}")
         x_tuples = [(tag.key, tag.value) for tag in x_tags]
         y_tuples = [(tag.key, tag.value) for tag in y_tags]
-        result_dto = analytics_service.get_tag_co_occurrence(x_tags=x_tuples, y_tags=y_tuples)
+        result_dto = analytics_service.get_tag_co_occurrence(x_tags=x_tuples, y_tags=y_tuples, library_id=library_id)
         return TagCoOccurrencesResponse.from_dto(result_dto)
     except Exception as e:
         logger.exception("[Web API] Error getting tag co-occurrences")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get tag co-occurrences")) from e
+
+
+
+@router.get("/collection-overview", dependencies=[Depends(verify_session)])
+async def web_analytics_collection_overview(
+    library_id: str | None = None,
+    analytics_service: Annotated["AnalyticsService", Depends(get_analytics_service)] = None,  # type: ignore[assignment]
+) -> CollectionOverviewResponse:
+    """Get collection overview statistics.
+
+    Returns library stats, year/genre/artist distributions.
+    Optionally filtered by library_id.
+    """
+    try:
+        result = analytics_service.get_collection_overview(library_id=library_id)
+        return CollectionOverviewResponse(
+            stats=result["stats"],
+            year_distribution=result["year_distribution"],
+            genre_distribution=result["genre_distribution"],
+            artist_distribution=result["artist_distribution"],
+        )
+    except Exception as e:
+        logger.exception("[Web API] Error getting collection overview")
+        raise HTTPException(
+            status_code=500,
+            detail=sanitize_exception_message(e, "Failed to get collection overview"),
+        ) from e
+
+
+@router.get("/mood-analysis", dependencies=[Depends(verify_session)])
+async def web_analytics_mood_analysis(
+    library_id: str | None = None,
+    analytics_service: Annotated["AnalyticsService", Depends(get_analytics_service)] = None,  # type: ignore[assignment]
+) -> MoodAnalysisResponse:
+    """Get mood analysis statistics.
+
+    Returns mood coverage, balance, top pairs, and dominant vibes.
+    Optionally filtered by library_id.
+    """
+    try:
+        result = analytics_service.get_mood_analysis(library_id=library_id)
+        return MoodAnalysisResponse(
+            coverage=result["coverage"],
+            balance=result["balance"],
+            top_pairs=result["top_pairs"],
+            dominant_vibes=result["dominant_vibes"],
+        )
+    except Exception as e:
+        logger.exception("[Web API] Error getting mood analysis")
+        raise HTTPException(
+            status_code=500,
+            detail=sanitize_exception_message(e, "Failed to get mood analysis"),
+        ) from e
