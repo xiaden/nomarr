@@ -5,11 +5,13 @@
 This is a reference demonstrating **split planning with orchestration**. When a task exceeds the split threshold (>2 phases OR >12 steps), break it into child plans and use a parent plan to track overall progress.
 
 **Why split?**
+
 - Prevents token overflow in chat/tool payloads
 - Each child plan is independently executable and verifiable
 - Parent plan shows forest-level progress; child plans show tree-level detail
 
 **Split triggers (any one):**
+
 - More than 2 phases
 - More than 12 steps total
 - Combined content length is "long"
