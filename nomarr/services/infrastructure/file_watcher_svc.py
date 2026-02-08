@@ -408,7 +408,7 @@ class FileWatcherService:
                 # Update last poll time
                 self.last_poll_time[library_id] = internal_s()
 
-                logger.info(f"Polling library {library_id}: triggering full scan")
+                logger.info(f"Polling library {library_id}: triggering quick scan")
 
                 try:
                     self.library_service.start_scan_for_library(library_id, scan_type="quick")
