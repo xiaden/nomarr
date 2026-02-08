@@ -22,6 +22,12 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from nomarr.components.ml.calibration_state_comp import (
+    load_all_calibration_states,
+    save_calibration_state,
+    set_calibration_version,
+)
+
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
@@ -124,7 +130,8 @@ def import_calibration_bundle_wf(
                 "bin_width": (params.get("hi", 1.0) - params.get("lo", 0.0)) / params.get("bins", 10000),
             }
 
-            db.calibration_state.upsert_calibration_state(
+            save_calibration_state(
+                db,
                 model_key=model_key,
                 head_name=head_name,
                 calibration_def_hash=calibration_def_hash,
@@ -148,9 +155,9 @@ def import_calibration_bundle_wf(
     # Update global calibration version
     from nomarr.components.ml.ml_calibration_comp import compute_global_calibration_hash
 
-    calibration_states = db.calibration_state.get_all_calibration_states()
+    calibration_states = load_all_calibration_states(db)
     global_version = compute_global_calibration_hash(calibration_states)
-    db.meta.set("calibration_version", global_version)
+    set_calibration_version(db, global_version)
 
     logger.info(
         f"[import_calibration] Import complete: {imported_count} imported, "
@@ -240,7 +247,7 @@ def import_calibration_bundles_from_directory_wf(
     # Final global version (computed after all imports)
     from nomarr.components.ml.ml_calibration_comp import compute_global_calibration_hash
 
-    calibration_states = db.calibration_state.get_all_calibration_states()
+    calibration_states = load_all_calibration_states(db)
     global_version = compute_global_calibration_hash(calibration_states)
 
     logger.info(

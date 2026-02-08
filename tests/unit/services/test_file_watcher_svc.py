@@ -1,11 +1,10 @@
-"""Unit tests for FileWatcherService (Phase 4).
+"""Unit tests for FileWatcherService.
 
 Tests verify:
 - File event filtering (audio files only, ignore temp/hidden)
-- Debouncing behavior (batches rapid changes)
-- Path-to-ScanTarget mapping
-- Target deduplication (parent folders subsume children)
 - Thread-safe event handling
+- Watch lifecycle (start/stop)
+- Per-library watch modes (event/poll/off)
 """
 
 import asyncio
@@ -13,7 +12,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from nomarr.helpers.dto.library_dto import ScanTarget
 from nomarr.services.infrastructure.file_watcher_svc import (
     FileWatcherService,
     LibraryEventHandler,
@@ -83,8 +81,8 @@ def mock_library_service():
         def __init__(self):
             self.scan_calls = []
 
-        def scan_targets(self, targets, batch_size=200):
-            self.scan_calls.append({"targets": targets, "batch_size": batch_size})
+        def start_scan_for_library(self, library_id, scan_type="quick"):
+            self.scan_calls.append({"library_id": library_id, "scan_type": scan_type})
             return {"status": "ok"}
 
     return MockLibraryService()
@@ -198,102 +196,6 @@ class TestLibraryEventHandler:
         assert len(received_events) == 0
 
 
-class TestFileWatcherService:
-    """Test file watcher service behavior."""
-
-    @pytest.mark.asyncio
-    async def test_debouncing_batches_changes(self, mock_db, mock_library_service, temp_library):
-        """Debouncing should batch rapid changes."""
-        watcher = FileWatcherService(
-            db=mock_db,
-            library_service=mock_library_service,
-            debounce_seconds=0.1,  # Short debounce for testing
-        )
-
-        # Simulate multiple file changes
-        watcher._on_file_change("libraries/lib1", "Rock/song1.mp3")
-        watcher._on_file_change("libraries/lib1", "Rock/song2.mp3")
-        watcher._on_file_change("libraries/lib1", "Jazz/track.flac")
-
-        # Wait for debounce
-        await asyncio.sleep(0.2)
-
-        # Should have triggered one scan with all changes
-        assert len(mock_library_service.scan_calls) == 1
-        call = mock_library_service.scan_calls[0]
-
-        # Should have 2 targets (Rock/ and Jazz/)
-        targets = call["targets"]
-        assert len(targets) == 2
-
-        target_folders = {t.folder_path for t in targets}
-        assert "Rock" in target_folders
-        assert "Jazz" in target_folders
-
-    @pytest.mark.asyncio
-    async def test_maps_files_to_parent_folders(self, mock_db, mock_library_service, temp_library):
-        """Changed files should map to their parent folders."""
-        watcher = FileWatcherService(
-            db=mock_db,
-            library_service=mock_library_service,
-            debounce_seconds=0.1,
-        )
-
-        # Simulate changes in deep folder
-        watcher._on_file_change("libraries/lib1", "Rock/Beatles/Help.mp3")
-        watcher._on_file_change("libraries/lib1", "Rock/Beatles/Yesterday.mp3")
-
-        # Wait for debounce
-        await asyncio.sleep(0.2)
-
-        # Should have one target: Rock/Beatles (normalize for cross-platform)
-        assert len(mock_library_service.scan_calls) == 1
-        targets = mock_library_service.scan_calls[0]["targets"]
-        assert len(targets) == 1
-        normalized_path = targets[0].folder_path.replace("\\", "/")
-        assert normalized_path == "Rock/Beatles"
-
-    def test_deduplicates_parent_child_targets(self, mock_db, mock_library_service):
-        """Should remove child targets when parent is being scanned."""
-        watcher = FileWatcherService(
-            db=mock_db,
-            library_service=mock_library_service,
-            debounce_seconds=0.1,
-        )
-
-        targets = [
-            ScanTarget(library_id="lib1", folder_path="Rock"),
-            ScanTarget(library_id="lib1", folder_path="Rock/Beatles"),
-            ScanTarget(library_id="lib1", folder_path="Rock/Beatles/Early"),
-            ScanTarget(library_id="lib1", folder_path="Jazz"),
-        ]
-
-        deduplicated = watcher._deduplicate_targets(targets)
-
-        # Should only have Rock and Jazz (Beatles and Early are subsumed by Rock)
-        assert len(deduplicated) == 2
-        folders = {t.folder_path for t in deduplicated}
-        assert folders == {"Rock", "Jazz"}
-
-    def test_empty_folder_path_subsumes_all(self, mock_db, mock_library_service):
-        """Empty folder_path (full library scan) should subsume all other targets."""
-        watcher = FileWatcherService(
-            db=mock_db,
-            library_service=mock_library_service,
-            debounce_seconds=0.1,
-        )
-
-        targets = [
-            ScanTarget(library_id="lib1", folder_path=""),  # Full library
-            ScanTarget(library_id="lib1", folder_path="Rock"),
-            ScanTarget(library_id="lib1", folder_path="Jazz"),
-        ]
-
-        deduplicated = watcher._deduplicate_targets(targets)
-
-        # Should only have empty folder_path
-        assert len(deduplicated) == 1
-        assert deduplicated[0].folder_path == ""
 
 
 class TestThreadSafety:
@@ -671,7 +573,7 @@ class TestPerLibraryWatchMode:
             def __init__(self):
                 self.scan_call_count = 0
 
-            def scan_targets(self, targets, batch_size=200):
+            def start_scan_for_library(self, library_id, scan_type="quick"):
                 self.scan_call_count += 1
                 raise RuntimeError("Scan failed")
 

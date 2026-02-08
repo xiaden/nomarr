@@ -46,7 +46,6 @@ from nomarr.helpers.dto.health_dto import (
     ComponentStatus,
     StatusChangeContext,
 )
-from nomarr.helpers.dto.library_dto import ScanTarget
 from nomarr.helpers.dto.ml_dto import (
     AnalyzeWithSegmentsResult,
     ComputeEmbeddingsForBackboneParams,
@@ -83,7 +82,6 @@ __all__ = [
     "ProcessFileResult",
     "ProcessorConfig",
     "SaveCalibrationSidecarsResult",
-    "ScanTarget",
     "SegmentWaveformParams",
     "SmartPlaylistFilter",
     "StatusChangeContext",

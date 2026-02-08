@@ -39,7 +39,6 @@ def scan_folder_files(
     library_id: str,
     existing_files: dict[str, dict],
     tagger_version: str,
-    scan_id: str,
     db: Database,
 ) -> FileBatchResult:
     """Scan all files in a single folder and return batch-ready data.
@@ -51,7 +50,6 @@ def scan_folder_files(
         library_id: Library identifier
         existing_files: Path → existing file dict (for determining if file is new/updated)
         tagger_version: Current model suite hash
-        scan_id: Identifier for this scan run
         db: Database instance (for build_library_path_from_input)
 
     Returns:
@@ -143,7 +141,6 @@ def scan_folder_files(
                 "needs_tagging": needs_tagging,
                 "is_valid": True,
                 "scanned_at": now_ms().value,
-                "last_seen_scan_id": scan_id,  # Mark as seen in this scan
                 "has_nomarr_namespace": has_nomarr_namespace,
                 "last_written_mode": last_written_mode,
             }

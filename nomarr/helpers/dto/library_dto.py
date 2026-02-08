@@ -70,7 +70,7 @@ class LibraryDict:
     scan_error: str | None = None
     last_scan_started_at: int | None = None  # Timestamp (ms) when scan started
     last_scan_at: int | None = None  # Timestamp (ms) of last scan completion
-    full_scan_in_progress: bool = False  # True if a full scan is currently running
+    scan_type_in_progress: str | None = None  # "quick" or "full" if a scan is running
     # Statistics (populated by service layer, not stored in DB)
     file_count: int = 0
     folder_count: int = 0
@@ -87,15 +87,7 @@ class StartScanResult:
     job_ids: list[int] | list[str]  # Can be int (legacy queue IDs) or str (task IDs)
 
 
-@dataclass
-class ScanLibraryWorkflowParams:
-    """Parameters for workflows/library/scan_library_direct_wf.py::scan_library_direct_workflow."""
 
-    library_path: str
-    namespace: str
-    progress_callback: Any  # Callable[[int, int], None] | None
-    auto_tag: bool
-    ignore_patterns: str  # Comma-separated patterns like "*/Audiobooks/*,*.wav"
 
 
 @dataclass
@@ -182,21 +174,7 @@ class FileTagsResult:
     tags: list[FileTag]
 
 
-@dataclass
-class ScanTarget:
-    """Represents a specific folder within a library to scan.
 
-    Used for targeted/incremental scanning:
-    - folder_path="" means scan entire library
-    - folder_path="Rock/Beatles" means scan only that subtree
-    """
-
-    library_id: str  # ArangoDB uses string IDs (e.g., "libraries/123")
-    folder_path: str = ""  # Relative to library root, POSIX-style
-
-    def __post_init__(self) -> None:
-        """Normalize folder_path: strip leading/trailing slashes."""
-        self.folder_path = self.folder_path.strip("/")
 
 
 @dataclass
@@ -225,8 +203,6 @@ __all__ = [
     "LibraryStatsResult",
     "ReconcileStatusResult",
     "ReconcileTagsResult",
-    "ScanLibraryWorkflowParams",
-    "ScanTarget",
     "SearchFilesResult",
     "StartScanResult",
     "TagCleanupResult",

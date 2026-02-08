@@ -211,7 +211,7 @@ class TestScanWorkflowDualPath:
 
     def test_scan_creates_both_path_fields(self):
         """Scan workflow should create docs with absolute path AND normalized_path."""
-        from nomarr.workflows.library.scan_library_direct_wf import _compute_normalized_path
+        from nomarr.components.library.file_batch_scanner_comp import _compute_normalized_path
 
         # Test with platform-specific paths
         library_root = TEST_SCAN_ROOT

@@ -20,9 +20,15 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from nomarr.components.processing.file_write_comp import (
+    get_file_for_writing,
+    get_nomarr_tags,
+    mark_file_written,
+    release_file_claim,
+    resolve_library_root,
+)
 from nomarr.components.tagging.tagging_writer_comp import TagWriter
 from nomarr.helpers.dto.tags_dto import Tags
 
@@ -130,15 +136,9 @@ def write_file_tags_workflow(
 
     """
     try:
-        # Normalize file_key
-        if file_key.startswith("library_files/"):
-            file_id = file_key
-            file_key = file_key.split("/")[1]
-        else:
-            file_id = f"library_files/{file_key}"
+        # Get file document via component
+        file_id, file_key, file_doc = get_file_for_writing(db, file_key)
 
-        # Get file document
-        file_doc = db.library_files.get_file_by_id(file_id)
         if not file_doc:
             return WriteResult(
                 file_key=file_key,
@@ -169,8 +169,8 @@ def write_file_tags_workflow(
                 success=False,
                 error=f"Invalid library_id: {library_id}",
             )
-        library_doc = db.libraries.get_library(library_id)
-        if not library_doc:
+        library_root = resolve_library_root(db, library_id)
+        if not library_root:
             return WriteResult(
                 file_key=file_key,
                 tags_written=0,
@@ -178,13 +178,12 @@ def write_file_tags_workflow(
                 success=False,
                 error=f"Library not found: {library_id}",
             )
-        library_root = Path(library_doc["root_path"])
 
         # Get chromaprint for verification
         chromaprint = file_doc.get("chromaprint")
 
         # Get tags from database (nomarr tags only) - returns Tags DTO
-        db_tags = db.tags.get_song_tags(file_id, nomarr_only=True)
+        db_tags = get_nomarr_tags(db, file_id)
 
         # Filter tags for target mode
         tags_to_write = _filter_tags_for_mode(db_tags, target_mode, has_calibration)
@@ -198,7 +197,7 @@ def write_file_tags_workflow(
             result = tag_writer.write_safe(library_path, tags_to_write, library_root, chromaprint)
             if not result.success:
                 # Release claim but don't update state
-                db.library_files.release_claim(file_key)
+                release_file_claim(db, file_key)
                 return WriteResult(
                     file_key=file_key,
                     tags_written=0,
@@ -212,7 +211,7 @@ def write_file_tags_workflow(
             tag_writer.write(library_path, tags_to_write)
 
         # Update file projection state in database
-        db.library_files.set_file_written(file_key, mode=target_mode, calibration_hash=calibration_hash)
+        mark_file_written(db, file_key, mode=target_mode, calibration_hash=calibration_hash)
 
         logger.debug(
             f"[write_file_tags] Wrote {len(tags_to_write)} tags to {library_path.relative} "
@@ -228,11 +227,8 @@ def write_file_tags_workflow(
 
     except Exception as e:
         logger.exception(f"[write_file_tags] Failed to write tags for {file_key}")
-        # Release claim on error
-        try:
-            db.library_files.release_claim(file_key)
-        except Exception as release_err:
-            logger.debug(f"[write_file_tags] Failed to release claim for {file_key}: {release_err}")
+        # Release claim on error (swallows exceptions internally)
+        release_file_claim(db, file_key)
         return WriteResult(
             file_key=file_key,
             tags_written=0,

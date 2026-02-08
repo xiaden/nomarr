@@ -8,11 +8,15 @@ This module orchestrates the creation of .nsp files by:
 No SQL or sqlite3 imports here - all DB access via Database façade.
 """
 
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 from nomarr.helpers.dto.navidrome_dto import SmartPlaylistFilter, TagCondition
 from nomarr.helpers.exceptions import PlaylistQueryError
-from nomarr.persistence.db import Database
+
+if TYPE_CHECKING:
+    from nomarr.persistence.db import Database
 from nomarr.workflows.navidrome.parse_smart_playlist_query_wf import (
     parse_smart_playlist_query,
 )

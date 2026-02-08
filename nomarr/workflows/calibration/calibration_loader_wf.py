@@ -14,6 +14,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from nomarr.components.ml.calibration_state_comp import load_all_calibration_states
+
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
@@ -46,7 +48,7 @@ def load_calibrations_from_db_wf(db: Database) -> dict[str, dict[str, float]]:
 
     """
     try:
-        calibration_states = db.calibration_state.get_all_calibration_states()
+        calibration_states = load_all_calibration_states(db)
 
         if not calibration_states:
             logger.debug("[calibration_loader] No calibrations in database (initial state)")

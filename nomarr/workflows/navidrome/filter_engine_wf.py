@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from nomarr.components.navidrome.tag_query_comp import find_files_matching_tag
+
 if TYPE_CHECKING:
     from nomarr.helpers.dto.navidrome_dto import SmartPlaylistFilter, TagCondition
     from nomarr.persistence.db import Database
@@ -81,16 +83,16 @@ def _execute_single_condition(db: Database, condition: TagCondition) -> set[str]
 
     if condition.operator == "contains":
         # String contains query
-        result = db.tags.get_file_ids_matching_tag(
+        return find_files_matching_tag(
+            db,
             rel=rel,
             operator="CONTAINS",
             value=str(condition.value),
         )
-        return set(result) if not isinstance(result, set) else result
     # Numeric comparison query
-    result = db.tags.get_file_ids_matching_tag(
+    return find_files_matching_tag(
+        db,
         rel=rel,
         operator=condition.operator,
         value=condition.value,
     )
-    return set(result) if not isinstance(result, set) else result

@@ -39,6 +39,15 @@ import numpy as np
 from scipy.spatial.distance import jensenshannon
 from scipy.stats import iqr
 
+from nomarr.components.ml.calibration_state_comp import (
+    count_tagged_files,
+    create_calibration_snapshot,
+    load_all_calibration_states,
+    save_calibration_state,
+    set_calibration_last_run,
+    set_calibration_version,
+)
+
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
@@ -388,7 +397,8 @@ def _run_single_calibration(db: Database, models_dir: str, heads: list[Any], nam
             calib_def_hash = compute_calibration_def_hash(model_key, head_name, version)
 
             # Upsert calibration_state
-            db.calibration_state.upsert_calibration_state(
+            save_calibration_state(
+                db,
                 model_key=model_key,
                 head_name=head_name,
                 calibration_def_hash=calib_def_hash,
@@ -413,12 +423,12 @@ def _run_single_calibration(db: Database, models_dir: str, heads: list[Any], nam
     # Compute and store global calibration version
     from nomarr.components.ml.ml_calibration_comp import compute_global_calibration_hash
 
-    all_calibration_states = db.calibration_state.get_all_calibration_states()
+    all_calibration_states = load_all_calibration_states(db)
     global_version_hash = compute_global_calibration_hash(all_calibration_states)
     current_timestamp = str(int(__import__("time").time() * 1000))
 
-    db.meta.set("calibration_version", global_version_hash)
-    db.meta.set("calibration_last_run", current_timestamp)
+    set_calibration_version(db, global_version_hash)
+    set_calibration_last_run(db, current_timestamp)
 
     logger.info(f"[histogram_calibration_wf] Stored global calibration version: {global_version_hash[:12]}...")
 
@@ -447,7 +457,7 @@ def _run_progressive_calibration(
     logger.info(f"[progressive_calibration] Starting: {start_sample_size} files → +{increment_size} per iteration")
 
     # Get total file count
-    total_files = db.library_files.count_files_with_tags(namespace)
+    total_files = count_tagged_files(db, namespace)
     if total_files == 0:
         logger.warning("[progressive_calibration] No tagged files found")
         return {
@@ -534,7 +544,8 @@ def _run_progressive_calibration(
                 calib_def_hash = compute_calibration_def_hash(model_key, head_name, version)
                 calibration_key = f"{model_key}:{head_name}"
 
-                db.calibration_history.create_snapshot(
+                create_calibration_snapshot(
+                    db,
                     calibration_key=calibration_key,
                     p5=calib_result["p5"],
                     p95=calib_result["p95"],
@@ -547,7 +558,8 @@ def _run_progressive_calibration(
                 )
 
                 # Update calibration_state with latest values
-                db.calibration_state.upsert_calibration_state(
+                save_calibration_state(
+                    db,
                     model_key=model_key,
                     head_name=head_name,
                     calibration_def_hash=calib_def_hash,
@@ -599,12 +611,12 @@ def _run_progressive_calibration(
     logger.info(f"[progressive_calibration] Completed {iteration} iterations")
 
     # Update global calibration version
-    all_calibration_states = db.calibration_state.get_all_calibration_states()
+    all_calibration_states = load_all_calibration_states(db)
     global_version_hash = compute_global_calibration_hash(all_calibration_states)
     current_timestamp = str(int(__import__("time").time() * 1000))
 
-    db.meta.set("calibration_version", global_version_hash)
-    db.meta.set("calibration_last_run", current_timestamp)
+    set_calibration_version(db, global_version_hash)
+    set_calibration_last_run(db, current_timestamp)
 
     logger.info(f"[progressive_calibration] Global version: {global_version_hash[:12]}...")
 

@@ -12,9 +12,16 @@ Flow:
 6. Return typed PlaylistPreviewResult → API serializes to JSON
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from nomarr.components.navidrome.tag_query_comp import get_playlist_preview_tracks
 from nomarr.helpers.dto.navidrome_dto import PlaylistPreviewResult
 from nomarr.helpers.exceptions import PlaylistQueryError
-from nomarr.persistence.db import Database
+
+if TYPE_CHECKING:
+    from nomarr.persistence.db import Database
 from nomarr.workflows.navidrome.filter_engine_wf import execute_smart_playlist_filter
 from nomarr.workflows.navidrome.parse_smart_playlist_query_wf import (
     parse_smart_playlist_query,
@@ -57,7 +64,8 @@ def preview_smart_playlist_workflow(
     total_count = len(file_ids)
 
     # Fetch sample tracks (limit already validated at API layer: 1-100)
-    sample_tracks = db.library_files.get_tracks_by_file_ids(
+    sample_tracks = get_playlist_preview_tracks(
+        db,
         file_ids=file_ids,
         order_by=None,  # Random order for preview
         limit=preview_limit,

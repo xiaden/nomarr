@@ -1,7 +1,7 @@
 """File system watcher service for automatic library scanning.
 
 This service monitors library directories for changes and triggers
-targeted scans via LibraryService. It implements debouncing to batch
+library scans via LibraryService. It implements debouncing to batch
 rapid changes and avoid excessive scanning.
 
 Watch Modes:
@@ -17,8 +17,9 @@ Architecture:
 - One Observer (event mode) or polling task (poll mode) per library
 - Events/scans are debounced (configurable quiet period)
 - Only relevant file types are processed (audio, playlists, artwork)
-- Maps changed paths to parent-folder ScanTargets
-- Calls LibraryService.scan_targets() - NO direct persistence access
+- Triggers full library scans; folder-level caching in the scan workflow
+  handles incremental optimization
+- Calls LibraryService.start_scan_for_library() - NO direct persistence access
 
 CRITICAL (event mode): Watchdog callbacks run on background threads, NOT the asyncio event loop.
 Must use thread-safe handoff via loop.call_soon_threadsafe().
@@ -30,14 +31,12 @@ import asyncio
 import contextlib
 import logging
 import threading
-from collections import defaultdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
-from nomarr.helpers.dto.library_dto import ScanTarget
 from nomarr.helpers.time_helper import InternalSeconds, internal_s
 
 if TYPE_CHECKING:
@@ -137,8 +136,7 @@ class FileWatcherService:
     This service is responsible for:
     1. Starting/stopping watchers per library
     2. Debouncing events (configurable quiet period)
-    3. Mapping changed paths to ScanTargets
-    4. Delegating to LibraryService for actual scanning
+    3. Triggering full library scans via LibraryService
 
     It does NOT:
     - Access persistence directly (violates architecture)
@@ -410,21 +408,15 @@ class FileWatcherService:
                 # Update last poll time
                 self.last_poll_time[library_id] = internal_s()
 
-                # Trigger full library scan (empty folder_path = entire library)
-                target = ScanTarget(library_id=library_id, folder_path="")
                 logger.info(f"Polling library {library_id}: triggering full scan")
 
                 try:
-                    self.library_service.scan_targets(
-                        targets=[target],
-                        batch_size=200,
-                    )
+                    self.library_service.start_scan_for_library(library_id, scan_type="quick")
                 except ValueError as e:
                     error_msg = str(e)
                     # Library not found - stop watching it
                     if "Library not found" in error_msg:
                         logger.warning(f"Library {library_id} no longer exists, stopping watcher")
-                        # Schedule cleanup on next iteration (can't modify observers while iterating)
                         self._schedule_cleanup(library_id)
                         return
                     # Already scanning - skip this poll cycle, continue polling
@@ -557,7 +549,7 @@ class FileWatcherService:
         self.debounce_task = asyncio.create_task(self._trigger_after_debounce())
 
     async def _trigger_after_debounce(self) -> None:
-        """Wait for quiet period, then trigger scan."""
+        """Wait for quiet period, then trigger scan for affected libraries."""
         await asyncio.sleep(self.debounce_seconds)
 
         # Collect pending changes (thread-safe)
@@ -568,90 +560,22 @@ class FileWatcherService:
         if not changes:
             return
 
-        logger.info(f"Debounce fired: {len(changes)} file changes detected")
+        # Group by library — we only need the library IDs
+        affected_libraries: set[str] = set()
+        for library_id, _relative_path in changes:
+            affected_libraries.add(library_id)
 
-        # Group by library
-        by_library: dict[str, set[str]] = defaultdict(set)
-        for library_id, relative_path in changes:
-            by_library[library_id].add(relative_path)
+        logger.info(
+            f"Debounce fired: {len(changes)} file changes across "
+            f"{len(affected_libraries)} library/libraries",
+        )
 
-        # Map to ScanTargets (parent folder per changed file)
-        for library_id, paths in by_library.items():
-            targets = self._paths_to_scan_targets(library_id, paths)
-            logger.info(f"Triggering scan for library {library_id}: {len(targets)} target(s)")
-
-            # Delegate to LibraryService - NO direct persistence calls
+        # Trigger a full scan for each affected library.
+        # Folder-level caching in the scan workflow ensures only changed
+        # folders are actually re-scanned.
+        for library_id in affected_libraries:
             try:
-                self.library_service.scan_targets(
-                    targets=list(targets),
-                    batch_size=200,  # Use default batch size
-                )
+                self.library_service.start_scan_for_library(library_id, scan_type="quick")
             except Exception as e:
                 logger.error(f"Failed to trigger scan for library {library_id}: {e}", exc_info=True)
 
-    def _paths_to_scan_targets(
-        self,
-        library_id: str,
-        paths: set[str],
-    ) -> list[ScanTarget]:
-        """Convert changed file paths to ScanTargets (parent folders).
-
-        Deduplicates targets - multiple files in same folder = one target.
-
-        Args:
-            library_id: Library document _id
-            paths: Set of relative paths that changed
-
-        Returns:
-            List of deduplicated ScanTargets
-
-        """
-        folders = set()
-
-        for path_str in paths:
-            path = Path(path_str)
-            # Get parent folder
-            folder = str(path.parent) if path.parent != Path() else ""
-            folders.add(folder)
-
-        # Convert to ScanTargets
-        targets = [ScanTarget(library_id=library_id, folder_path=folder) for folder in sorted(folders)]
-
-        # Deduplicate: if we're scanning parent, don't scan children
-        # Example: ["Rock", "Rock/Beatles"] -> ["Rock"]
-        return self._deduplicate_targets(targets)
-
-
-    def _deduplicate_targets(self, targets: list[ScanTarget]) -> list[ScanTarget]:
-        """Remove redundant targets (child folders when parent is being scanned).
-
-        Args:
-            targets: List of ScanTargets (may contain redundant children)
-
-        Returns:
-            Deduplicated list (no child if parent present)
-
-        """
-        if len(targets) <= 1:
-            return targets
-
-        # Sort by folder depth (shallowest first)
-        sorted_targets = sorted(targets, key=lambda t: t.folder_path.count("/"))
-
-        deduplicated: list[ScanTarget] = []
-        for target in sorted_targets:
-            # Check if any existing target is a parent
-            is_redundant = False
-            for existing in deduplicated:
-                # Empty folder_path means entire library (parent of everything)
-                if existing.folder_path == "":
-                    is_redundant = True
-                    break
-                # Check if target is child of existing
-                if target.folder_path.startswith(existing.folder_path + "/"):
-                    is_redundant = True
-                    break
-            if not is_redundant:
-                deduplicated.append(target)
-
-        return deduplicated

@@ -38,7 +38,14 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from nomarr.components.library.file_sync_comp import get_library_file
+from nomarr.components.library.scan_lifecycle_comp import save_folder_record
+from nomarr.components.ml.calibration_state_comp import (
+    get_calibration_version,
+    update_file_calibration_hash,
+)
 from nomarr.components.ml.ml_discovery_comp import discover_heads
+from nomarr.components.processing.file_write_comp import get_nomarr_tags, save_mood_tags
 from nomarr.components.tagging.tagging_aggregation_comp import aggregate_mood_tiers
 from nomarr.components.tagging.tagging_writer_comp import TagWriter
 from nomarr.helpers.dto.ml_dto import HeadOutput
@@ -75,13 +82,13 @@ def _load_library_state(db: Database, file_path: str, namespace: str) -> LoadLib
         FileNotFoundError: If file not found in library database
 
     """
-    library_file = db.library_files.get_library_file(file_path)
+    library_file = get_library_file(db, file_path)
     if not library_file:
         msg = f"File not in library: {file_path}"
         raise FileNotFoundError(msg)
     file_id = library_file["_id"]
     chromaprint = library_file.get("chromaprint")
-    tags = db.tags.get_song_tags(file_id, nomarr_only=True)
+    tags = get_nomarr_tags(db, file_id)
     all_tags = {}
     for tag in tags:
         rel = tag.key
@@ -235,10 +242,8 @@ def _update_db_and_file(db: Database, file_id: str, file_path: str, namespace: s
         chromaprint: Audio fingerprint for verification (from library_files)
 
     """
-    for tag in mood_tags:
-        nomarr_rel = f"nom:{tag.key}" if not tag.key.startswith("nom:") else tag.key
-        db.tags.set_song_tags(file_id, nomarr_rel, tag.value)
-    logger.debug(f"[calibrated_tags] Updated {len(mood_tags)} mood tags in DB")
+    count = save_mood_tags(db, file_id, mood_tags)
+    logger.debug(f"[calibrated_tags] Updated {count} mood tags in DB")
     from nomarr.components.infrastructure.path_comp import build_library_path_from_input, get_library_root
     library_path = build_library_path_from_input(file_path, db)
     library_root = get_library_root(library_path, db)
@@ -268,7 +273,7 @@ def _update_folder_mtime_after_write(db: Database, library_path: LibraryPath, li
             folder_rel = ""
         from nomarr.helpers.files_helper import is_audio_file
         file_count = sum(1 for f in os.listdir(folder_abs) if is_audio_file(f) and os.path.isfile(os.path.join(folder_abs, f)))
-        db.library_folders.upsert_folder(library_path.library_id, folder_rel, folder_mtime, file_count)
+        save_folder_record(db, library_path.library_id, folder_rel, folder_mtime, file_count)
         logger.debug(f"[calibrated_tags] Updated folder mtime: {folder_rel}")
     except Exception as e:
         logger.warning(f"[calibrated_tags] Failed to update folder mtime: {e}")
@@ -337,7 +342,7 @@ def write_calibrated_tags_wf(db: Database, params: WriteCalibratedTagsParams) ->
     if not mood_tags:
         return
     _update_db_and_file(db, str(file_id), file_path, namespace, mood_tags, chromaprint)
-    global_version = db.meta.get("calibration_version")
+    global_version = get_calibration_version(db)
     if global_version:
-        db.library_files.update_calibration_hash(f"library_files/{file_id}", global_version)
+        update_file_calibration_hash(db, f"library_files/{file_id}", global_version)
         logger.debug(f"[calibrated_tags] Updated calibration_hash for {file_path}")

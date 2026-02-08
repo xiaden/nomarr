@@ -1,7 +1,7 @@
 """Library statistics and management endpoints for web UI."""
 
 import logging
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -379,7 +379,7 @@ async def get_file_tags(
 async def scan_library(
     library_id: str,
     scan_type: Annotated[
-        str,
+        Literal["quick", "full"],
         Query(description="Scan type: 'quick' (skip unchanged files) or 'full' (rescan all)"),
     ] = "quick",
     library_service: "LibraryService" = Depends(get_library_service),
@@ -404,10 +404,7 @@ async def scan_library(
     """
     library_id = decode_path_id(library_id)
     try:
-        if scan_type not in ("quick", "full"):
-            raise HTTPException(status_code=400, detail="scan_type must be 'quick' or 'full'")
-        force_rescan = scan_type == "full"
-        stats = library_service.start_scan_for_library(library_id=library_id, force_rescan=force_rescan)
+        stats = library_service.start_scan_for_library(library_id=library_id, scan_type=scan_type)
         return StartScanWithStatusResponse.from_dto(stats, library_id)
     except ValueError as e:
         error_msg = str(e)

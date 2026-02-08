@@ -3,10 +3,18 @@
 This workflow computes statistics for all tags in the library, useful for
 debugging and understanding tag data before generating Navidrome config.
 """
-import logging
-from typing import Any
+from __future__ import annotations
 
-from nomarr.persistence.db import Database
+import logging
+from typing import TYPE_CHECKING, Any
+
+from nomarr.components.navidrome.tag_query_comp import (
+    get_nomarr_tag_rels,
+    get_tag_value_counts,
+)
+
+if TYPE_CHECKING:
+    from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +31,7 @@ def preview_tag_stats_workflow(db: Database, namespace: str="nom") -> dict[str, 
         Dict of tag_key -> stats dict (type, is_multivalue, summary, count)
 
     """
-    all_rels = db.tags.get_unique_rels(nomarr_only=True)
+    all_rels = get_nomarr_tag_rels(db)
     f"nom:{namespace}:" if not namespace.startswith("nom:") else f"{namespace}:"
     filtered_rels = [rel for rel in all_rels if rel.startswith("nom:")]
     logger.info(f"[navidrome] Computing summaries for {len(filtered_rels)} tag types...")
@@ -32,7 +40,7 @@ def preview_tag_stats_workflow(db: Database, namespace: str="nom") -> dict[str, 
         try:
             if idx % 10 == 0:
                 logger.info(f"[navidrome] Progress: {idx}/{len(filtered_rels)} tags processed...")
-            value_counts = db.tags.get_tag_value_counts(rel)
+            value_counts = get_tag_value_counts(db, rel)
             total_count = sum(value_counts.values())
             if value_counts:
                 first_value = next(iter(value_counts.keys()))

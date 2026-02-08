@@ -203,3 +203,40 @@ def resolve_path_within_library(
     return resolve_library_path(
         library_root=library_root, user_path=user_path, must_exist=must_exist, must_be_file=must_be_file,
     )
+
+
+
+def validate_library_root(library_root: Path) -> None:
+    """Validate that a library root directory is accessible and non-empty.
+
+    Checks existence, directory status, permissions, and emptiness.
+    This is an I/O-level pre-flight check intended to be called before
+    scanning begins, so mount / permission problems surface early.
+
+    Args:
+        library_root: Absolute resolved path to library root
+
+    Raises:
+        OSError: If root doesn't exist, isn't a directory, isn't readable,
+            or is empty (possible unmounted volume).
+
+    """
+    if not library_root.exists():
+        msg = f"Library root does not exist: {library_root} \u2014 the volume may not be mounted"
+        raise OSError(msg)
+    if not library_root.is_dir():
+        msg = f"Library root is not a directory: {library_root}"
+        raise OSError(msg)
+
+    try:
+        entries = list(library_root.iterdir())
+    except PermissionError:
+        msg = f"Library root is not accessible (permission denied): {library_root}"
+        raise OSError(msg) from None
+    except OSError as e:
+        msg = f"Library root is not accessible (mount/IO error): {library_root} \u2014 {e}"
+        raise OSError(msg) from e
+
+    if not entries:
+        msg = f"Library root is empty: {library_root} \u2014 the volume may not be mounted correctly"
+        raise OSError(msg)

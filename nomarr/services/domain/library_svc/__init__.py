@@ -43,7 +43,7 @@ class LibraryService(LibraryAdminMixin, LibraryScanMixin, LibraryQueryMixin, Lib
         service.create_library(name="Main", path="/music")
 
         # Scan operations
-        service.start_scan(library_id="lib-123")
+        service.start_scan_for_library(library_id="lib-123")
         status = service.get_status(library_id="lib-123")
 
         # Query operations

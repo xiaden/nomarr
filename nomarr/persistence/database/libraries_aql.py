@@ -341,7 +341,7 @@ class LibrariesOperations:
 
         return None
 
-    def mark_scan_started(self, library_id: str, full_scan: bool) -> None:
+    def mark_scan_started(self, library_id: str, scan_type: str) -> None:
         """Mark a scan as started by updating library document.
 
         Sets last_scan_started_at to current timestamp and records scan type.
@@ -349,7 +349,7 @@ class LibrariesOperations:
 
         Args:
             library_id: Library document _id (e.g., "libraries/12345")
-            full_scan: True if scanning entire library, False if targeted scan
+            scan_type: Scan type string ("quick" or "full")
 
         """
         now = now_ms().value
@@ -358,7 +358,7 @@ class LibrariesOperations:
             """
             UPDATE PARSE_IDENTIFIER(@library_id).key WITH {
                 last_scan_started_at: @timestamp,
-                full_scan_in_progress: @full_scan
+                scan_type_in_progress: @scan_type
             } IN libraries
             """,
             bind_vars=cast(
@@ -366,7 +366,7 @@ class LibrariesOperations:
                 {
                     "library_id": library_id,
                     "timestamp": now,
-                    "full_scan": full_scan,
+                    "scan_type": scan_type,
                 },
             ),
         )
@@ -385,7 +385,7 @@ class LibrariesOperations:
             UPDATE PARSE_IDENTIFIER(@library_id).key WITH {
                 last_scan_at: @timestamp,
                 last_scan_started_at: null,
-                full_scan_in_progress: false
+                scan_type_in_progress: null
             } IN libraries
             """,
             bind_vars=cast(
@@ -404,7 +404,7 @@ class LibrariesOperations:
             library_id: Library document _id (e.g., "libraries/12345")
 
         Returns:
-            Dict with last_scan_started_at, last_scan_at, full_scan_in_progress
+            Dict with last_scan_started_at, last_scan_at, scan_type_in_progress
             or None if library not found
 
         """
@@ -417,7 +417,7 @@ class LibrariesOperations:
                     RETURN {
                         last_scan_started_at: lib.last_scan_started_at,
                         last_scan_at: lib.last_scan_at,
-                        full_scan_in_progress: lib.full_scan_in_progress
+                        scan_type_in_progress: lib.scan_type_in_progress
                     }
                 """,
                 bind_vars={"library_id": library_id},
@@ -427,14 +427,15 @@ class LibrariesOperations:
         results = list(cursor)
         return results[0] if results else None
 
-    def check_interrupted_scan(self, library_id: str) -> tuple[bool, bool]:
+    def check_interrupted_scan(self, library_id: str) -> tuple[bool, str | None]:
         r"""Check if a scan was interrupted.
 
         Args:
             library_id: Library document _id (e.g., \"libraries/12345\")
 
         Returns:
-            Tuple of (was_interrupted, was_full_scan)
+            Tuple of (was_interrupted, scan_type) where scan_type is
+            ``"quick"`` or ``"full"`` if interrupted, ``None`` otherwise.
 
         A scan is interrupted if:
         - last_scan_started_at is set, AND
@@ -445,12 +446,14 @@ class LibrariesOperations:
         """
         state = self.get_scan_state(library_id)
         if not state or not state.get("last_scan_started_at"):
-            return False, False
+            return False, None
+
+        scan_type: str | None = state.get("scan_type_in_progress")
 
         # Interrupted if started but never completed
         if not state.get("last_scan_at"):
-            return True, bool(state.get("full_scan_in_progress", False))
+            return True, scan_type
 
         # Or if started after last completion (integer comparison)
         interrupted = state["last_scan_started_at"] > state["last_scan_at"]
-        return interrupted, bool(state.get("full_scan_in_progress", False))
+        return interrupted, scan_type if interrupted else None

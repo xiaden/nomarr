@@ -56,7 +56,7 @@ class TestNomarrLogFilterIdentityRole:
     @pytest.mark.unit
     def test_workflow_suffix(self, log_filter: NomarrLogFilter) -> None:
         """_wf suffix should produce [Identity] [Workflow] tags."""
-        record = self._make_record("nomarr.workflows.library.scan_library_direct_wf")
+        record = self._make_record("nomarr.workflows.library.scan_library_quick_wf")
         log_filter.filter(record)
 
         assert _get_attr(record, "nomarr_identity_tag") == "[Scan Library Direct]"

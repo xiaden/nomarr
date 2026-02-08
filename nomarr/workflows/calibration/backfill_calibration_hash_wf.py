@@ -17,11 +17,15 @@ STRATEGY:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
+
+from nomarr.components.ml.calibration_state_comp import (
+    backfill_null_calibration_hashes,
+    count_null_calibration_hashes,
+    get_calibration_version,
+)
 
 if TYPE_CHECKING:
-    from arango.cursor import Cursor
-
     from nomarr.persistence.db import Database
 
 
@@ -63,7 +67,7 @@ def backfill_calibration_hashes_wf(
     logger.info("[backfill] Starting calibration_hash backfill analysis...")
 
     # Get current global version
-    global_version = db.meta.get("calibration_version")
+    global_version = get_calibration_version(db)
 
     if not global_version:
         logger.warning("[backfill] No global calibration version exists yet")
@@ -74,15 +78,7 @@ def backfill_calibration_hashes_wf(
         }
 
     # Count files with NULL calibration_hash
-    count_query = """
-        FOR f IN library_files
-            FILTER f.calibration_hash == null
-            COLLECT WITH COUNT INTO count
-            RETURN count
-    """
-
-    cursor = cast("Cursor", db.db.aql.execute(count_query))
-    null_count = next(cursor, 0)
+    null_count = count_null_calibration_hashes(db)
 
     logger.info(f"[backfill] Found {null_count} files with NULL calibration_hash")
 
@@ -110,16 +106,7 @@ def backfill_calibration_hashes_wf(
     logger.warning(f"[backfill] Assuming files processed with current calibration: {global_version[:12]}...")
 
     # Update all NULL files to current hash
-    update_query = """
-        FOR f IN library_files
-            FILTER f.calibration_hash == null
-            UPDATE f WITH { calibration_hash: @hash } IN library_files
-            COLLECT WITH COUNT INTO updated
-            RETURN updated
-    """
-
-    cursor = cast("Cursor", db.db.aql.execute(update_query, bind_vars={"hash": global_version}))
-    updated_count = next(cursor, 0)
+    updated_count = backfill_null_calibration_hashes(db, global_version)
 
     logger.info(f"[backfill] Backfill complete: {updated_count} files updated to current hash")
 

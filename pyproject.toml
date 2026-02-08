@@ -250,6 +250,11 @@ type = "forbidden"
 source_modules = ["nomarr.interfaces", "nomarr.workflows", "nomarr.helpers"]
 forbidden_modules = ["nomarr.persistence"]
 allow_indirect_imports = true
+# Workflows may import Database under TYPE_CHECKING for type annotations only.
+# import-linter cannot distinguish TYPE_CHECKING from runtime imports.
+ignore_imports = [
+    "nomarr.workflows.*.* -> nomarr.persistence.db",
+]
 
 [[tool.importlinter.contracts]]
 name = "Services may only import Database for type hints"

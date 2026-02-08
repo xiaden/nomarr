@@ -23,6 +23,10 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from nomarr.components.ml.calibration_state_comp import (
+    get_calibration_version,
+    load_all_calibration_states,
+)
 from nomarr.helpers.time_helper import format_wall_timestamp, now_ms
 
 if TYPE_CHECKING:
@@ -74,7 +78,7 @@ def export_calibration_bundle_wf(
     logger.info(f"[export_calibration] Exporting calibrations to {output_path}")
 
     # Read all calibrations from database
-    calibration_states = db.calibration_state.get_all_calibration_states()
+    calibration_states = load_all_calibration_states(db)
 
     if not calibration_states:
         msg = "No calibrations in database to export"
@@ -103,7 +107,7 @@ def export_calibration_bundle_wf(
         }
 
     # Get global version
-    global_version = db.meta.get("calibration_version")
+    global_version = get_calibration_version(db)
 
     # Build bundle
     bundle: dict[str, Any] = {"labels": labels}

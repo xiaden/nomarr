@@ -159,3 +159,58 @@ def detect_file_moves(
         chromaprints_computed=chromaprints_computed,
         collisions_detected=collisions_detected,
     )
+
+
+def apply_detected_moves(
+    moves: list[FileMove],
+    metadata_map: dict[str, dict[str, Any]],
+    db: Database,
+) -> int:
+    """Persist detected file moves to the database.
+
+    For each move:
+    1. Updates the file record path / size / mtime via ``update_file_path``
+    2. Re-seeds entity tags from the new file's metadata
+    3. Rebuilds the song metadata cache
+
+    Args:
+        moves: Detected moves from :func:`detect_file_moves`
+        metadata_map: Map of file_path -> raw metadata dict (from scan)
+        db: Database instance
+
+    Returns:
+        Number of moves successfully applied
+
+    """
+    from nomarr.components.metadata.entity_seeding_comp import (
+        _extract_entity_tags,
+        seed_song_entities_from_tags,
+    )
+    from nomarr.components.metadata.metadata_cache_comp import rebuild_song_metadata_cache
+
+    applied = 0
+    for move in moves:
+        db.library_files.update_file_path(
+            file_id=move.file_id,
+            new_path=move.new_path,
+            file_size=move.new_file_size,
+            modified_time=move.new_modified_time,
+            duration_seconds=move.new_duration,
+        )
+
+        new_metadata = metadata_map.get(move.new_path)
+        if new_metadata:
+            try:
+                entity_tags = _extract_entity_tags(new_metadata)
+                seed_song_entities_from_tags(db, move.file_id, entity_tags)
+                rebuild_song_metadata_cache(db, move.file_id)
+            except Exception as e:
+                logger.warning(
+                    "Failed to update entities for moved file %s: %s",
+                    move.new_path,
+                    e,
+                )
+
+        applied += 1
+
+    return applied

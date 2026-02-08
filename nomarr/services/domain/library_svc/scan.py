@@ -9,11 +9,11 @@ This module handles:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
-from nomarr.helpers.dto.library_dto import LibraryScanStatusResult, ScanTarget, StartScanResult
+from nomarr.helpers.dto.library_dto import LibraryScanStatusResult, StartScanResult
 from nomarr.helpers.time_helper import now_ms
-from nomarr.workflows.library.start_scan_wf import start_scan_workflow
+from nomarr.workflows.library.start_library_scan_wf import start_library_scan_workflow
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
@@ -68,107 +68,30 @@ class LibraryScanMixin:
         libraries = self.db.libraries.list_libraries(enabled_only=False)
         return any(lib.get("scan_status") == "scanning" for lib in libraries)
 
-    def scan_targets(
+    def start_scan_for_library(
         self,
-        targets: list[ScanTarget],
-        batch_size: int = 200,
-        force_rescan: bool = False,
+        library_id: str,
+        scan_type: Literal["quick", "full"] = "quick",
     ) -> StartScanResult:
-        """Scan specific folders within libraries.
-
-        This is the core scanning method that supports both full library scans
-        and targeted/incremental scans. Use this when you want fine-grained control
-        over which folders to scan.
-
-        Args:
-            targets: List of ScanTarget specifying which folders to scan.
-                     Each target identifies a library and optional subfolder.
-                     Empty folder_path means scan entire library.
-            batch_size: Number of files to batch per database write (default: 200)
-            force_rescan: If True, skip unchanged files detection (rescan all files)
-
-        Returns:
-            StartScanResult DTO with scan statistics and task_id
-
-        Raises:
-            ValueError: If targets list is empty
-            ValueError: If any library_id not found
-            ValueError: If scan already running for any target library
-            ValueError: If multiple targets reference the same library
-
-        """
-        if not targets:
-            msg = "Cannot scan: targets list is empty"
-            raise ValueError(msg)
-        library_ids = [t.library_id for t in targets]
-        if len(library_ids) != len(set(library_ids)):
-            msg = "Cannot scan: multiple targets reference the same library"
-            raise ValueError(msg)
-        for target in targets:
-            self._get_library_or_error(target.library_id)
-        primary_library_id = targets[0].library_id
-        return start_scan_workflow(
-            db=self.db,
-            background_tasks=self.background_tasks,
-            tagger_version=self.cfg.tagger_version,
-            library_id=primary_library_id,
-            scan_targets=targets,
-            batch_size=batch_size,
-            force_rescan=force_rescan,
-        )
-
-    def start_scan_for_library(self, library_id: str, force_rescan: bool = False) -> StartScanResult:
-        """Start a full library scan for a specific library.
-
-        This is a convenience method that delegates to scan_targets()
-        with a full library scan target (empty folder_path).
-
-        Scans the entire library root recursively and marks missing files as invalid.
-
-        IMPORTANT: Libraries are used ONLY to determine which filesystem roots to scan.
-        All discovered files and statistics remain GLOBAL and do NOT track library_id.
-        Nomarr is an autotagger, not a multi-tenant library manager.
+        """Start a library scan.
 
         Args:
             library_id: ID of the library to scan
-            force_rescan: If True, skip unchanged files detection (rescan all files)
+            scan_type: ``"quick"`` (incremental) or ``"full"`` (rescan all)
 
         Returns:
             StartScanResult DTO with scan statistics and task_id
 
         Raises:
-            ValueError: If library not found or scan already running
+            ValueError: If library not found, already scanning, or invalid scan_type
 
         """
-        target = ScanTarget(library_id=library_id, folder_path="")
-        return self.scan_targets([target], force_rescan=force_rescan)
-
-    def start_scan(self, library_id: str) -> StartScanResult:
-        """Start a library scan.
-
-        Scans the entire library root recursively and marks missing files as invalid.
-
-        This is the main scanning entrypoint. It delegates to the workflow,
-        which resolves the library and handles orchestration.
-
-        IMPORTANT: Libraries are used ONLY to pick which filesystem roots to scan.
-        All discovered files and stats are GLOBAL and do NOT carry library_id.
-
-        Args:
-            library_id: ID of library to scan (required)
-
-        Returns:
-            StartScanResult DTO with scan statistics
-
-        Raises:
-            ValueError: If library not found
-
-        """
-        return start_scan_workflow(
+        return start_library_scan_workflow(
             db=self.db,
             background_tasks=self.background_tasks,
             tagger_version=self.cfg.tagger_version,
             library_id=library_id,
+            scan_type=scan_type,
         )
 
     def cancel_scan(self, library_id: str | None = None) -> bool:

@@ -635,13 +635,13 @@ class LibraryFilesOperations:
         if not paths:
             return 0
 
-        # Delete edges first
+        # Delete edges first (edges go _from=library_files/* -> _to=tags/*)
         self.db.aql.execute(
             """
             FOR file IN library_files
                 FILTER file.path IN @paths
                 FOR edge IN song_tag_edges
-                    FILTER edge._to == file._id
+                    FILTER edge._from == file._id
                     REMOVE edge IN song_tag_edges
             """,
             bind_vars={"paths": paths},
@@ -1198,87 +1198,6 @@ class LibraryFilesOperations:
         )
 
         return len(file_docs)
-
-    def mark_missing_for_library(self, library_id: str, scan_id: str) -> int:
-        """Mark files not seen in this scan as invalid.
-
-        DEPRECATED: Use delete_missing_for_library instead. Soft deletes create state explosion.
-
-        Args:
-            library_id: Library that was scanned (full scan only)
-            scan_id: Identifier of this scan (timestamp or unique ID)
-
-        Returns:
-            Number of files marked invalid
-
-        Files with last_seen_scan_id != scan_id are assumed deleted.
-        Only call this for FULL library scans (not targeted scans).
-
-        """
-        cursor = cast(
-            "Cursor",
-            self.db.aql.execute(
-                """
-                FOR file IN library_files
-                    FILTER file.library_id == @library_id
-                    FILTER file.last_seen_scan_id != @scan_id
-                    FILTER file.is_valid == true
-                    UPDATE file WITH { is_valid: 0 } IN library_files
-                    COLLECT WITH COUNT INTO marked
-                    RETURN marked
-                """,
-                bind_vars={"library_id": library_id, "scan_id": scan_id},
-            ),
-        )
-
-        results = list(cursor)
-        return results[0] if results else 0
-
-    def delete_missing_for_library(self, library_id: str, scan_id: str) -> int:
-        """Delete files not seen in this scan.
-
-        Args:
-            library_id: Library that was scanned (full scan only)
-            scan_id: Identifier of this scan (timestamp or unique ID)
-
-        Returns:
-            Number of files deleted
-
-        Files with last_seen_scan_id != scan_id are assumed deleted.
-        Only call this for FULL library scans (not targeted scans).
-
-        """
-        # Delete edges first
-        self.db.aql.execute(
-            """
-            FOR file IN library_files
-                FILTER file.library_id == @library_id
-                FILTER file.last_seen_scan_id != @scan_id
-                FOR edge IN song_tag_edges
-                    FILTER edge._to == file._id
-                    REMOVE edge IN song_tag_edges
-            """,
-            bind_vars={"library_id": library_id, "scan_id": scan_id},
-        )
-
-        # Delete files and count
-        cursor = cast(
-            "Cursor",
-            self.db.aql.execute(
-                """
-                FOR file IN library_files
-                    FILTER file.library_id == @library_id
-                    FILTER file.last_seen_scan_id != @scan_id
-                    REMOVE file IN library_files
-                    COLLECT WITH COUNT INTO deleted
-                    RETURN deleted
-                """,
-                bind_vars={"library_id": library_id, "scan_id": scan_id},
-            ),
-        )
-
-        results = list(cursor)
-        return results[0] if results else 0
 
     def get_library_counts(self) -> dict[str, dict[str, int]]:
         """Get file and folder counts for all libraries.

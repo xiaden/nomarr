@@ -1,0 +1,1648 @@
+### Example: File Resource Contents in Read Resource Result
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+Illustrates the JSON structure for representing file resource contents within a `ReadResourceResult`. This example shows a single file with its URI, MIME type, and text content.
+
+```json
+{
+  "contents": [
+    {
+      "uri": "file:///project/src/main.rs",
+      "mimeType": "text/x-rust",
+      "text": "fn main() {\n    println!(\"Hello world!\");\n}"
+    }
+  ]
+}
+```
+
+--------------------------------
+
+### Tool Result JSON Example
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+This JSON object represents a tool result, including the tool type, the ID of the tool use it corresponds to, and the content of the result. The content is an array of ContentBlock objects, which can contain text, images, audio, or resource links. It also includes optional fields for structured content and error reporting.
+
+```json
+{
+  "tool_result": {
+    "toolUseId": "call_abc123",
+    "content": [
+      {
+        "type": "text",
+        "text": "Weather in Paris: 18°C, partly cloudy"
+      }
+    ]
+  }
+}
+```
+
+--------------------------------
+
+### Define ToolResultContent Interface for Tool Execution Results
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+Defines the 'ToolResultContent' interface, representing the outcome of a tool execution. It includes 'type', 'toolUseId', 'content', optional 'structuredContent', 'isError' flag, and optional '_meta'.
+
+```typescript
+interface ToolResultContent {
+  type: "tool_result";
+  toolUseId: string;
+  content: ContentBlock[];
+  structuredContent?: { [key: string]: unknown };
+  isError?: boolean;
+  _meta?: MetaObject;
+}
+```
+
+--------------------------------
+
+### Read Resource Contents
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+Retrieves the contents of a resource, which can be either text or binary data.
+
+```APIDOC
+## GET /websites/modelcontextprotocol_io_specification/readresourceresult-contents
+
+### Description
+Retrieves the contents of a resource. The contents can be of type TextResourceContents or BlobResourceContents.
+
+### Method
+GET
+
+### Endpoint
+/websites/modelcontextprotocol_io_specification/readresourceresult-contents
+
+### Parameters
+#### Query Parameters
+- **resourceId** (string) - Required - The unique identifier for the resource.
+
+### Request Example
+```json
+{
+  "resourceId": "example-resource-id"
+}
+```
+
+### Response
+#### Success Response (200)
+- **contents** (Array<TextResourceContents | BlobResourceContents>) - An array containing the resource's content parts.
+
+#### Response Example
+```json
+{
+  "contents": [
+    {
+      "type": "text",
+      "content": "This is the text content."
+    },
+    {
+      "type": "blob",
+      "content": "base64encodedblobdata"
+    }
+  ]
+}
+```
+```
+
+--------------------------------
+
+### Resource Title Property Documentation
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+Documentation for the optional 'title' property, a string intended for UI and end-user contexts. It is optimized for human readability and understanding, even for non-technical users. If not provided, the 'name' property is used as a fallback, with specific precedence rules for 'Tool' types.
+
+```typescript
+/**
+ * Intended for UI and end-user contexts — optimized to be human-readable and easily understood,
+ * even by those unfamiliar with domain-specific terminology.
+ *
+ * If not provided, the name should be used for display (except for Tool,
+ * where `annotations.title` should be given precedence over using `name`).
+ */
+title?: string;
+```
+
+--------------------------------
+
+### Resource Template Properties
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+Details the properties available for resource templates, including their types, descriptions, and whether they are required or optional.
+
+```APIDOC
+## Resource Template Properties
+
+### Description
+This section details the properties that define a resource template within the Model Context Protocol.
+
+### Method
+N/A (Schema Definition)
+
+### Endpoint
+N/A (Schema Definition)
+
+### Parameters
+#### Path Parameters
+None
+
+#### Query Parameters
+None
+
+#### Request Body
+##### name (string) - Required
+Intended for programmatic or logical use, but used as a display name in past specs or fallback (if title isn't present).
+
+##### title (string) - Optional
+Intended for UI and end-user contexts — optimized to be human-readable and easily understood, even by those unfamiliar with domain-specific terminology. If not provided, the name should be used for display.
+
+##### uriTemplate (string) - Required
+A URI template (according to RFC 6570) that can be used to construct resource URIs.
+
+##### description (string) - Optional
+A description of what this template is for. This can be used by clients to improve the LLM's understanding of available resources. It can be thought of like a "hint" to the model.
+
+##### mimeType (string) - Optional
+The MIME type for all resources that match this template. This should only be included if all resources matching this template have the same type.
+
+##### annotations (Annotations) - Optional
+Optional annotations for the client.
+
+##### _meta (MetaObject) - Optional
+Internal metadata field.
+
+### Request Example
+```json
+{
+  "name": "exampleResource",
+  "title": "Example Resource",
+  "uriTemplate": "/resources/{id}",
+  "description": "This is an example resource template.",
+  "mimeType": "application/json",
+  "annotations": {},
+  "_meta": {}
+}
+```
+
+### Response
+#### Success Response (200)
+- **name** (string) - The programmatic name of the resource template.
+- **title** (string) - The human-readable title of the resource template.
+- **uriTemplate** (string) - The URI template for constructing resource URIs.
+- **description** (string) - A description of the resource template's purpose.
+- **mimeType** (string) - The MIME type of resources matching this template.
+- **annotations** (Annotations) - Optional annotations for the client.
+- **_meta** (MetaObject) - Internal metadata.
+
+#### Response Example
+```json
+{
+  "name": "exampleResource",
+  "title": "Example Resource",
+  "uriTemplate": "/resources/{id}",
+  "description": "This is an example resource template.",
+  "mimeType": "application/json",
+  "annotations": {},
+  "_meta": {}
+}
+```
+```
+
+--------------------------------
+
+### Example File Resource with Annotations
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+Provides a JSON example of a 'Resource' object representing a file, including its URI, name, title, and MIME type. This demonstrates how resource data is structured.
+
+```json
+{
+  "uri": "file:///project/README.md",
+  "name": "README.md",
+  "title": "Project Documentation",
+  "mimeType": "
+```
+
+--------------------------------
+
+### Example Read Resource Result Response
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+An example JSON payload demonstrating a successful response for a 'resources/read' request. It shows the structure including jsonrpc version, request ID, and the resource content with its URI, mime type, and text.
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "read-resource-example",
+  "result": {
+    "contents": [
+      {
+        "uri": "file:///project/src/main.rs",
+        "mimeType": "text/x-rust",
+        "text": "fn main() {\n    println!(\"Hello world!\");\n}"
+      }
+    ]
+  }
+}
+```
+
+--------------------------------
+
+### Resource Properties
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+This section details the properties associated with a resource in the Model Context Protocol, including its URI, description, MIME type, annotations, size, and metadata.
+
+```APIDOC
+## Resource Properties
+
+### Description
+Details the properties of a resource within the Model Context Protocol.
+
+### Method
+N/A (Describes data structure)
+
+### Endpoint
+N/A (Describes data structure)
+
+### Parameters
+#### Path Parameters
+None
+
+#### Query Parameters
+None
+
+#### Request Body
+This describes the structure of a resource object:
+
+- **uri** (string) - Required - The URI of this resource.
+- **description** (string) - Optional - A description of what this resource represents. This can be used by clients to improve the LLM's understanding of available resources. It can be thought of like a "hint" to the model.
+- **mimeType** (string) - Optional - The MIME type of this resource, if known.
+- **annotations** (Annotations) - Optional - Optional annotations for the client.
+- **size** (number) - Optional - The size of the raw resource content, in bytes (i.e., before base64 encoding or any tokenization), if known. This can be used by Hosts to display file sizes and estimate context window usage.
+- **_meta** (MetaObject) - Optional - Metadata object for the resource.
+
+### Request Example
+```json
+{
+  "uri": "http://example.com/resource",
+  "description": "An example resource.",
+  "mimeType": "application/json",
+  "annotations": {},
+  "size": 1024,
+  "_meta": {}
+}
+```
+
+### Response
+#### Success Response (200)
+- **uri** (string) - The URI of the resource.
+- **description** (string) - A description of the resource.
+- **mimeType** (string) - The MIME type of the resource.
+- **annotations** (Annotations) - Optional annotations for the client.
+- **size** (number) - The size of the resource in bytes.
+- **_meta** (MetaObject) - Metadata object for the resource.
+
+#### Response Example
+```json
+{
+  "uri": "http://example.com/resource",
+  "description": "An example resource.",
+  "mimeType": "application/json",
+  "annotations": {},
+  "size": 1024,
+  "_meta": {}
+}
+```
+```
+
+--------------------------------
+
+### Resource Icons Property Documentation
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+Documentation for the 'icons' property, which is an optional set of sized icons for UI display. It specifies supported MIME types like image/png, image/jpeg, image/svg+xml, and image/webp.
+
+```typescript
+/**
+ * Optional set of sized icons that the client can display in a user interface.
+ *
+ * Clients that support rendering icons MUST support at least the following MIME types:
+ * - `image/png` - PNG images (safe, universal compatibility)
+ * - `image/jpeg` (and `image/jpg`) - JPEG images (safe, universal compatibility)
+ *
+ * Clients that support rendering icons SHOULD also support:
+ * - `image/svg+xml` - SVG images (scalable but requires security precautions)
+ * - `image/webp` - WebP images (modern, efficient format)
+ */
+icons?: Icon[];
+```
+
+--------------------------------
+
+### Read Resource Result Interface Definition
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+Defines the structure for the result of a resources/read request. It includes optional metadata, an array of resource contents (text or blob), and allows for additional string-keyed properties.
+
+```typescript
+interface ReadResourceResult {
+  _meta?: MetaObject;
+  contents: (TextResourceContents | BlobResourceContents)[];
+  [key: string]: unknown;
+}
+```
+
+--------------------------------
+
+### Resource Interface Definition
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+Defines the structure of a 'Resource' object, including properties like URI, name, title, description, MIME type, annotations, size, and optional metadata. It also inherits properties from 'PaginatedResult'.
+
+```typescript
+interface Resource {
+  icons?: Icon[];
+  name: string;
+  title?: string;
+  uri: string;
+  description?: string;
+  mimeType?: string;
+  annotations?: Annotations;
+  size?: number;
+  _meta?: MetaObject;
+}
+```
+
+--------------------------------
+
+### CallToolResult Example: Unstructured Text Result
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+An example demonstrating a CallToolResult containing unstructured text content. This format is used when the tool's output is primarily textual.
+
+```json
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "Current weather in New York:\nTemperature: 72°F\nConditions: Partly cloudy"
+    }
+  ],
+  "isError": false
+}
+```
+
+--------------------------------
+
+### Resource Object
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+Represents a known resource that the server is capable of reading. This includes properties like URI, name, title, description, MIME type, annotations, size, and metadata.
+
+```APIDOC
+## Resource Object
+
+### Description
+A known resource that the server is capable of reading.
+
+### Fields
+- **uri** (string) - Required - The unique identifier for the resource.
+- **name** (string) - Required - The name of the resource.
+- **title** (string) - Optional - A human-readable title for the resource.
+- **description** (string) - Optional - A detailed description of the resource.
+- **mimeType** (string) - Optional - The MIME type of the resource.
+- **icons** (Icon[]) - Optional - An array of icons associated with the resource.
+- **annotations** (Annotations) - Optional - Annotations related to the resource.
+- **size** (number) - Optional - The size of the resource in bytes.
+- **_meta** (MetaObject) - Optional - Metadata associated with the resource.
+
+### Example
+```json
+{
+  "uri": "file:///project/README.md",
+  "name": "README.md",
+  "title": "Project Documentation",
+  "description": "The main documentation file for the project.",
+  "mimeType": "text/markdown",
+  "size": 1024,
+  "icons": [
+    {
+      "uri": "file:///icons/md.png",
+      "name": "markdown-icon"
+    }
+  ],
+  "annotations": {
+    "key": "value"
+  },
+  "_meta": {
+    "createdAt": "2023-01-01T12:00:00Z",
+    "updatedAt": "2023-01-01T12:00:00Z"
+  }
+}
+```
+```
+
+--------------------------------
+
+### Tool Output Schema - Optional JSON Schema
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+An optional JSON Schema object that defines the structure of the tool's output. This schema is used for the structuredContent field in CallToolResult and defaults to JSON Schema 2020-12 if not explicitly provided.
+
+```typescript
+/**
+ * An optional JSON Schema object defining the structure of the tool's output returned in
+ * the structuredContent field of a CallToolResult.
+ * 
+ * Defaults to JSON Schema 2020-12 when no explicit `$schema` is provided.
+ */
+outputSchema?: {
+  $schema?: string;
+  type: "object";
+  properties?: { [key: string]: object };
+  required?: string[];
+};
+```
+
+--------------------------------
+
+### Define ToolUseContent Interface (TypeScript)
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+Defines the TypeScript interface for ToolUseContent, specifying the structure for tool calls. It includes properties for type, id, name, input, and optional meta information.
+
+```typescript
+interface ToolUseContent {
+  type: "tool_use";
+  id: string;
+  name: string;
+  input: { [key: string]: unknown };
+  _meta?: MetaObject;
+}
+```
+
+--------------------------------
+
+### Tool Result Structure in JSON
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+This JSON snippet demonstrates the structure of a tool result message within the Model Context Protocol. It includes the type of message, a unique tool use identifier, and the content of the result, which is typically text.
+
+```json
+[
+  {
+    "type": "tool_result",
+    "toolUseId": "call_abc123",
+    "content": [
+      {
+        "type": "text",
+        "text": "Weather in Paris: 18°C, partly cloudy"
+      }
+    ]
+  },
+  {
+    "type": "tool_result",
+    "toolUseId": "call_def456",
+    "content": [
+      {
+        "type": "text",
+        "text": "Weather in London: 15°C, rainy"
+      }
+    ]
+  }
+]
+```
+
+--------------------------------
+
+### Read Resource Response
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+Details the structure of the response received after a resources/read request, including metadata and resource contents.
+
+```APIDOC
+## Read Resource Response
+
+### Description
+This endpoint returns the result of a `resources/read` request. The response includes optional metadata and an array of resource contents, which can be either text or binary data.
+
+### Method
+POST (Implied by JSON-RPC structure, typically used for requests)
+
+### Endpoint
+/ (Implied by JSON-RPC structure)
+
+### Parameters
+#### Path Parameters
+None
+
+#### Query Parameters
+None
+
+#### Request Body
+(This documentation focuses on the response structure. Request body would be a JSON-RPC request object for `resources/read`)
+
+### Request Example
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "resources/read",
+  "params": {
+    "uris": ["file:///project/src/main.rs"]
+  },
+  "id": "some-request-id"
+}
+```
+
+### Response
+#### Success Response (200)
+- **jsonrpc** (string) - The JSON-RPC protocol version, always "2.0".
+- **id** (RequestId) - The identifier for the request.
+- **result** (ReadResourceResult) - The result of the read operation.
+
+##### `ReadResourceResult` Object
+- **_meta** (MetaObject) - Optional metadata about the resource.
+- **contents** (Array<TextResourceContents | BlobResourceContents>) - An array containing the content of the requested resources.
+  - **uri** (string) - The URI of the resource content.
+  - **mimeType** (string) - The MIME type of the resource content.
+  - **text** (string) - The text content of the resource (for text-based resources).
+  - (Binary content would be represented differently, e.g., base64 encoded or via a separate mechanism not detailed here).
+
+#### Response Example
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "some-request-id",
+  "result": {
+    "contents": [
+      {
+        "uri": "file:///project/src/main.rs",
+        "mimeType": "text/x-rust",
+        "text": "fn main() {\n    println!(\"Hello world!\");\n}"
+      }
+    ]
+  }
+}
+```
+
+#### Error Response
+(Standard JSON-RPC error object structure would apply here, detailing any errors during the read operation.)
+```
+
+--------------------------------
+
+### Tool Definition with Output Schema for Structured Content (JSON)
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+This JSON snippet defines a tool named 'get_weather_data'. It includes a description, input schema for location, and an output schema specifying temperature, conditions, and humidity. This structure helps clients understand and interact with the tool's capabilities.
+
+```json
+{
+  "name": "get_weather_data",
+  "title": "Weather Data Retriever",
+  "description": "Get current weather data for a location",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "location": {
+        "type": "string",
+        "description": "City name or zip code"
+      }
+    },
+    "required": ["location"]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "temperature": {
+        "type": "number",
+        "description": "Temperature in celsius"
+      },
+      "conditions": {
+        "type": "string",
+        "description": "Weather conditions description"
+      },
+      "humidity": {
+        "type": "number",
+        "description": "Humidity percentage"
+      }
+    },
+    "required": ["temperature", "conditions", "humidity"]
+  }
+}
+```
+
+--------------------------------
+
+### Example Tool Result for get_weather
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+Provides a JSON example of a 'ToolResultContent' for a 'get_weather' tool. This demonstrates how to structure the response, including the tool's output and metadata.
+
+```json
+{
+  "type": "tool_result",
+  "toolUseId": "call_123",
+  "content": [
+    {
+      "type": "text",
+      "text": "The weather in San Francisco is sunny and 70 degrees Fahrenheit."
+    }
+  ]
+}
+```
+
+--------------------------------
+
+### Define ReadResourceResultResponse Interface
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+Represents a successful response from a 'resources/read' request. It adheres to the JSON-RPC 2.0 specification and includes an ID and the result of the resource read operation. The result contains details about the resource's contents.
+
+```typescript
+interface ReadResourceResultResponse {
+  jsonrpc: "2.0";
+  id: RequestId;
+  result: ReadResourceResult;
+}
+```
+
+--------------------------------
+
+### List Resource Templates Result Response Interface (JSON)
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+Defines the structure for a successful response when listing resource templates. It includes the JSONRPC version, a request ID, and the result containing an array of resource templates.
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "list-resource-templates-example",
+  "result": {
+    "resourceTemplates": [
+      {
+        "uriTemplate": "file:///\{path}",
+        "name": "Project Files",
+        "title": "Project Files",
+        "description": "Access files in the project directory",
+        "mimeType": "application/octet-stream",
+        "icons": [
+          {
+            "src": "https://example.com/folder-icon.png",
+            "mimeType": "image/png",
+            "sizes": [
+              "48x48"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+--------------------------------
+
+### POST /resources/read
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+Reads a resource identified by its URI. The server interprets the URI protocol to fetch the resource content.
+
+```APIDOC
+## POST /resources/read
+
+### Description
+Reads a resource identified by its URI. The server interprets the URI protocol to fetch the resource content.
+
+### Method
+POST
+
+### Endpoint
+/resources/read
+
+### Parameters
+#### Request Body
+- **_meta** (RequestMetaObject) - Optional - Metadata for the request.
+- **uri** (string) - Required - The URI of the resource to read. Can use any protocol.
+
+### Request Example
+```json
+{
+  "_meta": {
+    "traceId": "some-trace-id"
+  },
+  "uri": "file:///path/to/your/resource"
+}
+```
+
+### Response
+#### Success Response (200)
+- **jsonrpc** (string) - The JSONRPC version, always "2.0".
+- **id** (RequestId) - The ID of the request.
+- **result** (ReadResourceResult) - The result of the resource read operation.
+
+#### Response Example
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "read-resource-example",
+  "result": {
+    "contents": [
+      {
+        "uri": "file:///project/src/main.rs",
+        "mimeType": "text/x-rust",
+        "text": "fn main() {\n    println!(\"Hello world!\");\n}"
+      }
+    ]
+  }
+}
+```
+```
+
+--------------------------------
+
+### Tool Call Result
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+Represents the result of a tool call, which can include unstructured text content, structured data, and error information.
+
+```APIDOC
+## Tool Call Result
+
+### Description
+Represents the result of a tool call. This can include unstructured text content, structured data, and error information.
+
+### Method
+N/A (This describes a data structure, not an endpoint)
+
+### Endpoint
+N/A
+
+### Parameters
+#### Request Body
+(This describes a response structure, not a request)
+
+#### Response Body
+- **content** (ContentBlock[]) - Required - A list of content objects that represent the unstructured result of the tool call.
+- **structuredContent** (object) - Optional - An optional JSON object that represents the structured result of the tool call.
+- **isError** (boolean) - Optional - Whether the tool call ended in an error. If not set, this is assumed to be false (the call was successful).
+- **_meta** (MetaObject) - Optional - Metadata associated with the result.
+
+### Request Example
+```json
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{ \"temperature\": 22.5, \"conditions\": \"Partly cloudy\", \"humidity\": 65 }"
+    }
+  ],
+  "structuredContent": {
+    "temperature": 22.5,
+    "conditions": "Partly cloudy",
+    "humidity": 65
+  }
+}
+```
+
+### Response
+#### Success Response (200)
+- **content** (ContentBlock[]) - A list of content objects representing the unstructured result.
+- **structuredContent** (object) - An optional JSON object representing the structured result.
+
+#### Error Response Example
+```json
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "Invalid departure date: must be in the future. Current date is 08/08/2025."
+    }
+  ],
+  "isError": true
+}
+```
+```
+
+--------------------------------
+
+### Example ListResourcesResult JSON
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+An example of a JSON response for a resources/list request, demonstrating the structure with a 'resources' array containing a single resource object and a 'nextCursor' for pagination.
+
+```json
+{
+  "resources": [
+    {
+      "uri": "file:///project/src/main.rs",
+      "name": "main.rs",
+      "title": "Rust Software Application Main File",
+      "description": "Primary application entry point",
+      "mimeType": "text/x-rust",
+      "icons": [
+        {
+          "src": "[https://example.com/rust-file-icon.png](https://example.com/rust-file-icon.png)",
+          "mimeType": "image/png",
+          "sizes": ["48x48"]
+        }
+      ]
+    }
+  ],
+  "nextCursor": "eyJwYWdlIjogM30="
+}
+```
+
+--------------------------------
+
+### List Resource Templates Result
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+Represents the result of a request to list resource templates, including the templates themselves and pagination information.
+
+```APIDOC
+## List Resource Templates Result
+
+### Description
+Represents the result of a request to list resource templates, including the templates themselves and pagination information.
+
+### Fields
+- **_meta** (MetaObject) - Optional - Metadata for the result set.
+- **nextCursor** (string) - Optional - An opaque token representing the pagination position after the last returned result. If present, there may be more results available.
+- **resourceTemplates** (ResourceTemplate[]) - Required - An array of ResourceTemplate objects.
+```
+
+--------------------------------
+
+### Example Tool Use Response for CreateMessageResult
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+Demonstrates a response where the assistant intends to use a tool. This example within 'CreateMessageResult' shows the assistant role, content structured for tool use with an ID, name, and parameters.
+
+```json
+{
+  "role": "assistant",
+  "content": [
+    {
+      "type": "tool_use",
+      "id": "call_abc123",
+      "name": "get_weather",
+      
+```
+
+--------------------------------
+
+### List Resource Templates Result Structure (JSON)
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+Defines the structure of the result returned by a 'resources/templates/list' request. It includes optional metadata, a cursor for pagination, and an array of resource templates. This interface also supports arbitrary string keys.
+
+```json
+{
+  "resourceTemplates": [
+    {
+      "uriTemplate": "file:///\{path}",
+      "name": "Project Files",
+      "title": "📁 Project Files",
+      "description": "Access files in the project directory",
+      "mimeType": "application/octet-stream",
+      "icons": [
+        {
+          "src": "https://example.com/folder-icon.png",
+          "mimeType": "image/png",
+          "sizes": ["48x48"]
+        }
+      ]
+    }
+  ]
+}
+```
+
+--------------------------------
+
+### List Resource Templates Result Response
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+This interface defines the structure of a successful response from the server when requesting a list of resource templates.
+
+```APIDOC
+## List Resource Templates Result Response
+
+### Description
+A successful response from the server for a `resources/templates/list` request.
+
+### Method
+POST (Implied by the context of a JSONRPC request)
+
+### Endpoint
+(Not explicitly defined, but implied to be a JSONRPC endpoint)
+
+### Parameters
+#### Path Parameters
+None
+
+#### Query Parameters
+None
+
+#### Request Body
+This endpoint is part of a JSONRPC request. The specific request body for listing resource templates is not detailed here, but the response structure is:
+
+- **jsonrpc** (string) - The JSONRPC protocol version, always "2.0".
+- **id** (RequestId) - The identifier for the request.
+- **result** (ListResourceTemplatesResult) - The result of the request, containing the list of resource templates.
+
+### Request Example
+(Example not provided for the request, only the response)
+
+### Response
+#### Success Response (200)
+- **jsonrpc** (string) - The JSONRPC protocol version, "2.0".
+- **id** (RequestId) - The identifier for the request.
+- **result** (ListResourceTemplatesResult) - An object containing the list of resource templates.
+  - **resourceTemplates** (Array<ResourceTemplate>) - An array of resource template objects.
+    - **uriTemplate** (string) - The URI template for the resource.
+    - **name** (string) - The name of the resource template.
+    - **title** (string) - The title of the resource template.
+    - **description** (string) - A description of the resource template.
+    - **mimeType** (string) - The MIME type of the resource.
+    - **icons** (Array<Icon>) - An array of icon objects.
+      - **src** (string) - The source URL of the icon.
+      - **mimeType** (string) - The MIME type of the icon.
+      - **sizes** (Array<string>) - An array of supported icon sizes.
+
+#### Response Example
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "list-resource-templates-example",
+  "result": {
+    "resourceTemplates": [
+      {
+        "uriTemplate": "file:///\{path}",
+        "name": "Project Files",
+        "title": "Project Files",
+        "description": "Access files in the project directory",
+        "mimeType": "application/octet-stream",
+        "icons": [
+          {
+            "src": "https://example.com/folder-icon.png",
+            "mimeType": "image/png",
+            "sizes": ["48x48"]
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+```
+
+--------------------------------
+
+### Resource Template Object
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+Defines the structure and properties of a ResourceTemplate, used for describing resources available on the server.
+
+```APIDOC
+## ResourceTemplate Object
+
+### Description
+A template description for resources available on the server.
+
+### Fields
+- **icons** (Icon[]) - Optional - An optional set of sized icons that the client can display in a user interface.
+- **name** (string) - Required - The name of the resource template.
+- **title** (string) - Optional - A human-readable title for the resource template.
+- **uriTemplate** (string) - Required - A URI template string that can be used to construct URIs for resources of this type.
+- **description** (string) - Optional - A description of the resource template.
+- **mimeType** (string) - Optional - The MIME type of the resource.
+- **annotations** (Annotations) - Optional - Additional annotations for the resource template.
+- **_meta** (MetaObject) - Optional - Metadata associated with the resource template.
+```
+
+--------------------------------
+
+### JSON Tool Call Result Example
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+This JSON object represents a successful tool call result. It includes unstructured text content describing weather conditions and structured content with specific weather details like temperature, conditions, and humidity.
+
+```json
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{ \"temperature\": 22.5, \"conditions\": \"Partly cloudy\", \"humidity\": 65}"
+    }
+  ],
+  "structuredContent": {
+    "temperature": 22.5,
+    "conditions": "Partly cloudy",
+    "humidity": 65
+  }
+}
+```
+
+--------------------------------
+
+### JSON Invalid Tool Input Error Example
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+This JSON object demonstrates an error response from a tool call. It contains an error message within the 'content' field and a boolean flag 'isError' set to true, indicating that the tool execution failed.
+
+```json
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "Invalid departure date: must be in the future. Current date is 08/08/2025."
+    }
+  ],
+  "isError": true
+}
+```
+
+--------------------------------
+
+### Server Capabilities: Resources Configuration (JSON)
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+Specifies the server's capabilities for managing resources. It allows for subscription to individual resource updates and notifications for changes in the resource list.
+
+```json
+{
+  "resources": {}
+}
+```
+
+```json
+{
+  "resources": {
+    "subscribe": true
+  }
+}
+```
+
+```json
+{
+  "resources": {
+    "listChanged": true
+  }
+}
+```
+
+```json
+{
+  "resources": {
+    "subscribe": true,
+    "listChanged": true
+  }
+}
+```
+
+--------------------------------
+
+### Paginated Resource List
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+Represents a paginated list of resources, including the resources themselves and pagination information.
+
+```APIDOC
+## Paginated Resource List
+
+### Description
+Represents a paginated list of resources, including the resources themselves and pagination information.
+
+### Fields
+- **resources** (Resource[]) - Required - An array of Resource objects.
+- **nextCursor** (string) - Optional - An opaque token representing the pagination position after the last returned result. If present, there may be more results available.
+- **_meta** (MetaObject) - Optional - Metadata associated with the paginated result.
+
+### Example
+```json
+{
+  "resources": [
+    {
+      "uri": "file:///project/README.md",
+      "name": "README.md",
+      "title": "Project Documentation",
+      "mimeType": "text/markdown",
+      "size": 1024
+    },
+    {
+      "uri": "file:///project/LICENSE",
+      "name": "LICENSE",
+      "title": "Project License",
+      "mimeType": "text/plain",
+      "size": 1024
+    }
+  ],
+  "nextCursor": "some_opaque_token",
+  "_meta": {
+    "createdAt": "2023-01-01T12:00:00Z",
+    "updatedAt": "2023-01-01T12:00:00Z"
+  }
+}
+```
+```
+
+--------------------------------
+
+### Server Capabilities - Resources
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+This section describes the server's capabilities regarding resource notifications, specifically for subscribing to and listing changes.
+
+```APIDOC
+## GET /server/capabilities/resources
+
+### Description
+Retrieves the server's capabilities for resource notifications.
+
+### Method
+GET
+
+### Endpoint
+/server/capabilities/resources
+
+### Parameters
+#### Query Parameters
+None
+
+#### Request Body
+None
+
+### Request Example
+None
+
+### Response
+#### Success Response (200)
+- **resources** (object) - An object detailing the server's resource notification capabilities.
+  - **subscribe** (boolean) - Indicates if the server supports subscribing to resource notifications.
+  - **listChanged** (boolean) - Indicates if the server supports notifications for changes in the resource list.
+
+#### Response Example
+```json
+{
+  "resources": {
+    "subscribe": true,
+    "listChanged": true
+  }
+}
+```
+```
+
+--------------------------------
+
+### Resource Title
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+Provides a human-readable title for a resource, intended for UI display and end-user contexts.
+
+```APIDOC
+## GET /resource/title
+
+### Description
+Retrieves the human-readable title of a resource.
+
+### Method
+GET
+
+### Endpoint
+/resource/title
+
+### Response
+#### Success Response (200)
+- **title** (string) - The human-readable title of the resource.
+
+#### Response Example
+```json
+{
+  "title": "Example Resource Title"
+}
+```
+```
+
+--------------------------------
+
+### Example SamplingMessage with Multiple Content Blocks (JSON)
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+An example illustrating a SamplingMessage containing multiple content blocks, suitable for complex interactions involving tool results or other structured data.
+
+```json
+{
+  "role": "user",
+  "content": [
+    {
+      "type": "tool_result",
+      "toolUseId": "call_123",
+      "content": [{"type": "text", "text": "Result 1" }]
+    },
+    {
+      "type": "tool_result",
+      "toolUseId": "call_456",
+      "content": [{"type": "text", "text": "Result 2" }]
+    }
+  ]
+}
+```
+
+--------------------------------
+
+### List Resource Templates API
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+This endpoint retrieves a list of available resource templates. It is part of the resources/templates/list request.
+
+```APIDOC
+## GET /resources/templates/list
+
+### Description
+Retrieves a list of available resource templates.
+
+### Method
+GET
+
+### Endpoint
+/resources/templates/list
+
+### Parameters
+#### Query Parameters
+- **nextCursor** (string) - Optional - Used for pagination to fetch the next set of results.
+
+### Request Example
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "resources/templates/list",
+  "params": {
+    "nextCursor": "someCursor"
+  },
+  "id": "requestId"
+}
+```
+
+### Response
+#### Success Response (200)
+- **_meta** (MetaObject) - Optional - Metadata for the response.
+- **nextCursor** (string) - Optional - A cursor for fetching the next page of results.
+- **resourceTemplates** (ResourceTemplate[]) - Required - An array of resource templates.
+
+#### Response Example
+```json
+{
+  "resourceTemplates": [
+    {
+      "uriTemplate": "file:///{path}",
+      "name": "Project Files",
+      "title": "📁 Project Files",
+      "description": "Access files in the project directory",
+      "mimeType": "application/octet-stream",
+      "icons": [
+        {
+          "src": "https://example.com/folder-icon.png",
+          "mimeType": "image/png",
+          "sizes": ["48x48"]
+        }
+      ]
+    }
+  ]
+}
+```
+```
+
+--------------------------------
+
+### Example: Follow-up Request with Tool Results (JSON)
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+This JSON example demonstrates a follow-up request in a conversation where the assistant has used tools. It shows a sequence of messages, including user prompts, assistant responses that indicate tool usage (e.g., get_weather), and the input provided to those tools. This is crucial for maintaining conversational context and handling tool outputs.
+
+```json
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": {
+        "type": "text",
+        "text": "What's the weather like in Paris and London?"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "call_abc123",
+          "name": "get_weather",
+          "input": { "city": "Paris" }
+        },
+        {
+          "type": "tool_use",
+          "id": "call_def456",
+          "name": "get_weather",
+          "input": { "city": "London" }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": {
+        "type": "tool_result",
+        "tool_use_id": "call_abc123",
+        "content": {
+          "type": "text",
+          "text": "The weather in Paris is sunny."
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": {
+        "type": "tool_result",
+        "tool_use_id": "call_def456",
+        "content": {
+          "type": "text",
+          "text": "The weather in London is cloudy."
+        }
+      }
+    }
+  ],
+  "toolChoice": {
+    "mode": "auto"
+  },
+  "maxTokens": 1000
+}
+```
+
+--------------------------------
+
+### Call Tool Result Response Example (JSON)
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+This JSON object demonstrates a successful response from the server after a 'tools/call' request. It includes the JSON RPC version, a unique request ID, and the result of the tool call, which contains content and an error status.
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "call-tool-example",
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "Current weather in New York:\nTemperature: 72°F\nConditions: Partly cloudy"
+      }
+    ],
+    "isError": false
+  }
+}
+```
+
+--------------------------------
+
+### Tool Use Example in JSON
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+This JSON snippet illustrates a model's decision to use a tool, specifying the tool name and its required input. It's part of the model's output during an interaction.
+
+```json
+{
+  "type": "tool_use",
+  "id": "call_def456",
+  "name": "get_weather",
+  "input": {
+    "city": "London"
+  }
+}
+```
+
+--------------------------------
+
+### Server Capabilities: Resource Notifications (JSON)
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+This JSON snippet illustrates the server capabilities for resource notifications, indicating support for subscribing to and receiving notifications about list changes. It's a basic configuration for enabling resource-related events.
+
+```json
+{
+  "resources": {
+    "subscribe": true,
+    "listChanged": true
+  }
+}
+```
+
+--------------------------------
+
+### List Resources Result Response
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+Represents a successful response from the server for a resources/list request. It includes JSON-RPC version, request ID, and the list of resources.
+
+```APIDOC
+## GET /resources/list
+
+### Description
+This endpoint retrieves a list of available resources. The response includes details about each resource, such as its URI, name, title, description, MIME type, and icons.
+
+### Method
+GET
+
+### Endpoint
+/resources/list
+
+### Parameters
+#### Query Parameters
+- **cursor** (string) - Optional - Used for pagination to fetch the next set of resources.
+
+### Request Example
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "list-resources-example",
+  "method": "resources/list",
+  "params": {}
+}
+```
+
+### Response
+#### Success Response (200)
+- **jsonrpc** (string) - The JSON-RPC protocol version, always "2.0".
+- **id** (string) - The unique identifier for the request.
+- **result** (object) - Contains the list of resources and pagination information.
+  - **resources** (array) - An array of resource objects.
+    - **uri** (string) - The unique identifier (URI) of the resource.
+    - **name** (string) - The name of the resource.
+    - **title** (string) - A human-readable title for the resource.
+    - **description** (string) - A brief description of the resource.
+    - **mimeType** (string) - The MIME type of the resource.
+    - **icons** (array) - An array of icon objects for the resource.
+      - **src** (string) - The URL of the icon.
+      - **mimeType** (string) - The MIME type of the icon.
+      - **sizes** (array) - An array of supported icon sizes (e.g., "48x48").
+  - **nextCursor** (string) - A cursor for fetching the next page of results, if available.
+
+#### Response Example
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "list-resources-example",
+  "result": {
+    "resources": [
+      {
+        "uri": "file:///project/src/main.rs",
+        "name": "main.rs",
+        "title": "Rust Software Application Main File",
+        "description": "Primary application entry point",
+        "mimeType": "text/x-rust",
+        "icons": [
+          {
+            "src": "https://example.com/rust-file-icon.png",
+            "mimeType": "image/png",
+            "sizes": ["48x48"]
+          }
+        ]
+      }
+    ],
+    "nextCursor": "eyJwYWdlIjogM30="
+  }
+}
+```
+```
+
+--------------------------------
+
+### Resource Icons
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+Defines the optional set of sized icons that can be displayed in a user interface. Clients should support PNG and JPEG, and ideally SVG and WebP.
+
+```APIDOC
+## GET /resource/icons
+
+### Description
+Retrieves a list of available icons for a resource.
+
+### Method
+GET
+
+### Endpoint
+/resource/icons
+
+### Parameters
+#### Query Parameters
+- **size** (string) - Optional - The desired size of the icons (e.g., 'small', 'medium', 'large').
+
+### Response
+#### Success Response (200)
+- **icons** (Icon[]) - An array of icon objects, each containing size and URL information.
+
+#### Response Example
+```json
+{
+  "icons": [
+    {
+      "size": "small",
+      "url": "/icons/small.png"
+    },
+    {
+      "size": "medium",
+      "url": "/icons/medium.png"
+    }
+  ]
+}
+```
+```
+
+--------------------------------
+
+### Tool Icons Definition (TypeScript)
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+This TypeScript snippet defines an optional property 'icons' for a tool. It specifies that 'icons' is an array of 'Icon' objects, where each icon can have different sizes and MIME types. Clients supporting icons must handle at least PNG images.
+
+```typescript
+icons?: Icon[];
+```
+
+--------------------------------
+
+### List Resources Result Response Example (JSON)
+
+Source: https://modelcontextprotocol.io/specification/draft/schema
+
+An example of a successful response from the server for a 'resources/list' request. It includes the JSONRPC version, a request ID, and the 'result' object containing a list of resources and a cursor for pagination.
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "list-resources-example",
+  "result": {
+    "resources": [
+      {
+        "uri": "file:///project/src/main.rs",
+        "name": "main.rs",
+        "title": "Rust Software Application Main File",
+        "description": "Primary application entry point",
+        "mimeType": "text/x-rust",
+        "icons": [
+          {
+            "src": "[https://example.com/rust-file-icon.png](https://example.com/rust-file-icon.png)",
+            "mimeType": "image/png",
+            "sizes": ["48x48"]
+          }
+        ]
+      }
+    ],
+    "nextCursor": "eyJwYWdlIjogM30="
+  }
+}
+```

@@ -7,6 +7,11 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from nomarr.components.navidrome.tag_query_comp import (
+    get_nomarr_tag_rels,
+    get_tag_value_counts,
+)
+
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -33,7 +38,7 @@ def generate_navidrome_config_workflow(db: Database, namespace: str="nom") -> st
 
     """
     logger.info("[navidrome] Generating Navidrome config from library tags")
-    all_rels = db.tags.get_unique_rels(nomarr_only=True)
+    all_rels = get_nomarr_tag_rels(db)
     if not all_rels:
         return "# No tags found in library. Run a library scan first.\n"
     filtered_rels = [rel for rel in all_rels if rel.startswith("nom:")]
@@ -42,7 +47,7 @@ def generate_navidrome_config_workflow(db: Database, namespace: str="nom") -> st
     logger.info(f"[navidrome] Found {len(filtered_rels)} tags with 'nom:' prefix")
     config_lines = ["# Navidrome Custom Tags Configuration", f"# Generated from library with {len(filtered_rels)} tags", "#", "# Add this to your navidrome.toml file, then run a FULL scan (not quick scan)", ""]
     for rel in sorted(filtered_rels):
-        value_counts = db.tags.get_tag_value_counts(rel)
+        value_counts = get_tag_value_counts(db, rel)
         total_count = sum(value_counts.values())
         field_name = rel.replace("nom:", "").replace("-", "_")
         aliases = _generate_aliases(rel, namespace)

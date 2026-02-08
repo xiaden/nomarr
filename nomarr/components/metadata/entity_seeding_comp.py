@@ -91,3 +91,64 @@ def seed_song_entities_from_tags(db: "Database", song_id: str, tags: dict[str, A
         tag_ops.set_song_tags(song_id, "year", [year_int])
     else:
         tag_ops.set_song_tags(song_id, "year", [])
+
+
+_ENTITY_TAG_KEYS = ("artist", "artists", "album", "label", "genre", "year")
+
+
+def _extract_entity_tags(metadata: dict[str, Any]) -> dict[str, Any]:
+    """Extract entity-relevant tag keys from scan metadata.
+
+    Args:
+        metadata: Raw file metadata dict (from mutagen)
+
+    Returns:
+        Dict with only the entity tag keys
+
+    """
+    return {k: metadata.get(k) for k in _ENTITY_TAG_KEYS}
+
+
+def seed_entities_for_scan_batch(
+    db: "Database",
+    file_paths: list[str],
+    metadata_map: dict[str, dict[str, Any]],
+) -> int:
+    """Seed entity vertices/edges and rebuild metadata caches for scanned files.
+
+    For each file, looks up the DB record, extracts entity tags from metadata,
+    calls :func:`seed_song_entities_from_tags`, then rebuilds the metadata cache.
+
+    Args:
+        db: Database instance
+        file_paths: File paths that were just upserted
+        metadata_map: Map of file_path -> raw metadata dict
+
+    Returns:
+        Number of files successfully seeded
+
+    """
+    from nomarr.components.metadata.metadata_cache_comp import rebuild_song_metadata_cache
+
+    seeded = 0
+    for file_path in file_paths:
+        metadata = metadata_map.get(file_path)
+        if not metadata:
+            continue
+
+        file_record = db.library_files.get_library_file(file_path)
+        if not file_record:
+            logger.warning("File not found after upsert: %s", file_path)
+            continue
+
+        file_id = file_record["_id"]
+
+        try:
+            entity_tags = _extract_entity_tags(metadata)
+            seed_song_entities_from_tags(db, file_id, entity_tags)
+            rebuild_song_metadata_cache(db, file_id)
+            seeded += 1
+        except Exception as e:
+            logger.warning("Failed to seed entities for %s: %s", file_path, e)
+
+    return seeded
