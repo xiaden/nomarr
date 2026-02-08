@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
-from nomarr.helpers.tags_dto import Tags
+from nomarr.helpers.dto.tags_dto import Tags
 
 logger = logging.getLogger(__name__)
 
