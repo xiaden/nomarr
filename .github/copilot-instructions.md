@@ -301,9 +301,11 @@ interfaces â†’ services â†’ workflows â†’ components â†’ (pe
 
 - **Interfaces** call services only
 - **Services** own wiring, call workflows and/or components directly
-- **Workflows** orchestrate multi-step use cases, call components
+- **Workflows** orchestrate multi-step use cases, call components and other workflows
 - **Components** contain reusable domain logic, call persistence/helpers
 - **Persistence/helpers** never import higher layers
+
+Lateral (same-layer) imports are allowed: workflows may call other workflows, components may call other components. Only **upward** imports are forbidden.
 
 Services may skip workflows for simple single-step operations. Workflows exist for multi-step orchestration, not as mandatory pass-through.
 
@@ -497,13 +499,13 @@ Use `.docker/compose.yaml` to run containerized test environment (app + ArangoDB
 **Nomarr API auth** (session-based):
 ```powershell
 # 1. Login to get session token (password from .docker/nom-config/config.yaml → admin_password)
-$login = Invoke-RestMethod -Uri "http://localhost:8356/api/web/auth/login" -Method Post `
+$login = Invoke-RestMethod -Uri "http://127.0.0.1:8356/api/web/auth/login" -Method Post `
   -ContentType "application/json" -Body '{"password":"<admin_password>"}'
 $token = $login.session_token
 
 # 2. Use token for authenticated requests
 $headers = @{Authorization="Bearer $token"}
-Invoke-RestMethod -Uri "http://localhost:8356/api/web/calibration/generate-histogram" `
+Invoke-RestMethod -Uri "http://127.0.0.1:8356/api/web/calibration/generate-histogram" `
   -Method Post -Headers $headers
 ```
 
@@ -518,7 +520,7 @@ $auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("root:nomarr_d
 # Single query
 $q = 'FOR doc IN libraries RETURN doc'
 $body = @{query=$q} | ConvertTo-Json
-$r = Invoke-RestMethod -Uri "http://localhost:8529/_db/nomarr/_api/cursor" -Method Post `
+$r = Invoke-RestMethod -Uri "http://127.0.0.1:8529/_db/nomarr/_api/cursor" -Method Post `
   -Body $body -ContentType "application/json" -Headers @{Authorization="Basic $auth"}
 $r.result | ConvertTo-Json -Depth 5
 ```
@@ -534,7 +536,7 @@ $queries = @(
 foreach ($q in $queries) {
   Write-Host "=== $q ==="
   $body = @{query=$q} | ConvertTo-Json
-  $r = Invoke-RestMethod -Uri "http://localhost:8529/_db/nomarr/_api/cursor" -Method Post `
+  $r = Invoke-RestMethod -Uri "http://127.0.0.1:8529/_db/nomarr/_api/cursor" -Method Post `
     -Body $body -ContentType "application/json" -Headers @{Authorization="Basic $auth"}
   $r.result | ConvertTo-Json -Depth 5
 }
@@ -547,6 +549,8 @@ foreach ($q in $queries) {
 - API calls that trigger background work (calibration, scanning) return quickly but the work continues in-container
 - **Always set generous timeouts** (60-120s minimum) for `Invoke-RestMethod` and `run_in_terminal` when running DB queries
 - **Never assume a query failed because it didn't return instantly** — check with longer timeouts before investigating
+
+**CRITICAL: Use `127.0.0.1` not `localhost`** — On Windows, `localhost` resolves to IPv6 (`::1`) first. Docker only binds IPv4, so `localhost` connections hang ~21 seconds before falling back. Always use `127.0.0.1` for both Nomarr API and ArangoDB.
 
 **Key collections:**
 - `libraries` — library config and scan state
