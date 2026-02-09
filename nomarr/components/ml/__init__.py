@@ -1,6 +1,13 @@
 """Ml package."""
 
-from .ml_audio_comp import HAVE_ESSENTIA, load_audio_mono, should_skip_short
+from .ml_audio_comp import (
+    HAVE_ESSENTIA,
+    AudioLoadCrashError,
+    AudioLoadShutdownError,
+    load_audio_mono,
+    set_stop_event,
+    should_skip_short,
+)
 from .ml_cache_comp import (
     backbone_cache_key,
     cache_backbone_predictor,
@@ -37,6 +44,8 @@ from .ml_tier_selection_comp import (
 
 __all__ = [
     "HAVE_ESSENTIA",
+    "AudioLoadCrashError",
+    "AudioLoadShutdownError",
     "CapacityEstimate",
     "ExecutionTier",
     "TierConfig",
@@ -62,6 +71,7 @@ __all__ = [
     "make_predictor_uncached",
     "save_calibration_sidecars",
     "select_execution_tier",
+    "set_stop_event",
     "should_skip_short",
     "touch_cache",
     "warmup_predictor_cache",

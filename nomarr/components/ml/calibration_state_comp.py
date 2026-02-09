@@ -177,3 +177,116 @@ def backfill_null_calibration_hashes(
         ),
     )
     return next(cursor, 0)
+
+
+# ---------------------------------------------------------------------------
+# Calibration analysis (convergence, reconciliation, history grouping)
+# ---------------------------------------------------------------------------
+
+
+def compute_convergence_status(db: Database) -> dict[str, Any]:
+    """Compute latest convergence metrics for all calibration heads.
+
+    Iterates every calibration state, fetches its most recent snapshot,
+    and evaluates whether the head has converged
+    (``|p5_delta| < 0.01`` **and** ``|p95_delta| < 0.01``).
+
+    Returns:
+        ``{head_key: {"latest_snapshot": ..., "p5_delta": ..., "converged": bool}}``
+    """
+    all_states = db.calibration_state.get_all_calibration_states()
+    convergence_status: dict[str, Any] = {}
+
+    for state in all_states:
+        calibration_key = f"{state['model_key']}:{state['head_name']}"
+        latest = db.calibration_history.get_latest_snapshot(calibration_key)
+
+        if latest:
+            p5_delta = latest.get("p5_delta")
+            p95_delta = latest.get("p95_delta")
+            converged = False
+            if p5_delta is not None and p95_delta is not None:
+                converged = abs(p5_delta) < 0.01 and abs(p95_delta) < 0.01
+
+            convergence_status[calibration_key] = {
+                "latest_snapshot": latest,
+                "p5_delta": p5_delta,
+                "p95_delta": p95_delta,
+                "n": latest.get("n", 0),
+                "converged": converged,
+            }
+
+    return convergence_status
+
+
+def compute_reconciliation_info(
+    db: Database,
+    global_version: str | None,
+) -> dict[str, Any]:
+    """Compute which libraries need reconciliation after calibration.
+
+    Checks all libraries with ``file_write_mode`` in ``('minimal', 'full')``
+    and counts files with outdated ``calibration_hash``.
+
+    Returns:
+        ``{"requires_reconciliation": bool,
+          "affected_libraries": [{library_id, name, outdated_files, file_write_mode}]}``
+    """
+    if not global_version:
+        return {"requires_reconciliation": False, "affected_libraries": []}
+
+    # Get libraries with write modes that use mood tags
+    all_libraries = db.libraries.list_libraries()
+    writable_libraries = {
+        lib["_id"]: lib
+        for lib in all_libraries
+        if lib.get("file_write_mode") in ("minimal", "full")
+    }
+
+    if not writable_libraries:
+        return {"requires_reconciliation": False, "affected_libraries": []}
+
+    # Get calibration status by library
+    calibration_status = db.library_files.get_calibration_status_by_library(global_version)
+
+    affected_libraries = []
+    for status in calibration_status:
+        library_id = status["library_id"]
+        if library_id in writable_libraries and status["outdated_count"] > 0:
+            lib = writable_libraries[library_id]
+            affected_libraries.append(
+                {
+                    "library_id": library_id,
+                    "name": lib.get("name", "Unknown"),
+                    "outdated_files": status["outdated_count"],
+                    "file_write_mode": lib.get("file_write_mode"),
+                }
+            )
+
+    return {
+        "requires_reconciliation": len(affected_libraries) > 0,
+        "affected_libraries": affected_libraries,
+    }
+
+
+def group_snapshots_by_head(
+    snapshots: list[dict[str, Any]],
+    limit: int,
+) -> dict[str, list[dict[str, Any]]]:
+    """Group flat snapshot list by ``calibration_key``, sorted and trimmed.
+
+    Each group is sorted by ``snapshot_at`` descending and capped at *limit*.
+    """
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for snapshot in snapshots:
+        key = snapshot["calibration_key"]
+        if key not in grouped:
+            grouped[key] = []
+        grouped[key].append(snapshot)
+
+    for key in grouped:
+        grouped[key] = sorted(
+            grouped[key], key=lambda x: x["snapshot_at"], reverse=True
+        )[:limit]
+
+    return grouped

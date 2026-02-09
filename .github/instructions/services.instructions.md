@@ -15,6 +15,8 @@ Services are:
 
 **No complex business logic lives here.** That belongs in workflows.
 
+**Private helpers in services** are only acceptable for managing the service's own infrastructure state (threading locks, caching, connection lifecycle). If a private method contains domain logic, iteration over data, or algorithmic work — it belongs in a workflow or component, not a service helper.
+
 ---
 
 ## File and Package Naming

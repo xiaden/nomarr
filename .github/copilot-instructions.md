@@ -146,7 +146,7 @@ These tools understand FastAPI DI and nomarr's architecture. Serena is a fallbac
 
 **Additional atomic edit operations:**
 
-- `edit_file_replace_string` - Apply multiple string replacements atomically (single write, avoids formatter issues)
+- `edit_file_replace_string` - Apply multiple string replacements atomically. Requires `expected_count` per replacement - fails if actual matches differ. For small strings, error suggests using `search_file_text` first to verify matches.
 - `edit_file_replace_line_range` - Replace specific line range with new content (use when you have exact line numbers)
 - `edit_file_move_text` - Move lines within same file or across files atomically
 
@@ -200,6 +200,21 @@ edit_file_copy_paste_text([
 **For multi-step edits that may exceed your context window:**
 
 Create a task plan in `plans/` (e.g., `TASK-refactor-library-service.md`) following the **mandatory schema** defined in `code-intel/schemas/PLAN_MARKDOWN_SCHEMA.json`.
+
+**MANDATORY: Use the Plan subagent for complex tasks.**
+
+When given a complex task (5+ coordinated edits, cross-layer changes, architectural decisions requiring research), do NOT attempt to manage it through todos and context alone. Instead:
+
+1. **Invoke the Plan subagent** to research the problem and create a formal plan in `plans/`
+2. **Execute the plan** using `mcp_nomarr_dev_plan_read` and `mcp_nomarr_dev_plan_complete_step` to track progress
+
+This is required because:
+- Plans persist across context windows — a fresh context can resume via `plan_read`
+- Step completion is durable (not lost if context resets mid-task)
+- The Plan agent performs upfront research, avoiding mid-execution surprises
+- Todos disappear when context ends; plans survive
+
+**Threshold for plan creation:** Any task where you would otherwise create 4+ todo items, or where the work requires understanding multiple modules before starting implementation.
 
 **Required structure:**
 ```markdown

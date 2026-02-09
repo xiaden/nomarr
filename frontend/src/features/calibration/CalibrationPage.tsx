@@ -58,19 +58,26 @@ export function CalibrationPage() {
               Generating Calibration...
             </Typography>
           </Box>
-          {progress && progress.total_heads > 0 && (
+          {progress && progress.iteration != null && progress.total_iterations != null && (
+            <>
+              <ProgressBar
+                label={`Iteration ${progress.iteration} of ${progress.total_iterations} (${progress.sample_pct ?? 0}%)`}
+                value={progress.iteration}
+                total={progress.total_iterations}
+              />
+              {progress.current_head && progress.current_head_index != null && (
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                  Processing head {progress.current_head_index}/{progress.total_heads}: {progress.current_head}
+                </Typography>
+              )}
+            </>
+          )}
+          {progress && progress.iteration == null && progress.total_heads > 0 && (
             <ProgressBar
               label={`Processing heads`}
               value={progress.completed_heads}
               total={progress.total_heads}
             />
-          )}
-          {progress && (
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              {progress.completed_heads} / {progress.total_heads} heads
-              {progress.remaining_heads > 0 &&
-                ` (${progress.remaining_heads} remaining)`}
-            </Typography>
           )}
         </Panel>
       )}

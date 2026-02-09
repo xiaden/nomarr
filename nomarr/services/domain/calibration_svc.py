@@ -13,6 +13,11 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 from typing import cast as type_cast
 
+from nomarr.components.ml.calibration_state_comp import (
+    compute_convergence_status,
+    compute_reconciliation_info,
+    group_snapshots_by_head,
+)
 from nomarr.components.ml.ml_discovery_comp import discover_heads
 from nomarr.helpers.time_helper import now_ms
 from nomarr.workflows.calibration.generate_calibration_wf import (
@@ -60,6 +65,8 @@ class CalibrationService:
         self._generation_thread: threading.Thread | None = None
         self._generation_result: dict[str, Any] | None = None
         self._generation_error: Exception | None = None
+        self._progress_lock = threading.Lock()
+        self._progress: dict[str, Any] = {}
 
     # -------------------------------------------------------------------------
     #  Histogram-Based Calibration (Primary System)
@@ -90,10 +97,13 @@ class CalibrationService:
             db=self._db,
             models_dir=self.cfg.models_dir,
             namespace=self.cfg.namespace,
+            progress_callback=self._update_progress,
         )
 
         # Compute reconciliation info after calibration completes
-        reconciliation_info = self._compute_reconciliation_info(result.get("global_version"))
+        reconciliation_info = compute_reconciliation_info(
+            self._db, result.get("global_version"),
+        )
         result["requires_reconciliation"] = reconciliation_info["requires_reconciliation"]
         result["affected_libraries"] = reconciliation_info["affected_libraries"]
 
@@ -112,6 +122,7 @@ class CalibrationService:
         # Reset state
         self._generation_result = None
         self._generation_error = None
+        self._clear_progress()
 
         # Start background thread
         self._generation_thread = threading.Thread(
@@ -121,6 +132,25 @@ class CalibrationService:
         )
         self._generation_thread.start()
         logger.info("[CalibrationService] Started histogram calibration generation in background")
+
+    # -- Threading infrastructure (NOT domain logic; see services.instructions.md) --
+
+    def _update_progress(self, **kwargs: int | float | str | None) -> None:
+        """Thread-safe update of progress state from background thread.
+
+        Args:
+            **kwargs: Progress fields to update. Valid keys:
+                iteration, total_iterations, current_head, current_head_index,
+                total_heads, sample_pct
+
+        """
+        with self._progress_lock:
+            self._progress.update(kwargs)
+
+    def _clear_progress(self) -> None:
+        """Reset progress state (called when generation starts or finishes)."""
+        with self._progress_lock:
+            self._progress = {}
 
     def _run_histogram_generation(self) -> None:
         """Background thread: run histogram calibration generation."""
@@ -135,6 +165,8 @@ class CalibrationService:
         except Exception as e:
             logger.error(f"[CalibrationService] Background generation failed: {e}", exc_info=True)
             self._generation_error = e
+        finally:
+            self._clear_progress()
 
     def is_generation_running(self) -> bool:
         """Check if histogram calibration generation is currently running."""
@@ -182,7 +214,13 @@ class CalibrationService:
         }
 
     def get_generation_progress(self) -> dict[str, Any]:
-        """Get calibration generation progress (per-head completion).
+        """Get calibration generation progress.
+
+        When generation is running, returns live progress from background thread:
+            iteration, total_iterations, current_head, current_head_index,
+            total_heads, sample_pct
+
+        When not running, falls back to DB query for head completion counts.
 
         Returns:
             {
@@ -190,11 +228,35 @@ class CalibrationService:
               "completed_heads": int,
               "remaining_heads": int,
               "last_updated": int | None,
-              "is_running": bool
+              "is_running": bool,
+              "iteration": int | None,
+              "total_iterations": int | None,
+              "current_head": str | None,
+              "current_head_index": int | None,
+              "sample_pct": float | None,
             }
 
         """
-        # Discover all heads from models
+        is_running = self.is_generation_running()
+
+        if is_running:
+            # Return live progress from background thread
+            with self._progress_lock:
+                progress = dict(self._progress)
+            return {
+                "total_heads": progress.get("total_heads", 0),
+                "completed_heads": 0,  # Not meaningful during generation
+                "remaining_heads": 0,
+                "last_updated": None,
+                "is_running": True,
+                "iteration": progress.get("iteration"),
+                "total_iterations": progress.get("total_iterations"),
+                "current_head": progress.get("current_head"),
+                "current_head_index": progress.get("current_head_index"),
+                "sample_pct": progress.get("sample_pct"),
+            }
+
+        # Not running: fall back to DB query for head completion counts
         heads = discover_heads(self.cfg.models_dir)
         total_heads = len(heads)
 
@@ -229,7 +291,12 @@ class CalibrationService:
             "completed_heads": completed,
             "remaining_heads": total_heads - completed,
             "last_updated": last_updated,
-            "is_running": self.is_generation_running(),
+            "is_running": False,
+            "iteration": None,
+            "total_iterations": None,
+            "current_head": None,
+            "current_head_index": None,
+            "sample_pct": None,
         }
 
     def get_calibration_history(
@@ -244,136 +311,23 @@ class CalibrationService:
             limit: Maximum snapshots to return per head
 
         Returns:
-            {
-              "calibration_key": [...snapshots...] or
-              "all": {calibration_key: [...snapshots...]}
-            }
+            {"calibration_key": [...snapshots...]} or {"all_heads": {key: [...snapshots...]}}
 
         """
         if calibration_key:
-            # Single head history
             history = self._db.calibration_history.get_history(
                 calibration_key=calibration_key,
                 limit=limit,
             )
             return {"calibration_key": calibration_key, "history": history}
-        # All heads - get recent snapshots and group by calibration_key
+
         recent = self._db.calibration_history.get_all_recent_snapshots(limit=limit * 10)
-        grouped: dict[str, list[dict[str, Any]]] = {}
-        for snapshot in recent:
-            key = snapshot["calibration_key"]
-            if key not in grouped:
-                grouped[key] = []
-            grouped[key].append(snapshot)
-
-        # Trim each group to limit
-        for key in grouped:
-            grouped[key] = sorted(grouped[key], key=lambda x: x["snapshot_at"], reverse=True)[:limit]
-
-        return {"all_heads": grouped}
+        return {"all_heads": group_snapshots_by_head(recent, limit)}
 
     def get_latest_convergence_status(self) -> dict[str, Any]:
-        """Get latest convergence metrics for all heads.
-
-        Returns:
-            {
-              head_key: {
-                "latest_snapshot": {...},
-                "p5_delta": float,
-                "p95_delta": float,
-                "n": int,
-                "converged": bool (|p5_delta| < 0.01 and |p95_delta| < 0.01)
-              }
-            }
-
-        """
-        all_states = self._db.calibration_state.get_all_calibration_states()
-        convergence_status = {}
-
-        for state in all_states:
-            calibration_key = f"{state['model_key']}:{state['head_name']}"
-            latest = self._db.calibration_history.get_latest_snapshot(calibration_key)
-
-            if latest:
-                p5_delta = latest.get("p5_delta")
-                p95_delta = latest.get("p95_delta")
-                converged = False
-                if p5_delta is not None and p95_delta is not None:
-                    converged = abs(p5_delta) < 0.01 and abs(p95_delta) < 0.01
-
-                convergence_status[calibration_key] = {
-                    "latest_snapshot": latest,
-                    "p5_delta": p5_delta,
-                    "p95_delta": p95_delta,
-                    "n": latest.get("n", 0),
-                    "converged": converged,
-                }
-
-        return convergence_status
+        """Get latest convergence metrics for all heads."""
+        return compute_convergence_status(self._db)
 
     # -------------------------------------------------------------------------
     #  Reconciliation Info
-    # -------------------------------------------------------------------------
 
-    def _compute_reconciliation_info(self, global_version: str | None) -> dict[str, Any]:
-        """Compute which libraries need reconciliation after calibration.
-
-        Checks all libraries with file_write_mode in ('minimal', 'full') and
-        counts files with outdated calibration_hash.
-
-        Args:
-            global_version: The new global calibration version hash
-
-        Returns:
-            {
-              "requires_reconciliation": bool,
-              "affected_libraries": [
-                {"library_id": str, "name": str, "outdated_files": int}
-              ]
-            }
-
-        """
-        if not global_version:
-            logger.debug("[CalibrationService] No global version, no reconciliation needed")
-            return {"requires_reconciliation": False, "affected_libraries": []}
-
-        # Get libraries with write modes that use mood tags
-        all_libraries = self._db.libraries.list_libraries()
-        writable_libraries = {
-            lib["_id"]: lib for lib in all_libraries if lib.get("file_write_mode") in ("minimal", "full")
-        }
-
-        if not writable_libraries:
-            logger.debug("[CalibrationService] No libraries with minimal/full write mode")
-            return {"requires_reconciliation": False, "affected_libraries": []}
-
-        # Get calibration status by library
-        calibration_status = self._db.library_files.get_calibration_status_by_library(global_version)
-
-        affected_libraries = []
-        for status in calibration_status:
-            library_id = status["library_id"]
-            if library_id in writable_libraries and status["outdated_count"] > 0:
-                lib = writable_libraries[library_id]
-                affected_libraries.append(
-                    {
-                        "library_id": library_id,
-                        "name": lib.get("name", "Unknown"),
-                        "outdated_files": status["outdated_count"],
-                        "file_write_mode": lib.get("file_write_mode"),
-                    }
-                )
-
-        requires_reconciliation = len(affected_libraries) > 0
-
-        if requires_reconciliation:
-            total_outdated = sum(lib["outdated_files"] for lib in affected_libraries)
-            logger.info(
-                f"[CalibrationService] Reconciliation needed: {len(affected_libraries)} libraries, "
-                f"{total_outdated} files with outdated calibration",
-            )
-
-        return {
-            "requires_reconciliation": requires_reconciliation,
-            "affected_libraries": affected_libraries,
-        }

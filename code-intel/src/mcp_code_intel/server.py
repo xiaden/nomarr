@@ -579,14 +579,19 @@ def edit_file_replace_string(
     file_path: Annotated[str, "Workspace-relative or absolute path to the file to edit"],
     replacements: Annotated[
         list[dict],
-        "List of {old_string, new_string} dicts. Applied in order, each on result of previous.",
+        "List of {old_string, new_string, expected_count} dicts. "
+        "expected_count is required and specifies how many matches are expected. "
+        "If actual count != expected_count, the operation fails with guidance.",
     ],
 ) -> CallToolResult:
     """Apply multiple string replacements atomically (single write).
 
     All replacements are applied in-memory before writing to disk.
     This avoids issues with auto-formatters running between edits.
-    Each old_string must match exactly once (ambiguous matches are skipped).
+
+    Each old_string must match exactly expected_count times. If the actual
+    count differs, the operation fails. For small strings that fail, the error
+    suggests using search_file_text first to verify matches.
     """
     result = edit_file_replace_string_impl(file_path, replacements, ROOT)
     file_link = format_file_link(file_path, ROOT)

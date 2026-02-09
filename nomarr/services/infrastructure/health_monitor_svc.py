@@ -306,7 +306,7 @@ class HealthMonitorService:
                 pipe_map = {
                     state.pipe_conn: cid
                     for cid, state in self._components.items()
-                    if state.status != "failed"  # Don't monitor failed
+                    if state.status not in ("failed", "dead")  # Don't monitor terminal states
                 }
                 pipes = list(pipe_map.keys())
 
@@ -417,8 +417,8 @@ class HealthMonitorService:
         """Handle pipe EOF - component exited."""
         with self._lock:
             state = self._components.get(component_id)
-            if not state or state.status == "failed":
-                return
+            if not state or state.status in ("failed", "dead"):
+                return  # Idempotent: only emit dead transition once
 
             old_status = state.status
             state.status = "dead"

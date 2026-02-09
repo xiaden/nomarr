@@ -107,6 +107,16 @@ export interface HistogramCalibrationProgress {
   remaining_heads: number;
   last_updated: number | null;
   is_running: boolean;
+  /** Current iteration (1-based), null when not running */
+  iteration: number | null;
+  /** Total number of iterations planned */
+  total_iterations: number | null;
+  /** Name of head currently being processed */
+  current_head: string | null;
+  /** Index of current head (1-based) */
+  current_head_index: number | null;
+  /** Current sample percentage (e.g. 55.0 for 55%) */
+  sample_pct: number | null;
 }
 
 /**

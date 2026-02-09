@@ -836,7 +836,7 @@ class TagOperations:
                        total_artists (int)
         """
         library_filter = ""
-        bind_vars: dict[str, Any] = {"limit": limit}
+        bind_vars: dict[str, Any] = {}
 
         if library_id:
             library_filter = """

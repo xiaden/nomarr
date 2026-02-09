@@ -124,3 +124,20 @@ def get_active_claim_count(db: Database) -> int:
 
     """
     return db.worker_claims.get_active_claim_count()
+
+
+def release_claims_for_worker(db: Database, worker_id: str) -> list[str]:
+    """Release all claims held by a specific worker.
+
+    Used when a worker dies/crashes to free its claimed files for rediscovery.
+
+    Args:
+        db: Database instance
+        worker_id: Worker identifier (e.g., "worker:tag:0")
+
+    Returns:
+        List of file_ids that were released
+
+    """
+    return db.worker_claims.release_claims_for_worker(worker_id)
+

@@ -32,7 +32,10 @@ from nomarr.components.ml.ml_tier_selection_comp import (
 )
 from nomarr.components.platform.resource_monitor_comp import check_nvidia_gpu_capability
 from nomarr.components.workers import should_restart_worker
-from nomarr.components.workers.worker_discovery_comp import cleanup_stale_claims
+from nomarr.components.workers.worker_discovery_comp import (
+    cleanup_stale_claims,
+    release_claims_for_worker,
+)
 from nomarr.helpers.dto.admin_dto import WorkerOperationResult
 from nomarr.helpers.dto.health_dto import (
     ComponentLifecycleHandler,
@@ -244,6 +247,15 @@ class WorkerSystemService(ComponentLifecycleHandler):
         )
 
         if new_status == "dead":
+            # Release claims for crashed worker
+            released_file_ids = release_claims_for_worker(self.db, component_id)
+            if released_file_ids:
+                logger.info(
+                    "[WorkerSystemService] Released %d claim(s) for dead worker %s - files will be reprocessed",
+                    len(released_file_ids),
+                    component_id,
+                )
+
             # Check if shutdown was requested (graceful stop)
             if self._stop_event.is_set():
                 logger.info("[WorkerSystemService] Worker %s stopped gracefully, not restarting", component_id)
@@ -320,7 +332,7 @@ class WorkerSystemService(ComponentLifecycleHandler):
 
         # Extract worker index from component_id
         try:
-            worker_index = int(component_id.split("_")[-1])
+            worker_index = int(component_id.split(":")[-1])
         except (ValueError, IndexError):
             logger.exception("[WorkerSystemService] Invalid component_id format: %s", component_id)
             return
@@ -350,8 +362,11 @@ class WorkerSystemService(ComponentLifecycleHandler):
             if self.health_monitor:
                 self.health_monitor.register_component(new_worker.worker_id, self, parent_conn)
 
-            # Replace worker in list
+            # Replace worker in list (join old worker to reap zombie)
             if worker_index < len(self._workers):
+                old_worker = self._workers[worker_index]
+                if old_worker is not None:
+                    old_worker.join(timeout=1.0)  # Worker already dead, just reap zombie
                 self._workers[worker_index] = new_worker
             else:
                 # Worker list shrunk? Append instead

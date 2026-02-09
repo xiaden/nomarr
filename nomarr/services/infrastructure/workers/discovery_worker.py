@@ -170,6 +170,17 @@ class DiscoveryWorker(multiprocessing.Process):
         # Configure logging for subprocess (spawn doesn't inherit parent's logging config)
         self._configure_subprocess_logging()
 
+        # Enable faulthandler for native crash tracebacks (SIGSEGV, SIGFPE, etc.)
+        import faulthandler
+
+        faulthandler.enable()
+        logger.info("[%s] faulthandler enabled for native crash diagnostics", self.worker_id)
+
+        # Register stop event for shutdown-aware audio loading
+        from nomarr.components.ml.ml_audio_comp import set_stop_event
+
+        set_stop_event(self._stop_event)
+
         # Late imports to avoid import-time issues in subprocess
         from nomarr.components.ml.ml_backend_essentia_comp import is_available as ml_is_available
         from nomarr.components.platform.resource_monitor_comp import check_resource_headroom
@@ -314,6 +325,7 @@ class DiscoveryWorker(multiprocessing.Process):
                 # Process the claimed file
                 try:
                     # Get file path from database
+                    logger.info("[%s] Fetching file doc for %s", self.worker_id, file_id)
                     file_doc = db.library_files.get_file_by_id(file_id)
                     if not file_doc:
                         logger.warning("[%s] Claimed file %s not found in database", self.worker_id, file_id)
@@ -322,7 +334,19 @@ class DiscoveryWorker(multiprocessing.Process):
 
                     file_path = file_doc["path"]
 
-                    logger.debug("[%s] Processing %s", self.worker_id, file_path)
+                    # Pre-call diagnostics with file size (native crash logging)
+                    import os
+                    import sys
+
+                    try:
+                        file_size = os.path.getsize(file_path)
+                    except OSError:
+                        file_size = -1
+                    logger.info(
+                        "[%s] Processing %s (size=%d bytes)", self.worker_id, file_path, file_size
+                    )
+                    sys.stdout.flush()
+                    sys.stderr.flush()
 
                     # Run the processing workflow
                     result = process_file_workflow(
@@ -331,6 +355,7 @@ class DiscoveryWorker(multiprocessing.Process):
                         db=db,
                         file_id=file_id,
                     )
+                    logger.info("[%s] Workflow returned for %s", self.worker_id, file_path)
 
                     # Check if file was skipped (e.g., audio too short)
                     if result.heads_processed == 0 and result.tags_written == 0:

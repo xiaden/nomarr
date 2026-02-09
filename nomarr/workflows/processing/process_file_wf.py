@@ -62,6 +62,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from nomarr.components.ml import ml_backend_essentia_comp as backend_essentia
+from nomarr.components.ml.ml_audio_comp import AudioLoadCrashError, AudioLoadShutdownError
 from nomarr.components.ml.ml_discovery_comp import HeadInfo, discover_heads
 from nomarr.components.ml.ml_embed_comp import pool_scores
 from nomarr.components.ml.ml_heads_comp import run_head_decision
@@ -505,11 +506,31 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
                 duration_final = float(duration)
             if chromaprint_from_ml is None:
                 chromaprint_from_ml = chromaprint_hash
+        except AudioLoadShutdownError:
+            # Worker shutting down - let it propagate, don't mark file invalid
+            raise
         except RuntimeError as e:
             logger.warning(f"[processor] Skipping backbone {backbone}: {e}")
             for head in backbone_heads:
                 all_head_results[head.name] = {"status": "skipped", "reason": str(e)}
             continue
+        except AudioLoadCrashError as e:
+            # File is corrupt (crashed twice during audio loading) - mark invalid and abort
+            logger.error(f"[processor] Audio load crashed twice for {path}: {e}")
+            if db:
+                db.library_files.mark_file_invalid(path)
+                logger.info(f"[processor] Marked file as invalid: {path}")
+            elapsed = round(internal_s().value - start_all.value, 2)
+            return ProcessFileResult(
+                file_path=path,
+                elapsed=elapsed,
+                duration=None,
+                heads_processed=0,
+                tags_written=0,
+                head_results={"_crash": {"status": "crash", "reason": str(e)}},
+                mood_aggregations=None,
+                tags=Tags.from_dict({}),
+            )
         result = _process_head_predictions(backbone_heads, embeddings_2d, config, tags_accum)
         heads_succeeded = result.heads_succeeded
         head_results = result.head_results

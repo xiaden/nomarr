@@ -32,6 +32,7 @@ USAGE:
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -302,6 +303,7 @@ def generate_histogram_calibration_wf(
     progressive: bool = True,
     start_pct: float = 0.5,
     increment_pct: float = 0.05,
+    progress_callback: Callable[..., None] | None = None,
 ) -> dict[str, Any]:
     """Generate histogram-based calibrations for all model heads.
 
@@ -357,6 +359,7 @@ def generate_histogram_calibration_wf(
         namespace=namespace,
         start_sample_size=int(start_pct * 1000),  # Convert pct to initial sample size
         increment_size=int(increment_pct * 1000),
+        progress_callback=progress_callback,
     )
 
 
@@ -444,6 +447,7 @@ def _run_single_calibration(db: Database, models_dir: str, heads: list[Any], nam
 
 def _run_progressive_calibration(
     db: Database, models_dir: str, heads: list[Any], namespace: str, start_sample_size: int, increment_size: int,
+    progress_callback: Callable[..., None] | None = None,
 ) -> dict[str, Any]:
     """Run calibration progressively: start with N files, add M more each iteration.
     Store convergence history in calibration_history collection.
@@ -490,6 +494,8 @@ def _run_progressive_calibration(
     current_sample_size = start_sample_size
     success_count = 0
     failed_count = 0
+    total_iterations = max(1, (total_files - start_sample_size) // increment_size + 1)
+    total_heads = len(heads)
     while current_sample_size <= total_files:
         iteration += 1
         current_pct = current_sample_size / total_files
@@ -497,12 +503,23 @@ def _run_progressive_calibration(
             f"[progressive_calibration] Iteration {iteration}: {current_sample_size} files ({current_pct * 100:.0f}%)",
         )
 
+        # Report iteration-level progress
+        if progress_callback:
+            progress_callback(
+                iteration=iteration,
+                total_iterations=total_iterations,
+                total_heads=total_heads,
+                sample_pct=round(current_pct * 100, 1),
+                current_head=None,
+                current_head_index=0,
+            )
+
         iteration_results = {}
         iteration_deltas = {}
         success_count = 0
         failed_count = 0
 
-        for head_info in heads:
+        for head_idx, head_info in enumerate(heads):
             # Construct identifiers
             embedder_date = "unknown"
             if head_info.embedding_sidecar:
@@ -515,6 +532,13 @@ def _run_progressive_calibration(
             labels = head_info.labels  # Actual tag labels for AQL matching
             version = head_info.sidecar.data.get("version", 1)
             head_key = f"{model_key}:{head_name}"
+
+            # Report per-head progress
+            if progress_callback:
+                progress_callback(
+                    current_head=head_name,
+                    current_head_index=head_idx + 1,
+                )
 
             try:
                 # Generate calibration with sample limit

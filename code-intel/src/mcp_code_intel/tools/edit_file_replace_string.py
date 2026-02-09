@@ -13,7 +13,37 @@ from ..helpers.file_helpers import (
     resolve_file_path,
 )
 
+_SMALL_STRING_THRESHOLD = 20  # Strings shorter than this get search_file_text guidance
 _PREVIEW_MAX_LEN = 50
+
+
+def _build_count_mismatch_error(
+    rep_idx: int,
+    old_preview: str,
+    expected: int,
+    actual: int,
+    old_string_len: int,
+) -> tuple[str, str]:
+    """Build helpful error message for count mismatch.
+
+    Returns (error_message, status_string).
+    """
+    if actual == 0:
+        base = f"Replacement {rep_idx}: not found (expected {expected}): {old_preview}"
+        status = "not_found"
+    else:
+        base = f"Replacement {rep_idx}: found {actual} matches, expected {expected}: {old_preview}"
+        status = f"count_mismatch (found {actual}, expected {expected})"
+
+    # Add guidance for small strings
+    if old_string_len < _SMALL_STRING_THRESHOLD:
+        guidance = (
+            " Tip: Use search_file_text first to see all matches and include "
+            "more surrounding context to make old_string unique."
+        )
+        base += guidance
+
+    return base, status
 
 
 def _validate_replacements(replacements: list[dict]) -> dict | None:
@@ -26,6 +56,11 @@ def _validate_replacements(replacements: list[dict]) -> dict | None:
             return {"error": f"Replacement {i}: missing 'old_string'"}
         if "new_string" not in rep:
             return {"error": f"Replacement {i}: missing 'new_string'"}
+        if "expected_count" not in rep:
+            return {"error": f"Replacement {i}: missing 'expected_count' (required)"}
+        expected = rep["expected_count"]
+        if not isinstance(expected, int) or expected < 1:
+            return {"error": f"Replacement {i}: 'expected_count' must be a positive integer"}
 
     return None
 
@@ -103,30 +138,32 @@ def _extract_line_context(
 
 def _calculate_new_positions(
     edits: list[tuple[int, int, str]],
-    details: list[dict],
-) -> list[tuple[int, int] | None]:
+) -> list[tuple[int, int]]:
     """Calculate where each edit ends up in the new content after all edits are applied.
 
     Edits are applied from end to start, so we need to track cumulative offset changes.
 
     Args:
         edits: List of (start, end, new_string) tuples, in original order
-        details: List of detail dicts with original_span and new_string_len
 
     Returns:
-        List of (new_start, new_end) tuples or None showing final positions in new content
+        List of (new_start, new_end) tuples showing final positions in new content,
+        one per edit in the same order as the input.
     """
+    if not edits:
+        return []
+
     # Create list of (original_start, original_end, new_string_len, original_index)
-    indexed_edits = []
-    for i, ((start, end, new_string), detail) in enumerate(zip(edits, details)):
-        if "original_span" in detail:  # Only for valid edits
-            indexed_edits.append((start, end, detail["new_string_len"], i))
+    indexed_edits = [
+        (start, end, len(new_string), i)
+        for i, (start, end, new_string) in enumerate(edits)
+    ]
 
     # Sort by position (ascending) to process from start to end
     indexed_edits.sort(key=lambda x: x[0])
 
     # Calculate new positions with cumulative offset
-    new_positions: list[tuple[int, int] | None] = [None] * len(details)
+    new_positions: list[tuple[int, int] | None] = [None] * len(edits)
     cumulative_offset = 0
 
     for orig_start, orig_end, new_len, idx in indexed_edits:
@@ -138,7 +175,8 @@ def _calculate_new_positions(
         # Update cumulative offset for next edit
         cumulative_offset += (new_len - old_len)
 
-    return new_positions
+    # All positions should be filled
+    return [pos for pos in new_positions if pos is not None]
 
 
 def _validate_all_replacements_upfront(
@@ -152,11 +190,11 @@ def _validate_all_replacements_upfront(
     or an error dict if validation fails.
 
     Edits are validated for:
-    - Exactly one match per old_string
+    - Match count equals expected_count for each replacement
     - No overlapping spans between different replacements
 
     Each new_string is normalized to match the document's EOL style.
-    Details now include original_span for context extraction after editing.
+    Details include original_spans and edit_indices for context extraction after editing.
     """
     edits: list[tuple[int, int, str]] = []
     details: list[dict] = []
@@ -165,51 +203,61 @@ def _validate_all_replacements_upfront(
     for i, rep in enumerate(replacements):
         old_string = rep["old_string"]
         new_string = rep["new_string"]
+        expected_count = rep["expected_count"]
         # Normalize old_string to match document EOL so LLM-provided strings match file content
         normalized_old = normalize_eol(old_string, eol)
         old_preview = _preview(old_string)
 
         matches = _find_all_matches(content, normalized_old)
+        actual_count = len(matches)
 
-        if len(matches) == 0:
-            errors.append(f"Replacement {i}: not found: {old_preview}")
-            details.append({"old_string_preview": old_preview, "status": "not_found"})
-        elif len(matches) > 1:
-            errors.append(f"Replacement {i}: ambiguous ({len(matches)} occurrences): {old_preview}")
-            details.append(
-                {
-                    "old_string_preview": old_preview,
-                    "status": f"ambiguous ({len(matches)} occurrences)",
-                },
+        if actual_count != expected_count:
+            # Count mismatch - fail with helpful guidance
+            error_msg, status = _build_count_mismatch_error(
+                i, old_preview, expected_count, actual_count, len(old_string)
             )
+            errors.append(error_msg)
+            details.append({"old_string_preview": old_preview, "status": status})
         else:
-            # Exactly one match - check for overlap with previous edits
-            span = matches[0]
-            overlap_idx = None
-            for j, (prev_start, prev_end, _) in enumerate(edits):
-                if _spans_overlap(span, (prev_start, prev_end)):
-                    overlap_idx = j
-                    break
+            # Count matches - process all occurrences
+            normalized_new = normalize_eol(new_string, eol)
+            spans_for_this_rep: list[tuple[int, int]] = []
+            has_overlap = False
 
-            if overlap_idx is not None:
-                errors.append(
-                    f"Replacement {i} overlaps with replacement {overlap_idx}: {old_preview}",
-                )
-                details.append(
-                    {
-                        "old_string_preview": old_preview,
-                        "status": f"overlaps with replacement {overlap_idx}",
-                    },
-                )
-            else:
-                # Normalize new_string to match document's EOL style
-                normalized_new = normalize_eol(new_string, eol)
-                edits.append((span[0], span[1], normalized_new))
-                # Track original span and new string length for later context extraction
+            for span in matches:
+                # Check for overlap with ALL previous edits
+                overlap_idx = None
+                for j, (prev_start, prev_end, _) in enumerate(edits):
+                    if _spans_overlap(span, (prev_start, prev_end)):
+                        overlap_idx = j
+                        break
+
+                if overlap_idx is not None:
+                    has_overlap = True
+                    errors.append(
+                        f"Replacement {i} overlaps with replacement {overlap_idx}: {old_preview}",
+                    )
+                    details.append(
+                        {
+                            "old_string_preview": old_preview,
+                            "status": f"overlaps with replacement {overlap_idx}",
+                        },
+                    )
+                    break  # Stop processing this replacement's matches
+                else:
+                    # Valid span - add to edits
+                    edits.append((span[0], span[1], normalized_new))
+                    spans_for_this_rep.append(span)
+
+            if not has_overlap:
+                # Track all original spans and edit indices for context extraction
+                edit_end_idx = len(edits)
+                edit_start_idx = edit_end_idx - len(spans_for_this_rep)
                 details.append({
                     "old_string_preview": old_preview,
                     "status": "valid",
-                    "original_span": span,
+                    "original_spans": spans_for_this_rep,
+                    "edit_indices": list(range(edit_start_idx, edit_end_idx)),
                     "new_string_len": len(normalized_new),
                 })
 
@@ -276,23 +324,30 @@ def _write_and_build_result(
     # Write atomically
     target_path.write_bytes(new_content.encode("utf-8"))
 
-    # Calculate new positions and extract context from new content
-    new_positions = _calculate_new_positions(edits, details)
+    # Calculate new positions for all edits
+    new_positions = _calculate_new_positions(edits)
 
     # Build final details with new_context
+    # Each detail may have multiple edit_indices (when expected_count > 1)
     final_details = []
-    for i, d in enumerate(details):
-        if d["status"] == "valid" and new_positions[i] is not None:
-            pos = new_positions[i]
-            assert pos is not None  # Type narrowing for mypy
-            new_start, new_end = pos
-            new_context = _extract_line_context(new_content, new_start, new_end, context_lines=2)
+    for d in details:
+        if d["status"] == "valid" and "edit_indices" in d:
+            # Collect context for all edits belonging to this replacement
+            contexts = []
+            for edit_idx in d["edit_indices"]:
+                if edit_idx < len(new_positions):
+                    new_start, new_end = new_positions[edit_idx]
+                    context = _extract_line_context(
+                        new_content, new_start, new_end, context_lines=2,
+                    )
+                    contexts.append(context)
             final_details.append({
                 "status": "applied",
-                "new_context": new_context,
+                "matches_replaced": len(d["edit_indices"]),
+                "new_context": "\n---\n".join(contexts) if contexts else "",
             })
         else:
-            # For non-valid edits (not_found, ambiguous, overlapping), keep old_string_preview
+            # For non-valid edits (not_found, count_mismatch, overlapping), keep old_string_preview
             final_details.append({
                 "old_string_preview": d.get("old_string_preview", ""),
                 "status": d["status"],
@@ -318,7 +373,7 @@ def edit_file_replace_string(
     written to disk.
 
     Validation checks:
-    - Each old_string must match exactly once (not zero, not multiple)
+    - Each old_string must match exactly expected_count times
     - No two replacements can have overlapping spans
     - File must be valid UTF-8
     - File must not contain tabs in leading whitespace
@@ -328,6 +383,7 @@ def edit_file_replace_string(
         replacements: List of dicts, each with:
             - old_string: Exact text to find and replace
             - new_string: Text to replace with
+            - expected_count: How many matches expected (required, must be >= 1)
         workspace_root: Path to workspace root for security validation
 
     Returns:
@@ -335,14 +391,14 @@ def edit_file_replace_string(
         - path: The resolved workspace-relative path
         - changed: bool - whether file was modified
         - replacements_applied: Number of replacements (all or none)
-        - details: List of {new_context, status} for each successful replacement
-                   or {old_string_preview, status} for failed validations
+        - details: List of {new_context, matches_replaced, status} for each successful
+                   replacement or {old_string_preview, status} for failed validations
         - error: Error message if operation fails
         - validation_errors: List of specific errors if validation failed
 
     Note: For successfully applied replacements, new_context shows the modified
-    lines with 2 lines of context on each side, enabling immediate verification
-    without needing to re-read the file.
+    lines with 2 lines of context on each side. When expected_count > 1, contexts
+    for all matches are shown separated by '---'.
 
     """
     # Resolve and validate path

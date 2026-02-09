@@ -239,3 +239,29 @@ class WorkerClaimsOperations:
             ),
         )
         return list(cursor)
+
+    def release_claims_for_worker(self, worker_id: str) -> list[str]:
+        """Release all claims held by a specific worker.
+
+        Called when worker dies to allow files to be rediscovered.
+
+        Args:
+            worker_id: Worker identifier (e.g., "worker:tag:0")
+
+        Returns:
+            List of file_ids that were released (from claim.file_id field)
+
+        """
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(
+                """
+                FOR claim IN worker_claims
+                    FILTER claim.worker_id == @worker_id
+                    REMOVE claim IN worker_claims
+                    RETURN OLD.file_id
+                """,
+                bind_vars=cast("dict[str, Any]", {"worker_id": worker_id}),
+            ),
+        )
+        return list(cursor)
