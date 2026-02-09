@@ -1,25 +1,31 @@
 /**
- * FileTagsDataGrid - Display file tags in a MUI DataGrid
+ * FileTagsDataGrid - Display file tags in grouped accordions
  *
  * Features:
- * - Sortable columns
- * - Quick filter search
+ * - Tags grouped into 4 categories: Metadata, Nomarr Tags, Raw Head Outputs, Extended Metadata
+ * - Accordion expand/collapse per group
+ * - Quick filter search across all groups
  * - Toggle to show only Nomarr tags
- * - Chip display for Nomarr status
- * - Tooltip for long values
+ * - Compact key-value table layout within each group
  */
 
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import {
+    Accordion,
+    AccordionDetails,
+    AccordionSummary,
     Box,
-    Chip,
     FormControlLabel,
     Stack,
     Switch,
+    Table,
+    TableBody,
+    TableCell,
+    TableRow,
     TextField,
     Tooltip,
     Typography,
 } from "@mui/material";
-import { DataGrid, type GridColDef, type GridRowsProp } from "@mui/x-data-grid";
 import { useMemo, useState } from "react";
 
 interface FileTag {
@@ -33,123 +39,114 @@ interface FileTagsDataGridProps {
   tags: FileTag[];
 }
 
-interface TagRow {
-  id: string;
-  key: string;
-  value: string;
-  type: string;
-  is_nomarr: boolean;
+// ──────────────────────────────────────────────────────────────────────
+// Tag Grouping
+// ──────────────────────────────────────────────────────────────────────
+
+type TagGroupId = "metadata" | "nomarr" | "rawHeads" | "extended";
+
+interface TagGroup {
+  id: TagGroupId;
+  label: string;
+  defaultExpanded: boolean;
+  tags: FileTag[];
 }
 
-const truncateValue = (value: string, maxLength = 120): string => {
-  if (value.length <= maxLength) return value;
-  return value.substring(0, maxLength) + "...";
-};
+const METADATA_WHITELIST = new Set([
+  "title",
+  "artist",
+  "artists",
+  "album",
+  "album_artist",
+  "genre",
+  "year",
+  "date",
+]);
 
-export function FileTagsDataGrid({ tags }: FileTagsDataGridProps) {
+const GROUP_DEFS: Omit<TagGroup, "tags">[] = [
+  { id: "metadata", label: "Metadata", defaultExpanded: true },
+  { id: "nomarr", label: "Nomarr Tags", defaultExpanded: true },
+  { id: "rawHeads", label: "Raw Head Outputs", defaultExpanded: false },
+  { id: "extended", label: "Extended Metadata", defaultExpanded: false },
+];
+
+function classifyTag(tag: FileTag): TagGroupId {
+  if (tag.key.startsWith("nom:")) {
+    return tag.key.includes("_essentia") ? "rawHeads" : "nomarr";
+  }
+  return METADATA_WHITELIST.has(tag.key) ? "metadata" : "extended";
+}
+
+function groupTags(tags: FileTag[]): TagGroup[] {
+  const buckets: Record<TagGroupId, FileTag[]> = {
+    metadata: [],
+    nomarr: [],
+    rawHeads: [],
+    extended: [],
+  };
+
+  for (const tag of tags) {
+    buckets[classifyTag(tag)].push(tag);
+  }
+
+  // Sort each bucket alphabetically by key
+  for (const bucket of Object.values(buckets)) {
+    bucket.sort((a, b) => a.key.localeCompare(b.key));
+  }
+
+  return GROUP_DEFS.map((def) => ({ ...def, tags: buckets[def.id] }));
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Value Display
+// ──────────────────────────────────────────────────────────────────────
+
+const MAX_VALUE_LENGTH = 120;
+
+function TagValue({ value }: { value: string }): React.JSX.Element {
+  if (value.length <= MAX_VALUE_LENGTH) {
+    return <Typography variant="body2">{value}</Typography>;
+  }
+  return (
+    <Tooltip title={value} arrow>
+      <Typography variant="body2" sx={{ cursor: "help" }}>
+        {value.substring(0, MAX_VALUE_LENGTH) + "..."}
+      </Typography>
+    </Tooltip>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Component
+// ──────────────────────────────────────────────────────────────────────
+
+export function FileTagsDataGrid({ tags }: FileTagsDataGridProps): React.JSX.Element {
   const [showNomarrOnly, setShowNomarrOnly] = useState(false);
   const [quickFilter, setQuickFilter] = useState("");
 
-  // Convert tags to DataGrid rows
-  const rows: GridRowsProp<TagRow> = useMemo(() => {
-    let filteredTags = tags;
+  const groups = useMemo(() => {
+    let filtered = tags;
 
-    // Filter by Nomarr tags if toggle is enabled
+    // Nomarr-only toggle: keep only nom: tags
     if (showNomarrOnly) {
-      filteredTags = filteredTags.filter((tag) => tag.is_nomarr);
+      filtered = filtered.filter((tag) => tag.is_nomarr);
     }
 
-    return filteredTags.map((tag, idx) => ({
-      id: `${tag.key}-${idx}`, // Use combination of key + index for unique ID
-      key: tag.key,
-      value: tag.value,
-      type: tag.type,
-      is_nomarr: tag.is_nomarr,
-    }));
-  }, [tags, showNomarrOnly]);
+    // Quick filter: match against key or value
+    if (quickFilter) {
+      const lower = quickFilter.toLowerCase();
+      filtered = filtered.filter(
+        (tag) =>
+          tag.key.toLowerCase().includes(lower) ||
+          tag.value.toLowerCase().includes(lower),
+      );
+    }
 
-  // Define columns
-  const columns: GridColDef<TagRow>[] = [
-    {
-      field: "key",
-      headerName: "Key",
-      flex: 1,
-      minWidth: 180,
-      renderCell: (params) => (
-        <Typography
-          variant="body2"
-          sx={{
-            fontWeight: params.row.is_nomarr ? 600 : 400,
-            color: params.row.is_nomarr ? "primary.main" : "text.primary",
-          }}
-        >
-          {params.value}
-        </Typography>
-      ),
-    },
-    {
-      field: "value",
-      headerName: "Value",
-      flex: 2,
-      minWidth: 250,
-      renderCell: (params) => {
-        const fullValue = params.value as string;
-        const displayValue = truncateValue(fullValue);
-        const isTruncated = fullValue.length > 120;
+    return groupTags(filtered);
+  }, [tags, showNomarrOnly, quickFilter]);
 
-        return isTruncated ? (
-          <Tooltip title={fullValue} arrow>
-            <Typography variant="body2" sx={{ cursor: "help" }}>
-              {displayValue}
-            </Typography>
-          </Tooltip>
-        ) : (
-          <Typography variant="body2">{displayValue}</Typography>
-        );
-      },
-    },
-    {
-      field: "type",
-      headerName: "Type",
-      width: 100,
-      renderCell: (params) => (
-        <Chip
-          label={params.value}
-          size="small"
-          variant="outlined"
-          sx={{ fontSize: "0.75rem" }}
-        />
-      ),
-    },
-    {
-      field: "is_nomarr",
-      headerName: "Nomarr",
-      width: 100,
-      type: "boolean",
-      renderCell: (params) =>
-        params.value ? (
-          <Chip
-            label="nom:"
-            size="small"
-            color="primary"
-            sx={{ fontSize: "0.75rem" }}
-          />
-        ) : null,
-    },
-  ];
-
-  // Apply quick filter
-  const filteredRows = useMemo(() => {
-    if (!quickFilter) return rows;
-
-    const lowerFilter = quickFilter.toLowerCase();
-    return rows.filter(
-      (row) =>
-        row.key.toLowerCase().includes(lowerFilter) ||
-        row.value.toLowerCase().includes(lowerFilter) ||
-        row.type.toLowerCase().includes(lowerFilter)
-    );
-  }, [rows, quickFilter]);
+  // Only render non-empty groups
+  const visibleGroups = groups.filter((g) => g.tags.length > 0);
 
   return (
     <Box sx={{ mt: 2 }}>
@@ -187,7 +184,7 @@ export function FileTagsDataGrid({ tags }: FileTagsDataGridProps) {
         </Stack>
       </Stack>
 
-      {/* DataGrid */}
+      {/* Tag Groups */}
       {tags.length === 0 ? (
         <Box
           sx={{
@@ -201,36 +198,87 @@ export function FileTagsDataGrid({ tags }: FileTagsDataGridProps) {
         >
           No tags found
         </Box>
-      ) : (
-        <Box sx={{ height: 400, width: "100%" }}>
-          <DataGrid
-            rows={filteredRows}
-            columns={columns}
-            initialState={{
-              pagination: {
-                paginationModel: { page: 0, pageSize: 25 },
-              },
-              sorting: {
-                sortModel: [{ field: "key", sort: "asc" }],
-              },
-            }}
-            pageSizeOptions={[10, 25, 50, 100]}
-            disableRowSelectionOnClick
-            density="compact"
-            sx={{
-              border: 1,
-              borderColor: "divider",
-              "& .MuiDataGrid-cell": {
-                borderColor: "divider",
-              },
-              "& .MuiDataGrid-columnHeaders": {
-                backgroundColor: "background.paper",
-                borderBottom: 2,
-                borderColor: "divider",
-              },
-            }}
-          />
+      ) : visibleGroups.length === 0 ? (
+        <Box
+          sx={{
+            p: 3,
+            textAlign: "center",
+            color: "text.secondary",
+            border: 1,
+            borderColor: "divider",
+            borderRadius: 1,
+          }}
+        >
+          No tags match the current filter
         </Box>
+      ) : (
+        <Stack spacing={0.5}>
+          {visibleGroups.map((group) => (
+            <Accordion
+              key={group.id}
+              defaultExpanded={group.defaultExpanded}
+              disableGutters
+              sx={{
+                border: 1,
+                borderColor: "divider",
+                "&:before": { display: "none" },
+                boxShadow: "none",
+              }}
+            >
+              <AccordionSummary
+                expandIcon={<ExpandMoreIcon />}
+                sx={{
+                  bgcolor: "background.paper",
+                  minHeight: 40,
+                  "& .MuiAccordionSummary-content": { my: 0.5 },
+                }}
+              >
+                <Typography variant="subtitle2">
+                  {group.label}
+                  <Typography
+                    component="span"
+                    variant="subtitle2"
+                    color="text.secondary"
+                    sx={{ ml: 1 }}
+                  >
+                    ({group.tags.length})
+                  </Typography>
+                </Typography>
+              </AccordionSummary>
+              <AccordionDetails sx={{ p: 0 }}>
+                <Table size="small">
+                  <TableBody>
+                    {group.tags.map((tag, idx) => (
+                      <TableRow
+                        key={`${tag.key}-${idx}`}
+                        sx={{
+                          "&:last-child td": { borderBottom: 0 },
+                        }}
+                      >
+                        <TableCell
+                          sx={{
+                            width: "30%",
+                            fontWeight: tag.is_nomarr ? 600 : 400,
+                            color: tag.is_nomarr
+                              ? "primary.main"
+                              : "text.primary",
+                            verticalAlign: "top",
+                            py: 0.5,
+                          }}
+                        >
+                          {tag.key}
+                        </TableCell>
+                        <TableCell sx={{ py: 0.5 }}>
+                          <TagValue value={tag.value} />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </AccordionDetails>
+            </Accordion>
+          ))}
+        </Stack>
       )}
     </Box>
   );

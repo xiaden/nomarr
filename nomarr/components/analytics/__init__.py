@@ -10,6 +10,7 @@ from nomarr.helpers.dto.analytics_dto import (
 
 from .analytics_comp import (
     compute_artist_tag_profile,
+    compute_dominant_vibes,
     compute_mood_distribution,
     compute_tag_co_occurrence,
     compute_tag_correlation_matrix,
@@ -22,6 +23,7 @@ __all__ = [
     "TagCoOccurrenceData",
     "TagCorrelationData",
     "compute_artist_tag_profile",
+    "compute_dominant_vibes",
     "compute_mood_distribution",
     "compute_tag_co_occurrence",
     "compute_tag_correlation_matrix",

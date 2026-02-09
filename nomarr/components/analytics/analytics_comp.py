@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 import logging
 from collections import Counter, defaultdict
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from nomarr.helpers.dto.analytics_dto import (
     ArtistTagProfile,
@@ -223,3 +223,39 @@ def compute_tag_co_occurrence(params: ComputeTagCoOccurrenceParams) -> TagCoOccu
             row.append(intersection_count)
         matrix.append(row)
     return TagCoOccurrenceData(x_tags=params.x_tags, y_tags=params.y_tags, matrix=matrix)
+
+
+def compute_dominant_vibes(balance: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    """Compute dominant mood vibes from balance data.
+
+    Aggregates mood counts across all tiers, sorts by frequency,
+    and returns the top 5 moods with percentages.
+
+    Args:
+        balance: Mood balance data mapping tier_name -> list of {mood, count}.
+
+    Returns:
+        List of {mood, percentage} for the top 5 moods across all tiers.
+    """
+    # Aggregate counts across all tiers
+    mood_totals: dict[str, int] = {}
+    for tier_moods in balance.values():
+        for item in tier_moods:
+            mood = item["mood"]
+            count = item["count"]
+            mood_totals[mood] = mood_totals.get(mood, 0) + count
+
+    if not mood_totals:
+        return []
+
+    total = sum(mood_totals.values())
+    # Sort by count and get top 5
+    sorted_moods = sorted(mood_totals.items(), key=lambda x: x[1], reverse=True)[:5]
+
+    return [
+        {
+            "mood": mood,
+            "percentage": round((count / total) * 100, 1) if total > 0 else 0.0,
+        }
+        for mood, count in sorted_moods
+    ]

@@ -4,6 +4,12 @@
  * Navigation flow:
  * Artist → Albums → Tracks → Tags → Tag-search → Tracks (repeatable)
  *
+ * Breadcrumb behavior:
+ * - Always shows "Artists" as root
+ * - Shows "..." if history > 5 items, then last 4 items
+ * - Clicking a breadcrumb truncates history to that point
+ * - Full history is preserved, just visually truncated
+ *
  * - Float tags: Sort by distance from clicked value
  * - String tags: Filter by exact match
  */
@@ -27,7 +33,7 @@ import {
     Stack,
     Typography,
 } from "@mui/material";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { getFilesByIds, searchByTag, type FileTag, type LibraryFile } from "../../../shared/api/files";
 import { listAlbumsForArtist, listEntities, listSongsForEntity, type Album } from "../../../shared/api/metadata";
@@ -41,16 +47,36 @@ type NavigationStep =
   | { type: "albums"; artist: Entity }
   | { type: "tracks"; artist: Entity; album: Album }
   | { type: "tags"; artist: Entity; album: Album; track: LibraryFile }
-  | { type: "tag-search"; tagKey: string; targetValue: number | string; breadcrumb: BreadcrumbItem[] };
+  | { type: "tag-search"; tagKey: string; targetValue: number | string; label: string };
+
+/** Get display label for a navigation step */
+function getStepLabel(step: NavigationStep): string {
+  switch (step.type) {
+    case "artists":
+      return "Artists";
+    case "albums":
+      return step.artist.display_name;
+    case "tracks":
+      return step.album.display_name;
+    case "tags":
+      return step.track.title ?? step.track.path.split("/").pop() ?? "Track";
+    case "tag-search":
+      return step.label;
+  }
+}
 
 interface LibraryBrowserProps {
   initialStep?: NavigationStep;
 }
 
 export function LibraryBrowser({ initialStep }: LibraryBrowserProps) {
-  // Navigation state
-  const [step, setStep] = useState<NavigationStep>(initialStep ?? { type: "artists" });
-  const [tagBreadcrumbs, setTagBreadcrumbs] = useState<BreadcrumbItem[]>([]);
+  // Navigation history stack - step is always history[history.length - 1]
+  const [history, setHistory] = useState<NavigationStep[]>(
+    initialStep ? [{ type: "artists" }, initialStep] : [{ type: "artists" }]
+  );
+
+  // Current step is derived from history
+  const step = history[history.length - 1];
 
   // Data
   const [artists, setArtists] = useState<Entity[]>([]);
@@ -132,17 +158,13 @@ export function LibraryBrowser({ initialStep }: LibraryBrowserProps) {
   useEffect(() => {
     switch (step.type) {
       case "artists":
-        // Reset to first page when returning to artist view
         loadArtists(0);
-        setTagBreadcrumbs([]);
         break;
       case "albums":
         loadAlbums(step.artist.entity_id);
-        setTagBreadcrumbs([]);
         break;
       case "tracks":
         loadTracks(step.album.entity_id);
-        setTagBreadcrumbs([]);
         break;
       case "tags":
         // Tags are already available on the track
@@ -153,26 +175,35 @@ export function LibraryBrowser({ initialStep }: LibraryBrowserProps) {
     }
   }, [step, loadArtists, loadAlbums, loadTracks, loadTracksByTag]);
 
+  // Navigation: push new step onto history
+  const navigateTo = useCallback((newStep: NavigationStep) => {
+    setHistory(prev => [...prev, newStep]);
+  }, []);
+
+  // Navigation: truncate history to index (clicking a breadcrumb)
+  const navigateToIndex = useCallback((index: number) => {
+    setHistory(prev => prev.slice(0, index + 1));
+  }, []);
+
   // Navigation handlers
   const handleArtistClick = (artist: Entity) => {
-    setStep({ type: "albums", artist });
+    navigateTo({ type: "albums", artist });
   };
 
   const handleAlbumClick = (album: Album) => {
     if (step.type === "albums") {
-      setStep({ type: "tracks", artist: step.artist, album });
+      navigateTo({ type: "tracks", artist: step.artist, album });
     }
   };
 
   const handleTrackClick = (track: LibraryFile) => {
     if (step.type === "tracks") {
-      setStep({ type: "tags", artist: step.artist, album: step.album, track });
+      navigateTo({ type: "tags", artist: step.artist, album: step.album, track });
     } else if (step.type === "tag-search") {
-      // Find or create artist/album context from track
+      // From tag-search results, create artist/album context from track metadata
       const artistName = track.artist ?? "Unknown Artist";
       const albumName = track.album ?? "Unknown Album";
-      // For tag-search results, we show tags but keep the tag breadcrumbs
-      setStep({
+      navigateTo({
         type: "tags",
         artist: { entity_id: "", key: "", display_name: artistName },
         album: { entity_id: "", display_name: albumName },
@@ -182,7 +213,7 @@ export function LibraryBrowser({ initialStep }: LibraryBrowserProps) {
   };
 
   const handleTagClick = (tag: FileTag) => {
-    // Parse value
+    // Parse value for display and search
     let value: number | string = tag.value;
     try {
       const parsed = JSON.parse(tag.value);
@@ -195,62 +226,60 @@ export function LibraryBrowser({ initialStep }: LibraryBrowserProps) {
       // Keep as string
     }
 
-    // Build breadcrumb for this tag hop
-    const newCrumb: BreadcrumbItem = {
-      label: `${tag.key}: ${typeof value === "number" ? value.toFixed(2) : value}`,
-      onClick: () => handleTagClick(tag),
-    };
+    // Create label for breadcrumb
+    const label = `${tag.key}: ${typeof value === "number" ? value.toFixed(2) : value}`;
 
-    // Keep only last 3 tag hops
-    const newBreadcrumbs = [...tagBreadcrumbs, newCrumb].slice(-3);
-    setTagBreadcrumbs(newBreadcrumbs);
-
-    setStep({
+    navigateTo({
       type: "tag-search",
       tagKey: tag.key,
       targetValue: value,
-      breadcrumb: newBreadcrumbs,
+      label,
     });
   };
 
-  // Build breadcrumb items
-  const buildBreadcrumbs = (): BreadcrumbItem[] => {
+  // Build breadcrumb items with smart truncation
+  // Shows: Artists > [... if needed] > last N items
+  const breadcrumbs = useMemo((): BreadcrumbItem[] => {
+    const maxVisible = 5; // Total max visible breadcrumbs
     const crumbs: BreadcrumbItem[] = [];
 
-    // Always start with Artists
+    // Always show "Artists" (index 0)
     crumbs.push({
       label: "Artists",
-      onClick: () => setStep({ type: "artists" }),
+      onClick: () => navigateToIndex(0),
     });
 
-    if (step.type === "albums" || step.type === "tracks" || step.type === "tags") {
+    if (history.length <= maxVisible) {
+      // Show all items
+      for (let i = 1; i < history.length; i++) {
+        const historyStep = history[i];
+        const index = i;
+        crumbs.push({
+          label: getStepLabel(historyStep),
+          onClick: index === history.length - 1 ? () => {} : () => navigateToIndex(index),
+        });
+      }
+    } else {
+      // Show: Artists > ... > last (maxVisible - 2) items
+      // Ellipsis takes one slot, Artists takes one slot
       crumbs.push({
-        label: step.artist.display_name,
-        onClick: () => setStep({ type: "albums", artist: step.artist }),
+        label: "...",
+        onClick: () => {}, // Could expand to show full history in a menu
       });
-    }
 
-    if (step.type === "tracks" || step.type === "tags") {
-      crumbs.push({
-        label: step.album.display_name,
-        onClick: () => setStep({ type: "tracks", artist: step.artist, album: step.album }),
-      });
-    }
-
-    if (step.type === "tags") {
-      crumbs.push({
-        label: step.track.title ?? step.track.path.split("/").pop() ?? "Track",
-        onClick: () => {}, // Current item, no action
-      });
-    }
-
-    if (step.type === "tag-search") {
-      // Add tag breadcrumbs
-      crumbs.push(...tagBreadcrumbs);
+      const startIndex = history.length - (maxVisible - 2);
+      for (let i = startIndex; i < history.length; i++) {
+        const historyStep = history[i];
+        const index = i;
+        crumbs.push({
+          label: getStepLabel(historyStep),
+          onClick: index === history.length - 1 ? () => {} : () => navigateToIndex(index),
+        });
+      }
     }
 
     return crumbs;
-  };
+  }, [history, navigateToIndex]);
 
   // Render the current view
   const renderContent = () => {
@@ -280,68 +309,44 @@ export function LibraryBrowser({ initialStep }: LibraryBrowserProps) {
         return (
           <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
             <List dense sx={{ flex: 1, overflow: "auto" }}>
-              {artists.map((artist) => (
+              {artists.map(artist => (
                 <ListItemButton key={artist.entity_id} onClick={() => handleArtistClick(artist)}>
-                  <ListItemIcon>
-                    <Person />
-                  </ListItemIcon>
+                  <ListItemIcon><Person /></ListItemIcon>
                   <ListItemText
                     primary={artist.display_name}
-                    secondary={artist.song_count ? `${artist.song_count} songs` : undefined}
+                    secondary={artist.song_count !== undefined ? `${artist.song_count} songs` : undefined}
                   />
                   <DrillIcon color="action" />
                 </ListItemButton>
               ))}
-              {artists.length === 0 && (
-                <Box sx={{ p: 2, textAlign: "center" }}>
-                  <Typography color="text.secondary">No artists found</Typography>
-                </Box>
-              )}
             </List>
-            {artistsTotal > artistsLimit && (
-              <Stack
-                direction="row"
-                spacing={2}
-                alignItems="center"
-                justifyContent="center"
-                sx={{ p: 1.5, borderTop: 1, borderColor: "divider" }}
-              >
-                <Button
-                  size="small"
-                  variant="outlined"
-                  onClick={() => loadArtists(Math.max(0, artistsOffset - artistsLimit))}
-                  disabled={!hasPrev || loading}
-                >
+
+            {totalPages > 1 && (
+              <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 2, p: 1, borderTop: 1, borderColor: "divider" }}>
+                <Button size="small" disabled={!hasPrev} onClick={() => loadArtists(artistsOffset - artistsLimit)}>
                   Previous
                 </Button>
                 <Typography variant="body2" color="text.secondary">
                   Page {currentPage} of {totalPages}
                 </Typography>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  onClick={() => loadArtists(artistsOffset + artistsLimit)}
-                  disabled={!hasNext || loading}
-                >
+                <Button size="small" disabled={!hasNext} onClick={() => loadArtists(artistsOffset + artistsLimit)}>
                   Next
                 </Button>
-              </Stack>
+              </Box>
             )}
           </Box>
         );
       }
 
-      case "albums":
+      case "albums": {
         return (
           <List dense>
-            {albums.map((album) => (
+            {albums.map(album => (
               <ListItemButton key={album.entity_id} onClick={() => handleAlbumClick(album)}>
-                <ListItemIcon>
-                  <AudioFile />
-                </ListItemIcon>
+                <ListItemIcon><AudioFile /></ListItemIcon>
                 <ListItemText
                   primary={album.display_name}
-                  secondary={album.song_count ? `${album.song_count} songs` : undefined}
+                  secondary={album.song_count !== undefined ? `${album.song_count} tracks` : undefined}
                 />
                 <DrillIcon color="action" />
               </ListItemButton>
@@ -353,39 +358,37 @@ export function LibraryBrowser({ initialStep }: LibraryBrowserProps) {
             )}
           </List>
         );
+      }
 
       case "tracks":
-      case "tag-search":
+      case "tag-search": {
         return (
           <List dense>
-            {tracks.map((track) => (
+            {tracks.map(track => (
               <ListItemButton key={track.file_id} onClick={() => handleTrackClick(track)}>
-                <ListItemIcon>
-                  <MusicNote />
-                </ListItemIcon>
+                <ListItemIcon><MusicNote /></ListItemIcon>
                 <ListItemText
                   primary={track.title ?? track.path.split("/").pop()}
-                  secondary={
-                    step.type === "tag-search" 
-                      ? `${track.artist} - ${track.album}`
-                      : track.artist
-                  }
+                  secondary={`${track.artist ?? "Unknown"} - ${track.album ?? "Unknown"}`}
                 />
                 <DrillIcon color="action" />
               </ListItemButton>
             ))}
             {tracks.length === 0 && (
               <Box sx={{ p: 2, textAlign: "center" }}>
-                <Typography color="text.secondary">No tracks found</Typography>
+                <Typography color="text.secondary">
+                  {step.type === "tag-search" ? "No matching tracks found" : "No tracks found"}
+                </Typography>
               </Box>
             )}
           </List>
         );
+      }
 
       case "tags": {
-        const nomarrTags = step.track.tags.filter((t) => t.is_nomarr);
-        const otherTags = step.track.tags.filter((t) => !t.is_nomarr);
-        
+        const nomarrTags = step.track.tags?.filter(t => t.is_nomarr) ?? [];
+        const otherTags = step.track.tags?.filter(t => !t.is_nomarr) ?? [];
+
         return (
           <Box sx={{ p: 2 }}>
             <Typography variant="h6" gutterBottom>
@@ -475,7 +478,7 @@ export function LibraryBrowser({ initialStep }: LibraryBrowserProps) {
 
   return (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
-      <BreadcrumbNav items={buildBreadcrumbs()} />
+      <BreadcrumbNav items={breadcrumbs} />
       
       <Paper sx={{ flex: 1, overflow: "auto", mt: 1 }}>
         {renderContent()}

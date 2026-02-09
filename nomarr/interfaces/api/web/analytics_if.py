@@ -155,16 +155,17 @@ async def web_analytics_collection_overview(
 @router.get("/mood-analysis", dependencies=[Depends(verify_session)])
 async def web_analytics_mood_analysis(
     library_id: str | None = None,
+    mood_tier: str = "strict",
     analytics_service: Annotated["AnalyticsService", Depends(get_analytics_service)] = None,  # type: ignore[assignment]
 ) -> MoodAnalysisResponse:
     """Get mood analysis statistics.
 
     Returns mood coverage, balance, top pairs, and dominant vibes.
-    Optionally filtered by library_id.
+    Optionally filtered by library_id and mood_tier.
     """
     try:
         result = await asyncio.to_thread(
-            analytics_service.get_mood_analysis, library_id=library_id
+            analytics_service.get_mood_analysis, library_id=library_id, mood_tier=mood_tier
         )
         return MoodAnalysisResponse(
             coverage=result["coverage"],

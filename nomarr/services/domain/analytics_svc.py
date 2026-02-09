@@ -32,6 +32,8 @@ from nomarr.helpers.dto.analytics_dto import (
     TagFrequenciesResult,
     TagFrequencyItem,
 )
+from nomarr.workflows.analytics.collection_overview_wf import collection_overview_workflow
+from nomarr.workflows.analytics.mood_analysis_wf import mood_analysis_workflow
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -226,7 +228,7 @@ class AnalyticsService:
     ) -> dict[str, Any]:
         """Get collection overview data for Insights tab.
 
-        Orchestrates library stats, year/genre/artist distributions.
+        Delegates to collection_overview_workflow for orchestration.
 
         Args:
             library_id: Optional library _id to filter by.
@@ -234,73 +236,21 @@ class AnalyticsService:
         Returns:
             Dict with: stats, year_distribution, genre_distribution, artist_distribution
         """
-        stats = self._db.tags.get_library_stats(library_id)
-        years = self._db.tags.get_year_distribution(library_id)
-        genres = self._db.tags.get_genre_distribution(library_id, limit=20)
-        artists = self._db.tags.get_artist_distribution(library_id, limit=20)
-
-        return {
-            "stats": stats,
-            "year_distribution": years,
-            "genre_distribution": genres,
-            "artist_distribution": artists,
-        }
+        return collection_overview_workflow(self._db, library_id=library_id)
 
     def get_mood_analysis(
-        self, library_id: str | None = None,
+        self, library_id: str | None = None, mood_tier: str = "strict",
     ) -> dict[str, Any]:
         """Get mood analysis data for Insights tab.
 
-        Orchestrates coverage, balance, top pairs, and dominant vibes.
+        Delegates to mood_analysis_workflow for orchestration.
 
         Args:
             library_id: Optional library _id to filter by.
+            mood_tier: Mood tier for top pairs ("strict", "relaxed", or "genre").
 
         Returns:
             Dict with: coverage, balance, top_pairs, dominant_vibes
         """
-        coverage = self._db.tags.get_mood_coverage(library_id)
-        balance = self._db.tags.get_mood_balance(library_id)
-        top_pairs = self._db.tags.get_top_mood_pairs(library_id, limit=5)
+        return mood_analysis_workflow(self._db, library_id=library_id, mood_tier=mood_tier)
 
-        # Compute dominant vibes from balance data
-        dominant_vibes = self._compute_dominant_vibes(balance)
-
-        return {
-            "coverage": coverage,
-            "balance": balance,
-            "top_pairs": top_pairs,
-            "dominant_vibes": dominant_vibes,
-        }
-
-    def _compute_dominant_vibes(self, balance: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
-        """Compute dominant mood vibes from balance data.
-
-        Args:
-            balance: Mood balance data from get_mood_balance.
-
-        Returns:
-            List of {mood, percentage} for top moods across all tiers.
-        """
-        # Aggregate counts across all tiers
-        mood_totals: dict[str, int] = {}
-        for tier_moods in balance.values():
-            for item in tier_moods:
-                mood = item["mood"]
-                count = item["count"]
-                mood_totals[mood] = mood_totals.get(mood, 0) + count
-
-        if not mood_totals:
-            return []
-
-        total = sum(mood_totals.values())
-        # Sort by count and get top 5
-        sorted_moods = sorted(mood_totals.items(), key=lambda x: x[1], reverse=True)[:5]
-
-        return [
-            {
-                "mood": mood,
-                "percentage": round((count / total) * 100, 1) if total > 0 else 0.0,
-            }
-            for mood, count in sorted_moods
-        ]

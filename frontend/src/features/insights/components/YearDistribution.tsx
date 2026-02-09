@@ -1,10 +1,12 @@
 /**
- * YearDistribution - Display year distribution as a simple bar chart.
+ * YearDistribution - Display year distribution as a smooth line chart.
  *
- * Shows release years histogram.
+ * Shows release years as a chronological line chart using MUI X Charts.
+ * Filters out year "1" (garbage data). Uses catmullRom curve for smooth interpolation.
  */
 
-import { Box, Typography } from "@mui/material";
+import { Typography } from "@mui/material";
+import { LineChart } from "@mui/x-charts/LineChart";
 
 import type { YearDistributionItem } from "../../../shared/api/analytics";
 
@@ -19,7 +21,12 @@ export function YearDistribution({
   distribution,
   parentId,
 }: YearDistributionProps) {
-  if (distribution.length === 0) {
+  // Filter out year "1" (garbage data) and sort chronologically
+  const sorted = distribution
+    .filter((d) => String(d.year) !== "1")
+    .sort((a, b) => Number(a.year) - Number(b.year));
+
+  if (sorted.length === 0) {
     return (
       <AccordionSubsection
         subsectionId="years"
@@ -31,7 +38,8 @@ export function YearDistribution({
     );
   }
 
-  const maxCount = Math.max(...distribution.map((d) => d.count));
+  const years = sorted.map((d) => String(d.year));
+  const counts = sorted.map((d) => d.count);
 
   return (
     <AccordionSubsection
@@ -40,45 +48,16 @@ export function YearDistribution({
       title="Years"
       secondary={
         <Typography variant="body2" color="text.secondary">
-          {distribution.length} years
+          {sorted.length} years
         </Typography>
       }
     >
-      <Box sx={{ maxHeight: 200, overflow: "auto" }}>
-        {distribution.map((item) => (
-          <Box
-            key={item.year}
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              mb: 0.5,
-            }}
-          >
-            <Typography
-              variant="body2"
-              sx={{ width: 60, flexShrink: 0, textAlign: "right", mr: 1 }}
-            >
-              {item.year}
-            </Typography>
-            <Box
-              sx={{
-                height: 16,
-                width: `${(item.count / maxCount) * 100}%`,
-                minWidth: 2,
-                bgcolor: "primary.main",
-                borderRadius: 0.5,
-              }}
-            />
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              sx={{ ml: 1, flexShrink: 0 }}
-            >
-              {item.count}
-            </Typography>
-          </Box>
-        ))}
-      </Box>
+      <LineChart
+        height={250}
+        xAxis={[{ scaleType: "point", data: years }]}
+        series={[{ data: counts, curve: "catmullRom", showMark: false }]}
+        margin={{ left: 50, right: 20, top: 20, bottom: 30 }}
+      />
     </AccordionSubsection>
   );
 }

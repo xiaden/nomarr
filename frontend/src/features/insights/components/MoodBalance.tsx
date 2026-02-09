@@ -17,8 +17,8 @@ interface MoodBalanceProps {
 
 const TIER_LABELS: Record<string, string> = {
   strict: "Strict",
-  relaxed: "Relaxed",
-  genre: "Genre",
+  regular: "Regular",
+  loose: "Loose",
 };
 
 export function MoodBalance({ balance, parentId }: MoodBalanceProps) {

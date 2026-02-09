@@ -208,11 +208,15 @@ export interface MoodAnalysisResponse {
 
 /**
  * Get mood analysis statistics.
- * Optionally filtered by libraryId.
+ * Optionally filtered by libraryId and moodTier.
  */
 export async function getMoodAnalysis(
-  libraryId?: string
+  libraryId?: string,
+  moodTier: string = "strict"
 ): Promise<MoodAnalysisResponse> {
-  const params = libraryId ? `?library_id=${encodeURIComponent(libraryId)}` : "";
-  return get(`/api/web/analytics/mood-analysis${params}`);
+  const searchParams = new URLSearchParams();
+  if (libraryId) searchParams.set("library_id", libraryId);
+  searchParams.set("mood_tier", moodTier);
+  const qs = searchParams.toString();
+  return get(`/api/web/analytics/mood-analysis?${qs}`);
 }

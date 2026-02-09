@@ -630,7 +630,7 @@ class TagOperations:
 
         """
         mood_rows: list[tuple[str, str]] = []
-        for mood_type in ["nom:mood-strict", "nom:mood-relaxed", "nom:mood-genre"]:
+        for mood_type in ["nom:mood-strict", "nom:mood-regular", "nom:mood-loose"]:
             library_filter = ""
             bind_vars: dict[str, Any] = {"mood_type": mood_type}
 
@@ -725,7 +725,7 @@ class TagOperations:
                 total_size = SUM(file.file_size)
             RETURN {{
                 file_count: file_count,
-                total_duration_ms: (total_duration_s || 0) * 1000,
+                total_duration_ms: FLOOR((total_duration_s || 0) * 1000),
                 total_file_size_bytes: total_size || 0,
                 avg_track_length_ms: file_count > 0
                     ? ((total_duration_s || 0) / file_count) * 1000
@@ -749,7 +749,7 @@ class TagOperations:
                         If None, returns stats for all libraries.
 
         Returns:
-            List of {year: int, count: int} sorted by year ascending.
+            List of {year: int, count: int} sorted by count descending.
         """
         library_filter = ""
         bind_vars: dict[str, Any] = {}
@@ -771,7 +771,7 @@ class TagOperations:
                     RETURN 1
             )
             FILTER song_count > 0
-            SORT tag.value ASC
+            SORT song_count DESC
             RETURN {{
                 year: tag.value,
                 count: song_count
@@ -781,19 +781,24 @@ class TagOperations:
         return list(cursor)
 
     def get_genre_distribution(
-        self, library_id: str | None = None, limit: int = 20,
+        self, library_id: str | None = None, limit: int | None = 20,
     ) -> list[dict[str, Any]]:
         """Get genre distribution for Collection Overview.
 
         Args:
             library_id: Optional library _id to filter by.
-            limit: Max genres to return (sorted by count desc).
+            limit: Max genres to return (sorted by count desc). None = no limit.
 
         Returns:
             List of {genre: str, count: int} sorted by count descending.
         """
         library_filter = ""
-        bind_vars: dict[str, Any] = {"limit": limit}
+        bind_vars: dict[str, Any] = {}
+        limit_clause = ""
+
+        if limit is not None:
+            limit_clause = "LIMIT @limit"
+            bind_vars["limit"] = limit
 
         if library_id:
             library_filter = """
@@ -813,7 +818,7 @@ class TagOperations:
             )
             FILTER song_count > 0
             SORT song_count DESC
-            LIMIT @limit
+            {limit_clause}
             RETURN {{
                 genre: tag.value,
                 count: song_count
@@ -894,15 +899,15 @@ class TagOperations:
                 "total_files": 0,
                 "tiers": {
                     "strict": {"tagged": 0, "percentage": 0.0},
-                    "relaxed": {"tagged": 0, "percentage": 0.0},
-                    "genre": {"tagged": 0, "percentage": 0.0},
+                    "regular": {"tagged": 0, "percentage": 0.0},
+                    "loose": {"tagged": 0, "percentage": 0.0},
                 },
             }
 
         tier_map = {
             "strict": "nom:mood-strict",
-            "relaxed": "nom:mood-relaxed",
-            "genre": "nom:mood-genre",
+            "regular": "nom:mood-regular",
+            "loose": "nom:mood-loose",
         }
 
         tiers: dict[str, dict[str, Any]] = {}
@@ -956,8 +961,8 @@ class TagOperations:
         """
         tier_map = {
             "strict": "nom:mood-strict",
-            "relaxed": "nom:mood-relaxed",
-            "genre": "nom:mood-genre",
+            "regular": "nom:mood-regular",
+            "loose": "nom:mood-loose",
         }
 
         result: dict[str, list[dict[str, Any]]] = {}
@@ -995,21 +1000,30 @@ class TagOperations:
         return result
 
     def get_top_mood_pairs(
-        self, library_id: str | None = None, limit: int = 10,
+        self, library_id: str | None = None, limit: int = 10, mood_tier: str = "strict",
     ) -> list[dict[str, Any]]:
         """Get top co-occurring mood pairs for Mood Analysis.
 
         Finds the most common pairs of mood values that appear on the same songs.
+        Tiers are cumulative: "regular" includes strict+regular, "loose" includes all.
 
         Args:
             library_id: Optional library _id to filter by.
             limit: Max pairs to return.
+            mood_tier: Mood tier to query ("strict", "regular", or "loose").
 
         Returns:
             List of {mood1: str, mood2: str, count: int} sorted by count DESC.
         """
+        # Tiers are cumulative: higher tiers include all stricter tiers
+        tier_hierarchy: dict[str, list[str]] = {
+            "strict": ["nom:mood-strict"],
+            "regular": ["nom:mood-strict", "nom:mood-regular"],
+            "loose": ["nom:mood-strict", "nom:mood-regular", "nom:mood-loose"],
+        }
+        rels = tier_hierarchy.get(mood_tier, ["nom:mood-strict"])
         library_filter = ""
-        bind_vars: dict[str, Any] = {"limit": limit}
+        bind_vars: dict[str, Any] = {"limit": limit, "rels": rels}
 
         if library_id:
             library_filter = """
@@ -1020,14 +1034,14 @@ class TagOperations:
 
         query = f"""
         FOR tag1 IN tags
-            FILTER STARTS_WITH(tag1.rel, "nom:mood-")
+            FILTER tag1.rel IN @rels
             FOR edge1 IN song_tag_edges
                 FILTER edge1._to == tag1._id
                 {library_filter}
                 FOR edge2 IN song_tag_edges
                     FILTER edge2._from == edge1._from AND edge2._to != edge1._to
                     FOR tag2 IN tags
-                        FILTER tag2._id == edge2._to AND STARTS_WITH(tag2.rel, "nom:mood-")
+                        FILTER tag2._id == edge2._to AND tag2.rel IN @rels
                         FILTER tag1.value < tag2.value  // Avoid duplicates (A,B) and (B,A)
                         COLLECT mood1 = tag1.value, mood2 = tag2.value WITH COUNT INTO pair_count
                         SORT pair_count DESC

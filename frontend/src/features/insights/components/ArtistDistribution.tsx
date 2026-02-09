@@ -1,10 +1,11 @@
 /**
- * ArtistDistribution - Display top artists.
+ * ArtistDistribution - Display top artists as a vertical bar chart.
  *
- * Shows top artists list and "others" count.
+ * Shows top artists using MUI X Charts BarChart with "others" summary below.
  */
 
-import { Box, List, ListItem, ListItemText, Typography } from "@mui/material";
+import { Typography } from "@mui/material";
+import { BarChart } from "@mui/x-charts/BarChart";
 
 import type { ArtistDistribution as ArtistDistributionType } from "../../../shared/api/analytics";
 
@@ -35,6 +36,9 @@ export function ArtistDistribution({
     );
   }
 
+  const artists = top_artists.map((d) => d.artist);
+  const counts = top_artists.map((d) => d.count);
+
   return (
     <AccordionSubsection
       subsectionId="artists"
@@ -46,49 +50,28 @@ export function ArtistDistribution({
         </Typography>
       }
     >
-      <List dense disablePadding>
-        {top_artists.map((item, index) => (
-          <ListItem key={item.artist} disableGutters sx={{ py: 0.25 }}>
-            <ListItemText
-              primary={
-                <Box sx={{ display: "flex", alignItems: "center" }}>
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ width: 24, textAlign: "right", mr: 1 }}
-                  >
-                    {index + 1}.
-                  </Typography>
-                  <Typography variant="body2">{item.artist}</Typography>
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ ml: "auto" }}
-                  >
-                    {item.count} tracks
-                  </Typography>
-                </Box>
-              }
-            />
-          </ListItem>
-        ))}
-        {others_count > 0 && (
-          <ListItem disableGutters sx={{ py: 0.25 }}>
-            <ListItemText
-              primary={
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                  sx={{ fontStyle: "italic" }}
-                >
-                  + {others_count} tracks from{" "}
-                  {total_artists - top_artists.length} other artists
-                </Typography>
-              }
-            />
-          </ListItem>
-        )}
-      </List>
+      <BarChart
+        height={300}
+        xAxis={[
+          {
+            scaleType: "band",
+            data: artists,
+            tickLabelStyle: { angle: -45, textAnchor: "end", fontSize: 11 },
+          },
+        ]}
+        series={[{ data: counts }]}
+        margin={{ left: 50, right: 20, top: 20, bottom: 80 }}
+      />
+      {others_count > 0 && (
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          sx={{ fontStyle: "italic", mt: 1 }}
+        >
+          + {others_count} tracks from {total_artists - top_artists.length}{" "}
+          other artists
+        </Typography>
+      )}
     </AccordionSubsection>
   );
 }

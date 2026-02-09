@@ -3,6 +3,7 @@
  */
 
 import { Box, Chip, Typography } from "@mui/material";
+import type { ReactNode } from "react";
 
 import type { MoodPairItem } from "../../../shared/api/analytics";
 
@@ -11,15 +12,22 @@ import { AccordionSubsection } from "./AccordionSubsection";
 interface MoodCombosProps {
   pairs: MoodPairItem[];
   parentId: string;
+  /** Optional tier selector rendered in the subsection header */
+  tierSelector?: ReactNode;
 }
 
-export function MoodCombos({ pairs, parentId }: MoodCombosProps) {
+export function MoodCombos({ pairs, parentId, tierSelector }: MoodCombosProps) {
   if (pairs.length === 0) {
     return (
       <AccordionSubsection
         subsectionId="combos"
         parentId={parentId}
         title="Mood Combos"
+        secondary={
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            {tierSelector}
+          </Box>
+        }
       >
         <Typography color="text.secondary">
           No mood combinations found
@@ -35,9 +43,12 @@ export function MoodCombos({ pairs, parentId }: MoodCombosProps) {
       title="Mood Combos"
       defaultExpanded={false}
       secondary={
-        <Typography variant="body2" color="text.secondary">
-          Top pairs
-        </Typography>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <Typography variant="body2" color="text.secondary">
+            Top pairs
+          </Typography>
+          {tierSelector}
+        </Box>
       }
     >
       <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
