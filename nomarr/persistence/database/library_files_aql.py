@@ -1517,3 +1517,42 @@ class LibraryFilesOperations:
             """,
             bind_vars={"file_key": file_key, "mode": mode},
         )
+
+
+    def get_recently_processed(
+        self, limit: int = 20, library_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Get recently processed files ordered by last_tagged_at descending.
+
+        Args:
+            limit: Maximum number of files to return.
+            library_id: Optional library _id to filter by.
+
+        Returns:
+            List of {file_id, path, title, artist, album, last_tagged_at}
+            sorted by last_tagged_at DESC.
+        """
+        library_filter = ""
+        bind_vars: dict[str, Any] = {"limit": limit}
+
+        if library_id:
+            library_filter = "FILTER f.library_id == @library_id"
+            bind_vars["library_id"] = library_id
+
+        query = f"""
+        FOR f IN library_files
+            FILTER f.last_tagged_at != null
+            {library_filter}
+            SORT f.last_tagged_at DESC
+            LIMIT @limit
+            RETURN {{
+                file_id: f._id,
+                path: f.normalized_path,
+                title: f.title,
+                artist: f.artist,
+                album: f.album,
+                last_tagged_at: f.last_tagged_at
+            }}
+        """
+        cursor = cast("Cursor", self.db.aql.execute(query, bind_vars=bind_vars))
+        return list(cursor)

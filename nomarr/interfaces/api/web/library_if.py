@@ -580,3 +580,52 @@ async def update_write_mode(
     except Exception as e:
         logger.exception(f"[Web API] Error updating write mode for library {library_id}")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to update write mode")) from e
+
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Recent Activity
+# ──────────────────────────────────────────────────────────────────────
+
+
+class RecentFileItem(BaseModel):
+    """A recently processed file."""
+
+    file_id: str
+    path: str
+    title: str | None
+    artist: str | None
+    album: str | None
+    last_tagged_at: int
+
+
+class RecentFilesResponse(BaseModel):
+    """Response for recently processed files."""
+
+    files: list[RecentFileItem]
+
+
+@router.get("/recent-activity", dependencies=[Depends(verify_session)])
+async def web_library_recent_activity(
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
+    limit: int = Query(default=20, ge=1, le=100, description="Number of recent files to return"),
+    library_id: str | None = Query(default=None, description="Optional library ID to filter by"),
+) -> RecentFilesResponse:
+    """Get recently processed files.
+
+    Returns files sorted by last_tagged_at descending.
+    """
+    try:
+        decoded_library_id = decode_path_id(library_id) if library_id else None
+        files = library_service.get_recently_processed(
+            limit=limit, library_id=decoded_library_id
+        )
+        return RecentFilesResponse(
+            files=[RecentFileItem(**f) for f in files]
+        )
+    except Exception as e:
+        logger.exception("[Web API] Error getting recent activity")
+        raise HTTPException(
+            status_code=500,
+            detail=sanitize_exception_message(e, "Failed to get recent activity"),
+        ) from e

@@ -249,3 +249,34 @@ export async function getFileTags(
 
   return get(endpoint);
 }
+
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Recent Activity
+// ────────────────────────────────────────────────────────────────────────────────
+
+export interface RecentFile {
+  file_id: string;
+  path: string;
+  title: string | null;
+  artist: string | null;
+  album: string | null;
+  last_tagged_at: number;
+}
+
+export interface RecentFilesResult {
+  files: RecentFile[];
+}
+
+/**
+ * Get recently processed files.
+ */
+export async function getRecentActivity(
+  limit = 20,
+  libraryId?: string
+): Promise<RecentFilesResult> {
+  const params = new URLSearchParams();
+  params.append("limit", limit.toString());
+  if (libraryId) params.append("library_id", libraryId);
+  return get(`/api/web/libraries/recent-activity?${params.toString()}`);
+}

@@ -8,7 +8,7 @@ This module handles:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.search_files_comp import get_unique_tag_keys, get_unique_tag_values, search_library_files
 from nomarr.helpers.dto.info_dto import ScanningLibraryInfo, WorkStatusResult
@@ -171,4 +171,22 @@ class LibraryQueryMixin:
             processed_files=processed,
             total_files=stats.total_files,
             is_busy=is_scanning or is_processing,
+        )
+
+
+    def get_recently_processed(
+        self, limit: int = 20, library_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Get recently processed files.
+
+        Args:
+            limit: Maximum number of files to return.
+            library_id: Optional library _id to filter by.
+
+        Returns:
+            List of {file_id, path, title, artist, album, last_tagged_at}
+            sorted by last_tagged_at DESC.
+        """
+        return self.db.library_files.get_recently_processed(
+            limit=limit, library_id=library_id
         )
