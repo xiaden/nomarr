@@ -33,7 +33,7 @@ dependencies = [
     "rich==13.7.1",
     "requests==2.32.5",
     "bcrypt==4.2.1",
-    "python-arango==7.9.0",
+    "python-arango==7.9.1",
     "watchdog==6.0.0",
     "psutil==7.2.2",
 ]
