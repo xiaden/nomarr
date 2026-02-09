@@ -59,7 +59,7 @@ class TestNomarrLogFilterIdentityRole:
         record = self._make_record("nomarr.workflows.library.scan_library_quick_wf")
         log_filter.filter(record)
 
-        assert _get_attr(record, "nomarr_identity_tag") == "[Scan Library Direct]"
+        assert _get_attr(record, "nomarr_identity_tag") == "[Scan Library Quick]"
         assert _get_attr(record, "nomarr_role_tag") == "[Workflow]"
 
     @pytest.mark.unit

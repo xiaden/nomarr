@@ -183,7 +183,7 @@ class TestRestartWorkerHelper:
         mock_worker.health_pipe = MagicMock()
         mock_create_worker.return_value = mock_worker
 
-        worker_service._restart_worker("discovery_worker_1")
+        worker_service._restart_worker("discovery_worker:1")
 
         # Verify worker created
         mock_create_worker.assert_called_once()
@@ -199,7 +199,7 @@ class TestRestartWorkerHelper:
         worker_service.health_monitor.register_component.assert_called_once()
         args = worker_service.health_monitor.register_component.call_args[0]
         assert args[0] == "worker_1"  # component_id
-        assert args[1] == worker_service  # handler
+        assert args[1] == worker_service  # handler  # handler
 
     def test_restart_worker_handles_invalid_component_id(self, worker_service):
         """When component_id format is invalid, logs error and returns."""

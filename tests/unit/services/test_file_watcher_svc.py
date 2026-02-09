@@ -217,13 +217,10 @@ class TestThreadSafety:
         # Wait for debounce
         await asyncio.sleep(0.2)
 
-        # Should have batched all events
+        # Should have batched all events into a single scan call
         assert len(mock_library_service.scan_calls) == 1
-
-        # Should have one target (all in same folder)
-        targets = mock_library_service.scan_calls[0]["targets"]
-        assert len(targets) == 1
-        assert targets[0].folder_path == "Rock"
+        assert mock_library_service.scan_calls[0]["library_id"] == "libraries/lib1"
+        assert mock_library_service.scan_calls[0]["scan_type"] == "quick"
 
 
 class TestWatcherLifecycle:
@@ -528,11 +525,10 @@ class TestPerLibraryWatchMode:
         assert len(mock_library_service.scan_calls) >= 2
         assert len(mock_library_service.scan_calls) <= 3
 
-        # Each call should scan entire library (empty folder_path)
+        # Each call should be a quick scan for the correct library
         for call in mock_library_service.scan_calls:
-            assert len(call["targets"]) == 1
-            assert call["targets"][0].folder_path == ""
-            assert call["targets"][0].library_id == "libraries/lib1"
+            assert call["library_id"] == "libraries/lib1"
+            assert call["scan_type"] == "quick"
 
     @pytest.mark.asyncio
     async def test_polling_stop_cancels_task(self, mock_db, mock_library_service):
