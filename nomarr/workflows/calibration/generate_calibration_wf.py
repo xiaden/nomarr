@@ -357,8 +357,8 @@ def generate_histogram_calibration_wf(
         models_dir=models_dir,
         heads=heads,
         namespace=namespace,
-        start_sample_size=int(start_pct * 1000),  # Convert pct to initial sample size
-        increment_size=int(increment_pct * 1000),
+        start_pct=start_pct,
+        increment_pct=increment_pct,
         progress_callback=progress_callback,
     )
 
@@ -446,10 +446,10 @@ def _run_single_calibration(db: Database, models_dir: str, heads: list[Any], nam
 
 
 def _run_progressive_calibration(
-    db: Database, models_dir: str, heads: list[Any], namespace: str, start_sample_size: int, increment_size: int,
+    db: Database, models_dir: str, heads: list[Any], namespace: str, start_pct: float, increment_pct: float,
     progress_callback: Callable[..., None] | None = None,
 ) -> dict[str, Any]:
-    """Run calibration progressively: start with N files, add M more each iteration.
+    """Run calibration progressively: start at start_pct of files, add increment_pct more each iteration.
     Store convergence history in calibration_history collection.
     """
     from nomarr.components.ml.ml_calibration_comp import (
@@ -458,9 +458,7 @@ def _run_progressive_calibration(
         generate_calibration_from_histogram_with_limit,
     )
 
-    logger.info(f"[progressive_calibration] Starting: {start_sample_size} files → +{increment_size} per iteration")
-
-    # Get total file count
+    # Get total file count and compute sample sizes from percentages
     total_files = count_tagged_files(db, namespace)
     if total_files == 0:
         logger.warning("[progressive_calibration] No tagged files found")
@@ -473,6 +471,14 @@ def _run_progressive_calibration(
             "progressive_iterations": 0,
             "convergence_history": [],
         }
+
+    start_sample_size = max(1, int(start_pct * total_files))
+    increment_size = max(1, int(increment_pct * total_files))
+
+    logger.info(
+        f"[progressive_calibration] Starting: {start_sample_size}/{total_files} files "
+        f"({start_pct * 100:.0f}%) → +{increment_size} per iteration ({increment_pct * 100:.0f}%)",
+    )
 
     logger.info(f"[progressive_calibration] Total tagged files: {total_files}")
 
@@ -500,7 +506,8 @@ def _run_progressive_calibration(
         iteration += 1
         current_pct = current_sample_size / total_files
         logger.info(
-            f"[progressive_calibration] Iteration {iteration}: {current_sample_size} files ({current_pct * 100:.0f}%)",
+            f"[progressive_calibration] Iteration {iteration}/{total_iterations}: "
+            f"{current_sample_size} files ({current_pct * 100:.0f}%)",
         )
 
         # Report iteration-level progress

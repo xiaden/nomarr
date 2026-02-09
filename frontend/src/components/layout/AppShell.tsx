@@ -67,7 +67,7 @@ export function AppShell({ children }: AppShellProps) {
       <NavTabs />
 
       {/* Main Content */}
-      <Box component="main" sx={{ flex: 1, overflow: "auto" }}>
+      <Box component="main" sx={{ flex: 1 }}>
         {children}
       </Box>
     </Box>
