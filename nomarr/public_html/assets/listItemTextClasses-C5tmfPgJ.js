@@ -1,0 +1,1 @@
+import{an as e,on as t}from"./index-DtjqrSiu.js";function n(e){return t(`MuiListItemIcon`,e)}var r=e(`MuiListItemIcon`,[`root`,`alignItemsFlexStart`]);function i(e){return t(`MuiListItemText`,e)}var a=e(`MuiListItemText`,[`root`,`multiline`,`dense`,`inset`,`primary`,`secondary`]);export{r as i,a as n,n as r,i as t};
