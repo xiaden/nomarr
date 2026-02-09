@@ -1,1 +1,0 @@
-import{Cn as e,U as t,xn as n}from"./index-DF7hOdML.js";var r=e(n(),1);function i(){let e=(0,r.useContext)(t);if(!e)throw Error(`useNotification must be used within NotificationProvider`);return e}export{i as t};

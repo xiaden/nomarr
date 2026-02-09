@@ -23,6 +23,9 @@ import {
 } from "@mui/material";
 import { BarChart } from "@mui/x-charts/BarChart";
 import { LineChart } from "@mui/x-charts/LineChart";
+import type { BarItemIdentifier } from "@mui/x-charts/models";
+import type { DefaultizedPieValueType, PieItemIdentifier } from "@mui/x-charts/models";
+import type { LineItemIdentifier } from "@mui/x-charts/models";
 import { PieChart } from "@mui/x-charts/PieChart";
 import { useMemo, useState } from "react";
 
@@ -114,24 +117,33 @@ export function InteractiveChart({
 
   const showAll = () => setHiddenLabels(new Set());
 
-  // ── Click handler for chart items ─────────────────────────────────
+  // ── Click handlers (type-safe per chart) ──────────────────────────
 
   const handleBarClick = (
-    _event: React.MouseEvent,
-    barItem: { dataIndex: number; seriesId: string | number },
+    _event: React.MouseEvent<SVGElement>,
+    barItem: BarItemIdentifier,
   ) => {
     if (!filterable) return;
     const item = visibleData[barItem.dataIndex];
     if (item) hideItem(item.label);
   };
 
-  // Pie click has a different signature
+  const handleLineMarkClick = (
+    _event: React.MouseEvent<SVGElement>,
+    lineItem: LineItemIdentifier,
+  ) => {
+    if (!filterable || lineItem.dataIndex == null) return;
+    const item = visibleData[lineItem.dataIndex];
+    if (item) hideItem(item.label);
+  };
+
   const handlePieClick = (
-    _event: React.MouseEvent,
-    itemIdentifier: { dataIndex: number },
+    _event: React.MouseEvent<SVGPathElement>,
+    pieItem: PieItemIdentifier,
+    _item: DefaultizedPieValueType,
   ) => {
     if (!filterable) return;
-    const item = visibleData[itemIdentifier.dataIndex];
+    const item = visibleData[pieItem.dataIndex];
     if (item) hideItem(item.label);
   };
 
@@ -225,6 +237,7 @@ export function InteractiveChart({
                 showMark: visibleData.length <= 30,
               },
             ]}
+            onMarkClick={handleLineMarkClick}
             margin={{
               left: 50,
               right: 20,
