@@ -48,7 +48,7 @@ dev = [
     "vulture==2.14",
     "pydub==0.25.1",
     "radon==5.1.0",
-    "import-linter==2.6",
+    "import-linter==2.10",
     "types-PyYAML==6.0.12.20250915",
     "types-requests==2.32.4.20260107",
     "mcp>=1.0.0",
