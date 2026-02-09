@@ -440,7 +440,7 @@ def analyze_project_api_coverage(
     Filter modes: 'used', 'unused', or None for all endpoints.
     """
     result = analyze_project_api_coverage_impl(
-        filter_mode=filter_mode, route_path=route_path, config=_config
+        filter_mode=filter_mode, route_path=route_path, config=_config, project_root=ROOT
     )
     return wrap_mcp_result(
         result,

@@ -74,6 +74,7 @@ def scan_frontend_usage(
     file_extensions: list[str] | None = None,
     endpoint_pattern: re.Pattern | None = None,
     template_pattern: re.Pattern | None = None,
+    project_root: Path | None = None,
 ) -> tuple[dict[str, list[tuple[str, int]]], list[str]]:
     r"""Scan frontend files for API endpoint usage.
 
@@ -82,6 +83,7 @@ def scan_frontend_usage(
         file_extensions: List of file extensions to scan (default: [\"ts\"])
         endpoint_pattern: Regex pattern for endpoint strings (default: /api/...)
         template_pattern: Regex pattern for template literals (default: `/api/...`)
+        project_root: Path to project root for relative path computation. Defaults to ROOT.
 
     Returns:
         Tuple of (usage_map, errors) where:
@@ -89,6 +91,8 @@ def scan_frontend_usage(
         - errors: List of error messages for files that couldn't be scanned
 
     """
+    if project_root is None:
+        project_root = ROOT
     if file_extensions is None:
         file_extensions = ["ts"]
     if endpoint_pattern is None:
@@ -112,15 +116,15 @@ def scan_frontend_usage(
                 for line_num, line in enumerate(lines, start=1):
                     for match in endpoint_pattern.finditer(line):
                         endpoint = match.group(1).split("?")[0]
-                        rel_path = ts_file.relative_to(ROOT).as_posix()
+                        rel_path = ts_file.relative_to(project_root).as_posix()
                         usage_map[endpoint].append((rel_path, line_num))
                     for match in template_pattern.finditer(line):
                         endpoint = match.group(1)
                         endpoint_base = re.sub(r"\$\{[^}]+\}", "{param}", endpoint).split("?")[0]
-                        rel_path = ts_file.relative_to(ROOT).as_posix()
+                        rel_path = ts_file.relative_to(project_root).as_posix()
                         usage_map[endpoint_base].append((rel_path, line_num))
             except (UnicodeDecodeError, OSError) as e:
-                rel_path = ts_file.relative_to(ROOT).as_posix()
+                rel_path = ts_file.relative_to(project_root).as_posix()
                 errors.append(f"{rel_path}: {type(e).__name__}: {e}")
     return dict(usage_map), errors
 
@@ -132,7 +136,10 @@ def normalize_path(path: str) -> str:
 
 
 def analyze_project_api_coverage(
-    filter_mode: str | None = None, route_path: str | None = None, config: dict | None = None
+    filter_mode: str | None = None,
+    route_path: str | None = None,
+    config: dict | None = None,
+    project_root: Path | None = None,
 ) -> dict[str, Any]:
     """Check API coverage between backend and frontend.
 
@@ -153,6 +160,7 @@ def analyze_project_api_coverage(
         route_path: Filter to specific route path (e.g., "/api/web/libraries")
         config: Optional config dict. If not provided, loaded from workspace.
             Can be obtained from: load_config(project_root)
+        project_root: Path to project root. Defaults to ROOT constant.
 
     Returns:
         Dict with endpoints, stats, and usage information
@@ -161,9 +169,12 @@ def analyze_project_api_coverage(
             - scan_errors: Optional list of errors during frontend scan
 
     """
+    if project_root is None:
+        project_root = ROOT
+
     # Load config if not provided (dependency injection)
     if config is None:
-        config = load_config(ROOT)
+        config = load_config(project_root)
     frontend_config = get_frontend_config(config)
 
     # Get patterns from config
@@ -171,13 +182,14 @@ def analyze_project_api_coverage(
     endpoint_pattern, template_pattern = _build_endpoint_patterns(api_calls_config)
 
     # Get routes and scan frontend
-    backend_routes = get_backend_routes(ROOT)
-    frontend_dir = ROOT / "frontend" / "src"
+    backend_routes = get_backend_routes(project_root)
+    frontend_dir = project_root / "frontend" / "src"
     frontend_usage, scan_errors = scan_frontend_usage(
         frontend_dir,
         file_extensions=["ts", "tsx", "js", "jsx"],
         endpoint_pattern=endpoint_pattern,
         template_pattern=template_pattern,
+        project_root=project_root,
     )
 
     results = []

@@ -18,8 +18,10 @@ import {
 
 import { CalibrationActions } from "./components/CalibrationActions";
 import { CalibrationStatus } from "./components/CalibrationStatus";
+import { ConvergenceCharts } from "./components/ConvergenceCharts";
 import { ConvergenceSummary } from "./components/ConvergenceSummary";
 import { ConvergenceTable } from "./components/ConvergenceTable";
+import { useCalibrationHistory } from "./hooks/useCalibrationHistory";
 import { useCalibrationStatus } from "./hooks/useCalibrationStatus";
 import { useConvergenceStatus } from "./hooks/useConvergenceStatus";
 
@@ -41,6 +43,12 @@ export function CalibrationPage() {
     loading: convergenceLoading,
     error: convergenceError,
   } = useConvergenceStatus();
+
+  const {
+    data: historyData,
+    loading: historyLoading,
+    error: historyError,
+  } = useCalibrationHistory();
 
   const { isGenerating, progress } = generationState;
 
@@ -104,6 +112,11 @@ export function CalibrationPage() {
               <ConvergenceTable data={convergenceData} />
             </>
           )}
+          <ConvergenceCharts
+            data={historyData}
+            loading={historyLoading}
+            error={historyError}
+          />
           <CalibrationActions
             onGenerate={handleGenerate}
             onApply={handleApply}
