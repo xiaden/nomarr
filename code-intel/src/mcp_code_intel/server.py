@@ -56,10 +56,9 @@ from pydantic import BaseModel, Field
 
 from .helpers.config_loader import load_config
 from .helpers.mcp_output_helper import (
-    format_file_link,
-    format_file_range_link,
     wrap_mcp_result,
     wrap_mcp_result_with_file_link,
+    wrap_mcp_result_with_multiple_file_links,
 )
 from .tools.analyze_project_api_coverage import (
     analyze_project_api_coverage as analyze_project_api_coverage_impl,
@@ -288,6 +287,14 @@ def read_module_api(
 ) -> CallToolResult:
     """Discover the entire API of any Python module."""
     result = read_module_api_impl(module_name)
+    file_path = result.get("file")
+    if file_path:
+        return wrap_mcp_result_with_file_link(
+            result,
+            file_path=file_path,
+            action="Read API",
+            tool_name="read_module_api",
+        )
     return wrap_mcp_result(
         result,
         user_summary=f"Read API for module: {module_name}",
@@ -313,6 +320,18 @@ def read_module_source(
         - symbol_start_line/symbol_end_line: Actual symbol boundaries (use for replacements)
     """
     result = read_module_source_impl(qualified_name, large_context=large_context)
+    file_path = result.get("file")
+    start_line = result.get("symbol_start_line")
+    end_line = result.get("symbol_end_line")
+    if file_path and start_line:
+        return wrap_mcp_result_with_file_link(
+            result,
+            file_path=file_path,
+            start_line=start_line,
+            end_line=end_line,
+            action="Read source",
+            tool_name="read_module_source",
+        )
     return wrap_mcp_result(
         result,
         user_summary=f"Read source: {qualified_name}",
@@ -357,6 +376,20 @@ def locate_module_symbol(
     Supports partially qualified names for scoping (e.g., 'services.ConfigService').
     """
     result = locate_module_symbol_impl(symbol_name)
+    matches = result.get("matches", [])
+    if matches:
+        # Build file locations from matches (relative paths resolved to absolute)
+        file_locations = [
+            (ROOT / m["file"], m["line"], m.get("line") + m.get("length", 1) - 1, "Found")
+            for m in matches
+            if m.get("file") and m.get("line")
+        ]
+        if file_locations:
+            return wrap_mcp_result_with_multiple_file_links(
+                result,
+                file_locations=file_locations,
+                tool_name="locate_module_symbol",
+            )
     return wrap_mcp_result(
         result,
         user_summary=f"Located symbol: {symbol_name}",
@@ -379,6 +412,17 @@ def trace_module_calls(
     Shows every nomarr function it calls, recursively, with file paths and line numbers.
     """
     result = trace_module_calls_impl(function, ROOT, config=_config)
+    tree = result.get("tree", {})
+    file_path = tree.get("file")
+    line = tree.get("line")
+    if file_path and line:
+        return wrap_mcp_result_with_file_link(
+            result,
+            file_path=ROOT / file_path,
+            start_line=line,
+            action="Traced calls from",
+            tool_name="trace_module_calls",
+        )
     return wrap_mcp_result(
         result,
         user_summary=f"Traced calls from: {function}",
@@ -418,6 +462,17 @@ def trace_project_endpoint(
     Use this for interface endpoints to get the complete picture without manual DI resolution.
     """
     result = trace_project_endpoint_impl(endpoint, ROOT, config=_config)
+    ep = result.get("endpoint", {})
+    file_path = ep.get("file")
+    line = ep.get("line")
+    if file_path and line:
+        return wrap_mcp_result_with_file_link(
+            result,
+            file_path=ROOT / file_path,
+            start_line=line,
+            action="Traced endpoint",
+            tool_name="trace_project_endpoint",
+        )
     return wrap_mcp_result(
         result,
         user_summary=f"Traced endpoint: {endpoint}",
@@ -561,10 +616,23 @@ def search_file_text(
 ) -> CallToolResult:
     """Find exact text in non-Python files (configs, frontend, logs) and show 2-line context."""
     result = search_file_text_impl(file_path, search_string, ROOT)
-    file_link = format_file_link(file_path, ROOT)
-    return wrap_mcp_result(
+    matches = result.get("matches", [])
+    if matches:
+        file_locations: list[tuple[str | Path, int | None, int | None, str]] = [
+            (file_path, m.get("line_number"), m.get("line_number"), f"Found '{search_string}'")
+            for m in matches
+            if m.get("line_number")
+        ]
+        if file_locations:
+            return wrap_mcp_result_with_multiple_file_links(
+                result,
+                file_locations=file_locations,
+                tool_name="search_file_text",
+            )
+    return wrap_mcp_result_with_file_link(
         result,
-        user_summary=f"Searched {file_link} for: {search_string}",
+        file_path=file_path,
+        action="Searched",
         tool_name="search_file_text",
     )
 
@@ -594,10 +662,10 @@ def edit_file_replace_string(
     suggests using search_file_text first to verify matches.
     """
     result = edit_file_replace_string_impl(file_path, replacements, ROOT)
-    file_link = format_file_link(file_path, ROOT)
-    return wrap_mcp_result(
+    return wrap_mcp_result_with_file_link(
         result,
-        user_summary=f"Edited {file_link}: {len(replacements)} replacements",
+        file_path=file_path,
+        action=f"Edited ({len(replacements)} replacements)",
         tool_name="edit_file_replace_string",
     )
 
@@ -622,10 +690,23 @@ def edit_file_move_text(
     result = edit_file_move_text_impl(
         file_path, source_start, source_end, target_line, ROOT, target_file
     )
-    file_link = format_file_link(file_path, ROOT)
-    return wrap_mcp_result(
+    if target_file:
+        # Cross-file move: show both source and target
+        file_locations: list[tuple[str | Path, int | None, int | None, str]] = [
+            (file_path, source_start, source_end, "Moved from"),
+            (target_file, target_line, target_line, "Moved to"),
+        ]
+        return wrap_mcp_result_with_multiple_file_links(
+            result,
+            file_locations=file_locations,
+            tool_name="edit_file_move_text",
+        )
+    return wrap_mcp_result_with_file_link(
         result,
-        user_summary=f"Moved lines {source_start}-{source_end} in {file_link}",
+        file_path=file_path,
+        start_line=source_start,
+        end_line=source_end,
+        action="Moved lines",
         tool_name="edit_file_move_text",
     )
 
@@ -650,9 +731,13 @@ def edit_file_replace_line_range(
     Returns context showing 2 lines before/after replaced region.
     """
     result = edit_file_replace_line_range_impl(file_path, start_line, end_line, new_content, ROOT)
-    file_link = format_file_range_link(file_path, start_line, end_line, ROOT)
-    return wrap_mcp_result(
-        result, user_summary=f"Replaced {file_link}", tool_name="edit_file_replace_line_range"
+    return wrap_mcp_result_with_file_link(
+        result,
+        file_path=file_path,
+        start_line=start_line,
+        end_line=end_line,
+        action="Replaced lines",
+        tool_name="edit_file_replace_line_range",
     )
 
 
@@ -673,6 +758,16 @@ def plan_read(
     Returns phases with steps, completion status, notes, and next step info.
     """
     result = plan_read_impl(plan_name, workspace_root=ROOT)
+    # Construct plan file path
+    plan_file = plan_name if plan_name.endswith(".md") else f"{plan_name}.md"
+    plan_path = ROOT / "plans" / plan_file
+    if plan_path.exists():
+        return wrap_mcp_result_with_file_link(
+            result,
+            file_path=plan_path,
+            action="Read plan",
+            tool_name="plan_read",
+        )
     return wrap_mcp_result(
         result,
         user_summary=f"Read plan: {plan_name}",
@@ -701,6 +796,16 @@ def plan_complete_step(
     # Convert Pydantic model to dict for the implementation
     ann_dict = annotation.model_dump() if annotation else None
     result = plan_complete_step_impl(plan_name, step_id, workspace_root=ROOT, annotation=ann_dict)
+    # Construct plan file path
+    plan_file = plan_name if plan_name.endswith(".md") else f"{plan_name}.md"
+    plan_path = ROOT / "plans" / plan_file
+    if plan_path.exists():
+        return wrap_mcp_result_with_file_link(
+            result,
+            file_path=plan_path,
+            action=f"Completed step {step_id}",
+            tool_name="plan_complete_step",
+        )
     return wrap_mcp_result(
         result,
         user_summary=f"Completed step {step_id} in {plan_name}",
@@ -722,8 +827,24 @@ def edit_file_create(
     Returns first 2 + last 2 lines of each created file for validation.
     """
     result = edit_file_create_impl(files, workspace_root=ROOT)
-    user_summary = f"Created {len(files)} file(s)"
-    return wrap_mcp_result(result, user_summary, tool_name="edit_file_create")
+    applied_ops = result.get("applied_ops", [])
+    if applied_ops:
+        file_locations: list[tuple[str | Path, int | None, int | None, str]] = [
+            (op["filepath"], 1, op.get("end_line"), "Created")
+            for op in applied_ops
+            if op.get("filepath")
+        ]
+        if file_locations:
+            return wrap_mcp_result_with_multiple_file_links(
+                result,
+                file_locations=file_locations,
+                tool_name="edit_file_create",
+            )
+    return wrap_mcp_result(
+        result,
+        user_summary=f"Created {len(files)} file(s)",
+        tool_name="edit_file_create",
+    )
 
 
 @mcp.tool()
@@ -750,8 +871,24 @@ def edit_file_replace_content(
     result = edit_file_replace_content_impl(parsed_ops, workspace_root=ROOT).model_dump(
         exclude_none=True
     )
-    user_summary = f"Replaced content in {len(ops)} file(s)"
-    return wrap_mcp_result(result, user_summary, tool_name="edit_file_replace_content")
+    applied_ops = result.get("applied_ops", [])
+    if applied_ops:
+        file_locations: list[tuple[str | Path, int | None, int | None, str]] = [
+            (op["filepath"], 1, op.get("end_line"), "Replaced")
+            for op in applied_ops
+            if op.get("filepath")
+        ]
+        if file_locations:
+            return wrap_mcp_result_with_multiple_file_links(
+                result,
+                file_locations=file_locations,
+                tool_name="edit_file_replace_content",
+            )
+    return wrap_mcp_result(
+        result,
+        user_summary=f"Replaced content in {len(ops)} file(s)",
+        tool_name="edit_file_replace_content",
+    )
 
 
 @mcp.tool()
@@ -773,8 +910,24 @@ def edit_file_insert_text(
     For same-file ops: coordinates refer to ORIGINAL state, applied bottom-to-top.
     """
     result = edit_file_insert_text_impl(ops, workspace_root=ROOT)
-    user_summary = f"Inserted text in {len(ops)} location(s)"
-    return wrap_mcp_result(result, user_summary, tool_name="edit_file_insert_text")
+    applied_ops = result.get("applied_ops", [])
+    if applied_ops:
+        file_locations: list[tuple[str | Path, int | None, int | None, str]] = [
+            (op["filepath"], op.get("start_line"), op.get("end_line"), "Inserted")
+            for op in applied_ops
+            if op.get("filepath")
+        ]
+        if file_locations:
+            return wrap_mcp_result_with_multiple_file_links(
+                result,
+                file_locations=file_locations,
+                tool_name="edit_file_insert_text",
+            )
+    return wrap_mcp_result(
+        result,
+        user_summary=f"Inserted text in {len(ops)} location(s)",
+        tool_name="edit_file_insert_text",
+    )
 
 
 @mcp.tool()
@@ -793,8 +946,24 @@ def edit_file_copy_paste_text(
     For same-file targets: coordinates refer to ORIGINAL state.
     """
     result = edit_file_copy_paste_text_impl(ops, workspace_root=ROOT)
-    user_summary = f"Copied and pasted text in {len(ops)} operation(s)"
-    return wrap_mcp_result(result, user_summary, tool_name="edit_file_copy_paste_text")
+    applied_ops = result.get("applied_ops", [])
+    if applied_ops:
+        file_locations: list[tuple[str | Path, int | None, int | None, str]] = [
+            (op["filepath"], op.get("start_line"), op.get("end_line"), "Pasted")
+            for op in applied_ops
+            if op.get("filepath")
+        ]
+        if file_locations:
+            return wrap_mcp_result_with_multiple_file_links(
+                result,
+                file_locations=file_locations,
+                tool_name="edit_file_copy_paste_text",
+            )
+    return wrap_mcp_result(
+        result,
+        user_summary=f"Copied and pasted text in {len(ops)} operation(s)",
+        tool_name="edit_file_copy_paste_text",
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────

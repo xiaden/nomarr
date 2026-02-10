@@ -1,39 +1,52 @@
 /**
  * Navidrome Playlist Generator tab.
- * Allows building Smart Playlist queries and generating .nsp files.
+ * Visual rule builder for Smart Playlist queries with .nsp generation.
  */
 
 import {
-    Box,
-    Button,
-    Stack,
-    TextField,
-    Typography,
+  Box,
+  Button,
+  Stack,
+  TextField,
+  Typography,
 } from "@mui/material";
 
+import type { PlaylistPreviewResponse } from "@shared/api/navidrome";
 import { ErrorMessage, Panel, SectionHeader } from "@shared/components/ui";
 
+import { useTagMetadata } from "../hooks/useTagMetadata";
+
+import { PreviewTable } from "./PreviewTable";
+import { RuleBuilder } from "./RuleBuilder";
+import type { Rule } from "./RuleRow";
+import type { LogicMode } from "./ruleUtils";
+import { buildQueryString } from "./ruleUtils";
+import { SortPicker } from "./SortPicker";
+
 interface PlaylistTabProps {
-  query: string;
+  rules: Rule[];
+  logic: LogicMode;
   name: string;
   comment: string;
   limit: number | undefined;
   sort: string;
-  preview: Record<string, unknown> | null;
+  preview: PlaylistPreviewResponse | null;
   content: string | null;
   loading: boolean;
   error: string | null;
-  onQueryChange: (value: string) => void;
+  onRulesChange: (rules: Rule[]) => void;
+  onLogicChange: (logic: LogicMode) => void;
   onNameChange: (value: string) => void;
   onCommentChange: (value: string) => void;
   onLimitChange: (value: number | undefined) => void;
   onSortChange: (value: string) => void;
-  onPreview: (e: React.FormEvent) => void;
+  onPreview: () => void;
   onGenerate: () => void;
 }
 
 export function PlaylistTab({
-  query,
+  rules,
+  logic,
   name,
   comment,
   limit,
@@ -42,7 +55,8 @@ export function PlaylistTab({
   content,
   loading,
   error,
-  onQueryChange,
+  onRulesChange,
+  onLogicChange,
   onNameChange,
   onCommentChange,
   onLimitChange,
@@ -50,6 +64,11 @@ export function PlaylistTab({
   onPreview,
   onGenerate,
 }: PlaylistTabProps) {
+  const { numericTags, stringTags, loading: tagsLoading } = useTagMetadata();
+
+  const assembledQuery = buildQueryString(rules, logic);
+  const hasValidRules = assembledQuery.length > 0;
+
   const handleDownload = () => {
     if (content) {
       const blob = new Blob([content], { type: "text/plain" });
@@ -66,118 +85,124 @@ export function PlaylistTab({
     <Stack spacing={2.5}>
       <Panel>
         <SectionHeader title="Smart Playlist Generator" />
-        <Box component="form" onSubmit={onPreview}>
-          <Stack spacing={2}>
+        <Stack spacing={2}>
+          {/* Rule builder */}
+          <RuleBuilder
+            rules={rules}
+            logic={logic}
+            numericTags={numericTags}
+            stringTags={stringTags}
+            onRulesChange={onRulesChange}
+            onLogicChange={onLogicChange}
+          />
+
+          {tagsLoading && (
+            <Typography variant="caption" color="text.secondary">
+              Loading tag metadata…
+            </Typography>
+          )}
+
+          {/* Assembled query (read-only) */}
+          {assembledQuery && (
+            <TextField
+              value={assembledQuery}
+              label="Generated query"
+              size="small"
+              fullWidth
+              slotProps={{
+                input: {
+                  readOnly: true,
+                  sx: { fontFamily: "monospace", fontSize: "0.8rem" },
+                },
+              }}
+            />
+          )}
+
+          {/* Playlist metadata */}
+          <Box>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5, fontWeight: 600 }}>
+              Playlist Name *
+            </Typography>
+            <TextField
+              value={name}
+              onChange={(e) => onNameChange(e.target.value)}
+              disabled={loading}
+              required
+              fullWidth
+              size="small"
+            />
+          </Box>
+          <Box>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5, fontWeight: 600 }}>
+              Comment
+            </Typography>
+            <TextField
+              value={comment}
+              onChange={(e) => onCommentChange(e.target.value)}
+              disabled={loading}
+              fullWidth
+              size="small"
+            />
+          </Box>
+
+          {/* Sort + Limit row */}
+          <Stack direction="row" spacing={2} alignItems="flex-end">
             <Box>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5, fontWeight: 600 }}>
-                Query *
+                Sort
               </Typography>
-              <TextField
-                value={query}
-                onChange={(e) => onQueryChange(e.target.value)}
-                placeholder="e.g., tag:nom_happy > 0.8"
-                multiline
-                rows={3}
-                disabled={loading}
-                required
-                fullWidth
-                InputProps={{
-                  sx: { fontFamily: "monospace", fontSize: "0.875rem" },
-                }}
-              />
+              <SortPicker value={sort} onChange={onSortChange} />
             </Box>
             <Box>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5, fontWeight: 600 }}>
-                Playlist Name *
+                Limit
               </Typography>
               <TextField
-                value={name}
-                onChange={(e) => onNameChange(e.target.value)}
+                type="number"
+                value={limit ?? ""}
+                onChange={(e) =>
+                  onLimitChange(e.target.value ? parseInt(e.target.value) : undefined)
+                }
                 disabled={loading}
-                required
-                fullWidth
+                placeholder="Optional"
+                size="small"
+                sx={{ width: 120 }}
               />
             </Box>
-            <Box>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5, fontWeight: 600 }}>
-                Comment
-              </Typography>
-              <TextField
-                value={comment}
-                onChange={(e) => onCommentChange(e.target.value)}
-                disabled={loading}
-                fullWidth
-              />
-            </Box>
-            <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1.25 }}>
-              <Box>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5, fontWeight: 600 }}>
-                  Limit
-                </Typography>
-                <TextField
-                  type="number"
-                  value={limit ?? ""}
-                  onChange={(e) =>
-                    onLimitChange(e.target.value ? parseInt(e.target.value) : undefined)
-                  }
-                  disabled={loading}
-                  placeholder="Optional"
-                  fullWidth
-                />
-              </Box>
-              <Box>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5, fontWeight: 600 }}>
-                  Sort
-                </Typography>
-                <TextField
-                  value={sort}
-                  onChange={(e) => onSortChange(e.target.value)}
-                  disabled={loading}
-                  placeholder="Optional"
-                  fullWidth
-                />
-              </Box>
-            </Box>
-            <Stack direction="row" spacing={1.25}>
-              <Button type="submit" variant="contained" disabled={loading} fullWidth>
-                {loading ? "Loading..." : "Preview Query"}
-              </Button>
-              <Button
-                type="button"
-                onClick={onGenerate}
-                variant="contained"
-                disabled={loading}
-                fullWidth
-              >
-                {loading ? "Generating..." : "Generate .nsp"}
-              </Button>
-            </Stack>
           </Stack>
-        </Box>
+
+          {/* Action buttons */}
+          <Stack direction="row" spacing={1.25}>
+            <Button
+              variant="contained"
+              disabled={loading || !hasValidRules}
+              onClick={onPreview}
+              fullWidth
+            >
+              {loading ? "Loading…" : "Preview Query"}
+            </Button>
+            <Button
+              variant="contained"
+              disabled={loading || !hasValidRules}
+              onClick={onGenerate}
+              fullWidth
+            >
+              {loading ? "Generating…" : "Generate .nsp"}
+            </Button>
+          </Stack>
+        </Stack>
         {error && <ErrorMessage>Error: {error}</ErrorMessage>}
       </Panel>
 
+      {/* Preview results */}
       {preview && (
         <Panel>
           <SectionHeader title="Query Preview" />
-          <Box
-            component="pre"
-            sx={{
-              p: 2,
-              bgcolor: "background.default",
-              border: 1,
-              borderColor: "divider",
-              borderRadius: 1,
-              overflow: "auto",
-              fontSize: "0.875rem",
-              fontFamily: "monospace",
-            }}
-          >
-            {JSON.stringify(preview, null, 2)}
-          </Box>
+          <PreviewTable data={preview} />
         </Panel>
       )}
 
+      {/* Generated playlist content */}
       {content && (
         <Panel>
           <SectionHeader title="Generated Playlist (.nsp)" />
@@ -186,9 +211,11 @@ export function PlaylistTab({
             rows={15}
             value={content}
             fullWidth
-            InputProps={{
-              readOnly: true,
-              sx: { fontFamily: "monospace", fontSize: "0.875rem" },
+            slotProps={{
+              input: {
+                readOnly: true,
+                sx: { fontFamily: "monospace", fontSize: "0.875rem" },
+              },
             }}
           />
           <Button onClick={handleDownload} variant="contained" sx={{ mt: 1.25 }}>

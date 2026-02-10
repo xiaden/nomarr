@@ -11,7 +11,10 @@ import {
     previewPlaylist as apiPreviewPlaylist,
     getConfig,
     getPreview,
+    type PlaylistPreviewResponse,
 } from "../../../shared/api/navidrome";
+import type { Rule } from "../components/RuleRow";
+import { buildQueryString, createRule, type LogicMode } from "../components/ruleUtils";
 
 interface TagPreview {
   tag_key: string;
@@ -30,13 +33,14 @@ export function useNavidromeData() {
   const [configLoading, setConfigLoading] = useState(false);
   const [configError, setConfigError] = useState<string | null>(null);
 
-  // Playlist state
-  const [playlistQuery, setPlaylistQuery] = useState("");
+  // Playlist state — structured rules instead of raw query
+  const [playlistRules, setPlaylistRules] = useState<Rule[]>([createRule()]);
+  const [playlistLogic, setPlaylistLogic] = useState<LogicMode>("all");
   const [playlistName, setPlaylistName] = useState("My Playlist");
   const [playlistComment, setPlaylistComment] = useState("");
   const [playlistLimit, setPlaylistLimit] = useState<number | undefined>(undefined);
   const [playlistSort, setPlaylistSort] = useState("");
-  const [playlistPreview, setPlaylistPreview] = useState<Record<string, unknown> | null>(null);
+  const [playlistPreview, setPlaylistPreview] = useState<PlaylistPreviewResponse | null>(null);
   const [playlistContent, setPlaylistContent] = useState<string | null>(null);
   const [playlistLoading, setPlaylistLoading] = useState(false);
   const [playlistError, setPlaylistError] = useState<string | null>(null);
@@ -69,14 +73,17 @@ export function useNavidromeData() {
   };
 
   // Playlist actions
-  const previewPlaylist = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!playlistQuery.trim()) return;
+  const previewPlaylist = async () => {
+    const query = buildQueryString(playlistRules, playlistLogic);
+    if (!query.trim()) {
+      showError("Add at least one complete rule");
+      return;
+    }
 
     try {
       setPlaylistLoading(true);
       setPlaylistError(null);
-      const data = await apiPreviewPlaylist(playlistQuery, 10);
+      const data = await apiPreviewPlaylist(query, 10);
       setPlaylistPreview(data);
     } catch (err) {
       setPlaylistError(err instanceof Error ? err.message : "Failed to preview playlist");
@@ -86,8 +93,9 @@ export function useNavidromeData() {
   };
 
   const generatePlaylist = async () => {
-    if (!playlistQuery.trim()) {
-      showError("Query is required");
+    const query = buildQueryString(playlistRules, playlistLogic);
+    if (!query.trim()) {
+      showError("Add at least one complete rule");
       return;
     }
     if (!playlistName.trim()) {
@@ -99,7 +107,7 @@ export function useNavidromeData() {
       setPlaylistLoading(true);
       setPlaylistError(null);
       const data = await apiGeneratePlaylist({
-        query: playlistQuery,
+        query,
         playlist_name: playlistName,
         comment: playlistComment,
         limit: playlistLimit,
@@ -120,7 +128,8 @@ export function useNavidromeData() {
     configLoading,
     configError,
     // Playlist state
-    playlistQuery,
+    playlistRules,
+    playlistLogic,
     playlistName,
     playlistComment,
     playlistLimit,
@@ -135,7 +144,8 @@ export function useNavidromeData() {
     // Playlist actions
     previewPlaylist,
     generatePlaylist,
-    setPlaylistQuery,
+    setPlaylistRules,
+    setPlaylistLogic,
     setPlaylistName,
     setPlaylistComment,
     setPlaylistLimit,

@@ -428,6 +428,7 @@ def read_module_api(
             - classes: {name: {bases: [...], methods: {name: {sig, doc?}}, doc?: str}}
             - functions: {name: {sig: str, doc?: str}}
             - constants: {name: value}
+            - file: Source file path (if found)
             - error: Optional error message if file not found or parse failed
 
     """
@@ -440,6 +441,7 @@ def read_module_api(
         return result
 
     is_package = source_path.name == "__init__.py"
+    result["file"] = str(source_path)
 
     # Read and parse source
     try:
