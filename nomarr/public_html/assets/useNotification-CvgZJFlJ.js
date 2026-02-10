@@ -1,0 +1,1 @@
+import{Dn as e,K as t,Tn as n}from"./index-GbBoqRhg.js";var r=e(n(),1);function i(){let e=(0,r.useContext)(t);if(!e)throw Error(`useNotification must be used within NotificationProvider`);return e}export{i as t};
