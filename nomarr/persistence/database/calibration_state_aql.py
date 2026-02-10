@@ -158,6 +158,7 @@ class CalibrationStateOperations:
               LET first_underscore = FIND_FIRST(rel_without_prefix, "_")
               LET label = first_underscore >= 0 ? SUBSTRING(rel_without_prefix, 0, first_underscore) : rel_without_prefix
               FILTER label IN @labels
+              SORT RAND()
               LIMIT @limit
 
               LET value = tag.value
