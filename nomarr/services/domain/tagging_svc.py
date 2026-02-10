@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import asdict
+import threading
+from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Any
 
 from nomarr.helpers.dto.calibration_dto import (
@@ -13,6 +14,7 @@ from nomarr.helpers.dto.calibration_dto import (
 )
 from nomarr.helpers.dto.library_dto import ReconcileTagsResult
 from nomarr.helpers.dto.recalibration_dto import ApplyCalibrationResult
+from nomarr.workflows.calibration.apply_calibration_wf import apply_calibration_wf
 from nomarr.workflows.calibration.write_calibrated_tags_wf import write_calibrated_tags_wf
 from nomarr.workflows.library.file_tags_io_wf import read_file_tags_workflow, remove_file_tags_workflow
 from nomarr.workflows.processing.write_file_tags_wf import write_file_tags_workflow
@@ -23,6 +25,24 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class TaggingServiceConfig:
+    """Configuration for TaggingService.
+
+    Attributes:
+        models_dir: Path to ML models directory
+        namespace: Tag namespace (e.g., "nom")
+        version_tag_key: Metadata key for version tracking
+        calibrate_heads: Whether to apply calibration heads
+
+    """
+
+    models_dir: str
+    namespace: str
+    version_tag_key: str
+    calibrate_heads: bool = False
 
 
 class TaggingService:
@@ -38,16 +58,30 @@ class TaggingService:
     - Threading/background execution should be in workflow layer, not service layer
     """
 
-    def __init__(self, database: Database, library_service: LibraryService | None = None) -> None:
+    def __init__(
+        self,
+        database: Database,
+        cfg: TaggingServiceConfig,
+        library_service: LibraryService | None = None,
+    ) -> None:
         """Initialize the tagging service.
 
         Args:
             database: Database instance for persistence operations
+            cfg: Service configuration (models_dir, namespace, etc.)
             library_service: LibraryService instance (optional, for library operations)
 
         """
         self.db = database
+        self.cfg = cfg
         self.library_service = library_service
+
+        # Background apply state — explicit lifecycle: idle → running → completed/failed
+        self._apply_thread: threading.Thread | None = None
+        self._apply_result: ApplyCalibrationResult | None = None
+        self._apply_error: Exception | None = None
+        self._apply_progress_lock = threading.Lock()
+        self._apply_progress: dict[str, Any] = {}
 
     @property
     def namespace(self) -> str:
@@ -57,59 +91,32 @@ class TaggingService:
             raise ValueError(msg)
         return self.library_service.cfg.namespace
 
-    def tag_file(
-        self,
-        file_path: str,
-        models_dir: str,
-        namespace: str,
-        version_tag_key: str,
-        calibrate_heads: bool,
-    ) -> None:
+    def tag_file(self, file_path: str) -> None:
         """Write calibrated tags to a single file.
 
         Args:
             file_path: Absolute path to the audio file
-            models_dir: Path to models directory
-            namespace: Tag namespace (e.g., "nom")
-            version_tag_key: Metadata key for version tracking
-            calibrate_heads: Whether to use calibration
-
-        Raises:
-            ValueError: If file doesn't have existing tags
 
         """
-
         params = WriteCalibratedTagsParams(
             file_path=file_path,
-            models_dir=models_dir,
-            namespace=namespace,
-            version_tag_key=version_tag_key,
-            calibrate_heads=calibrate_heads,
+            models_dir=self.cfg.models_dir,
+            namespace=self.cfg.namespace,
+            version_tag_key=self.cfg.version_tag_key,
+            calibrate_heads=self.cfg.calibrate_heads,
         )
 
         write_calibrated_tags_wf(db=self.db, params=params)
         logger.info(f"Wrote calibrated tags: {file_path}")
 
-    def tag_library(
-        self,
-        models_dir: str,
-        namespace: str,
-        version_tag_key: str,
-        calibrate_heads: bool,
-    ) -> ApplyCalibrationResult:
+    def tag_library(self) -> ApplyCalibrationResult:
         """Write calibrated tags to all TAGGED library files.
 
-        This requires files that already have numeric tags in the database.
-        It applies calibration to existing raw scores without re-running ML inference.
-
-        Args:
-            models_dir: Path to models directory
-            namespace: Tag namespace (e.g., "nom")
-            version_tag_key: Metadata key for version tracking
-            calibrate_heads: Whether to use calibration
+        Delegates to apply_calibration_wf for the actual iteration.
+        Progress updates are forwarded via self._update_apply_progress.
 
         Returns:
-            ApplyCalibrationResult with processed count and message
+            ApplyCalibrationResult with processed/failed counts
 
         Raises:
             ValueError: If library_service not configured
@@ -122,35 +129,151 @@ class TaggingService:
         # Get only TAGGED library file paths (needs existing tags)
         paths = self.library_service.get_tagged_library_paths()
 
-        if not paths:
-            return ApplyCalibrationResult(
-                queued=0,  # Keep field name for DTO compatibility
-                message="No tagged files found. Run tagging first.",
-            )
-
-        logger.info(f"Writing calibrated tags to {len(paths)} files...")
-
-        success_count = 0
-        for file_path in paths:
-            try:
-                params = WriteCalibratedTagsParams(
-                    file_path=file_path,
-                    models_dir=models_dir,
-                    namespace=namespace,
-                    version_tag_key=version_tag_key,
-                    calibrate_heads=calibrate_heads,
-                )
-                write_calibrated_tags_wf(db=self.db, params=params)
-                success_count += 1
-            except Exception as e:
-                logger.warning(f"Failed to write calibrated tags for {file_path}: {e}")
-
-        logger.info(f"Wrote calibrated tags: {success_count}/{len(paths)} files")
-
-        return ApplyCalibrationResult(
-            queued=success_count,  # Keep field name for DTO compatibility
-            message=f"Wrote calibrated tags to {success_count}/{len(paths)} files",
+        return apply_calibration_wf(
+            db=self.db,
+            paths=paths,
+            models_dir=self.cfg.models_dir,
+            namespace=self.cfg.namespace,
+            version_tag_key=self.cfg.version_tag_key,
+            calibrate_heads=self.cfg.calibrate_heads,
+            on_progress=self._update_apply_progress,
         )
+
+    # -- Background apply threading infrastructure --
+
+    def start_apply_calibration_background(self) -> None:
+        """Start calibration apply in background thread.
+
+        Non-blocking: returns immediately. Poll with is_apply_running() and
+        get_apply_status() / get_apply_progress().
+
+        Uses configuration from TaggingServiceConfig for models_dir, namespace, etc.
+
+        Note: Single-process only. Thread state is in-memory and will not survive
+        worker restarts, multiple uvicorn workers, or horizontal scaling.
+
+        """
+        if self._apply_thread and self._apply_thread.is_alive():
+            logger.warning("[TaggingService] Apply already running")
+            return
+
+        # Reset state for new run (clears previous completed/failed state)
+        self._apply_result = None
+        self._apply_error = None
+        self._clear_apply_progress()
+
+        # Start background thread
+        self._apply_thread = threading.Thread(
+            target=self._run_apply_calibration,
+            name="CalibrationApply",
+            daemon=False,
+        )
+        self._apply_thread.start()
+        logger.info("[TaggingService] Started calibration apply in background")
+
+    def _run_apply_calibration(self) -> None:
+        """Background thread: run calibration apply.
+
+        Progress is NOT cleared on completion — the final snapshot remains queryable
+        until the next run starts.
+        """
+        try:
+            logger.info("[TaggingService] Background apply started")
+            result = self.tag_library()
+            self._apply_result = result
+            logger.info(
+                f"[TaggingService] Background apply completed: "
+                f"{result.processed} processed, {result.failed} failed out of {result.total}",
+            )
+        except Exception as e:
+            logger.error(f"[TaggingService] Background apply failed: {e}", exc_info=True)
+            self._apply_error = e
+
+    def _update_apply_progress(self, **kwargs: int | str | None) -> None:
+        """Thread-safe update of apply progress state.
+
+        Args:
+            **kwargs: Progress fields to update. Valid keys:
+                completed_files, total_files, current_file
+
+        """
+        with self._apply_progress_lock:
+            self._apply_progress.update(kwargs)
+
+    def _clear_apply_progress(self) -> None:
+        """Reset apply progress state."""
+        with self._apply_progress_lock:
+            self._apply_progress = {}
+
+    def is_apply_running(self) -> bool:
+        """Check if calibration apply is currently running."""
+        return self._apply_thread is not None and self._apply_thread.is_alive()
+
+    def get_apply_status(self) -> dict[str, Any]:
+        """Get current status of background calibration apply.
+
+        Lifecycle: idle → running → completed | failed.
+        Status remains queryable after completion until next start clears it.
+
+        Returns:
+            {
+              "status": "idle" | "running" | "completed" | "failed",
+              "result": {"processed": int, "failed": int, "total": int, "message": str} | None,
+              "error": str | None,
+            }
+
+        """
+        running = self.is_apply_running()
+
+        if running:
+            status = "running"
+        elif self._apply_error:
+            status = "failed"
+        elif self._apply_result:
+            status = "completed"
+        else:
+            status = "idle"
+
+        error = str(self._apply_error) if self._apply_error else None
+        result_dict = None
+        if self._apply_result:
+            result_dict = {
+                "processed": self._apply_result.processed,
+                "failed": self._apply_result.failed,
+                "total": self._apply_result.total,
+                "message": self._apply_result.message,
+            }
+
+        return {
+            "status": status,
+            "result": result_dict,
+            "error": error,
+        }
+
+    def get_apply_progress(self) -> dict[str, Any]:
+        """Get calibration apply progress.
+
+        Progress snapshot persists after completion until next run.
+
+        Returns:
+            {
+              "total_files": int,
+              "completed_files": int,
+              "current_file": str | None,
+              "is_running": bool,
+            }
+
+        """
+        running = self.is_apply_running()
+        with self._apply_progress_lock:
+            progress = dict(self._apply_progress)
+
+        return {
+            "total_files": progress.get("total_files", 0),
+            "completed_files": progress.get("completed_files", 0),
+            "current_file": progress.get("current_file"),
+            "is_running": running,
+        }
 
     def get_calibration_status(self) -> dict[str, Any]:
         """Get global calibration status with per-library breakdown.

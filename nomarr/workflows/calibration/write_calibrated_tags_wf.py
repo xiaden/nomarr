@@ -344,5 +344,5 @@ def write_calibrated_tags_wf(db: Database, params: WriteCalibratedTagsParams) ->
     _update_db_and_file(db, str(file_id), file_path, namespace, mood_tags, chromaprint)
     global_version = get_calibration_version(db)
     if global_version:
-        update_file_calibration_hash(db, f"library_files/{file_id}", global_version)
+        update_file_calibration_hash(db, str(file_id), global_version)
         logger.debug(f"[calibrated_tags] Updated calibration_hash for {file_path}")

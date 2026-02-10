@@ -29,7 +29,7 @@ from nomarr.services.domain.analytics_svc import AnalyticsService
 from nomarr.services.domain.calibration_svc import CalibrationService
 from nomarr.services.domain.library_svc import LibraryService, LibraryServiceConfig
 from nomarr.services.domain.navidrome_svc import NavidromeService
-from nomarr.services.domain.tagging_svc import TaggingService
+from nomarr.services.domain.tagging_svc import TaggingService, TaggingServiceConfig
 from nomarr.services.infrastructure.config_svc import ConfigService
 from nomarr.services.infrastructure.health_monitor_svc import HealthMonitorService
 from nomarr.services.infrastructure.keys_svc import KeyManagementService
@@ -324,7 +324,16 @@ class Application:
 
         metadata_service = MetadataService(db=self.db)
         self.register_service("metadata", metadata_service)
-        self.register_service("tagging", TaggingService(database=self.db, library_service=self.services.get("library")))
+        self.register_service("tagging", TaggingService(
+            database=self.db,
+            cfg=TaggingServiceConfig(
+                models_dir=self.models_dir,
+                namespace=self.namespace,
+                version_tag_key=self.version_tag_key,
+                calibrate_heads=self.calibrate_heads,
+            ),
+            library_service=self.services.get("library"),
+        ))
         logger.info("[Application] Initializing discovery-based worker system...")
         processor_config = self._config_service.make_processor_config()
         worker_count = self._config_service.get_worker_count("tagger")

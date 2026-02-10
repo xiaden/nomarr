@@ -57,14 +57,18 @@ class RecalibrationStatusResponse(BaseModel):
 class ApplyCalibrationResponse(BaseModel):
     """Response for apply calibration to library endpoint."""
 
-    queued: int = Field(..., description="Number of files queued for recalibration")
+    processed: int = Field(..., description="Number of files successfully processed")
+    failed: int = Field(..., description="Number of files that failed processing")
+    total: int = Field(..., description="Total files attempted")
     message: str = Field(..., description="Status message")
 
     @classmethod
     def from_dto(cls, dto: ApplyCalibrationResult) -> ApplyCalibrationResponse:
         """Convert ApplyCalibrationResult DTO to Pydantic response model."""
         return cls(
-            queued=dto.queued,
+            processed=dto.processed,
+            failed=dto.failed,
+            total=dto.total,
             message=dto.message,
         )
 

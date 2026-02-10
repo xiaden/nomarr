@@ -21,9 +21,11 @@ class GetStatusResult:
 
 @dataclass
 class ApplyCalibrationResult:
-    """Result from recalibration_service.queue_library_for_recalibration()."""
+    """Result from applying calibration to library files."""
 
-    queued: int
+    processed: int
+    failed: int
+    total: int
     message: str
 
 

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
-from nomarr.interfaces.api.types.calibration_types import ApplyCalibrationResponse, CalibrationRequest
+from nomarr.interfaces.api.types.calibration_types import CalibrationRequest
 from nomarr.interfaces.api.web.dependencies import get_calibration_service, get_tagging_service
 
 logger = logging.getLogger(__name__)
@@ -15,26 +15,57 @@ if TYPE_CHECKING:
     from nomarr.services.domain.tagging_svc import TaggingService
 router = APIRouter(prefix="/calibration", tags=["Calibration"])
 
-@router.post("/apply", dependencies=[Depends(verify_session)])
-async def apply_calibration_to_library(tagging_service: Annotated[Any, Depends(get_tagging_service)]) -> ApplyCalibrationResponse:
-    """Apply calibrated tags to all library files.
-    This updates tier and mood tags by applying calibration to existing raw scores.
+@router.post("/start-apply", dependencies=[Depends(verify_session)])
+async def start_apply_calibration(tagging_service: Annotated["TaggingService", Depends(get_tagging_service)]) -> dict[str, Any]:
+    """Start calibration apply in background thread.
 
-    Note: This is a synchronous operation that may take time for large libraries.
+    Non-blocking: returns immediately. Use GET /apply-status to check progress.
+
+    Returns:
+        {"status": "started"} or {"status": "already_running"}
+
     """
     try:
-        models_dir = "/app/models"
-        namespace = "nom"
-        version_tag_key = "nom_version"
-        calibrate_heads = False
-        result = tagging_service.tag_library(models_dir=models_dir, namespace=namespace, version_tag_key=version_tag_key, calibrate_heads=calibrate_heads)
-        return ApplyCalibrationResponse.from_dto(result)
-    except RuntimeError as e:
-        logger.exception(f"[Web API] Tagging service error: {e}")
-        raise HTTPException(status_code=503, detail=sanitize_exception_message(e, "Tagging service unavailable")) from e
+        if tagging_service.is_apply_running():
+            return {"status": "already_running", "message": "Calibration apply already in progress"}
+
+        tagging_service.start_apply_calibration_background()
+        return {"status": "started", "message": "Calibration apply started in background"}
     except Exception as e:
-        logger.exception("[Web API] Error during calibrated tag application")
-        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to apply calibrated tags")) from e
+        logger.error(f"[Web API] Failed to start calibration apply: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to start calibration apply")) from e
+
+
+@router.get("/apply-status", dependencies=[Depends(verify_session)])
+async def get_apply_calibration_status(tagging_service: Annotated["TaggingService", Depends(get_tagging_service)]) -> dict[str, Any]:
+    """Get status of background calibration apply.
+
+    Returns:
+        {
+          "running": bool,
+          "completed": bool,
+          "error": str | None,
+          "result": {"queued": int, "message": str} | None,
+        }
+
+    """
+    return tagging_service.get_apply_status()
+
+
+@router.get("/apply-progress", dependencies=[Depends(verify_session)])
+async def get_apply_calibration_progress(tagging_service: Annotated["TaggingService", Depends(get_tagging_service)]) -> dict[str, Any]:
+    """Get per-file progress of calibration apply.
+
+    Returns:
+        {
+          "total_files": int,
+          "completed_files": int,
+          "current_file": str | None,
+          "is_running": bool,
+        }
+
+    """
+    return tagging_service.get_apply_progress()
 
 @router.get("/status", dependencies=[Depends(verify_session)])
 async def get_calibration_status(tagging_service: Annotated["TaggingService", Depends(get_tagging_service)]) -> dict[str, Any]:

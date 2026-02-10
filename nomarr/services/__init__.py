@@ -15,6 +15,7 @@ from .domain import (
     NavidromeConfig,
     NavidromeService,
     TaggingService,
+    TaggingServiceConfig,
 )
 
 # Infrastructure services
@@ -90,6 +91,7 @@ __all__ = [
     "NavidromeConfig",
     "NavidromeService",
     "TaggingService",
+    "TaggingServiceConfig",
     "WorkerSystemService",
     "check_missing_calibrations",
     "download_calibrations",
