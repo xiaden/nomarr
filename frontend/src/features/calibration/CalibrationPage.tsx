@@ -30,8 +30,8 @@ export function CalibrationPage() {
     status,
     loading,
     error,
-    actionLoading,
     generationState,
+    applyState,
     handleGenerate,
     handleApply,
     handleUpdateFiles,
@@ -51,6 +51,7 @@ export function CalibrationPage() {
   } = useCalibrationHistory();
 
   const { isGenerating, progress } = generationState;
+  const { isApplying, progress: applyProgress } = applyState;
 
   return (
     <PageContainer title="Calibration">
@@ -66,26 +67,60 @@ export function CalibrationPage() {
               Generating Calibration...
             </Typography>
           </Box>
-          {progress && progress.iteration != null && progress.total_iterations != null && (
-            <>
-              <ProgressBar
-                label={`Iteration ${progress.iteration} of ${progress.total_iterations} (${progress.sample_pct ?? 0}%)`}
-                value={progress.iteration}
-                total={progress.total_iterations}
-              />
-              {progress.current_head && progress.current_head_index != null && (
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                  Processing head {progress.current_head_index}/{progress.total_heads}: {progress.current_head}
-                </Typography>
-              )}
-            </>
-          )}
+          {progress && progress.iteration != null && progress.total_iterations != null && (() => {
+            const headFraction = (progress.current_head_index ?? 0) / (progress.total_heads || 1);
+            const combinedPct = ((progress.iteration - 1 + headFraction) / progress.total_iterations) * 100;
+            return (
+              <>
+                <ProgressBar
+                  label={`Iteration ${progress.iteration}/${progress.total_iterations} · Head ${progress.current_head_index ?? 0}/${progress.total_heads} (${progress.sample_pct ?? 0}% of files)`}
+                  value={Math.round(combinedPct)}
+                  percentage={combinedPct}
+                />
+                {progress.current_head && (
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                    Processing: {progress.current_head}
+                  </Typography>
+                )}
+              </>
+            );
+          })()}
           {progress && progress.iteration == null && progress.total_heads > 0 && (
             <ProgressBar
               label={`Processing heads`}
               value={progress.completed_heads}
               total={progress.total_heads}
             />
+          )}
+        </Panel>
+      )}
+
+      {/* Apply progress panel */}
+      {isApplying && (
+        <Panel sx={{ mb: 2.5 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 2 }}>
+            <CircularProgress size={20} />
+            <Typography variant="subtitle1" fontWeight={500}>
+              Applying Calibration...
+            </Typography>
+          </Box>
+          {applyProgress && applyProgress.total_files > 0 && (
+            <>
+              <ProgressBar
+                label={`${applyProgress.completed_files} / ${applyProgress.total_files} files`}
+                value={applyProgress.completed_files}
+                total={applyProgress.total_files}
+              />
+              {applyProgress.current_file && (
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ mt: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                >
+                  {applyProgress.current_file}
+                </Typography>
+              )}
+            </>
           )}
         </Panel>
       )}
@@ -121,7 +156,7 @@ export function CalibrationPage() {
             onGenerate={handleGenerate}
             onApply={handleApply}
             onUpdateFiles={handleUpdateFiles}
-            actionLoading={actionLoading || isGenerating}
+            actionLoading={isGenerating || isApplying}
           />
         </Stack>
       )}

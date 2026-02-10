@@ -43,15 +43,49 @@ export async function generate(
 }
 
 export interface ApplyCalibrationResponse {
-  queued: number;
+  processed: number;
+  failed: number;
+  total: number;
   message: string;
 }
 
+export interface StartApplyResponse {
+  status: "started" | "already_running";
+  message: string;
+}
+
+export interface ApplyStatus {
+  status: "idle" | "running" | "completed" | "failed";
+  result: ApplyCalibrationResponse | null;
+  error: string | null;
+}
+
+export interface ApplyProgress {
+  total_files: number;
+  completed_files: number;
+  current_file: string | null;
+  is_running: boolean;
+}
+
 /**
- * Apply calibration to entire library (queue recalibration jobs).
+ * Start calibration apply in background. Returns immediately.
  */
-export async function apply(): Promise<ApplyCalibrationResponse> {
-  return post("/api/web/calibration/apply");
+export async function startApplyCalibration(): Promise<StartApplyResponse> {
+  return post("/api/web/calibration/start-apply");
+}
+
+/**
+ * Get status of background calibration apply.
+ */
+export async function getApplyStatus(): Promise<ApplyStatus> {
+  return get("/api/web/calibration/apply-status");
+}
+
+/**
+ * Get per-file progress of calibration apply.
+ */
+export async function getApplyProgress(): Promise<ApplyProgress> {
+  return get("/api/web/calibration/apply-progress");
 }
 
 export interface LibraryCalibrationStatus {

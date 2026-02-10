@@ -8,8 +8,12 @@ import { useEffect, useState } from "react";
 import { useConfirmDialog } from "../../../hooks/useConfirmDialog";
 import { useNotification } from "../../../hooks/useNotification";
 import type { CalibrationStatus } from "../../../shared/api/calibration";
-import { apply, getStatus } from "../../../shared/api/calibration";
+import { getStatus } from "../../../shared/api/calibration";
 
+import {
+  useCalibrationApply,
+  type CalibrationApplyState,
+} from "./useCalibrationApply";
 import {
   useHistogramCalibrationGeneration,
   type CalibrationGenerationState,
@@ -22,7 +26,6 @@ export function useCalibrationStatus() {
   const [status, setStatus] = useState<CalibrationStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [actionLoading, setActionLoading] = useState(false);
 
   // Background calibration generation hook
   const {
@@ -30,6 +33,13 @@ export function useCalibrationStatus() {
     startGeneration,
     reset: resetGeneration,
   } = useHistogramCalibrationGeneration();
+
+  // Background calibration apply hook
+  const {
+    state: applyState,
+    startApply,
+    reset: resetApply,
+  } = useCalibrationApply();
 
   const loadStatus = async () => {
     try {
@@ -73,6 +83,29 @@ export function useCalibrationStatus() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [generationState.completed]);
 
+  // Watch for apply completion and show notifications
+  useEffect(() => {
+    if (!applyState.completed) return;
+
+    if (applyState.error) {
+      showError(`Calibration apply failed: ${applyState.error}`);
+      resetApply();
+      return;
+    }
+
+    if (applyState.result) {
+      const { processed, failed, total } = applyState.result;
+      let msg = `Applied calibration to ${processed}/${total} files`;
+      if (failed > 0) {
+        msg += ` (${failed} failed)`;
+      }
+      showSuccess(msg);
+      resetApply();
+      loadStatus(); // Refresh status after apply completes
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applyState.completed]);
+
   const handleGenerate = async () => {
     const confirmed = await confirm({
       title: "Generate Calibration?",
@@ -91,24 +124,14 @@ export function useCalibrationStatus() {
     const confirmed = await confirm({
       title: "Apply Calibration?",
       message:
-        "Apply calibration to entire library? This will queue all files for reprocessing.",
+        "Apply calibration to entire library? This will reprocess all files with current calibration values.",
       confirmLabel: "Apply",
       severity: "warning",
     });
     if (!confirmed) return;
 
-    try {
-      setActionLoading(true);
-      const result = await apply();
-      showSuccess(`Queued ${result.queued} files for recalibration`);
-      await loadStatus();
-    } catch (err) {
-      showError(
-        err instanceof Error ? err.message : "Failed to apply calibration"
-      );
-    } finally {
-      setActionLoading(false);
-    }
+    // Start background apply (non-blocking)
+    await startApply();
   };
 
   const handleUpdateFiles = () => {
@@ -119,9 +142,10 @@ export function useCalibrationStatus() {
     status,
     loading,
     error,
-    actionLoading,
     // Generation state for progress UI
     generationState,
+    // Apply state for progress UI
+    applyState,
     handleGenerate,
     handleApply,
     handleUpdateFiles,
@@ -130,5 +154,6 @@ export function useCalibrationStatus() {
   };
 }
 
-// Re-export type for consumers
+// Re-export types for consumers
 export type { CalibrationGenerationState };
+export type { CalibrationApplyState };
