@@ -2,22 +2,26 @@
  * Navidrome integration page.
  *
  * Features:
- * - Preview tags for Navidrome config
  * - Generate Navidrome TOML configuration
- * - Preview Smart Playlist queries
- * - Generate Smart Playlist (.nsp) files
+ * - Build and generate Smart Playlist (.nsp) files
  */
 
-import { useState } from "react";
+import { ExpandMore } from "@mui/icons-material";
+import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
+  Stack,
+  Typography,
+} from "@mui/material";
 
-import { PageContainer, TabNav } from "@shared/components/ui";
+import { PageContainer } from "@shared/components/ui";
 
 import { ConfigTab } from "./components/ConfigTab";
 import { PlaylistTab } from "./components/PlaylistTab";
 import { useNavidromeData } from "./hooks/useNavidromeData";
 
 export function NavidromePage() {
-  const [activeTab, setActiveTab] = useState<"config" | "playlist">("config");
   const {
     configPreview,
     configText,
@@ -44,48 +48,56 @@ export function NavidromePage() {
   } = useNavidromeData();
 
   return (
-    <PageContainer title="Navidrome Integration">
-      <TabNav
-        tabs={[
-          { id: "config", label: "Config Generator" },
-          { id: "playlist", label: "Playlist Generator" },
-        ]}
-        activeTab={activeTab}
-        onTabChange={(id) => setActiveTab(id as "config" | "playlist")}
-      />
+    <PageContainer title="Navidrome">
+      <Stack spacing={2}>
+        {/* Generate Config accordion */}
+        <Accordion defaultExpanded disableGutters>
+          <AccordionSummary expandIcon={<ExpandMore />}>
+            <Typography variant="h6" sx={{ fontWeight: 600 }}>
+              Generate Config
+            </Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <ConfigTab
+              preview={configPreview}
+              configText={configText}
+              loading={configLoading}
+              error={configError}
+              onLoadPreview={loadConfigPreview}
+              onGenerateConfig={generateConfig}
+            />
+          </AccordionDetails>
+        </Accordion>
 
-      {/* Tab Content */}
-      {activeTab === "config" && (
-        <ConfigTab
-          preview={configPreview}
-          configText={configText}
-          loading={configLoading}
-          error={configError}
-          onLoadPreview={loadConfigPreview}
-          onGenerateConfig={generateConfig}
-        />
-      )}
-
-      {activeTab === "playlist" && (
-        <PlaylistTab
-          query={playlistQuery}
-          name={playlistName}
-          comment={playlistComment}
-          limit={playlistLimit}
-          sort={playlistSort}
-          preview={playlistPreview}
-          content={playlistContent}
-          loading={playlistLoading}
-          error={playlistError}
-          onQueryChange={setPlaylistQuery}
-          onNameChange={setPlaylistName}
-          onCommentChange={setPlaylistComment}
-          onLimitChange={setPlaylistLimit}
-          onSortChange={setPlaylistSort}
-          onPreview={previewPlaylist}
-          onGenerate={generatePlaylist}
-        />
-      )}
+        {/* Playlist Maker accordion */}
+        <Accordion disableGutters>
+          <AccordionSummary expandIcon={<ExpandMore />}>
+            <Typography variant="h6" sx={{ fontWeight: 600 }}>
+              Playlist Maker
+            </Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <PlaylistTab
+              query={playlistQuery}
+              name={playlistName}
+              comment={playlistComment}
+              limit={playlistLimit}
+              sort={playlistSort}
+              preview={playlistPreview}
+              content={playlistContent}
+              loading={playlistLoading}
+              error={playlistError}
+              onQueryChange={setPlaylistQuery}
+              onNameChange={setPlaylistName}
+              onCommentChange={setPlaylistComment}
+              onLimitChange={setPlaylistLimit}
+              onSortChange={setPlaylistSort}
+              onPreview={previewPlaylist}
+              onGenerate={generatePlaylist}
+            />
+          </AccordionDetails>
+        </Accordion>
+      </Stack>
     </PageContainer>
   );
 }

@@ -22,6 +22,7 @@ const navItems: NavItem[] = [
   { path: "/browse", label: "Library" },
   { path: "/insights", label: "Insights" },
   { path: "/calibration", label: "Calibration" },
+  { path: "/navidrome", label: "Navidrome" },
   { path: "/config", label: "Config" },
 ];
 
