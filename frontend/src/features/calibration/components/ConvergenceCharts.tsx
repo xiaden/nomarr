@@ -201,6 +201,7 @@ export function ConvergenceCharts({ data, loading, error }: ConvergenceChartsPro
               tickLabelStyle: { fontSize: 11 },
             }]}
             series={valueSeries}
+            hideLegend
             margin={{ left: 60, right: 20, top: 20, bottom: 50 }}
           />
         </AccordionDetails>
@@ -226,6 +227,7 @@ export function ConvergenceCharts({ data, loading, error }: ConvergenceChartsPro
               tickLabelStyle: { fontSize: 11 },
             }]}
             series={deltaSeries}
+            hideLegend
             margin={{ left: 60, right: 20, top: 20, bottom: 50 }}
           />
         </AccordionDetails>
