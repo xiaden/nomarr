@@ -7,6 +7,9 @@
  *
  * Each head is its own series. X-axis is sample count (n), showing how
  * percentiles stabilize as more data is included (50% → 100%).
+ *
+ * Series are individually toggleable via colored chips. Click a chip to
+ * hide/show that series. Y-axis auto-scales to visible series only.
  */
 
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
@@ -15,11 +18,12 @@ import {
   AccordionDetails,
   AccordionSummary,
   Box,
+  Chip,
   CircularProgress,
   Typography,
 } from "@mui/material";
 import { LineChart } from "@mui/x-charts/LineChart";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import type { CalibrationHistoryData } from "../hooks/useCalibrationHistory";
 
@@ -130,6 +134,59 @@ function buildConvergenceSeries(historyData: CalibrationHistoryData) {
 }
 
 // ──────────────────────────────────────────────────────────────────────
+// Series toggle chips
+// ──────────────────────────────────────────────────────────────────────
+
+interface SeriesTogglesProps {
+  allSeries: LineSeries[];
+  hiddenLabels: Set<string>;
+  onToggle: (label: string) => void;
+  onShowAll: () => void;
+}
+
+function SeriesToggles({ allSeries, hiddenLabels, onToggle, onShowAll }: SeriesTogglesProps) {
+  const hiddenCount = allSeries.filter((s) => hiddenLabels.has(s.label)).length;
+
+  return (
+    <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, mb: 1 }}>
+      {allSeries.map((series) => {
+        const hidden = hiddenLabels.has(series.label);
+        return (
+          <Chip
+            key={series.label}
+            label={series.label}
+            size="small"
+            variant={hidden ? "outlined" : "filled"}
+            onClick={() => onToggle(series.label)}
+            sx={{
+              height: 22,
+              fontSize: 11,
+              bgcolor: hidden ? "transparent" : series.color,
+              color: hidden ? "text.secondary" : "#fff",
+              borderColor: hidden ? series.color : undefined,
+              opacity: hidden ? 0.5 : 1,
+              "&:hover": {
+                bgcolor: hidden ? `${series.color}22` : series.color,
+                opacity: 1,
+              },
+            }}
+          />
+        );
+      })}
+      {hiddenCount > 0 && (
+        <Chip
+          label="Show all"
+          size="small"
+          variant="outlined"
+          onClick={onShowAll}
+          sx={{ height: 22, fontSize: 11 }}
+        />
+      )}
+    </Box>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────
 // Component
 // ──────────────────────────────────────────────────────────────────────
 
@@ -148,7 +205,45 @@ export function ConvergenceCharts({ data, loading, error }: ConvergenceChartsPro
     [data],
   );
 
+  // Per-chart hidden series state
+  const [hiddenValues, setHiddenValues] = useState<Set<string>>(new Set());
+  const [hiddenDeltas, setHiddenDeltas] = useState<Set<string>>(new Set());
+
+  const toggleValue = (label: string) => {
+    setHiddenValues((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+  };
+
+  const toggleDelta = (label: string) => {
+    setHiddenDeltas((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+  };
+
+  const showAllValues = () => setHiddenValues(new Set());
+  const showAllDeltas = () => setHiddenDeltas(new Set());
+
   const hasSeries = p5Series.length > 0;
+
+  // Filter series based on hidden state
+  const allValueSeries = useMemo(() => [...p5Series, ...p95Series], [p5Series, p95Series]);
+  const allDeltaSeries = useMemo(() => [...p5DeltaSeries, ...p95DeltaSeries], [p5DeltaSeries, p95DeltaSeries]);
+
+  const visibleValueSeries = useMemo(
+    () => allValueSeries.filter((s) => !hiddenValues.has(s.label)),
+    [allValueSeries, hiddenValues],
+  );
+  const visibleDeltaSeries = useMemo(
+    () => allDeltaSeries.filter((s) => !hiddenDeltas.has(s.label)),
+    [allDeltaSeries, hiddenDeltas],
+  );
 
   if (loading) {
     return (
@@ -175,10 +270,6 @@ export function ConvergenceCharts({ data, loading, error }: ConvergenceChartsPro
     );
   }
 
-  // P5 lines solid, P95 lines in same color — distinguished by label
-  const valueSeries = [...p5Series, ...p95Series];
-  const deltaSeries = [...p5DeltaSeries, ...p95DeltaSeries];
-
   return (
     <Box>
       {/* P5 / P95 values across progressive iterations */}
@@ -192,18 +283,30 @@ export function ConvergenceCharts({ data, loading, error }: ConvergenceChartsPro
           <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: "block" }}>
             X-axis: sample count. Watch percentiles stabilize as more data is included.
           </Typography>
-          <LineChart
-            height={350}
-            xAxis={[{
-              scaleType: "point",
-              data: xLabels,
-              label: "Samples",
-              tickLabelStyle: { fontSize: 11 },
-            }]}
-            series={valueSeries}
-            hideLegend
-            margin={{ left: 60, right: 20, top: 20, bottom: 50 }}
+          <SeriesToggles
+            allSeries={allValueSeries}
+            hiddenLabels={hiddenValues}
+            onToggle={toggleValue}
+            onShowAll={showAllValues}
           />
+          {visibleValueSeries.length > 0 ? (
+            <LineChart
+              height={350}
+              xAxis={[{
+                scaleType: "point",
+                data: xLabels,
+                label: "Samples",
+                tickLabelStyle: { fontSize: 11 },
+              }]}
+              series={visibleValueSeries}
+              hideLegend
+              margin={{ left: 60, right: 20, top: 20, bottom: 50 }}
+            />
+          ) : (
+            <Box sx={{ height: 350, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Typography color="text.secondary">All series hidden</Typography>
+            </Box>
+          )}
         </AccordionDetails>
       </Accordion>
 
@@ -218,18 +321,30 @@ export function ConvergenceCharts({ data, loading, error }: ConvergenceChartsPro
           <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: "block" }}>
             Delta between iterations. Values approaching 0 indicate convergence.
           </Typography>
-          <LineChart
-            height={350}
-            xAxis={[{
-              scaleType: "point",
-              data: xLabels,
-              label: "Samples",
-              tickLabelStyle: { fontSize: 11 },
-            }]}
-            series={deltaSeries}
-            hideLegend
-            margin={{ left: 60, right: 20, top: 20, bottom: 50 }}
+          <SeriesToggles
+            allSeries={allDeltaSeries}
+            hiddenLabels={hiddenDeltas}
+            onToggle={toggleDelta}
+            onShowAll={showAllDeltas}
           />
+          {visibleDeltaSeries.length > 0 ? (
+            <LineChart
+              height={350}
+              xAxis={[{
+                scaleType: "point",
+                data: xLabels,
+                label: "Samples",
+                tickLabelStyle: { fontSize: 11 },
+              }]}
+              series={visibleDeltaSeries}
+              hideLegend
+              margin={{ left: 60, right: 20, top: 20, bottom: 50 }}
+            />
+          ) : (
+            <Box sx={{ height: 350, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Typography color="text.secondary">All series hidden</Typography>
+            </Box>
+          )}
         </AccordionDetails>
       </Accordion>
     </Box>
