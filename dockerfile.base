@@ -41,6 +41,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     "bcrypt==4.2.1" \
     "python-arango>=8.0.0" \
     "watchdog==6.0.0" \
+    "spotipy>=2.24.0" \
+    "rapidfuzz>=3.0.0" \
     "pytest==8.3.3" \
     "pytest-cov==5.0.0" \
     "psutil==7.2.1" \

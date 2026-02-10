@@ -15,6 +15,8 @@ bcrypt==4.3.0
 python-arango==7.9.1
 watchdog==6.0.0
 psutil==7.2.2
+spotipy>=2.24.0
+rapidfuzz>=3.0.0
 
 # Testing dependencies
 pytest==8.4.2
