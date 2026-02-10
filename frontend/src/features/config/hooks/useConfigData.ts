@@ -72,7 +72,7 @@ export function useConfigData() {
       }
 
       showSuccess(
-        `Saved ${changes.length} config change(s). Use "Restart Server" in Admin page to apply.`
+        `Saved ${changes.length} config change(s). Use "Restart Server" in the Admin section to apply.`
       );
       await loadConfig(); // Reload to sync state
     } catch (err) {

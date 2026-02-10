@@ -33,7 +33,7 @@ export function ConfigSettings({
         sx={{ mb: 2.5 }}
       >
         Changes are saved to the database and will take effect on server
-        restart. Use "Restart Server" in Admin page to apply changes.
+        restart. Use "Restart Server" in the Admin section below to apply changes.
       </Typography>
       <Stack spacing={1.875}>
         {Object.entries(config).map(([key, value]) => (

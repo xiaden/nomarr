@@ -1,14 +1,13 @@
-import { Box, Typography } from "@mui/material";
+import { Box } from "@mui/material";
 import type { ReactNode } from "react";
 
-import { NavTabs } from "./NavTabs";
+import { Sidebar, SIDEBAR_WIDTH } from "./Sidebar";
 
 /**
  * Main application shell component.
  *
  * Provides the overall layout structure with:
- * - Top bar with app title
- * - Navigation tabs
+ * - Left sidebar navigation
  * - Main content area
  */
 
@@ -24,50 +23,22 @@ export function AppShell({ children }: AppShellProps) {
         bgcolor: "background.paper",
         color: "text.primary",
         display: "flex",
-        flexDirection: "column",
+        flexDirection: "row",
       }}
     >
-      {/* Top Bar */}
-      <Box
-        component="header"
-        sx={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          px: 4,
-          py: 2,
-          bgcolor: "#252525",
-          borderBottom: 1,
-          borderColor: "divider",
-        }}
-      >
-        <Typography variant="h5" sx={{ fontWeight: 600 }}>
-          Nomarr
-        </Typography>
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            gap: 1,
-            fontSize: "0.875rem",
-            color: "text.secondary",
-          }}
-        >
-          <Typography
-            component="span"
-            sx={{ color: "success.main", fontSize: "0.75rem" }}
-          >
-            ●
-          </Typography>
-          <span>Online</span>
-        </Box>
-      </Box>
-
-      {/* Navigation */}
-      <NavTabs />
+      {/* Sidebar */}
+      <Sidebar />
 
       {/* Main Content */}
-      <Box component="main" sx={{ flex: 1 }}>
+      <Box
+        component="main"
+        sx={{
+          flex: 1,
+          minWidth: 0,
+          width: `calc(100% - ${SIDEBAR_WIDTH}px)`,
+          overflow: "auto",
+        }}
+      >
         {children}
       </Box>
     </Box>

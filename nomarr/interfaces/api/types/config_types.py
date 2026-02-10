@@ -38,23 +38,13 @@ class ConfigResponse(BaseModel):
         """Create ConfigResponse from WebConfigResult DTO.
 
         Args:
-            result: WebConfigResult with config, internal_info, and worker_enabled
+            result: WebConfigResult with config and worker_enabled
 
         Returns:
-            ConfigResponse: Merged config with all fields flattened
+            ConfigResponse: Editable config fields only
 
         """
-        # Merge config dict with internal info fields
-        merged = {
-            **result.config,
-            "namespace": result.internal_info.namespace,
-            "version_tag": result.internal_info.version_tag,
-            "min_duration_s": result.internal_info.min_duration_s,
-            "allow_short": result.internal_info.allow_short,
-            "poll_interval": result.internal_info.poll_interval,
-            "library_scan_poll_interval": result.internal_info.library_scan_poll_interval,
-            "worker_enabled": result.worker_enabled,
-        }
+        merged = {**result.config, "worker_enabled": result.worker_enabled}
         return cls(**merged)
 
 
