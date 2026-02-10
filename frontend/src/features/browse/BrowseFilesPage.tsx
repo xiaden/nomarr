@@ -29,7 +29,6 @@ import { ErrorMessage, PageContainer, Panel } from "@shared/components/ui";
 import { getTagValues, getUniqueTagKeys, search } from "../../shared/api/files";
 import { FileTagsDataGrid } from "../../shared/components/FileTagsDataGrid";
 import type { LibraryFile } from "../../shared/types";
-import { LibraryManagement } from "../library/components/LibraryManagement";
 
 export function BrowseFilesPage() {
   const [files, setFiles] = useState<LibraryFile[]>([]);
@@ -150,10 +149,7 @@ export function BrowseFilesPage() {
   const totalPages = Math.ceil(total / limit);
 
   return (
-    <PageContainer title="Library">
-      {/* Library Management */}
-      <LibraryManagement />
-
+    <PageContainer title="Browse Tagged Files">
       {/* Search Controls */}
       <Panel>
         <Stack direction="row" spacing={1.5} sx={{ mb: 2, flexWrap: "wrap" }}>

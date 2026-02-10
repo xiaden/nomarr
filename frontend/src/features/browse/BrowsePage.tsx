@@ -13,6 +13,7 @@ import { useState } from "react";
 import { PageContainer } from "@shared/components/ui";
 
 import type { EntityCollection } from "../../shared/types";
+import { LibraryManagement } from "../library/components/LibraryManagement";
 
 import { EntityBrowser } from "./components/EntityBrowser";
 import { LibraryBrowser } from "./components/LibraryBrowser";
@@ -23,8 +24,10 @@ export function BrowsePage() {
   const [activeTab, setActiveTab] = useState<BrowseTab>("library");
 
   return (
-    <PageContainer title="Browse Music">
-      <Box sx={{ borderBottom: 1, borderColor: "divider", mb: 2 }}>
+    <PageContainer title="Library">
+      <LibraryManagement />
+
+      <Box sx={{ borderBottom: 1, borderColor: "divider", mb: 2, mt: 3 }}>
         <Tabs
           value={activeTab}
           onChange={(_, newValue) => setActiveTab(newValue as BrowseTab)}
