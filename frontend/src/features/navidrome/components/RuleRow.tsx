@@ -37,14 +37,13 @@ const NUMERIC_OPERATORS = [
   { value: "!=", label: "\u2260" },
   { value: ">", label: ">" },
   { value: "<", label: "<" },
-  { value: ">=", label: "\u2265" },
-  { value: "<=", label: "\u2264" },
 ] as const;
 
 const STRING_OPERATORS = [
+  { value: "contains", label: "contains" },
+  { value: "notcontains", label: "not contains" },
   { value: "=", label: "=" },
   { value: "!=", label: "\u2260" },
-  { value: "contains", label: "contains" },
 ] as const;
 
 interface RuleRowProps {
@@ -107,10 +106,13 @@ export function RuleRow({
       wasNumeric === nowNumeric &&
       operators.some((op) => op.value === rule.operator);
 
+    // Default operator: "=" for numeric, "contains" for string
+    const defaultOp = nowNumeric ? "=" : "contains";
+
     onChange({
       ...rule,
       tagKey: newKey,
-      operator: keepOperator ? rule.operator : "=",
+      operator: keepOperator ? rule.operator : defaultOp,
       value: wasNumeric !== nowNumeric ? "" : rule.value,
     });
   };

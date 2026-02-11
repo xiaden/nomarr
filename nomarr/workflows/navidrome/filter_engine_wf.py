@@ -112,6 +112,14 @@ def _execute_single_condition(db: Database, condition: TagCondition) -> set[str]
             operator="CONTAINS",
             value=str(condition.value),
         )
+    if condition.operator == "notcontains":
+        # String not-contains query
+        return find_files_matching_tag(
+            db,
+            rel=rel,
+            operator="NOTCONTAINS",
+            value=str(condition.value),
+        )
     # Numeric comparison query
     return find_files_matching_tag(
         db,

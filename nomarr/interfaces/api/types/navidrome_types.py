@@ -11,7 +11,7 @@ Architecture:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -36,7 +36,7 @@ class TagConditionResponse(BaseModel):
     """Pydantic model for TagCondition DTO."""
 
     tag_key: str = Field(..., description="Full tag key with namespace (e.g., 'nom:mood_happy')")
-    operator: Literal[">", "<", ">=", "<=", "=", "!=", "contains"] = Field(..., description="Comparison operator")
+    operator: Literal[">", "<", "=", "!=", "contains", "notcontains"] = Field(..., description="Comparison operator")
     value: float | int | str = Field(..., description="Value to compare against")
 
     @classmethod
@@ -134,7 +134,10 @@ class NavidromeConfigResponse(BaseModel):
 class GeneratePlaylistResponse(BaseModel):
     """Pydantic model for GeneratePlaylistResult DTO."""
 
-    playlist_structure: dict[str, str | int | list[dict[str, str]]] = Field(
+    # NSP structure is recursive with mixed types:
+    # {"name": str, "comment": str, "all"|"any": [{"op": {field: value}}, ...], ...}
+    # Values can be str, int, float, or nested all/any dicts
+    playlist_structure: dict[str, Any] = Field(
         ..., description="Navidrome .nsp playlist structure",
     )
 

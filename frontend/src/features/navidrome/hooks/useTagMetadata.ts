@@ -26,18 +26,12 @@ const STANDARD_TAG_RELS = new Set([
   "publisher",
   "title",
   "lyricist",
-  "tracknumber",
-  "track_number",
-  "discnumber",
 ]);
 
 /** Tags that should always be treated as numeric for comparisons. */
 const FORCE_NUMERIC_TAG_RELS = new Set([
   "year",
   "bpm",
-  "tracknumber",
-  "track_number",
-  "discnumber",
 ]);
 
 /** Display-friendly labels for tag keys. */
@@ -55,9 +49,6 @@ const TAG_LABELS: Record<string, string> = {
   publisher: "Publisher",
   title: "Title",
   lyricist: "Lyricist",
-  tracknumber: "Track #",
-  track_number: "Track #",
-  discnumber: "Disc #",
   "nom:mood-loose": "Mood (Loose)",
   "nom:mood-regular": "Mood (Regular)",
   "nom:mood-strict": "Mood (Strict)",

@@ -558,6 +558,15 @@ class TagOperations:
                     FILTER edge._to == tag._id
                     RETURN DISTINCT edge._from
             """
+        elif operator == "NOTCONTAINS":
+            query = """
+            FOR tag IN tags
+                FILTER tag.rel == @rel
+                FILTER !CONTAINS(LOWER(TO_STRING(tag.value)), LOWER(@value))
+                FOR edge IN song_tag_edges
+                    FILTER edge._to == tag._id
+                    RETURN DISTINCT edge._from
+            """
         else:
             # Build dynamic filter based on operator
             # Safe operators only - map from query syntax to AQL syntax

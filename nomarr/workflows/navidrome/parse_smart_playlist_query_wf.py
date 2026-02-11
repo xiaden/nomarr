@@ -439,7 +439,8 @@ def _parse_condition(condition: str, namespace: str) -> TagCondition:
     """
     # Pattern: tag:KEY OPERATOR VALUE
     # Use [^\s].* instead of .+ to prevent ReDoS (catastrophic backtracking)
-    pattern = r"^tag:(\S+)\s+(>=|<=|!=|>|<|=|contains)\s+([^\s].*)$"
+    # Order operators from longest to shortest to prevent partial matches
+    pattern = r"^tag:(\S+)\s+(notcontains|contains|!=|>|<|=)\s+([^\s].*)$"
     match = re.match(pattern, condition.strip(), re.IGNORECASE)
 
     if not match:

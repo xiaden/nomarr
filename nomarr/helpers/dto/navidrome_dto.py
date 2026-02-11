@@ -11,7 +11,7 @@ Rules:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 # Maximum nesting depth for rule groups to prevent stack overflow
 MAX_RULE_GROUP_DEPTH = 5
@@ -32,9 +32,6 @@ STANDARD_TAG_RELS = frozenset({
     "publisher",
     "title",
     "lyricist",
-    "tracknumber",
-    "track_number",
-    "discnumber",
 })
 
 
@@ -48,7 +45,7 @@ class TagCondition:
     tag_key: str
     """Full tag key with namespace (e.g., "nom:mood_happy")"""
 
-    operator: Literal[">", "<", ">=", "<=", "=", "!=", "contains"]
+    operator: Literal[">", "<", "=", "!=", "contains", "notcontains"]
     """Comparison operator"""
 
     value: float | int | str
@@ -129,9 +126,13 @@ class PreviewTagStatsResult:
 
 @dataclass
 class GeneratePlaylistResult:
-    """Result from navidrome_service.generate_playlist()."""
+    """Result from navidrome_service.generate_playlist().
 
-    playlist_structure: dict[str, str | int | list[dict[str, str]]]
+    The playlist_structure dict uses Any because NSP format is recursive
+    with mixed types: str, int, float, and nested all/any dicts.
+    """
+
+    playlist_structure: dict[str, Any]
 
 
 @dataclass

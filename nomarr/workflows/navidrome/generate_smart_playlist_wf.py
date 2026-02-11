@@ -25,11 +25,10 @@ from nomarr.workflows.navidrome.parse_smart_playlist_query_wf import (
 NSP_OPERATORS: dict[str, str] = {
     ">": "gt",
     "<": "lt",
-    ">=": "gt",  # No gte in Navidrome, use gt
-    "<=": "lt",  # No lte in Navidrome, use lt
     "=": "is",
     "!=": "isNot",
     "contains": "contains",
+    "notcontains": "notContains",
 }
 
 # Whitelisted sort columns for ORDER BY
