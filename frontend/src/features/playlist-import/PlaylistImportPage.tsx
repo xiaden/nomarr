@@ -37,6 +37,7 @@ import {
   type MatchTier,
   convertPlaylist,
   getSpotifyStatus,
+  statusToTier,
 } from "../../shared/api/playlistImport";
 import type { Library } from "../../shared/types";
 
@@ -49,25 +50,17 @@ const tierColors: Record<MatchTier, "success" | "info" | "warning" | "error" | "
   none: "error",
 };
 
-const tierLabels: Record<MatchTier, string> = {
-  isrc: "ISRC Match",
-  exact: "Exact",
-  fuzzy_high: "High Fuzzy",
-  fuzzy_low: "Low Fuzzy",
-  none: "Not Found",
-};
-
 export function PlaylistImportPage() {
   // Form state
   const [url, setUrl] = useState("");
   const [selectedLibrary, setSelectedLibrary] = useState("");
   const [libraries, setLibraries] = useState<Library[]>([]);
-  
+
   // Result state
   const [result, setResult] = useState<ConvertPlaylistResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Feature availability
   const [spotifyEnabled, setSpotifyEnabled] = useState<boolean | null>(null);
 
@@ -114,7 +107,7 @@ export function PlaylistImportPage() {
     const downloadUrl = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = downloadUrl;
-    a.download = `${result.playlist.name}.m3u`;
+    a.download = `${result.playlist_metadata.name}.m3u`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -191,9 +184,9 @@ export function PlaylistImportPage() {
               {/* Playlist info header */}
               <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <Box>
-                  <Typography variant="h6">{result.playlist.name}</Typography>
+                  <Typography variant="h6">{result.playlist_metadata.name}</Typography>
                   <Typography variant="body2" color="text.secondary">
-                    {result.playlist.track_count} tracks from {result.playlist.platform}
+                    {result.total_tracks} tracks from {result.playlist_metadata.source_platform}
                   </Typography>
                 </Box>
                 <Button
@@ -206,54 +199,106 @@ export function PlaylistImportPage() {
               </Box>
 
               {/* Match statistics */}
-              <Box sx={{ display: "flex", gap: 2 }}>
+              <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
                 <Chip
-                  label={`${result.matched_count} matched`}
+                  label={`${result.exact_matches} exact`}
                   color="success"
                   variant="outlined"
                 />
+                {result.fuzzy_matches > 0 && (
+                  <Chip
+                    label={`${result.fuzzy_matches} fuzzy`}
+                    color="info"
+                    variant="outlined"
+                  />
+                )}
+                {result.ambiguous_count > 0 && (
+                  <Chip
+                    label={`${result.ambiguous_count} ambiguous`}
+                    color="warning"
+                    variant="outlined"
+                  />
+                )}
+                {result.not_found_count > 0 && (
+                  <Chip
+                    label={`${result.not_found_count} not found`}
+                    color="error"
+                    variant="outlined"
+                  />
+                )}
                 <Chip
-                  label={`${result.unmatched_count} not found`}
-                  color="error"
-                  variant="outlined"
-                />
-                <Chip
-                  label={`${Math.round((result.matched_count / result.playlist.track_count) * 100)}% success`}
+                  label={`${Math.round(result.match_rate * 100)}% matched`}
                   variant="outlined"
                 />
               </Box>
 
-              {/* Results table */}
-              <TableContainer sx={{ maxHeight: 400 }}>
-                <Table size="small" stickyHeader>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Track</TableCell>
-                      <TableCell>Artist</TableCell>
-                      <TableCell>Match</TableCell>
-                      <TableCell align="right">Confidence</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {result.results.map((row, idx) => (
-                      <TableRow key={idx} sx={{ opacity: row.matched ? 1 : 0.6 }}>
-                        <TableCell>{row.input_title}</TableCell>
-                        <TableCell>{row.input_artist}</TableCell>
-                        <TableCell>
-                          <Chip
-                            label={tierLabels[row.tier]}
-                            color={tierColors[row.tier]}
-                            size="small"
-                          />
-                        </TableCell>
-                        <TableCell align="right">
-                          {row.matched ? `${Math.round(row.confidence * 100)}%` : "-"}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
+              {/* Ambiguous matches needing review */}
+              {result.ambiguous_matches.length > 0 && (
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+                    Ambiguous matches (need review)
+                  </Typography>
+                  <TableContainer sx={{ maxHeight: 300 }}>
+                    <Table size="small" stickyHeader>
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Track</TableCell>
+                          <TableCell>Artist</TableCell>
+                          <TableCell>Matched To</TableCell>
+                          <TableCell align="right">Confidence</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {result.ambiguous_matches.map((match, idx) => (
+                          <TableRow key={idx}>
+                            <TableCell>{match.input_track.title}</TableCell>
+                            <TableCell>{match.input_track.artist}</TableCell>
+                            <TableCell sx={{ maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis" }}>
+                              {match.matched_path?.split("/").pop() || "-"}
+                            </TableCell>
+                            <TableCell align="right">
+                              <Chip
+                                label={`${Math.round(match.confidence * 100)}%`}
+                                color={tierColors[statusToTier(match.status)]}
+                                size="small"
+                              />
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </Box>
+              )}
+
+              {/* Unmatched tracks */}
+              {result.unmatched_tracks.length > 0 && (
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+                    Not found in library
+                  </Typography>
+                  <TableContainer sx={{ maxHeight: 300 }}>
+                    <Table size="small" stickyHeader>
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Track</TableCell>
+                          <TableCell>Artist</TableCell>
+                          <TableCell>Album</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {result.unmatched_tracks.map((track, idx) => (
+                          <TableRow key={idx}>
+                            <TableCell>{track.title}</TableCell>
+                            <TableCell>{track.artist}</TableCell>
+                            <TableCell>{track.album || "-"}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </Box>
+              )}
             </Stack>
           </Paper>
         )}

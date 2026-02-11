@@ -8,7 +8,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from nomarr.interfaces.api.id_codec import decode_id
 
 if TYPE_CHECKING:
     from nomarr.helpers.dto.playlist_import_dto import (
@@ -40,6 +42,14 @@ class ConvertPlaylistRequest(BaseModel):
         default=None,
         description="Optional library _id to restrict matching scope",
     )
+
+    @field_validator("library_id", mode="before")
+    @classmethod
+    def decode_library_id(cls, v: str | None) -> str | None:
+        """Decode encoded library_id (libraries:123 -> libraries/123)."""
+        if v is None or v == "":
+            return None
+        return decode_id(v)
 
 
 # ──────────────────────────────────────────────────────────────────────

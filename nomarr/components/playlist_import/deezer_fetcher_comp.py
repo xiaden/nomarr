@@ -133,10 +133,9 @@ def _extract_tracks(track_data: list[dict[str, Any]]) -> list[PlaylistTrackInput
     tracks = []
 
     for i, track in enumerate(track_data):
-        # Skip unavailable tracks
-        if not track.get("readable", True):
-            logger.debug(f"Skipping unavailable track: {track.get('title', 'Unknown')}")
-            continue
+        # Note: We include tracks even if readable=false because we only need
+        # metadata for matching, not streaming. Geo-restricted tracks may still
+        # exist in the user's local library.
 
         tracks.append(
             PlaylistTrackInput(
