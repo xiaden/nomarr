@@ -81,10 +81,11 @@ def fetch_spotify_playlist(
         SpotifyFetchError: If the API request fails or playlist not found
     """
     try:
-        # Fetch playlist metadata
+        # Fetch playlist metadata (market required for Client Credentials flow)
         playlist_data = client.playlist(
             playlist_id,
             fields="name,description,external_urls,tracks.total",
+            market="US",
         )
 
         metadata = PlaylistMetadata(
@@ -142,6 +143,7 @@ def _fetch_all_tracks(
             offset=offset,
             limit=limit,
             fields="items(track(name,artists,album,external_ids,duration_ms)),next",
+            market="US",
         )
 
         items = results.get("items", [])
