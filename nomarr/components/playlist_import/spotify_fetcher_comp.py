@@ -108,6 +108,13 @@ def fetch_spotify_playlist(
                 f"Playlist not found: {playlist_id}. "
                 "Make sure the playlist is public."
             ) from e
+        if e.http_status == 400:
+            # 400 errors often mean private/personalized playlists
+            raise SpotifyFetchError(
+                f"Cannot access playlist: {playlist_id}. "
+                "Spotify 'Made For You' and personalized playlists (IDs starting with 37i9dQZF1) "
+                "cannot be fetched with app credentials. Only public playlists are supported."
+            ) from e
         raise SpotifyFetchError(f"Spotify API error: {e}") from e
 
 
