@@ -40,10 +40,8 @@ export interface SpotifyStatusResponse {
 }
 
 export interface ConvertPlaylistRequest {
-  url: string;
-  library_id: string;
-  min_confidence?: number;
-  generate_m3u?: boolean;
+  playlist_url: string;
+  library_id: string | null;
 }
 
 /**

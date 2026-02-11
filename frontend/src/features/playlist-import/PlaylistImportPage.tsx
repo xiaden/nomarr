@@ -96,7 +96,7 @@ export function PlaylistImportPage() {
 
     try {
       const response = await convertPlaylist({
-        url: url.trim(),
+        playlist_url: url.trim(),
         library_id: selectedLibrary,
       });
       setResult(response);
