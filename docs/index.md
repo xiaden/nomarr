@@ -57,7 +57,6 @@ Roadmaps and research documents:
 - [Web UI Overview](user/getting_started.md#web-interface)
 
 **Integration:**
-- [Lidarr Webhook Setup](user/api_reference.md#lidarr-integration)
 - [Navidrome Smart Playlists](user/navidrome.md#smart-playlists)
 
 **Development:**

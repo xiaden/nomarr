@@ -2,11 +2,11 @@
 
 **Intelligent audio auto-tagging for your music library using state-of-the-art machine learning.**
 
-Nomarr is a pre-alpha audio tagging system that analyzes your music files with Essentia's pre-trained ML models and writes rich metadata tags directly into MP3/M4A/FLAC/OGG/Opus files. Perfect for organizing large libraries, discovering moods, and enriching metadata for music servers like Navidrome and Plex.
+Nomarr is an alpha audio tagging system that analyzes your music files with Essentia's pre-trained ML models and writes rich metadata tags directly into MP3/M4A/FLAC/OGG/Opus files. Perfect for organizing large libraries, discovering moods, and enriching metadata for music servers like Navidrome and Plex.
 
 ## WARNING
 
-This is a PRE-ALPHA program that is HEAVILY made with assistance of AI. I make no guarantee it is functional, useful, or even worth installing yet. The codebase changes DAILY in rather large ways, and I'm not done staging things at all yet. GitHub hosting is mainly to get CI tooling and a working image to test with.
+This is an ALPHA program that is HEAVILY made with assistance of AI. I make no guarantee it is functional, useful, or even worth installing yet. The codebase changes DAILY in rather large ways, and I'm not done staging things at all yet. GitHub hosting is mainly to get CI tooling and a working image to test with.
 
 That said, I will take PR and feature requests, and do guarantee that every line of code will be human-reviewed (and honestly... probably refactored into a much better shape than the current AI slop) prior to releasing as a version 1.
 
@@ -16,7 +16,7 @@ Do also note (WITH A BIG CAPITAL WARNING) that the EFFNET embedder (so any EFFNE
 
 ## 🎯 What Does It Do?
 
-Nomarr automatically tags your audio files with:
+Nomarr tags your audio files with:
 
 - **Mood & Emotion** — Happy, sad, aggressive, relaxed, party, etc.
 - **Acoustic Properties** — Danceability, energy, timbre, brightness
@@ -33,8 +33,8 @@ You set a library path, scan, and get high quality ML tags in roughly a day (bas
 ## ✨ Key Features
 
 - **🌐 Modern Web UI** — Full browser interface for library management, analytics, calibration, and integrations
-- **📚 Library Scanner** — Automatic background scanning with tag extraction and real-time progress
-- **👁️ File Watching** — Detects filesystem changes and triggers incremental scans automatically (2–5 second response)
+- **📚 Library Scanner** — Background scanning with tag extraction and real-time progress tracking
+- **👁️ File Watching** — Monitors filesystem for changes and triggers incremental scans (2–5 second response)
 - **📊 Calibration System** — Normalize model outputs across heads with convergence tracking and drift detection
 - **🔍 Library Insights** — Collection overview, mood analysis, tag co-occurrence matrix, and genre/year distributions
 - **🎵 Navidrome Integration** — Smart playlist (.nsp) generation and TOML config export
@@ -42,7 +42,6 @@ You set a library path, scan, and get high quality ML tags in roughly a day (bas
 - **⚡ GPU Accelerated** — NVIDIA CUDA support for fast ML inference
 - **🎨 Rich Metadata** — Writes probabilities, tiers, and aggregated mood tags in native format
 - **📊 Queue System** — Background processing with pause/resume, status tracking, and error recovery
-- **🔌 Lidarr Integration** — Drop-in Docker sidecar that auto-tags imports via webhooks
 - **🔐 Secure** — API key authentication for automation, session-based auth for web UI
 - **🐳 Docker Native** — Single container with NVIDIA GPU passthrough
 
@@ -97,7 +96,6 @@ Paste a Spotify or Deezer playlist URL and Nomarr converts it to a local M3U fil
 ### Prerequisites
 
 - Docker with NVIDIA GPU support (for GPU acceleration)
-- Lidarr (optional, for automatic tagging)
 - Music library mounted at consistent path
 
 ### Installation
@@ -146,24 +144,16 @@ Paste a Spotify or Deezer playlist URL and Nomarr converts it to a local M3U fil
    - Login with the admin password from step 4
    - Add a library and start scanning!
 
-6. **(Optional) For Lidarr Integration:**
-
-   The API key is auto-generated on first run. Retrieve it from the web UI settings page or check the container logs:
-
-   ```bash
-   docker compose logs nomarr | grep "API key"
-   ```
-
 ---
 
 ## 📚 Usage
 
 ### Web UI (Recommended)
 
-The easiest way to use Nomarr — modern browser interface for:
+The primary way to use Nomarr — modern browser interface for:
 
 - **Library management** — Add libraries, trigger scans, view scan history
-- **File watching** — Automatic incremental scanning when files are added/modified (enabled by default)
+- **File watching** — Incremental scanning when files are added or modified (enabled by default)
 - **Browse & explore** — Hierarchical drill-down and flat entity tabs with tag-based search
 - **Insights** — Mood distributions, tag correlations, and co-occurrence analysis
 - **Calibration** — Generate and apply calibration to normalize model outputs
@@ -172,9 +162,10 @@ The easiest way to use Nomarr — modern browser interface for:
 
 Access at `http://localhost:8356/` (login with auto-generated admin password)
 
-**File Watching:** Once a library is added and scanned, Nomarr automatically monitors it for changes. When files are added, modified, or deleted, an incremental scan is triggered within 2–5 seconds (event mode) or 30–120 seconds (polling mode).
+**File Watching:** Once a library is added and scanned, Nomarr monitors it for changes. When files are added, modified, or deleted, an incremental scan is triggered within 2–5 seconds (event mode) or 30–120 seconds (polling mode).
 
 For network mounts (NFS/SMB/CIFS), use polling mode for reliable detection:
+
 ```bash
 # Add to docker-compose.yml environment:
 environment:
@@ -183,20 +174,12 @@ environment:
 
 ### CLI
 
-Administrative commands for queue and system management:
+Administrative commands for maintenance and system management:
 
 ```bash
-# Remove jobs from queue
-docker exec nomarr nom remove <job_id>          # Remove specific job
-docker exec nomarr nom remove --all             # Remove all non-running jobs
-docker exec nomarr nom remove --status error    # Remove failed jobs
-
-# Clean up old completed jobs
-docker exec nomarr nom cleanup --hours 168      # Remove jobs older than 7 days
-
-# Reset stuck or failed jobs
-docker exec nomarr nom admin-reset --stuck      # Reset jobs stuck in 'running' state
-docker exec nomarr nom admin-reset --errors     # Reset all failed jobs to retry
+# Remove orphaned entities (artists, albums with no songs)
+docker exec nomarr nom cleanup                  # Remove orphaned entities
+docker exec nomarr nom cleanup --dry-run        # Preview what would be deleted
 
 # Model cache management
 docker exec nomarr nom cache-refresh            # Rebuild cache after adding models
@@ -207,21 +190,7 @@ docker exec nomarr nom manage-password verify   # Test a password
 docker exec nomarr nom manage-password reset    # Change admin password
 ```
 
-**Note:** For processing files, use the Web UI which provides real-time progress and SSE streaming. The CLI focuses on administrative operations.
-
-### Lidarr Integration
-
-Configure a custom script in Lidarr (Settings → Connect) to auto-tag on import:
-
-```bash
-#!/bin/bash
-API_KEY="your-api-key-here"
-curl -X POST \
-  -H "Authorization: Bearer $API_KEY" \
-  -H "Content-Type: application/json" \
-  -d "{\"path\":\"$lidarr_trackfile_path\",\"force\":true}" \
-  http://nomarr:8356/api/v1/tag
-```
+**Note:** For processing and queue management, use the Web UI which provides real-time progress and SSE streaming. The CLI focuses on maintenance operations.
 
 ---
 
@@ -258,18 +227,13 @@ Each numeric tag includes the full model head identifier (model version, backbon
 
 ## 🗂️ Repository Structure
 
-This is currently a **monorepo** containing multiple independent projects:
-
-| Directory | Purpose | Future |
-|-----------|---------|--------|
-| `nomarr/` | Python backend (FastAPI, clean architecture) | Core project |
-| `frontend/` | React/TypeScript SPA | Core project |
-| `code-intel/` | MCP server for Python code navigation | → Separate repo |
-| `.github/skills/` | GitHub Copilot skill definitions | → Separate repo or archive |
-| `scripts/` | Build tools, viewers, analysis scripts | Part of core |
-| `e2e/`, `tests/` | Integration and unit tests | Part of core |
-
-**Note:** `code-intel/` is architecturally independent and will eventually split into its own repository. Until then, it's tracked in the main git history but maintains its own `pyproject.toml`, tests, and documentation.
+| Directory | Purpose |
+|-----------|--------|
+| `nomarr/` | Python backend (FastAPI, clean architecture) |
+| `frontend/` | React/TypeScript SPA |
+| `code-intel/` | MCP server for Python code navigation |
+| `scripts/` | Build tools, viewers, analysis scripts |
+| `e2e/`, `tests/` | Integration and unit tests |
 
 ---
 

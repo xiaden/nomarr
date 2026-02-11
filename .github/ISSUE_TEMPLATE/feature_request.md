@@ -20,7 +20,7 @@ A clear and concise description of what you want to happen.
 
 Describe how you would use this feature:
 
-- Who would benefit? (e.g., Lidarr users, large library owners, NAS users)
+- Who would benefit? (e.g., large library owners, NAS users, Navidrome users)
 - How often would you use it?
 - What's the impact if not implemented?
 
@@ -42,7 +42,7 @@ How does this fit with Nomarr's purpose (AI-powered music auto-tagging for self-
 
 - [ ] Improves ML tagging accuracy or coverage
 - [ ] Enhances music library management
-- [ ] Improves integration with existing tools (Lidarr, Navidrome, Plex)
+- [ ] Improves integration with existing tools (Navidrome, Plex, Spotify)
 - [ ] Improves user experience or workflow
 - [ ] Other: _____
 

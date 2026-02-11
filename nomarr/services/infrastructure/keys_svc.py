@@ -1,7 +1,7 @@
 """Key Management Service.
 
 Centralized service for managing authentication credentials:
-- Public API keys (for Lidarr/external integrations)
+- Public API keys (for external integrations)
 - Admin passwords (for web UI authentication)
 - Session tokens (for web UI session management)
 
@@ -63,7 +63,7 @@ class KeyManagementService:
 
     def get_or_create_api_key(self) -> str:
         """Get or create the public API key for external endpoints.
-        This key is used by Lidarr and other external integrations.
+        This key is used by external integrations.
 
         Returns:
             API key string (existing or newly generated)

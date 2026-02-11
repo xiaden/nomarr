@@ -1,5 +1,5 @@
 # ----------------------------------------------------------------------
-#  Nomarr - Audio auto-tagging for Lidarr (GPU-enabled)
+#  Nomarr - Audio auto-tagging (GPU-enabled)
 #  Fast build using pre-built base image
 # ----------------------------------------------------------------------
 # Use pre-built base image with all heavy dependencies

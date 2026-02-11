@@ -1,6 +1,6 @@
 # API Reference
 
-**Audience:** Developers integrating Nomarr with automation tools, Lidarr, or custom scripts.
+**Audience:** Developers integrating Nomarr with automation tools or custom scripts.
 
 Nomarr provides a REST API for file processing, library operations, system monitoring, and worker management. All endpoints return JSON responses.
 
@@ -659,52 +659,6 @@ eventSource.addEventListener('worker:tag:0:status', (e) => {
   const worker = JSON.parse(e.data);
   console.log('Worker status:', worker);
 });
-```
-
----
-
-## Lidarr Integration
-
-### Webhook Setup
-
-Configure Lidarr to auto-tag on import:
-
-1. **Lidarr Settings → Connect → Add Custom Script**
-2. **On Import, On Upgrade**
-3. **Script Path:** `/config/scripts/nomarr-autotag.sh`
-
-**Script Example:**
-```bash
-#!/bin/bash
-# nomarr-autotag.sh
-
-API_KEY="your-api-key-here"
-NOMARR_URL="http://nomarr:8356"
-
-# Lidarr provides these environment variables
-FILE_PATH="$lidarr_trackfile_path"
-
-# Enqueue file for tagging
-curl -X POST "$NOMARR_URL/api/v1/tag" \
-  -H "Authorization: Bearer $API_KEY" \
-  -H "Content-Type: application/json" \
-  -d "{\"path\":\"$FILE_PATH\",\"force\":true}" \
-  --silent --show-error
-
-echo "Queued for tagging: $FILE_PATH"
-```
-
-**Docker Compose:**
-```yaml
-services:
-  lidarr:
-    volumes:
-      - ./scripts/nomarr-autotag.sh:/config/scripts/nomarr-autotag.sh:ro
-      - /music:/music  # Same path as Nomarr
-
-  nomarr:
-    volumes:
-      - /music:/music  # Must match Lidarr's path
 ```
 
 ---

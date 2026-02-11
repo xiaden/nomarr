@@ -14,7 +14,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the argument parser with all subcommands."""
     parser = argparse.ArgumentParser(
         prog="nom",
-        description="Nomarr - Audio auto-tagging for Lidarr using Essentia ML models",
+        description="Nomarr - Audio auto-tagging using Essentia ML models",
         epilog="Examples:\n"
         "  nom cleanup                                # Remove orphaned entities\n"
         "  nom cleanup --dry-run                      # Preview orphaned entities\n"
