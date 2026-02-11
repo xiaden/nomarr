@@ -9,7 +9,7 @@ import { Box, MenuItem, Select, TextField, Typography } from "@mui/material";
 const CONFIG_METADATA: Record<string, {
   label: string;
   description?: string;
-  type?: 'text' | 'boolean' | 'select';
+  type?: 'text' | 'password' | 'boolean' | 'select';
   options?: { value: string; label: string }[];
 }> = {
   file_write_mode: {
@@ -56,6 +56,16 @@ const CONFIG_METADATA: Record<string, {
     label: "Calibration Repository",
     description: "Git repository URL for calibration data downloads",
     type: "text",
+  },
+  spotify_client_id: {
+    label: "Spotify Client ID",
+    description: "From https://developer.spotify.com/dashboard - for playlist import",
+    type: "text",
+  },
+  spotify_client_secret: {
+    label: "Spotify Client Secret",
+    description: "From https://developer.spotify.com/dashboard - keep this private",
+    type: "password",
   },
 };
 
@@ -118,7 +128,7 @@ export function ConfigField({
     // Default to text field
     return (
       <TextField
-        type="text"
+        type={fieldType === "password" ? "password" : "text"}
         value={stringValue}
         onChange={(e) => onChange(configKey, e.target.value)}
         disabled={disabled}

@@ -29,6 +29,7 @@ from nomarr.services.domain.analytics_svc import AnalyticsService
 from nomarr.services.domain.calibration_svc import CalibrationService
 from nomarr.services.domain.library_svc import LibraryService, LibraryServiceConfig
 from nomarr.services.domain.navidrome_svc import NavidromeService
+from nomarr.services.domain.playlist_import_svc import PlaylistImportConfig, PlaylistImportService
 from nomarr.services.domain.tagging_svc import TaggingService, TaggingServiceConfig
 from nomarr.services.infrastructure.config_svc import ConfigService
 from nomarr.services.infrastructure.health_monitor_svc import HealthMonitorService
@@ -271,6 +272,13 @@ class Application:
         navidrome_cfg = NavidromeConfig(namespace=self.namespace)
         navidrome_service = NavidromeService(db=self.db, cfg=navidrome_cfg)
         self.register_service("navidrome", navidrome_service)
+        logger.info("[Application] Initializing PlaylistImportService...")
+        playlist_import_cfg = PlaylistImportConfig(
+            spotify_client_id=self._config.get("spotify_client_id"),
+            spotify_client_secret=self._config.get("spotify_client_secret"),
+        )
+        playlist_import_service = PlaylistImportService(db=self.db, cfg=playlist_import_cfg)
+        self.register_service("playlist_import", playlist_import_service)
         from nomarr.services.infrastructure.info_svc import InfoConfig, InfoService
 
         info_cfg = InfoConfig(

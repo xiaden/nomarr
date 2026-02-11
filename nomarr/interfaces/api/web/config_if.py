@@ -33,6 +33,8 @@ def get_config(
             "cache_idle_timeout",
             "calibrate_heads",
             "calibration_repo",
+            "spotify_client_id",
+            "spotify_client_secret",
         }
         filtered_config = {k: v for k, v in result.config.items() if k in editable_keys}
         filtered_result = WebConfigResult(
@@ -68,6 +70,8 @@ def update_config(
             "cache_idle_timeout",
             "calibrate_heads",
             "calibration_repo",
+            "spotify_client_id",
+            "spotify_client_secret",
         }
         if key not in editable_keys:
             raise HTTPException(

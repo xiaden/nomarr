@@ -3,9 +3,13 @@
 Provides playlist conversion from Spotify/Deezer URLs to local Navidrome playlists.
 """
 
-from dataclasses import dataclass
+from __future__ import annotations
 
-from arango.database import StandardDatabase as Database
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from nomarr.persistence.db import Database
 
 from nomarr.helpers.dto.playlist_import_dto import PlaylistConversionResult
 from nomarr.workflows.playlist_import.convert_playlist_wf import (

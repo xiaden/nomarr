@@ -3,9 +3,13 @@
 Orchestrates: URL parsing → API fetch → matching → M3U output
 """
 
-import logging
+from __future__ import annotations
 
-from arango.database import StandardDatabase as Database
+import logging
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from nomarr.persistence.db import Database
 
 from nomarr.components.playlist_import.deezer_fetcher_comp import (
     DeezerFetchError,
@@ -33,7 +37,6 @@ from nomarr.helpers.dto.playlist_import_dto import (
     PlaylistMetadata,
     PlaylistTrackInput,
 )
-from nomarr.persistence.database.library_files_aql import LibraryFilesOperations
 
 logger = logging.getLogger(__name__)
 
@@ -89,8 +92,7 @@ def convert_playlist_workflow(
     logger.info(f"Fetched {len(input_tracks)} tracks from '{metadata.name}'")
 
     # Step 3: Load library tracks
-    library_ops = LibraryFilesOperations(db)
-    library_rows = library_ops.get_tracks_for_matching(library_id=library_id)
+    library_rows = db.library_files.get_tracks_for_matching(library_id=library_id)
     library_tracks = [LibraryTrack.from_db_row(row) for row in library_rows]
 
     logger.info(f"Loaded {len(library_tracks)} library tracks for matching")
