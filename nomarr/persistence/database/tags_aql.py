@@ -471,24 +471,32 @@ class TagOperations:
         return {row["value"]: row["count"] for row in cursor}
 
     def get_all_tag_stats_batched(self) -> dict[str, dict[str, Any]]:
-        """Get value counts and type info for ALL tags in a single batched query.
+        """Get value counts and type info for ALL tags in a single optimized query.
 
-        This is much faster than calling get_tag_value_counts per rel.
-        Returns stats organized by rel, ready for preview_tag_stats_workflow.
+        Aggregates edges first (single pass), then joins with tags.
+        Much faster than N subqueries.
 
         Returns:
-            Dict of {rel: {values: {value: count}, type: str, is_multivalue: bool}}
+            Dict of {rel: {type, is_multivalue, summary, total_count}}
 
         """
+        # Aggregate edges by _to first (single pass over edges collection)
+        # Then join with tags to get rel/value, and group by rel
         query = """
-        FOR tag IN tags
-            LET song_count = LENGTH(
-                FOR edge IN song_tag_edges
-                    FILTER edge._to == tag._id
-                    RETURN 1
-            )
-            COLLECT rel = tag.rel INTO tag_entries = {value: tag.value, count: song_count}
-            RETURN {rel, entries: tag_entries}
+        LET edge_counts = (
+            FOR edge IN song_tag_edges
+                COLLECT tag_id = edge._to WITH COUNT INTO cnt
+                RETURN {tag_id, cnt}
+        )
+        LET tag_data = (
+            FOR ec IN edge_counts
+                LET tag = DOCUMENT(ec.tag_id)
+                FILTER tag != null
+                RETURN {rel: tag.rel, value: tag.value, count: ec.cnt}
+        )
+        FOR td IN tag_data
+            COLLECT rel = td.rel INTO entries = {value: td.value, count: td.count}
+            RETURN {rel, entries}
         """
         cursor = cast("Cursor", self._db.aql.execute(query))
 
