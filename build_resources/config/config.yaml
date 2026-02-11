@@ -62,3 +62,10 @@ calibration_repo: "https://github.com/xiaden/nom-cal" # Calibration repo URL
 # ----------------------------------------------------------------------
 admin_password: # Admin password for web UI
   # (auto-generated if not set)
+
+# ----------------------------------------------------------------------
+# Playlist Import (Spotify)
+# ----------------------------------------------------------------------
+# Get credentials at https://developer.spotify.com/dashboard
+spotify_client_id: # Spotify Developer App client ID
+spotify_client_secret: # Spotify Developer App client secret
