@@ -15,6 +15,7 @@ from nomarr.interfaces.api.web import info_if as info
 from nomarr.interfaces.api.web import library_if as library
 from nomarr.interfaces.api.web import metadata_if as metadata
 from nomarr.interfaces.api.web import navidrome_if as navidrome
+from nomarr.interfaces.api.web import playlist_import_if as playlist_import
 from nomarr.interfaces.api.web import processing_if as processing
 from nomarr.interfaces.api.web import tags_if as tags
 from nomarr.interfaces.api.web import worker_if as worker
@@ -32,6 +33,7 @@ router.include_router(info.router)
 router.include_router(library.router)
 router.include_router(metadata.router)
 router.include_router(navidrome.router)
+router.include_router(playlist_import.router)
 router.include_router(processing.router)
 router.include_router(tags.router)
 router.include_router(worker.router)

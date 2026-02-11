@@ -18,14 +18,12 @@ import { useTagMetadata } from "../hooks/useTagMetadata";
 
 import { PreviewTable } from "./PreviewTable";
 import { RuleBuilder } from "./RuleBuilder";
-import type { Rule } from "./RuleRow";
-import type { LogicMode } from "./ruleUtils";
+import type { RuleGroup } from "./ruleUtils";
 import { buildQueryString } from "./ruleUtils";
 import { SortPicker } from "./SortPicker";
 
 interface PlaylistTabProps {
-  rules: Rule[];
-  logic: LogicMode;
+  rootGroup: RuleGroup;
   name: string;
   comment: string;
   limit: number | undefined;
@@ -34,8 +32,7 @@ interface PlaylistTabProps {
   content: string | null;
   loading: boolean;
   error: string | null;
-  onRulesChange: (rules: Rule[]) => void;
-  onLogicChange: (logic: LogicMode) => void;
+  onGroupChange: (group: RuleGroup) => void;
   onNameChange: (value: string) => void;
   onCommentChange: (value: string) => void;
   onLimitChange: (value: number | undefined) => void;
@@ -45,8 +42,7 @@ interface PlaylistTabProps {
 }
 
 export function PlaylistTab({
-  rules,
-  logic,
+  rootGroup,
   name,
   comment,
   limit,
@@ -55,8 +51,7 @@ export function PlaylistTab({
   content,
   loading,
   error,
-  onRulesChange,
-  onLogicChange,
+  onGroupChange,
   onNameChange,
   onCommentChange,
   onLimitChange,
@@ -66,7 +61,7 @@ export function PlaylistTab({
 }: PlaylistTabProps) {
   const { numericTags, stringTags, loading: tagsLoading } = useTagMetadata();
 
-  const assembledQuery = buildQueryString(rules, logic);
+  const assembledQuery = buildQueryString(rootGroup);
   const hasValidRules = assembledQuery.length > 0;
 
   const handleDownload = () => {
@@ -88,12 +83,10 @@ export function PlaylistTab({
         <Stack spacing={2}>
           {/* Rule builder */}
           <RuleBuilder
-            rules={rules}
-            logic={logic}
+            rootGroup={rootGroup}
             numericTags={numericTags}
             stringTags={stringTags}
-            onRulesChange={onRulesChange}
-            onLogicChange={onLogicChange}
+            onGroupChange={onGroupChange}
           />
 
           {tagsLoading && (

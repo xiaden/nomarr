@@ -13,8 +13,12 @@ import {
     getPreview,
     type PlaylistPreviewResponse,
 } from "../../../shared/api/navidrome";
-import type { Rule } from "../components/RuleRow";
-import { buildQueryString, createRule, type LogicMode } from "../components/ruleUtils";
+import {
+  buildQueryString,
+  createRule,
+  createRuleGroup,
+  type RuleGroup,
+} from "../components/ruleUtils";
 
 interface TagPreview {
   tag_key: string;
@@ -33,9 +37,12 @@ export function useNavidromeData() {
   const [configLoading, setConfigLoading] = useState(false);
   const [configError, setConfigError] = useState<string | null>(null);
 
-  // Playlist state — structured rules instead of raw query
-  const [playlistRules, setPlaylistRules] = useState<Rule[]>([createRule()]);
-  const [playlistLogic, setPlaylistLogic] = useState<LogicMode>("all");
+  // Playlist state — structured rule groups instead of flat rules
+  const [playlistRootGroup, setPlaylistRootGroup] = useState<RuleGroup>(() => {
+    const rootGroup = createRuleGroup("all");
+    rootGroup.rules = [createRule()];
+    return rootGroup;
+  });
   const [playlistName, setPlaylistName] = useState("My Playlist");
   const [playlistComment, setPlaylistComment] = useState("");
   const [playlistLimit, setPlaylistLimit] = useState<number | undefined>(undefined);
@@ -74,7 +81,7 @@ export function useNavidromeData() {
 
   // Playlist actions
   const previewPlaylist = async () => {
-    const query = buildQueryString(playlistRules, playlistLogic);
+    const query = buildQueryString(playlistRootGroup);
     if (!query.trim()) {
       showError("Add at least one complete rule");
       return;
@@ -93,7 +100,7 @@ export function useNavidromeData() {
   };
 
   const generatePlaylist = async () => {
-    const query = buildQueryString(playlistRules, playlistLogic);
+    const query = buildQueryString(playlistRootGroup);
     if (!query.trim()) {
       showError("Add at least one complete rule");
       return;
@@ -128,8 +135,7 @@ export function useNavidromeData() {
     configLoading,
     configError,
     // Playlist state
-    playlistRules,
-    playlistLogic,
+    playlistRootGroup,
     playlistName,
     playlistComment,
     playlistLimit,
@@ -144,8 +150,7 @@ export function useNavidromeData() {
     // Playlist actions
     previewPlaylist,
     generatePlaylist,
-    setPlaylistRules,
-    setPlaylistLogic,
+    setPlaylistRootGroup,
     setPlaylistName,
     setPlaylistComment,
     setPlaylistLimit,

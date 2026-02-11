@@ -70,6 +70,13 @@ export async function list(enabledOnly = false): Promise<Library[]> {
 }
 
 /**
+ * Alias for list() to match older import naming.
+ */
+export async function getLibraries(enabledOnly = false): Promise<Library[]> {
+  return list(enabledOnly);
+}
+
+/**
  * Get a specific library by ID.
  */
 export async function getLibrary(id: string): Promise<Library> {

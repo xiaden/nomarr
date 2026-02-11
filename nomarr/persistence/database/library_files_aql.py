@@ -1556,3 +1556,55 @@ class LibraryFilesOperations:
         """
         cursor = cast("Cursor", self.db.aql.execute(query, bind_vars=bind_vars))
         return list(cursor)
+
+    def get_tracks_for_matching(
+        self,
+        library_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Get all tracks with metadata for playlist matching.
+
+        Returns tracks with essential metadata for fuzzy matching:
+        _id, path, title, artist, album.
+
+        ISRC is retrieved from tags collection if available.
+
+        Args:
+            library_id: Optional library _id to filter by.
+
+        Returns:
+            List of dicts with _id, path, title, artist, album, isrc fields.
+        """
+        library_filter = ""
+        bind_vars: dict[str, Any] = {}
+
+        if library_id:
+            library_filter = "FILTER f.library_id == @library_id"
+            bind_vars["library_id"] = library_id
+
+        # Query files and LEFT JOIN with tags to get ISRC if available
+        query = f"""
+        FOR f IN library_files
+            FILTER f.is_valid == true
+            {library_filter}
+
+            // Left join to get ISRC from tags
+            LET isrc_tag = FIRST(
+                FOR e IN song_tag_edges
+                    FILTER e._from == f._id
+                    FOR t IN tags
+                        FILTER t._id == e._to
+                        FILTER t.rel == "isrc"
+                        RETURN t.value
+            )
+
+            RETURN {{
+                _id: f._id,
+                path: f.path,
+                title: f.title,
+                artist: f.artist,
+                album: f.album,
+                isrc: isrc_tag
+            }}
+        """
+        cursor = cast("Cursor", self.db.aql.execute(query, bind_vars=bind_vars))
+        return list(cursor)

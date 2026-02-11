@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from nomarr.services.domain.library_svc import LibraryService
     from nomarr.services.domain.metadata_svc import MetadataService
     from nomarr.services.domain.navidrome_svc import NavidromeService
+    from nomarr.services.domain.playlist_import_svc import PlaylistImportService
     from nomarr.services.domain.tagging_svc import TaggingService
     from nomarr.services.infrastructure.config_svc import ConfigService
     from nomarr.services.infrastructure.file_watcher_svc import FileWatcherService
@@ -142,3 +143,14 @@ def get_file_watcher_service() -> FileWatcherService | None:
     from nomarr.app import application
 
     return application.services.get("file_watcher")  # type: ignore[return-value]
+
+
+
+def get_playlist_import_service() -> PlaylistImportService:
+    """Get PlaylistImportService instance."""
+    from nomarr.app import application
+
+    service = application.services.get("playlist_import")
+    if not service:
+        raise HTTPException(status_code=503, detail="Playlist import service not available")
+    return service  # type: ignore[no-any-return]

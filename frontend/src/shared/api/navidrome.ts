@@ -150,3 +150,22 @@ export async function getTagStats(): Promise<TagStatEntry[]> {
     }))
     .sort((a, b) => a.key.localeCompare(b.key));
 }
+
+
+// ── Tag Values (for rules engine combobox) ──
+
+interface TagValuesRawResponse {
+  rel: string;
+  values: string[];
+}
+
+/**
+ * Get distinct values for a specific tag relationship.
+ * Used by the rules engine combobox for autocomplete.
+ */
+export async function getTagValues(rel: string): Promise<string[]> {
+  const raw = await get<TagValuesRawResponse>(
+    `/api/web/navidrome/tag-values?rel=${encodeURIComponent(rel)}`,
+  );
+  return raw.values;
+}

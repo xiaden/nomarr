@@ -17,6 +17,7 @@ from nomarr.interfaces.api.types.navidrome_types import (
     PlaylistPreviewRequest,
     PlaylistPreviewResponse,
     PreviewTagStatsResponse,
+    TagValuesResponse,
 )
 from nomarr.interfaces.api.web.dependencies import get_navidrome_service
 
@@ -34,6 +35,19 @@ async def web_navidrome_preview(navidrome_service: Annotated["NavidromeService",
     except Exception as e:
         logger.exception("[Web API] Error generating Navidrome preview")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to generate preview")) from e
+
+@router.get("/tag-values", dependencies=[Depends(verify_session)])
+async def web_navidrome_tag_values(
+    rel: str,
+    navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
+) -> TagValuesResponse:
+    """Get distinct values for a specific tag relationship."""
+    try:
+        values = navidrome_service.get_tag_values(rel)
+        return TagValuesResponse(rel=rel, values=values)
+    except Exception as e:
+        logger.exception("[Web API] Error fetching tag values")
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to fetch tag values")) from e
 
 @router.get("/config", dependencies=[Depends(verify_session)])
 async def web_navidrome_config(navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)]) -> NavidromeConfigResponse:

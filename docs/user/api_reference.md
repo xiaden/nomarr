@@ -446,6 +446,133 @@ Generate Navidrome Smart Playlist (.nsp file).
 ## Config Endpoints
 
 ### GET /api/web/config
+## Playlist Import Endpoints
+
+### POST /api/web/playlist-import/convert
+
+Convert a Spotify or Deezer playlist to M3U by matching tracks against local library.
+
+**Request:**
+```json
+{
+  "url": "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M",
+  "library_id": "libraries:123",
+  "min_confidence": 0.7,
+  "generate_m3u": true
+}
+```
+
+**Fields:**
+- `url` (string, required): Spotify or Deezer playlist URL
+  - Spotify: `https://open.spotify.com/playlist/{id}` or `spotify:playlist:{id}`
+  - Deezer: `https://www.deezer.com/playlist/{id}` or short links
+- `library_id` (string, required): Target library ID (e.g., "libraries:123")
+- `min_confidence` (float, optional): Minimum confidence threshold (0.0-1.0, default: 0.7)
+- `generate_m3u` (boolean, optional): Whether to generate M3U content (default: true)
+
+**Response:**
+```json
+{
+  "playlist": {
+    "name": "This Is The Beatles",
+    "description": "This is The Beatles. The essential tracks, all in one playlist.",
+    "track_count": 44,
+    "platform": "spotify",
+    "url": "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M"
+  },
+  "matched_count": 42,
+  "unmatched_count": 2,
+  "results": [
+    {
+      "input_title": "Hey Jude",
+      "input_artist": "The Beatles",
+      "matched": true,
+      "tier": "isrc",
+      "confidence": 1.0,
+      "matched_file_path": "/music/The Beatles/1967-1970/Hey Jude.mp3",
+      "alternatives_count": 0
+    },
+    {
+      "input_title": "Come Together",
+      "input_artist": "The Beatles",
+      "matched": true,
+      "tier": "exact",
+      "confidence": 0.95,
+      "matched_file_path": "/music/The Beatles/Abbey Road/01 Come Together.mp3",
+      "alternatives_count": 0
+    },
+    {
+      "input_title": "Yesterday - Remastered 2009",
+      "input_artist": "The Beatles",
+      "matched": true,
+      "tier": "fuzzy_high",
+      "confidence": 0.92,
+      "matched_file_path": "/music/The Beatles/Help!/Yesterday.mp3",
+      "alternatives_count": 1
+    },
+    {
+      "input_title": "Obscure B-Side",
+      "input_artist": "The Beatles",
+      "matched": false,
+      "tier": "none",
+      "confidence": 0.0,
+      "matched_file_path": null,
+      "alternatives_count": 0
+    }
+  ],
+  "m3u_content": "#EXTM3U\n#EXTINF:234,The Beatles - Hey Jude\n/music/The Beatles/1967-1970/Hey Jude.mp3\n..."
+}
+```
+
+**Match Tiers:**
+- `isrc`: Exact match via ISRC code (confidence: 1.0)
+- `exact`: Perfect metadata match after normalization (confidence: 0.95)
+- `fuzzy_high`: Strong fuzzy match (confidence: 0.85+)
+- `fuzzy_low`: Moderate fuzzy match (confidence: 0.70-0.85)
+- `none`: No match found (confidence: 0.0)
+
+**Error Responses:**
+
+400 Bad Request - Invalid URL or missing parameters:
+```json
+{
+  "detail": "Invalid playlist URL format"
+}
+```
+
+404 Not Found - Library not found:
+```json
+{
+  "detail": "Library not found: libraries:999"
+}
+```
+
+500 Internal Server Error - API failure:
+```json
+{
+  "detail": "Failed to fetch playlist: Invalid Spotify credentials"
+}
+```
+
+---
+
+### GET /api/web/playlist-import/spotify-status
+
+Check if Spotify API credentials are configured.
+
+**Response:**
+```json
+{
+  "configured": true
+}
+```
+
+**Fields:**
+- `configured` (boolean): Whether `spotify_client_id` and `spotify_client_secret` are set
+
+**Note:** Deezer does not require configuration (public API).
+
+---
 
 Get current configuration (user-editable subset).
 

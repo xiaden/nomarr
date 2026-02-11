@@ -33,34 +33,325 @@ Examples:
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 
-from nomarr.helpers.dto.navidrome_dto import SmartPlaylistFilter, TagCondition
+from nomarr.helpers.dto.navidrome_dto import (
+    MAX_RULE_GROUP_DEPTH,
+    RuleGroup,
+    SmartPlaylistFilter,
+    TagCondition,
+)
 from nomarr.helpers.exceptions import PlaylistQueryError
 
 # Maximum query length to prevent ReDoS attacks
 MAX_QUERY_LENGTH = 4096
 
 
+
+@dataclass
+class TokenizedGroup:
+    """A tokenized group from parenthesis parsing."""
+
+    content: str
+    """Raw content inside this group (without outer parentheses)"""
+
+    depth: int
+    """Nesting depth (0 = root level)"""
+
+    start_pos: int
+    """Starting position in original query"""
+
+    end_pos: int
+    """Ending position in original query"""
+
+
+def _tokenize_parentheses(
+    query: str, max_depth: int = MAX_RULE_GROUP_DEPTH
+) -> tuple[str, list[tuple[int, int, int]]]:
+    """Tokenize query by parentheses, track depth, and enforce max depth.
+
+    Args:
+        query: Query string with potential parentheses
+        max_depth: Maximum allowed nesting depth
+
+    Returns:
+        Tuple of (query_without_parens, group_ranges)
+            - query_without_parens: Query with parentheses removed
+            - group_ranges: List of (start, end, depth) tuples for each group
+
+    Raises:
+        PlaylistQueryError: If parentheses are unbalanced or depth exceeds max
+
+    Examples:
+        >>> _tokenize_parentheses("(a AND b) OR (c AND d)")
+        ("a AND b OR c AND d", [(1, 8, 1), (13, 20, 1)])
+
+        >>> _tokenize_parentheses("((a))")
+        ("a", [(2, 3, 2)])
+    """
+    depth = 0
+    max_seen_depth = 0
+    group_ranges: list[tuple[int, int, int]] = []
+    current_group_start = -1
+
+    for i, char in enumerate(query):
+        if char == "(":
+            depth += 1
+            if depth > max_seen_depth:
+                max_seen_depth = depth
+            if depth > max_depth:
+                msg = f"Query nesting depth {depth} exceeds maximum of {max_depth}"
+                raise PlaylistQueryError(msg)
+            if depth == 1:
+                current_group_start = i
+        elif char == ")":
+            if depth == 0:
+                msg = "Unbalanced parentheses: closing ')' without opening '('"
+                raise PlaylistQueryError(msg)
+            if depth == 1 and current_group_start >= 0:
+                # Record this group range
+                group_ranges.append((current_group_start + 1, i, 1))
+            depth -= 1
+
+    if depth != 0:
+        msg = "Unbalanced parentheses: unclosed '('"
+        raise PlaylistQueryError(msg)
+
+    # Remove parentheses from query for simpler parsing
+    query_without_parens = query.replace("(", "").replace(")", "")
+
+    return query_without_parens, group_ranges
+
+
+def _find_top_level_operators(query: str) -> list[tuple[int, str]]:
+    """Find AND/OR operators at top level (outside parentheses).
+
+    Args:
+        query: Query string to scan
+
+    Returns:
+        List of (position, operator_type) tuples sorted by position
+
+    Raises:
+        PlaylistQueryError: If mixed AND/OR found at same level
+
+    """
+    operators: list[tuple[int, str]] = []
+    depth = 0
+    i = 0
+
+    while i < len(query):
+        char = query[i]
+
+        if char == "(":
+            depth += 1
+            i += 1
+        elif char == ")":
+            depth -= 1
+            i += 1
+        elif depth == 0:
+            # Check for AND/OR at top level
+            # Must be preceded by space or start, followed by space or end
+            if i + 3 <= len(query) and query[i : i + 3].upper() == "AND":
+                # Verify word boundary after AND
+                if i + 3 >= len(query) or query[i + 3].isspace():
+                    # Verify word boundary before AND
+                    if i == 0 or query[i - 1].isspace():
+                        operators.append((i, "AND"))
+                        i += 3
+                        continue
+            elif i + 2 <= len(query) and query[i : i + 2].upper() == "OR":
+                # Verify word boundary after OR
+                if i + 2 >= len(query) or query[i + 2].isspace():
+                    # Verify word boundary before OR
+                    if i == 0 or query[i - 1].isspace():
+                        operators.append((i, "OR"))
+                        i += 2
+                        continue
+            i += 1
+        else:
+            i += 1
+
+    # Verify all operators are same type
+    if operators:
+        op_types = {op[1] for op in operators}
+        if len(op_types) > 1:
+            msg = "Mixed AND/OR operators at same level not supported. Use parentheses to group."
+            raise PlaylistQueryError(msg)
+
+    return operators
+
+
+def _split_on_operators(
+    query: str, operator_positions: list[tuple[int, str]]
+) -> list[str]:
+    """Split query string at operator positions.
+
+    Args:
+        query: Original query string
+        operator_positions: List of (position, operator) from _find_top_level_operators
+
+    Returns:
+        List of query segments between operators
+
+    """
+    if not operator_positions:
+        return [query]
+
+    segments: list[str] = []
+    start = 0
+
+    for pos, op in operator_positions:
+        # Extract segment before this operator
+        segment = query[start:pos]
+        segments.append(segment)
+        # Move start past the operator
+        start = pos + len(op)
+
+    # Add final segment after last operator
+    final_segment = query[start:]
+    segments.append(final_segment)
+
+    return segments
+
+
+def _parse_group(query: str, namespace: str, depth: int = 0) -> RuleGroup:
+    """Recursively parse a query string into a RuleGroup tree.
+
+    Args:
+        query: Query string (may contain nested parentheses)
+        namespace: Tag namespace for conditions
+        depth: Current nesting depth (for validation)
+
+    Returns:
+        RuleGroup with parsed conditions and/or nested groups
+
+    Raises:
+        PlaylistQueryError: If syntax invalid or max depth exceeded
+
+    """
+    if depth >= MAX_RULE_GROUP_DEPTH:
+        msg = f"Maximum nesting depth ({MAX_RULE_GROUP_DEPTH}) exceeded"
+        raise PlaylistQueryError(msg)
+
+    query = query.strip()
+
+    if not query:
+        msg = "Empty query segment"
+        raise PlaylistQueryError(msg)
+
+    # Check if entire query wrapped in outer parentheses
+    if query.startswith("(") and query.endswith(")"):
+        # Verify these are matching outer parens
+        depth_counter = 0
+        is_outer_parens = True
+        for i, char in enumerate(query):
+            if char == "(":
+                depth_counter += 1
+            elif char == ")":
+                depth_counter -= 1
+                if depth_counter == 0 and i < len(query) - 1:
+                    # Closing paren isn't at the end - not outer parens
+                    is_outer_parens = False
+                    break
+
+        if is_outer_parens:
+            # These are outer parens - strip and recurse
+            return _parse_group(query[1:-1], namespace, depth + 1)
+
+    # Find top-level AND/OR operators (outside parentheses)
+    operator_positions = _find_top_level_operators(query)
+
+    if not operator_positions:
+        # No operators - this is a single condition
+        condition = _parse_condition(query, namespace)
+        return RuleGroup(logic="AND", conditions=[condition], groups=[])
+
+    # Determine which operator to use (all same type, verified by helper)
+    operator = operator_positions[0][1]  # Get operator type from first position
+
+    # Split on operators
+    segments = _split_on_operators(query, operator_positions)
+
+    # Parse each segment
+    conditions: list[TagCondition] = []
+    groups: list[RuleGroup] = []
+
+    for segment in segments:
+        segment = segment.strip()
+        if not segment:
+            continue
+
+        # Check if segment is parenthesized
+        if segment.startswith("(") and segment.endswith(")"):
+            # Check if entire segment is one group
+            is_single_group = True
+            depth_counter = 0
+            for i, char in enumerate(segment):
+                if char == "(":
+                    depth_counter += 1
+                elif char == ")":
+                    depth_counter -= 1
+                    if depth_counter == 0 and i < len(segment) - 1:
+                        is_single_group = False
+                        break
+
+            if is_single_group:
+                # Recursively parse as nested group
+                nested_group = _parse_group(segment[1:-1], namespace, depth + 1)
+                groups.append(nested_group)
+            else:
+                # Complex segment - parse as group without stripping
+                nested_group = _parse_group(segment, namespace, depth + 1)
+                groups.append(nested_group)
+        else:
+            # Try to parse as condition
+            try:
+                condition = _parse_condition(segment, namespace)
+                conditions.append(condition)
+            except PlaylistQueryError:
+                # Might be a complex expression - parse as group
+                nested_group = _parse_group(segment, namespace, depth + 1)
+                groups.append(nested_group)
+
+    return RuleGroup(
+        logic=operator,  # type: ignore[arg-type]  # operator validated by _find_top_level_operators
+        conditions=conditions,
+        groups=groups,
+    )
+
 def parse_smart_playlist_query(query: str, namespace: str = "nom") -> SmartPlaylistFilter:
     """Parse Smart Playlist query into structured filter object.
 
     This is a PURE function - no SQL generation, no database access.
+    Supports nested rule groups with parentheses for complex boolean logic.
+
+    Backward Compatibility:
+        Flat queries without parentheses (e.g., "tag:a > 1 AND tag:b > 2")
+        are automatically represented as a single root RuleGroup with no
+        nested groups. This maintains compatibility with pre-nested query
+        behavior - the structure is identical, just wrapped in RuleGroup.
 
     Args:
-        query: Smart Playlist query string
+        query: Smart Playlist query string (supports nested parentheses)
         namespace: Tag namespace (default: "nom")
 
     Returns:
-        SmartPlaylistFilter with parsed conditions
+        SmartPlaylistFilter with parsed rule groups
 
     Raises:
         PlaylistQueryError: If query syntax is invalid or too long
 
     USAGE:
         >>> from nomarr.workflows.navidrome.parse_smart_playlist_query_wf import parse_smart_playlist_query
+        >>> # Nested query
+        >>> filter = parse_smart_playlist_query("(tag:mood_happy > 0.7 AND tag:energy > 0.6) OR tag:calm > 0.8")
+        >>> print(filter.root.logic)  # "OR"
+        >>> print(filter.root.groups)  # Has nested groups
+        >>> # Flat query (backward compatible)
         >>> filter = parse_smart_playlist_query("tag:mood_happy > 0.7 AND tag:energy > 0.6")
-        >>> print(filter.all_conditions)
-        >>> print(filter.is_simple_and)
+        >>> print(filter.root.logic)  # "AND"
+        >>> print(filter.root.groups)  # Empty list - no nested groups
 
     """
     if not query or not query.strip():
@@ -75,48 +366,17 @@ def parse_smart_playlist_query(query: str, namespace: str = "nom") -> SmartPlayl
     # Normalize whitespace
     query = " ".join(query.split())
 
-    # Tokenize into conditions and logic operators
-    condition_strings, operators = _tokenize_query(query)
+    # Validate parenthesis balance and depth before parsing
+    try:
+        _tokenize_parentheses(query, MAX_RULE_GROUP_DEPTH)
+    except PlaylistQueryError:
+        # Re-raise with original error message (already has context)
+        raise
 
-    if not condition_strings:
-        msg = "No valid conditions found in query"
-        raise PlaylistQueryError(msg)
+    # Parse query into tree structure
+    root_group = _parse_group(query, namespace, depth=0)
 
-    # Parse each condition
-    conditions: list[tuple[TagCondition, str | None]] = []
-
-    for i, cond_str in enumerate(condition_strings):
-        tag_cond = _parse_condition(cond_str, namespace)
-
-        # Determine logic operator for this condition
-        # First condition has no logic operator
-        logic = operators[i - 1] if i > 0 else None
-        conditions.append((tag_cond, logic))
-
-    if not conditions:
-        msg = "No valid conditions found in query"
-        raise PlaylistQueryError(msg)
-
-    # Group conditions by logic operator
-    logic_types = {logic for _, logic in conditions[1:] if logic}
-
-    if not logic_types or logic_types == {"AND"}:
-        # All AND conditions - must match all
-        all_conds = [cond for cond, _ in conditions]
-        any_conds = []
-    elif logic_types == {"OR"}:
-        # All OR conditions - must match any
-        all_conds = []
-        any_conds = [cond for cond, _ in conditions]
-    else:
-        # Mixed AND/OR logic is not supported
-        # Reject with clear error message
-        msg = "Mixed AND/OR operators are not supported. Use either all AND or all OR in your query."
-        raise PlaylistQueryError(
-            msg,
-        )
-
-    return SmartPlaylistFilter(all_conditions=all_conds, any_conditions=any_conds)
+    return SmartPlaylistFilter(root=root_group)
 
 
 def _tokenize_query(query: str) -> tuple[list[str], list[str]]:

@@ -58,6 +58,21 @@ class NavidromeService:
         stats = preview_tag_stats_workflow(self._db, namespace=self.cfg.namespace)
         return PreviewTagStatsResult(stats=stats)
 
+    def get_tag_values(self, rel: str) -> list[str]:
+        """Get distinct values for a specific tag relationship.
+
+        Args:
+            rel: Tag relationship key (e.g., 'artist', 'nom:mood-strict')
+
+        Returns:
+            Sorted list of distinct tag values as strings
+
+        """
+        from nomarr.components.navidrome.tag_query_comp import get_tag_value_counts
+
+        value_counts = get_tag_value_counts(self._db, rel)
+        return sorted(str(v) for v in value_counts)
+
     def generate_navidrome_config(self) -> str:
         """Generate Navidrome config file content."""
         return generate_navidrome_config_workflow(self._db, namespace=self.cfg.namespace)

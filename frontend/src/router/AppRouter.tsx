@@ -13,6 +13,7 @@ const InsightsPage = lazy(() => import("../features/insights/InsightsPage").then
 const CalibrationPage = lazy(() => import("../features/calibration/CalibrationPage").then((m) => ({ default: m.CalibrationPage })));
 const ConfigPage = lazy(() => import("../features/config/ConfigPage").then((m) => ({ default: m.ConfigPage })));
 const NavidromePage = lazy(() => import("../features/navidrome/NavidromePage").then((m) => ({ default: m.NavidromePage })));
+const PlaylistImportPage = lazy(() => import("../features/playlist-import/PlaylistImportPage").then((m) => ({ default: m.PlaylistImportPage })));
 
 /**
  * Main application router.
@@ -67,6 +68,7 @@ export function AppRouter() {
                     <Route path="/calibration" element={<CalibrationPage />} />
                     <Route path="/config" element={<ConfigPage />} />
                     <Route path="/navidrome" element={<NavidromePage />} />
+                    <Route path="/playlist-import" element={<PlaylistImportPage />} />
                   </Routes>
                 </AppShell>
               </ProtectedRoute>

@@ -19,6 +19,7 @@ Start here if you're installing or using Nomarr:
 - **[Deployment Guide](user/deployment.md)** - Docker deployment, GPU setup, production configuration
 - **[API Reference](user/api_reference.md)** - HTTP endpoints for automation and integration
 - **[Navidrome Integration](user/navidrome.md)** - Smart playlists and web UI integration
+- **[Playlist Import](user/playlist_import.md)** - Convert Spotify/Deezer playlists to M3U
 
 ### 🔧 Developer Documentation
 

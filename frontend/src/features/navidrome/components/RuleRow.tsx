@@ -1,12 +1,13 @@
 /**
  * A single rule row in the playlist rule builder.
  *
- * Renders tag select (grouped by type), operator select (context-sensitive),
- * value input (number for numeric tags, text for string), and remove button.
+ * Renders tag select (grouped by type with labels), operator select (context-sensitive),
+ * value combobox (autocomplete from DB values + free text), and remove button.
  */
 
 import CloseIcon from "@mui/icons-material/Close";
 import {
+  Autocomplete,
   FormControl,
   IconButton,
   InputLabel,
@@ -18,8 +19,11 @@ import {
   Tooltip,
   type SelectChangeEvent,
 } from "@mui/material";
+import { useCallback, useEffect, useState } from "react";
 
-import type { TagStatEntry } from "@shared/api/navidrome";
+import { getTagValues } from "@shared/api/navidrome";
+
+import type { TagMetaEntry } from "../hooks/useTagMetadata";
 
 export interface Rule {
   id: string;
@@ -43,24 +47,13 @@ const STRING_OPERATORS = [
   { value: "contains", label: "contains" },
 ] as const;
 
-/** Extract hint text from tag summary, e.g. "min=0, max=100, unique=5" → "0 – 100" */
-function rangeHint(tag: TagStatEntry): string {
-  if (tag.type === "string") {
-    const m = tag.summary.match(/unique=(\d+)/);
-    return m ? `${m[1]} values` : "";
-  }
-  const minMatch = tag.summary.match(/min=([\d.]+)/);
-  const maxMatch = tag.summary.match(/max=([\d.]+)/);
-  if (minMatch && maxMatch) return `${minMatch[1]} – ${maxMatch[1]}`;
-  return "";
-}
-
 interface RuleRowProps {
   rule: Rule;
-  numericTags: TagStatEntry[];
-  stringTags: TagStatEntry[];
+  numericTags: TagMetaEntry[];
+  stringTags: TagMetaEntry[];
   onChange: (updated: Rule) => void;
   onRemove: () => void;
+  onMoveToGroup?: (ruleId: string, targetGroupId: string) => void; // Future: drag-and-drop
 }
 
 export function RuleRow({
@@ -70,19 +63,41 @@ export function RuleRow({
   onChange,
   onRemove,
 }: RuleRowProps) {
+  const allTags = [...numericTags, ...stringTags];
+
   // Determine if the selected tag is numeric
-  const selectedTag = [...numericTags, ...stringTags].find(
-    (t) => t.key === rule.tagKey,
-  );
+  const selectedTag = allTags.find((t) => t.key === rule.tagKey);
   const isNumeric =
     selectedTag?.type === "float" || selectedTag?.type === "integer";
   const operators = isNumeric ? NUMERIC_OPERATORS : STRING_OPERATORS;
 
+  // Fetch distinct values for the selected tag
+  const [tagOptions, setTagOptions] = useState<string[]>([]);
+  const [optionsLoading, setOptionsLoading] = useState(false);
+
+  const fetchValues = useCallback(async (tagKey: string) => {
+    if (!tagKey) {
+      setTagOptions([]);
+      return;
+    }
+    try {
+      setOptionsLoading(true);
+      const values = await getTagValues(tagKey);
+      setTagOptions(values);
+    } catch {
+      setTagOptions([]);
+    } finally {
+      setOptionsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchValues(rule.tagKey);
+  }, [rule.tagKey, fetchValues]);
+
   const handleTagChange = (e: SelectChangeEvent) => {
     const newKey = e.target.value;
-    const newTag = [...numericTags, ...stringTags].find(
-      (t) => t.key === newKey,
-    );
+    const newTag = allTags.find((t) => t.key === newKey);
     const wasNumeric = isNumeric;
     const nowNumeric =
       newTag?.type === "float" || newTag?.type === "integer";
@@ -104,14 +119,10 @@ export function RuleRow({
     onChange({ ...rule, operator: e.target.value });
   };
 
-  const handleValueChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    onChange({ ...rule, value: e.target.value });
-  };
-
   return (
     <Stack direction="row" spacing={1} alignItems="center">
       {/* Tag selector */}
-      <FormControl size="small" sx={{ minWidth: 200, flex: 2 }}>
+      <FormControl size="small" sx={{ minWidth: 180, flex: 2 }}>
         <InputLabel>Tag</InputLabel>
         <Select
           value={rule.tagKey}
@@ -121,25 +132,19 @@ export function RuleRow({
           {numericTags.length > 0 && (
             <ListSubheader>Numeric</ListSubheader>
           )}
-          {numericTags.map((tag) => {
-            const hint = rangeHint(tag);
-            return (
-              <MenuItem key={tag.key} value={tag.key}>
-                {tag.key}{hint && ` (${hint})`}
-              </MenuItem>
-            );
-          })}
+          {numericTags.map((tag) => (
+            <MenuItem key={tag.key} value={tag.key}>
+              {tag.label}
+            </MenuItem>
+          ))}
           {stringTags.length > 0 && (
             <ListSubheader>Text</ListSubheader>
           )}
-          {stringTags.map((tag) => {
-            const hint = rangeHint(tag);
-            return (
-              <MenuItem key={tag.key} value={tag.key}>
-                {tag.key}{hint && ` (${hint})`}
-              </MenuItem>
-            );
-          })}
+          {stringTags.map((tag) => (
+            <MenuItem key={tag.key} value={tag.key}>
+              {tag.label}
+            </MenuItem>
+          ))}
         </Select>
       </FormControl>
 
@@ -159,15 +164,32 @@ export function RuleRow({
         </Select>
       </FormControl>
 
-      {/* Value input */}
-      <TextField
+      {/* Value combobox */}
+      <Autocomplete
         size="small"
-        label="Value"
-        type={isNumeric ? "number" : "text"}
-        value={rule.value}
-        onChange={handleValueChange}
-        slotProps={isNumeric ? { htmlInput: { step: "any" } } : undefined}
-        sx={{ flex: 2 }}
+        freeSolo
+        options={tagOptions}
+        loading={optionsLoading}
+        value={rule.value || null}
+        inputValue={rule.value}
+        onInputChange={(_, newValue) => {
+          onChange({ ...rule, value: newValue });
+        }}
+        onChange={(_, newValue) => {
+          onChange({ ...rule, value: newValue ?? "" });
+        }}
+        renderInput={(params) => (
+          <TextField
+            {...params}
+            label="Value"
+            type={isNumeric ? "number" : "text"}
+            inputProps={{
+              ...params.inputProps,
+              ...(isNumeric ? { step: "any" } : {}),
+            }}
+          />
+        )}
+        sx={{ flex: 2, minWidth: 160 }}
       />
 
       {/* Remove button */}

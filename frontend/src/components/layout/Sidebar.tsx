@@ -23,6 +23,7 @@ const navItems: NavItem[] = [
   { path: "/insights", label: "Insights" },
   { path: "/calibration", label: "Calibration" },
   { path: "/navidrome", label: "Navidrome" },
+  { path: "/playlist-import", label: "Playlist Import" },
   { path: "/config", label: "Config" },
 ];
 

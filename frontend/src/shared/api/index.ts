@@ -41,7 +41,7 @@ export { getConfig, updateConfig, type UpdateConfigResponse } from "./config";
 
 // Navidrome - rename getConfig to avoid conflict
 export {
-    generatePlaylist, generateTemplates, getConfig as getNavidromeConfig, getPreview as getNavidromePreview, getTagStats, getTemplates, previewPlaylist, type GeneratePlaylistParams,
+    generatePlaylist, generateTemplates, getConfig as getNavidromeConfig, getPreview as getNavidromePreview, getTagStats, getTagValues as getNavidromeTagValues, getTemplates, previewPlaylist, type GeneratePlaylistParams,
     type GeneratePlaylistResponse, type GenerateTemplatesResponse, type GeneratedTemplate, type GetTemplatesResponse, type NavidromeConfigResponse, type NavidromePreviewResponse, type NavidromeTag, type PlaylistPreviewResponse, type PlaylistTemplate, type TagStatEntry
 } from "./navidrome";
 

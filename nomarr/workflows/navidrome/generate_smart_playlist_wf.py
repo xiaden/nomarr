@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from nomarr.helpers.dto.navidrome_dto import SmartPlaylistFilter, TagCondition
+from nomarr.helpers.dto.navidrome_dto import RuleGroup, SmartPlaylistFilter, TagCondition
 from nomarr.helpers.exceptions import PlaylistQueryError
 
 if TYPE_CHECKING:
@@ -107,32 +107,50 @@ def generate_smart_playlist_workflow(
     return nsp
 
 
-def _convert_filter_to_nsp_rules(
-    playlist_filter: SmartPlaylistFilter, namespace: str,
-) -> dict[str, list[dict[str, Any]]]:
-    """Convert SmartPlaylistFilter to .nsp rules format.
+
+def _convert_rule_group_to_nsp(rule_group: RuleGroup, namespace: str) -> dict[str, Any]:
+    """Convert RuleGroup to .nsp format recursively.
 
     Args:
-        playlist_filter: Parsed filter with all_conditions and any_conditions
+        rule_group: Rule group with conditions and/or nested groups
         namespace: Tag namespace for stripping prefixes
 
     Returns:
         Dictionary with either {"all": [...]}, {"any": [...]}, or nested structure
 
     """
-    all_rules = [_tag_condition_to_nsp_rule(cond, namespace) for cond in playlist_filter.all_conditions]
-    any_rules = [_tag_condition_to_nsp_rule(cond, namespace) for cond in playlist_filter.any_conditions]
+    rules: list[dict[str, Any]] = []
 
-    # Build .nsp structure based on condition types
-    if all_rules and not any_rules:
-        return {"all": all_rules}
-    if any_rules and not all_rules:
-        return {"any": any_rules}
-    if all_rules and any_rules:
-        # Mixed logic: nest any_rules inside all_rules
-        return {"all": [*all_rules, {"any": any_rules}]}
-    # No conditions (should not happen, parser prevents this)
-    return {"all": []}
+    # Convert conditions to NSP rules
+    for condition in rule_group.conditions:
+        rules.append(_tag_condition_to_nsp_rule(condition, namespace))
+
+    # Recursively convert nested groups
+    for nested_group in rule_group.groups:
+        nested_nsp = _convert_rule_group_to_nsp(nested_group, namespace)
+        rules.append(nested_nsp)
+
+    # Wrap in all/any based on logic
+    if rule_group.logic == "AND":
+        return {"all": rules}
+    # logic == "OR"
+    return {"any": rules}
+
+
+def _convert_filter_to_nsp_rules(
+    playlist_filter: SmartPlaylistFilter, namespace: str,
+) -> dict[str, list[dict[str, Any]]]:
+    """Convert SmartPlaylistFilter to .nsp rules format.
+
+    Args:
+        playlist_filter: Parsed filter with nested rule groups
+        namespace: Tag namespace for stripping prefixes
+
+    Returns:
+        Dictionary with either {"all": [...]}, {"any": [...]}, or nested structure
+
+    """
+    return _convert_rule_group_to_nsp(playlist_filter.root, namespace)  # type: ignore[return-value]
 
 
 def _tag_condition_to_nsp_rule(condition: TagCondition, namespace: str) -> dict[str, Any]:

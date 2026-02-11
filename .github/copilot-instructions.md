@@ -206,10 +206,12 @@ Create a task plan in `plans/` (e.g., `TASK-refactor-library-service.md`) follow
 When given a complex task (5+ coordinated edits, cross-layer changes, architectural decisions requiring research), do NOT attempt to manage it through todos and context alone. Instead:
 
 1. **Invoke the Plan subagent** to research the problem and create a formal plan in `plans/`
-2. **Execute the plan** using `mcp_nomarr_dev_plan_read` and `mcp_nomarr_dev_plan_complete_step` to track progress
+2. **Execute the plan** using `mcp_nomarr_dev_plan_complete_step` to track progress
+   - If the plan file is **attached in context**, read it directly — do NOT call `plan_read`
+   - Only use `plan_read` when resuming in a fresh context without the plan attached
 
 This is required because:
-- Plans persist across context windows — a fresh context can resume via `plan_read`
+- Plans persist across context windows — a fresh context can resume via `plan_read` or by attaching the plan file
 - Step completion is durable (not lost if context resets mid-task)
 - The Plan agent performs upfront research, avoiding mid-execution surprises
 - Todos disappear when context ends; plans survive

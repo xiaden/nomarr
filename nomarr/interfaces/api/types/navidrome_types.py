@@ -21,6 +21,7 @@ if TYPE_CHECKING:
         GetTemplateSummaryResult,
         PlaylistPreviewResult,
         PreviewTagStatsResult,
+        RuleGroup,
         SmartPlaylistFilter,
         TagCondition,
         TemplateSummaryItem,
@@ -48,23 +49,36 @@ class TagConditionResponse(BaseModel):
         )
 
 
+class RuleGroupResponse(BaseModel):
+    """Pydantic model for RuleGroup DTO."""
+
+    logic: Literal["AND", "OR"] = Field(..., description="Logic operator for this group")
+    conditions: list[TagConditionResponse] = Field(
+        default_factory=list, description="Tag conditions directly in this group"
+    )
+    groups: list[RuleGroupResponse] = Field(
+        default_factory=list, description="Nested child groups (recursive structure)"
+    )
+
+    @classmethod
+    def from_dto(cls, dto: RuleGroup) -> RuleGroupResponse:
+        """Convert RuleGroup DTO to Pydantic response model."""
+        return cls(
+            logic=dto.logic,
+            conditions=[TagConditionResponse.from_dto(c) for c in dto.conditions],
+            groups=[RuleGroupResponse.from_dto(g) for g in dto.groups],
+        )
+
+
 class SmartPlaylistFilterResponse(BaseModel):
     """Pydantic model for SmartPlaylistFilter DTO."""
 
-    all_conditions: list[TagConditionResponse] = Field(
-        default_factory=list, description="Conditions joined by AND (all must match)",
-    )
-    any_conditions: list[TagConditionResponse] = Field(
-        default_factory=list, description="Conditions joined by OR (any must match)",
-    )
+    root: RuleGroupResponse = Field(..., description="Root rule group containing the query structure")
 
     @classmethod
     def from_dto(cls, dto: SmartPlaylistFilter) -> SmartPlaylistFilterResponse:
         """Convert SmartPlaylistFilter DTO to Pydantic response model."""
-        return cls(
-            all_conditions=[TagConditionResponse.from_dto(c) for c in dto.all_conditions],
-            any_conditions=[TagConditionResponse.from_dto(c) for c in dto.any_conditions],
-        )
+        return cls(root=RuleGroupResponse.from_dto(dto.root))
 
 
 class PlaylistPreviewResponse(BaseModel):
@@ -97,6 +111,13 @@ class PreviewTagStatsResponse(BaseModel):
     def from_dto(cls, dto: PreviewTagStatsResult) -> PreviewTagStatsResponse:
         """Convert PreviewTagStatsResult DTO to Pydantic response model."""
         return cls(stats=dto.stats)
+
+
+class TagValuesResponse(BaseModel):
+    """Response containing distinct values for a specific tag."""
+
+    rel: str = Field(..., description="Tag relationship key")
+    values: list[str] = Field(default_factory=list, description="Sorted distinct values")
 
 
 class NavidromeConfigResponse(BaseModel):

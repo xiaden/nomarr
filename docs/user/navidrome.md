@@ -286,6 +286,55 @@ playlists:
       - tag: "slow"
 ```
 
+### Nested Rule Groups (Advanced)
+
+For complex boolean logic, use parentheses to group rules together. This allows combining AND/OR logic in ways not possible with flat rules.
+
+**Query Syntax:**
+```
+(condition AND condition) OR (condition AND condition)
+```
+
+**Example: Energetic Electronic OR Mellow Acoustic**
+
+Matches tracks that are EITHER (energetic AND electronic) OR (mellow AND acoustic):
+
+```
+(tag:energetic > 0.7 AND tag:electronic > 0.7) OR (tag:mellow > 0.7 AND tag:acoustic > 0.7)
+```
+
+Without nesting, you could only express "all must match" or "any can match" — nesting gives you full boolean control.
+
+**More Examples:**
+
+```
+# Happy dance music OR calm acoustic
+(tag:happy > 0.6 AND tag:danceable > 0.6) OR (tag:calm > 0.7 AND tag:acoustic > 0.6)
+
+# Rock or metal, but must be energetic
+(tag:rock > 0.7 OR tag:metal > 0.7) AND tag:energetic > 0.6
+
+# Complex three-level nesting
+((tag:electronic > 0.7 AND tag:danceable > 0.7) OR tag:pop > 0.8) AND tag:happy > 0.5
+```
+
+**Max Nesting Depth:** 5 levels
+
+The backend enforces a maximum nesting depth of 5 to prevent overly complex queries. This limit is more than sufficient for practical playlist rules.
+
+**Invalid (too deep):**
+```
+(((((tag:a > 0.5)))))
+```
+
+**UI Support:**
+
+The Web UI rule builder supports nested groups:
+1. Click "Add Group" to create a nested group
+2. Set the group's logic (AND/OR) independently
+3. Add rules or more nested groups within
+4. The UI prevents exceeding max depth
+
 ### Tier-Based Filtering
 
 **Only Strong Matches:**

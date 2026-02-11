@@ -55,7 +55,7 @@ def list_project_directory_tree(folder: str = "", *, workspace_root: Path) -> di
             if part in blacklist_dirs:
                 return True
             # Check hidden dirs (except .github)
-            if part.startswith(".") and part not in {".github"}:
+            if part.startswith(".") and part not in {".github", ".docker"}:
                 return True
             # Check glob patterns
             for pattern in blacklist_patterns:

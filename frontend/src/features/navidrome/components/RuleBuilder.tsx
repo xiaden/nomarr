@@ -1,99 +1,37 @@
 /**
- * Rule builder panel — manages an array of rules with a logic toggle
- * (Match ALL / Match ANY) and assembles the query string for the backend.
+ * Rule builder panel — manages a root RuleGroup with nested structure.
+ * Delegates all UI and logic to GroupContainer component.
  */
 
-import AddIcon from "@mui/icons-material/Add";
-import {
-  Button,
-  Stack,
-  ToggleButton,
-  ToggleButtonGroup,
-  Typography,
-} from "@mui/material";
+import { Stack } from "@mui/material";
 
-import type { TagStatEntry } from "@shared/api/navidrome";
+import type { TagMetaEntry } from "../hooks/useTagMetadata";
 
-import { RuleRow, type Rule } from "./RuleRow";
-import { createRule, type LogicMode } from "./ruleUtils";
+import { GroupContainer } from "./GroupContainer";
+import type { RuleGroup } from "./ruleUtils";
 
 interface RuleBuilderProps {
-  rules: Rule[];
-  logic: LogicMode;
-  numericTags: TagStatEntry[];
-  stringTags: TagStatEntry[];
-  onRulesChange: (rules: Rule[]) => void;
-  onLogicChange: (logic: LogicMode) => void;
+  rootGroup: RuleGroup;
+  numericTags: TagMetaEntry[];
+  stringTags: TagMetaEntry[];
+  onGroupChange: (updated: RuleGroup) => void;
 }
 
 export function RuleBuilder({
-  rules,
-  logic,
+  rootGroup,
   numericTags,
   stringTags,
-  onRulesChange,
-  onLogicChange,
+  onGroupChange,
 }: RuleBuilderProps) {
-  const handleAdd = () => {
-    onRulesChange([...rules, createRule()]);
-  };
-
-  const handleChange = (index: number, updated: Rule) => {
-    const next = [...rules];
-    next[index] = updated;
-    onRulesChange(next);
-  };
-
-  const handleRemove = (index: number) => {
-    onRulesChange(rules.filter((_, i) => i !== index));
-  };
-
-  const handleLogicToggle = (
-    _: React.MouseEvent<HTMLElement>,
-    value: LogicMode | null,
-  ) => {
-    if (value) onLogicChange(value);
-  };
-
   return (
     <Stack spacing={1.5}>
-      {/* Logic toggle */}
-      <Stack direction="row" spacing={2} alignItems="center">
-        <Typography variant="body2" color="text.secondary">
-          Match
-        </Typography>
-        <ToggleButtonGroup
-          value={logic}
-          exclusive
-          onChange={handleLogicToggle}
-          size="small"
-        >
-          <ToggleButton value="all">ALL rules</ToggleButton>
-          <ToggleButton value="any">ANY rule</ToggleButton>
-        </ToggleButtonGroup>
-      </Stack>
-
-      {/* Rule rows */}
-      {rules.map((rule, i) => (
-        <RuleRow
-          key={rule.id}
-          rule={rule}
-          numericTags={numericTags}
-          stringTags={stringTags}
-          onChange={(updated) => handleChange(i, updated)}
-          onRemove={() => handleRemove(i)}
-        />
-      ))}
-
-      {/* Add rule */}
-      <Button
-        startIcon={<AddIcon />}
-        onClick={handleAdd}
-        size="small"
-        sx={{ alignSelf: "flex-start" }}
-      >
-        Add Rule
-      </Button>
+      <GroupContainer
+        group={rootGroup}
+        numericTags={numericTags}
+        stringTags={stringTags}
+        depth={0}
+        onGroupChange={onGroupChange}
+      />
     </Stack>
   );
 }

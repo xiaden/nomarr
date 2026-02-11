@@ -73,6 +73,9 @@ _ALLOWED_CONFIG_KEYS = {
     "tagger_worker_count",
     "calibrate_heads",
     "calibration_repo",
+    # Playlist import (Spotify credentials)
+    "spotify_client_id",
+    "spotify_client_secret",
 }
 
 
@@ -310,6 +313,9 @@ class ConfigService:
             "admin_password": None,  # Optional; auto-generated if not set
             # Model cache settings
             "cache_idle_timeout": 300,  # Seconds before unloading models (0=never)
+            # Playlist import settings (optional)
+            "spotify_client_id": None,  # Spotify Developer App client ID
+            "spotify_client_secret": None,  # Spotify Developer App client secret
         }
 
     def _deep_merge(self, base_dict: dict[str, Any], override_dict: dict[str, Any]) -> dict[str, Any]:

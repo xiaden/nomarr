@@ -1,19 +1,83 @@
 /**
  * Hook for fetching and categorizing tag metadata from the backend.
  * Used by the playlist rules engine to populate tag dropdowns.
+ *
+ * Filters to only show relevant tags:
+ * - Standard song tags (artist, album, year, genre, etc.)
+ * - nom:mood-* tags (mood-loose, mood-regular, mood-strict)
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { getTagStats, type TagStatEntry } from "../../../shared/api/navidrome";
 
+/** Standard song tags to include in the rules engine. */
+const STANDARD_TAG_RELS = new Set([
+  "artist",
+  "artists",
+  "album",
+  "album_artist",
+  "genre",
+  "year",
+  "date",
+  "bpm",
+  "composer",
+  "label",
+  "publisher",
+  "title",
+  "lyricist",
+  "tracknumber",
+  "track_number",
+  "discnumber",
+]);
+
+/** Tags that should always be treated as numeric for comparisons. */
+const FORCE_NUMERIC_TAG_RELS = new Set([
+  "year",
+  "bpm",
+  "tracknumber",
+  "track_number",
+  "discnumber",
+]);
+
+/** Display-friendly labels for tag keys. */
+const TAG_LABELS: Record<string, string> = {
+  artist: "Artist",
+  artists: "Artists",
+  album: "Album",
+  album_artist: "Album Artist",
+  genre: "Genre",
+  year: "Year",
+  date: "Date",
+  bpm: "BPM",
+  composer: "Composer",
+  label: "Label",
+  publisher: "Publisher",
+  title: "Title",
+  lyricist: "Lyricist",
+  tracknumber: "Track #",
+  track_number: "Track #",
+  discnumber: "Disc #",
+  "nom:mood-loose": "Mood (Loose)",
+  "nom:mood-regular": "Mood (Regular)",
+  "nom:mood-strict": "Mood (Strict)",
+};
+
+function isRelevantTag(key: string): boolean {
+  return STANDARD_TAG_RELS.has(key) || key.startsWith("nom:mood-");
+}
+
+export interface TagMetaEntry extends TagStatEntry {
+  label: string;
+}
+
 export interface UseTagMetadataResult {
-  /** All tags sorted by key */
-  tags: TagStatEntry[];
+  /** All relevant tags sorted by label */
+  tags: TagMetaEntry[];
   /** Tags with type float or integer */
-  numericTags: TagStatEntry[];
+  numericTags: TagMetaEntry[];
   /** Tags with type string */
-  stringTags: TagStatEntry[];
+  stringTags: TagMetaEntry[];
   loading: boolean;
   error: string | null;
   /** Re-fetch tag metadata */
@@ -21,7 +85,7 @@ export interface UseTagMetadataResult {
 }
 
 export function useTagMetadata(): UseTagMetadataResult {
-  const [tags, setTags] = useState<TagStatEntry[]>([]);
+  const [rawTags, setRawTags] = useState<TagStatEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -30,7 +94,7 @@ export function useTagMetadata(): UseTagMetadataResult {
       setLoading(true);
       setError(null);
       const data = await getTagStats();
-      setTags(data);
+      setRawTags(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load tag metadata");
     } finally {
@@ -41,6 +105,17 @@ export function useTagMetadata(): UseTagMetadataResult {
   useEffect(() => {
     void fetchTags();
   }, [fetchTags]);
+
+  const tags = useMemo(() => {
+    return rawTags
+      .filter((t) => isRelevantTag(t.key))
+      .map((t) => ({
+        ...t,
+        type: FORCE_NUMERIC_TAG_RELS.has(t.key) ? "integer" : t.type,
+        label: TAG_LABELS[t.key] ?? t.key,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [rawTags]);
 
   const numericTags = useMemo(
     () => tags.filter((t) => t.type === "float" || t.type === "integer"),

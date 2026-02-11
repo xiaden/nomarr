@@ -13,6 +13,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+# Maximum nesting depth for rule groups to prevent stack overflow
+MAX_RULE_GROUP_DEPTH = 5
+
 
 @dataclass
 class TagCondition:
@@ -32,27 +35,50 @@ class TagCondition:
 
 
 @dataclass
+class RuleGroup:
+    """Recursive rule group for nested smart playlist queries.
+
+    Supports nesting of AND/OR groups: (A AND B) OR (C AND D)
+    """
+
+    logic: Literal["AND", "OR"]
+    """Logic operator for this group"""
+
+    conditions: list[TagCondition]
+    """Tag conditions directly in this group"""
+
+    groups: list[RuleGroup]
+    """Nested child groups (recursive structure)"""
+
+    @property
+    def depth(self) -> int:
+        """Calculate max nesting depth of this group tree."""
+        if not self.groups:
+            return 1
+        return 1 + max(g.depth for g in self.groups)
+
+
+
+@dataclass
 class SmartPlaylistFilter:
     """Structured filter representing a smart playlist query.
 
-    Contains conditions grouped by logic operators (AND/OR).
+    Now supports nested rule groups via root RuleGroup.
+    For backward compatibility, flat queries are represented as a single root group.
     """
 
-    all_conditions: list[TagCondition]
-    """Conditions joined by AND (all must match)"""
-
-    any_conditions: list[TagCondition]
-    """Conditions joined by OR (any must match)"""
+    root: RuleGroup
+    """Root rule group containing the query structure"""
 
     @property
     def is_simple_and(self) -> bool:
-        """True if all conditions are AND (no OR)."""
-        return len(self.all_conditions) > 0 and len(self.any_conditions) == 0
+        """True if root is AND with no nested groups."""
+        return self.root.logic == "AND" and len(self.root.groups) == 0
 
     @property
     def is_simple_or(self) -> bool:
-        """True if all conditions are OR (no AND)."""
-        return len(self.any_conditions) > 0 and len(self.all_conditions) == 0
+        """True if root is OR with no nested groups."""
+        return self.root.logic == "OR" and len(self.root.groups) == 0
 
 
 @dataclass

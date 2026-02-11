@@ -60,6 +60,12 @@ from nomarr.helpers.dto.navidrome_dto import (
     TagCondition,
 )
 from nomarr.helpers.dto.path_dto import LibraryPath
+from nomarr.helpers.dto.playlist_import_dto import (
+    MatchResult,
+    PlaylistConversionResult,
+    PlaylistMetadata,
+    PlaylistTrackInput,
+)
 from nomarr.helpers.dto.processing_dto import (
     ProcessFileResult,
     ProcessorConfig,
@@ -77,8 +83,12 @@ __all__ = [
     "GenerateMinmaxCalibrationResult",
     "LibraryPath",
     "LoadAudioMonoResult",
+    "MatchResult",
     "MoodDistributionData",
+    "PlaylistConversionResult",
+    "PlaylistMetadata",
     "PlaylistPreviewResult",
+    "PlaylistTrackInput",
     "ProcessFileResult",
     "ProcessorConfig",
     "SaveCalibrationSidecarsResult",

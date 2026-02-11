@@ -17,10 +17,12 @@ You are executing a plan, not interpreting one.
 
 ## Phase 1: Load the Plan
 
-- Use `plan_read` with the plan name: ${fileBasenameNoExtension}
-- Do not modify the plan.
-- Do not summarize it.
-- Treat the plan as authoritative.
+**Check if the plan file is already attached in context.**
+
+- If the plan markdown is visible in attachments → read it directly, skip `plan_read`
+- If NOT attached → use `plan_read` with the plan name: ${fileBasenameNoExtension}
+
+Do not modify the plan. Do not summarize it. Treat the plan as authoritative.
 
 ---
 
@@ -166,8 +168,36 @@ No recovery. No skipping. No assumptions.
   - Execute ONLY the current plan by default
   - When Completion Criteria references other plans, verify their status
   - Cross-plan symbols must exist or prerequisite validation failed
+
+---
+
+## Phase 4: Plan Archival
+
+After ALL steps in the plan are marked complete:
+
+1. **Verify completion**
+   - Confirm `plan_read` shows no remaining incomplete steps
+   - All phases have been executed
+
+2. **Move to completed directory**
+   ```
+   mkdir -p plans/completed
+   mv plans/<plan-name>.md plans/completed/
+   ```
+
+3. **Handle split plans**
+   - Only move the current plan file (the one you executed)
+   - Do NOT move sibling plans (A, B, C parts) unless you executed them too
+   - Parent plans stay in `plans/` until all children are complete
+
+4. **Confirm archival**
+   - Verify the file exists in `plans/completed/`
+   - Report: "Plan archived to plans/completed/<plan-name>.md"
+
 ---
 
 ## Start Condition
 
-Begin now by calling plan_read on the plan file provided in context.
+Begin now by reading the plan:
+- If attached in context → parse the markdown directly
+- Otherwise → call `plan_read`

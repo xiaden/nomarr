@@ -27,8 +27,7 @@ export function NavidromePage() {
     configText,
     configLoading,
     configError,
-    playlistRules,
-    playlistLogic,
+    playlistRootGroup,
     playlistName,
     playlistComment,
     playlistLimit,
@@ -41,8 +40,7 @@ export function NavidromePage() {
     generateConfig,
     previewPlaylist,
     generatePlaylist,
-    setPlaylistRules,
-    setPlaylistLogic,
+    setPlaylistRootGroup,
     setPlaylistName,
     setPlaylistComment,
     setPlaylistLimit,
@@ -80,8 +78,7 @@ export function NavidromePage() {
           </AccordionSummary>
           <AccordionDetails>
             <PlaylistTab
-              rules={playlistRules}
-              logic={playlistLogic}
+              rootGroup={playlistRootGroup}
               name={playlistName}
               comment={playlistComment}
               limit={playlistLimit}
@@ -90,8 +87,7 @@ export function NavidromePage() {
               content={playlistContent}
               loading={playlistLoading}
               error={playlistError}
-              onRulesChange={setPlaylistRules}
-              onLogicChange={setPlaylistLogic}
+              onGroupChange={setPlaylistRootGroup}
               onNameChange={setPlaylistName}
               onCommentChange={setPlaylistComment}
               onLimitChange={setPlaylistLimit}
