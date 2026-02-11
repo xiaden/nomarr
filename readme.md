@@ -2,7 +2,7 @@
 
 **Intelligent audio auto-tagging for your music library using state-of-the-art machine learning.**
 
-Nomarr is an alpha audio tagging system that analyzes your music files with Essentia's pre-trained ML models and writes rich metadata tags directly into MP3/M4A/FLAC/OGG/Opus files. Perfect for organizing large libraries, discovering moods, and enriching metadata for music servers like Navidrome and Plex.
+Nomarr is an alpha audio tagging system that analyzes your music files with Essentia's pre-trained ML models and writes rich metadata tags directly into your audio files (MP3, M4A, FLAC, OGG, Opus, WAV, AAC, AIFF, and more). Perfect for organizing large libraries, discovering moods, and enriching metadata for music servers like Navidrome and Plex.
 
 ## WARNING
 
@@ -41,7 +41,7 @@ You set a library path, scan, and get high quality ML tags in roughly a day (bas
 - **📥 Playlist Import** — Convert Spotify and Deezer playlists to local M3U with fuzzy matching, metadata display, and manual search
 - **⚡ GPU Accelerated** — NVIDIA CUDA support for fast ML inference
 - **🎨 Rich Metadata** — Writes probabilities, tiers, and aggregated mood tags in native format
-- **📊 Queue System** — Background processing with pause/resume, status tracking, and error recovery
+- **🔧 Worker System** — Discovery-based background processing with pause/resume and status tracking
 - **🔐 Secure** — API key authentication for automation, session-based auth for web UI
 - **🐳 Docker Native** — Single container with NVIDIA GPU passthrough
 
@@ -104,24 +104,24 @@ Paste a Spotify or Deezer playlist URL and Nomarr converts it to a local M3U fil
 
    ```bash
    git clone https://github.com/xiaden/nomarr.git
-   cd nomarr
-   mkdir -p config/db
+   cd nomarr/docker
    ```
 
 2. **Configure environment files:**
 
    ```bash
    # Copy example env files
-   cp docker/nomarr-arangodb.env.example docker/nomarr-arangodb.env
-   cp docker/nomarr.env.example docker/nomarr.env
+   cp nomarr-arangodb.env.example nomarr-arangodb.env
+   cp nomarr.env.example nomarr.env
 
-   # Edit docker/nomarr-arangodb.env and set a strong root password
-   # Edit docker/nomarr.env and set the same root password
+   # Edit nomarr-arangodb.env and set a strong root password
+   # Edit nomarr.env and set the same root password
    ```
 
-3. **Start with Docker Compose:**
+3. **Create config directories and start:**
 
    ```bash
+   mkdir -p config/arangodb
    docker compose up -d
    ```
 
@@ -140,7 +140,7 @@ Paste a Spotify or Deezer playlist URL and Nomarr converts it to a local M3U fil
 
 5. **Access the Web UI:**
 
-   - Navigate to `http://localhost:8356/`
+   - Navigate to `http://localhost:8356/` (if port is exposed in compose) or via your reverse proxy
    - Login with the admin password from step 4
    - Add a library and start scanning!
 
@@ -153,24 +153,19 @@ Paste a Spotify or Deezer playlist URL and Nomarr converts it to a local M3U fil
 The primary way to use Nomarr — modern browser interface for:
 
 - **Library management** — Add libraries, trigger scans, view scan history
-- **File watching** — Incremental scanning when files are added or modified (enabled by default)
+- **File watching** — Incremental scanning when files are added or modified (configurable per library: event mode, polling, or off)
 - **Browse & explore** — Hierarchical drill-down and flat entity tabs with tag-based search
 - **Insights** — Mood distributions, tag correlations, and co-occurrence analysis
 - **Calibration** — Generate and apply calibration to normalize model outputs
 - **Navidrome integration** — Smart playlist generation and config export
 - **Playlist import** — Convert Spotify/Deezer playlists to local M3U files
 
-Access at `http://localhost:8356/` (login with auto-generated admin password)
+Access at the configured port (default `8356`, login with auto-generated admin password)
 
-**File Watching:** Once a library is added and scanned, Nomarr monitors it for changes. When files are added, modified, or deleted, an incremental scan is triggered within 2–5 seconds (event mode) or 30–120 seconds (polling mode).
-
-For network mounts (NFS/SMB/CIFS), use polling mode for reliable detection:
-
-```bash
-# Add to docker-compose.yml environment:
-environment:
-  - NOMARR_WATCH_MODE=poll
-```
+**File Watching:** Once a library is added and scanned, Nomarr can monitor it for changes. Watch mode is configured per library via the web UI:
+- **Event mode** — Real-time filesystem events via watchdog (2–5 second response)
+- **Poll mode** — Periodic full-library scans, network-mount-safe (NFS/SMB/CIFS)
+- **Off** — No watching
 
 ### CLI
 
@@ -190,7 +185,7 @@ docker exec nomarr nom manage-password verify   # Test a password
 docker exec nomarr nom manage-password reset    # Change admin password
 ```
 
-**Note:** For processing and queue management, use the Web UI which provides real-time progress and SSE streaming. The CLI focuses on maintenance operations.
+**Note:** For processing and worker management, use the Web UI which provides real-time progress tracking. The CLI focuses on maintenance operations.
 
 ---
 
@@ -199,18 +194,17 @@ docker exec nomarr nom manage-password reset    # Change admin password
 Nomarr writes tags using the `nom:` namespace prefix:
 
 ```
-nom:danceability_essentia21-beta6-dev_effnet20220217_danceability20220825 = 0.7234
-nom:aggressive_essentia21-beta6-dev_effnet20220217_aggressive20220825 = 0.1203
-nom:genre_electronic_essentia21-beta6-dev_effnet20220217_genre_electronic20220825 = 0.8941
-nom:voice_instrumental_essentia21-beta6-dev_effnet20220217_voice_instrumental20220825 = 0.2341
-nom:bright_essentia21-beta6-dev_effnet20220217_bright20220825 = 0.4514
+nom:happy_essentia21b6dev1389_effnet20220825_happy20220825 = 0.7234
+nom:aggressive_essentia21b6dev1389_effnet20220825_aggressive20220825 = 0.1203
+nom:danceability_essentia21b6dev1389_effnet20220825_danceability20220825 = 0.8941
+nom:voice_instrumental_essentia21b6dev1389_effnet20220825_voice_instrumental20220825 = 0.2341
 nom:mood-strict = ["peppy", "party-like", "synth-like", "bright timbre"]
 nom:mood-regular = ["peppy", "party-like", "synth-like", "bright timbre", "easy to dance to"]
 nom:mood-loose = ["peppy", "party-like", "synth-like", "bright timbre", "easy to dance to", "has vocals"]
 nom_version = 1.0.0
 ```
 
-Each numeric tag includes the full model head identifier (model version, backbone, head name, and date). Aggregated mood tags combine predictions across multiple heads using human-readable labels. The version tag tracks which tagger version processed each file.
+Each numeric tag includes the full model head identifier: `{label}_{framework}_{embedder}_{head}`. Aggregated mood tags combine predictions across multiple heads into three confidence tiers (strict ⊂ regular ⊂ loose) using human-readable labels. The `nom_version` tag tracks which tagger version processed each file.
 
 ---
 
@@ -260,7 +254,7 @@ Built with:
 - **[FastAPI](https://fastapi.tiangolo.com/)** — Modern Python web framework
 - **[Rich](https://github.com/Textualize/rich)** — Beautiful terminal UI
 
-See [Credits & Technologies](docs/README.md#credits) for complete list.
+See [Developer Documentation](docs/index.md) for complete technical details.
 
 ---
 
