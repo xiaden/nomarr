@@ -470,6 +470,65 @@ class TagOperations:
         cursor = cast("Cursor", self._db.aql.execute(query, bind_vars=cast("dict[str, Any]", {"rel": rel})))
         return {row["value"]: row["count"] for row in cursor}
 
+    def get_all_tag_stats_batched(self) -> dict[str, dict[str, Any]]:
+        """Get value counts and type info for ALL tags in a single batched query.
+
+        This is much faster than calling get_tag_value_counts per rel.
+        Returns stats organized by rel, ready for preview_tag_stats_workflow.
+
+        Returns:
+            Dict of {rel: {values: {value: count}, type: str, is_multivalue: bool}}
+
+        """
+        query = """
+        FOR tag IN tags
+            LET song_count = LENGTH(
+                FOR edge IN song_tag_edges
+                    FILTER edge._to == tag._id
+                    RETURN 1
+            )
+            COLLECT rel = tag.rel INTO tag_entries = {value: tag.value, count: song_count}
+            RETURN {rel, entries: tag_entries}
+        """
+        cursor = cast("Cursor", self._db.aql.execute(query))
+
+        result: dict[str, dict[str, Any]] = {}
+        for row in cursor:
+            rel = row["rel"]
+            entries = row["entries"]
+            values: dict[Any, int] = {e["value"]: e["count"] for e in entries}
+            total_count = sum(values.values())
+
+            # Detect type from values
+            if values:
+                numeric_values = [v for v in values if isinstance(v, (int, float))]
+                if numeric_values and len(numeric_values) > len(values) / 2:
+                    first_numeric = numeric_values[0]
+                    tag_type = "float" if isinstance(first_numeric, float) else "integer"
+                else:
+                    tag_type = "string"
+            else:
+                tag_type = "unknown"
+
+            # Generate summary
+            if tag_type in ("float", "integer"):
+                numeric_vals = [v for v in values if isinstance(v, (int, float))]
+                if numeric_vals:
+                    summary = f"min={min(numeric_vals)}, max={max(numeric_vals)}, unique={len(numeric_vals)}"
+                else:
+                    summary = "no values"
+            else:
+                summary = f"unique={len(values)}"
+
+            result[rel] = {
+                "type": tag_type,
+                "is_multivalue": len(values) > 1,
+                "summary": summary,
+                "total_count": total_count,
+            }
+
+        return result
+
     def get_file_ids_matching_tag(self, rel: str, operator: str, value: TagValue) -> set[str]:
         """Get file IDs matching a tag condition.
 

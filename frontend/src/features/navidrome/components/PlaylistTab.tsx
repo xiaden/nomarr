@@ -6,6 +6,7 @@
 import {
   Box,
   Button,
+  CircularProgress,
   Stack,
   TextField,
   Typography,
@@ -82,17 +83,27 @@ export function PlaylistTab({
         <SectionHeader title="Smart Playlist Generator" />
         <Stack spacing={2}>
           {/* Rule builder */}
-          <RuleBuilder
-            rootGroup={rootGroup}
-            numericTags={numericTags}
-            stringTags={stringTags}
-            onGroupChange={onGroupChange}
-          />
-
-          {tagsLoading && (
-            <Typography variant="caption" color="text.secondary">
-              Loading tag metadata…
-            </Typography>
+          {tagsLoading ? (
+            <Box sx={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              py: 4,
+              gap: 2,
+            }}>
+              <CircularProgress size={40} />
+              <Typography variant="body2" color="text.secondary">
+                Loading tag metadata…
+              </Typography>
+            </Box>
+          ) : (
+            <RuleBuilder
+              rootGroup={rootGroup}
+              numericTags={numericTags}
+              stringTags={stringTags}
+              onGroupChange={onGroupChange}
+            />
           )}
 
           {/* Assembled query (read-only) */}
