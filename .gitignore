@@ -105,11 +105,6 @@ frontend/build/
 
 # Models and large files
 models_old/
-*.ckpt
-*.pb
-*.pth
-*.h5
-*.model
 
 # Jupyter
 .ipynb_checkpoints/
