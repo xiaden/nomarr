@@ -2,28 +2,15 @@
 
 **Intelligent audio auto-tagging for your music library using state-of-the-art machine learning.**
 
-Nomarr is a pre-alpha audio tagging system that analyzes your music files with Essentia's pre-trained ML models and writes rich metadata tags directly into MP3/M4A files. Perfect for organizing large libraries, discovering moods, and enriching metadata for music servers like Navidrome and Plex.
+Nomarr is a pre-alpha audio tagging system that analyzes your music files with Essentia's pre-trained ML models and writes rich metadata tags directly into MP3/M4A/FLAC/OGG/Opus files. Perfect for organizing large libraries, discovering moods, and enriching metadata for music servers like Navidrome and Plex.
 
 ## WARNING
 
-This is PRE-ALPHA program that is HEAVILY made with assistance of AI. I make no gaurentee it is functional, useful, or even worth installing yet. The codebase changes DAILY in rather large ways, and I'm not done staging things at all yet. Github hosting is mainly to get CI tooling and a working image to test with.
+This is a PRE-ALPHA program that is HEAVILY made with assistance of AI. I make no guarantee it is functional, useful, or even worth installing yet. The codebase changes DAILY in rather large ways, and I'm not done staging things at all yet. GitHub hosting is mainly to get CI tooling and a working image to test with.
 
-That said, I will take PR and feature requests, and do gaurentee that every line of code will be human-reviewed (and honestly... probably refactored into a much better shape than the current AI slop) Prior to releasing as a version 1.
+That said, I will take PR and feature requests, and do guarantee that every line of code will be human-reviewed (and honestly... probably refactored into a much better shape than the current AI slop) prior to releasing as a version 1.
 
-Do also note (WITH A BIG CAPITAL WARNING) that the EFFNET embedder (so any EFFNET HEADS used) REQUIRES 9 GB of VRAM to run on GPU. and you want it on GPU, it's the difference between a 40s per song tagging job, and a 2 second per song tagging job. The embedder is cached in VRAM, to prevent spin up time
-each song, and will remain resident on VRAM for some time after the last song is tagged (this is kinda legacy from API logic, where I'm expecting songs to trickle in)
-
-## Roadmap
-
-Currently, The program was designed with lidarr autotagging in mind, and a deep desire to "have ML inference that works without needing understanding and configuration of Tensorflow and Essentia" on music.
-
-That evolved into the current shape, where the WEB UI is the first class citizen, and API takes a backseat.
-
-Nomarr is currently in the process of being refactored into a ML tagging music library assistant, that will take a music library, tag using whatever essentia tf models are provided, monitor the library for changes, verify tags, calibrate heads to match in scale, and provide the user with
-Tags that are ONLY high quality, playlists that work in navidrome, and analytics about their library's tags. So, you set the library path, scan, and get high quality ML tags in like... a day ish (based on my NAS share 18k song library I've built up... your time may be lower or higher).
-
-<img width="100%" alt="Dashboard" src="https://github.com/user-attachments/assets/201e0ea7-c397-4c84-97a4-87c8c5b9f3f6" />
-
+Do also note (WITH A BIG CAPITAL WARNING) that the EFFNET embedder (so any EFFNET HEADS used) REQUIRES 9 GB of VRAM to run on GPU. And you want it on GPU — it's the difference between a 40s per song tagging job and a 2 second per song tagging job. The embedder is cached in VRAM to prevent spin-up time each song, and will remain resident on VRAM for some time after the last song is tagged.
 
 ---
 
@@ -31,11 +18,13 @@ Tags that are ONLY high quality, playlists that work in navidrome, and analytics
 
 Nomarr automatically tags your audio files with:
 
-- **Mood & Emotion** - Happy, sad, aggressive, relaxed, party, etc.
-- **Acoustic Properties** - Danceability, energy, timbre, brightness
-- **Audio Characteristics** - Vocal presence, tonal/atonal classification
+- **Mood & Emotion** — Happy, sad, aggressive, relaxed, party, etc.
+- **Acoustic Properties** — Danceability, energy, timbre, brightness
+- **Audio Characteristics** — Vocal presence, tonal/atonal classification
 
-All tags are written as native metadata (ID3v2 for MP3, iTunes atoms for M4A, Vorbis comments for OGG/FLAC/Opus) with the `nom:` namespace prefix - no external database required.
+All tags are written as native metadata (ID3v2 for MP3, iTunes atoms for M4A, Vorbis comments for OGG/FLAC/Opus) with the `nom:` namespace prefix — no external database required.
+
+You set a library path, scan, and get high quality ML tags in roughly a day (based on an 18k song library over a NAS share — your time may be lower or higher).
 
 **Note:** Nomarr comes with mood and acoustic property models. Additional models (genre, instruments, etc.) can be added by users but are not included by default.
 
@@ -43,18 +32,63 @@ All tags are written as native metadata (ID3v2 for MP3, iTunes atoms for M4A, Vo
 
 ## ✨ Key Features
 
-- **🌐 Modern Web UI** - Browser interface for processing, monitoring, analytics, and configuration
-- **🔌 Lidarr Integration** - Drop-in Docker sidecar that auto-tags imports via webhooks
-- **📚 Library Scanner** - Automatic background scanning with tag extraction and analytics
-- **�️ File Watching** - Detects filesystem changes and triggers incremental scans automatically (2-5 second response time)
-- **�📊 Calibration System** - Normalize model outputs with min-max scaling and drift tracking
-- **⚡ GPU Accelerated** - NVIDIA CUDA support for fast ML inference
-- **🎨 Rich Metadata** - Writes probabilities, tiers, and aggregated mood tags in native format (ID3v2/MP4)
-- **📊 Queue System** - Background processing with pause/resume, status tracking, and error recovery
-- **🎵 Navidrome Integration** - Smart playlist generation and config export
-- **🔐 Secure** - API key authentication for automation, session-based auth for web UI
-- **🐳 Docker Native** - Single container with NVIDIA GPU passthrough
-- **🏗️ Clean Architecture** - Dependency injection, pure workflows, and isolated ML layer
+- **🌐 Modern Web UI** — Full browser interface for library management, analytics, calibration, and integrations
+- **📚 Library Scanner** — Automatic background scanning with tag extraction and real-time progress
+- **👁️ File Watching** — Detects filesystem changes and triggers incremental scans automatically (2–5 second response)
+- **📊 Calibration System** — Normalize model outputs across heads with convergence tracking and drift detection
+- **🔍 Library Insights** — Collection overview, mood analysis, tag co-occurrence matrix, and genre/year distributions
+- **🎵 Navidrome Integration** — Smart playlist (.nsp) generation and TOML config export
+- **📥 Playlist Import** — Convert Spotify and Deezer playlists to local M3U with fuzzy matching, metadata display, and manual search
+- **⚡ GPU Accelerated** — NVIDIA CUDA support for fast ML inference
+- **🎨 Rich Metadata** — Writes probabilities, tiers, and aggregated mood tags in native format
+- **📊 Queue System** — Background processing with pause/resume, status tracking, and error recovery
+- **🔌 Lidarr Integration** — Drop-in Docker sidecar that auto-tags imports via webhooks
+- **🔐 Secure** — API key authentication for automation, session-based auth for web UI
+- **🐳 Docker Native** — Single container with NVIDIA GPU passthrough
+
+---
+
+## 🖥️ Web UI
+
+### Dashboard
+
+Real-time system overview with processing progress (including velocity tracking and ETA), library statistics with genre/year charts, and recent scan activity.
+
+<img width="100%" alt="Dashboard" src="docs/screenshots/dashboard.png" />
+
+### Browse
+
+Hierarchical library browser with Artist → Album → Track drill-down, plus flat entity tabs for Artists, Albums, Genres, and Years. Tag-based exploration lets you find songs by exact string match or nearest numeric value.
+
+<img width="100%" alt="Browse" src="docs/screenshots/browse.png" />
+
+Library management is built in — add libraries, trigger scans, and monitor scan status from a collapsible panel:
+
+<img width="60%" alt="Library Management" src="docs/screenshots/library-management.png" />
+
+### Insights
+
+Library analytics organized into three sections: **Collection Overview** (stats, top genres, years, artists), **Mood Analysis** (coverage, balance, vibes, mood combos), and **Advanced** (tag frequency distributions and a full co-occurrence matrix). All filterable by library.
+
+<img width="100%" alt="Insights" src="docs/screenshots/insights.png" />
+
+### Calibration
+
+Generate calibration profiles from your library data, apply them to normalize model outputs, and update new files. Convergence tracking shows per-head stability across calibration rounds with summary stats and P5/P95 charts.
+
+<img width="100%" alt="Calibration" src="docs/screenshots/calibration.png" />
+
+### Navidrome
+
+Two tools for Navidrome users: **Generate Config** creates a TOML configuration file mapping Nomarr tags to Navidrome's smart playlist fields. **Playlist Maker** builds `.nsp` smart playlist files using tag-based filter groups with preview and sort options.
+
+<img width="100%" alt="Navidrome" src="docs/screenshots/navidrome.png" />
+
+### Playlist Import
+
+Paste a Spotify or Deezer playlist URL and Nomarr converts it to a local M3U file by fuzzy-matching tracks against your library. Results show match confidence, matched file metadata (artist, album, duration, bitrate), and let you search for alternatives or manually add tracks.
+
+<img width="100%" alt="Playlist Import" src="docs/screenshots/playlist-import.png" />
 
 ---
 
@@ -82,7 +116,7 @@ All tags are written as native metadata (ID3v2 for MP3, iTunes atoms for M4A, Vo
    # Copy example env files
    cp docker/nomarr-arangodb.env.example docker/nomarr-arangodb.env
    cp docker/nomarr.env.example docker/nomarr.env
-   
+
    # Edit docker/nomarr-arangodb.env and set a strong root password
    # Edit docker/nomarr.env and set the same root password
    ```
@@ -110,7 +144,7 @@ All tags are written as native metadata (ID3v2 for MP3, iTunes atoms for M4A, Vo
 
    - Navigate to `http://localhost:8356/`
    - Login with the admin password from step 4
-   - Use the Process Files tab to tag your music!
+   - Add a library and start scanning!
 
 6. **(Optional) For Lidarr Integration:**
 
@@ -126,19 +160,19 @@ All tags are written as native metadata (ID3v2 for MP3, iTunes atoms for M4A, Vo
 
 ### Web UI (Recommended)
 
-The easiest way to use Nomarr - modern browser interface for:
+The easiest way to use Nomarr — modern browser interface for:
 
-- **Processing files** - Single file or batch upload with real-time progress
-- **Queue management** - Monitor jobs, pause/resume workers, clear errors
-- **Library management** - Add libraries, trigger scans, view scan history
-- **File watching** - Automatic incremental scanning when files are added/modified (enabled by default)
-- **Navidrome integration** - Smart playlist generation and config export
-- **Calibration** - Generate and apply calibration to normalize model outputs
-- **Tag analytics** - Mood distributions, correlations, and co-occurrences
+- **Library management** — Add libraries, trigger scans, view scan history
+- **File watching** — Automatic incremental scanning when files are added/modified (enabled by default)
+- **Browse & explore** — Hierarchical drill-down and flat entity tabs with tag-based search
+- **Insights** — Mood distributions, tag correlations, and co-occurrence analysis
+- **Calibration** — Generate and apply calibration to normalize model outputs
+- **Navidrome integration** — Smart playlist generation and config export
+- **Playlist import** — Convert Spotify/Deezer playlists to local M3U files
 
 Access at `http://localhost:8356/` (login with auto-generated admin password)
 
-**File Watching:** Once a library is added and scanned, Nomarr automatically monitors it for changes. When files are added, modified, or deleted, an incremental scan is triggered within 2-5 seconds (event mode) or 30-120 seconds (polling mode). This is 10-100x faster than full library scans for small changes.
+**File Watching:** Once a library is added and scanned, Nomarr automatically monitors it for changes. When files are added, modified, or deleted, an incremental scan is triggered within 2–5 seconds (event mode) or 30–120 seconds (polling mode).
 
 For network mounts (NFS/SMB/CIFS), use polling mode for reliable detection:
 ```bash
@@ -173,7 +207,7 @@ docker exec nomarr nom manage-password verify   # Test a password
 docker exec nomarr nom manage-password reset    # Change admin password
 ```
 
-**Note:** For processing files, use the Web UI (`/`) which provides real-time progress and SSE streaming. The CLI focuses on administrative operations.
+**Note:** For processing files, use the Web UI which provides real-time progress and SSE streaming. The CLI focuses on administrative operations.
 
 ### Lidarr Integration
 
@@ -213,12 +247,12 @@ Each numeric tag includes the full model head identifier (model version, backbon
 
 ## 📖 Documentation
 
-- **[Getting Started](docs/user/getting_started.md)** - Installation, setup, and first steps
-- **[API Reference](docs/user/api_reference.md)** - Complete endpoint documentation and examples
-- **[Deployment Guide](docs/user/deployment.md)** - Docker setup, configuration, and production best practices
-- **[Navidrome Integration](docs/user/navidrome.md)** - Smart playlist generation guide
-- **[Architecture](docs/dev/architecture.md)** - System design and component overview
-- **[Developer Documentation](docs/index.md)** - Complete documentation index
+- **[Getting Started](docs/user/getting_started.md)** — Installation, setup, and first steps
+- **[API Reference](docs/user/api_reference.md)** — Complete endpoint documentation and examples
+- **[Deployment Guide](docs/user/deployment.md)** — Docker setup, configuration, and production best practices
+- **[Navidrome Integration](docs/user/navidrome.md)** — Smart playlist generation guide
+- **[Architecture](docs/dev/architecture.md)** — System design and component overview
+- **[Developer Documentation](docs/index.md)** — Complete documentation index
 
 ---
 
@@ -241,7 +275,7 @@ This is currently a **monorepo** containing multiple independent projects:
 
 ## ⚠️ License & Usage
 
-**Nomarr is licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) - Non-Commercial use only**
+**Nomarr is licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) — Non-Commercial use only**
 
 This project is designed for the self-hosted music community and personal use. Commercial use is not permitted.
 
@@ -257,10 +291,10 @@ See [LICENSE](LICENSE) and [NOTICE](NOTICE) for complete attribution and third-p
 
 Built with:
 
-- **[Essentia](https://essentia.upf.edu/)** - Audio analysis and ML models by Music Technology Group, UPF
-- **[TensorFlow](https://www.tensorflow.org/)** - Machine learning inference
-- **[FastAPI](https://fastapi.tiangolo.com/)** - Modern Python web framework
-- **[Rich](https://github.com/Textualize/rich)** - Beautiful terminal UI
+- **[Essentia](https://essentia.upf.edu/)** — Audio analysis and ML models by Music Technology Group, UPF
+- **[TensorFlow](https://www.tensorflow.org/)** — Machine learning inference
+- **[FastAPI](https://fastapi.tiangolo.com/)** — Modern Python web framework
+- **[Rich](https://github.com/Textualize/rich)** — Beautiful terminal UI
 
 See [Credits & Technologies](docs/README.md#credits) for complete list.
 
