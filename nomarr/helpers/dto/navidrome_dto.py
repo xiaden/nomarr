@@ -16,6 +16,27 @@ from typing import Literal
 # Maximum nesting depth for rule groups to prevent stack overflow
 MAX_RULE_GROUP_DEPTH = 5
 
+# Standard ID3/metadata tags that are NOT prefixed with "nom:"
+# These are stored directly by taglib without namespace
+STANDARD_TAG_RELS = frozenset({
+    "artist",
+    "artists",
+    "album",
+    "album_artist",
+    "genre",
+    "year",
+    "date",
+    "bpm",
+    "composer",
+    "label",
+    "publisher",
+    "title",
+    "lyricist",
+    "tracknumber",
+    "track_number",
+    "discnumber",
+})
+
 
 @dataclass
 class TagCondition:

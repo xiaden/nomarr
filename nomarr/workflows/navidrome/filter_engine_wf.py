@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from nomarr.components.navidrome.tag_query_comp import find_files_matching_tag
+from nomarr.helpers.dto.navidrome_dto import STANDARD_TAG_RELS
 
 if TYPE_CHECKING:
     from nomarr.helpers.dto.navidrome_dto import SmartPlaylistFilter, TagCondition
@@ -90,14 +91,18 @@ def _execute_single_condition(db: Database, condition: TagCondition) -> set[str]
 
     """
     # Use unified TagOperations for tag queries
-    # Tag key needs "nom:" prefix for nomarr tags
+    # Standard tags (year, artist, etc.) have no namespace prefix
+    # Nomarr tags (mood, effnet, etc.) have "nom:" prefix
     rel = condition.tag_key
-    if not rel.startswith("nom:") and ":" in rel:
-        # Already namespaced
-        pass
+
+    # Strip any existing "nom:" prefix for lookup
+    raw_key = rel.removeprefix("nom:")
+
+    # Standard tags must NOT have prefix; nomarr tags must have it
+    if raw_key in STANDARD_TAG_RELS:
+        rel = raw_key  # No prefix for standard tags
     elif not rel.startswith("nom:"):
-        # Add nom: prefix for nomarr tags (most filter engine uses are nomarr tags)
-        rel = f"nom:{rel}"
+        rel = f"nom:{rel}"  # Add prefix for nomarr tags
 
     if condition.operator == "contains":
         # String contains query

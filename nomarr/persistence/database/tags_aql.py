@@ -560,8 +560,16 @@ class TagOperations:
             """
         else:
             # Build dynamic filter based on operator
-            # Safe operators only
-            safe_ops = {"==": "==", ">=": ">=", "<=": "<=", ">": ">", "<": "<"}
+            # Safe operators only - map from query syntax to AQL syntax
+            safe_ops = {
+                "==": "==",
+                "=": "==",   # Parser uses "=" for equality
+                ">=": ">=",
+                "<=": "<=",
+                ">": ">",
+                "<": "<",
+                "!=": "!=",
+            }
             op = safe_ops.get(operator, "==")
             query = f"""
             FOR tag IN tags
