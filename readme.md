@@ -22,11 +22,8 @@ That evolved into the current shape, where the WEB UI is the first class citizen
 Nomarr is currently in the process of being refactored into a ML tagging music library assistant, that will take a music library, tag using whatever essentia tf models are provided, monitor the library for changes, verify tags, calibrate heads to match in scale, and provide the user with
 Tags that are ONLY high quality, playlists that work in navidrome, and analytics about their library's tags. So, you set the library path, scan, and get high quality ML tags in like... a day ish (based on my NAS share 18k song library I've built up... your time may be lower or higher).
 
-![Web UI Dashboard](docs/images/placeholder-dashboard.png)
-_Screenshot: Web UI dashboard - coming soon_
+<img width="100%" alt="Dashboard" src="https://github.com/user-attachments/assets/201e0ea7-c397-4c84-97a4-87c8c5b9f3f6" />
 
-![CLI Processing](docs/images/placeholder-cli.png)
-_Screenshot: CLI batch processing - coming soon_
 
 ---
 
