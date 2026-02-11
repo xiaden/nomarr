@@ -222,7 +222,7 @@ def _generate_m3u(
     ]
 
     for result in match_results:
-        if result.matched_path and result.status in ("exact_isrc", "exact_metadata", "fuzzy"):
+        if result.matched_file and result.status in ("exact_isrc", "exact_metadata", "fuzzy"):
             # Add EXTINF with track info
             duration_s = (
                 result.input_track.duration_ms // 1000
@@ -232,6 +232,6 @@ def _generate_m3u(
             artist = result.input_track.artist
             title = result.input_track.title
             lines.append(f"#EXTINF:{duration_s},{artist} - {title}")
-            lines.append(result.matched_path)
+            lines.append(result.matched_file.path)
 
     return "\n".join(lines) + "\n"

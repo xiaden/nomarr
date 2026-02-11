@@ -20,12 +20,20 @@ export interface PlaylistTrackInputResponse {
   position: number;
 }
 
+export interface MatchedFileInfoResponse {
+  path: string;
+  file_id: string;
+  title: string;
+  artist: string;
+  album: string | null;
+}
+
 export interface MatchResultResponse {
   input_track: PlaylistTrackInputResponse;
   status: MatchStatus;
   confidence: number;
-  matched_path: string | null;
-  alternatives: string[];
+  matched_file: MatchedFileInfoResponse | null;
+  alternatives: MatchedFileInfoResponse[];
 }
 
 export interface PlaylistMetadataResponse {
@@ -48,6 +56,7 @@ export interface ConvertPlaylistResponse {
   match_rate: number;
   unmatched_tracks: PlaylistTrackInputResponse[];
   ambiguous_matches: MatchResultResponse[];
+  all_matches: MatchResultResponse[];
 }
 
 // Helper to convert backend status to UI tier

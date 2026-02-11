@@ -26,6 +26,21 @@ class PlaylistTrackInput:
 
 
 @dataclass(frozen=True)
+class MatchedFileInfo:
+    """Metadata about a matched library file.
+
+    Carries the essential display fields so consumers don't need
+    to resolve a path back to the database.
+    """
+
+    path: str
+    file_id: str
+    title: str
+    artist: str
+    album: str | None = None
+
+
+@dataclass(frozen=True)
 class MatchResult:
     """Result of matching a single track against the library.
 
@@ -35,12 +50,10 @@ class MatchResult:
     input_track: PlaylistTrackInput
     status: Literal["exact_isrc", "exact_metadata", "fuzzy", "ambiguous", "not_found"]
     confidence: float  # 0.0 to 1.0
-    # Matched library file path (None if not_found)
-    matched_path: str | None = None
-    # Matched file's library_files document _id
-    matched_file_id: str | None = None
+    # Matched library file (None if not_found)
+    matched_file: MatchedFileInfo | None = None
     # For ambiguous matches, alternative candidates
-    alternatives: tuple[str, ...] = field(default_factory=tuple)
+    alternatives: tuple[MatchedFileInfo, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)

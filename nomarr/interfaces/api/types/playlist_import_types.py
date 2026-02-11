@@ -14,6 +14,7 @@ from nomarr.interfaces.api.id_codec import decode_id
 
 if TYPE_CHECKING:
     from nomarr.helpers.dto.playlist_import_dto import (
+        MatchedFileInfo,
         MatchResult,
         PlaylistConversionResult,
         PlaylistMetadata,
@@ -78,6 +79,27 @@ class PlaylistTrackInputResponse(BaseModel):
         )
 
 
+class MatchedFileInfoResponse(BaseModel):
+    """Metadata about a matched library file."""
+
+    path: str = Field(..., description="File path in library")
+    file_id: str = Field(..., description="Library file document ID")
+    title: str = Field(..., description="Track title from file metadata")
+    artist: str = Field(..., description="Artist from file metadata")
+    album: str | None = Field(None, description="Album from file metadata")
+
+    @classmethod
+    def from_dto(cls, dto: MatchedFileInfo) -> MatchedFileInfoResponse:
+        """Convert DTO to response model."""
+        return cls(
+            path=dto.path,
+            file_id=dto.file_id,
+            title=dto.title,
+            artist=dto.artist,
+            album=dto.album,
+        )
+
+
 class MatchResultResponse(BaseModel):
     """Result of matching a single track."""
 
@@ -90,12 +112,12 @@ class MatchResultResponse(BaseModel):
     confidence: float = Field(
         ..., ge=0.0, le=1.0, description="Match confidence score (0-1)"
     )
-    matched_path: str | None = Field(
-        None, description="Path to matched library file"
+    matched_file: MatchedFileInfoResponse | None = Field(
+        None, description="Matched library file with metadata"
     )
-    alternatives: list[str] = Field(
+    alternatives: list[MatchedFileInfoResponse] = Field(
         default_factory=list,
-        description="Alternative match paths for ambiguous matches",
+        description="Alternative match candidates for ambiguous matches",
     )
 
     @classmethod
@@ -105,9 +127,17 @@ class MatchResultResponse(BaseModel):
             input_track=PlaylistTrackInputResponse.from_dto(dto.input_track),
             status=dto.status,
             confidence=dto.confidence,
-            matched_path=dto.matched_path,
-            alternatives=list(dto.alternatives),
+            matched_file=(
+                MatchedFileInfoResponse.from_dto(dto.matched_file)
+                if dto.matched_file
+                else None
+            ),
+            alternatives=[
+                MatchedFileInfoResponse.from_dto(alt)
+                for alt in dto.alternatives
+            ],
         )
+
 
 
 class PlaylistMetadataResponse(BaseModel):
@@ -168,6 +198,10 @@ class ConvertPlaylistResponse(BaseModel):
         default_factory=list,
         description="Matches with low confidence requiring review",
     )
+    all_matches: list[MatchResultResponse] = Field(
+        default_factory=list,
+        description="All track match results for interactive review",
+    )
 
     @classmethod
     def from_dto(cls, dto: PlaylistConversionResult) -> ConvertPlaylistResponse:
@@ -190,6 +224,9 @@ class ConvertPlaylistResponse(BaseModel):
             ],
             ambiguous_matches=[
                 MatchResultResponse.from_dto(r) for r in dto.get_ambiguous()
+            ],
+            all_matches=[
+                MatchResultResponse.from_dto(r) for r in dto.match_results
             ],
         )
 

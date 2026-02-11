@@ -16,7 +16,7 @@ from nomarr.components.playlist_import.metadata_normalizer_comp import (
     normalize_artist,
     normalize_title,
 )
-from nomarr.helpers.dto.playlist_import_dto import MatchResult, PlaylistTrackInput
+from nomarr.helpers.dto.playlist_import_dto import MatchedFileInfo, MatchResult, PlaylistTrackInput
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +60,17 @@ class LibraryTrack:
         )
 
 
+def _to_file_info(lib_track: LibraryTrack) -> MatchedFileInfo:
+    """Convert a LibraryTrack to a MatchedFileInfo for API responses."""
+    return MatchedFileInfo(
+        path=lib_track.file_path,
+        file_id=lib_track.file_id,
+        title=lib_track.title,
+        artist=lib_track.artist,
+        album=lib_track.album,
+    )
+
+
 def match_track(
     input_track: PlaylistTrackInput,
     library_tracks: list[LibraryTrack],
@@ -97,8 +108,7 @@ def match_track(
                     input_track=input_track,
                     status="exact_isrc",
                     confidence=1.0,
-                    matched_path=lib_track.file_path,
-                    matched_file_id=lib_track.file_id,
+                    matched_file=_to_file_info(lib_track),
                 )
 
     # Strategy 2: Exact normalized title + artist match
@@ -111,12 +121,12 @@ def match_track(
                 input_track=input_track,
                 status="exact_metadata",
                 confidence=0.95,
-                matched_path=lib_track.file_path,
-                matched_file_id=lib_track.file_id,
+                matched_file=_to_file_info(lib_track),
             )
 
     # Strategy 3: Fuzzy matching
     return _fuzzy_match(input_track, input_title_norm, input_artist_norm, library_tracks)
+
 
 
 def _fuzzy_match(
@@ -171,40 +181,38 @@ def _fuzzy_match(
     best_score, best_match = candidates[0]
 
     # Check if match is ambiguous (close scores with different tracks)
-    alternatives: list[str] = []
+    alt_infos: list[MatchedFileInfo] = []
     if len(candidates) > 1:
         # If second best is within 5 points, it's ambiguous
         second_score = candidates[1][0]
         if best_score - second_score < 5:
-            alternatives = [c[1].file_path for c in candidates[1:4]]
+            alt_infos = [_to_file_info(c[1]) for c in candidates[1:4]]
 
     # Determine status based on score
     if best_score >= FUZZY_HIGH_THRESHOLD:
-        if alternatives:
+        if alt_infos:
             return MatchResult(
                 input_track=input_track,
                 status="ambiguous",
                 confidence=best_score / 100.0,
-                matched_path=best_match.file_path,
-                matched_file_id=best_match.file_id,
-                alternatives=tuple(alternatives),
+                matched_file=_to_file_info(best_match),
+                alternatives=tuple(alt_infos),
             )
         return MatchResult(
             input_track=input_track,
             status="fuzzy",
             confidence=best_score / 100.0,
-            matched_path=best_match.file_path,
-            matched_file_id=best_match.file_id,
+            matched_file=_to_file_info(best_match),
         )
     # Score between LOW and HIGH - ambiguous
     return MatchResult(
         input_track=input_track,
         status="ambiguous",
         confidence=best_score / 100.0,
-        matched_path=best_match.file_path,
-        matched_file_id=best_match.file_id,
-        alternatives=tuple(alternatives),
+        matched_file=_to_file_info(best_match),
+        alternatives=tuple(alt_infos),
     )
+
 
 
 def match_tracks(
