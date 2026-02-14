@@ -58,8 +58,8 @@ def scan_library_quick_workflow(
 
     Returns:
         Dict with scan statistics (files_discovered, files_added,
-        files_updated, files_moved, files_removed, files_failed,
-        scan_duration_s, warnings, scan_id)
+        files_updated, files_skipped, files_moved, files_removed,
+        files_failed, scan_duration_s, warnings, scan_id)
 
     Raises:
         ValueError: If library not found
@@ -110,6 +110,7 @@ def scan_library_quick_workflow(
 
             stats["files_updated"] += batch.stats["files_updated"]
             stats["files_failed"] += batch.stats["files_failed"]
+            stats["files_skipped"] += batch.stats.get("files_skipped", 0)
             warnings.extend(batch.warnings)
             all_discovered_paths.update(batch.discovered_paths)
             all_metadata.update(batch.metadata_map)
@@ -179,12 +180,13 @@ def scan_library_quick_workflow(
         )
 
         logger.info(
-            "Quick scan complete in %.1fs: folders=%d/%d, added=%d, updated=%d, moved=%d, removed=%d, failed=%d",
+            "Quick scan complete in %.1fs: folders=%d/%d, added=%d, updated=%d, skipped=%d, moved=%d, removed=%d, failed=%d",
             scan_duration,
             stats["folders_scanned"],
             stats["folders_scanned"] + stats["folders_skipped"],
             stats["files_added"],
             stats["files_updated"],
+            stats["files_skipped"],
             stats["files_moved"],
             stats["files_removed"],
             stats["files_failed"],

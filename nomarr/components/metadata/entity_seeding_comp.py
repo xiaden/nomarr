@@ -5,9 +5,11 @@ Part of hybrid model: seed edges from imports, then rebuild cache.
 """
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
+    from arango.cursor import Cursor
+
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
@@ -109,15 +111,86 @@ def _extract_entity_tags(metadata: dict[str, Any]) -> dict[str, Any]:
     return {k: metadata.get(k) for k in _ENTITY_TAG_KEYS}
 
 
+
+def _build_song_tag_entries(song_id: str, tags: dict[str, Any]) -> list[dict[str, Any]]:
+    """Build tag entries for batch-seeding from raw entity tags.
+
+    Returns list of dicts with keys ``song_id``, ``rel``, ``values``
+    suitable for :meth:`TagOperations.set_song_tags_batch`.
+
+    Mirrors the normalization logic in :func:`seed_song_entities_from_tags`
+    but collects entries instead of calling the DB per-rel.
+
+    """
+    entries: list[dict[str, Any]] = []
+
+    artist_raw = tags.get("artist")
+    artists_raw = tags.get("artists")
+
+    # — artist (singular) —
+    primary_artist: str | None = None
+    if artist_raw:
+        primary_artist = (artist_raw[0] if artist_raw else None) if isinstance(artist_raw, list) else artist_raw
+    elif artists_raw:
+        primary_artist = (artists_raw[0] if artists_raw else None) if isinstance(artists_raw, list) else artists_raw
+
+    entries.append({"song_id": song_id, "rel": "artist", "values": [primary_artist] if primary_artist else []})
+
+    # — artists (multi) —
+    all_artists: list[str] = []
+    if artists_raw:
+        all_artists = [str(a) for a in artists_raw if a] if isinstance(artists_raw, list) else [str(artists_raw)]
+    elif primary_artist:
+        all_artists = [str(primary_artist)]
+
+    entries.append({"song_id": song_id, "rel": "artists", "values": list(all_artists)})
+
+    # — album (singular) —
+    album_raw = tags.get("album")
+    if album_raw:
+        album_str = album_raw[0] if isinstance(album_raw, list) else album_raw
+        entries.append({"song_id": song_id, "rel": "album", "values": [album_str]})
+    else:
+        entries.append({"song_id": song_id, "rel": "album", "values": []})
+
+    # — label (multi) —
+    label_raw = tags.get("label")
+    labels: list[str] = []
+    if label_raw:
+        if isinstance(label_raw, list):
+            labels = [str(lbl) for lbl in label_raw if lbl]
+        else:
+            labels = [str(label_raw)]
+    entries.append({"song_id": song_id, "rel": "label", "values": list(labels)})
+
+    # — genre (multi) —
+    genre_raw = tags.get("genre")
+    genres: list[str] = []
+    if genre_raw:
+        genres = [str(g) for g in genre_raw if g] if isinstance(genre_raw, list) else [str(genre_raw)]
+    entries.append({"song_id": song_id, "rel": "genre", "values": list(genres)})
+
+    # — year (singular) —
+    year_raw = tags.get("year")
+    if year_raw:
+        year_int = year_raw if isinstance(year_raw, int) else int(year_raw)
+        entries.append({"song_id": song_id, "rel": "year", "values": [year_int]})
+    else:
+        entries.append({"song_id": song_id, "rel": "year", "values": []})
+
+    return entries
+
 def seed_entities_for_scan_batch(
     db: "Database",
     file_paths: list[str],
     metadata_map: dict[str, dict[str, Any]],
 ) -> int:
-    """Seed entity vertices/edges and rebuild metadata caches for scanned files.
+    """Seed entity vertices/edges and update metadata caches for scanned files.
 
-    For each file, looks up the DB record, extracts entity tags from metadata,
-    calls :func:`seed_song_entities_from_tags`, then rebuilds the metadata cache.
+    Batch-optimised: resolves all file IDs in one AQL, collects per-file tag
+    entries in-memory, then executes ``set_song_tags_batch`` (3 AQL) and
+    ``update_metadata_cache_batch`` (1 AQL) — total 5 AQL per folder instead
+    of ~20 x N per file.
 
     Args:
         db: Database instance
@@ -128,27 +201,63 @@ def seed_entities_for_scan_batch(
         Number of files successfully seeded
 
     """
-    from nomarr.components.metadata.metadata_cache_comp import rebuild_song_metadata_cache
+    from nomarr.components.metadata.metadata_cache_comp import (
+        compute_metadata_cache_fields,
+        update_metadata_cache_batch,
+    )
 
-    seeded = 0
+    if not file_paths:
+        return 0
+
+    # 1) Batch-resolve file paths → _ids in one AQL round-trip
+    cursor = cast(
+        "Cursor",
+        db.db.aql.execute(
+            """
+            FOR p IN @paths
+                FOR file IN library_files
+                    FILTER file.normalized_path == p OR file.path == p
+                    LIMIT 1
+                    RETURN { path: p, id: file._id }
+            """,
+            bind_vars=cast("dict[str, Any]", {"paths": file_paths}),
+        ),
+    )
+    path_to_id: dict[str, str] = {row["path"]: row["id"] for row in cursor}
+
+    # 2) Build all tag entries and cache updates in-memory
+    all_tag_entries: list[dict[str, Any]] = []
+    cache_updates: list[dict[str, Any]] = []
+
     for file_path in file_paths:
         metadata = metadata_map.get(file_path)
-        if not metadata:
-            continue
+        file_id = path_to_id.get(file_path)
 
-        file_record = db.library_files.get_library_file(file_path)
-        if not file_record:
-            logger.warning("File not found after upsert: %s", file_path)
+        if not metadata or not file_id:
+            if not file_id:
+                logger.warning("File not found after upsert: %s", file_path)
             continue
-
-        file_id = file_record["_id"]
 
         try:
             entity_tags = _extract_entity_tags(metadata)
-            seed_song_entities_from_tags(db, file_id, entity_tags)
-            rebuild_song_metadata_cache(db, file_id)
-            seeded += 1
+            all_tag_entries.extend(_build_song_tag_entries(file_id, entity_tags))
+            cache_updates.append({"song_id": file_id, **compute_metadata_cache_fields(metadata)})
         except Exception as e:
-            logger.warning("Failed to seed entities for %s: %s", file_path, e)
+            logger.warning("Failed to build entities for %s: %s", file_path, e)
 
-    return seeded
+    # 3) Batch seed entities (3 AQL total instead of 3 x N x 6)
+    if all_tag_entries:
+        try:
+            db.tags.set_song_tags_batch(all_tag_entries)
+        except Exception as e:
+            logger.warning("Batch tag seeding failed: %s", e)
+            return 0
+
+    # 4) Batch update metadata cache (1 AQL instead of N)
+    if cache_updates:
+        try:
+            update_metadata_cache_batch(db, cache_updates)
+        except Exception as e:
+            logger.warning("Batch cache update failed: %s", e)
+
+    return len(cache_updates)

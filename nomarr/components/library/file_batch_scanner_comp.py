@@ -28,7 +28,7 @@ class FileBatchResult:
     metadata_map: dict[str, dict[str, Any]]  # path → full metadata for entity seeding
     discovered_paths: set[str]  # All paths found
     new_file_paths: set[str]  # Paths that are new (not in existing_files)
-    stats: dict[str, int]  # files_updated, files_failed
+    stats: dict[str, int]  # files_updated, files_failed, files_skipped
     warnings: list[str]
 
 
@@ -60,7 +60,7 @@ def scan_folder_files(
     metadata_map: dict[str, dict[str, Any]] = {}
     discovered_paths: set[str] = set()
     new_file_paths: set[str] = set()
-    stats: dict[str, int] = {"files_updated": 0, "files_failed": 0}
+    stats: dict[str, int] = {"files_updated": 0, "files_failed": 0, "files_skipped": 0}
     warnings: list[str] = []
 
     # Get audio files in this folder (non-recursive)
@@ -106,13 +106,19 @@ def scan_folder_files(
 
             discovered_paths.add(file_path_str)
 
-            # Check if file exists in DB
+            # Check if file exists in DB and get disk mtime
             existing_file = existing_files.get(file_path_str)
             file_stat = os.stat(file_path_str)
             modified_time = int(file_stat.st_mtime * 1000)
             file_size = file_stat.st_size
 
-            # Extract metadata + tags
+            # Skip unchanged files: if file exists in DB and mtime matches,
+            # no need to re-parse metadata or update entities
+            if existing_file is not None and existing_file.get("modified_time") == modified_time:
+                stats["files_skipped"] += 1
+                continue
+
+            # Extract metadata + tags (only for new or changed files)
             metadata = extract_metadata(library_path, namespace="nom")
 
             # Check if file needs ML tagging

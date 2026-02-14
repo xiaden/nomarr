@@ -235,6 +235,84 @@ class TagOperations:
                 edge_create_query, bind_vars=cast("dict[str, Any]", {"song_id": song_id, "rel": rel, "values": values}),
             )
 
+    def set_song_tags_batch(
+        self,
+        entries: list[dict[str, Any]],
+    ) -> None:
+        """Replace tags for multiple (song_id, rel) pairs in 3 AQL queries.
+
+        Each entry is ``{"song_id": str, "rel": str, "values": list[TagValue]}``.
+        This is functionally equivalent to calling :meth:`set_song_tags` once
+        per entry but collapses all work into 3 AQL round-trips:
+
+        1. Delete existing edges for every (song_id, rel) pair
+        2. UPSERT all tag vertices
+        3. UPSERT all edges
+
+        Args:
+            entries: List of dicts with song_id, rel, values keys.
+                     Empty *values* list clears tags for that (song_id, rel).
+
+        """
+        if not entries:
+            return
+
+        # Prepare serialisable entries for bind vars
+        bind_entries = [
+            {"song_id": e["song_id"], "rel": e["rel"], "values": e["values"]}
+            for e in entries
+        ]
+
+        # 1) Delete existing edges for all (song_id, rel) pairs
+        self._db.aql.execute(
+            """
+            FOR entry IN @entries
+                FOR edge IN song_tag_edges
+                    FILTER edge._from == entry.song_id
+                    LET tag = DOCUMENT(edge._to)
+                    FILTER tag != null AND tag.rel == entry.rel
+                    REMOVE edge IN song_tag_edges
+            """,
+            bind_vars=cast("dict[str, Any]", {"entries": bind_entries}),
+        )
+
+        # Filter to entries that have values (need vertex + edge creation)
+        with_values = [e for e in bind_entries if e["values"]]
+        if not with_values:
+            return
+
+        # 2) UPSERT tag vertices for all (rel, value) pairs
+        self._db.aql.execute(
+            """
+            FOR entry IN @entries
+                FOR value IN entry.values
+                    UPSERT { rel: entry.rel, value: value }
+                    INSERT { rel: entry.rel, value: value }
+                    UPDATE {}
+                    IN tags
+            """,
+            bind_vars=cast("dict[str, Any]", {"entries": with_values}),
+        )
+
+        # 3) Create edges from song to tags
+        self._db.aql.execute(
+            """
+            FOR entry IN @entries
+                FOR value IN entry.values
+                    LET tag = FIRST(
+                        FOR t IN tags
+                            FILTER t.rel == entry.rel AND t.value == value
+                            RETURN t
+                    )
+                    FILTER tag != null
+                    UPSERT { _from: entry.song_id, _to: tag._id }
+                    INSERT { _from: entry.song_id, _to: tag._id }
+                    UPDATE {}
+                    IN song_tag_edges
+            """,
+            bind_vars=cast("dict[str, Any]", {"entries": with_values}),
+        )
+
     def add_song_tag(self, song_id: str, rel: str, value: TagValue) -> None:
         """Add a single tag to a song (without replacing existing tags for this rel).
 
