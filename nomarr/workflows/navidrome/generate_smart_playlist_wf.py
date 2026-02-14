@@ -14,6 +14,11 @@ from typing import TYPE_CHECKING, Any
 
 from nomarr.helpers.dto.navidrome_dto import RuleGroup, SmartPlaylistFilter, TagCondition
 from nomarr.helpers.exceptions import PlaylistQueryError
+from nomarr.helpers.tag_key_mapping import (
+    is_versioned_ml_key,
+    make_navidrome_field_name,
+    make_short_tag_name,
+)
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -106,7 +111,6 @@ def generate_smart_playlist_workflow(
     return nsp
 
 
-
 def _convert_rule_group_to_nsp(rule_group: RuleGroup, namespace: str) -> dict[str, Any]:
     """Convert RuleGroup to .nsp format recursively.
 
@@ -155,22 +159,31 @@ def _convert_filter_to_nsp_rules(
 def _tag_condition_to_nsp_rule(condition: TagCondition, namespace: str) -> dict[str, Any]:
     """Convert a single TagCondition to a Navidrome .nsp rule.
 
+    Uses short, user-friendly field names that match the generated Navidrome config.
+    Versioned keys like "nom:happy_essentia21-beta6-dev_..." become "nom_happy_raw".
+
     Args:
         condition: TagCondition with tag_key, operator, value
         namespace: Tag namespace to strip from field names
 
     Returns:
         Dictionary like {nsp_op: {field_name: value}}
-        Example: {"gt": {"mood_happy": 0.7}}
+        Example: {"gt": {"nom_happy_raw": 0.7}}
 
     """
-    # Remove namespace prefix (Navidrome uses field names without namespace)
-    field_name = condition.tag_key
-    if field_name.startswith(f"{namespace}:"):
-        field_name = field_name[len(namespace) + 1 :]
+    tag_key = condition.tag_key
 
-    # Convert hyphens to underscores (Navidrome field naming convention)
-    field_name = field_name.replace("-", "_")
+    # Ensure nom: prefix for processing
+    if not tag_key.startswith(f"{namespace}:"):
+        tag_key = f"{namespace}:{tag_key}"
+
+    # Convert to short name if this is a versioned ML key
+    # Check if numeric (versioned keys are typically numeric)
+    is_numeric = is_versioned_ml_key(tag_key)
+    short_name = make_short_tag_name(tag_key, is_numeric=is_numeric)
+
+    # Convert to TOML-safe field name (hyphens to underscores)
+    field_name = make_navidrome_field_name(short_name)
 
     # Map operator to .nsp format
     nsp_op = NSP_OPERATORS[condition.operator]

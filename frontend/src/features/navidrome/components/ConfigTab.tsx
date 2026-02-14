@@ -25,6 +25,9 @@ interface TagPreview {
   is_multivalue: boolean;
   summary: string;
   total_count: number;
+  short_name: string;
+  field_name: string;
+  is_versioned: boolean;
 }
 
 interface ConfigTabProps {
@@ -105,7 +108,9 @@ export function ConfigTab({
               <TableBody>
                 {preview.map((tag) => (
                   <TableRow key={tag.tag_key}>
-                    <TableCell sx={{ borderColor: "divider" }}>{tag.tag_key}</TableCell>
+                    <TableCell sx={{ borderColor: "divider" }} title={tag.tag_key}>
+                      {tag.short_name}
+                    </TableCell>
                     <TableCell sx={{ borderColor: "divider" }}>{tag.type}</TableCell>
                     <TableCell sx={{ borderColor: "divider" }}>
                       {tag.is_multivalue ? "Yes" : "No"}

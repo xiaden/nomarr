@@ -219,9 +219,13 @@ async def get_calibration_history_single(calibration_key: str, limit: int=100, c
         logger.error(f"[Web] Failed to get calibration history for {calibration_key}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get calibration history")) from e
 
-@router.get("/convergence", dependencies=[Depends(verify_session)])
+@router.get("/convergence", dependencies=[Depends(verify_session)], deprecated=True)
 async def get_convergence_status(calibration_service: Annotated["CalibrationService", Depends(get_calibration_service)]) -> dict[str, Any]:
-    """Get latest convergence status for all heads.
+    """[DEPRECATED] Get latest convergence status for all heads.
+
+    Relies on calibration_history collection from progressive calibration.
+    Frontend now uses histogram visualization instead.
+    This endpoint may be removed in a future release.
 
     Returns:
         {
@@ -241,3 +245,68 @@ async def get_convergence_status(calibration_service: Annotated["CalibrationServ
     except Exception as e:
         logger.error(f"[Web] Failed to get convergence status: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get convergence status")) from e
+
+
+
+@router.get("/histogram/{model_key}/{head_name}", dependencies=[Depends(verify_session)])
+async def get_histogram_for_head(
+    model_key: str,
+    head_name: str,
+    calibration_service: "CalibrationService" = Depends(get_calibration_service),
+) -> dict[str, Any]:
+    """Get histogram bins for a specific head.
+
+    Path params:
+        model_key: Model identifier (e.g., "effnet-20220825")
+        head_name: Head name (e.g., "mood_happy")
+
+    Returns:
+        {
+          "model_key": str,
+          "head_name": str,
+          "histogram_bins": [{val: float, count: int}, ...],
+          "p5": float,
+          "p95": float,
+          "n": int,
+          "histogram_spec": {lo, hi, bins, bin_width}
+        }
+
+    """
+    try:
+        return calibration_service.get_histogram_for_head(model_key, head_name)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except Exception as e:
+        logger.error(f"[Web] Failed to get histogram for {model_key}:{head_name}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get histogram")) from e
+
+
+@router.get("/histogram", dependencies=[Depends(verify_session)])
+async def get_all_calibration_histograms(
+    calibration_service: "CalibrationService" = Depends(get_calibration_service),
+) -> dict[str, Any]:
+    """Get all calibration states with histogram bins.
+
+    Returns:
+        {
+          "calibrations": [
+            {
+              "model_key": str,
+              "head_name": str,
+              "histogram_bins": [{val, count}, ...],
+              "p5": float,
+              "p95": float,
+              "n": int,
+              ...
+            },
+            ...
+          ]
+        }
+
+    """
+    try:
+        states = calibration_service.get_all_calibration_states()
+        return {"calibrations": states}
+    except Exception as e:
+        logger.error(f"[Web] Failed to get all calibration histograms: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get histograms")) from e

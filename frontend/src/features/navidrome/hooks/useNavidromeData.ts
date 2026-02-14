@@ -26,6 +26,9 @@ interface TagPreview {
   is_multivalue: boolean;
   summary: string;
   total_count: number;
+  short_name: string;
+  field_name: string;
+  is_versioned: boolean;
 }
 
 export function useNavidromeData() {

@@ -141,16 +141,10 @@ export interface HistogramCalibrationProgress {
   remaining_heads: number;
   last_updated: number | null;
   is_running: boolean;
-  /** Current iteration (1-based), null when not running */
-  iteration: number | null;
-  /** Total number of iterations planned */
-  total_iterations: number | null;
   /** Name of head currently being processed */
   current_head: string | null;
   /** Index of current head (1-based) */
   current_head_index: number | null;
-  /** Current sample percentage (e.g. 55.0 for 55%) */
-  sample_pct: number | null;
 }
 
 /**
@@ -231,4 +225,59 @@ export async function getHistory(
     return get<CalibrationHistoryResponse>(`/api/web/calibration/history/${calibrationKey}?limit=${limit}`);
   }
   return get(`/api/web/calibration/history?limit=${limit}`);
+}
+
+// ======================================================
+// Histogram Data (Distribution Visualization)
+// ======================================================
+
+export interface HistogramBin {
+  val: number;
+  count: number;
+}
+
+export interface HistogramSpec {
+  lo: number;
+  hi: number;
+  bins: number;
+  bin_width: number;
+}
+
+export interface HeadHistogramResponse {
+  model_key: string;
+  head_name: string;
+  histogram_bins: HistogramBin[];
+  p5: number;
+  p95: number;
+  n: number;
+  histogram_spec: HistogramSpec;
+  calibration_def_hash?: string;
+  version?: number;
+  underflow_count?: number;
+  overflow_count?: number;
+}
+
+export interface AllCalibrationStatesResponse {
+  calibrations: HeadHistogramResponse[];
+}
+
+/**
+ * Get histogram bins for a specific head.
+ * @param modelKey Model identifier (e.g., "effnet-20220825")
+ * @param headName Head name (e.g., "mood_happy")
+ */
+export async function getHistogramForHead(
+  modelKey: string,
+  headName: string
+): Promise<HeadHistogramResponse> {
+  return get<HeadHistogramResponse>(
+    `/api/web/calibration/histogram/${modelKey}/${headName}`
+  );
+}
+
+/**
+ * Get all calibration states with histogram bins.
+ */
+export async function getAllHistograms(): Promise<AllCalibrationStatesResponse> {
+  return get<AllCalibrationStatesResponse>("/api/web/calibration/histogram");
 }

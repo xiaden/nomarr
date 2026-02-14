@@ -35,6 +35,7 @@ def save_calibration_state(
     sample_count: int,
     underflow_count: int,
     overflow_count: int,
+    histogram_bins: list[dict[str, Any]] | None = None,
 ) -> None:
     """Persist a single head's calibration state (upsert)."""
     db.calibration_state.upsert_calibration_state(
@@ -48,6 +49,7 @@ def save_calibration_state(
         sample_count=sample_count,
         underflow_count=underflow_count,
         overflow_count=overflow_count,
+        histogram_bins=histogram_bins,
     )
 
 
@@ -56,42 +58,6 @@ def load_all_calibration_states(
 ) -> list[dict[str, Any]]:
     """Return every document in the ``calibration_state`` collection."""
     return db.calibration_state.get_all_calibration_states()
-
-
-# ---------------------------------------------------------------------------
-# Calibration history
-# ---------------------------------------------------------------------------
-
-
-def create_calibration_snapshot(
-    db: Database,
-    *,
-    calibration_key: str,
-    p5: float,
-    p95: float,
-    sample_count: int,
-    underflow_count: int,
-    overflow_count: int,
-    p5_delta: float | None = None,
-    p95_delta: float | None = None,
-    n_delta: int | None = None,
-) -> str:
-    """Create a point-in-time snapshot for progressive calibration tracking.
-
-    Returns:
-        The ``_key`` of the created snapshot document.
-    """
-    return db.calibration_history.create_snapshot(
-        calibration_key=calibration_key,
-        p5=p5,
-        p95=p95,
-        sample_count=sample_count,
-        underflow_count=underflow_count,
-        overflow_count=overflow_count,
-        p5_delta=p5_delta,
-        p95_delta=p95_delta,
-        n_delta=n_delta,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -117,11 +83,6 @@ def set_calibration_last_run(db: Database, timestamp: str) -> None:
 # ---------------------------------------------------------------------------
 # Library-file queries related to calibration
 # ---------------------------------------------------------------------------
-
-
-def count_tagged_files(db: Database, namespace: str = "nom") -> int:
-    """Count library files that have tags in *namespace*."""
-    return db.library_files.count_files_with_tags(namespace)
 
 
 def update_file_calibration_hash(
@@ -269,24 +230,3 @@ def compute_reconciliation_info(
     }
 
 
-def group_snapshots_by_head(
-    snapshots: list[dict[str, Any]],
-    limit: int,
-) -> dict[str, list[dict[str, Any]]]:
-    """Group flat snapshot list by ``calibration_key``, sorted and trimmed.
-
-    Each group is sorted by ``snapshot_at`` descending and capped at *limit*.
-    """
-    grouped: dict[str, list[dict[str, Any]]] = {}
-    for snapshot in snapshots:
-        key = snapshot["calibration_key"]
-        if key not in grouped:
-            grouped[key] = []
-        grouped[key].append(snapshot)
-
-    for key in grouped:
-        grouped[key] = sorted(
-            grouped[key], key=lambda x: x["snapshot_at"], reverse=True
-        )[:limit]
-
-    return grouped

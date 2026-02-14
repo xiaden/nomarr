@@ -52,7 +52,6 @@ from typing import Annotated
 
 from mcp.server.fastmcp import FastMCP
 from mcp.types import CallToolResult
-from pydantic import BaseModel, Field
 
 from .helpers.config_loader import load_config
 from .helpers.mcp_output_helper import (
@@ -64,11 +63,19 @@ from .tools.analyze_project_api_coverage import (
     analyze_project_api_coverage as analyze_project_api_coverage_impl,
 )
 from .tools.edit_file_copy_paste_text import (
+    CopyPasteOp,
+)
+from .tools.edit_file_copy_paste_text import (
     edit_file_copy_paste_text as edit_file_copy_paste_text_impl,
 )
+from .tools.edit_file_create import CreateOp
 from .tools.edit_file_create import edit_file_create as edit_file_create_impl
+from .tools.edit_file_insert_text import InsertOp
 from .tools.edit_file_insert_text import edit_file_insert_text as edit_file_insert_text_impl
 from .tools.edit_file_move_text import edit_file_move_text as edit_file_move_text_impl
+from .tools.edit_file_replace_content import (
+    ReplaceOp,
+)
 from .tools.edit_file_replace_content import (
     edit_file_replace_content as edit_file_replace_content_impl,
 )
@@ -78,6 +85,9 @@ from .tools.edit_file_replace_line_range import (
 
 # Import tool implementations with _impl suffix to avoid name collision
 # with MCP-decorated wrapper functions defined below
+from .tools.edit_file_replace_string import (
+    ReplacementOp,
+)
 from .tools.edit_file_replace_string import (
     edit_file_replace_string as edit_file_replace_string_impl,
 )
@@ -214,15 +224,6 @@ def _validate_config_on_startup() -> dict:
 # ──────────────────────────────────────────────────────────────────────
 # Pydantic Models for Complex Tool Parameters
 # ──────────────────────────────────────────────────────────────────────
-
-
-class StepAnnotation(BaseModel):
-    """Annotation to add under a completed step."""
-
-    marker: str = Field(
-        description="Alphanumeric marker word (e.g., 'Notes', 'Warning', 'Blocked')"
-    )
-    text: str = Field(description="Annotation text to add under the step")
 
 
 # Initialize MCP server
@@ -503,7 +504,6 @@ def analyze_project_api_coverage(
         tool_name="analyze_project_api_coverage",
     )
 
-
 @mcp.tool()
 def lint_project_backend(
     path: Annotated[
@@ -520,9 +520,42 @@ def lint_project_backend(
     Runs ruff, mypy, and import-linter (for directories only).
     """
     result = lint_project_backend_impl(path, check_all)
+    summary = result.get("summary", {})
+
+    if summary.get("clean", False):
+        return wrap_mcp_result(
+            result,
+            user_summary=f"Linted {path or 'nomarr/'} - all checks passed",
+            tool_name="lint_project_backend",
+        )
+
+    # Build file locations from errors
+    file_locations: list[tuple[str | Path, int | None, int | None, str]] = []
+    for tool_name in ("ruff", "mypy", "import-linter"):
+        tool_errors = result.get(tool_name, {})
+        for code_info in tool_errors.values():
+            for occ in code_info.get("occurrences", []):
+                file_path = occ.get("file")
+                line = occ.get("line")
+                if file_path:
+                    file_locations.append((file_path, line, None, "Error"))
+                if len(file_locations) >= 10:
+                    break
+            if len(file_locations) >= 10:
+                break
+        if len(file_locations) >= 10:
+            break
+
+    if file_locations:
+        return wrap_mcp_result_with_multiple_file_links(
+            result,
+            file_locations=file_locations,
+            tool_name="lint_project_backend",
+        )
+
     return wrap_mcp_result(
         result,
-        user_summary=f"Linted backend: {path or 'nomarr/'}",
+        user_summary=f"Linted {path or 'nomarr/'} with errors",
         tool_name="lint_project_backend",
     )
 
@@ -531,9 +564,43 @@ def lint_project_backend(
 def lint_project_frontend() -> CallToolResult:
     """Run frontend linting tools (ESLint and TypeScript)."""
     result = lint_project_frontend_impl()
+    status = result.get("status", "")
+
+    if status == "clean":
+        return wrap_mcp_result(
+            result,
+            user_summary="Linted frontend - all checks passed",
+            tool_name="lint_project_frontend",
+        )
+
+    if status == "error":
+        error_msg = result.get("summary", {}).get("error", "unknown")
+        return wrap_mcp_result(
+            result,
+            user_summary=f"Frontend lint error: {error_msg}",
+            tool_name="lint_project_frontend",
+            is_error=True,
+        )
+
+    # status == "errors" - build file locations
+    errors = result.get("errors", [])
+    file_locations: list[tuple[str | Path, int | None, int | None, str]] = []
+    for err in errors[:10]:
+        file_path = err.get("file")
+        line = err.get("line")
+        if file_path:
+            file_locations.append((file_path, line, None, "Error"))
+
+    if file_locations:
+        return wrap_mcp_result_with_multiple_file_links(
+            result,
+            file_locations=file_locations,
+            tool_name="lint_project_frontend",
+        )
+
     return wrap_mcp_result(
         result,
-        user_summary="Linted frontend",
+        user_summary="Frontend lint completed with errors",
         tool_name="lint_project_frontend",
     )
 
@@ -645,23 +712,16 @@ def search_file_text(
 @mcp.tool()
 def edit_file_replace_string(
     file_path: Annotated[str, "Workspace-relative or absolute path to the file to edit"],
-    replacements: Annotated[
-        list[dict],
-        "List of {old_string, new_string, expected_count} dicts. "
-        "expected_count is required and specifies how many matches are expected. "
-        "If actual count != expected_count, the operation fails with guidance.",
-    ],
+    replacements: list[ReplacementOp],
 ) -> CallToolResult:
     """Apply multiple string replacements atomically (single write).
 
+    Each replacement dict has: `old_string`, `new_string`, `expected_count`.
     All replacements are applied in-memory before writing to disk.
-    This avoids issues with auto-formatters running between edits.
-
-    Each old_string must match exactly expected_count times. If the actual
-    count differs, the operation fails. For small strings that fail, the error
-    suggests using search_file_text first to verify matches.
+    Each old_string must match exactly expected_count times or the operation fails.
     """
-    result = edit_file_replace_string_impl(file_path, replacements, ROOT)
+    replacements_dicts = [rep.model_dump() for rep in replacements]
+    result = edit_file_replace_string_impl(file_path, replacements_dicts, ROOT)
     return wrap_mcp_result_with_file_link(
         result,
         file_path=file_path,
@@ -781,9 +841,13 @@ def plan_complete_step(
     step_id: Annotated[
         str, "Step ID in format P<phase>-S<step> (e.g., 'P1-S3' for Phase 1, Step 3)"
     ],
-    annotation: Annotated[
-        StepAnnotation | None,
-        "Optional annotation to add under the step after marking complete.",
+    annotation_marker: Annotated[
+        str | None,
+        "Annotation marker word (e.g., 'Notes', 'Warning'). Required with annotation_text.",
+    ] = None,
+    annotation_text: Annotated[
+        str | None,
+        "Text to add under the step. Cannot contain checkbox syntax ('- [').",
     ] = None,
 ) -> CallToolResult:
     """Mark a step as complete in a task plan.
@@ -793,8 +857,17 @@ def plan_complete_step(
     Optionally adds an annotation block directly under the completed step.
     Returns the next incomplete step in the plan.
     """
-    # Convert Pydantic model to dict for the implementation
-    ann_dict = annotation.model_dump() if annotation else None
+    # Build annotation dict from separate parameters
+    ann_dict = None
+    if annotation_marker and annotation_text:
+        ann_dict = {"marker": annotation_marker, "text": annotation_text}
+    elif annotation_marker or annotation_text:
+        return wrap_mcp_result(
+            {"error": "Both annotation_marker and annotation_text must be provided together."},
+            user_summary="Error: incomplete annotation",
+            tool_name="plan_complete_step",
+            is_error=True,
+        )
     result = plan_complete_step_impl(plan_name, step_id, workspace_root=ROOT, annotation=ann_dict)
     # Construct plan file path
     plan_file = plan_name if plan_name.endswith(".md") else f"{plan_name}.md"
@@ -815,18 +888,15 @@ def plan_complete_step(
 
 @mcp.tool()
 def edit_file_create(
-    files: Annotated[
-        list[dict],
-        "List of file dicts with 'path' (str) and 'content' (str, default=\"\")",
-    ],
+    files: list[CreateOp],
 ) -> CallToolResult:
     """Create new files atomically with automatic parent directory creation.
 
-    Creates files in batch with mkdir -p behavior. Fails if any file exists.
-    All files created or none (atomic rollback on any failure).
-    Returns first 2 + last 2 lines of each created file for validation.
+    Each file dict has: `path` (str), `content` (str, default="").
+    Fails if any file exists. All created or none (atomic rollback).
     """
-    result = edit_file_create_impl(files, workspace_root=ROOT)
+    files_dicts = [f.model_dump() for f in files]
+    result = edit_file_create_impl(files_dicts, workspace_root=ROOT)
     applied_ops = result.get("applied_ops", [])
     if applied_ops:
         file_locations: list[tuple[str | Path, int | None, int | None, str]] = [
@@ -849,26 +919,14 @@ def edit_file_create(
 
 @mcp.tool()
 def edit_file_replace_content(
-    ops: Annotated[
-        list[dict],
-        "List of file dicts with 'path' (str) and 'content' (str)",
-    ],
+    ops: list[ReplaceOp],
 ) -> CallToolResult:
     """Replace entire file contents atomically.
 
-    Fails if any file doesn't exist. Overwrites entire contents.
-    All files replaced or none (atomic rollback on any failure).
-    Returns first 2 + last 2 lines for validation.
+    Each op dict has: `path` (str), `content` (str).
+    Fails if any file doesn't exist. All replaced or none (atomic rollback).
     """
-    from .tools.edit_file_replace_content import (
-        ReplaceOp,
-    )
-    from .tools.edit_file_replace_content import (
-        edit_file_replace_content as edit_file_replace_content_impl,
-    )
-
-    parsed_ops = [ReplaceOp(**op) for op in ops]
-    result = edit_file_replace_content_impl(parsed_ops, workspace_root=ROOT).model_dump(
+    result = edit_file_replace_content_impl(ops, workspace_root=ROOT).model_dump(
         exclude_none=True
     )
     applied_ops = result.get("applied_ops", [])
@@ -893,23 +951,16 @@ def edit_file_replace_content(
 
 @mcp.tool()
 def edit_file_insert_text(
-    ops: Annotated[
-        list[dict],
-        (
-            "List of InsertOp dicts with 'path', 'content', 'at' (bof|eof|before_line|after_line), "
-            "optional 'line' (int, required for before/after_line), "
-            "optional 'col' (int, None=BOL, -1=EOL)"
-        ),
-    ],
+    ops: list[InsertOp],
 ) -> CallToolResult:
     """Insert text at specific positions without string matching.
 
-    Supports 4 insertion modes: bof, eof, before_line, after_line.
-    Line-only mode (col=None): Inserts as new lines.
-    Row+col mode: Character-precise insertion.
+    Each op dict has: `path`, `content`, `at` (bof|eof|before_line|after_line),
+    optional `line` (required for before/after_line), optional `col`.
     For same-file ops: coordinates refer to ORIGINAL state, applied bottom-to-top.
     """
-    result = edit_file_insert_text_impl(ops, workspace_root=ROOT)
+    ops_dicts = [op.model_dump() for op in ops]
+    result = edit_file_insert_text_impl(ops_dicts, workspace_root=ROOT)
     applied_ops = result.get("applied_ops", [])
     if applied_ops:
         file_locations: list[tuple[str | Path, int | None, int | None, str]] = [
@@ -932,20 +983,16 @@ def edit_file_insert_text(
 
 @mcp.tool()
 def edit_file_copy_paste_text(
-    ops: Annotated[
-        list[dict],
-        "List of CopyPasteOp dicts with source_path, source_start_line, source_end_line, "
-        "target_path, target_line, optional source_start_col/source_end_col/target_col",
-    ],
+    ops: list[CopyPasteOp],
 ) -> CallToolResult:
     """Copy text from sources and paste to targets atomically.
 
-    Sources read-only (cached per unique range). Targets must exist.
-    Line-only mode (all col=None): Copy/paste full lines.
-    Row+col mode: Character-precise copy/paste.
-    For same-file targets: coordinates refer to ORIGINAL state.
+    Each op dict has: `source_path`, `source_start_line`, `source_end_line`,
+    `target_path`, `target_line`, optional `source_start_col`, `source_end_col`, `target_col`.
+    Sources cached per unique range. For same-file targets: coordinates refer to ORIGINAL state.
     """
-    result = edit_file_copy_paste_text_impl(ops, workspace_root=ROOT)
+    ops_dicts = [op.model_dump() for op in ops]
+    result = edit_file_copy_paste_text_impl(ops_dicts, workspace_root=ROOT)
     applied_ops = result.get("applied_ops", [])
     if applied_ops:
         file_locations: list[tuple[str | Path, int | None, int | None, str]] = [

@@ -10,19 +10,46 @@ export interface NavidromeTag {
   is_multivalue: boolean;
   summary: string;
   total_count: number;
+  short_name: string;
+  field_name: string;
+  is_versioned: boolean;
+}
+
+interface NavidromePreviewRawResponse {
+  stats: Record<string, {
+    type: string;
+    is_multivalue: boolean;
+    summary: string;
+    total_count: number;
+    short_name: string;
+    field_name: string;
+    is_versioned: boolean;
+  }>;
 }
 
 export interface NavidromePreviewResponse {
-  namespace: string;
-  tag_count: number;
   tags: NavidromeTag[];
 }
 
 /**
  * Get preview of tags for Navidrome config.
+ * Transforms backend stats dict into sorted tags array.
  */
 export async function getPreview(): Promise<NavidromePreviewResponse> {
-  return get("/api/web/navidrome/preview");
+  const raw = await get<NavidromePreviewRawResponse>("/api/web/navidrome/preview");
+  const tags = Object.entries(raw.stats)
+    .map(([tag_key, stat]) => ({
+      tag_key,
+      type: stat.type,
+      is_multivalue: stat.is_multivalue,
+      summary: stat.summary,
+      total_count: stat.total_count,
+      short_name: stat.short_name,
+      field_name: stat.field_name,
+      is_versioned: stat.is_versioned,
+    }))
+    .sort((a, b) => a.short_name.localeCompare(b.short_name));
+  return { tags };
 }
 
 export interface NavidromeConfigResponse {
@@ -128,15 +155,27 @@ export interface TagStatEntry {
   is_multivalue: boolean;
   summary: string;
   total_count: number;
+  short_name: string;
+  field_name: string;
+  is_versioned: boolean;
 }
 
 interface TagStatsRawResponse {
-  stats: Record<string, { type: string; is_multivalue: boolean; summary: string; total_count: number }>;
+  stats: Record<string, {
+    type: string;
+    is_multivalue: boolean;
+    summary: string;
+    total_count: number;
+    short_name: string;
+    field_name: string;
+    is_versioned: boolean;
+  }>;
 }
 
 /**
  * Get tag metadata for the rules engine.
  * Transforms the backend stats dict into a sorted array of TagStatEntry.
+ * Sorts by short_name for user-friendly display.
  */
 export async function getTagStats(): Promise<TagStatEntry[]> {
   const raw = await get<TagStatsRawResponse>("/api/web/navidrome/preview");
@@ -147,8 +186,11 @@ export async function getTagStats(): Promise<TagStatEntry[]> {
       is_multivalue: stat.is_multivalue,
       summary: stat.summary,
       total_count: stat.total_count,
+      short_name: stat.short_name,
+      field_name: stat.field_name,
+      is_versioned: stat.is_versioned,
     }))
-    .sort((a, b) => a.key.localeCompare(b.key));
+    .sort((a, b) => a.short_name.localeCompare(b.short_name));
 }
 
 

@@ -18,12 +18,9 @@ import {
 
 import { CalibrationActions } from "./components/CalibrationActions";
 import { CalibrationStatus } from "./components/CalibrationStatus";
-import { ConvergenceCharts } from "./components/ConvergenceCharts";
-import { ConvergenceSummary } from "./components/ConvergenceSummary";
-import { ConvergenceTable } from "./components/ConvergenceTable";
-import { useCalibrationHistory } from "./hooks/useCalibrationHistory";
+import { HistogramCharts } from "./components/HistogramCharts";
+import { useCalibrationHistograms } from "./hooks/useCalibrationHistograms";
 import { useCalibrationStatus } from "./hooks/useCalibrationStatus";
-import { useConvergenceStatus } from "./hooks/useConvergenceStatus";
 
 export function CalibrationPage() {
   const {
@@ -39,16 +36,10 @@ export function CalibrationPage() {
   } = useCalibrationStatus();
 
   const {
-    data: convergenceData,
-    loading: convergenceLoading,
-    error: convergenceError,
-  } = useConvergenceStatus();
-
-  const {
-    data: historyData,
-    loading: historyLoading,
-    error: historyError,
-  } = useCalibrationHistory();
+    data: histogramData,
+    loading: histogramLoading,
+    error: histogramError,
+  } = useCalibrationHistograms();
 
   const { isGenerating, progress } = generationState;
   const { isApplying, progress: applyProgress } = applyState;
@@ -67,30 +58,19 @@ export function CalibrationPage() {
               Generating Calibration...
             </Typography>
           </Box>
-          {progress && progress.iteration != null && progress.total_iterations != null && (() => {
-            const headFraction = (progress.current_head_index ?? 0) / (progress.total_heads || 1);
-            const combinedPct = ((progress.iteration - 1 + headFraction) / progress.total_iterations) * 100;
-            return (
-              <>
-                <ProgressBar
-                  label={`Iteration ${progress.iteration}/${progress.total_iterations} · Head ${progress.current_head_index ?? 0}/${progress.total_heads} (${progress.sample_pct ?? 0}% of files)`}
-                  value={Math.round(combinedPct)}
-                  percentage={combinedPct}
-                />
-                {progress.current_head && (
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                    Processing: {progress.current_head}
-                  </Typography>
-                )}
-              </>
-            );
-          })()}
-          {progress && progress.iteration == null && progress.total_heads > 0 && (
-            <ProgressBar
-              label={`Processing heads`}
-              value={progress.completed_heads}
-              total={progress.total_heads}
-            />
+          {progress && progress.total_heads > 0 && (
+            <>
+              <ProgressBar
+                label={`Head ${progress.current_head_index ?? 0}/${progress.total_heads}`}
+                value={progress.completed_heads}
+                total={progress.total_heads}
+              />
+              {progress.current_head && (
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                  Processing: {progress.current_head}
+                </Typography>
+              )}
+            </>
           )}
         </Panel>
       )}
@@ -128,29 +108,10 @@ export function CalibrationPage() {
       {status && (
         <Stack spacing={2.5}>
           <CalibrationStatus status={status} />
-          {convergenceLoading && (
-            <Panel>
-              <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-                <CircularProgress size={20} />
-                <Typography variant="body2">Loading convergence data...</Typography>
-              </Box>
-            </Panel>
-          )}
-          {convergenceError && (
-            <Alert severity="error">
-              Failed to load convergence data: {convergenceError}
-            </Alert>
-          )}
-          {convergenceData && (
-            <>
-              <ConvergenceSummary data={convergenceData} />
-              <ConvergenceTable data={convergenceData} />
-            </>
-          )}
-          <ConvergenceCharts
-            data={historyData}
-            loading={historyLoading}
-            error={historyError}
+          <HistogramCharts
+            data={histogramData}
+            loading={histogramLoading}
+            error={histogramError}
           />
           <CalibrationActions
             onGenerate={handleGenerate}

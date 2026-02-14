@@ -55,7 +55,7 @@ const TAG_LABELS: Record<string, string> = {
 };
 
 function isRelevantTag(key: string): boolean {
-  return STANDARD_TAG_RELS.has(key) || key.startsWith("nom:mood-");
+  return STANDARD_TAG_RELS.has(key) || key.startsWith("nom:");
 }
 
 export interface TagMetaEntry extends TagStatEntry {
@@ -103,7 +103,8 @@ export function useTagMetadata(): UseTagMetadataResult {
       .map((t) => ({
         ...t,
         type: FORCE_NUMERIC_TAG_RELS.has(t.key) ? "integer" : t.type,
-        label: TAG_LABELS[t.key] ?? t.key,
+        // Use short_name from backend for versioned tags, otherwise local labels
+        label: TAG_LABELS[t.key] ?? t.short_name ?? t.key,
       }))
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [rawTags]);

@@ -240,45 +240,22 @@ def generate_calibration_from_histogram(db: Database, model_key: str, head_name:
         bins: Number of uniform bins (default 10000)
 
     Returns:
-        {p5: float, p95: float, n: int, underflow_count: int, overflow_count: int}
+        {p5: float, p95: float, n: int, underflow_count: int, overflow_count: int, histogram_bins: list[{val, count}]}
 
     """
     bin_width = (hi - lo) / bins
     sparse_bins = db.calibration_state.get_sparse_histogram(model_key=model_key, labels=labels, lo=lo, hi=hi, bins=bins)
     if not sparse_bins:
         logger.warning(f"[calibration] No data for {model_key}:{head_name} (labels={labels})")
-        return {"p5": lo, "p95": hi, "n": 0, "underflow_count": 0, "overflow_count": 0}
+        return {"p5": lo, "p95": hi, "n": 0, "underflow_count": 0, "overflow_count": 0, "histogram_bins": []}
+
     result = derive_percentiles_from_sparse_histogram(sparse_bins=sparse_bins, lo=lo, hi=hi, bin_width=bin_width, p5_target=0.05, p95_target=0.95)
-    logger.info(f"[calibration] {model_key}:{head_name} -> p5={result['p5']:.4f}, p95={result['p95']:.4f}, n={result['n']}")
-    return result
 
-def generate_calibration_from_histogram_with_limit(db: Database, model_key: str, head_name: str, labels: list[str], version: int, lo: float=0.0, hi: float=1.0, bins: int=10000, sample_limit: int | None=None) -> dict[str, Any]:
-    """Generate calibration for a single head using DB histogram query with sample limiting.
+    # Transform sparse_bins to storage format: [{val: float, count: int}]
+    histogram_bins = [{"val": b["min_val"], "count": b["count"]} for b in sparse_bins]
+    result["histogram_bins"] = histogram_bins
 
-    Progressive calibration variant: limits sample size for convergence tracking.
-
-    Args:
-        db: Database instance
-        model_key: Model identifier (e.g., "effnet-discogs-effnet-1")
-        head_name: Head name for logging (e.g., "mood happy")
-        labels: Actual tag labels to match (e.g., ["happy", "non_happy"])
-        version: Calibration version
-        lo: Lower bound of calibrated range (default 0.0)
-        hi: Upper bound of calibrated range (default 1.0)
-        bins: Number of uniform bins (default 10000)
-        sample_limit: Max number of samples to use (for progressive calibration)
-
-    Returns:
-        {p5: float, p95: float, n: int, underflow_count: int, overflow_count: int}
-
-    """
-    bin_width = (hi - lo) / bins
-    sparse_bins = db.calibration_state.get_sparse_histogram_with_limit(model_key=model_key, labels=labels, lo=lo, hi=hi, bins=bins, limit=sample_limit)
-    if not sparse_bins:
-        logger.warning(f"[calibration] No data for {model_key}:{head_name} (labels={labels})")
-        return {"p5": lo, "p95": hi, "n": 0, "underflow_count": 0, "overflow_count": 0}
-    result = derive_percentiles_from_sparse_histogram(sparse_bins=sparse_bins, lo=lo, hi=hi, bin_width=bin_width, p5_target=0.05, p95_target=0.95)
-    logger.info(f"[calibration] {model_key}:{head_name} (n={result['n']}) -> p5={result['p5']:.4f}, p95={result['p95']:.4f}")
+    logger.info(f"[calibration] {model_key}:{head_name} -> p5={result['p5']:.4f}, p95={result['p95']:.4f}, n={result['n']}, bins={len(histogram_bins)}")
     return result
 
 def export_calibration_state_to_json(db: Database, output_path: str) -> dict[str, Any]:

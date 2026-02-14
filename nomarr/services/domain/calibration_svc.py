@@ -16,7 +16,6 @@ from typing import cast as type_cast
 from nomarr.components.ml.calibration_state_comp import (
     compute_convergence_status,
     compute_reconciliation_info,
-    group_snapshots_by_head,
 )
 from nomarr.components.ml.ml_discovery_comp import discover_heads
 from nomarr.helpers.time_helper import now_ms
@@ -140,8 +139,7 @@ class CalibrationService:
 
         Args:
             **kwargs: Progress fields to update. Valid keys:
-                iteration, total_iterations, current_head, current_head_index,
-                total_heads, sample_pct
+                current_head, current_head_index, total_heads
 
         """
         with self._progress_lock:
@@ -217,8 +215,7 @@ class CalibrationService:
         """Get calibration generation progress.
 
         When generation is running, returns live progress from background thread:
-            iteration, total_iterations, current_head, current_head_index,
-            total_heads, sample_pct
+            current_head, current_head_index, total_heads
 
         When not running, falls back to DB query for head completion counts.
 
@@ -229,11 +226,8 @@ class CalibrationService:
               "remaining_heads": int,
               "last_updated": int | None,
               "is_running": bool,
-              "iteration": int | None,
-              "total_iterations": int | None,
               "current_head": str | None,
               "current_head_index": int | None,
-              "sample_pct": float | None,
             }
 
         """
@@ -249,11 +243,8 @@ class CalibrationService:
                 "remaining_heads": 0,
                 "last_updated": None,
                 "is_running": True,
-                "iteration": progress.get("iteration"),
-                "total_iterations": progress.get("total_iterations"),
                 "current_head": progress.get("current_head"),
                 "current_head_index": progress.get("current_head_index"),
-                "sample_pct": progress.get("sample_pct"),
             }
 
         # Not running: fall back to DB query for head completion counts
@@ -292,11 +283,8 @@ class CalibrationService:
             "remaining_heads": total_heads - completed,
             "last_updated": last_updated,
             "is_running": False,
-            "iteration": None,
-            "total_iterations": None,
             "current_head": None,
             "current_head_index": None,
-            "sample_pct": None,
         }
 
     def get_calibration_history(
@@ -305,6 +293,9 @@ class CalibrationService:
         limit: int = 100,
     ) -> dict[str, Any]:
         """Get calibration convergence history.
+
+        NOTE: This method uses the legacy calibration_history collection from
+        progressive calibration. Will be deprecated in favor of histogram visualization.
 
         Args:
             calibration_key: Specific head (e.g., "effnet-20220825:mood_happy") or None for all
@@ -321,12 +312,67 @@ class CalibrationService:
             )
             return {"calibration_key": calibration_key, "history": history}
 
+        # Inline grouping logic (simplified from removed group_snapshots_by_head)
         recent = self._db.calibration_history.get_all_recent_snapshots(limit=limit * 10)
-        return {"all_heads": group_snapshots_by_head(recent, limit)}
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for snapshot in recent:
+            key = snapshot["calibration_key"]
+            if key not in grouped:
+                grouped[key] = []
+            grouped[key].append(snapshot)
+        for key in grouped:
+            grouped[key] = sorted(grouped[key], key=lambda x: x["snapshot_at"], reverse=True)[:limit]
+        return {"all_heads": grouped}
 
     def get_latest_convergence_status(self) -> dict[str, Any]:
         """Get latest convergence metrics for all heads."""
         return compute_convergence_status(self._db)
+
+
+    def get_histogram_for_head(self, model_key: str, head_name: str) -> dict[str, Any]:
+        """Get stored histogram bins for a specific head.
+
+        Args:
+            model_key: Model identifier (e.g., "effnet-20220825")
+            head_name: Head name (e.g., "mood_happy")
+
+        Returns:
+            {
+              "model_key": str,
+              "head_name": str,
+              "histogram_bins": [{val: float, count: int}, ...],
+              "p5": float,
+              "p95": float,
+              "n": int,
+              "histogram_spec": {lo, hi, bins, bin_width}
+            }
+
+        Raises:
+            ValueError: If no calibration state found for head
+
+        """
+        state = self._db.calibration_state.get_calibration_state(model_key, head_name)
+        if not state:
+            raise ValueError(f"No calibration state found for {model_key}:{head_name}")
+
+        return {
+            "model_key": model_key,
+            "head_name": head_name,
+            "histogram_bins": state.get("histogram_bins", []),
+            "p5": state.get("p5"),
+            "p95": state.get("p95"),
+            "n": state.get("n"),
+            "histogram_spec": state.get("histogram", {}),
+        }
+
+    def get_all_calibration_states(self) -> list[dict[str, Any]]:
+        """Get all calibration states with histogram bins.
+
+        Returns:
+            List of calibration state documents with histogram_bins
+
+        """
+        return self._db.calibration_state.get_all_calibration_states()
 
     # -------------------------------------------------------------------------
     #  Reconciliation Info

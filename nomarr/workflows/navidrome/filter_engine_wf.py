@@ -4,14 +4,22 @@ Executes parsed smart playlist filters using set operations.
 This module sits in the workflows layer and orchestrates:
 1. Calling simple persistence queries for each condition
 2. Combining results using Python set operations (AND = intersection, OR = union)
+
+Supports both:
+- Full versioned tag keys (nom:happy_essentia21-beta6-dev_...)
+- Short user-friendly names (nom-happy-raw) which resolve to versioned keys
 """
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from nomarr.components.navidrome.tag_query_comp import find_files_matching_tag
 from nomarr.helpers.dto.navidrome_dto import STANDARD_TAG_RELS
+from nomarr.helpers.tag_key_mapping import resolve_short_to_versioned_keys
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from nomarr.helpers.dto.navidrome_dto import SmartPlaylistFilter, TagCondition
@@ -19,7 +27,6 @@ if TYPE_CHECKING:
 else:
     # Need RuleGroup at runtime for recursive execution
     from nomarr.helpers.dto.navidrome_dto import RuleGroup
-
 
 
 def _execute_rule_group(db: Database, rule_group: RuleGroup) -> set[str]:  # type: ignore[name-defined]
@@ -79,8 +86,54 @@ def execute_smart_playlist_filter(db: Database, playlist_filter: SmartPlaylistFi
     return _execute_rule_group(db, playlist_filter.root)
 
 
+def _resolve_tag_key(db: Database, tag_key: str) -> list[str]:
+    """Resolve a tag key to actual storage key(s).
+
+    Handles:
+    - Standard tags (artist, album, year) - returned as-is
+    - Full versioned keys (nom:happy_essentia21...) - returned with nom: prefix
+    - Short names (nom-happy-raw) - resolved to versioned key(s)
+
+    Args:
+        db: Database instance
+        tag_key: Tag key from user query
+
+    Returns:
+        List of storage keys to query (usually 1, may be multiple if short name
+        maps to multiple versions)
+
+    """
+    # Strip any existing "nom:" prefix for lookup
+    raw_key = tag_key.removeprefix("nom:")
+
+    # Standard tags (artist, album, year, etc.) - no prefix needed
+    if raw_key in STANDARD_TAG_RELS:
+        return [raw_key]
+
+    # Check if this looks like a short name (nom-something or nom_something)
+    # Short names use hyphens, storage keys use underscores after nom:
+    if tag_key.startswith("nom-") or (tag_key.startswith("nom_") and "essentia" not in tag_key):
+        # Try to resolve short name to versioned key(s)
+        # Normalize: convert underscores to hyphens for lookup
+        short_name = tag_key.replace("_", "-")
+        versioned_keys = resolve_short_to_versioned_keys(short_name, db)
+        if versioned_keys:
+            logger.debug(f"[filter_engine] Resolved '{tag_key}' to {versioned_keys}")
+            return versioned_keys
+        # If no match found, treat as literal (maybe user knows the exact key)
+        logger.warning(f"[filter_engine] Short name '{tag_key}' not found, using as-is")
+
+    # Full versioned key or unknown - ensure nom: prefix for nomarr tags
+    if not tag_key.startswith("nom:"):
+        return [f"nom:{tag_key}"]
+    return [tag_key]
+
+
 def _execute_single_condition(db: Database, condition: TagCondition) -> set[str]:
     """Execute a single tag condition and return matching file IDs.
+
+    Supports both full versioned tag keys and short user-friendly names.
+    Short names are resolved to actual storage keys before querying.
 
     Args:
         db: Database instance
@@ -90,40 +143,35 @@ def _execute_single_condition(db: Database, condition: TagCondition) -> set[str]
         Set of file IDs matching the condition
 
     """
-    # Use unified TagOperations for tag queries
-    # Standard tags (year, artist, etc.) have no namespace prefix
-    # Nomarr tags (mood, effnet, etc.) have "nom:" prefix
-    rel = condition.tag_key
+    # Resolve tag key to actual storage key(s)
+    storage_keys = _resolve_tag_key(db, condition.tag_key)
 
-    # Strip any existing "nom:" prefix for lookup
-    raw_key = rel.removeprefix("nom:")
+    # Union results from all resolved keys
+    all_matching: set[str] = set()
 
-    # Standard tags must NOT have prefix; nomarr tags must have it
-    if raw_key in STANDARD_TAG_RELS:
-        rel = raw_key  # No prefix for standard tags
-    elif not rel.startswith("nom:"):
-        rel = f"nom:{rel}"  # Add prefix for nomarr tags
+    for rel in storage_keys:
+        if condition.operator == "contains":
+            file_ids = find_files_matching_tag(
+                db,
+                rel=rel,
+                operator="CONTAINS",
+                value=str(condition.value),
+            )
+        elif condition.operator == "notcontains":
+            file_ids = find_files_matching_tag(
+                db,
+                rel=rel,
+                operator="NOTCONTAINS",
+                value=str(condition.value),
+            )
+        else:
+            # Numeric comparison query
+            file_ids = find_files_matching_tag(
+                db,
+                rel=rel,
+                operator=condition.operator,
+                value=condition.value,
+            )
+        all_matching.update(file_ids)
 
-    if condition.operator == "contains":
-        # String contains query
-        return find_files_matching_tag(
-            db,
-            rel=rel,
-            operator="CONTAINS",
-            value=str(condition.value),
-        )
-    if condition.operator == "notcontains":
-        # String not-contains query
-        return find_files_matching_tag(
-            db,
-            rel=rel,
-            operator="NOTCONTAINS",
-            value=str(condition.value),
-        )
-    # Numeric comparison query
-    return find_files_matching_tag(
-        db,
-        rel=rel,
-        operator=condition.operator,
-        value=condition.value,
-    )
+    return all_matching

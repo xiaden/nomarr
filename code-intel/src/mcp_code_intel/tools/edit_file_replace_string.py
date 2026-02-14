@@ -6,6 +6,8 @@ All replacements are validated upfront and applied only if ALL succeed.
 
 from pathlib import Path
 
+from pydantic import BaseModel, Field
+
 from ..helpers.file_helpers import (
     check_mtime,
     normalize_eol,
@@ -15,6 +17,17 @@ from ..helpers.file_helpers import (
 
 _SMALL_STRING_THRESHOLD = 20  # Strings shorter than this get search_file_text guidance
 _PREVIEW_MAX_LEN = 50
+
+
+class ReplacementOp(BaseModel):
+    """Single replacement operation within a file."""
+
+    old_string: str = Field(description="Exact text to find and replace")
+    new_string: str = Field(description="Text to replace old_string with")
+    expected_count: int = Field(
+        description="Number of matches expected (required). Fails if actual count differs.",
+        ge=1,
+    )
 
 
 def _build_count_mismatch_error(

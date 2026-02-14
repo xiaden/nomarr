@@ -61,6 +61,12 @@ def _validate_annotation(annotation: dict[str, str]) -> dict[str, str] | None:
         }
     if not ann_text or not ann_text.strip():
         return {"error": "empty_annotation_text", "message": "Annotation text cannot be empty"}
+    # Reject step-like syntax that would confuse the parser on re-read
+    if "- [" in ann_text:
+        return {
+            "error": "invalid_annotation_text",
+            "message": "Annotation text cannot contain checkbox syntax ('- [')",
+        }
     return None
 
 
