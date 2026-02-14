@@ -259,7 +259,7 @@ def _build_tier_map(
         Dictionary mapping model_key -> (tier, value, label)
 
     """
-    mood_outputs = [ho for ho in head_outputs if not ho.head.is_regression_head and ho.tier is not None]
+    mood_outputs = [ho for ho in head_outputs if ho.tier is not None]
     logger.debug(f"[aggregation] {len(mood_outputs)} mood outputs with tiers")
     if not mood_outputs:
         logger.info("[aggregation] No mood outputs with tiers, returning empty mood tags")
