@@ -248,3 +248,8 @@ class CalibrationStateOperations:
         _key = self._make_key(model_key, head_name, label)
         if self.collection.has(_key):
             self.collection.delete(_key)
+
+
+    def truncate(self) -> None:
+        """Remove all documents from the calibration_state collection."""
+        self.collection.truncate()

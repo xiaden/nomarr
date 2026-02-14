@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 import { useConfirmDialog } from "../../../hooks/useConfirmDialog";
 import { useNotification } from "../../../hooks/useNotification";
 import type { CalibrationStatus } from "../../../shared/api/calibration";
-import { getStatus } from "../../../shared/api/calibration";
+import { clearCalibration, getStatus } from "../../../shared/api/calibration";
 
 import {
   useCalibrationApply,
@@ -138,6 +138,29 @@ export function useCalibrationStatus() {
     showInfo("Not implemented");
   };
 
+  const handleClear = async () => {
+    const confirmed = await confirm({
+      title: "Clear All Calibration Data?",
+      message:
+        "This will permanently remove all calibration states, history, and reset file calibration hashes. You will need to regenerate calibration afterward.",
+      confirmLabel: "Clear",
+      severity: "error",
+    });
+    if (!confirmed) return;
+
+    try {
+      const result = await clearCalibration();
+      showSuccess(
+        `Calibration data cleared. ${result.files_updated} file hashes reset.`
+      );
+      loadStatus();
+    } catch (err) {
+      showError(
+        err instanceof Error ? err.message : "Failed to clear calibration"
+      );
+    }
+  };
+
   return {
     status,
     loading,
@@ -149,6 +172,7 @@ export function useCalibrationStatus() {
     handleGenerate,
     handleApply,
     handleUpdateFiles,
+    handleClear,
     // Dialog state for rendering ConfirmDialog
     dialogState: { isOpen, options, handleConfirm, handleCancel },
   };

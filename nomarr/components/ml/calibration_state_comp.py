@@ -232,3 +232,30 @@ def compute_reconciliation_info(
     }
 
 
+
+
+def clear_all_calibration_data(db: Database) -> dict[str, int]:
+    """Remove all calibration data from the database.
+
+    Truncates calibration_state and calibration_history collections,
+    removes calibration meta keys, and nulls calibration_hash on all library files.
+
+    Returns:
+        Summary of cleared data: {files_updated, meta_keys_cleared}.
+
+    """
+    # Truncate calibration collections
+    db.calibration_state.truncate()
+    db.calibration_history.truncate()
+
+    # Clear calibration meta keys
+    meta_keys_cleared = 0
+    for key in ("calibration_version", "calibration_last_run"):
+        if db.meta.get(key) is not None:
+            db.meta.delete(key)
+            meta_keys_cleared += 1
+
+    # Null out calibration hashes on library files
+    files_updated = db.library_files.clear_all_calibration_hashes()
+
+    return {"files_updated": files_updated, "meta_keys_cleared": meta_keys_cleared}

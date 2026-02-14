@@ -2,7 +2,7 @@
  * Calibration API functions.
  */
 
-import { get, post } from "./client";
+import { del, get, post } from "./client";
 
 export interface CalibrationData {
   method: string;
@@ -284,4 +284,17 @@ export async function getHistogramForHead(
  */
 export async function getAllHistograms(): Promise<AllCalibrationStatesResponse> {
   return get<AllCalibrationStatesResponse>("/api/web/calibration/histogram");
+}
+
+export interface ClearCalibrationResponse {
+  files_updated: number;
+  meta_keys_cleared: number;
+}
+
+/**
+ * Clear all calibration data from the database.
+ * Truncates calibration collections, clears meta keys, and nulls file calibration hashes.
+ */
+export async function clearCalibration(): Promise<ClearCalibrationResponse> {
+  return del("/api/web/calibration");
 }

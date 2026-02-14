@@ -897,6 +897,28 @@ class LibraryFilesOperations:
             bind_vars={"file_id": file_id, "calibration_hash": calibration_hash},
         )
 
+    def clear_all_calibration_hashes(self) -> int:
+        """Set calibration_hash and last_written_calibration_hash to null on all files.
+
+        Used when clearing calibration data to mark all files as needing recalibration.
+
+        Returns:
+            Number of files updated.
+
+        """
+        cursor = self.db.aql.execute(
+            """
+            FOR f IN library_files
+                FILTER f.calibration_hash != null OR f.last_written_calibration_hash != null
+                UPDATE f WITH {
+                    calibration_hash: null,
+                    last_written_calibration_hash: null
+                } IN library_files
+                RETURN 1
+            """,
+        )
+        return len(list(cursor))  # type: ignore[arg-type]
+
     def get_calibration_status_by_library(self, expected_hash: str) -> list[dict[str, Any]]:
         """Get calibration status counts grouped by library.
 

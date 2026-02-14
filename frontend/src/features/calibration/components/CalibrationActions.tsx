@@ -11,6 +11,7 @@ interface CalibrationActionsProps {
   onGenerate: () => Promise<void>;
   onApply: () => Promise<void>;
   onUpdateFiles: () => void;
+  onClear: () => Promise<void>;
   actionLoading: boolean;
 }
 
@@ -18,6 +19,7 @@ export function CalibrationActions({
   onGenerate,
   onApply,
   onUpdateFiles,
+  onClear,
   actionLoading,
 }: CalibrationActionsProps) {
   const actions = [
@@ -43,6 +45,14 @@ export function CalibrationActions({
         "Download and import the latest calibration bundle files from the repository.",
       onClick: onUpdateFiles,
       color: "secondary" as const,
+      variant: "outlined" as const,
+    },
+    {
+      label: "Clear Calibration Data",
+      description:
+        "Remove all calibration states, history, and reset file calibration hashes. You will need to regenerate calibration afterward.",
+      onClick: onClear,
+      color: "error" as const,
       variant: "outlined" as const,
     },
   ];

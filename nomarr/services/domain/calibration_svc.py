@@ -378,5 +378,27 @@ class CalibrationService:
         return self._db.calibration_state.get_all_calibration_states()
 
     # -------------------------------------------------------------------------
-    #  Reconciliation Info
 
+    def clear_calibration(self) -> dict[str, int]:
+        """Clear all calibration data from the database.
+
+        Removes calibration_state, calibration_history, meta keys,
+        and nulls calibration_hash on all library files.
+
+        Returns:
+            Summary: {files_updated, meta_keys_cleared}
+
+        Raises:
+            RuntimeError: If calibration generation is currently running.
+
+        """
+        if self.is_generation_running():
+            msg = "Cannot clear calibration while generation is running."
+            raise RuntimeError(msg)
+
+        from nomarr.components.ml.calibration_state_comp import clear_all_calibration_data
+
+        return clear_all_calibration_data(self._db)
+
+    # -------------------------------------------------------------------------
+    #  Reconciliation Info

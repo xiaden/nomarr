@@ -32,6 +32,7 @@ export function CalibrationPage() {
     handleGenerate,
     handleApply,
     handleUpdateFiles,
+    handleClear,
     dialogState,
   } = useCalibrationStatus();
 
@@ -117,6 +118,7 @@ export function CalibrationPage() {
             onGenerate={handleGenerate}
             onApply={handleApply}
             onUpdateFiles={handleUpdateFiles}
+            onClear={handleClear}
             actionLoading={isGenerating || isApplying}
           />
         </Stack>

@@ -15,6 +15,32 @@ if TYPE_CHECKING:
     from nomarr.services.domain.tagging_svc import TaggingService
 router = APIRouter(prefix="/calibration", tags=["Calibration"])
 
+
+@router.delete("", dependencies=[Depends(verify_session)])
+async def clear_calibration(
+    calibration_service: Annotated["CalibrationService", Depends(get_calibration_service)],
+) -> dict[str, Any]:
+    """Clear all calibration data.
+
+    Truncates calibration_state and calibration_history collections,
+    removes calibration meta keys, and nulls calibration_hash on all library files.
+    Calibration can be regenerated afterward.
+
+    Returns:
+        {"files_updated": int, "meta_keys_cleared": int}
+
+    """
+    try:
+        return calibration_service.clear_calibration()
+    except RuntimeError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except Exception as e:
+        logger.exception("[Web API] Error clearing calibration data")
+        raise HTTPException(
+            status_code=500,
+            detail=sanitize_exception_message(e, "Failed to clear calibration data"),
+        ) from e
+
 @router.post("/start-apply", dependencies=[Depends(verify_session)])
 async def start_apply_calibration(tagging_service: Annotated["TaggingService", Depends(get_tagging_service)]) -> dict[str, Any]:
     """Start calibration apply in background thread.

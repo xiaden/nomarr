@@ -210,3 +210,8 @@ class CalibrationHistoryOperations:
         )
         results = list(cursor)  # type: ignore
         return len(results)
+
+
+    def truncate(self) -> None:
+        """Remove all documents from the calibration_history collection."""
+        self.collection.truncate()
