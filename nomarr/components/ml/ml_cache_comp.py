@@ -98,12 +98,6 @@ def clear_predictor_cache() -> int:
         _CACHE_LAST_ACCESS = 0
         import gc
         gc.collect()
-        try:
-            import tensorflow as tf
-            tf.keras.backend.clear_session()
-            logger.info("[cache] TensorFlow session cleared")
-        except Exception as e:
-            logger.warning(f"[cache] Could not clear TensorFlow session: {e}")
         logger.info(f"[cache] Cleared predictor cache ({count} predictors removed, GPU memory freed)")
         return count
 
