@@ -239,7 +239,7 @@ def _process_head_predictions(
                 logger.warning(f"[processor] Head {head_name} produced ZERO tags")
             tags_accum.update(head_tags)
             heads_succeeded += 1
-            if head_info.is_regression_mood_source:
+            if head_info.is_regression_head:
                 if segment_scores.ndim == 2:
                     raw_values = [float(x) for x in segment_scores[:, 0]]
                 else:

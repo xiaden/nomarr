@@ -104,17 +104,14 @@ class HeadInfo:
         head_type: str,
         embedding_graph: str,
         embedding_sidecar: Sidecar | None = None,
-        is_mood_source: bool = False,
-        is_regression_mood_source: bool = False,
+        is_regression_head: bool = False,
     ) -> None:
         self.sidecar = sidecar
         self.backbone = backbone
         self.head_type = head_type
         self.embedding_graph = embedding_graph
         self.embedding_sidecar = embedding_sidecar
-        # Structured metadata for tagging/aggregation logic
-        self.is_mood_source = is_mood_source  # True for all non-regression heads (all contribute to mood-* tags)
-        self.is_regression_mood_source = is_regression_mood_source  # Regression head for mood tiers
+        self.is_regression_head = is_regression_head  # Regression head for mood tiers
 
     @property
     def name(self) -> str:
@@ -225,8 +222,8 @@ def get_head_output_node(head_type: str, sidecar: Sidecar) -> str:
     return "model/Softmax"
 
 
-# Known regression heads that feed mood tiers
-_REGRESSION_MOOD_HEADS = {"approachability_regression", "engagement_regression"}
+# Known regression heads (output continuous values, not class labels)
+_REGRESSION_HEADS = {"approachability_regression", "engagement_regression"}
 
 
 def discover_heads(models_dir: str) -> list[HeadInfo]:
@@ -237,8 +234,6 @@ def discover_heads(models_dir: str) -> list[HeadInfo]:
         models/<backbone>/heads/<type>/*.json
 
     Returns HeadInfo objects with backbone, head_type, and embedding graph resolved.
-    Sets is_mood_source=True for all non-regression heads (all contribute to mood-* tags).
-    Sets is_regression_mood_source for known regression heads that feed mood tiers.
     """
     heads: list[HeadInfo] = []
 
@@ -291,16 +286,6 @@ def discover_heads(models_dir: str) -> list[HeadInfo]:
                         continue
 
                     sidecar = Sidecar(json_path, data)
-                    head_name = sidecar.name
-
-                    # Check if this is a regression head that feeds mood tiers
-                    is_regression_mood_source = head_name in _REGRESSION_MOOD_HEADS
-
-                    # ALL non-regression heads contribute to mood-* tags.
-                    # Mood tags are an aggregated, curated list of the most likely
-                    # labels across ALL heads (binary, multilabel, multiclass) —
-                    # not just heads with "mood" in their name.
-                    is_mood_source = not is_regression_mood_source
 
                     head_info = HeadInfo(
                         sidecar=sidecar,
@@ -308,8 +293,7 @@ def discover_heads(models_dir: str) -> list[HeadInfo]:
                         head_type=head_type,
                         embedding_graph=embedding_graph,
                         embedding_sidecar=embedding_sidecar,
-                        is_mood_source=is_mood_source,
-                        is_regression_mood_source=is_regression_mood_source,
+                        is_regression_head=sidecar.name in _REGRESSION_HEADS,
                     )
                     heads.append(head_info)
 

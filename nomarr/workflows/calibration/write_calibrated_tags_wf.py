@@ -222,17 +222,16 @@ def _reconstruct_head_outputs(numeric_tags: dict[str, float | int], head_by_mode
         head_info, label = head_by_model_key[tag_key]
         clean_key = tag_key[len(namespace) + 1:] if tag_key.startswith(f"{namespace}:") else tag_key
         tier: str | None = None
-        if head_info.is_mood_source or head_info.is_regression_mood_source:
-            calibrated_value = value
-            if calibrations and clean_key in calibrations:
-                from nomarr.components.ml.ml_calibration_comp import apply_minmax_calibration
-                calibrated_value = apply_minmax_calibration(value, calibrations[clean_key])
-            if calibrated_value >= 0.7:
-                tier = "high"
-            elif calibrated_value >= 0.5:
-                tier = "medium"
-            elif calibrated_value >= 0.3:
-                tier = "low"
+        calibrated_value = value
+        if calibrations and clean_key in calibrations:
+            from nomarr.components.ml.ml_calibration_comp import apply_minmax_calibration
+            calibrated_value = apply_minmax_calibration(value, calibrations[clean_key])
+        if calibrated_value >= 0.7:
+            tier = "high"
+        elif calibrated_value >= 0.5:
+            tier = "medium"
+        elif calibrated_value >= 0.3:
+            tier = "low"
         head_outputs.append(HeadOutput(head=head_info, model_key=clean_key, label=label, value=value, tier=tier, calibration_id=None))
     if not head_outputs:
         logger.warning("[calibrated_tags] No HeadOutput objects reconstructed")
