@@ -62,7 +62,7 @@ export function CalibrationPage() {
             <>
               <ProgressBar
                 label={`Head ${progress.current_head_index ?? 0}/${progress.total_heads}`}
-                value={progress.completed_heads}
+                value={progress.current_head_index ?? progress.completed_heads}
                 total={progress.total_heads}
               />
               {progress.current_head && (
