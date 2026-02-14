@@ -337,6 +337,7 @@ def generate_histogram_calibration_wf(
         generate_calibration_from_histogram,
     )
     from nomarr.components.ml.ml_discovery_comp import discover_heads
+    from nomarr.components.tagging.tagging_aggregation_comp import normalize_tag_label
 
     logger.info("[histogram_calibration_wf] Starting histogram-based calibration generation")
 
@@ -377,7 +378,9 @@ def generate_histogram_calibration_wf(
             )
 
         # Iterate over labels (per-label calibration)
-        for label in labels:
+        for raw_label in labels:
+            # Normalize label to match DB tag format ("non_party" → "not_party")
+            label = normalize_tag_label(raw_label)
             label_key = f"{model_key}:{head_name}:{label}"
             logger.info(f"[histogram_calibration_wf] Processing label {label_key}")
 
