@@ -64,9 +64,11 @@ class CalibrationStateOperations:
               // Check if tag contains the model backbone/date pattern
               LET rel_without_prefix = SUBSTRING(tag.rel, 4)
               FILTER CONTAINS(rel_without_prefix, @model_key_for_tag)
-              // Extract label (first segment before first underscore)
-              LET first_underscore = FIND_FIRST(rel_without_prefix, "_")
-              LET extracted_label = first_underscore >= 0 ? SUBSTRING(rel_without_prefix, 0, first_underscore) : rel_without_prefix
+              // Extract label: everything before "_essentia" (framework marker).
+              // Labels may contain underscores (e.g., "not_happy"), so splitting
+              // on the first underscore is incorrect.
+              LET essentia_pos = FIND_FIRST(rel_without_prefix, "_essentia")
+              LET extracted_label = essentia_pos >= 0 ? SUBSTRING(rel_without_prefix, 0, essentia_pos) : rel_without_prefix
               // Check if extracted label matches the specified label
               FILTER extracted_label == @label
 
@@ -115,7 +117,7 @@ class CalibrationStateOperations:
             ),
         )
 
-        return list(cursor)  # type: ignore  # type: ignore
+        return list(cursor)  # type: ignore  # type: ignore  # type: ignore  # type: ignore
 
     @staticmethod
     def _make_key(model_key: str, head_name: str, label: str) -> str:
