@@ -35,7 +35,7 @@ USAGE:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.file_sync_comp import get_library_file
@@ -66,6 +66,32 @@ class LoadLibraryStateResult:
     file_id: int
     all_tags: dict[str, Any]
     chromaprint: str | None
+
+
+@dataclass
+class BatchContext:
+    """Pre-computed invariants for batch calibration apply.
+
+    When processing many files, these values are computed once and reused,
+    avoiding redundant DB queries and filesystem scans per file.
+
+    Attributes:
+        heads: Discovered HeadInfo objects from discover_heads()
+        calibrations: Calibration data from load_calibrations_from_db_wf()
+        calibration_version: Global calibration version string
+        library_roots: Mapping of library_id -> resolved root Path
+        writer: Reusable TagWriter instance
+        pending_folders: Folders needing mtime update after batch completes.
+            Maps folder_abs_str -> (library_id, library_root).
+
+    """
+
+    heads: list[Any]
+    calibrations: dict[str, Any]
+    calibration_version: str | None
+    library_roots: dict[str, Path]
+    writer: TagWriter
+    pending_folders: dict[str, tuple[str, Path]] = field(default_factory=dict)
 
 def _load_library_state(db: Database, file_path: str, namespace: str) -> LoadLibraryStateResult:
     """Load file metadata and tags from library database.
@@ -122,13 +148,15 @@ def _filter_numeric_tags(all_tags: dict[str, Any], version_tag_key: str) -> dict
     logger.debug(f"[calibrated_tags] Found {len(numeric_tags)} numeric tags")
     return numeric_tags
 
-def _discover_head_mappings(models_dir: str, namespace: str, numeric_tags: dict[str, float | int]) -> dict[str, tuple[Any, str]]:
+def _discover_head_mappings(models_dir: str, namespace: str, numeric_tags: dict[str, float | int], heads: list[Any] | None = None) -> dict[str, tuple[Any, str]]:
     """Discover heads and build mapping from tag keys to HeadInfo.
 
     Args:
         models_dir: Path to models directory
         namespace: Tag namespace
         numeric_tags: Numeric tags to match against heads
+        heads: Pre-discovered HeadInfo objects (batch optimization).
+            When provided, skips the expensive discover_heads() filesystem scan.
 
     Returns:
         Dictionary mapping tag_key -> (HeadInfo, label)
@@ -137,7 +165,8 @@ def _discover_head_mappings(models_dir: str, namespace: str, numeric_tags: dict[
         ValueError: If no heads discovered
 
     """
-    heads = discover_heads(models_dir)
+    if heads is None:
+        heads = discover_heads(models_dir)
     if not heads:
         msg = f"No heads discovered in {models_dir}"
         raise ValueError(msg)
@@ -228,7 +257,7 @@ def _compute_mood_tags(head_outputs: list[HeadOutput], calibrations: dict[str, A
     logger.info(f"[calibrated_tags] Generated {len(mood_tags_dict)} mood tags")
     return Tags.from_dict(mood_tags_dict)
 
-def _update_db_and_file(db: Database, file_id: str, file_path: str, namespace: str, mood_tags: Tags, chromaprint: str | None=None) -> None:
+def _update_db_and_file(db: Database, file_id: str, file_path: str, namespace: str, mood_tags: Tags, chromaprint: str | None=None, *, batch_ctx: BatchContext | None = None) -> None:
     """Update mood-* tags in database and file.
 
     Uses atomic safe writes to prevent file corruption.
@@ -240,10 +269,67 @@ def _update_db_and_file(db: Database, file_id: str, file_path: str, namespace: s
         namespace: Tag namespace
         mood_tags: Tags DTO with mood tags to write
         chromaprint: Audio fingerprint for verification (from library_files)
+        batch_ctx: Pre-computed batch context (batch optimization).
+            When provided, skips redundant library root lookups and
+            defers folder mtime updates.
 
     """
     count = save_mood_tags(db, file_id, mood_tags)
     logger.debug(f"[calibrated_tags] Updated {count} mood tags in DB")
+
+    if batch_ctx is not None:
+        # Batch mode: skip expensive per-file library lookups
+        from pathlib import Path as PathLib
+        file_abs = PathLib(file_path).resolve()
+
+        # Find library root by in-memory prefix matching
+        matched_library_id: str | None = None
+        matched_root: PathLib | None = None
+        matched_root_len = 0
+        for lib_id, root in batch_ctx.library_roots.items():
+            try:
+                file_abs.relative_to(root)
+                root_len = len(str(root))
+                if root_len > matched_root_len:
+                    matched_library_id = lib_id
+                    matched_root = root
+                    matched_root_len = root_len
+            except ValueError:
+                continue
+
+        if matched_root and matched_library_id and chromaprint:
+            from nomarr.helpers.dto.path_dto import LibraryPath
+            relative_str = str(file_abs.relative_to(matched_root)).replace("\\", "/")
+            library_path = LibraryPath(
+                relative=relative_str,
+                absolute=file_abs,
+                library_id=matched_library_id,
+                status="valid",
+            )
+            result = batch_ctx.writer.write_safe(library_path, mood_tags, matched_root, chromaprint)
+            if not result.success:
+                msg = f"Safe write failed: {result.error}"
+                raise RuntimeError(msg)
+            # Defer folder mtime update — collect for batch processing
+            folder_key = str(file_abs.parent)
+            if folder_key not in batch_ctx.pending_folders:
+                batch_ctx.pending_folders[folder_key] = (matched_library_id, matched_root)
+        elif not chromaprint:
+            logger.warning("[calibrated_tags] No chromaprint - using unsafe direct write")
+            writer = batch_ctx.writer
+            from pathlib import Path as PathLib2
+
+            from nomarr.helpers.dto.path_dto import LibraryPath
+            library_path = LibraryPath(
+                relative="",
+                absolute=PathLib2(file_path),
+                library_id=None,
+                status="valid",
+            )
+            writer.write(library_path, mood_tags)
+        return
+
+    # Single-file mode: full validation path
     from nomarr.components.infrastructure.path_comp import build_library_path_from_input, get_library_root
     library_path = build_library_path_from_input(file_path, db)
     library_root = get_library_root(library_path, db)
@@ -278,7 +364,7 @@ def _update_folder_mtime_after_write(db: Database, library_path: LibraryPath, li
     except Exception as e:
         logger.warning(f"[calibrated_tags] Failed to update folder mtime: {e}")
 
-def write_calibrated_tags_wf(db: Database, params: WriteCalibratedTagsParams) -> None:
+def write_calibrated_tags_wf(db: Database, params: WriteCalibratedTagsParams, *, batch_ctx: BatchContext | None = None) -> None:
     """Write calibrated tags to a file by applying calibration to existing numeric tags.
 
     This workflow:
@@ -300,6 +386,9 @@ def write_calibrated_tags_wf(db: Database, params: WriteCalibratedTagsParams) ->
             - namespace: Tag namespace (e.g., "nom")
             - version_tag_key: Un-namespaced key for version tag
             - calibrate_heads: Whether to use versioned calibration files
+        batch_ctx: Pre-computed batch context (batch optimization).
+            When provided, reuses cached heads, calibrations, and library roots
+            instead of re-computing them for every file.
 
     Returns:
         None (updates file tags in-place)
@@ -307,16 +396,6 @@ def write_calibrated_tags_wf(db: Database, params: WriteCalibratedTagsParams) ->
     Raises:
         FileNotFoundError: If file not found in library database
         ValueError: If no heads discovered or no tags found
-
-    Example:
-        >>> params = WriteCalibratedTagsParams(
-        ...     file_path="/music/song.mp3",
-        ...     models_dir="/app/models",
-        ...     namespace="nom",
-        ...     version_tag_key="nom_version",
-        ...     calibrate_heads=False,
-        ... )
-        >>> write_calibrated_tags_wf(db=my_db, params=params)
 
     """
     file_path = params.file_path
@@ -333,16 +412,25 @@ def write_calibrated_tags_wf(db: Database, params: WriteCalibratedTagsParams) ->
     numeric_tags = _filter_numeric_tags(all_tags, version_tag_key)
     if not numeric_tags:
         return
-    head_by_model_key = _discover_head_mappings(models_dir, namespace, numeric_tags)
-    calibrations = _load_calibrations_from_db(db)
+
+    # Use cached values from batch context when available
+    heads = batch_ctx.heads if batch_ctx is not None else None
+    calibrations = batch_ctx.calibrations if batch_ctx is not None else _load_calibrations_from_db(db)
+
+    head_by_model_key = _discover_head_mappings(models_dir, namespace, numeric_tags, heads=heads)
     head_outputs = _reconstruct_head_outputs(numeric_tags, head_by_model_key, namespace, calibrations)
     if not head_outputs:
         return
     mood_tags = _compute_mood_tags(head_outputs, calibrations)
     if not mood_tags:
         return
-    _update_db_and_file(db, str(file_id), file_path, namespace, mood_tags, chromaprint)
-    global_version = get_calibration_version(db)
+    _update_db_and_file(db, str(file_id), file_path, namespace, mood_tags, chromaprint, batch_ctx=batch_ctx)
+
+    # Update calibration hash
+    if batch_ctx is not None:
+        global_version = batch_ctx.calibration_version
+    else:
+        global_version = get_calibration_version(db)
     if global_version:
         update_file_calibration_hash(db, str(file_id), global_version)
         logger.debug(f"[calibrated_tags] Updated calibration_hash for {file_path}")
