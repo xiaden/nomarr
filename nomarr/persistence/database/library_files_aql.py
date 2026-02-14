@@ -675,6 +675,7 @@ class LibraryFilesOperations:
         album: str | None = None,
         title: str | None = None,
         duration_seconds: float | None = None,
+        normalized_path: str | None = None,
     ) -> None:
         """Update file path and metadata (for moved files).
 
@@ -689,37 +690,47 @@ class LibraryFilesOperations:
             album: Album name (optional)
             title: Track title (optional)
             duration_seconds: Duration in seconds (optional)
+            normalized_path: Normalized path relative to library root (optional)
 
         """
-        self.db.aql.execute(
+        # Build update fields - normalized_path only included when provided
+        update_fields = {
+            "path": "@new_path",
+            "file_size": "@file_size",
+            "modified_time": "@modified_time",
+            "is_valid": "1",
+            "artist": "@artist",
+            "album": "@album",
+            "title": "@title",
+            "duration_seconds": "@duration_seconds",
+            "scanned_at": "@scanned_at",
+        }
+        bind_vars: dict[str, Any] = {
+            "file_id": file_id,
+            "new_path": new_path,
+            "file_size": file_size,
+            "modified_time": modified_time,
+            "artist": artist,
+            "album": album,
+            "title": title,
+            "duration_seconds": duration_seconds,
+            "scanned_at": now_ms().value,
+        }
+
+        if normalized_path is not None:
+            update_fields["normalized_path"] = "@normalized_path"
+            bind_vars["normalized_path"] = normalized_path
+
+        # Build AQL with dynamic fields
+        field_assignments = ", ".join(f"{k}: {v}" for k, v in update_fields.items())
+        aql = f"""
+            UPDATE PARSE_IDENTIFIER(@file_id).key WITH {{
+                {field_assignments}
+            }} IN library_files
             """
-            UPDATE PARSE_IDENTIFIER(@file_id).key WITH {
-                path: @new_path,
-                file_size: @file_size,
-                modified_time: @modified_time,
-                is_valid: 1,
-                artist: @artist,
-                album: @album,
-                title: @title,
-                duration_seconds: @duration_seconds,
-                scanned_at: @scanned_at
-            } IN library_files
-            """,
-            bind_vars=cast(
-                "dict[str, Any]",
-                {
-                    "file_id": file_id,
-                    "new_path": new_path,
-                    "file_size": file_size,
-                    "modified_time": modified_time,
-                    "artist": artist,
-                    "album": album,
-                    "title": title,
-                    "duration_seconds": duration_seconds,
-                    "scanned_at": now_ms().value,
-                },
-            ),
-        )
+
+        self.db.aql.execute(aql, bind_vars=bind_vars)
+
 
     def library_has_tagged_files(self, library_id: str) -> bool:
         """Check if library has any files with ML tags.

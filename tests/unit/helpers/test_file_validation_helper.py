@@ -22,32 +22,40 @@ class TestValidateFileExists:
     @pytest.mark.unit
     def test_raises_for_nonexistent_file(self) -> None:
         """Should raise RuntimeError for non-existent file."""
-        with patch("pathlib.Path.exists", return_value=False):
-            with pytest.raises(RuntimeError, match="File not found"):
-                validate_file_exists("/nonexistent/file.mp3")
+        with patch("pathlib.Path.exists", return_value=False), pytest.raises(RuntimeError, match="File not found"):
+            validate_file_exists("/nonexistent/file.mp3")
 
     @pytest.mark.unit
     def test_raises_for_directory(self) -> None:
         """Should raise RuntimeError if path is a directory."""
-        with patch("pathlib.Path.exists", return_value=True), patch("pathlib.Path.is_file", return_value=False):
-            with pytest.raises(RuntimeError, match="Not a file"):
-                validate_file_exists("/some/directory")
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch("pathlib.Path.is_file", return_value=False),
+            pytest.raises(RuntimeError, match="Not a file"),
+        ):
+            validate_file_exists("/some/directory")
 
     @pytest.mark.unit
     def test_raises_for_unreadable_file(self) -> None:
         """Should raise RuntimeError if file is not readable."""
-        with patch("pathlib.Path.exists", return_value=True), patch("pathlib.Path.is_file", return_value=True):
-            with patch("os.access", return_value=False):
-                with pytest.raises(RuntimeError, match="File not readable"):
-                    validate_file_exists("/unreadable/file.mp3")
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch("pathlib.Path.is_file", return_value=True),
+            patch("os.access", return_value=False),
+            pytest.raises(RuntimeError, match="File not readable"),
+        ):
+            validate_file_exists("/unreadable/file.mp3")
 
     @pytest.mark.unit
     def test_succeeds_for_valid_file(self) -> None:
         """Should not raise for valid, readable file."""
-        with patch("pathlib.Path.exists", return_value=True), patch("pathlib.Path.is_file", return_value=True):
-            with patch("os.access", return_value=True):
-                # Should not raise
-                validate_file_exists("/valid/file.mp3")
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch("pathlib.Path.is_file", return_value=True),
+            patch("os.access", return_value=True),
+        ):
+            # Should not raise
+            validate_file_exists("/valid/file.mp3")
 
 
 class TestCheckAlreadyTagged:

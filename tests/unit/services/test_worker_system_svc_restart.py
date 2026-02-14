@@ -1,6 +1,6 @@
 """Unit tests for WorkerSystemService restart integration."""
 
-from threading import Event
+from multiprocessing import Event
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -23,8 +23,7 @@ def mock_db():
 @pytest.fixture
 def mock_health_monitor():
     """Provide mock HealthMonitorService."""
-    monitor = MagicMock()
-    return monitor
+    return MagicMock()
 
 
 @pytest.fixture
@@ -71,7 +70,7 @@ class TestOnStatusChangeRestartLogic:
     def test_restart_decision_schedules_timer(self, mock_should_restart, worker_service, mock_db):
         """When decision is 'restart', schedules timer with backoff."""
         mock_should_restart.return_value = RestartDecision(
-            action="restart", backoff_seconds=2.0, reason="Under restart limit",
+            action="restart", backoff_seconds=2, reason="Under restart limit",
         )
         mock_db.worker_restart_policy.get_restart_state.return_value = (2, 1234567890)
 
@@ -129,7 +128,7 @@ class TestOnStatusChangeRestartLogic:
     def test_idempotent_restart_cancels_existing_timer(self, mock_should_restart, worker_service):
         """When worker crashes again during backoff, cancels old timer."""
         mock_should_restart.return_value = RestartDecision(
-            action="restart", backoff_seconds=2.0, reason="Under restart limit",
+            action="restart", backoff_seconds=2, reason="Under restart limit",
         )
 
         with patch("threading.Timer") as mock_timer_class:

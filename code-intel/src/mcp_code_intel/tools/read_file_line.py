@@ -42,7 +42,8 @@ def read_file_line(
 ) -> dict:
     """Read a single line with 2 lines of context before and after.
 
-    Returns 5 lines total: target line ± 2 context lines. Example: Request line 50 → Returns lines 48-52.
+    Returns 5 lines total: target line ± 2 context lines.
+    Example: Request line 50 → Returns lines 48-52.
 
     Quick inspection tool for error messages, search results, and spot checks.
     For Python code analysis, prefer discover_api, get_source, or locate_symbol.

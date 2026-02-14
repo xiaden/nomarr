@@ -118,16 +118,16 @@ def _convert_rule_group_to_nsp(rule_group: RuleGroup, namespace: str) -> dict[st
         Dictionary with either {"all": [...]}, {"any": [...]}, or nested structure
 
     """
-    rules: list[dict[str, Any]] = []
-
-    # Convert conditions to NSP rules
-    for condition in rule_group.conditions:
-        rules.append(_tag_condition_to_nsp_rule(condition, namespace))
+    rules: list[dict[str, Any]] = [
+        _tag_condition_to_nsp_rule(condition, namespace)
+        for condition in rule_group.conditions
+    ]
 
     # Recursively convert nested groups
-    for nested_group in rule_group.groups:
-        nested_nsp = _convert_rule_group_to_nsp(nested_group, namespace)
-        rules.append(nested_nsp)
+    rules.extend(
+        _convert_rule_group_to_nsp(nested_group, namespace)
+        for nested_group in rule_group.groups
+    )
 
     # Wrap in all/any based on logic
     if rule_group.logic == "AND":

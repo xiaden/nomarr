@@ -152,22 +152,24 @@ def _find_top_level_operators(query: str) -> list[tuple[int, str]]:
         elif depth == 0:
             # Check for AND/OR at top level
             # Must be preceded by space or start, followed by space or end
-            if i + 3 <= len(query) and query[i : i + 3].upper() == "AND":
-                # Verify word boundary after AND
-                if i + 3 >= len(query) or query[i + 3].isspace():
-                    # Verify word boundary before AND
-                    if i == 0 or query[i - 1].isspace():
-                        operators.append((i, "AND"))
-                        i += 3
-                        continue
-            elif i + 2 <= len(query) and query[i : i + 2].upper() == "OR":
-                # Verify word boundary after OR
-                if i + 2 >= len(query) or query[i + 2].isspace():
-                    # Verify word boundary before OR
-                    if i == 0 or query[i - 1].isspace():
-                        operators.append((i, "OR"))
-                        i += 2
-                        continue
+            if (
+                i + 3 <= len(query)
+                and query[i : i + 3].upper() == "AND"
+                and (i + 3 >= len(query) or query[i + 3].isspace())
+                and (i == 0 or query[i - 1].isspace())
+            ):
+                operators.append((i, "AND"))
+                i += 3
+                continue
+            if (
+                i + 2 <= len(query)
+                and query[i : i + 2].upper() == "OR"
+                and (i + 2 >= len(query) or query[i + 2].isspace())
+                and (i == 0 or query[i - 1].isspace())
+            ):
+                operators.append((i, "OR"))
+                i += 2
+                continue
             i += 1
         else:
             i += 1

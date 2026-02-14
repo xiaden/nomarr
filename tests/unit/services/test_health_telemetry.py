@@ -10,12 +10,12 @@ Tests cover:
 from __future__ import annotations
 
 import json
-import time
 from unittest.mock import MagicMock
 
 import pytest
 
 from nomarr.helpers.dto.health_dto import ComponentPolicy, StatusChangeContext
+from nomarr.helpers.time_helper import now_s
 
 # Test the frame prefix and parsing logic
 HEALTH_FRAME_PREFIX = "HEALTH|"
@@ -164,19 +164,15 @@ class TestHealthMonitorStatusRegistry:
         )
         monitor._components["worker:tag:0"] = state
 
-        before = time.time()
         monitor._transition_to_recovering("worker:tag:0", reported_recover_for_s=120.0)
-        after = time.time()
+        after = now_s()
 
         # Deadline should be clamped to max_recovery_s (30s)
         assert state.recovery_deadline is not None
         # Convert InternalSeconds to float for comparison
-        deadline_float = (
-            float(state.recovery_deadline.value)
-            if hasattr(state.recovery_deadline, "value")
-            else float(state.recovery_deadline)
-        )
-        assert deadline_float <= after + 30.0 + 1  # Allow 1s tolerance
+        deadline_value = state.recovery_deadline.value
+        after_value = after.value
+        assert deadline_value <= after_value + 30 + 1  # Allow 1s tolerance
 
     def test_set_failed_is_terminal(self) -> None:
         """set_failed should permanently mark component as failed."""

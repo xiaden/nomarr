@@ -5,6 +5,7 @@ Detects file moves by comparing chromaprints between removed and new files.
 
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_input
@@ -165,6 +166,7 @@ def apply_detected_moves(
     moves: list[FileMove],
     metadata_map: dict[str, dict[str, Any]],
     db: Database,
+    library_root: Path,
 ) -> int:
     """Persist detected file moves to the database.
 
@@ -177,6 +179,7 @@ def apply_detected_moves(
         moves: Detected moves from :func:`detect_file_moves`
         metadata_map: Map of file_path -> raw metadata dict (from scan)
         db: Database instance
+        library_root: Library root path for computing normalized_path
 
     Returns:
         Number of moves successfully applied
@@ -190,12 +193,22 @@ def apply_detected_moves(
 
     applied = 0
     for move in moves:
+        # Compute normalized_path from new_path relative to library_root
+        new_path_obj = Path(move.new_path)
+        try:
+            relative = new_path_obj.relative_to(library_root)
+            computed_normalized_path = relative.as_posix()
+        except ValueError:
+            # new_path not under library_root; skip normalization
+            computed_normalized_path = None
+
         db.library_files.update_file_path(
             file_id=move.file_id,
             new_path=move.new_path,
             file_size=move.new_file_size,
             modified_time=move.new_modified_time,
             duration_seconds=move.new_duration,
+            normalized_path=computed_normalized_path,
         )
 
         new_metadata = metadata_map.get(move.new_path)

@@ -971,5 +971,10 @@ def edit_file_copy_paste_text(
 # ──────────────────────────────────────────────────────────────────────
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Run the MCP server."""
     mcp.run()
+
+
+if __name__ == "__main__":
+    main()

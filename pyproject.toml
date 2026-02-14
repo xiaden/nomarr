@@ -130,6 +130,10 @@ target-version = "py312"
 line-length = 120
 fix = true
 output-format = "json"
+exclude = [
+    "scripts/",
+    ".github/skills/",
+]
 
 [tool.ruff.lint]
 select = [
