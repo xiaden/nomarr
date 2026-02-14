@@ -113,7 +113,7 @@ class HeadInfo:
         self.embedding_graph = embedding_graph
         self.embedding_sidecar = embedding_sidecar
         # Structured metadata for tagging/aggregation logic
-        self.is_mood_source = is_mood_source  # Contributes to mood-* tags
+        self.is_mood_source = is_mood_source  # True for all non-regression heads (all contribute to mood-* tags)
         self.is_regression_mood_source = is_regression_mood_source  # Regression head for mood tiers
 
     @property
@@ -237,7 +237,8 @@ def discover_heads(models_dir: str) -> list[HeadInfo]:
         models/<backbone>/heads/<type>/*.json
 
     Returns HeadInfo objects with backbone, head_type, and embedding graph resolved.
-    Sets is_mood_source and is_regression_mood_source flags based on sidecar metadata.
+    Sets is_mood_source=True for all non-regression heads (all contribute to mood-* tags).
+    Sets is_regression_mood_source for known regression heads that feed mood tiers.
     """
     heads: list[HeadInfo] = []
 
@@ -292,13 +293,14 @@ def discover_heads(models_dir: str) -> list[HeadInfo]:
                     sidecar = Sidecar(json_path, data)
                     head_name = sidecar.name
 
-                    # Determine if this head contributes to mood-* tags
-                    # Centralized logic: check for "mood_" in name (case-insensitive)
-                    name_normalized = head_name.replace(" ", "_").lower()
-                    is_mood_source = "mood_" in name_normalized
-
                     # Check if this is a regression head that feeds mood tiers
                     is_regression_mood_source = head_name in _REGRESSION_MOOD_HEADS
+
+                    # ALL non-regression heads contribute to mood-* tags.
+                    # Mood tags are an aggregated, curated list of the most likely
+                    # labels across ALL heads (binary, multilabel, multiclass) —
+                    # not just heads with "mood" in their name.
+                    is_mood_source = not is_regression_mood_source
 
                     head_info = HeadInfo(
                         sidecar=sidecar,
