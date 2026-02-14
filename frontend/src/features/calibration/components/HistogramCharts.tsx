@@ -465,31 +465,29 @@ export function HistogramCharts({ data, loading, error }: HistogramChartsProps) 
 
           {/* Bar chart */}
           {processed && processed.counts.length > 0 ? (
-            <Box sx={{ position: "relative" }}>
-              <BarChart
-                height={350}
-                xAxis={[
-                  {
-                    scaleType: "band",
-                    data: processed.xLabels,
-                    label: "Embedding Value",
-                    tickLabelStyle: { fontSize: 9 },
-                    // Only show every Nth label to avoid crowding
-                    tickLabelInterval: (_value, index) =>
-                      index % Math.ceil(processed.xLabels.length / 20) === 0,
-                  },
-                ]}
-                series={[
-                  {
-                    data: processed.counts,
-                    label: "Count",
-                    color: "#90caf9",
-                  },
-                ]}
-                hideLegend
-                margin={{ left: 60, right: 20, top: 20, bottom: 60 }}
-              />
-            </Box>
+            <BarChart
+              height={350}
+              xAxis={[
+                {
+                  scaleType: "band",
+                  data: processed.xLabels,
+                  label: "Embedding Value",
+                  tickLabelStyle: { fontSize: 9 },
+                  // Only show every Nth label to avoid crowding
+                  tickLabelInterval: (_value, index) =>
+                    index % Math.ceil(processed.xLabels.length / 20) === 0,
+                },
+              ]}
+              series={[
+                {
+                  data: processed.counts,
+                  label: "Count",
+                  color: "#90caf9",
+                },
+              ]}
+              hideLegend
+              margin={{ left: 60, right: 20, top: 20, bottom: 60 }}
+            />
           ) : (
             <Box sx={{ height: 350, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <Typography color="text.secondary">No histogram data for selected head</Typography>
