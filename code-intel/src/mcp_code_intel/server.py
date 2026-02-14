@@ -245,7 +245,6 @@ mcp = FastMCP(
 _config = _validate_config_on_startup()
 
 
-
 # ──────────────────────────────────────────────────────────────────────
 # Tools
 # ──────────────────────────────────────────────────────────────────────
@@ -503,6 +502,7 @@ def analyze_project_api_coverage(
         user_summary="Analyzed API coverage",
         tool_name="analyze_project_api_coverage",
     )
+
 
 @mcp.tool()
 def lint_project_backend(
@@ -847,7 +847,8 @@ def plan_complete_step(
     ] = None,
     annotation_text: Annotated[
         str | None,
-        "Text to add under the step. Cannot contain checkbox syntax ('- [').",
+        "Text to add under the step.",
+        " Cannot contain bullets or step like items(eg: '\n - ' or '\n - [').",
     ] = None,
 ) -> CallToolResult:
     """Mark a step as complete in a task plan.
@@ -926,9 +927,7 @@ def edit_file_replace_content(
     Each op dict has: `path` (str), `content` (str).
     Fails if any file doesn't exist. All replaced or none (atomic rollback).
     """
-    result = edit_file_replace_content_impl(ops, workspace_root=ROOT).model_dump(
-        exclude_none=True
-    )
+    result = edit_file_replace_content_impl(ops, workspace_root=ROOT).model_dump(exclude_none=True)
     applied_ops = result.get("applied_ops", [])
     if applied_ops:
         file_locations: list[tuple[str | Path, int | None, int | None, str]] = [

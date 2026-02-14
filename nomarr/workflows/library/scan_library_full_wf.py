@@ -32,6 +32,7 @@ from nomarr.components.library.scan_lifecycle_comp import (
 )
 from nomarr.components.metadata import seed_entities_for_scan_batch
 from nomarr.helpers.time_helper import internal_s, now_ms
+from nomarr.workflows.library.validate_library_tags_wf import validate_library_tags_workflow
 from nomarr.workflows.metadata.cleanup_orphaned_entities_wf import cleanup_orphaned_entities_workflow
 
 if TYPE_CHECKING:
@@ -44,6 +45,8 @@ def scan_library_full_workflow(
     db: Database,
     library_id: str,
     tagger_version: str,
+    models_dir: str | None = None,
+    namespace: str = "nom",
 ) -> dict[str, Any]:
     """Run a full library scan (ignores folder cache).
 
@@ -54,6 +57,8 @@ def scan_library_full_workflow(
         db: Database instance
         library_id: Library document ``_id``
         tagger_version: Model suite hash for version comparison
+        models_dir: Path to ML models (enables tag validation when provided)
+        namespace: Tag namespace (default ``"nom"``)
 
     Returns:
         Dict with scan statistics (files_discovered, files_added,
@@ -200,6 +205,36 @@ def scan_library_full_workflow(
             cleanup_orphaned_entities_workflow(db, dry_run=False)
         except Exception as e:
             logger.warning("Entity cleanup failed: %s", e)
+
+        # Step 8b — Tag graph validation (optional, requires models_dir)
+        if models_dir:
+            try:
+                validation = validate_library_tags_workflow(
+                    db, models_dir, library_id=library_id, namespace=namespace, auto_repair=True,
+                )
+                stats["validation_checked"] = validation["files_checked"]
+                stats["validation_incomplete"] = validation["incomplete_files"]
+                stats["validation_repaired"] = validation["files_repaired"]
+                if validation["incomplete_files"]:
+                    warnings.append(
+                        f"Tag validation: {validation['incomplete_files']}/{validation['files_checked']} "
+                        f"files incomplete ({validation['files_repaired']} auto-repaired)"
+                    )
+                    logger.warning(
+                        "Tag validation found %d incomplete files (repaired %d), missing rels: %s",
+                        validation["incomplete_files"],
+                        validation["files_repaired"],
+                        validation.get("missing_rels_summary", {}),
+                    )
+                else:
+                    logger.info(
+                        "Tag validation: all %d files complete (%d heads)",
+                        validation["files_checked"],
+                        validation["expected_heads"],
+                    )
+            except Exception as e:
+                logger.warning("Tag validation failed: %s", e)
+                warnings.append(f"Tag validation error: {e}")
 
         # Step 9 — Finalize
         scan_duration = internal_s().value - start_time.value

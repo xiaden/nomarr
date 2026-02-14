@@ -368,24 +368,24 @@ interface HistogramChartsProps {
 }
 
 export function HistogramCharts({ data, loading, error }: HistogramChartsProps) {
-  // Track selected head (default to first)
+  // Track selected label (head:label pairs)
   const headOptions = useMemo(() => {
     if (!data) return [];
     return data.map((h) => ({
-      key: `${h.model_key}:${h.head_name}`,
-      label: shortLabel(h.head_name),
-      fullLabel: `${h.model_key}:${h.head_name}`,
+      key: `${h.model_key}:${h.head_name}:${h.label}`,
+      label: `${shortLabel(h.head_name)} - ${h.label}`,
+      fullLabel: `${h.model_key}:${h.head_name}:${h.label}`,
     }));
   }, [data]);
 
   const [selectedHead, setSelectedHead] = useState<string>("");
 
-  // Auto-select first head when data loads
+  // Auto-select first label when data loads
   const effectiveSelected = selectedHead || headOptions[0]?.key || "";
 
   const selectedData = useMemo(() => {
     if (!data || !effectiveSelected) return null;
-    return data.find((h) => `${h.model_key}:${h.head_name}` === effectiveSelected) ?? null;
+    return data.find((h) => `${h.model_key}:${h.head_name}:${h.label}` === effectiveSelected) ?? null;
   }, [data, effectiveSelected]);
 
   const processed = useMemo(
@@ -427,14 +427,14 @@ export function HistogramCharts({ data, loading, error }: HistogramChartsProps) 
           </Typography>
         </AccordionSummary>
         <AccordionDetails>
-          {/* Head selector */}
+          {/* Label selector (head:label pairs) */}
           <Box sx={{ mb: 2 }}>
             <FormControl size="small" sx={{ minWidth: 200 }}>
-              <InputLabel id="head-select-label">Head</InputLabel>
+              <InputLabel id="head-select-label">Label</InputLabel>
               <Select
                 labelId="head-select-label"
                 value={effectiveSelected}
-                label="Head"
+                label="Label"
                 onChange={(e) => setSelectedHead(e.target.value)}
               >
                 {headOptions.map((opt) => (
@@ -452,14 +452,19 @@ export function HistogramCharts({ data, loading, error }: HistogramChartsProps) 
             percentiles.
           </Typography>
 
-          {/* P5/P95 legend */}
+          {/* P5/P95 legend with label name */}
           {selectedData && (
-            <Box sx={{ display: "flex", gap: 3, mb: 2 }}>
-              <ReferenceLineInfo label="P5" value={selectedData.p5} color="#2196f3" />
-              <ReferenceLineInfo label="P95" value={selectedData.p95} color="#f44336" />
-              <Typography variant="body2" color="text.secondary">
-                Samples: <strong>{selectedData.n.toLocaleString()}</strong>
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="body2" fontWeight={500} color="text.primary" sx={{ mb: 1 }}>
+                {shortLabel(selectedData.head_name)} - {selectedData.label}
               </Typography>
+              <Box sx={{ display: "flex", gap: 3 }}>
+                <ReferenceLineInfo label="P5" value={selectedData.p5} color="#2196f3" />
+                <ReferenceLineInfo label="P95" value={selectedData.p95} color="#f44336" />
+                <Typography variant="body2" color="text.secondary">
+                  Samples: <strong>{selectedData.n.toLocaleString()}</strong>
+                </Typography>
+              </Box>
             </Box>
           )}
 

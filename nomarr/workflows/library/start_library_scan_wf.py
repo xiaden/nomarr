@@ -37,6 +37,8 @@ def start_library_scan_workflow(
     tagger_version: str,
     library_id: str,
     scan_type: Literal["quick", "full"] = "quick",
+    models_dir: str | None = None,
+    namespace: str = "nom",
 ) -> StartScanResult:
     """Start a library scan, dispatching to the correct workflow.
 
@@ -54,6 +56,9 @@ def start_library_scan_workflow(
         library_id: Library document ``_id``.
         scan_type: ``"quick"`` (incremental, folder-cache aware) or
             ``"full"`` (rescan everything).
+        models_dir: Path to ML models directory (enables tag validation
+            in full scans when provided).
+        namespace: Tag namespace (default ``"nom"``).
 
     Returns:
         StartScanResult with initial counters and optional task id.
@@ -96,6 +101,12 @@ def start_library_scan_workflow(
     update_scan_progress(db, library_id, status="scanning", progress=0, total=0)
 
     # --- dispatch ---
+    # Build extra kwargs for full scans (tag validation)
+    extra_kwargs: dict[str, Any] = {}
+    if scan_type == "full" and models_dir:
+        extra_kwargs["models_dir"] = models_dir
+        extra_kwargs["namespace"] = namespace
+
     if background_tasks:
         task_id = f"scan_library_{library_id}"
         background_tasks.start_task(
@@ -104,6 +115,7 @@ def start_library_scan_workflow(
             db=db,
             library_id=library_id,
             tagger_version=tagger_version,
+            **extra_kwargs,
         )
         logger.info("Scan task launched: %s", task_id)
 
@@ -120,6 +132,7 @@ def start_library_scan_workflow(
         db=db,
         library_id=library_id,
         tagger_version=tagger_version,
+        **extra_kwargs,
     )
 
     return StartScanResult(

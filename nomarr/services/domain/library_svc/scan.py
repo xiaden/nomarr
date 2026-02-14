@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from nomarr.helpers.dto.library_dto import LibraryScanStatusResult, StartScanResult
 from nomarr.helpers.time_helper import now_ms
 from nomarr.workflows.library.start_library_scan_wf import start_library_scan_workflow
+from nomarr.workflows.library.validate_library_tags_wf import validate_library_tags_workflow
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
@@ -92,6 +93,8 @@ class LibraryScanMixin:
             tagger_version=self.cfg.tagger_version,
             library_id=library_id,
             scan_type=scan_type,
+            models_dir=self.cfg.models_dir,
+            namespace=self.cfg.namespace,
         )
 
     def cancel_scan(self, library_id: str | None = None) -> bool:
@@ -185,3 +188,31 @@ class LibraryScanMixin:
             }
             for lib in libraries[:limit]
         ]
+
+    def validate_library_tags(
+        self,
+        library_id: str,
+        auto_repair: bool = True,
+    ) -> dict[str, Any]:
+        """Validate tag completeness for files in a library.
+
+        Checks that every file marked as tagged has edges for all discovered
+        ML heads.  Incomplete files are optionally repaired by marking them
+        ``needs_tagging=true`` so the next scan reprocesses them.
+
+        Args:
+            library_id: Library to validate
+            auto_repair: If True, mark incomplete files for re-tagging
+
+        Returns:
+            Validation summary dict (files_checked, incomplete_files, etc.)
+
+        """
+        self._get_library_or_error(library_id)
+        return validate_library_tags_workflow(
+            db=self.db,
+            models_dir=self.cfg.models_dir,
+            library_id=library_id,
+            namespace=self.cfg.namespace,
+            auto_repair=auto_repair,
+        )

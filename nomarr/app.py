@@ -303,7 +303,10 @@ class Application:
         if self.library_root:
             logger.info(f"[Application] Registering LibraryService with namespace={self.namespace}")
             library_cfg = LibraryServiceConfig(
-                namespace=self.namespace, tagger_version=self.tagger_version, library_root=self.library_root,
+                models_dir=str(self.models_dir),
+                namespace=self.namespace,
+                tagger_version=self.tagger_version,
+                library_root=self.library_root,
             )
             library_service = LibraryService(cfg=library_cfg, db=self.db, background_tasks=background_tasks)
             self.register_service("library", library_service)

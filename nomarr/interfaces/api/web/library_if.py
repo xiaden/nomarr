@@ -24,6 +24,7 @@ from nomarr.interfaces.api.types.library_types import (
     UniqueTagKeysResponse,
     UpdateLibraryRequest,
     UpdateWriteModeResponse,
+    ValidateLibraryTagsResponse,
 )
 from nomarr.interfaces.api.web.dependencies import (
     get_file_watcher_service,
@@ -622,5 +623,44 @@ async def update_write_mode(
     except Exception as e:
         logger.exception(f"[Web API] Error updating write mode for library {library_id}")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to update write mode")) from e
+
+
+@router.post("/{library_id}/validate-tags", dependencies=[Depends(verify_session)])
+async def validate_library_tags(
+    library_id: str,
+    auto_repair: Annotated[bool, Query(description="Auto-repair incomplete files by marking for re-tagging")] = True,
+    library_service: "LibraryService" = Depends(get_library_service),
+) -> ValidateLibraryTagsResponse:
+    """Validate tag completeness for a library's files.
+
+    Checks that every file marked as tagged has edges for all discovered
+    ML heads. Optionally auto-repairs incomplete files by marking them
+    for re-tagging on the next scan.
+
+    Args:
+        library_id: Library ID to validate
+        auto_repair: If true, mark incomplete files for re-tagging
+        library_service: LibraryService instance (injected)
+
+    Returns:
+        ValidateLibraryTagsResponse with validation summary
+
+    """
+    library_id = decode_path_id(library_id)
+    try:
+        result = library_service.validate_library_tags(library_id=library_id, auto_repair=auto_repair)
+        return ValidateLibraryTagsResponse(
+            files_checked=result["files_checked"],
+            complete_files=result["complete_files"],
+            incomplete_files=result["incomplete_files"],
+            files_repaired=result["files_repaired"],
+            expected_heads=result["expected_heads"],
+            missing_rels_summary=result.get("missing_rels_summary", {}),
+        )
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Library not found") from None
+    except Exception as e:
+        logger.exception(f"[Web API] Error validating tags for library {library_id}")
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to validate tags")) from e
 
 

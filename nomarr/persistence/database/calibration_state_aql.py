@@ -19,19 +19,24 @@ class CalibrationStateOperations:
     def get_sparse_histogram(
         self,
         model_key: str,
-        labels: list[str],
+        label: str,
         lo: float = 0.0,
         hi: float = 1.0,
         bins: int = 10000,
     ) -> list[dict[str, Any]]:
-        """Query sparse histogram for a head using uniform binning.
+        """Query sparse histogram for a single label using uniform binning.
+
+        Per-label semantics: Each label is calibrated independently. For binary
+        classification heads (e.g., gender with male/female labels), this method
+        is called separately for each label, producing independent P5/P95 ranges.
+        Sample count (n) represents file count, not prediction aggregation.
 
         Returns only bins with non-zero counts (sparse representation).
         Typical: 1,000-3,000 bins for real data (not full 10,000).
 
         Args:
             model_key: Model identifier (e.g., "effnet-discogs-effnet-1")
-            labels: Head labels to match (e.g., ["happy", "non_happy"])
+            label: Label to match (e.g., "male", "happy", "arousal")
             lo: Lower bound of calibrated range (default 0.0)
             hi: Upper bound of calibrated range (default 1.0)
             bins: Number of uniform bins (default 10000)
@@ -61,9 +66,9 @@ class CalibrationStateOperations:
               FILTER CONTAINS(rel_without_prefix, @model_key_for_tag)
               // Extract label (first segment before first underscore)
               LET first_underscore = FIND_FIRST(rel_without_prefix, "_")
-              LET label = first_underscore >= 0 ? SUBSTRING(rel_without_prefix, 0, first_underscore) : rel_without_prefix
-              // Check if extracted label matches any of the head's labels
-              FILTER label IN @labels
+              LET extracted_label = first_underscore >= 0 ? SUBSTRING(rel_without_prefix, 0, first_underscore) : rel_without_prefix
+              // Check if extracted label matches the specified label
+              FILTER extracted_label == @label
 
               LET value = tag.value
 
@@ -101,7 +106,7 @@ class CalibrationStateOperations:
                 "dict[str, Any]",
                 {
                     "model_key_for_tag": model_key_for_tag,
-                    "labels": labels,
+                    "label": label,
                     "lo": lo,
                     "hi": hi,
                     "bin_width": bin_width,
@@ -113,21 +118,22 @@ class CalibrationStateOperations:
         return list(cursor)  # type: ignore  # type: ignore
 
     @staticmethod
-    def _make_key(model_key: str, head_name: str) -> str:
-        """Build an ArangoDB-safe _key from model_key and head_name.
+    def _make_key(model_key: str, head_name: str, label: str) -> str:
+        """Build an ArangoDB-safe _key from model_key, head_name, and label.
 
         ArangoDB keys must not contain '/' or spaces.
         Replaces '/' with '_', spaces with '_', colons kept (allowed).
         """
         import re
 
-        raw = f"{model_key}:{head_name}"
+        raw = f"{model_key}:{head_name}:{label}"
         return re.sub(r"[^a-zA-Z0-9_:.@()+,=;$!*'%-]", "_", raw)
 
     def upsert_calibration_state(
         self,
         model_key: str,
         head_name: str,
+        label: str,
         calibration_def_hash: str,
         version: int,
         histogram_spec: dict[str, Any],
@@ -138,15 +144,22 @@ class CalibrationStateOperations:
         overflow_count: int,
         histogram_bins: list[dict[str, Any]] | None = None,
     ) -> None:
-        """Upsert calibration_state document for a head.
+        """Upsert calibration_state document for a label.
 
-        Uses _key = sanitized "model_key:head_name" for stable identity.
+        Per-label schema: Each label gets its own calibration document. Binary
+        classification heads (e.g., gender) produce 2 documents with independent
+        _key values (effnet-20220825:gender:male, effnet-20220825:gender:female).
+        This enables independent P5/P95 ranges per label instead of aggregating
+        complementary predictions (male=0.85, female=0.15) into single distribution.
+
+        Uses _key = sanitized "model_key:head_name:label" for stable identity.
         Overwrites existing document on version bump.
 
         Args:
             model_key: Model identifier
             head_name: Head name
-            calibration_def_hash: MD5 of (model_key, head_name, version)
+            label: Label name (e.g., "male", "female", "arousal")
+            calibration_def_hash: MD5 of (model_key, head_name, label, version)
             version: Calibration version from head metadata
             histogram_spec: {lo: float, hi: float, bins: int, bin_width: float}
             p5: 5th percentile (lower bound)
@@ -158,12 +171,13 @@ class CalibrationStateOperations:
 
         """
         now_ms = int(__import__("time").time() * 1000)
-        _key = self._make_key(model_key, head_name)
+        _key = self._make_key(model_key, head_name, label)
 
         doc = {
             "_key": _key,
             "model_key": model_key,
             "head_name": head_name,
+            "label": label,
             "calibration_def_hash": calibration_def_hash,
             "version": version,
             "histogram": histogram_spec,
@@ -188,18 +202,19 @@ class CalibrationStateOperations:
             doc["created_at"] = now_ms
             self.collection.insert(doc)
 
-    def get_calibration_state(self, model_key: str, head_name: str) -> dict[str, Any] | None:
-        """Get calibration state for a specific head.
+    def get_calibration_state(self, model_key: str, head_name: str, label: str) -> dict[str, Any] | None:
+        """Get calibration state for a specific label.
 
         Args:
             model_key: Model identifier
             head_name: Head name
+            label: Label name
 
         Returns:
             Calibration state document or None if not found
 
         """
-        _key = self._make_key(model_key, head_name)
+        _key = self._make_key(model_key, head_name, label)
         try:
             return self.collection.get(_key)  # type: ignore
         except Exception:
@@ -221,14 +236,15 @@ class CalibrationStateOperations:
         )
         return list(cursor)  # type: ignore
 
-    def delete_calibration_state(self, model_key: str, head_name: str) -> None:
-        """Delete calibration state for a specific head.
+    def delete_calibration_state(self, model_key: str, head_name: str, label: str) -> None:
+        """Delete calibration state for a specific label.
 
         Args:
             model_key: Model identifier
             head_name: Head name
+            label: Label name
 
         """
-        _key = f"{model_key}:{head_name}"
+        _key = self._make_key(model_key, head_name, label)
         if self.collection.has(_key):
             self.collection.delete(_key)

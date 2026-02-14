@@ -246,6 +246,7 @@ export interface HistogramSpec {
 export interface HeadHistogramResponse {
   model_key: string;
   head_name: string;
+  label: string;
   histogram_bins: HistogramBin[];
   p5: number;
   p95: number;
@@ -262,21 +263,24 @@ export interface AllCalibrationStatesResponse {
 }
 
 /**
- * Get histogram bins for a specific head.
+ * Get histogram bins for a specific label.
  * @param modelKey Model identifier (e.g., "effnet-20220825")
  * @param headName Head name (e.g., "mood_happy")
+ * @param label Label name (e.g., "happy", "male")
  */
 export async function getHistogramForHead(
   modelKey: string,
-  headName: string
+  headName: string,
+  label: string
 ): Promise<HeadHistogramResponse> {
   return get<HeadHistogramResponse>(
-    `/api/web/calibration/histogram/${modelKey}/${headName}`
+    `/api/web/calibration/histogram/${modelKey}/${headName}/${label}`
   );
 }
 
 /**
- * Get all calibration states with histogram bins.
+ * Get all calibration states with histogram bins (per-label).
+ * Returns 22 items (one per label) instead of 12 (per head).
  */
 export async function getAllHistograms(): Promise<AllCalibrationStatesResponse> {
   return get<AllCalibrationStatesResponse>("/api/web/calibration/histogram");

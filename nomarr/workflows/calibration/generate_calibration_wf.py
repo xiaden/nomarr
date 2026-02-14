@@ -300,7 +300,13 @@ def generate_histogram_calibration_wf(
     namespace: str = "nom",
     progress_callback: Callable[..., None] | None = None,
 ) -> dict[str, Any]:
-    """Generate histogram-based calibrations for all model heads (single pass).
+    """Generate histogram-based calibrations for all model labels (single pass).
+
+    Per-label semantics: Iterates over heads, then for each head iterates over
+    its labels, generating independent calibrations. Binary classification heads
+    (e.g., gender) produce 2 calibration documents (male, female), each with
+    independent P5/P95 ranges. Regression heads produce 1 calibration per label.
+    Total: 22 calibration_state documents across 12 heads.
 
     Stateless, idempotent workflow. Always computes from current DB state.
     Uses sparse uniform histogram (10,000 bins) to derive p5/p95 percentiles.
@@ -309,7 +315,7 @@ def generate_histogram_calibration_wf(
         db: Database instance
         models_dir: Path to models directory
         namespace: Tag namespace (default "nom")
-        progress_callback: Optional callback for progress updates
+        progress_callback: Optional callback for progress updates (per-head granularity)
 
     Returns:
         {
@@ -317,9 +323,12 @@ def generate_histogram_calibration_wf(
           "heads_processed": int,
           "heads_success": int,
           "heads_failed": int,
-          "results": {head_key: {p5, p95, n, underflow_count, overflow_count}},
+          "results": {label_key: {p5, p95, n, underflow_count, overflow_count}},
           "global_version": str
         }
+
+    Note:
+        results keys are "model:head:label" format (e.g., "effnet-20220825:gender:male").
 
     """
     from nomarr.components.ml.ml_calibration_comp import (
@@ -356,11 +365,10 @@ def generate_histogram_calibration_wf(
         head_name = head_info.name
         labels = head_info.labels
         version = head_info.sidecar.data.get("version", 1)
-        head_key = f"{model_key}:{head_name}"
 
-        logger.info(f"[histogram_calibration_wf] Processing {head_key} (version {version}, labels={labels})")
+        logger.info(f"[histogram_calibration_wf] Processing head {head_name} (version {version}, labels={labels})")
 
-        # Report progress
+        # Report progress (per-head, outer loop)
         if progress_callback:
             progress_callback(
                 current_head=head_name,
@@ -368,49 +376,55 @@ def generate_histogram_calibration_wf(
                 total_heads=total_heads,
             )
 
-        try:
-            # Generate calibration from histogram (full dataset)
-            calib_result = generate_calibration_from_histogram(
-                db=db,
-                model_key=model_key,
-                head_name=head_name,
-                labels=labels,
-                version=version,
-                lo=0.0,
-                hi=1.0,
-                bins=10000,
-            )
+        # Iterate over labels (per-label calibration)
+        for label in labels:
+            label_key = f"{model_key}:{head_name}:{label}"
+            logger.info(f"[histogram_calibration_wf] Processing label {label_key}")
 
-            # Compute calibration definition hash
-            calib_def_hash = compute_calibration_def_hash(model_key, head_name, version)
+            try:
+                # Generate calibration from histogram (single label)
+                calib_result = generate_calibration_from_histogram(
+                    db=db,
+                    model_key=model_key,
+                    head_name=head_name,
+                    label=label,
+                    version=version,
+                    lo=0.0,
+                    hi=1.0,
+                    bins=10000,
+                )
 
-            # Upsert calibration_state
-            save_calibration_state(
-                db,
-                model_key=model_key,
-                head_name=head_name,
-                calibration_def_hash=calib_def_hash,
-                version=version,
-                histogram_spec={"lo": 0.0, "hi": 1.0, "bins": 10000, "bin_width": 0.0001},
-                p5=calib_result["p5"],
-                p95=calib_result["p95"],
-                sample_count=calib_result["n"],
-                underflow_count=calib_result["underflow_count"],
-                overflow_count=calib_result["overflow_count"],
-                histogram_bins=calib_result.get("histogram_bins"),
-            )
+                # Compute calibration definition hash (includes label)
+                calib_def_hash = compute_calibration_def_hash(model_key, head_name, label, version)
 
-            results[head_key] = calib_result
-            success_count += 1
+                # Upsert calibration_state (includes label)
+                save_calibration_state(
+                    db,
+                    model_key=model_key,
+                    head_name=head_name,
+                    label=label,
+                    calibration_def_hash=calib_def_hash,
+                    version=version,
+                    histogram_spec={"lo": 0.0, "hi": 1.0, "bins": 10000, "bin_width": 0.0001},
+                    p5=calib_result["p5"],
+                    p95=calib_result["p95"],
+                    sample_count=calib_result["n"],
+                    underflow_count=calib_result["underflow_count"],
+                    overflow_count=calib_result["overflow_count"],
+                    histogram_bins=calib_result.get("histogram_bins"),
+                )
 
-            logger.debug(
-                f"[histogram_calibration_wf] {head_key}: p5={calib_result['p5']:.4f}, "
-                f"p95={calib_result['p95']:.4f}, n={calib_result['n']}",
-            )
+                results[label_key] = calib_result
+                success_count += 1
 
-        except Exception as e:
-            logger.exception(f"[histogram_calibration_wf] Failed to generate calibration for {head_key}: {e}")
-            failed_count += 1
+                logger.debug(
+                    f"[histogram_calibration_wf] {label_key}: p5={calib_result['p5']:.4f}, "
+                    f"p95={calib_result['p95']:.4f}, n={calib_result['n']}",
+                )
+
+            except Exception as e:
+                logger.exception(f"[histogram_calibration_wf] Failed to generate calibration for {label_key}: {e}")
+                failed_count += 1
 
     logger.info(f"[histogram_calibration_wf] Completed: {success_count} success, {failed_count} failed")
 

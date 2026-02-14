@@ -248,22 +248,25 @@ async def get_convergence_status(calibration_service: Annotated["CalibrationServ
 
 
 
-@router.get("/histogram/{model_key}/{head_name}", dependencies=[Depends(verify_session)])
+@router.get("/histogram/{model_key}/{head_name}/{label}", dependencies=[Depends(verify_session)])
 async def get_histogram_for_head(
     model_key: str,
     head_name: str,
+    label: str,
     calibration_service: "CalibrationService" = Depends(get_calibration_service),
 ) -> dict[str, Any]:
-    """Get histogram bins for a specific head.
+    """Get histogram bins for a specific label.
 
     Path params:
         model_key: Model identifier (e.g., "effnet-20220825")
         head_name: Head name (e.g., "mood_happy")
+        label: Label name (e.g., "happy", "male")
 
     Returns:
         {
           "model_key": str,
           "head_name": str,
+          "label": str,
           "histogram_bins": [{val: float, count: int}, ...],
           "p5": float,
           "p95": float,
@@ -273,11 +276,11 @@ async def get_histogram_for_head(
 
     """
     try:
-        return calibration_service.get_histogram_for_head(model_key, head_name)
+        return calibration_service.get_histogram_for_head(model_key, head_name, label)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     except Exception as e:
-        logger.error(f"[Web] Failed to get histogram for {model_key}:{head_name}: {e}", exc_info=True)
+        logger.error(f"[Web] Failed to get histogram for {model_key}:{head_name}:{label}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get histogram")) from e
 
 
@@ -285,7 +288,7 @@ async def get_histogram_for_head(
 async def get_all_calibration_histograms(
     calibration_service: "CalibrationService" = Depends(get_calibration_service),
 ) -> dict[str, Any]:
-    """Get all calibration states with histogram bins.
+    """Get all calibration states with histogram bins (per-label).
 
     Returns:
         {
@@ -293,6 +296,7 @@ async def get_all_calibration_histograms(
             {
               "model_key": str,
               "head_name": str,
+              "label": str,
               "histogram_bins": [{val, count}, ...],
               "p5": float,
               "p95": float,
@@ -302,6 +306,9 @@ async def get_all_calibration_histograms(
             ...
           ]
         }
+
+    Note:
+        Returns 22 items (one per label) instead of 12 (per head).
 
     """
     try:

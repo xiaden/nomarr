@@ -144,14 +144,15 @@ def apply_minmax_calibration(raw_score: float, calibration: dict[str, Any]) -> f
     clamped: float = max(0.0, min(1.0, scaled))
     return clamped
 
-def compute_calibration_def_hash(model_key: str, head_name: str, version: int) -> str:
+def compute_calibration_def_hash(model_key: str, head_name: str, label: str, version: int) -> str:
     """Compute calibration definition hash from model metadata.
 
-    Stable identifier for a calibration configuration. Changes when version bumps.
+    Stable identifier for a calibration configuration. Changes when version or label changes.
 
     Args:
         model_key: Model identifier (e.g., "effnet-discogs-effnet-1")
         head_name: Head name (e.g., "mood_happy")
+        label: Label name (e.g., "happy", "male")
         version: Calibration version
 
     Returns:
@@ -159,7 +160,7 @@ def compute_calibration_def_hash(model_key: str, head_name: str, version: int) -
 
     """
     import hashlib
-    calib_def_str = f"{model_key}:{head_name}:{version}"
+    calib_def_str = f"{model_key}:{head_name}:{label}:{version}"
     return hashlib.md5(calib_def_str.encode()).hexdigest()
 
 def get_default_histogram_spec(head_name: str) -> dict[str, Any]:
@@ -224,16 +225,16 @@ def derive_percentiles_from_sparse_histogram(sparse_bins: list[dict[str, Any]], 
         p95_value = hi
     return {"p5": p5_value, "p95": p95_value, "n": total_n, "underflow_count": underflow_count, "overflow_count": overflow_count}
 
-def generate_calibration_from_histogram(db: Database, model_key: str, head_name: str, labels: list[str], version: int, lo: float=0.0, hi: float=1.0, bins: int=10000) -> dict[str, Any]:
-    """Generate calibration for a single head using DB histogram query.
+def generate_calibration_from_histogram(db: Database, model_key: str, head_name: str, label: str, version: int, lo: float=0.0, hi: float=1.0, bins: int=10000) -> dict[str, Any]:
+    """Generate calibration for a single label using DB histogram query.
 
     Stateless, idempotent computation. Always computes from current file_tags.
 
     Args:
         db: Database instance
         model_key: Model identifier (e.g., "effnet-discogs-effnet-1")
-        head_name: Head name for logging (e.g., "mood happy")
-        labels: Actual tag labels to match (e.g., ["happy", "non_happy"])
+        head_name: Head name for logging (e.g., "mood_happy")
+        label: Label to match (e.g., "happy", "male", "arousal")
         version: Calibration version
         lo: Lower bound of calibrated range (default 0.0)
         hi: Upper bound of calibrated range (default 1.0)
@@ -244,9 +245,9 @@ def generate_calibration_from_histogram(db: Database, model_key: str, head_name:
 
     """
     bin_width = (hi - lo) / bins
-    sparse_bins = db.calibration_state.get_sparse_histogram(model_key=model_key, labels=labels, lo=lo, hi=hi, bins=bins)
+    sparse_bins = db.calibration_state.get_sparse_histogram(model_key=model_key, label=label, lo=lo, hi=hi, bins=bins)
     if not sparse_bins:
-        logger.warning(f"[calibration] No data for {model_key}:{head_name} (labels={labels})")
+        logger.warning(f"[calibration] No data for {model_key}:{head_name}:{label}")
         return {"p5": lo, "p95": hi, "n": 0, "underflow_count": 0, "overflow_count": 0, "histogram_bins": []}
 
     result = derive_percentiles_from_sparse_histogram(sparse_bins=sparse_bins, lo=lo, hi=hi, bin_width=bin_width, p5_target=0.05, p95_target=0.95)
@@ -255,7 +256,7 @@ def generate_calibration_from_histogram(db: Database, model_key: str, head_name:
     histogram_bins = [{"val": b["min_val"], "count": b["count"]} for b in sparse_bins]
     result["histogram_bins"] = histogram_bins
 
-    logger.info(f"[calibration] {model_key}:{head_name} -> p5={result['p5']:.4f}, p95={result['p95']:.4f}, n={result['n']}, bins={len(histogram_bins)}")
+    logger.info(f"[calibration] {model_key}:{head_name}:{label} -> p5={result['p5']:.4f}, p95={result['p95']:.4f}, n={result['n']}, bins={len(histogram_bins)}")
     return result
 
 def export_calibration_state_to_json(db: Database, output_path: str) -> dict[str, Any]:
@@ -321,14 +322,15 @@ def import_calibration_state_from_json(db: Database, input_path: str, overwrite:
         try:
             model_key = calib["model_key"]
             head_name = calib["head_name"]
+            label = calib["label"]
             calibration_def_hash = calib["calibration_def_hash"]
-            existing = db.calibration_state.get_calibration_state(model_key, head_name)
+            existing = db.calibration_state.get_calibration_state(model_key, head_name, label)
             if existing and (not overwrite) and (existing.get("calibration_def_hash") == calibration_def_hash):
-                logger.debug(f"[calibration] Skipping {model_key}:{head_name} (already exists)")
+                logger.debug(f"[calibration] Skipping {model_key}:{head_name}:{label} (already exists)")
                 skipped_count += 1
                 continue
-            db.calibration_state.upsert_calibration_state(model_key=model_key, head_name=head_name, calibration_def_hash=calibration_def_hash, version=calib.get("version", 1), histogram_spec=calib["histogram"], p5=calib["p5"], p95=calib["p95"], sample_count=calib["n"], underflow_count=calib.get("underflow_count", 0), overflow_count=calib.get("overflow_count", 0))
-            logger.info(f"[calibration] Imported {model_key}:{head_name}")
+            db.calibration_state.upsert_calibration_state(model_key=model_key, head_name=head_name, label=label, calibration_def_hash=calibration_def_hash, version=calib.get("version", 1), histogram_spec=calib["histogram"], p5=calib["p5"], p95=calib["p95"], sample_count=calib["n"], underflow_count=calib.get("underflow_count", 0), overflow_count=calib.get("overflow_count", 0))
+            logger.info(f"[calibration] Imported {model_key}:{head_name}:{label}")
             imported_count += 1
         except KeyError as e:
             logger.warning(f"[calibration] Skipping invalid calibration entry (missing {e})")

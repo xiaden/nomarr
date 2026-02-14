@@ -1,6 +1,7 @@
 /**
- * Custom hook for fetching calibration histograms across all heads.
- * Returns per-head histogram bin data for visualization.
+ * Custom hook for fetching calibration histograms (per-label).
+ * Returns histogram bin data for all labels across all heads for visualization.
+ * Returns 22 items (one per label) instead of 12 (per head).
  */
 
 import { useEffect, useState } from "react";

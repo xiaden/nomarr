@@ -423,3 +423,14 @@ class UpdateWriteModeResponse(BaseModel):
     file_write_mode: str
     requires_reconciliation: bool
     affected_file_count: int
+
+
+class ValidateLibraryTagsResponse(BaseModel):
+    """Response for library tag validation endpoint."""
+
+    files_checked: int
+    complete_files: int
+    incomplete_files: int
+    files_repaired: int
+    expected_heads: int
+    missing_rels_summary: dict[str, int]

@@ -119,7 +119,7 @@ def import_calibration_bundle_wf(
             # Generate calibration_def_hash for tracking
             import hashlib
 
-            calib_def = f"{model_key}:{head_name}:1"
+            calib_def = f"{model_key}:{head_name}:{label}:1"
             calibration_def_hash = hashlib.md5(calib_def.encode()).hexdigest()
 
             # Create histogram spec (default 10k bins)
@@ -134,6 +134,7 @@ def import_calibration_bundle_wf(
                 db,
                 model_key=model_key,
                 head_name=head_name,
+                label=label,
                 calibration_def_hash=calibration_def_hash,
                 version=params.get("version", 1),
                 histogram_spec=histogram_spec,

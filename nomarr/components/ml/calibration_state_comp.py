@@ -27,6 +27,7 @@ def save_calibration_state(
     *,
     model_key: str,
     head_name: str,
+    label: str,
     calibration_def_hash: str,
     version: int,
     histogram_spec: dict[str, Any],
@@ -37,10 +38,11 @@ def save_calibration_state(
     overflow_count: int,
     histogram_bins: list[dict[str, Any]] | None = None,
 ) -> None:
-    """Persist a single head's calibration state (upsert)."""
+    """Persist a single label's calibration state (upsert)."""
     db.calibration_state.upsert_calibration_state(
         model_key=model_key,
         head_name=head_name,
+        label=label,
         calibration_def_hash=calibration_def_hash,
         version=version,
         histogram_spec=histogram_spec,

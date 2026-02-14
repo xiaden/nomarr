@@ -329,17 +329,19 @@ class CalibrationService:
         return compute_convergence_status(self._db)
 
 
-    def get_histogram_for_head(self, model_key: str, head_name: str) -> dict[str, Any]:
-        """Get stored histogram bins for a specific head.
+    def get_histogram_for_head(self, model_key: str, head_name: str, label: str) -> dict[str, Any]:
+        """Get stored histogram bins for a specific label.
 
         Args:
             model_key: Model identifier (e.g., "effnet-20220825")
             head_name: Head name (e.g., "mood_happy")
+            label: Label name (e.g., "happy", "male")
 
         Returns:
             {
               "model_key": str,
               "head_name": str,
+              "label": str,
               "histogram_bins": [{val: float, count: int}, ...],
               "p5": float,
               "p95": float,
@@ -348,16 +350,17 @@ class CalibrationService:
             }
 
         Raises:
-            ValueError: If no calibration state found for head
+            ValueError: If no calibration state found for label
 
         """
-        state = self._db.calibration_state.get_calibration_state(model_key, head_name)
+        state = self._db.calibration_state.get_calibration_state(model_key, head_name, label)
         if not state:
-            raise ValueError(f"No calibration state found for {model_key}:{head_name}")
+            raise ValueError(f"No calibration state found for {model_key}:{head_name}:{label}")
 
         return {
             "model_key": model_key,
             "head_name": head_name,
+            "label": label,
             "histogram_bins": state.get("histogram_bins", []),
             "p5": state.get("p5"),
             "p95": state.get("p95"),
