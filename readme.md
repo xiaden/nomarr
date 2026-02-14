@@ -43,8 +43,9 @@ You set a library path, scan, and get high quality ML tags in roughly a day (bas
 - **🎨 Rich Metadata** — Writes probabilities, tiers, and aggregated mood tags in native format
 - **🔧 Worker System** — Discovery-based background processing with pause/resume and status tracking
 - **🔐 Secure** — API key authentication for automation, session-based auth for web UI
-- **🐳 Docker Native** — Single container with NVIDIA GPU passthrough
+- **🐳 Docker Native** — Compose-based deployment with NVIDIA GPU passthrough and ArangoDB backend
 
+Compose brings up two services: the Nomarr app and the ArangoDB datastore. There is no single-container deployment.
 ---
 
 ## 🖥️ Web UI

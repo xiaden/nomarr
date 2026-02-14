@@ -216,7 +216,7 @@ interface ExampleHistogramData {
  * Finds the indices of bins closest to p5/p95 for marker placement.
  */
 function processHistogram(head: HeadHistogramResponse): ProcessedHistogram {
-  const bins = head.histogram_bins;
+  const bins = Array.isArray(head?.histogram_bins) ? head.histogram_bins : [];
   if (bins.length === 0) {
     return { xLabels: [], counts: [], binValues: [], p5Index: null, p95Index: null };
   }
