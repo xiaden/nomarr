@@ -1,1 +1,0 @@
-import{In as e,Pn as t}from"./index-CxzRfZt4.js";var n=e(t(),1);function r(){let[e,t]=(0,n.useState)(!1),[r,i]=(0,n.useState)({title:``,message:``}),[a,o]=(0,n.useState)(null);return{isOpen:e,options:r,confirm:e=>(i(e),t(!0),new Promise(e=>{o(()=>e)})),handleConfirm:()=>{t(!1),a?.(!0),o(null)},handleCancel:()=>{t(!1),a?.(!1),o(null)}}}export{r as t};

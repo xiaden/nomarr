@@ -24,9 +24,10 @@ import {
   Typography,
 } from "@mui/material";
 import { BarChart } from "@mui/x-charts/BarChart";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { HeadHistogramResponse } from "@shared/api/calibration";
+import { debugLog } from "@shared/utils/debug";
 
 // ──────────────────────────────────────────────────────────────────────
 // Helpers
@@ -315,7 +316,7 @@ function ExampleHistogram({ example }: ExampleHistogramProps) {
       </Typography>
 
       {/* Mini bar chart */}
-      <Box sx={{ height: 180, mb: 2 }}>
+      <Box sx={{ height: 180, mb: 2, overflow: "hidden" }}>
         <BarChart
           height={180}
           xAxis={[
@@ -368,6 +369,8 @@ interface HistogramChartsProps {
 }
 
 export function HistogramCharts({ data, loading, error }: HistogramChartsProps) {
+  const TAG = "HistogramCharts";
+
   // Track selected label (head:label pairs)
   const headOptions = useMemo(() => {
     if (!data) return [];
@@ -392,6 +395,31 @@ export function HistogramCharts({ data, loading, error }: HistogramChartsProps) 
     () => (selectedData ? processHistogram(selectedData) : null),
     [selectedData],
   );
+
+  // ── Debug logging ─────────────────────────────────────────────────
+  useEffect(() => {
+    debugLog(TAG, "mount/update", {
+      loading,
+      error,
+      headCount: data?.length ?? 0,
+      selectedHead: effectiveSelected,
+    });
+  }, [loading, error, data, effectiveSelected]);
+
+  useEffect(() => {
+    if (processed) {
+      debugLog(TAG, "processed histogram", {
+        head: effectiveSelected,
+        binCount: processed.counts.length,
+        totalSamples: processed.counts.reduce((a, b) => a + b, 0),
+        p5Index: processed.p5Index,
+        p95Index: processed.p95Index,
+        xLabelRange: processed.xLabels.length > 0
+          ? `${processed.xLabels[0]} .. ${processed.xLabels[processed.xLabels.length - 1]}`
+          : "(empty)",
+      });
+    }
+  }, [processed, effectiveSelected]);
 
   if (loading) {
     return (
@@ -470,6 +498,7 @@ export function HistogramCharts({ data, loading, error }: HistogramChartsProps) 
 
           {/* Bar chart */}
           {processed && processed.counts.length > 0 ? (
+            <Box sx={{ overflow: "hidden" }}>
             <BarChart
               height={350}
               xAxis={[
@@ -493,6 +522,7 @@ export function HistogramCharts({ data, loading, error }: HistogramChartsProps) 
               hideLegend
               margin={{ left: 60, right: 20, top: 20, bottom: 60 }}
             />
+            </Box>
           ) : (
             <Box sx={{ height: 350, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <Typography color="text.secondary">No histogram data for selected head</Typography>
