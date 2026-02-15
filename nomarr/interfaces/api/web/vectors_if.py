@@ -55,9 +55,10 @@ async def list_backbones() -> dict[str, list[str]]:
         Dict with 'backbones' key containing list of available backbone IDs
 
     """
+    import os
     from pathlib import Path
 
-    models_dir = Path("/app/build_resources/models")
+    models_dir = Path(os.environ.get("NOMARR_MODELS", "build_resources/models"))
     backbones = [
         p.name for p in models_dir.iterdir()
         if p.is_dir() and ((p / "embeddings").exists() or (p / "embedding").exists())
@@ -190,13 +191,14 @@ async def get_vector_stats(
 
     """
     import asyncio
-    from concurrent.futures import ThreadPoolExecutor
 
     # Discover backbones from models directory structure
     # models/<backbone>/embeddings/ or models/<backbone>/embedding/ indicates a valid backbone
+    import os
+    from concurrent.futures import ThreadPoolExecutor
     from pathlib import Path
 
-    models_dir = Path("/app/build_resources/models")
+    models_dir = Path(os.environ.get("NOMARR_MODELS", "build_resources/models"))
     known_backbones = [
         p.name for p in models_dir.iterdir()
         if p.is_dir() and ((p / "embeddings").exists() or (p / "embedding").exists())
