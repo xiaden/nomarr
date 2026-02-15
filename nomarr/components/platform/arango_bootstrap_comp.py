@@ -19,7 +19,7 @@ from nomarr.persistence.arango_client import DatabaseLike
 logger = logging.getLogger(__name__)
 
 
-def ensure_schema(db: DatabaseLike) -> None:
+def ensure_schema(db: DatabaseLike, *, models_dir: str | None = None) -> None:
     """Ensure all collections, indexes, and graphs exist.
 
     Idempotent - safe to call on every startup.
@@ -27,12 +27,17 @@ def ensure_schema(db: DatabaseLike) -> None:
 
     Args:
         db: ArangoDB database handle
+        models_dir: Path to ML models directory. When provided, creates
+            per-backbone ``vectors_track__*`` collections and indexes.
 
     """
     _create_collections(db)
     _create_indexes(db)
     _create_graphs(db)
     _validate_no_legacy_calibration(db)
+    if models_dir:
+        _create_vectors_track_collections(db, models_dir)
+        _create_vectors_track_indexes(db, models_dir)
 
 
 def _create_collections(db: DatabaseLike) -> None:
@@ -53,6 +58,11 @@ def _create_collections(db: DatabaseLike) -> None:
         "ml_capacity_estimates",  # Stores probe results per model_set_hash
         "ml_capacity_probe_locks",  # Prevents concurrent probes
         "worker_restart_policy",  # Worker restart state persistence
+        # Segment-level ML statistics (per-label aggregates from head predictions)
+        "segment_scores_stats",
+        # Future: "segment_scores_blob" -- full segment x class matrix for re-pooling
+        # Migration tracking (database migration system)
+        "applied_migrations",
     ]
 
     for collection_name in document_collections:
@@ -202,6 +212,18 @@ def _create_indexes(db: DatabaseLike) -> None:
         sparse=False,
     )
 
+    # segment_scores_stats indexes (per-label segment statistics)
+    _ensure_index(db, "segment_scores_stats", "persistent", ["file_id"])
+    _ensure_index(db, "segment_scores_stats", "persistent", ["head_name"])
+    _ensure_index(db, "segment_scores_stats", "persistent", ["tagger_version"])
+    _ensure_index(
+        db,
+        "segment_scores_stats",
+        "persistent",
+        ["file_id", "head_name", "tagger_version"],
+        unique=True,
+    )
+
 
 def _ensure_index(
     db: DatabaseLike,
@@ -276,3 +298,127 @@ def _validate_no_legacy_calibration(db: DatabaseLike) -> None:
             "To remove them, run: python scripts/drop_old_calibration_collections.py",
             ", ".join(found_legacy),
         )
+
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Vectors track: per-backbone embedding collections
+# ─────────────────────────────────────────────────────────────────────
+
+
+def _discover_backbone_ids(models_dir: str) -> list[str]:
+    """Discover unique backbone identifiers from the models directory.
+
+    Returns:
+        Sorted list of backbone IDs (e.g., ["effnet", "musicnn", "yamnet"]).
+
+    """
+    try:
+        from nomarr.components.ml.ml_discovery_comp import discover_heads
+
+        heads = discover_heads(models_dir)
+        backbones = sorted({h.backbone for h in heads})
+        logger.info("[bootstrap] Discovered backbones for vectors_track: %s", backbones)
+        return backbones
+    except Exception:
+        logger.warning("[bootstrap] Could not discover backbones from %s — skipping vectors_track", models_dir)
+        return []
+
+
+def _create_vectors_track_collections(db: DatabaseLike, models_dir: str) -> None:
+    """Create a ``vectors_track__{backbone}`` collection per discovered backbone.
+
+    Idempotent — skips existing collections.
+    """
+    for backbone in _discover_backbone_ids(models_dir):
+        collection_name = f"vectors_track__{backbone}"
+        if not db.has_collection(collection_name):
+            with contextlib.suppress(CollectionCreateError):
+                db.create_collection(collection_name)
+                logger.info("[bootstrap] Created collection %s", collection_name)
+
+        # Persistent index on file_id for cascade delete performance
+        _ensure_index(db, collection_name, "persistent", ["file_id"])
+
+
+def _create_vectors_track_indexes(db: DatabaseLike, models_dir: str) -> None:
+    """Create vector indexes on ``vectors_track__{backbone}`` collections.
+
+    Vector indexes require a fixed ``dimension`` parameter that matches the
+    backbone's embedding dimension. Dimension is probed from the sidecar
+    ``outputs`` schema — specifically the output with ``output_purpose:
+    "embeddings"``. If unknown, the index is deferred until next startup.
+    """
+    try:
+        from nomarr.components.ml.ml_discovery_comp import discover_heads
+
+        heads = discover_heads(models_dir)
+    except Exception:
+        return
+
+    # Group heads by backbone, take first to probe embed_dim
+    seen: set[str] = set()
+    for head in heads:
+        if head.backbone in seen:
+            continue
+        seen.add(head.backbone)
+
+        collection_name = f"vectors_track__{head.backbone}"
+        if not db.has_collection(collection_name):
+            continue
+
+        # Probe embedding dimension from sidecar outputs with output_purpose="embeddings"
+        embed_dim: int | None = None
+        if head.embedding_sidecar:
+            outputs = head.embedding_sidecar.outputs
+            if outputs and isinstance(outputs, list):
+                for output in outputs:
+                    if (
+                        isinstance(output, dict)
+                        and output.get("output_purpose") == "embeddings"
+                    ):
+                        shape = output.get("shape")
+                        if isinstance(shape, list) and len(shape) >= 2:
+                            embed_dim = int(shape[-1])
+                        break
+
+        if embed_dim is None or embed_dim <= 0:
+            logger.info(
+                "[bootstrap] Cannot determine embed_dim for %s — vector index deferred",
+                head.backbone,
+            )
+            continue
+
+        # Check if vector index already exists
+        coll = db.collection(collection_name)
+        existing_indexes = coll.indexes()
+        has_vector_index = any(
+            idx.get("type") == "vector" for idx in existing_indexes  # type: ignore[union-attr]
+        )
+        if has_vector_index:
+            continue
+
+        try:
+            coll.add_index(  # type: ignore[attr-defined]  # exists in python-arango 8.x, stubs incomplete
+                {
+                    "type": "vector",
+                    "fields": ["vector"],
+                    "params": {
+                        "metric": "cosine",
+                        "dimension": embed_dim,
+                        "nLists": 10,
+                    },
+                },
+            )
+            logger.info(
+                "[bootstrap] Created vector index on %s (dim=%d, metric=cosine)",
+                collection_name,
+                embed_dim,
+            )
+        except Exception:
+            logger.warning(
+                "[bootstrap] Failed to create vector index on %s (dim=%d) — will retry next startup",
+                collection_name,
+                embed_dim,
+                exc_info=True,
+            )

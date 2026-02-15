@@ -120,10 +120,9 @@ class Application:
         logger.info(f"[Application] Model suite hash (tagger_version): {self.tagger_version}")
         self._ensure_database_provisioned()
         self.db = Database()
-        from nomarr.components.platform.arango_bootstrap_comp import ensure_schema
+        from nomarr.workflows.platform.prepare_database_wf import prepare_database_workflow
 
-        ensure_schema(self.db.db)
-        self.db.ensure_schema_version()
+        prepare_database_workflow(self.db, models_dir=self.models_dir)
         self._config_service = config_service
         self.services: dict[str, Any] = {}
         self.worker_system: WorkerSystemService | None = None

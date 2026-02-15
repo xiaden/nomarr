@@ -14,33 +14,39 @@ from nomarr.persistence.database.libraries_aql import LibrariesOperations
 from nomarr.persistence.database.library_files_aql import LibraryFilesOperations
 from nomarr.persistence.database.library_folders_aql import LibraryFoldersOperations
 from nomarr.persistence.database.meta_aql import MetaOperations
+from nomarr.persistence.database.migrations_aql import MigrationOperations
 from nomarr.persistence.database.ml_capacity_aql import MLCapacityOperations
+from nomarr.persistence.database.segment_scores_stats_aql import SegmentScoresStatsOperations
 from nomarr.persistence.database.sessions_aql import SessionOperations
 from nomarr.persistence.database.tags_aql import TagOperations
+from nomarr.persistence.database.vectors_track_aql import VectorsTrackOperations
 from nomarr.persistence.database.worker_claims_aql import WorkerClaimsOperations
 from nomarr.persistence.database.worker_restart_policy_aql import WorkerRestartPolicyOperations
 
 __all__ = ["SCHEMA_VERSION", "Database"]
 
-SCHEMA_VERSION = 3  # GPU/CPU adaptive resource management collections
+SCHEMA_VERSION = 6  # applied_migrations collection for database migration tracking
 
 # ==================== SCHEMA VERSIONING POLICY ====================
-# Schema versioning is ADDITIVE ONLY.
+# Schema versioning uses forward-only migrations (alpha policy).
 #
-# SCHEMA_VERSION is stored in meta but NOT enforced at runtime.
-# Schema bootstrap (ensure_schema) is idempotent and creates missing
-# collections/indexes, but does NOT handle:
-#   - Index changes (must drop manually)
-#   - Collection renames (manual intervention)
-#   - Data migrations (not supported)
+# SCHEMA_VERSION tracks the target schema version in code.
+# Migrations auto-run on startup via prepare_database_workflow().
 #
-# Future schema changes require:
+# Migration system (starting SCHEMA_VERSION=6):
+#   - Migrations live in nomarr/migrations/ as V{NNN}_*.py modules
+#   - Applied migrations tracked in applied_migrations collection
+#   - Schema version stored in meta collection
+#   - Startup aborts if DB schema is ahead of code
+#
+# Schema changes require:
 #   1. Increment SCHEMA_VERSION
-#   2. Add new collections/indexes to bootstrap
-#   3. Document manual intervention steps if destructive
+#   2. Create migration file in nomarr/migrations/
+#   3. Implement upgrade() function with data transformations
+#   4. See docs/dev/migrations.md for full migration architecture
 #
-# Pre-alpha: Breaking changes are acceptable.
-# Post-1.0: Must build migration framework or maintain additive-only.
+# Alpha: Breaking changes allowed pre-1.0, but migrations provide self-repair.
+# Post-1.0: Strict migration requirements with deprecation paths.
 # ==================================================================
 
 
@@ -127,21 +133,65 @@ class Database:
         self.worker_restart_policy = WorkerRestartPolicyOperations(self.db)
         self.worker_claims = WorkerClaimsOperations(self.db)
         self.ml_capacity = MLCapacityOperations(self.db)
+        self.segment_scores_stats = SegmentScoresStatsOperations(self.db)
         # Unified tag operations (TAG_UNIFICATION_REFACTOR)
         self.tags = TagOperations(self.db)
+        # Migration tracking operations (database migration system)
+        self.migrations = MigrationOperations(self.db)
+
+        # Vectors track — one Operations instance per backbone, created lazily
+        self.vectors_track: dict[str, VectorsTrackOperations] = {}
 
         # Lazy import to avoid circular dependency
         # from nomarr.persistence.database.joined_queries_aql import JoinedQueryOperations
         # self.joined_queries = JoinedQueryOperations(self.db)
 
-    def ensure_schema_version(self) -> None:
-        """Ensure schema version is recorded in meta collection.
+    def register_vectors_track_backbone(self, backbone_id: str) -> VectorsTrackOperations:
+        """Get or create a VectorsTrackOperations instance for a backbone.
+
+        Lazily creates and caches the Operations instance on first access.
+
+        Args:
+            backbone_id: Backbone identifier (e.g., "effnet", "yamnet").
+
+        Returns:
+            The cached VectorsTrackOperations for this backbone.
+
+        """
+        if backbone_id not in self.vectors_track:
+            self.vectors_track[backbone_id] = VectorsTrackOperations(self.db, backbone_id)
+        return self.vectors_track[backbone_id]
+
+    def ensure_schema_version(self) -> int:
+        """Read current schema version, initializing if needed.
+
+        For fresh databases (no version recorded), records the current
+        SCHEMA_VERSION. For existing databases, returns the stored version
+        without modification.
 
         Should be called AFTER ensure_schema() has created collections.
+
+        Returns:
+            Current schema version as integer.
+
         """
         current_version = self.meta.get("schema_version")
         if not current_version:
+            # Fresh database — record current version
             self.meta.set("schema_version", str(SCHEMA_VERSION))
+            return SCHEMA_VERSION
+        return int(current_version)
+
+    def update_schema_version(self, version: int) -> None:
+        """Update the stored schema version.
+
+        Called after migrations complete to record the new version.
+
+        Args:
+            version: New schema version to record.
+
+        """
+        self.meta.set("schema_version", str(version))
 
     def close(self) -> None:
         """Close database connection (cleanup)."""
