@@ -18,6 +18,7 @@ export * from "./metadata";
 export * from "./processing";
 export * from "./tags";
 export * from "./worker";
+export * from "./vectors";
 
 // Library - explicit exports to avoid conflicts with files module
 export {

@@ -1,9 +1,10 @@
-"""Tests for file_create_new tool."""
+"""Tests for edit_file_create tool."""
 
 from pathlib import Path
 
 import pytest
-from mcp_code_intel.file_create_new import file_create_new
+
+from mcp_code_intel.tools.edit_file_create import edit_file_create
 
 
 @pytest.fixture
@@ -14,7 +15,7 @@ def temp_workspace(tmp_path: Path) -> Path:
 
 def test_create_single_file(temp_workspace: Path) -> None:
     """Test creating a single file."""
-    result = file_create_new(
+    result = edit_file_create(
         [{"path": str(temp_workspace / "test.py"), "content": "# Test\n"}],
         workspace_root=str(temp_workspace),
     )
@@ -31,12 +32,13 @@ def test_create_single_file(temp_workspace: Path) -> None:
     # Verify context returned
     op = result["applied_ops"][0]
     assert "new_context" in op
-    assert op["new_context"][0] == "1: # Test"
+    assert "Created test.py" in op["new_context"]
+    assert "7 bytes" in op["new_context"]
 
 
 def test_create_batch_files(temp_workspace: Path) -> None:
     """Test creating multiple files in one batch."""
-    result = file_create_new(
+    result = edit_file_create(
         [
             {"path": str(temp_workspace / "file1.py"), "content": "# File 1\n"},
             {"path": str(temp_workspace / "file2.py"), "content": "# File 2\n"},
@@ -57,7 +59,7 @@ def test_create_batch_files(temp_workspace: Path) -> None:
 
 def test_create_nested_directories(temp_workspace: Path) -> None:
     """Test creating files in nested directories (mkdir -p behavior)."""
-    result = file_create_new(
+    result = edit_file_create(
         [
             {
                 "path": str(temp_workspace / "services" / "auth" / "session.py"),
@@ -86,7 +88,7 @@ def test_create_nested_directories(temp_workspace: Path) -> None:
 
 def test_create_empty_file(temp_workspace: Path) -> None:
     """Test creating an empty file."""
-    result = file_create_new(
+    result = edit_file_create(
         [{"path": str(temp_workspace / "empty.txt")}],
         workspace_root=str(temp_workspace),
     )
@@ -107,7 +109,7 @@ def test_fail_on_existing_file(temp_workspace: Path) -> None:
     existing.write_text("# Existing\n")
 
     # Try to create it again
-    result = file_create_new(
+    result = edit_file_create(
         [{"path": str(existing), "content": "# New\n"}],
         workspace_root=str(temp_workspace),
     )
@@ -128,7 +130,7 @@ def test_rollback_on_partial_failure(temp_workspace: Path) -> None:
     existing.write_text("# Existing\n")
 
     # Try to create batch with one existing file
-    result = file_create_new(
+    result = edit_file_create(
         [
             {"path": str(temp_workspace / "new1.py"), "content": "# New 1\n"},
             {"path": str(temp_workspace / "new2.py"), "content": "# New 2\n"},
@@ -152,7 +154,7 @@ def test_rollback_on_partial_failure(temp_workspace: Path) -> None:
 
 def test_duplicate_paths_in_batch(temp_workspace: Path) -> None:
     """Test failure when batch contains duplicate paths."""
-    result = file_create_new(
+    result = edit_file_create(
         [
             {"path": str(temp_workspace / "dup.py"), "content": "# First\n"},
             {"path": str(temp_workspace / "other.py"), "content": "# Other\n"},
@@ -175,7 +177,7 @@ def test_large_file_context_capping(temp_workspace: Path) -> None:
     lines = [f"# Line {i}\n" for i in range(1, 101)]
     content = "".join(lines)
 
-    result = file_create_new(
+    result = edit_file_create(
         [{"path": str(temp_workspace / "large.py"), "content": content}],
         workspace_root=str(temp_workspace),
     )
@@ -190,7 +192,8 @@ def test_large_file_context_capping(temp_workspace: Path) -> None:
     # Verify context is capped (should be ~52 lines, not all 100)
     op = result["applied_ops"][0]
     assert "new_context" in op
-    assert len(op["new_context"]) <= 55  # ~52 + some margin
+    context_lines = op["new_context"].split("\n")
+    assert len(context_lines) <= 55  # ~52 + some margin
 
 
 def test_very_large_file_over_1mb(temp_workspace: Path) -> None:
@@ -201,7 +204,7 @@ def test_very_large_file_over_1mb(temp_workspace: Path) -> None:
     content = "".join(lines)
     assert len(content.encode()) > 1_048_576  # Verify >1MB
 
-    result = file_create_new(
+    result = edit_file_create(
         [{"path": str(temp_workspace / "huge.py"), "content": content}],
         workspace_root=str(temp_workspace),
     )
@@ -213,13 +216,19 @@ def test_very_large_file_over_1mb(temp_workspace: Path) -> None:
     assert huge_file.exists()
     assert huge_file.stat().st_size > 1_048_576
 
-    # Verify context is still capped
+    # Verify context summary returned (not full file content due to size)
     op = result["applied_ops"][0]
-    assert len(op["new_context"]) <= 55
+    assert "new_context" in op
+    assert "Created huge.py" in op["new_context"]
+    assert "bytes" in op["new_context"]
 
 
 def test_permission_error_rollback(temp_workspace: Path) -> None:
     """Test rollback on permission errors (if applicable)."""
+    import sys
+    if sys.platform == "win32":
+        pytest.skip("Permission error simulation not reliable on Windows")
+
     # This test is platform-dependent and may not work on all systems
     # Skip if we can't simulate permission errors
     try:
@@ -228,7 +237,7 @@ def test_permission_error_rollback(temp_workspace: Path) -> None:
         readonly_dir.mkdir()
         readonly_dir.chmod(0o444)  # Read-only
 
-        result = file_create_new(
+        result = edit_file_create(
             [
                 {"path": str(temp_workspace / "good.py"), "content": "# Good\n"},
                 {"path": str(readonly_dir / "bad.py"), "content": "# Bad\n"},
@@ -255,7 +264,7 @@ def test_permission_error_rollback(temp_workspace: Path) -> None:
 
 def test_response_format(temp_workspace: Path) -> None:
     """Test response includes all required fields."""
-    result = file_create_new(
+    result = edit_file_create(
         [{"path": str(temp_workspace / "test.py"), "content": "# Test\nprint('hello')\n"}],
         workspace_root=str(temp_workspace),
     )

@@ -154,3 +154,24 @@ def get_playlist_import_service() -> PlaylistImportService:
     if not service:
         raise HTTPException(status_code=503, detail="Playlist import service not available")
     return service  # type: ignore[no-any-return]
+
+
+
+def get_vector_search_service() -> Any:
+    """Get VectorSearchService instance."""
+    from nomarr.app import application
+
+    service = application.services.get("vector_search")
+    if not service:
+        raise HTTPException(status_code=503, detail="Vector search service not available")
+    return service  # type: ignore[no-any-return]
+
+
+def get_vector_maintenance_service() -> Any:
+    """Get VectorMaintenanceService instance."""
+    from nomarr.app import application
+
+    service = application.services.get("vector_maintenance")
+    if not service:
+        raise HTTPException(status_code=503, detail="Vector maintenance service not available")
+    return service  # type: ignore[no-any-return]

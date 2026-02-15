@@ -34,12 +34,12 @@ Task plan tools:
 
 File editing tools:
 - edit_file_replace_string: Apply multiple string replacements atomically (single write)
-- edit_file_replace_line_range: Replace line range with new content (line-anchored)
+- edit_file_replace_by_content: Replace content range by boundary text (no line numbers)
 - edit_file_move: Move/rename a file within the workspace (single call)
-- edit_file_move_text: Move lines within a file or between files atomically
+- edit_file_move_by_content: Move text between locations using content boundaries
 - edit_file_create: Create new files with mkdir -p behavior (atomic batch)
 - edit_file_replace_content: Replace entire file contents atomically
-- edit_file_insert_text: Insert text at precise positions (bof/eof/before_line/after_line)
+- edit_file_insert_text: Insert text at precise positions (bof/eof/before_anchor/after_anchor)
 - edit_file_copy_paste_text: Copy text from sources to targets (stamp decorator pattern)
 
 Python introspection:
@@ -77,15 +77,17 @@ from .tools.edit_file_create import edit_file_create as edit_file_create_impl
 from .tools.edit_file_insert_text import InsertBoundaryOp, InsertLineOp
 from .tools.edit_file_insert_text import edit_file_insert_text as edit_file_insert_text_impl
 from .tools.edit_file_move import edit_file_move as edit_file_move_impl
-from .tools.edit_file_move_text import edit_file_move_text as edit_file_move_text_impl
+from .tools.edit_file_move_by_content import (
+    edit_file_move_by_content as edit_file_move_by_content_impl,
+)
+from .tools.edit_file_replace_by_content import (
+    edit_file_replace_by_content as edit_file_replace_by_content_impl,
+)
 from .tools.edit_file_replace_content import (
     ReplaceOp,
 )
 from .tools.edit_file_replace_content import (
     edit_file_replace_content as edit_file_replace_content_impl,
-)
-from .tools.edit_file_replace_line_range import (
-    edit_file_replace_line_range as edit_file_replace_line_range_impl,
 )
 
 # Import tool implementations with _impl suffix to avoid name collision
@@ -121,14 +123,14 @@ from .tools.trace_project_endpoint import trace_project_endpoint as trace_projec
 TOOL_IMPLS: dict[str, object] = {
     "edit_file_replace_string": edit_file_replace_string_impl,
     "edit_file_move": edit_file_move_impl,
-    "edit_file_move_text": edit_file_move_text_impl,
+    "edit_file_move_by_content": edit_file_move_by_content_impl,
     "edit_file_copy_paste_text": edit_file_copy_paste_text_impl,
     "edit_file_create": edit_file_create_impl,
     "edit_file_insert_text": edit_file_insert_text_impl,
     "read_file_line": read_file_line_impl,
     "read_file_line_range": read_file_range_impl,
     "edit_file_replace_content": edit_file_replace_content_impl,
-    "edit_file_replace_line_range": edit_file_replace_line_range_impl,
+    "edit_file_replace_by_content": edit_file_replace_by_content_impl,
     "search_file_text": search_file_text_impl,
     "read_file_symbol_at_line": read_file_symbol_at_line_impl,
     "lint_project_backend": lint_project_backend_impl,
@@ -738,44 +740,65 @@ def edit_file_replace_string(
     )
 
 
+
+
 @mcp.tool()
-def edit_file_move_text(
+def edit_file_move_by_content(
     file_path: Annotated[str, "Workspace-relative or absolute path to the source file"],
-    source_start: Annotated[int, "First line to move (1-indexed, inclusive)"],
-    source_end: Annotated[int, "Last line to move (1-indexed, inclusive)"],
-    target_line: Annotated[int, "Line number to insert BEFORE (use line_count+1 to append)"],
+    start_boundary: Annotated[
+        str,
+        "Content marking the start of the range to move. "
+        "Multi-line supported (\\n separated). Stripped substring match.",
+    ],
+    end_boundary: Annotated[
+        str,
+        "Content marking the end of the range to move. Same rules.",
+    ],
+    expected_line_count: Annotated[
+        int,
+        "Exact line count of the source range (inclusive). Safety check.",
+    ],
+    target_position: Annotated[
+        str,
+        "Insert 'before' or 'after' the target anchor line. "
+        "Ignored when target_anchor is None.",
+    ],
+    target_anchor: Annotated[
+        str | None,
+        "Content line in the target file to anchor insertion. "
+        "Must match exactly one line (stripped substring). "
+        "Omit (None) when extracting to a new file — the moved "
+        "block becomes the file content.",
+    ] = None,
     target_file: Annotated[
         str | None,
-        "Target file for cross-file moves. If None, moves within the same file.",
+        "Target file for cross-file moves. If None, moves within same file.",
     ] = None,
 ) -> CallToolResult:
-    """Move lines within a file or between files.
+    """Move text between locations using content boundaries, not line numbers.
 
-    Same-file: Extracts source lines and inserts them before target_line.
-    Cross-file: Removes lines from source file and inserts into target file.
-    Atomic operation - each file is only written once after all changes computed.
+    Source range is located by start/end boundary text with line count validation.
+    Target is located by a content anchor line. Atomic per file.
+    Fails on ambiguous matches (multiple boundary/anchor hits).
+
+    When target_anchor is omitted (None) and target_file is set, the moved
+    block becomes the entire content of a newly created file. Fails if the
+    target file already exists.
     """
-    result = edit_file_move_text_impl(
-        file_path, source_start, source_end, target_line, ROOT, target_file
+    result = edit_file_move_by_content_impl(
+        file_path,
+        start_boundary,
+        end_boundary,
+        expected_line_count,
+        target_anchor,  # can be None
+        target_position,
+        ROOT,
+        target_file,
     )
-    if target_file:
-        # Cross-file move: show both source and target
-        file_locations: list[tuple[str | Path, int | None, int | None, str]] = [
-            (file_path, source_start, source_end, "Moved from"),
-            (target_file, target_line, target_line, "Moved to"),
-        ]
-        return wrap_mcp_result_with_multiple_file_links(
-            result,
-            file_locations=file_locations,
-            tool_name="edit_file_move_text",
-        )
-    return wrap_mcp_result_with_file_link(
+    return wrap_mcp_result(
         result,
-        file_path=file_path,
-        start_line=source_start,
-        end_line=source_end,
-        action="Moved lines",
-        tool_name="edit_file_move_text",
+        user_summary=f"Moved content in {file_path}",
+        tool_name="edit_file_move_by_content",
     )
 
 
@@ -808,39 +831,47 @@ def edit_file_move(
     )
 
 
-@mcp.tool()
-def edit_file_replace_line_range(
-    file_path: Annotated[str, "Workspace-relative or absolute path to the file to edit"],
-    start_line: Annotated[int, "First line to replace (1-indexed, inclusive)"],
-    end_line: Annotated[int, "Last line to replace (1-indexed, inclusive)"],
-    new_content: Annotated[str, "New content to insert (can be multiple lines)"],
-    expected_content: Annotated[
-        str | None,
-        "Optional verification: the exact content you expect at the target line range. "
-        "Tool will fail if actual content doesn't match, preventing corruption from stale line numbers. "
-        "Strongly recommended for all replacements to avoid editing wrong code.",
-    ] = None,
-) -> CallToolResult:
-    """Line-anchored replacement for deterministic edits when line numbers are known
-    from prior read operations. Removes ambiguity of string matching and reduces
-    blast radius compared to large block string replacements.
 
-    Use when:
-    - You just read a function with read_module_source and have exact line numbers
-    - You want to rewrite a specific block without string matching
-    - Formatters make string matching fragile
-    Returns context showing 2 lines before/after replaced region.
+
+@mcp.tool()
+def edit_file_replace_by_content(
+    file_path: Annotated[str, "Workspace-relative or absolute path to the file to edit"],
+    start_boundary: Annotated[
+        str,
+        "Content that marks the beginning of the range to replace. "
+        "Multi-line supported (separate lines with \\n). "
+        "Each line is stripped and matched as a substring against file lines.",
+    ],
+    end_boundary: Annotated[
+        str,
+        "Content that marks the end of the range to replace. "
+        "Same matching rules as start_boundary.",
+    ],
+    expected_line_count: Annotated[
+        int,
+        "Exact number of lines the matched range must span (inclusive of boundary lines). "
+        "Acts as a safety check — the tool fails if the actual count differs.",
+    ],
+    new_content: Annotated[
+        str,
+        "Replacement text. Replaces the entire matched range including boundary lines. "
+        "Include boundary text in new_content if you want to preserve it.",
+    ],
+) -> CallToolResult:
+    """Replace a range of lines identified by content boundaries, not line numbers.
+
+    Locates the range by finding start_boundary and end_boundary text in the file.
+    Both boundaries are inclusive — they and everything between them are replaced.
+    Fails if boundaries match zero or multiple ranges (ambiguity detection).
+    Use expected_line_count to validate you're replacing the right amount of code.
     """
-    result = edit_file_replace_line_range_impl(
-        file_path, start_line, end_line, new_content, ROOT, expected_content
+    result = edit_file_replace_by_content_impl(
+        file_path, start_boundary, end_boundary, expected_line_count, new_content, ROOT
     )
-    return wrap_mcp_result_with_file_link(
+    return wrap_mcp_result(
         result,
-        file_path=file_path,
-        start_line=start_line,
-        end_line=end_line,
-        action="Replaced lines",
-        tool_name="edit_file_replace_line_range",
+        user_summary=f"Replaced content range in {file_path}",
+        tool_name="edit_file_replace_by_content",
     )
 
 
@@ -1031,13 +1062,20 @@ def edit_file_insert_at_boundary(
 def edit_file_insert_at_line(
     ops: list[InsertLineOp],
 ) -> CallToolResult:
-    """Insert text before or after a specific line in file(s).
+    """Insert text before or after a content anchor in file(s).
 
-    Each op has: `path`, `content`, `line` (1-indexed), `position` ('before' or 'after').
-    Content is inserted as new line(s). For same-file ops: line numbers refer to ORIGINAL state.
+    Each op has: `path`, `content`, `anchor` (content substring, must match
+    exactly one line), `position` ('before' or 'after').
+    Content is inserted as new line(s). For same-file ops with multiple
+    insertions, each anchor resolves against the current file state.
     """
     ops_dicts = [
-        {"path": op.path, "content": op.content, "at": f"{op.position}_line", "line": op.line}
+        {
+            "path": op.path,
+            "content": op.content,
+            "at": f"{op.position}_line",
+            "anchor": op.anchor,
+        }
         for op in ops
     ]
     result = edit_file_insert_text_impl(ops_dicts, workspace_root=ROOT)
@@ -1056,7 +1094,7 @@ def edit_file_insert_at_line(
             )
     return wrap_mcp_result(
         result,
-        user_summary=f"Inserted text at {len(ops)} line location(s)",
+        user_summary=f"Inserted text at {len(ops)} anchor location(s)",
         tool_name="edit_file_insert_at_line",
     )
 

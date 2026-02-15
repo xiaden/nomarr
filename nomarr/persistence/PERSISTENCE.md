@@ -440,6 +440,190 @@ Schema bootstrap is **idempotent**:
 - `worker_claims` - Worker resource claims
 - `worker_restart_policy` - Worker restart state
 - `ml_capacity` - ML capacity monitoring
+
+## 8. Vector Store Architecture (Hot/Cold Collections)
+
+### 8.1 Overview
+
+Nomarr uses a **hot/cold architecture** for vector embeddings to prevent OOM crashes during active ML processing. This design separates write operations from read/search operations into different collections with different indexing strategies.
+
+**Design principles:**
+- **Hot collections:** Write-only, no vector index (no HNSW maintenance overhead)
+- **Cold collections:** Read/search-only, vector index created manually via maintenance workflow
+- **Convergent promotion:** Hot drains to cold via UPSERT with unique `_key` (idempotent, safe to retry)
+- **Scheduled index rebuild:** Vector index creation deferred to maintenance window, not bootstrap
+- **"As of last rebuild" search:** Search results reflect cold collection state at last rebuild (acceptable staleness)
+
+### 8.2 Collection Naming
+
+**Hot collections:**
+```
+vectors_track_hot__{backbone}
+```
+
+**Cold collections:**
+```
+vectors_track_cold__{backbone}
+```
+
+Examples:
+- `vectors_track_hot__discogs_effnet`
+- `vectors_track_cold__discogs_effnet`
+- `vectors_track_hot__musicnn`
+- `vectors_track_cold__musicnn`
+
+### 8.3 Field Schema
+
+Both hot and cold collections share identical field schema:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `_key` | string | Unique identifier (SHA-1 hash of `file_id\|model_suite_hash`) |
+| `file_id` | string | Library file document ID (e.g., `"library_files/12345"`) |
+| `model_suite_hash` | string | 12-char hex hash from `compute_model_suite_hash()` |
+| `embed_dim` | int | Number of embedding dimensions (e.g., 1280 for effnet) |
+| `vector` | array[float] | Pooled embedding as list of floats |
+| `num_segments` | int | Number of backbone patches that were pooled |
+| `created_at` | int | Unix timestamp in milliseconds |
+
+### 8.4 Key Strategy
+
+**Deterministic key generation** ensures idempotent drain from hot to cold:
+
+```python
+def _make_key(file_id: str, model_suite_hash: str) -> str:
+    """Build deterministic ArangoDB-safe _key.
+    
+    Backbone identity is encoded in collection name, so only
+    file_id and model_suite_hash contribute to key.
+    """
+    return hashlib.sha1(f"{file_id}|{model_suite_hash}".encode()).hexdigest()
+```
+
+**Why this works:**
+- Same `(file_id, model_suite_hash)` produces same `_key` in both hot and cold
+- UPSERT operations during drain use `_key` to prevent duplication
+- Re-running drain is safe (convergent operation)
+
+### 8.5 Indexes
+
+#### Hot Collection Indexes
+
+**Persistent indexes only** (no vector index ever):
+
+1. **Unique index on `_key`** (enforces uniqueness invariant)
+   - Type: `persistent`
+   - Fields: `["_key"]`
+   - Unique: `true`
+   - Purpose: Prevents duplication during convergent drain
+
+2. **Index on `file_id`** (cascade delete performance)
+   - Type: `persistent`
+   - Fields: `["file_id"]`
+   - Unique: `false`
+   - Purpose: Fast cascade deletion when files are removed
+
+**Critical invariant:** Hot collections MUST NEVER have vector indexes. Any vector index on hot is a bug.
+
+#### Cold Collection Indexes
+
+**Persistent indexes** (same as hot):
+
+1. **Unique index on `_key`** (enforces uniqueness invariant)
+   - Type: `persistent`
+   - Fields: `["_key"]`
+   - Unique: `true`
+   - Purpose: Prevents duplication during UPSERT from hot
+
+2. **Index on `file_id`** (cascade delete performance)
+   - Type: `persistent`
+   - Fields: `["file_id"]`
+   - Unique: `false`
+   - Purpose: Fast cascade deletion when files are removed
+
+**Vector index** (created manually via maintenance workflow):
+
+3. **Vector index on `vector` field** (similarity search)
+   - Type: `vector`
+   - Fields: `["vector"]`
+   - Created: **Only via `promote_and_rebuild_workflow`**, never by bootstrap
+   - Purpose: ANN search using HNSW graph
+   - Lifecycle: Dropped before drain, rebuilt after drain completes
+
+### 8.6 Uniqueness Invariant
+
+**Requirement:** Both hot and cold collections MUST have a unique persistent index on `_key`.
+
+**Why:** Prevents duplication during convergent drain operations. Without the unique index:
+- Multiple drain attempts could create duplicate docs in cold
+- UPSERT semantics would fail (no unique constraint to match on)
+- Data integrity would be violated
+
+**Enforcement:**
+- Bootstrap creates unique `_key` index for hot collections
+- Migration m007 creates unique `_key` index for cold collections
+- Operations classes assume this constraint exists
+
+### 8.7 Collection Lifecycle Contract
+
+**Bootstrap phase:**
+1. Creates hot collections with persistent indexes only
+2. Does NOT create cold collections (not needed until first drain)
+3. Does NOT create vector indexes (architectural violation if bootstrap does this)
+
+**Active ML processing:**
+1. Embeddings written to hot collection via `VectorsTrackHotOperations.upsert_vector()`
+2. No vector index maintenance occurs (writes are fast, no OOM risk)
+3. Hot collection accumulates vectors until promotion
+
+**Maintenance phase:**
+1. Maintenance workflow triggered manually or by scheduler
+2. Hot vectors drained to cold via convergent UPSERT (unique `_key` prevents duplication)
+3. Hot collection verified empty (completeness check)
+4. Cold vector index dropped (if exists)
+5. Cold vector index rebuilt with current data
+6. Search becomes available with "as of rebuild" semantics
+
+**Search phase:**
+1. Similarity search queries cold collection only (never hot)
+2. Results reflect state at last rebuild (acceptable staleness)
+3. If cold has no vector index, search returns error (expected)
+
+**Cascade delete:**
+1. When file deleted, vectors removed from BOTH hot and cold
+2. Centralized via `Database.delete_vectors_by_file_id()`
+3. No orphaned vectors in either collection
+
+### 8.8 Architectural Constraints
+
+**NEVER:**
+- Create vector indexes in bootstrap (lifecycle owned by maintenance workflow)
+- Write to cold collection directly (hot is the only write path)
+- Search hot collection (search is cold-only)
+- Let hot collection accumulate vectors indefinitely (triggers OOM eventually)
+
+**ALWAYS:**
+- Write embeddings to hot collection only
+- Promote hot → cold via maintenance workflow
+- Drop old cold vector index before rebuilding new one (avoid double memory cost)
+- Use convergent drain semantics (UPSERT with unique `_key`)
+- Verify hot is empty after drain (completeness check)
+
+### 8.9 Why This Design Works
+
+**Problem solved:** Continuous HNSW graph maintenance during active ML processing causes OOM on low-end systems.
+
+**Solution:**
+- Defers expensive vector index operations to scheduled maintenance window
+- Separates write concerns (hot) from read/search concerns (cold)
+- Makes search semantics explicit: "as of last rebuild" (predictable, acceptable)
+- Allows low-end CPUs to complete ML processing without crashing
+- Convergent drain operation is safe to retry (idempotent via unique `_key`)
+
+**Trade-off:** Search results may be stale (not real-time). This is acceptable because:
+- Vector search is for discovery, not transactional consistency
+- Users understand "last rebuilt at" timestamp
+- Explicit rebuild gives control over when CPU burn happens
 - `calibration_state` - Calibration state
 - `calibration_history` - Calibration history
 

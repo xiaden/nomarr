@@ -2,9 +2,10 @@
  * TrackList - Display tracks for a selected entity with tag exploration
  */
 
-import { Search } from "@mui/icons-material";
-import { Box, Chip, IconButton, MenuItem, Select, Stack, TextField, Typography } from "@mui/material";
+import { ImageSearch, Search } from "@mui/icons-material";
+import { Box, Chip, IconButton, MenuItem, Select, Stack, TextField, Tooltip, Typography } from "@mui/material";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { ErrorMessage, Panel } from "@shared/components/ui";
 
@@ -33,6 +34,12 @@ export function TrackList({
   const [expandedTrackId, setExpandedTrackId] = useState<string | null>(null);
   const [filterQuery, setFilterQuery] = useState("");
   const [sortBy, setSortBy] = useState<"title" | "artist" | "album" | "duration">("title");
+  const navigate = useNavigate();
+
+  const handleFindSimilar = (fileId: string) => {
+    // Navigate to vector search with file ID pre-filled
+    navigate(`/vector-search?fileId=${encodeURIComponent(fileId)}`);
+  };
 
   const loadTracks = useCallback(async () => {
     try {
@@ -224,6 +231,19 @@ export function TrackList({
                     color="primary"
                   />
                 )}
+
+                <Tooltip title="Find similar tracks (vector search)">
+                  <IconButton
+                    size="small"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleFindSimilar(track.file_id);
+                    }}
+                    sx={{ ml: 0.5 }}
+                  >
+                    <ImageSearch fontSize="small" />
+                  </IconButton>
+                </Tooltip>
               </Box>
 
               <Typography color="text.disabled" sx={{ ml: 1 }}>

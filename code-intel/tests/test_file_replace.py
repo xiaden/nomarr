@@ -1,9 +1,10 @@
-"""Tests for file_replace tool."""
+"""Tests for edit_file_replace_content tool."""
 
 from pathlib import Path
 
 import pytest
-from mcp_code_intel.file_replace import file_replace
+
+from mcp_code_intel.tools.edit_file_replace_content import edit_file_replace_content
 
 
 @pytest.fixture
@@ -18,7 +19,7 @@ def test_replace_single_file(temp_workspace: Path) -> None:
     test_file = temp_workspace / "test.py"
     test_file.write_text("# Original\nold_content = 1\n")
 
-    result = file_replace(
+    result = edit_file_replace_content(
         [{"path": str(test_file), "content": "# Replaced\nnew_content = 2\n"}],
         workspace_root=str(temp_workspace),
     )
@@ -48,7 +49,7 @@ def test_replace_batch_files(temp_workspace: Path) -> None:
     file2.write_text("# File 2 original\n")
     file3.write_text("# File 3 original\n")
 
-    result = file_replace(
+    result = edit_file_replace_content(
         [
             {"path": str(file1), "content": "# File 1 replaced\n"},
             {"path": str(file2), "content": "# File 2 replaced\n"},
@@ -69,7 +70,7 @@ def test_replace_batch_files(temp_workspace: Path) -> None:
 
 def test_fail_on_missing_file(temp_workspace: Path) -> None:
     """Test failure when target file doesn't exist."""
-    result = file_replace(
+    result = edit_file_replace_content(
         [{"path": str(temp_workspace / "missing.py"), "content": "# New\n"}],
         workspace_root=str(temp_workspace),
     )
@@ -89,7 +90,7 @@ def test_rollback_on_partial_failure(temp_workspace: Path) -> None:
     file2.write_text("# File 2 original\n")
 
     # Try to replace batch with one missing file
-    result = file_replace(
+    result = edit_file_replace_content(
         [
             {"path": str(file1), "content": "# File 1 replaced\n"},
             {"path": str(temp_workspace / "missing.py"), "content": "# Should fail\n"},
@@ -111,7 +112,7 @@ def test_replace_with_empty_content(temp_workspace: Path) -> None:
     test_file = temp_workspace / "test.py"
     test_file.write_text("# Original content\nsome_code = 1\n")
 
-    result = file_replace(
+    result = edit_file_replace_content(
         [{"path": str(test_file), "content": ""}],
         workspace_root=str(temp_workspace),
     )
@@ -136,7 +137,7 @@ def test_large_file_context_capping(temp_workspace: Path) -> None:
     lines = [f"# Line {i}\n" for i in range(1, 101)]
     content = "".join(lines)
 
-    result = file_replace(
+    result = edit_file_replace_content(
         [{"path": str(test_file), "content": content}],
         workspace_root=str(temp_workspace),
     )
@@ -163,7 +164,7 @@ def test_very_large_file_over_1mb(temp_workspace: Path) -> None:
     content = "".join(lines)
     assert len(content.encode()) > 1_048_576  # Verify >1MB
 
-    result = file_replace(
+    result = edit_file_replace_content(
         [{"path": str(test_file), "content": content}],
         workspace_root=str(temp_workspace),
     )
@@ -187,7 +188,7 @@ def test_binary_file_handling(temp_workspace: Path) -> None:
     # Replace with new binary content
     new_content = bytes(range(256))  # All byte values 0-255
 
-    result = file_replace(
+    result = edit_file_replace_content(
         [{"path": str(test_file), "content": new_content.decode("latin-1")}],
         workspace_root=str(temp_workspace),
     )
@@ -205,7 +206,7 @@ def test_duplicate_paths_in_batch(temp_workspace: Path) -> None:
     file1.write_text("# Original\n")
     file2.write_text("# Original\n")
 
-    result = file_replace(
+    result = edit_file_replace_content(
         [
             {"path": str(file1), "content": "# First replacement\n"},
             {"path": str(file2), "content": "# Other\n"},
@@ -234,7 +235,7 @@ def test_permission_error_rollback(temp_workspace: Path) -> None:
         # Make file2 read-only
         file2.chmod(0o444)
 
-        result = file_replace(
+        result = edit_file_replace_content(
             [
                 {"path": str(file1), "content": "# File 1 replaced\n"},
                 {"path": str(file2), "content": "# Should fail\n"},
@@ -264,7 +265,7 @@ def test_response_format(temp_workspace: Path) -> None:
     test_file = temp_workspace / "test.py"
     test_file.write_text("# Original\n")
 
-    result = file_replace(
+    result = edit_file_replace_content(
         [{"path": str(test_file), "content": "# Replaced\nprint('hello')\n"}],
         workspace_root=str(temp_workspace),
     )
@@ -302,7 +303,7 @@ class MyClass:
         return self.value
 """
 
-    result = file_replace(
+    result = edit_file_replace_content(
         [{"path": str(test_file), "content": content}],
         workspace_root=str(temp_workspace),
     )

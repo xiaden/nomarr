@@ -14,6 +14,8 @@ const CalibrationPage = lazy(() => import("../features/calibration/CalibrationPa
 const ConfigPage = lazy(() => import("../features/config/ConfigPage").then((m) => ({ default: m.ConfigPage })));
 const NavidromePage = lazy(() => import("../features/navidrome/NavidromePage").then((m) => ({ default: m.NavidromePage })));
 const PlaylistImportPage = lazy(() => import("../features/playlist-import/PlaylistImportPage").then((m) => ({ default: m.PlaylistImportPage })));
+const VectorSearchPage = lazy(() => import("../features/vector-search/VectorSearchPage").then((m) => ({ default: m.VectorSearchPage })));
+const AdminPage = lazy(() => import("../features/admin/AdminPage").then((m) => ({ default: m.AdminPage })));
 
 /**
  * Main application router.
@@ -69,6 +71,8 @@ export function AppRouter() {
                     <Route path="/config" element={<ConfigPage />} />
                     <Route path="/navidrome" element={<NavidromePage />} />
                     <Route path="/playlist-import" element={<PlaylistImportPage />} />
+                    <Route path="/vector-search" element={<VectorSearchPage />} />
+                    <Route path="/admin" element={<AdminPage />} />
                   </Routes>
                 </AppShell>
               </ProtectedRoute>

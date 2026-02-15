@@ -22,9 +22,9 @@ Layer-specific guidance auto-applies based on file paths. What follows are the h
 
 ---
 
-## MANDATORY PROCESS REQUIREMENTS
+## Process Requirements
 
-**These requirements are NOT optional. Skipping them creates architectural debt and bugs.**
+**These requirements create architectural debt and bugs when skipped.**
 
 ### 1. Layer-Specific Instructions
 
@@ -68,7 +68,7 @@ read_module_api("nomarr.services.infrastructure.file_watcher_svc")
 
 **You MUST verify code quality after editing ANY Python file.**
 
-**This is NOT optional. This applies to:**
+**This applies to:**
 - All nomarr backend layers (interfaces, services, workflows, components, persistence, helpers)
 - code-intel Python code
 - Scripts, tests, tooling - any `.py` file you touch
@@ -90,9 +90,9 @@ lint_project_frontend()
 
 ---
 
-## TOOL USAGE HIERARCHY (MANDATORY)
+## Tool Usage Hierarchy
 
-**These tool selection rules are NOT optional. Violating them wastes tokens and ignores purpose-built capabilities.**
+**These tool selection rules waste tokens and ignore purpose-built capabilities when violated.**
 
 ### MCP Tool Availability
 
@@ -112,6 +112,15 @@ Check this hierarchy before reaching for `read_file_range`, `grep_search`, or `s
 - `trace_project_endpoint(endpoint)` - Trace FastAPI routes through DI layers
 - `trace_module_calls(function)` - Follow call chains from entry points
 - `analyze_project_api_coverage()` - See which endpoints are used by frontend
+
+**These tools use static AST analysis** - fast, safe, work even when imports are broken. Use them first.
+
+**Runtime verification (RARE - only when AST tools insufficient):**
+- `py_introspect(checks)` - Subprocess-isolated runtime checks (actual MRO after metaclasses, resolved isinstance checks, exception raising via AST)
+- Only use when you need behavior that can't be determined statically
+- Example: metaclass-modified signatures, dynamic class hierarchy, verifying parent classes at import time
+- Batch multiple checks in one call: `{"checks": [{"check": "mro", "target": "X"}, {"check": "signature", "target": "Y.method"}]}`
+- **Default to AST tools** - reach for `py_introspect` only when you hit a wall
 
 These tools understand FastAPI DI and nomarr's architecture. Serena is a fallback for non-Python or when nomarr-dev tools are insufficient.
 
@@ -141,15 +150,16 @@ These tools understand FastAPI DI and nomarr's architecture. Serena is a fallbac
 
 - `edit_file_create` - Create new files atomically with mkdir -p behavior
 - `edit_file_replace_content` - Replace entire file contents (use for small files or complete rewrites)
-- `edit_file_insert_text` - Insert at precise positions (bof, eof, before_line, after_line) without string matching
+- `edit_file_insert_at_boundary` - Insert at beginning (`bof`) or end (`eof`) of file
+- `edit_file_insert_at_line` - Insert before or after a specific line number
 - `edit_file_copy_paste_text` - Copy text from sources to targets with caching (batch boilerplate duplication)
 
 **Additional atomic edit operations:**
 
 - `edit_file_move` - Move or rename a file within the workspace (single call, creates target parent dirs automatically)
 - `edit_file_replace_string` - Apply multiple string replacements atomically. Requires `expected_count` per replacement - fails if actual matches differ. For small strings, error suggests using `search_file_text` first to verify matches.
-- `edit_file_replace_line_range` - Replace specific line range with new content (use when you have exact line numbers)
-- `edit_file_move_text` - Move lines within same file or across files atomically
+- `edit_file_replace_by_content` - Replace content range by boundary text (no line numbers). Uses start/end content boundaries with expected_line_count validation. Fails on ambiguous matches.
+- `edit_file_move_by_content` - Move text between locations using content boundaries and target anchor. Supports same-file and cross-file moves.
 
 **Discovery tools:**
 
@@ -162,25 +172,31 @@ These tools understand FastAPI DI and nomarr's architecture. Serena is a fallbac
 |----------|------|-----|
 | Create multiple new files | `edit_file_create` | Atomic batch creation with automatic directory creation |
 | Replace entire file | `edit_file_replace_content` | Atomic replacement with context validation (first 2 + last 2 lines) |
-| Add import at top of file | `edit_file_insert_text` | Use `at: "bof"` or `at: "before_line"` with `line: 1` |
-| Add function at end of file | `edit_file_insert_text` | Use `at: "eof"` for appending |
-| Insert between existing lines | `edit_file_insert_text` | Use `at: "after_line"` with specific line number |
+| Add import at top of file | `edit_file_insert_at_boundary` | Use `position='bof'` for prepending |
+| Add function at end of file | `edit_file_insert_at_boundary` | Use `position='eof'` for appending |
+| Insert near existing code | `edit_file_insert_at_line` | Use `anchor` to find line, `position='before'` or `'after'` |
+| Replace small string (< 50 lines) | `edit_file_replace_string` | Content-based, requires exact match |
+| Replace large block (50+ lines) | `edit_file_replace_by_content` | Content boundaries + line count validation, no line numbers |
+| Move code block within/between files | `edit_file_move_by_content` | Source boundaries + target anchor, no line numbers |
 | Copy same code to many places | `edit_file_copy_paste_text` | Source cached once, pasted to multiple targets efficiently |
 | Copy boilerplate code to multiple places | `edit_file_copy_paste_text` | Primary use case - read once, paste everywhere |
 | Move or rename a file | `edit_file_move` | Single call, auto-creates target parent directories |
 
-**Critical rule: Coordinate space preservation**
+**Critical rule: Content anchors are sequential**
 
-When batching operations on the same file, all line/col numbers refer to the ORIGINAL file state:
+When batching `edit_file_insert_at_line` operations on the same file, each anchor resolves against the file state *after* prior insertions in the batch. This means anchors are applied top-to-bottom in order — not against the original file.
+
 ```python
-# Example: Insert 3 things into same file
-edit_file_insert_text([
-    {"path": "service.py", "at": "after_line", "line": 10, "content": "# Comment 1\n"},
-    {"path": "service.py", "at": "after_line", "line": 20, "content": "# Comment 2\n"},
-    {"path": "service.py", "at": "after_line", "line": 30, "content": "# Comment 3\n"}
+# Example: Insert 3 things into same file using content anchors
+edit_file_insert_at_line([
+    {"path": "service.py", "position": "after",
+     "anchor": "class MyService:", "content": "# Comment 1\n"},
+    {"path": "service.py", "position": "before",
+     "anchor": "def cleanup(", "content": "# Comment 2\n"},
+    {"path": "service.py", "position": "after",
+     "anchor": "return result", "content": "# Comment 3\n"}
 ])
-# Line 10, 20, 30 all refer to ORIGINAL file before any edits
-# Tool applies bottom-to-top automatically
+# Each anchor finds its match in the file as modified by prior ops
 ```
 
 **Batch boilerplate duplication example:**
@@ -195,6 +211,7 @@ edit_file_copy_paste_text([
      "target_path": "service2.py", "target_line": 15},
 ])
 # helpers.py read once, cached, pasted to all targets
+# Note: copy_paste_text still uses line numbers (source read-only, so safe)
 ```
 
 #### 5. Task Tracking for Long Operations
@@ -268,15 +285,7 @@ The MCP servers exist specifically to avoid context bloat and leverage architect
 
 ### Why This Hierarchy Works
 
-The semantic tools answer the *real* question, not the proxy question:
-
-| You think you need... | You're actually asking... | Use this instead |
-|-----------------------|--------------------------|------------------|
-| Read file imports | "What does this module depend on?" | `trace_module_calls`, `read_module_api` |
-| Read top of file | "What are the class attributes?" | `read_module_source` on the class |
-| Search for import statement | "Where is X defined?" | `locate_module_symbol` |
-| Read file to find function | "What's the module API?" | `read_module_api` |
-| Check if import is wrong | "Is there a layer violation?" | `lint_project_backend` |
+The semantic tools answer the *real* question, not the proxy question. Instead of reading file imports to understand dependencies, use `trace_module_calls`. Instead of reading the top of a file to find class attributes, use `read_module_source` on the class. The tools understand what you're actually asking.
 
 **Common anti-pattern: Reading imports**
 - Imports are implementation details, not architectural facts
@@ -286,7 +295,7 @@ The semantic tools answer the *real* question, not the proxy question:
 
 The `read_file_range` warning on Python files isn't naggy - it's catching you using the wrong tool. Imports are never the question. Relationships are the question.
 
-**After fully completing a task**, if you reached a conclusion about tool usage that isn't captured here, add a new row. This is collective model wisdom—don't update mid-task.
+**See the "Meta: Tool Usage Patterns" section below for the full proxy questions table and tool gotchas.**
 
 ---
 
@@ -355,39 +364,25 @@ Import-linter enforces layer boundaries.
 
 ---
 
-## Error Ownership (CRITICAL)
+## Error Ownership
 
 **You are the only one writing code in this codebase. There are no "pre-existing errors."**
 
-If `lint_project_backend` reports errors, you caused them—either in this context or a previous one. The chat being new does not absolve you. A previous context that broke things and hit its limit is still *you*.
+If `lint_project_backend` reports errors, you caused them—either in this context or a previous one. A previous context that broke things and hit its limit is still *you*.
 
-### Required Behavior When Errors Exist
+**Required behavior:**
 
 1. **Assume you caused it.** Do not dismiss errors as "pre-existing" or "outside scope."
 2. **Investigate before fixing.** Use `read_file_symbol_at_line`, `read_module_source`, `trace_module_calls` to understand *why* the error exists.
 3. **Fix the code, not the symptoms.** Change the implementation to satisfy the checker. Do not add `# noqa` or `# type: ignore` to silence it.
 4. **Verify the fix.** Run `lint_project_backend` again. Zero errors is the only acceptable state.
 
-### Suppression Comments Are Admission of Failure
-
-`# noqa` and `# type: ignore` mean: "I don't understand this error, so I'm hiding it."
-
-**Only acceptable when ALL are true:**
+**Suppression comments (`# noqa`, `# type: ignore`) are only acceptable when ALL are true:**
 - The error is a **verified false positive** (tool limitation, not your bug)
 - Fixing requires **changing external code** you don't control
 - You add an **inline comment explaining why** suppression is necessary
 
 Unexplained suppression comments are architectural violations.
-
-### Why This Rule Exists
-
-Previous contexts have:
-- Dismissed errors as "pre-existing" and moved on
-- Added noqa to silence errors they didn't understand
-- Left broken code for the next context to inherit
-- Created cascading failures that required full rewrites
-
-**Every error you ignore compounds.** The next context inherits your mess. Fix it now.
 
 ---
 
@@ -415,14 +410,30 @@ When you reach for `read_file_range` on Python code, stop and ask: **what am I a
 | Check if import is wrong | "Is there a layer violation?" | `lint_project_backend` |
 | Verify code was deleted | "Does this symbol still exist anywhere?" | `locate_module_symbol` (0 matches = deleted) |
 | Move/rename a file via terminal | "I need to relocate this file" | `edit_file_move` (single call, creates parent dirs) |
+| Run python -c to check signature/MRO | "What's the runtime signature/inheritance?" | `py_introspect` with multiple checks in one call |
 
 ### Tool Gotchas
 
-- `read_module_api` is AST-based; won't catch import errors. Use `python -c "import X"` for runtime verification.
+- `read_module_api` is AST-based; won't catch import errors. That's fine—AST tools are for understanding structure, not verifying imports work.
+- **Try AST tools first** (`read_module_api`, `read_module_source`). Only reach for `py_introspect` when you need actual runtime behavior (metaclass-modified MRO, dynamic inheritance).
+- **Use `py_introspect` for runtime verification instead of manual terminal commands.** It runs multiple checks atomically in an isolated subprocess (signatures, MRO, issubclass, docstrings, exception raising). Example: Instead of `python -c "from X import Y; print(inspect.signature(Y))"`, use `py_introspect` with `{"check": "signature", "target": "X.Y"}`. You can batch multiple checks in one call.
 - When a tool fails, don't swap to a familiar fallback—ask if you're using the wrong tool for the question. Example: `read_module_api` returns nothing → try `locate_module_symbol` or verify module path.
 - `read_file_range` warnings on Python files aren't naggy—they're catching you using the wrong tool. Imports are never the question; relationships are.
 
 **Add to these tables when you discover new patterns.** Keep entries concise and actionable.
+
+### Content-Based Edit Tool Guidance
+
+- **Boundary text is stripped-substring matched.** Leading/trailing whitespace is ignored. `"class Foo:"` matches `"    class Foo:"`. Use the most unique fragment on the line.
+- **Multi-line boundaries are supported.** Split on `\n`, each line matched consecutively. Use sparingly—single-line boundaries are clearer.
+- **Ambiguity = failure.** If your boundary matches multiple locations, the tool fails with diagnostic showing all match positions. Make boundaries more specific.
+- **`expected_line_count` is your safety net.** Always provide it for `edit_file_replace_by_content`. If the matched range has a different line count, the tool fails before writing.
+- **Boundaries are inclusive in `replace_by_content`.** The start and end boundary lines are replaced along with everything between them.
+- **Choose the right content-based tool:**
+  - Small, exact string replacement → `edit_file_replace_string`
+  - Large block replacement (50+ lines) → `edit_file_replace_by_content`
+  - Moving code within/between files → `edit_file_move_by_content`
+  - Inserting near known code → `edit_file_insert_at_line` with `anchor`
 
 ### When to Update These Instructions
 
@@ -441,122 +452,14 @@ Use Serena's `insert_after_symbol` or `replace_symbol_body` on the markdown file
 
 ---
 
-## Docker Test Environment
+## Docker Environment
 
-Use `.docker/compose.yaml` to run containerized test environment (app + ArangoDB). See `.docker/` directory for compose files and commands.
+For Docker development environment details (credentials, API authentication, ArangoDB queries, collection schema), see `docker.instructions.md` in the instructions folder.
 
-### Docker vs Native Dev
+**Key rules:**
+- Use `127.0.0.1` not `localhost` (Windows IPv6 issue causes 21-second hangs)
+- Set 60-120s timeouts for DB queries (large collections are not instant)
+- Use Docker for e2e tests and prod-like debugging; use native dev for faster iteration
 
-**Use Docker when:**
-- Reproducing prod-reported issues not visible in native dev
-- Running e2e tests with Playwright (`npx playwright test` in container)
-- Testing DB migration behavior
-- Verifying essentia audio analysis in prod-like environment
-
-**Use native dev when:**
-- Writing/debugging backend services (faster iteration)
-- Running lint/type checks
-- Unit/integration tests
-- Iterating on frontend components
-
-### Interacting with the Running Container
-
-**Credentials & Config:**
-- **Nomarr admin password**: Set in `.docker/nom-config/config.yaml` → `admin_password` field
-- **ArangoDB credentials**: Set in `.docker/.env` → `ARANGO_ROOT_PASSWORD` (default: `nomarr_dev_password`)
-- **Nomarr API port**: `8356` (mapped from container)
-- **ArangoDB port**: `8529` (mapped from container)
-
-**Nomarr API auth** (session-based):
-```powershell
-# 1. Login to get session token (password from .docker/nom-config/config.yaml → admin_password)
-$login = Invoke-RestMethod -Uri "http://127.0.0.1:8356/api/web/auth/login" -Method Post `
-  -ContentType "application/json" -Body '{"password":"<admin_password>"}'
-$token = $login.session_token
-
-# 2. Use token for authenticated requests
-$headers = @{Authorization="Bearer $token"}
-Invoke-RestMethod -Uri "http://127.0.0.1:8356/api/web/calibration/generate-histogram" `
-  -Method Post -Headers $headers
-```
-
-**ArangoDB direct queries** (via HTTP API):
-
-The ArangoDB password is in `.docker/.env` → `ARANGO_ROOT_PASSWORD`. Use basic auth with `root:<password>`.
-
-```powershell
-# Setup auth (reuse across queries)
-$auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("root:nomarr_dev_password"))
-
-# Single query
-$q = 'FOR doc IN libraries RETURN doc'
-$body = @{query=$q} | ConvertTo-Json
-$r = Invoke-RestMethod -Uri "http://127.0.0.1:8529/_db/nomarr/_api/cursor" -Method Post `
-  -Body $body -ContentType "application/json" -Headers @{Authorization="Basic $auth"}
-$r.result | ConvertTo-Json -Depth 5
-```
-
-```powershell
-# Batch multiple queries (useful for investigating DB state)
-$queries = @(
-  "RETURN LENGTH(library_files)"
-  "RETURN LENGTH(tags)"
-  "RETURN LENGTH(song_tag_edges)"
-  "FOR lib IN libraries RETURN { name: lib.name, scan_status: lib.scan_status }"
-)
-foreach ($q in $queries) {
-  Write-Host "=== $q ==="
-  $body = @{query=$q} | ConvertTo-Json
-  $r = Invoke-RestMethod -Uri "http://127.0.0.1:8529/_db/nomarr/_api/cursor" -Method Post `
-    -Body $body -ContentType "application/json" -Headers @{Authorization="Basic $auth"}
-  $r.result | ConvertTo-Json -Depth 5
-}
-```
-
-**IMPORTANT: Query and API performance expectations:**
-- AQL queries against `song_tag_edges` (~200k+ docs) or `tags` (~30k+ docs) are **not instant** — expect 5-30+ seconds
-- Full-table scans (e.g., orphaned edge checks) can take 30-60+ seconds
-- Calibration generation scans all edges and takes 30-120 seconds depending on data volume
-- API calls that trigger background work (calibration, scanning) return quickly but the work continues in-container
-- **Always set generous timeouts** (60-120s minimum) for `Invoke-RestMethod` and `run_in_terminal` when running DB queries
-- **Never assume a query failed because it didn't return instantly** — check with longer timeouts before investigating
-
-**CRITICAL: Use `127.0.0.1` not `localhost`** — On Windows, `localhost` resolves to IPv6 (`::1`) first. Docker only binds IPv4, so `localhost` connections hang ~21 seconds before falling back. Always use `127.0.0.1` for both Nomarr API and ArangoDB.
-
-**Key collections:**
-- `libraries` — library config and scan state
-- `library_files` — scanned audio files (one doc per file)
-- `tags` — tag vertices with `{rel, value}` (e.g. `{rel: "artist", value: "Beatles"}`)
-- `song_tag_edges` — edges from `library_files/*` → `tags/*` (edge `_from` = file, `_to` = tag)
-- `library_folders` — folder-level cache for quick scan skipping
-- `calibration_state`, `calibration_history` — calibration data
-- `sessions` — auth sessions
-- `meta` — schema version and app config
-
-There are **no** separate `songs`, `artists`, or `albums` collections. Browse/entity data comes from `tags` filtered by `rel` (e.g. `rel="artist"`).
-
-**Useful investigative queries:**
-```aql
--- List all collections
-RETURN COLLECTIONS()[*].name
-
--- Check collection counts
-RETURN LENGTH(library_files)
-
--- See unique tag rels
-FOR t IN tags COLLECT rel = t.rel WITH COUNT INTO c SORT c DESC RETURN {rel, c}
-
--- Sample edges to verify direction
-FOR edge IN song_tag_edges LIMIT 3 RETURN { from: edge._from, to: edge._to }
-
--- Find orphaned edges (pointing to deleted files)
-RETURN LENGTH(
-  FOR edge IN song_tag_edges
-    FILTER !DOCUMENT(edge._from)
-    RETURN 1
-)
-```
-
----
 
 End of always-on instructions.

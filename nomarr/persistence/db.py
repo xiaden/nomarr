@@ -19,13 +19,16 @@ from nomarr.persistence.database.ml_capacity_aql import MLCapacityOperations
 from nomarr.persistence.database.segment_scores_stats_aql import SegmentScoresStatsOperations
 from nomarr.persistence.database.sessions_aql import SessionOperations
 from nomarr.persistence.database.tags_aql import TagOperations
-from nomarr.persistence.database.vectors_track_aql import VectorsTrackOperations
+from nomarr.persistence.database.vectors_track_aql import (
+    VectorsTrackColdOperations,
+    VectorsTrackHotOperations,
+)
 from nomarr.persistence.database.worker_claims_aql import WorkerClaimsOperations
 from nomarr.persistence.database.worker_restart_policy_aql import WorkerRestartPolicyOperations
 
 __all__ = ["SCHEMA_VERSION", "Database"]
 
-SCHEMA_VERSION = 6  # applied_migrations collection for database migration tracking
+SCHEMA_VERSION = 7  # hot/cold vectors_track collections (split for write/search optimization)
 
 # ==================== SCHEMA VERSIONING POLICY ====================
 # Schema versioning uses forward-only migrations (alpha policy).
@@ -124,7 +127,7 @@ class Database:
         # Initialize operation classes - one per collection
         self.meta = MetaOperations(self.db)
         self.libraries = LibrariesOperations(self.db)
-        self.library_files = LibraryFilesOperations(self.db)
+        self.library_files = LibraryFilesOperations(self.db, parent_db=self)
         self.library_folders = LibraryFoldersOperations(self.db)
         self.sessions = SessionOperations(self.db)
         self.calibration_state = CalibrationStateOperations(self.db)
@@ -139,15 +142,20 @@ class Database:
         # Migration tracking operations (database migration system)
         self.migrations = MigrationOperations(self.db)
 
-        # Vectors track — one Operations instance per backbone, created lazily
-        self.vectors_track: dict[str, VectorsTrackOperations] = {}
+        # Vectors track — one Hot Operations instance per backbone, created lazily
+        self.vectors_track: dict[str, VectorsTrackHotOperations] = {}
+
+        # Cold operations cache (for read/search)
+        self._vectors_track_cold: dict[str, VectorsTrackColdOperations] = {}
 
         # Lazy import to avoid circular dependency
         # from nomarr.persistence.database.joined_queries_aql import JoinedQueryOperations
         # self.joined_queries = JoinedQueryOperations(self.db)
 
-    def register_vectors_track_backbone(self, backbone_id: str) -> VectorsTrackOperations:
-        """Get or create a VectorsTrackOperations instance for a backbone.
+    def register_vectors_track_backbone(self, backbone_id: str) -> VectorsTrackHotOperations:
+        """Get or create a VectorsTrackHotOperations instance for a backbone.
+
+        Hot operations are for write-only vector storage (no vector index overhead).
 
         Lazily creates and caches the Operations instance on first access.
 
@@ -155,12 +163,100 @@ class Database:
             backbone_id: Backbone identifier (e.g., "effnet", "yamnet").
 
         Returns:
-            The cached VectorsTrackOperations for this backbone.
+            The cached VectorsTrackHotOperations for this backbone.
 
         """
         if backbone_id not in self.vectors_track:
-            self.vectors_track[backbone_id] = VectorsTrackOperations(self.db, backbone_id)
+            self.vectors_track[backbone_id] = VectorsTrackHotOperations(self.db, backbone_id)
         return self.vectors_track[backbone_id]
+
+    def get_vectors_track_cold(self, backbone_id: str) -> VectorsTrackColdOperations:
+        """Get or create a VectorsTrackColdOperations instance for a backbone.
+
+        Cold operations are for read/search on promoted vectors with vector indexes.
+
+        Lazily creates and caches the Operations instance on first access.
+
+        Args:
+            backbone_id: Backbone identifier (e.g., "effnet", "yamnet").
+
+        Returns:
+            The cached VectorsTrackColdOperations for this backbone.
+
+        """
+        if backbone_id not in self._vectors_track_cold:
+            self._vectors_track_cold[backbone_id] = VectorsTrackColdOperations(self.db, backbone_id)
+        return self._vectors_track_cold[backbone_id]
+
+    def delete_vectors_by_file_id(self, file_id: str) -> int:
+        """Delete vectors for a file from ALL backbones (both hot and cold).
+
+        Single orchestration point for cascade delete. Iterates all registered
+        backbones and removes vectors from both hot and cold collections.
+
+        Args:
+            file_id: Library file document ID.
+
+        Returns:
+            Total number of vectors deleted across all backbones.
+
+        """
+        total_deleted = 0
+
+        # Delete from all hot collections
+        for hot_ops in self.vectors_track.values():
+            deleted = hot_ops.delete_by_file_id(file_id)
+            total_deleted += deleted
+
+        # Delete from all cold collections
+        for cold_ops in self._vectors_track_cold.values():
+            deleted = cold_ops.delete_by_file_id(file_id)
+            total_deleted += deleted
+
+        # Also check cold collections not yet cached
+        for backbone_id in self.vectors_track:
+            if backbone_id not in self._vectors_track_cold:
+                cold_ops = self.get_vectors_track_cold(backbone_id)
+                deleted = cold_ops.delete_by_file_id(file_id)
+                total_deleted += deleted
+
+        return total_deleted
+
+    def delete_vectors_by_file_ids(self, file_ids: list[str]) -> int:
+        """Delete vectors for multiple files from ALL backbones (both hot and cold).
+
+        Bulk version of delete_vectors_by_file_id.
+
+        Args:
+            file_ids: List of library file document IDs.
+
+        Returns:
+            Total number of vectors deleted across all backbones.
+
+        """
+        if not file_ids:
+            return 0
+
+        total_deleted = 0
+
+        # Delete from all hot collections
+        for hot_ops in self.vectors_track.values():
+            deleted = hot_ops.delete_by_file_ids(file_ids)
+            total_deleted += deleted
+
+        # Delete from all cold collections
+        for cold_ops in self._vectors_track_cold.values():
+            deleted = cold_ops.delete_by_file_ids(file_ids)
+            total_deleted += deleted
+
+        # Also check cold collections not yet cached
+        for backbone_id in self.vectors_track:
+            if backbone_id not in self._vectors_track_cold:
+                cold_ops = self.get_vectors_track_cold(backbone_id)
+                deleted = cold_ops.delete_by_file_ids(file_ids)
+                total_deleted += deleted
+
+        return total_deleted
 
     def ensure_schema_version(self) -> int:
         """Read current schema version, initializing if needed.

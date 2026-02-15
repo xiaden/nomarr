@@ -36,6 +36,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from mcp_code_intel.helpers.content_boundaries import find_anchor_line
 from mcp_code_intel.helpers.file_helpers import (
     atomic_write,
     build_new_context,
@@ -60,13 +61,18 @@ class InsertBoundaryOp(BaseModel):
 
 
 class InsertLineOp(BaseModel):
-    """Operation for inserting text before or after a specific line."""
+    """Operation for inserting text before or after a content anchor."""
 
     path: str = Field(description="File path (workspace-relative or absolute)")
     content: str = Field(description="Text to insert")
-    line: int = Field(description="Line number (1-indexed)")
+    anchor: str = Field(
+        description=(
+            "Content to anchor insertion. Stripped substring match against "
+            "file lines. Must match exactly one line."
+        ),
+    )
     position: str = Field(
-        description="Insert before or after the line",
+        description="Insert before or after the anchor line",
         pattern=r"^(before|after)$",
     )
 
@@ -153,24 +159,29 @@ def _insert_at_line(
     lines: list[str],
     content: str,
     *,
-    line: int,
+    anchor: str,
     position: str,
 ) -> tuple[list[str], int, int] | str:
-    """Insert text before or after a specific line.
+    """Insert text before or after a line identified by content anchor.
 
     Args:
         lines: File lines (without trailing newlines)
         content: Text to insert
-        line: Target line number (1-indexed)
+        anchor: Content substring to locate the target line
         position: 'before' or 'after'
 
     Returns:
         Tuple of (modified_lines, start_line, end_line) or error message
 
     """
+    anchor_result = find_anchor_line(lines, anchor)
+    if isinstance(anchor_result, str):
+        return anchor_result
+
+    line: int = anchor_result  # 1-indexed
     total_lines = len(lines)
 
-    # Validate line number
+    # Validate line number (should always be valid from find_anchor_line)
     line_error = validate_line_range(line, line, total_lines)
     if line_error:
         return line_error
@@ -203,19 +214,24 @@ def _insert_text(
         return _insert_at_boundary(lines, content, position=at)
 
     # before_line or after_line
-    line = op_dict.get("line")
-    if line is None:
-        return "line is required for before_line/after_line"
+    anchor = op_dict.get("anchor")
+    if anchor is None:
+        return "anchor is required for before_line/after_line"
 
     position = "before" if at == "before_line" else "after"
-    return _insert_at_line(lines, content, line=line, position=position)
+    return _insert_at_line(lines, content, anchor=anchor, position=position)
 
 
 def _apply_insertions_to_file(
     file_path: Path,
     ops_for_file: list[tuple[int, dict]],
 ) -> tuple[list[AppliedOp], list[FailedOp]]:
-    """Apply all insertions to a single file (bottom-to-top to preserve coordinates)."""
+    """Apply all insertions to a single file.
+
+    With content-anchor based operations, each insertion resolves its anchor
+    against the current state of the file after previous insertions.
+    Operations are applied in the order they are received.
+    """
     # Read file
     file_data = read_file_with_metadata(file_path)
     if "error" in file_data:
@@ -232,13 +248,10 @@ def _apply_insertions_to_file(
     original_mtime = file_data["mtime"]
     lines = content.split("\n")
 
-    # Sort operations bottom-to-top (descending line order)
-    sorted_ops = sorted(ops_for_file, key=lambda x: x[1].get("line") or 0, reverse=True)
-
-    # Apply insertions bottom-to-top
+    # Apply insertions in order (anchors resolve against current state)
     applied_ops: list[AppliedOp] = []
 
-    for idx, op_dict in sorted_ops:
+    for idx, op_dict in ops_for_file:
         result = _insert_text(lines, op_dict)
 
         if isinstance(result, str):  # Error

@@ -21,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 
 import nomarr
 from nomarr.interfaces.api import web
-from nomarr.interfaces.api.v1 import admin_if, public_if
+from nomarr.interfaces.api.v1 import admin_if, public_if, vectors_if
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +56,8 @@ async def exception_handler(request, exc: Exception):
 integration_router = APIRouter(prefix="/api")
 integration_router.include_router(public_if.router, tags=["Integration: Public"])
 integration_router.include_router(admin_if.router, tags=["Integration: Admin"])
+integration_router.include_router(vectors_if.router, tags=["Integration: Vectors"])
+integration_router.include_router(vectors_if.admin_router, tags=["Integration: Vectors Admin"])
 api_app.include_router(integration_router)
 api_app.include_router(web.router)
 public_html_dir = Path(nomarr.__file__).parent / "public_html"

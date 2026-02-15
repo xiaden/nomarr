@@ -13,6 +13,7 @@ import { ConfirmDialog, PageContainer } from "@shared/components/ui";
 
 import { InspectTags } from "./components/InspectTags";
 import { SystemControls } from "./components/SystemControls";
+import { VectorMaintenance } from "./components/VectorMaintenance";
 import { WorkerControls } from "./components/WorkerControls";
 import { useAdminActions } from "./hooks/useAdminActions";
 
@@ -29,6 +30,7 @@ export function AdminPage() {
           actionLoading={actionLoading}
         />
         <SystemControls onRestart={handleRestart} actionLoading={actionLoading} />
+        <VectorMaintenance />
         <InspectTags />
       </Stack>
 

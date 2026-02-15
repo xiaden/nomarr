@@ -22,9 +22,11 @@ const navItems: NavItem[] = [
   { path: "/browse", label: "Library" },
   { path: "/insights", label: "Insights" },
   { path: "/calibration", label: "Calibration" },
+  { path: "/vector-search", label: "Vector Search" },
   { path: "/navidrome", label: "Navidrome" },
   { path: "/playlist-import", label: "Playlist Import" },
   { path: "/config", label: "Config" },
+  { path: "/admin", label: "Admin" },
 ];
 
 export { SIDEBAR_WIDTH };

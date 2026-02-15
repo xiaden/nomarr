@@ -1,0 +1,247 @@
+"""Vector search and maintenance API endpoints.
+
+Routes:
+- /v1/vectors/search (POST) - Vector similarity search
+- /v1/admin/vectors/stats (GET) - Get hot/cold stats
+- /v1/admin/vectors/promote (POST) - Promote & rebuild
+
+These routes will be mounted under /api via the integration router.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING, Annotated
+
+from fastapi import APIRouter, Depends, HTTPException
+
+from nomarr.interfaces.api.auth import verify_key
+from nomarr.interfaces.api.types.vector_types import (
+    VectorGetResponse,
+    VectorHotColdStats,
+    VectorPromoteRequest,
+    VectorPromoteResponse,
+    VectorSearchRequest,
+    VectorSearchResponse,
+    VectorSearchResultItem,
+    VectorStatsResponse,
+)
+from nomarr.interfaces.api.web.dependencies import (
+    get_vector_maintenance_service,
+    get_vector_search_service,
+)
+
+logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from nomarr.services.domain.vector_maintenance_svc import VectorMaintenanceService
+    from nomarr.services.domain.vector_search_svc import VectorSearchService
+
+router = APIRouter(tags=["vectors"], prefix="/v1/vectors")
+
+
+@router.post("/search", dependencies=[Depends(verify_key)])
+async def search_vectors(
+    request: VectorSearchRequest,
+    vector_search_service: Annotated[
+        VectorSearchService, Depends(get_vector_search_service)
+    ],
+) -> VectorSearchResponse:
+    """Search for similar vectors using ANN.
+
+    Searches cold collection only (promoted vectors with indexes).
+    Returns results as of last rebuild (stale is acceptable).
+
+    Requires:
+    - Authentication (admin or library owner)
+    - Cold collection must have vector index
+
+    Args:
+        request: Search parameters (backbone_id, vector, limit, min_score)
+
+    Returns:
+        VectorSearchResponse with matching vectors and scores
+
+    Raises:
+        400: If vector dimension doesn't match backbone
+        404: If backbone not found
+        503: If cold collection has no vector index (search not available)
+    """
+    try:
+        # Call service layer
+        results = vector_search_service.search_similar_tracks(
+            backbone_id=request.backbone_id,
+            vector=request.vector,
+            limit=request.limit,
+            min_score=request.min_score,
+        )
+
+        # Convert to response model
+        result_items = [
+            VectorSearchResultItem(
+                file_id=result["file_id"],
+                score=result["score"],
+                vector=result["vector"],
+            )
+            for result in results
+        ]
+
+        return VectorSearchResponse(results=result_items)
+
+    except ValueError as e:
+        # Service raises ValueError for validation errors (e.g., no vector index)
+        logger.warning(f"Vector search validation error: {e}")
+        raise HTTPException(status_code=503, detail=str(e)) from e
+
+    except RuntimeError as e:
+        # Service raises RuntimeError for query failures
+        logger.error(f"Vector search failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Vector search failed") from e
+
+    except Exception as e:
+        logger.error(f"Unexpected error in vector search: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error") from e
+
+
+@router.get("/track", dependencies=[Depends(verify_key)])
+async def get_track_vector(
+    backbone_id: str,
+    file_id: str,
+    vector_search_service: Annotated[
+        VectorSearchService, Depends(get_vector_search_service)
+    ],
+) -> VectorGetResponse:
+    """Get embedding vector for a specific track.
+
+    Tries cold collection first, then falls back to hot if not found.
+    Use this to retrieve a track's vector before performing similarity search.
+
+    Requires:
+    - Authentication (admin or library owner)
+
+    Args:
+        backbone_id: Backbone identifier (e.g., "effnet", "yamnet")
+        file_id: Library file document ID
+
+    Returns:
+        VectorGetResponse with the track's embedding vector
+
+    Raises:
+        404: If vector not found in hot or cold collections
+    """
+    result = vector_search_service.get_track_vector(backbone_id, file_id)
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No vector found for file '{file_id}' with backbone '{backbone_id}'",
+        )
+
+    return VectorGetResponse(
+        file_id=file_id,
+        backbone_id=backbone_id,
+        vector=result["vector"],
+    )
+
+
+# Admin endpoints for vector maintenance
+admin_router = APIRouter(tags=["admin"], prefix="/v1/admin/vectors")
+
+
+@admin_router.get("/stats", dependencies=[Depends(verify_key)])
+async def get_vector_stats(
+    vector_maintenance_service: Annotated[
+        VectorMaintenanceService,
+        Depends(get_vector_maintenance_service),
+    ],
+) -> VectorStatsResponse:
+    """Get hot/cold statistics for all backbones.
+
+    Returns stats for all registered vector backbones.
+    Use this endpoint to monitor hot collection sizes and decide when to rebuild.
+
+    Requires:
+    - Authentication (admin only)
+
+    Returns:
+        VectorStatsResponse with stats for all backbones
+    """
+
+    # Get all registered backbones from app state
+    # For now, return stats for known backbones (effnet, yamnet, etc.)
+    # TODO: Get this from a backbone registry or config
+    known_backbones = ["discogs_effnet"]  # Placeholder - should come from config
+
+    stats_list = []
+    for backbone_id in known_backbones:
+        try:
+            stats = vector_maintenance_service.get_hot_cold_stats(backbone_id)
+            stats_list.append(
+                VectorHotColdStats(
+                    backbone_id=backbone_id,
+                    hot_count=int(stats["hot_count"]),
+                    cold_count=int(stats["cold_count"]),
+                    index_exists=bool(stats["index_exists"]),
+                )
+            )
+        except Exception as e:
+            logger.warning(f"Failed to get stats for backbone {backbone_id}: {e}")
+            # Skip backbones that don't exist or have errors
+            continue
+
+    return VectorStatsResponse(stats=stats_list)
+
+
+@admin_router.post("/promote", dependencies=[Depends(verify_key)])
+async def promote_vectors(
+    request: VectorPromoteRequest,
+    vector_maintenance_service: Annotated[
+        VectorMaintenanceService,
+        Depends(get_vector_maintenance_service),
+    ],
+) -> VectorPromoteResponse:
+    """Promote vectors from hot to cold and rebuild vector index.
+
+    Synchronous operation - blocks until complete (may take several minutes).
+    Auto-calculates nlists if not provided based on collection size.
+
+    Requires:
+    - Authentication (admin only)
+
+    Args:
+        request: Promote parameters (backbone_id, optional nlists)
+
+    Returns:
+        VectorPromoteResponse with operation status
+
+    Raises:
+        400: If backbone not found or invalid parameters
+        500: If promote & rebuild fails
+        504: If operation times out (>10 minutes)
+    """
+    try:
+        # Call service layer (synchronous - blocks until complete)
+        vector_maintenance_service.promote_and_rebuild(
+            backbone_id=request.backbone_id,
+            nlists=request.nlists,
+        )
+
+        return VectorPromoteResponse(
+            status="success",
+            backbone_id=request.backbone_id,
+            message=f"Vectors promoted and index rebuilt for backbone '{request.backbone_id}'",
+        )
+
+    except ValueError as e:
+        # Service raises ValueError for validation errors
+        logger.warning(f"Vector promote validation error: {e}")
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    except RuntimeError as e:
+        # Service raises RuntimeError for operation failures
+        logger.error(f"Vector promote failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Promote & rebuild failed") from e
+
+    except Exception as e:
+        logger.error(f"Unexpected error in vector promote: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error") from e

@@ -344,6 +344,18 @@ class Application:
             ),
             library_service=self.services.get("library"),
         ))
+        # Vector services (search and maintenance)
+        from nomarr.services.domain.vector_maintenance_svc import VectorMaintenanceService
+        from nomarr.services.domain.vector_search_svc import VectorSearchService
+
+        vector_search_service = VectorSearchService(db=self.db)
+        self.register_service("vector_search", vector_search_service)
+
+        vector_maintenance_service = VectorMaintenanceService(
+            db=self.db,
+            models_dir=self.models_dir,
+        )
+        self.register_service("vector_maintenance", vector_maintenance_service)
         logger.info("[Application] Initializing discovery-based worker system...")
         processor_config = self._config_service.make_processor_config()
         worker_count = self._config_service.get_worker_count("tagger")

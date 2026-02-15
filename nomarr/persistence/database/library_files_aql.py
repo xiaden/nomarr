@@ -14,13 +14,16 @@ from nomarr.persistence.arango_client import DatabaseLike
 if TYPE_CHECKING:
     from arango.cursor import Cursor
 
+    from nomarr.persistence.db import Database
+
 
 class LibraryFilesOperations:
     """Operations for the library_files collection."""
 
-    def __init__(self, db: DatabaseLike) -> None:
+    def __init__(self, db: DatabaseLike, parent_db: "Database | None" = None) -> None:
         self.db = db
         self.collection = db.collection("library_files")
+        self.parent_db = parent_db  # For accessing centralized vector deletion
 
     def upsert_library_file(
         self,
@@ -513,14 +516,9 @@ class LibraryFilesOperations:
             file_id: Document _id (e.g., "library_files/12345")
 
         """
-        # Delete vectors_track first (derived data — per-backbone collections)
-        for coll_info in self.db.collections():  # type: ignore[union-attr]
-            coll_name = coll_info["name"]
-            if coll_name.startswith("vectors_track__"):
-                self.db.aql.execute(
-                    f"FOR doc IN {coll_name} FILTER doc.file_id == @file_id REMOVE doc IN {coll_name}",
-                    bind_vars={"file_id": file_id},
-                )
+        # Delete vectors from ALL backbones (hot + cold) via centralized orchestration
+        if self.parent_db is not None:
+            self.parent_db.delete_vectors_by_file_id(file_id)
 
         # Delete segment_scores_stats (derived data)
         self.db.aql.execute(
@@ -661,30 +659,30 @@ class LibraryFilesOperations:
         if not paths:
             return 0
 
-        # Delete vectors_track first (derived data — per-backbone collections)
-        for coll_info in self.db.collections():  # type: ignore[union-attr]
-            coll_name = coll_info["name"]
-            if coll_name.startswith("vectors_track__"):
-                self.db.aql.execute(
-                    f"""
-                    LET ids = (FOR f IN library_files FILTER f.path IN @paths RETURN f._id)
-                    FOR doc IN {coll_name}
-                        FILTER doc.file_id IN ids
-                        REMOVE doc IN {coll_name}
-                    """,
-                    bind_vars={"paths": paths},
-                )
+        # Collect file_ids for bulk vector deletion
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(
+                "FOR f IN library_files FILTER f.path IN @paths RETURN f._id",
+                bind_vars={"paths": paths},
+            ),
+        )
+        file_ids = list(cursor)
+
+        # Delete vectors from ALL backbones (hot + cold) via centralized orchestration
+        if self.parent_db is not None and file_ids:
+            self.parent_db.delete_vectors_by_file_ids(file_ids)
 
         # Delete segment_scores_stats (derived data — single-pass via collected IDs)
-        self.db.aql.execute(
-            """
-            LET ids = (FOR f IN library_files FILTER f.path IN @paths RETURN f._id)
-            FOR doc IN segment_scores_stats
-                FILTER doc.file_id IN ids
-                REMOVE doc IN segment_scores_stats
-            """,
-            bind_vars={"paths": paths},
-        )
+        if file_ids:
+            self.db.aql.execute(
+                """
+                FOR doc IN segment_scores_stats
+                    FILTER doc.file_id IN @file_ids
+                    REMOVE doc IN segment_scores_stats
+                """,
+                bind_vars={"file_ids": file_ids},
+            )
 
         # Delete edges (edges go _from=library_files/* -> _to=tags/*)
         self.db.aql.execute(

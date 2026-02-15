@@ -19,6 +19,8 @@ from nomarr.persistence.arango_client import DatabaseLike
 logger = logging.getLogger(__name__)
 
 
+
+
 def ensure_schema(db: DatabaseLike, *, models_dir: str | None = None) -> None:
     """Ensure all collections, indexes, and graphs exist.
 
@@ -28,7 +30,7 @@ def ensure_schema(db: DatabaseLike, *, models_dir: str | None = None) -> None:
     Args:
         db: ArangoDB database handle
         models_dir: Path to ML models directory. When provided, creates
-            per-backbone ``vectors_track__*`` collections and indexes.
+            per-backbone ``vectors_track_hot__*`` collections.
 
     """
     _create_collections(db)
@@ -37,7 +39,7 @@ def ensure_schema(db: DatabaseLike, *, models_dir: str | None = None) -> None:
     _validate_no_legacy_calibration(db)
     if models_dir:
         _create_vectors_track_collections(db, models_dir)
-        _create_vectors_track_indexes(db, models_dir)
+
 
 
 def _create_collections(db: DatabaseLike) -> None:
@@ -325,100 +327,27 @@ def _discover_backbone_ids(models_dir: str) -> list[str]:
         return []
 
 
+
+
 def _create_vectors_track_collections(db: DatabaseLike, models_dir: str) -> None:
-    """Create a ``vectors_track__{backbone}`` collection per discovered backbone.
+    """Create a ``vectors_track_hot__{backbone}`` collection per discovered backbone.
+
+    Hot collections must never have vector indexes. Use promote_and_rebuild_workflow
+    to create cold indexes after ML processing completes.
 
     Idempotent — skips existing collections.
     """
     for backbone in _discover_backbone_ids(models_dir):
-        collection_name = f"vectors_track__{backbone}"
+        collection_name = f"vectors_track_hot__{backbone}"
         if not db.has_collection(collection_name):
             with contextlib.suppress(CollectionCreateError):
                 db.create_collection(collection_name)
                 logger.info("[bootstrap] Created collection %s", collection_name)
 
+        # Unique persistent index on _key (enforce uniqueness invariant for convergent drain)
+        _ensure_index(db, collection_name, "persistent", ["_key"], unique=True)
+
         # Persistent index on file_id for cascade delete performance
         _ensure_index(db, collection_name, "persistent", ["file_id"])
 
 
-def _create_vectors_track_indexes(db: DatabaseLike, models_dir: str) -> None:
-    """Create vector indexes on ``vectors_track__{backbone}`` collections.
-
-    Vector indexes require a fixed ``dimension`` parameter that matches the
-    backbone's embedding dimension. Dimension is probed from the sidecar
-    ``outputs`` schema — specifically the output with ``output_purpose:
-    "embeddings"``. If unknown, the index is deferred until next startup.
-    """
-    try:
-        from nomarr.components.ml.ml_discovery_comp import discover_heads
-
-        heads = discover_heads(models_dir)
-    except Exception:
-        return
-
-    # Group heads by backbone, take first to probe embed_dim
-    seen: set[str] = set()
-    for head in heads:
-        if head.backbone in seen:
-            continue
-        seen.add(head.backbone)
-
-        collection_name = f"vectors_track__{head.backbone}"
-        if not db.has_collection(collection_name):
-            continue
-
-        # Probe embedding dimension from sidecar outputs with output_purpose="embeddings"
-        embed_dim: int | None = None
-        if head.embedding_sidecar:
-            outputs = head.embedding_sidecar.outputs
-            if outputs and isinstance(outputs, list):
-                for output in outputs:
-                    if (
-                        isinstance(output, dict)
-                        and output.get("output_purpose") == "embeddings"
-                    ):
-                        shape = output.get("shape")
-                        if isinstance(shape, list) and len(shape) >= 2:
-                            embed_dim = int(shape[-1])
-                        break
-
-        if embed_dim is None or embed_dim <= 0:
-            logger.info(
-                "[bootstrap] Cannot determine embed_dim for %s — vector index deferred",
-                head.backbone,
-            )
-            continue
-
-        # Check if vector index already exists
-        coll = db.collection(collection_name)
-        existing_indexes = coll.indexes()
-        has_vector_index = any(
-            idx.get("type") == "vector" for idx in existing_indexes  # type: ignore[union-attr]
-        )
-        if has_vector_index:
-            continue
-
-        try:
-            coll.add_index(  # type: ignore[attr-defined]  # exists in python-arango 8.x, stubs incomplete
-                {
-                    "type": "vector",
-                    "fields": ["vector"],
-                    "params": {
-                        "metric": "cosine",
-                        "dimension": embed_dim,
-                        "nLists": 10,
-                    },
-                },
-            )
-            logger.info(
-                "[bootstrap] Created vector index on %s (dim=%d, metric=cosine)",
-                collection_name,
-                embed_dim,
-            )
-        except Exception:
-            logger.warning(
-                "[bootstrap] Failed to create vector index on %s (dim=%d) — will retry next startup",
-                collection_name,
-                embed_dim,
-                exc_info=True,
-            )

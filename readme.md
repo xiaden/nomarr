@@ -34,6 +34,7 @@ A BIG CAPITAL WARNING that the EFFNET embedder (so any EFFNET HEADS used) REQUIR
 - **📥 Playlist Import** — Convert Spotify and Deezer playlists to local M3U with fuzzy matching, metadata display, and manual search
 - **⚡ GPU Accelerated** — NVIDIA CUDA support for fast ML inference
 - **🎨 Rich Metadata** — Writes probabilities, tiers, and aggregated mood tags in native format
+- **🧠 Vector Search** — Cold-only ANN search with manual promote & rebuild workflow for predictable "as of last rebuild" results
 - **🔐 Secure** — API key authentication for automation, session-based auth for web UI
 - **🐳 Docker Native** — Compose-based deployment with NVIDIA GPU passthrough and ArangoDB backend
 
