@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.types.vector_types import (
     VectorGetResponse,
     VectorHotColdStats,
@@ -26,7 +27,6 @@ from nomarr.interfaces.api.types.vector_types import (
     VectorSearchResultItem,
     VectorStatsResponse,
 )
-from nomarr.interfaces.api.web.auth_if import verify_session
 from nomarr.interfaces.api.web.dependencies import (
     get_vector_maintenance_service,
     get_vector_search_service,
