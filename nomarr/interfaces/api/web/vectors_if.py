@@ -42,7 +42,9 @@ router = APIRouter(tags=["vectors"], prefix="/vectors")
 
 
 @router.get("/backbones", dependencies=[Depends(verify_session)])
-async def list_backbones() -> dict[str, list[str]]:
+async def list_backbones(
+    vector_maintenance_service: VectorMaintenanceService = Depends(get_vector_maintenance_service),
+) -> dict[str, list[str]]:
     """List available vector backbones.
 
     Returns backbone IDs discovered from models directory structure.
@@ -55,16 +57,7 @@ async def list_backbones() -> dict[str, list[str]]:
         Dict with 'backbones' key containing list of available backbone IDs
 
     """
-    import os
-    from pathlib import Path
-
-    models_dir = Path(os.environ.get("NOMARR_MODELS", "build_resources/models"))
-    backbones = [
-        p.name for p in models_dir.iterdir()
-        if p.is_dir() and ((p / "embeddings").exists() or (p / "embedding").exists())
-    ]
-
-    return {"backbones": backbones}
+    return {"backbones": vector_maintenance_service.list_backbones()}
 
 
 @router.post("/search", dependencies=[Depends(verify_session)])
@@ -191,18 +184,9 @@ async def get_vector_stats(
 
     """
     import asyncio
-
-    # Discover backbones from models directory structure
-    # models/<backbone>/embeddings/ or models/<backbone>/embedding/ indicates a valid backbone
-    import os
     from concurrent.futures import ThreadPoolExecutor
-    from pathlib import Path
 
-    models_dir = Path(os.environ.get("NOMARR_MODELS", "build_resources/models"))
-    known_backbones = [
-        p.name for p in models_dir.iterdir()
-        if p.is_dir() and ((p / "embeddings").exists() or (p / "embedding").exists())
-    ]
+    known_backbones = vector_maintenance_service.list_backbones()
 
     def _get_stats_sync() -> list[VectorHotColdStats]:
         """Run blocking DB queries in thread pool."""

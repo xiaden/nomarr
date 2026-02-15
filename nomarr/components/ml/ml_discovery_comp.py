@@ -226,6 +226,47 @@ def get_head_output_node(head_type: str, sidecar: Sidecar) -> str:
 _REGRESSION_HEADS = {"approachability_regression", "engagement_regression"}
 
 
+
+def discover_backbones(models_dir: str) -> list[str]:
+    """Discover available embedding backbones from folder structure.
+
+    A backbone is valid if it has an embeddings/ (or embedding/) subdirectory
+    containing at least one .pb graph file.
+
+    Structure expected:
+        models/<backbone>/embeddings/*.pb  (or embedding/*.pb for musicnn)
+
+    Args:
+        models_dir: Root directory containing model folders
+
+    Returns:
+        Sorted list of backbone identifiers (e.g., ["effnet", "musicnn"])
+
+    """
+    backbones: list[str] = []
+
+    for backbone_dir in glob.glob(os.path.join(models_dir, "*")):
+        if not os.path.isdir(backbone_dir):
+            continue
+
+        backbone = os.path.basename(backbone_dir)
+
+        # Try both "embeddings" (plural) and "embedding" (singular) for compatibility
+        embeddings_dir = os.path.join(backbone_dir, "embeddings")
+        if not os.path.isdir(embeddings_dir):
+            embeddings_dir = os.path.join(backbone_dir, "embedding")
+
+        if not os.path.isdir(embeddings_dir):
+            continue
+
+        # Verify at least one .pb file exists
+        embedding_pb_files = glob.glob(os.path.join(embeddings_dir, "*.pb"))
+        if embedding_pb_files:
+            backbones.append(backbone)
+
+    return sorted(backbones)
+
+
 def discover_heads(models_dir: str) -> list[HeadInfo]:
     """Discover all classification/regression heads using folder structure.
 
