@@ -5,7 +5,7 @@
 Nomarr is an alpha audio tagging system that analyzes your music files with Essentia's pre-trained ML models and writes rich metadata tags directly into your audio files (MP3, M4A, FLAC, OGG, Opus, WAV, AAC, AIFF, and more). Perfect for organizing large libraries, discovering moods, and enriching metadata for music servers like Navidrome and Plex.
 
 > **⚠️ Alpha Software**  
-> Nomarr is under active development with daily breaking changes. No backward compatibility guarantees exist until version 1.0. Database schemas, APIs, and workflows may change without notice or migration paths.
+> Nomarr is alpha software under active development. Breaking changes can occur in any release before 1.0. Database schema changes include forward-only migrations that auto-apply on startup. APIs and workflows may change. Backups recommended before updates.
 
 ---
 
@@ -31,6 +31,7 @@ Technical architecture and implementation details:
 - **[Health System](dev/health.md)** - Health table invariants and state machine
 - **[StateBroker](dev/statebroker.md)** - Real-time state management and DTO contracts
 - **[Naming Standards](dev/naming.md)** - Enforced naming conventions for services, methods, and DTOs
+- **[Migrations](dev/migrations.md)** - Database migration system architecture and conventions
 - **[QC System](dev/qc.md)** - Quality control tools, linting, and architecture enforcement
 - **[Versioning](dev/versioning.md)** - Model and tag versioning strategy
 

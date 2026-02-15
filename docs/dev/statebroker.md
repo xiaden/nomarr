@@ -517,7 +517,7 @@ data: {"component": "worker:tag:0", "id": 0, "queue_type": "tag", "status": "hea
 4. **Compression** - Gzip SSE stream for bandwidth savings
 5. **Redis Pub/Sub** - Replace database polling with message queue
 
-**Current Status:** Database polling is sufficient for pre-alpha. Evaluate alternatives if scalability issues arise.
+**Current Status:** Database polling is sufficient for alpha. Evaluate alternatives if scalability issues arise.
 
 ---
 

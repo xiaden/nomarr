@@ -387,18 +387,23 @@ config = config_service.load_config()
 # Database connects to ArangoDB using ARANGO_HOST env and arango_password from config
 db = Database()
 
-# 3. Initialize ML backend (components/ml/backend_essentia.py)
+# 3. Prepare database - run migrations, ensure schema (workflows/platform/prepare_database_wf.py)
+# Auto-runs pending migrations tracked in applied_migrations collection
+# See docs/dev/migrations.md for migration system architecture
+prepare_database_workflow(db=db)
+
+# 4. Initialize ML backend (components/ml/backend_essentia.py)
 ml_backend = EssentiaBackend(models_dir=config.models_dir)
 
-# 4. Initialize services (services/domain/*.py)
+# 5. Initialize services (services/domain/*.py)
 processing_service = ProcessingService(db=db, ml_backend=ml_backend)
 queue_service = QueueService(db=db, queue_type="tag")
 worker_service = WorkerSystemService(db=db, config=config)
 
-# 5. Start workers (services/infrastructure/worker_system_svc.py)
+# 6. Start workers (services/infrastructure/worker_system_svc.py)
 worker_service.start_all_workers()
 
-# 6. Start API server (interfaces/api/app.py)
+# 7. Start API server (interfaces/api/app.py)
 app = create_app(
     processing_service=processing_service,
     queue_service=queue_service,

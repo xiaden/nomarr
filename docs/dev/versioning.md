@@ -6,14 +6,13 @@
 
 ## Overview
 
-Nomarr uses **Semantic Versioning (SemVer)** with modifications for pre-alpha status.
+Nomarr uses **Semantic Versioning (SemVer)** with modifications for alpha status.
 
-**Current status: Pre-Alpha (0.x.x)**
+**Current status: Alpha (0.x.x)**
 
-- No backward compatibility guarantees
-- Breaking changes allowed in minor versions
-- Database schema can change without migrations
-- Config format can change without migrations
+- Breaking changes allowed before 1.0
+- Forward-only migrations for database schema changes (auto-apply on startup)
+- Config format changes possible (document in release notes)
 
 **When 1.0.0 releases:**
 - Strict SemVer enforced
@@ -50,18 +49,29 @@ MAJOR.MINOR.PATCH
 
 ---
 
-## Pre-Alpha Rules (0.x.x)
+## Alpha Rules (0.x.x)
 
 **Current version scheme: `0.MINOR.PATCH`**
 
 ### What the `0.x.x` prefix means:
 
-- **No stability guarantees:** Breaking changes can happen in any release
-- **No migrations:** Users may need to rebuild database or rescan library
+- **Breaking changes allowed:** Breaking changes can happen in any release before 1.0
+- **Forward-only migrations:** Database schema changes include migrations that auto-run on startup (see [migrations.md](migrations.md))
+- **No rollback support:** Migrations are forward-only; rolling back requires manual intervention
 - **No deprecation warnings:** Old features can be removed without notice
-- **Rapid iteration:** Focus on architecture and features, not compatibility
+- **Rapid iteration:** Focus on architecture and features over long-term compatibility
 
-### Version bumping in pre-alpha:
+### Migration Policy
+
+Starting with SCHEMA_VERSION 6, Nomarr uses a **forward-only migration system**:
+
+- Migrations run automatically during startup via `prepare_database_workflow()`
+- Applied migrations are tracked in the `applied_migrations` collection
+- Schema version is stored in the `meta` collection
+- If the database schema is ahead of the code, startup aborts
+- See [migrations.md](migrations.md) for architecture details and how to write migrations
+
+### Version bumping in alpha:
 
 **0.x.0 (minor bump):**
 - New major feature
@@ -477,9 +487,9 @@ docker pull ghcr.io/nomarr/nomarr:latest
 
 ## Summary
 
-**Pre-Alpha (0.x.x):**
-- Breaking changes allowed
-- No migrations required
+**Alpha (0.x.x):**
+- Breaking changes allowed before 1.0
+- Forward-only migrations for schema changes (auto-apply on startup)
 - Rapid iteration
 - Version bumps: breaking/major feature → MINOR, fixes/small features → PATCH
 
@@ -492,7 +502,7 @@ docker pull ghcr.io/nomarr/nomarr:latest
 **Docker tags:**
 - Pin to specific version in production: `0.3.1`
 - Use `main` for development
-- Use `latest` for auto-updates (risky in pre-alpha)
+- Use `latest` for auto-updates (risky in alpha)
 
 **Release process:**
 1. Update version in `nomarr/__version__.py`

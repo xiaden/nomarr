@@ -4,15 +4,15 @@
 
 ---
 
-## ⚠️ Pre-Alpha Status
+## ⚠️ Alpha Software
 
-Nomarr is in **pre-alpha** development:
+Nomarr is **alpha** software:
 
-- No backward compatibility guarantees
-- Database schemas may change between versions
-- Breaking changes expected
-- Recommended for testing and development only
-- GPU recommended for acceptable performance
+- Breaking changes allowed before 1.0 release
+- Database schema changes include forward-only migrations (auto-applied on startup)
+- No rollback support — backups recommended before major updates
+- Recommended for testing and development, not production
+- GPU strongly recommended for acceptable ML inference performance
 
 ---
 

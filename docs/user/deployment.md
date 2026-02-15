@@ -22,8 +22,8 @@ This guide covers production deployment of Nomarr with:
 
 **Before deploying to production:**
 
-- [ ] Nomarr is pre-alpha software (no stability guarantees)
-- [ ] Database schema may change between versions
+- [ ] Nomarr is alpha software (breaking changes possible before 1.0)
+- [ ] Database migrations auto-apply on startup (forward-only, no rollback)
 - [ ] Plan for regular backups
 - [ ] GPU required for acceptable performance
 - [ ] Budget 10-20 GB storage for models and cache
