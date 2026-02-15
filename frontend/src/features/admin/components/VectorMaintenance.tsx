@@ -31,19 +31,19 @@ import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@shared/api/client";
 import {
   getVectorStats,
+  listBackbones,
   promoteVectors,
   type VectorHotColdStats,
 } from "@shared/api/vectors";
 import { Panel, SectionHeader } from "@shared/components/ui";
 
-const BACKBONES = ["discogs_effnet", "discogs_musicnn"];
-
 export function VectorMaintenance() {
+  const [backbones, setBackbones] = useState<string[]>([]);
   const [stats, setStats] = useState<VectorHotColdStats[] | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState<string | null>(null);
 
-  const [promoteBackbone, setPromoteBackbone] = useState(BACKBONES[0]);
+  const [promoteBackbone, setPromoteBackbone] = useState("");
   const [promoteNlists, setPromoteNlists] = useState<string>("");
   const [promoteLoading, setPromoteLoading] = useState(false);
   const [promoteResult, setPromoteResult] = useState<string | null>(null);
@@ -72,6 +72,21 @@ export function VectorMaintenance() {
   useEffect(() => {
     void fetchStats();
   }, [fetchStats]);
+
+  // Fetch available backbones on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const response = await listBackbones();
+        setBackbones(response.backbones);
+        if (response.backbones.length > 0) {
+          setPromoteBackbone((prev) => prev || response.backbones[0]);
+        }
+      } catch (error) {
+        console.error("Failed to fetch backbones:", error);
+      }
+    })();
+  }, []);
 
   // Promote vectors
   const handlePromote = useCallback(async () => {
@@ -164,7 +179,7 @@ export function VectorMaintenance() {
                 label="Backbone"
                 onChange={(e) => setPromoteBackbone(e.target.value)}
               >
-                {BACKBONES.map((bb) => (
+                {backbones.map((bb) => (
                   <MenuItem key={bb} value={bb}>
                     {bb}
                   </MenuItem>

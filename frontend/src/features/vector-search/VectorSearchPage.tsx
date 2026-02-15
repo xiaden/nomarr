@@ -32,20 +32,34 @@ import { useSearchParams } from "react-router-dom";
 
 import type { LibraryFile } from "@shared/api/files";
 import { getFilesByIds } from "@shared/api/files";
+import { listBackbones } from "@shared/api/vectors";
 import { PageContainer, Panel, SectionHeader } from "@shared/components/ui";
 
 import { useVectorSearch } from "./hooks/useVectorSearch";
 import { TrackSearchPicker } from "./TrackSearchPicker";
 
-// Known backbones (could be fetched from API in future)
-const BACKBONES = ["discogs_effnet", "discogs_musicnn"];
-
 export function VectorSearchPage() {
   const [searchParams] = useSearchParams();
-  const [backboneId, setBackboneId] = useState(BACKBONES[0]);
+  const [backbones, setBackbones] = useState<string[]>([]);
+  const [backboneId, setBackboneId] = useState("");
   const [selectedTrack, setSelectedTrack] = useState<LibraryFile | null>(null);
   const [limit, setLimit] = useState(10);
   const [minScore, setMinScore] = useState(0);
+
+  // Fetch available backbones on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const response = await listBackbones();
+        setBackbones(response.backbones);
+        if (response.backbones.length > 0) {
+          setBackboneId((prev) => prev || response.backbones[0]);
+        }
+      } catch (error) {
+        console.error("Failed to fetch backbones:", error);
+      }
+    })();
+  }, []);
 
   // Initialize track from URL params (from "Find Similar" navigation)
   useEffect(() => {
@@ -87,7 +101,7 @@ export function VectorSearchPage() {
                 label="Backbone"
                 onChange={(e) => setBackboneId(e.target.value)}
               >
-                {BACKBONES.map((bb) => (
+                {backbones.map((bb) => (
                   <MenuItem key={bb} value={bb}>
                     {bb}
                   </MenuItem>
