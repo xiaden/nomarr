@@ -105,7 +105,7 @@ export async function searchVectors(
     limit,
     min_score,
   };
-  return post("/api/v1/vectors/search", body);
+  return post("/api/web/vectors/search", body);
 }
 
 /**
@@ -116,7 +116,7 @@ export async function searchVectors(
  * @returns Stats for all backbones (hot_count, cold_count, index_exists)
  */
 export async function getVectorStats(): Promise<VectorStatsResponse> {
-  return get("/api/v1/admin/vectors/stats");
+  return get("/api/web/vectors/stats");
 }
 
 /**
@@ -137,7 +137,7 @@ export async function promoteVectors(
     backbone_id,
     nlists: nlists ?? null,
   };
-  return post("/api/v1/admin/vectors/promote", body);
+  return post("/api/web/vectors/promote", body);
 }
 
 /**
@@ -156,5 +156,5 @@ export async function getTrackVector(
   file_id: string
 ): Promise<VectorGetResponse> {
   const params = new URLSearchParams({ backbone_id, file_id });
-  return get(`/api/v1/vectors/track?${params.toString()}`);
+  return get(`/api/web/vectors/track?${params.toString()}`);
 }

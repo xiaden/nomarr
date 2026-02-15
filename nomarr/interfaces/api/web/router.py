@@ -18,6 +18,7 @@ from nomarr.interfaces.api.web import navidrome_if as navidrome
 from nomarr.interfaces.api.web import playlist_import_if as playlist_import
 from nomarr.interfaces.api.web import processing_if as processing
 from nomarr.interfaces.api.web import tags_if as tags
+from nomarr.interfaces.api.web import vectors_if as vectors
 from nomarr.interfaces.api.web import worker_if as worker
 
 # Create combined router with /api/web prefix for all browser-facing endpoints
@@ -36,4 +37,5 @@ router.include_router(navidrome.router)
 router.include_router(playlist_import.router)
 router.include_router(processing.router)
 router.include_router(tags.router)
+router.include_router(vectors.router)
 router.include_router(worker.router)
