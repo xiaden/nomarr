@@ -23,36 +23,36 @@ classifiers = [
 ]
 
 dependencies = [
-    "numpy==1.26.4",
-    "scipy==1.17.0",
-    "soundfile==0.13.1",
-    "mutagen==1.47.0",
-    "pyyaml==6.0.3",
+    "numpy==1.26.4",           # Pinned: essentia-tensorflow compatibility
+    "scipy>=1.13.1",
+    "soundfile>=0.13.0",
+    "mutagen>=1.47.0",
+    "pyyaml>=6.0.2",
     "fastapi>=0.115.0",
     "uvicorn>=0.30.6",
-    "rich==13.9.4",
-    "requests==2.32.5",
-    "bcrypt==4.3.0",
-    "python-arango==7.9.1",
-    "watchdog==6.0.0",
-    "psutil==7.2.2",
+    "rich>=13.7.0",
+    "requests>=2.32.0",
+    "bcrypt>=4.2.0",
+    "python-arango>=8.0.0",
+    "watchdog>=6.0.0",
+    "psutil>=7.0.0",
     "rapidfuzz>=3.0.0",
     "spotipy>=2.24.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest==8.4.2",
-    "pytest-cov==5.0.0",
-    "ruff==0.15.0",
-    "mypy==1.19.1",
-    "bandit==1.9.3",
-    "vulture==2.14",
-    "pydub==0.25.1",
-    "radon==5.1.0",
-    "import-linter==2.10",
-    "types-PyYAML==6.0.12.20250915",
-    "types-requests==2.32.4.20260107",
+    "pytest>=8.3.0",
+    "pytest-cov>=5.0.0",
+    "ruff>=0.14.0",
+    "mypy>=1.19.0",
+    "bandit>=1.7.5",
+    "vulture>=2.10",
+    "pydub>=0.25.1",
+    "radon>=5.1.0",
+    "import-linter>=2.0",
+    "types-PyYAML",
+    "types-requests",
     "mcp>=1.0.0",
 ]
 
@@ -177,6 +177,8 @@ ignore = [
 "debug_vram.py" = ["E722"]
 "nomarr/helpers/time_helper.py" = ["TID251"]
 "nomarr/components/workers/worker_crash_comp.py" = ["TID251"]
+# Migration files use V-prefix naming convention (V006_*, V007_*, etc.)
+"nomarr/migrations/V*.py" = ["N999"]
 # ML components use intentional lazy imports to avoid loading TF/numpy until needed
 "nomarr/components/ml/*.py" = ["PLC0415"]
 # DI wiring file uses lazy imports by design

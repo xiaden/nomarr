@@ -35,7 +35,7 @@ updates:
         patterns:
           - "pytest*"
           - "coverage*"
-    # Allow pre-release versions for these packages (pre-alpha project)
+    # Allow pre-release versions for these packages (alpha project)
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
