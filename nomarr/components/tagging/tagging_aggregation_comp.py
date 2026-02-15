@@ -293,13 +293,16 @@ _MOOD_MAPPING = {
 
 
 def _build_tier_map(
-    head_outputs: list[Any], calibrations: dict[str, dict[str, Any]] | None,
+    head_outputs: list[Any],
 ) -> dict[str, tuple[str, float, str]]:
-    """Build tier map from HeadOutput objects, applying calibration when available.
+    """Build tier map from HeadOutput objects.
+
+    Note: Calibration should be applied BEFORE creating HeadOutput objects
+    (in reconstruct_head_outputs_from_stats). This function only builds
+    the tier map from pre-calibrated outputs.
 
     Args:
-        head_outputs: List of HeadOutput objects
-        calibrations: Optional calibration data (tag_key -> {p5, p95, method})
+        head_outputs: List of HeadOutput objects (values should already be calibrated)
 
     Returns:
         Dictionary mapping model_key -> (tier, value, label)
@@ -312,12 +315,7 @@ def _build_tier_map(
         return {}
     tier_map: dict[str, tuple[str, float, str]] = {}
     for ho in mood_outputs:
-        value = ho.value
-        if calibrations and ho.model_key in calibrations:
-            raw_value = value
-            value = apply_minmax_calibration(value, calibrations[ho.model_key])
-            logger.debug(f"[aggregation] Applied calibration to {ho.model_key}: {raw_value:.3f} → {value:.3f}")
-        tier_map[ho.model_key] = (ho.tier, value, ho.label)
+        tier_map[ho.model_key] = (ho.tier, ho.value, ho.label)
     logger.debug(f"[aggregation] Tier map has {len(tier_map)} entries")
     return tier_map
 
@@ -475,9 +473,9 @@ def aggregate_mood_tiers(
 
     Uses HeadOutput.tier to determine confidence level instead of parsing *_tier tags.
 
-    Optionally applies calibration to raw scores before tier assignment. If calibrations
-    are provided, raw scores are normalized using min-max scaling to make different models
-    comparable. If no calibration exists for a tag, the raw score is used unchanged.
+    Note: Calibration should be applied BEFORE calling this function, typically in
+    reconstruct_head_outputs_from_stats(). The calibrations parameter is retained for
+    backward compatibility but is no longer used here.
 
     Applies pair conflict suppression: if both sides of a pair (e.g., happy/sad,
     aggressive/relaxed) have tiers, neither is emitted to avoid contradictory tags.
@@ -485,8 +483,8 @@ def aggregate_mood_tiers(
     Also applies label improvements for better human readability.
 
     Args:
-        head_outputs: List of HeadOutput objects with tier information
-        calibrations: Optional calibration data (tag_key -> {p5, p95, method})
+        head_outputs: List of HeadOutput objects with tier information (pre-calibrated)
+        calibrations: DEPRECATED - no longer used. Calibration is applied upstream.
 
     Returns:
         Dictionary containing mood-strict, mood-regular, mood-loose tags
@@ -495,7 +493,7 @@ def aggregate_mood_tiers(
     logger.debug(
         f"[aggregation] aggregate_mood_tiers called with {len(head_outputs)} HeadOutput objects, calibrations={calibrations is not None}",
     )
-    tier_map = _build_tier_map(head_outputs, calibrations)
+    tier_map = _build_tier_map(head_outputs)
     if not tier_map:
         return {}
     suppressed_keys = _compute_suppressed_keys(tier_map, LABEL_PAIRS)
@@ -511,6 +509,7 @@ def reconstruct_head_outputs_from_stats(
     head_infos: list[Any],
     framework_version: str,
     namespace: str,
+    calibrations: dict[str, dict[str, Any]] | None = None,
     stability_thresholds: StabilityThresholds | None = None,
     regression_thresholds: RegressionThresholds | None = None,
 ) -> list[Any]:
@@ -520,12 +519,18 @@ def reconstruct_head_outputs_from_stats(
     For classification heads, applies decide_multilabel with segment std.
     For regression heads, uses segment mean/std with add_regression_mood_tiers logic.
 
+    When calibrations are provided, they are applied to raw probability/mean values
+    BEFORE tier assignment. This ensures tiers reflect calibrated confidence levels
+    (p5→0, p95→1 normalization) rather than raw model outputs.
+
     Args:
         numeric_tags: Dict of namespaced tag_key -> value from DB
         segment_stats_by_head: Dict of head_name -> label_stats [{label, mean, std, min, max}, ...]
         head_infos: List of discovered HeadInfo objects
         framework_version: Runtime Essentia version
         namespace: Tag namespace (e.g., "nom")
+        calibrations: Optional calibration data (model_key -> {p5, p95, method}).
+            When provided, raw values are normalized before tier logic runs.
         stability_thresholds: Thresholds for stability gating (default: DEFAULT_STABILITY_THRESHOLDS)
         regression_thresholds: Thresholds for regression mood determination (default: DEFAULT_REGRESSION_THRESHOLDS)
 
@@ -561,13 +566,32 @@ def reconstruct_head_outputs_from_stats(
                 continue
             # Regression heads have 1 label
             stat = label_stats[0]
-            mean_val = stat["mean"]
+            raw_mean = stat["mean"]
+            raw_std = stat["std"]
+
+            # Apply calibration to regression mean BEFORE tier logic
+            # Build model_key for calibration lookup using the regression label
+            reg_label = stat["label"]
+            reg_model_key, _ = head_info.build_versioned_tag_key(
+                reg_label, framework_version=framework_version, calib_method="none", calib_version=0,
+            )
+            calib_scale = 1.0  # Default: no scaling if no calibration
+            if calibrations and reg_model_key in calibrations:
+                calib_data = calibrations[reg_model_key]
+                mean_val = apply_minmax_calibration(raw_mean, calib_data)
+                # Compute scale factor for std: 1 / (p95 - p5)
+                p5, p95 = calib_data.get("p5", 0.0), calib_data.get("p95", 1.0)
+                span = p95 - p5
+                if span > 0:
+                    calib_scale = 1.0 / span
+            else:
+                mean_val = raw_mean
 
             # Replicate add_regression_mood_tiers logic inline for single-value case
             if head_name not in _MOOD_MAPPING:
                 continue
 
-            std_val = stat["std"]
+            std_val = raw_std * calib_scale  # Scale std by same factor as mean
             mean_val = max(0.0, min(1.0, mean_val))
             high_term, low_term = _MOOD_MAPPING[head_name]
 
@@ -652,13 +676,26 @@ def reconstruct_head_outputs_from_stats(
                 )
                 full_key = f"{namespace}:{model_key}"
 
-                # Get probability from numeric tags
+                # Get probability from numeric tags and compute calibration scale factor
+                calib_scale = 1.0  # Default: no scaling if no calibration
                 if full_key in numeric_tags:
-                    probs[i] = numeric_tags[full_key]
+                    raw_prob = numeric_tags[full_key]
+                    # Apply calibration BEFORE tier logic
+                    if calibrations and model_key in calibrations:
+                        calib_data = calibrations[model_key]
+                        probs[i] = apply_minmax_calibration(raw_prob, calib_data)
+                        # Compute scale factor for std: 1 / (p95 - p5)
+                        p5, p95 = calib_data.get("p5", 0.0), calib_data.get("p95", 1.0)
+                        span = p95 - p5
+                        if span > 0:
+                            calib_scale = 1.0 / span
+                    else:
+                        probs[i] = raw_prob
 
-                # Get segment std from stats
+                # Get segment std from stats (scaled by calibration factor)
                 if label in stats_by_label:
-                    segment_std_array[i] = stats_by_label[label]["std"]
+                    raw_std = stats_by_label[label]["std"]
+                    segment_std_array[i] = raw_std * calib_scale
 
             # Run decision logic with segment std
             result = decide_multilabel(probs, spec, segment_std=segment_std_array)

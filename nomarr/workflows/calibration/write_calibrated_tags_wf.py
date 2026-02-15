@@ -155,38 +155,6 @@ def _filter_numeric_tags(all_tags: dict[str, Any], version_tag_key: str) -> dict
     logger.debug(f"[calibrated_tags] Found {len(numeric_tags)} numeric tags")
     return numeric_tags
 
-def _discover_head_mappings(models_dir: str, namespace: str, numeric_tags: dict[str, float | int], heads: list[Any] | None = None) -> dict[str, tuple[Any, str]]:
-    """Discover heads and build mapping from tag keys to HeadInfo.
-
-    Args:
-        models_dir: Path to models directory
-        namespace: Tag namespace
-        numeric_tags: Numeric tags to match against heads
-        heads: Pre-discovered HeadInfo objects (batch optimization).
-            When provided, skips the expensive discover_heads() filesystem scan.
-
-    Returns:
-        Dictionary mapping tag_key -> (HeadInfo, label)
-
-    Raises:
-        ValueError: If no heads discovered
-
-    """
-    if heads is None:
-        heads = discover_heads(models_dir)
-    if not heads:
-        msg = f"No heads discovered in {models_dir}"
-        raise ValueError(msg)
-    head_by_model_key: dict[str, tuple[Any, str]] = {}
-    for head in heads:
-        for label in head.labels:
-            normalized_label = label.lower().replace(" ", "_")
-            for tag_key in numeric_tags:
-                clean_key = tag_key[len(namespace) + 1:] if tag_key.startswith(f"{namespace}:") else tag_key
-                if normalized_label in clean_key.lower():
-                    head_by_model_key[tag_key] = (head, label)
-    logger.debug(f"[calibrated_tags] Matched {len(head_by_model_key)} tags to heads")
-    return head_by_model_key
 
 def _load_calibrations_from_db(db: Database) -> dict[str, Any]:
     """Load calibrations from calibration_state database table.
@@ -207,49 +175,6 @@ def _load_calibrations_from_db(db: Database) -> dict[str, Any]:
         logger.debug(f"[calibrated_tags] Loaded {len(calibrations)} calibrations from database")
     return calibrations
 
-def _reconstruct_head_outputs(numeric_tags: dict[str, float | int], head_by_model_key: dict[str, tuple[Any, str]], namespace: str, calibrations: dict[str, Any]) -> list[HeadOutput]:
-    """LEGACY: Reconstruct HeadOutput objects from numeric tags and calibration data.
-
-    WARNING: This function uses simple value thresholds for tier assignment, which
-    differs from ML inference (which uses segment variance). Use only as fallback
-    when segment_scores_stats is not available.
-
-    For unified tier logic, use reconstruct_head_outputs_from_stats() instead.
-
-    Note: calibration_id set to None for all outputs (legacy field, not used).
-
-    Args:
-        numeric_tags: Numeric tags from database
-        head_by_model_key: Mapping of tag_key -> (HeadInfo, label)
-        namespace: Tag namespace
-        calibrations: Calibration data (label -> {p5, p95})
-
-    Returns:
-        List of HeadOutput objects
-
-    """
-    head_outputs: list[HeadOutput] = []
-    for tag_key, value in numeric_tags.items():
-        if tag_key not in head_by_model_key:
-            continue
-        head_info, label = head_by_model_key[tag_key]
-        clean_key = tag_key[len(namespace) + 1:] if tag_key.startswith(f"{namespace}:") else tag_key
-        tier: str | None = None
-        calibrated_value = value
-        if calibrations and clean_key in calibrations:
-            from nomarr.components.ml.ml_calibration_comp import apply_minmax_calibration
-            calibrated_value = apply_minmax_calibration(value, calibrations[clean_key])
-        if calibrated_value >= 0.7:
-            tier = "high"
-        elif calibrated_value >= 0.5:
-            tier = "medium"
-        elif calibrated_value >= 0.3:
-            tier = "low"
-        head_outputs.append(HeadOutput(head=head_info, model_key=clean_key, label=label, value=value, tier=tier, calibration_id=None))
-    if not head_outputs:
-        logger.warning("[calibrated_tags] No HeadOutput objects reconstructed")
-    logger.info(f"[calibrated_tags] Reconstructed {len(head_outputs)} HeadOutput objects")
-    return head_outputs
 
 def _compute_mood_tags(head_outputs: list[HeadOutput], calibrations: dict[str, Any]) -> Tags:
     """Aggregate HeadOutput objects into mood-* tags.
@@ -439,28 +364,28 @@ def write_calibrated_tags_wf(db: Database, params: WriteCalibratedTagsParams, *,
             segment_stats_by_head[head_name] = label_stats
 
     if not segment_stats_by_head:
-        logger.warning(f"[calibrated_tags] No segment_scores_stats found for {file_path}, falling back to legacy reconstruction")
-        # Fallback to legacy reconstruction without segment stats
-        head_by_model_key = _discover_head_mappings(models_dir, namespace, numeric_tags, heads=heads)
-        head_outputs = _reconstruct_head_outputs(numeric_tags, head_by_model_key, namespace, calibrations)
-    else:
-        # Use discovered heads or discover them
-        heads_list: list[Any]
-        if heads is None:
-            heads_list = discover_heads(models_dir)
-            if not heads_list:
-                msg = f"No heads discovered in {models_dir}"
-                raise ValueError(msg)
-        else:
-            heads_list = heads
+        logger.warning(f"[calibrated_tags] No segment_scores_stats found for {file_path}, skipping (file needs reprocessing)")
+        return
 
-        # Reconstruct HeadOutput objects using segment stats (matches ML tier logic)
-        head_outputs = reconstruct_head_outputs_from_stats(
-            numeric_tags=numeric_tags,
-            segment_stats_by_head=segment_stats_by_head,
-            head_infos=heads_list,
-            framework_version=_get_essentia_version(),
-            namespace=namespace,
+    # Use discovered heads or discover them
+    heads_list: list[Any]
+    if heads is None:
+        heads_list = discover_heads(models_dir)
+        if not heads_list:
+            msg = f"No heads discovered in {models_dir}"
+            raise ValueError(msg)
+    else:
+        heads_list = heads
+
+    # Reconstruct HeadOutput objects using segment stats (matches ML tier logic)
+    # Pass calibrations so they are applied BEFORE tier assignment
+    head_outputs = reconstruct_head_outputs_from_stats(
+        numeric_tags=numeric_tags,
+        segment_stats_by_head=segment_stats_by_head,
+        head_infos=heads_list,
+        framework_version=_get_essentia_version(),
+        namespace=namespace,
+        calibrations=calibrations,
         )
     if not head_outputs:
         return
