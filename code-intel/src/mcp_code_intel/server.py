@@ -778,11 +778,10 @@ def edit_file_move_text(
         tool_name="edit_file_move_text",
     )
 
+
 @mcp.tool()
 def edit_file_move(
-    old_path: Annotated[
-        str, "Workspace-relative or absolute path to the source file (must exist)"
-    ],
+    old_path: Annotated[str, "Workspace-relative or absolute path to the source file (must exist)"],
     new_path: Annotated[
         str, "Workspace-relative or absolute path to the destination (must not exist)"
     ],
@@ -809,7 +808,6 @@ def edit_file_move(
     )
 
 
-
 @mcp.tool()
 def edit_file_replace_line_range(
     file_path: Annotated[str, "Workspace-relative or absolute path to the file to edit"],
@@ -823,7 +821,7 @@ def edit_file_replace_line_range(
         "Strongly recommended for all replacements to avoid editing wrong code.",
     ] = None,
 ) -> CallToolResult:
-    Line-anchored replacement for deterministic edits when line numbers are known
+    """Line-anchored replacement for deterministic edits when line numbers are known
     from prior read operations. Removes ambiguity of string matching and reduces
     blast radius compared to large block string replacements.
 
