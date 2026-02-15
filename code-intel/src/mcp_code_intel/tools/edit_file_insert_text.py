@@ -1,12 +1,12 @@
 r"""Insert text at specific positions without string matching.
 
 MCP tool for inserting text at precise positions
-(BOF, EOF, before/after line, with optional column).
+(BOF, EOF, before/after line).
 Ensures atomicity: all insertions applied or none on any failure.
 
 Design Principles:
 - Position-based insertion (no fuzzy string matching)
-- Supports both line-only and row+col modes
+- Line-level insertion only (no character-level positioning)
 - Coordinate space: all line numbers in batch refer to ORIGINAL file state
 - Bottom-to-top application preserves coordinates
 - Context validation: returns changed region ± 2 lines
@@ -23,11 +23,6 @@ Insert after specific line:
 ...     {"path": "service.py", "content": "    pass\n", "at": "after_line", "line": 10}
 ... ])
 
-Insert at character position (row+col mode):
->>> file_insert_text([
-...     {"path": "code.py", "content": ", arg2", "at": "after_line", "line": 5, "col": 20}
-... ])
-
 Batch same-file ops (coordinates refer to original state):
 >>> file_insert_text([
 ...     {"path": "test.py", "content": "import b\n", "at": "after_line", "line": 2},
@@ -39,7 +34,7 @@ Batch same-file ops (coordinates refer to original state):
 import contextlib
 from pathlib import Path
 
-from pydantic import BaseModel, Field, ValidationInfo, field_validator
+from pydantic import BaseModel, Field
 
 from mcp_code_intel.helpers.file_helpers import (
     atomic_write,
@@ -48,7 +43,6 @@ from mcp_code_intel.helpers.file_helpers import (
     group_ops_by_file,
     read_file_with_metadata,
     resolve_file_path,
-    validate_col,
     validate_line_range,
 )
 from mcp_code_intel.response_models import (
@@ -58,83 +52,117 @@ from mcp_code_intel.response_models import (
 )
 
 
-class InsertOp(BaseModel):
-    """Operation for inserting text at a specific position."""
+class InsertBoundaryOp(BaseModel):
+    """Operation for inserting text at file boundaries (beginning or end)."""
 
     path: str = Field(description="File path (workspace-relative or absolute)")
     content: str = Field(description="Text to insert")
-    at: str = Field(
-        description="Insertion mode: bof, eof, before_line, after_line",
-        pattern=r"^(bof|eof|before_line|after_line)$",
-    )
-    line: int | None = Field(
-        default=None,
-        description="Line number (1-indexed, required for before_line/after_line)",
-    )
-    col: int | None = Field(
-        default=None,
-        description="Column position (0-indexed, None=BOL, -1=EOL, N=char N)",
-    )
 
-    @field_validator("line")
-    @classmethod
-    def validate_line_required(cls, v: int | None, info: ValidationInfo) -> int | None:
-        """Require line for before_line/after_line modes."""
-        at_value = info.data.get("at")
-        if at_value in ("before_line", "after_line") and v is None:
-            msg = f"line is required when at='{at_value}'"
-            raise ValueError(msg)
-        return v
+
+class InsertLineOp(BaseModel):
+    """Operation for inserting text before or after a specific line."""
+
+    path: str = Field(description="File path (workspace-relative or absolute)")
+    content: str = Field(description="Text to insert")
+    line: int = Field(description="Line number (1-indexed)")
+    position: str = Field(
+        description="Insert before or after the line",
+        pattern=r"^(before|after)$",
+    )
 
 
 def _validate_operations(
     ops: list[dict],
     workspace_root: Path,
-) -> tuple[list[tuple[int, InsertOp, Path]], list[FailedOp]]:
+) -> tuple[list[tuple[int, dict, Path]], list[FailedOp]]:
     """Validate all insert operations before execution."""
     failed_ops: list[FailedOp] = []
-    validated_ops: list[tuple[int, InsertOp, Path]] = []
+    validated_ops: list[tuple[int, dict, Path]] = []
 
     for idx, op_dict in enumerate(ops):
-        try:
-            insert_op = InsertOp.model_validate(op_dict)
-        except (ValueError, TypeError) as e:
+        # Basic structure validation
+        path = op_dict.get("path")
+        if not path:
             failed_ops.append(
                 FailedOp(
                     index=idx,
-                    filepath=op_dict.get("path", "<unknown>"),
-                    reason=f"Invalid operation: {e}",
+                    filepath="<unknown>",
+                    reason="Missing required field: path",
+                ),
+            )
+            continue
+
+        if "content" not in op_dict:
+            failed_ops.append(
+                FailedOp(
+                    index=idx,
+                    filepath=path,
+                    reason="Missing required field: content",
                 ),
             )
             continue
 
         # Resolve path (file must exist)
-        result = resolve_file_path(insert_op.path, workspace_root)
+        result = resolve_file_path(path, workspace_root)
         if isinstance(result, dict):  # Error
             failed_ops.append(
                 FailedOp(
                     index=idx,
-                    filepath=insert_op.path,
+                    filepath=path,
                     reason=result["error"],
                 ),
             )
             continue
 
         resolved_path: Path = result
-        validated_ops.append((idx, insert_op, resolved_path))
+        validated_ops.append((idx, op_dict, resolved_path))
 
     return validated_ops, failed_ops
 
 
-def _insert_text(  # noqa: PLR0911
+def _insert_at_boundary(
     lines: list[str],
-    insert_op: InsertOp,
-) -> tuple[list[str], int, int] | str:
-    """Insert text into lines at specified position.
+    content: str,
+    *,
+    position: str,
+) -> tuple[list[str], int, int]:
+    """Insert text at beginning or end of file.
 
     Args:
         lines: File lines (without trailing newlines)
-        insert_op: Insert operation
+        content: Text to insert
+        position: 'bof' or 'eof'
+
+    Returns:
+        Tuple of (modified_lines, start_line, end_line)
+
+    """
+    insert_lines = content.rstrip("\n").split("\n")
+
+    if position == "bof":
+        modified_lines = insert_lines + lines
+        return modified_lines, 1, len(insert_lines)
+
+    # eof
+    start_line = len(lines) + 1
+    modified_lines = lines + insert_lines
+    return modified_lines, start_line, start_line + len(insert_lines) - 1
+
+
+def _insert_at_line(
+    lines: list[str],
+    content: str,
+    *,
+    line: int,
+    position: str,
+) -> tuple[list[str], int, int] | str:
+    """Insert text before or after a specific line.
+
+    Args:
+        lines: File lines (without trailing newlines)
+        content: Text to insert
+        line: Target line number (1-indexed)
+        position: 'before' or 'after'
 
     Returns:
         Tuple of (modified_lines, start_line, end_line) or error message
@@ -142,63 +170,45 @@ def _insert_text(  # noqa: PLR0911
     """
     total_lines = len(lines)
 
-    if insert_op.at == "bof":
-        # Insert at beginning of file
-        insert_lines = insert_op.content.rstrip("\n").split("\n")
-        modified_lines = insert_lines + lines
-        return modified_lines, 1, len(insert_lines)
-
-    if insert_op.at == "eof":
-        # Insert at end of file
-        insert_lines = insert_op.content.rstrip("\n").split("\n")
-        start_line = total_lines + 1
-        modified_lines = lines + insert_lines
-        return modified_lines, start_line, start_line + len(insert_lines) - 1
-
-    # before_line or after_line modes
-    if insert_op.line is None:
-        return "line is required for before_line/after_line"
-
     # Validate line number
-    line_error = validate_line_range(insert_op.line, insert_op.line, total_lines)
+    line_error = validate_line_range(line, line, total_lines)
     if line_error:
         return line_error
 
-    target_line_idx = insert_op.line - 1  # Convert to 0-indexed
+    target_line_idx = line - 1  # Convert to 0-indexed
+    insert_lines = content.rstrip("\n").split("\n")
 
-    if insert_op.col is None:
-        # Line-only mode: insert content as new line(s)
-        insert_lines = insert_op.content.rstrip("\n").split("\n")
+    if position == "before":
+        modified_lines = lines[:target_line_idx] + insert_lines + lines[target_line_idx:]
+        return modified_lines, line, line + len(insert_lines) - 1
 
-        if insert_op.at == "before_line":
-            modified_lines = lines[:target_line_idx] + insert_lines + lines[target_line_idx:]
-            return modified_lines, insert_op.line, insert_op.line + len(insert_lines) - 1
+    # after
+    modified_lines = lines[: target_line_idx + 1] + insert_lines + lines[target_line_idx + 1 :]
+    return modified_lines, line + 1, line + len(insert_lines)
 
-        # after_line
-        modified_lines = lines[: target_line_idx + 1] + insert_lines + lines[target_line_idx + 1 :]
-        return modified_lines, insert_op.line + 1, insert_op.line + len(insert_lines)
 
-    # Row+col mode: insert at exact character position
-    target_line = lines[target_line_idx]
+def _insert_text(
+    lines: list[str],
+    op_dict: dict,
+) -> tuple[list[str], int, int] | str:
+    """Insert text into lines — dispatcher for legacy dict compatibility.
 
-    # Validate column
-    col_error = validate_col(insert_op.col, len(target_line))
-    if col_error:
-        return col_error
+    Delegates to _insert_at_boundary or _insert_at_line based on op.at value.
 
-    # Resolve column position
-    col_pos = len(target_line) if insert_op.col == -1 else insert_op.col
+    """
+    at = op_dict.get("at")
+    content = op_dict.get("content", "")
 
-    # Insert at character position (no newlines in content for char-precise mode)
-    modified_line = target_line[:col_pos] + insert_op.content + target_line[col_pos:]
+    if at in ("bof", "eof"):
+        return _insert_at_boundary(lines, content, position=at)
 
-    if insert_op.at == "before_line":
-        lines[target_line_idx] = modified_line
-        return lines, insert_op.line, insert_op.line
+    # before_line or after_line
+    line = op_dict.get("line")
+    if line is None:
+        return "line is required for before_line/after_line"
 
-    # after_line with col: still inserts AT the line (col positioning happens within line)
-    lines[target_line_idx] = modified_line
-    return lines, insert_op.line, insert_op.line
+    position = "before" if at == "before_line" else "after"
+    return _insert_at_line(lines, content, line=line, position=position)
 
 
 def _apply_insertions_to_file(
@@ -222,15 +232,14 @@ def _apply_insertions_to_file(
     original_mtime = file_data["mtime"]
     lines = content.split("\n")
 
-    # Parse operations and sort bottom-to-top (descending line order)
-    parsed_ops = [(idx, InsertOp.model_validate(op_dict)) for idx, op_dict in ops_for_file]
-    sorted_ops = sorted(parsed_ops, key=lambda x: x[1].line or 0, reverse=True)
+    # Sort operations bottom-to-top (descending line order)
+    sorted_ops = sorted(ops_for_file, key=lambda x: x[1].get("line") or 0, reverse=True)
 
     # Apply insertions bottom-to-top
     applied_ops: list[AppliedOp] = []
 
-    for idx, insert_op in sorted_ops:
-        result = _insert_text(lines, insert_op)
+    for idx, op_dict in sorted_ops:
+        result = _insert_text(lines, op_dict)
 
         if isinstance(result, str):  # Error
             return [], [
@@ -287,7 +296,7 @@ def edit_file_insert_text(ops: list[dict], workspace_root: Path) -> dict:
     """Insert text at specific positions without string matching.
 
     Args:
-        ops: List of InsertOp dicts
+        ops: List of operation dicts with: path, content, at, line (for at=before_line/after_line)
         workspace_root: Workspace root path for resolution and security
 
     Returns:
@@ -295,8 +304,7 @@ def edit_file_insert_text(ops: list[dict], workspace_root: Path) -> dict:
 
     Behavior:
         - All target files must exist
-        - Line-only mode (col=None): Inserts content as new line(s)
-        - Row+col mode: Inserts at exact character position
+        - Inserts content as new line(s) at specified position
         - For same-file ops: all coordinates refer to ORIGINAL file state
         - Apply operations bottom-to-top to avoid coordinate drift
 
@@ -312,7 +320,7 @@ def edit_file_insert_text(ops: list[dict], workspace_root: Path) -> dict:
 
     # Phase 2: Group operations by file
     grouped_ops = group_ops_by_file(
-        [(idx, op.__dict__, path) for idx, op, path in validated_ops],
+        [(idx, op_dict, path) for idx, op_dict, path in validated_ops],
     )
 
     # Phase 3: Apply insertions file by file

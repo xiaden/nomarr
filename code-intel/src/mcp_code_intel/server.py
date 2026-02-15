@@ -35,11 +35,15 @@ Task plan tools:
 File editing tools:
 - edit_file_replace_string: Apply multiple string replacements atomically (single write)
 - edit_file_replace_line_range: Replace line range with new content (line-anchored)
+- edit_file_move: Move/rename a file within the workspace (single call)
 - edit_file_move_text: Move lines within a file or between files atomically
 - edit_file_create: Create new files with mkdir -p behavior (atomic batch)
 - edit_file_replace_content: Replace entire file contents atomically
 - edit_file_insert_text: Insert text at precise positions (bof/eof/before_line/after_line)
 - edit_file_copy_paste_text: Copy text from sources to targets (stamp decorator pattern)
+
+Python introspection:
+- py_introspect: Run whitelist-only Python introspection checks in isolated subprocess
 
 Usage:
     python -m scripts.mcp.nomarr_mcp
@@ -48,7 +52,7 @@ Usage:
 import logging
 import sys
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any, Literal
 
 from mcp.server.fastmcp import FastMCP
 from mcp.types import CallToolResult
@@ -70,8 +74,9 @@ from .tools.edit_file_copy_paste_text import (
 )
 from .tools.edit_file_create import CreateOp
 from .tools.edit_file_create import edit_file_create as edit_file_create_impl
-from .tools.edit_file_insert_text import InsertOp
+from .tools.edit_file_insert_text import InsertBoundaryOp, InsertLineOp
 from .tools.edit_file_insert_text import edit_file_insert_text as edit_file_insert_text_impl
+from .tools.edit_file_move import edit_file_move as edit_file_move_impl
 from .tools.edit_file_move_text import edit_file_move_text as edit_file_move_text_impl
 from .tools.edit_file_replace_content import (
     ReplaceOp,
@@ -100,6 +105,7 @@ from .tools.list_project_routes import list_project_routes as list_project_route
 from .tools.locate_module_symbol import locate_module_symbol as locate_module_symbol_impl
 from .tools.plan_complete_step import plan_complete_step as plan_complete_step_impl
 from .tools.plan_read import plan_read as plan_read_impl
+from .tools.py_introspect import py_introspect as py_introspect_impl
 from .tools.read_file_line import read_file_line as read_file_line_impl
 from .tools.read_file_range import read_file_range as read_file_range_impl
 from .tools.read_file_symbol_at_line import (
@@ -114,6 +120,7 @@ from .tools.trace_project_endpoint import trace_project_endpoint as trace_projec
 # Tool registry for programmatic access (replaces _ToolsNamespace)
 TOOL_IMPLS: dict[str, object] = {
     "edit_file_replace_string": edit_file_replace_string_impl,
+    "edit_file_move": edit_file_move_impl,
     "edit_file_move_text": edit_file_move_text_impl,
     "edit_file_copy_paste_text": edit_file_copy_paste_text_impl,
     "edit_file_create": edit_file_create_impl,
@@ -136,6 +143,7 @@ TOOL_IMPLS: dict[str, object] = {
     "list_project_routes": list_project_routes_impl,
     "trace_module_calls": trace_module_calls_impl,
     "trace_project_endpoint": trace_project_endpoint_impl,
+    "py_introspect": py_introspect_impl,
 }
 
 # ──────────────────────────────────────────────────────────────────────
@@ -770,6 +778,36 @@ def edit_file_move_text(
         tool_name="edit_file_move_text",
     )
 
+@mcp.tool()
+def edit_file_move(
+    old_path: Annotated[
+        str, "Workspace-relative or absolute path to the source file (must exist)"
+    ],
+    new_path: Annotated[
+        str, "Workspace-relative or absolute path to the destination (must not exist)"
+    ],
+) -> CallToolResult:
+    """Move or rename a file within the workspace.
+
+    Single-call file move. Resolves both paths, creates target parent directories
+    automatically, and performs the move. Fails if target already exists.
+    """
+    result = edit_file_move_impl(old_path, new_path, workspace_root=ROOT)
+    if "error" in result:
+        return wrap_mcp_result(
+            result,
+            user_summary=f"Move failed: {result['error']}",
+            tool_name="edit_file_move",
+        )
+    return wrap_mcp_result_with_file_link(
+        result,
+        file_path=result["new_path"],
+        start_line=1,
+        end_line=None,
+        action="Moved to",
+        tool_name="edit_file_move",
+    )
+
 
 @mcp.tool()
 def edit_file_replace_line_range(
@@ -847,8 +885,10 @@ def plan_complete_step(
     ] = None,
     annotation_text: Annotated[
         str | None,
-        "Text to add under the step.",
-        " Cannot contain bullets or step like items(eg: '\n - ' or '\n - [').",
+        (
+            "Text to add under the step."
+            " Cannot contain bullets or step-like items (e.g., ' - ', ' - [', or '1.')."
+        ),
     ] = None,
 ) -> CallToolResult:
     """Mark a step as complete in a task plan.
@@ -856,6 +896,7 @@ def plan_complete_step(
     Idempotent: safe to call multiple times on the same step.
     Updates the plan file by checking the step's checkbox.
     Optionally adds an annotation block directly under the completed step.
+    Annotation text Cannot contain bullets or step-like items (e.g., ' - ', ' - [', or '1.').
     Returns the next incomplete step in the plan.
     """
     # Build annotation dict from separate parameters
@@ -949,16 +990,17 @@ def edit_file_replace_content(
 
 
 @mcp.tool()
-def edit_file_insert_text(
-    ops: list[InsertOp],
+def edit_file_insert_at_boundary(
+    position: Literal["bof", "eof"],
+    ops: list[InsertBoundaryOp],
 ) -> CallToolResult:
-    """Insert text at specific positions without string matching.
+    """Insert text at beginning or end of file(s).
 
-    Each op dict has: `path`, `content`, `at` (bof|eof|before_line|after_line),
-    optional `line` (required for before/after_line), optional `col`.
-    For same-file ops: coordinates refer to ORIGINAL state, applied bottom-to-top.
+    position: 'bof' (beginning of file) or 'eof' (end of file).
+    Each op has: `path` (file path), `content` (text to insert).
+    Content is inserted as new lines. Multiple ops are atomic.
     """
-    ops_dicts = [op.model_dump() for op in ops]
+    ops_dicts = [{"path": op.path, "content": op.content, "at": position} for op in ops]
     result = edit_file_insert_text_impl(ops_dicts, workspace_root=ROOT)
     applied_ops = result.get("applied_ops", [])
     if applied_ops:
@@ -971,12 +1013,46 @@ def edit_file_insert_text(
             return wrap_mcp_result_with_multiple_file_links(
                 result,
                 file_locations=file_locations,
-                tool_name="edit_file_insert_text",
+                tool_name="edit_file_insert_at_boundary",
             )
     return wrap_mcp_result(
         result,
-        user_summary=f"Inserted text in {len(ops)} location(s)",
-        tool_name="edit_file_insert_text",
+        user_summary=f"Inserted text at {position} in {len(ops)} file(s)",
+        tool_name="edit_file_insert_at_boundary",
+    )
+
+
+@mcp.tool()
+def edit_file_insert_at_line(
+    ops: list[InsertLineOp],
+) -> CallToolResult:
+    """Insert text before or after a specific line in file(s).
+
+    Each op has: `path`, `content`, `line` (1-indexed), `position` ('before' or 'after').
+    Content is inserted as new line(s). For same-file ops: line numbers refer to ORIGINAL state.
+    """
+    ops_dicts = [
+        {"path": op.path, "content": op.content, "at": f"{op.position}_line", "line": op.line}
+        for op in ops
+    ]
+    result = edit_file_insert_text_impl(ops_dicts, workspace_root=ROOT)
+    applied_ops = result.get("applied_ops", [])
+    if applied_ops:
+        file_locations: list[tuple[str | Path, int | None, int | None, str]] = [
+            (op["filepath"], op.get("start_line"), op.get("end_line"), "Inserted")
+            for op in applied_ops
+            if op.get("filepath")
+        ]
+        if file_locations:
+            return wrap_mcp_result_with_multiple_file_links(
+                result,
+                file_locations=file_locations,
+                tool_name="edit_file_insert_at_line",
+            )
+    return wrap_mcp_result(
+        result,
+        user_summary=f"Inserted text at {len(ops)} line location(s)",
+        tool_name="edit_file_insert_at_line",
     )
 
 
@@ -1009,6 +1085,57 @@ def edit_file_copy_paste_text(
         result,
         user_summary=f"Copied and pasted text in {len(ops)} operation(s)",
         tool_name="edit_file_copy_paste_text",
+    )
+
+
+@mcp.tool()
+def py_introspect(
+    imports: Annotated[
+        list[str] | None,
+        "Extra dotted imports to execute before checks (e.g. ['nomarr.services']).",
+    ] = None,
+    checks: Annotated[
+        list[dict[str, Any]] | None,
+        "Ordered list of check dicts. Each has a 'check' key "
+        "(mro|issubclass|signature|doc|getsource_contains|ast_raises) "
+        "plus check-specific fields.",
+    ] = None,
+    timeout_ms: Annotated[
+        int,
+        "Hard timeout for the subprocess in milliseconds (500-30000).",
+    ] = 3000,
+    max_source_chars: Annotated[
+        int,
+        "Max characters for source-text results like doc/getsource (100-50000).",
+    ] = 2000,
+) -> CallToolResult:
+    """Run whitelist-only Python introspection checks in isolated subprocess.
+
+    Check types: `mro`, `issubclass`, `signature`, `doc`, `getsource_contains`, `ast_raises`.
+    Each check resolves a dotted import path and returns structured results.
+    """
+    result = py_introspect_impl(
+        imports=imports,
+        checks=checks,
+        timeout_ms=timeout_ms,
+        max_source_chars=max_source_chars,
+    )
+    status = result.get("status", "error")
+    n_checks = len(result.get("results", []))
+    n_ok = sum(1 for r in result.get("results", []) if r.get("ok"))
+
+    if status == "ok":
+        summary = f"All {n_checks} check(s) passed"
+    elif status == "partial":
+        summary = f"{n_ok}/{n_checks} check(s) succeeded"
+    else:
+        errors = result.get("errors", [])
+        summary = f"Error: {errors[0]}" if errors else "Unknown error"
+
+    return wrap_mcp_result(
+        result,
+        user_summary=summary,
+        tool_name="py_introspect",
     )
 
 
