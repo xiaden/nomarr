@@ -180,7 +180,7 @@ class LibraryFilesCrudMixin:
             bind_vars={"file_id": file_id},
         )
 
-    def upsert_batch(self, file_docs: list[dict[str, Any]]) -> int:
+    def upsert_batch(self, file_docs: list[dict[str, Any]]) -> list[str]:
         """Batch upsert file documents to ArangoDB.
 
         More efficient than individual upserts - reduces DB roundtrips.
@@ -193,18 +193,18 @@ class LibraryFilesCrudMixin:
                 - Other fields as needed (file_size, modified_time, etc.)
 
         Returns:
-            Number of documents processed
+            List of document _ids (inserted or updated)
 
         Note: ArangoDB UPSERT does not reliably distinguish inserted vs updated.
         Workflows must not depend on this split for correctness.
 
         """
         if not file_docs:
-            return 0
+            return []
 
-        # Use AQL UPSERT for atomic insert-or-update
+        # Use AQL UPSERT for atomic insert-or-update, return _ids
         # Key on (library_id, normalized_path) tuple
-        self.db.aql.execute(
+        cursor = self.db.aql.execute(
             """
             FOR doc IN @docs
                 UPSERT {
@@ -214,11 +214,14 @@ class LibraryFilesCrudMixin:
                 INSERT doc
                 UPDATE doc
                 IN library_files
+                RETURN NEW._id
             """,
             bind_vars={"docs": file_docs},
         )
 
-        return len(file_docs)
+        # Cast cursor to list for type checker
+        result: list[str] = list(cursor)  # type: ignore[arg-type]
+        return result
 
     def update_file_path(
         self,

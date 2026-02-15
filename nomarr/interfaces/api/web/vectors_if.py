@@ -12,7 +12,7 @@ These routes will be mounted under /api/web via the web router.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -41,12 +41,35 @@ if TYPE_CHECKING:
 router = APIRouter(tags=["vectors"], prefix="/vectors")
 
 
+@router.get("/backbones", dependencies=[Depends(verify_session)])
+async def list_backbones() -> dict[str, list[str]]:
+    """List available vector backbones.
+
+    Returns backbone IDs discovered from models directory structure.
+    Use these IDs when calling other vector endpoints.
+
+    Requires:
+    - Authentication (admin or library owner)
+
+    Returns:
+        Dict with 'backbones' key containing list of available backbone IDs
+
+    """
+    from pathlib import Path
+
+    models_dir = Path("/app/build_resources/models")
+    backbones = [
+        p.name for p in models_dir.iterdir()
+        if p.is_dir() and ((p / "embeddings").exists() or (p / "embedding").exists())
+    ]
+
+    return {"backbones": backbones}
+
+
 @router.post("/search", dependencies=[Depends(verify_session)])
 async def search_vectors(
     request: VectorSearchRequest,
-    vector_search_service: Annotated[
-        VectorSearchService, Depends(get_vector_search_service)
-    ],
+    vector_search_service: VectorSearchService = Depends(get_vector_search_service),
 ) -> VectorSearchResponse:
     """Search for similar vectors using ANN.
 
@@ -67,6 +90,7 @@ async def search_vectors(
         400: If vector dimension doesn't match backbone
         404: If backbone not found
         503: If cold collection has no vector index (search not available)
+
     """
     try:
         # Call service layer
@@ -108,9 +132,7 @@ async def search_vectors(
 async def get_track_vector(
     backbone_id: str,
     file_id: str,
-    vector_search_service: Annotated[
-        VectorSearchService, Depends(get_vector_search_service)
-    ],
+    vector_search_service: VectorSearchService = Depends(get_vector_search_service),
 ) -> VectorGetResponse:
     """Get embedding vector for a specific track.
 
@@ -129,6 +151,7 @@ async def get_track_vector(
 
     Raises:
         404: If vector not found in hot or cold collections
+
     """
     result = vector_search_service.get_track_vector(backbone_id, file_id)
 
@@ -152,10 +175,7 @@ async def get_track_vector(
 
 @router.get("/stats", dependencies=[Depends(verify_session)])
 async def get_vector_stats(
-    vector_maintenance_service: Annotated[
-        VectorMaintenanceService,
-        Depends(get_vector_maintenance_service),
-    ],
+    vector_maintenance_service: VectorMaintenanceService = Depends(get_vector_maintenance_service),
 ) -> VectorStatsResponse:
     """Get hot/cold statistics for all backbones.
 
@@ -167,14 +187,20 @@ async def get_vector_stats(
 
     Returns:
         VectorStatsResponse with stats for all backbones
+
     """
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
 
-    # Get all registered backbones from app state
-    # For now, return stats for known backbones (effnet, yamnet, etc.)
-    # TODO: Get this from a backbone registry or config
-    known_backbones = ["discogs_effnet"]  # Placeholder - should come from config
+    # Discover backbones from models directory structure
+    # models/<backbone>/embeddings/ or models/<backbone>/embedding/ indicates a valid backbone
+    from pathlib import Path
+
+    models_dir = Path("/app/build_resources/models")
+    known_backbones = [
+        p.name for p in models_dir.iterdir()
+        if p.is_dir() and ((p / "embeddings").exists() or (p / "embedding").exists())
+    ]
 
     def _get_stats_sync() -> list[VectorHotColdStats]:
         """Run blocking DB queries in thread pool."""
@@ -207,10 +233,7 @@ async def get_vector_stats(
 @router.post("/promote", dependencies=[Depends(verify_session)])
 async def promote_vectors(
     request: VectorPromoteRequest,
-    vector_maintenance_service: Annotated[
-        VectorMaintenanceService,
-        Depends(get_vector_maintenance_service),
-    ],
+    vector_maintenance_service: VectorMaintenanceService = Depends(get_vector_maintenance_service),
 ) -> VectorPromoteResponse:
     """Promote vectors from hot to cold and rebuild vector index.
 
@@ -230,6 +253,7 @@ async def promote_vectors(
         400: If backbone not found or invalid parameters
         500: If promote & rebuild fails
         504: If operation times out (>10 minutes)
+
     """
     try:
         # Call service layer (synchronous - blocks until complete)

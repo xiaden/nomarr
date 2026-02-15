@@ -133,22 +133,25 @@ def scan_library_quick_workflow(
 
             # Upsert only updated entries immediately (new entries deferred)
             if updated_entries:
-                upsert_scanned_files(db, updated_entries)
-                seed_entities_for_scan_batch(
-                    db,
-                    [e["path"] for e in updated_entries],
-                    batch.metadata_map,
-                )
+                file_ids = upsert_scanned_files(db, updated_entries)
+                # Build metadata map keyed by file_id
+                metadata_by_id = {
+                    file_id: batch.metadata_map[entry["path"]]
+                    for file_id, entry in zip(file_ids, updated_entries, strict=True)
+                    if entry[" path"] in batch.metadata_map
+                }
+                seed_entities_for_scan_batch(db, file_ids, metadata_by_id)
 
             # If no tagged files, upsert new entries immediately (no move detection)
             if not has_tagged_files and new_entries:
-                upsert_scanned_files(db, new_entries)
+                file_ids = upsert_scanned_files(db, new_entries)
                 stats["files_added"] += len(new_entries)
-                seed_entities_for_scan_batch(
-                    db,
-                    [e["path"] for e in new_entries],
-                    batch.metadata_map,
-                )
+                metadata_by_id = {
+                    file_id: batch.metadata_map[entry["path"]]
+                    for file_id, entry in zip(file_ids, new_entries, strict=True)
+                    if entry["path"] in batch.metadata_map
+                }
+                seed_entities_for_scan_batch(db, file_ids, metadata_by_id)
 
             save_folder_record(
                 db, library_id, folder.rel_path, folder.mtime, folder.file_count,
@@ -187,13 +190,14 @@ def scan_library_quick_workflow(
                 e for e in deferred_new_entries if e["path"] not in moved_new_paths
             ]
             if remaining_new_entries:
-                upsert_scanned_files(db, remaining_new_entries)
+                file_ids = upsert_scanned_files(db, remaining_new_entries)
                 stats["files_added"] += len(remaining_new_entries)
-                seed_entities_for_scan_batch(
-                    db,
-                    [e["path"] for e in remaining_new_entries],
-                    deferred_new_metadata,
-                )
+                metadata_by_id = {
+                    file_id: deferred_new_metadata[entry["path"]]
+                    for file_id, entry in zip(file_ids, remaining_new_entries, strict=True)
+                    if entry["path"] in deferred_new_metadata
+                }
+                seed_entities_for_scan_batch(db, file_ids, metadata_by_id)
 
         # Step 7 — Clean up stale folder records
         existing_folder_rel_paths = {f.rel_path for f in folder_plan.all_folders}

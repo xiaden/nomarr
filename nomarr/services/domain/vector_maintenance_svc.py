@@ -91,7 +91,12 @@ class VectorMaintenanceService:
         hot_ops = self.db.register_vectors_track_backbone(backbone_id)
         cold_ops = self.db.get_vectors_track_cold(backbone_id)
 
-        hot_count = hot_ops.count()
+        # Check if hot collection exists before counting
+        hot_count = (
+            hot_ops.count()
+            if self.db.db.has_collection(f"vectors_track_hot__{backbone_id}")
+            else 0
+        )
         # Check if cold collection exists before counting
         cold_count = (
             cold_ops.count()

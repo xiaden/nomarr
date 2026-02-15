@@ -13,6 +13,7 @@ ARCHITECTURE:
 - Services/workflows orchestrate: fetch data from persistence, pass to analytics
 - Interfaces call services, not analytics directly
 """
+
 from __future__ import annotations
 
 import json
@@ -36,6 +37,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+
 def compute_tag_frequencies(params: ComputeTagFrequenciesParams) -> ComputeTagFrequenciesResult:
     """Compute frequency counts from raw tag data.
 
@@ -51,7 +53,16 @@ def compute_tag_frequencies(params: ComputeTagFrequenciesParams) -> ComputeTagFr
     """
     logger.info("[analytics] Computing tag frequencies")
     nom_tag_counts = list(params.nom_tag_rows)
-    return ComputeTagFrequenciesResult(nom_tags=nom_tag_counts, standard_tags={"artists": list(params.artist_rows), "genres": list(params.genre_rows), "albums": list(params.album_rows)}, total_files=params.total_files)
+    return ComputeTagFrequenciesResult(
+        nom_tags=nom_tag_counts,
+        standard_tags={
+            "artists": list(params.artist_rows),
+            "genres": list(params.genre_rows),
+            "albums": list(params.album_rows),
+        },
+        total_files=params.total_files,
+    )
+
 
 def compute_tag_correlation_matrix(params: ComputeTagCorrelationMatrixParams) -> TagCorrelationData:
     """Compute VALUE-based correlation matrix from raw tag data.
@@ -121,6 +132,7 @@ def compute_tag_correlation_matrix(params: ComputeTagCorrelationMatrixParams) ->
         mood_tier_correlations[mood] = dict(top_tiers)
     return TagCorrelationData(mood_correlations=mood_correlations, mood_tier_correlations=mood_tier_correlations)
 
+
 def compute_mood_distribution(mood_rows: Sequence[tuple[str, str]]) -> MoodDistributionData:
     """Compute mood distribution from raw mood tag data.
 
@@ -137,7 +149,11 @@ def compute_mood_distribution(mood_rows: Sequence[tuple[str, str]]) -> MoodDistr
     mood_strict_counts: Counter = Counter()
     mood_regular_counts: Counter = Counter()
     mood_loose_counts: Counter = Counter()
-    counter_map = {"mood-strict": mood_strict_counts, "mood-regular": mood_regular_counts, "mood-loose": mood_loose_counts}
+    counter_map = {
+        "mood-strict": mood_strict_counts,
+        "mood-regular": mood_regular_counts,
+        "mood-loose": mood_loose_counts,
+    }
     for mood_type, tag_value in mood_rows:
         counter = counter_map.get(mood_type)
         if not counter:
@@ -153,7 +169,13 @@ def compute_mood_distribution(mood_rows: Sequence[tuple[str, str]]) -> MoodDistr
     all_moods.update(mood_strict_counts)
     all_moods.update(mood_regular_counts)
     all_moods.update(mood_loose_counts)
-    return MoodDistributionData(mood_strict=dict(mood_strict_counts.most_common(20)), mood_regular=dict(mood_regular_counts.most_common(20)), mood_loose=dict(mood_loose_counts.most_common(20)), top_moods=all_moods.most_common(30))
+    return MoodDistributionData(
+        mood_strict=dict(mood_strict_counts.most_common(20)),
+        mood_regular=dict(mood_regular_counts.most_common(20)),
+        mood_loose=dict(mood_loose_counts.most_common(20)),
+        top_moods=all_moods.most_common(30),
+    )
+
 
 def compute_artist_tag_profile(params: ComputeArtistTagProfileParams) -> ArtistTagProfile:
     """Compute tag profile for an artist from raw tag data.
@@ -195,8 +217,17 @@ def compute_artist_tag_profile(params: ComputeArtistTagProfileParams) -> ArtistT
         values = tag_values.get(tag)
         avg_value = sum(values) / len(values) if values else 0.0
         top_tags.append((tag, count, avg_value))
-    total_non_mood_tags = sum((count for tag, count in tag_counts.items() if tag not in ["mood-strict", "mood-regular", "mood-loose"]))
-    return ArtistTagProfile(artist=params.artist, file_count=params.file_count, top_tags=top_tags, moods=mood_counts.most_common(15), avg_tags_per_file=total_non_mood_tags / params.file_count if params.file_count else 0.0)
+    total_non_mood_tags = sum(
+        (count for tag, count in tag_counts.items() if tag not in ["mood-strict", "mood-regular", "mood-loose"])
+    )
+    return ArtistTagProfile(
+        artist=params.artist,
+        file_count=params.file_count,
+        top_tags=top_tags,
+        moods=mood_counts.most_common(15),
+        avg_tags_per_file=total_non_mood_tags / params.file_count if params.file_count else 0.0,
+    )
+
 
 def compute_tag_co_occurrence(params: ComputeTagCoOccurrenceParams) -> TagCoOccurrenceData:
     """Compute tag co-occurrence matrix from tag file sets.
@@ -236,6 +267,7 @@ def compute_dominant_vibes(balance: dict[str, list[dict[str, Any]]]) -> list[dic
 
     Returns:
         List of {mood, percentage} for the top 5 moods across all tiers.
+
     """
     # Aggregate counts across all tiers
     mood_totals: dict[str, int] = {}

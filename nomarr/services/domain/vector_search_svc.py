@@ -101,9 +101,11 @@ class VectorSearchService:
         Returns:
             Vector document or None if not found in either collection
         """
-        # Try cold first (promoted vectors)
-        cold_ops = self.db.get_vectors_track_cold(backbone_id)
-        result = cold_ops.get_vector(file_id)
+        # Try cold first (promoted vectors) - only if collection exists
+        result = None
+        if self.db.db.has_collection(f"vectors_track_cold__{backbone_id}"):
+            cold_ops = self.db.get_vectors_track_cold(backbone_id)
+            result = cold_ops.get_vector(file_id)
 
         if result is not None:
             logger.debug(
@@ -111,9 +113,10 @@ class VectorSearchService:
             )
             return result
 
-        # Fallback to hot (not yet promoted)
-        hot_ops = self.db.register_vectors_track_backbone(backbone_id)
-        result = hot_ops.get_vector(file_id)
+        # Fallback to hot (not yet promoted) - only if collection exists
+        if self.db.db.has_collection(f"vectors_track_hot__{backbone_id}"):
+            hot_ops = self.db.register_vectors_track_backbone(backbone_id)
+            result = hot_ops.get_vector(file_id)
 
         if result is not None:
             logger.debug(

@@ -67,6 +67,10 @@ export interface VectorPromoteResponse {
   message: string;
 }
 
+export interface VectorBackbonesResponse {
+  /** List of available backbone IDs */
+  backbones: string[];
+}
 export interface VectorGetResponse {
   /** Library file document ID */
   file_id: string;
@@ -78,6 +82,18 @@ export interface VectorGetResponse {
 
 // ============================================================================
 // API Functions
+
+/**
+ * List available vector backbones.
+ *
+ * Returns backbone IDs discovered from the models directory.
+ * Use these IDs when calling other vector endpoints.
+ *
+ * @returns List of available backbone IDs (e.g., ["effnet", "musicnn"])
+ */
+export async function listBackbones(): Promise<VectorBackbonesResponse> {
+  return get("/api/web/vectors/backbones");
+}
 // ============================================================================
 
 /**

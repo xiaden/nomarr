@@ -198,7 +198,6 @@ def rebuild_all_song_metadata_caches(db: "Database", limit: int | None = None) -
         Number of songs processed
 
     """
-
     # Get all song _ids
     query = "FOR file IN library_files SORT file._key"
     if limit:

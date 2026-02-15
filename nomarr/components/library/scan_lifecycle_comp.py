@@ -147,7 +147,7 @@ def snapshot_existing_files(
 # ---------------------------------------------------------------------------
 
 
-def upsert_scanned_files(db: Database, file_entries: list[dict[str, Any]]) -> int:
+def upsert_scanned_files(db: Database, file_entries: list[dict[str, Any]]) -> list[str]:
     """Batch-upsert scanned file documents.
 
     Args:
@@ -155,7 +155,7 @@ def upsert_scanned_files(db: Database, file_entries: list[dict[str, Any]]) -> in
         file_entries: File documents to upsert
 
     Returns:
-        Number of documents processed
+        List of document _ids (inserted or updated)
 
     """
     return db.library_files.upsert_batch(file_entries)
