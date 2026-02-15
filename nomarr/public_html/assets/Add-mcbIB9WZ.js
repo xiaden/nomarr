@@ -1,0 +1,1 @@
+import{Gn as e,Mn as t,tn as n}from"./index-C5fbkBFX.js";var r=n((0,e(t()).jsx)(`path`,{d:`M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z`}),`Add`);export{r as t};

@@ -25,15 +25,17 @@ import {
   TableCell,
   TableHead,
   TableRow,
-  TextField,
   Typography,
 } from "@mui/material";
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
+import type { LibraryFile } from "@shared/api/files";
+import { getFilesByIds } from "@shared/api/files";
 import { PageContainer, Panel, SectionHeader } from "@shared/components/ui";
 
 import { useVectorSearch } from "./hooks/useVectorSearch";
+import { TrackSearchPicker } from "./TrackSearchPicker";
 
 // Known backbones (could be fetched from API in future)
 const BACKBONES = ["discogs_effnet", "discogs_musicnn"];
@@ -41,25 +43,35 @@ const BACKBONES = ["discogs_effnet", "discogs_musicnn"];
 export function VectorSearchPage() {
   const [searchParams] = useSearchParams();
   const [backboneId, setBackboneId] = useState(BACKBONES[0]);
-  const [queryFileId, setQueryFileId] = useState("");
+  const [selectedTrack, setSelectedTrack] = useState<LibraryFile | null>(null);
   const [limit, setLimit] = useState(10);
   const [minScore, setMinScore] = useState(0);
 
-  // Initialize file ID from URL params (from "Find Similar" navigation)
+  // Initialize track from URL params (from "Find Similar" navigation)
   useEffect(() => {
     const fileIdParam = searchParams.get("fileId");
-    if (fileIdParam && !queryFileId) {
-      setQueryFileId(fileIdParam);
+    if (fileIdParam && !selectedTrack) {
+      // Prefetch track metadata by file ID
+      (async () => {
+        try {
+          const response = await getFilesByIds([fileIdParam]);
+          if (response.files && response.files.length > 0) {
+            setSelectedTrack(response.files[0]);
+          }
+        } catch (error) {
+          console.error("Failed to load track from fileId:", error);
+        }
+      })();
     }
-  }, [searchParams, queryFileId]);
+  }, [searchParams, selectedTrack]);
 
   const { loading, error, results, searchByFileId } =
     useVectorSearch();
 
   const handleSearch = useCallback(async () => {
-    if (!queryFileId.trim()) return;
-    await searchByFileId(backboneId, queryFileId.trim(), limit, minScore);
-  }, [backboneId, queryFileId, limit, minScore, searchByFileId]);
+    if (!selectedTrack) return;
+    await searchByFileId(backboneId, selectedTrack.file_id, limit, minScore);
+  }, [backboneId, selectedTrack, limit, minScore, searchByFileId]);
 
   return (
     <PageContainer title="Vector Search">
@@ -83,14 +95,9 @@ export function VectorSearchPage() {
               </Select>
             </FormControl>
 
-            <TextField
-              label="File ID"
-              placeholder="library_files/12345"
-              value={queryFileId}
-              onChange={(e) => setQueryFileId(e.target.value)}
-              size="small"
-              fullWidth
-              helperText="Enter a library file ID to find similar tracks"
+            <TrackSearchPicker
+              onTrackSelect={setSelectedTrack}
+              helperText="Search by artist, album, or title to find a track"
             />
 
             <Box>
@@ -123,7 +130,7 @@ export function VectorSearchPage() {
             <Button
               variant="contained"
               onClick={handleSearch}
-              disabled={loading || !queryFileId.trim()}
+              disabled={loading || !selectedTrack}
             >
               {loading ? <CircularProgress size={24} /> : "Search"}
             </Button>

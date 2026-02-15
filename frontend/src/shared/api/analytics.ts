@@ -140,22 +140,10 @@ export interface GenreDistributionItem {
   count: number;
 }
 
-export interface ArtistDistributionItem {
-  artist: string;
-  count: number;
-}
-
-export interface ArtistDistribution {
-  top_artists: ArtistDistributionItem[];
-  others_count: number;
-  total_artists: number;
-}
-
 export interface CollectionOverviewResponse {
   stats: LibraryStats;
   year_distribution: YearDistributionItem[];
   genre_distribution: GenreDistributionItem[];
-  artist_distribution: ArtistDistribution;
 }
 
 /**

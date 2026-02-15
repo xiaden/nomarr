@@ -40,7 +40,7 @@ def mood_analysis_workflow(
     balance = db.tags.get_mood_balance(library_id)
 
     # Step 3: Get top mood pairs (within selected tier)
-    top_pairs = db.tags.get_top_mood_pairs(library_id, limit=5, mood_tier=mood_tier)
+    top_pairs = db.tags.get_top_mood_pairs(library_id, mood_tier=mood_tier)
 
     # Step 4: Compute dominant vibes from balance data
     dominant_vibes = compute_dominant_vibes(balance)

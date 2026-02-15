@@ -11,7 +11,6 @@ import type { CollectionOverviewResponse } from "../../../shared/api/analytics";
 import { getCollectionOverview } from "../../../shared/api/analytics";
 
 import { AccordionSection } from "./AccordionSection";
-import { ArtistDistribution } from "./ArtistDistribution";
 import { GenreDistribution } from "./GenreDistribution";
 import { LibraryStats } from "./LibraryStats";
 import { YearDistribution } from "./YearDistribution";
@@ -91,10 +90,6 @@ export function CollectionOverview({ libraryId }: CollectionOverviewProps) {
       />
       <GenreDistribution
         distribution={data.genre_distribution}
-        parentId="collection-overview"
-      />
-      <ArtistDistribution
-        distribution={data.artist_distribution}
         parentId="collection-overview"
       />
     </AccordionSection>

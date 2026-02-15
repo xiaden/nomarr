@@ -39,20 +39,56 @@ Persistence lives under `nomarr/persistence/`:
 persistence/
 ├── arango_client.py              # Factory for ArangoDB connections
 ├── db.py                          # Database class (wires all operations)
-└── database/                      # Operations classes (one per collection)
+└── database/                      # Operations package (Python package)
+    ├── __init__.py                # Exports all Operations classes
+    │
     ├── calibration_history_aql.py
     ├── calibration_state_aql.py
     ├── health_aql.py
     ├── libraries_aql.py
-    ├── library_files_aql.py
     ├── library_folders_aql.py
     ├── meta_aql.py
+    ├── migrations_aql.py
     ├── ml_capacity_aql.py
+    ├── segment_scores_stats_aql.py
     ├── sessions_aql.py
-    ├── tags_aql.py                # Unified tag operations (TAG_UNIFICATION_REFACTOR)
+    ├── vectors_track_aql.py
     ├── worker_claims_aql.py
-    └── worker_restart_policy_aql.py
+    ├── worker_restart_policy_aql.py
+    │
+    ├── library_files_aql/         # Multi-file subpackage
+    │   ├── __init__.py            # Exports LibraryFilesOperations
+    │   ├── calibration.py         # Calibration-specific queries
+    │   ├── chromaprint.py          # Chromaprint queries
+    │   ├── crud.py                 # Basic CRUD operations
+    │   ├── queries.py              # General queries
+    │   ├── reconciliation.py       # File reconciliation
+    │   ├── stats.py                # Statistics queries
+    │   ├── status.py               # Status queries
+    │   └── tracks.py               # Track-specific queries
+    │
+    └── tags_aql/                   # Multi-file subpackage
+        ├── __init__.py             # Exports TagOperations
+        ├── analytics.py            # Tag analytics queries
+        ├── cleanup.py              # Tag cleanup operations
+        ├── crud.py                 # Basic CRUD operations
+        ├── mood.py                 # Mood-specific queries
+        ├── queries.py              # General tag queries
+        └── stats.py                # Tag statistics
 ```
+
+**Subpackage Pattern:**
+
+The `database/` directory is a Python package that:
+- Exports all Operations classes via `__init__.py`
+- Contains single-file modules for simple operations (one class per file)
+- Contains multi-file subpackages for complex operations (library_files_aql/, tags_aql/)
+
+When operations grow large (500+ lines), split into a subpackage:
+- Create `<collection>_aql/` directory
+- Move operations class to `<collection>_aql/__init__.py`
+- Split methods into logical modules (crud.py, queries.py, stats.py, etc.)
+- Keep the same import path: `from nomarr.persistence.database import <Operations>`
 
 Naming rules:
 

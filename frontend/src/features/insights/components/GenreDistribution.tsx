@@ -32,8 +32,10 @@ export function GenreDistribution({
   distribution,
   parentId,
 }: GenreDistributionProps) {
-  // Track which genres are hidden
-  const [hiddenGenres, setHiddenGenres] = useState<Set<string>>(new Set());
+  // Initialize with genres beyond top 5 hidden
+  const [hiddenGenres, setHiddenGenres] = useState<Set<string>>(() => {
+    return new Set(distribution.slice(5).map(d => d.genre));
+  });
 
   // Filter and transform data for pie chart
   const { pieData, visibleCount, totalCount } = useMemo(() => {

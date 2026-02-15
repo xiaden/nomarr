@@ -1,7 +1,16 @@
 """Database operations package.
 
-Contains table-specific operations classes (one per table) and joined query operations.
-Each *_aql.py file owns all AQL for that specific table.
+Contains table-specific operations classes (one per collection).
+
+Structure:
+- Single-file modules (e.g., libraries_aql.py) for simple operations
+- Multi-file subpackages (e.g., library_files_aql/, tags_aql/) for complex operations
+
+All Operations classes are exported from this __init__.py for consistent imports:
+    from nomarr.persistence.database import LibrariesOperations, TagOperations
+
+When operations grow large (500+ lines), split into a subpackage with logical
+modules (crud.py, queries.py, stats.py) while keeping the same import path.
 """
 
 from .calibration_history_aql import CalibrationHistoryOperations

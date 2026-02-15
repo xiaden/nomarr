@@ -1,11 +1,11 @@
 /**
  * AdvancedAnalytics - Power user analytics section.
  *
- * Contains tag co-occurrence matrix for power users.
+ * Contains tag co-occurrence grid for power users.
  * Collapsed by default.
  */
 
-import { TagCoOccurrence } from "../../analytics/components/TagCoOccurrence";
+import { TagCoOccurrenceGrid } from "../../analytics/components/TagCoOccurrenceGrid";
 
 import { AccordionSection } from "./AccordionSection";
 
@@ -21,7 +21,7 @@ export function AdvancedAnalytics({ libraryId }: AdvancedAnalyticsProps) {
       title="Advanced Analytics"
       defaultExpanded={false}
     >
-      <TagCoOccurrence libraryId={libraryId} />
+      <TagCoOccurrenceGrid libraryId={libraryId} />
     </AccordionSection>
   );
 }

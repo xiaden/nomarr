@@ -1,6 +1,6 @@
 """Workflow for computing collection overview analytics.
 
-Orchestrates persistence queries for library stats, year/genre/artist distributions.
+Orchestrates persistence queries for library stats, year/genre distributions.
 """
 from __future__ import annotations
 
@@ -18,14 +18,14 @@ def collection_overview_workflow(
 ) -> dict[str, Any]:
     """Get collection overview data for Insights tab.
 
-    Orchestrates library stats, year/genre/artist distributions.
+    Orchestrates library stats, year/genre distributions.
 
     Args:
         db: Database instance.
         library_id: Optional library _id to filter by.
 
     Returns:
-        Dict with: stats, year_distribution, genre_distribution, artist_distribution
+        Dict with: stats, year_distribution, genre_distribution
     """
     # Step 1: Get aggregate library statistics
     stats = db.tags.get_library_stats(library_id)
@@ -36,12 +36,8 @@ def collection_overview_workflow(
     # Step 3: Get genre distribution (all genres)
     genres = db.tags.get_genre_distribution(library_id, limit=None)
 
-    # Step 4: Get artist distribution (top 20)
-    artists = db.tags.get_artist_distribution(library_id, limit=20)
-
     return {
         "stats": stats,
         "year_distribution": years,
         "genre_distribution": genres,
-        "artist_distribution": artists,
     }
