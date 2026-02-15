@@ -6,6 +6,10 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from nomarr.components.tagging.tagging_aggregation_comp import (
+    DEFAULT_STABILITY_THRESHOLDS,
+    StabilityThresholds,
+)
 from nomarr.helpers.dto.ml_dto import HeadOutput
 
 logger = logging.getLogger(__name__)
@@ -184,29 +188,44 @@ def _find_counter_confidence(
 
 
 def _determine_tier(
-    prob: float, ratio: float, gap: float, cascade: Cascade, *, label_std: float | None = None,
+    prob: float,
+    ratio: float,
+    gap: float,
+    cascade: Cascade,
+    *,
+    label_std: float | None = None,
+    stability_thresholds: StabilityThresholds | None = None,
 ) -> str | None:
     """Determine tier (high/medium/low) based on cascade thresholds.
 
     If label_std is provided (segment-level standard deviation), unstable predictions
-    are downgraded:
-    - std >= 0.25: no tier (too unreliable to trust)
-    - std >= 0.15: cap at "low" tier maximum
-    - std >= 0.08: cap at "medium" tier maximum
+    are downgraded based on stability_thresholds:
+    - std >= acceptable: no tier (too unreliable to trust)
+    - std >= stable: cap at "low" tier maximum
+    - std >= very_stable: cap at "medium" tier maximum
 
-    These thresholds mirror the regression stability constants (_ACCEPTABLE, _STABLE,
-    _VERY_STABLE) from tagging_aggregation_comp, keeping consistency across the pipeline.
+    Args:
+        prob: Probability score for the label
+        ratio: Ratio of label probability to counter-label probability
+        gap: Gap between label and counter-label probabilities
+        cascade: Cascade thresholds from model sidecar
+        label_std: Optional segment-level standard deviation for stability gating
+        stability_thresholds: Thresholds for stability gating (default: DEFAULT_STABILITY_THRESHOLDS)
 
-    Returns None if no tier requirements are met.
+    Returns:
+        Tier string ("high", "medium", "low") or None if no tier requirements are met.
     """
+    if stability_thresholds is None:
+        stability_thresholds = DEFAULT_STABILITY_THRESHOLDS
+
     # Stability ceiling: segment variance caps the maximum achievable tier.
     max_tier_rank = 3  # 3=high, 2=medium, 1=low
     if label_std is not None:
-        if label_std >= 0.25:
+        if label_std >= stability_thresholds.acceptable:
             return None  # Too unstable to assign any tier
-        if label_std >= 0.15:
+        if label_std >= stability_thresholds.stable:
             max_tier_rank = 1  # Cap at low
-        elif label_std >= 0.08:
+        elif label_std >= stability_thresholds.very_stable:
             max_tier_rank = 2  # Cap at medium
 
     if max_tier_rank >= 3 and prob >= cascade.high and ratio >= cascade.ratio_high and gap >= cascade.gap_high:
