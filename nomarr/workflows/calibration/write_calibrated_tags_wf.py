@@ -46,12 +46,19 @@ from nomarr.components.ml.calibration_state_comp import (
 )
 from nomarr.components.ml.ml_discovery_comp import discover_heads
 from nomarr.components.processing.file_write_comp import get_nomarr_tags, save_mood_tags
-from nomarr.components.tagging.tagging_aggregation_comp import aggregate_mood_tiers
+from nomarr.components.tagging.tagging_aggregation_comp import aggregate_mood_tiers, reconstruct_head_outputs_from_stats
 from nomarr.components.tagging.tagging_writer_comp import TagWriter
 from nomarr.helpers.dto.ml_dto import HeadOutput
 from nomarr.helpers.dto.tags_dto import Tags
 
 logger = logging.getLogger(__name__)
+
+
+def _get_essentia_version() -> str:
+    """Get Essentia version lazily (only when needed)."""
+    from nomarr.components.ml import ml_backend_essentia_comp as backend_essentia
+
+    return str(backend_essentia.get_version())
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -201,7 +208,13 @@ def _load_calibrations_from_db(db: Database) -> dict[str, Any]:
     return calibrations
 
 def _reconstruct_head_outputs(numeric_tags: dict[str, float | int], head_by_model_key: dict[str, tuple[Any, str]], namespace: str, calibrations: dict[str, Any]) -> list[HeadOutput]:
-    """Reconstruct HeadOutput objects from numeric tags and calibration data.
+    """LEGACY: Reconstruct HeadOutput objects from numeric tags and calibration data.
+
+    WARNING: This function uses simple value thresholds for tier assignment, which
+    differs from ML inference (which uses segment variance). Use only as fallback
+    when segment_scores_stats is not available.
+
+    For unified tier logic, use reconstruct_head_outputs_from_stats() instead.
 
     Note: calibration_id set to None for all outputs (legacy field, not used).
 
@@ -413,11 +426,42 @@ def write_calibrated_tags_wf(db: Database, params: WriteCalibratedTagsParams, *,
         return
 
     # Use cached values from batch context when available
-    heads = batch_ctx.heads if batch_ctx is not None else None
+    heads: list[Any] | None = batch_ctx.heads if batch_ctx is not None else None
     calibrations = batch_ctx.calibrations if batch_ctx is not None else _load_calibrations_from_db(db)
 
-    head_by_model_key = _discover_head_mappings(models_dir, namespace, numeric_tags, heads=heads)
-    head_outputs = _reconstruct_head_outputs(numeric_tags, head_by_model_key, namespace, calibrations)
+    # Load segment_scores_stats from DB for faithful tier reconstruction
+    segment_stats_docs = db.segment_scores_stats.get_stats_for_file(str(file_id))
+    segment_stats_by_head: dict[str, list[dict[str, Any]]] = {}
+    for doc in segment_stats_docs:
+        head_name = doc.get("head_name")
+        label_stats = doc.get("label_stats", [])
+        if head_name and label_stats:
+            segment_stats_by_head[head_name] = label_stats
+
+    if not segment_stats_by_head:
+        logger.warning(f"[calibrated_tags] No segment_scores_stats found for {file_path}, falling back to legacy reconstruction")
+        # Fallback to legacy reconstruction without segment stats
+        head_by_model_key = _discover_head_mappings(models_dir, namespace, numeric_tags, heads=heads)
+        head_outputs = _reconstruct_head_outputs(numeric_tags, head_by_model_key, namespace, calibrations)
+    else:
+        # Use discovered heads or discover them
+        heads_list: list[Any]
+        if heads is None:
+            heads_list = discover_heads(models_dir)
+            if not heads_list:
+                msg = f"No heads discovered in {models_dir}"
+                raise ValueError(msg)
+        else:
+            heads_list = heads
+
+        # Reconstruct HeadOutput objects using segment stats (matches ML tier logic)
+        head_outputs = reconstruct_head_outputs_from_stats(
+            numeric_tags=numeric_tags,
+            segment_stats_by_head=segment_stats_by_head,
+            head_infos=heads_list,
+            framework_version=_get_essentia_version(),
+            namespace=namespace,
+        )
     if not head_outputs:
         return
     mood_tags = _compute_mood_tags(head_outputs, calibrations)
