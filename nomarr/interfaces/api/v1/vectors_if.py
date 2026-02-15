@@ -166,28 +166,38 @@ async def get_vector_stats(
     Returns:
         VectorStatsResponse with stats for all backbones
     """
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
 
     # Get all registered backbones from app state
     # For now, return stats for known backbones (effnet, yamnet, etc.)
     # TODO: Get this from a backbone registry or config
     known_backbones = ["discogs_effnet"]  # Placeholder - should come from config
 
-    stats_list = []
-    for backbone_id in known_backbones:
-        try:
-            stats = vector_maintenance_service.get_hot_cold_stats(backbone_id)
-            stats_list.append(
-                VectorHotColdStats(
-                    backbone_id=backbone_id,
-                    hot_count=int(stats["hot_count"]),
-                    cold_count=int(stats["cold_count"]),
-                    index_exists=bool(stats["index_exists"]),
+    def _get_stats_sync() -> list[VectorHotColdStats]:
+        """Run blocking DB queries in thread pool."""
+        stats_list = []
+        for backbone_id in known_backbones:
+            try:
+                stats = vector_maintenance_service.get_hot_cold_stats(backbone_id)
+                stats_list.append(
+                    VectorHotColdStats(
+                        backbone_id=backbone_id,
+                        hot_count=int(stats["hot_count"]),
+                        cold_count=int(stats["cold_count"]),
+                        index_exists=bool(stats["index_exists"]),
+                    )
                 )
-            )
-        except Exception as e:
-            logger.warning(f"Failed to get stats for backbone {backbone_id}: {e}")
-            # Skip backbones that don't exist or have errors
-            continue
+            except Exception as e:
+                logger.warning(f"Failed to get stats for backbone {backbone_id}: {e}")
+                # Skip backbones that don't exist or have errors
+                continue
+        return stats_list
+
+    # Run blocking DB operations in thread pool to avoid blocking event loop
+    loop = asyncio.get_running_loop()
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        stats_list = await loop.run_in_executor(executor, _get_stats_sync)
 
     return VectorStatsResponse(stats=stats_list)
 

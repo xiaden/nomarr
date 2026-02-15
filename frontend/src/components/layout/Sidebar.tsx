@@ -26,7 +26,6 @@ const navItems: NavItem[] = [
   { path: "/navidrome", label: "Navidrome" },
   { path: "/playlist-import", label: "Playlist Import" },
   { path: "/config", label: "Config" },
-  { path: "/admin", label: "Admin" },
 ];
 
 export { SIDEBAR_WIDTH };

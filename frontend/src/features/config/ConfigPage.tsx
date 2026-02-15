@@ -23,6 +23,7 @@ import { ConfirmDialog, PageContainer } from "@shared/components/ui";
 
 import { InspectTags } from "../admin/components/InspectTags";
 import { SystemControls } from "../admin/components/SystemControls";
+import { VectorMaintenance } from "../admin/components/VectorMaintenance";
 import { WorkerControls } from "../admin/components/WorkerControls";
 import { useAdminActions } from "../admin/hooks/useAdminActions";
 
@@ -75,6 +76,7 @@ export function ConfigPage() {
                   actionLoading={actionLoading}
                 />
                 <SystemControls onRestart={handleRestart} actionLoading={actionLoading} />
+                <VectorMaintenance />
                 <InspectTags />
               </Stack>
             </AccordionDetails>
