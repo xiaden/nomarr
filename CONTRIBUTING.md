@@ -1,10 +1,10 @@
 # Contributing to Nomarr
 
-Thank you for your interest in contributing to Nomarr! This document provides guidelines for contributing to this pre-alpha project.
+Thank you for your interest in contributing to Nomarr! This document provides guidelines for contributing to this alpha project.
 
 ## ⚠️ Project Status
 
-**Nomarr is in pre-alpha development** and changes heavily on a daily basis. The architecture is actively being refactored, and breaking changes are expected. We welcome contributions but ask for patience as the codebase stabilizes.
+**Nomarr is alpha software** and changes frequently. The architecture is actively being refined, and breaking changes are expected before 1.0. We welcome contributions but ask for patience as the codebase stabilizes.
 
 ## 🤝 How to Contribute
 
@@ -178,7 +178,7 @@ Refactor service layer to use workflow orchestration
 
 ## 🚫 What We're Not Accepting (Yet)
 
-- Database migrations or backwards compatibility layers (pre-alpha policy)
+- Forward-only database migrations (migrations exist but no rollback support)
 - Alternative ML backends without discussion first
 - UI framework changes
 - Major architectural changes without RFC

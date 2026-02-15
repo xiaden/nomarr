@@ -2,11 +2,11 @@
 
 ## Project Status
 
-⚠️ **Nomarr is pre-alpha software** under active development. Security features are still being implemented and hardened. **Do not use Nomarr in production environments or expose it directly to the internet.**
+⚠️ **Nomarr is alpha software** under active development. Security features are still being implemented and hardened. **Do not use Nomarr in production environments or expose it directly to the internet.**
 
 ## Supported Versions
 
-Currently, only the latest commit on the `main` branch is supported. Version numbers are provisional during pre-alpha.
+Currently, only the latest commit on the `main` branch is supported. Version numbers are provisional during alpha.
 
 | Version | Supported          |
 | ------- | ------------------ |
@@ -23,7 +23,7 @@ Currently, only the latest commit on the `main` branch is supported. Version num
 - **Database Authentication** - ArangoDB requires credentials
 - **No External Network Access** - ML models run locally, no telemetry
 
-### Known Limitations (Pre-Alpha)
+### Known Limitations (Alpha)
 
 - **No HTTPS by default** - Run behind a reverse proxy (nginx, Traefik) for TLS
 - **No rate limiting** - Can be abused if exposed to untrusted networks
@@ -40,7 +40,7 @@ Currently, only the latest commit on the `main` branch is supported. Version num
 2. **Use a reverse proxy** - nginx or Traefik with TLS termination
 3. **Bind to localhost** - Use `127.0.0.1:8356` and proxy from reverse proxy
 4. **Strong passwords** - Change auto-generated admin password immediately
-5. **Regular updates** - Pull latest images frequently during pre-alpha
+5. **Regular updates** - Pull latest images frequently during alpha
 6. **Filesystem permissions** - Music library should be read-only for Nomarr
 7. **Backup database** - ArangoDB data in `config/db` should be backed up
 
@@ -94,7 +94,7 @@ services:
   - High: Patch within 2 weeks
   - Medium/Low: Included in next release
 
-**Note:** As a pre-alpha project with a single maintainer, response times may vary. Critical vulnerabilities will be prioritized.
+**Note:** As an alpha project with a single maintainer, response times may vary. Critical vulnerabilities will be prioritized.
 
 ## Security Best Practices for Users
 
@@ -149,7 +149,7 @@ We follow **coordinated disclosure** - vulnerabilities are not made public until
 - Social engineering attacks
 - Vulnerabilities in third-party dependencies (report to upstream projects)
 - Issues that require user to run untrusted code
-- DoS attacks (pre-alpha has no DoS protection)
+- DoS attacks (alpha has no DoS protection)
 
 ## Dependencies
 

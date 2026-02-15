@@ -134,7 +134,7 @@ python scripts/check_dead_nodes.py --format=json
 
 **Purpose:** Find references to "legacy" or "backwards compatibility" in the codebase.
 
-**Why:** Nomarr is pre-alpha. There should be NO legacy code or compatibility layers.
+**Why:** Nomarr is alpha. There should be NO legacy code or compatibility layers (forward-only migrations only).
 
 **Use when:**
 - Ensuring no one added migration/shim code
@@ -160,7 +160,7 @@ python scripts/find_legacy.py nomarr/services tests/unit
 - `TODO...remove`
 - `FIXME...remove`
 
-**Expected result:** Zero matches. Any match is a violation of pre-alpha policy.
+**Expected result:** Zero matches. Any match is a violation of alpha development policy.
 
 ---
 
@@ -204,5 +204,5 @@ python scripts/detect_slop.py nomarr/workflows/processing/process_file_wf.py
 ## Key Rules
 
 - **Use `detect_slop.py` on one file/package at a time** — don't try to fix everything from one giant report
-- **`find_legacy.py` should always return zero results** — pre-alpha means no legacy code
+- **`find_legacy.py` should always return zero results** — alpha means no legacy code (migrations are forward-only)
 - **Run `check_naming.py` before committing** — naming violations are enforcement, not cosmetic
