@@ -73,6 +73,9 @@ def upgrade(db: DatabaseLike) -> None:
         ", ".join(sorted(vt_collections)),
     )
 
+    # Collect existing hot/cold collection names for idempotency checks
+    existing_names = {c["name"] for c in collections}  # type: ignore[union-attr]
+
     # Process each collection
     for old_name in sorted(vt_collections):
         # Extract backbone_id from collection name
@@ -82,34 +85,51 @@ def upgrade(db: DatabaseLike) -> None:
         cold_name = f"{_VECTORS_TRACK_COLD_PREFIX}{backbone_id}"
 
         # Step 2: Rename old collection to cold (preserves data + existing indexes)
-        logger.info(
-            "Migration V007: Renaming %s → %s (preserving %d vectors)",
-            old_name,
-            cold_name,
-            db.collection(old_name).count(),  # type: ignore[union-attr]
-        )
-        db.collection(old_name).rename(cold_name)  # type: ignore[union-attr]
+        # Skip if cold already exists (idempotency)
+        if cold_name in existing_names:
+            logger.info(
+                "Migration V007: Cold collection %s already exists, skipping rename",
+                cold_name,
+            )
+        else:
+            logger.info(
+                "Migration V007: Renaming %s → %s (preserving %d vectors)",
+                old_name,
+                cold_name,
+                db.collection(old_name).count(),  # type: ignore[union-attr]
+            )
+            db.collection(old_name).rename(cold_name)  # type: ignore[union-attr]
 
         # Step 3: Create new empty hot collection
-        logger.info(
-            "Migration V007: Creating empty hot collection: %s",
-            hot_name,
-        )
-        db.create_collection(hot_name)  # type: ignore[union-attr]
+        # Skip if hot already exists (idempotency)
+        if hot_name in existing_names:
+            logger.info(
+                "Migration V007: Hot collection %s already exists, skipping create",
+                hot_name,
+            )
+        else:
+            logger.info(
+                "Migration V007: Creating empty hot collection: %s",
+                hot_name,
+            )
+            db.create_collection(hot_name)
 
         # Step 4: Create indexes on both hot and cold
         # Hot indexes: unique _key (enforce invariant), file_id (cascade delete performance)
         hot_coll = db.collection(hot_name)  # type: ignore[union-attr]
-        hot_coll.add_persistent_index(  # type: ignore[union-attr]
-            fields=["_key"],
-            unique=True,
-            name="idx_hot_key_unique",
-        )
-        hot_coll.add_persistent_index(  # type: ignore[union-attr]
-            fields=["file_id"],
-            unique=False,
-            name="idx_hot_file_id",
-        )
+        hot_existing_indexes = {idx["name"] for idx in hot_coll.indexes()}  # type: ignore[union-attr]
+        if "idx_hot_key_unique" not in hot_existing_indexes:
+            hot_coll.add_persistent_index(  # type: ignore[union-attr]
+                fields=["_key"],
+                unique=True,
+                name="idx_hot_key_unique",
+            )
+        if "idx_hot_file_id" not in hot_existing_indexes:
+            hot_coll.add_persistent_index(  # type: ignore[union-attr]
+                fields=["file_id"],
+                unique=False,
+                name="idx_hot_file_id",
+            )
 
         # Cold indexes: unique _key, file_id (cold already has vector index from old collection)
         cold_coll = db.collection(cold_name)  # type: ignore[union-attr]
