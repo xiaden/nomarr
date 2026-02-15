@@ -80,8 +80,8 @@ Plans are parsed by `mcp_code_intel.helpers.plan_md`. Invalid structure causes `
 ## Splitting Large Tasks
 
 Split a plan into sequential parts if ANY condition is true:
-- More than 2 phases
-- More than 12 steps total
+- More than 4 phases
+- More than 16 steps total
 - `plan_read` returns a resource link instead of inline content
 
 **Resource link = absolute trigger.** If you see `Large tool result written to file...`, the plan is too large. Split immediately.
