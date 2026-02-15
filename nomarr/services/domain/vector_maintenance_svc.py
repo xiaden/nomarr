@@ -111,19 +111,6 @@ class VectorMaintenanceService:
             "index_exists": index_exists,
         }
 
-    def list_backbones(self) -> list[str]:
-        """List available embedding backbones.
-
-        Discovers backbones from models directory structure.
-
-        Returns:
-            Sorted list of backbone identifiers (e.g., ["effnet", "musicnn"])
-
-        """
-        from nomarr.components.ml.ml_discovery_comp import discover_backbones
-
-        return discover_backbones(self.models_dir)
-
     def calculate_optimal_nlists(self, doc_count: int) -> int:
         """Calculate optimal nlists for vector index based on document count.
 

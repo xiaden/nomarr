@@ -28,6 +28,7 @@ from nomarr.interfaces.api.types.vector_types import (
     VectorStatsResponse,
 )
 from nomarr.interfaces.api.web.dependencies import (
+    get_ml_service,
     get_vector_maintenance_service,
     get_vector_search_service,
 )
@@ -37,13 +38,14 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from nomarr.services.domain.vector_maintenance_svc import VectorMaintenanceService
     from nomarr.services.domain.vector_search_svc import VectorSearchService
+    from nomarr.services.infrastructure.ml_svc import MLService
 
 router = APIRouter(tags=["vectors"], prefix="/vectors")
 
 
 @router.get("/backbones", dependencies=[Depends(verify_session)])
 async def list_backbones(
-    vector_maintenance_service: VectorMaintenanceService = Depends(get_vector_maintenance_service),
+    ml_service: MLService = Depends(get_ml_service),
 ) -> dict[str, list[str]]:
     """List available vector backbones.
 
@@ -57,7 +59,7 @@ async def list_backbones(
         Dict with 'backbones' key containing list of available backbone IDs
 
     """
-    return {"backbones": vector_maintenance_service.list_backbones()}
+    return {"backbones": ml_service.list_backbones()}
 
 
 @router.post("/search", dependencies=[Depends(verify_session)])
@@ -169,6 +171,7 @@ async def get_track_vector(
 
 @router.get("/stats", dependencies=[Depends(verify_session)])
 async def get_vector_stats(
+    ml_service: MLService = Depends(get_ml_service),
     vector_maintenance_service: VectorMaintenanceService = Depends(get_vector_maintenance_service),
 ) -> VectorStatsResponse:
     """Get hot/cold statistics for all backbones.
@@ -186,7 +189,7 @@ async def get_vector_stats(
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
 
-    known_backbones = vector_maintenance_service.list_backbones()
+    known_backbones = ml_service.list_backbones()
 
     def _get_stats_sync() -> list[VectorHotColdStats]:
         """Run blocking DB queries in thread pool."""

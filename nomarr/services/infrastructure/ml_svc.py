@@ -1,7 +1,7 @@
-"""ML Service: Manages ML model cache and predictor operations.
+"""ML Service: Manages ML model discovery and cache lifecycle.
 
-This service owns ML cache lifecycle and provides a clean interface for
-warming up predictors without exposing ml layer details to interfaces.
+This service owns ML model discovery, cache lifecycle, and provides a clean
+interface for model operations without exposing component details to interfaces.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from nomarr.components.ml.ml_cache_comp import get_cache_size, warmup_predictor_cache
-from nomarr.components.ml.ml_discovery_comp import discover_heads
+from nomarr.components.ml.ml_discovery_comp import discover_backbones, discover_heads
 
 logger = logging.getLogger(__name__)
 
@@ -25,10 +25,12 @@ class MLConfig:
 
 
 class MLService:
-    """Service for managing ML model cache and predictor operations.
+    """Service for ML model discovery and cache management.
 
-    Provides a clean interface for cache warmup without requiring
-    interfaces to import from nomarr.components.ml directly.
+    Provides a clean interface for:
+    - Discovering available backbones (embedding extractors)
+    - Discovering model heads (classifiers)
+    - Cache warmup and monitoring
     """
 
     def __init__(self, cfg: MLConfig) -> None:
@@ -50,7 +52,6 @@ class MLService:
             RuntimeError: If cache warmup fails
 
         """
-
         try:
             count = warmup_predictor_cache(
                 models_dir=self.cfg.models_dir,
@@ -72,6 +73,18 @@ class MLService:
         """
         return get_cache_size()
 
+    def list_backbones(self) -> list[str]:
+        """List available embedding backbones.
+
+        Discovers backbones from models directory structure.
+        A backbone is valid if it has embeddings/*.pb files.
+
+        Returns:
+            Sorted list of backbone identifiers (e.g., ["effnet", "musicnn"])
+
+        """
+        return discover_backbones(self.cfg.models_dir)
+
     def discover_heads(self) -> list[Any]:
         """Discover all available model heads in models directory.
 
@@ -82,7 +95,6 @@ class MLService:
             RuntimeError: If model discovery fails
 
         """
-
         try:
             heads = discover_heads(self.cfg.models_dir)
             logger.info(f"[MLService] Discovered {len(heads)} model heads")
