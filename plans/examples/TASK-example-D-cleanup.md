@@ -4,9 +4,7 @@
 
 Cleanup phase for the comprehensive example refactor. Remove deprecated code and update documentation.
 
-**Parent plan:** `TASK-example-comprehensive.md` (orchestrator)
-
-**Prerequisite:** `TASK-example-C-validation.md` must be complete (don't delete code until it's verified working)
+**Prerequisite:** `TASK-example-C-validation` must be complete (don't delete code until it's verified working)
 
 ## Phases
 
@@ -32,6 +30,5 @@ Cleanup phase for the comprehensive example refactor. Remove deprecated code and
 
 ## References
 
-- Parent: `plans/examples/TASK-example-comprehensive.md`
 - Prerequisite: `plans/examples/TASK-example-C-validation.md`
 - Siblings: A-discovery, B-implementation

@@ -26,55 +26,19 @@ Do not modify the plan. Do not summarize it. Treat the plan as authoritative.
 
 ---
 
+## Phase 1.5: Prerequisite Check
 
-## Phase 1.5: Split Plan Detection
+If the plan name follows the pattern `TASK-<feature>-<B|C|D|...>-<outcome>` (i.e., it's not the first part):
 
-After loading the plan, check if it's part of a split plan set:
-
-### Detection Criteria
-
-A plan is split if:
-- The plan name follows pattern `TASK-<feature>-<A|B|C|...>-<outcome>`, OR
-- The `References` section lists other plan files with the same prefix
-
-### Execution Strategy
-
-**Default: Execute ONLY the current plan** (the one explicitly loaded).
-
-Do NOT automatically execute all related split plans unless:
-1. The user explicitly requests execution of all parts, OR
-2. The current plan's `Completion Criteria` lists other split plans as "completed (prerequisite)"
-
-### Prerequisite Checking
-
-Before starting Phase 2 execution:
-
-1. **Parse Completion Criteria** for prerequisite declarations like:
-   - `TASK-<name>-A-<outcome> completed (prerequisite)`
-   - `TASK-<name> completed (prerequisite)`
-
-2. **Check each prerequisite** using `plan_read`:
-   - If prerequisite plan doesn't exist → BLOCK with error
-   - If prerequisite has incomplete steps → BLOCK with warning
-   - If all prerequisites completed → proceed to Phase 2
-
-3. **If blocked**, add annotation and stop:
-   ```
-   annotation:
-     marker: Blocked
-     text: |
-       Prerequisite not met: TASK-feature-A-backend must be completed first.
-       Found 3 incomplete steps in prerequisite plan.
-   ```
-
-### Cross-Plan References
-
-When a step references "components from TASK-X-Y":
-- Use `locate_module_symbol` or `find_symbol` to verify the referenced code exists
-- If missing → check if the prerequisite plan completed successfully
-- If completed but symbol missing → prerequisite plan failed its validation
+1. Check the Problem Statement for `**Prerequisite:** TASK-<feature>-<letter>-<outcome>`
+2. If a prerequisite is declared, verify it exists in `plans/completed/` using `find_file`
+3. If the prerequisite plan is NOT in `plans/completed/`:
+   - Check if it exists in `plans/` and read it to see if all steps are complete
+   - If incomplete → BLOCK and stop
+4. If no prerequisite is declared, proceed normally
 
 ---
+
 ## Phase 2: Step Execution Loop
 
 Process steps strictly in order.
@@ -96,7 +60,6 @@ For each step:
      - test output
      - file diffs
      - concrete inspection
-     - for split plans: imported symbols from prerequisite plans exist
    - If verification fails, the step is not complete.
 
 4. Record completion
@@ -161,13 +124,7 @@ No recovery. No skipping. No assumptions.
 - Do not optimize the plan
 - Do not invent follow-up tasks
 - Do not proceed past failure
-- The plan’s Problem Statement and Completion Criteria override all other instructions
-
-- **For split plans:**
-  - Check prerequisites before execution (Phase 1.5)
-  - Execute ONLY the current plan by default
-  - When Completion Criteria references other plans, verify their status
-  - Cross-plan symbols must exist or prerequisite validation failed
+- The plan's Problem Statement and Completion Criteria override all other instructions
 
 ---
 
@@ -185,12 +142,7 @@ After ALL steps in the plan are marked complete:
    mv plans/<plan-name>.md plans/completed/
    ```
 
-3. **Handle split plans**
-   - Only move the current plan file (the one you executed)
-   - Do NOT move sibling plans (A, B, C parts) unless you executed them too
-   - Parent plans stay in `plans/` until all children are complete
-
-4. **Confirm archival**
+3. **Confirm archival**
    - Verify the file exists in `plans/completed/`
    - Report: "Plan archived to plans/completed/<plan-name>.md"
 

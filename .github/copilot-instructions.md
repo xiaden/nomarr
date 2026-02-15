@@ -146,6 +146,7 @@ These tools understand FastAPI DI and nomarr's architecture. Serena is a fallbac
 
 **Additional atomic edit operations:**
 
+- `edit_file_move` - Move or rename a file within the workspace (single call, creates target parent dirs automatically)
 - `edit_file_replace_string` - Apply multiple string replacements atomically. Requires `expected_count` per replacement - fails if actual matches differ. For small strings, error suggests using `search_file_text` first to verify matches.
 - `edit_file_replace_line_range` - Replace specific line range with new content (use when you have exact line numbers)
 - `edit_file_move_text` - Move lines within same file or across files atomically
@@ -166,6 +167,7 @@ These tools understand FastAPI DI and nomarr's architecture. Serena is a fallbac
 | Insert between existing lines | `edit_file_insert_text` | Use `at: "after_line"` with specific line number |
 | Copy same code to many places | `edit_file_copy_paste_text` | Source cached once, pasted to multiple targets efficiently |
 | Copy boilerplate code to multiple places | `edit_file_copy_paste_text` | Primary use case - read once, paste everywhere |
+| Move or rename a file | `edit_file_move` | Single call, auto-creates target parent directories |
 
 **Critical rule: Coordinate space preservation**
 
@@ -244,7 +246,7 @@ This is required because:
 - Steps MUST be flat lists - nested checkboxes will cause parser errors
 - If substeps are needed → they're actually separate steps or phase-level notes
 - Use `**Notes:**`, `**Warning:**`, `**Blocked:**` annotations after steps (or phases)
-- Annotations: pure bullet lists → parsed as arrays; mixed content → string with `\n`
+- Annotation text must not contain bullets (`- `), checkboxes (`- [`), or numbered lists (`1.`) — the parser will misinterpret them as steps
 - Phase numbers must be sequential starting from 1
 - Steps auto-generate IDs like `P1-S1`, `P2-S3`
 
@@ -288,25 +290,28 @@ The `read_file_range` warning on Python files isn't naggy - it's catching you us
 
 ---
 
-## Pre-Alpha Policy
+## Alpha Development Policy
 
-Nomarr is **pre-alpha**. Break things if it makes the architecture cleaner. No migrations, legacy shims, or backwards compatibility. When you change contracts and something breaks, you fix the breakage—not by reverting, but by updating the callers. Priority is always clean architecture over preserving old code.
+Nomarr is **alpha software** with forward-only migrations. Breaking changes are allowed before 1.0, but the system self-repairs via database migrations on startup. When you change contracts and something breaks, fix the breakage by updating callers and adding migrations if schema changes. Priority is always clean architecture over preserving old code.
 
 **Do break:**
 - Change service method signatures to fix layer violations
 - Rename modules to match actual responsibilities
 - Delete unused code even if recently added
 - Refactor workflows to eliminate temporal coupling
+- Change database schemas (add a migration in `nomarr/migrations/`)
 
 **Fix the breakage by:**
 - Updating all callers (use `find_referencing_symbols`)
 - Running `lint_project_backend` to find compile errors
 - Updating tests to match new contracts
+- Writing a forward-only migration if schema changes (see `docs/dev/migrations.md`)
 
 **Priority order:**
 1. Clean architecture (proper layers, clear contracts)
 2. Working code (passes lint + tests)
-3. Git history / preserving old code (irrelevant)
+3. Self-repairing (migrations for schema changes)
+4. Git history / preserving old code (irrelevant)
 
 ---
 
@@ -391,58 +396,6 @@ Previous contexts have:
 Config is loaded once by `ConfigService` and passed via parameters. No global singletons.
 
 ---
-
-## MCP Tool Return Pattern
-
-**All nomarr MCP tools use audience-targeted responses** to provide different content for users vs assistants.
-
-### Architecture
-
-- **Tools return domain objects only** (BatchResponse, dicts, Pydantic models)
-- **Server adds presentation layer** via `wrap_with_audience_targeting()` in `code-intel/src/mcp_code_intel/server.py`
-- **NO MCP protocol awareness in tool implementations** (`code-intel/src/mcp_code_intel/tools/`)
-
-### User Experience
-
-- **Users see summaries with breadcrumbs**: `"Edited 3 files: nomarr/services/domain/library_svc.py:142"`
-- **Assistants get structured data**: Full JSON with all details for reasoning
-- **Lint tools**: `"✓ All checks passed"` or `"✗ Lint failed: 5 errors in 3 files"` with breadcrumbs
-- **Trace tools**: `"LibraryService.scan_folder() calls 5 functions"` with call chains
-
-### Breadcrumb Helpers (server.py)
-
-- `make_workspace_relative(path)` - Strip workspace root, normalize to forward slashes
-- `format_qualified_name_breadcrumb(qualified_name)` - Shorten to `Class.method`
-- `format_file_location_breadcrumb(file, line)` - Format as `path/to/file.py:42`
-- `format_call_chain_breadcrumb(calls)` - Format as `A.method → B.method → C.method`
-
-### Implementation Pattern
-
-```python
-@mcp.tool()
-def my_tool(...) -> CallToolResult:
-    # Call domain tool implementation
-    result = my_tool_impl(...)
-    
-    # Format user-friendly summary with breadcrumbs
-    user_summary = format_result_for_user(result)
-    
-    # Wrap with audience targeting
-    return wrap_with_audience_targeting(result, user_summary, is_error=...)
-```
-
-**Use breadcrumb helpers for all file paths and qualified names in user summaries.**
-
-### Where Wrapping Happens
-
-**Automatic wrapping** in [code-intel/src/mcp_code_intel/server.py](code-intel/src/mcp_code_intel/server.py):
-- Every `@mcp.tool()` decorated function's return value passes through wrapper
-- Tool implementations in `tools/*.py` return raw domain objects
-- Server.py intercepts and adds audience targeting before returning to MCP client
-
-**You don't call `wrap_with_audience_targeting()` directly** - it's middleware in the MCP server request handler.
-
----
 ## Meta: Tool Usage Patterns
 
 **This section is living documentation.** When you complete a task and discover a pattern worth remembering, add it here. These are lessons for future contexts—including yourself.
@@ -461,6 +414,7 @@ When you reach for `read_file_range` on Python code, stop and ask: **what am I a
 | Read file to find function | "What's the module API?" | `read_module_api` |
 | Check if import is wrong | "Is there a layer violation?" | `lint_project_backend` |
 | Verify code was deleted | "Does this symbol still exist anywhere?" | `locate_module_symbol` (0 matches = deleted) |
+| Move/rename a file via terminal | "I need to relocate this file" | `edit_file_move` (single call, creates parent dirs) |
 
 ### Tool Gotchas
 

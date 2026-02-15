@@ -4,9 +4,7 @@
 
 Validation phase for the comprehensive example refactor. Verify implementation correctness through automated and manual testing.
 
-**Parent plan:** `TASK-example-comprehensive.md` (orchestrator)
-
-**Prerequisite:** `TASK-example-B-implementation.md` must be complete
+**Prerequisite:** `TASK-example-B-implementation` must be complete
 
 ## Phases
 
@@ -34,6 +32,5 @@ Validation phase for the comprehensive example refactor. Verify implementation c
 
 ## References
 
-- Parent: `plans/examples/TASK-example-comprehensive.md`
 - Prerequisite: `plans/examples/TASK-example-B-implementation.md`
 - Siblings: A-discovery, D-cleanup

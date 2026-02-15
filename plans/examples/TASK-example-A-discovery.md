@@ -4,8 +4,6 @@
 
 Discovery phase for the comprehensive example refactor. Goal: understand current state, identify affected components, document breaking changes, and get sign-off before implementation.
 
-**Parent plan:** `TASK-example-comprehensive.md` (orchestrator)
-
 ## Phases
 
 ### Phase 1: Component Analysis
@@ -22,7 +20,7 @@ Discovery phase for the comprehensive example refactor. Goal: understand current
 - [ ] Get stakeholder sign-off on scope
     **Blocked:** Waiting on product team review of breaking change impact
 
-**Warning:** Do not mark parent orchestrator step complete until P2-S2 is done. Implementation depends on this sign-off.
+**Warning:** Implementation depends on this sign-off.
 
 ## Completion Criteria
 
@@ -32,5 +30,4 @@ Discovery phase for the comprehensive example refactor. Goal: understand current
 
 ## References
 
-- Parent: `plans/examples/TASK-example-comprehensive.md`
 - Siblings: B-implementation, C-validation, D-cleanup

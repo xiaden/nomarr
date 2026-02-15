@@ -10,9 +10,7 @@ Plans are parsed by `mcp_code_intel.helpers.plan_md`. Invalid structure causes `
 
 ---
 
-## Minimal Template (Single Plan)
-
-Use for tasks with ≤2 phases and ≤12 steps total.
+## Template
 
 ```markdown
 # Task: <Brief Title>
@@ -68,93 +66,33 @@ Use for tasks with ≤2 phases and ≤12 steps total.
 
 ---
 
-## When to Split
+## Splitting Large Tasks
 
-Split into parent→child plans if ANY condition is true:
+Split a plan into sequential parts if ANY condition is true:
 - More than 2 phases
 - More than 12 steps total
 - `plan_read` returns a resource link instead of inline content
 
 **Resource link = absolute trigger.** If you see `Large tool result written to file...`, the plan is too large. Split immediately.
 
----
+### How to Split
 
-## Split Architecture
-
-**Maximum 2 levels.** One parent orchestrator + multiple child plans. Never nest orchestrators.
-
-### Parent (Orchestrator)
-
-```markdown
-# Task: Feature Name (Orchestrator)
-
-## Problem Statement
-High-level overview. Child plans contain details.
-
-## Phases
-
-### Phase 1: Orchestration
-- [ ] TASK-feature-A-discovery complete
-- [ ] TASK-feature-B-implementation complete
-    **Blocked:** Requires A sign-off
-- [ ] TASK-feature-C-validation complete
-
-## Completion Criteria
-- All child plans completed
-
-## References
-- `plans/TASK-feature-A-discovery.md`
-- `plans/TASK-feature-B-implementation.md`
-- `plans/TASK-feature-C-validation.md`
-```
-
-**Parent rules:**
-- Single phase named "Orchestration"
-- Steps are child completion conditions, not implementation actions
-- Mark step complete when linked child reaches 100%
-
-### Child
-
-```markdown
-# Task: Feature Name - Discovery
-
-## Problem Statement
-Specific scope. Context for fresh models.
-
-**Parent:** `TASK-feature.md`
-**Prerequisite:** None (or required sibling)
-
-## Phases
-
-### Phase 1: Analysis
-- [ ] Step
-- [ ] Step
-
-### Phase 2: Assessment
-- [ ] Step
-
-## Completion Criteria
-- Criteria
-
-## References
-- Parent: `plans/TASK-feature.md`
-- Siblings: B-implementation, C-validation
-```
-
-**Child rules:**
-- Title: `<Parent Feature> - <Child Outcome>`
-- Problem Statement includes parent reference and prerequisites
-- Can have multiple phases
-
-### Naming Convention
+Create independent plans with letter-suffixed names. Each plan is self-contained with its own Problem Statement, Phases, and Completion Criteria. **No orchestrator/parent plan.**
 
 ```
-TASK-<feature>.md                 (orchestrator)
-TASK-<feature>-A-<outcome>.md     (first child)
-TASK-<feature>-B-<outcome>.md     (second child)
+TASK-<feature>-A-<outcome>.md     (first part)
+TASK-<feature>-B-<outcome>.md     (second part)
+TASK-<feature>-C-<outcome>.md     (third part)
 ```
 
-### If a Child Is Still Too Large
+The naming convention carries the sequencing: A before B before C.
+
+Each plan should include:
+- Full Problem Statement (assume reader has zero context)
+- `**Prerequisite:** TASK-<feature>-A-<outcome>` if it depends on a prior part
+- Its own Completion Criteria (not "all parts done")
+
+### If a Part Is Still Too Large
 
 **Add siblings, don't nest deeper.**
 
@@ -163,8 +101,6 @@ Before: TASK-feature-A-discovery.md triggers split
 After:  TASK-feature-A1-discovery-scope.md
         TASK-feature-A2-discovery-assess.md
 ```
-
-Parent gains additional steps. Hierarchy stays at 2 levels.
 
 ---
 
@@ -193,15 +129,14 @@ Fix: Unnest as flat steps, move to `**Notes:**`, or split into phases.
 
 ## Validation
 
-**Always run `plan_read(plan_name)` after creating a plan.** Fix errors before proceeding. For split plans, validate parent and all children independently.
+**Always run `plan_read(plan_name)` after creating a plan.** Fix errors before proceeding.
 
 ---
 
 ## Complete Examples
 
 See `plans/examples/`:
-- `TASK-example-comprehensive.md` — Parent orchestrator
-- `TASK-example-A-discovery.md` through `D-cleanup.md` — Child plans
+- `TASK-example-A-discovery.md` through `D-cleanup.md` — Split plan set
 
 ---
 
@@ -216,5 +151,4 @@ See `plans/examples/`:
 | Skip problem statement | Always include context |
 | Manual checkbox edits | Use `plan_complete_step` |
 | Micro-steps ("add import") | Meaningful units |
-| Multiple orchestrator phases | Single "Orchestration" phase |
-| Nest 3+ levels | Add siblings (A1, A2) instead |
+| Create orchestrator plans | Just use A→B→C naming |

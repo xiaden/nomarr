@@ -4,9 +4,7 @@
 
 Implementation phase for the comprehensive example refactor. Build the new abstractions and migrate callers.
 
-**Parent plan:** `TASK-example-comprehensive.md` (orchestrator)
-
-**Prerequisite:** `TASK-example-A-discovery.md` must be complete (stakeholder sign-off required)
+**Prerequisite:** `TASK-example-A-discovery` must be complete (stakeholder sign-off required)
 
 ## Phases
 
@@ -33,6 +31,5 @@ Implementation phase for the comprehensive example refactor. Build the new abstr
 
 ## References
 
-- Parent: `plans/examples/TASK-example-comprehensive.md`
 - Prerequisite: `plans/examples/TASK-example-A-discovery.md`
 - Siblings: C-validation, D-cleanup
