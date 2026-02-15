@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,42 @@ from nomarr.helpers.dto.ml_dto import HeadOutput
 from nomarr.helpers.dto.tagging_dto import BuildTierTermSetsResult
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class StabilityThresholds:
+    """Thresholds for stability-based tier gating.
+
+    These thresholds control how segment-level variance affects tier assignment:
+    - acceptable: Max std for any tier (above this = no tier)
+    - stable: Max std for medium tier (above this = cap at low)
+    - very_stable: Max std for high tier (above this = cap at medium)
+    """
+
+    acceptable: float = 0.25
+    stable: float = 0.15
+    very_stable: float = 0.08
+
+
+# Default stability thresholds (used by ML inference and reconstruction)
+DEFAULT_STABILITY_THRESHOLDS = StabilityThresholds()
+
+@dataclass(frozen=True)
+class RegressionThresholds:
+    """Thresholds for regression head mood classification.
+
+    These thresholds determine when regression values (0-1 intensity) trigger mood terms:
+    - strong: Threshold for high-intensity label (>= this value)
+    - weak: Threshold for low-intensity label (<= this value)
+    - Values between weak and strong are neutral (both labels emitted with no tier)
+    """
+
+    strong: float = 0.7
+    weak: float = 0.3
+
+
+# Default regression thresholds
+DEFAULT_REGRESSION_THRESHOLDS = RegressionThresholds()
 
 
 def load_calibrations(models_dir: str, calibrate_heads: bool = False) -> dict[str, dict[str, Any]]:
@@ -120,15 +157,20 @@ def simplify_label(base_key: str) -> str:
     return label_stripped.replace("_", " ")
 
 
-def add_regression_mood_tiers(regression_heads: list[tuple[Any, list[float]]], framework_version: str) -> list[Any]:
+def add_regression_mood_tiers(
+    regression_heads: list[tuple[Any, list[float]]],
+    framework_version: str,
+    stability_thresholds: StabilityThresholds | None = None,
+    regression_thresholds: RegressionThresholds | None = None,
+) -> list[Any]:
     """Convert regression head predictions (approachability, engagement) into HeadOutput objects.
 
     Uses versioned tag keys from HeadInfo.build_versioned_tag_key() instead of hardcoded prefixes.
 
     Regression heads output INTENSITY values (0-1), not probabilities:
-    - High values (>0.7) indicate STRONG presence of the attribute
-    - Low values (<0.3) indicate STRONG presence of the opposite attribute
-    - Middle values (0.3-0.7) are neutral/ambiguous
+    - High values (>= strong threshold) indicate STRONG presence of the attribute
+    - Low values (<= weak threshold) indicate STRONG presence of the opposite attribute
+    - Middle values are neutral/ambiguous
 
     ALWAYS creates a HeadOutput with the mean value (clamped to [0, 1]).
     Variance only affects TIER assignment:
@@ -138,6 +180,8 @@ def add_regression_mood_tiers(regression_heads: list[tuple[Any, list[float]]], f
     Args:
         regression_heads: List of (HeadInfo, segment_values) tuples for regression heads
         framework_version: Runtime Essentia version (e.g., "2.1b6.dev1389")
+        stability_thresholds: Thresholds for stability gating (default: DEFAULT_STABILITY_THRESHOLDS)
+        regression_thresholds: Thresholds for regression mood determination (default: DEFAULT_REGRESSION_THRESHOLDS)
 
     Returns:
         List of HeadOutput objects with tier information
@@ -145,6 +189,13 @@ def add_regression_mood_tiers(regression_heads: list[tuple[Any, list[float]]], f
     """
     if not regression_heads:
         return []
+
+    # Use provided thresholds or defaults
+    if stability_thresholds is None:
+        stability_thresholds = DEFAULT_STABILITY_THRESHOLDS
+    if regression_thresholds is None:
+        regression_thresholds = DEFAULT_REGRESSION_THRESHOLDS
+
     outputs: list[HeadOutput] = []
     for head_info, segment_values in regression_heads:
         head_name = head_info.name
@@ -155,8 +206,8 @@ def add_regression_mood_tiers(regression_heads: list[tuple[Any, list[float]]], f
         std_val = float(np.std(arr))
         mean_val = max(0.0, min(1.0, mean_val))
         high_term, low_term = _MOOD_MAPPING[head_name]
-        is_high = mean_val >= _STRONG_THRESHOLD
-        is_low = mean_val <= _WEAK_THRESHOLD
+        is_high = mean_val >= regression_thresholds.strong
+        is_low = mean_val <= regression_thresholds.weak
         if is_high:
             mood_term = high_term
         elif is_low:
@@ -196,15 +247,15 @@ def add_regression_mood_tiers(regression_heads: list[tuple[Any, list[float]]], f
             mood_term, framework_version=framework_version, calib_method="none", calib_version=0,
         )
         tier: str | None = None
-        if std_val >= _ACCEPTABLE:
+        if std_val >= stability_thresholds.acceptable:
             logger.debug(
                 f"[aggregation] Regression no tier: {head_name} → {mood_term} (mean={mean_val:.3f}, std={std_val:.3f} - high variance)",
             )
         else:
             intensity = abs(mean_val - 0.5) * 2
-            if std_val < _VERY_STABLE and intensity >= 0.8:
+            if std_val < stability_thresholds.very_stable and intensity >= 0.8:
                 tier = "high"
-            elif std_val < _STABLE and intensity >= 0.6:
+            elif std_val < stability_thresholds.stable and intensity >= 0.6:
                 tier = "medium"
             else:
                 tier = "low"
@@ -235,11 +286,6 @@ LABEL_PAIRS = [
     ("tonal", "atonal", "tonal", "atonal"),
     ("instrumental", "voice", "instrumental only", "has vocals"),
 ]
-_STRONG_THRESHOLD = 0.7
-_WEAK_THRESHOLD = 0.3
-_VERY_STABLE = 0.08
-_STABLE = 0.15
-_ACCEPTABLE = 0.25
 _MOOD_MAPPING = {
     "approachability_regression": ("mainstream", "fringe"),
     "engagement_regression": ("engaging", "mellow"),
@@ -456,3 +502,210 @@ def aggregate_mood_tiers(
     label_map = _build_label_map(tier_map, LABEL_PAIRS)
     tier_sets = _build_tier_term_sets(tier_map, suppressed_keys, label_map)
     return _make_inclusive_mood_tags(tier_sets.strict_terms, tier_sets.regular_terms, tier_sets.loose_terms)
+
+
+
+def reconstruct_head_outputs_from_stats(
+    numeric_tags: dict[str, float],
+    segment_stats_by_head: dict[str, list[dict[str, Any]]],
+    head_infos: list[Any],
+    framework_version: str,
+    namespace: str,
+    stability_thresholds: StabilityThresholds | None = None,
+    regression_thresholds: RegressionThresholds | None = None,
+) -> list[Any]:
+    """Reconstruct HeadOutput objects from segment statistics and numeric tags.
+
+    Uses the same tier logic as ML inference to ensure identical mood tag results.
+    For classification heads, applies decide_multilabel with segment std.
+    For regression heads, uses segment mean/std with add_regression_mood_tiers logic.
+
+    Args:
+        numeric_tags: Dict of namespaced tag_key -> value from DB
+        segment_stats_by_head: Dict of head_name -> label_stats [{label, mean, std, min, max}, ...]
+        head_infos: List of discovered HeadInfo objects
+        framework_version: Runtime Essentia version
+        namespace: Tag namespace (e.g., "nom")
+        stability_thresholds: Thresholds for stability gating (default: DEFAULT_STABILITY_THRESHOLDS)
+        regression_thresholds: Thresholds for regression mood determination (default: DEFAULT_REGRESSION_THRESHOLDS)
+
+    Returns:
+        List of HeadOutput objects with tier information matching ML inference
+
+    """
+    from nomarr.components.ml.ml_heads_comp import HeadSpec, decide_multilabel
+
+    # Use provided thresholds or defaults
+    if stability_thresholds is None:
+        stability_thresholds = DEFAULT_STABILITY_THRESHOLDS
+    if regression_thresholds is None:
+        regression_thresholds = DEFAULT_REGRESSION_THRESHOLDS
+
+    all_outputs: list[HeadOutput] = []
+
+    for head_info in head_infos:
+        head_name = head_info.name
+        if head_name not in segment_stats_by_head:
+            logger.debug(f"[reconstruction] No segment stats for {head_name}, skipping")
+            continue
+
+        label_stats = segment_stats_by_head[head_name]
+
+        # Build label -> {mean, std} lookup
+        stats_by_label = {stat["label"]: stat for stat in label_stats}
+
+        if head_info.is_regression_head:
+            # For regression: collect mean values as "segment values" for add_regression_mood_tiers
+            # We can't reconstruct raw segment arrays, but mean/std are sufficient for tier logic
+            if not label_stats:
+                continue
+            # Regression heads have 1 label
+            stat = label_stats[0]
+            mean_val = stat["mean"]
+
+            # Replicate add_regression_mood_tiers logic inline for single-value case
+            if head_name not in _MOOD_MAPPING:
+                continue
+
+            std_val = stat["std"]
+            mean_val = max(0.0, min(1.0, mean_val))
+            high_term, low_term = _MOOD_MAPPING[head_name]
+
+            is_high = mean_val >= regression_thresholds.strong
+            is_low = mean_val <= regression_thresholds.weak
+
+            if is_high:
+                mood_term = high_term
+            elif is_low:
+                mood_term = low_term
+            else:
+                # Neutral case: emit both high and low terms with no tier
+                model_key_high, calib_id_high = head_info.build_versioned_tag_key(
+                    high_term, framework_version=framework_version, calib_method="none", calib_version=0,
+                )
+                model_key_low, calib_id_low = head_info.build_versioned_tag_key(
+                    low_term, framework_version=framework_version, calib_method="none", calib_version=0,
+                )
+                all_outputs.append(
+                    HeadOutput(
+                        head=head_info,
+                        model_key=model_key_high,
+                        label=high_term,
+                        value=mean_val,
+                        tier=None,
+                        calibration_id=calib_id_high,
+                    ),
+                )
+                all_outputs.append(
+                    HeadOutput(
+                        head=head_info,
+                        model_key=model_key_low,
+                        label=low_term,
+                        value=1.0 - mean_val,
+                        tier=None,
+                        calibration_id=calib_id_low,
+                    ),
+                )
+                continue
+
+            model_key, calibration_id = head_info.build_versioned_tag_key(
+                mood_term, framework_version=framework_version, calib_method="none", calib_version=0,
+            )
+
+            tier: str | None = None
+            if std_val >= stability_thresholds.acceptable:
+                logger.debug(f"[reconstruction] Regression no tier: {head_name} → {mood_term} (std={std_val:.3f})")
+            else:
+                intensity = abs(mean_val - 0.5) * 2
+                if std_val < stability_thresholds.very_stable and intensity >= 0.8:
+                    tier = "high"
+                elif std_val < stability_thresholds.stable and intensity >= 0.6:
+                    tier = "medium"
+                else:
+                    tier = "low"
+
+            all_outputs.append(
+                HeadOutput(
+                    head=head_info,
+                    model_key=model_key,
+                    label=mood_term,
+                    value=mean_val,
+                    tier=tier,
+                    calibration_id=calibration_id,
+                ),
+            )
+        else:
+            # Classification head: reconstruct from numeric tags + segment std
+            spec = HeadSpec.from_sidecar(head_info.sidecar)
+
+            # Build probs array for all labels
+            probs = np.zeros(len(spec.labels), dtype=np.float32)
+            segment_std_array = np.zeros(len(spec.labels), dtype=np.float32)
+
+            for i, label in enumerate(spec.labels):
+                norm_label = normalize_tag_label(label)
+                model_key, _ = head_info.build_versioned_tag_key(
+                    norm_label,
+                    framework_version=framework_version,
+                    calib_method="none",
+                    calib_version=0,
+                )
+                full_key = f"{namespace}:{model_key}"
+
+                # Get probability from numeric tags
+                if full_key in numeric_tags:
+                    probs[i] = numeric_tags[full_key]
+
+                # Get segment std from stats
+                if label in stats_by_label:
+                    segment_std_array[i] = stats_by_label[label]["std"]
+
+            # Run decision logic with segment std
+            result = decide_multilabel(probs, spec, segment_std=segment_std_array)
+            selected = result.get("selected", {})
+            all_probs = result.get("all_probs", {})
+
+            # Convert to HeadOutput objects (replicates HeadDecision.to_head_outputs logic)
+            def _build_key(lbl: str, head: Any = head_info) -> str:
+                norm_lbl = normalize_tag_label(lbl)
+                model_key, _ = head.build_versioned_tag_key(
+                    norm_lbl,
+                    framework_version=framework_version,
+                    calib_method="none",
+                    calib_version=0,
+                )
+                return str(model_key)
+
+            for label, value_dict in selected.items():
+                prob = float(value_dict.get("p", 0.0))
+                tier_val = value_dict.get("tier")
+                model_key = _build_key(label)
+                all_outputs.append(
+                    HeadOutput(
+                        head=head_info,
+                        model_key=model_key,
+                        label=label,
+                        value=prob,
+                        tier=tier_val,
+                        calibration_id=None,
+                    ),
+                )
+
+            # Add all_probs labels not in selected
+            for label, prob in all_probs.items():
+                if label in selected:
+                    continue
+                model_key = _build_key(label)
+                all_outputs.append(
+                    HeadOutput(
+                        head=head_info,
+                        model_key=model_key,
+                        label=label,
+                        value=float(prob),
+                        tier=None,
+                        calibration_id=None,
+                    ),
+                )
+
+    logger.info(f"[reconstruction] Reconstructed {len(all_outputs)} HeadOutput objects from stats")
+    return all_outputs
