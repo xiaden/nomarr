@@ -809,15 +809,20 @@ def edit_file_move(
     )
 
 
+
 @mcp.tool()
 def edit_file_replace_line_range(
     file_path: Annotated[str, "Workspace-relative or absolute path to the file to edit"],
     start_line: Annotated[int, "First line to replace (1-indexed, inclusive)"],
     end_line: Annotated[int, "Last line to replace (1-indexed, inclusive)"],
     new_content: Annotated[str, "New content to insert (can be multiple lines)"],
+    expected_content: Annotated[
+        str | None,
+        "Optional verification: the exact content you expect at the target line range. "
+        "Tool will fail if actual content doesn't match, preventing corruption from stale line numbers. "
+        "Strongly recommended for all replacements to avoid editing wrong code.",
+    ] = None,
 ) -> CallToolResult:
-    """Replace a line range with new content.
-
     Line-anchored replacement for deterministic edits when line numbers are known
     from prior read operations. Removes ambiguity of string matching and reduces
     blast radius compared to large block string replacements.
@@ -828,7 +833,9 @@ def edit_file_replace_line_range(
     - Formatters make string matching fragile
     Returns context showing 2 lines before/after replaced region.
     """
-    result = edit_file_replace_line_range_impl(file_path, start_line, end_line, new_content, ROOT)
+    result = edit_file_replace_line_range_impl(
+        file_path, start_line, end_line, new_content, ROOT, expected_content
+    )
     return wrap_mcp_result_with_file_link(
         result,
         file_path=file_path,

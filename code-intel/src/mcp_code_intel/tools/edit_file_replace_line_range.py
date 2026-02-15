@@ -25,8 +25,8 @@ def edit_file_replace_line_range(
     end_line: int,
     new_content: str,
     workspace_root: Path,
+    expected_content: str | None = None,
 ) -> dict:
-    """Replace a line range with new content.
 
     Line-anchored replacement for deterministic edits when line numbers are known
     from prior read operations. Removes ambiguity of string matching and reduces
