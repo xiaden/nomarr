@@ -11,6 +11,7 @@ from .libraries_aql import LibrariesOperations
 from .library_files_aql import LibraryFilesOperations
 from .library_folders_aql import LibraryFoldersOperations
 from .meta_aql import MetaOperations
+from .segment_scores_stats_aql import SegmentScoresStatsOperations
 from .sessions_aql import SessionOperations
 from .tags_aql import TagOperations
 
@@ -24,6 +25,7 @@ __all__ = [
     "LibraryFilesOperations",
     "LibraryFoldersOperations",
     "MetaOperations",
+    "SegmentScoresStatsOperations",
     "SessionOperations",
     "TagOperations",
 ]

@@ -513,7 +513,26 @@ class LibraryFilesOperations:
             file_id: Document _id (e.g., "library_files/12345")
 
         """
-        # Delete entity edges first (referential integrity)
+        # Delete vectors_track first (derived data — per-backbone collections)
+        for coll_info in self.db.collections():  # type: ignore[union-attr]
+            coll_name = coll_info["name"]
+            if coll_name.startswith("vectors_track__"):
+                self.db.aql.execute(
+                    f"FOR doc IN {coll_name} FILTER doc.file_id == @file_id REMOVE doc IN {coll_name}",
+                    bind_vars={"file_id": file_id},
+                )
+
+        # Delete segment_scores_stats (derived data)
+        self.db.aql.execute(
+            """
+            FOR doc IN segment_scores_stats
+                FILTER doc.file_id == @file_id
+                REMOVE doc IN segment_scores_stats
+            """,
+            bind_vars={"file_id": file_id},
+        )
+
+        # Delete entity edges (referential integrity)
         self.db.aql.execute(
             """
             FOR edge IN song_tag_edges
@@ -580,7 +599,14 @@ class LibraryFilesOperations:
         - song_tag_edges
         - library_files
         """
-        # Delete song_tag_edges first (edge collection)
+        # Truncate vectors_track collections first (derived data — per-backbone)
+        for coll_info in self.db.collections():  # type: ignore[union-attr]
+            coll_name = coll_info["name"]
+            if coll_name.startswith("vectors_track__"):
+                self.db.collection(coll_name).truncate()
+        # Delete segment_scores_stats (derived data)
+        self.db.aql.execute("FOR doc IN segment_scores_stats REMOVE doc IN segment_scores_stats")
+        # Delete song_tag_edges (edge collection)
         self.db.aql.execute("FOR edge IN song_tag_edges REMOVE edge IN song_tag_edges")
         # Delete library_files
         self.db.aql.execute("FOR file IN library_files REMOVE file IN library_files")
@@ -635,7 +661,32 @@ class LibraryFilesOperations:
         if not paths:
             return 0
 
-        # Delete edges first (edges go _from=library_files/* -> _to=tags/*)
+        # Delete vectors_track first (derived data — per-backbone collections)
+        for coll_info in self.db.collections():  # type: ignore[union-attr]
+            coll_name = coll_info["name"]
+            if coll_name.startswith("vectors_track__"):
+                self.db.aql.execute(
+                    f"""
+                    LET ids = (FOR f IN library_files FILTER f.path IN @paths RETURN f._id)
+                    FOR doc IN {coll_name}
+                        FILTER doc.file_id IN ids
+                        REMOVE doc IN {coll_name}
+                    """,
+                    bind_vars={"paths": paths},
+                )
+
+        # Delete segment_scores_stats (derived data — single-pass via collected IDs)
+        self.db.aql.execute(
+            """
+            LET ids = (FOR f IN library_files FILTER f.path IN @paths RETURN f._id)
+            FOR doc IN segment_scores_stats
+                FILTER doc.file_id IN ids
+                REMOVE doc IN segment_scores_stats
+            """,
+            bind_vars={"paths": paths},
+        )
+
+        # Delete edges (edges go _from=library_files/* -> _to=tags/*)
         self.db.aql.execute(
             """
             FOR file IN library_files

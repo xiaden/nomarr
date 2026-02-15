@@ -67,6 +67,7 @@ from nomarr.components.ml.ml_discovery_comp import HeadInfo, discover_heads
 from nomarr.components.ml.ml_embed_comp import pool_scores
 from nomarr.components.ml.ml_heads_comp import run_head_decision
 from nomarr.components.ml.ml_inference_comp import compute_embeddings_for_backbone, make_head_only_predictor_batched
+from nomarr.components.ml.segment_stats_comp import compute_segment_stats
 from nomarr.components.tagging.tagging_aggregation_comp import (
     add_regression_mood_tiers,
     aggregate_mood_tiers,
@@ -96,6 +97,8 @@ class ProcessHeadPredictionsResult:
     head_results: dict[str, Any]
     regression_heads: list[tuple[Any, list[float]]]
     all_head_outputs: list[Any]
+    segment_stats_per_head: dict[str, list[dict[str, Any]]]
+    num_segments_per_head: dict[str, int]
 
 
 def _discover_and_group_heads(models_dir: str) -> tuple[list[HeadInfo], dict[str, list[HeadInfo]]]:
@@ -200,19 +203,32 @@ def _process_head_predictions(
     head_results: dict[str, Any] = {}
     regression_heads: list[tuple[HeadInfo, list[float]]] = []
     all_head_outputs: list[Any] = []
+    segment_stats_per_head: dict[str, list[dict[str, Any]]] = {}
+    num_segments_per_head: dict[str, int] = {}
     for head_info in backbone_heads:
         head_name = head_info.name
         try:
             t_head = internal_s()
             head_predict_fn = make_head_only_predictor_batched(head_info, embeddings_2d, batch_size=config.batch_size)
             segment_scores = head_predict_fn()
+            # Compute per-label segment statistics for persistence before pooling
+            if segment_scores.ndim == 2 and len(head_info.labels) > 0:
+                head_label_stats = compute_segment_stats(segment_scores, head_info.labels)
+                segment_stats_per_head[head_name] = head_label_stats
+                num_segments_per_head[head_name] = segment_scores.shape[0]
             pooled_vec = pool_scores(segment_scores, mode="trimmed_mean", trim_perc=0.1, nan_policy="omit")
+            # Compute per-label segment std for stability gating (classification heads).
+            # segment_scores is [num_segments, num_classes]; std across axis=0 gives
+            # per-label variance across the track's segments.
+            seg_std: np.ndarray | None = None
+            if segment_scores.ndim == 2 and segment_scores.shape[0] > 1:
+                seg_std = np.std(segment_scores, axis=0).astype(np.float32, copy=False)
         except Exception as e:
             logger.error(f"[processor] Processing error for {head_name}: {e}", exc_info=True)
             head_results[head_name] = {"status": "error", "error": str(e), "stage": "processing"}
             continue
         try:
-            decision = run_head_decision(head_info.sidecar, pooled_vec, prefix="")
+            decision = run_head_decision(head_info.sidecar, pooled_vec, prefix="", segment_std=seg_std)
 
             def _build_key(label: str, head: HeadInfo = head_info) -> str:
                 model_key, _ = head.build_versioned_tag_key(
@@ -262,6 +278,8 @@ def _process_head_predictions(
         head_results=head_results,
         regression_heads=regression_heads,
         all_head_outputs=all_head_outputs,
+        segment_stats_per_head=segment_stats_per_head,
+        num_segments_per_head=num_segments_per_head,
     )
 
 
@@ -496,6 +514,12 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
     heads_succeeded = 0
     regression_heads: list[tuple[HeadInfo, list[float]]] = []
     total_heads_succeeded = 0
+    all_segment_stats: dict[str, list[dict[str, Any]]] = {}
+    all_num_segments: dict[str, int] = {}
+    # Compute model suite hash once for vector persistence (not per backbone)
+    from nomarr.components.ml.ml_discovery_comp import compute_model_suite_hash
+
+    model_suite_hash = compute_model_suite_hash(config.models_dir)
     for backbone, backbone_heads in heads_by_backbone.items():
         first_head = backbone_heads[0]
         try:
@@ -540,6 +564,31 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
         all_head_results.update(head_results)
         regression_heads.extend(regression_outputs)
         all_head_outputs.extend(head_outputs)
+        all_segment_stats.update(result.segment_stats_per_head)
+        all_num_segments.update(result.num_segments_per_head)
+        # Persist pooled track-level embedding vector for this backbone
+        if db is not None and file_id is not None:
+            try:
+                from nomarr.components.ml.ml_vector_pool_comp import (
+                    get_embedding_dimension,
+                    pool_embedding_for_storage,
+                )
+
+                vector = pool_embedding_for_storage(embeddings_2d)
+                embed_dim = get_embedding_dimension(embeddings_2d)
+                ops = db.register_vectors_track_backbone(backbone)
+                ops.upsert_vector(
+                    file_id=file_id,
+                    model_suite_hash=model_suite_hash,
+                    embed_dim=embed_dim,
+                    vector=vector,
+                    num_segments=embeddings_2d.shape[0],
+                )
+                logger.debug(
+                    f"[processor] Persisted {backbone} vector: dim={embed_dim}, segments={embeddings_2d.shape[0]}",
+                )
+            except Exception:
+                logger.warning(f"[processor] Failed to persist {backbone} vector for {path}", exc_info=True)
         del embeddings_2d
         gc.collect()
         logger.debug(f"[processor] Released {backbone} embeddings and predictors from memory")
@@ -580,6 +629,24 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
     tags_accum[config.version_tag_key] = config.tagger_version
     db_tags = dict(tags_accum)
     _sync_to_database(db, path, db_tags, config.namespace, config.tagger_version, chromaprint_from_ml, file_id=file_id)
+    # Persist per-label segment statistics (derived data — after canonical sync)
+    if db is not None and file_id is not None and all_segment_stats:
+        for head_name, label_stats in all_segment_stats.items():
+            num_segments = all_num_segments.get(head_name, 0)
+            if head_name not in all_num_segments:
+                logger.warning(
+                    "[processor] num_segments missing for head '%s' — "
+                    "stats and segment count accumulators out of sync",
+                    head_name,
+                )
+            db.segment_scores_stats.upsert_stats(
+                file_id=file_id,
+                head_name=head_name,
+                tagger_version=config.tagger_version,
+                num_segments=num_segments,
+                pooling_strategy="trimmed_mean",
+                label_stats=label_stats,
+            )
     elapsed = round(internal_s().value - start_all.value, 2)
     mood_info = {}
     for key in ["mood-strict", "mood-regular", "mood-loose"]:

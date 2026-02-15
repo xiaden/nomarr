@@ -153,8 +153,12 @@ def _find_counter_confidence(
 ) -> float:
     """Find counter-confidence for a label.
 
-    Prefers explicit 'non_*' or 'not_*' variants; for binary heads uses the other label;
-    otherwise assumes no counterpart and returns 0.0.
+    Resolution order:
+    1. Explicit 'non_*' or 'not_*' negation label → use its probability.
+    2. Binary head (exactly 2 labels) → use the other label's probability.
+    3. Fallback → use the highest probability among all *other* labels in this head.
+       This ensures ratio/gap remain meaningful even for labels without explicit
+       negation partners, preventing them from auto-clearing tier gates.
     """
     non_name = f"non_{label}"
     not_name = f"not_{label}"
@@ -166,28 +170,67 @@ def _find_counter_confidence(
         other_idx = 1 - label_idx
         if other_idx < len(probs):
             return float(probs[other_idx])
-    return 0.0
+    # Fallback: second-best (max of all other labels) as counter-confidence.
+    # For single-label heads (degenerate), return 0.0.
+    if num_labels <= 1:
+        return 0.0
+    best_other = 0.0
+    for idx in range(min(num_labels, len(probs))):
+        if idx != label_idx:
+            val = float(probs[idx])
+            if val > best_other:
+                best_other = val
+    return best_other
 
 
-def _determine_tier(prob: float, ratio: float, gap: float, cascade: Cascade) -> str | None:
+def _determine_tier(
+    prob: float, ratio: float, gap: float, cascade: Cascade, *, label_std: float | None = None,
+) -> str | None:
     """Determine tier (high/medium/low) based on cascade thresholds.
+
+    If label_std is provided (segment-level standard deviation), unstable predictions
+    are downgraded:
+    - std >= 0.25: no tier (too unreliable to trust)
+    - std >= 0.15: cap at "low" tier maximum
+    - std >= 0.08: cap at "medium" tier maximum
+
+    These thresholds mirror the regression stability constants (_ACCEPTABLE, _STABLE,
+    _VERY_STABLE) from tagging_aggregation_comp, keeping consistency across the pipeline.
+
     Returns None if no tier requirements are met.
     """
-    if prob >= cascade.high and ratio >= cascade.ratio_high and (gap >= cascade.gap_high):
+    # Stability ceiling: segment variance caps the maximum achievable tier.
+    max_tier_rank = 3  # 3=high, 2=medium, 1=low
+    if label_std is not None:
+        if label_std >= 0.25:
+            return None  # Too unstable to assign any tier
+        if label_std >= 0.15:
+            max_tier_rank = 1  # Cap at low
+        elif label_std >= 0.08:
+            max_tier_rank = 2  # Cap at medium
+
+    if max_tier_rank >= 3 and prob >= cascade.high and ratio >= cascade.ratio_high and gap >= cascade.gap_high:
         return "high"
-    if prob >= cascade.medium and ratio >= cascade.ratio_medium and (gap >= cascade.gap_medium):
+    if max_tier_rank >= 2 and prob >= cascade.medium and ratio >= cascade.ratio_medium and gap >= cascade.gap_medium:
         return "medium"
-    if prob >= cascade.low and ratio >= cascade.ratio_low and (gap >= cascade.gap_low):
+    if prob >= cascade.low and ratio >= cascade.ratio_low and gap >= cascade.gap_low:
         return "low"
     return None
 
 
-def decide_multilabel(scores: np.ndarray, spec: HeadSpec) -> dict[str, Any]:
+def decide_multilabel(
+    scores: np.ndarray, spec: HeadSpec, *, segment_std: np.ndarray | None = None,
+) -> dict[str, Any]:
     """Multilabel: select all labels with score >= (per-label threshold or cascade.low).
     Also provide tier mapping (high/medium/low) per selected label.
 
     Returns ALL labels with their probabilities, but only assigns tiers to labels
     that meet the cascade thresholds (confidence, ratio, gap).
+
+    If segment_std is provided (per-label standard deviation across segments),
+    it is used to gate tier assignment: labels with high segment variance get
+    their tier downgraded or rejected, matching the stability gating already
+    used for regression heads.
     """
     probs = _to_prob(scores, already_prob=spec.prob_input)
     out: dict[str, Any] = {}
@@ -206,10 +249,17 @@ def decide_multilabel(scores: np.ndarray, spec: HeadSpec) -> dict[str, Any]:
         counter_p = max(0.0, min(1.0, counter_p))
         ratio = prob / max(counter_p, eps)
         gap = prob - counter_p
-        tier = _determine_tier(prob, ratio, gap, spec.cascade)
+        # Extract per-label segment std if available
+        lab_std: float | None = None
+        if segment_std is not None and i < len(segment_std):
+            lab_std = float(segment_std[i])
+        tier = _determine_tier(prob, ratio, gap, spec.cascade, label_std=lab_std)
         if tier is None and prob >= 0.1:
+            std_info = f", std={lab_std:.3f}" if lab_std is not None else ""
             logger.debug(
-                f"[heads] Label '{lab}' rejected: p={prob:.3f} (need >={spec.cascade.low:.2f}), ratio={ratio:.2f} (need >={spec.cascade.ratio_low:.2f}), gap={gap:.3f} (need >={spec.cascade.gap_low:.2f})",
+                f"[heads] Label '{lab}' rejected: p={prob:.3f} (need >={spec.cascade.low:.2f}), "
+                f"ratio={ratio:.2f} (need >={spec.cascade.ratio_low:.2f}), "
+                f"gap={gap:.3f} (need >={spec.cascade.gap_low:.2f}){std_info}",
             )
         if tier is not None:
             out[lab] = {"p": prob, "tier": tier}
@@ -366,11 +416,13 @@ def head_is_multiclass(spec: HeadSpec) -> bool:
 
 def run_head_decision(
     sc: Sidecar, scores: np.ndarray, *, prefix: str = "", emit_all_scores: bool = True,
+    segment_std: np.ndarray | None = None,
 ) -> HeadDecision:
     """Turn the raw output vector for a head into a HeadDecision.
     - sc: Sidecar describing the head (labels, thresholds, cascade)
     - scores: head outputs (logits or probs depending on sidecar)
     - prefix: optional string to prepend to tag keys (e.g., "yamnet_").
+    - segment_std: optional per-label segment standard deviation for stability gating.
     """
     spec = HeadSpec.from_sidecar(sc)
     kind = spec.kind.lower()
@@ -379,7 +431,7 @@ def run_head_decision(
         details = decide_regression(vec, spec.labels)
         return HeadDecision(spec, details)
     if kind == "multilabel":
-        result = decide_multilabel(vec, spec)
+        result = decide_multilabel(vec, spec, segment_std=segment_std)
         details = result.get("selected", {})
         all_probs = result.get("all_probs", {})
         return HeadDecision(spec, details, all_probs)
@@ -395,7 +447,7 @@ def run_head_decision(
                 probs = ex / exp_sum if exp_sum > 0 else np.zeros_like(probs)
             all_probs = {lab: float(probs[i]) for i, lab in enumerate(spec.labels) if i < len(probs)}
         return HeadDecision(spec, details, all_probs)
-    result = decide_multilabel(vec, spec)
+    result = decide_multilabel(vec, spec, segment_std=segment_std)
     details = result.get("selected", {})
     all_probs = result.get("all_probs", {})
     return HeadDecision(spec, details, all_probs)
