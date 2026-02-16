@@ -252,7 +252,7 @@ class KeyManagementService:
         """
         sessions = self._db.sessions.load_all()
         _session_cache.update((s["session_id"], s["expiry_timestamp"] / 1000.0) for s in sessions)
-        logger.info(f"[KeyManagement] Loaded {len(sessions)} active session(s) from database")
+        logger.debug(f"[KeyManagement] Loaded {len(sessions)} active session(s) from database")
         return len(sessions)
 
 

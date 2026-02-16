@@ -75,7 +75,7 @@ class _GPUMonitorLifecycleHandler(ComponentLifecycleHandler):
         context: Any,
     ) -> None:
         """Handle GPU monitor status changes from HealthMonitorService."""
-        logger.info(f"[InfoService] GPU monitor status: {old_status} -> {new_status}")
+        logger.debug(f"[InfoService] GPU monitor status: {old_status} -> {new_status}")
 
         if new_status == "dead":
             # GPU monitor died - restart it
@@ -145,7 +145,7 @@ class InfoService:
             health_pipe=child_conn,  # type: ignore[arg-type]
         )
         self._gpu_monitor.start()
-        logger.info("[InfoService] Started GPUHealthMonitor subprocess")
+        logger.debug("[InfoService] Started GPUHealthMonitor subprocess")
 
         # Register with HealthMonitorService if available
         if self.cfg.health_monitor:
@@ -161,7 +161,7 @@ class InfoService:
                 pipe_conn=self._gpu_pipe_parent,
                 policy=policy,
             )
-            logger.info("[InfoService] Registered GPU monitor with HealthMonitorService")
+            logger.debug("[InfoService] Registered GPU monitor with HealthMonitorService")
 
     def _stop_gpu_monitor(self) -> None:
         """Stop GPUHealthMonitor subprocess and unregister from HealthMonitorService."""

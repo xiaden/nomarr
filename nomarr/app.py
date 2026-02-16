@@ -230,17 +230,17 @@ class Application:
             logger.warning("[Application] Already running, ignoring start() call")
             return
         logger.info("[Application] Starting...")
-        logger.info("[Application] Cleaning ephemeral runtime state...")
+        logger.debug("[Application] Cleaning ephemeral runtime state...")
         self.db.health.clean_all()
         self.db.health.mark_starting(component_id="app", component_type="app")
-        logger.info("[Application] Initializing authentication...")
+        logger.debug("[Application] Initializing authentication...")
         key_service = KeyManagementService(self.db)
         self.api_key = key_service.get_or_create_api_key()
         self.admin_password = key_service.get_or_create_admin_password(self.admin_password_config)
         key_service.load_sessions_from_db()
         self.register_service("keys", key_service)
         self.register_service("config", self._config_service)
-        logger.info("[Application] Initializing services...")
+        logger.debug("[Application] Initializing services...")
         from nomarr.services.infrastructure.ml_svc import MLConfig, MLService
 
         ml_cfg = MLConfig(models_dir=str(self.models_dir), cache_idle_timeout=self.cache_idle_timeout)
@@ -252,26 +252,26 @@ class Application:
         self.health_monitor = HealthMonitorService(cfg=health_cfg, db=self.db)
         self.health_monitor.start()
         self.register_service("health_monitor", self.health_monitor)
-        logger.info("[Application] HealthMonitorService started")
-        logger.info("[Application] Initializing AnalyticsService...")
+        logger.debug("[Application] HealthMonitorService started")
+        logger.debug("[Application] Initializing AnalyticsService...")
         from nomarr.services.domain.analytics_svc import AnalyticsConfig
 
         analytics_cfg = AnalyticsConfig(namespace=self.namespace)
         analytics_service = AnalyticsService(db=self.db, cfg=analytics_cfg)
         self.register_service("analytics", analytics_service)
-        logger.info("[Application] Initializing CalibrationService...")
+        logger.debug("[Application] Initializing CalibrationService...")
         from nomarr.services.domain.calibration_svc import CalibrationConfig
 
         calibration_cfg = CalibrationConfig(models_dir=str(self.models_dir), namespace=self.namespace)
         calibration_service = CalibrationService(db=self.db, cfg=calibration_cfg)
         self.register_service("calibration", calibration_service)
-        logger.info("[Application] Initializing NavidromeService...")
+        logger.debug("[Application] Initializing NavidromeService...")
         from nomarr.services.domain.navidrome_svc import NavidromeConfig
 
         navidrome_cfg = NavidromeConfig(namespace=self.namespace)
         navidrome_service = NavidromeService(db=self.db, cfg=navidrome_cfg)
         self.register_service("navidrome", navidrome_service)
-        logger.info("[Application] Initializing PlaylistImportService...")
+        logger.debug("[Application] Initializing PlaylistImportService...")
         playlist_import_cfg = PlaylistImportConfig(
             spotify_client_id=self._config.get("spotify_client_id"),
             spotify_client_secret=self._config.get("spotify_client_secret"),
@@ -300,7 +300,7 @@ class Application:
         background_tasks = BackgroundTaskService()
         self.register_service("background_tasks", background_tasks)
         if self.library_root:
-            logger.info(f"[Application] Registering LibraryService with namespace={self.namespace}")
+            logger.debug(f"[Application] Registering LibraryService with namespace={self.namespace}")
             library_cfg = LibraryServiceConfig(
                 models_dir=str(self.models_dir),
                 namespace=self.namespace,
@@ -309,7 +309,7 @@ class Application:
             )
             library_service = LibraryService(cfg=library_cfg, db=self.db, background_tasks=background_tasks)
             self.register_service("library", library_service)
-            logger.info("[Application] Initializing FileWatcherService...")
+            logger.debug("[Application] Initializing FileWatcherService...")
             from nomarr.services.infrastructure.file_watcher_svc import FileWatcherService
 
             file_watcher = FileWatcherService(db=self.db, library_service=library_service, debounce_seconds=2.0)
@@ -323,13 +323,13 @@ class Application:
             def _sync_watchers_bg() -> None:
                 try:
                     file_watcher.sync_watchers()
-                    logger.info("[Application] File watchers synced with library collection")
+                    logger.debug("[Application] File watchers synced with library collection")
                 except Exception:
                     logger.exception("[Application] Failed to sync file watchers")
 
             threading.Thread(target=_sync_watchers_bg, name="file-watcher-sync", daemon=True).start()
         else:
-            logger.info("[Application] No library root configured, library service not started")
+            logger.debug("[Application] No library root configured, library service not started")
         from nomarr.services.domain.metadata_svc import MetadataService
 
         metadata_service = MetadataService(db=self.db)
@@ -356,7 +356,7 @@ class Application:
             models_dir=self.models_dir,
         )
         self.register_service("vector_maintenance", vector_maintenance_service)
-        logger.info("[Application] Initializing discovery-based worker system...")
+        logger.debug("[Application] Initializing discovery-based worker system...")
         processor_config = self._config_service.make_processor_config()
         worker_count = self._config_service.get_worker_count("tagger")
         self.worker_system = WorkerSystemService(
@@ -368,11 +368,10 @@ class Application:
         )
         self.register_service("worker_system", self.worker_system)
         if self.worker_system.is_worker_system_enabled():
-            logger.info("[Application] Starting discovery workers...")
             self.worker_system.start_all_workers()
         else:
-            logger.info("[Application] Worker system disabled, not starting workers")
-        logger.info("[Application] Starting InfoService (GPU monitor)...")
+            logger.debug("[Application] Worker system disabled, not starting workers")
+        logger.debug("[Application] Starting InfoService (GPU monitor)...")
         info_service.start()
         self._running = True
         self._start_app_heartbeat()

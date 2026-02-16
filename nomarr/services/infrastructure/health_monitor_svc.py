@@ -266,7 +266,7 @@ class HealthMonitorService:
         )
         self._history_thread.start()
 
-        logger.info("[HealthMonitor] Started")
+        logger.debug("[HealthMonitor] Started")
 
     def stop(self) -> None:
         """Stop health monitoring background threads."""

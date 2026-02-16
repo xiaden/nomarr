@@ -186,7 +186,7 @@ class FileWatcherService:
         # Libraries scheduled for cleanup (when not found)
         self._pending_cleanups: set[str] = set()
 
-        logger.info(
+        logger.debug(
             f"FileWatcherService initialized (debounce={debounce_seconds}s, poll_interval={polling_interval_seconds}s)",
         )
 

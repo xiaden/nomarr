@@ -99,6 +99,7 @@ class ProcessHeadPredictionsResult:
     all_head_outputs: list[Any]
     segment_stats_per_head: dict[str, list[dict[str, Any]]]
     num_segments_per_head: dict[str, int]
+    per_head_timings: dict[str, float]  # head_name -> duration_ms
 
 
 def _discover_and_group_heads(models_dir: str) -> tuple[list[HeadInfo], dict[str, list[HeadInfo]]]:
@@ -199,6 +200,7 @@ def _process_head_predictions(
     all_head_outputs: list[Any] = []
     segment_stats_per_head: dict[str, list[dict[str, Any]]] = {}
     num_segments_per_head: dict[str, int] = {}
+    per_head_timings: dict[str, float] = {}  # Track per-head processing time
     for head_info in backbone_heads:
         head_name = head_info.name
         try:
@@ -249,6 +251,7 @@ def _process_head_predictions(
                 logger.warning(f"[processor] Head {head_name} produced ZERO tags")
             tags_accum.update(head_tags)
             heads_succeeded += 1
+            per_head_timings[head_name] = (internal_s().value - t_head.value) * 1000
             if head_info.is_regression_head:
                 if segment_scores.ndim == 2:
                     raw_values = [float(x) for x in segment_scores[:, 0]]
@@ -274,6 +277,7 @@ def _process_head_predictions(
         all_head_outputs=all_head_outputs,
         segment_stats_per_head=segment_stats_per_head,
         num_segments_per_head=num_segments_per_head,
+        per_head_timings=per_head_timings,
     )
 
 
@@ -528,7 +532,11 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
     check_and_evict_idle_cache()
     touch_cache()
     start_all = internal_s()
+    # Ultra-verbose timing tracker for bottleneck analysis
+    timings: dict[str, float] = {}  # operation_name -> duration_ms
+    t_discover = internal_s()
     _, heads_by_backbone = _discover_and_group_heads(config.models_dir)
+    timings["model_discovery"] = (internal_s().value - t_discover.value) * 1000
 
     class TagAccumulator(dict):
         pass
@@ -552,9 +560,11 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
     for backbone, backbone_heads in heads_by_backbone.items():
         first_head = backbone_heads[0]
         try:
+            t_emb_backbone = internal_s()
             embeddings_2d, duration, chromaprint_hash = _compute_embeddings_for_backbone(
                 backbone, first_head, library_path, config,
             )
+            timings[f"emb_{backbone}"] = (internal_s().value - t_emb_backbone.value) * 1000
             if duration_final is None:
                 duration_final = float(duration)
             if chromaprint_from_ml is None:
@@ -584,7 +594,12 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
                 mood_aggregations=None,
                 tags=Tags.from_dict({}),
             )
+        t_heads_start = internal_s()
         result = _process_head_predictions(backbone_heads, embeddings_2d, config, tags_accum)
+        timings[f"heads_{backbone}"] = (internal_s().value - t_heads_start.value) * 1000
+        # Store per-head timings
+        for head_name, head_time_ms in result.per_head_timings.items():
+            timings[f"head_{head_name}"] = head_time_ms
         heads_succeeded = result.heads_succeeded
         head_results = result.head_results
         regression_outputs = result.regression_heads
@@ -647,7 +662,9 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
         # Some heads failed (not skipped) - this is an error
         msg = "No heads produced decisions; refusing to write tags"
         raise RuntimeError(msg)
+    t_mood = internal_s()
     mood_tags = _collect_mood_outputs(regression_heads, all_head_outputs, config.models_dir, config, db)
+    timings["mood_aggregation"] = (internal_s().value - t_mood.value) * 1000
     tags_accum.update(mood_tags)
     mood_keys = [k for k in tags_accum if isinstance(k, str) and k.startswith("mood-")]
     logger.debug(f"[processor] Mood aggregation produced {len(mood_keys)} mood- tags: {mood_keys}")
@@ -681,11 +698,33 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
     db_elapsed = internal_s().value - t_db_start.value if db is not None else 0.0
     elapsed = round(internal_s().value - start_all.value, 2)
     db_ms = db_elapsed * 1000  # Convert to milliseconds for visibility
+    timings["db_writes"] = db_ms
     db_pct = (db_elapsed / elapsed * 100) if db is not None and elapsed > 0 else 0.0
-    ml_elapsed = elapsed - db_elapsed if db is not None else elapsed
+
+    # Ultra-verbose timing breakdown for bottleneck hunting
     if db is not None:
+        # Group timings by category for readability
+        overhead_ms = timings.get("model_discovery", 0)
+        emb_times = {k: v for k, v in timings.items() if k.startswith("emb_")}
+        head_times = {k: v for k, v in timings.items() if k.startswith("head_")}
+        mood_ms = timings.get("mood_aggregation", 0)
+        db_ms_val = timings.get("db_writes", 0)
+
+        total_emb_ms = sum(emb_times.values())
+        total_head_ms = sum(head_times.values())
+
+        # Build concise summary
+        emb_str = " + ".join([f"{k.replace('emb_', '')}={v:.0f}ms" for k, v in emb_times.items()])
+        head_summary = f"{len(head_times)} heads in {total_head_ms:.0f}ms (avg={(total_head_ms/len(head_times)):.0f}ms)" if head_times else "no heads"
+
         logger.info(
-            f"[processor] ⏱️  Timing: total={elapsed:.2f}s | ML={ml_elapsed:.2f}s | DB={db_ms:.0f}ms ({db_pct:.1f}%)"
+            f"[processor] 🔍 ULTRA-VERBOSE TIMING | "
+            f"total={elapsed:.2f}s | "
+            f"discovery={overhead_ms:.0f}ms | "
+            f"embeddings=[{emb_str}] ({total_emb_ms:.0f}ms) | "
+            f"heads={head_summary} | "
+            f"mood_agg={mood_ms:.0f}ms | "
+            f"db={db_ms_val:.0f}ms ({db_pct:.1f}%)"
         )
     mood_info = {}
     for key in ["mood-strict", "mood-regular", "mood-loose"]:
