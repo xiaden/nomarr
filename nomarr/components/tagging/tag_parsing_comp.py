@@ -19,6 +19,7 @@ def parse_tag_values(tags: dict[str, str | TagValue | list[TagValue]]) -> dict[s
     Converts string tag values to their proper types and ensures all values
     are wrapped in lists (always-list invariant):
     - JSON arrays (e.g., '["value1", "value2"]') -> list
+    - Python tuple strings (e.g., "('value1', 'value2')") -> list (legacy format)
     - Floats (e.g., "0.95") -> [float]
     - Integers (e.g., "120") -> [int]
     - Semicolon-delimited (e.g., "pop; rock") -> list of strs
@@ -61,6 +62,19 @@ def parse_tag_values(tags: dict[str, str | TagValue | list[TagValue]]) -> dict[s
                     parsed[key] = parsed_value
                     continue
             except json.JSONDecodeError:
+                pass
+
+        # Try to parse Python tuple strings (legacy format from str(tuple))
+        # e.g., "('aggressive', 'party-like', 'peppy')"
+        if value.startswith("(") and value.endswith(")"):
+            try:
+                # Use ast.literal_eval for safe parsing of tuple literals
+                import ast
+                parsed_value = ast.literal_eval(value)
+                if isinstance(parsed_value, tuple):
+                    parsed[key] = list(parsed_value)
+                    continue
+            except (ValueError, SyntaxError):
                 pass
 
         # Handle semicolon-delimited multi-value tags

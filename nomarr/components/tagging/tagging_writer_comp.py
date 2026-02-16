@@ -35,12 +35,12 @@ from mutagen.oggvorbis import OggVorbis
 def _to_text_value(value: Any) -> str:
     """Convert a value to a text representation without losing numeric precision.
     - Numbers: write via JSON to keep a stable, locale-independent representation
-    - Dict/List: JSON encode compactly
+    - Dict/List/Tuple: JSON encode compactly (tuples become arrays)
     - Everything else: str().
     """
     if isinstance(value, int | float):
         return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-    if isinstance(value, dict | list):
+    if isinstance(value, dict | list | tuple):
         return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
     return str(value)
 
