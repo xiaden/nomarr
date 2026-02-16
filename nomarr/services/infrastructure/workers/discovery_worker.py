@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 HEALTH_FRAME_INTERVAL_S = 3.0  # Send health frame every 3 seconds (faster than 5s staleness check)
 IDLE_SLEEP_S = 1.0  # Sleep when no work available
 MAX_CONSECUTIVE_ERRORS = 10  # Shutdown after this many consecutive failures
-CACHE_IDLE_TIMEOUT_S = 300  # Evict cache after 5 minutes of no work (matches default)
+CACHE_IDLE_TIMEOUT_S = 40  # Evict cache after 40 seconds of no work (matches default)
 
 # Health frame prefix
 HEALTH_FRAME_PREFIX = "HEALTH|"

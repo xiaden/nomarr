@@ -30,7 +30,7 @@ _BACKBONE_CACHE: dict[str, Any] = {}
 _CACHE_INITIALIZED = False
 _CACHE_LAST_ACCESS: int = 0
 _CACHE_LOCK = threading.Lock()
-_CACHE_TIMEOUT: int = 300
+_CACHE_TIMEOUT: int = 40  # Default idle timeout in seconds
 
 
 def cache_key(head_info: HeadInfo) -> str:
@@ -48,13 +48,13 @@ def get_cache_size() -> int:
     return len(_PREDICTOR_CACHE)
 
 
-def warmup_predictor_cache(models_dir: str, cache_idle_timeout: int = 300) -> int:
+def warmup_predictor_cache(models_dir: str, cache_idle_timeout: int = 40) -> int:
     """Pre-load all model predictors into cache to avoid loading overhead during processing.
     Returns the number of predictors cached.
 
     Args:
         models_dir: Directory containing model files
-        cache_idle_timeout: Seconds before idle cache eviction (0 = never evict, default: 300)
+        cache_idle_timeout: Seconds before idle cache eviction (0 = never evict, default: 40)
 
     """
     global _PREDICTOR_CACHE, _CACHE_INITIALIZED, _CACHE_LAST_ACCESS
@@ -122,7 +122,7 @@ def touch_cache() -> None:
 
 def get_cache_idle_time() -> float:
     """Get the number of seconds since last cache access."""
-    return internal_ms().value - _CACHE_LAST_ACCESS
+    return (internal_ms().value - _CACHE_LAST_ACCESS) / 1000
 
 
 def check_and_evict_idle_cache() -> bool:

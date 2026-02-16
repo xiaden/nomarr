@@ -228,7 +228,7 @@ def _run_capacity_probe(
         # Warm up backbone cache to measure actual VRAM usage
         from nomarr.components.ml.ml_cache_comp import warmup_predictor_cache
 
-        warmup_predictor_cache(models_dir=models_dir, cache_idle_timeout=300)
+        warmup_predictor_cache(models_dir=models_dir, cache_idle_timeout=300000)
 
         # Measure RAM after loading
         ram_after = get_ram_usage_mb(ram_detection_mode)
