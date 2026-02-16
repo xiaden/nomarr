@@ -308,9 +308,9 @@ def _collect_mood_outputs(
     logger.debug(f"[processor] Total HeadOutput objects: {len(all_head_outputs)}")
     calibrations = {}
     if db is not None:
-        from nomarr.workflows.calibration.calibration_loader_wf import load_calibrations_from_db_wf
+        from nomarr.workflows.calibration.calibration_loader_wf import load_calibrations_cached_wf
 
-        calibrations = load_calibrations_from_db_wf(db)
+        calibrations = load_calibrations_cached_wf(db)
         if calibrations:
             logger.debug(f"[aggregation] Loaded {len(calibrations)} calibrations from database")
         else:

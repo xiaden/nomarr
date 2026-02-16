@@ -74,3 +74,53 @@ def load_calibrations_from_db_wf(db: Database) -> dict[str, dict[str, float]]:
     except Exception as e:
         logger.exception(f"[calibration_loader] Failed to load calibrations: {e}")
         return {}
+
+
+
+# Module-level cache for calibrations
+_cached_calibrations: dict[str, dict[str, float]] | None = None
+_cached_version: str | None = None
+
+
+def load_calibrations_cached_wf(db: Database) -> dict[str, dict[str, float]]:
+    """Load calibrations with caching based on version hash.
+
+    Checks calibration_version in meta collection. If version matches cached
+    version, returns cached calibrations without database query.
+
+    Cache is module-level (per-process), so workers maintain separate caches.
+    Version check is ~2-5ms single document lookup vs ~50ms full calibration load.
+
+    Args:
+        db: Database instance
+
+    Returns:
+        Dict mapping label to {p5, p95}
+        Empty dict if no calibrations exist
+
+    Note:
+        When calibration generation completes, it updates calibration_version in meta,
+        causing cache invalidation on next check.
+
+    """
+    from nomarr.components.ml.calibration_state_comp import get_calibration_version
+
+    global _cached_calibrations, _cached_version
+
+    # Check current version (cheap: single doc lookup)
+    current_version = get_calibration_version(db)
+
+    # Cache miss or version changed - reload calibrations
+    if _cached_version != current_version:
+        _cached_calibrations = load_calibrations_from_db_wf(db)
+        _cached_version = current_version
+
+        if current_version:
+            logger.info(
+                f"[calibration_loader] Loaded calibrations version {current_version[:12]}... "
+                f"({len(_cached_calibrations)} labels)"
+            )
+        else:
+            logger.debug("[calibration_loader] No calibration version set (initial state)")
+
+    return _cached_calibrations or {}
