@@ -123,9 +123,10 @@ class DeferredFileWrites:
     The expected execution order is:
     1. ``save_file_tags``   (tag vertices + edges)
     2. ``set_chromaprint``  (fingerprint)
-    3. ``upsert_stats``     (segment statistics)
-    4. ``mark_file_tagged`` (only if 1-3 succeeded)
-    5. ``release_claim``    (always, even on error)
+    3. compute segment stats from raw_segments (deferred from hot path)
+    4. ``upsert_stats``     (segment statistics)
+    5. ``mark_file_tagged`` (only if 1-4 succeeded)
+    6. ``release_claim``    (always, even on error)
     """
 
     file_id: str
@@ -134,7 +135,7 @@ class DeferredFileWrites:
     namespace: str
     tagger_version: str
     chromaprint: str | None
-    segment_stats_entries: list[dict[str, Any]]
+    raw_segments: dict[str, tuple[Any, list[str]]]  # head_name -> (segment_scores ndarray, labels)
 
 @dataclass
 class ProcessFileResult:

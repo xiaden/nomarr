@@ -53,11 +53,12 @@ USAGE:
 
 from __future__ import annotations
 
-import gc
 import logging
 from collections import defaultdict
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -68,7 +69,6 @@ from nomarr.components.ml.ml_discovery_comp import HeadInfo, discover_heads
 from nomarr.components.ml.ml_embed_comp import pool_scores
 from nomarr.components.ml.ml_heads_comp import run_head_decision
 from nomarr.components.ml.ml_inference_comp import compute_embeddings_for_backbone, make_head_only_predictor_batched
-from nomarr.components.ml.segment_stats_comp import compute_segment_stats
 from nomarr.components.tagging.tagging_aggregation_comp import (
     add_regression_mood_tiers,
     aggregate_mood_tiers,
@@ -85,9 +85,21 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
+_ESSENTIA_VERSION: str | None = None
+
+
 def _get_essentia_version() -> str:
-    """Get Essentia version lazily (only when needed)."""
-    return backend_essentia.get_version()
+    """Get Essentia version — computed once per process, cached thereafter."""
+    global _ESSENTIA_VERSION
+    if _ESSENTIA_VERSION is None:
+        _ESSENTIA_VERSION = backend_essentia.get_version()
+    return _ESSENTIA_VERSION
+
+
+# Reusable thread pool for parallel head predictions.
+# Capped at 12 workers (max heads per backbone group). Lives for the process
+# lifetime — avoids repeated pool creation/teardown overhead per file.
+_HEAD_POOL = ThreadPoolExecutor(max_workers=12, thread_name_prefix="head")
 
 
 @dataclass
@@ -98,9 +110,8 @@ class ProcessHeadPredictionsResult:
     head_results: dict[str, Any]
     regression_heads: list[tuple[Any, list[float]]]
     all_head_outputs: list[Any]
-    segment_stats_per_head: dict[str, list[dict[str, Any]]]
-    num_segments_per_head: dict[str, int]
-    per_head_timings: dict[str, float]  # head_name -> duration_ms
+    raw_segments_per_head: dict[str, tuple[np.ndarray, list[str]]]  # head -> (scores, labels)
+    per_head_timings: dict[str, float]  # head_name -> duration_ms  # head_name -> duration_ms
 
 
 @dataclass
@@ -113,8 +124,8 @@ class _SingleHeadResult:
     head_tags: dict[str, Any] | None = None
     head_outputs: list[Any] | None = None
     regression_data: tuple[Any, list[float]] | None = None
-    segment_stats: list[dict[str, Any]] | None = None
-    num_segments: int | None = None
+    raw_segment_scores: np.ndarray | None = None  # deferred to async write thread
+    segment_labels: list[str] | None = None  # labels for segment stats computation
     elapsed_ms: float = 0.0
     decisions_count: int = 0
 
@@ -202,26 +213,38 @@ def _compute_embeddings_for_backbone(
     return (embeddings_2d, duration, chromaprint)
 
 
+
+def _build_tag_key(label: str, *, head_info: HeadInfo, essentia_version: str) -> str:
+    """Build a versioned tag key for a label — module-level to avoid per-head closure creation."""
+    model_key, _ = head_info.build_versioned_tag_key(
+        normalize_tag_label(label),
+        framework_version=essentia_version,
+        calib_method="none",
+        calib_version=0,
+    )
+    return model_key
 def _run_single_head(
-    head_info: HeadInfo, embeddings_2d: np.ndarray, batch_size: int,
+    head_info: HeadInfo,
+    predict_fn: Callable[[], np.ndarray],
+    essentia_version: str,
 ) -> _SingleHeadResult:
     """Process a single head prediction — fully independent, no shared state mutation.
 
     Thread-safe: all inputs are read-only, all outputs returned via _SingleHeadResult.
     TF inference releases the GIL so multiple heads get real parallelism.
+
+    Args:
+        head_info: Head metadata.
+        predict_fn: Pre-resolved cached predictor closure (from make_head_only_predictor_batched).
+            Hoisting resolution to the caller avoids per-thread cache lookup + lock contention.
+        essentia_version: Pre-cached essentia version string (avoids per-label calls).
+
     """
     head_name = head_info.name
     t_head = internal_ms()
     # Phase 1: TF inference (GPU/CPU, releases GIL)
     try:
-        head_predict_fn = make_head_only_predictor_batched(head_info, embeddings_2d, batch_size=batch_size)
-        segment_scores = head_predict_fn()
-        # Segment stats before pooling
-        seg_stats: list[dict[str, Any]] | None = None
-        n_segments: int | None = None
-        if segment_scores.ndim == 2 and len(head_info.labels) > 0:
-            seg_stats = compute_segment_stats(segment_scores, head_info.labels)
-            n_segments = segment_scores.shape[0]
+        segment_scores = predict_fn()
         pooled_vec = pool_scores(segment_scores, mode="trimmed_mean", trim_perc=0.1, nan_policy="omit")
         seg_std: np.ndarray | None = None
         if segment_scores.ndim == 2 and segment_scores.shape[0] > 1:
@@ -236,19 +259,12 @@ def _run_single_head(
     try:
         decision = run_head_decision(head_info.sidecar, pooled_vec, prefix="", segment_std=seg_std)
 
-        def _build_key(label: str, head: HeadInfo = head_info) -> str:
-            model_key, _ = head.build_versioned_tag_key(
-                normalize_tag_label(label),
-                framework_version=_get_essentia_version(),
-                calib_method="none",
-                calib_version=0,
-            )
-            return model_key
+        key_builder = partial(_build_tag_key, head_info=head_info, essentia_version=essentia_version)
 
         head_outputs = decision.to_head_outputs(
-            head_info=head_info, framework_version=_get_essentia_version(), key_builder=_build_key,
+            head_info=head_info, framework_version=essentia_version, key_builder=key_builder,
         )
-        head_tags = decision.as_tags(key_builder=_build_key)
+        head_tags = decision.as_tags(key_builder=key_builder)
         logger.debug(f"[processor] Head {head_name} ({head_info.head_type}) produced {len(head_tags)} tags")
         if head_tags:
             sample_keys = list(head_tags.keys())[:3]
@@ -270,11 +286,18 @@ def _run_single_head(
             logger.debug(
                 f"[processor] Captured {len(raw_values)} segment predictions for {head_name} (mean={np.mean(raw_values):.3f}, std={np.std(raw_values):.3f})",
             )
+        # Defer segment stats computation to async DB write thread.
+        # Keep raw scores alive (numpy ref, no copy needed — it's from vstack).
+        raw_segment_scores: np.ndarray | None = None
+        segment_labels: list[str] | None = None
+        if segment_scores.ndim == 2 and len(head_info.labels) > 0:
+            raw_segment_scores = segment_scores
+            segment_labels = head_info.labels
         return _SingleHeadResult(
             head_name=head_name, status="success",
             head_tags=head_tags, head_outputs=head_outputs,
             regression_data=regression_data,
-            segment_stats=seg_stats, num_segments=n_segments,
+            raw_segment_scores=raw_segment_scores, segment_labels=segment_labels,
             elapsed_ms=elapsed_ms, decisions_count=len(decision.details),
         )
     except Exception as e:
@@ -290,9 +313,10 @@ def _process_head_predictions(
 ) -> ProcessHeadPredictionsResult:
     """Process all head predictions for a single backbone using cached embeddings.
 
-    Runs heads in parallel via ThreadPoolExecutor. Head-only predictors are
-    cached (TensorflowPredict2D objects persist across files), and predict()
-    releases the GIL, so threads get real CPU parallelism.
+    Runs heads in parallel via a reusable module-level ThreadPoolExecutor (_HEAD_POOL).
+    Predictor resolution is hoisted to the main thread to avoid per-thread cache
+    lookup + lock contention. The dispatched threads only call predict_fn() which
+    releases the GIL for real CPU parallelism.
 
     Args:
         backbone_heads: List of heads for this backbone
@@ -304,26 +328,33 @@ def _process_head_predictions(
         ProcessHeadPredictionsResult with per-head outcomes
 
     """
+    # Pre-resolve cached predictors on the main thread (no lock contention).
+    # Each predict_fn is a lightweight closure binding the cached TF model + embeddings.
+    predict_fns: dict[str, Callable[[], np.ndarray]] = {}
+    for hi in backbone_heads:
+        predict_fns[hi.name] = make_head_only_predictor_batched(hi, embeddings_2d, batch_size=config.batch_size)
+
+    essentia_version = _get_essentia_version()
     head_results_list: list[_SingleHeadResult] = []
     n_heads = len(backbone_heads)
     if n_heads > 1:
-        with ThreadPoolExecutor(max_workers=n_heads) as pool:
-            futures = {
-                pool.submit(_run_single_head, hi, embeddings_2d, config.batch_size): hi.name
-                for hi in backbone_heads
-            }
-            head_results_list.extend(fut.result() for fut in as_completed(futures))
+        futures = {
+            _HEAD_POOL.submit(_run_single_head, hi, predict_fns[hi.name], essentia_version): hi.name
+            for hi in backbone_heads
+        }
+        head_results_list.extend(fut.result() for fut in as_completed(futures))
         logger.debug("[processor] Parallel heads complete (%d heads)", n_heads)
     else:
-        head_results_list.extend(_run_single_head(hi, embeddings_2d, config.batch_size) for hi in backbone_heads)
+        head_results_list.extend(
+            _run_single_head(hi, predict_fns[hi.name], essentia_version) for hi in backbone_heads
+        )
 
     # Merge results sequentially (safe dict mutations)
     heads_succeeded = 0
     head_results: dict[str, Any] = {}
     regression_heads: list[tuple[Any, list[float]]] = []
     all_head_outputs: list[Any] = []
-    segment_stats_per_head: dict[str, list[dict[str, Any]]] = {}
-    num_segments_per_head: dict[str, int] = {}
+    raw_segments_per_head: dict[str, tuple[np.ndarray, list[str]]] = {}
     per_head_timings: dict[str, float] = {}
     for r in head_results_list:
         per_head_timings[r.head_name] = r.elapsed_ms
@@ -335,10 +366,8 @@ def _process_head_predictions(
                 all_head_outputs.extend(r.head_outputs)
             if r.regression_data:
                 regression_heads.append(r.regression_data)
-            if r.segment_stats is not None:
-                segment_stats_per_head[r.head_name] = r.segment_stats
-            if r.num_segments is not None:
-                num_segments_per_head[r.head_name] = r.num_segments
+            if r.raw_segment_scores is not None and r.segment_labels is not None:
+                raw_segments_per_head[r.head_name] = (r.raw_segment_scores, r.segment_labels)
             head_results[r.head_name] = {
                 "status": "success",
                 "tags_written": len(r.head_tags or {}),
@@ -353,8 +382,7 @@ def _process_head_predictions(
         head_results=head_results,
         regression_heads=regression_heads,
         all_head_outputs=all_head_outputs,
-        segment_stats_per_head=segment_stats_per_head,
-        num_segments_per_head=num_segments_per_head,
+        raw_segments_per_head=raw_segments_per_head,
         per_head_timings=per_head_timings,
     )
 
@@ -536,8 +564,7 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
     heads_succeeded = 0
     regression_heads: list[tuple[HeadInfo, list[float]]] = []
     total_heads_succeeded = 0
-    all_segment_stats: dict[str, list[dict[str, Any]]] = {}
-    all_num_segments: dict[str, int] = {}
+    all_raw_segments: dict[str, tuple[np.ndarray, list[str]]] = {}
     # Compute model suite hash once for vector persistence (not per backbone)
     from nomarr.components.ml.ml_discovery_comp import compute_model_suite_hash
 
@@ -671,8 +698,7 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
         all_head_results.update(head_results)
         regression_heads.extend(regression_outputs)
         all_head_outputs.extend(head_outputs)
-        all_segment_stats.update(result.segment_stats_per_head)
-        all_num_segments.update(result.num_segments_per_head)
+        all_raw_segments.update(result.raw_segments_per_head)
         # Persist pooled track-level embedding vector for this backbone
         if db is not None and file_id is not None:
             t_vector_store = internal_ms()
@@ -699,8 +725,7 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
             except Exception:
                 logger.warning(f"[processor] Failed to persist {backbone} vector for {path}", exc_info=True)
         del embeddings_2d
-        gc.collect()
-        logger.debug(f"[processor] Released {backbone} embeddings and predictors from memory")
+        logger.debug(f"[processor] Released {backbone} embeddings from memory")
     if total_heads_succeeded == 0:
         # Check if all heads were skipped (vs failed)
         all_skipped = all(
@@ -742,26 +767,6 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
     db_tags = dict(tags_accum)
     deferred: DeferredFileWrites | None = None
     if db is not None and file_id is not None:
-        stats_entries: list[dict[str, Any]] = []
-        if all_segment_stats:
-            for head_name, label_stats in all_segment_stats.items():
-                num_segments = all_num_segments.get(head_name, 0)
-                if head_name not in all_num_segments:
-                    logger.warning(
-                        "[processor] num_segments missing for head '%s' — "
-                        "stats and segment count accumulators out of sync",
-                        head_name,
-                    )
-                stats_entries.append(
-                    {
-                        "file_id": file_id,
-                        "head_name": head_name,
-                        "tagger_version": config.tagger_version,
-                        "num_segments": num_segments,
-                        "pooling_strategy": "trimmed_mean",
-                        "label_stats": label_stats,
-                    }
-                )
         deferred = DeferredFileWrites(
             file_id=file_id,
             path=path,
@@ -769,7 +774,7 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
             namespace=config.namespace,
             tagger_version=config.tagger_version,
             chromaprint=chromaprint_from_ml,
-            segment_stats_entries=stats_entries,
+            raw_segments=all_raw_segments if all_raw_segments else {},
         )
     elapsed_ms = internal_ms().value - start_all.value
     elapsed = round(elapsed_ms / 1000, 2)

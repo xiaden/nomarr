@@ -46,10 +46,14 @@ def _execute_deferred_writes(
 ) -> None:
     """Execute deferred DB writes for one file on a background thread.
 
-    Order: save_tags → set_chromaprint → upsert_stats → mark_tagged → release_claim.
+    Order: save_tags → set_chromaprint → compute_segment_stats → upsert_stats
+           → mark_tagged → release_claim.
+    Segment stats are computed here (deferred from the ML hot path) so the
+    pipeline doesn't pay numpy reduction costs per head during inference.
     mark_tagged only runs if prior writes succeeded. release_claim always runs.
     """
     from nomarr.components.library.file_sync_comp import save_file_tags, set_chromaprint
+    from nomarr.components.ml.segment_stats_comp import compute_segment_stats
     from nomarr.components.tagging.tag_parsing_comp import parse_tag_values
     from nomarr.components.workers.worker_discovery_comp import release_claim
 
@@ -67,9 +71,21 @@ def _execute_deferred_writes(
         if writes.chromaprint:
             set_chromaprint(db, file_id, writes.chromaprint)
 
-        # 3. Persist segment statistics
-        if writes.segment_stats_entries:
-            db.segment_scores_stats.upsert_stats_batch(writes.segment_stats_entries)
+        # 3. Compute segment statistics from raw scores (deferred from hot path)
+        if writes.raw_segments:
+            stats_entries: list[dict[str, Any]] = []
+            for head_name, (segment_scores, labels) in writes.raw_segments.items():
+                label_stats = compute_segment_stats(segment_scores, labels)
+                stats_entries.append({
+                    "file_id": file_id,
+                    "head_name": head_name,
+                    "tagger_version": writes.tagger_version,
+                    "num_segments": segment_scores.shape[0],
+                    "pooling_strategy": "trimmed_mean",
+                    "label_stats": label_stats,
+                })
+            if stats_entries:
+                db.segment_scores_stats.upsert_stats_batch(stats_entries)
 
         # 4. All writes succeeded — mark file as tagged
         db.library_files.mark_file_tagged(file_id, writes.tagger_version)
