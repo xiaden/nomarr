@@ -612,6 +612,7 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
         all_num_segments.update(result.num_segments_per_head)
         # Persist pooled track-level embedding vector for this backbone
         if db is not None and file_id is not None:
+            t_vector_store = internal_ms()
             try:
                 from nomarr.components.ml.ml_vector_pool_comp import (
                     get_embedding_dimension,
@@ -628,6 +629,7 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
                     vector=vector,
                     num_segments=embeddings_2d.shape[0],
                 )
+                timings[f"vector_store_{backbone}"] = internal_ms().value - t_vector_store.value
                 logger.debug(
                     f"[processor] Persisted {backbone} vector: dim={embed_dim}, segments={embeddings_2d.shape[0]}",
                 )
@@ -706,15 +708,18 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
         # Group timings by category for readability
         overhead_ms = timings.get("model_discovery", 0)
         emb_times = {k: v for k, v in timings.items() if k.startswith("emb_")}
+        vector_times = {k: v for k, v in timings.items() if k.startswith("vector_store_")}
         head_times = {k: v for k, v in timings.items() if k.startswith("head_")}
         mood_ms = timings.get("mood_aggregation", 0)
         db_ms_val = timings.get("db_writes", 0)
 
         total_emb_ms = sum(emb_times.values())
+        total_vector_ms = sum(vector_times.values())
         total_head_ms = sum(head_times.values())
 
         # Build concise summary
         emb_str = " + ".join([f"{k.replace('emb_', '')}={v:.0f}ms" for k, v in emb_times.items()])
+        vector_str = " + ".join([f"{k.replace('vector_store_', '')}={v:.0f}ms" for k, v in vector_times.items()])
         head_summary = f"{len(head_times)} heads in {total_head_ms:.0f}ms (avg={(total_head_ms/len(head_times)):.0f}ms)" if head_times else "no heads"
 
         logger.info(
@@ -722,6 +727,7 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
             f"total={elapsed:.2f}s | "
             f"discovery={overhead_ms:.0f}ms | "
             f"embeddings=[{emb_str}] ({total_emb_ms:.0f}ms) | "
+            f"vector_store=[{vector_str}] ({total_vector_ms:.0f}ms) | "
             f"heads={head_summary} | "
             f"mood_agg={mood_ms:.0f}ms | "
             f"db={db_ms_val:.0f}ms ({db_pct:.1f}%)"
