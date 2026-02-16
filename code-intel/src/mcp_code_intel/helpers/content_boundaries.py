@@ -47,6 +47,46 @@ def _find_all_substring_matches(
     return matches
 
 
+def _format_match_context(
+    file_lines: list[str],
+    match_line_0idx: int,
+    *,
+    context_before: int = 2,
+    context_after: int = 2,
+) -> str:
+    """Format context lines around a match for error messages.
+
+    Args:
+        file_lines: All lines in the file (no trailing newlines).
+        match_line_0idx: 0-indexed line number of the match.
+        context_before: Lines to show before match (default 2).
+        context_after: Lines to show after match (default 2).
+
+    Returns:
+        Formatted string with line numbers and content.
+        Match line is marked with ` > `, context lines with `   `.
+
+    """
+    total_lines = len(file_lines)
+    max_line_num = total_lines  # for width calculation
+    width = len(str(max_line_num))
+
+    start = max(0, match_line_0idx - context_before)
+    end = min(total_lines - 1, match_line_0idx + context_after)
+
+    lines: list[str] = []
+    for i in range(start, end + 1):
+        line_num = i + 1  # 1-indexed for display
+        content = file_lines[i].rstrip()
+        if i == match_line_0idx:
+            prefix = " > "
+        else:
+            prefix = "   "
+        lines.append(f"{prefix}{line_num:>{width}} | {content}")
+
+    return "\n".join(lines)
+
+
 def find_content_boundaries(
     file_lines: list[str],
     start_boundary: str,
@@ -108,44 +148,62 @@ def find_content_boundaries(
         return (s0 + 1, e0 + 1)  # convert to 1-indexed
 
     if len(candidates) == 0:
-        # Provide diagnostics
-        diag_parts: list[str] = []
-        diag_parts.append(
-            f"No matching range found with expected_line_count={expected_line_count}."
-        )
-        diag_parts.append(
-            f"  Start boundary matched at line(s): "
-            f"{', '.join(str(s + 1) for s in start_matches)}"
-        )
-        # Show end matches from first start for context
+        # Provide diagnostics with context
+        diag_parts: list[str] = [
+            f"No matching range found with expected_line_count={expected_line_count}.",
+        ]
+
+        # Show context for start boundary matches (limit to 2)
+        shown_starts = start_matches[:2]
+        for i, s in enumerate(shown_starts):
+            diag_parts.append(f"  Start boundary match {i + 1} at line {s + 1}:")
+            diag_parts.append(_format_match_context(file_lines, s))
+
+        if len(start_matches) > 2:
+            diag_parts.append(f"  ... and {len(start_matches) - 2} more start matches")
+
+        # Show end matches from first start with context
         if start_matches:
             first_s = start_matches[0]
             end_matches = _find_all_substring_matches(
                 file_lines, end_bl, search_start=first_s,
             )
             if end_matches:
-                for em in end_matches:
+                # Show up to 2 end matches with context
+                shown_ends = end_matches[:2]
+                for em in shown_ends:
                     end_last = em + len(end_bl) - 1
                     actual = end_last - first_s + 1
                     diag_parts.append(
-                        f"  End boundary matched at line {em + 1} "
-                        f"(range would be {actual} lines, expected {expected_line_count})"
+                        f"  End boundary at line {end_last + 1} "
+                        f"(range = {actual} lines, expected {expected_line_count}):"
                     )
+                    diag_parts.append(_format_match_context(file_lines, end_last))
+                if len(end_matches) > 2:
+                    diag_parts.append(f"  ... and {len(end_matches) - 2} more end matches")
             else:
-                diag_parts.append(
-                    "  End boundary not found after start boundary."
-                )
+                diag_parts.append("  End boundary not found after start boundary.")
+
         return "\n".join(diag_parts)
 
-    # Multiple candidates
-    locations = ", ".join(
-        f"lines {s + 1}-{e + 1}" for s, e in candidates
-    )
-    return (
+    # Multiple candidates - show context for up to 3
+    ambig_parts: list[str] = [
         f"Ambiguous: {len(candidates)} matching ranges found. "
-        f"Provide more specific boundaries.\n"
-        f"  Candidate ranges: {locations}"
-    )
+        f"Provide more specific boundaries.",
+    ]
+
+    shown_candidates = candidates[:3]
+    for i, (s, e) in enumerate(shown_candidates):
+        ambig_parts.append(f"  Candidate {i + 1}: lines {s + 1}-{e + 1}")
+        ambig_parts.append(f"    Start (line {s + 1}):")
+        ambig_parts.append(_format_match_context(file_lines, s))
+        ambig_parts.append(f"    End (line {e + 1}):")
+        ambig_parts.append(_format_match_context(file_lines, e))
+
+    if len(candidates) > 3:
+        ambig_parts.append(f"  ... and {len(candidates) - 3} more candidates")
+
+    return "\n".join(ambig_parts)
 
 
 def find_anchor_line(

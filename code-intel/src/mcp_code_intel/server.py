@@ -341,6 +341,7 @@ def read_module_source(
             end_line=end_line,
             action="Read source",
             tool_name="read_module_source",
+            text_field_keys=["source"],
         )
     return wrap_mcp_result(
         result,
@@ -369,6 +370,7 @@ def read_file_symbol_at_line(
         end_line=line_number,
         action="Read symbol at",
         tool_name="read_file_symbol_at_line",
+        text_field_keys=["source"],
     )
 
 
@@ -644,12 +646,17 @@ def read_file_line_range(
     result = read_file_range_impl(
         file_path, start_line, end_line, ROOT, include_imports=include_imports
     )
+
+    # Extract warning from structuredContent and build user summary
+    warning = result.pop("warning", None)
+    action = f"Read (⚠️ {warning})" if warning else "Read"
+
     return wrap_mcp_result_with_file_link(
         result,
         file_path=file_path,
         start_line=start_line,
         end_line=end_line,
-        action="Read",
+        action=action,
         tool_name="read_file_line_range",
     )
 
@@ -676,12 +683,17 @@ def read_file_line(
     for structured navigation.
     """
     result = read_file_line_impl(file_path, line_number, ROOT, include_imports=include_imports)
+
+    # Extract warning from structuredContent and build user summary
+    warning = result.pop("warning", None)
+    action = f"Read (⚠️ {warning})" if warning else "Read"
+
     return wrap_mcp_result_with_file_link(
         result,
         file_path=file_path,
         start_line=line_number,
         end_line=line_number,
-        action="Read",
+        action=action,
         tool_name="read_file_line",
     )
 
@@ -694,6 +706,29 @@ def search_file_text(
     """Find exact text in non-Python files (configs, frontend, logs) and show 2-line context."""
     result = search_file_text_impl(file_path, search_string, ROOT)
     matches = result.get("matches", [])
+
+    # Extract content from each match for assistant-targeted content
+    assistant_content = []
+    if matches and isinstance(result, dict) and "matches" in result:
+        # Build clean metadata-only matches array and extract content
+        clean_matches = []
+        for match in matches:
+            if isinstance(match, dict):
+                # Extract content for assistant
+                content = match.get("content")
+                if content:
+                    line_range = match.get("line_range", "")
+                    assistant_content.append(f"Lines {line_range}:\n{content}")
+
+                # Keep only metadata in structuredContent
+                clean_match = {
+                    k: v for k, v in match.items() if k != "content"
+                }
+                clean_matches.append(clean_match)
+
+        # Replace matches with metadata-only version
+        result["matches"] = clean_matches
+
     if matches:
         file_locations: list[tuple[str | Path, int | None, int | None, str]] = [
             (file_path, m.get("line_number"), m.get("line_number"), f"Found '{search_string}'")
@@ -705,12 +740,13 @@ def search_file_text(
                 result,
                 file_locations=file_locations,
                 tool_name="search_file_text",
+                assistant_content=assistant_content if assistant_content else None,
             )
-    return wrap_mcp_result_with_file_link(
+    return wrap_mcp_result(
         result,
-        file_path=file_path,
-        action="Searched",
+        user_summary=f"Searched {file_path}",
         tool_name="search_file_text",
+        assistant_content=assistant_content if assistant_content else None,
     )
 
 
