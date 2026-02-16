@@ -172,7 +172,7 @@ def compute_embeddings_for_backbone(params: ComputeEmbeddingsForBackboneParams) 
         logger.info(f"[inference] CPU spill requested for {params.backbone} (GPU VRAM pressure detected)")
     emb_predictor = get_cached_backbone_predictor(params.backbone, params.emb_graph)
     if emb_predictor is None:
-        logger.debug(f"[inference] Creating backbone predictor for {params.backbone} (not cached)")
+        logger.info(f"[inference] Creating {params.backbone} backbone predictor (device=GPU, not cached)")
         if params.backbone == "yamnet":
             if TensorflowPredictVGGish is None:
                 msg = "TensorflowPredictVGGish not available"
@@ -200,7 +200,7 @@ def compute_embeddings_for_backbone(params: ComputeEmbeddingsForBackboneParams) 
             raise RuntimeError(msg)
         cache_backbone_predictor(params.backbone, params.emb_graph, emb_predictor)
     else:
-        logger.debug(f"[inference] Using cached backbone predictor for {params.backbone}")
+        logger.debug(f"[inference] Using cached {params.backbone} backbone predictor (device=GPU)")
     wave_f32 = audio_result.waveform.astype(np.float32)
     emb = emb_predictor(wave_f32)
     emb = np.asarray(emb, dtype=np.float32)

@@ -362,17 +362,36 @@ class WorkerSystemService(ComponentLifecycleHandler):
             if self.health_monitor:
                 self.health_monitor.register_component(new_worker.worker_id, self, parent_conn)
 
-            # Replace worker in list (join old worker to reap zombie)
+            # Replace worker in list (terminate old worker if still alive)
             if worker_index < len(self._workers):
                 old_worker = self._workers[worker_index]
                 if old_worker is not None:
-                    old_worker.join(timeout=1.0)  # Worker already dead, just reap zombie
+                    # Signal worker to stop and wait
+                    old_worker.join(timeout=2.0)
+                    # Force-terminate if still alive (prevents zombies)
+                    if old_worker.is_alive():
+                        logger.warning(
+                            "[WorkerSystemService] Old worker %s (pid=%s) did not stop gracefully, terminating",
+                            old_worker.worker_id,
+                            old_worker.pid,
+                        )
+                        old_worker.terminate()
+                        old_worker.join(timeout=1.0)
+                        # Final kill if terminate failed
+                        if old_worker.is_alive():
+                            logger.error(
+                                "[WorkerSystemService] Worker %s (pid=%s) still alive after terminate(), force killing",
+                                old_worker.worker_id,
+                                old_worker.pid,
+                            )
+                            old_worker.kill()
+                            old_worker.join(timeout=0.5)
                 self._workers[worker_index] = new_worker
             else:
                 # Worker list shrunk? Append instead
                 self._workers.append(new_worker)
 
-            logger.info("[WorkerSystemService] Worker %d restarted successfully", worker_index)
+            logger.info("[WorkerSystemService] Worker %d restarted successfully (new_pid=%s, old_pid=%s)", worker_index, new_worker.pid, old_worker.pid if old_worker else None)
 
         except Exception as e:
             logger.error(
@@ -556,11 +575,21 @@ class WorkerSystemService(ComponentLifecycleHandler):
             worker.join(timeout=timeout)
             if worker.is_alive():
                 logger.warning(
-                    "[WorkerSystemService] Worker %s did not stop gracefully, terminating",
+                    "[WorkerSystemService] Worker %s (pid=%s) did not stop gracefully, terminating",
                     worker.worker_id,
+                    worker.pid,
                 )
                 worker.terminate()
                 worker.join(timeout=1.0)
+                # Final kill if terminate failed (prevents zombies)
+                if worker.is_alive():
+                    logger.error(
+                        "[WorkerSystemService] Worker %s (pid=%s) still alive after terminate(), force killing",
+                        worker.worker_id,
+                        worker.pid,
+                    )
+                    worker.kill()
+                    worker.join(timeout=0.5)
 
         self._workers.clear()
         self._started = False

@@ -370,7 +370,7 @@ def _compute_suppressed_keys(
             neg_tier, _, _ = tier_map[neg_key]
             suppressed_keys.add(pos_key)
             suppressed_keys.add(neg_key)
-            logger.info(f"[aggregation] Suppressing conflicting pair: {pos_key} ({pos_tier}) vs {neg_key} ({neg_tier})")
+            logger.debug(f"[aggregation] Suppressing conflicting pair: {pos_key} ({pos_tier}) vs {neg_key} ({neg_tier})")
     return suppressed_keys
 
 

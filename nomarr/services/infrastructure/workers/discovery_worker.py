@@ -12,6 +12,7 @@ import contextlib
 import json
 import logging
 import multiprocessing
+import os
 import threading
 import time
 from multiprocessing import Event
@@ -227,8 +228,9 @@ class DiscoveryWorker(multiprocessing.Process):
         db.health.mark_healthy(self.worker_id)
 
         logger.info(
-            "[%s] Discovery worker started (tier=%d, prefer_gpu=%s)",
+            "[%s] Discovery worker started (pid=%s, tier=%d, prefer_gpu=%s)",
             self.worker_id,
+            os.getpid(),
             self.execution_tier,
             self.prefer_gpu,
         )
@@ -325,7 +327,7 @@ class DiscoveryWorker(multiprocessing.Process):
                 # Process the claimed file
                 try:
                     # Get file path from database
-                    logger.info("[%s] Fetching file doc for %s", self.worker_id, file_id)
+                    logger.debug("[%s] Fetching file doc for %s", self.worker_id, file_id)
                     file_doc = db.library_files.get_file_by_id(file_id)
                     if not file_doc:
                         logger.warning("[%s] Claimed file %s not found in database", self.worker_id, file_id)
@@ -335,7 +337,6 @@ class DiscoveryWorker(multiprocessing.Process):
                     file_path = file_doc["path"]
 
                     # Pre-call diagnostics with file size (native crash logging)
-                    import os
                     import sys
 
                     try:
@@ -355,7 +356,7 @@ class DiscoveryWorker(multiprocessing.Process):
                         db=db,
                         file_id=file_id,
                     )
-                    logger.info("[%s] Workflow returned for %s", self.worker_id, file_path)
+                    logger.debug("[%s] Workflow returned for %s", self.worker_id, file_path)
 
                     # Check if file was skipped (e.g., audio too short)
                     if result.heads_processed == 0 and result.tags_written == 0:
