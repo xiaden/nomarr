@@ -344,7 +344,39 @@ def _sync_to_database(
     """
     if db is None:
         return
+
     try:
+        # Fast path: file_id provided (ML worker flow)
+        # Skip metadata extraction - we only need to write ML tags
+        if file_id is not None:
+            from nomarr.components.library.file_sync_comp import (
+                mark_file_tagged,
+                save_file_tags,
+                set_chromaprint,
+            )
+            from nomarr.components.tagging.tag_parsing_comp import parse_tag_values
+
+            # Parse and write ML prediction tags with nom: prefix
+            parsed_nom_tags = parse_tag_values(db_tags) if db_tags else {}
+            prefixed_nom_tags = {
+                (f"nom:{rel}" if not rel.startswith("nom:") else rel): values
+                for rel, values in parsed_nom_tags.items()
+            }
+            save_file_tags(db, file_id, prefixed_nom_tags)
+
+            # Store chromaprint if provided by ML audio fingerprinting
+            if chromaprint:
+                set_chromaprint(db, file_id, chromaprint)
+                logger.debug(f"[processor] Stored chromaprint for {path}")
+
+            # Mark file as tagged with this tagger version
+            mark_file_tagged(db, file_id, tagger_version)
+
+            logger.debug(f"[processor] Updated library database for {path} with {len(db_tags)} ML tags")
+            return
+
+        # Slow path: no file_id provided (legacy/fallback)
+        # This extracts metadata and does full sync - needed for non-worker flows
         from nomarr.components.infrastructure.path_comp import build_library_path_from_input
         from nomarr.components.library.metadata_extraction_comp import extract_metadata
         from nomarr.workflows.library.sync_file_to_library_wf import sync_file_to_library
@@ -369,6 +401,7 @@ def _sync_to_database(
             file_id=file_id,
         )
         logger.debug(f"[processor] Updated library database for {path} with {len(db_tags)} tags")
+
     except Exception as e:
         logger.exception(f"[processor] Failed to update library database for {path}: {e}")
 
