@@ -328,6 +328,28 @@ async def get_unique_tag_values(
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get tag values")) from e
 
 
+@router.get("/files/tags/mood-values", dependencies=[Depends(verify_session)])
+async def get_unique_mood_values(
+    mood_tier: Annotated[str, Query(description="Mood tier (mood-strict, mood-regular, mood-loose)")] = "mood-strict",
+    limit: Annotated[int, Query(description="Maximum values to return")] = 100,
+    library_service: "LibraryService" = Depends(get_library_service),
+) -> UniqueTagKeysResponse:
+    """Get unique individual mood values from tuple string tags.
+
+    Parses mood tags stored as tuple strings like "('aggressive', 'party-like')"
+    and extracts individual mood terms.
+
+    Returns:
+        List of unique mood values (e.g., ["aggressive", "happy", "party-like"])
+    """
+    try:
+        result = library_service.get_unique_mood_values(mood_tier=mood_tier, limit=limit)
+        return UniqueTagKeysResponse.from_dto(result)
+    except Exception as e:
+        logger.exception("[Web API] Error getting unique mood values")
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get mood values")) from e
+
+
 @router.post("/cleanup-tags", dependencies=[Depends(verify_session)])
 async def cleanup_orphaned_tags(
     dry_run: Annotated[bool, Query(description="Preview orphaned tags without deleting")] = False,

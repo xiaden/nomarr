@@ -128,6 +128,11 @@ class LibraryQueryMixin:
         values = get_unique_tag_values(self.db, tag_key, nomarr_only)
         return UniqueTagKeysResult(tag_keys=values, count=len(values), calibration=None, library_id=None)
 
+    def get_unique_mood_values(self, mood_tier: str = "mood-strict", limit: int = 100) -> UniqueTagKeysResult:
+        """Get unique individual mood values extracted from tuple string tags."""
+        values = self.db.tags.get_unique_mood_values(mood_tier=mood_tier, limit=limit)
+        return UniqueTagKeysResult(tag_keys=values, count=len(values), calibration=None, library_id=None)
+
     def get_work_status(self) -> WorkStatusResult:
         """Get unified work status for the system.
 

@@ -146,3 +146,20 @@ export async function getUniqueTagValues(
 ): Promise<TagValuesResponse> {
   return getTagValues(tagKey, nomarrOnly);
 }
+
+
+/**
+ * Get unique individual mood values extracted from mood tag tuple strings.
+ * Returns values like ["aggressive", "happy", "party-like"] that appear
+ * in mood tags stored as tuples like "('aggressive', 'happy')".
+ */
+export async function getMoodValues(
+  moodTier: "mood-loose" | "mood-regular" | "mood-strict" = "mood-strict",
+  limit = 100
+): Promise<UniqueTagKeysResponse> {
+  const queryParams = new URLSearchParams();
+  queryParams.append("mood_tier", moodTier);
+  queryParams.append("limit", limit.toString());
+
+  return get(`/api/web/libraries/files/tags/mood-values?${queryParams.toString()}`);
+}
