@@ -27,16 +27,13 @@ logger = logging.getLogger(__name__)
 def get_database() -> Database:
     """Get Database instance for CLI operations.
 
-    Uses ConfigService to get db_path, respecting YAML config and env vars.
+    Connects to ArangoDB using ARANGO_HOST environment variable.
 
     Returns:
         Database instance
 
     """
-    config_service = ConfigService()
-    config = config_service.get_config()
-    db_path = str(config.config["db_path"])
-    return Database(db_path)
+    return Database()
 
 def get_keys_service() -> KeyManagementService:
     """Get KeyManagementService instance for CLI operations.

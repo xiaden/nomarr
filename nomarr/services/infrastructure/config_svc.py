@@ -135,7 +135,7 @@ class ConfigService:
             node = node[part]
         return node
 
-    def set_config_value(self, key: str, value: str, db_path: str | None = None) -> None:
+    def set_config_value(self, key: str, value: str) -> None:
         """Store a user-editable config value in DB meta.
 
         This persists configuration changes made via web UI. The value is stored
@@ -144,22 +144,14 @@ class ConfigService:
         Args:
             key: Config key (without 'config_' prefix)
             value: String value to store
-            db_path: Path to database (if None, uses current config's db_path)
 
         Note:
             Changes take effect after reload() or application restart.
             Caller is responsible for validating that key is editable.
 
         """
-        if db_path is None:
-            db_path = self.get("db_path")
-
-        if not db_path:
-            msg = "Cannot set config value: no db_path available"
-            raise ValueError(msg)
-
         # Create temporary DB connection for write
-        db = Database(db_path)
+        db = Database()
         db.meta.set(f"config_{key}", value)
         self._logger.info(f"[ConfigService] Set config_{key} = {value}")
 
@@ -272,7 +264,7 @@ class ConfigService:
         # 5) Database meta table overrides (web UI customizations)
         # Can be disabled via NOMARR_IGNORE_DB_CONFIG=true for recovery
         if os.getenv("NOMARR_IGNORE_DB_CONFIG", "").lower() != "true":
-            db_overrides = self._load_db_config(cfg.get("db_path"))
+            db_overrides = self._load_db_config()
             if db_overrides:
                 self._deep_merge(cfg, db_overrides)
         else:
@@ -337,33 +329,21 @@ class ConfigService:
         except Exception:
             return {}
 
-    def _load_db_config(self, db_path: str | None) -> dict[str, Any]:
+    def _load_db_config(self) -> dict[str, Any]:
         """Load configuration overrides from database meta table.
 
         Only allows overrides for the 11 user-configurable keys.
         All other config_* keys in the DB are ignored (internal constants
         cannot be overridden at runtime).
 
-        Graceful fallback if DB doesn't exist or is corrupted.
-
-        Args:
-            db_path: Path to SQLite database (from YAML/env config)
+        Graceful fallback if DB is unavailable or corrupted.
 
         Returns:
             dict: Config overrides from DB meta table (empty if unavailable)
 
         """
-        if not db_path:
-            self._logger.debug("DB config skipped: no db_path provided")
-            return {}
-
         try:
-            # Only import DB if path exists (avoids errors during initial setup)
-            if not os.path.exists(db_path):
-                self._logger.debug(f"DB config skipped: {db_path} does not exist")
-                return {}
-
-            db = Database(db_path)
+            db = Database()
             try:
                 # Query all config_* keys from meta table via persistence layer
                 meta_dict = db.meta.get_by_prefix("config_")

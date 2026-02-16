@@ -655,6 +655,8 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
         mood_value = tags_accum[mood_key]
         if isinstance(mood_value, list):
             logger.debug(f"[processor]   {mood_key}: {len(mood_value)} terms")
+    # Time DB write operations to assess async opportunity
+    t_db_start = internal_s()
     tags_accum[config.version_tag_key] = config.tagger_version
     db_tags = dict(tags_accum)
     _sync_to_database(db, path, db_tags, config.namespace, config.tagger_version, chromaprint_from_ml, file_id=file_id)
@@ -676,7 +678,14 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
                 pooling_strategy="trimmed_mean",
                 label_stats=label_stats,
             )
+    db_elapsed = internal_s().value - t_db_start.value if db is not None else 0.0
     elapsed = round(internal_s().value - start_all.value, 2)
+    db_pct = (db_elapsed / elapsed * 100) if db is not None and elapsed > 0 else 0.0
+    ml_elapsed = elapsed - db_elapsed if db is not None else elapsed
+    if db is not None:
+        logger.info(
+            f"[processor] ⏱️  Timing: total={elapsed:.2f}s | ML={ml_elapsed:.2f}s | DB={db_elapsed:.2f}s ({db_pct:.0f}%)"
+        )
     mood_info = {}
     for key in ["mood-strict", "mood-regular", "mood-loose"]:
         if key in tags_accum:
