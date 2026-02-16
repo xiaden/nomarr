@@ -9,13 +9,14 @@ Two cache types:
 
 Both caches share the same idle timeout and eviction policy.
 """
+
 from __future__ import annotations
 
 import logging
 import threading
 from typing import TYPE_CHECKING, Any
 
-from nomarr.helpers.time_helper import internal_s
+from nomarr.helpers.time_helper import internal_ms
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
@@ -31,19 +32,23 @@ _CACHE_LAST_ACCESS: int = 0
 _CACHE_LOCK = threading.Lock()
 _CACHE_TIMEOUT: int = 300
 
+
 def cache_key(head_info: HeadInfo) -> str:
     """Unique cache key for a head across backbones/types."""
     return f"{head_info.name}::{head_info.backbone}::{head_info.head_type}"
+
 
 def is_initialized() -> bool:
     """Check if cache has been initialized."""
     return _CACHE_INITIALIZED
 
+
 def get_cache_size() -> int:
     """Return number of predictors in cache."""
     return len(_PREDICTOR_CACHE)
 
-def warmup_predictor_cache(models_dir: str, cache_idle_timeout: int=300) -> int:
+
+def warmup_predictor_cache(models_dir: str, cache_idle_timeout: int = 300) -> int:
     """Pre-load all model predictors into cache to avoid loading overhead during processing.
     Returns the number of predictors cached.
 
@@ -60,30 +65,36 @@ def warmup_predictor_cache(models_dir: str, cache_idle_timeout: int=300) -> int:
         return len(_PREDICTOR_CACHE)
     from nomarr.components.ml.ml_discovery_comp import discover_heads
     from nomarr.components.ml.ml_inference_comp import make_predictor_uncached
+
     heads = discover_heads(models_dir)
     if not heads:
         logger.warning(f"[cache] No heads found in {models_dir}")
         return 0
     logger.info(f"[cache] Warming up predictor cache with {len(heads)} heads...")
     logger.info("[cache] Building model cache (Essentia warnings normal during warmup)...")
-    start = internal_s()
+    start = internal_ms()
     for idx, head_info in enumerate(heads, 1):
         try:
             predictor = make_predictor_uncached(head_info)
             key = cache_key(head_info)
             _PREDICTOR_CACHE[key] = predictor
-            logger.debug(f"[cache] Cached [{idx}/{len(heads)}]: '{head_info.name}' ({head_info.backbone}/{head_info.head_type})")
+            logger.debug(
+                f"[cache] Cached [{idx}/{len(heads)}]: '{head_info.name}' ({head_info.backbone}/{head_info.head_type})"
+            )
         except Exception as e:
             logger.exception(f"[cache] Failed to cache predictor for {head_info.name}: {e}")
-    elapsed = internal_s().value - start.value
+    elapsed = internal_ms().value - start.value
     _CACHE_INITIALIZED = True
-    _CACHE_LAST_ACCESS = internal_s().value
-    logger.info(f"[cache] Predictor cache ready: {len(_PREDICTOR_CACHE)}/{len(heads)} predictors loaded in {elapsed:.1f}s")
+    _CACHE_LAST_ACCESS = internal_ms().value
+    logger.info(
+        f"[cache] Predictor cache ready: {len(_PREDICTOR_CACHE)}/{len(heads)} predictors loaded in {elapsed:.1f}s"
+    )
     if len(_PREDICTOR_CACHE) != len(heads):
         cached = set(_PREDICTOR_CACHE.keys())
         missing = [f"{h.name} ({h.backbone})" for h in heads if cache_key(h) not in cached]
         logger.warning(f"[cache] Missing from cache after warmup: {missing}")
     return len(_PREDICTOR_CACHE)
+
 
 def clear_predictor_cache() -> int:
     """Clear all caches (predictor and backbone) and free GPU memory.
@@ -97,18 +108,22 @@ def clear_predictor_cache() -> int:
         _CACHE_INITIALIZED = False
         _CACHE_LAST_ACCESS = 0
         import gc
+
         gc.collect()
         logger.info(f"[cache] Cleared predictor cache ({count} predictors removed, GPU memory freed)")
         return count
 
+
 def touch_cache() -> None:
     """Update the last access time for the cache."""
     global _CACHE_LAST_ACCESS
-    _CACHE_LAST_ACCESS = internal_s().value
+    _CACHE_LAST_ACCESS = internal_ms().value
+
 
 def get_cache_idle_time() -> float:
     """Get the number of seconds since last cache access."""
-    return internal_s().value - _CACHE_LAST_ACCESS
+    return internal_ms().value - _CACHE_LAST_ACCESS
+
 
 def check_and_evict_idle_cache() -> bool:
     """Check if cache has been idle longer than timeout and evict if needed.
@@ -127,9 +142,11 @@ def check_and_evict_idle_cache() -> bool:
         return True
     return False
 
+
 def backbone_cache_key(backbone: str, emb_graph: str) -> str:
     """Generate cache key for a backbone embedding predictor."""
     return f"backbone::{backbone}::{emb_graph}"
+
 
 def get_cached_backbone_predictor(backbone: str, emb_graph: str) -> Any | None:
     """Get cached backbone predictor if available.
@@ -145,6 +162,7 @@ def get_cached_backbone_predictor(backbone: str, emb_graph: str) -> Any | None:
     key = backbone_cache_key(backbone, emb_graph)
     return _BACKBONE_CACHE.get(key)
 
+
 def cache_backbone_predictor(backbone: str, emb_graph: str, predictor: Any) -> None:
     """Cache a backbone predictor for reuse.
 
@@ -158,6 +176,7 @@ def cache_backbone_predictor(backbone: str, emb_graph: str, predictor: Any) -> N
     with _CACHE_LOCK:
         _BACKBONE_CACHE[key] = predictor
         logger.debug(f"[cache] Cached backbone predictor: {backbone}")
+
 
 def get_backbone_cache_size() -> int:
     """Return number of backbone predictors in cache."""

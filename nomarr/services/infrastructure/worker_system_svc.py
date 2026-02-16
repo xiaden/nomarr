@@ -176,7 +176,7 @@ class WorkerSystemService(ComponentLifecycleHandler):
         rm_config = self.processor_config.resource_management
         if rm_config is None or not rm_config.enabled:
             # Resource management disabled - use configured worker count
-            logger.info("[WorkerSystemService] Resource management disabled, using configured worker count")
+            logger.debug("[WorkerSystemService] Resource management disabled, using configured worker count")
 
             # Return Tier 0 with configured workers
             return TierSelection(
@@ -238,7 +238,7 @@ class WorkerSystemService(ComponentLifecycleHandler):
             context: Additional context (consecutive_misses, recovery_deadline, etc.)
 
         """
-        logger.info(
+        logger.debug(
             "[WorkerSystemService] %s: %s -> %s (misses=%d)",
             component_id,
             old_status,
@@ -541,6 +541,7 @@ class WorkerSystemService(ComponentLifecycleHandler):
 
             logger.info("[WorkerSystemService] Started worker:tag:%d (pid=%s)", i, worker.pid)
 
+        logger.info("[WorkerSystemService] Started %d worker(s)", actual_worker_count)
         self._started = True
 
     def stop_all_workers(self, timeout: float = 10.0) -> None:

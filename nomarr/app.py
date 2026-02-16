@@ -376,6 +376,16 @@ class Application:
         self._running = True
         self._start_app_heartbeat()
         self.db.health.mark_healthy(component_id="app")
+
+        # Summary log with key startup info
+        sessions = len(self.services["keys"]._session_cache) if "keys" in self.services else 0
+        worker_count = len(self.worker_system._workers) if self.worker_system and self.worker_system._started else 0
+        logger.info(
+            "[Application] Ready | %d session(s) | %d worker(s) | GPU monitor: %s",
+            sessions,
+            worker_count,
+            "enabled" if "info" in self.services else "disabled",
+        )
         logger.info("[Application] Started successfully")
 
     def stop(self) -> None:

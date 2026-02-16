@@ -76,7 +76,7 @@ from nomarr.components.tagging.tagging_aggregation_comp import (
 from nomarr.helpers.dto.ml_dto import ComputeEmbeddingsForBackboneParams
 from nomarr.helpers.dto.processing_dto import ProcessFileResult, ProcessorConfig
 from nomarr.helpers.dto.tags_dto import Tags
-from nomarr.helpers.time_helper import internal_s
+from nomarr.helpers.time_helper import internal_ms
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
@@ -161,7 +161,7 @@ def _compute_embeddings_for_backbone(
     emb_graph = first_head.embedding_graph
     logger.debug(f"[processor] Computing embeddings for {backbone}: sr={target_sr}")
 
-    t_emb = internal_s()
+    t_emb = internal_ms()
     params = ComputeEmbeddingsForBackboneParams(
         backbone=backbone,
         emb_graph=emb_graph,
@@ -174,7 +174,7 @@ def _compute_embeddings_for_backbone(
     )
     embeddings_2d, duration, chromaprint = compute_embeddings_for_backbone(params=params)
     logger.debug(
-        f"[processor] Embeddings for {backbone} computed in {internal_s().value - t_emb.value:.1f}s: shape={embeddings_2d.shape}",
+        f"[processor] Embeddings for {backbone} computed in {(internal_ms().value - t_emb.value)/1000:.1f}s: shape={embeddings_2d.shape}",
     )
     return (embeddings_2d, duration, chromaprint)
 
@@ -204,7 +204,7 @@ def _process_head_predictions(
     for head_info in backbone_heads:
         head_name = head_info.name
         try:
-            t_head = internal_s()
+            t_head = internal_ms()
             head_predict_fn = make_head_only_predictor_batched(head_info, embeddings_2d, batch_size=config.batch_size)
             segment_scores = head_predict_fn()
             # Compute per-label segment statistics for persistence before pooling
@@ -245,13 +245,13 @@ def _process_head_predictions(
                 sample_keys = list(head_tags.keys())[:3]
                 logger.debug(f"[processor]   Sample keys: {sample_keys}")
             logger.debug(
-                f"[processor] Head {head_name} complete: {len(segment_scores)} patches → {len(head_tags)} tags in {internal_s().value - t_head.value:.1f}s",
+                f"[processor] Head {head_name} complete: {len(segment_scores)} patches → {len(head_tags)} tags in {(internal_ms().value - t_head.value)/1000:.1f}s",
             )
             if len(head_tags) == 0:
                 logger.warning(f"[processor] Head {head_name} produced ZERO tags")
             tags_accum.update(head_tags)
             heads_succeeded += 1
-            per_head_timings[head_name] = (internal_s().value - t_head.value) * 1000
+            per_head_timings[head_name] = internal_ms().value - t_head.value
             if head_info.is_regression_head:
                 if segment_scores.ndim == 2:
                     raw_values = [float(x) for x in segment_scores[:, 0]]
@@ -531,12 +531,12 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
         logger.debug(f"[process_file_workflow] Path validated for library_id={library_path.library_id}: {path}")
     check_and_evict_idle_cache()
     touch_cache()
-    start_all = internal_s()
+    start_all = internal_ms()
     # Ultra-verbose timing tracker for bottleneck analysis
     timings: dict[str, float] = {}  # operation_name -> duration_ms
-    t_discover = internal_s()
+    t_discover = internal_ms()
     _, heads_by_backbone = _discover_and_group_heads(config.models_dir)
-    timings["model_discovery"] = (internal_s().value - t_discover.value) * 1000
+    timings["model_discovery"] = internal_ms().value - t_discover.value
 
     class TagAccumulator(dict):
         pass
@@ -560,11 +560,11 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
     for backbone, backbone_heads in heads_by_backbone.items():
         first_head = backbone_heads[0]
         try:
-            t_emb_backbone = internal_s()
+            t_emb_backbone = internal_ms()
             embeddings_2d, duration, chromaprint_hash = _compute_embeddings_for_backbone(
                 backbone, first_head, library_path, config,
             )
-            timings[f"emb_{backbone}"] = (internal_s().value - t_emb_backbone.value) * 1000
+            timings[f"emb_{backbone}"] = internal_ms().value - t_emb_backbone.value
             if duration_final is None:
                 duration_final = float(duration)
             if chromaprint_from_ml is None:
@@ -583,7 +583,7 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
             if db:
                 db.library_files.mark_file_invalid(path)
                 logger.info(f"[processor] Marked file as invalid: {path}")
-            elapsed = round(internal_s().value - start_all.value, 2)
+            elapsed = round((internal_ms().value - start_all.value) / 1000, 2)
             return ProcessFileResult(
                 file_path=path,
                 elapsed=elapsed,
@@ -594,9 +594,9 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
                 mood_aggregations=None,
                 tags=Tags.from_dict({}),
             )
-        t_heads_start = internal_s()
+        t_heads_start = internal_ms()
         result = _process_head_predictions(backbone_heads, embeddings_2d, config, tags_accum)
-        timings[f"heads_{backbone}"] = (internal_s().value - t_heads_start.value) * 1000
+        timings[f"heads_{backbone}"] = internal_ms().value - t_heads_start.value
         # Store per-head timings
         for head_name, head_time_ms in result.per_head_timings.items():
             timings[f"head_{head_name}"] = head_time_ms
@@ -645,7 +645,7 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
         if all_skipped:
             # All heads skipped due to short audio or other valid reasons
             # Return early with skipped result instead of raising error
-            elapsed = round(internal_s().value - start_all.value, 2)
+            elapsed = round((internal_ms().value - start_all.value) / 1000, 2)
             logger.info(
                 f"[processor] All heads skipped for {path} (e.g., audio too short) - returning empty result"
             )
@@ -662,9 +662,9 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
         # Some heads failed (not skipped) - this is an error
         msg = "No heads produced decisions; refusing to write tags"
         raise RuntimeError(msg)
-    t_mood = internal_s()
+    t_mood = internal_ms()
     mood_tags = _collect_mood_outputs(regression_heads, all_head_outputs, config.models_dir, config, db)
-    timings["mood_aggregation"] = (internal_s().value - t_mood.value) * 1000
+    timings["mood_aggregation"] = internal_ms().value - t_mood.value
     tags_accum.update(mood_tags)
     mood_keys = [k for k in tags_accum if isinstance(k, str) and k.startswith("mood-")]
     logger.debug(f"[processor] Mood aggregation produced {len(mood_keys)} mood- tags: {mood_keys}")
@@ -673,7 +673,7 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
         if isinstance(mood_value, list):
             logger.debug(f"[processor]   {mood_key}: {len(mood_value)} terms")
     # Time DB write operations to assess async opportunity
-    t_db_start = internal_s()
+    t_db_start = internal_ms()
     tags_accum[config.version_tag_key] = config.tagger_version
     db_tags = dict(tags_accum)
     _sync_to_database(db, path, db_tags, config.namespace, config.tagger_version, chromaprint_from_ml, file_id=file_id)
@@ -695,11 +695,11 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
                 pooling_strategy="trimmed_mean",
                 label_stats=label_stats,
             )
-    db_elapsed = internal_s().value - t_db_start.value if db is not None else 0.0
-    elapsed = round(internal_s().value - start_all.value, 2)
-    db_ms = db_elapsed * 1000  # Convert to milliseconds for visibility
-    timings["db_writes"] = db_ms
-    db_pct = (db_elapsed / elapsed * 100) if db is not None and elapsed > 0 else 0.0
+    db_elapsed_ms = internal_ms().value - t_db_start.value if db is not None else 0.0
+    elapsed_ms = internal_ms().value - start_all.value
+    elapsed = round(elapsed_ms / 1000, 2)
+    timings["db_writes"] = db_elapsed_ms
+    db_pct = (db_elapsed_ms / elapsed_ms * 100) if db is not None and elapsed_ms > 0 else 0.0
 
     # Ultra-verbose timing breakdown for bottleneck hunting
     if db is not None:
