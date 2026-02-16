@@ -152,6 +152,7 @@ class LibraryFilesStatusMixin:
 
         Query optimized for discovery-based workers:
         - Filters: needs_tagging=true, is_valid=true
+        - Excludes files with active claims in worker_claims collection
         - Optional duration filter (skip files too short for ML)
         - Deterministic ordering by _key for consistent work distribution
         - LIMIT 1 for single-file claiming
@@ -182,6 +183,8 @@ class LibraryFilesStatusMixin:
                 FOR file IN library_files
                     FILTER file.needs_tagging == true
                     FILTER file.is_valid == true{duration_filter}
+                    LET claim_key = CONCAT("claim_", file._key)
+                    FILTER DOCUMENT(CONCAT("worker_claims/", claim_key)) == null
                     SORT file._key
                     LIMIT 1
                     RETURN file

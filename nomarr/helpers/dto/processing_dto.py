@@ -111,6 +111,31 @@ class WorkerStatusResult:
     workers: list[dict[str, Any]]
 
 
+
+@dataclass
+class DeferredFileWrites:
+    """DB write payloads collected during ML processing.
+
+    Returned by ``process_file_workflow`` so the caller can execute writes
+    asynchronously (e.g. on a background thread) while the ML loop continues
+    with the next file.
+
+    The expected execution order is:
+    1. ``save_file_tags``   (tag vertices + edges)
+    2. ``set_chromaprint``  (fingerprint)
+    3. ``upsert_stats``     (segment statistics)
+    4. ``mark_file_tagged`` (only if 1-3 succeeded)
+    5. ``release_claim``    (always, even on error)
+    """
+
+    file_id: str
+    path: str
+    db_tags: dict[str, Any]
+    namespace: str
+    tagger_version: str
+    chromaprint: str | None
+    segment_stats_entries: list[dict[str, Any]]
+
 @dataclass
 class ProcessFileResult:
     """Result from process_file_workflow."""
@@ -124,3 +149,4 @@ class ProcessFileResult:
     mood_aggregations: dict[str, int] | None
     tags: Tags
     timing_summary: str | None = None
+    deferred_writes: DeferredFileWrites | None = None

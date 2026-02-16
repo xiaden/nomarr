@@ -56,6 +56,7 @@ from __future__ import annotations
 import gc
 import logging
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -74,7 +75,7 @@ from nomarr.components.tagging.tagging_aggregation_comp import (
     normalize_tag_label,
 )
 from nomarr.helpers.dto.ml_dto import ComputeEmbeddingsForBackboneParams, LoadAudioMonoResult
-from nomarr.helpers.dto.processing_dto import ProcessFileResult, ProcessorConfig
+from nomarr.helpers.dto.processing_dto import DeferredFileWrites, ProcessFileResult, ProcessorConfig
 from nomarr.helpers.dto.tags_dto import Tags
 from nomarr.helpers.time_helper import internal_ms
 
@@ -100,6 +101,22 @@ class ProcessHeadPredictionsResult:
     segment_stats_per_head: dict[str, list[dict[str, Any]]]
     num_segments_per_head: dict[str, int]
     per_head_timings: dict[str, float]  # head_name -> duration_ms
+
+
+@dataclass
+class _SingleHeadResult:
+    """Result from processing a single head (thread-safe, no shared mutation)."""
+
+    head_name: str
+    status: str  # "success", "error_processing", "error_aggregation"
+    error: str | None = None
+    head_tags: dict[str, Any] | None = None
+    head_outputs: list[Any] | None = None
+    regression_data: tuple[Any, list[float]] | None = None
+    segment_stats: list[dict[str, Any]] | None = None
+    num_segments: int | None = None
+    elapsed_ms: float = 0.0
+    decisions_count: int = 0
 
 
 def _discover_and_group_heads(models_dir: str) -> tuple[list[HeadInfo], dict[str, list[HeadInfo]]]:
@@ -185,10 +202,97 @@ def _compute_embeddings_for_backbone(
     return (embeddings_2d, duration, chromaprint)
 
 
+def _run_single_head(
+    head_info: HeadInfo, embeddings_2d: np.ndarray, batch_size: int,
+) -> _SingleHeadResult:
+    """Process a single head prediction — fully independent, no shared state mutation.
+
+    Thread-safe: all inputs are read-only, all outputs returned via _SingleHeadResult.
+    TF inference releases the GIL so multiple heads get real parallelism.
+    """
+    head_name = head_info.name
+    t_head = internal_ms()
+    # Phase 1: TF inference (GPU/CPU, releases GIL)
+    try:
+        head_predict_fn = make_head_only_predictor_batched(head_info, embeddings_2d, batch_size=batch_size)
+        segment_scores = head_predict_fn()
+        # Segment stats before pooling
+        seg_stats: list[dict[str, Any]] | None = None
+        n_segments: int | None = None
+        if segment_scores.ndim == 2 and len(head_info.labels) > 0:
+            seg_stats = compute_segment_stats(segment_scores, head_info.labels)
+            n_segments = segment_scores.shape[0]
+        pooled_vec = pool_scores(segment_scores, mode="trimmed_mean", trim_perc=0.1, nan_policy="omit")
+        seg_std: np.ndarray | None = None
+        if segment_scores.ndim == 2 and segment_scores.shape[0] > 1:
+            seg_std = np.std(segment_scores, axis=0).astype(np.float32, copy=False)
+    except Exception as e:
+        logger.error(f"[processor] Processing error for {head_name}: {e}", exc_info=True)
+        return _SingleHeadResult(
+            head_name=head_name, status="error_processing",
+            error=str(e), elapsed_ms=internal_ms().value - t_head.value,
+        )
+    # Phase 2: Decision + tag generation (pure Python/numpy)
+    try:
+        decision = run_head_decision(head_info.sidecar, pooled_vec, prefix="", segment_std=seg_std)
+
+        def _build_key(label: str, head: HeadInfo = head_info) -> str:
+            model_key, _ = head.build_versioned_tag_key(
+                normalize_tag_label(label),
+                framework_version=_get_essentia_version(),
+                calib_method="none",
+                calib_version=0,
+            )
+            return model_key
+
+        head_outputs = decision.to_head_outputs(
+            head_info=head_info, framework_version=_get_essentia_version(), key_builder=_build_key,
+        )
+        head_tags = decision.as_tags(key_builder=_build_key)
+        logger.debug(f"[processor] Head {head_name} ({head_info.head_type}) produced {len(head_tags)} tags")
+        if head_tags:
+            sample_keys = list(head_tags.keys())[:3]
+            logger.debug(f"[processor]   Sample keys: {sample_keys}")
+        elapsed_ms = internal_ms().value - t_head.value
+        logger.debug(
+            f"[processor] Head {head_name} complete: {len(segment_scores)} patches → {len(head_tags)} tags in {elapsed_ms/1000:.1f}s",
+        )
+        if len(head_tags) == 0:
+            logger.warning(f"[processor] Head {head_name} produced ZERO tags")
+        # Regression data
+        regression_data: tuple[Any, list[float]] | None = None
+        if head_info.is_regression_head:
+            if segment_scores.ndim == 2:
+                raw_values = [float(x) for x in segment_scores[:, 0]]
+            else:
+                raw_values = [float(x) for x in segment_scores]
+            regression_data = (head_info, raw_values)
+            logger.debug(
+                f"[processor] Captured {len(raw_values)} segment predictions for {head_name} (mean={np.mean(raw_values):.3f}, std={np.std(raw_values):.3f})",
+            )
+        return _SingleHeadResult(
+            head_name=head_name, status="success",
+            head_tags=head_tags, head_outputs=head_outputs,
+            regression_data=regression_data,
+            segment_stats=seg_stats, num_segments=n_segments,
+            elapsed_ms=elapsed_ms, decisions_count=len(decision.details),
+        )
+    except Exception as e:
+        logger.error(f"[processor] Aggregation error for {head_name}: {e}", exc_info=True)
+        return _SingleHeadResult(
+            head_name=head_name, status="error_aggregation",
+            error=str(e), elapsed_ms=internal_ms().value - t_head.value,
+        )
+
+
 def _process_head_predictions(
     backbone_heads: list[HeadInfo], embeddings_2d: np.ndarray, config: ProcessorConfig, tags_accum: dict[str, Any],
 ) -> ProcessHeadPredictionsResult:
     """Process all head predictions for a single backbone using cached embeddings.
+
+    Runs heads in parallel via ThreadPoolExecutor. Head-only predictors are
+    cached (TensorflowPredict2D objects persist across files), and predict()
+    releases the GIL, so threads get real CPU parallelism.
 
     Args:
         backbone_heads: List of heads for this backbone
@@ -197,85 +301,53 @@ def _process_head_predictions(
         tags_accum: Accumulator dict for tags (modified in place)
 
     Returns:
-        Tuple of (heads_succeeded, head_results, regression_heads, all_head_outputs)
+        ProcessHeadPredictionsResult with per-head outcomes
 
     """
+    head_results_list: list[_SingleHeadResult] = []
+    n_heads = len(backbone_heads)
+    if n_heads > 1:
+        with ThreadPoolExecutor(max_workers=n_heads) as pool:
+            futures = {
+                pool.submit(_run_single_head, hi, embeddings_2d, config.batch_size): hi.name
+                for hi in backbone_heads
+            }
+            head_results_list.extend(fut.result() for fut in as_completed(futures))
+        logger.debug("[processor] Parallel heads complete (%d heads)", n_heads)
+    else:
+        head_results_list.extend(_run_single_head(hi, embeddings_2d, config.batch_size) for hi in backbone_heads)
+
+    # Merge results sequentially (safe dict mutations)
     heads_succeeded = 0
     head_results: dict[str, Any] = {}
-    regression_heads: list[tuple[HeadInfo, list[float]]] = []
+    regression_heads: list[tuple[Any, list[float]]] = []
     all_head_outputs: list[Any] = []
     segment_stats_per_head: dict[str, list[dict[str, Any]]] = {}
     num_segments_per_head: dict[str, int] = {}
-    per_head_timings: dict[str, float] = {}  # Track per-head processing time
-    for head_info in backbone_heads:
-        head_name = head_info.name
-        try:
-            t_head = internal_ms()
-            head_predict_fn = make_head_only_predictor_batched(head_info, embeddings_2d, batch_size=config.batch_size)
-            segment_scores = head_predict_fn()
-            # Compute per-label segment statistics for persistence before pooling
-            if segment_scores.ndim == 2 and len(head_info.labels) > 0:
-                head_label_stats = compute_segment_stats(segment_scores, head_info.labels)
-                segment_stats_per_head[head_name] = head_label_stats
-                num_segments_per_head[head_name] = segment_scores.shape[0]
-            pooled_vec = pool_scores(segment_scores, mode="trimmed_mean", trim_perc=0.1, nan_policy="omit")
-            # Compute per-label segment std for stability gating (classification heads).
-            # segment_scores is [num_segments, num_classes]; std across axis=0 gives
-            # per-label variance across the track's segments.
-            seg_std: np.ndarray | None = None
-            if segment_scores.ndim == 2 and segment_scores.shape[0] > 1:
-                seg_std = np.std(segment_scores, axis=0).astype(np.float32, copy=False)
-        except Exception as e:
-            logger.error(f"[processor] Processing error for {head_name}: {e}", exc_info=True)
-            head_results[head_name] = {"status": "error", "error": str(e), "stage": "processing"}
-            continue
-        try:
-            decision = run_head_decision(head_info.sidecar, pooled_vec, prefix="", segment_std=seg_std)
-
-            def _build_key(label: str, head: HeadInfo = head_info) -> str:
-                model_key, _ = head.build_versioned_tag_key(
-                    normalize_tag_label(label),
-                    framework_version=_get_essentia_version(),
-                    calib_method="none",
-                    calib_version=0,
-                )
-                return model_key
-
-            head_outputs = decision.to_head_outputs(
-                head_info=head_info, framework_version=_get_essentia_version(), key_builder=_build_key,
-            )
-            all_head_outputs.extend(head_outputs)
-            head_tags = decision.as_tags(key_builder=_build_key)
-            logger.debug(f"[processor] Head {head_name} ({head_info.head_type}) produced {len(head_tags)} tags")
-            if head_tags:
-                sample_keys = list(head_tags.keys())[:3]
-                logger.debug(f"[processor]   Sample keys: {sample_keys}")
-            logger.debug(
-                f"[processor] Head {head_name} complete: {len(segment_scores)} patches → {len(head_tags)} tags in {(internal_ms().value - t_head.value)/1000:.1f}s",
-            )
-            if len(head_tags) == 0:
-                logger.warning(f"[processor] Head {head_name} produced ZERO tags")
-            tags_accum.update(head_tags)
+    per_head_timings: dict[str, float] = {}
+    for r in head_results_list:
+        per_head_timings[r.head_name] = r.elapsed_ms
+        if r.status == "success":
             heads_succeeded += 1
-            per_head_timings[head_name] = internal_ms().value - t_head.value
-            if head_info.is_regression_head:
-                if segment_scores.ndim == 2:
-                    raw_values = [float(x) for x in segment_scores[:, 0]]
-                else:
-                    raw_values = [float(x) for x in segment_scores]
-                regression_heads.append((head_info, raw_values))
-                logger.debug(
-                    f"[processor] Captured {len(raw_values)} segment predictions for {head_name} (mean={np.mean(raw_values):.3f}, std={np.std(raw_values):.3f})",
-                )
-            head_results[head_name] = {
+            if r.head_tags:
+                tags_accum.update(r.head_tags)
+            if r.head_outputs:
+                all_head_outputs.extend(r.head_outputs)
+            if r.regression_data:
+                regression_heads.append(r.regression_data)
+            if r.segment_stats is not None:
+                segment_stats_per_head[r.head_name] = r.segment_stats
+            if r.num_segments is not None:
+                num_segments_per_head[r.head_name] = r.num_segments
+            head_results[r.head_name] = {
                 "status": "success",
-                "tags_written": len(head_tags),
-                "decisions": len(decision.details),
+                "tags_written": len(r.head_tags or {}),
+                "decisions": r.decisions_count,
             }
-        except Exception as e:
-            logger.error(f"[processor] Aggregation error for {head_name}: {e}", exc_info=True)
-            head_results[head_name] = {"status": "error", "error": str(e), "stage": "aggregation"}
-            continue
+        elif r.status == "error_processing":
+            head_results[r.head_name] = {"status": "error", "error": r.error, "stage": "processing"}
+        else:
+            head_results[r.head_name] = {"status": "error", "error": r.error, "stage": "aggregation"}
     return ProcessHeadPredictionsResult(
         heads_succeeded=heads_succeeded,
         head_results=head_results,
@@ -322,92 +394,6 @@ def _collect_mood_outputs(
     return aggregate_mood_tiers(all_head_outputs, calibrations=calibrations)
 
 
-def _sync_to_database(
-    db: Database | None,
-    path: str,
-    db_tags: dict[str, Any],
-    namespace: str,
-    tagger_version: str,
-    chromaprint: str | None = None,
-    file_id: str | None = None,
-) -> None:
-    """Sync ML predictions to database only (NO file writes).
-
-    File tag writing is handled separately by write_file_tags_wf based on
-    library settings. This decouples ML inference from file I/O failures.
-
-    Args:
-        db: Optional Database instance
-        path: Path to audio file
-        db_tags: ML prediction tags to write to database
-        namespace: Tag namespace
-        tagger_version: Tagger version string
-        chromaprint: Audio fingerprint hash for move detection
-        file_id: Document _id from library_files (avoids path-based re-lookup)
-
-    """
-    if db is None:
-        return
-
-    try:
-        # Fast path: file_id provided (ML worker flow)
-        # Skip metadata extraction - we only need to write ML tags
-        if file_id is not None:
-            from nomarr.components.library.file_sync_comp import (
-                mark_file_tagged,
-                save_file_tags,
-                set_chromaprint,
-            )
-            from nomarr.components.tagging.tag_parsing_comp import parse_tag_values
-
-            # Parse and write ML prediction tags with nom: prefix
-            parsed_nom_tags = parse_tag_values(db_tags) if db_tags else {}
-            prefixed_nom_tags = {
-                (f"nom:{rel}" if not rel.startswith("nom:") else rel): values
-                for rel, values in parsed_nom_tags.items()
-            }
-            save_file_tags(db, file_id, prefixed_nom_tags)
-
-            # Store chromaprint if provided by ML audio fingerprinting
-            if chromaprint:
-                set_chromaprint(db, file_id, chromaprint)
-                logger.debug(f"[processor] Stored chromaprint for {path}")
-
-            # Mark file as tagged with this tagger version
-            mark_file_tagged(db, file_id, tagger_version)
-
-            logger.debug(f"[processor] Updated library database for {path} with {len(db_tags)} ML tags")
-            return
-
-        # Slow path: no file_id provided (legacy/fallback)
-        # This extracts metadata and does full sync - needed for non-worker flows
-        from nomarr.components.infrastructure.path_comp import build_library_path_from_input
-        from nomarr.components.library.metadata_extraction_comp import extract_metadata
-        from nomarr.workflows.library.sync_file_to_library_wf import sync_file_to_library
-
-        library_path = build_library_path_from_input(path, db)
-        metadata = extract_metadata(library_path, namespace=namespace)
-        if chromaprint:
-            metadata["chromaprint"] = chromaprint
-
-        # Merge ML prediction tags into nom_tags so sync_file_to_library writes them to DB
-        nom_tags = metadata.get("nom_tags", {})
-        nom_tags.update(db_tags)
-        metadata["nom_tags"] = nom_tags
-
-        sync_file_to_library(
-            db=db,
-            file_path=path,
-            metadata=metadata,
-            namespace=namespace,
-            tagged_version=tagger_version,
-            library_id=None,
-            file_id=file_id,
-        )
-        logger.debug(f"[processor] Updated library database for {path} with {len(db_tags)} tags")
-
-    except Exception as e:
-        logger.exception(f"[processor] Failed to update library database for {path}: {e}")
 
 
 def select_tags_for_file(all_tags: dict[str, Any], file_write_mode: str) -> dict[str, Any]:
@@ -524,7 +510,6 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
 
     """
     from nomarr.components.infrastructure.path_comp import build_library_path_from_db
-    from nomarr.components.ml.ml_cache_comp import check_and_evict_idle_cache, touch_cache
 
     library_path: LibraryPath | None = None
     if db is not None:
@@ -535,8 +520,6 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
             raise ValueError(error_msg)
         path = str(library_path.absolute)
         logger.debug(f"[process_file_workflow] Path validated for library_id={library_path.library_id}: {path}")
-    check_and_evict_idle_cache()
-    touch_cache()
     start_all = internal_ms()
     # Ultra-verbose timing tracker for bottleneck analysis
     timings: dict[str, float] = {}  # operation_name -> duration_ms
@@ -609,21 +592,71 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
     timings["audio_load"] = internal_ms().value - t_audio_load.value
     duration_final = float(shared_audio.duration)
     chromaprint_from_ml = shared_chromaprint
-    for backbone, backbone_heads in heads_by_backbone.items():
+    # -- Backbone embedding computation: parallel when 2+ backbones --
+    # Both models are already resident in VRAM (cached predictors).
+    # TF C++ kernels release the GIL, so ThreadPoolExecutor gets real parallelism.
+    # Audio array is read-only numpy — safe to share across threads with no copy.
+    backbone_items = list(heads_by_backbone.items())
+    use_parallel = len(backbone_items) >= 2
+
+    def _embed_one(backbone: str, backbone_heads: list[HeadInfo]) -> tuple[str, list[HeadInfo], np.ndarray, float, str, float]:
+        """Compute embeddings for one backbone, returning timing info."""
         first_head = backbone_heads[0]
-        try:
-            t_emb_backbone = internal_ms()
-            embeddings_2d, _duration, _chromaprint_hash = _compute_embeddings_for_backbone(
-                backbone, first_head, library_path, config,
-                pre_loaded_audio=shared_audio,
-                pre_computed_chromaprint=shared_chromaprint,
-            )
-            timings[f"emb_{backbone}"] = internal_ms().value - t_emb_backbone.value
-        except RuntimeError as e:
-            logger.warning(f"[processor] Skipping backbone {backbone}: {e}")
-            for head in backbone_heads:
-                all_head_results[head.name] = {"status": "skipped", "reason": str(e)}
-            continue
+        t0 = internal_ms()
+        embeddings_2d, duration, chromaprint_hash = _compute_embeddings_for_backbone(
+            backbone, first_head, library_path, config,
+            pre_loaded_audio=shared_audio,
+            pre_computed_chromaprint=shared_chromaprint,
+        )
+        elapsed_ms = internal_ms().value - t0.value
+        return (backbone, backbone_heads, embeddings_2d, duration, chromaprint_hash, elapsed_ms)
+
+    # Collect (backbone, heads, embeddings, ...) — either parallel or sequential
+    embedding_results: list[tuple[str, list[HeadInfo], np.ndarray, float, str, float]] = []
+    embedding_errors: dict[str, str] = {}
+    if use_parallel:
+        t_parallel_start = internal_ms()
+        logger.debug(f"[processor] Computing embeddings for {len(backbone_items)} backbones in parallel (ThreadPoolExecutor)")
+        with ThreadPoolExecutor(max_workers=len(backbone_items), thread_name_prefix="backbone") as pool:
+            future_to_backbone = {
+                pool.submit(_embed_one, bb, heads): bb
+                for bb, heads in backbone_items
+            }
+            for future in as_completed(future_to_backbone):
+                bb = future_to_backbone[future]
+                try:
+                    embedding_results.append(future.result())
+                except RuntimeError as e:
+                    logger.warning(f"[processor] Skipping backbone {bb}: {e}")
+                    embedding_errors[bb] = str(e)
+        parallel_wall_ms = internal_ms().value - t_parallel_start.value
+        sequential_sum_ms = sum(r[5] for r in embedding_results)
+        logger.debug(
+            f"[processor] Parallel embeddings done: wall={parallel_wall_ms:.0f}ms, "
+            f"sum_of_parts={sequential_sum_ms:.0f}ms, "
+            f"speedup={sequential_sum_ms / max(parallel_wall_ms, 1):.2f}x"
+        )
+        timings["emb_wall"] = parallel_wall_ms
+        for r in embedding_results:
+            timings[f"emb_{r[0]}"] = r[5]
+    else:
+        # Single backbone — no thread overhead
+        for backbone, backbone_heads in backbone_items:
+            try:
+                result_tuple = _embed_one(backbone, backbone_heads)
+                embedding_results.append(result_tuple)
+                timings[f"emb_{backbone}"] = result_tuple[5]
+            except RuntimeError as e:
+                logger.warning(f"[processor] Skipping backbone {backbone}: {e}")
+                embedding_errors[backbone] = str(e)
+
+    # Mark skipped heads from failed backbones
+    for bb, err_msg in embedding_errors.items():
+        for head in heads_by_backbone[bb]:
+            all_head_results[head.name] = {"status": "skipped", "reason": err_msg}
+
+    # Process head predictions sequentially (cheap, mutates shared state)
+    for backbone, backbone_heads, embeddings_2d, _duration, _chromaprint_hash, _emb_ms in embedding_results:
         t_heads_start = internal_ms()
         result = _process_head_predictions(backbone_heads, embeddings_2d, config, tags_accum)
         timings[f"heads_{backbone}"] = internal_ms().value - t_heads_start.value
@@ -704,58 +737,74 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
         mood_value = tags_accum[mood_key]
         if isinstance(mood_value, list):
             logger.debug(f"[processor]   {mood_key}: {len(mood_value)} terms")
-    # Time DB write operations to assess async opportunity
-    t_db_start = internal_ms()
+    # Build deferred DB writes (executed async by caller, not here)
     tags_accum[config.version_tag_key] = config.tagger_version
     db_tags = dict(tags_accum)
-    _sync_to_database(db, path, db_tags, config.namespace, config.tagger_version, chromaprint_from_ml, file_id=file_id)
-    # Persist per-label segment statistics (derived data — after canonical sync)
-    if db is not None and file_id is not None and all_segment_stats:
+    deferred: DeferredFileWrites | None = None
+    if db is not None and file_id is not None:
         stats_entries: list[dict[str, Any]] = []
-        for head_name, label_stats in all_segment_stats.items():
-            num_segments = all_num_segments.get(head_name, 0)
-            if head_name not in all_num_segments:
-                logger.warning(
-                    "[processor] num_segments missing for head '%s' — "
-                    "stats and segment count accumulators out of sync",
-                    head_name,
+        if all_segment_stats:
+            for head_name, label_stats in all_segment_stats.items():
+                num_segments = all_num_segments.get(head_name, 0)
+                if head_name not in all_num_segments:
+                    logger.warning(
+                        "[processor] num_segments missing for head '%s' — "
+                        "stats and segment count accumulators out of sync",
+                        head_name,
+                    )
+                stats_entries.append(
+                    {
+                        "file_id": file_id,
+                        "head_name": head_name,
+                        "tagger_version": config.tagger_version,
+                        "num_segments": num_segments,
+                        "pooling_strategy": "trimmed_mean",
+                        "label_stats": label_stats,
+                    }
                 )
-            stats_entries.append(
-                {
-                    "file_id": file_id,
-                    "head_name": head_name,
-                    "tagger_version": config.tagger_version,
-                    "num_segments": num_segments,
-                    "pooling_strategy": "trimmed_mean",
-                    "label_stats": label_stats,
-                }
-            )
-        db.segment_scores_stats.upsert_stats_batch(stats_entries)
-    db_elapsed_ms = internal_ms().value - t_db_start.value if db is not None else 0.0
+        deferred = DeferredFileWrites(
+            file_id=file_id,
+            path=path,
+            db_tags=db_tags,
+            namespace=config.namespace,
+            tagger_version=config.tagger_version,
+            chromaprint=chromaprint_from_ml,
+            segment_stats_entries=stats_entries,
+        )
     elapsed_ms = internal_ms().value - start_all.value
     elapsed = round(elapsed_ms / 1000, 2)
-    timings["db_writes"] = db_elapsed_ms
-    db_pct = (db_elapsed_ms / elapsed_ms * 100) if db is not None and elapsed_ms > 0 else 0.0
 
     # Build timing summary string (attached to result, logged by worker)
     timing_summary: str | None = None
     if db is not None:
         # Group timings by category
         audio_load_ms = timings.get("audio_load", 0)
-        emb_times = {k: v for k, v in timings.items() if k.startswith("emb_")}
-        head_times = {k: v for k, v in timings.items() if k.startswith("head_")}
+        # Embedding: use wall time if parallel, else sum of parts
+        emb_per_backbone = {k: v for k, v in timings.items() if k.startswith("emb_") and k != "emb_wall"}
+        emb_wall_ms = timings.get("emb_wall", sum(emb_per_backbone.values()))
+        # Head: use per-backbone wall times (heads_<backbone>), which are already wall times
+        # even when individual heads within ran in parallel
+        heads_wall_per_bb = {k: v for k, v in timings.items() if k.startswith("heads_")}
+        heads_wall_total = sum(heads_wall_per_bb.values())
         mood_ms = timings.get("mood_aggregation", 0)
-        db_ms_val = timings.get("db_writes", 0)
 
-        total_emb_ms = sum(emb_times.values())
-        total_head_ms = sum(head_times.values())
+        def _pct(ms: float) -> str:
+            return f"{ms / elapsed_ms * 100:.0f}%" if elapsed_ms > 0 else "0%"
 
-        emb_str = "+".join([f"{k.replace('emb_', '')}={v:.0f}" for k, v in emb_times.items()])
-        head_summary = f"{len(head_times)}x{total_head_ms:.0f}ms" if head_times else "0"
+        emb_detail = "+".join(f"{k.replace('emb_', '')}={v:.0f}" for k, v in emb_per_backbone.items())
+        # Head detail: "<count>x<wall_ms>" per backbone
+        head_parts: list[str] = []
+        for bb_key, bb_wall in heads_wall_per_bb.items():
+            bb_name = bb_key.replace("heads_", "")
+            bb_head_count = len(heads_by_backbone.get(bb_name, []))
+            head_parts.append(f"{bb_head_count}x{bb_wall:.0f}")
+        head_detail = "+".join(head_parts)
 
         timing_summary = (
-            f"audio={audio_load_ms:.0f} emb=[{emb_str}]={total_emb_ms:.0f} "
-            f"heads={head_summary} mood={mood_ms:.0f} db={db_ms_val:.0f}({db_pct:.1f}%)"
+            f"audio={audio_load_ms:.0f}({_pct(audio_load_ms)}) "
+            f"emb={emb_wall_ms:.0f}({_pct(emb_wall_ms)}|{emb_detail}) "
+            f"heads={heads_wall_total:.0f}({_pct(heads_wall_total)}|{head_detail}) "
+            f"mood={mood_ms:.0f}({_pct(mood_ms)})"
         )
     mood_info = {}
     for key in ["mood-strict", "mood-regular", "mood-loose"]:
@@ -773,4 +822,5 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
         mood_aggregations=mood_info if mood_info else None,
         tags=Tags.from_dict(dict(tags_accum)),
         timing_summary=timing_summary,
+        deferred_writes=deferred,
     )

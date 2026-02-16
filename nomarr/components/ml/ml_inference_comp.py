@@ -7,8 +7,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
-import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -54,85 +53,45 @@ if TYPE_CHECKING:
     from nomarr.helpers.dto.ml_dto import ComputeEmbeddingsForBackboneParams
 
 
-def make_predictor_uncached(head_info: HeadInfo) -> Callable[[np.ndarray, int], np.ndarray]:
-    """Build full two-stage predictor (waveform -> embedding -> head predictions).
 
-    Used by cache warmup to pre-load all predictors at startup.
-    Uses folder structure to determine backbone and embedding graph.
+
+
+
+def _create_backbone_predictor(backbone: str, emb_graph: str) -> Any:
+    """Construct a backbone embedding predictor.
+
+    This is the expensive operation (graph parse + session creation) that should
+    be done once and cached. Runs on GPU for maximum throughput.
     """
     backend_essentia.require()
-    from nomarr.components.ml.ml_discovery_comp import get_embedding_output_node, get_head_output_node
+    from nomarr.components.ml.ml_discovery_comp import get_embedding_output_node
 
-    backbone = head_info.backbone
-    emb_graph = head_info.embedding_graph
-    head_graph = head_info.sidecar.graph_abs("")
-    if not head_graph or not os.path.exists(head_graph):
-        msg = f"Head graph not found for {head_info.name}"
-        raise RuntimeError(msg)
     emb_output = get_embedding_output_node(backbone)
-    emb_predictor = None
     if backbone == "yamnet":
         if TensorflowPredictVGGish is None:
             msg = "TensorflowPredictVGGish not available"
             raise RuntimeError(msg)
-        emb_predictor = TensorflowPredictVGGish(graphFilename=emb_graph, input="melspectrogram", output=emb_output)
+        predictor = TensorflowPredictVGGish(graphFilename=emb_graph, input="melspectrogram", output=emb_output)
     elif backbone == "vggish":
         if TensorflowPredictVGGish is None:
             msg = "TensorflowPredictVGGish not available"
             raise RuntimeError(msg)
-        emb_predictor = TensorflowPredictVGGish(graphFilename=emb_graph, output=emb_output)
+        predictor = TensorflowPredictVGGish(graphFilename=emb_graph, output=emb_output)
     elif backbone == "effnet":
         if TensorflowPredictEffnetDiscogs is None:
             msg = "TensorflowPredictEffnetDiscogs not available"
             raise RuntimeError(msg)
-        emb_predictor = TensorflowPredictEffnetDiscogs(graphFilename=emb_graph, output=emb_output, patchHopSize=93)
+        predictor = TensorflowPredictEffnetDiscogs(graphFilename=emb_graph, output=emb_output, patchHopSize=93)
     elif backbone == "musicnn":
         if TensorflowPredictMusiCNN is None:
             msg = "TensorflowPredictMusiCNN not available"
             raise RuntimeError(msg)
-        emb_predictor = TensorflowPredictMusiCNN(graphFilename=emb_graph, output=emb_output, patchHopSize=128)
+        predictor = TensorflowPredictMusiCNN(graphFilename=emb_graph, output=emb_output, patchHopSize=128)
     else:
         msg = f"Unsupported backbone {backbone}"
         raise RuntimeError(msg)
-    head_output = get_head_output_node(head_info.head_type, head_info.sidecar)
-    head_input = head_info.sidecar.head_input_name()
-    if head_input:
-        head_predictor = TensorflowPredict2D(graphFilename=head_graph, input=head_input, output=head_output)
-    else:
-        head_predictor = TensorflowPredict2D(graphFilename=head_graph, output=head_output)
-    embed_dim = head_info.sidecar.input_dim()
-    logger.info(
-        f"[inference] Built predictor for {head_info.name}: {backbone} ({emb_output}) -> {head_info.head_type} ({head_output})",
-    )
-
-    def predict_fn(wave: np.ndarray, sr: int) -> np.ndarray:
-        """Two-stage predictor: wave -> embeddings -> predictions."""
-        if sr != head_info.sidecar.sr:
-            msg = f"Sample rate mismatch for {head_info.name}: got {sr}, expected {head_info.sidecar.sr}"
-            raise RuntimeError(msg)
-        wave_f32 = wave.astype(np.float32)
-        embeddings = emb_predictor(wave_f32)
-        embeddings = np.asarray(embeddings, dtype=np.float32)
-        if embeddings.ndim == 1:
-            pass
-        elif embeddings.ndim == 2:
-            embeddings = embeddings.reshape(-1) if embeddings.shape[0] == 1 else np.mean(embeddings, axis=0)
-        elif embeddings.ndim == 3:
-            embeddings = np.mean(embeddings, axis=(0, 1))
-        else:
-            embeddings = embeddings.reshape(-1)
-        if embed_dim and embeddings.shape[0] != embed_dim:
-            msg = f"Embedding dimension mismatch for {head_info.name}: got {embeddings.shape[0]}, expected {embed_dim}"
-            raise RuntimeError(msg)
-        emb_input = embeddings.reshape(1, -1)
-        predictions = head_predictor(emb_input)
-        predictions = np.asarray(predictions, dtype=np.float32)
-        if predictions.ndim > 1:
-            predictions = predictions.reshape(-1)
-        result: np.ndarray = predictions
-        return result
-
-    return predict_fn
+    logger.debug(f"[inference] Created backbone predictor for {backbone}")
+    return predictor
 
 
 def compute_embeddings_for_backbone(params: ComputeEmbeddingsForBackboneParams) -> tuple[np.ndarray, float, str]:
@@ -158,7 +117,6 @@ def compute_embeddings_for_backbone(params: ComputeEmbeddingsForBackboneParams) 
     backend_essentia.require()
     from nomarr.components.ml.ml_audio_comp import load_audio_mono, should_skip_short
     from nomarr.components.ml.ml_cache_comp import cache_backbone_predictor, get_cached_backbone_predictor
-    from nomarr.components.ml.ml_discovery_comp import get_embedding_output_node
 
     if params.pre_loaded_audio is not None:
         audio_result = params.pre_loaded_audio
@@ -177,37 +135,12 @@ def compute_embeddings_for_backbone(params: ComputeEmbeddingsForBackboneParams) 
     logger.debug(
         f"[inference] Processing full track: {audio_result.duration:.1f}s ({len(audio_result.waveform)} samples @ {audio_result.sample_rate}Hz)",
     )
-    emb_output = get_embedding_output_node(params.backbone)
     if not params.prefer_gpu:
         logger.info(f"[inference] CPU spill requested for {params.backbone} (GPU VRAM pressure detected)")
     emb_predictor = get_cached_backbone_predictor(params.backbone, params.emb_graph)
     if emb_predictor is None:
         logger.info(f"[inference] Creating {params.backbone} backbone predictor (device=GPU, not cached)")
-        if params.backbone == "yamnet":
-            if TensorflowPredictVGGish is None:
-                msg = "TensorflowPredictVGGish not available"
-                raise RuntimeError(msg)
-            emb_predictor = TensorflowPredictVGGish(
-                graphFilename=params.emb_graph, input="melspectrogram", output=emb_output,
-            )
-        elif params.backbone == "vggish":
-            if TensorflowPredictVGGish is None:
-                msg = "TensorflowPredictVGGish not available"
-                raise RuntimeError(msg)
-            emb_predictor = TensorflowPredictVGGish(graphFilename=params.emb_graph, output=emb_output)
-        elif params.backbone == "effnet":
-            if TensorflowPredictEffnetDiscogs is None:
-                msg = "TensorflowPredictEffnetDiscogs not available"
-                raise RuntimeError(msg)
-            emb_predictor = TensorflowPredictEffnetDiscogs(graphFilename=params.emb_graph, output=emb_output, patchHopSize=93)
-        elif params.backbone == "musicnn":
-            if TensorflowPredictMusiCNN is None:
-                msg = "TensorflowPredictMusiCNN not available"
-                raise RuntimeError(msg)
-            emb_predictor = TensorflowPredictMusiCNN(graphFilename=params.emb_graph, output=emb_output, patchHopSize=128)
-        else:
-            msg = f"Unsupported backbone {params.backbone}"
-            raise RuntimeError(msg)
+        emb_predictor = _create_backbone_predictor(params.backbone, params.emb_graph)
         cache_backbone_predictor(params.backbone, params.emb_graph, emb_predictor)
     else:
         logger.debug(f"[inference] Using cached {params.backbone} backbone predictor (device=GPU)")
@@ -236,25 +169,13 @@ def compute_embeddings_for_backbone(params: ComputeEmbeddingsForBackboneParams) 
     return (embeddings_2d, audio_result.duration, chromaprint)
 
 
-def make_head_only_predictor_batched(
-    head_info: HeadInfo, embeddings_2d: np.ndarray, batch_size: int = 11,
-) -> Callable[[], np.ndarray]:
-    """Create a batched predictor that processes segments in fixed-size batches.
-    Returns a function that takes no args and returns predictions for all segments.
 
-    This is MUCH faster than per-segment prediction:
-    - Processes in batches of `batch_size` (default 11 = 60s clip)
-    - GPU can parallelize across segments within each batch
-    - Reduces Python/TensorFlow overhead
-    - Fixed batch size helps TensorFlow optimize VRAM allocation
+def _create_head_only_predictor(head_info: HeadInfo) -> Any:
+    """Construct a TensorflowPredict2D object for a head model.
 
-    Args:
-        head_info: Head metadata and model paths
-        embeddings_2d: Pre-computed embeddings [num_segments, embed_dim]
-        batch_size: Fixed batch size for inference (default 11 segments = 60s)
-
-    Returns: Callable that returns [num_segments, num_classes] array
-
+    This is the expensive operation (graph parse + session creation) that should
+    be done once and cached. Runs on CPU to avoid GPU VRAM contention with
+    backbone models.
     """
     backend_essentia.require()
     from nomarr.components.ml.ml_discovery_comp import get_head_output_node
@@ -268,6 +189,34 @@ def make_head_only_predictor_batched(
             head_predictor = TensorflowPredict2D(graphFilename=head_graph, input=head_input, output=head_output)
         else:
             head_predictor = TensorflowPredict2D(graphFilename=head_graph, output=head_output)
+    logger.debug(f"[inference] Created head-only predictor for {head_info.name} ({head_info.backbone}/{head_info.head_type})")
+    return head_predictor
+
+
+def make_head_only_predictor_batched(
+    head_info: HeadInfo, embeddings_2d: np.ndarray, batch_size: int = 11,
+) -> Callable[[], np.ndarray]:
+    """Create a batched predictor that processes segments in fixed-size batches.
+    Returns a function that takes no args and returns predictions for all segments.
+
+    Uses cached head-only predictor when available (populated at warmup or on first
+    use). The TensorflowPredict2D construction is expensive (model graph parse +
+    session setup), but once cached, reuse is essentially free.
+
+    Args:
+        head_info: Head metadata and model paths
+        embeddings_2d: Pre-computed embeddings [num_segments, embed_dim]
+        batch_size: Fixed batch size for inference (default 11 segments = 60s)
+
+    Returns: Callable that returns [num_segments, num_classes] array
+
+    """
+    from nomarr.components.ml.ml_cache_comp import cache_head_predictor, get_cached_head_predictor
+
+    head_predictor = get_cached_head_predictor(head_info)
+    if head_predictor is None:
+        head_predictor = _create_head_only_predictor(head_info)
+        cache_head_predictor(head_info, head_predictor)
     embed_dim = head_info.sidecar.input_dim()
 
     def predict_all_segments() -> np.ndarray:

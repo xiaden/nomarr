@@ -15,6 +15,7 @@ import multiprocessing
 import os
 import threading
 import time
+from concurrent.futures import Future, ThreadPoolExecutor
 from multiprocessing import Event
 from typing import TYPE_CHECKING, Any
 
@@ -37,6 +38,47 @@ CACHE_IDLE_TIMEOUT_S = 40  # Evict cache after 40 seconds of no work (matches de
 HEALTH_FRAME_PREFIX = "HEALTH|"
 
 
+
+def _execute_deferred_writes(
+    db: Any,
+    writes: Any,
+    worker_id: str,
+) -> None:
+    """Execute deferred DB writes for one file on a background thread.
+
+    Order: save_tags → set_chromaprint → upsert_stats → mark_tagged → release_claim.
+    mark_tagged only runs if prior writes succeeded. release_claim always runs.
+    """
+    from nomarr.components.library.file_sync_comp import save_file_tags, set_chromaprint
+    from nomarr.components.tagging.tag_parsing_comp import parse_tag_values
+    from nomarr.components.workers.worker_discovery_comp import release_claim
+
+    file_id = writes.file_id
+    try:
+        # 1. Parse and write ML prediction tags with nom: prefix
+        parsed_nom_tags = parse_tag_values(writes.db_tags) if writes.db_tags else {}
+        prefixed_nom_tags = {
+            (f"nom:{rel}" if not rel.startswith("nom:") else rel): values
+            for rel, values in parsed_nom_tags.items()
+        }
+        save_file_tags(db, file_id, prefixed_nom_tags)
+
+        # 2. Store chromaprint fingerprint
+        if writes.chromaprint:
+            set_chromaprint(db, file_id, writes.chromaprint)
+
+        # 3. Persist segment statistics
+        if writes.segment_stats_entries:
+            db.segment_scores_stats.upsert_stats_batch(writes.segment_stats_entries)
+
+        # 4. All writes succeeded — mark file as tagged
+        db.library_files.mark_file_tagged(file_id, writes.tagger_version)
+        logger.debug("[%s] Async writes done for %s (%d tags)", worker_id, writes.path, len(writes.db_tags))
+    except Exception:
+        logger.exception("[%s] Async write failed for %s — file will be retried", worker_id, writes.path)
+    finally:
+        # 5. Always release claim so file is re-discoverable on failure
+        release_claim(db, file_id)
 class DiscoveryWorker(multiprocessing.Process):
     """Discovery-based ML processing worker.
 
@@ -238,6 +280,10 @@ class DiscoveryWorker(multiprocessing.Process):
         cache_warmed = False  # Lazy cache warmup - only warm when work arrives
         recovering_until: float | None = None  # Recovery deadline if in recovering state
 
+        # Single-thread executor for async DB writes — overlaps I/O with next file's ML
+        write_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="db-write")
+        pending_write: Future[None] | None = None
+
         try:
             while not self._stop_event.is_set():
                 # Check if in recovery state
@@ -327,6 +373,11 @@ class DiscoveryWorker(multiprocessing.Process):
                             # Continue anyway - workflow will create predictors inline (slower but works)
                     cache_warmed = True
 
+                # Mark cache as active for the duration of processing
+                from nomarr.components.ml.ml_cache_comp import mark_active, mark_idle
+
+                mark_active()
+
                 # Process the claimed file
                 try:
                     # Get file path from database
@@ -361,27 +412,28 @@ class DiscoveryWorker(multiprocessing.Process):
                     )
                     logger.debug("[%s] Workflow returned for %s", self.worker_id, file_path)
 
+                    # Wait for previous file's async writes to finish (backpressure)
+                    if pending_write is not None:
+                        pending_write.result()  # raises if write thread had unhandled error
+                        pending_write = None
+
                     # Check if file was skipped (e.g., audio too short)
                     if result.heads_processed == 0 and result.tags_written == 0:
-                        # File was skipped - mark as tagged with special reason to avoid infinite retries
+                        # File was skipped — mark tagged synchronously (no data to write)
                         logger.info(
                             "[%s] Skipped %s (all heads skipped - likely too short)",
                             self.worker_id,
                             file_path,
                         )
-                        # Mark as tagged so it doesn't get retried
                         db.library_files.mark_file_tagged(file_id, config.tagger_version)
                         release_claim(db, file_id)
                         files_processed += 1
-                        consecutive_errors = 0  # Reset error counter - skip is not an error
-                    else:
-                        # File was successfully processed
-                        # Mark file as tagged (this sets needs_tagging=0, tagged=1)
-                        db.library_files.mark_file_tagged(file_id, config.tagger_version)
-
-                        # Release claim AFTER marking tagged
-                        release_claim(db, file_id)
-
+                        consecutive_errors = 0
+                    elif result.deferred_writes is not None:
+                        # File processed — submit writes to background thread
+                        pending_write = write_executor.submit(
+                            _execute_deferred_writes, db, result.deferred_writes, self.worker_id,
+                        )
                         files_processed += 1
                         consecutive_errors = 0
 
@@ -395,6 +447,11 @@ class DiscoveryWorker(multiprocessing.Process):
                             result.tags_written,
                             timing,
                         )
+                    else:
+                        # No deferred writes (no db) — just release
+                        release_claim(db, file_id)
+                        files_processed += 1
+                        consecutive_errors = 0
 
                 except Exception as e:
                     logger.exception("[%s] Error processing %s: %s", self.worker_id, file_id, e)
@@ -410,8 +467,18 @@ class DiscoveryWorker(multiprocessing.Process):
                             consecutive_errors,
                         )
                         break
+                finally:
+                    mark_idle()
 
         finally:
+            # Drain any pending async writes before shutdown
+            if pending_write is not None:
+                try:
+                    pending_write.result(timeout=30)
+                except Exception:
+                    logger.exception("[%s] Pending write failed during shutdown", self.worker_id)
+            write_executor.shutdown(wait=True)
+
             # Cleanup on exit
             logger.info(
                 "[%s] Discovery worker stopping (processed %d files)",
