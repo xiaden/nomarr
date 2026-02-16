@@ -169,21 +169,6 @@ class GenreDistributionItemResponse(BaseModel):
     count: int = Field(..., description="Number of tracks")
 
 
-class ArtistDistributionItemResponse(BaseModel):
-    """Single artist in distribution."""
-
-    artist: str = Field(..., description="Artist name")
-    count: int = Field(..., description="Number of tracks")
-
-
-class ArtistDistributionResponse(BaseModel):
-    """Artist distribution with long tail count."""
-
-    top_artists: list[ArtistDistributionItemResponse] = Field(
-        default_factory=list, description="Top artists by track count",
-    )
-    others_count: int = Field(..., description="Track count from remaining artists")
-    total_artists: int = Field(..., description="Total unique artists")
 
 
 class CollectionOverviewResponse(BaseModel):
@@ -196,7 +181,6 @@ class CollectionOverviewResponse(BaseModel):
     genre_distribution: list[GenreDistributionItemResponse] = Field(
         default_factory=list, description="Genre distribution",
     )
-    artist_distribution: ArtistDistributionResponse = Field(..., description="Artist distribution")
 
 
 class MoodCoverageTierResponse(BaseModel):

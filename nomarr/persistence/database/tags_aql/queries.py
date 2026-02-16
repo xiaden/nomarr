@@ -250,7 +250,7 @@ class TagQueriesMixin:
         """Get file IDs for tag co-occurrence analysis.
 
         Args:
-            tag_specs: List of (rel, value) tuples
+            tag_specs: List of (rel, value) tuples. Use value="*" to match any value for the key.
             library_id: Optional library _id to filter by.
 
         Returns:
@@ -269,10 +269,72 @@ class TagQueriesMixin:
             bind_vars_base["library_id"] = library_id
 
         for rel, value in tag_specs:
-            bind_vars = {**bind_vars_base, "rel": rel, "value": value}
+            # Support wildcard: value="*" means match any value for this key
+            if value == "*":
+                bind_vars = {**bind_vars_base, "rel": rel}
+                query = f"""
+                FOR tag IN tags
+                    FILTER tag.rel == @rel
+                    FOR edge IN song_tag_edges
+                        FILTER edge._to == tag._id
+                        {library_filter}
+                        RETURN edge._from
+                """
+            else:
+                bind_vars = {**bind_vars_base, "rel": rel, "value": value}
+                query = f"""
+                FOR tag IN tags
+                    FILTER tag.rel == @rel AND tag.value == @value
+                    FOR edge IN song_tag_edges
+                        FILTER edge._to == tag._id
+                        {library_filter}
+                        RETURN edge._from
+                """
+            cursor = cast(
+                "Cursor", self.db.aql.execute(query, bind_vars=cast("dict[str, Any]", bind_vars)),
+            )
+            result[(rel, value)] = set(cursor)
+
+        return result
+
+    def get_file_ids_for_mood_tags(
+        self, mood_values: list[str], mood_tier: str = "mood-strict", library_id: str | None = None,
+    ) -> dict[str, set[str]]:
+        """Get file IDs for mood tag co-occurrence with CONTAINS matching.
+
+        Handles legacy tuple string values like "('aggressive', 'party-like')" by
+        using CONTAINS to match individual mood terms within the compound string.
+
+        Args:
+            mood_values: List of individual mood terms to search for (e.g., ["aggressive", "happy"])
+            mood_tier: Mood tier key suffix ("mood-strict", "mood-regular", "mood-loose")
+            library_id: Optional library _id to filter by.
+
+        Returns:
+            Dict mapping mood_value -> set of file_ids that contain that mood
+
+        """
+        result: dict[str, set[str]] = {}
+        rel = f"nom:{mood_tier}" if not mood_tier.startswith("nom:") else mood_tier
+
+        library_filter = ""
+        bind_vars_base: dict[str, Any] = {"rel": rel}
+        if library_id:
+            library_filter = """
+                LET file = DOCUMENT(edge._from)
+                FILTER file != null AND file.library_id == @library_id
+            """
+            bind_vars_base["library_id"] = library_id
+
+        for mood_value in mood_values:
+            # Use CONTAINS to match mood terms within tuple strings
+            # e.g., CONTAINS("('aggressive', 'party-like')", "'aggressive'") == true
+            # We search for the quoted version to avoid partial matches
+            search_pattern = f"'{mood_value}'"
+            bind_vars = {**bind_vars_base, "search_pattern": search_pattern}
             query = f"""
             FOR tag IN tags
-                FILTER tag.rel == @rel AND tag.value == @value
+                FILTER tag.rel == @rel AND CONTAINS(tag.value, @search_pattern)
                 FOR edge IN song_tag_edges
                     FILTER edge._to == tag._id
                     {library_filter}
@@ -281,7 +343,65 @@ class TagQueriesMixin:
             cursor = cast(
                 "Cursor", self.db.aql.execute(query, bind_vars=cast("dict[str, Any]", bind_vars)),
             )
-            result[(rel, value)] = set(cursor)
+            result[mood_value] = set(cursor)
 
         return result
+
+    def get_unique_mood_values(
+        self, mood_tier: str = "mood-strict", limit: int = 100,
+    ) -> list[str]:
+        """Extract unique individual mood values from tuple string tags.
+
+        Parses tuple strings like "('aggressive', 'party-like')" and extracts
+        individual mood terms, deduplicating across all files.
+
+        Args:
+            mood_tier: Mood tier suffix ("mood-strict", "mood-regular", "mood-loose")
+            limit: Maximum number of unique values to return
+
+        Returns:
+            Sorted list of unique mood values
+
+        """
+        import ast
+
+        rel = f"nom:{mood_tier}" if not mood_tier.startswith("nom:") else mood_tier
+        query = """
+        FOR tag IN tags
+            FILTER tag.rel == @rel
+            RETURN DISTINCT tag.value
+        """
+        cursor = cast(
+            "Cursor", self.db.aql.execute(query, bind_vars=cast("dict[str, Any]", {"rel": rel})),
+        )
+
+        # Parse each tuple string and extract individual values
+        unique_values: set[str] = set()
+        for value in cursor:
+            if not isinstance(value, str):
+                continue
+            # Try to parse as Python tuple
+            if value.startswith("(") and value.endswith(")"):
+                try:
+                    parsed = ast.literal_eval(value)
+                    if isinstance(parsed, tuple):
+                        unique_values.update(str(v) for v in parsed)
+                        continue
+                except (ValueError, SyntaxError):
+                    pass
+            # Try to parse as JSON array
+            if value.startswith("[") and value.endswith("]"):
+                try:
+                    import json
+                    parsed = json.loads(value)
+                    if isinstance(parsed, list):
+                        unique_values.update(str(v) for v in parsed)
+                        continue
+                except json.JSONDecodeError:
+                    pass
+            # Single value
+            unique_values.add(value)
+
+        # Sort and limit
+        return sorted(unique_values)[:limit]
 

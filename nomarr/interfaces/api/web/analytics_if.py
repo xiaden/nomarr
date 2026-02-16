@@ -131,7 +131,7 @@ async def web_analytics_collection_overview(
 ) -> CollectionOverviewResponse:
     """Get collection overview statistics.
 
-    Returns library stats, year/genre/artist distributions.
+    Returns library stats, year/genre distributions.
     Optionally filtered by library_id.
     """
     try:
@@ -142,7 +142,6 @@ async def web_analytics_collection_overview(
             stats=result["stats"],
             year_distribution=result["year_distribution"],
             genre_distribution=result["genre_distribution"],
-            artist_distribution=result["artist_distribution"],
         )
     except Exception as e:
         logger.exception("[Web API] Error getting collection overview")

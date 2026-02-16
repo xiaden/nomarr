@@ -211,9 +211,38 @@ class AnalyticsService:
         x_tag_specs = [TagSpec(key=k, value=v) for k, v in x_tags]
         y_tag_specs = [TagSpec(key=k, value=v) for k, v in y_tags]
 
-        # Fetch file ID mappings for all unique tags
+        # Separate mood tags (need CONTAINS matching) from regular tags (exact match)
         all_specs = x_tags + y_tags
-        tag_data = self._db.tags.get_file_ids_for_tags(tag_specs=all_specs, library_id=library_id)
+        mood_specs: dict[str, list[str]] = {}  # tier -> [values]
+        regular_specs: list[tuple[str, str]] = []
+
+        for key, value in all_specs:
+            if key.startswith("nom:mood-"):
+                tier = key[4:]  # Remove "nom:" prefix, keep "mood-strict" etc.
+                if tier not in mood_specs:
+                    mood_specs[tier] = []
+                if value not in mood_specs[tier]:
+                    mood_specs[tier].append(value)
+            else:
+                regular_specs.append((key, value))
+
+        # Fetch file IDs using appropriate query method
+        tag_data: dict[tuple[str, str], set[str]] = {}
+
+        # Regular tags: use exact match
+        if regular_specs:
+            tag_data.update(self._db.tags.get_file_ids_for_tags(
+                tag_specs=regular_specs, library_id=library_id,
+            ))
+
+        # Mood tags: use CONTAINS matching for each tier
+        for tier, values in mood_specs.items():
+            mood_data = self._db.tags.get_file_ids_for_mood_tags(
+                mood_values=values, mood_tier=tier, library_id=library_id,
+            )
+            # Convert mood_value -> file_ids to (key, value) -> file_ids format
+            for mood_value, file_ids in mood_data.items():
+                tag_data[(f"nom:{tier}", mood_value)] = file_ids
 
         params = ComputeTagCoOccurrenceParams(x_tags=x_tag_specs, y_tags=y_tag_specs, tag_data=tag_data)
         return cast("TagCoOccurrenceData", compute_tag_co_occurrence(params=params))

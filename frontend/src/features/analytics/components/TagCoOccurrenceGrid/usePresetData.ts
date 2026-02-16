@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import type { TagSpec } from "../../../../shared/api/analytics";
-import { getUniqueTagValues } from "../../../../shared/api/files";
+import { getMoodValues, getUniqueTagValues } from "../../../../shared/api/files";
 
 import { PRESET_METADATA, type PresetId } from "./types";
 
@@ -46,17 +46,31 @@ export function usePresetData(presetId: PresetId): UsePresetDataResult {
       return;
     }
 
-    // Mood preset uses explicit keys
-    if (presetId === "mood" && fetchStrategy.explicitKeys) {
-      // For mood tags, we treat each key as a "presence" indicator
-      // The value is a placeholder since we're checking if the tag exists
-      const moodTags: TagSpec[] = fetchStrategy.explicitKeys.map((key) => ({
-        key,
-        value: "*", // Wildcard - any value means "has this mood tag"
-      }));
-      setTags(moodTags.slice(0, maxValues));
-      setLoading(false);
-      setError(null);
+    // Mood preset: fetch individual mood values from tuple strings
+    if (fetchStrategy.moodValueLookup) {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const moodTier = fetchStrategy.moodTier ?? "mood-strict";
+        const response = await getMoodValues(moodTier, maxValues);
+
+        // Build TagSpecs: key = "nom:mood-*" pattern, value = individual mood value
+        // Backend will use CONTAINS matching on the mood tag tuple strings
+        const moodTags: TagSpec[] = response.tag_keys.map((moodValue) => ({
+          key: fetchStrategy.tagKey ?? "nom:mood-*",
+          value: moodValue,
+        }));
+
+        setTags(moodTags);
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : "Failed to load mood values"
+        );
+        setTags([]);
+      } finally {
+        setLoading(false);
+      }
       return;
     }
 

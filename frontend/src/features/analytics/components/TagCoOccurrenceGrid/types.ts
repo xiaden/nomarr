@@ -16,12 +16,16 @@ export type PresetId = "genre" | "mood" | "year" | "manual";
 
 /** Fetch strategy for loading preset values */
 export interface PresetFetchStrategy {
-  /** Tag key to query (e.g., "genre", "year") or null for mood (multi-key) */
+  /** Tag key to query (e.g., "genre", "year") or null for special strategies */
   tagKey: string | null;
   /** Whether to filter to nomarr-only tags */
   nomarrOnly: boolean;
-  /** For mood preset: explicit list of keys to treat as boolean presence */
+  /** For mood preset: explicit list of keys to treat as boolean presence (legacy) */
   explicitKeys?: string[];
+  /** For mood preset: fetch individual mood values from tuple strings */
+  moodValueLookup?: boolean;
+  /** For mood preset: which tier to query (mood-strict, mood-regular, mood-loose) */
+  moodTier?: "mood-strict" | "mood-regular" | "mood-loose";
 }
 
 /** Metadata describing a preset option */
@@ -52,21 +56,15 @@ export const PRESET_METADATA: Record<PresetId, PresetMetadata> = {
   mood: {
     id: "mood",
     label: "Mood",
-    description: "nom:mood-* tags (presence/absence per file)",
+    description: "Individual mood values from mood tags (e.g., aggressive, happy)",
     fetchStrategy: {
-      tagKey: null,
+      tagKey: "nom:mood-*",
       nomarrOnly: true,
-      explicitKeys: ["nom:mood-loose", "nom:mood-regular", "nom:mood-strict"],
+      moodValueLookup: true,
+      moodTier: "mood-strict",
     },
     maxValues: 16,
-    labelTransform: (key: string) => {
-      const labels: Record<string, string> = {
-        "nom:mood-loose": "Mood (Loose)",
-        "nom:mood-regular": "Mood (Regular)",
-        "nom:mood-strict": "Mood (Strict)",
-      };
-      return labels[key] ?? key;
-    },
+    // Individual mood values are already human-readable (aggressive, happy, etc.)
   },
   year: {
     id: "year",
