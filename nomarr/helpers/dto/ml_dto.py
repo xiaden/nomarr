@@ -84,6 +84,8 @@ class ComputeEmbeddingsForBackboneParams:
     min_duration_s: int
     allow_short: bool
     prefer_gpu: bool = True  # GPU/CPU adaptive: False forces CPU execution
+    pre_loaded_audio: LoadAudioMonoResult | None = None  # Skip audio loading if provided
+    pre_computed_chromaprint: str | None = None  # Skip chromaprint if provided  # GPU/CPU adaptive: False forces CPU execution
 
 
 @dataclass

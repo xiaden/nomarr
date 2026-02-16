@@ -143,6 +143,9 @@ def compute_embeddings_for_backbone(params: ComputeEmbeddingsForBackboneParams) 
     segment/hop sizes. We feed the entire audio clip to get all patches in one call,
     preserving temporal resolution.
 
+    When pre_loaded_audio and pre_computed_chromaprint are provided on params,
+    audio loading and chromaprint computation are skipped (caller already did them).
+
     Args:
         params: Parameters including backbone, emb_graph, target_sr, segment_s, hop_s,
                 path, min_duration_s, allow_short
@@ -157,13 +160,20 @@ def compute_embeddings_for_backbone(params: ComputeEmbeddingsForBackboneParams) 
     from nomarr.components.ml.ml_cache_comp import cache_backbone_predictor, get_cached_backbone_predictor
     from nomarr.components.ml.ml_discovery_comp import get_embedding_output_node
 
-    audio_result = load_audio_mono(params.path, target_sr=params.target_sr)
+    if params.pre_loaded_audio is not None:
+        audio_result = params.pre_loaded_audio
+    else:
+        audio_result = load_audio_mono(params.path, target_sr=params.target_sr)
     if should_skip_short(audio_result.duration, params.min_duration_s, params.allow_short):
         msg = f"audio too short ({audio_result.duration:.2f}s < {params.min_duration_s}s)"
         raise RuntimeError(msg)
-    from nomarr.components.ml.chromaprint_comp import compute_chromaprint
 
-    chromaprint = compute_chromaprint(audio_result.waveform, audio_result.sample_rate)
+    if params.pre_computed_chromaprint is not None:
+        chromaprint = params.pre_computed_chromaprint
+    else:
+        from nomarr.components.ml.chromaprint_comp import compute_chromaprint
+
+        chromaprint = compute_chromaprint(audio_result.waveform, audio_result.sample_rate)
     logger.debug(
         f"[inference] Processing full track: {audio_result.duration:.1f}s ({len(audio_result.waveform)} samples @ {audio_result.sample_rate}Hz)",
     )

@@ -73,7 +73,7 @@ from nomarr.components.tagging.tagging_aggregation_comp import (
     aggregate_mood_tiers,
     normalize_tag_label,
 )
-from nomarr.helpers.dto.ml_dto import ComputeEmbeddingsForBackboneParams
+from nomarr.helpers.dto.ml_dto import ComputeEmbeddingsForBackboneParams, LoadAudioMonoResult
 from nomarr.helpers.dto.processing_dto import ProcessFileResult, ProcessorConfig
 from nomarr.helpers.dto.tags_dto import Tags
 from nomarr.helpers.time_helper import internal_ms
@@ -140,6 +140,8 @@ def _discover_and_group_heads(models_dir: str) -> tuple[list[HeadInfo], dict[str
 
 def _compute_embeddings_for_backbone(
     backbone: str, first_head: HeadInfo, library_path: LibraryPath, config: ProcessorConfig,
+    pre_loaded_audio: LoadAudioMonoResult | None = None,
+    pre_computed_chromaprint: str | None = None,
 ) -> tuple[np.ndarray, float, str]:
     """Compute embeddings for a single backbone.
 
@@ -148,6 +150,8 @@ def _compute_embeddings_for_backbone(
         first_head: First head in the backbone group (for params)
         library_path: Validated LibraryPath object (from workflow start)
         config: Processor configuration
+        pre_loaded_audio: Pre-loaded audio waveform (avoids redundant audio loading)
+        pre_computed_chromaprint: Pre-computed chromaprint hash
 
     Returns:
         Tuple of (embeddings_2d, duration, chromaprint)
@@ -171,6 +175,8 @@ def _compute_embeddings_for_backbone(
         path=library_path,
         min_duration_s=config.min_duration_s,
         allow_short=config.allow_short,
+        pre_loaded_audio=pre_loaded_audio,
+        pre_computed_chromaprint=pre_computed_chromaprint,
     )
     embeddings_2d, duration, chromaprint = compute_embeddings_for_backbone(params=params)
     logger.debug(
@@ -543,8 +549,6 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
 
     tags_accum = TagAccumulator()
     all_head_results: dict[str, Any] = {}
-    chromaprint_from_ml: str | None = None
-    duration_final: float | None = None
     all_head_outputs: list[Any] = []
     heads_succeeded = 0
     regression_heads: list[tuple[HeadInfo, list[float]]] = []
@@ -557,43 +561,69 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
     model_suite_hash = compute_model_suite_hash(config.models_dir)
     if library_path is None:
         raise ValueError("Cannot process file without database connection (library_path is None)")
+
+    # Load audio ONCE before the backbone loop (both backbones use same sample rate)
+    # This eliminates redundant fork-isolated loads + chromaprint computations
+    from nomarr.components.ml.chromaprint_comp import compute_chromaprint
+    from nomarr.components.ml.ml_audio_comp import load_audio_mono, should_skip_short
+
+    t_audio_load = internal_ms()
+    first_backbone_heads = next(iter(heads_by_backbone.values()))
+    target_sr = first_backbone_heads[0].sidecar.sr
+    try:
+        shared_audio = load_audio_mono(library_path, target_sr=target_sr)
+    except AudioLoadShutdownError:
+        raise
+    except AudioLoadCrashError as e:
+        logger.error(f"[processor] Audio load crashed twice for {path}: {e}")
+        if db:
+            db.library_files.mark_file_invalid(path)
+            logger.info(f"[processor] Marked file as invalid: {path}")
+        elapsed = round((internal_ms().value - start_all.value) / 1000, 2)
+        return ProcessFileResult(
+            file_path=path,
+            elapsed=elapsed,
+            duration=None,
+            heads_processed=0,
+            tags_written=0,
+            head_results={"_crash": {"status": "crash", "reason": str(e)}},
+            mood_aggregations=None,
+            tags=Tags.from_dict({}),
+        )
+    if should_skip_short(shared_audio.duration, config.min_duration_s, config.allow_short):
+        elapsed = round((internal_ms().value - start_all.value) / 1000, 2)
+        logger.info(
+            f"[processor] Audio too short ({shared_audio.duration:.1f}s < {config.min_duration_s}s) - skipping {path}"
+        )
+        return ProcessFileResult(
+            file_path=path,
+            elapsed=elapsed,
+            duration=shared_audio.duration,
+            heads_processed=0,
+            tags_written=0,
+            head_results={"_short": {"status": "skipped", "reason": f"audio too short ({shared_audio.duration:.1f}s)"}},
+            mood_aggregations=None,
+            tags=Tags.from_dict({}),
+        )
+    shared_chromaprint = compute_chromaprint(shared_audio.waveform, shared_audio.sample_rate)
+    timings["audio_load"] = internal_ms().value - t_audio_load.value
+    duration_final = float(shared_audio.duration)
+    chromaprint_from_ml = shared_chromaprint
     for backbone, backbone_heads in heads_by_backbone.items():
         first_head = backbone_heads[0]
         try:
             t_emb_backbone = internal_ms()
-            embeddings_2d, duration, chromaprint_hash = _compute_embeddings_for_backbone(
+            embeddings_2d, _duration, _chromaprint_hash = _compute_embeddings_for_backbone(
                 backbone, first_head, library_path, config,
+                pre_loaded_audio=shared_audio,
+                pre_computed_chromaprint=shared_chromaprint,
             )
             timings[f"emb_{backbone}"] = internal_ms().value - t_emb_backbone.value
-            if duration_final is None:
-                duration_final = float(duration)
-            if chromaprint_from_ml is None:
-                chromaprint_from_ml = chromaprint_hash
-        except AudioLoadShutdownError:
-            # Worker shutting down - let it propagate, don't mark file invalid
-            raise
         except RuntimeError as e:
             logger.warning(f"[processor] Skipping backbone {backbone}: {e}")
             for head in backbone_heads:
                 all_head_results[head.name] = {"status": "skipped", "reason": str(e)}
             continue
-        except AudioLoadCrashError as e:
-            # File is corrupt (crashed twice during audio loading) - mark invalid and abort
-            logger.error(f"[processor] Audio load crashed twice for {path}: {e}")
-            if db:
-                db.library_files.mark_file_invalid(path)
-                logger.info(f"[processor] Marked file as invalid: {path}")
-            elapsed = round((internal_ms().value - start_all.value) / 1000, 2)
-            return ProcessFileResult(
-                file_path=path,
-                elapsed=elapsed,
-                duration=None,
-                heads_processed=0,
-                tags_written=0,
-                head_results={"_crash": {"status": "crash", "reason": str(e)}},
-                mood_aggregations=None,
-                tags=Tags.from_dict({}),
-            )
         t_heads_start = internal_ms()
         result = _process_head_predictions(backbone_heads, embeddings_2d, config, tags_accum)
         timings[f"heads_{backbone}"] = internal_ms().value - t_heads_start.value
@@ -710,6 +740,7 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
     # Ultra-verbose timing breakdown for bottleneck hunting
     if db is not None:
         # Group timings by category for readability
+        audio_load_ms = timings.get("audio_load", 0)
         overhead_ms = timings.get("model_discovery", 0)
         emb_times = {k: v for k, v in timings.items() if k.startswith("emb_")}
         vector_times = {k: v for k, v in timings.items() if k.startswith("vector_store_")}
@@ -729,6 +760,7 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
         logger.info(
             f"[processor] 🔍 ULTRA-VERBOSE TIMING | "
             f"total={elapsed:.2f}s | "
+            f"audio_load={audio_load_ms:.0f}ms | "
             f"discovery={overhead_ms:.0f}ms | "
             f"embeddings=[{emb_str}] ({total_emb_ms:.0f}ms) | "
             f"vector_store=[{vector_str}] ({total_vector_ms:.0f}ms) | "

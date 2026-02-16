@@ -418,6 +418,11 @@ class DiscoveryWorker(multiprocessing.Process):
             )
             db.health.mark_stopping(self.worker_id)
 
+            # Shut down persistent audio loader subprocess
+            from nomarr.components.ml.ml_audio_comp import shutdown_audio_loader
+
+            shutdown_audio_loader()
+
             # Close health pipe (this signals EOF to parent reader)
             if self._health_pipe is not None:
                 with contextlib.suppress(Exception):

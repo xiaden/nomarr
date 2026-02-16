@@ -7,6 +7,7 @@ from .ml_audio_comp import (
     load_audio_mono,
     set_stop_event,
     should_skip_short,
+    shutdown_audio_loader,
 )
 from .ml_cache_comp import (
     backbone_cache_key,
@@ -73,6 +74,7 @@ __all__ = [
     "select_execution_tier",
     "set_stop_event",
     "should_skip_short",
+    "shutdown_audio_loader",
     "touch_cache",
     "warmup_predictor_cache",
 ]
