@@ -343,7 +343,7 @@ class DiscoveryWorker(multiprocessing.Process):
                         file_size = os.path.getsize(file_path)
                     except OSError:
                         file_size = -1
-                    logger.info(
+                    logger.debug(
                         "[%s] Processing %s (size=%d bytes)", self.worker_id, file_path, file_size
                     )
                     sys.stdout.flush()
