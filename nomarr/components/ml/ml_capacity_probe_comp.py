@@ -24,7 +24,7 @@ from nomarr.components.platform.resource_monitor_comp import (
     get_ram_usage_mb,
     get_vram_usage_for_pid_mb,
 )
-from nomarr.helpers.time_helper import internal_s, now_ms
+from nomarr.helpers.time_helper import internal_ms, now_ms
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -32,8 +32,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Probe configuration
-PROBE_POLL_INTERVAL_S = 5.0  # Interval to poll for completed probe
-PROBE_TIMEOUT_S = 120.0  # Timeout waiting for another worker's probe
+PROBE_POLL_INTERVAL_S = 5000  # Interval to poll for completed probe
+PROBE_TIMEOUT_S = 120000  # Timeout waiting for another worker's probe
 CONSERVATIVE_BACKBONE_VRAM_MB = 8192  # Default if probe fails (EffNet worst case)
 CONSERVATIVE_WORKER_RAM_MB = 4096  # Default if probe fails
 
@@ -185,7 +185,7 @@ def _run_capacity_probe(
         CapacityEstimate with measured values
 
     """
-    probe_start = internal_s()
+    probe_start = internal_ms()
 
     try:
         # Measure current RAM before loading models
@@ -247,10 +247,10 @@ def _run_capacity_probe(
         if worker_ram_mb < 1024:
             worker_ram_mb = max(worker_ram_mb, 2048)
 
-        probe_duration = internal_s().value - probe_start.value
+        probe_duration = internal_ms().value - probe_start.value
 
         logger.info(
-            "[ml_capacity_probe] Probe complete: backbone_vram=%dMB, worker_ram=%dMB (%.1fs)",
+            "[ml_capacity_probe] Probe complete: backbone_vram=%dMB, worker_ram=%dMB (%.1fms)",
             backbone_vram_mb,
             worker_ram_mb,
             probe_duration,
@@ -309,10 +309,10 @@ def _wait_for_probe_completion(
         CapacityEstimate with results or conservative fallback
 
     """
-    start_time = internal_s().value
+    start_time = internal_ms().value
     deadline = start_time + PROBE_TIMEOUT_S
 
-    while internal_s().value < deadline:
+    while internal_ms().value < deadline:
         # Check for completed estimate
         estimate = db.ml_capacity.get_capacity_estimate(model_set_hash)
         if estimate is not None:

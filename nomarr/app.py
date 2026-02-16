@@ -378,7 +378,8 @@ class Application:
         self.db.health.mark_healthy(component_id="app")
 
         # Summary log with key startup info
-        sessions = len(self.services["keys"]._session_cache) if "keys" in self.services else 0
+        from nomarr.services.infrastructure import keys_svc
+        sessions = len(keys_svc._session_cache) if "keys" in self.services else 0
         worker_count = len(self.worker_system._workers) if self.worker_system and self.worker_system._started else 0
         logger.info(
             "[Application] Ready | %d session(s) | %d worker(s) | GPU monitor: %s",

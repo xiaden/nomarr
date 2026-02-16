@@ -31,7 +31,7 @@ from nomarr.components.library.scan_lifecycle_comp import (
     upsert_scanned_files,
 )
 from nomarr.components.metadata import seed_entities_for_scan_batch
-from nomarr.helpers.time_helper import internal_s, now_ms
+from nomarr.helpers.time_helper import internal_ms, now_ms
 from nomarr.workflows.library.validate_library_tags_wf import validate_library_tags_workflow
 from nomarr.workflows.metadata.cleanup_orphaned_entities_wf import cleanup_orphaned_entities_workflow
 
@@ -70,7 +70,7 @@ def scan_library_full_workflow(
         OSError: If library root is inaccessible
 
     """
-    start_time = internal_s()
+    start_time = internal_ms()
     stats: dict[str, int] = defaultdict(int)
     warnings: list[str] = []
     scan_id = f"{library_id}_{now_ms()}"
@@ -118,12 +118,8 @@ def scan_library_full_workflow(
             all_metadata.update(batch.metadata_map)
 
             # Split into updated (existing path) vs new entries
-            updated_entries = [
-                e for e in batch.file_entries if e["path"] in existing_files_dict
-            ]
-            new_entries = [
-                e for e in batch.file_entries if e["path"] not in existing_files_dict
-            ]
+            updated_entries = [e for e in batch.file_entries if e["path"] in existing_files_dict]
+            new_entries = [e for e in batch.file_entries if e["path"] not in existing_files_dict]
 
             # Defer new entries for move detection (if library has chromaprints)
             if has_tagged_files and new_entries:
@@ -155,7 +151,11 @@ def scan_library_full_workflow(
                 seed_entities_for_scan_batch(db, file_ids, metadata_by_id)
 
             save_folder_record(
-                db, library_id, folder.rel_path, folder.mtime, folder.file_count,
+                db,
+                library_id,
+                folder.rel_path,
+                folder.mtime,
+                folder.file_count,
             )
             update_scan_progress(db, library_id, progress=len(all_discovered_paths))
 
@@ -187,9 +187,7 @@ def scan_library_full_workflow(
 
         # Upsert remaining deferred new entries (not consumed by move detection)
         if has_tagged_files and deferred_new_entries:
-            remaining_new_entries = [
-                e for e in deferred_new_entries if e["path"] not in moved_new_paths
-            ]
+            remaining_new_entries = [e for e in deferred_new_entries if e["path"] not in moved_new_paths]
             if remaining_new_entries:
                 file_ids = upsert_scanned_files(db, remaining_new_entries)
                 stats["files_added"] += len(remaining_new_entries)
@@ -214,7 +212,11 @@ def scan_library_full_workflow(
         if models_dir:
             try:
                 validation = validate_library_tags_workflow(
-                    db, models_dir, library_id=library_id, namespace=namespace, auto_repair=True,
+                    db,
+                    models_dir,
+                    library_id=library_id,
+                    namespace=namespace,
+                    auto_repair=True,
                 )
                 stats["validation_checked"] = validation["files_checked"]
                 stats["validation_incomplete"] = validation["incomplete_files"]
@@ -241,14 +243,18 @@ def scan_library_full_workflow(
                 warnings.append(f"Tag validation error: {e}")
 
         # Step 9 — Finalize
-        scan_duration = internal_s().value - start_time.value
+        scan_duration = internal_ms().value - start_time.value
         mark_scan_completed(db, library_id)
         update_scan_progress(
-            db, library_id, status="complete", progress=stats["files_discovered"], scan_error=None,
+            db,
+            library_id,
+            status="complete",
+            progress=stats["files_discovered"],
+            scan_error=None,
         )
 
         logger.info(
-            "Full scan complete in %.1fs: folders=%d/%d, added=%d, updated=%d, skipped=%d, moved=%d, removed=%d, failed=%d",
+            "Full scan complete in %.1fms: folders=%d/%d, added=%d, updated=%d, skipped=%d, moved=%d, removed=%d, failed=%d",
             scan_duration,
             stats["folders_scanned"],
             stats["folders_scanned"] + stats["folders_skipped"],
