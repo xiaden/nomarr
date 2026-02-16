@@ -138,16 +138,15 @@ def _discover_and_group_heads(models_dir: str) -> tuple[list[HeadInfo], dict[str
 
 
 def _compute_embeddings_for_backbone(
-    backbone: str, first_head: HeadInfo, path: str, config: ProcessorConfig, db: Database | None,
+    backbone: str, first_head: HeadInfo, library_path: LibraryPath, config: ProcessorConfig,
 ) -> tuple[np.ndarray, float, str]:
     """Compute embeddings for a single backbone.
 
     Args:
         backbone: Name of the backbone model
         first_head: First head in the backbone group (for params)
-        path: Path to audio file
+        library_path: Validated LibraryPath object (from workflow start)
         config: Processor configuration
-        db: Database instance (for LibraryPath validation)
 
     Returns:
         Tuple of (embeddings_2d, duration, chromaprint)
@@ -160,12 +159,7 @@ def _compute_embeddings_for_backbone(
     seg_len, hop_len = first_head.sidecar.segment_hop
     emb_graph = first_head.embedding_graph
     logger.debug(f"[processor] Computing embeddings for {backbone}: sr={target_sr}")
-    from nomarr.components.infrastructure.path_comp import build_library_path_from_input
 
-    library_path = build_library_path_from_input(path, db) if db else None
-    if not library_path or not library_path.is_valid():
-        msg = f"Cannot compute embeddings for invalid path: {path}"
-        raise ValueError(msg)
     t_emb = internal_s()
     params = ComputeEmbeddingsForBackboneParams(
         backbone=backbone,
@@ -553,11 +547,13 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
     from nomarr.components.ml.ml_discovery_comp import compute_model_suite_hash
 
     model_suite_hash = compute_model_suite_hash(config.models_dir)
+    if library_path is None:
+        raise ValueError("Cannot process file without database connection (library_path is None)")
     for backbone, backbone_heads in heads_by_backbone.items():
         first_head = backbone_heads[0]
         try:
             embeddings_2d, duration, chromaprint_hash = _compute_embeddings_for_backbone(
-                backbone, first_head, path, config, db,
+                backbone, first_head, library_path, config,
             )
             if duration_final is None:
                 duration_final = float(duration)
