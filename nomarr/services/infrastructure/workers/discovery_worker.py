@@ -385,13 +385,15 @@ class DiscoveryWorker(multiprocessing.Process):
                         files_processed += 1
                         consecutive_errors = 0
 
+                        timing = f" | {result.timing_summary}" if result.timing_summary else ""
                         logger.info(
-                            "[%s] Completed %s in %.2fs (%d heads, %d tags)",
+                            "[%s] Completed %s in %.2fs (%d heads, %d tags)%s",
                             self.worker_id,
                             result.file_path,
                             result.elapsed,
                             result.heads_processed,
                             result.tags_written,
+                            timing,
                         )
 
                 except Exception as e:

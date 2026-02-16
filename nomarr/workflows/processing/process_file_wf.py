@@ -737,36 +737,25 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
     timings["db_writes"] = db_elapsed_ms
     db_pct = (db_elapsed_ms / elapsed_ms * 100) if db is not None and elapsed_ms > 0 else 0.0
 
-    # Ultra-verbose timing breakdown for bottleneck hunting
+    # Build timing summary string (attached to result, logged by worker)
+    timing_summary: str | None = None
     if db is not None:
-        # Group timings by category for readability
+        # Group timings by category
         audio_load_ms = timings.get("audio_load", 0)
-        overhead_ms = timings.get("model_discovery", 0)
         emb_times = {k: v for k, v in timings.items() if k.startswith("emb_")}
-        vector_times = {k: v for k, v in timings.items() if k.startswith("vector_store_")}
         head_times = {k: v for k, v in timings.items() if k.startswith("head_")}
         mood_ms = timings.get("mood_aggregation", 0)
         db_ms_val = timings.get("db_writes", 0)
 
         total_emb_ms = sum(emb_times.values())
-        total_vector_ms = sum(vector_times.values())
         total_head_ms = sum(head_times.values())
 
-        # Build concise summary
-        emb_str = " + ".join([f"{k.replace('emb_', '')}={v:.0f}ms" for k, v in emb_times.items()])
-        vector_str = " + ".join([f"{k.replace('vector_store_', '')}={v:.0f}ms" for k, v in vector_times.items()])
-        head_summary = f"{len(head_times)} heads in {total_head_ms:.0f}ms (avg={(total_head_ms/len(head_times)):.0f}ms)" if head_times else "no heads"
+        emb_str = "+".join([f"{k.replace('emb_', '')}={v:.0f}" for k, v in emb_times.items()])
+        head_summary = f"{len(head_times)}x{total_head_ms:.0f}ms" if head_times else "0"
 
-        logger.info(
-            f"[processor] 🔍 ULTRA-VERBOSE TIMING | "
-            f"total={elapsed:.2f}s | "
-            f"audio_load={audio_load_ms:.0f}ms | "
-            f"discovery={overhead_ms:.0f}ms | "
-            f"embeddings=[{emb_str}] ({total_emb_ms:.0f}ms) | "
-            f"vector_store=[{vector_str}] ({total_vector_ms:.0f}ms) | "
-            f"heads={head_summary} | "
-            f"mood_agg={mood_ms:.0f}ms | "
-            f"db={db_ms_val:.0f}ms ({db_pct:.1f}%)"
+        timing_summary = (
+            f"audio={audio_load_ms:.0f} emb=[{emb_str}]={total_emb_ms:.0f} "
+            f"heads={head_summary} mood={mood_ms:.0f} db={db_ms_val:.0f}({db_pct:.1f}%)"
         )
     mood_info = {}
     for key in ["mood-strict", "mood-regular", "mood-loose"]:
@@ -783,4 +772,5 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
         head_results=all_head_results,
         mood_aggregations=mood_info if mood_info else None,
         tags=Tags.from_dict(dict(tags_accum)),
+        timing_summary=timing_summary,
     )

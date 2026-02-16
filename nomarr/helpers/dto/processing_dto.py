@@ -123,3 +123,4 @@ class ProcessFileResult:
     head_results: dict[str, dict[str, Any]]
     mood_aggregations: dict[str, int] | None
     tags: Tags
+    timing_summary: str | None = None
