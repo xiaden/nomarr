@@ -1,7 +1,7 @@
 import { MusicNote } from "@mui/icons-material";
 import { Box, List, ListItem, ListItemIcon, ListItemText, Stack, Typography } from "@mui/material";
 import { PieChart } from "@mui/x-charts/PieChart";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
     ErrorMessage,
@@ -38,7 +38,6 @@ interface ProgressTracking {
   processedCount: number;
   filesPerMinute: number;
   estimatedMinutesRemaining: number | null;
-  lastUpdateTime: number;
 }
 
 export function DashboardPage() {
@@ -49,10 +48,6 @@ export function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<ProgressTracking | null>(null);
 
-  // Track processed count over time for velocity calculation
-  const processedHistoryRef = useRef<Array<{ count: number; time: number }>>(
-    []
-  );
 
   const loadDashboard = async () => {
     try {
@@ -82,46 +77,11 @@ export function DashboardPage() {
   };
 
   const updateProgressTracking = (status: WorkStatus) => {
-    const now = Date.now();
-    const processed = status.processed_files;
-
-    // Track processed count history (last 5 minutes)
-    const history = processedHistoryRef.current;
-    history.push({ count: processed, time: now });
-
-    // Keep only last 5 minutes of data
-    const fiveMinutesAgo = now - 5 * 60 * 1000;
-    processedHistoryRef.current = history.filter(
-      (entry) => entry.time > fiveMinutesAgo
-    );
-
-    // Calculate velocity (files per minute)
-    let filesPerMinute = 0;
-    let estimatedMinutesRemaining: number | null = null;
-
-    if (processedHistoryRef.current.length >= 2) {
-      const oldest = processedHistoryRef.current[0];
-      const newest = processedHistoryRef.current[processedHistoryRef.current.length - 1];
-      const timeDiffMinutes = (newest.time - oldest.time) / (1000 * 60);
-      const countDiff = newest.count - oldest.count;
-
-      if (timeDiffMinutes > 0 && countDiff > 0) {
-        filesPerMinute = countDiff / timeDiffMinutes;
-
-        // Calculate ETA for remaining files
-        const remaining = status.pending_files;
-        if (remaining > 0 && filesPerMinute > 0) {
-          estimatedMinutesRemaining = remaining / filesPerMinute;
-        }
-      }
-    }
-
     setProgress({
       totalFiles: status.total_files,
-      processedCount: processed,
-      filesPerMinute: Math.round(filesPerMinute * 10) / 10,
-      estimatedMinutesRemaining,
-      lastUpdateTime: now,
+      processedCount: status.processed_files,
+      filesPerMinute: status.files_per_minute,
+      estimatedMinutesRemaining: status.estimated_minutes_remaining,
     });
   };
 

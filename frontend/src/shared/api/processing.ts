@@ -48,6 +48,10 @@ export interface WorkStatus {
   processed_files: number;
   total_files: number;
 
+  // Velocity (rolling 5-minute average from server-side timestamps)
+  files_per_minute: number;
+  estimated_minutes_remaining: number | null;
+
   // Overall activity indicator
   is_busy: boolean;
 }

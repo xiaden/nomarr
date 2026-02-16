@@ -139,6 +139,7 @@ class LibraryQueryMixin:
         Returns status of:
         - Scanning: Any library currently being scanned
         - Processing: ML inference on audio files (pending/processed counts)
+        - Velocity: Rolling 5-minute processing rate from actual timestamps
 
         This method is designed for frontend polling to show activity indicators.
 
@@ -168,6 +169,16 @@ class LibraryQueryMixin:
         processed = stats.total_files - pending
         is_processing = pending > 0
 
+        # Compute velocity from actual processing timestamps (last 5 minutes)
+        window_seconds = 300
+        recently_tagged = self.db.library_files.count_recently_tagged(window_seconds=window_seconds)
+        window_minutes = window_seconds / 60
+        files_per_minute = round(recently_tagged / window_minutes, 1) if window_minutes > 0 else 0.0
+
+        estimated_minutes_remaining: float | None = None
+        if pending > 0 and files_per_minute > 0:
+            estimated_minutes_remaining = round(pending / files_per_minute, 1)
+
         return WorkStatusResult(
             is_scanning=is_scanning,
             scanning_libraries=scanning_libraries,
@@ -175,6 +186,8 @@ class LibraryQueryMixin:
             pending_files=pending,
             processed_files=processed,
             total_files=stats.total_files,
+            files_per_minute=files_per_minute,
+            estimated_minutes_remaining=estimated_minutes_remaining,
             is_busy=is_scanning or is_processing,
         )
 

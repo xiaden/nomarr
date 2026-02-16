@@ -131,5 +131,9 @@ class WorkStatusResult:
     processed_files: int
     total_files: int
 
+    # Velocity (computed from last 5 minutes of actual processing)
+    files_per_minute: float
+    estimated_minutes_remaining: float | None
+
     # Overall activity indicator
     is_busy: bool

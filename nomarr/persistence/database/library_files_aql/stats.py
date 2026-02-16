@@ -59,6 +59,37 @@ class LibraryFilesStatsMixin:
         result: dict[str, Any] = next(cursor, {})
         return result
 
+    def count_recently_tagged(self, window_seconds: int = 300) -> int:
+        """Count files tagged within a recent time window.
+
+        Used for computing processing velocity (files/minute).
+
+        Args:
+            window_seconds: Lookback window in seconds (default 300 = 5 minutes)
+
+        Returns:
+            Number of files with last_tagged_at within the window
+
+        """
+        from nomarr.helpers.time_helper import now_ms
+
+        cutoff = now_ms().value - (window_seconds * 1000)
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(
+                """
+            FOR file IN library_files
+                FILTER file.last_tagged_at != null
+                FILTER file.last_tagged_at >= @cutoff
+                COLLECT WITH COUNT INTO cnt
+                RETURN cnt
+            """,
+                bind_vars=cast("dict[str, Any]", {"cutoff": cutoff}),
+            ),
+        )
+        result = next(cursor, 0)
+        return int(result)
+
     def get_library_counts(self) -> dict[str, dict[str, int]]:
         """Get file and folder counts for all libraries.
 

@@ -203,6 +203,10 @@ class WorkStatusResponse(BaseModel):
     processed_files: int = Field(..., description="Number of files already processed")
     total_files: int = Field(..., description="Total files in library")
 
+    # Velocity (rolling 5-minute average from server-side timestamps)
+    files_per_minute: float = Field(..., description="Files processed per minute (5-min rolling average)")
+    estimated_minutes_remaining: float | None = Field(None, description="Estimated minutes to finish pending files")
+
     # Overall activity indicator
     is_busy: bool = Field(..., description="System is doing any work (scanning or processing)")
 
@@ -216,5 +220,7 @@ class WorkStatusResponse(BaseModel):
             pending_files=dto.pending_files,
             processed_files=dto.processed_files,
             total_files=dto.total_files,
+            files_per_minute=dto.files_per_minute,
+            estimated_minutes_remaining=dto.estimated_minutes_remaining,
             is_busy=dto.is_busy,
         )
