@@ -85,12 +85,12 @@ def make_predictor_uncached(head_info: HeadInfo) -> Callable[[np.ndarray, int], 
         if TensorflowPredictEffnetDiscogs is None:
             msg = "TensorflowPredictEffnetDiscogs not available"
             raise RuntimeError(msg)
-        emb_predictor = TensorflowPredictEffnetDiscogs(graphFilename=emb_graph, output=emb_output)
+        emb_predictor = TensorflowPredictEffnetDiscogs(graphFilename=emb_graph, output=emb_output, patchHopSize=93)
     elif backbone == "musicnn":
         if TensorflowPredictMusiCNN is None:
             msg = "TensorflowPredictMusiCNN not available"
             raise RuntimeError(msg)
-        emb_predictor = TensorflowPredictMusiCNN(graphFilename=emb_graph, output=emb_output)
+        emb_predictor = TensorflowPredictMusiCNN(graphFilename=emb_graph, output=emb_output, patchHopSize=128)
     else:
         msg = f"Unsupported backbone {backbone}"
         raise RuntimeError(msg)
@@ -189,12 +189,12 @@ def compute_embeddings_for_backbone(params: ComputeEmbeddingsForBackboneParams) 
             if TensorflowPredictEffnetDiscogs is None:
                 msg = "TensorflowPredictEffnetDiscogs not available"
                 raise RuntimeError(msg)
-            emb_predictor = TensorflowPredictEffnetDiscogs(graphFilename=params.emb_graph, output=emb_output)
+            emb_predictor = TensorflowPredictEffnetDiscogs(graphFilename=params.emb_graph, output=emb_output, patchHopSize=93)
         elif params.backbone == "musicnn":
             if TensorflowPredictMusiCNN is None:
                 msg = "TensorflowPredictMusiCNN not available"
                 raise RuntimeError(msg)
-            emb_predictor = TensorflowPredictMusiCNN(graphFilename=params.emb_graph, output=emb_output)
+            emb_predictor = TensorflowPredictMusiCNN(graphFilename=params.emb_graph, output=emb_output, patchHopSize=128)
         else:
             msg = f"Unsupported backbone {params.backbone}"
             raise RuntimeError(msg)
