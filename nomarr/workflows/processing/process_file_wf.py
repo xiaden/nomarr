@@ -680,11 +680,12 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
             )
     db_elapsed = internal_s().value - t_db_start.value if db is not None else 0.0
     elapsed = round(internal_s().value - start_all.value, 2)
+    db_ms = db_elapsed * 1000  # Convert to milliseconds for visibility
     db_pct = (db_elapsed / elapsed * 100) if db is not None and elapsed > 0 else 0.0
     ml_elapsed = elapsed - db_elapsed if db is not None else elapsed
     if db is not None:
         logger.info(
-            f"[processor] ⏱️  Timing: total={elapsed:.2f}s | ML={ml_elapsed:.2f}s | DB={db_elapsed:.2f}s ({db_pct:.0f}%)"
+            f"[processor] ⏱️  Timing: total={elapsed:.2f}s | ML={ml_elapsed:.2f}s | DB={db_ms:.0f}ms ({db_pct:.1f}%)"
         )
     mood_info = {}
     for key in ["mood-strict", "mood-regular", "mood-loose"]:

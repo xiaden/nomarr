@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import pytest
+
 from mcp_code_intel.tools.edit_file_insert_text import edit_file_insert_text
 
 
