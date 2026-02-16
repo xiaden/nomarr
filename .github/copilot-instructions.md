@@ -51,20 +51,7 @@ These instructions contain:
 
 **These files may be automatically loaded based on file paths being edited. If you're uncertain about layer requirements, explicitly read the file.**
 
-### 2. Use MCP `read_module_api` Before Editing Modules
-
-**You MUST use the MCP `read_module_api` tool to inspect module shapes before editing.**
-
-- Run `read_module_api` for each module you will modify
-- Use the discovered function/class signatures as the source of truth
-- Do not guess at existing APIs — verify them
-
-```
-# Example: discover API before modifying
-read_module_api("nomarr.services.infrastructure.file_watcher_svc")
-```
-
-### 3. Validate All Python Code
+### 2. Validate All Python Code
 
 **You MUST verify code quality after editing ANY Python file.**
 
@@ -354,6 +341,7 @@ Import-linter enforces layer boundaries.
 - Rename `_id` or `_key` (ArangoDB-native identifiers)
 - Let workflows import services or interfaces
 - Let helpers import any `nomarr.*` modules
+- Guess context or line counts in tool usage
 
 **Always:**
 
@@ -361,6 +349,7 @@ Import-linter enforces layer boundaries.
 - Write fully type-annotated code
 - Use MCP `read_module_api` before calling unfamiliar APIs (the script version is legacy fallback)
 - Check venv is active before running Python commands
+- Reread context if a tool errors
 
 ---
 
@@ -437,7 +426,7 @@ When you reach for `read_file_range` on Python code, stop and ask: **what am I a
 
 **When `edit_file_replace_by_content` fails:**
 - **Multiple boundary matches** → Make boundaries more specific (include adjacent line content), don't adjust line count
-- **Line count mismatch with single matches** → Read the context in the error to understand what's actually there, then decide if your replacement is correct
+- **Line count mismatch** → The error shows `(range = N lines, expected M)`. Validate the context of the file by re-reading it, don't assume the tool expected is correct.
 - **Generic boundaries** (` ``` `, `return`, `}`) → Switch to `edit_file_replace_string` with the full unique text
 
 ### When to Update These Instructions

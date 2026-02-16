@@ -143,25 +143,45 @@ class LibraryFilesStatusMixin:
         )
         return list(cursor)
 
-    def discover_next_unprocessed_file(self) -> dict[str, Any] | None:
+    def discover_next_unprocessed_file(
+        self,
+        min_duration_s: int | None = None,
+        allow_short: bool = True,
+    ) -> dict[str, Any] | None:
         """Discover next file needing ML tagging for worker discovery.
 
         Query optimized for discovery-based workers:
         - Filters: needs_tagging=true, is_valid=true
+        - Optional duration filter (skip files too short for ML)
         - Deterministic ordering by _key for consistent work distribution
         - LIMIT 1 for single-file claiming
+
+        Args:
+            min_duration_s: Minimum duration in seconds for ML processing.
+                If provided and allow_short=False, files shorter than this
+                are excluded from discovery (avoids loading audio just to skip).
+            allow_short: If True, skip duration filtering (process all files).
 
         Returns:
             File dict or None if no work available
 
         """
+        # Build duration filter if needed
+        duration_filter = ""
+        if min_duration_s is not None and not allow_short:
+            # Filter out files with duration < min_duration_s
+            # Also include files with NULL duration (legacy/missing metadata)
+            # to avoid silently dropping them - they'll be checked at ML time
+            duration_filter = f"""
+                    FILTER file.duration_seconds == null OR file.duration_seconds >= {min_duration_s}"""
+
         cursor = cast(
             "Cursor",
             self.db.aql.execute(
-                """\
+                f"""\
                 FOR file IN library_files
                     FILTER file.needs_tagging == true
-                    FILTER file.is_valid == true
+                    FILTER file.is_valid == true{duration_filter}
                     SORT file._key
                     LIMIT 1
                     RETURN file

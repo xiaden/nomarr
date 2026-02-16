@@ -143,8 +143,8 @@ def save_file_tags(
 ) -> None:
     """Write parsed tags for a file.
 
-    Iterates over tag rel→values pairs and calls ``set_song_tags``
-    for each.
+    Builds a batch of (song_id, rel, values) entries and writes them all
+    in 3 AQL round-trips instead of 3 per rel.
 
     Args:
         db: Database instance
@@ -152,5 +152,5 @@ def save_file_tags(
         parsed_tags: Mapping of tag rel → list of tag values
 
     """
-    for rel, values in parsed_tags.items():
-        db.tags.set_song_tags(file_id, rel, values)
+    entries = [{"song_id": file_id, "rel": rel, "values": values} for rel, values in parsed_tags.items()]
+    db.tags.set_song_tags_batch(entries)

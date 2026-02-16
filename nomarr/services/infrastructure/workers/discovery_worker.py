@@ -253,7 +253,12 @@ class DiscoveryWorker(multiprocessing.Process):
 
                 # Discover and claim next file
                 logger.debug("[%s] Polling for work...", self.worker_id)
-                file_id = discover_and_claim_file(db, self.worker_id)
+                file_id = discover_and_claim_file(
+                    db,
+                    self.worker_id,
+                    min_duration_s=config.min_duration_s,
+                    allow_short=config.allow_short,
+                )
 
                 if file_id is None:
                     logger.debug("[%s] No work found, sleeping %.1fs", self.worker_id, IDLE_SLEEP_S)

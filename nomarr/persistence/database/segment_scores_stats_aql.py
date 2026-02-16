@@ -90,6 +90,57 @@ class SegmentScoresStatsOperations:
             ),
         )
 
+    def upsert_stats_batch(
+        self,
+        entries: list[dict[str, Any]],
+    ) -> None:
+        """Batch-upsert segment statistics for multiple heads in a single AQL query.
+
+        Each entry dict must have: ``file_id``, ``head_name``, ``tagger_version``,
+        ``num_segments``, ``pooling_strategy``, ``label_stats``.
+
+        Pre-computes deterministic ``_key`` values using :meth:`_make_key` and
+        sends everything in one round-trip.
+        """
+        if not entries:
+            return
+
+        ts = now_ms().value
+        docs = []
+        for e in entries:
+            _key = self._make_key(e["file_id"], e["head_name"], e["tagger_version"])
+            docs.append(
+                {
+                    "_key": _key,
+                    "file_id": e["file_id"],
+                    "head_name": e["head_name"],
+                    "tagger_version": e["tagger_version"],
+                    "num_segments": e["num_segments"],
+                    "pooling_strategy": e["pooling_strategy"],
+                    "label_stats": e["label_stats"],
+                    "processed_at": ts,
+                }
+            )
+
+        self.db.aql.execute(
+            """
+            FOR doc IN @docs
+                UPSERT { _key: doc._key }
+                INSERT doc
+                UPDATE {
+                    file_id: doc.file_id,
+                    head_name: doc.head_name,
+                    tagger_version: doc.tagger_version,
+                    num_segments: doc.num_segments,
+                    pooling_strategy: doc.pooling_strategy,
+                    label_stats: doc.label_stats,
+                    processed_at: doc.processed_at
+                }
+                IN segment_scores_stats
+            """,
+            bind_vars=cast("dict[str, Any]", {"docs": docs}),
+        )
+
     def get_stats_for_file(self, file_id: str) -> list[dict[str, Any]]:
         """Get all segment statistics documents for a given file.
 

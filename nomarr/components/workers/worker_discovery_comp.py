@@ -15,7 +15,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def discover_next_file(db: Database) -> str | None:
+def discover_next_file(
+    db: Database,
+    min_duration_s: int | None = None,
+    allow_short: bool = True,
+) -> str | None:
     """Discover next unprocessed file.
 
     Queries library_files for files with needs_tagging=1 and is_valid=1.
@@ -23,12 +27,17 @@ def discover_next_file(db: Database) -> str | None:
 
     Args:
         db: Database instance
+        min_duration_s: Minimum duration in seconds (skip shorter files at DB level)
+        allow_short: If True, skip duration filtering
 
     Returns:
         File _id or None if no work available
 
     """
-    file_doc = db.library_files.discover_next_unprocessed_file()
+    file_doc = db.library_files.discover_next_unprocessed_file(
+        min_duration_s=min_duration_s,
+        allow_short=allow_short,
+    )
     if file_doc:
         return str(file_doc["_id"])
     return None
@@ -82,11 +91,16 @@ def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
     return db.worker_claims.cleanup_all_stale_claims(heartbeat_timeout_ms)
 
 
-def discover_and_claim_file(db: Database, worker_id: str) -> str | None:
+def discover_and_claim_file(
+    db: Database,
+    worker_id: str,
+    min_duration_s: int | None = None,
+    allow_short: bool = True,
+) -> str | None:
     """Discover and claim the next available file for processing.
 
     Combined operation that:
-    1. Discovers next unprocessed file
+    1. Discovers next unprocessed file (optionally filtered by duration)
     2. Attempts to claim it
     3. Returns file_id if successful, None otherwise
 
@@ -95,12 +109,18 @@ def discover_and_claim_file(db: Database, worker_id: str) -> str | None:
     Args:
         db: Database instance
         worker_id: Worker identifier (e.g., "worker:tag:0")
+        min_duration_s: Minimum duration in seconds (skip shorter files at DB level)
+        allow_short: If True, skip duration filtering
 
     Returns:
         Claimed file _id or None if no work available or claim failed
 
     """
-    file_id = discover_next_file(db)
+    file_id = discover_next_file(
+        db,
+        min_duration_s=min_duration_s,
+        allow_short=allow_short,
+    )
     if not file_id:
         logger.debug("[Discovery] No files need processing")
         return None

@@ -681,6 +681,7 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
     _sync_to_database(db, path, db_tags, config.namespace, config.tagger_version, chromaprint_from_ml, file_id=file_id)
     # Persist per-label segment statistics (derived data — after canonical sync)
     if db is not None and file_id is not None and all_segment_stats:
+        stats_entries: list[dict[str, Any]] = []
         for head_name, label_stats in all_segment_stats.items():
             num_segments = all_num_segments.get(head_name, 0)
             if head_name not in all_num_segments:
@@ -689,14 +690,17 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
                     "stats and segment count accumulators out of sync",
                     head_name,
                 )
-            db.segment_scores_stats.upsert_stats(
-                file_id=file_id,
-                head_name=head_name,
-                tagger_version=config.tagger_version,
-                num_segments=num_segments,
-                pooling_strategy="trimmed_mean",
-                label_stats=label_stats,
+            stats_entries.append(
+                {
+                    "file_id": file_id,
+                    "head_name": head_name,
+                    "tagger_version": config.tagger_version,
+                    "num_segments": num_segments,
+                    "pooling_strategy": "trimmed_mean",
+                    "label_stats": label_stats,
+                }
             )
+        db.segment_scores_stats.upsert_stats_batch(stats_entries)
     db_elapsed_ms = internal_ms().value - t_db_start.value if db is not None else 0.0
     elapsed_ms = internal_ms().value - start_all.value
     elapsed = round(elapsed_ms / 1000, 2)

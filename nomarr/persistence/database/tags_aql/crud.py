@@ -161,6 +161,23 @@ class TagCrudMixin:
         )
 
         # 3) Create edges from song to tags
+        self.db.aql.execute(
+            """
+            FOR entry IN @entries
+                FOR value IN entry.values
+                    LET tag = FIRST(
+                        FOR t IN tags
+                            FILTER t.rel == entry.rel AND t.value == value
+                            RETURN t
+                    )
+                    FILTER tag != null
+                    UPSERT { _from: entry.song_id, _to: tag._id }
+                    INSERT { _from: entry.song_id, _to: tag._id }
+                    UPDATE {}
+                    IN song_tag_edges
+            """,
+            bind_vars=cast("dict[str, Any]", {"entries": with_values}),
+        )
 
     def add_song_tag(self, song_id: str, rel: str, value: TagValue) -> None:
         """Add a single tag to a song (without replacing existing tags for this rel).
