@@ -102,6 +102,20 @@ def _get_essentia_version() -> str:
 _HEAD_POOL = ThreadPoolExecutor(max_workers=12, thread_name_prefix="head")
 
 
+def shutdown_head_pool(*, timeout: float = 5.0) -> None:
+    """Shut down the module-level head prediction thread pool.
+
+    Safe to call multiple times or when the pool has already exited.
+    Called by the worker during cleanup to ensure a bounded exit time.
+
+    Args:
+        timeout: Max seconds to wait for in-flight predictions before
+                 forcing cancellation. Defaults to 5s — enough for any
+                 single head prediction to finish.
+    """
+    _HEAD_POOL.shutdown(wait=True, cancel_futures=True)
+
+
 @dataclass
 class ProcessHeadPredictionsResult:
     """Result from _process_head_predictions() private helper (workflow-internal)."""

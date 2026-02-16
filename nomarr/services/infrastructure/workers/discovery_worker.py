@@ -508,6 +508,11 @@ class DiscoveryWorker(multiprocessing.Process):
 
             shutdown_audio_loader()
 
+            # Shut down head prediction thread pool (bounded exit)
+            from nomarr.workflows.processing.process_file_wf import shutdown_head_pool
+
+            shutdown_head_pool()
+
             # Close health pipe (this signals EOF to parent reader)
             if self._health_pipe is not None:
                 with contextlib.suppress(Exception):
