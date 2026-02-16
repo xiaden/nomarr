@@ -133,7 +133,6 @@ class DiscoveryWorker(multiprocessing.Process):
             force=True,  # Override any existing config
         )
 
-        logger.info("[%s] Subprocess logging configured", self.worker_id)
 
     def _send_health_frame(self, status: str) -> None:
         """Send a health frame to the parent process via pipe.
@@ -175,7 +174,6 @@ class DiscoveryWorker(multiprocessing.Process):
         import faulthandler
 
         faulthandler.enable()
-        logger.info("[%s] faulthandler enabled for native crash diagnostics", self.worker_id)
 
         # Register stop event for shutdown-aware audio loading
         from nomarr.components.ml.ml_audio_comp import set_stop_event

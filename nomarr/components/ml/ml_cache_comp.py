@@ -72,7 +72,7 @@ def warmup_predictor_cache(models_dir: str, cache_idle_timeout: int=300) -> int:
             predictor = make_predictor_uncached(head_info)
             key = cache_key(head_info)
             _PREDICTOR_CACHE[key] = predictor
-            logger.info(f"[cache] Cached [{idx}/{len(heads)}]: '{head_info.name}' ({head_info.backbone}/{head_info.head_type})")
+            logger.debug(f"[cache] Cached [{idx}/{len(heads)}]: '{head_info.name}' ({head_info.backbone}/{head_info.head_type})")
         except Exception as e:
             logger.exception(f"[cache] Failed to cache predictor for {head_info.name}: {e}")
     elapsed = internal_s().value - start.value
