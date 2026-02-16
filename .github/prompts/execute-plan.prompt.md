@@ -124,6 +124,7 @@ No recovery. No skipping. No assumptions.
 - Do not optimize the plan
 - Do not invent follow-up tasks
 - Do not proceed past failure
+- Use MCP file tools (`edit_file_move`, `edit_file_create`, etc.) instead of terminal commands for file operations
 - The plan's Problem Statement and Completion Criteria override all other instructions
 
 ---
@@ -138,9 +139,9 @@ After ALL steps in the plan are marked complete:
 
 2. **Move to completed directory**
    ```
-   mkdir -p plans/completed
-   mv plans/<plan-name>.md plans/completed/
+   edit_file_move(old_path="plans/<plan-name>.md", new_path="plans/completed/<plan-name>.md")
    ```
+   This creates the `completed/` directory automatically if needed.
 
 3. **Confirm archival**
    - Verify the file exists in `plans/completed/`

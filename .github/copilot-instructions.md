@@ -435,6 +435,11 @@ When you reach for `read_file_range` on Python code, stop and ask: **what am I a
   - Moving code within/between files → `edit_file_move_by_content`
   - Inserting near known code → `edit_file_insert_at_line` with `anchor`
 
+**When `edit_file_replace_by_content` fails:**
+- **Multiple boundary matches** → Make boundaries more specific (include adjacent line content), don't adjust line count
+- **Line count mismatch with single matches** → Read the context in the error to understand what's actually there, then decide if your replacement is correct
+- **Generic boundaries** (` ``` `, `return`, `}`) → Switch to `edit_file_replace_string` with the full unique text
+
 ### When to Update These Instructions
 
 **Add to copilot-instructions.md when:**
