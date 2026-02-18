@@ -14,8 +14,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # ----------------------------------------------------------------------
 # Ubuntu 24.04 CUDA images already have a user at UID 1000 ('ubuntu'),
 # so reuse it or create appuser only if UID is free
-RUN id -nu 1000 >/dev/null 2>&1 && usermod -l appuser -d /home/appuser -m $(id -nu 1000) \
-    || useradd -m -u 1000 appuser
+RUN if id -nu 1000 >/dev/null 2>&1; then \
+        OLD_USER=$(id -nu 1000) && \
+        usermod -l appuser -d /home/appuser -m "$OLD_USER" && \
+        OLD_GROUP=$(id -gn 1000) && \
+        groupmod -n appuser "$OLD_GROUP"; \
+    else \
+        useradd -m -u 1000 appuser; \
+    fi
 WORKDIR /app
 
 # ----------------------------------------------------------------------
