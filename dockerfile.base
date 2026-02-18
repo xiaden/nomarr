@@ -45,13 +45,8 @@ RUN wget -q https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflo
 COPY build_resources/essentia/ /build/essentia/
 WORKDIR /build/essentia
 
-ARG ESSENTIA_ALGOS="MonoLoader,AudioLoader,MonoMixer,Resample,\
-Windowing,Spectrum,FFT,Magnitude,\
-TensorflowPredict2D,TensorflowPredictEffnetDiscogs,TensorflowPredictMusiCNN,TensorflowPredictVGGish,\
-TensorflowPredict,TensorflowInputMusiCNN,TensorflowInputVGGish,\
-VectorRealToTensor,TensorToPool,PoolToTensor,TensorToVectorReal,\
-FrameCutter,NoiseAdder,MelBands,TriangularBands,UnaryOperator,\
-FileOutputProxy"
+# 25 algorithms: MonoLoader chain, TF predict family, spectral, I/O
+ARG ESSENTIA_ALGOS="MonoLoader,AudioLoader,MonoMixer,Resample,Windowing,Spectrum,FFT,Magnitude,TensorflowPredict2D,TensorflowPredictEffnetDiscogs,TensorflowPredictMusiCNN,TensorflowPredictVGGish,TensorflowPredict,TensorflowInputMusiCNN,TensorflowInputVGGish,VectorRealToTensor,TensorToPool,PoolToTensor,TensorToVectorReal,FrameCutter,NoiseAdder,MelBands,TriangularBands,UnaryOperator,FileOutputProxy"
 
 RUN python3 waf configure \
     --with-python --with-tensorflow \
