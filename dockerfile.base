@@ -60,8 +60,10 @@ RUN mkdir -p /staging/lib /staging/python \
     && echo "Found essentia Python package at: ${ESSENTIA_PY}" \
     && cp -a "${ESSENTIA_PY}" /staging/python/essentia
 
-# Verify the build before proceeding
-RUN python3 -c "from essentia.standard import MonoLoader, TensorflowPredict2D; print('essentia build OK')"
+# Verify the build before proceeding (waf installs to python3/dist-packages
+# which isn't in Python 3.12's default sys.path on Ubuntu 24.04)
+RUN PYTHONPATH=/usr/local/lib/python3/dist-packages python3 -c \
+    "from essentia.standard import MonoLoader, TensorflowPredict2D; print('essentia build OK')"
 
 
 # ==============================================================
