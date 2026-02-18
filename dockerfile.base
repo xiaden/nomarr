@@ -81,7 +81,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 #  System packages, Python 3.12 (default on 24.04), essentia runtime deps
 #  cuDNN 9.3 for TF 2.18.0 GPU support
 # ----------------------------------------------------------------------
-# Add NVIDIA cuDNN repo and install runtime libs
+# Install cuDNN 9.3 from NVIDIA local repo, then system packages
 RUN apt-get update && apt-get install -y --no-install-recommends wget \
     && wget -qO /tmp/cudnn-keyring.deb https://developer.download.nvidia.com/compute/cudnn/9.3.0/local_installers/cudnn-local-repo-ubuntu2404-9.3.0_1.0-1_amd64.deb \
     && dpkg -i /tmp/cudnn-keyring.deb \
@@ -89,15 +89,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends wget \
     && apt-get update \
     && apt-get install -y --no-install-recommends libcudnn9-cuda-12 \
     && rm -rf /tmp/cudnn-keyring.deb /var/cudnn-local-repo-* \
-    && rm -f /etc/apt/sources.list.d/cudnn-local-repo-ubuntu2404-9.3.0.list \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-pip \
-    cron libsndfile1 ffmpeg sox ca-certificates curl tini \
-    # Runtime deps for essentia shared libraries (not -dev packages)
-    libfftw3-single3 libsamplerate0 libtag1v5 libyaml-0-2 libchromaprint1 \
-    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+    && rm -f /etc/apt/sources.list.d/cudnn*.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        python3 python3-pip \
+        cron libsndfile1 ffmpeg sox ca-certificates curl tini \
+        libfftw3-single3 libsamplerate0 libtag1v5 libyaml-0-2 libchromaprint1 \
+    && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # ----------------------------------------------------------------------
 #  Copy essentia + TF 2.18.0 build artifacts from builder stage
