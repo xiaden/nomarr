@@ -102,6 +102,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends wget \
 # ----------------------------------------------------------------------
 COPY --from=essentia-builder /staging/lib/ /usr/local/lib/
 COPY --from=essentia-builder /staging/python/essentia/ /usr/local/lib/python3.12/dist-packages/essentia/
+# Copy ptxas for XLA JIT compilation (avoids slow driver fallback)
+COPY --from=essentia-builder /usr/local/cuda/bin/ptxas /usr/local/cuda/bin/ptxas
 RUN ldconfig
 
 # ----------------------------------------------------------------------
