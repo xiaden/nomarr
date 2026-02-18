@@ -1,9 +1,79 @@
 # ----------------------------------------------------------------------
 #  Nomarr Base Image - Heavy dependencies only
 #  Build once, reuse for all app builds
-#  Last rebuild: 2026-02-03 (trigger rebuild if missing from registry)
+#  Last rebuild: 2025-07-11 (trigger rebuild if missing from registry)
 # ----------------------------------------------------------------------
-# Use NVIDIA CUDA base image to get CUDA libraries for TensorFlow
+
+# ==============================================================
+#  Stage 1: Build essentia from source with TF 2.14.0 GPU
+#  Uses cuda-devel for compilation toolchain, discarded after
+# ==============================================================
+FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04 AS essentia-builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Python 3.12 (must match runtime) + build tools + library dev headers
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    python3.12 python3.12-dev \
+    build-essential pkg-config wget curl \
+    libeigen3-dev libfftw3-dev \
+    libavcodec-dev libavformat-dev libavutil-dev libswresample-dev \
+    libsamplerate0-dev libyaml-dev libtag1-dev libchromaprint-dev \
+    && ln -sf /usr/bin/python3.12 /usr/bin/python3 \
+    && ln -sf /usr/bin/python3.12 /usr/bin/python \
+    && rm -rf /var/lib/apt/lists/*
+
+# pip + numpy (required for essentia Python bindings build)
+RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3 \
+    && python3 -m pip install --no-cache-dir numpy==1.26.4
+
+# Download TF 2.14.0 GPU C API and create pkg-config file
+# This layer is cached independently of essentia source changes
+RUN wget -q https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-2.14.0.tar.gz \
+    && tar -C /usr/local -xzf libtensorflow-gpu-linux-x86_64-2.14.0.tar.gz \
+    && rm libtensorflow-gpu-linux-x86_64-2.14.0.tar.gz \
+    && mkdir -p /usr/local/lib/pkgconfig \
+    && printf 'Name: tensorflow\nDescription: TensorFlow C API\nVersion: 2.14.0\nLibs: -L/usr/local/lib -ltensorflow\nCflags: -I/usr/local/include/tensorflow\n' \
+        > /usr/local/lib/pkgconfig/tensorflow.pc \
+    && ldconfig
+
+# Copy essentia source and build with only the algorithms nomarr uses
+# (25 out of 282 — MonoLoader chain, TF predict family, spectral, I/O)
+COPY build_resources/essentia/ /build/essentia/
+WORKDIR /build/essentia
+
+ARG ESSENTIA_ALGOS="MonoLoader,AudioLoader,MonoMixer,Resample,\
+Windowing,Spectrum,FFT,Magnitude,\
+TensorflowPredict2D,TensorflowPredictEffnetDiscogs,TensorflowPredictMusiCNN,TensorflowPredictVGGish,\
+TensorflowPredict,TensorflowInputMusiCNN,TensorflowInputVGGish,\
+VectorRealToTensor,TensorToPool,PoolToTensor,TensorToVectorReal,\
+FrameCutter,NoiseAdder,MelBands,TriangularBands,UnaryOperator,\
+FileOutputProxy"
+
+RUN python3 waf configure \
+    --with-python --with-tensorflow \
+    --include-algos="${ESSENTIA_ALGOS}" \
+    && python3 waf build \
+    && python3 waf install \
+    && ldconfig
+
+# Stage build artifacts into a clean directory for multi-stage COPY
+RUN mkdir -p /staging/lib /staging/python \
+    && cp -a /usr/local/lib/libessentia* /staging/lib/ \
+    && cp -a /usr/local/lib/libtensorflow* /staging/lib/ \
+    && PYDIR=$(python3 -c "import sysconfig; print(sysconfig.get_path('platlib'))") \
+    && cp -a "${PYDIR}/essentia" /staging/python/essentia
+
+# Verify the build before proceeding
+RUN python3 -c "from essentia.standard import MonoLoader, TensorflowPredict2D; print('essentia build OK')"
+
+
+# ==============================================================
+#  Stage 2: Runtime image (no build tools, no -dev packages)
+# ==============================================================
 FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -13,7 +83,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LC_ALL=C.UTF-8 LANG=C.UTF-8
 
 # ----------------------------------------------------------------------
-#  Install system packages and Python dependencies in single layer
+#  System packages, Python 3.12, and essentia runtime library deps
 # ----------------------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
     software-properties-common \
@@ -21,14 +91,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get update && apt-get install -y --no-install-recommends \
     python3.12 python3.12-dev python3.12-venv \
     cron libsndfile1 ffmpeg sox ca-certificates curl tini \
+    # Runtime deps for essentia shared libraries (not -dev packages)
+    libfftw3-single3 libsamplerate0 libtag1v5 libyaml-0-2 libchromaprint1 \
     && curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12 \
     && ln -sf /usr/bin/python3.12 /usr/bin/python3 \
     && ln -sf /usr/bin/python3.12 /usr/bin/python \
-    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* \
-    # Install Python packages
-    && python3 -m pip install --upgrade pip \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# ----------------------------------------------------------------------
+#  Copy essentia + TF 2.14.0 build artifacts from builder stage
+# ----------------------------------------------------------------------
+COPY --from=essentia-builder /staging/lib/ /usr/local/lib/
+COPY --from=essentia-builder /staging/python/essentia/ /usr/local/lib/python3.12/dist-packages/essentia/
+RUN ldconfig
+
+# ----------------------------------------------------------------------
+#  Python packages (essentia is from source, not PyPI)
+# ----------------------------------------------------------------------
+RUN python3 -m pip install --upgrade pip \
     && python3 -m pip install --no-cache-dir \
-    "essentia-tensorflow==2.1b6.dev1389" \
     "numpy==1.26.4" \
     "scipy>=1.13.1" \
     "soundfile" \
@@ -46,9 +127,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     "pytest==8.3.3" \
     "pytest-cov==5.0.0" \
     "psutil==7.2.1" \
-    # Clean up pip cache and temp files
+    # Clean up
     && rm -rf /root/.cache/pip /tmp/* /var/tmp/* \
-    # Sanity probe
-    && python3 -c "import essentia; from essentia.standard import TensorflowPredict2D; print('Essentia:', essentia.__version__)"
+    # Sanity probes
+    && python3 -c "import essentia; from essentia.standard import TensorflowPredict2D; print('Essentia:', essentia.__version__)" \
+    && python3 -c "import ctypes; tf = ctypes.CDLL('libtensorflow.so.2'); v = tf.TF_Version; v.restype = ctypes.c_char_p; print('TF C API:', v().decode())"
 
 WORKDIR /app

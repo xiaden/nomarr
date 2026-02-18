@@ -1,0 +1,4 @@
+[submodule "build_resources/essentia"]
+	path = build_resources/essentia
+	url = https://github.com/xiaden/essentia.git
+	branch = nomarr
