@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from nomarr.helpers.dto.library_dto import LibraryScanStatusResult, StartScanResult
 from nomarr.helpers.time_helper import now_ms
+from nomarr.services.infrastructure.config_svc import INTERNAL_MIN_DURATION_S
 from nomarr.workflows.library.start_library_scan_wf import start_library_scan_workflow
 from nomarr.workflows.library.validate_library_tags_wf import validate_library_tags_workflow
 
@@ -95,6 +96,7 @@ class LibraryScanMixin:
             scan_type=scan_type,
             models_dir=self.cfg.models_dir,
             namespace=self.cfg.namespace,
+            min_duration_s=INTERNAL_MIN_DURATION_S,
         )
 
     def cancel_scan(self, library_id: str | None = None) -> bool:

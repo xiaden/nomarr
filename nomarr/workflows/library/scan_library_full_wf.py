@@ -47,6 +47,7 @@ def scan_library_full_workflow(
     tagger_version: str,
     models_dir: str | None = None,
     namespace: str = "nom",
+    min_duration_s: int | None = None,
 ) -> dict[str, Any]:
     """Run a full library scan (ignores folder cache).
 
@@ -59,6 +60,8 @@ def scan_library_full_workflow(
         tagger_version: Model suite hash for version comparison
         models_dir: Path to ML models (enables tag validation when provided)
         namespace: Tag namespace (default ``"nom"``)
+        min_duration_s: Minimum duration for ML tagging. Files shorter
+            than this are marked ``needs_tagging=False`` at scan time.
 
     Returns:
         Dict with scan statistics (files_discovered, files_added,
@@ -108,6 +111,7 @@ def scan_library_full_workflow(
                 existing_files=existing_files_dict,
                 tagger_version=tagger_version,
                 db=db,
+                min_duration_s=min_duration_s,
             )
 
             stats["files_updated"] += batch.stats["files_updated"]

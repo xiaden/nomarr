@@ -40,6 +40,7 @@ def scan_folder_files(
     existing_files: dict[str, dict],
     tagger_version: str,
     db: Database,
+    min_duration_s: int | None = None,
 ) -> FileBatchResult:
     """Scan all files in a single folder and return batch-ready data.
 
@@ -51,6 +52,9 @@ def scan_folder_files(
         existing_files: Path → existing file dict (for determining if file is new/updated)
         tagger_version: Current model suite hash
         db: Database instance (for build_library_path_from_input)
+        min_duration_s: Minimum duration in seconds for ML tagging.
+            Files shorter than this are marked as not needing tagging
+            with ``tagging_skipped_reason='too_short'``.
 
     Returns:
         FileBatchResult with file entries ready for upsert and metadata
@@ -130,6 +134,18 @@ def scan_folder_files(
                 or file_version != tagger_version  # Tagged with different model suite
             )
 
+            # Override: files too short for ML get marked as done at scan time
+            tagging_skipped_reason: str | None = None
+            duration = metadata.get("duration")
+            if (
+                needs_tagging
+                and min_duration_s is not None
+                and duration is not None
+                and duration < min_duration_s
+            ):
+                needs_tagging = False
+                tagging_skipped_reason = "too_short"
+
             # Compute namespace tracking fields
             nom_tags = metadata.get("nom_tags", {})
             has_nomarr_namespace = bool(nom_tags)
@@ -145,6 +161,7 @@ def scan_folder_files(
                 "duration_seconds": metadata.get("duration"),
                 "title": metadata.get("title"),  # Title is direct metadata, not derived
                 "needs_tagging": needs_tagging,
+                "tagging_skipped_reason": tagging_skipped_reason,
                 "is_valid": True,
                 "scanned_at": now_ms().value,
                 "has_nomarr_namespace": has_nomarr_namespace,

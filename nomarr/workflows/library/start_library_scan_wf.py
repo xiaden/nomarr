@@ -39,6 +39,7 @@ def start_library_scan_workflow(
     scan_type: Literal["quick", "full"] = "quick",
     models_dir: str | None = None,
     namespace: str = "nom",
+    min_duration_s: int | None = None,
 ) -> StartScanResult:
     """Start a library scan, dispatching to the correct workflow.
 
@@ -101,11 +102,13 @@ def start_library_scan_workflow(
     update_scan_progress(db, library_id, status="scanning", progress=0, total=0)
 
     # --- dispatch ---
-    # Build extra kwargs for full scans (tag validation)
+    # Build extra kwargs for scan type
     extra_kwargs: dict[str, Any] = {}
     if scan_type == "full" and models_dir:
         extra_kwargs["models_dir"] = models_dir
         extra_kwargs["namespace"] = namespace
+    if min_duration_s is not None:
+        extra_kwargs["min_duration_s"] = min_duration_s
 
     if background_tasks:
         task_id = f"scan_library_{library_id}"
