@@ -12,7 +12,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # ----------------------------------------------------------------------
 #  User and working directory
 # ----------------------------------------------------------------------
-RUN useradd -m -u 1000 appuser
+# Ubuntu 24.04 CUDA images already have a user at UID 1000 ('ubuntu'),
+# so reuse it or create appuser only if UID is free
+RUN id -nu 1000 >/dev/null 2>&1 && usermod -l appuser -d /home/appuser -m $(id -nu 1000) \
+    || useradd -m -u 1000 appuser
 WORKDIR /app
 
 # ----------------------------------------------------------------------
