@@ -23,7 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # numpy + setuptools (required for essentia Python bindings build)
 RUN python3 -m pip install --no-cache-dir --break-system-packages \
-    numpy==1.26.4 setuptools six
+    numpy==1.26.4 setuptools
 
 # Download TF 2.18.0 GPU C API and create pkg-config file
 # This layer is cached independently of essentia source changes
