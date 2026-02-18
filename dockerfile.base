@@ -23,7 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # numpy + setuptools (required for essentia Python bindings build)
 RUN python3 -m pip install --no-cache-dir --break-system-packages \
-    numpy==1.26.4 setuptools
+    numpy==1.26.4 setuptools six
 
 # Download TF 2.18.0 GPU C API and create pkg-config file
 # This layer is cached independently of essentia source changes
@@ -115,6 +115,7 @@ RUN python3 -m pip install --no-cache-dir --break-system-packages \
     "pytest==8.3.3" \
     "pytest-cov==5.0.0" \
     "psutil==7.2.1" \
+    "six" \
     # Sanity probes
     && python3 -c "import essentia; from essentia.standard import TensorflowPredict2D; print('Essentia:', essentia.__version__)" \
     && python3 -c "import ctypes; tf = ctypes.CDLL('libtensorflow.so.2'); v = tf.TF_Version; v.restype = ctypes.c_char_p; print('TF C API:', v().decode())"
