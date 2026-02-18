@@ -89,6 +89,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends wget \
     && apt-get update \
     && apt-get install -y --no-install-recommends libcudnn9-cuda-12 \
     && rm -rf /tmp/cudnn-keyring.deb /var/cudnn-local-repo-* \
+    && rm -f /etc/apt/sources.list.d/cudnn-local-repo-ubuntu2404-9.3.0.list \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
