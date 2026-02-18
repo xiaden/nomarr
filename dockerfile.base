@@ -8,7 +8,7 @@
 #  Stage 1: Build essentia from source with TF 2.18.0 GPU
 #  Uses cuda-devel for compilation toolchain, discarded after
 # ==============================================================
-FROM nvidia/cuda:12.5.1-devel-ubuntu24.04 AS essentia-builder
+FROM nvidia/cuda:13.1.1-devel-ubuntu24.04 AS essentia-builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -64,7 +64,7 @@ RUN python3 -c "from essentia.standard import MonoLoader, TensorflowPredict2D; p
 # ==============================================================
 #  Stage 2: Runtime image (no build tools, no -dev packages)
 # ==============================================================
-FROM nvidia/cuda:12.5.1-runtime-ubuntu24.04
+FROM nvidia/cuda:13.1.1-runtime-ubuntu24.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
