@@ -79,7 +79,18 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # ----------------------------------------------------------------------
 #  System packages, Python 3.12 (default on 24.04), essentia runtime deps
+#  cuDNN 9.3 for TF 2.18.0 GPU support
 # ----------------------------------------------------------------------
+# Add NVIDIA cuDNN repo and install runtime libs
+RUN apt-get update && apt-get install -y --no-install-recommends wget \
+    && wget -qO /tmp/cudnn-keyring.deb https://developer.download.nvidia.com/compute/cudnn/9.3.0/local_installers/cudnn-local-repo-ubuntu2404-9.3.0_1.0-1_amd64.deb \
+    && dpkg -i /tmp/cudnn-keyring.deb \
+    && cp /var/cudnn-local-repo-ubuntu2404-9.3.0/cudnn-*-keyring.gpg /usr/share/keyrings/ \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends libcudnn9-cuda-12 \
+    && rm -rf /tmp/cudnn-keyring.deb /var/cudnn-local-repo-* \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip \
     cron libsndfile1 ffmpeg sox ca-certificates curl tini \

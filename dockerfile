@@ -62,8 +62,8 @@ ENV NOMARR_MODELS=/app/models \
     TF_CPP_MIN_LOG_LEVEL=2 \
     TF_FORCE_GPU_ALLOW_GROWTH=true \
     TF_GPU_THREAD_MODE=gpu_private \
-    TF_DISABLE_JIT=1 \
-    TF_GPU_ALLOCATOR=cuda_malloc_async
+    TF_GPU_ALLOCATOR=cuda_malloc_async \
+    TF_DISABLE_JIT=1
 
 # ----------------------------------------------------------------------
 #  Healthcheck (internal)
