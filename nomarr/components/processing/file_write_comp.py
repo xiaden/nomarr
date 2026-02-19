@@ -75,6 +75,13 @@ def get_nomarr_tags(
     return db.tags.get_song_tags(file_id, nomarr_only=True)
 
 
+
+# All three mood tier rels that must always be written (or cleared) together.
+# Writing an empty list for a rel deletes any existing edges for it,
+# which prevents stale tiers from persisting when the tier count drops.
+_MOOD_TIER_RELS = ("nom:mood-strict", "nom:mood-regular", "nom:mood-loose")
+
+
 def save_mood_tags(
     db: Database,
     file_id: str,
@@ -82,8 +89,10 @@ def save_mood_tags(
 ) -> int:
     """Write mood-* tags to the database for a file.
 
-    Each tag in *mood_tags* is namespaced with 'nom:' prefix if not
-    already present, then stored via ``set_song_tags``.
+    Always writes all three mood tier keys (mood-strict, mood-regular,
+    mood-loose). Tiers absent from *mood_tags* are explicitly cleared with an
+    empty value list so that previously-written tiers do not persist when the
+    tier count drops after recalibration.
 
     Args:
         db: Database instance
@@ -91,14 +100,21 @@ def save_mood_tags(
         mood_tags: Tags DTO containing mood tags to write
 
     Returns:
-        Number of tags written
+        Number of tiers written with non-empty values
 
     """
-    count = 0
+    # Build lookup: normalised rel -> values
+    written: dict[str, list] = {}
     for tag in mood_tags:
         nomarr_rel = f"nom:{tag.key}" if not tag.key.startswith("nom:") else tag.key
-        db.tags.set_song_tags(file_id, nomarr_rel, tag.value)
-        count += 1
+        written[nomarr_rel] = tag.value
+
+    count = 0
+    for rel in _MOOD_TIER_RELS:
+        values = written.get(rel, [])
+        db.tags.set_song_tags(file_id, rel, values)
+        if values:
+            count += 1
     return count
 
 
@@ -125,12 +141,19 @@ def save_mood_tags_batch(
 
     entries: list[dict] = []
     for file_id, mood_tags in items:
+        # Build a lookup for this file's non-empty tiers
+        written: dict[str, list] = {}
         for tag in mood_tags:
             nomarr_rel = f"nom:{tag.key}" if not tag.key.startswith("nom:") else tag.key
-            entries.append({"song_id": file_id, "rel": nomarr_rel, "values": tag.value})
+            written[nomarr_rel] = tag.value
+        # Always emit all three tiers; absent ones get an empty list (→ delete)
+        entries.extend(
+            {"song_id": file_id, "rel": rel, "values": written.get(rel, [])}
+            for rel in _MOOD_TIER_RELS
+        )
 
     db.tags.set_song_tags_batch(entries)
-    return len(entries)
+    return sum(1 for e in entries if e["values"])
 
 
 # ---------------------------------------------------------------------------
