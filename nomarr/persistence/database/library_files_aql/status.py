@@ -1,9 +1,12 @@
 """Status operations for library_files collection."""
 
+import logging
 from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.arango_client import DatabaseLike
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from arango.cursor import Cursor
@@ -171,15 +174,10 @@ class LibraryFilesStatusMixin:
         duration_filter = ""
         if min_duration_s is not None and not allow_short:
             # Filter out files with duration < min_duration_s
-            # Also include files with NULL duration (legacy/missing metadata)
-            # to avoid silently dropping them - they'll be checked at ML time
             duration_filter = f"""
                     FILTER file.duration_seconds == null OR file.duration_seconds >= {min_duration_s}"""
 
-        cursor = cast(
-            "Cursor",
-            self.db.aql.execute(
-                f"""\
+        query = f"""\
                 FOR file IN library_files
                     FILTER file.needs_tagging == true
                     FILTER file.is_valid == true{duration_filter}
@@ -188,7 +186,45 @@ class LibraryFilesStatusMixin:
                     SORT file._key
                     LIMIT 1
                     RETURN file
-                """,
-            ),
+                """
+        logger.debug("[DB] discover_next_unprocessed_file query: %s", query.strip())
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(query),
         )
-        return next(iter(cursor), None)
+        # Convert cursor to list to see all results
+        results = list(cursor)
+        logger.debug("[DB] discover_next_unprocessed_file raw results count: %d", len(results))
+        result = results[0] if results else None
+        if result:
+            logger.info("[DB] discover_next_unprocessed_file: found %s", result.get("_id"))
+        else:
+            # Debug query: count files by filter stage
+            diag = cast(
+                "Cursor",
+                self.db.aql.execute(
+                    """\
+                    LET total = LENGTH(FOR f IN library_files RETURN 1)
+                    LET needs_tagging = LENGTH(FOR f IN library_files FILTER f.needs_tagging == true RETURN 1)
+                    LET is_valid = LENGTH(FOR f IN library_files FILTER f.needs_tagging == true AND f.is_valid == true RETURN 1)
+                    LET unclaimed = LENGTH(
+                        FOR f IN library_files
+                            FILTER f.needs_tagging == true AND f.is_valid == true
+                            LET claim_key = CONCAT("claim_", f._key)
+                            FILTER DOCUMENT(CONCAT("worker_claims/", claim_key)) == null
+                            RETURN 1
+                    )
+                    RETURN {total, needs_tagging, is_valid, unclaimed}
+                    """,
+                ),
+            )
+            diag_result: dict[str, Any] = next(iter(diag), {})
+            logger.debug(
+                "[DB] discover_next_unprocessed_file: no files found. "
+                "Diagnostics: total=%s, needs_tagging=%s, is_valid=%s, unclaimed=%s",
+                diag_result.get("total"),
+                diag_result.get("needs_tagging"),
+                diag_result.get("is_valid"),
+                diag_result.get("unclaimed"),
+            )
+        return result
