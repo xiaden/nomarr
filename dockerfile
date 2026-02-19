@@ -59,11 +59,12 @@ ENV NOMARR_MODELS=/app/models \
     NOMARR_CONFIG=/app/config/config.yaml \
     PYTHONPATH=/app \
     PORT=8356 \
-    TF_CPP_MIN_LOG_LEVEL=2 \
+    TF_CPP_MIN_LOG_LEVEL=3 \
+    TF_ENABLE_ONEDNN_OPTS=0 \
     TF_FORCE_GPU_ALLOW_GROWTH=true \
     TF_GPU_THREAD_MODE=gpu_private \
     TF_GPU_ALLOCATOR=cuda_malloc_async \
-    XLA_FLAGS="--xla_gpu_cuda_data_dir=/usr/local/cuda"
+    XLA_FLAGS=--xla_gpu_cuda_data_dir=/usr/local/cuda
 
 # ----------------------------------------------------------------------
 #  Healthcheck (internal)
