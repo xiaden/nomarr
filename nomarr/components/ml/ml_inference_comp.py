@@ -5,7 +5,6 @@ Handles embedding computation, head prediction, and batched processing.
 
 from __future__ import annotations
 
-import contextlib
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -14,13 +13,6 @@ import numpy as np
 from nomarr.components.ml import ml_backend_essentia_comp as backend_essentia
 
 logger = logging.getLogger(__name__)
-try:
-    import tensorflow as tf
-
-    HAVE_TF = True
-except ImportError:
-    HAVE_TF = False
-    tf = None  # type: ignore[assignment]
 
 if backend_essentia.essentia_tf is not None:
     TensorflowPredict2D = backend_essentia.essentia_tf.TensorflowPredict2D
@@ -49,6 +41,7 @@ else:
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from nomarr.components.ml.ml_cache_comp import DevicePlacement
     from nomarr.components.ml.ml_discovery_comp import HeadInfo
     from nomarr.helpers.dto.ml_dto import ComputeEmbeddingsForBackboneParams
 
@@ -57,40 +50,53 @@ if TYPE_CHECKING:
 
 
 
-def _create_backbone_predictor(backbone: str, emb_graph: str) -> Any:
+def _create_backbone_predictor(backbone: str, emb_graph: str, device_placement: DevicePlacement = "gpu") -> Any:
     """Construct a backbone embedding predictor.
 
     This is the expensive operation (graph parse + session creation) that should
-    be done once and cached. Runs on GPU for maximum throughput.
+    be done once and cached. Session persists after creation (no-op reset).
+
+    Predictor instantiation triggers GPU enumeration from TensorFlow's C++ library,
+    which emits logs directly to stderr before absl::InitializeLog(). We filter
+    these at the fd level to keep logs clean.
+
+    Args:
+        backbone: Backbone name (yamnet, vggish, effnet, musicnn)
+        emb_graph: Path to the embedding model graph file
+        device_placement: Device for TF session ("cpu" or "gpu")
     """
     backend_essentia.require()
     from nomarr.components.ml.ml_discovery_comp import get_embedding_output_node
 
     emb_output = get_embedding_output_node(backbone)
-    if backbone == "yamnet":
-        if TensorflowPredictVGGish is None:
-            msg = "TensorflowPredictVGGish not available"
+
+    # Wrap predictor creation in stderr filter to suppress C++ GPU logs
+    with backend_essentia.filter_tf_stderr():
+        if backbone == "yamnet":
+            if TensorflowPredictVGGish is None:
+                msg = "TensorflowPredictVGGish not available"
+                raise RuntimeError(msg)
+            predictor = TensorflowPredictVGGish(graphFilename=emb_graph, input="melspectrogram", output=emb_output, devicePlacement=device_placement)
+        elif backbone == "vggish":
+            if TensorflowPredictVGGish is None:
+                msg = "TensorflowPredictVGGish not available"
+                raise RuntimeError(msg)
+            predictor = TensorflowPredictVGGish(graphFilename=emb_graph, output=emb_output, devicePlacement=device_placement)
+        elif backbone == "effnet":
+            if TensorflowPredictEffnetDiscogs is None:
+                msg = "TensorflowPredictEffnetDiscogs not available"
+                raise RuntimeError(msg)
+            predictor = TensorflowPredictEffnetDiscogs(graphFilename=emb_graph, output=emb_output, patchHopSize=93, devicePlacement=device_placement)
+        elif backbone == "musicnn":
+            if TensorflowPredictMusiCNN is None:
+                msg = "TensorflowPredictMusiCNN not available"
+                raise RuntimeError(msg)
+            predictor = TensorflowPredictMusiCNN(graphFilename=emb_graph, output=emb_output, patchHopSize=128, devicePlacement=device_placement)
+        else:
+            msg = f"Unsupported backbone {backbone}"
             raise RuntimeError(msg)
-        predictor = TensorflowPredictVGGish(graphFilename=emb_graph, input="melspectrogram", output=emb_output)
-    elif backbone == "vggish":
-        if TensorflowPredictVGGish is None:
-            msg = "TensorflowPredictVGGish not available"
-            raise RuntimeError(msg)
-        predictor = TensorflowPredictVGGish(graphFilename=emb_graph, output=emb_output)
-    elif backbone == "effnet":
-        if TensorflowPredictEffnetDiscogs is None:
-            msg = "TensorflowPredictEffnetDiscogs not available"
-            raise RuntimeError(msg)
-        predictor = TensorflowPredictEffnetDiscogs(graphFilename=emb_graph, output=emb_output, patchHopSize=93)
-    elif backbone == "musicnn":
-        if TensorflowPredictMusiCNN is None:
-            msg = "TensorflowPredictMusiCNN not available"
-            raise RuntimeError(msg)
-        predictor = TensorflowPredictMusiCNN(graphFilename=emb_graph, output=emb_output, patchHopSize=128)
-    else:
-        msg = f"Unsupported backbone {backbone}"
-        raise RuntimeError(msg)
-    logger.debug(f"[inference] Created backbone predictor for {backbone}")
+
+    logger.debug(f"[inference] Created backbone predictor for {backbone} (device={device_placement})")
     return predictor
 
 
@@ -116,7 +122,12 @@ def compute_embeddings_for_backbone(params: ComputeEmbeddingsForBackboneParams) 
     """
     backend_essentia.require()
     from nomarr.components.ml.ml_audio_comp import load_audio_mono, should_skip_short
-    from nomarr.components.ml.ml_cache_comp import cache_backbone_predictor, get_cached_backbone_predictor
+    from nomarr.components.ml.ml_cache_comp import (
+        cache_backbone_predictor,
+        evict_backbone_predictor,
+        get_cached_backbone_device,
+        get_cached_backbone_predictor,
+    )
 
     if params.pre_loaded_audio is not None:
         audio_result = params.pre_loaded_audio
@@ -135,15 +146,26 @@ def compute_embeddings_for_backbone(params: ComputeEmbeddingsForBackboneParams) 
     logger.debug(
         f"[inference] Processing full track: {audio_result.duration:.1f}s ({len(audio_result.waveform)} samples @ {audio_result.sample_rate}Hz)",
     )
+    # Device-aware cache: check if cached predictor is on the desired device
+    desired_device: DevicePlacement = "gpu" if params.prefer_gpu else "cpu"
     if not params.prefer_gpu:
         logger.info(f"[inference] CPU spill requested for {params.backbone} (GPU VRAM pressure detected)")
-    emb_predictor = get_cached_backbone_predictor(params.backbone, params.emb_graph)
-    if emb_predictor is None:
-        logger.info(f"[inference] Creating {params.backbone} backbone predictor (device=GPU, not cached)")
-        emb_predictor = _create_backbone_predictor(params.backbone, params.emb_graph)
-        cache_backbone_predictor(params.backbone, params.emb_graph, emb_predictor)
+    cached_device = get_cached_backbone_device(params.backbone, params.emb_graph)
+    if cached_device is not None and cached_device != desired_device:
+        # Device transition: evict and recreate
+        logger.info(f"[inference] Device transition for {params.backbone}: {cached_device} → {desired_device}")
+        evict_backbone_predictor(params.backbone, params.emb_graph)
+        emb_predictor = _create_backbone_predictor(params.backbone, params.emb_graph, device_placement=desired_device)
+        cache_backbone_predictor(params.backbone, params.emb_graph, emb_predictor, device=desired_device)
+    elif cached_device is not None:
+        # Cached on correct device
+        emb_predictor = get_cached_backbone_predictor(params.backbone, params.emb_graph)
+        logger.debug(f"[inference] Using cached {params.backbone} backbone predictor (device={cached_device})")
     else:
-        logger.debug(f"[inference] Using cached {params.backbone} backbone predictor (device=GPU)")
+        # Not cached — create fresh
+        logger.info(f"[inference] Creating {params.backbone} backbone predictor (device={desired_device}, not cached)")
+        emb_predictor = _create_backbone_predictor(params.backbone, params.emb_graph, device_placement=desired_device)
+        cache_backbone_predictor(params.backbone, params.emb_graph, emb_predictor, device=desired_device)
     wave_f32 = audio_result.waveform.astype(np.float32)
     emb = emb_predictor(wave_f32)
     emb = np.asarray(emb, dtype=np.float32)
@@ -170,12 +192,19 @@ def compute_embeddings_for_backbone(params: ComputeEmbeddingsForBackboneParams) 
 
 
 
-def _create_head_only_predictor(head_info: HeadInfo) -> Any:
+def _create_head_only_predictor(head_info: HeadInfo, device_placement: DevicePlacement = "cpu") -> Any:
     """Construct a TensorflowPredict2D object for a head model.
 
     This is the expensive operation (graph parse + session creation) that should
-    be done once and cached. Runs on CPU to avoid GPU VRAM contention with
-    backbone models.
+    be done once and cached. Session persists after creation (no-op reset).
+
+    Predictor instantiation triggers GPU enumeration from TensorFlow's C++ library,
+    which emits logs directly to stderr before absl::InitializeLog(). We filter
+    these at the fd level to keep logs clean.
+
+    Args:
+        head_info: Head metadata and model paths
+        device_placement: Device for TF session ("cpu" or "gpu")
     """
     backend_essentia.require()
     from nomarr.components.ml.ml_discovery_comp import get_head_output_node
@@ -183,18 +212,21 @@ def _create_head_only_predictor(head_info: HeadInfo) -> Any:
     head_graph = head_info.sidecar.graph_abs("")
     head_output = get_head_output_node(head_info.head_type, head_info.sidecar)
     head_input = head_info.sidecar.head_input_name()
-    device_context = tf.device("/CPU:0") if HAVE_TF and tf is not None else contextlib.nullcontext()
-    with device_context:
+
+    # Wrap predictor creation in stderr filter to suppress C++ GPU logs
+    with backend_essentia.filter_tf_stderr():
         if head_input:
-            head_predictor = TensorflowPredict2D(graphFilename=head_graph, input=head_input, output=head_output)
+            head_predictor = TensorflowPredict2D(graphFilename=head_graph, input=head_input, output=head_output, devicePlacement=device_placement)
         else:
-            head_predictor = TensorflowPredict2D(graphFilename=head_graph, output=head_output)
-    logger.debug(f"[inference] Created head-only predictor for {head_info.name} ({head_info.backbone}/{head_info.head_type})")
+            head_predictor = TensorflowPredict2D(graphFilename=head_graph, output=head_output, devicePlacement=device_placement)
+
+    logger.debug(f"[inference] Created head-only predictor for {head_info.name} ({head_info.backbone}/{head_info.head_type}) device={device_placement}")
     return head_predictor
 
 
 def make_head_only_predictor_batched(
     head_info: HeadInfo, embeddings_2d: np.ndarray, batch_size: int = 11,
+    device_placement: DevicePlacement = "cpu",
 ) -> Callable[[], np.ndarray]:
     """Create a batched predictor that processes segments in fixed-size batches.
     Returns a function that takes no args and returns predictions for all segments.
@@ -203,20 +235,41 @@ def make_head_only_predictor_batched(
     use). The TensorflowPredict2D construction is expensive (model graph parse +
     session setup), but once cached, reuse is essentially free.
 
+    Supports device transitions: if cached on a different device than requested,
+    evicts and recreates on the desired device.
+
     Args:
         head_info: Head metadata and model paths
         embeddings_2d: Pre-computed embeddings [num_segments, embed_dim]
         batch_size: Fixed batch size for inference (default 11 segments = 60s)
+        device_placement: Device for TF session ("cpu" or "gpu")
 
     Returns: Callable that returns [num_segments, num_classes] array
 
     """
-    from nomarr.components.ml.ml_cache_comp import cache_head_predictor, get_cached_head_predictor
+    from nomarr.components.ml.ml_cache_comp import (
+        cache_head_predictor,
+        evict_head_predictor,
+        get_cached_head_device,
+        get_cached_head_predictor,
+    )
 
-    head_predictor = get_cached_head_predictor(head_info)
-    if head_predictor is None:
-        head_predictor = _create_head_only_predictor(head_info)
-        cache_head_predictor(head_info, head_predictor)
+    # Device-aware cache: check if cached predictor is on the desired device
+    cached_device = get_cached_head_device(head_info)
+    if cached_device is not None and cached_device != device_placement:
+        # Device transition: evict and recreate
+        logger.info(f"[inference] Device transition for head {head_info.name}: {cached_device} → {device_placement}")
+        evict_head_predictor(head_info)
+        head_predictor = _create_head_only_predictor(head_info, device_placement=device_placement)
+        cache_head_predictor(head_info, head_predictor, device=device_placement)
+    elif cached_device is not None:
+        # Cached on correct device
+        head_predictor = get_cached_head_predictor(head_info)
+        logger.debug(f"[inference] Using cached head predictor for {head_info.name} (device={cached_device})")
+    else:
+        # Not cached — create fresh
+        head_predictor = _create_head_only_predictor(head_info, device_placement=device_placement)
+        cache_head_predictor(head_info, head_predictor, device=device_placement)
     embed_dim = head_info.sidecar.input_dim()
 
     def predict_all_segments() -> np.ndarray:

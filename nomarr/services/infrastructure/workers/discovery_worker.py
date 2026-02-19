@@ -425,6 +425,7 @@ class DiscoveryWorker(multiprocessing.Process):
                         config=config,
                         db=db,
                         file_id=file_id,
+                        prefer_gpu=True,
                     )
                     logger.debug("[%s] Workflow returned for %s", self.worker_id, file_path)
 

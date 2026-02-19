@@ -184,6 +184,7 @@ def _compute_embeddings_for_backbone(
     backbone: str, first_head: HeadInfo, library_path: LibraryPath, config: ProcessorConfig,
     pre_loaded_audio: LoadAudioMonoResult | None = None,
     pre_computed_chromaprint: str | None = None,
+    prefer_gpu: bool = True,
 ) -> tuple[np.ndarray, float, str]:
     """Compute embeddings for a single backbone.
 
@@ -219,6 +220,7 @@ def _compute_embeddings_for_backbone(
         allow_short=config.allow_short,
         pre_loaded_audio=pre_loaded_audio,
         pre_computed_chromaprint=pre_computed_chromaprint,
+        prefer_gpu=prefer_gpu,
     )
     embeddings_2d, duration, chromaprint = compute_embeddings_for_backbone(params=params)
     logger.debug(
@@ -477,7 +479,7 @@ def select_tags_for_file(all_tags: dict[str, Any], file_write_mode: str) -> dict
     return filtered
 
 
-def process_file_workflow(path: str, config: ProcessorConfig, db: Database | None = None, file_id: str | None = None) -> ProcessFileResult:
+def process_file_workflow(path: str, config: ProcessorConfig, db: Database | None = None, file_id: str | None = None, prefer_gpu: bool = True) -> ProcessFileResult:
     """Process an audio file through the complete tagging pipeline.
 
     This is the main workflow entrypoint for audio file processing. It is a pure
@@ -648,6 +650,7 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
             backbone, first_head, library_path, config,
             pre_loaded_audio=shared_audio,
             pre_computed_chromaprint=shared_chromaprint,
+            prefer_gpu=prefer_gpu,
         )
         elapsed_ms = internal_ms().value - t0.value
         return (backbone, backbone_heads, embeddings_2d, duration, chromaprint_hash, elapsed_ms)

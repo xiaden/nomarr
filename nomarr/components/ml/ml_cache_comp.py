@@ -7,6 +7,9 @@ Two cache tiers (both warmed at startup, both evicted together):
 1. Head-only cache: TensorflowPredict2D objects (embedding → predictions)
 2. Backbone cache: Embedding-only predictors (waveform → embeddings)
 
+Each cache entry tracks its device placement ("cpu" or "gpu") via ``CachedPredictor``.
+Per-item eviction supports device transitions without clearing the entire cache.
+
 Eviction is state-driven, not timestamp-driven:
 - ``mark_active()`` signals that a worker is using the cache (processing a file).
 - ``mark_idle()``   signals that the worker finished and is polling for work.
@@ -19,13 +22,35 @@ from __future__ import annotations
 import enum
 import logging
 import threading
-from typing import TYPE_CHECKING, Any
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Literal
 
 from nomarr.helpers.time_helper import internal_ms
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from nomarr.components.ml.ml_discovery_comp import HeadInfo
+
+
+# ---------------------------------------------------------------------------
+# Device placement
+# ---------------------------------------------------------------------------
+
+DevicePlacement = Literal["cpu", "gpu"]
+"""Device placement for a cached predictor. Mirrors Essentia C++ values."""
+
+
+@dataclass(slots=True)
+class CachedPredictor:
+    """Wrapper for a cached predictor with device tracking."""
+
+    predictor: Any
+    device: DevicePlacement
+
+
+# ---------------------------------------------------------------------------
+# Cache lifecycle state
+# ---------------------------------------------------------------------------
 
 
 class CacheState(enum.Enum):
@@ -35,8 +60,8 @@ class CacheState(enum.Enum):
     ACTIVE = "active"
 
 
-_HEAD_ONLY_CACHE: dict[str, Any] = {}  # head-only TensorflowPredict2D objects
-_BACKBONE_CACHE: dict[str, Any] = {}  # backbone embedding predictors
+_HEAD_ONLY_CACHE: dict[str, CachedPredictor] = {}  # head-only TensorflowPredict2D objects
+_BACKBONE_CACHE: dict[str, CachedPredictor] = {}  # backbone embedding predictors
 _CACHE_INITIALIZED = False
 _CACHE_STATE: CacheState = CacheState.IDLE
 _CACHE_IDLE_SINCE: int = 0  # ms timestamp when state last became IDLE
@@ -90,17 +115,47 @@ def get_head_only_cache_size() -> int:
 
 
 def get_cached_head_predictor(head_info: HeadInfo) -> Any | None:
-    """Get cached head-only predictor if available."""
+    """Get cached head-only predictor if available.
+
+    Returns the raw predictor object (transparent unwrapping).
+    """
     key = cache_key(head_info)
-    return _HEAD_ONLY_CACHE.get(key)
+    entry = _HEAD_ONLY_CACHE.get(key)
+    return entry.predictor if entry is not None else None
 
 
-def cache_head_predictor(head_info: HeadInfo, predictor: Any) -> None:
+def get_cached_head_device(head_info: HeadInfo) -> DevicePlacement | None:
+    """Get device placement of a cached head predictor.
+
+    Returns None if not cached.
+    """
+    key = cache_key(head_info)
+    entry = _HEAD_ONLY_CACHE.get(key)
+    return entry.device if entry is not None else None
+
+
+def cache_head_predictor(head_info: HeadInfo, predictor: Any, device: DevicePlacement = "cpu") -> None:
     """Cache a head-only TensorflowPredict2D predictor for reuse."""
     key = cache_key(head_info)
     with _CACHE_LOCK:
-        _HEAD_ONLY_CACHE[key] = predictor
-        logger.debug(f"[cache] Cached head-only predictor: {head_info.name}")
+        _HEAD_ONLY_CACHE[key] = CachedPredictor(predictor=predictor, device=device)
+        logger.debug(f"[cache] Cached head-only predictor: {head_info.name} (device={device})")
+
+
+def evict_head_predictor(head_info: HeadInfo) -> bool:
+    """Evict a single head predictor from cache.
+
+    Used for device transitions (evict old device, recreate on new device).
+    Returns True if an entry was evicted, False if key was absent.
+    """
+    key = cache_key(head_info)
+    with _CACHE_LOCK:
+        entry = _HEAD_ONLY_CACHE.pop(key, None)
+    if entry is not None:
+        logger.debug(f"[cache] Evicted head predictor: {head_info.name} (was device={entry.device})")
+        del entry
+        return True
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -109,17 +164,47 @@ def cache_head_predictor(head_info: HeadInfo, predictor: Any) -> None:
 
 
 def get_cached_backbone_predictor(backbone: str, emb_graph: str) -> Any | None:
-    """Get cached backbone predictor if available."""
+    """Get cached backbone predictor if available.
+
+    Returns the raw predictor object (transparent unwrapping).
+    """
     key = backbone_cache_key(backbone, emb_graph)
-    return _BACKBONE_CACHE.get(key)
+    entry = _BACKBONE_CACHE.get(key)
+    return entry.predictor if entry is not None else None
 
 
-def cache_backbone_predictor(backbone: str, emb_graph: str, predictor: Any) -> None:
+def get_cached_backbone_device(backbone: str, emb_graph: str) -> DevicePlacement | None:
+    """Get device placement of a cached backbone predictor.
+
+    Returns None if not cached.
+    """
+    key = backbone_cache_key(backbone, emb_graph)
+    entry = _BACKBONE_CACHE.get(key)
+    return entry.device if entry is not None else None
+
+
+def cache_backbone_predictor(backbone: str, emb_graph: str, predictor: Any, device: DevicePlacement = "gpu") -> None:
     """Cache a backbone predictor for reuse."""
     key = backbone_cache_key(backbone, emb_graph)
     with _CACHE_LOCK:
-        _BACKBONE_CACHE[key] = predictor
-        logger.debug(f"[cache] Cached backbone predictor: {backbone}")
+        _BACKBONE_CACHE[key] = CachedPredictor(predictor=predictor, device=device)
+        logger.debug(f"[cache] Cached backbone predictor: {backbone} (device={device})")
+
+
+def evict_backbone_predictor(backbone: str, emb_graph: str) -> bool:
+    """Evict a single backbone predictor from cache.
+
+    Used for device transitions (evict old device, recreate on new device).
+    Returns True if an entry was evicted, False if key was absent.
+    """
+    key = backbone_cache_key(backbone, emb_graph)
+    with _CACHE_LOCK:
+        entry = _BACKBONE_CACHE.pop(key, None)
+    if entry is not None:
+        logger.debug(f"[cache] Evicted backbone predictor: {backbone} (was device={entry.device})")
+        del entry
+        return True
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -132,8 +217,8 @@ def warmup_predictor_cache(models_dir: str, cache_idle_timeout: int = 40) -> int
     Returns the total number of predictors cached.
 
     Warms both tiers:
-    1. Head-only predictors (TensorflowPredict2D, embedding -> head)
-    2. Backbone predictors (embedding-only, waveform -> embeddings)
+    1. Head-only predictors (TensorflowPredict2D, embedding -> head) on CPU
+    2. Backbone predictors (embedding-only, waveform -> embeddings) on GPU
 
     Backbone graphs are derived from discovered heads (each HeadInfo knows its
     backbone name + embedding_graph path), so no separate backbone discovery needed.
@@ -159,21 +244,22 @@ def warmup_predictor_cache(models_dir: str, cache_idle_timeout: int = 40) -> int
     logger.info("[cache] Building model cache (Essentia warnings normal during warmup)...")
     start = internal_ms()
 
-    # 1. Head-only predictors
+    # 1. Head-only predictors (default: CPU)
     head_cached = 0
     for idx, head_info in enumerate(heads, 1):
         try:
             key = cache_key(head_info)
             if key not in _HEAD_ONLY_CACHE:
-                _HEAD_ONLY_CACHE[key] = _create_head_only_predictor(head_info)
+                predictor = _create_head_only_predictor(head_info, device_placement="cpu")
+                _HEAD_ONLY_CACHE[key] = CachedPredictor(predictor=predictor, device="cpu")
                 head_cached += 1
             logger.debug(
-                f"[cache] Head [{idx}/{len(heads)}]: '{head_info.name}' ({head_info.backbone}/{head_info.head_type})"
+                f"[cache] Head [{idx}/{len(heads)}]: '{head_info.name}' ({head_info.backbone}/{head_info.head_type}) device=cpu"
             )
         except Exception as e:
             logger.exception(f"[cache] Failed to cache head predictor for {head_info.name}: {e}")
 
-    # 2. Backbone predictors (unique backbone+graph pairs from heads)
+    # 2. Backbone predictors (default: GPU)
     backbone_cached = 0
     seen_backbones: set[str] = set()
     for head_info in heads:
@@ -183,9 +269,10 @@ def warmup_predictor_cache(models_dir: str, cache_idle_timeout: int = 40) -> int
         seen_backbones.add(bb_key)
         try:
             if bb_key not in _BACKBONE_CACHE:
-                _BACKBONE_CACHE[bb_key] = _create_backbone_predictor(head_info.backbone, head_info.embedding_graph)
+                predictor = _create_backbone_predictor(head_info.backbone, head_info.embedding_graph, device_placement="gpu")
+                _BACKBONE_CACHE[bb_key] = CachedPredictor(predictor=predictor, device="gpu")
                 backbone_cached += 1
-                logger.debug(f"[cache] Backbone: {head_info.backbone}")
+                logger.debug(f"[cache] Backbone: {head_info.backbone} device=gpu")
         except Exception as e:
             logger.exception(f"[cache] Failed to cache backbone predictor for {head_info.backbone}: {e}")
 
@@ -194,7 +281,7 @@ def warmup_predictor_cache(models_dir: str, cache_idle_timeout: int = 40) -> int
     _CACHE_IDLE_SINCE = internal_ms().value
     total = get_cache_size()
     logger.info(
-        f"[cache] Predictor cache ready: {head_cached} heads + {backbone_cached} backbones = {total} total in {elapsed:.0f}ms"
+        f"[cache] Predictor cache ready: {head_cached} heads (cpu) + {backbone_cached} backbones (gpu) = {total} total in {elapsed:.0f}ms"
     )
     if len(_HEAD_ONLY_CACHE) != len(heads):
         cached = set(_HEAD_ONLY_CACHE.keys())
