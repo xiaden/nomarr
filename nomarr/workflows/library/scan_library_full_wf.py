@@ -30,6 +30,7 @@ from nomarr.components.library.scan_lifecycle_comp import (
     update_scan_progress,
     upsert_scanned_files,
 )
+from nomarr.components.library.validate_scan_state_comp import validate_unchanged_files
 from nomarr.components.metadata import seed_entities_for_scan_batch
 from nomarr.helpers.time_helper import internal_ms, now_ms
 from nomarr.workflows.library.validate_library_tags_wf import validate_library_tags_workflow
@@ -245,6 +246,14 @@ def scan_library_full_workflow(
             except Exception as e:
                 logger.warning("Tag validation failed: %s", e)
                 warnings.append(f"Tag validation error: {e}")
+
+        # Step 8c — Validate scan state for unchanged files (heal short files)
+        if min_duration_s is not None:
+            try:
+                validation_stats = validate_unchanged_files(db, library_id, min_duration_s)
+                stats["short_files_healed"] = validation_stats.short_files_healed
+            except Exception as e:
+                logger.warning("Scan state validation failed: %s", e)
 
         # Step 9 — Finalize
         scan_duration = internal_ms().value - start_time.value
