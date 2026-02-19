@@ -35,6 +35,7 @@ USAGE:
 from __future__ import annotations
 
 import logging
+import threading
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -90,6 +91,14 @@ class BatchContext:
         writer: Reusable TagWriter instance
         pending_folders: Folders needing mtime update after batch completes.
             Maps folder_abs_str -> (library_id, library_root).
+        prefetched_file_docs: Optional pre-fetched file records keyed by path.
+            When populated, _load_library_state uses it instead of DB queries.
+        prefetched_tags: Optional pre-fetched nomarr tags keyed by file_id.
+            When populated, avoids per-file tag DB queries.
+        prefetched_stats: Optional pre-fetched segment stats keyed by file_id.
+            When populated, avoids per-file stats DB queries.
+        pending_mood_tags: Accumulated (file_id, mood_tags) for deferred batch write.
+        pending_calibration_hashes: Accumulated (file_id, hash) for deferred batch write.
 
     """
 
@@ -99,14 +108,29 @@ class BatchContext:
     library_roots: dict[str, Path]
     writer: TagWriter
     pending_folders: dict[str, tuple[str, Path]] = field(default_factory=dict)
+    prefetched_file_docs: dict[str, dict[str, Any]] | None = None
+    prefetched_tags: dict[str, Tags] | None = None
+    prefetched_stats: dict[str, list[dict[str, Any]]] | None = None
+    pending_mood_tags: list[tuple[str, Tags]] = field(default_factory=list)
+    pending_calibration_hashes: list[tuple[str, str]] = field(default_factory=list)
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
-def _load_library_state(db: Database, file_path: str, namespace: str) -> LoadLibraryStateResult:
+def _load_library_state(
+    db: Database,
+    file_path: str,
+    namespace: str,
+    batch_ctx: BatchContext | None = None,
+) -> LoadLibraryStateResult:
     """Load file metadata and tags from library database.
+
+    When ``batch_ctx`` is supplied and its prefetched caches are populated,
+    all DB round-trips are bypassed.
 
     Args:
         db: Database instance
         file_path: Path to audio file
         namespace: Tag namespace
+        batch_ctx: Optional batch context with pre-fetched data.
 
     Returns:
         LoadLibraryStateResult with file_id, all_tags, and chromaprint
@@ -115,13 +139,25 @@ def _load_library_state(db: Database, file_path: str, namespace: str) -> LoadLib
         FileNotFoundError: If file not found in library database
 
     """
-    library_file = get_library_file(db, file_path)
+    # Use prefetched file doc when available
+    if batch_ctx is not None and batch_ctx.prefetched_file_docs is not None:
+        library_file = batch_ctx.prefetched_file_docs.get(file_path)
+    else:
+        library_file = get_library_file(db, file_path)
+
     if not library_file:
         msg = f"File not in library: {file_path}"
         raise FileNotFoundError(msg)
+
     file_id = library_file["_id"]
     chromaprint = library_file.get("chromaprint")
-    tags = get_nomarr_tags(db, file_id)
+
+    # Use prefetched tags when available
+    if batch_ctx is not None and batch_ctx.prefetched_tags is not None:
+        tags = batch_ctx.prefetched_tags.get(str(file_id), Tags(items=()))
+    else:
+        tags = get_nomarr_tags(db, file_id)
+
     all_tags = {}
     for tag in tags:
         rel = tag.key
@@ -211,8 +247,9 @@ def _update_db_and_file(db: Database, file_id: str, file_path: str, namespace: s
             defers folder mtime updates.
 
     """
-    count = save_mood_tags(db, file_id, mood_tags)
-    logger.debug(f"[calibrated_tags] Updated {count} mood tags in DB")
+    count = save_mood_tags(db, file_id, mood_tags) if batch_ctx is None else 0
+    if batch_ctx is None:
+        logger.debug(f"[calibrated_tags] Updated {count} mood tags in DB")
 
     if batch_ctx is not None:
         # Batch mode: skip expensive per-file library lookups
@@ -243,14 +280,15 @@ def _update_db_and_file(db: Database, file_id: str, file_path: str, namespace: s
                 library_id=matched_library_id,
                 status="valid",
             )
-            result = batch_ctx.writer.write_safe(library_path, mood_tags, matched_root, chromaprint)
+            result = batch_ctx.writer.write_safe(library_path, mood_tags, matched_root, chromaprint, verify_audio=False)
             if not result.success:
                 msg = f"Safe write failed: {result.error}"
                 raise RuntimeError(msg)
-            # Defer folder mtime update — collect for batch processing
+            # Defer folder mtime update — collect for batch processing (lock for thread safety)
             folder_key = str(file_abs.parent)
-            if folder_key not in batch_ctx.pending_folders:
-                batch_ctx.pending_folders[folder_key] = (matched_library_id, matched_root)
+            with batch_ctx._lock:
+                if folder_key not in batch_ctx.pending_folders:
+                    batch_ctx.pending_folders[folder_key] = (matched_library_id, matched_root)
         elif not chromaprint:
             logger.warning("[calibrated_tags] No chromaprint - using unsafe direct write")
             writer = batch_ctx.writer
@@ -340,7 +378,7 @@ def write_calibrated_tags_wf(db: Database, params: WriteCalibratedTagsParams, *,
     namespace = params.namespace
     version_tag_key = params.version_tag_key
     logger.debug(f"[calibrated_tags] Processing {file_path}")
-    library_state = _load_library_state(db, file_path, namespace)
+    library_state = _load_library_state(db, file_path, namespace, batch_ctx=batch_ctx)
     file_id = library_state.file_id
     all_tags = library_state.all_tags
     chromaprint = library_state.chromaprint
@@ -354,10 +392,13 @@ def write_calibrated_tags_wf(db: Database, params: WriteCalibratedTagsParams, *,
     heads: list[Any] | None = batch_ctx.heads if batch_ctx is not None else None
     calibrations = batch_ctx.calibrations if batch_ctx is not None else _load_calibrations_from_db(db)
 
-    # Load segment_scores_stats from DB for faithful tier reconstruction
-    segment_stats_docs = db.segment_scores_stats.get_stats_for_file(str(file_id))
+    # Load segment_scores_stats — use prefetched bulk data if available
+    if batch_ctx is not None and batch_ctx.prefetched_stats is not None:
+        stats_list = batch_ctx.prefetched_stats.get(str(file_id), [])
+    else:
+        stats_list = db.segment_scores_stats.get_stats_for_file(str(file_id))
     segment_stats_by_head: dict[str, list[dict[str, Any]]] = {}
-    for doc in segment_stats_docs:
+    for doc in stats_list:
         head_name = doc.get("head_name")
         label_stats = doc.get("label_stats", [])
         if head_name and label_stats:
@@ -392,13 +433,21 @@ def write_calibrated_tags_wf(db: Database, params: WriteCalibratedTagsParams, *,
     mood_tags = _compute_mood_tags(head_outputs, calibrations)
     if not mood_tags:
         return
-    _update_db_and_file(db, str(file_id), file_path, namespace, mood_tags, chromaprint, batch_ctx=batch_ctx)
 
-    # Update calibration hash
+    # In batch mode, defer DB writes; in single-file mode, write immediately
     if batch_ctx is not None:
-        global_version = batch_ctx.calibration_version
+        # File write still happens here (safe_write inside _update_db_and_file)
+        _update_db_and_file(db, str(file_id), file_path, namespace, mood_tags, chromaprint, batch_ctx=batch_ctx)
+        # Defer DB writes to batch flush (lock for thread safety)
+        with batch_ctx._lock:
+            batch_ctx.pending_mood_tags.append((str(file_id), mood_tags))
+            global_version = batch_ctx.calibration_version
+            if global_version:
+                batch_ctx.pending_calibration_hashes.append((str(file_id), global_version))
     else:
+        _update_db_and_file(db, str(file_id), file_path, namespace, mood_tags, chromaprint, batch_ctx=None)
+        # Update calibration hash immediately in single-file mode
         global_version = get_calibration_version(db)
-    if global_version:
-        update_file_calibration_hash(db, str(file_id), global_version)
-        logger.debug(f"[calibrated_tags] Updated calibration_hash for {file_path}")
+        if global_version:
+            update_file_calibration_hash(db, str(file_id), global_version)
+            logger.debug(f"[calibrated_tags] Updated calibration_hash for {file_path}")

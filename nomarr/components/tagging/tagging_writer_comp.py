@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ======================================================================
-#  Essentia Autotag - Writers (fixed)
+#  Nomarr - Tag Writers
 #  MP3 (ID3 TXXX) and MP4/M4A (iTunes freeform) tag writer
 #  - Removes misuse of flatten_json (was a JSON string, not a mapping)
 #  - Avoids calling util.namespaced(key, ns) (util only accepts key)
@@ -310,17 +310,27 @@ class TagWriter:
             msg = f"Unsupported file type for writing: .{ext}"
             raise RuntimeError(msg)
 
-    def write_safe(self, path: LibraryPath, tags: Tags, library_root: Path, chromaprint: str) -> SafeWriteResult:
+    def write_safe(
+        self,
+        path: LibraryPath,
+        tags: Tags,
+        library_root: Path,
+        chromaprint: str,
+        *,
+        verify_audio: bool = True,
+    ) -> SafeWriteResult:
         """Write tags using atomic copy-modify-verify-replace pattern.
 
         This prevents file corruption if a crash occurs during write.
-        Verifies audio content hasn't changed by comparing chromaprints.
+        Optionally verifies audio content hasn't changed by comparing chromaprints.
 
         Args:
             path: LibraryPath to the file to modify
             tags: Tags DTO to write
             library_root: Root path of the library (for temp folder)
             chromaprint: Chromaprint of original file for verification
+            verify_audio: If True (default), decode temp file and verify chromaprint
+                matches original. Set to False for recalibration (metadata-only writes).
 
         Returns:
             SafeWriteResult with success status and folder_mtime_changed flag
@@ -338,4 +348,4 @@ class TagWriter:
         def write_fn(temp_path: PathLib) -> None:
             self._write_to_path(str(temp_path), tags_dict)
 
-        return safe_write_tags(path, library_root, chromaprint, write_fn)
+        return safe_write_tags(path, library_root, chromaprint, write_fn, verify_audio=verify_audio)

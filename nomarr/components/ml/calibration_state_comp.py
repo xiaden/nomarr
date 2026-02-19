@@ -96,9 +96,23 @@ def update_file_calibration_hash(
     db.library_files.update_calibration_hash(file_id, calibration_hash)
 
 
+def update_file_calibration_hashes_batch(
+    db: Database,
+    items: list[tuple[str, str]],
+) -> None:
+    """Set ``calibration_hash`` for multiple library files in one AQL query.
+
+    Args:
+        db: Database instance
+        items: List of (file_id, calibration_hash) tuples.
+               file_id is the full _id (e.g. "library_files/abc123").
+
+    """
+    db.library_files.update_calibration_hashes_batch(items)
+
+
 # ---------------------------------------------------------------------------
 # Bulk backfill helpers (absorb raw AQL from workflow)
-# ---------------------------------------------------------------------------
 
 
 def count_null_calibration_hashes(db: Database) -> int:

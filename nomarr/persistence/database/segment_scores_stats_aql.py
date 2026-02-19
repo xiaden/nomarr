@@ -157,6 +157,31 @@ class SegmentScoresStatsOperations:
         )
         return list(cursor)  # type: ignore[arg-type]
 
+    def get_stats_for_files_bulk(self, file_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
+        """Get segment statistics for multiple files in a single AQL query.
+
+        Args:
+            file_ids: List of library file document IDs
+
+        Returns:
+            Dict mapping file_id -> list of segment_scores_stats documents.
+            Files with no stats are absent from the result.
+
+        """
+        if not file_ids:
+            return {}
+
+        cursor = self.db.aql.execute(
+            "FOR doc IN segment_scores_stats FILTER doc.file_id IN @file_ids RETURN doc",
+            bind_vars=cast("dict[str, Any]", {"file_ids": file_ids}),
+        )
+        result: dict[str, list[dict[str, Any]]] = {}
+        for doc in cursor:  # type: ignore[union-attr]
+            fid = doc.get("file_id")
+            if fid:
+                result.setdefault(fid, []).append(doc)
+        return result
+
     def delete_by_file_id(self, file_id: str) -> int:
         """Delete all segment statistics documents for a given file.
 

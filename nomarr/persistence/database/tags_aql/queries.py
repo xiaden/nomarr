@@ -161,6 +161,39 @@ class TagQueriesMixin:
 
         cursor = cast("Cursor", self.db.aql.execute(query, bind_vars=cast("dict[str, Any]", bind_vars)))
         return Tags.from_db_rows(list(cursor))
+
+    def get_nomarr_tags_bulk(self, file_ids: list[str]) -> dict[str, Tags]:
+        """Get Nomarr-namespaced tags for multiple files in a single AQL query.
+
+        Args:
+            file_ids: List of library file _ids (e.g., ["library_files/abc", ...])
+
+        Returns:
+            Dict mapping file_id -> Tags (nom: prefixed only).
+            Files with no tags are absent from the result.
+
+        """
+        if not file_ids:
+            return {}
+
+        query = """
+        FOR edge IN song_tag_edges
+            FILTER edge._from IN @file_ids
+            LET tag = DOCUMENT(edge._to)
+            FILTER tag != null AND STARTS_WITH(tag.rel, "nom:")
+            RETURN { file_id: edge._from, rel: tag.rel, value: tag.value }
+        """
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(query, bind_vars=cast("dict[str, Any]", {"file_ids": file_ids})),
+        )
+        rows_by_file: dict[str, list[dict[str, Any]]] = {}
+        for row in cursor:
+            fid = row["file_id"]
+            rows_by_file.setdefault(fid, []).append({"rel": row["rel"], "value": row["value"]})
+
+        return {fid: Tags.from_db_rows(rows) for fid, rows in rows_by_file.items()}
+
     def list_songs_for_tag(self, tag_id: str, limit: int = 100, offset: int = 0) -> list[str]:
         """List song _ids with this tag. For browse drill-down.
 

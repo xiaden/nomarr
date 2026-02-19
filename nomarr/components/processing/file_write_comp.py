@@ -102,6 +102,37 @@ def save_mood_tags(
     return count
 
 
+def save_mood_tags_batch(
+    db: Database,
+    items: list[tuple[str, Tags]],
+) -> int:
+    """Write mood tags for multiple files in 3 AQL queries total.
+
+    Uses ``set_song_tags_batch`` to collapse all per-file, per-tag writes into
+    three round-trips (delete old edges, upsert vertices, upsert edges)
+    regardless of file count.
+
+    Args:
+        db: Database instance
+        items: List of (file_id, mood_tags) tuples
+
+    Returns:
+        Number of (file_id, rel) pairs written
+
+    """
+    if not items:
+        return 0
+
+    entries: list[dict] = []
+    for file_id, mood_tags in items:
+        for tag in mood_tags:
+            nomarr_rel = f"nom:{tag.key}" if not tag.key.startswith("nom:") else tag.key
+            entries.append({"song_id": file_id, "rel": nomarr_rel, "values": tag.value})
+
+    db.tags.set_song_tags_batch(entries)
+    return len(entries)
+
+
 # ---------------------------------------------------------------------------
 # Claim / state mutation
 # ---------------------------------------------------------------------------

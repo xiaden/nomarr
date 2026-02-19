@@ -116,6 +116,45 @@ class LibraryFilesQueriesMixin:
         result = list(cursor)
         return result[0] if result else None
 
+    def get_files_by_paths_bulk(self, paths: list[str]) -> dict[str, dict[str, Any]]:
+        """Get multiple library file records by path in one AQL query.
+
+        Matches on ``normalized_path`` or ``path`` (abs path fallback).
+        Returns the first match per input path.
+
+        Args:
+            paths: List of file paths (absolute or relative to library root)
+
+        Returns:
+            Dict mapping input path -> file document.
+            Paths with no match are absent from the result.
+
+        """
+        if not paths:
+            return {}
+
+        query = """
+            FOR file IN library_files
+                FILTER file.normalized_path IN @paths OR file.path IN @paths
+                RETURN file
+        """
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(query, bind_vars=cast("dict[str, Any]", {"paths": paths})),
+        )
+        # Build lookup: map both normalized_path and path -> doc, prefer normalized_path
+        path_set = set(paths)
+        result: dict[str, dict[str, Any]] = {}
+        for doc in cursor:
+            norm = doc.get("normalized_path")
+            abs_path = doc.get("path")
+            # Map whichever input path key we used
+            if norm and norm in path_set and norm not in result:
+                result[norm] = doc
+            if abs_path and abs_path in path_set and abs_path not in result:
+                result[abs_path] = doc
+        return result
+
     def get_file_modified_times(self) -> dict[str, int]:
         """Get all file paths and their modified times.
 

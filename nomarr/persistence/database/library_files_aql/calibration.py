@@ -42,6 +42,31 @@ class LibraryFilesCalibrationMixin:
             bind_vars={"file_id": file_id, "calibration_hash": calibration_hash},
         )
 
+    def update_calibration_hashes_batch(self, items: list[tuple[str, str]]) -> None:
+        """Update calibration_hash for multiple files in a single AQL query.
+
+        Args:
+            items: List of (file_id, calibration_hash) tuples.
+                   file_id is the full _id (e.g., "library_files/abc123").
+
+        """
+        if not items:
+            return
+
+        bind_items = [
+            {"file_id": file_id, "calibration_hash": calibration_hash}
+            for file_id, calibration_hash in items
+        ]
+        self.db.aql.execute(
+            """
+            FOR item IN @items
+                UPDATE PARSE_IDENTIFIER(item.file_id).key WITH {
+                    calibration_hash: item.calibration_hash
+                } IN library_files
+            """,
+            bind_vars=cast("dict[str, Any]", {"items": bind_items}),
+        )
+
     def clear_all_calibration_hashes(self) -> int:
         """Set calibration_hash and last_written_calibration_hash to null on all files.
 
