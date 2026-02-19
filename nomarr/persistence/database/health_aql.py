@@ -1,6 +1,9 @@
 """Health operations for ArangoDB (component health monitoring)."""
 
+import time
 from typing import TYPE_CHECKING, Any, cast
+
+from arango.exceptions import AQLQueryExecuteError
 
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.arango_client import DatabaseLike
@@ -174,8 +177,9 @@ class HealthOperations:
     def update_heartbeat(self, component_id: str, status: str | None = None, current_job: str | None = None) -> None:
         """Update component heartbeat with optional status and job.
 
-        Uses UPSERT to handle the case where the component doesn't exist yet,
-        avoiding write-write conflicts on startup.
+        Uses UPSERT to handle the case where the component doesn't exist yet.
+        Retries on write-write conflict (ERR 1200) which can occur when multiple
+        components start simultaneously.
         """
         ts = now_ms().value
 
@@ -185,21 +189,31 @@ class HealthOperations:
         if current_job is not None:
             update_data["current_job"] = current_job
 
-        self.db.aql.execute(
-            """
-            UPSERT {component_id: @component_id}
-            INSERT MERGE(@data, {component_id: @component_id, component_type: "app"})
-            UPDATE @data
-            IN health
-            """,
-            bind_vars=cast(
-                "dict[str, Any]",
-                {
-                    "component_id": component_id,
-                    "data": update_data,
-                },
-            ),
-        )
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                self.db.aql.execute(
+                    """
+                    UPSERT {component_id: @component_id}
+                    INSERT MERGE(@data, {component_id: @component_id, component_type: "app"})
+                    UPDATE @data
+                    IN health
+                    """,
+                    bind_vars=cast(
+                        "dict[str, Any]",
+                        {
+                            "component_id": component_id,
+                            "data": update_data,
+                        },
+                    ),
+                )
+                return  # Success
+            except AQLQueryExecuteError as e:
+                # ERR 1200 = write-write conflict, transient during concurrent startup
+                if e.error_code == 1200 and attempt < max_retries - 1:
+                    time.sleep(0.1 * (attempt + 1))  # 100ms, 200ms backoff
+                    continue
+                raise  # Re-raise if not a conflict or final attempt
 
     def get_component(self, component_id: str) -> dict[str, Any] | None:
         """Get component health record."""
