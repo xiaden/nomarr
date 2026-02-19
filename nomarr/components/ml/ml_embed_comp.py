@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ======================================================================
-#  Essentia Autotag - Embedding & Segmentation Utilities (fixed)
+#  Nomarr - Embedding & Segmentation Utilities (fixed)
 #  Inference-agnostic helpers: load audio, segment, score, pool.
 #  (Essentia TF graph wiring happens in processor.py)
 # ======================================================================
@@ -129,7 +129,11 @@ def score_segments(segments: Segments, predict_fn: Callable[[np.ndarray, int], n
 # Pooling
 # ----------------------------------------------------------------------
 def pool_scores(
-    scores: np.ndarray, mode: str = "mean", *, trim_perc: float = 0.1, nan_policy: str = "omit",
+    scores: np.ndarray,
+    mode: str = "mean",
+    *,
+    trim_perc: float = 0.1,
+    nan_policy: str = "omit",
 ) -> np.ndarray:
     """Pool segment-level scores into a single vector.
     - mode: "mean", "median", or "trimmed_mean"

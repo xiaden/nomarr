@@ -1,4 +1,4 @@
-"""Essentia AutoTag - Interfaces Package.
+"""Nomarr - Interfaces Package.
 ======================================
 
 Contains all user-facing interfaces (presentation layer).
