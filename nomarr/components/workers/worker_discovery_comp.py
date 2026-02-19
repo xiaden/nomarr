@@ -122,11 +122,11 @@ def discover_and_claim_file(
         allow_short=allow_short,
     )
     if not file_id:
-        logger.debug("[Discovery] No files need processing")
+        logger.debug("[Discovery] No files found needing processing (worker=%s)", worker_id)
         return None
 
     if claim_file(db, file_id, worker_id):
-        logger.debug("[Discovery] Claimed file %s for worker %s", file_id, worker_id)
+        logger.info("[Discovery] Claimed %s for %s", file_id, worker_id)
         return file_id
     # Another worker claimed this file - caller should retry
     logger.debug("[Discovery] File %s already claimed, retrying discovery", file_id)
