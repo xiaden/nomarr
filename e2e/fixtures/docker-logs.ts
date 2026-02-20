@@ -14,7 +14,6 @@ export interface DockerLogMonitor {
 
 export const test = base.extend<{ dockerLogs: DockerLogMonitor }>({
   dockerLogs: async ({}, use) => {
-    const errors: string[];
     let monitoringProcess: any = null;
     let isMonitoring = false;
 

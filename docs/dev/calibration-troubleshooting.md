@@ -73,10 +73,10 @@ FOR doc IN calibration_state
 | Regression | `approachability` | approachability | 1 |
 | Regression | `danceability` | danceability | 1 |
 | Regression | `engagement` | engagement | 1 |
-| Regression | `timbre` | bright, dark | 2 |
-| Regression | `tonal_atonal` | tonal | 1 |
+| Binary | `timbre` | bright, dark | 2 |
+| Binary | `tonal_atonal` | tonal, atonal | 2 |
 
-**Total: 22 documents**
+**Total: 23 documents**
 
 ### Verification Query
 
@@ -87,7 +87,7 @@ FOR doc IN calibration_state
   SORT head
   RETURN {head, label_count}
 
-// Expected: Binary heads → 2 docs each, Regression heads → 1-2 docs
+// Expected: Binary heads → 2 docs each, Regression heads → 1 doc each
 ```
 
 ---
