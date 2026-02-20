@@ -48,7 +48,7 @@ class LibraryService(LibraryAdminMixin, LibraryScanMixin, LibraryQueryMixin, Lib
 
         # Query operations
         stats = service.get_library_stats()
-        files = service.search_files(query="rock")
+        files = service.search_files(SearchFilesQuery(query_text="rock"))
 
         # File operations
         tags = service.get_file_tags(file_id="file-123")

@@ -20,6 +20,8 @@ from nomarr.components.analytics.analytics_comp import (
     compute_tag_correlation_matrix,
     compute_tag_frequencies,
 )
+from nomarr.components.analytics.collection_overview_comp import compute_collection_overview
+from nomarr.components.analytics.mood_analysis_comp import compute_mood_analysis
 from nomarr.helpers.dto import TagSpec
 from nomarr.helpers.dto.analytics_dto import (
     ComputeTagCoOccurrenceParams,
@@ -32,8 +34,6 @@ from nomarr.helpers.dto.analytics_dto import (
     TagFrequenciesResult,
     TagFrequencyItem,
 )
-from nomarr.workflows.analytics.collection_overview_wf import collection_overview_workflow
-from nomarr.workflows.analytics.mood_analysis_wf import mood_analysis_workflow
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -231,14 +231,19 @@ class AnalyticsService:
 
         # Regular tags: use exact match
         if regular_specs:
-            tag_data.update(self._db.tags.get_file_ids_for_tags(
-                tag_specs=regular_specs, library_id=library_id,
-            ))
+            tag_data.update(
+                self._db.tags.get_file_ids_for_tags(
+                    tag_specs=regular_specs,
+                    library_id=library_id,
+                ),
+            )
 
         # Mood tags: use CONTAINS matching for each tier
         for tier, values in mood_specs.items():
             mood_data = self._db.tags.get_file_ids_for_mood_tags(
-                mood_values=values, mood_tier=tier, library_id=library_id,
+                mood_values=values,
+                mood_tier=tier,
+                library_id=library_id,
             )
             # Convert mood_value -> file_ids to (key, value) -> file_ids format
             for mood_value, file_ids in mood_data.items():
@@ -247,39 +252,40 @@ class AnalyticsService:
         params = ComputeTagCoOccurrenceParams(x_tags=x_tag_specs, y_tags=y_tag_specs, tag_data=tag_data)
         return cast("TagCoOccurrenceData", compute_tag_co_occurrence(params=params))
 
-
     # ──────────────────────────────────────────────────────────────────────────────
     # Collection Profile Analytics
     # ──────────────────────────────────────────────────────────────────────────────
 
     def get_collection_overview(
-        self, library_id: str | None = None,
+        self,
+        library_id: str | None = None,
     ) -> dict[str, Any]:
         """Get collection overview data for Insights tab.
 
-        Delegates to collection_overview_workflow for orchestration.
+        Simple persistence pass-through: library stats, year/genre distributions.
 
         Args:
             library_id: Optional library _id to filter by.
 
         Returns:
-            Dict with: stats, year_distribution, genre_distribution, artist_distribution
+            Dict with: stats, year_distribution, genre_distribution
+
         """
-        return collection_overview_workflow(self._db, library_id=library_id)
+        return compute_collection_overview(self._db, library_id=library_id)
 
     def get_mood_analysis(
-        self, library_id: str | None = None, mood_tier: str = "strict",
+        self,
+        library_id: str | None = None,
     ) -> dict[str, Any]:
         """Get mood analysis data for Insights tab.
 
-        Delegates to mood_analysis_workflow for orchestration.
+        Delegates to compute_mood_analysis component.
 
         Args:
             library_id: Optional library _id to filter by.
-            mood_tier: Mood tier for top pairs ("strict", "relaxed", or "genre").
 
         Returns:
-            Dict with: coverage, balance, top_pairs, dominant_vibes
-        """
-        return mood_analysis_workflow(self._db, library_id=library_id, mood_tier=mood_tier)
+            Dict with: coverage, balance, top_pairs_by_tier, dominant_vibes
 
+        """
+        return compute_mood_analysis(self._db, library_id=library_id)

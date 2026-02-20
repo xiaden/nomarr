@@ -114,17 +114,17 @@ class VectorMaintenanceService:
     def calculate_optimal_nlists(self, doc_count: int) -> int:
         """Calculate optimal nlists for vector index based on document count.
 
-        Uses sqrt(doc_count) bounded to [10, 100] range.
+        Uses sqrt(doc_count) bounded to [10, 1000] range.
         ArangoDB recommends nlists ~ sqrt(doc_count) for good balance.
 
         Args:
             doc_count: Total number of documents
 
         Returns:
-            Optimal nlists value (10-100)
+            Optimal nlists value (10-1000)
         """
         if doc_count <= 0:
             return 10
 
         nlists = int(math.sqrt(doc_count))
-        return max(10, min(100, nlists))
+        return max(10, min(1000, nlists))

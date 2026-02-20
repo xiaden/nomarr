@@ -110,7 +110,15 @@ class TaggingService:
         logger.info(f"Wrote calibrated tags: {file_path}")
 
     def tag_library(self) -> ApplyCalibrationResult:
-        """Write calibrated tags to all TAGGED library files.
+        """Apply calibration to all tagged library files that need it.
+
+        Only processes files whose DB mood tags are stale relative to the
+        current calibration version (``meta.calibration_version``).  Files
+        whose ``calibration_hash`` already matches are skipped, making this
+        operation idempotent.
+
+        When no calibration version exists (first run), all tagged files are
+        processed so they receive their initial mood tags.
 
         Delegates to apply_calibration_wf for the actual iteration.
         Progress updates are forwarded via self._update_apply_progress.
@@ -126,8 +134,19 @@ class TaggingService:
             msg = "LibraryService not configured. Cannot get library paths."
             raise ValueError(msg)
 
-        # Get only TAGGED library file paths (needs existing tags)
-        paths = self.library_service.get_tagged_library_paths()
+        # Filter to only files with stale calibration hash.
+        # Falls back to all tagged files when no calibration version exists yet
+        # (first-run case — all files get their initial mood tags).
+        calibration_version = self.db.meta.get("calibration_version")
+        if calibration_version:
+            paths = self.library_service.get_paths_needing_calibration(calibration_version)
+            logger.info(
+                f"[TaggingService] {len(paths)} files need calibration update "
+                f"(hash={calibration_version[:8]}...)"
+            )
+        else:
+            paths = self.library_service.get_tagged_library_paths()
+            logger.info(f"[TaggingService] No calibration version yet — processing all {len(paths)} tagged files")
 
         return apply_calibration_wf(
             db=self.db,

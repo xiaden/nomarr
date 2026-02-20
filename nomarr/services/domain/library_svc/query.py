@@ -11,8 +11,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.search_files_comp import get_unique_tag_keys, get_unique_tag_values, search_library_files
-from nomarr.helpers.dto.info_dto import ScanningLibraryInfo, WorkStatusResult
-from nomarr.helpers.dto.library_dto import LibraryStatsResult, SearchFilesResult, UniqueTagKeysResult
+from nomarr.components.library.work_status_comp import compute_work_status
+from nomarr.helpers.dto.info_dto import WorkStatusResult
+from nomarr.helpers.dto.library_dto import LibraryStatsResult, SearchFilesQuery, SearchFilesResult, UniqueTagKeysResult
 from nomarr.services.domain._library_mapping import map_file_with_tags_to_dto
 
 if TYPE_CHECKING:
@@ -62,23 +63,23 @@ class LibraryQueryMixin:
         """
         return self.db.library_files.get_tagged_file_paths()
 
-    def search_files(
-        self,
-        query_text: str = "",
-        artist: str | None = None,
-        album: str | None = None,
-        tag_key: str | None = None,
-        tag_value: str | None = None,
-        tagged_only: bool = False,
-        limit: int = 100,
-        offset: int = 0,
-    ) -> SearchFilesResult:
+    def get_paths_needing_calibration(self, calibration_hash: str) -> list[str]:
+        """Get tagged file paths whose DB mood tags are stale for ``calibration_hash``.
+
+        Args:
+            calibration_hash: Current global calibration version string.
+
+        Returns:
+            List of absolute file paths needing recomputation.
+
+        """
+        return self.db.library_files.get_tagged_paths_needing_calibration(calibration_hash)
+
+    def search_files(self, query: SearchFilesQuery) -> SearchFilesResult:
         """Search library files with optional filters."""
-        files, total = search_library_files(
-            self.db, query_text, artist, album, tag_key, tag_value, tagged_only, limit, offset,
-        )
+        files, total = search_library_files(self.db, query)
         files_with_tags = [map_file_with_tags_to_dto(f) for f in files]
-        return SearchFilesResult(files=files_with_tags, total=total, limit=limit, offset=offset)
+        return SearchFilesResult(files=files_with_tags, total=total, limit=query.limit, offset=query.offset)
 
     def get_files_by_ids(self, file_ids: list[str]) -> SearchFilesResult:
         """Get files by IDs with their tags.
@@ -147,49 +148,10 @@ class LibraryQueryMixin:
             WorkStatusResult DTO with scanning and processing status
 
         """
-        # Get all libraries to check scan status
         libraries = self.db.libraries.list_libraries(enabled_only=False)
-
-        scanning_libraries = [
-            ScanningLibraryInfo(
-                library_id=lib["_id"],
-                name=lib.get("name", "Unknown"),
-                progress=lib.get("scan_progress") or 0,
-                total=lib.get("scan_total") or 0,
-            )
-            for lib in libraries
-            if lib.get("scan_status") == "scanning"
-        ]
-
-        is_scanning = len(scanning_libraries) > 0
-
-        # Get processing status (files needing ML tagging)
         stats = self.get_library_stats()
-        pending = stats.needs_tagging_count or 0
-        processed = stats.total_files - pending
-        is_processing = pending > 0
-
-        # Compute velocity from actual processing timestamps (last 5 minutes)
-        window_seconds = 300
-        recently_tagged = self.db.library_files.count_recently_tagged(window_seconds=window_seconds)
-        window_minutes = window_seconds / 60
-        files_per_minute = round(recently_tagged / window_minutes, 1) if window_minutes > 0 else 0.0
-
-        estimated_minutes_remaining: float | None = None
-        if pending > 0 and files_per_minute > 0:
-            estimated_minutes_remaining = round(pending / files_per_minute, 1)
-
-        return WorkStatusResult(
-            is_scanning=is_scanning,
-            scanning_libraries=scanning_libraries,
-            is_processing=is_processing,
-            pending_files=pending,
-            processed_files=processed,
-            total_files=stats.total_files,
-            files_per_minute=files_per_minute,
-            estimated_minutes_remaining=estimated_minutes_remaining,
-            is_busy=is_scanning or is_processing,
-        )
+        recently_tagged = self.db.library_files.count_recently_tagged(window_seconds=300)
+        return compute_work_status(libraries, stats, recently_tagged)
 
 
     def get_recently_processed(
