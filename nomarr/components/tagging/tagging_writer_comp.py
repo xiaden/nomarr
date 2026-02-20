@@ -1,12 +1,8 @@
-#!/usr/bin/env python3
-# ======================================================================
-#  Nomarr - Tag Writers
-#  MP3 (ID3 TXXX) and MP4/M4A (iTunes freeform) tag writer
-#  - Removes misuse of flatten_json (was a JSON string, not a mapping)
-#  - Avoids calling util.namespaced(key, ns) (util only accepts key)
-#  - Adds local, safe namespacing helper with double-namespace guard
-#  - Preserves full-precision numeric string writes
-# ======================================================================
+"""Tag writers for MP3 (ID3 TXXX), MP4/M4A (iTunes freeform), and FLAC/OGG/Opus (Vorbis comments).
+
+Handles namespaced tag writing with full-precision numeric string preservation
+and atomic safe-write support.
+"""
 
 from __future__ import annotations
 
@@ -34,6 +30,7 @@ from mutagen.oggvorbis import OggVorbis
 
 def _to_text_value(value: Any) -> str:
     """Convert a value to a text representation without losing numeric precision.
+
     - Numbers: write via JSON to keep a stable, locale-independent representation
     - Dict/List/Tuple: JSON encode compactly (tuples become arrays)
     - Everything else: str().
@@ -128,7 +125,8 @@ class _MP4Writer:
 
     @staticmethod
     def _ff_key(ns_key: str) -> str:
-        """Build the iTunes freeform key:
+        """Build the iTunes freeform key.
+
           '----:com.apple.iTunes:<ns_key>'
         where ns_key is '<namespace>:<key>'.
         """
@@ -191,7 +189,8 @@ class _VorbisWriter:
     @staticmethod
     def _vorbis_key(ns_key: str) -> str:
         """Convert namespaced key to Vorbis-compatible format.
-        Replace ':' and '-' with '_', then uppercase.
+
+        Replaces ':' and '-' with '_', then uppercase.
 
         Examples:
           'essentia:mood-strict' -> 'ESSENTIA_MOOD_STRICT'
@@ -260,7 +259,9 @@ class _VorbisWriter:
 # Public, format-aware writer
 # ----------------------------------------------------------------------
 class TagWriter:
-    """Format-aware tag writer that respects:
+    """Format-aware tag writer.
+
+    respects:
     - overwrite: if True, clears only existing '<namespace>:' tags before writing
     - full precision: numeric values are written as unrounded strings
     - namespace: every key is written as '<namespace>:<key>' exactly once.
@@ -274,7 +275,7 @@ class TagWriter:
         self._vorbis = _VorbisWriter(overwrite=overwrite, ns_prefix=namespace)
 
     def _write_to_path(self, path_str: str, tags: dict[str, Any]) -> None:
-        """Internal write method that works with string paths (for temp files)."""
+        """Write method using string path for temp file writes."""
         # Create a minimal LibraryPath for internal writers
         # Status is "valid" since we're writing to a known good temp file
         temp_lib_path = LibraryPath(relative="", absolute=PathLib(path_str), library_id=None, status="valid")
@@ -315,28 +316,21 @@ class TagWriter:
         path: LibraryPath,
         tags: Tags,
         library_root: Path,
-        chromaprint: str,
-        *,
-        verify_audio: bool = True,
     ) -> SafeWriteResult:
         """Write tags using atomic copy-modify-verify-replace pattern.
 
         This prevents file corruption if a crash occurs during write.
-        Optionally verifies audio content hasn't changed by comparing chromaprints.
+        After writing, audio properties (duration, sample rate, channels) are
+        probed from the temp copy and compared to the original to confirm the
+        file is still a valid, playable audio file with the same content shape.
 
         Args:
             path: LibraryPath to the file to modify
             tags: Tags DTO to write
             library_root: Root path of the library (for temp folder)
-            chromaprint: Chromaprint of original file for verification
-            verify_audio: If True (default), decode temp file and verify chromaprint
-                matches original. Set to False for recalibration (metadata-only writes).
 
         Returns:
-            SafeWriteResult with success status and folder_mtime_changed flag
-
-        The caller should always update folder mtime after a successful write
-        since all write strategies modify folder mtime.
+            SafeWriteResult with success status
 
         """
         if not path.is_valid():
@@ -348,4 +342,4 @@ class TagWriter:
         def write_fn(temp_path: PathLib) -> None:
             self._write_to_path(str(temp_path), tags_dict)
 
-        return safe_write_tags(path, library_root, chromaprint, write_fn, verify_audio=verify_audio)
+        return safe_write_tags(path, library_root, write_fn)

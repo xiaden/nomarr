@@ -7,6 +7,11 @@ remains intact.
 Two strategies:
 1. Hardlink replacement (preferred): Uses temp folder, atomic hardlink swap
 2. Fallback replacement: Uses .tmp file, delete+rename (modifies folder mtime)
+
+Verification: After writing to the temp copy, audio properties (duration,
+sample rate, channels) are probed using mutagen (header read only, no decode)
+and compared against the original. This confirms the file is still a valid,
+playable audio file with the same content shape.
 """
 
 from __future__ import annotations
@@ -19,19 +24,21 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import mutagen
+
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
     from nomarr.helpers.dto.path_dto import LibraryPath
 
-from nomarr.components.ml.chromaprint_comp import compute_chromaprint
-from nomarr.components.ml.ml_audio_comp import load_audio_mono
-
 logger = logging.getLogger(__name__)
 
 # Temp folder name - ignored by music libraries and git
 TEMP_FOLDER_NAME = ".ignore"
+
+# Tolerance for duration comparison — allows for container rounding differences
+DURATION_TOLERANCE_S = 1.0
 
 
 @dataclass
@@ -40,6 +47,51 @@ class SafeWriteResult:
 
     success: bool
     error: str | None = None
+
+
+@dataclass
+class _AudioProperties:
+    """Probed audio properties for sanity comparison."""
+
+    duration: float
+    sample_rate: int
+    channels: int
+
+
+def _probe_audio_properties(path: Path) -> _AudioProperties:
+    """Probe audio file properties using mutagen (header read, no decode).
+
+    Reads duration, sample rate, and channel count from the file's audio
+    stream headers. Does not decode audio data.
+
+    Raises:
+        RuntimeError: If mutagen cannot parse the file.
+
+    """
+    audio = mutagen.File(str(path))
+    if audio is None:
+        msg = f"mutagen could not read audio file: {path.name}"
+        raise RuntimeError(msg)
+    info = audio.info
+    return _AudioProperties(
+        duration=float(info.length),
+        sample_rate=int(info.sample_rate),
+        channels=int(info.channels),
+    )
+
+
+def _check_audio_properties(original: _AudioProperties, after: _AudioProperties) -> str | None:
+    """Return an error string if properties differ beyond tolerance, else None."""
+    if abs(after.duration - original.duration) > DURATION_TOLERANCE_S:
+        return (
+            f"Duration changed: {original.duration:.2f}s \u2192 {after.duration:.2f}s "
+            f"(tolerance \u00b1{DURATION_TOLERANCE_S}s)"
+        )
+    if after.sample_rate != original.sample_rate:
+        return f"Sample rate changed: {original.sample_rate}Hz \u2192 {after.sample_rate}Hz"
+    if after.channels != original.channels:
+        return f"Channel count changed: {original.channels} \u2192 {after.channels}"
+    return None
 
 
 def _get_temp_folder(library_root: Path) -> Path:
@@ -53,7 +105,6 @@ def _supports_hardlinks(source: Path, temp_folder: Path) -> bool:
     """Check if filesystem supports hardlinks between source and temp folder."""
     test_file = temp_folder / f".hardlink_test_{uuid.uuid4().hex}"
     try:
-        # Create a test file and try to hardlink it
         test_file.touch()
         test_link = source.parent / f".hardlink_test_{uuid.uuid4().hex}"
         try:
@@ -72,37 +123,26 @@ def _supports_hardlinks(source: Path, temp_folder: Path) -> bool:
             test_file.unlink()
 
 
-def _compute_chromaprint_for_path(path: Path) -> str:
-    """Compute chromaprint for a file path (not LibraryPath)."""
-    result = load_audio_mono(str(path), target_sr=16000)
-    return compute_chromaprint(result.waveform, result.sample_rate)
-
-
 def safe_write_tags(
     library_path: LibraryPath,
     library_root: Path,
-    original_chromaprint: str,
     write_fn: Callable[[Path], None],
-    *,
-    verify_audio: bool = True,
 ) -> SafeWriteResult:
     """Safely write tags to an audio file using copy-modify-verify-replace.
 
     Args:
         library_path: The original file to modify
         library_root: Root path of the library (for temp folder location)
-        original_chromaprint: Chromaprint of original file (for verification)
         write_fn: Function that writes tags to a Path (called on temp copy)
-        verify_audio: If True (default), decode temp file and verify chromaprint
-            matches original. Set to False for recalibration where only metadata
-            tags are modified (skips expensive audio decode + fingerprint).
 
     Returns:
         SafeWriteResult with success status
 
     The write_fn receives a Path to the temp copy and should write tags to it.
-    After write_fn completes, we verify the audio content hasn't changed by
-    comparing chromaprints (if verify_audio=True), then atomically replace the original.
+    After write_fn completes, audio properties (duration, sample rate, channels)
+    are probed from the temp copy and compared against the original to confirm
+    the file is still a valid, playable audio file with the same content shape.
+    The original is then atomically replaced.
 
     """
     if not library_path.is_valid():
@@ -111,31 +151,29 @@ def safe_write_tags(
     original_path = library_path.absolute
     filename = original_path.name
 
+    # Probe original before any writes
+    try:
+        original_props = _probe_audio_properties(original_path)
+    except Exception as e:
+        return SafeWriteResult(success=False, error=f"Failed to probe original file: {e}")
+
     # Try hardlink approach first
     temp_folder = _get_temp_folder(library_root)
     use_hardlink = _supports_hardlinks(original_path, temp_folder)
 
     if use_hardlink:
-        return _safe_write_hardlink(original_path, temp_folder, filename, original_chromaprint, write_fn, verify_audio=verify_audio)
-    return _safe_write_fallback(original_path, original_chromaprint, write_fn, verify_audio=verify_audio)
+        return _safe_write_hardlink(original_path, temp_folder, filename, original_props, write_fn)
+    return _safe_write_fallback(original_path, original_props, write_fn)
 
 
 def _safe_write_hardlink(
     original_path: Path,
     temp_folder: Path,
     filename: str,
-    original_chromaprint: str,
+    original_props: _AudioProperties,
     write_fn: Callable[[Path], None],
-    *,
-    verify_audio: bool = True,
 ) -> SafeWriteResult:
-    """Safe write using hardlink replacement (atomic, no folder mtime change).
-
-    Args:
-        verify_audio: If True, decode temp file and verify chromaprint matches.
-            Set to False for metadata-only writes (recalibration).
-
-    """
+    """Safe write using hardlink replacement (atomic, no folder mtime change)."""
     temp_path = temp_folder / f"{uuid.uuid4().hex}_{filename}"
 
     try:
@@ -147,22 +185,15 @@ def _safe_write_hardlink(
         write_fn(temp_path)
         logger.debug("[safe_write] Wrote tags to temp copy")
 
-        # Step 3: Verify chromaprint matches (optional - skip for recalibration)
-        if verify_audio:
-            new_chromaprint = _compute_chromaprint_for_path(temp_path)
-            if new_chromaprint != original_chromaprint:
-                temp_path.unlink()
-                return SafeWriteResult(
-                    success=False,
-                    error=f"Audio content changed during tag write! Original: {original_chromaprint[:16]}..., "
-                    f"After: {new_chromaprint[:16]}...",
-                )
-            logger.debug("[safe_write] Chromaprint verified")
-        else:
-            logger.debug("[safe_write] Skipping chromaprint verification (verify_audio=False)")
+        # Step 3: Verify audio properties unchanged
+        after_props = _probe_audio_properties(temp_path)
+        error = _check_audio_properties(original_props, after_props)
+        if error:
+            temp_path.unlink()
+            return SafeWriteResult(success=False, error=f"Audio sanity check failed: {error}")
+        logger.debug("[safe_write] Audio properties verified")
 
         # Step 4: Atomic hardlink replacement
-        # Remove original, hardlink temp to original location
         backup_path = original_path.with_suffix(original_path.suffix + ".bak")
         try:
             os.rename(original_path, backup_path)  # Atomic on same filesystem
@@ -183,7 +214,6 @@ def _safe_write_hardlink(
         return SafeWriteResult(success=False, error=str(e))
 
     finally:
-        # Clean up temp file
         if temp_path.exists():
             with contextlib.suppress(OSError):
                 temp_path.unlink()
@@ -191,18 +221,10 @@ def _safe_write_hardlink(
 
 def _safe_write_fallback(
     original_path: Path,
-    original_chromaprint: str,
+    original_props: _AudioProperties,
     write_fn: Callable[[Path], None],
-    *,
-    verify_audio: bool = True,
 ) -> SafeWriteResult:
-    """Safe write using .tmp file (modifies folder mtime).
-
-    Args:
-        verify_audio: If True, decode temp file and verify chromaprint matches.
-            Set to False for metadata-only writes (recalibration).
-
-    """
+    """Safe write using .tmp file (modifies folder mtime)."""
     temp_path = original_path.with_suffix(original_path.suffix + ".tmp")
 
     try:
@@ -214,19 +236,13 @@ def _safe_write_fallback(
         write_fn(temp_path)
         logger.debug("[safe_write] Wrote tags to .tmp copy")
 
-        # Step 3: Verify chromaprint matches (optional - skip for recalibration)
-        if verify_audio:
-            new_chromaprint = _compute_chromaprint_for_path(temp_path)
-            if new_chromaprint != original_chromaprint:
-                temp_path.unlink()
-                return SafeWriteResult(
-                    success=False,
-                    error=f"Audio content changed during tag write! Original: {original_chromaprint[:16]}..., "
-                    f"After: {new_chromaprint[:16]}...",
-                )
-            logger.debug("[safe_write] Chromaprint verified")
-        else:
-            logger.debug("[safe_write] Skipping chromaprint verification (verify_audio=False)")
+        # Step 3: Verify audio properties unchanged
+        after_props = _probe_audio_properties(temp_path)
+        error = _check_audio_properties(original_props, after_props)
+        if error:
+            temp_path.unlink()
+            return SafeWriteResult(success=False, error=f"Audio sanity check failed: {error}")
+        logger.debug("[safe_write] Audio properties verified")
 
         # Step 4: Delete original, rename .tmp to original
         original_path.unlink()
@@ -237,7 +253,6 @@ def _safe_write_fallback(
 
     except Exception as e:
         logger.exception(f"[safe_write] Fallback write failed: {e}")
-        # Clean up temp file on failure
         if temp_path.exists():
             with contextlib.suppress(OSError):
                 temp_path.unlink()

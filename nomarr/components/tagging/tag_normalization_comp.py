@@ -133,7 +133,7 @@ def normalize_mp4_tags(tags: Any) -> dict[str, str]:
         tags: MP4 tags dict-like object from mutagen
 
     Returns:
-        Dict with canonical tag names and serialized values (+ nom:* tags)
+        Dict with canonical tag names and JSON-array values (+ nom:* tags)
 
     """
     normalized: dict[str, str] = {}
@@ -149,7 +149,7 @@ def normalize_mp4_tags(tags: Any) -> dict[str, str]:
 
             # Keep nom:* namespaced tags
             if tag_name.startswith("nom:"):
-                normalized[tag_name] = _serialize_value(value)
+                normalized[tag_name] = json.dumps(_extract_tag_strings(value), ensure_ascii=False)
                 continue
 
             # Drop blocklisted tags (Acoustid, iTunNORM, etc.)
@@ -163,22 +163,17 @@ def normalize_mp4_tags(tags: Any) -> dict[str, str]:
             # Map canonical freeform tags (ARTISTS, LABEL, originaldate, etc.)
             if tag_name in MP4_FREEFORM_MAP:
                 norm_key = MP4_FREEFORM_MAP[tag_name]
-                normalized[norm_key] = _serialize_value(value)
+                normalized[norm_key] = json.dumps(_extract_tag_strings(value), ensure_ascii=False)
 
             continue
 
         # Map standard atoms to canonical names
         if key in MP4_TAG_MAP:
             norm_key = MP4_TAG_MAP[key]
-            normalized[norm_key] = _serialize_value(value)
+            normalized[norm_key] = json.dumps(_extract_tag_strings(value), ensure_ascii=False)
 
-    # Filter to only canonical tags + nom:* and ensure all values are JSON arrays
-    filtered: dict[str, str] = {}
-    for key, value in normalized.items():
-        if key.startswith("nom:") or key in CANONICAL_TAGS:
-            filtered[key] = _ensure_json_array(value)
-
-    return filtered
+    # Filter to only canonical tags + nom:*
+    return {k: v for k, v in normalized.items() if k.startswith("nom:") or k in CANONICAL_TAGS}
 
 
 def normalize_id3_tags(tags: Any) -> dict[str, str]:
@@ -191,7 +186,7 @@ def normalize_id3_tags(tags: Any) -> dict[str, str]:
         tags: ID3 tags dict-like object from mutagen
 
     Returns:
-        Dict with canonical tag names and serialized values (+ nom:* tags)
+        Dict with canonical tag names and JSON-array values (+ nom:* tags)
 
     """
     normalized: dict[str, str] = {}
@@ -203,14 +198,14 @@ def normalize_id3_tags(tags: Any) -> dict[str, str]:
 
             # Keep nom:* namespaced tags
             if tag_name.startswith("nom:"):
-                normalized[tag_name] = _serialize_value(value)
+                normalized[tag_name] = json.dumps(_extract_tag_strings(value), ensure_ascii=False)
                 continue
 
             # Map canonical TXXX tags (case-insensitive check)
             tag_name_upper = tag_name.upper()
             if tag_name_upper in ID3_TXXX_MAP:
                 norm_key = ID3_TXXX_MAP[tag_name_upper]
-                normalized[norm_key] = _serialize_value(value)
+                normalized[norm_key] = json.dumps(_extract_tag_strings(value), ensure_ascii=False)
 
             continue
 
@@ -222,15 +217,10 @@ def normalize_id3_tags(tags: Any) -> dict[str, str]:
         # Map standard frames to canonical names
         if frame_type in ID3_TAG_MAP:
             norm_key = ID3_TAG_MAP[frame_type]
-            normalized[norm_key] = _serialize_value(value)
+            normalized[norm_key] = json.dumps(_extract_tag_strings(value), ensure_ascii=False)
 
-    # Filter to only canonical tags + nom:* and ensure all values are JSON arrays
-    filtered: dict[str, str] = {}
-    for key, value in normalized.items():
-        if key.startswith("nom:") or key in CANONICAL_TAGS:
-            filtered[key] = _ensure_json_array(value)
-
-    return filtered
+    # Filter to only canonical tags + nom:*
+    return {k: v for k, v in normalized.items() if k.startswith("nom:") or k in CANONICAL_TAGS}
 
 
 def normalize_vorbis_tags(tags: Any) -> dict[str, str]:
@@ -246,7 +236,7 @@ def normalize_vorbis_tags(tags: Any) -> dict[str, str]:
         tags: Vorbis comments dict-like object from mutagen (FLAC, Ogg, etc.)
 
     Returns:
-        Dict with canonical tag names and serialized values (+ nom:* tags)
+        Dict with canonical tag names and JSON-array values (+ nom:* tags)
 
     """
     normalized: dict[str, str] = {}
@@ -264,101 +254,64 @@ def normalize_vorbis_tags(tags: Any) -> dict[str, str]:
         if key_upper.startswith("NOM_"):
             # Convert NOM_MOOD_STRICT -> nom:mood-strict
             normalized_key = "nom:" + key[4:].lower().replace("_", "-")
-            normalized[normalized_key] = _serialize_value(value)
+            normalized[normalized_key] = json.dumps(_extract_tag_strings(value), ensure_ascii=False)
             continue
 
         # Keep nom:* namespaced tags if they're already in colon format (rare)
         if key.lower().startswith("nom:"):
-            normalized[key] = _serialize_value(value)
+            normalized[key] = json.dumps(_extract_tag_strings(value), ensure_ascii=False)
             continue
 
         # Map standard Vorbis fields to canonical names
         if key_upper in VORBIS_TAG_MAP:
             norm_key = VORBIS_TAG_MAP[key_upper]
-            normalized[norm_key] = _serialize_value(value)
+            normalized[norm_key] = json.dumps(_extract_tag_strings(value), ensure_ascii=False)
 
-    # Filter to only canonical tags + nom:* and ensure all values are JSON arrays
-    filtered: dict[str, str] = {}
-    for key, value in normalized.items():
-        if key.startswith("nom:") or key in CANONICAL_TAGS:
-            filtered[key] = _ensure_json_array(value)
-
-    return filtered
+    # Filter to only canonical tags + nom:*
+    return {k: v for k, v in normalized.items() if k.startswith("nom:") or k in CANONICAL_TAGS}
 
 
-def _serialize_value(value: Any) -> str:
-    """Serialize a tag value to string.
+def _extract_tag_strings(value: Any) -> list[str]:
+    """Extract clean string values from a mutagen tag value.
 
     Handles various mutagen types:
     - MP4FreeForm: Extract bytes and decode
-    - Lists: Single-element lists unwrap to plain string; multi-element to JSON array
+    - Lists: Decode all items to strings
     - Tuples (MP4 track/disc): Format as "N/total"
     - Bytes: Decode to UTF-8
+    - ID3 text frames: Extract .text attribute
     - Everything else: str()
 
     Args:
         value: Tag value from mutagen
 
     Returns:
-        String representation (JSON only for multi-value lists)
+        List of decoded string values (always a list, even for single values)
 
     """
     # Handle MP4 track/disc tuples: (track, total)
     if isinstance(value, tuple) and len(value) >= 2 and all(isinstance(x, int) for x in value[:2]):
-        return f"{value[0]}/{value[1]}" if value[1] > 0 else str(value[0])
+        return [f"{value[0]}/{value[1]}" if value[1] > 0 else str(value[0])]
 
     # Handle lists (common in mutagen)
     if isinstance(value, list):
         if len(value) == 0:
-            return ""
-        # Decode all items first
-        decoded_items = [
-            item.decode("utf-8", errors="replace") if isinstance(item, bytes) else str(item) for item in value
-        ]
-        # Single-element lists: unwrap to plain string (most common case)
-        # Multi-element lists: serialize as JSON for fields like genres, artists
-        if len(decoded_items) == 1:
-            return decoded_items[0]
-        return json.dumps(decoded_items, ensure_ascii=False)
+            return []
+        return [item.decode("utf-8", errors="replace") if isinstance(item, bytes) else str(item) for item in value]
 
     # Handle bytes directly
     if isinstance(value, bytes):
-        return value.decode("utf-8", errors="replace")
+        return [value.decode("utf-8", errors="replace")]
 
     # Handle ID3 text frames (have .text attribute) - exclude tuples
     if not isinstance(value, tuple) and hasattr(value, "text"):
         text_value = value.text
         if isinstance(text_value, list):
-            return "; ".join(str(t) for t in text_value) if text_value else ""
-        return str(text_value)
+            return [str(t) for t in text_value] if text_value else []
+        return [str(text_value)]
 
     # Everything else
-    return str(value) if value is not None else ""
+    return [str(value)] if value is not None else []
 
 
-def _ensure_json_array(value: str) -> str:
-    """Ensure a tag value is stored as a JSON array.
 
-    If the value is already a JSON array, return it as-is.
-    Otherwise, wrap it in a single-element array.
-
-    Args:
-        value: String value from _serialize_value
-
-    Returns:
-        JSON array string
-
-    """
-    if not value:
-        return "[]"
-
-    # Check if already a JSON array
-    try:
-        parsed = json.loads(value)
-        if isinstance(parsed, list):
-            return value  # Already an array
-    except json.JSONDecodeError:
-        pass  # Not JSON, wrap it
-
-    # Wrap single value in array
-    return json.dumps([value], ensure_ascii=False)
