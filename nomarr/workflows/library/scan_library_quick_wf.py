@@ -142,7 +142,7 @@ def scan_library_quick_workflow(
                 metadata_by_id = {
                     file_id: batch.metadata_map[entry["path"]]
                     for file_id, entry in zip(file_ids, updated_entries, strict=True)
-                    if entry[" path"] in batch.metadata_map
+                    if entry["path"] in batch.metadata_map
                 }
                 seed_entities_for_scan_batch(db, file_ids, metadata_by_id)
 

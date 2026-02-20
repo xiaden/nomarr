@@ -18,7 +18,6 @@ Workflows are **use case implementations** that:
 ```
 workflows/
 ├── calibration/
-│   ├── backfill_calibration_hash_wf.py   # Backfill missing hashes
 │   ├── calibration_loader_wf.py          # Load calibration data
 │   ├── export_calibration_bundle_wf.py   # Export calibration bundle
 │   ├── generate_calibration_wf.py        # Generate calibration thresholds

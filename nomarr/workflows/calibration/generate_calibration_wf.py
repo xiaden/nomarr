@@ -337,7 +337,7 @@ def generate_histogram_calibration_wf(
         generate_calibration_from_histogram,
     )
     from nomarr.components.ml.ml_discovery_comp import discover_heads
-    from nomarr.components.tagging.tagging_aggregation_comp import normalize_tag_label
+    from nomarr.components.tagging.mood_labels_comp import normalize_tag_label
 
     logger.info("[histogram_calibration_wf] Starting histogram-based calibration generation")
 

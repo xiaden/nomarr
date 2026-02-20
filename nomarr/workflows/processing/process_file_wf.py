@@ -69,10 +69,10 @@ from nomarr.components.ml.ml_discovery_comp import HeadInfo, discover_heads
 from nomarr.components.ml.ml_embed_comp import pool_scores
 from nomarr.components.ml.ml_heads_comp import run_head_decision
 from nomarr.components.ml.ml_inference_comp import compute_embeddings_for_backbone, make_head_only_predictor_batched
+from nomarr.components.tagging.mood_labels_comp import normalize_tag_label
 from nomarr.components.tagging.tagging_aggregation_comp import (
     add_regression_mood_tiers,
     aggregate_mood_tiers,
-    normalize_tag_label,
 )
 from nomarr.helpers.dto.ml_dto import ComputeEmbeddingsForBackboneParams, LoadAudioMonoResult
 from nomarr.helpers.dto.processing_dto import DeferredFileWrites, ProcessFileResult, ProcessorConfig
@@ -406,18 +406,12 @@ def _process_head_predictions(
 def _collect_mood_outputs(
     regression_heads: list[tuple[HeadInfo, list[float]]],
     all_head_outputs: list[Any],
-    models_dir: str,
-    config: ProcessorConfig,
-    db: Database | None,
 ) -> dict[str, Any]:
     """Collect and aggregate all mood outputs from classification and regression heads.
 
     Args:
         regression_heads: List of (HeadInfo, segment_values) tuples for regression heads
         all_head_outputs: List of HeadOutput objects from classification heads
-        models_dir: Directory containing model files (for calibrations)
-        config: Processor configuration
-        db: Optional Database instance for loading calibrations
 
     Returns:
         Dict of mood-* tags
@@ -426,16 +420,7 @@ def _collect_mood_outputs(
     regression_outputs = add_regression_mood_tiers(regression_heads, framework_version=_get_essentia_version())
     all_head_outputs.extend(regression_outputs)
     logger.debug(f"[processor] Total HeadOutput objects: {len(all_head_outputs)}")
-    calibrations = {}
-    if db is not None:
-        from nomarr.workflows.calibration.calibration_loader_wf import load_calibrations_cached_wf
-
-        calibrations = load_calibrations_cached_wf(db)
-        if calibrations:
-            logger.debug(f"[aggregation] Loaded {len(calibrations)} calibrations from database")
-        else:
-            logger.debug("[aggregation] No calibrations in database (initial state), using raw scores")
-    return aggregate_mood_tiers(all_head_outputs, calibrations=calibrations)
+    return aggregate_mood_tiers(all_head_outputs)
 
 
 
@@ -770,7 +755,7 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
         msg = "No heads produced decisions; refusing to write tags"
         raise RuntimeError(msg)
     t_mood = internal_ms()
-    mood_tags = _collect_mood_outputs(regression_heads, all_head_outputs, config.models_dir, config, db)
+    mood_tags = _collect_mood_outputs(regression_heads, all_head_outputs)
     timings["mood_aggregation"] = internal_ms().value - t_mood.value
     tags_accum.update(mood_tags)
     mood_keys = [k for k in tags_accum if isinstance(k, str) and k.startswith("mood-")]

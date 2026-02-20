@@ -54,18 +54,15 @@ def load_calibrations_from_db_wf(db: Database) -> dict[str, dict[str, float]]:
             logger.debug("[calibration_loader] No calibrations in database (initial state)")
             return {}
 
-        # Build lookup by head_name (label)
+        # Build lookup by label (the actual label field from calibration_state)
         calibrations: dict[str, dict[str, float]] = {}
 
         for state in calibration_states:
-            head_name = state.get("head_name")
+            label = state.get("label")
             p5 = state.get("p5")
             p95 = state.get("p95")
 
-            if head_name and p5 is not None and p95 is not None:
-                # Extract label from head_name
-                # e.g., "mood_happy" -> "happy"
-                label = head_name.replace("mood_", "").replace("_", " ")
+            if label and p5 is not None and p95 is not None:
                 calibrations[label] = {"p5": p5, "p95": p95}
 
         logger.info(f"[calibration_loader] Loaded {len(calibrations)} calibrations from database")

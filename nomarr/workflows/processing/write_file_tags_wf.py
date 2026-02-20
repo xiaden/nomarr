@@ -179,9 +179,6 @@ def write_file_tags_workflow(
                 error=f"Library not found: {library_id}",
             )
 
-        # Get chromaprint for verification
-        chromaprint = file_doc.get("chromaprint")
-
         # Get tags from database (nomarr tags only) - returns Tags DTO
         db_tags = get_nomarr_tags(db, file_id)
 
@@ -192,23 +189,17 @@ def write_file_tags_workflow(
         # Create tag writer with overwrite=True to clear namespace first
         tag_writer = TagWriter(overwrite=True, namespace=namespace)
 
-        # Write tags using safe atomic write
-        if chromaprint:
-            result = tag_writer.write_safe(library_path, tags_to_write, library_root, chromaprint)
-            if not result.success:
-                # Release claim but don't update state
-                release_file_claim(db, file_key)
-                return WriteResult(
-                    file_key=file_key,
-                    tags_written=0,
-                    tags_filtered=tags_filtered,
-                    success=False,
-                    error=f"Safe write failed: {result.error}",
-                )
-        else:
-            # Fallback to direct write (no chromaprint available)
-            logger.warning(f"[write_file_tags] No chromaprint for {file_key}, using direct write")
-            tag_writer.write(library_path, tags_to_write)
+        # Write tags using atomic safe write
+        result = tag_writer.write_safe(library_path, tags_to_write, library_root)
+        if not result.success:
+            release_file_claim(db, file_key)
+            return WriteResult(
+                file_key=file_key,
+                tags_written=0,
+                tags_filtered=tags_filtered,
+                success=False,
+                error=f"Safe write failed: {result.error}",
+            )
 
         # Update file projection state in database
         mark_file_written(db, file_key, mode=target_mode, calibration_hash=calibration_hash)

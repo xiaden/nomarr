@@ -41,6 +41,7 @@ def apply_calibration_wf(
     calibrate_heads: bool,
     on_progress: ApplyProgressCallback | None = None,
     max_write_workers: int = 4,
+    prefetch_chunk_size: int = 1000,
 ) -> ApplyCalibrationResult:
     """Apply calibration to all tagged library files.
 
@@ -52,6 +53,12 @@ def apply_calibration_wf(
 
     File writes execute concurrently via a ThreadPoolExecutor (default 4 workers).
 
+    Paths are processed in chunks of `prefetch_chunk_size` (default 1000) to
+    bound peak RAM usage. Each chunk prefetches its DB data, processes files,
+    flushes deferred writes, and releases the prefetched data before the next
+    chunk begins. Invariant data (heads, calibrations, library roots) is held
+    across all chunks since it is small.
+
     Args:
         db: Database instance for persistence operations
         paths: List of absolute paths to tagged audio files
@@ -61,19 +68,21 @@ def apply_calibration_wf(
         calibrate_heads: Whether to apply calibration heads
         on_progress: Optional callback invoked after each file
         max_write_workers: Max concurrent file write workers (default 4)
+        prefetch_chunk_size: Number of files to prefetch per batch (default 1000).
+            Lower values reduce peak RAM at the cost of more DB round-trips.
 
     Returns:
         ApplyCalibrationResult with processed/failed/total counts
 
     """
-    import os
-    from pathlib import Path
+    import math
 
-    from nomarr.components.library.scan_lifecycle_comp import save_folder_record
-    from nomarr.components.ml.calibration_state_comp import get_calibration_version
+    from nomarr.components.ml.calibration_state_comp import (
+        get_calibration_version,
+        update_file_calibration_hashes_batch,
+    )
     from nomarr.components.ml.ml_discovery_comp import discover_heads
-    from nomarr.components.tagging.tagging_writer_comp import TagWriter
-    from nomarr.helpers.files_helper import is_audio_file
+    from nomarr.components.processing.file_write_comp import save_mood_tags_batch
     from nomarr.workflows.calibration.calibration_loader_wf import load_calibrations_from_db_wf
     from nomarr.workflows.calibration.write_calibrated_tags_wf import BatchContext
 
@@ -88,60 +97,21 @@ def apply_calibration_wf(
 
     logger.info(f"Writing calibrated tags to {total} files...")
 
-    # Pre-compute all invariants once (instead of per-file)
+    # --- Pre-compute small invariants once (cheap, shared across all chunks) ---
     _t0 = internal_ms()
     logger.info("[apply_calibration] Pre-computing batch context...")
     heads = discover_heads(models_dir)
     calibrations = load_calibrations_from_db_wf(db)
     calibration_version = get_calibration_version(db)
 
-    # Pre-resolve library roots (one DB query instead of N)
-    libraries = db.libraries.list_libraries()
-    library_roots: dict[str, Path] = {}
-    for lib in libraries:
-        library_roots[lib["_id"]] = Path(lib["root_path"]).resolve()
-
-    writer = TagWriter(overwrite=True, namespace=namespace)
-
-    batch_ctx = BatchContext(
-        heads=heads,
-        calibrations=calibrations,
-        calibration_version=calibration_version,
-        library_roots=library_roots,
-        writer=writer,
-    )
-
-    # --- Bulk prefetch DB data for all files ---
-    _t_prefetch_start = internal_ms()
-    logger.info(f"[apply_calibration] Bulk prefetching DB data for {total} files...")
-    prefetched_file_docs = db.library_files.get_files_by_paths_bulk(paths)
-    # Collect file_ids for tag and stats prefetch
-    all_file_ids = [doc["_id"] for doc in prefetched_file_docs.values()]
-    prefetched_tags = db.tags.get_nomarr_tags_bulk(all_file_ids) if all_file_ids else {}
-    prefetched_stats = db.segment_scores_stats.get_stats_for_files_bulk(all_file_ids) if all_file_ids else {}
-
-    batch_ctx.prefetched_file_docs = prefetched_file_docs
-    batch_ctx.prefetched_tags = prefetched_tags
-    batch_ctx.prefetched_stats = prefetched_stats
-
-    logger.info(
-        f"[apply_calibration] Batch context ready: {len(heads)} heads, "
-        f"{len(calibrations)} calibrations, {len(library_roots)} libraries, "
-        f"{len(prefetched_file_docs)}/{total} files cached"
-    )
-    _t_prefetch = (internal_ms().value - _t_prefetch_start.value) / 1000
     _t_setup = (internal_ms().value - _t0.value) / 1000
+    n_chunks = math.ceil(total / prefetch_chunk_size)
     logger.info(
-        f"[apply_calibration] Setup complete in {_t_setup:.2f}s "
-        f"(prefetch: {_t_prefetch:.2f}s)"
+        f"[apply_calibration] Setup complete in {_t_setup:.2f}s — "
+        f"{total} files in {n_chunks} chunk(s) of {prefetch_chunk_size}"
     )
 
-    success_count = 0
-    fail_count = 0
-    completed_lock = threading.Lock()
-    completed_count = [0]
-
-    def _process_file(file_path: str, idx: int) -> bool:
+    def _process_file(file_path: str, ctx: BatchContext) -> bool:
         """Process a single file (runs in thread pool)."""
         try:
             params = WriteCalibratedTagsParams(
@@ -151,90 +121,119 @@ def apply_calibration_wf(
                 version_tag_key=version_tag_key,
                 calibrate_heads=calibrate_heads,
             )
-            write_calibrated_tags_wf(db=db, params=params, batch_ctx=batch_ctx)
+            write_calibrated_tags_wf(db=db, params=params, batch_ctx=ctx)
             return True
         except Exception as e:
             logger.warning(f"Failed to write calibrated tags for {file_path}: {e}")
             return False
 
-    # Step: submit file writes to thread pool
-    _t_io_start = internal_ms()
-    futures_map = {}
-    with ThreadPoolExecutor(max_workers=max_write_workers) as executor:
-        for i, file_path in enumerate(paths):
-            fut = executor.submit(_process_file, file_path, i)
-            futures_map[fut] = (i, file_path)
+    # --- Chunk loop: prefetch → process → flush → discard ---
+    success_count = 0
+    fail_count = 0
+    completed_count = [0]
+    completed_lock = threading.Lock()
 
-        for fut in as_completed(futures_map):
-            i, file_path = futures_map[fut]
-            ok = fut.result()  # exceptions already caught inside _process_file
-            if ok:
-                success_count += 1
-            else:
-                fail_count += 1
-            with completed_lock:
-                completed_count[0] += 1
-                done_so_far = completed_count[0]
-            if on_progress is not None:
-                on_progress(
-                    completed_files=done_so_far,
-                    total_files=total,
-                    current_file=file_path,
-                )
+    _t_io_total = 0.0
+    _t_prefetch_total = 0.0
 
-    _t_io = (internal_ms().value - _t_io_start.value) / 1000
-    logger.info(
-        f"[apply_calibration] File I/O complete in {_t_io:.2f}s "
-        f"({max_write_workers} workers, {total} files)"
-    )
+    for chunk_start in range(0, total, prefetch_chunk_size):
+        chunk_paths = paths[chunk_start : chunk_start + prefetch_chunk_size]
+        chunk_num = chunk_start // prefetch_chunk_size + 1
+        chunk_size = len(chunk_paths)
 
-    # Step: batch-update folder mtimes (once per unique folder)
-    _t_postprocess_start = internal_ms()
-    pending = batch_ctx.pending_folders
-    if pending:
-        logger.info(f"[apply_calibration] Updating {len(pending)} folder mtime records...")
-        for folder_str, (library_id, library_root) in pending.items():
+        # Prefetch DB data for this chunk only
+        _t_prefetch_start = internal_ms()
+        logger.info(
+            f"[apply_calibration] Chunk {chunk_num}/{n_chunks}: "
+            f"prefetching DB data for {chunk_size} files..."
+        )
+        prefetched_file_docs = db.library_files.get_files_by_paths_bulk(chunk_paths)
+        all_file_ids = [doc["_id"] for doc in prefetched_file_docs.values()]
+        prefetched_tags = db.tags.get_nomarr_tags_bulk(all_file_ids) if all_file_ids else {}
+        prefetched_stats = db.segment_scores_stats.get_stats_for_files_bulk(all_file_ids) if all_file_ids else {}
+        _t_prefetch_chunk = (internal_ms().value - _t_prefetch_start.value) / 1000
+        _t_prefetch_total += _t_prefetch_chunk
+
+        batch_ctx = BatchContext(
+            heads=heads,
+            calibrations=calibrations,
+            calibration_version=calibration_version,
+        )
+        batch_ctx.prefetched_file_docs = prefetched_file_docs
+        batch_ctx.prefetched_tags = prefetched_tags
+        batch_ctx.prefetched_stats = prefetched_stats
+
+        logger.debug(
+            f"[apply_calibration] Chunk {chunk_num}/{n_chunks} prefetch done in "
+            f"{_t_prefetch_chunk:.2f}s: {len(prefetched_file_docs)}/{chunk_size} files cached"
+        )
+
+        _t_io_start = internal_ms()
+        futures_map = {}
+        with ThreadPoolExecutor(max_workers=max_write_workers) as executor:
+            for file_path in chunk_paths:
+                fut = executor.submit(_process_file, file_path, batch_ctx)
+                futures_map[fut] = file_path
+
+            for fut in as_completed(futures_map):
+                file_path = futures_map[fut]
+                ok = fut.result()
+                if ok:
+                    success_count += 1
+                else:
+                    fail_count += 1
+                with completed_lock:
+                    completed_count[0] += 1
+                    done_so_far = completed_count[0]
+                if on_progress is not None:
+                    on_progress(
+                        completed_files=done_so_far,
+                        total_files=total,
+                        current_file=file_path,
+                    )
+
+        _t_io_chunk = (internal_ms().value - _t_io_start.value) / 1000
+        _t_io_total += _t_io_chunk
+
+        # Flush deferred DB writes for this chunk, then release the cache
+        if batch_ctx.pending_mood_tags:
+            logger.debug(
+                f"[apply_calibration] Chunk {chunk_num}/{n_chunks}: "
+                f"flushing {len(batch_ctx.pending_mood_tags)} mood tag writes..."
+            )
             try:
-                folder_abs = Path(folder_str)
-                folder_mtime = int(os.stat(folder_abs).st_mtime * 1000)
-                folder_rel = str(folder_abs.relative_to(library_root)).replace("\\", "/")
-                if folder_abs == library_root:
-                    folder_rel = ""
-                file_count = sum(
-                    1 for f in os.listdir(folder_abs)
-                    if is_audio_file(f) and os.path.isfile(os.path.join(folder_abs, f))
-                )
-                save_folder_record(db, library_id, folder_rel, folder_mtime, file_count)
+                save_mood_tags_batch(db, batch_ctx.pending_mood_tags)
             except Exception as e:
-                logger.warning(f"[apply_calibration] Failed to update folder mtime for {folder_str}: {e}")
+                logger.warning(f"[apply_calibration] Batch mood tag flush failed: {e}")
 
-    # Step: flush deferred DB writes in bulk (3 AQL queries regardless of file count)
-    from nomarr.components.ml.calibration_state_comp import update_file_calibration_hashes_batch
-    from nomarr.components.processing.file_write_comp import save_mood_tags_batch
+        if batch_ctx.pending_calibration_hashes:
+            logger.debug(
+                f"[apply_calibration] Chunk {chunk_num}/{n_chunks}: "
+                f"flushing {len(batch_ctx.pending_calibration_hashes)} calibration hash updates..."
+            )
+            try:
+                update_file_calibration_hashes_batch(db, batch_ctx.pending_calibration_hashes)
+            except Exception as e:
+                logger.warning(f"[apply_calibration] Batch calibration hash flush failed: {e}")
 
-    if batch_ctx.pending_mood_tags:
-        logger.info(f"[apply_calibration] Flushing {len(batch_ctx.pending_mood_tags)} mood tag writes...")
-        try:
-            save_mood_tags_batch(db, batch_ctx.pending_mood_tags)
-        except Exception as e:
-            logger.warning(f"[apply_calibration] Batch mood tag flush failed: {e}")
+        # Explicitly release prefetched data so GC can reclaim RAM before next chunk
+        batch_ctx.prefetched_file_docs = None
+        batch_ctx.prefetched_tags = None
+        batch_ctx.prefetched_stats = None
 
-    if batch_ctx.pending_calibration_hashes:
-        logger.info(f"[apply_calibration] Flushing {len(batch_ctx.pending_calibration_hashes)} calibration hash updates...")
-        try:
-            update_file_calibration_hashes_batch(db, batch_ctx.pending_calibration_hashes)
-        except Exception as e:
-            logger.warning(f"[apply_calibration] Batch calibration hash flush failed: {e}")
+        logger.debug(
+            f"[apply_calibration] Chunk {chunk_num}/{n_chunks} done in "
+            f"{_t_io_chunk:.2f}s I/O"
+        )
 
-    _t_postprocess = (internal_ms().value - _t_postprocess_start.value) / 1000
     _t_total = (internal_ms().value - _t0.value) / 1000
     logger.info(
         f"[apply_calibration] DONE in {_t_total:.2f}s — "
-        f"setup={_t_setup:.2f}s prefetch={_t_prefetch:.2f}s "
-        f"io={_t_io:.2f}s postprocess={_t_postprocess:.2f}s | "
+        f"setup={_t_setup:.2f}s prefetch={_t_prefetch_total:.2f}s "
+        f"io={_t_io_total:.2f}s | "
         f"{success_count}/{total} ok, {fail_count} failed"
     )
-    logger.info(f"Wrote calibrated tags: {success_count}/{total} files ({fail_count} failed)")
+    logger.info(f"Applied calibration to DB: {success_count}/{total} files ({fail_count} failed)")
 
     return ApplyCalibrationResult(
         processed=success_count,
