@@ -282,35 +282,44 @@ class TagMoodMixin:
             "loose": ["nom:mood-strict", "nom:mood-regular", "nom:mood-loose"],
         }
         rels = tier_hierarchy.get(mood_tier, ["nom:mood-strict"])
-        library_filter = ""
         bind_vars: dict[str, Any] = {"limit": limit, "rels": rels}
 
         if library_id:
-            library_filter = """
-                LET file = DOCUMENT(edge1._from)
-                FILTER file != null AND file.library_id == @library_id
-            """
+            library_filter_clause = "FILTER file.library_id == @library_id"
             bind_vars["library_id"] = library_id
+        else:
+            library_filter_clause = ""
 
+        # Strategy: group all distinct mood values per song first (one COLLECT),
+        # then generate pairs from the per-song mood array (O(N * M²) where M is
+        # avg moods per song). This avoids the O(N²) Cartesian self-join that
+        # caused timeouts with the previous approach.
         query = f"""
-        FOR tag1 IN tags
-            FILTER tag1.rel IN @rels
-            FOR edge1 IN song_tag_edges
-                FILTER edge1._to == tag1._id
-                {library_filter}
-                FOR edge2 IN song_tag_edges
-                    FILTER edge2._from == edge1._from AND edge2._to != edge1._to
-                    FOR tag2 IN tags
-                        FILTER tag2._id == edge2._to AND tag2.rel IN @rels
-                        FILTER tag1.value < tag2.value  // Avoid duplicates (A,B) and (B,A)
-                        COLLECT mood1 = tag1.value, mood2 = tag2.value WITH COUNT INTO pair_count
-                        SORT pair_count DESC
-                        LIMIT @limit
-                        RETURN {{
-                            mood1: mood1,
-                            mood2: mood2,
-                            count: pair_count
-                        }}
+        LET by_song = (
+            FOR tag IN tags
+                FILTER tag.rel IN @rels
+                FOR edge IN song_tag_edges
+                    FILTER edge._to == tag._id
+                    LET file = DOCUMENT(edge._from)
+                    FILTER file != null
+                    {library_filter_clause}
+                    COLLECT song = edge._from INTO mood_vals = tag.value
+                    RETURN {{ song, moods: UNIQUE(mood_vals) }}
+        )
+        FOR entry IN by_song
+            LET ms = entry.moods
+            FOR i IN 0..LENGTH(ms)-2
+                FOR j IN i+1..LENGTH(ms)-1
+                    LET m1 = ms[i] < ms[j] ? ms[i] : ms[j]
+                    LET m2 = ms[i] < ms[j] ? ms[j] : ms[i]
+                    COLLECT mood1 = m1, mood2 = m2 WITH COUNT INTO pair_count
+                    SORT pair_count DESC
+                    LIMIT @limit
+                    RETURN {{
+                        mood1: mood1,
+                        mood2: mood2,
+                        count: pair_count
+                    }}
         """
         cursor = cast("Cursor", self.db.aql.execute(query, bind_vars=cast("dict[str, Any]", bind_vars)))
         return list(cursor)

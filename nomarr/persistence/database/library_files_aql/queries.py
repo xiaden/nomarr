@@ -278,6 +278,36 @@ class LibraryFilesQueriesMixin:
         )
         return list(cursor)
 
+    def get_tagged_paths_needing_calibration(self, calibration_hash: str) -> list[str]:
+        """Get paths of tagged files whose DB mood tags are stale.
+
+        A file needs calibration when its stored ``calibration_hash`` does not
+        match the supplied ``calibration_hash`` value (or is absent).  Files
+        that are already up to date are skipped, making
+        ``apply_calibration_wf`` idempotent.
+
+        Args:
+            calibration_hash: The current global calibration version from
+                ``meta.calibration_version``.
+
+        Returns:
+            List of file paths that need their DB mood tags recomputed.
+
+        """
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(
+                """
+            FOR file IN library_files
+                FILTER file.tagged == true
+                FILTER file.calibration_hash != @hash OR file.calibration_hash == null
+                RETURN file.path
+            """,
+                bind_vars={"hash": calibration_hash},
+            ),
+        )
+        return list(cursor)
+
     def search_library_files_with_tags(
         self,
         query_text: str = "",

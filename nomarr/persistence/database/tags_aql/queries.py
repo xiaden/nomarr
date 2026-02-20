@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from typing import TYPE_CHECKING, Any, cast
 
@@ -27,7 +28,12 @@ class TagQueriesMixin:
         result = list(cursor)
         return result[0] if result and result[0] else None
     def list_tags_by_rel(
-        self, rel: str, limit: int = 100, offset: int = 0, search: str | None = None,
+        self,
+        rel: str,
+        limit: int = 100,
+        offset: int = 0,
+        search: str | None = None,
+        sort_by_count: bool = False,
     ) -> list[dict[str, Any]]:
         """List all unique tag values for a rel. For browse UI.
 
@@ -36,12 +42,57 @@ class TagQueriesMixin:
             limit: Max results
             offset: Pagination offset
             search: Optional substring search on value (case-insensitive)
+            sort_by_count: If True, sort by song_count DESC (most common first).
+                           If False (default), sort by tag.value ASC for browse/pagination.
 
         Returns:
             List of {_id, _key, rel, value, song_count}
 
         """
-        if search:
+        if sort_by_count:
+            # Must compute song_count before SORT/LIMIT to order by frequency.
+            if search:
+                query = """
+                FOR tag IN tags
+                    FILTER tag.rel == @rel
+                    FILTER CONTAINS(LOWER(TO_STRING(tag.value)), LOWER(@search))
+                    LET song_count = LENGTH(
+                        FOR edge IN song_tag_edges
+                            FILTER edge._to == tag._id
+                            RETURN 1
+                    )
+                    SORT song_count DESC
+                    LIMIT @offset, @limit
+                    RETURN {
+                        _id: tag._id,
+                        _key: tag._key,
+                        rel: tag.rel,
+                        value: tag.value,
+                        song_count: song_count
+                    }
+                """
+                bind_vars: dict[str, Any] = {"rel": rel, "search": search, "limit": limit, "offset": offset}
+            else:
+                query = """
+                FOR tag IN tags
+                    FILTER tag.rel == @rel
+                    LET song_count = LENGTH(
+                        FOR edge IN song_tag_edges
+                            FILTER edge._to == tag._id
+                            RETURN 1
+                    )
+                    SORT song_count DESC
+                    LIMIT @offset, @limit
+                    RETURN {
+                        _id: tag._id,
+                        _key: tag._key,
+                        rel: tag.rel,
+                        value: tag.value,
+                        song_count: song_count
+                    }
+                """
+                bind_vars = {"rel": rel, "limit": limit, "offset": offset}
+        elif search:
             query = """
             FOR tag IN tags
                 FILTER tag.rel == @rel
@@ -302,6 +353,16 @@ class TagQueriesMixin:
             bind_vars_base["library_id"] = library_id
 
         for rel, value in tag_specs:
+            # Coerce string value to numeric type if possible, to match stored types.
+            # Tags like year ("2021"), bpm ("120") are stored as integers by parse_tag_values.
+            # ArangoDB strict-type comparison means "2021" != 2021, so we must match the stored type.
+            aql_value: TagValue = value
+            try:
+                aql_value = int(value)
+            except ValueError:
+                with contextlib.suppress(ValueError):
+                    aql_value = float(value)
+
             # Support wildcard: value="*" means match any value for this key
             if value == "*":
                 bind_vars = {**bind_vars_base, "rel": rel}
@@ -314,7 +375,7 @@ class TagQueriesMixin:
                         RETURN edge._from
                 """
             else:
-                bind_vars = {**bind_vars_base, "rel": rel, "value": value}
+                bind_vars = {**bind_vars_base, "rel": rel, "value": aql_value}
                 query = f"""
                 FOR tag IN tags
                     FILTER tag.rel == @rel AND tag.value == @value
@@ -333,10 +394,9 @@ class TagQueriesMixin:
     def get_file_ids_for_mood_tags(
         self, mood_values: list[str], mood_tier: str = "mood-strict", library_id: str | None = None,
     ) -> dict[str, set[str]]:
-        """Get file IDs for mood tag co-occurrence with CONTAINS matching.
+        """Get file IDs for mood tag co-occurrence.
 
-        Handles legacy tuple string values like "('aggressive', 'party-like')" by
-        using CONTAINS to match individual mood terms within the compound string.
+        Each mood term is stored as a plain string tag vertex (e.g. value == "aggressive").
 
         Args:
             mood_values: List of individual mood terms to search for (e.g., ["aggressive", "happy"])
@@ -360,14 +420,11 @@ class TagQueriesMixin:
             bind_vars_base["library_id"] = library_id
 
         for mood_value in mood_values:
-            # Use CONTAINS to match mood terms within tuple strings
-            # e.g., CONTAINS("('aggressive', 'party-like')", "'aggressive'") == true
-            # We search for the quoted version to avoid partial matches
-            search_pattern = f"'{mood_value}'"
-            bind_vars = {**bind_vars_base, "search_pattern": search_pattern}
+            bind_vars = {**bind_vars_base, "plain_value": mood_value}
             query = f"""
             FOR tag IN tags
-                FILTER tag.rel == @rel AND CONTAINS(tag.value, @search_pattern)
+                FILTER tag.rel == @rel
+                FILTER tag.value == @plain_value
                 FOR edge IN song_tag_edges
                     FILTER edge._to == tag._id
                     {library_filter}
@@ -383,10 +440,7 @@ class TagQueriesMixin:
     def get_unique_mood_values(
         self, mood_tier: str = "mood-strict", limit: int = 100,
     ) -> list[str]:
-        """Extract unique individual mood values from tuple string tags.
-
-        Parses tuple strings like "('aggressive', 'party-like')" and extracts
-        individual mood terms, deduplicating across all files.
+        """Return unique mood tag values for a given tier, sorted alphabetically.
 
         Args:
             mood_tier: Mood tier suffix ("mood-strict", "mood-regular", "mood-loose")
@@ -396,45 +450,16 @@ class TagQueriesMixin:
             Sorted list of unique mood values
 
         """
-        import ast
-
         rel = f"nom:{mood_tier}" if not mood_tier.startswith("nom:") else mood_tier
         query = """
         FOR tag IN tags
             FILTER tag.rel == @rel
+            SORT tag.value ASC
+            LIMIT @limit
             RETURN DISTINCT tag.value
         """
         cursor = cast(
-            "Cursor", self.db.aql.execute(query, bind_vars=cast("dict[str, Any]", {"rel": rel})),
+            "Cursor", self.db.aql.execute(query, bind_vars=cast("dict[str, Any]", {"rel": rel, "limit": limit})),
         )
-
-        # Parse each tuple string and extract individual values
-        unique_values: set[str] = set()
-        for value in cursor:
-            if not isinstance(value, str):
-                continue
-            # Try to parse as Python tuple
-            if value.startswith("(") and value.endswith(")"):
-                try:
-                    parsed = ast.literal_eval(value)
-                    if isinstance(parsed, tuple):
-                        unique_values.update(str(v) for v in parsed)
-                        continue
-                except (ValueError, SyntaxError):
-                    pass
-            # Try to parse as JSON array
-            if value.startswith("[") and value.endswith("]"):
-                try:
-                    import json
-                    parsed = json.loads(value)
-                    if isinstance(parsed, list):
-                        unique_values.update(str(v) for v in parsed)
-                        continue
-                except json.JSONDecodeError:
-                    pass
-            # Single value
-            unique_values.add(value)
-
-        # Sort and limit
-        return sorted(unique_values)[:limit]
+        return [v for v in cursor if isinstance(v, str)]
 

@@ -331,10 +331,10 @@ class VectorsTrackColdOperations:
         cursor = self.db.aql.execute(
             f"""
             FOR doc IN {self.collection_name}
-                LET distance = DISTANCE(doc.vector, @query_vector)
-                SORT distance ASC
+                LET score = APPROX_NEAR_COSINE(doc.vector, @query_vector)
+                SORT score DESC
                 LIMIT @limit
-                RETURN MERGE(doc, {{{{ score: distance }}}})
+                RETURN MERGE(doc, {{ score: score }})
             """,
             bind_vars=cast(
                 "dict[str, Any]",

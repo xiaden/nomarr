@@ -356,3 +356,77 @@ class LibraryFilesCrudMixin:
 
         results = list(cursor)
         return results[0] if results else 0
+
+
+    def delete_files_for_library(self, library_id: str) -> int:
+        """Delete all files for a library and cascade to derived data.
+
+        Removes, in order:
+        1. Track-level embedding vectors (all backbones, hot + cold)
+        2. segment_scores_stats (per-label head stats)
+        3. song_tag_edges (entity edges)
+        4. library_files documents
+
+        Args:
+            library_id: Library _id (e.g., "libraries/12345")
+
+        Returns:
+            Number of library_files documents deleted
+
+        """
+        if not library_id:
+            return 0
+
+        # Collect file_ids for this library first
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(
+                "FOR f IN library_files FILTER f.library_id == @library_id RETURN f._id",
+                bind_vars={"library_id": library_id},
+            ),
+        )
+        file_ids = list(cursor)
+
+        if not file_ids:
+            return 0
+
+        # Delete vectors from ALL backbones (hot + cold)
+        if self.parent_db is not None:
+            self.parent_db.delete_vectors_by_file_ids(file_ids)
+
+        # Delete segment_scores_stats (derived data)
+        self.db.aql.execute(
+            """
+            FOR doc IN segment_scores_stats
+                FILTER doc.file_id IN @file_ids
+                REMOVE doc IN segment_scores_stats
+            """,
+            bind_vars={"file_ids": file_ids},
+        )
+
+        # Delete song_tag_edges
+        self.db.aql.execute(
+            """
+            FOR edge IN song_tag_edges
+                FILTER edge._from IN @file_ids
+                REMOVE edge IN song_tag_edges
+            """,
+            bind_vars={"file_ids": file_ids},
+        )
+
+        # Delete library_files and return count
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(
+                """
+                FOR f IN library_files
+                    FILTER f.library_id == @library_id
+                    REMOVE f IN library_files
+                    COLLECT WITH COUNT INTO deleted
+                    RETURN deleted
+                """,
+                bind_vars={"library_id": library_id},
+            ),
+        )
+        results = list(cursor)
+        return results[0] if results else 0

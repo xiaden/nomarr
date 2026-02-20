@@ -138,6 +138,23 @@ class LibraryFileWithTags:
 
 
 @dataclass
+class SearchFilesQuery:
+    """Search/filter parameters for library file queries.
+
+    Used across interface → service → component → persistence layers.
+    """
+
+    query_text: str = ""
+    artist: str | None = None
+    album: str | None = None
+    tag_key: str | None = None
+    tag_value: str | None = None
+    tagged_only: bool = False
+    limit: int = 100
+    offset: int = 0
+
+
+@dataclass
 class SearchFilesResult:
     """Result from library_service.search_files."""
 
@@ -203,6 +220,7 @@ __all__ = [
     "LibraryStatsResult",
     "ReconcileStatusResult",
     "ReconcileTagsResult",
+    "SearchFilesQuery",
     "SearchFilesResult",
     "StartScanResult",
     "TagCleanupResult",
