@@ -89,8 +89,10 @@ export function usePresetData(presetId: PresetId): UsePresetDataResult {
         fetchStrategy.nomarrOnly
       );
 
-      // Parse values and build TagSpecs
-      const parsedValues = new Set<string>();
+      // Parse values preserving backend order (song_count DESC from API).
+      // Use a seen set for dedup but an array to preserve insertion order.
+      const seen = new Set<string>();
+      const parsedValues: string[] = [];
       for (const value of response.tag_keys) {
         // Handle JSON array values (multi-value tags)
         if (value.startsWith("[") && value.endsWith("]")) {
@@ -98,22 +100,31 @@ export function usePresetData(presetId: PresetId): UsePresetDataResult {
             const parsed = JSON.parse(value) as unknown;
             if (Array.isArray(parsed)) {
               for (const v of parsed) {
-                parsedValues.add(String(v));
+                const s = String(v);
+                if (!seen.has(s)) { seen.add(s); parsedValues.push(s); }
               }
             } else {
-              parsedValues.add(value);
+              if (!seen.has(value)) { seen.add(value); parsedValues.push(value); }
             }
           } catch {
-            parsedValues.add(value);
+            if (!seen.has(value)) { seen.add(value); parsedValues.push(value); }
           }
         } else {
-          parsedValues.add(value);
+          if (!seen.has(value)) { seen.add(value); parsedValues.push(value); }
         }
       }
 
-      // Sort and limit to maxValues
-      const sortedValues = Array.from(parsedValues).sort();
-      const limitedValues = sortedValues.slice(0, maxValues);
+      // For year preset: filter out placeholder/invalid years (< 1900).
+      const filteredValues =
+        presetId === "year"
+          ? parsedValues.filter((v) => {
+              const n = parseInt(v, 10);
+              return !isNaN(n) && n >= 10;
+            })
+          : parsedValues;
+
+      // Take the top maxValues (already sorted by song_count DESC by backend).
+      const limitedValues = filteredValues.slice(0, maxValues);
 
       // Convert to TagSpecs
       const tagSpecs: TagSpec[] = limitedValues.map((value) => ({

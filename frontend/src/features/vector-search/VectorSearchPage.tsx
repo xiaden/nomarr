@@ -28,7 +28,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useCallback, useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 
 import type { LibraryFile } from "@shared/api/files";
 import { getFilesByIds } from "@shared/api/files";
@@ -61,26 +61,68 @@ export function VectorSearchPage() {
     })();
   }, []);
 
+  // pendingAutoSearchFileId tracks when we need to auto-search after URL navigation
+  const [pendingAutoSearchFileId, setPendingAutoSearchFileId] = useState<string | null>(
+    () => new URLSearchParams(window.location.search).get("fileId")
+  );
+
   // Initialize track from URL params (from "Find Similar" navigation)
+  // Runs whenever URL params change — no selectedTrack guard so clicking a result
+  // title also loads the new track correctly.
   useEffect(() => {
     const fileIdParam = searchParams.get("fileId");
-    if (fileIdParam && !selectedTrack) {
-      // Prefetch track metadata by file ID
-      (async () => {
-        try {
-          const response = await getFilesByIds([fileIdParam]);
-          if (response.files && response.files.length > 0) {
-            setSelectedTrack(response.files[0]);
-          }
-        } catch (error) {
-          console.error("Failed to load track from fileId:", error);
+    if (!fileIdParam) return;
+
+    setPendingAutoSearchFileId(fileIdParam);
+    setSelectedTrack(null);
+
+    (async () => {
+      try {
+        const response = await getFilesByIds([fileIdParam]);
+        if (response.files && response.files.length > 0) {
+          setSelectedTrack(response.files[0]);
         }
-      })();
-    }
-  }, [searchParams, selectedTrack]);
+      } catch (error) {
+        console.error("Failed to load track from fileId:", error);
+        setPendingAutoSearchFileId(null);
+      }
+    })();
+  }, [searchParams]); // Only re-run when URL params change
 
   const { loading, error, results, searchByFileId } =
     useVectorSearch();
+
+  const [trackMeta, setTrackMeta] = useState<Record<string, LibraryFile>>({});
+
+  // Fetch track metadata whenever results change
+  useEffect(() => {
+    if (!results || results.length === 0) return;
+    (async () => {
+      try {
+        const ids = results.map((r) => r.file_id);
+        const response = await getFilesByIds(ids);
+        const meta: Record<string, LibraryFile> = {};
+        for (const file of response.files) {
+          meta[file.file_id] = file;
+        }
+        setTrackMeta(meta);
+      } catch (err) {
+        console.error("Failed to fetch track metadata:", err);
+      }
+    })();
+  }, [results]);
+
+  // Auto-search when navigated via "Find Similar" — fires once track + backbone both ready
+  useEffect(() => {
+    if (
+      pendingAutoSearchFileId &&
+      backboneId &&
+      selectedTrack?.file_id === pendingAutoSearchFileId
+    ) {
+      setPendingAutoSearchFileId(null);
+      searchByFileId(backboneId, pendingAutoSearchFileId, limit, minScore);
+    }
+  }, [pendingAutoSearchFileId, backboneId, selectedTrack, limit, minScore, searchByFileId]);
 
   const handleSearch = useCallback(async () => {
     if (!selectedTrack) return;
@@ -166,27 +208,37 @@ export function VectorSearchPage() {
               <Table size="small">
                 <TableHead>
                   <TableRow>
-                    <TableCell>File ID</TableCell>
+                    <TableCell>Title</TableCell>
+                    <TableCell>Artist</TableCell>
+                    <TableCell>Album</TableCell>
                     <TableCell align="right">Score</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {results.map((result, idx) => (
-                    <TableRow key={idx}>
-                      <TableCell>
-                        <Typography
-                          component="a"
-                          href={`#/browse?file=${encodeURIComponent(result.file_id)}`}
-                          sx={{ textDecoration: "none", color: "primary.main" }}
-                        >
-                          {result.file_id}
-                        </Typography>
-                      </TableCell>
-                      <TableCell align="right">
-                        {result.score.toFixed(4)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {results.map((result, idx) => {
+                    const meta = trackMeta[result.file_id];
+                    const title = meta?.title ?? meta?.path?.split("/").pop() ?? result.file_id;
+                    const artist = meta?.artist ?? "—";
+                    const album = meta?.album ?? "—";
+                    return (
+                      <TableRow key={idx}>
+                        <TableCell>
+                          <Typography
+                            component={Link}
+                            to={`/vector-search?fileId=${encodeURIComponent(result.file_id)}`}
+                            sx={{ textDecoration: "none", color: "primary.main", "&:hover": { textDecoration: "underline" } }}
+                          >
+                            {title}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>{artist}</TableCell>
+                        <TableCell>{album}</TableCell>
+                        <TableCell align="right">
+                          {result.score.toFixed(4)}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </Paper>

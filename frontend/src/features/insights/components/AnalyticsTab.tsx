@@ -12,6 +12,7 @@ import { useState } from "react";
 
 import { AdvancedAnalytics } from "./AdvancedAnalytics";
 import { CollectionOverview } from "./CollectionOverview";
+import { InsightsDocumentation } from "./InsightsDocumentation";
 import { LibraryFilter } from "./LibraryFilter";
 import { MoodAnalysis } from "./MoodAnalysis";
 
@@ -26,6 +27,7 @@ export function AnalyticsTab() {
       <CollectionOverview libraryId={libraryId} />
       <MoodAnalysis libraryId={libraryId} />
       <AdvancedAnalytics libraryId={libraryId} />
+      <InsightsDocumentation />
     </Stack>
   );
 }

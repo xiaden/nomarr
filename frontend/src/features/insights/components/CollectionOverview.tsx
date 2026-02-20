@@ -7,10 +7,11 @@
 import { Alert, CircularProgress, Typography } from "@mui/material";
 import { useEffect, useState } from "react";
 
+import { AccordionSection } from "@shared/components/ui";
+
 import type { CollectionOverviewResponse } from "../../../shared/api/analytics";
 import { getCollectionOverview } from "../../../shared/api/analytics";
 
-import { AccordionSection } from "./AccordionSection";
 import { GenreDistribution } from "./GenreDistribution";
 import { LibraryStats } from "./LibraryStats";
 import { YearDistribution } from "./YearDistribution";

@@ -109,11 +109,6 @@ export function CalibrationPage() {
       {status && (
         <Stack spacing={2.5}>
           <CalibrationStatus status={status} />
-          <HistogramCharts
-            data={histogramData}
-            loading={histogramLoading}
-            error={histogramError}
-          />
           <CalibrationActions
             onGenerate={handleGenerate}
             onApply={handleApply}
@@ -123,6 +118,16 @@ export function CalibrationPage() {
           />
         </Stack>
       )}
+
+      {/* HistogramCharts is rendered unconditionally so its accordion is in the DOM
+          from page load. This ensures MUI X Charts always mounts into a fully-settled
+          layout, matching the pattern used by YearDistribution in InsightsPage. */}
+      <HistogramCharts
+        data={histogramData}
+        loading={histogramLoading}
+        error={histogramError}
+        sx={{ mt: 2.5 }}
+      />
 
       {/* Confirm dialog for calibration actions */}
       <ConfirmDialog

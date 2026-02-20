@@ -7,11 +7,10 @@
  * - Tag-based exploration (exact string match, closest for numbers)
  */
 
-import { ExpandMore } from "@mui/icons-material";
-import { Accordion, AccordionDetails, AccordionSummary, Box, Tab, Tabs, Typography } from "@mui/material";
+import { Box, Tab, Tabs } from "@mui/material";
 import { useState } from "react";
 
-import { PageContainer } from "@shared/components/ui";
+import { AccordionSection, PageContainer } from "@shared/components/ui";
 
 import type { EntityCollection } from "../../shared/types";
 import { LibraryManagement } from "../library/components/LibraryManagement";
@@ -26,16 +25,9 @@ export function BrowsePage() {
 
   return (
     <PageContainer title="Library">
-      <Accordion defaultExpanded disableGutters>
-        <AccordionSummary expandIcon={<ExpandMore />}>
-          <Typography variant="h6" sx={{ fontWeight: 600 }}>
-            Library Management
-          </Typography>
-        </AccordionSummary>
-        <AccordionDetails>
-          <LibraryManagement />
-        </AccordionDetails>
-      </Accordion>
+      <AccordionSection sectionId="browse:library-management" title="Library Management">
+        <LibraryManagement />
+      </AccordionSection>
 
       <Box sx={{ borderBottom: 1, borderColor: "divider", mb: 2, mt: 3 }}>
         <Tabs

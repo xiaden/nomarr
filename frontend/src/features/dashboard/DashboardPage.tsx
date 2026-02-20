@@ -12,6 +12,7 @@ import {
     ResponsiveGrid,
     SectionHeader,
 } from "@shared/components/ui";
+import { formatTotalDuration } from "@shared/utils/format";
 
 import { getRecentActivity, getStats, type RecentFile } from "../../shared/api/library";
 import { getWorkStatus, type WorkStatus } from "../../shared/api/processing";
@@ -111,12 +112,6 @@ export function DashboardPage() {
 
     return () => clearInterval(interval);
   }, [workStatus]);
-
-  const formatDuration = (seconds: number): string => {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    return `${hours}h ${minutes}m`;
-  };
 
   const formatETA = (minutes: number | null): string => {
     if (minutes === null || minutes <= 0) return "—";
@@ -290,7 +285,7 @@ export function DashboardPage() {
                     <MetricCard label="Albums" value={libraryStats.unique_albums} />
                     <MetricCard
                       label="Total Duration"
-                      value={formatDuration(libraryStats.total_duration_seconds)}
+                      value={formatTotalDuration(libraryStats.total_duration_seconds)}
                     />
                   </ResponsiveGrid>
                 </Box>

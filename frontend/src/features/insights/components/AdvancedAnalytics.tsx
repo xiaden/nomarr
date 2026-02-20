@@ -5,9 +5,10 @@
  * Collapsed by default.
  */
 
+import { AccordionSection } from "@shared/components/ui";
+
 import { TagCoOccurrenceGrid } from "../../analytics/components/TagCoOccurrenceGrid";
 
-import { AccordionSection } from "./AccordionSection";
 
 interface AdvancedAnalyticsProps {
   /** Optional library ID to filter by */

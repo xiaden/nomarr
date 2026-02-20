@@ -25,6 +25,7 @@ import {
 import { useCallback, useEffect, useState } from "react";
 
 import { ErrorMessage, PageContainer, Panel } from "@shared/components/ui";
+import { formatTrackDuration } from "@shared/utils/format";
 
 import { getTagValues, getUniqueTagKeys, search } from "../../shared/api/files";
 import { FileTagsDataGrid } from "../../shared/components/FileTagsDataGrid";
@@ -136,13 +137,6 @@ export function BrowseFilesPage() {
 
   const toggleFileDetails = (fileId: string) => {
     setExpandedFileId(expandedFileId === fileId ? null : fileId);
-  };
-
-  const formatDuration = (seconds: number | null | undefined): string => {
-    if (!seconds || seconds <= 0) return "-";
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
   const currentPage = Math.floor(offset / limit) + 1;
@@ -276,7 +270,7 @@ export function BrowseFilesPage() {
                     )}
                   </Typography>
                   <Typography variant="caption" color="text.disabled">
-                    {formatDuration(file.duration_seconds)}
+                    {formatTrackDuration(file.duration_seconds)}
                     {file.tags && file.tags.find(t => t.key === "genre") && (
                       <span> • {file.tags.find(t => t.key === "genre")?.value}</span>
                     )}

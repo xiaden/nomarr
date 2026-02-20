@@ -11,9 +11,10 @@ import { Box, Chip, Stack, Typography } from "@mui/material";
 import { PieChart } from "@mui/x-charts/PieChart";
 import { useMemo, useState } from "react";
 
+import { AccordionSubsection } from "@shared/components/ui";
+
 import type { GenreDistributionItem } from "../../../shared/api/analytics";
 
-import { AccordionSubsection } from "./AccordionSubsection";
 
 interface GenreDistributionProps {
   distribution: GenreDistributionItem[];

@@ -9,6 +9,7 @@ import { Box, Button, Chip, IconButton, MenuItem, Select, Stack, TextField, Typo
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ErrorMessage } from "@shared/components/ui";
+import { formatTrackDuration } from "@shared/utils/format";
 
 import { search } from "../../../shared/api/files";
 import type { FileTag, LibraryFile } from "../../../shared/types";
@@ -94,13 +95,6 @@ export function SimilarTracks({
   useEffect(() => {
     loadSimilarTracks();
   }, [loadSimilarTracks]);
-
-  const formatDuration = (seconds: number | null | undefined): string => {
-    if (!seconds || seconds <= 0) return "-";
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
-  };
 
   const getTagValue = (track: LibraryFile): string | null => {
     const trackTag = track.tags?.find((t) => t.key === tag.key);
@@ -271,7 +265,7 @@ export function SimilarTracks({
                       color="text.disabled"
                       sx={{ minWidth: 40, textAlign: "right" }}
                     >
-                      {formatDuration(track.duration_seconds)}
+                      {formatTrackDuration(track.duration_seconds)}
                     </Typography>
                   </Stack>
                 </Stack>

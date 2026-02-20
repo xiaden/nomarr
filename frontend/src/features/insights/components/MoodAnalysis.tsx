@@ -1,35 +1,24 @@
 /**
  * MoodAnalysis - Main accordion section for mood statistics.
  *
- * Shows mood coverage, balance, top pairs, and dominant vibes.
- * Includes a mood tier selector that filters the top pairs query.
+ * Shows mood coverage, balance, top pairs (all tiers), and dominant vibes.
  */
 
 import {
   Alert,
   CircularProgress,
-  FormControl,
-  InputLabel,
-  MenuItem,
-  Select,
-  type SelectChangeEvent,
   Typography,
 } from "@mui/material";
 import { useEffect, useState } from "react";
 
+import { AccordionSection } from "@shared/components/ui";
+
 import type { MoodAnalysisResponse } from "../../../shared/api/analytics";
 import { getMoodAnalysis } from "../../../shared/api/analytics";
 
-import { AccordionSection } from "./AccordionSection";
 import { DominantVibes } from "./DominantVibes";
 import { MoodCombos } from "./MoodCombos";
 import { MoodCoverage } from "./MoodCoverage";
-
-const MOOD_TIERS = [
-  { value: "strict", label: "Strict" },
-  { value: "regular", label: "Regular" },
-  { value: "loose", label: "Loose" },
-] as const;
 
 interface MoodAnalysisProps {
   /** Optional library ID to filter by */
@@ -40,14 +29,13 @@ export function MoodAnalysis({ libraryId }: MoodAnalysisProps) {
   const [data, setData] = useState<MoodAnalysisResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [moodTier, setMoodTier] = useState("strict");
 
   useEffect(() => {
     const loadData = async () => {
       try {
         setLoading(true);
         setError(null);
-        const result = await getMoodAnalysis(libraryId, moodTier);
+        const result = await getMoodAnalysis(libraryId);
         setData(result);
       } catch (err) {
         setError(
@@ -60,11 +48,7 @@ export function MoodAnalysis({ libraryId }: MoodAnalysisProps) {
     };
 
     loadData();
-  }, [libraryId, moodTier]);
-
-  const handleTierChange = (event: SelectChangeEvent<string>) => {
-    setMoodTier(event.target.value);
-  };
+  }, [libraryId]);
 
   if (loading) {
     return (
@@ -100,30 +84,8 @@ export function MoodAnalysis({ libraryId }: MoodAnalysisProps) {
       <MoodCoverage coverage={data.coverage} balance={data.balance} parentId="mood-analysis" />
       <DominantVibes vibes={data.dominant_vibes} parentId="mood-analysis" />
       <MoodCombos
-        pairs={data.top_pairs}
+        pairsByTier={data.top_pairs_by_tier}
         parentId="mood-analysis"
-        tierSelector={
-          <FormControl
-            size="small"
-            sx={{ minWidth: 120 }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <InputLabel id="mood-tier-label">Tier</InputLabel>
-            <Select
-              labelId="mood-tier-label"
-              id="mood-tier-select"
-              value={moodTier}
-              label="Tier"
-              onChange={handleTierChange}
-            >
-              {MOOD_TIERS.map((tier) => (
-                <MenuItem key={tier.value} value={tier.value}>
-                  {tier.label}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        }
       />
     </AccordionSection>
   );

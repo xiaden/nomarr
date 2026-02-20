@@ -6,9 +6,10 @@
 
 import { Box, Typography } from "@mui/material";
 
+import { AccordionSubsection } from "@shared/components/ui";
+
 import type { DominantVibeItem } from "../../../shared/api/analytics";
 
-import { AccordionSubsection } from "./AccordionSubsection";
 
 interface DominantVibesProps {
   vibes: DominantVibeItem[];

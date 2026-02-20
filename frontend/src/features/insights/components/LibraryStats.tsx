@@ -6,25 +6,15 @@
 
 import { Box, Typography } from "@mui/material";
 
+import { AccordionSubsection } from "@shared/components/ui";
+import { formatTotalDuration, formatTrackDuration } from "@shared/utils/format";
+
 import type { LibraryStats as LibraryStatsType } from "../../../shared/api/analytics";
 
-import { AccordionSubsection } from "./AccordionSubsection";
 
 interface LibraryStatsProps {
   stats: LibraryStatsType;
   parentId: string;
-}
-
-/**
- * Format duration in milliseconds to human-readable string.
- */
-function formatDuration(ms: number): string {
-  const hours = Math.floor(ms / 3600000);
-  const minutes = Math.floor((ms % 3600000) / 60000);
-  if (hours > 0) {
-    return `${hours}h ${minutes}m`;
-  }
-  return `${minutes}m`;
 }
 
 /**
@@ -72,7 +62,7 @@ export function LibraryStats({ stats, parentId }: LibraryStatsProps) {
         <StatItem label="Tracks" value={stats.file_count.toLocaleString()} />
         <StatItem
           label="Total Duration"
-          value={formatDuration(stats.total_duration_ms)}
+          value={formatTotalDuration(stats.total_duration_ms / 1000)}
         />
         <StatItem
           label="Total Size"
@@ -80,7 +70,7 @@ export function LibraryStats({ stats, parentId }: LibraryStatsProps) {
         />
         <StatItem
           label="Avg Track"
-          value={formatDuration(stats.avg_track_length_ms)}
+          value={formatTrackDuration(stats.avg_track_length_ms / 1000)}
         />
       </Box>
     </AccordionSubsection>

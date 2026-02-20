@@ -5,16 +5,14 @@
  * marking the p5 and p95 calibration values. Users can select which head
  * to display via a dropdown selector.
  *
- * This replaces the progressive convergence charts with a direct view of
- * the underlying data distribution, helping users assess whether their
- * library's embedding values are representative.
+ * Key design constraint: EmbeddingHistogramChart is ALWAYS mounted from page
+ * load (never conditionally removed). MUI X Charts caches its bounding rect
+ * on mount; if the chart only mounts after the API response, the position is
+ * measured mid-page-reflow and ends up stale (offset by ~sidebar width).
+ * Loading/error/empty states use an absolute overlay instead.
  */
 
-import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import {
-  Accordion,
-  AccordionDetails,
-  AccordionSummary,
   Box,
   CircularProgress,
   FormControl,
@@ -22,12 +20,17 @@ import {
   MenuItem,
   Select,
   Typography,
+  type SxProps,
+  type Theme,
 } from "@mui/material";
 import { BarChart } from "@mui/x-charts/BarChart";
 import { useEffect, useMemo, useState } from "react";
 
 import type { HeadHistogramResponse } from "@shared/api/calibration";
+import { AccordionSection } from "@shared/components/ui";
 import { debugLog } from "@shared/utils/debug";
+
+import { EmbeddingHistogramChart } from "./EmbeddingHistogramChart";
 
 // ──────────────────────────────────────────────────────────────────────
 // Helpers
@@ -45,6 +48,7 @@ function formatBinValue(val: number): string {
   if (Math.abs(val) >= 10) return val.toFixed(1);
   return val.toFixed(2);
 }
+
 /**
  * Generate synthetic histogram bins for example patterns.
  * Creates realistic-looking distributions with controlled characteristics.
@@ -59,7 +63,6 @@ function generateExampleBins(
 
   switch (pattern) {
     case "healthy": {
-      // Bell curve with reasonable spread
       for (let i = 0; i < binCount; i++) {
         const val = (i / binCount) * range;
         const distance = Math.abs(val - center);
@@ -68,27 +71,21 @@ function generateExampleBins(
       }
       break;
     }
-
     case "focused": {
-      // 60% of values in 30% of range (normal for genre-focused libraries)
       for (let i = 0; i < binCount; i++) {
         const val = (i / binCount) * range;
         const distance = Math.abs(val - center);
         let count = 0;
         if (distance < 15) {
-          // Tight cluster
           count = Math.floor(80 * Math.exp(-Math.pow(distance / 8, 2)));
         } else if (distance < 35) {
-          // Some spread
           count = Math.floor(20 * Math.exp(-Math.pow((distance - 15) / 10, 2)));
         }
         if (count > 0) bins.push({ val, count });
       }
       break;
     }
-
     case "extreme": {
-      // 90%+ in tiny range (problematic)
       for (let i = 0; i < binCount; i++) {
         const val = (i / binCount) * range;
         const distance = Math.abs(val - center);
@@ -97,24 +94,18 @@ function generateExampleBins(
       }
       break;
     }
-
     case "skewed": {
-      // Smooth distribution weighted to one side
       for (let i = 0; i < binCount; i++) {
         const val = (i / binCount) * range;
-        // Exponential decay from low end
         const count = Math.floor(80 * Math.exp(-val / 30));
         if (count > 0) bins.push({ val, count });
       }
       break;
     }
-
     case "sparse": {
-      // Large gaps, uneven distribution
       for (let i = 0; i < binCount; i++) {
         const val = (i / binCount) * range;
         let count = 0;
-        // Only populate select bins (creating gaps)
         if (val < 15 || (val > 40 && val < 50) || val > 85) {
           count = Math.floor(Math.random() * 40 + 10);
         }
@@ -127,10 +118,27 @@ function generateExampleBins(
   return bins;
 }
 
-/**
- * Example histogram patterns for user education.
- * Shows common distribution shapes and what they mean.
- */
+// ──────────────────────────────────────────────────────────────────────
+// Types
+// ──────────────────────────────────────────────────────────────────────
+
+interface ProcessedHistogram {
+  xLabels: string[];
+  counts: number[];
+  binValues: number[];
+  p5Index: number | null;
+  p95Index: number | null;
+}
+
+interface ExampleHistogramData {
+  label: string;
+  severity: "success" | "info" | "warning";
+  description: string;
+  bins: { val: number; count: number }[];
+  p5: number;
+  p95: number;
+}
+
 const EXAMPLE_HISTOGRAMS: ExampleHistogramData[] = [
   {
     label: "✅ Healthy Spread",
@@ -195,41 +203,34 @@ const EXAMPLE_HISTOGRAMS: ExampleHistogramData[] = [
 // Data transformation
 // ──────────────────────────────────────────────────────────────────────
 
-interface ProcessedHistogram {
-  xLabels: string[];
-  counts: number[];
-  binValues: number[];
-  p5Index: number | null;
-  p95Index: number | null;
-}
-
-interface ExampleHistogramData {
-  label: string;
-  severity: "success" | "info" | "warning";
-  description: string;
-  bins: { val: number; count: number }[];
-  p5: number;
-  p95: number;
-}
-
-/**
- * Process histogram bins for display.
- * Finds the indices of bins closest to p5/p95 for marker placement.
- */
 function processHistogram(head: HeadHistogramResponse): ProcessedHistogram {
   const bins = Array.isArray(head?.histogram_bins) ? head.histogram_bins : [];
   if (bins.length === 0) {
     return { xLabels: [], counts: [], binValues: [], p5Index: null, p95Index: null };
   }
 
-  // Sort bins by value for proper display order
   const sortedBins = [...bins].sort((a, b) => a.val - b.val);
 
-  const xLabels = sortedBins.map((b) => formatBinValue(b.val));
-  const counts = sortedBins.map((b) => b.count);
-  const binValues = sortedBins.map((b) => b.val);
+  // Aggregate bins that share the same formatted label.
+  // The backend stores up to 10,000 fine-grained bins (0.0001 width each),
+  // but toFixed(2) collapses many into the same label string ("0.00", "0.01"…).
+  // Passing 10,000 items to MUI X Charts' band scale divides the container
+  // width by 10,000, making hover hit-detection wildly wrong.
+  const aggregated = new Map<string, { totalCount: number; representativeVal: number }>();
+  for (const b of sortedBins) {
+    const label = formatBinValue(b.val);
+    const existing = aggregated.get(label);
+    if (existing) {
+      existing.totalCount += b.count;
+    } else {
+      aggregated.set(label, { totalCount: b.count, representativeVal: b.val });
+    }
+  }
 
-  // Find indices closest to p5/p95
+  const xLabels = [...aggregated.keys()];
+  const counts = [...aggregated.values()].map((v) => v.totalCount);
+  const binValues = [...aggregated.values()].map((v) => v.representativeVal);
+
   let p5Index: number | null = null;
   let p95Index: number | null = null;
   let p5Dist = Infinity;
@@ -238,40 +239,21 @@ function processHistogram(head: HeadHistogramResponse): ProcessedHistogram {
   binValues.forEach((val, i) => {
     const d5 = Math.abs(val - head.p5);
     const d95 = Math.abs(val - head.p95);
-    if (d5 < p5Dist) {
-      p5Dist = d5;
-      p5Index = i;
-    }
-    if (d95 < p95Dist) {
-      p95Dist = d95;
-      p95Index = i;
-    }
+    if (d5 < p5Dist) { p5Dist = d5; p5Index = i; }
+    if (d95 < p95Dist) { p95Dist = d95; p95Index = i; }
   });
 
   return { xLabels, counts, binValues, p5Index, p95Index };
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Reference line component (p5/p95 markers)
+// Reference line info
 // ──────────────────────────────────────────────────────────────────────
 
-interface ReferenceLineProps {
-  label: string;
-  value: number;
-  color: string;
-}
-
-function ReferenceLineInfo({ label, value, color }: ReferenceLineProps) {
+function ReferenceLineInfo({ label, value, color }: { label: string; value: number; color: string }) {
   return (
     <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-      <Box
-        sx={{
-          width: 16,
-          height: 3,
-          bgcolor: color,
-          borderRadius: 1,
-        }}
-      />
+      <Box sx={{ width: 16, height: 3, bgcolor: color, borderRadius: 1 }} />
       <Typography variant="body2" color="text.secondary">
         {label}: <strong>{formatBinValue(value)}</strong>
       </Typography>
@@ -280,69 +262,38 @@ function ReferenceLineInfo({ label, value, color }: ReferenceLineProps) {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-
-// ──────────────────────────────────────────────────────────────────────
-// Example Histogram Mini-Component
+// Example mini-chart
 // ──────────────────────────────────────────────────────────────────────
 
-interface ExampleHistogramProps {
-  example: ExampleHistogramData;
-}
-
-function ExampleHistogram({ example }: ExampleHistogramProps) {
-  // Process bins for display
+function ExampleHistogram({ example }: { example: ExampleHistogramData }) {
   const xLabels = example.bins.map((b) => formatBinValue(b.val));
   const counts = example.bins.map((b) => b.count);
-
-  // Map severity to border color
-  const borderColor = example.severity === "success" 
-    ? "success.main" 
-    : example.severity === "warning" 
-    ? "warning.main" 
-    : "info.main";
+  const borderColor =
+    example.severity === "success" ? "success.main" :
+    example.severity === "warning" ? "warning.main" : "info.main";
+  const barColor =
+    example.severity === "success" ? "#90ee90" :
+    example.severity === "warning" ? "#ffcc80" : "#90caf9";
 
   return (
-    <Box
-      sx={{
-        border: 2,
-        borderColor: borderColor,
-        borderRadius: 1,
-        p: 2,
-        backgroundColor: "background.paper",
-      }}
-    >
+    <Box sx={{ border: 2, borderColor, borderRadius: 1, p: 2, backgroundColor: "background.paper" }}>
       <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
         {example.label}
       </Typography>
-
-      {/* Mini bar chart */}
-      <Box sx={{ height: 180, mb: 2, overflow: "hidden" }}>
+      <Box sx={{ height: 180, mb: 2 }}>
         <BarChart
           height={180}
-          xAxis={[
-            {
-              scaleType: "band",
-              data: xLabels,
-              tickLabelStyle: { fontSize: 8 },
-              tickLabelInterval: (_value, index) => index % Math.ceil(xLabels.length / 10) === 0,
-            },
-          ]}
-          series={[
-            {
-              data: counts,
-              color: example.severity === "success" 
-                ? "#90ee90" 
-                : example.severity === "warning" 
-                ? "#ffcc80" 
-                : "#90caf9",
-            },
-          ]}
+          xAxis={[{
+            scaleType: "band",
+            data: xLabels,
+            tickLabelStyle: { fontSize: 8 },
+            tickLabelInterval: (_value, index) => index % Math.ceil(xLabels.length / 10) === 0,
+          }]}
+          series={[{ data: counts, color: barColor }]}
           hideLegend
           margin={{ left: 40, right: 10, top: 10, bottom: 30 }}
         />
       </Box>
-
-      {/* P5/P95 indicators */}
       <Box sx={{ display: "flex", gap: 2, mb: 1.5 }}>
         <Typography variant="caption" color="text.secondary">
           P5: <strong>{formatBinValue(example.p5)}</strong>
@@ -351,39 +302,36 @@ function ExampleHistogram({ example }: ExampleHistogramProps) {
           P95: <strong>{formatBinValue(example.p95)}</strong>
         </Typography>
       </Box>
-
-      {/* Description */}
       <Typography variant="body2" color="text.secondary">
         {example.description}
       </Typography>
     </Box>
   );
 }
-// Component
+
+// ──────────────────────────────────────────────────────────────────────
+// Main component
 // ──────────────────────────────────────────────────────────────────────
 
 interface HistogramChartsProps {
   data: HeadHistogramResponse[] | null;
   loading: boolean;
   error: string | null;
+  sx?: SxProps<Theme>;
 }
 
-export function HistogramCharts({ data, loading, error }: HistogramChartsProps) {
+export function HistogramCharts({ data, loading, error, sx }: HistogramChartsProps) {
   const TAG = "HistogramCharts";
 
-  // Track selected label (head:label pairs)
   const headOptions = useMemo(() => {
     if (!data) return [];
     return data.map((h) => ({
       key: `${h.model_key}:${h.head_name}:${h.label}`,
       label: `${shortLabel(h.head_name)} - ${h.label}`,
-      fullLabel: `${h.model_key}:${h.head_name}:${h.label}`,
     }));
   }, [data]);
 
   const [selectedHead, setSelectedHead] = useState<string>("");
-
-  // Auto-select first label when data loads
   const effectiveSelected = selectedHead || headOptions[0]?.key || "";
 
   const selectedData = useMemo(() => {
@@ -396,171 +344,108 @@ export function HistogramCharts({ data, loading, error }: HistogramChartsProps) 
     [selectedData],
   );
 
-  // ── Debug logging ─────────────────────────────────────────────────
   useEffect(() => {
-    debugLog(TAG, "mount/update", {
-      loading,
-      error,
-      headCount: data?.length ?? 0,
-      selectedHead: effectiveSelected,
-    });
+    debugLog(TAG, "mount/update", { loading, error, headCount: data?.length ?? 0, selectedHead: effectiveSelected });
   }, [loading, error, data, effectiveSelected]);
 
-  useEffect(() => {
-    if (processed) {
-      debugLog(TAG, "processed histogram", {
-        head: effectiveSelected,
-        binCount: processed.counts.length,
-        totalSamples: processed.counts.reduce((a, b) => a + b, 0),
-        p5Index: processed.p5Index,
-        p95Index: processed.p95Index,
-        xLabelRange: processed.xLabels.length > 0
-          ? `${processed.xLabels[0]} .. ${processed.xLabels[processed.xLabels.length - 1]}`
-          : "(empty)",
-      });
-    }
-  }, [processed, effectiveSelected]);
+  const hasData = !loading && !error && data != null && data.length > 0;
+  const hasChart = hasData && processed != null && processed.counts.length > 0;
 
-  if (loading) {
+  // ── Understanding section (static) ────────────────────────────────────
+  const understandingSection = (
+    <AccordionSection
+      sectionId="calibration:histogram:understanding"
+      title="Understanding Your Results"
+      defaultExpanded={false}
+    >
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+        Common patterns and what they mean for your library. Compare your histogram above to these examples:
+      </Typography>
+      <Box
+        sx={{
+          display: "grid",
+          gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", md: "repeat(3, 1fr)" },
+          gap: 2,
+        }}
+      >
+        {EXAMPLE_HISTOGRAMS.map((example) => (
+          <ExampleHistogram key={example.label} example={example} />
+        ))}
+      </Box>
+    </AccordionSection>
+  );
+
+  // ── Not-ready states ──────────────────────────────────────────────────
+  if (!hasChart) {
     return (
-      <Box sx={{ display: "flex", alignItems: "center", gap: 2, py: 2 }}>
-        <CircularProgress size={20} />
-        <Typography variant="body2">Loading histogram data...</Typography>
+      <Box sx={sx}>
+        <AccordionSection sectionId="calibration:histogram:embedding" title="Embedding Distribution">
+          {loading && (
+            <Box sx={{ display: "flex", alignItems: "center", gap: 2, py: 2 }}>
+              <CircularProgress size={20} />
+              <Typography variant="body2">Loading histogram data...</Typography>
+            </Box>
+          )}
+          {!loading && error && (
+            <Typography color="error" variant="body2" sx={{ py: 1 }}>{error}</Typography>
+          )}
+          {!loading && !error && (
+            <Typography variant="body2" color="text.secondary" sx={{ py: 1 }}>
+              No histogram data available. Run calibration to see distribution.
+            </Typography>
+          )}
+        </AccordionSection>
+        {understandingSection}
       </Box>
     );
   }
 
-  if (error) {
-    return (
-      <Typography color="error" variant="body2">
-        {error}
-      </Typography>
-    );
-  }
-
-  if (!data || data.length === 0) {
-    return (
-      <Typography variant="body2" color="text.secondary">
-        No histogram data available. Run calibration to see distribution.
-      </Typography>
-    );
-  }
-
+  // ── Data-ready state ──────────────────────────────────────────────────
   return (
-    <Box>
-      <Accordion defaultExpanded>
-        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-          <Typography variant="subtitle1" fontWeight={500}>
-            Embedding Distribution
-          </Typography>
-        </AccordionSummary>
-        <AccordionDetails>
-          {/* Label selector (head:label pairs) */}
+    <Box sx={sx}>
+      <AccordionSection sectionId="calibration:histogram:embedding" title="Embedding Distribution">
+        <Box sx={{ mb: 2 }}>
+          <FormControl size="small" sx={{ minWidth: 200 }}>
+            <InputLabel id="head-select-label">Label</InputLabel>
+            <Select
+              labelId="head-select-label"
+              value={effectiveSelected}
+              label="Label"
+              onChange={(e) => setSelectedHead(e.target.value)}
+            >
+              {headOptions.map((opt) => (
+                <MenuItem key={opt.key} value={opt.key}>{opt.label}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </Box>
+
+        <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: "block" }}>
+          Distribution of embedding values across your library. P5/P95 markers show calibration percentiles.
+        </Typography>
+
+        {selectedData && (
           <Box sx={{ mb: 2 }}>
-            <FormControl size="small" sx={{ minWidth: 200 }}>
-              <InputLabel id="head-select-label">Label</InputLabel>
-              <Select
-                labelId="head-select-label"
-                value={effectiveSelected}
-                label="Label"
-                onChange={(e) => setSelectedHead(e.target.value)}
-              >
-                {headOptions.map((opt) => (
-                  <MenuItem key={opt.key} value={opt.key}>
-                    {opt.label}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Box>
-
-          {/* Description */}
-          <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: "block" }}>
-            Distribution of embedding values across your library. P5/P95 markers show calibration
-            percentiles.
-          </Typography>
-
-          {/* P5/P95 legend with label name */}
-          {selectedData && (
-            <Box sx={{ mb: 2 }}>
-              <Typography variant="body2" fontWeight={500} color="text.primary" sx={{ mb: 1 }}>
-                {shortLabel(selectedData.head_name)} - {selectedData.label}
+            <Typography variant="body2" fontWeight={500} color="text.primary" sx={{ mb: 1 }}>
+              {shortLabel(selectedData.head_name)} - {selectedData.label}
+            </Typography>
+            <Box sx={{ display: "flex", gap: 3 }}>
+              <ReferenceLineInfo label="P5" value={selectedData.p5} color="#2196f3" />
+              <ReferenceLineInfo label="P95" value={selectedData.p95} color="#f44336" />
+              <Typography variant="body2" color="text.secondary">
+                Samples: <strong>{selectedData.n.toLocaleString()}</strong>
               </Typography>
-              <Box sx={{ display: "flex", gap: 3 }}>
-                <ReferenceLineInfo label="P5" value={selectedData.p5} color="#2196f3" />
-                <ReferenceLineInfo label="P95" value={selectedData.p95} color="#f44336" />
-                <Typography variant="body2" color="text.secondary">
-                  Samples: <strong>{selectedData.n.toLocaleString()}</strong>
-                </Typography>
-              </Box>
             </Box>
-          )}
-
-          {/* Bar chart */}
-          {processed && processed.counts.length > 0 ? (
-            <Box sx={{ overflow: "hidden" }}>
-            <BarChart
-              height={350}
-              xAxis={[
-                {
-                  scaleType: "band",
-                  data: processed.xLabels,
-                  label: "Embedding Value",
-                  tickLabelStyle: { fontSize: 9 },
-                  // Only show every Nth label to avoid crowding
-                  tickLabelInterval: (_value, index) =>
-                    index % Math.ceil(processed.xLabels.length / 20) === 0,
-                },
-              ]}
-              series={[
-                {
-                  data: processed.counts,
-                  label: "Count",
-                  color: "#90caf9",
-                },
-              ]}
-              hideLegend
-              margin={{ left: 60, right: 20, top: 20, bottom: 60 }}
-            />
-            </Box>
-          ) : (
-            <Box sx={{ height: 350, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Typography color="text.secondary">No histogram data for selected head</Typography>
-            </Box>
-          )}
-        </AccordionDetails>
-      </Accordion>
-
-      {/* Example patterns for user education */}
-      <Accordion>
-        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-          <Typography variant="subtitle1" fontWeight={500}>
-            Understanding Your Results
-          </Typography>
-        </AccordionSummary>
-        <AccordionDetails>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-            Common patterns and what they mean for your library. Compare your histogram above to these examples:
-          </Typography>
-
-          {/* Examples grid */}
-          <Box
-            sx={{
-              display: "grid",
-              gridTemplateColumns: {
-                xs: "1fr",
-                sm: "repeat(2, 1fr)",
-                md: "repeat(3, 1fr)",
-              },
-              gap: 2,
-            }}
-          >
-            {EXAMPLE_HISTOGRAMS.map((example) => (
-              <ExampleHistogram key={example.label} example={example} />
-            ))}
           </Box>
-        </AccordionDetails>
-      </Accordion>
+        )}
+
+        <EmbeddingHistogramChart
+          key={effectiveSelected}
+          xLabels={processed.xLabels}
+          counts={processed.counts}
+        />
+      </AccordionSection>
+      {understandingSection}
     </Box>
   );
 }

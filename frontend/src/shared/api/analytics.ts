@@ -190,21 +190,17 @@ export interface DominantVibeItem {
 export interface MoodAnalysisResponse {
   coverage: MoodCoverage;
   balance: Record<string, MoodBalanceItem[]>;
-  top_pairs: MoodPairItem[];
+  top_pairs_by_tier: Record<string, MoodPairItem[]>;
   dominant_vibes: DominantVibeItem[];
 }
 
 /**
  * Get mood analysis statistics.
- * Optionally filtered by libraryId and moodTier.
+ * Optionally filtered by libraryId.
  */
 export async function getMoodAnalysis(
   libraryId?: string,
-  moodTier: string = "strict"
 ): Promise<MoodAnalysisResponse> {
-  const searchParams = new URLSearchParams();
-  if (libraryId) searchParams.set("library_id", libraryId);
-  searchParams.set("mood_tier", moodTier);
-  const qs = searchParams.toString();
-  return get(`/api/web/analytics/mood-analysis?${qs}`);
+  const params = libraryId ? `?library_id=${encodeURIComponent(libraryId)}` : "";
+  return get(`/api/web/analytics/mood-analysis${params}`);
 }

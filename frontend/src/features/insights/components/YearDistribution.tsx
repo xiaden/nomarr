@@ -8,9 +8,10 @@
 import { Typography } from "@mui/material";
 import { LineChart } from "@mui/x-charts/LineChart";
 
+import { AccordionSubsection } from "@shared/components/ui";
+
 import type { YearDistributionItem } from "../../../shared/api/analytics";
 
-import { AccordionSubsection } from "./AccordionSubsection";
 
 interface YearDistributionProps {
   distribution: YearDistributionItem[];

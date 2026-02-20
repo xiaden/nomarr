@@ -58,7 +58,7 @@ export const PRESET_METADATA: Record<PresetId, PresetMetadata> = {
     label: "Mood",
     description: "Individual mood values from mood tags (e.g., aggressive, happy)",
     fetchStrategy: {
-      tagKey: "nom:mood-*",
+      tagKey: "nom:mood-strict",
       nomarrOnly: true,
       moodValueLookup: true,
       moodTier: "mood-strict",
