@@ -1,1 +1,0 @@
-import{Gn as e,qn as t,rt as n}from"./index-6y9j_W_w.js";var r=t(e(),1);function i(){let e=(0,r.useContext)(n);if(!e)throw Error(`useNotification must be used within NotificationProvider`);return e}export{i as t};
