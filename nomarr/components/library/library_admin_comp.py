@@ -89,8 +89,9 @@ def delete_library(db: Database, library_id: str) -> bool:
     library = db.libraries.get_library(library_id)
     if not library:
         return False
+    files_deleted = db.library_files.delete_files_for_library(library_id)
     db.libraries.delete_library(library_id)
-    logger.info(f"[LibraryAdmin] Deleted library {library_id}: {library.get('name')}")
+    logger.info(f"[LibraryAdmin] Deleted library {library_id}: {library.get('name')} ({files_deleted} files removed)")
     return True
 
 def clear_library_data(db: Database, library_root: str | None) -> None:

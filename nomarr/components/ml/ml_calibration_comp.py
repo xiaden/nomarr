@@ -69,7 +69,7 @@ def save_calibration_sidecars(calibration_data: dict[str, Any], models_dir: str,
     for head_info in heads:
         head_date = head_info.sidecar.data.get("release_date", "").replace("-", "")
         for label in head_info.sidecar.labels:
-            from nomarr.components.tagging.tagging_aggregation_comp import normalize_tag_label
+            from nomarr.components.tagging.mood_labels_comp import normalize_tag_label
             norm_label = normalize_tag_label(label)
             key = (head_info.backbone, head_date, norm_label)
             head_lookup[key] = head_info
@@ -132,8 +132,6 @@ def apply_minmax_calibration(raw_score: float, calibration: dict[str, Any]) -> f
         Calibrated score in [0, 1] range
 
     """
-    if calibration.get("method") != "minmax":
-        return raw_score
     p5 = calibration.get("p5")
     p95 = calibration.get("p95")
     if p5 is None or p95 is None:
@@ -362,6 +360,8 @@ def compute_global_calibration_hash(calibration_states: list[dict[str, Any]]) ->
     for state in sorted_states:
         _key = state.get("_key", "")
         calib_hash = state.get("calibration_def_hash", "")
-        hash_parts.append(f"{_key}:{calib_hash}")
+        p5 = state.get("p5", "")
+        p95 = state.get("p95", "")
+        hash_parts.append(f"{_key}:{calib_hash}:{p5}:{p95}")
     combined = "|".join(hash_parts)
     return hashlib.md5(combined.encode()).hexdigest()

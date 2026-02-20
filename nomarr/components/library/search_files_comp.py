@@ -7,33 +7,21 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from nomarr.helpers.dto.library_dto import SearchFilesQuery
+
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
 def search_library_files(
     db: Database,
-    query_text: str = "",
-    artist: str | None = None,
-    album: str | None = None,
-    tag_key: str | None = None,
-    tag_value: str | None = None,
-    tagged_only: bool = False,
-    limit: int = 100,
-    offset: int = 0,
+    query: SearchFilesQuery,
 ) -> tuple[list[dict[str, Any]], int]:
     """Search library files with optional filtering.
 
     Args:
         db: Database instance
-        query_text: Text search query for artist/album/title
-        artist: Filter by artist name
-        album: Filter by album name
-        tag_key: Filter by files that have this tag key
-        tag_value: Filter by files with this specific tag key=value
-        tagged_only: Only return tagged files
-        limit: Maximum number of results
-        offset: Pagination offset
+        query: Search/filter parameters
 
     Returns:
         Tuple of (files list with tags, total count)
@@ -41,14 +29,14 @@ def search_library_files(
     """
     # Use joined queries for efficient file+tag retrieval
     return db.library_files.search_library_files_with_tags(
-        query_text=query_text,
-        artist=artist,
-        album=album,
-        tag_key=tag_key,
-        tag_value=tag_value,
-        tagged_only=tagged_only,
-        limit=limit,
-        offset=offset,
+        query_text=query.query_text,
+        artist=query.artist,
+        album=query.album,
+        tag_key=query.tag_key,
+        tag_value=query.tag_value,
+        tagged_only=query.tagged_only,
+        limit=query.limit,
+        offset=query.offset,
     )
 
 
@@ -79,5 +67,5 @@ def get_unique_tag_values(db: Database, tag_key: str, nomarr_only: bool = False)
 
     """
     # Get all tags for this rel (limited to reasonable count)
-    tags = db.tags.list_tags_by_rel(tag_key, limit=10000)
+    tags = db.tags.list_tags_by_rel(tag_key, limit=10000, sort_by_count=True)
     return [str(t["value"]) for t in tags]

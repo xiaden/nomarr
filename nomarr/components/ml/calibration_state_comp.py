@@ -7,10 +7,9 @@ so they never touch persistence directly.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from arango.cursor import Cursor
 
     from nomarr.persistence.db import Database
 
@@ -109,51 +108,6 @@ def update_file_calibration_hashes_batch(
 
     """
     db.library_files.update_calibration_hashes_batch(items)
-
-
-# ---------------------------------------------------------------------------
-# Bulk backfill helpers (absorb raw AQL from workflow)
-
-
-def count_null_calibration_hashes(db: Database) -> int:
-    """Count library files where ``calibration_hash`` is ``null``."""
-    cursor = cast(
-        "Cursor",
-        db.db.aql.execute(
-            """
-            FOR f IN library_files
-                FILTER f.calibration_hash == null
-                COLLECT WITH COUNT INTO count
-                RETURN count
-            """,
-        ),
-    )
-    return next(cursor, 0)
-
-
-def backfill_null_calibration_hashes(
-    db: Database,
-    calibration_hash: str,
-) -> int:
-    """Set ``calibration_hash`` on all files where it is currently ``null``.
-
-    Returns:
-        Number of files updated.
-    """
-    cursor = cast(
-        "Cursor",
-        db.db.aql.execute(
-            """
-            FOR f IN library_files
-                FILTER f.calibration_hash == null
-                UPDATE f WITH { calibration_hash: @hash } IN library_files
-                COLLECT WITH COUNT INTO updated
-                RETURN updated
-            """,
-            bind_vars={"hash": calibration_hash},
-        ),
-    )
-    return next(cursor, 0)
 
 
 # ---------------------------------------------------------------------------

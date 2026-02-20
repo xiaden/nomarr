@@ -389,48 +389,6 @@ def _get_first(tags: Any, key: str) -> str | None:
     return None
 
 
-def _serialize_mutagen_value(value: Any) -> str:
-    """Serialize a mutagen tag value to a string.
-
-    Handles various mutagen types:
-    - MP4FreeForm: Extract bytes and decode
-    - Lists: Process all elements, JSON-encode if multiple values
-    - Bytes: Decode to UTF-8
-    - Everything else: str()
-
-    Multi-value tags are JSON-encoded as arrays. The _parse_tag_values()
-    function will parse them back to lists when storing in the database.
-
-    Args:
-        value: Mutagen tag value
-
-    Returns:
-        String representation of the value
-
-    """
-    if hasattr(value, "__iter__") and (not isinstance(value, str | bytes)):
-        try:
-            items = list(value)
-            if len(items) == 0:
-                return ""
-            if len(items) == 1:
-                item = items[0]
-                if isinstance(item, bytes):
-                    return item.decode("utf-8", errors="replace")
-                return str(item)
-            decoded = []
-            for item in items:
-                if isinstance(item, bytes):
-                    decoded.append(item.decode("utf-8", errors="replace"))
-                else:
-                    decoded.append(str(item))
-            return json.dumps(decoded, ensure_ascii=False)
-        except Exception:
-            return str(value)
-    if isinstance(value, bytes):
-        return value.decode("utf-8", errors="replace")
-    return str(value)
-
 
 def compute_chromaprint_for_file(path: LibraryPath) -> str:
     """Compute chromaprint for an audio file.

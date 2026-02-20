@@ -35,14 +35,7 @@ def _as_float_list(element: Any) -> list[float]:
     return [float(element)]
 
 
-def _normalize(vector: np.ndarray) -> np.ndarray:
-    vmax = np.max(vector)
-    ex = np.exp(vector - vmax)
-    exp_sum = np.sum(ex)
-    if exp_sum <= 0:
-        return np.zeros_like(vector)
-    result: np.ndarray = ex / exp_sum
-    return result
+
 
 
 def _to_prob(vector: np.ndarray, already_prob: bool) -> np.ndarray:
@@ -285,39 +278,61 @@ def decide_multilabel(
     return {"selected": out, "all_probs": all_probs}
 
 
-def decide_multiclass_adaptive(scores: np.ndarray, spec: HeadSpec) -> dict[str, Any]:
-    """Multiclass adaptive top-K:
-    - Normalize to a probability simplex if needed.
-    - Sort by descending p.
-    - Emit classes while p_i >= min_conf AND i < max_classes.
-    This avoids “always 3” or “everything” behaviors.
+def decide_binary_multiclass(
+    scores: np.ndarray, spec: HeadSpec, *, segment_std: np.ndarray | None = None,
+) -> dict[str, Any]:
+    """Binary multiclass (2-class softmax): uses the model's native counter-confidence.
+
+    For 2-class softmax heads (e.g., happy/non_happy), each label's counter-confidence
+    is the other label's probability — directly from the model output, no heuristics.
+    Otherwise identical to decide_multilabel: same cascade, ratio, gap, and stability
+    gating logic.
+
+    Returns ALL labels with their probabilities, but only assigns tiers to labels
+    that meet the cascade thresholds (confidence, ratio, gap).
     """
     probs = _to_prob(scores, already_prob=spec.prob_input)
-    if not spec.prob_input:
-        probs = _normalize(probs)
-    order = np.argsort(-probs)
     out: dict[str, Any] = {}
-    emitted = 0
-    if len(order) == 0:
-        return out
-    top_p = float(probs[order[0]])
-    for idx in order:
-        prob = float(probs[idx])
+    all_probs: dict[str, float] = {}
+    n_labels = len(spec.labels)
+    eps = 1e-09
+    for i, lab in enumerate(spec.labels):
+        prob = float(probs[i]) if i < len(probs) else 0.0
+        all_probs[lab] = prob
         if prob < spec.min_conf:
-            break
-        if prob < top_p * spec.top_ratio:
             continue
-        lab = spec.labels[idx] if idx < len(spec.labels) else f"class_{idx}"
-        tier = "low"
-        if prob >= spec.cascade.high:
-            tier = "high"
-        elif prob >= spec.cascade.medium:
-            tier = "medium"
-        out[lab] = {"p": prob, "tier": tier}
-        emitted += 1
-        if emitted >= spec.max_classes:
-            break
-    return out
+        thr = spec.label_thresholds.get(lab, spec.cascade.low)
+        if prob < thr:
+            continue
+        # Native counter-confidence: the other class in the softmax pair
+        if n_labels == 2:
+            other_idx = 1 - i
+            counter_p = float(probs[other_idx]) if other_idx < len(probs) else 0.0
+        else:
+            # N>2 multiclass: highest probability among all other classes
+            counter_p = 0.0
+            for j in range(min(n_labels, len(probs))):
+                if j != i:
+                    counter_p = max(counter_p, float(probs[j]))
+        counter_p = max(0.0, min(1.0, counter_p))
+        ratio = prob / max(counter_p, eps)
+        gap = prob - counter_p
+        # Extract per-label segment std if available
+        lab_std: float | None = None
+        if segment_std is not None and i < len(segment_std):
+            lab_std = float(segment_std[i])
+        tier = _determine_tier(prob, ratio, gap, spec.cascade, label_std=lab_std)
+        if tier is None and prob >= 0.1:
+            std_info = f", std={lab_std:.3f}" if lab_std is not None else ""
+            logger.debug(
+                f"[heads] Label '{lab}' rejected: p={prob:.3f} (need >={spec.cascade.low:.2f}), "
+                f"ratio={ratio:.2f} (need >={spec.cascade.ratio_low:.2f}), "
+                f"gap={gap:.3f} (need >={spec.cascade.gap_low:.2f}){std_info}",
+            )
+        if tier is not None:
+            out[lab] = {"p": prob, "tier": tier}
+    return {"selected": out, "all_probs": all_probs}
+
 
 
 class HeadDecision:
@@ -345,15 +360,6 @@ class HeadDecision:
                 tag_key = key_builder(key) if key_builder else f"{prefix}{key}"
                 tags[tag_key] = value
             return tags
-        if head_is_multiclass(self.head):
-            for key, value in self.details.items():
-                tag_key = key_builder(key) if key_builder else f"{prefix}{key}"
-                tags[tag_key] = float(value.get("p", 0.0))
-            for lab, prob in (self.all_probs or {}).items():
-                tag_key = key_builder(lab) if key_builder else f"{prefix}{lab}"
-                if tag_key not in tags:
-                    tags[tag_key] = float(prob)
-            return tags
         for key, value in self.details.items():
             tag_key = key_builder(key) if key_builder else f"{prefix}{key}"
             tags[tag_key] = float(value.get("p", 0.0))
@@ -369,7 +375,8 @@ class HeadDecision:
         """Convert HeadDecision to list of HeadOutput objects.
 
         For multilabel heads, creates one HeadOutput per selected label with tier information.
-        For multiclass heads, creates HeadOutput objects for all emitted labels (no tiers).
+        For multiclass heads, creates HeadOutput objects for emitted labels with tiers from
+        the adaptive decision function.
         For regression heads, this should not be called (regression uses add_regression_mood_tiers).
 
         Args:
@@ -394,7 +401,7 @@ class HeadDecision:
                 calibration_id = None
             if isinstance(value, dict):
                 prob = float(value.get("p", 0.0))
-                tier = value.get("tier") if not head_is_multiclass(self.head) else None
+                tier = value.get("tier")
             else:
                 prob = float(value)
                 tier = None
@@ -426,11 +433,11 @@ class HeadDecision:
 
 
 def head_is_regression(spec: HeadSpec) -> bool:
-    return spec.kind.lower() == "regression"
+    return "regression" in spec.kind.lower()
 
 
 def head_is_multiclass(spec: HeadSpec) -> bool:
-    return spec.kind.lower() == "multiclass"
+    return "multiclass" in spec.kind.lower() or "multi-class" in spec.kind.lower()
 
 
 def run_head_decision(
@@ -446,25 +453,13 @@ def run_head_decision(
     spec = HeadSpec.from_sidecar(sc)
     kind = spec.kind.lower()
     vec = np.asarray(scores).reshape(-1)
-    if kind == "regression":
+    if "regression" in kind:
         details = decide_regression(vec, spec.labels)
         return HeadDecision(spec, details)
-    if kind == "multilabel":
-        result = decide_multilabel(vec, spec, segment_std=segment_std)
+    if "multiclass" in kind or "multi-class" in kind:
+        result = decide_binary_multiclass(vec, spec, segment_std=segment_std)
         details = result.get("selected", {})
         all_probs = result.get("all_probs", {})
-        return HeadDecision(spec, details, all_probs)
-    if kind == "multiclass":
-        details = decide_multiclass_adaptive(vec, spec)
-        all_probs = None
-        if emit_all_scores:
-            probs = _to_prob(vec, already_prob=spec.prob_input)
-            if not spec.prob_input:
-                vmax = np.max(probs)
-                ex = np.exp(probs - vmax)
-                exp_sum = np.sum(ex)
-                probs = ex / exp_sum if exp_sum > 0 else np.zeros_like(probs)
-            all_probs = {lab: float(probs[i]) for i, lab in enumerate(spec.labels) if i < len(probs)}
         return HeadDecision(spec, details, all_probs)
     result = decide_multilabel(vec, spec, segment_std=segment_std)
     details = result.get("selected", {})

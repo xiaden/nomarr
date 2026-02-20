@@ -66,10 +66,10 @@ def derive_embed_dim(models_dir: str, backbone_id: str) -> int:
 
 
 def drain_hot_to_cold(db: DatabaseLike, backbone_id: str) -> int:
-    """Drain all vectors from hot to cold collection (convergent UPSERT).
+    """Drain all vectors from hot to cold collection (convergent UPSERT + truncate).
 
-    Uses AQL UPSERT with unique _key to ensure convergent operation.
-    Safe to run multiple times (idempotent via unique constraint).
+    Copies all documents from hot to cold via AQL UPSERT (idempotent by _key),
+    then truncates hot. Safe to run multiple times.
 
     Args:
         db: ArangoDB database handle.
@@ -112,6 +112,9 @@ def drain_hot_to_cold(db: DatabaseLike, backbone_id: str) -> int:
         """
     )
     drained = len(list(cursor))  # type: ignore[arg-type]
+
+    # Clear hot collection now that all docs are in cold
+    hot_coll.truncate()
 
     logger.info(
         "Drained %d documents from %s to %s",
