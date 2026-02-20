@@ -11,9 +11,9 @@ Architecture:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 if TYPE_CHECKING:
     from nomarr.helpers.dto.analytics_dto import (
@@ -119,23 +119,27 @@ class TagSpecRequest(BaseModel):
 class TagCoOccurrenceRequest(BaseModel):
     """Request model for tag co-occurrence matrix."""
 
-    x_axis: list[TagSpecRequest] = Field(..., alias="x", description="X-axis tags (max 16)", max_length=16)
-    y_axis: list[TagSpecRequest] = Field(..., alias="y", description="Y-axis tags (max 16)", max_length=16)
+    model_config = ConfigDict(populate_by_name=True)
+
+    x_axis: Annotated[list[TagSpecRequest], Field(alias="x", description="X-axis tags (max 16)", max_length=16)]
+    y_axis: Annotated[list[TagSpecRequest], Field(alias="y", description="Y-axis tags (max 16)", max_length=16)]
 
 
 class TagCoOccurrencesResponse(BaseModel):
     """Response model for tag co-occurrence matrix."""
 
-    x_axis: list[TagSpecRequest] = Field(..., alias="x", description="X-axis tags")
-    y_axis: list[TagSpecRequest] = Field(..., alias="y", description="Y-axis tags")
+    model_config = ConfigDict(populate_by_name=True)
+
+    x_axis: Annotated[list[TagSpecRequest], Field(alias="x", description="X-axis tags")]
+    y_axis: Annotated[list[TagSpecRequest], Field(alias="y", description="Y-axis tags")]
     matrix: list[list[int]] = Field(..., description="Co-occurrence matrix where matrix[j][i] = count")
 
     @classmethod
     def from_dto(cls, dto: TagCoOccurrenceData) -> TagCoOccurrencesResponse:
         """Convert TagCoOccurrenceData DTO to Pydantic response model."""
         return cls(
-            x=[TagSpecRequest(key=tag.key, value=tag.value) for tag in dto.x_tags],
-            y=[TagSpecRequest(key=tag.key, value=tag.value) for tag in dto.y_tags],
+            x_axis=[TagSpecRequest(key=tag.key, value=tag.value) for tag in dto.x_tags],
+            y_axis=[TagSpecRequest(key=tag.key, value=tag.value) for tag in dto.y_tags],
             matrix=dto.matrix,
         )
 
@@ -228,8 +232,8 @@ class MoodAnalysisResponse(BaseModel):
     balance: dict[str, list[MoodBalanceItemResponse]] = Field(
         default_factory=dict, description="Mood balance per tier",
     )
-    top_pairs: list[MoodPairItemResponse] = Field(
-        default_factory=list, description="Top co-occurring mood pairs",
+    top_pairs_by_tier: dict[str, list[MoodPairItemResponse]] = Field(
+        default_factory=dict, description="Top co-occurring mood pairs per tier (strict/regular/loose)",
     )
     dominant_vibes: list[DominantVibeItemResponse] = Field(
         default_factory=list, description="Dominant mood vibes",

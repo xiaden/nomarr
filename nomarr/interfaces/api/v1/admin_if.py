@@ -18,7 +18,6 @@ from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_key
 from nomarr.interfaces.api.types.admin_types import WorkerOperationResponse
 from nomarr.interfaces.api.web.dependencies import get_calibration_service, get_workers_coordinator
-from nomarr.workflows.calibration.backfill_calibration_hash_wf import backfill_calibration_hashes_wf
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
@@ -71,23 +70,3 @@ async def admin_run_calibration(calibration_service: Annotated[CalibrationServic
             status_code=500, detail=sanitize_exception_message(e, "Calibration generation failed")
         ) from e
 
-
-@router.post("/calibration/backfill", dependencies=[Depends(verify_key)])
-async def admin_backfill_calibration_hashes(
-    set_to_current: bool = False, calibration_service: CalibrationService = Depends(get_calibration_service)
-):
-    """Backfill calibration_hash for files currently showing as NULL.
-
-    Two strategies:
-    - set_to_current=False (default): Leave as NULL, users must recalibrate
-    - set_to_current=True: Set to current global hash (assumes files are current)
-
-    Returns:
-        Summary of backfill operation
-
-    """
-    try:
-        return backfill_calibration_hashes_wf(db=calibration_service._db, set_to_current=set_to_current)
-    except Exception as e:
-        logger.exception("[Admin API] Backfill failed")
-        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Backfill failed")) from e

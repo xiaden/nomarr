@@ -1,11 +1,13 @@
 """Library statistics and management endpoints for web UI."""
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING, Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from nomarr.helpers.dto.library_dto import SearchFilesQuery
 from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.id_codec import decode_path_id
@@ -217,7 +219,7 @@ async def search_library_files(
     Returns paginated list of files with metadata.
     """
     try:
-        result = library_service.search_files(
+        query = SearchFilesQuery(
             query_text=q,
             artist=artist,
             album=album,
@@ -227,6 +229,7 @@ async def search_library_files(
             limit=limit,
             offset=offset,
         )
+        result = library_service.search_files(query)
         return SearchFilesResponse.from_dto(result)
     except Exception as e:
         logger.exception("[Web API] Error searching library files")
@@ -522,7 +525,9 @@ async def reconcile_library_paths(
     """
     library_id = decode_path_id(library_id)
     try:
-        stats = library_service.reconcile_library_paths(policy=policy, batch_size=batch_size)
+        stats = await asyncio.to_thread(
+            library_service.reconcile_library_paths, policy=policy, batch_size=batch_size
+        )
         return ReconcilePathsResponse.from_dict(stats)
     except ValueError as e:
         error_msg = str(e).lower()
@@ -562,7 +567,9 @@ async def reconcile_library_tags(
     """
     library_id = decode_path_id(library_id)
     try:
-        result = tagging_service.reconcile_library(library_id=library_id, batch_size=batch_size)
+        result = await asyncio.to_thread(
+            tagging_service.reconcile_library, library_id=library_id, batch_size=batch_size
+        )
         return ReconcileTagsResponse.from_dto(result)
     except ValueError:
         raise HTTPException(status_code=404, detail="Library not found") from None

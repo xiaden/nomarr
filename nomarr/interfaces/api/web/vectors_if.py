@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 from fastapi import APIRouter, Depends, HTTPException
 
 from nomarr.interfaces.api.auth import verify_session
+from nomarr.interfaces.api.id_codec import decode_path_id, encode_id
 from nomarr.interfaces.api.types.vector_types import (
     VectorGetResponse,
     VectorHotColdStats,
@@ -100,7 +101,7 @@ async def search_vectors(
         # Convert to response model
         result_items = [
             VectorSearchResultItem(
-                file_id=result["file_id"],
+                file_id=encode_id(result["file_id"]),
                 score=result["score"],
                 vector=result["vector"],
             )
@@ -140,7 +141,7 @@ async def get_track_vector(
 
     Args:
         backbone_id: Backbone identifier (e.g., "effnet", "yamnet")
-        file_id: Library file document ID
+        file_id: Library file document ID (HTTP-encoded, e.g. "library_files:123")
 
     Returns:
         VectorGetResponse with the track's embedding vector
@@ -149,6 +150,7 @@ async def get_track_vector(
         404: If vector not found in hot or cold collections
 
     """
+    file_id = decode_path_id(file_id)
     result = vector_search_service.get_track_vector(backbone_id, file_id)
 
     if result is None:
@@ -158,7 +160,7 @@ async def get_track_vector(
         )
 
     return VectorGetResponse(
-        file_id=file_id,
+        file_id=encode_id(file_id),
         backbone_id=backbone_id,
         vector=result["vector"],
     )
