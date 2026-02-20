@@ -47,6 +47,7 @@ config/*.sqlite*
 .dockerignore
 # Data directories (bind mounts)
 .docker/*
+build.ps1
 
 # Serena IDE files
 .serena/
@@ -132,9 +133,3 @@ fpcalc.exe
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
-
-
-# Disposable benchmark / test artifacts
-hop_sweep_output.txt
-test_files.json
-scripts/bench_*.py
