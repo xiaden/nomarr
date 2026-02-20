@@ -1,69 +1,23 @@
-"""Tests for safe_write_comp - atomic tag writing with optional verification."""
+"""Tests for safe_write_comp - atomic tag writing with audio sanity verification."""
 
 from pathlib import Path
 from unittest.mock import patch
 
 from nomarr.components.tagging.safe_write_comp import (
     SafeWriteResult,
-    _safe_write_fallback,
-    _safe_write_hardlink,
+    _AudioProperties,
     safe_write_tags,
 )
 from nomarr.helpers.dto.path_dto import LibraryPath
 
+_GOOD_PROPS = _AudioProperties(duration=180.0, sample_rate=44100, channels=2)
 
-class TestSafeWriteTagsVerifyAudio:
-    """Tests for verify_audio parameter behavior."""
 
-    def test_default_verify_audio_is_true(self) -> None:
-        """verify_audio defaults to True for backward compatibility."""
-        # Introspect the function signature
-        import inspect
+class TestSafeWriteVerification:
+    """Tests that audio property sanity check is always performed."""
 
-        sig = inspect.signature(safe_write_tags)
-        verify_audio_param = sig.parameters.get("verify_audio")
-        assert verify_audio_param is not None
-        assert verify_audio_param.default is True
-
-    def test_verify_audio_false_skips_chromaprint(self, tmp_path: Path) -> None:
-        """When verify_audio=False, chromaprint computation is skipped."""
-        # Create a temp file to write to
-        test_file = tmp_path / "test.mp3"
-        test_file.write_bytes(b"fake audio content")
-
-        library_path = LibraryPath(
-            relative="test.mp3",
-            absolute=test_file,
-            library_id="test_lib",
-            status="valid",
-        )
-
-        write_fn_called = [False]
-
-        def mock_write_fn(temp_path: Path) -> None:
-            write_fn_called[0] = True
-            # Just touch the file - simulate tag write
-            temp_path.touch()
-
-        with patch(
-            "nomarr.components.tagging.safe_write_comp._compute_chromaprint_for_path"
-        ) as mock_chromaprint:
-            # With verify_audio=False, chromaprint should NOT be called
-            result = safe_write_tags(
-                library_path,
-                tmp_path,
-                "original_chromaprint_value",
-                mock_write_fn,
-                verify_audio=False,
-            )
-
-            # The chromaprint function should not be called
-            mock_chromaprint.assert_not_called()
-            assert write_fn_called[0] is True
-            assert result.success is True
-
-    def test_verify_audio_true_calls_chromaprint(self, tmp_path: Path) -> None:
-        """When verify_audio=True (default), chromaprint is computed and verified."""
+    def test_audio_properties_verified_on_success(self, tmp_path: Path) -> None:
+        """Audio properties are probed and compared for every write."""
         test_file = tmp_path / "test.mp3"
         test_file.write_bytes(b"fake audio content")
 
@@ -78,78 +32,90 @@ class TestSafeWriteTagsVerifyAudio:
             temp_path.touch()
 
         with patch(
-            "nomarr.components.tagging.safe_write_comp._compute_chromaprint_for_path"
-        ) as mock_chromaprint:
-            # Return same chromaprint to simulate no corruption
-            mock_chromaprint.return_value = "original_chromaprint_value"
+            "nomarr.components.tagging.safe_write_comp._probe_audio_properties"
+        ) as mock_probe:
+            mock_probe.return_value = _GOOD_PROPS
 
-            result = safe_write_tags(
-                library_path,
-                tmp_path,
-                "original_chromaprint_value",
-                mock_write_fn,
-                verify_audio=True,  # explicit True
-            )
+            result = safe_write_tags(library_path, tmp_path, mock_write_fn)
 
-            # Chromaprint should be called for verification
-            mock_chromaprint.assert_called_once()
+            # Probed twice: original before copy, temp after write
+            assert mock_probe.call_count == 2
             assert result.success is True
 
+    def test_duration_mismatch_returns_failure(self, tmp_path: Path) -> None:
+        """Returns failure when duration differs beyond tolerance after write."""
+        test_file = tmp_path / "test.mp3"
+        test_file.write_bytes(b"fake audio content")
 
-class TestSafeWriteHardlinkVerifyAudio:
-    """Tests for _safe_write_hardlink verify_audio parameter."""
-
-    def test_verify_audio_false_skips_chromaprint(self, tmp_path: Path) -> None:
-        """Hardlink path skips chromaprint when verify_audio=False."""
-        # Create source file
-        original = tmp_path / "original.mp3"
-        original.write_bytes(b"audio data")
-
-        temp_folder = tmp_path / "temp"
-        temp_folder.mkdir()
+        library_path = LibraryPath(
+            relative="test.mp3",
+            absolute=test_file,
+            library_id="test_lib",
+            status="valid",
+        )
 
         def mock_write_fn(temp_path: Path) -> None:
-            pass
+            temp_path.touch()
+
+        truncated_props = _AudioProperties(duration=10.0, sample_rate=44100, channels=2)
 
         with patch(
-            "nomarr.components.tagging.safe_write_comp._compute_chromaprint_for_path"
-        ) as mock_chromaprint:
-            result = _safe_write_hardlink(
-                original,
-                temp_folder,
-                "original.mp3",
-                "some_chromaprint",
-                mock_write_fn,
-                verify_audio=False,
-            )
+            "nomarr.components.tagging.safe_write_comp._probe_audio_properties"
+        ) as mock_probe:
+            mock_probe.side_effect = [_GOOD_PROPS, truncated_props]
 
-            mock_chromaprint.assert_not_called()
-            assert result.success is True
+            result = safe_write_tags(library_path, tmp_path, mock_write_fn)
 
+            assert result.success is False
+            assert "Duration changed" in (result.error or "")
 
-class TestSafeWriteFallbackVerifyAudio:
-    """Tests for _safe_write_fallback verify_audio parameter."""
+    def test_sample_rate_mismatch_returns_failure(self, tmp_path: Path) -> None:
+        """Returns failure when sample rate changes after write."""
+        test_file = tmp_path / "test.mp3"
+        test_file.write_bytes(b"fake audio content")
 
-    def test_verify_audio_false_skips_chromaprint(self, tmp_path: Path) -> None:
-        """Fallback path skips chromaprint when verify_audio=False."""
-        original = tmp_path / "original.mp3"
-        original.write_bytes(b"audio data")
+        library_path = LibraryPath(
+            relative="test.mp3",
+            absolute=test_file,
+            library_id="test_lib",
+            status="valid",
+        )
 
         def mock_write_fn(temp_path: Path) -> None:
-            pass
+            temp_path.touch()
+
+        wrong_sr_props = _AudioProperties(duration=180.0, sample_rate=22050, channels=2)
 
         with patch(
-            "nomarr.components.tagging.safe_write_comp._compute_chromaprint_for_path"
-        ) as mock_chromaprint:
-            result = _safe_write_fallback(
-                original,
-                "some_chromaprint",
-                mock_write_fn,
-                verify_audio=False,
-            )
+            "nomarr.components.tagging.safe_write_comp._probe_audio_properties"
+        ) as mock_probe:
+            mock_probe.side_effect = [_GOOD_PROPS, wrong_sr_props]
 
-            mock_chromaprint.assert_not_called()
-            assert result.success is True
+            result = safe_write_tags(library_path, tmp_path, mock_write_fn)
+
+            assert result.success is False
+            assert "Sample rate changed" in (result.error or "")
+
+    def test_probe_failure_on_original_returns_failure(self, tmp_path: Path) -> None:
+        """Returns failure when the original file cannot be probed."""
+        test_file = tmp_path / "test.mp3"
+        test_file.write_bytes(b"not a real audio file")
+
+        library_path = LibraryPath(
+            relative="test.mp3",
+            absolute=test_file,
+            library_id="test_lib",
+            status="valid",
+        )
+
+        with patch(
+            "nomarr.components.tagging.safe_write_comp._probe_audio_properties",
+            side_effect=RuntimeError("mutagen could not read audio file"),
+        ):
+            result = safe_write_tags(library_path, tmp_path, lambda _: None)
+
+            assert result.success is False
+            assert "Failed to probe original file" in (result.error or "")
 
 
 class TestSafeWriteResult:
