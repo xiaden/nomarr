@@ -105,21 +105,49 @@ def discover_migrations() -> list[tuple[str, ModuleType]]:
     return migrations
 
 
+def get_current_schema_version(migrations: list[tuple[str, ModuleType]]) -> int:
+    """Derive the current code schema version from discovered migration files.
+
+    Returns the highest SCHEMA_VERSION_AFTER across all discovered migrations,
+    eliminating the need for a manually maintained SCHEMA_VERSION constant.
+
+    Args:
+        migrations: All discovered migrations (name, module) pairs.
+
+    Returns:
+        Highest schema version number, or 0 if no migrations exist.
+
+    """
+    if not migrations:
+        return 0
+    return int(max(mod.SCHEMA_VERSION_AFTER for _, mod in migrations))
+
+
 def get_pending_migrations(
     all_migrations: list[tuple[str, ModuleType]],
     applied_names: set[str],
+    current_db_version: int,
 ) -> list[tuple[str, ModuleType]]:
-    """Filter to only migrations that have not been applied.
+    """Filter to only migrations that have not been applied and are needed.
+
+    A migration is skipped if its SCHEMA_VERSION_AFTER is already at or below
+    the current database version. This prevents fresh installs from running
+    historical migrations that were already incorporated into the base schema.
 
     Args:
         all_migrations: All discovered migrations (name, module) pairs.
         applied_names: Set of migration names already applied.
+        current_db_version: Current schema version stored in the database.
 
     Returns:
         List of (name, module) pairs for pending migrations, in order.
 
     """
-    pending = [(name, mod) for name, mod in all_migrations if name not in applied_names]
+    pending = [
+        (name, mod)
+        for name, mod in all_migrations
+        if name not in applied_names and current_db_version < mod.SCHEMA_VERSION_AFTER
+    ]
     if pending:
         logger.info(
             "Found %d pending migration(s): %s",
@@ -163,7 +191,12 @@ def apply_migration(
     db: DatabaseLike,
     migration_ops: MigrationOperations,
 ) -> None:
-    """Apply a single migration with timing and recording.
+    """Apply a single migration with two-phase recording.
+
+    Records the migration as 'in_progress' BEFORE running upgrade(), then
+    updates to 'applied' after success. This ensures a record exists even
+    if the process crashes mid-migration, making the interrupted state visible
+    on the next startup rather than silently re-running.
 
     Args:
         name: Migration identifier.
@@ -183,6 +216,14 @@ def apply_migration(
         module.SCHEMA_VERSION_AFTER,
     )
 
+    started_at = format_wall_timestamp(now_ms(), fmt="%Y-%m-%dT%H:%M:%SZ")
+    migration_ops.record_migration_started(
+        name=name,
+        schema_version_before=module.SCHEMA_VERSION_BEFORE,
+        schema_version_after=module.SCHEMA_VERSION_AFTER,
+        started_at=started_at,
+    )
+
     start_time = internal_ms()
     try:
         module.upgrade(db)
@@ -193,10 +234,8 @@ def apply_migration(
     duration_ms = internal_ms().value - start_time.value
     applied_at = format_wall_timestamp(now_ms(), fmt="%Y-%m-%dT%H:%M:%SZ")
 
-    migration_ops.record_migration(
+    migration_ops.mark_migration_applied(
         name=name,
-        schema_version_before=module.SCHEMA_VERSION_BEFORE,
-        schema_version_after=module.SCHEMA_VERSION_AFTER,
         duration_ms=duration_ms,
         applied_at=applied_at,
     )

@@ -26,15 +26,15 @@ from nomarr.persistence.database.vectors_track_aql import (
 from nomarr.persistence.database.worker_claims_aql import WorkerClaimsOperations
 from nomarr.persistence.database.worker_restart_policy_aql import WorkerRestartPolicyOperations
 
-__all__ = ["SCHEMA_VERSION", "Database"]
-
-SCHEMA_VERSION = 7  # hot/cold vectors_track collections (split for write/search optimization)
+__all__ = ["Database"]
 
 # ==================== SCHEMA VERSIONING POLICY ====================
 # Schema versioning uses forward-only migrations (alpha policy).
 #
-# SCHEMA_VERSION tracks the target schema version in code.
-# Migrations auto-run on startup via prepare_database_workflow().
+# The current schema version is derived automatically from the highest
+# SCHEMA_VERSION_AFTER across all migration files in nomarr/migrations/.
+# There is no manually maintained SCHEMA_VERSION constant.
+# See nomarr/components/platform/migration_runner_comp.get_current_schema_version().
 #
 # Migration system (starting SCHEMA_VERSION=6):
 #   - Migrations live in nomarr/migrations/ as V{NNN}_*.py modules
@@ -43,10 +43,9 @@ SCHEMA_VERSION = 7  # hot/cold vectors_track collections (split for write/search
 #   - Startup aborts if DB schema is ahead of code
 #
 # Schema changes require:
-#   1. Increment SCHEMA_VERSION
-#   2. Create migration file in nomarr/migrations/
-#   3. Implement upgrade() function with data transformations
-#   4. See docs/dev/migrations.md for full migration architecture
+#   1. Create migration file in nomarr/migrations/
+#   2. Implement upgrade() function with data transformations
+#   3. See docs/dev/migrations.md for full migration architecture
 #
 # Alpha: Breaking changes allowed pre-1.0, but migrations provide self-repair.
 # Post-1.0: Strict migration requirements with deprecation paths.
@@ -258,12 +257,16 @@ class Database:
 
         return total_deleted
 
-    def ensure_schema_version(self) -> int:
+    def ensure_schema_version(self, code_schema_version: int) -> int:
         """Read current schema version, initializing if needed.
 
-        For fresh databases (no version recorded), records the current
-        SCHEMA_VERSION. For existing databases, returns the stored version
+        For fresh databases (no version recorded), records the given
+        code schema version. For existing databases, returns the stored version
         without modification.
+
+        Args:
+            code_schema_version: The schema version derived from migration files.
+                Used to stamp fresh databases.
 
         Should be called AFTER ensure_schema() has created collections.
 
@@ -274,8 +277,8 @@ class Database:
         current_version = self.meta.get("schema_version")
         if not current_version:
             # Fresh database — record current version
-            self.meta.set("schema_version", str(SCHEMA_VERSION))
-            return SCHEMA_VERSION
+            self.meta.set("schema_version", str(code_schema_version))
+            return code_schema_version
         return int(current_version)
 
     def update_schema_version(self, version: int) -> None:

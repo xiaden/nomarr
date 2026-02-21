@@ -258,8 +258,12 @@ def _ensure_index(
         else:
             # Persistent, hash, etc.
             coll.add_persistent_index(fields=fields, unique=unique, sparse=sparse)
-    except IndexCreateError:
-        pass  # Index already exists  # Index already exists  # Index already exists  # Index already exists  # Index already exists  # Index already exists
+    except IndexCreateError as exc:
+        # 409 (HTTP Conflict) means the index already exists — safe to ignore.
+        # Any other error code indicates a genuine failure (wrong field type,
+        # missing collection, etc.) that should surface immediately.
+        if exc.http_code != 409:
+            raise
 
 
 def _create_graphs(db: DatabaseLike) -> None:

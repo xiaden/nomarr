@@ -68,6 +68,90 @@ class MigrationOperations:
         )
         return set(cursor)
 
+    def get_in_progress_migration_names(self) -> list[str]:
+        """Get names of migrations currently in-progress (started but not completed).
+
+        A migration is in-progress if it was recorded with status='in_progress'
+        but never updated to status='applied'. This indicates a crash between
+        upgrade() running and the completion record being written.
+
+        Returns:
+            List of migration name strings with status='in_progress'.
+
+        """
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(
+                """
+            FOR m IN applied_migrations
+                FILTER m.status == 'in_progress'
+                RETURN m._key
+            """,
+            ),
+        )
+        return list(cursor)
+
+    def record_migration_started(
+        self,
+        name: str,
+        *,
+        schema_version_before: int,
+        schema_version_after: int,
+        started_at: str,
+    ) -> None:
+        """Record that a migration has started (pre-upgrade record).
+
+        Inserted before upgrade() runs to ensure a record exists even if the
+        process crashes mid-migration. Use mark_migration_applied() after
+        upgrade() completes successfully.
+
+        Args:
+            name: Migration identifier (filename without .py).
+            schema_version_before: Schema version before migration.
+            schema_version_after: Schema version after migration.
+            started_at: ISO 8601 timestamp when execution began.
+
+        """
+        self.collection.insert(
+            {
+                "_key": name,
+                "name": name,
+                "status": "in_progress",
+                "started_at": started_at,
+                "schema_version_before": schema_version_before,
+                "schema_version_after": schema_version_after,
+            },
+        )
+        logger.debug("Recorded migration %s as in_progress", name)
+
+    def mark_migration_applied(
+        self,
+        name: str,
+        *,
+        duration_ms: int,
+        applied_at: str,
+    ) -> None:
+        """Mark an in-progress migration as successfully applied.
+
+        Updates the record created by record_migration_started() with
+        completion timing and sets status='applied'.
+
+        Args:
+            name: Migration identifier (filename without .py).
+            duration_ms: Execution duration in milliseconds.
+            applied_at: ISO 8601 timestamp of completion.
+
+        """
+        self.collection.update(
+            {
+                "_key": name,
+                "status": "applied",
+                "applied_at": applied_at,
+                "duration_ms": duration_ms,
+            },
+        )
+        logger.debug("Marked migration %s as applied (%dms)", name, duration_ms)
+
     def record_migration(
         self,
         name: str,

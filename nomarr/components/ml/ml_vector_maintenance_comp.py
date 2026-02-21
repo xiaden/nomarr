@@ -238,7 +238,7 @@ def build_cold_vector_index(
         cold_coll.add_index(  # type: ignore[attr-defined]
             {
                 "type": "vector",
-                "fields": ["vector"],
+                "fields": ["vector_n"],
                 "params": {
                     "metric": "cosine",
                     "dimension": embed_dim,
@@ -258,3 +258,49 @@ def build_cold_vector_index(
         raise RuntimeError(
             f"Vector index creation failed on {cold_name}: {exc}"
         ) from exc
+
+
+
+def rebuild_cold_vector_index(
+    db: DatabaseLike,
+    backbone_id: str,
+    embed_dim: int,
+    nlists: int,
+) -> None:
+    """Drop existing vector index and rebuild it on the cold collection.
+
+    Combines drop + build as a single operation for use when data is already
+    fully promoted and only the index parameters need updating.
+
+    Args:
+        db: ArangoDB database handle.
+        backbone_id: Backbone identifier.
+        embed_dim: Embedding dimension (from derive_embed_dim).
+        nlists: Number of Voronoi cells (controls recall/speed tradeoff).
+
+    Raises:
+        ValueError: If cold collection doesn't exist.
+        RuntimeError: If index creation fails.
+
+    """
+    cold_name = f"vectors_track_cold__{backbone_id}"
+    if not db.has_collection(cold_name):
+        raise ValueError(
+            f"Cold collection '{cold_name}' does not exist. "
+            "Run promote & rebuild first to populate the cold collection."
+        )
+
+    logger.info(
+        "[rebuild index] Starting for %s (dim=%d, nlists=%d)",
+        cold_name,
+        embed_dim,
+        nlists,
+    )
+
+    # Drop existing index if present
+    drop_cold_vector_index(db, backbone_id)
+
+    # Build fresh index on the fully-populated cold collection
+    build_cold_vector_index(db, backbone_id, embed_dim, nlists)
+
+    logger.info("[rebuild index] Completed for %s", cold_name)

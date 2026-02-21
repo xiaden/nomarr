@@ -18,6 +18,7 @@ from nomarr.components.platform.migration_runner_comp import (
     apply_migration,
     check_schema_version_mismatch,
     discover_migrations,
+    get_current_schema_version,
     get_pending_migrations,
     validate_version_chain,
 )
@@ -50,40 +51,51 @@ def prepare_database_workflow(
         SystemExit: If any step fails. Startup is fail-fast.
 
     """
-    from nomarr.persistence.db import SCHEMA_VERSION
-
     # Step 1: Ensure schema (collections, indexes, graphs)
     ensure_schema(db.db, models_dir=models_dir)
 
-    # Step 2: Read current schema version (initializes on fresh DB)
-    current_db_version = db.ensure_schema_version()
+    # Step 2: Discover migrations and derive code schema version
+    all_migrations = discover_migrations()
+    code_schema_version = get_current_schema_version(all_migrations)
+
+    # Step 3: Read current schema version (initializes on fresh DB with code version)
+    current_db_version = db.ensure_schema_version(code_schema_version)
     logger.info(
         "Database schema version: %d, code schema version: %d",
         current_db_version,
-        SCHEMA_VERSION,
+        code_schema_version,
     )
 
-    # Step 3: Validate version compatibility
+    # Step 4: Validate version compatibility
     try:
-        check_schema_version_mismatch(current_db_version, SCHEMA_VERSION)
+        check_schema_version_mismatch(current_db_version, code_schema_version)
     except SchemaVersionMismatchError as exc:
         logger.critical(
             "Database schema version (%d) is newer than code (%d). "
             "Upgrade the application or restore the database from backup.",
             current_db_version,
-            SCHEMA_VERSION,
+            code_schema_version,
         )
         raise SystemExit(1) from exc
 
-    # Step 4: Discover, validate, and apply pending migrations
+    # Step 5: Apply pending migrations
     try:
-        all_migrations = discover_migrations()
         if not all_migrations:
             logger.info("No migrations found")
             final_version = current_db_version
         else:
+            # Warn about migrations stuck in 'in_progress' state (crash mid-migration)
+            in_progress = db.migrations.get_in_progress_migration_names()
+            if in_progress:
+                logger.critical(
+                    "Interrupted migration(s) detected: %s. "
+                    "These migrations started but did not complete on a previous run. "
+                    "Data may be in a partially-migrated state. "
+                    "Investigate and resolve before allowing writes.",
+                    ", ".join(in_progress),
+                )
             applied_names = db.migrations.get_applied_migration_names()
-            pending = get_pending_migrations(all_migrations, applied_names)
+            pending = get_pending_migrations(all_migrations, applied_names, current_db_version)
             if not pending:
                 logger.info("All migrations already applied")
                 final_version = current_db_version
@@ -113,7 +125,7 @@ def prepare_database_workflow(
         )
         raise SystemExit(1) from exc
 
-    # Step 5: Update stored schema version
+    # Step 6: Update stored schema version
     if final_version != current_db_version:
         db.update_schema_version(final_version)
         logger.info(

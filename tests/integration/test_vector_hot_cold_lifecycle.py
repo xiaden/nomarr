@@ -230,7 +230,7 @@ class FakeColdOperations:
     def get_vector(self, file_id: str) -> dict[str, Any] | None:
         return self.harness.get_cold_vector(self.backbone_id, file_id)
 
-    def search_similar(self, vector: list[float], limit: int) -> list[dict[str, Any]]:
+    def search_similar(self, vector: list[float], limit: int, *, nprobe: int = 10) -> list[dict[str, Any]]:
         return self.harness.search_cold(self.backbone_id, vector, limit)
 
     def count(self) -> int:

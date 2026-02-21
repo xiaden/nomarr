@@ -6,6 +6,7 @@ Documents store a pooled track-level embedding vector per file, keyed by
 """
 
 import hashlib
+import math
 from typing import Any, cast
 
 from nomarr.helpers.time_helper import now_ms
@@ -57,6 +58,10 @@ class VectorsTrackHotOperations:
         Uses atomic AQL UPSERT to handle parallel workers safely.
         No vector index maintenance occurs (hot collections have no vector indexes).
 
+        Both the raw ``vector`` and an L2-normalized copy ``vector_n`` are stored.
+        ``vector_n`` is used for cosine index search; ``vector`` is preserved for
+        downstream arithmetic (e.g. centroid computation, future metric changes).
+
         Args:
             file_id: Library file document ID (e.g., ``"library_files/12345"``).
             model_suite_hash: 12-char hex hash from ``compute_model_suite_hash()``.
@@ -69,6 +74,9 @@ class VectorsTrackHotOperations:
         ts = now_ms().value
         collection_name = self.collection_name
 
+        norm = math.sqrt(math.fsum(x * x for x in vector))
+        vector_n = [x / norm for x in vector] if norm > 0.0 else list(vector)
+
         self.db.aql.execute(
             f"""
             UPSERT {{ _key: @_key }}
@@ -78,6 +86,7 @@ class VectorsTrackHotOperations:
                 model_suite_hash: @model_suite_hash,
                 embed_dim: @embed_dim,
                 vector: @vector,
+                vector_n: @vector_n,
                 num_segments: @num_segments,
                 created_at: @ts
             }}
@@ -86,6 +95,7 @@ class VectorsTrackHotOperations:
                 model_suite_hash: @model_suite_hash,
                 embed_dim: @embed_dim,
                 vector: @vector,
+                vector_n: @vector_n,
                 num_segments: @num_segments,
                 created_at: @ts
             }}
@@ -99,6 +109,7 @@ class VectorsTrackHotOperations:
                     "model_suite_hash": model_suite_hash,
                     "embed_dim": embed_dim,
                     "vector": vector,
+                    "vector_n": vector_n,
                     "num_segments": num_segments,
                     "ts": ts,
                 },
@@ -306,7 +317,9 @@ class VectorsTrackColdOperations:
     # Search
     # ------------------------------------------------------------------
 
-    def search_similar(self, vector: list[float], limit: int) -> list[dict[str, Any]]:
+    def search_similar(
+        self, vector: list[float], limit: int, nprobe: int = 20
+    ) -> list[dict[str, Any]]:
         """Search for similar vectors using ANN index.
 
         Returns raw results with distance scores. Service layer applies min_score filtering.
@@ -316,6 +329,9 @@ class VectorsTrackColdOperations:
         Args:
             vector: Query embedding vector.
             limit: Maximum number of results to return.
+            nprobe: Number of centroids to probe during search. Higher values improve
+                recall at the cost of latency. Overrides defaultNProbe from the index.
+                Should be roughly 10% of nLists (e.g. nprobe=20 for nLists=170).
 
         Returns:
             List of dicts with keys:
@@ -331,7 +347,7 @@ class VectorsTrackColdOperations:
         cursor = self.db.aql.execute(
             f"""
             FOR doc IN {self.collection_name}
-                LET score = APPROX_NEAR_COSINE(doc.vector, @query_vector)
+                LET score = APPROX_NEAR_COSINE(doc.vector_n, @query_vector, {{nProbe: {nprobe}}})
                 SORT score DESC
                 LIMIT @limit
                 RETURN MERGE(doc, {{ score: score }})
