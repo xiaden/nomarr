@@ -66,7 +66,6 @@ def assign_regression_outputs(
     head_name: str,
     mean_val: float,
     std_val: float,
-    framework_version: str,
     stability_thresholds: StabilityThresholds,
     regression_thresholds: RegressionThresholds,
     log_prefix: str = "aggregation",
@@ -84,7 +83,6 @@ def assign_regression_outputs(
         head_name: The head name key into MOOD_MAPPING
         mean_val: Clamped [0, 1] regression mean
         std_val: Standard deviation (optionally calibration-scaled)
-        framework_version: Runtime Essentia version
         stability_thresholds: Thresholds for stability gating
         regression_thresholds: Thresholds for mood determination
         log_prefix: Logging prefix tag (e.g. "aggregation" or "reconstruction")
@@ -104,13 +102,11 @@ def assign_regression_outputs(
     if not is_high and not is_low:
         model_key_high, calib_id_high = head_info.build_versioned_tag_key(
             high_term,
-            framework_version=framework_version,
             calib_method="none",
             calib_version=0,
         )
         model_key_low, calib_id_low = head_info.build_versioned_tag_key(
             low_term,
-            framework_version=framework_version,
             calib_method="none",
             calib_version=0,
         )
@@ -146,7 +142,6 @@ def assign_regression_outputs(
     mood_term = high_term if is_high else low_term
     model_key, calibration_id = head_info.build_versioned_tag_key(
         mood_term,
-        framework_version=framework_version,
         calib_method="none",
         calib_version=0,
     )
@@ -199,7 +194,6 @@ def assign_regression_outputs(
 
 def add_regression_mood_tiers(
     regression_heads: list[tuple[Any, list[float]]],
-    framework_version: str,
     stability_thresholds: StabilityThresholds | None = None,
     regression_thresholds: RegressionThresholds | None = None,
 ) -> list[Any]:
@@ -219,7 +213,6 @@ def add_regression_mood_tiers(
 
     Args:
         regression_heads: List of (HeadInfo, segment_values) tuples for regression heads
-        framework_version: Runtime Essentia version (e.g., "2.1b6.dev1389")
         stability_thresholds: Thresholds for stability gating (default: DEFAULT_STABILITY_THRESHOLDS)
         regression_thresholds: Thresholds for regression mood determination (default: DEFAULT_REGRESSION_THRESHOLDS)
 
@@ -251,7 +244,6 @@ def add_regression_mood_tiers(
                 head_name,
                 mean_val,
                 std_val,
-                framework_version=framework_version,
                 stability_thresholds=stability_thresholds,
                 regression_thresholds=regression_thresholds,
                 log_prefix="aggregation",

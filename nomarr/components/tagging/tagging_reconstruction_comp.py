@@ -42,7 +42,6 @@ def reconstruct_head_outputs_from_stats(
     numeric_tags: dict[str, float],
     segment_stats_by_head: dict[str, list[dict[str, Any]]],
     head_infos: list[Any],
-    framework_version: str,
     calibrations: dict[str, dict[str, Any]] | None = None,
     stability_thresholds: StabilityThresholds | None = None,
     regression_thresholds: RegressionThresholds | None = None,
@@ -60,10 +59,9 @@ def reconstruct_head_outputs_from_stats(
 
     Args:
         numeric_tags: Dict of tag_key -> value from DB. Keys have the namespace prefix
-            already stripped (e.g. "happy_essentia21b..." not "nom:happy_essentia21b...").
+            already stripped (e.g. "happy_v1_..." not "nom:happy_v1_...").
         segment_stats_by_head: Dict of head_name -> label_stats [{label, mean, std, min, max}, ...]
         head_infos: List of discovered HeadInfo objects
-        framework_version: Runtime Essentia version
         calibrations: Optional calibration data (model_key -> {p5, p95, method}).
             When provided, raw values are normalized before tier logic runs.
         stability_thresholds: Thresholds for stability gating (default: DEFAULT_STABILITY_THRESHOLDS)
@@ -118,7 +116,6 @@ def reconstruct_head_outputs_from_stats(
                     head_name,
                     mean_val,
                     std_val,
-                    framework_version=framework_version,
                     stability_thresholds=stability_thresholds,
                     regression_thresholds=regression_thresholds,
                     log_prefix="reconstruction",
@@ -136,7 +133,6 @@ def reconstruct_head_outputs_from_stats(
                 norm_label = normalize_tag_label(label)
                 model_key, _ = head_info.build_versioned_tag_key(
                     norm_label,
-                    framework_version=framework_version,
                     calib_method="none",
                     calib_version=0,
                 )
@@ -170,7 +166,6 @@ def reconstruct_head_outputs_from_stats(
                 norm_lbl = normalize_tag_label(lbl)
                 model_key, _ = head.build_versioned_tag_key(
                     norm_lbl,
-                    framework_version=framework_version,
                     calib_method="none",
                     calib_version=0,
                 )

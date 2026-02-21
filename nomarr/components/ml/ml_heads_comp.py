@@ -370,7 +370,7 @@ class HeadDecision:
         return tags
 
     def to_head_outputs(
-        self, head_info: Any, framework_version: str, prefix: str = "", key_builder: Callable[[str], str] | None = None,
+        self, head_info: Any, prefix: str = "", key_builder: Callable[[str], str] | None = None,
     ) -> list[Any]:
         """Convert HeadDecision to list of HeadOutput objects.
 
@@ -381,7 +381,6 @@ class HeadDecision:
 
         Args:
             head_info: HeadInfo object from discovery
-            framework_version: Runtime Essentia version
             prefix: Legacy simple prefix (fallback)
             key_builder: Optional function(label) -> versioned_key
 

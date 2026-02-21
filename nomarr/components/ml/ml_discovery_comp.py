@@ -9,6 +9,13 @@ import json
 import os
 from typing import Any
 
+# Stable model-suite version embedded in all tag keys.
+# Tracks the deployed model set, not the inference runtime.
+# Increment this ("v1" -> "v2") only when the model weights themselves change
+# in a way that alters numeric outputs (new backbone, retraining, head replacement).
+# Changing the inference runtime (TF -> ONNX) does NOT warrant a version bump.
+MODEL_SUITE_VERSION: str = "v1"
+
 
 class Sidecar:
     """Represents a model sidecar JSON file (head or embedding extractor)."""
@@ -48,8 +55,16 @@ class Sidecar:
         return (segment_s, hop_s)
 
     def graph_abs(self, models_dir: str) -> str | None:
-        """Resolve absolute path to the .pb graph file (same dir as JSON)."""
-        pb_path = self.path.rsplit(".", 1)[0] + ".pb"
+        """Resolve absolute path to the graph file (same dir as JSON).
+
+        Prefers ``.onnx`` when available; falls back to ``.pb`` for the
+        transition period.  Returns ``None`` if neither file exists.
+        """
+        base = self.path.rsplit(".", 1)[0]
+        onnx_path = base + ".onnx"
+        if os.path.exists(onnx_path):
+            return onnx_path
+        pb_path = base + ".pb"
         return pb_path if os.path.exists(pb_path) else None
 
     def input_dim(self) -> int | None:
@@ -137,21 +152,24 @@ class HeadInfo:
         return self.sidecar.labels
 
     def build_versioned_tag_key(
-        self, label: str, framework_version: str, calib_method: str = "none", calib_version: int = 0,
+        self, label: str, calib_method: str = "none", calib_version: int = 0,
     ) -> tuple[str, str]:
-        """Build versioned tag key from model metadata and runtime framework version.
+        """Build versioned tag key from model metadata and stable suite version.
 
-        NEW FORMAT (calibration separate):
-        - model_key: {label}_{framework}{version}_{embedder}{date}_{head}{date}
+        Format:
+        - model_key: {label}_{suite_version}_{embedder}{date}_{head}{date}
         - calibration_id: {calib_method}_{calib_version}
 
+        The suite version is the module-level MODEL_SUITE_VERSION constant (e.g. "v1"),
+        which tracks deployed model weights — not the inference runtime.  Switching
+        runtimes (TF → ONNX) does not change the key.
+
         Example:
-        - model_key: "happy_essentia21b6dev1389_yamnet20210604_happy20220825"
+        - model_key: "happy_v1_yamnet20210604_happy20220825"
         - calibration_id: "platt_1"
 
         Args:
             label: Friendly label (e.g., "happy", "approachable")
-            framework_version: Runtime Essentia-TensorFlow version (e.g., "2.1b6.dev1389")
             calib_method: Calibration method ("platt", "isotonic", "none")
             calib_version: Calibration version number
 
@@ -159,10 +177,8 @@ class HeadInfo:
             Tuple of (model_tag_key, calibration_id)
 
         """
-        # Convert framework version to compact form: "2.1b6.dev1389" -> "21b6dev1389"
-        # Keep full version including dev/patch suffixes (TF version changes matter)
-        fw_short = framework_version.replace(".", "")
-        framework_part = f"essentia{fw_short}"
+        # Use stable suite version rather than runtime-library version string
+        framework_part = MODEL_SUITE_VERSION
 
         # Extract embedder release date from embedding sidecar
         embedder_date = "unknown"
@@ -259,9 +275,11 @@ def discover_backbones(models_dir: str) -> list[str]:
         if not os.path.isdir(embeddings_dir):
             continue
 
-        # Verify at least one .pb file exists
-        embedding_pb_files = glob.glob(os.path.join(embeddings_dir, "*.pb"))
-        if embedding_pb_files:
+        # Verify at least one .onnx or .pb graph file exists (.onnx preferred)
+        embedding_graph_files = glob.glob(os.path.join(embeddings_dir, "*.onnx")) or glob.glob(
+            os.path.join(embeddings_dir, "*.pb")
+        )
+        if embedding_graph_files:
             backbones.append(backbone)
 
     return sorted(backbones)
@@ -294,11 +312,14 @@ def discover_heads(models_dir: str) -> list[HeadInfo]:
         if not os.path.isdir(embeddings_dir) or not os.path.isdir(heads_dir):
             continue
 
-        embedding_pb_files = glob.glob(os.path.join(embeddings_dir, "*.pb"))
-        if not embedding_pb_files:
+        # Prefer .onnx graph files; fall back to .pb for the transition period
+        embedding_graph_files = glob.glob(os.path.join(embeddings_dir, "*.onnx")) or glob.glob(
+            os.path.join(embeddings_dir, "*.pb")
+        )
+        if not embedding_graph_files:
             continue
 
-        embedding_graph = embedding_pb_files[0]
+        embedding_graph = embedding_graph_files[0]
 
         # Load embedding sidecar JSON (for metadata)
         embedding_sidecar = None

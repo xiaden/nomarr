@@ -65,13 +65,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _get_essentia_version() -> str:
-    """Get Essentia version lazily (only when needed)."""
-    from nomarr.components.ml import ml_backend_essentia_comp as backend_essentia
-
-    return str(backend_essentia.get_version())
-
-
 @dataclass
 class LoadLibraryStateResult:
     """Result from _load_library_state() private helper (workflow-internal)."""
@@ -332,7 +325,6 @@ def write_calibrated_tags_wf(
         numeric_tags=numeric_tags,
         segment_stats_by_head=segment_stats_by_head,
         head_infos=heads_list,
-        framework_version=_get_essentia_version(),
         calibrations=calibrations,
     )
     if not head_outputs:

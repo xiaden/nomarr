@@ -23,9 +23,11 @@ classifiers = [
 ]
 
 dependencies = [
-    "numpy==1.26.4",           # Pinned: essentia-tensorflow compatibility
+    "numpy==1.26.4",           # Pinned: onnxruntime compatibility
     "scipy>=1.13.1",
     "soundfile>=0.13.0",
+    "librosa>=0.10.0",
+    "onnxruntime>=1.18.0",
     "mutagen>=1.47.0",
     "pyyaml>=6.0.2",
     "fastapi>=0.115.0",
@@ -117,11 +119,12 @@ follow_imports = "normal"
 
 [[tool.mypy.overrides]]
 module = [
-    "essentia.*",
     "scipy.*",
     "mutagen.*",
     "soundfile.*",
     "pydub.*",
+    "librosa.*",
+    "onnxruntime.*",
 ]
 ignore_missing_imports = true
 

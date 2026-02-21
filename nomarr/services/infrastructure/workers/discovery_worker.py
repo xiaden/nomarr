@@ -267,7 +267,7 @@ class DiscoveryWorker(multiprocessing.Process):
         set_stop_event(self._stop_event)
 
         # Late imports to avoid import-time issues in subprocess
-        from nomarr.components.ml.ml_backend_essentia_comp import is_available as ml_is_available
+        from nomarr.components.ml.ml_backend_onnx_comp import is_available as ml_is_available
         from nomarr.components.platform.resource_monitor_comp import check_resource_headroom
         from nomarr.components.workers.worker_discovery_comp import (
             discover_and_claim_file,
@@ -293,7 +293,7 @@ class DiscoveryWorker(multiprocessing.Process):
 
         # Preflight check: verify ML backend is available
         if not ml_is_available():
-            logger.error("[%s] ML backend (Essentia) not available - marking unhealthy", self.worker_id)
+            logger.error("[%s] ML backend (ONNX) not available - marking unhealthy", self.worker_id)
             self._current_status = "unhealthy"
             # Keep emitting unhealthy status for a short time, then exit
             time.sleep(10)

@@ -217,8 +217,8 @@ def warmup_predictor_cache(models_dir: str, cache_idle_timeout: int = 40) -> int
     Returns the total number of predictors cached.
 
     Warms both tiers:
-    1. Head-only predictors (TensorflowPredict2D, embedding -> head) on CPU
-    2. Backbone predictors (embedding-only, waveform -> embeddings) on GPU
+    1. Head-only predictors (ONNX, embedding -> head) on CPU
+    2. Backbone predictors (ONNX, waveform -> embeddings) on GPU
 
     Backbone graphs are derived from discovered heads (each HeadInfo knows its
     backbone name + embedding_graph path), so no separate backbone discovery needed.
@@ -241,7 +241,7 @@ def warmup_predictor_cache(models_dir: str, cache_idle_timeout: int = 40) -> int
         logger.warning(f"[cache] No heads found in {models_dir}")
         return 0
     logger.info(f"[cache] Warming up predictor cache with {len(heads)} heads...")
-    logger.info("[cache] Building model cache (Essentia warnings normal during warmup)...")
+    logger.info("[cache] Building model cache (ONNX session creation may take a moment)...")
     start = internal_ms()
 
     # 1. Head-only predictors (default: CPU)

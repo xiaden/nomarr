@@ -1,7 +1,6 @@
 """Ml package."""
 
 from .ml_audio_comp import (
-    HAVE_ESSENTIA,
     AudioLoadCrashError,
     AudioLoadShutdownError,
     load_audio_mono,
@@ -55,7 +54,6 @@ from .ml_tier_selection_comp import (
 )
 
 __all__ = [
-    "HAVE_ESSENTIA",
     "AudioLoadCrashError",
     "AudioLoadShutdownError",
     "CacheState",

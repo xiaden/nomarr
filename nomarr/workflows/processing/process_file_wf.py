@@ -63,7 +63,6 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from nomarr.components.ml import ml_backend_essentia_comp as backend_essentia
 from nomarr.components.ml.ml_audio_comp import AudioLoadCrashError, AudioLoadShutdownError
 from nomarr.components.ml.ml_discovery_comp import HeadInfo, discover_heads
 from nomarr.components.ml.ml_embed_comp import pool_scores
@@ -83,17 +82,6 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from nomarr.helpers.dto.path_dto import LibraryPath
     from nomarr.persistence.db import Database
-
-
-_ESSENTIA_VERSION: str | None = None
-
-
-def _get_essentia_version() -> str:
-    """Get Essentia version — computed once per process, cached thereafter."""
-    global _ESSENTIA_VERSION
-    if _ESSENTIA_VERSION is None:
-        _ESSENTIA_VERSION = backend_essentia.get_version()
-    return _ESSENTIA_VERSION
 
 
 # Reusable thread pool for parallel head predictions.
@@ -230,35 +218,34 @@ def _compute_embeddings_for_backbone(
 
 
 
-def _build_tag_key(label: str, *, head_info: HeadInfo, essentia_version: str) -> str:
+def _build_tag_key(label: str, *, head_info: HeadInfo) -> str:
     """Build a versioned tag key for a label — module-level to avoid per-head closure creation."""
     model_key, _ = head_info.build_versioned_tag_key(
         normalize_tag_label(label),
-        framework_version=essentia_version,
         calib_method="none",
         calib_version=0,
     )
     return model_key
+
+
 def _run_single_head(
     head_info: HeadInfo,
     predict_fn: Callable[[], np.ndarray],
-    essentia_version: str,
 ) -> _SingleHeadResult:
     """Process a single head prediction — fully independent, no shared state mutation.
 
     Thread-safe: all inputs are read-only, all outputs returned via _SingleHeadResult.
-    TF inference releases the GIL so multiple heads get real parallelism.
+    ONNX inference releases the GIL so multiple heads get real parallelism.
 
     Args:
         head_info: Head metadata.
         predict_fn: Pre-resolved cached predictor closure (from make_head_only_predictor_batched).
             Hoisting resolution to the caller avoids per-thread cache lookup + lock contention.
-        essentia_version: Pre-cached essentia version string (avoids per-label calls).
 
     """
     head_name = head_info.name
     t_head = internal_ms()
-    # Phase 1: TF inference (GPU/CPU, releases GIL)
+    # Phase 1: ONNX inference (GPU/CPU, releases GIL)
     try:
         segment_scores = predict_fn()
         pooled_vec = pool_scores(segment_scores, mode="trimmed_mean", trim_perc=0.1, nan_policy="omit")
@@ -275,10 +262,10 @@ def _run_single_head(
     try:
         decision = run_head_decision(head_info.sidecar, pooled_vec, prefix="", segment_std=seg_std)
 
-        key_builder = partial(_build_tag_key, head_info=head_info, essentia_version=essentia_version)
+        key_builder = partial(_build_tag_key, head_info=head_info)
 
         head_outputs = decision.to_head_outputs(
-            head_info=head_info, framework_version=essentia_version, key_builder=key_builder,
+            head_info=head_info, key_builder=key_builder,
         )
         head_tags = decision.as_tags(key_builder=key_builder)
         logger.debug(f"[processor] Head {head_name} ({head_info.head_type}) produced {len(head_tags)} tags")
@@ -345,24 +332,23 @@ def _process_head_predictions(
 
     """
     # Pre-resolve cached predictors on the main thread (no lock contention).
-    # Each predict_fn is a lightweight closure binding the cached TF model + embeddings.
+    # Each predict_fn is a lightweight closure binding the cached ONNX session + embeddings.
     predict_fns: dict[str, Callable[[], np.ndarray]] = {}
     for hi in backbone_heads:
         predict_fns[hi.name] = make_head_only_predictor_batched(hi, embeddings_2d, batch_size=config.batch_size)
 
-    essentia_version = _get_essentia_version()
     head_results_list: list[_SingleHeadResult] = []
     n_heads = len(backbone_heads)
     if n_heads > 1:
         futures = {
-            _HEAD_POOL.submit(_run_single_head, hi, predict_fns[hi.name], essentia_version): hi.name
+            _HEAD_POOL.submit(_run_single_head, hi, predict_fns[hi.name]): hi.name
             for hi in backbone_heads
         }
         head_results_list.extend(fut.result() for fut in as_completed(futures))
         logger.debug("[processor] Parallel heads complete (%d heads)", n_heads)
     else:
         head_results_list.extend(
-            _run_single_head(hi, predict_fns[hi.name], essentia_version) for hi in backbone_heads
+            _run_single_head(hi, predict_fns[hi.name]) for hi in backbone_heads
         )
 
     # Merge results sequentially (safe dict mutations)
@@ -417,7 +403,7 @@ def _collect_mood_outputs(
         Dict of mood-* tags
 
     """
-    regression_outputs = add_regression_mood_tiers(regression_heads, framework_version=_get_essentia_version())
+    regression_outputs = add_regression_mood_tiers(regression_heads)
     all_head_outputs.extend(regression_outputs)
     logger.debug(f"[processor] Total HeadOutput objects: {len(all_head_outputs)}")
     return aggregate_mood_tiers(all_head_outputs)
