@@ -1,12 +1,14 @@
 """Vector maintenance service for promote & rebuild operations."""
 
 import logging
-import math
 
 from nomarr.components.ml.ml_vector_maintenance_comp import has_vector_index
 from nomarr.persistence.db import Database
 from nomarr.workflows.platform.promote_and_rebuild_vectors_wf import (
     promote_and_rebuild_workflow,
+)
+from nomarr.workflows.platform.rebuild_vector_index_wf import (
+    rebuild_vector_index_workflow,
 )
 
 logger = logging.getLogger(__name__)
@@ -114,17 +116,66 @@ class VectorMaintenanceService:
     def calculate_optimal_nlists(self, doc_count: int) -> int:
         """Calculate optimal nlists for vector index based on document count.
 
-        Uses sqrt(doc_count) bounded to [10, 1000] range.
-        ArangoDB recommends nlists ~ sqrt(doc_count) for good balance.
+        Uses the Faiss-recommended N/15 heuristic, bounded to [10, 4000].
+        Each centroid covers ~15 documents on average, which gives good
+        cluster granularity for ANN recall.
 
         Args:
             doc_count: Total number of documents
 
         Returns:
-            Optimal nlists value (10-1000)
+            Optimal nlists value (10-4000)
         """
         if doc_count <= 0:
             return 10
 
-        nlists = int(math.sqrt(doc_count))
-        return max(10, min(1000, nlists))
+        nlists = doc_count // 15
+        return max(10, min(4000, nlists))
+
+
+    def rebuild_index(
+        self,
+        backbone_id: str,
+        nlists: int | None = None,
+    ) -> None:
+        """Drop and rebuild the vector index without promoting hot vectors.
+
+        Use this to update index parameters (e.g. nLists) when cold is already
+        fully populated. Faster than promote_and_rebuild when there is no
+        pending hot data.
+
+        Args:
+            backbone_id: Backbone identifier (e.g., "effnet", "yamnet")
+            nlists: Number of Voronoi cells (auto-calculated if None)
+
+        Raises:
+            ValueError: If backbone not found, cold collection missing,
+                or embed_dim cannot be determined
+            RuntimeError: If index creation fails
+        """
+        if nlists is None:
+            stats = self.get_hot_cold_stats(backbone_id)
+            nlists = self.calculate_optimal_nlists(int(stats["cold_count"]))
+            logger.info(
+                f"Auto-calculated nlists={nlists} for backbone={backbone_id} "
+                f"(cold={stats['cold_count']})"
+            )
+
+        logger.info(
+            f"Starting index rebuild: backbone={backbone_id}, nlists={nlists}"
+        )
+
+        try:
+            rebuild_vector_index_workflow(
+                db=self.db,
+                backbone_id=backbone_id,
+                nlists=nlists,
+                models_dir=self.models_dir,
+            )
+            logger.info(f"Index rebuild completed: backbone={backbone_id}")
+        except Exception as e:
+            logger.error(
+                f"Index rebuild failed: backbone={backbone_id}, error={e}",
+                exc_info=True,
+            )
+            raise

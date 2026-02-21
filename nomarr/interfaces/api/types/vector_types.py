@@ -68,7 +68,7 @@ class VectorPromoteRequest(BaseModel):
         None,
         description="Number of HNSW graph lists (auto-calculated if omitted)",
         ge=10,
-        le=100,
+        le=5000,
     )
 
 
@@ -86,3 +86,26 @@ class VectorGetResponse(BaseModel):
     file_id: str = Field(..., description="Library file document ID")
     backbone_id: str = Field(..., description="Backbone identifier")
     vector: list[float] = Field(..., description="Embedding vector")
+
+
+
+class VectorRebuildIndexRequest(BaseModel):
+    """Request model for rebuild-index operation."""
+
+    backbone_id: str = Field(
+        ..., description="Backbone identifier (e.g., 'effnet', 'yamnet')"
+    )
+    nlists: int | None = Field(
+        None,
+        description="Number of Voronoi cells (auto-calculated if omitted)",
+        ge=10,
+        le=5000,
+    )
+
+
+class VectorRebuildIndexResponse(BaseModel):
+    """Response model for rebuild-index operation."""
+
+    status: str = Field(..., description="Operation status")
+    backbone_id: str = Field(..., description="Backbone identifier")
+    message: str = Field(..., description="Human-readable result message")

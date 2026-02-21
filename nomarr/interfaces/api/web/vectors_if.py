@@ -4,7 +4,8 @@ Routes:
 - /vectors/search (POST) - Vector similarity search
 - /vectors/track (GET) - Get track vector
 - /vectors/stats (GET) - Get hot/cold stats
-- /vectors/promote (POST) - Promote & rebuild
+- /vectors/promote (POST) - Promote hot→cold + rebuild index
+- /vectors/rebuild-index (POST) - Rebuild index only (no hot→cold drain)
 
 These routes will be mounted under /api/web via the web router.
 """
@@ -23,6 +24,8 @@ from nomarr.interfaces.api.types.vector_types import (
     VectorHotColdStats,
     VectorPromoteRequest,
     VectorPromoteResponse,
+    VectorRebuildIndexRequest,
+    VectorRebuildIndexResponse,
     VectorSearchRequest,
     VectorSearchResponse,
     VectorSearchResultItem,
@@ -271,4 +274,59 @@ async def promote_vectors(
 
     except Exception as e:
         logger.error(f"Unexpected error in vector promote: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error") from e
+
+
+
+@router.post("/rebuild-index", dependencies=[Depends(verify_session)])
+async def rebuild_vector_index(
+    request: VectorRebuildIndexRequest,
+    vector_maintenance_service: VectorMaintenanceService = Depends(
+        get_vector_maintenance_service
+    ),
+) -> VectorRebuildIndexResponse:
+    """Rebuild vector index without promoting hot vectors.
+
+    Drops the existing index on the cold collection and trains a new one
+    using the current cold data. Does not drain hot→cold.
+
+    Use this to apply updated index parameters (e.g. nLists) when the
+    cold collection is already fully populated and has no pending hot data.
+
+    Requires:
+    - Authentication (admin only)
+
+    Args:
+        request: backbone_id and optional nlists override
+
+    Returns:
+        VectorRebuildIndexResponse with operation status
+
+    Raises:
+        400: If backbone not found or cold collection missing
+        500: If index creation fails
+        504: If operation times out (>10 minutes)
+    """
+    try:
+        vector_maintenance_service.rebuild_index(
+            backbone_id=request.backbone_id,
+            nlists=request.nlists,
+        )
+
+        return VectorRebuildIndexResponse(
+            status="success",
+            backbone_id=request.backbone_id,
+            message=f"Vector index rebuilt for backbone '{request.backbone_id}'",
+        )
+
+    except ValueError as e:
+        logger.warning(f"Vector rebuild-index validation error: {e}")
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    except RuntimeError as e:
+        logger.error(f"Vector rebuild-index failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Rebuild index failed") from e
+
+    except Exception as e:
+        logger.error(f"Unexpected error in rebuild-index: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error") from e

@@ -30,6 +30,7 @@ class VectorSearchService:
         vector: list[float],
         limit: int,
         min_score: float = 0.0,
+        nprobe: int = 20,
     ) -> list[dict[str, Any]]:
         """Search for similar tracks using vector similarity.
 
@@ -41,6 +42,8 @@ class VectorSearchService:
             vector: Query embedding vector
             limit: Maximum number of results
             min_score: Minimum similarity score threshold (filters raw results)
+            nprobe: Centroids to probe per query. Overrides the index defaultNProbe.
+                Higher values improve recall at the cost of latency.
 
         Returns:
             List of matching results with keys:
@@ -66,7 +69,7 @@ class VectorSearchService:
         cold_ops = self.db.get_vectors_track_cold(backbone_id)
 
         try:
-            raw_results = cold_ops.search_similar(vector, limit)
+            raw_results = cold_ops.search_similar(vector, limit, nprobe=nprobe)
         except Exception as e:
             logger.error(
                 f"Vector search failed for backbone={backbone_id}, limit={limit}: {e}",
@@ -80,7 +83,7 @@ class VectorSearchService:
         ]
 
         logger.debug(
-            f"Vector search: backbone={backbone_id}, limit={limit}, "
+            f"Vector search: backbone={backbone_id}, limit={limit}, nprobe={nprobe}, "
             f"raw_results={len(raw_results)}, filtered={len(filtered_results)}"
         )
 
