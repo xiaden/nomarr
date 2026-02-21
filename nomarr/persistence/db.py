@@ -9,6 +9,7 @@ from nomarr.persistence.arango_client import SafeDatabase, create_arango_client
 # Import operation classes (AQL versions)
 from nomarr.persistence.database.calibration_history_aql import CalibrationHistoryOperations
 from nomarr.persistence.database.calibration_state_aql import CalibrationStateOperations
+from nomarr.persistence.database.gpu_claims_aql import GpuClaimOperations
 from nomarr.persistence.database.health_aql import HealthOperations
 from nomarr.persistence.database.libraries_aql import LibrariesOperations
 from nomarr.persistence.database.library_files_aql import LibraryFilesOperations
@@ -134,6 +135,7 @@ class Database:
         self.health = HealthOperations(self.db)
         self.worker_restart_policy = WorkerRestartPolicyOperations(self.db)
         self.worker_claims = WorkerClaimsOperations(self.db)
+        self.gpu_claims = GpuClaimOperations(self.db)
         self.ml_capacity = MLCapacityOperations(self.db)
         self.segment_scores_stats = SegmentScoresStatsOperations(self.db)
         # Unified tag operations (TAG_UNIFICATION_REFACTOR)
@@ -192,6 +194,8 @@ class Database:
 
         Single orchestration point for cascade delete. Iterates all registered
         backbones and removes vectors from both hot and cold collections.
+        Gracefully skips cold collections that don't exist yet (created only
+        after promote & rebuild).
 
         Args:
             file_id: Library file document ID.
@@ -207,14 +211,17 @@ class Database:
             deleted = hot_ops.delete_by_file_id(file_id)
             total_deleted += deleted
 
-        # Delete from all cold collections
+        # Delete from all cold collections already cached
         for cold_ops in self._vectors_track_cold.values():
             deleted = cold_ops.delete_by_file_id(file_id)
             total_deleted += deleted
 
-        # Also check cold collections not yet cached
+        # Also check cold collections not yet cached (only if they exist)
         for backbone_id in self.vectors_track:
             if backbone_id not in self._vectors_track_cold:
+                cold_name = f"vectors_track_cold__{backbone_id}"
+                if not self.db.has_collection(cold_name):
+                    continue
                 cold_ops = self.get_vectors_track_cold(backbone_id)
                 deleted = cold_ops.delete_by_file_id(file_id)
                 total_deleted += deleted
@@ -243,14 +250,17 @@ class Database:
             deleted = hot_ops.delete_by_file_ids(file_ids)
             total_deleted += deleted
 
-        # Delete from all cold collections
+        # Delete from all cold collections already cached
         for cold_ops in self._vectors_track_cold.values():
             deleted = cold_ops.delete_by_file_ids(file_ids)
             total_deleted += deleted
 
-        # Also check cold collections not yet cached
+        # Also check cold collections not yet cached (only if they exist)
         for backbone_id in self.vectors_track:
             if backbone_id not in self._vectors_track_cold:
+                cold_name = f"vectors_track_cold__{backbone_id}"
+                if not self.db.has_collection(cold_name):
+                    continue
                 cold_ops = self.get_vectors_track_cold(backbone_id)
                 deleted = cold_ops.delete_by_file_ids(file_ids)
                 total_deleted += deleted
