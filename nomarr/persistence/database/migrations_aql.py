@@ -51,7 +51,12 @@ class MigrationOperations:
         return list(cursor)
 
     def get_applied_migration_names(self) -> set[str]:
-        """Get the set of applied migration names (keys).
+        """Get the set of successfully applied migration names (keys).
+
+        Only returns migrations that completed successfully (status='applied').
+        In-progress records (from a crashed run) are intentionally excluded
+        so the runner retries them on the next startup.  Idempotent migrations
+        (which filter already-processed data) are therefore safe to re-run.
 
         Returns:
             Set of migration name strings.
@@ -62,6 +67,7 @@ class MigrationOperations:
             self.db.aql.execute(
                 """
             FOR m IN applied_migrations
+                FILTER m.status == 'applied'
                 RETURN m._key
             """,
             ),
@@ -101,8 +107,9 @@ class MigrationOperations:
     ) -> None:
         """Record that a migration has started (pre-upgrade record).
 
-        Inserted before upgrade() runs to ensure a record exists even if the
-        process crashes mid-migration. Use mark_migration_applied() after
+        Inserted (or replaced if a previous in_progress record exists from a
+        crashed run) before upgrade() runs to ensure a record exists even if
+        the process crashes mid-migration. Use mark_migration_applied() after
         upgrade() completes successfully.
 
         Args:
@@ -121,6 +128,7 @@ class MigrationOperations:
                 "schema_version_before": schema_version_before,
                 "schema_version_after": schema_version_after,
             },
+            overwrite=True,
         )
         logger.debug("Recorded migration %s as in_progress", name)
 

@@ -88,8 +88,15 @@ def upgrade(db: DatabaseLike) -> None:
     logger.info("Migration V008: All cold collections processed successfully.")
 
 
+_BACKFILL_BATCH_SIZE = 500
+
+
 def _backfill_vector_n(db: DatabaseLike, coll_name: str) -> None:
-    """Add vector_n to docs that are missing it via AQL UPDATE.
+    """Add vector_n to docs that are missing it via batched AQL UPDATEs.
+
+    Processes documents in batches of _BACKFILL_BATCH_SIZE to avoid hitting
+    the HTTP read timeout on large collections.  Each batch query completes
+    well within the 60 s client timeout even for high-dimensional embeddings.
 
     Uses AQL array inline expressions to compute the L2 norm and normalize
     each element.  The FILTER ensures idempotency: already-normalized docs
@@ -121,25 +128,48 @@ def _backfill_vector_n(db: DatabaseLike, coll_name: str) -> None:
         logger.info("Migration V008: Skipping backfill for %s (all docs have vector_n)", coll_name)
         return
 
-    # AQL array inline expression:
-    #   doc.vector[* RETURN CURRENT * CURRENT]  → array of x_i^2
-    #   SUM(...)                                 → Σ x_i^2
-    #   SQRT(SUM(...))                           → L2 norm
-    #   doc.vector[* RETURN CURRENT / norm]      → normalized vector
-    db.aql.execute(  # type: ignore[union-attr]
-        f"""
-        FOR doc IN {coll_name}
-            FILTER !HAS(doc, "vector_n")
-            LET norm = SQRT(SUM(doc.vector[* RETURN CURRENT * CURRENT]))
-            UPDATE doc WITH {{ vector_n: doc.vector[* RETURN CURRENT / norm] }}
-            IN {coll_name}
-        """,
-        bind_vars={},
-    )
+    # Process in batches to avoid HTTP read timeout on large collections.
+    total_updated = 0
+    batch_num = 0
+    remaining = missing_count
+    while remaining > 0:
+        batch_num += 1
+        db.aql.execute(  # type: ignore[union-attr]
+            f"""
+            FOR doc IN {coll_name}
+                FILTER !HAS(doc, "vector_n")
+                LIMIT @batch_size
+                LET norm = SQRT(SUM(doc.vector[* RETURN CURRENT * CURRENT]))
+                UPDATE doc WITH {{ vector_n: doc.vector[* RETURN CURRENT / norm] }}
+                IN {coll_name}
+            """,
+            bind_vars={"batch_size": _BACKFILL_BATCH_SIZE},  # type: ignore[dict-item]
+        )
+
+        # Check how many remain after this batch
+        remaining_cursor = db.aql.execute(  # type: ignore[union-attr]
+            f"""
+            RETURN LENGTH(
+                FOR doc IN {coll_name}
+                    FILTER !HAS(doc, "vector_n")
+                    RETURN 1
+            )
+            """
+        )
+        remaining = next(iter(remaining_cursor))  # type: ignore[arg-type]
+        batch_updated = missing_count - remaining - total_updated
+        total_updated += batch_updated
+        logger.info(
+            "Migration V008: Batch %d complete — %d updated this batch, %d remaining in %s",
+            batch_num,
+            batch_updated,
+            remaining,
+            coll_name,
+        )
 
     logger.info(
         "Migration V008: Backfilled vector_n for %d docs in %s",
-        missing_count,
+        total_updated,
         coll_name,
     )
 

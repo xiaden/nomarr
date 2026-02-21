@@ -196,7 +196,10 @@ def apply_migration(
     Records the migration as 'in_progress' BEFORE running upgrade(), then
     updates to 'applied' after success. This ensures a record exists even
     if the process crashes mid-migration, making the interrupted state visible
-    on the next startup rather than silently re-running.
+    on the next startup.  Because get_applied_migration_names() only returns
+    'applied' records, an in_progress migration is automatically retried on
+    the next startup — safe for idempotent migrations that filter already-
+    processed data.
 
     Args:
         name: Migration identifier.
