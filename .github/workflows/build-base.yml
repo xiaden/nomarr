@@ -32,15 +32,34 @@ jobs:
                   username: ${{ github.actor }}
                   password: ${{ secrets.GITHUB_TOKEN }}
 
+            - name: Compute image tags
+              id: tags
+              run: |
+                  REPO="ghcr.io/xiaden/nomarr-base"
+                  SHA="${{ github.sha }}"
+
+                  BRANCH="${{ github.ref_name }}"
+                  BRANCH_TAG=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g')
+
+                  if [ "$BRANCH" == "main" ]; then
+                    TAGS="${REPO}:latest"
+                  else
+                    TAGS="${REPO}:${BRANCH_TAG}"
+                  fi
+                  TAGS="${TAGS},${REPO}:${SHA}"
+
+                  echo "tags<<EOF" >> $GITHUB_OUTPUT
+                  echo "$TAGS" >> $GITHUB_OUTPUT
+                  echo "EOF" >> $GITHUB_OUTPUT
+                  echo "Image tags: $TAGS"
+
             - name: Build and push base image with attestation
               uses: docker/build-push-action@v6
               with:
                   context: .
                   file: ./dockerfile.base
                   push: true
-                  tags: |
-                      ghcr.io/xiaden/nomarr-base:latest
-                      ghcr.io/xiaden/nomarr-base:${{ github.sha }}
+                  tags: ${{ steps.tags.outputs.tags }}
                   cache-from: |
                       type=registry,ref=ghcr.io/xiaden/nomarr-base:buildcache
                       type=registry,ref=ghcr.io/xiaden/nomarr-base:latest

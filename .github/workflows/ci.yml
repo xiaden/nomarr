@@ -197,6 +197,40 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Compute image tags
+        if: steps.should_build.outputs.should_build == 'true'
+        id: tags
+        run: |
+          REPO="ghcr.io/${{ github.repository_owner }}/nomarr"
+          VERSION="v${{ steps.version.outputs.version }}"
+          SHA="${{ github.sha }}"
+
+          # Determine source branch
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            BRANCH="${{ github.head_ref }}"
+          else
+            BRANCH="${{ github.ref_name }}"
+          fi
+
+          # Sanitize branch name for Docker tag (lowercase, only [a-z0-9._-])
+          BRANCH_TAG=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g')
+
+          if [ "$BRANCH" == "main" ]; then
+            TAGS="${REPO}:latest"
+            BASE_TAG="latest"
+          else
+            TAGS="${REPO}:${BRANCH_TAG}"
+            BASE_TAG="${BRANCH_TAG}"
+          fi
+          TAGS="${TAGS},${REPO}:${VERSION},${REPO}:${SHA}"
+
+          echo "tags<<EOF" >> $GITHUB_OUTPUT
+          echo "$TAGS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "base_tag=${BASE_TAG}" >> $GITHUB_OUTPUT
+          echo "Image tags: $TAGS"
+          echo "Base image tag: $BASE_TAG"
+
       - name: Build and push to GitHub Container Registry with attestation
         if: steps.should_build.outputs.should_build == 'true'
         uses: docker/build-push-action@v6
@@ -204,10 +238,9 @@ jobs:
           context: .
           file: ./dockerfile
           push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/nomarr:latest
-            ghcr.io/${{ github.repository_owner }}/nomarr:v${{ steps.version.outputs.version }}
-            ghcr.io/${{ github.repository_owner }}/nomarr:${{ github.sha }}
+          build-args: |
+            BASE_TAG=${{ steps.tags.outputs.base_tag }}
+          tags: ${{ steps.tags.outputs.tags }}
           cache-from: |
             type=registry,ref=ghcr.io/${{ github.repository_owner }}/nomarr:buildcache
             type=registry,ref=ghcr.io/${{ github.repository_owner }}/nomarr:latest

@@ -4,7 +4,8 @@
 # ----------------------------------------------------------------------
 # Use pre-built base image with all heavy dependencies
 # Build base with: docker build -f dockerfile.base -t ghcr.io/xiaden/nomarr-base:latest .
-FROM ghcr.io/xiaden/nomarr-base:latest
+ARG BASE_TAG=latest
+FROM ghcr.io/xiaden/nomarr-base:${BASE_TAG}
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
