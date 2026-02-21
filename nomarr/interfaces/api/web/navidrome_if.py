@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from nomarr.helpers.exceptions import PlaylistQueryError
 from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
+from nomarr.interfaces.api.id_codec import decode_id
 from nomarr.interfaces.api.types.navidrome_types import (
     GeneratePlaylistResponse,
     GenerateTemplateFilesRequest,
@@ -17,6 +18,8 @@ from nomarr.interfaces.api.types.navidrome_types import (
     PlaylistPreviewRequest,
     PlaylistPreviewResponse,
     PreviewTagStatsResponse,
+    StaticPlaylistRequest,
+    StaticPlaylistResponse,
     TagValuesResponse,
 )
 from nomarr.interfaces.api.web.dependencies import get_navidrome_service
@@ -106,3 +109,16 @@ async def web_navidrome_templates_generate(request: GenerateTemplateFilesRequest
     except Exception as e:
         logger.exception("[Web API] Error generating templates")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to generate templates")) from e
+
+
+@router.post("/playlists/static", dependencies=[Depends(verify_session)])
+async def web_navidrome_static_playlist(request: StaticPlaylistRequest, navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)]) -> StaticPlaylistResponse:
+    """Generate a static M3U playlist from a list of file IDs."""
+    try:
+        result_dto = navidrome_service.generate_static_playlist(file_ids=[decode_id(fid) for fid in request.file_ids], playlist_name=request.playlist_name)
+        return StaticPlaylistResponse.from_dto(result_dto)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("[Web API] Error generating static playlist")
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to generate static playlist")) from e

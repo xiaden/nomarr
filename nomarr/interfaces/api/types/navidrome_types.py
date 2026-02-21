@@ -23,6 +23,7 @@ if TYPE_CHECKING:
         PreviewTagStatsResult,
         RuleGroup,
         SmartPlaylistFilter,
+        StaticPlaylistResult,
         TagCondition,
         TemplateSummaryItem,
     )
@@ -210,3 +211,37 @@ class GenerateTemplateFilesRequest(BaseModel):
 
     template_id: str | None = Field(None, description="Optional template ID (generates all if not provided)")
     output_dir: str | None = Field(None, description="Optional output directory")
+
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Static Playlist (Vector Search → M3U)
+# ──────────────────────────────────────────────────────────────────────
+
+
+class StaticPlaylistRequest(BaseModel):
+    """Request model for static playlist generation from file IDs."""
+
+    file_ids: list[str] = Field(
+        ..., min_length=1, max_length=200, description="Library file IDs to include in the playlist",
+    )
+    playlist_name: str = Field("Vector Search Playlist", description="Name for the generated playlist")
+
+
+class StaticPlaylistResponse(BaseModel):
+    """Response model for static playlist generation."""
+
+    playlist_name: str = Field(..., description="Name of the generated playlist")
+    m3u_content: str = Field(..., description="M3U playlist file content")
+    track_count: int = Field(..., description="Number of tracks in the playlist")
+    missing_ids: list[str] = Field(default_factory=list, description="File IDs not found in the library")
+
+    @classmethod
+    def from_dto(cls, dto: StaticPlaylistResult) -> StaticPlaylistResponse:
+        """Convert StaticPlaylistResult DTO to Pydantic response model."""
+        return cls(
+            playlist_name=dto.playlist_name,
+            m3u_content=dto.m3u_content,
+            track_count=dto.track_count,
+            missing_ids=dto.missing_ids,
+        )

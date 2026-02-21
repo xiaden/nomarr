@@ -156,3 +156,18 @@ class GenerateTemplateFilesResult:
     """Result from navidrome_service.generate_template_files()."""
 
     files_generated: dict[str, str]
+
+
+
+@dataclass
+class StaticPlaylistResult:
+    """Result from static playlist generation.
+
+    Used for vector-search-to-M3U export where tracks are a fixed set
+    of file IDs rather than a dynamic tag query.
+    """
+
+    playlist_name: str
+    m3u_content: str
+    track_count: int
+    missing_ids: list[str]

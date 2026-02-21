@@ -57,6 +57,7 @@ from nomarr.helpers.dto.ml_dto import (
 from nomarr.helpers.dto.navidrome_dto import (
     PlaylistPreviewResult,
     SmartPlaylistFilter,
+    StaticPlaylistResult,
     TagCondition,
 )
 from nomarr.helpers.dto.path_dto import LibraryPath
@@ -94,6 +95,7 @@ __all__ = [
     "SaveCalibrationSidecarsResult",
     "SegmentWaveformParams",
     "SmartPlaylistFilter",
+    "StaticPlaylistResult",
     "StatusChangeContext",
     "Tag",
     "TagCoOccurrenceData",

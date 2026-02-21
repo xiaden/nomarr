@@ -15,11 +15,13 @@ from nomarr.helpers.dto.navidrome_dto import (
     GenerateTemplateFilesResult,
     GetTemplateSummaryResult,
     PreviewTagStatsResult,
+    StaticPlaylistResult,
     TemplateSummaryItem,
 )
 from nomarr.workflows.navidrome import (
     generate_navidrome_config_workflow,
     generate_smart_playlist_workflow,
+    generate_static_playlist_workflow,
     preview_smart_playlist_workflow,
     preview_tag_stats_workflow,
 )
@@ -146,3 +148,27 @@ class NavidromeService:
         """Generate files from a template."""
         files_generated = generate_template_files()
         return GenerateTemplateFilesResult(files_generated=files_generated)
+
+    def generate_static_playlist(
+        self,
+        file_ids: list[str],
+        playlist_name: str = "Vector Search Playlist",
+    ) -> StaticPlaylistResult:
+        """Generate a static M3U playlist from file IDs.
+
+        Used by vector search to export results as a Navidrome-importable
+        M3U playlist of specific tracks (not a rule-based smart playlist).
+
+        Args:
+            file_ids: List of library file document IDs (max 200)
+            playlist_name: Name for the playlist header
+
+        Returns:
+            StaticPlaylistResult with M3U content, track count, and missing IDs
+
+        """
+        return generate_static_playlist_workflow(
+            db=self._db,
+            file_ids=file_ids,
+            playlist_name=playlist_name,
+        )
