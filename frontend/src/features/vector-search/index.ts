@@ -1,3 +1,3 @@
 export { VectorSearchPage } from "./VectorSearchPage";
 
-export { TrackSearchPicker } from "./TrackSearchPicker";
+export { TrackSearchPicker } from "@shared/components/TrackSearchPicker";

@@ -8,6 +8,7 @@
  * - Results display with track links
  */
 
+import { Download } from "@mui/icons-material";
 import {
   Alert,
   Box,
@@ -25,6 +26,7 @@ import {
   TableCell,
   TableHead,
   TableRow,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import { useCallback, useEffect, useState } from "react";
@@ -32,11 +34,12 @@ import { Link, useSearchParams } from "react-router-dom";
 
 import type { LibraryFile } from "@shared/api/files";
 import { getFilesByIds } from "@shared/api/files";
+import { generateStaticPlaylist } from "@shared/api/navidrome";
 import { listBackbones } from "@shared/api/vectors";
+import { TrackSearchPicker } from "@shared/components/TrackSearchPicker";
 import { PageContainer, Panel, SectionHeader } from "@shared/components/ui";
 
 import { useVectorSearch } from "./hooks/useVectorSearch";
-import { TrackSearchPicker } from "./TrackSearchPicker";
 
 export function VectorSearchPage() {
   const [searchParams] = useSearchParams();
@@ -129,6 +132,38 @@ export function VectorSearchPage() {
     await searchByFileId(backboneId, selectedTrack.file_id, limit, minScore);
   }, [backboneId, selectedTrack, limit, minScore, searchByFileId]);
 
+  // ── Static playlist generation ──
+  const [playlistLoading, setPlaylistLoading] = useState(false);
+  const [playlistError, setPlaylistError] = useState<string | null>(null);
+
+  const handleGeneratePlaylist = useCallback(async () => {
+    if (!results || results.length === 0) return;
+    setPlaylistLoading(true);
+    setPlaylistError(null);
+    try {
+      const fileIds = results.map((r) => r.file_id).slice(0, 200);
+      const artist = selectedTrack?.artist ?? "Unknown";
+      const title = selectedTrack?.title ?? "Unknown";
+      const playlistName = `Similar to ${artist} - ${title}`;
+      const response = await generateStaticPlaylist(fileIds, playlistName);
+      // Trigger browser download
+      const blob = new Blob([response.m3u_content], { type: "audio/x-mpegurl" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${response.playlist_name}.m3u`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Failed to generate playlist:", err);
+      setPlaylistError(err instanceof Error ? err.message : "Failed to generate playlist");
+    } finally {
+      setPlaylistLoading(false);
+    }
+  }, [results, selectedTrack]);
+
   return (
     <PageContainer title="Vector Search">
       <Stack spacing={3}>
@@ -203,7 +238,27 @@ export function VectorSearchPage() {
         {/* Results */}
         {results && results.length > 0 && (
           <Panel>
-            <SectionHeader title={`Results (${results.length})`} />
+            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 1 }}>
+              <SectionHeader title={`Results (${results.length})`} />
+              <Tooltip title="Download M3U playlist of these results">
+                <span>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={playlistLoading ? <CircularProgress size={16} /> : <Download />}
+                    onClick={handleGeneratePlaylist}
+                    disabled={playlistLoading}
+                  >
+                    Generate Navidrome Playlist
+                  </Button>
+                </span>
+              </Tooltip>
+            </Box>
+            {playlistError && (
+              <Alert severity="error" sx={{ mb: 1 }}>
+                {playlistError}
+              </Alert>
+            )}
             <Paper variant="outlined">
               <Table size="small">
                 <TableHead>

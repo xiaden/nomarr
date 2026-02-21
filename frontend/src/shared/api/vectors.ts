@@ -174,3 +174,43 @@ export async function getTrackVector(
   const params = new URLSearchParams({ backbone_id, file_id });
   return get(`/api/web/vectors/track?${params.toString()}`);
 }
+
+
+export interface VectorRebuildIndexRequest {
+  /** Backbone identifier (e.g., "effnet", "yamnet") */
+  backbone_id: string;
+  /** Number of Voronoi cells (optional, auto-calculated if null) */
+  nlists?: number | null;
+}
+
+export interface VectorRebuildIndexResponse {
+  /** Operation status */
+  status: string;
+  /** Backbone identifier */
+  backbone_id: string;
+  /** Human-readable result message */
+  message: string;
+}
+
+/**
+ * Rebuild vector index without promoting hot vectors.
+ *
+ * Drops and rebuilds the ANN index on the cold collection using current
+ * cold data. Use this to apply updated index parameters (e.g. nLists)
+ * without waiting for hot data to accumulate.
+ *
+ * @param backbone_id - Backbone identifier (e.g., "effnet", "yamnet")
+ * @param nlists - Number of Voronoi cells (optional, auto-calculated if omitted)
+ * @returns Operation status and message
+ * @throws ApiError with status 400 if cold collection missing
+ */
+export async function rebuildVectorIndex(
+  backbone_id: string,
+  nlists?: number | null
+): Promise<VectorRebuildIndexResponse> {
+  const body: VectorRebuildIndexRequest = {
+    backbone_id,
+    nlists: nlists ?? null,
+  };
+  return post("/api/web/vectors/rebuild-index", body);
+}

@@ -11,6 +11,7 @@ import {
   Alert,
   Box,
   Button,
+  Chip,
   CircularProgress,
   FormControl,
   InputLabel,
@@ -33,6 +34,7 @@ import {
   getVectorStats,
   listBackbones,
   promoteVectors,
+  rebuildVectorIndex,
   type VectorHotColdStats,
 } from "@shared/api/vectors";
 import { Panel, SectionHeader } from "@shared/components/ui";
@@ -42,6 +44,9 @@ export function VectorMaintenance() {
   const [stats, setStats] = useState<VectorHotColdStats[] | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState<string | null>(null);
+
+  const [rebuildingBackbone, setRebuildingBackbone] = useState<string | null>(null);
+  const [rebuildError, setRebuildError] = useState<string | null>(null);
 
   const [promoteBackbone, setPromoteBackbone] = useState("");
   const [promoteNlists, setPromoteNlists] = useState<string>("");
@@ -112,6 +117,25 @@ export function VectorMaintenance() {
     }
   }, [promoteBackbone, promoteNlists, fetchStats]);
 
+  const handleRebuildIndex = useCallback(async (bb: string) => {
+    setRebuildingBackbone(bb);
+    setRebuildError(null);
+    try {
+      await rebuildVectorIndex(bb);
+      void fetchStats();
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setRebuildError(`API Error (${err.status}): ${err.message}`);
+      } else if (err instanceof Error) {
+        setRebuildError(err.message);
+      } else {
+        setRebuildError("Rebuild failed");
+      }
+    } finally {
+      setRebuildingBackbone(null);
+    }
+  }, [fetchStats]);
+
   return (
     <Panel>
       <SectionHeader title="Vector Store" />
@@ -142,6 +166,12 @@ export function VectorMaintenance() {
             </Alert>
           )}
 
+          {rebuildError && (
+            <Alert severity="error" sx={{ mb: 1 }}>
+              {rebuildError}
+            </Alert>
+          )}
+
           {stats && (
             <Paper variant="outlined">
               <Table size="small">
@@ -150,14 +180,35 @@ export function VectorMaintenance() {
                     <TableCell>Backbone</TableCell>
                     <TableCell align="right">Hot</TableCell>
                     <TableCell align="right">Cold</TableCell>
+                    <TableCell align="center">Index</TableCell>
+                    <TableCell align="right">Action</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {stats.map((s) => (
                     <TableRow key={s.backbone_id}>
                       <TableCell>{s.backbone_id}</TableCell>
-                      <TableCell align="right">{s.hot_count}</TableCell>
-                      <TableCell align="right">{s.cold_count}</TableCell>
+                      <TableCell align="right">{s.hot_count.toLocaleString()}</TableCell>
+                      <TableCell align="right">{s.cold_count.toLocaleString()}</TableCell>
+                      <TableCell align="center">
+                        <Chip
+                          label={s.index_exists ? "exists" : "missing"}
+                          color={s.index_exists ? "success" : "warning"}
+                          size="small"
+                        />
+                      </TableCell>
+                      <TableCell align="right">
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          disabled={rebuildingBackbone !== null}
+                          onClick={() => void handleRebuildIndex(s.backbone_id)}
+                        >
+                          {rebuildingBackbone === s.backbone_id
+                            ? <CircularProgress size={16} />
+                            : "Rebuild Index"}
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
