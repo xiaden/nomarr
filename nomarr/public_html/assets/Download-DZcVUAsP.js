@@ -1,0 +1,1 @@
+import{Un as e,fn as t,nr as n}from"./index-B2iLb_wf.js";var r=t((0,n(e()).jsx)(`path`,{d:`M5 20h14v-2H5zM19 9h-4V3H9v6H5l7 7z`}),`Download`);export{r as t};

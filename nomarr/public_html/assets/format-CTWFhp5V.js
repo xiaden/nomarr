@@ -1,1 +1,0 @@
-function e(e){return!e||e<=0?`-`:`${Math.floor(e/60)}:${Math.floor(e%60).toString().padStart(2,`0`)}`}function t(e){return`${Math.floor(e/3600)}h ${Math.floor(e%3600/60)}m`}export{e as n,t};
