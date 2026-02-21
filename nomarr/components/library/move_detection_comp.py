@@ -50,6 +50,13 @@ def detect_file_moves(
     Computes chromaprints for new files and matches against removed files.
     Only processes files if chromaprints exist in the library (fast-fail).
 
+    Optimizations applied:
+    - **Duration pre-filter:** New files whose duration doesn't match any
+      removed file (within 1 s tolerance) are skipped entirely, avoiding
+      an expensive audio-decode + spectral fingerprint per file.
+    - **Early termination:** Once every removed file has been matched, the
+      loop stops immediately instead of fingerprinting remaining new files.
+
     Args:
         files_to_remove: Files marked for removal (with chromaprint if available)
         new_file_entries: Newly discovered file entries from scan
@@ -85,14 +92,44 @@ def detect_file_moves(
     # Sort removed files by ID for deterministic matching when duplicates exist
     files_to_remove.sort(key=lambda f: f["_id"])
 
+    # Build set of removed-file durations for fast pre-filtering.
+    # A new file can only be a move if its duration is within 1 s of some
+    # removed file.  Files with unknown duration are never filtered out.
+    duration_tolerance = 1.0
+    removed_durations: list[float] = [
+        f["duration_seconds"]
+        for f in files_to_remove
+        if f.get("duration_seconds") is not None
+    ]
+
+    def _duration_could_match(new_dur: float | None) -> bool:
+        """Return True when *new_dur* is close to any removed-file duration."""
+        if new_dur is None or not removed_durations:
+            # Unknown duration → can't rule it out.
+            return True
+        return any(abs(new_dur - rd) <= duration_tolerance for rd in removed_durations)
+
     moves: list[FileMove] = []
     matched_indices: set[int] = set()
     chromaprints_computed = 0
     collisions_detected = 0
+    skipped_by_duration = 0
+
+    total_to_match = sum(1 for f in files_to_remove if f.get("chromaprint"))
 
     # Match new files against removed files
     for new_file in new_file_entries:
+        # Early termination: all removed files matched
+        if len(matched_indices) >= total_to_match:
+            break
+
         new_path = new_file["path"]
+
+        # Duration pre-filter: skip expensive chromaprint if duration
+        # doesn't match any removed file.
+        if not _duration_could_match(new_file.get("duration_seconds")):
+            skipped_by_duration += 1
+            continue
 
         # Compute chromaprint for new file
         try:
@@ -116,7 +153,7 @@ def detect_file_moves(
 
                     # Verify duration matches (allow 1 second tolerance)
                     duration_matches = (
-                        removed_duration is None or new_duration is None or abs(removed_duration - new_duration) <= 1.0
+                        removed_duration is None or new_duration is None or abs(removed_duration - new_duration) <= duration_tolerance
                     )
 
                     if duration_matches:
@@ -151,6 +188,7 @@ def detect_file_moves(
     logger.info(
         f"Move detection complete: {len(moves)} moves found, "
         f"{chromaprints_computed} chromaprints computed, "
+        f"{skipped_by_duration} skipped by duration pre-filter, "
         f"{collisions_detected} collisions detected",
     )
 
