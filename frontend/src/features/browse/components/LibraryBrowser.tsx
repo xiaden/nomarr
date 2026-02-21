@@ -42,7 +42,7 @@ import type { Entity } from "../../../shared/types";
 import { BreadcrumbNav, type BreadcrumbItem } from "./BreadcrumbNav";
 
 // Navigation step types
-type NavigationStep =
+export type NavigationStep =
   | { type: "artists" }
   | { type: "albums"; artist: Entity }
   | { type: "tracks"; artist: Entity; album: Album }
