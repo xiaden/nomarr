@@ -65,6 +65,8 @@ def _create_collections(db: DatabaseLike) -> None:
         # Future: "segment_scores_blob" -- full segment x class matrix for re-pooling
         # Migration tracking (database migration system)
         "applied_migrations",
+        # GPU warmup claim (serializes multi-worker GPU cache warming)
+        "gpu_warmup_claims",
     ]
 
     for collection_name in document_collections:

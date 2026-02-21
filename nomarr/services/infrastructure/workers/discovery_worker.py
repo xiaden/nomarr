@@ -145,6 +145,8 @@ class DiscoveryWorker(multiprocessing.Process):
         self._current_status: str = "pending"  # Current health status for frame emission
         self.execution_tier = execution_tier  # GPU/CPU tier from admission control
         self.prefer_gpu = prefer_gpu  # GPU preference from tier config
+        self._holds_gpu_claim: bool = False  # Whether this worker holds the GPU warmup claim
+        self._db: Any = None  # Database connection (set in run(), used by health writer thread)
 
     def _configure_subprocess_logging(self) -> None:
         """Configure logging for the subprocess.
@@ -214,9 +216,35 @@ class DiscoveryWorker(multiprocessing.Process):
             logger.debug("[%s] Failed to send health frame: %s", self.worker_id, e)
 
     def _health_writer_loop(self) -> None:
-        """Background thread that periodically sends health frames to parent."""
+        """Background thread that periodically sends health frames to parent.
+
+        Also heartbeats the GPU warmup claim if held, to prevent stale expiry
+        during long file processing.
+        """
+        heartbeat_counter = 0  # Count iterations to heartbeat every ~5th frame (15s)
         while not self._stop_event.is_set():
             self._send_health_frame(self._current_status)
+
+            # Heartbeat GPU claim every ~5 frames (15s at 3s interval)
+            heartbeat_counter += 1
+            if heartbeat_counter >= 5 and self._holds_gpu_claim and self._db is not None:
+                heartbeat_counter = 0
+                try:
+                    from nomarr.components.workers.worker_gpu_claim_comp import (
+                        heartbeat_gpu_claim,
+                    )
+
+                    still_held = heartbeat_gpu_claim(self._db, self.worker_id)
+                    if not still_held:
+                        # Claim was stolen (e.g., we were stale due to process pause)
+                        self._holds_gpu_claim = False
+                        logger.warning(
+                            "[%s] GPU warmup claim lost (stolen by another worker)",
+                            self.worker_id,
+                        )
+                except Exception:
+                    logger.debug("[%s] GPU claim heartbeat failed", self.worker_id, exc_info=True)
+
             # Sleep in small increments to allow faster shutdown
             for _ in range(int(HEALTH_FRAME_INTERVAL_S * 10)):
                 if self._stop_event.is_set():
@@ -245,6 +273,10 @@ class DiscoveryWorker(multiprocessing.Process):
             discover_and_claim_file,
             release_claim,
         )
+        from nomarr.components.workers.worker_gpu_claim_comp import (
+            attempt_acquire_gpu_claim,
+            release_gpu_claim,
+        )
         from nomarr.helpers.dto.processing_dto import ProcessorConfig, ResourceManagementConfig
         from nomarr.persistence.db import Database
         from nomarr.workflows.processing.process_file_wf import process_file_workflow
@@ -269,6 +301,7 @@ class DiscoveryWorker(multiprocessing.Process):
 
         # Create database connection in subprocess
         db = Database(hosts=self.db_hosts, password=self.db_password)
+        self._db = db  # Store for health writer thread heartbeat access
 
         # Reconstruct ProcessorConfig from dict
         config = ProcessorConfig(**self.processor_config_dict)
@@ -294,6 +327,8 @@ class DiscoveryWorker(multiprocessing.Process):
         consecutive_errors = 0
         files_processed = 0
         cache_warmed = False  # Lazy cache warmup - only warm when work arrives
+        holds_gpu_claim = False  # Whether this worker holds the GPU warmup claim
+        # NOTE: also stored as self._holds_gpu_claim for health writer thread access
         recovering_until: float | None = None  # Recovery deadline if in recovering state
 
         # Single-thread executor for async DB writes — overlaps I/O with next file's ML
@@ -329,6 +364,10 @@ class DiscoveryWorker(multiprocessing.Process):
 
                     if check_and_evict_idle_cache():
                         cache_warmed = False  # Cache was evicted, will need re-warmup
+                        if holds_gpu_claim:
+                            release_gpu_claim(db, self.worker_id)
+                            holds_gpu_claim = False
+                            self._holds_gpu_claim = False
                         logger.info("[%s] ML cache evicted due to idle timeout", self.worker_id)
 
                     time.sleep(IDLE_SLEEP_S)
@@ -377,16 +416,33 @@ class DiscoveryWorker(multiprocessing.Process):
                     from nomarr.components.ml.ml_cache_comp import is_initialized, warmup_predictor_cache
 
                     if not is_initialized():
-                        logger.info("[%s] Work discovered - warming up ML cache...", self.worker_id)
-                        try:
-                            count = warmup_predictor_cache(
-                                models_dir=config.models_dir,
-                                cache_idle_timeout=CACHE_IDLE_TIMEOUT_S,
+                        # Attempt GPU warmup claim before loading models into VRAM
+                        claimed = attempt_acquire_gpu_claim(db, self.worker_id)
+                        if claimed:
+                            holds_gpu_claim = True
+                            self._holds_gpu_claim = True
+                            logger.info("[%s] Acquired GPU warmup claim - warming ML cache...", self.worker_id)
+                            try:
+                                count = warmup_predictor_cache(
+                                    models_dir=config.models_dir,
+                                    cache_idle_timeout=CACHE_IDLE_TIMEOUT_S,
+                                )
+                                logger.info("[%s] ML cache ready: %d predictors loaded", self.worker_id, count)
+                            except Exception as e:
+                                logger.exception("[%s] Failed to warm ML cache: %s", self.worker_id, e)
+                                # Warmup failed - release claim so another worker can try
+                                release_gpu_claim(db, self.worker_id)
+                                holds_gpu_claim = False
+                                self._holds_gpu_claim = False
+                                # Continue anyway - workflow will create predictors inline (slower but works)
+                        else:
+                            # Another worker holds the GPU — process CPU-only this round
+                            logger.info(
+                                "[%s] GPU claim held by another worker, processing CPU-only",
+                                self.worker_id,
                             )
-                            logger.info("[%s] ML cache ready: %d predictors loaded", self.worker_id, count)
-                        except Exception as e:
-                            logger.exception("[%s] Failed to warm ML cache: %s", self.worker_id, e)
-                            # Continue anyway - workflow will create predictors inline (slower but works)
+                            # Don't set cache_warmed so we re-attempt on next file
+                            continue
                     cache_warmed = True
 
                 # Mark cache as active for the duration of processing
@@ -503,6 +559,15 @@ class DiscoveryWorker(multiprocessing.Process):
                 files_processed,
             )
             db.health.mark_stopping(self.worker_id)
+
+            # Release GPU warmup claim if held
+            if holds_gpu_claim:
+                try:
+                    release_gpu_claim(db, self.worker_id)
+                    holds_gpu_claim = False
+                    self._holds_gpu_claim = False
+                except Exception:
+                    logger.debug("[%s] Failed to release GPU claim on shutdown", self.worker_id, exc_info=True)
 
             # Shut down persistent audio loader subprocess
             from nomarr.components.ml.ml_audio_comp import shutdown_audio_loader
