@@ -27,12 +27,19 @@ Forward-only; no dowgrade path.
 from __future__ import annotations
 
 import logging
+import time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from nomarr.persistence.arango_client import DatabaseLike
 
+from arango.exceptions import ArangoServerError
+
 logger = logging.getLogger(__name__)
+
+_ERR_WRITE_WRITE_CONFLICT = 1200
+_CONFLICT_MAX_RETRIES = 5
+_CONFLICT_RETRY_DELAY_S = 10
 
 # Required metadata
 SCHEMA_VERSION_BEFORE: int = 7
@@ -59,6 +66,7 @@ def upgrade(db: DatabaseLike) -> None:
         db: ArangoDB database handle.
 
     """
+    logger.info("Migration V008: Listing collections")
     collections = db.collections()  # type: ignore[union-attr]
     if collections is None:
         logger.warning("Migration V008: Could not list collections. Skipping.")
@@ -88,7 +96,7 @@ def upgrade(db: DatabaseLike) -> None:
     logger.info("Migration V008: All cold collections processed successfully.")
 
 
-_BACKFILL_BATCH_SIZE = 500
+_BACKFILL_BATCH_SIZE = 100
 
 
 def _backfill_vector_n(db: DatabaseLike, coll_name: str) -> None:
@@ -98,74 +106,74 @@ def _backfill_vector_n(db: DatabaseLike, coll_name: str) -> None:
     the HTTP read timeout on large collections.  Each batch query completes
     well within the 60 s client timeout even for high-dimensional embeddings.
 
-    Uses AQL array inline expressions to compute the L2 norm and normalize
-    each element.  The FILTER ensures idempotency: already-normalized docs
-    are skipped without re-computation.
+    Progress is tracked via the UPDATE return value (RETURN 1 per doc updated)
+    rather than a separate full-collection COUNT scan, which would itself
+    time out on large collections.
+
+    The loop terminates when a batch updates zero documents (idempotent: the
+    FILTER ensures already-normalized docs are never re-processed).
 
     Args:
         db: ArangoDB database handle.
         coll_name: Cold collection name.
 
     """
-    logger.info("Migration V008: Backfilling vector_n in %s …", coll_name)
+    logger.info("Migration V008: [%s] Starting backfill of vector_n", coll_name)
 
-    # Count docs missing vector_n before update
-    pre_cursor = db.aql.execute(  # type: ignore[union-attr]
-        f"""
-        RETURN LENGTH(
-            FOR doc IN {coll_name}
-                FILTER !HAS(doc, "vector_n")
-                RETURN 1
-        )
-        """
-    )
-    missing_count = next(iter(pre_cursor))  # type: ignore[arg-type]
-    logger.info(
-        "Migration V008: %s has %d docs missing vector_n", coll_name, missing_count
-    )
-
-    if missing_count == 0:
-        logger.info("Migration V008: Skipping backfill for %s (all docs have vector_n)", coll_name)
-        return
-
-    # Process in batches to avoid HTTP read timeout on large collections.
     total_updated = 0
     batch_num = 0
-    remaining = missing_count
-    while remaining > 0:
+    while True:
         batch_num += 1
-        db.aql.execute(  # type: ignore[union-attr]
-            f"""
-            FOR doc IN {coll_name}
-                FILTER !HAS(doc, "vector_n")
-                LIMIT @batch_size
-                LET norm = SQRT(SUM(doc.vector[* RETURN CURRENT * CURRENT]))
-                UPDATE doc WITH {{ vector_n: doc.vector[* RETURN CURRENT / norm] }}
-                IN {coll_name}
-            """,
-            bind_vars={"batch_size": _BACKFILL_BATCH_SIZE},  # type: ignore[dict-item]
+        logger.info(
+            "Migration V008: [%s] Executing batch %d (size=%d)",
+            coll_name,
+            batch_num,
+            _BACKFILL_BATCH_SIZE,
         )
-
-        # Check how many remain after this batch
-        remaining_cursor = db.aql.execute(  # type: ignore[union-attr]
-            f"""
-            RETURN LENGTH(
-                FOR doc IN {coll_name}
-                    FILTER !HAS(doc, "vector_n")
-                    RETURN 1
-            )
-            """
-        )
-        remaining = next(iter(remaining_cursor))  # type: ignore[arg-type]
-        batch_updated = missing_count - remaining - total_updated
+        # RETURN 1 per updated doc so we count updates without a separate scan.
+        # Retry on write-write conflict (ERR 1200): the previous crashed run may
+        # have left in-flight transactions that ArangoDB hasn't fully resolved.
+        cursor = None
+        for attempt in range(1, _CONFLICT_MAX_RETRIES + 1):
+            try:
+                cursor = db.aql.execute(  # type: ignore[union-attr]
+                    f"""
+                    FOR doc IN {coll_name}
+                        FILTER !HAS(doc, "vector_n")
+                        LIMIT @batch_size
+                        LET norm = SQRT(SUM(doc.vector[* RETURN CURRENT * CURRENT]))
+                        UPDATE doc WITH {{ vector_n: doc.vector[* RETURN CURRENT / norm] }}
+                        IN {coll_name}
+                        RETURN 1
+                    """,
+                    bind_vars={"batch_size": _BACKFILL_BATCH_SIZE},  # type: ignore[dict-item]
+                )
+                break  # success
+            except ArangoServerError as exc:
+                if exc.error_code == _ERR_WRITE_WRITE_CONFLICT and attempt < _CONFLICT_MAX_RETRIES:
+                    logger.info(
+                        "Migration V008: [%s] Write conflict on batch %d (attempt %d/%d) — retrying in %ds",
+                        coll_name,
+                        batch_num,
+                        attempt,
+                        _CONFLICT_MAX_RETRIES,
+                        _CONFLICT_RETRY_DELAY_S,
+                    )
+                    time.sleep(_CONFLICT_RETRY_DELAY_S)
+                else:
+                    raise
+        batch_updated = len(list(cursor))  # type: ignore[arg-type, union-attr]
         total_updated += batch_updated
         logger.info(
-            "Migration V008: Batch %d complete — %d updated this batch, %d remaining in %s",
+            "Migration V008: Batch %d — %d docs updated in %s (%d total so far)",
             batch_num,
             batch_updated,
-            remaining,
             coll_name,
+            total_updated,
         )
+
+        if batch_updated == 0:
+            break
 
     logger.info(
         "Migration V008: Backfilled vector_n for %d docs in %s",
@@ -185,8 +193,16 @@ def _rebuild_index_on_vector_n(db: DatabaseLike, coll_name: str) -> None:
         coll_name: Cold collection name.
 
     """
+    logger.info("Migration V008: [%s] Getting collection handle", coll_name)
     coll = db.collection(coll_name)  # type: ignore[union-attr]
+
+    logger.info("Migration V008: [%s] Listing existing indexes", coll_name)
     existing_indexes = coll.indexes()  # type: ignore[union-attr]
+    logger.info(
+        "Migration V008: [%s] Found %d index(es)",
+        coll_name,
+        len(existing_indexes),  # type: ignore[arg-type]
+    )
 
     vector_idx = next(
         (idx for idx in existing_indexes if idx.get("type") == "vector"),  # type: ignore[union-attr]
@@ -195,7 +211,7 @@ def _rebuild_index_on_vector_n(db: DatabaseLike, coll_name: str) -> None:
 
     if vector_idx is None:
         logger.info(
-            "Migration V008: No vector index found on %s — skipping index rebuild",
+            "Migration V008: [%s] No vector index found — skipping index rebuild",
             coll_name,
         )
         return
@@ -204,7 +220,7 @@ def _rebuild_index_on_vector_n(db: DatabaseLike, coll_name: str) -> None:
     indexed_fields = vector_idx.get("fields", [])
     if "vector_n" in indexed_fields:
         logger.info(
-            "Migration V008: Vector index on %s already uses vector_n — skipping rebuild",
+            "Migration V008: [%s] Vector index already uses vector_n — skipping rebuild",
             coll_name,
         )
         return
@@ -215,8 +231,7 @@ def _rebuild_index_on_vector_n(db: DatabaseLike, coll_name: str) -> None:
 
     if not embed_dim or not nlists:
         logger.warning(
-            "Migration V008: Could not read index params from %s (dim=%s, nLists=%s). "
-            "Skipping index rebuild.",
+            "Migration V008: [%s] Could not read index params (dim=%s, nLists=%s) — skipping rebuild",
             coll_name,
             embed_dim,
             nlists,
@@ -224,24 +239,26 @@ def _rebuild_index_on_vector_n(db: DatabaseLike, coll_name: str) -> None:
         return
 
     idx_id = vector_idx.get("id")
+    if idx_id is None:
+        logger.warning(
+            "Migration V008: [%s] Vector index has no id, cannot drop — skipping",
+            coll_name,
+        )
+        return
+
     logger.info(
-        "Migration V008: Dropping vector index %s from %s (was on %s, dim=%d, nLists=%d)",
-        idx_id,
+        "Migration V008: [%s] Dropping vector index %s (was on %s, dim=%d, nLists=%d)",
         coll_name,
+        idx_id,
         indexed_fields,
         embed_dim,
         nlists,
     )
-    if idx_id is None:
-        logger.warning(
-            "Migration V008: Vector index on %s has no id, cannot drop. Skipping.",
-            coll_name,
-        )
-        return
     coll.delete_index(str(idx_id))  # type: ignore[union-attr]
+    logger.info("Migration V008: [%s] Vector index dropped", coll_name)
 
     logger.info(
-        "Migration V008: Rebuilding vector index on %s (field=vector_n, dim=%d, nLists=%d)",
+        "Migration V008: [%s] Rebuilding vector index (field=vector_n, dim=%d, nLists=%d) — this may take several minutes",
         coll_name,
         embed_dim,
         nlists,
@@ -257,6 +274,4 @@ def _rebuild_index_on_vector_n(db: DatabaseLike, coll_name: str) -> None:
             },
         }
     )
-    logger.info(
-        "Migration V008: Vector index rebuilt on vector_n for %s", coll_name
-    )
+    logger.info("Migration V008: [%s] Vector index rebuilt on vector_n", coll_name)

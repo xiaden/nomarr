@@ -10,9 +10,12 @@ from pathlib import Path
 
 import uvicorn
 
-from nomarr.app import application
 from nomarr.helpers.logging_helper import NomarrLogFilter
 
+# Configure logging BEFORE importing nomarr.app.
+# Application.__init__ runs prepare_database_workflow() (and thus migrations)
+# at module import time.  If handlers aren't attached yet, only the fallback
+# lastResort handler (WARNING+) fires and all INFO migration logs are lost.
 logger = logging.getLogger(__name__)
 multiprocessing.set_start_method("spawn", force=True)
 log_dir = Path("logs")
@@ -21,17 +24,23 @@ _LOG_FORMAT = "%(asctime)s %(levelname)s %(nomarr_identity_tag)s %(nomarr_role_t
 file_handler = logging.handlers.RotatingFileHandler(log_dir / "nomarr.log", maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8")
 file_handler.setLevel(logging.INFO)
 file_handler.setFormatter(logging.Formatter(_LOG_FORMAT))
-file_handler.addFilter(NomarrLogFilter())  # Add filter to handler
+file_handler.addFilter(NomarrLogFilter())
 console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setLevel(logging.INFO)
 console_handler.setFormatter(logging.Formatter(_LOG_FORMAT))
-console_handler.addFilter(NomarrLogFilter())  # Add filter to handler
+console_handler.addFilter(NomarrLogFilter())
 logging.basicConfig(level=logging.INFO, handlers=[file_handler, console_handler])
+
+from nomarr.app import application  # noqa: E402
+
+
 def shutdown_handler(signum, frame) -> None:
     """Handle shutdown signals gracefully."""
-    logger.info(f"Received signal {signum}, shutting down...")
+    logger.info("Received signal %s, shutting down...", signum)
     application.stop()
     sys.exit(0)
+
+
 if __name__ == "__main__":
     signal.signal(signal.SIGTERM, shutdown_handler)
     signal.signal(signal.SIGINT, shutdown_handler)
