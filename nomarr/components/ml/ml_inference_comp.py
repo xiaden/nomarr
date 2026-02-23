@@ -18,6 +18,40 @@ from nomarr.components.ml.ml_preprocess_comp import preprocess_for_backbone
 
 logger = logging.getLogger(__name__)
 
+_BACKBONE_BATCH_SIZE = 32
+"""Number of mel patches per ONNX forward pass for backbone embedding models.
+
+ONNX Runtime receives all patches as a single batch per call, so unbounded
+batch sizes cause linear memory growth with track duration (and OOM for long
+tracks). Fixed batches cap peak allocation regardless of input length.
+"""
+
+
+def _run_in_batches(
+    predict_fn: "Callable[[np.ndarray], np.ndarray]",
+    inputs: np.ndarray,
+    batch_size: int,
+) -> np.ndarray:
+    """Run predict_fn over inputs in fixed-size batches and vstack results.
+
+    Args:
+        predict_fn: Callable accepting [batch, ...] and returning [batch, dim].
+        inputs: Full input array, shape [n, ...].
+        batch_size: Maximum number of rows per forward pass.
+
+    Returns:
+        Concatenated outputs, shape [n, dim].
+    """
+    all_results: list[np.ndarray] = []
+    for i in range(0, inputs.shape[0], batch_size):
+        batch = inputs[i : i + batch_size]
+        result = np.asarray(predict_fn(batch), dtype=np.float32)
+        if result.ndim == 1:
+            result = result.reshape(1, -1)
+        all_results.append(result)
+    return np.vstack(all_results)
+
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -66,8 +100,12 @@ def _create_backbone_predictor(
         if patches.shape[0] == 0:
             msg = f"[inference] No patches produced for backbone {backbone} — audio too short"
             raise RuntimeError(msg)
-        result = session.run([output_name], {input_name: patches})
-        return np.asarray(result[0], dtype=np.float32)
+
+        def _session_fn(batch: np.ndarray) -> np.ndarray:
+            result = session.run([output_name], {input_name: batch})
+            return np.asarray(result[0], dtype=np.float32)
+
+        return _run_in_batches(_session_fn, patches, _BACKBONE_BATCH_SIZE)
 
     return predict
 
@@ -344,15 +382,6 @@ def make_head_only_predictor_batched(
                 )
                 raise RuntimeError(msg)
 
-        num_segments = batch_emb.shape[0]
-        all_predictions: list[np.ndarray] = []
-        for i in range(0, num_segments, batch_size):
-            batch_slice = batch_emb[i : i + batch_size]
-            batch_preds = head_predictor(batch_slice)
-            batch_preds = np.asarray(batch_preds, dtype=np.float32)
-            if batch_preds.ndim == 1:
-                batch_preds = batch_preds.reshape(-1, 1)
-            all_predictions.append(batch_preds)
-        return np.vstack(all_predictions)
+        return _run_in_batches(head_predictor, batch_emb, batch_size)
 
     return predict_all_segments
