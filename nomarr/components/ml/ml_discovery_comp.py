@@ -218,7 +218,8 @@ def get_embedding_output_node(backbone: str) -> str:
         return "PartitionedCall:1"
     if backbone == "musicnn":
         return "model/dense/BiasAdd"
-    return "embeddings"
+    msg = f"Unknown backbone {backbone!r}: no embedding output node defined"
+    raise ValueError(msg)
 
 
 def get_head_output_node(head_type: str, sidecar: Sidecar) -> str:

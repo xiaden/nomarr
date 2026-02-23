@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, cast
 import numpy as np
 
 from nomarr.components.ml import ml_backend_onnx_comp as backend_onnx
+from nomarr.components.ml.ml_discovery_comp import get_embedding_output_node
 from nomarr.components.ml.ml_preprocess_comp import preprocess_for_backbone
 
 logger = logging.getLogger(__name__)
@@ -49,7 +50,7 @@ def _create_backbone_predictor(
 
     session = backend_onnx.create_session(emb_graph, device=device_placement)
     input_name: str = session.get_inputs()[0].name
-    output_name: str = session.get_outputs()[0].name
+    output_name: str = get_embedding_output_node(backbone)
 
     logger.debug(
         "[inference] Created ONNX backbone session for %s "
