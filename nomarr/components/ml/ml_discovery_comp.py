@@ -207,19 +207,17 @@ class HeadInfo:
 
 
 def get_embedding_output_node(backbone: str) -> str:
-    """Return the documented output node name for embedding extractors.
-    Based on modelsinfo.md examples.
+    """Return the ONNX output node name for embedding extractors.
+
+    All Essentia ONNX backbone models expose two outputs: 'activations'
+    (classification logits) and 'embeddings' (the penultimate dense layer).
+    This is consistent across effnet, musicnn, vggish, and yamnet exports.
     """
-    if backbone == "yamnet":
-        return "embeddings"
-    if backbone == "vggish":
-        return "model/vggish/embeddings"
-    if backbone == "effnet":
-        return "PartitionedCall:1"
-    if backbone == "musicnn":
-        return "model/dense/BiasAdd"
-    msg = f"Unknown backbone {backbone!r}: no embedding output node defined"
-    raise ValueError(msg)
+    _known = {"yamnet", "vggish", "effnet", "musicnn"}
+    if backbone not in _known:
+        msg = f"Unknown backbone {backbone!r}: no embedding output node defined"
+        raise ValueError(msg)
+    return "embeddings"
 
 
 def get_head_output_node(head_type: str, sidecar: Sidecar) -> str:
