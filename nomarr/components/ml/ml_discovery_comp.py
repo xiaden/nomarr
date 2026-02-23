@@ -415,3 +415,82 @@ def compute_model_suite_hash(models_dir: str) -> str:
 
     except Exception:
         return "unknown"
+
+
+
+def discover_backbone_models(models_dir: str) -> list[Any]:
+    """Discover backbone ONNX models and return ready-to-use ONNXBackboneModel instances.
+
+    Walks ``models/<backbone>/embeddings/*.onnx`` (``embedding/`` variant for
+    musicnn) and constructs one :class:`ONNXBackboneModel` per ``.onnx`` file
+    found.  Only ``.onnx`` files are considered — ``.pb`` falls outside the
+    scope of the new model classes.
+
+    Args:
+        models_dir: Root directory containing backbone sub-directories.
+
+    Returns:
+        List of :class:`ONNXBackboneModel` instances sorted by backbone name.
+    """
+    from nomarr.components.ml.ml_onnx_backbone import ONNXBackboneModel
+
+    models: list[ONNXBackboneModel] = []
+
+    for backbone_dir in glob.glob(os.path.join(models_dir, "*")):
+        if not os.path.isdir(backbone_dir):
+            continue
+
+        # Try both "embeddings" (plural) and "embedding" (singular for musicnn)
+        embeddings_dir = os.path.join(backbone_dir, "embeddings")
+        if not os.path.isdir(embeddings_dir):
+            embeddings_dir = os.path.join(backbone_dir, "embedding")
+
+        if not os.path.isdir(embeddings_dir):
+            continue
+
+        models.extend(
+            ONNXBackboneModel(onnx_path)
+            for onnx_path in sorted(glob.glob(os.path.join(embeddings_dir, "*.onnx")))
+        )
+
+    models.sort(key=lambda m: m.backbone_name)
+    return models
+
+
+def discover_head_models(models_dir: str) -> list[Any]:
+    """Discover head ONNX models and return ready-to-use ONNXHeadModel instances.
+
+    Walks ``models/<backbone>/heads/<type>/*.onnx`` and constructs one
+    :class:`ONNXHeadModel` per ``.onnx`` file found.  Labels are read from
+    co-located ``.json`` sidecars inside :class:`ONNXHeadModel.__init__`.
+
+    Args:
+        models_dir: Root directory containing backbone sub-directories.
+
+    Returns:
+        List of :class:`ONNXHeadModel` instances sorted by
+        ``(backbone_name, head_type, model_name)``.
+    """
+    from nomarr.components.ml.ml_onnx_head import ONNXHeadModel
+
+    models: list[ONNXHeadModel] = []
+
+    for backbone_dir in glob.glob(os.path.join(models_dir, "*")):
+        if not os.path.isdir(backbone_dir):
+            continue
+
+        heads_dir = os.path.join(backbone_dir, "heads")
+        if not os.path.isdir(heads_dir):
+            continue
+
+        for head_type_dir in sorted(glob.glob(os.path.join(heads_dir, "*"))):
+            if not os.path.isdir(head_type_dir):
+                continue
+
+            models.extend(
+                ONNXHeadModel(onnx_path)
+                for onnx_path in sorted(glob.glob(os.path.join(head_type_dir, "*.onnx")))
+            )
+
+    models.sort(key=lambda m: (m.backbone_name, m.head_type, m.model_name))
+    return models

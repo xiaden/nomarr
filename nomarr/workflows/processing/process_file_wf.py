@@ -67,7 +67,8 @@ from nomarr.components.ml.ml_audio_comp import AudioLoadCrashError, AudioLoadShu
 from nomarr.components.ml.ml_discovery_comp import HeadInfo, discover_heads
 from nomarr.components.ml.ml_embed_comp import pool_scores
 from nomarr.components.ml.ml_heads_comp import run_head_decision
-from nomarr.components.ml.ml_inference_comp import compute_embeddings_for_backbone, make_head_only_predictor_batched
+from nomarr.components.ml.ml_inference_comp import compute_embeddings_for_backbone
+from nomarr.components.ml.ml_onnx_cache import ONNXModelCache
 from nomarr.components.tagging.mood_labels_comp import normalize_tag_label
 from nomarr.components.tagging.tagging_aggregation_comp import (
     add_regression_mood_tiers,
@@ -80,6 +81,7 @@ from nomarr.helpers.time_helper import internal_ms
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
+    from nomarr.components.ml.ml_onnx_head import ONNXHeadModel
     from nomarr.helpers.dto.path_dto import LibraryPath
     from nomarr.persistence.db import Database
 
@@ -218,9 +220,9 @@ def _compute_embeddings_for_backbone(
 
 
 
-def _build_tag_key(label: str, *, head_info: HeadInfo) -> str:
+def _build_tag_key(label: str, *, head_model: ONNXHeadModel) -> str:
     """Build a versioned tag key for a label — module-level to avoid per-head closure creation."""
-    model_key, _ = head_info.build_versioned_tag_key(
+    model_key, _ = head_model.build_versioned_tag_key(
         normalize_tag_label(label),
         calib_method="none",
         calib_version=0,
@@ -229,7 +231,7 @@ def _build_tag_key(label: str, *, head_info: HeadInfo) -> str:
 
 
 def _run_single_head(
-    head_info: HeadInfo,
+    head_model: ONNXHeadModel,
     predict_fn: Callable[[], np.ndarray],
 ) -> _SingleHeadResult:
     """Process a single head prediction — fully independent, no shared state mutation.
@@ -238,12 +240,12 @@ def _run_single_head(
     ONNX inference releases the GIL so multiple heads get real parallelism.
 
     Args:
-        head_info: Head metadata.
-        predict_fn: Pre-resolved cached predictor closure (from make_head_only_predictor_batched).
+        head_model: ONNX head model wrapper (provides labels, sidecar, name, etc.).
+        predict_fn: Pre-resolved cached predictor closure that calls head_model.run().
             Hoisting resolution to the caller avoids per-thread cache lookup + lock contention.
 
     """
-    head_name = head_info.name
+    head_name = head_model.name
     t_head = internal_ms()
     # Phase 1: ONNX inference (GPU/CPU, releases GIL)
     try:
@@ -260,15 +262,15 @@ def _run_single_head(
         )
     # Phase 2: Decision + tag generation (pure Python/numpy)
     try:
-        decision = run_head_decision(head_info.sidecar, pooled_vec, prefix="", segment_std=seg_std)
+        decision = run_head_decision(head_model._sidecar, pooled_vec, prefix="", segment_std=seg_std)
 
-        key_builder = partial(_build_tag_key, head_info=head_info)
+        key_builder = partial(_build_tag_key, head_model=head_model)
 
         head_outputs = decision.to_head_outputs(
-            head_info=head_info, key_builder=key_builder,
+            head_info=head_model, key_builder=key_builder,
         )
         head_tags = decision.as_tags(key_builder=key_builder)
-        logger.debug(f"[processor] Head {head_name} ({head_info.head_type}) produced {len(head_tags)} tags")
+        logger.debug(f"[processor] Head {head_name} ({head_model.head_type}) produced {len(head_tags)} tags")
         if head_tags:
             sample_keys = list(head_tags.keys())[:3]
             logger.debug(f"[processor]   Sample keys: {sample_keys}")
@@ -280,12 +282,12 @@ def _run_single_head(
             logger.warning(f"[processor] Head {head_name} produced ZERO tags")
         # Regression data
         regression_data: tuple[Any, list[float]] | None = None
-        if head_info.is_regression_head:
+        if head_model.is_regression:
             if segment_scores.ndim == 2:
                 raw_values = [float(x) for x in segment_scores[:, 0]]
             else:
                 raw_values = [float(x) for x in segment_scores]
-            regression_data = (head_info, raw_values)
+            regression_data = (head_model, raw_values)
             logger.debug(
                 f"[processor] Captured {len(raw_values)} segment predictions for {head_name} (mean={np.mean(raw_values):.3f}, std={np.std(raw_values):.3f})",
             )
@@ -293,9 +295,9 @@ def _run_single_head(
         # Keep raw scores alive (numpy ref, no copy needed — it's from vstack).
         raw_segment_scores: np.ndarray | None = None
         segment_labels: list[str] | None = None
-        if segment_scores.ndim == 2 and len(head_info.labels) > 0:
+        if segment_scores.ndim == 2 and len(head_model.labels) > 0:
             raw_segment_scores = segment_scores
-            segment_labels = head_info.labels
+            segment_labels = head_model.labels
         return _SingleHeadResult(
             head_name=head_name, status="success",
             head_tags=head_tags, head_outputs=head_outputs,
@@ -312,7 +314,7 @@ def _run_single_head(
 
 
 def _process_head_predictions(
-    backbone_heads: list[HeadInfo], embeddings_2d: np.ndarray, config: ProcessorConfig, tags_accum: dict[str, Any],
+    backbone_heads: list[ONNXHeadModel], embeddings_2d: np.ndarray, config: ProcessorConfig, tags_accum: dict[str, Any],
 ) -> ProcessHeadPredictionsResult:
     """Process all head predictions for a single backbone using cached embeddings.
 
@@ -332,23 +334,28 @@ def _process_head_predictions(
 
     """
     # Pre-resolve cached predictors on the main thread (no lock contention).
-    # Each predict_fn is a lightweight closure binding the cached ONNX session + embeddings.
-    predict_fns: dict[str, Callable[[], np.ndarray]] = {}
-    for hi in backbone_heads:
-        predict_fns[hi.name] = make_head_only_predictor_batched(hi, embeddings_2d, batch_size=config.batch_size)
+    # Each predict_fn is a lightweight closure binding the ONNX session + embeddings.
+    def _make_predict(m: ONNXHeadModel, e: np.ndarray) -> Callable[[], np.ndarray]:
+        def _fn() -> np.ndarray:
+            return m.run(e)
+        return _fn
+
+    predict_fns: dict[str, Callable[[], np.ndarray]] = {
+        hm.name: _make_predict(hm, embeddings_2d) for hm in backbone_heads
+    }
 
     head_results_list: list[_SingleHeadResult] = []
     n_heads = len(backbone_heads)
     if n_heads > 1:
         futures = {
-            _HEAD_POOL.submit(_run_single_head, hi, predict_fns[hi.name]): hi.name
-            for hi in backbone_heads
+            _HEAD_POOL.submit(_run_single_head, hm, predict_fns[hm.name]): hm.name
+            for hm in backbone_heads
         }
         head_results_list.extend(fut.result() for fut in as_completed(futures))
         logger.debug("[processor] Parallel heads complete (%d heads)", n_heads)
     else:
         head_results_list.extend(
-            _run_single_head(hi, predict_fns[hi.name]) for hi in backbone_heads
+            _run_single_head(hm, predict_fns[hm.name]) for hm in backbone_heads
         )
 
     # Merge results sequentially (safe dict mutations)
@@ -390,7 +397,7 @@ def _process_head_predictions(
 
 
 def _collect_mood_outputs(
-    regression_heads: list[tuple[HeadInfo, list[float]]],
+    regression_heads: list[tuple[Any, list[float]]],
     all_head_outputs: list[Any],
 ) -> dict[str, Any]:
     """Collect and aggregate all mood outputs from classification and regression heads.
@@ -450,7 +457,7 @@ def select_tags_for_file(all_tags: dict[str, Any], file_write_mode: str) -> dict
     return filtered
 
 
-def process_file_workflow(path: str, config: ProcessorConfig, db: Database | None = None, file_id: str | None = None, prefer_gpu: bool = True) -> ProcessFileResult:
+def process_file_workflow(path: str, config: ProcessorConfig, db: Database | None = None, file_id: str | None = None, prefer_gpu: bool = True, cache: ONNXModelCache | None = None) -> ProcessFileResult:
     """Process an audio file through the complete tagging pipeline.
 
     This is the main workflow entrypoint for audio file processing. It is a pure
@@ -539,7 +546,21 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
     # Ultra-verbose timing tracker for bottleneck analysis
     timings: dict[str, float] = {}  # operation_name -> duration_ms
     t_discover = internal_ms()
-    _, heads_by_backbone = _discover_and_group_heads(config.models_dir)
+    # Use the caller-provided ONNXModelCache; fall back to on-demand discovery
+    # only during the transition period (no caller passes a cache yet).
+    if cache is None:
+        # Legacy fallback: discover + warm on demand.  Workers should pass a cache.
+        from nomarr.components.ml.ml_onnx_cache import ONNXModelCache as _ONNXModelCache
+        if prefer_gpu:
+            cache = _ONNXModelCache(config.models_dir, "gpu")
+        else:
+            cache = _ONNXModelCache(config.models_dir, "cpu")
+    if not cache.warm:
+        cache.warm = True
+    heads_by_backbone = cache.heads
+    if not heads_by_backbone:
+        msg = f"No head models found under {config.models_dir}"
+        raise RuntimeError(msg)
     timings["model_discovery"] = internal_ms().value - t_discover.value
 
     class TagAccumulator(dict):
@@ -549,7 +570,7 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
     all_head_results: dict[str, Any] = {}
     all_head_outputs: list[Any] = []
     heads_succeeded = 0
-    regression_heads: list[tuple[HeadInfo, list[float]]] = []
+    regression_heads: list[tuple[Any, list[float]]] = []
     total_heads_succeeded = 0
     all_raw_segments: dict[str, tuple[np.ndarray, list[str]]] = {}
     # Compute model suite hash once for vector persistence (not per backbone)
@@ -565,8 +586,8 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
     from nomarr.components.ml.ml_audio_comp import load_audio_mono, should_skip_short
 
     t_audio_load = internal_ms()
-    first_backbone_heads = next(iter(heads_by_backbone.values()))
-    target_sr = first_backbone_heads[0].sidecar.sr
+    first_backbone = next(iter(heads_by_backbone))
+    target_sr = cache.backbones[first_backbone].preprocess_params.sample_rate
     try:
         shared_audio = load_audio_mono(library_path, target_sr=target_sr)
     except AudioLoadShutdownError:
@@ -613,21 +634,17 @@ def process_file_workflow(path: str, config: ProcessorConfig, db: Database | Non
     backbone_items = list(heads_by_backbone.items())
     use_parallel = len(backbone_items) >= 2
 
-    def _embed_one(backbone: str, backbone_heads: list[HeadInfo]) -> tuple[str, list[HeadInfo], np.ndarray, float, str, float]:
-        """Compute embeddings for one backbone, returning timing info."""
-        first_head = backbone_heads[0]
+    def _embed_one(backbone: str, backbone_heads: list[ONNXHeadModel]) -> tuple[str, list[ONNXHeadModel], np.ndarray, float, str, float]:
+        """Compute embeddings for one backbone using the ONNX cache."""
         t0 = internal_ms()
-        embeddings_2d, duration, chromaprint_hash = _compute_embeddings_for_backbone(
-            backbone, first_head, library_path, config,
-            pre_loaded_audio=shared_audio,
-            pre_computed_chromaprint=shared_chromaprint,
-            prefer_gpu=prefer_gpu,
-        )
+        wave_f32 = shared_audio.waveform.astype(np.float32)
+        embeddings_2d = cache.backbones[backbone].run(wave_f32)
+        duration = float(shared_audio.duration)
         elapsed_ms = internal_ms().value - t0.value
-        return (backbone, backbone_heads, embeddings_2d, duration, chromaprint_hash, elapsed_ms)
+        return (backbone, backbone_heads, embeddings_2d, duration, shared_chromaprint, elapsed_ms)
 
     # Collect (backbone, heads, embeddings, ...) — either parallel or sequential
-    embedding_results: list[tuple[str, list[HeadInfo], np.ndarray, float, str, float]] = []
+    embedding_results: list[tuple[str, list[ONNXHeadModel], np.ndarray, float, str, float]] = []
     embedding_errors: dict[str, str] = {}
     if use_parallel:
         t_parallel_start = internal_ms()

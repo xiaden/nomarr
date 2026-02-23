@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -83,6 +83,58 @@ def _read_labels(path: str) -> list[str]:
         return []
 
 
+
+def _read_sidecar_json(path: str) -> dict[str, Any]:
+    """Read the co-located JSON sidecar for an ONNX file.
+
+    Looks for a ``.json`` file with the same base name as the ``.onnx`` file
+    and returns the parsed content.  Returns an empty dict if the file does
+    not exist or cannot be parsed.
+
+    Args:
+        path: Absolute path to the ``.onnx`` file.
+
+    Returns:
+        Parsed sidecar data, or ``{}`` on failure.
+    """
+    json_path = Path(path).with_suffix(".json")
+    if not json_path.exists():
+        return {}
+    try:
+        return dict(json.loads(json_path.read_text(encoding="utf-8")))
+    except (json.JSONDecodeError, OSError):
+        logger.warning("[head] Failed to read sidecar from %s", json_path)
+        return {}
+
+
+def _find_backbone_sidecar_json(head_onnx_path: str) -> dict[str, Any]:
+    """Locate and read the backbone embedding sidecar JSON for a head model.
+
+    Directory convention::
+
+        models/<backbone>/heads/<head_type>/<model>.onnx
+        models/<backbone>/embeddings/<backbone>.json   ← backbone sidecar
+
+    Navigates three levels up from the ``.onnx`` file to reach the backbone
+    root, then searches the ``embeddings`` (or ``embedding``) sub-directory
+    for the first ``.json`` file.
+
+    Args:
+        head_onnx_path: Absolute path to the head ``.onnx`` file.
+
+    Returns:
+        Parsed backbone sidecar data, or ``{}`` if not found.
+    """
+    backbone_dir = Path(head_onnx_path).parent.parent.parent
+    for emb_dir_name in ("embeddings", "embedding"):
+        emb_dir = backbone_dir / emb_dir_name
+        if emb_dir.is_dir():
+            for json_file in sorted(emb_dir.glob("*.json")):
+                try:
+                    return dict(json.loads(json_file.read_text(encoding="utf-8")))
+                except (json.JSONDecodeError, OSError):
+                    continue
+    return {}
 class ONNXHeadModel(BaseONNXModel):
     """ONNX wrapper for classification and regression head models.
 
@@ -142,6 +194,15 @@ class ONNXHeadModel(BaseONNXModel):
         self.output_node = None
         self.input_dim = None
         self.num_classes = None
+        self._head_data: dict[str, Any] = _read_sidecar_json(path)
+        self._backbone_data: dict[str, Any] = _find_backbone_sidecar_json(path)
+        # Create a Sidecar object so components that expect one (e.g. run_head_decision)
+        # can receive it directly without needing the old HeadInfo wrapper.
+        # Import inline to avoid a circular dependency: ml_discovery_comp → (inline)
+        # ml_onnx_head, so a top-level import in the other direction is prohibited.
+        from nomarr.components.ml.ml_discovery_comp import Sidecar
+        _json_path = str(Path(path).with_suffix(".json"))
+        self._sidecar = Sidecar(_json_path, self._head_data)
 
     def load(self, device: DevicePlacement) -> None:
         """Load the ONNX session and resolve tensor metadata.
@@ -207,3 +268,53 @@ class ONNXHeadModel(BaseONNXModel):
             return np.asarray(result[0], dtype=np.float32)
 
         return _run_in_batches(_session_fn, embeddings, _HEAD_BATCH_SIZE)
+
+
+    @property
+    def name(self) -> str:
+        """Display name from sidecar data, falling back to the model filename stem.
+
+        Checks ``"name"`` then ``"head_name"`` keys in the sidecar JSON before
+        returning :attr:`model_name` as a last resort.
+        """
+        return (
+            self._head_data.get("name")
+            or self._head_data.get("head_name")
+            or self.model_name
+        )
+
+    def build_versioned_tag_key(
+        self,
+        label: str,
+        calib_method: str = "none",
+        calib_version: int = 0,
+    ) -> tuple[str, str]:
+        """Build a versioned tag key mirroring the :meth:`HeadInfo.build_versioned_tag_key` format.
+
+        Format::
+
+            {label}_{suite_version}_{backbone}{embedder_date}_{label}{head_date}
+
+        Release dates are read from the sidecar JSON files:
+        - backbone embedder date → :attr:`_backbone_data`
+        - head release date → :attr:`_head_data`
+
+        Args:
+            label: Normalised tag label (e.g. ``"happy"``).
+            calib_method: Calibration method string (default ``"none"``).
+            calib_version: Calibration version integer (default ``0``).
+
+        Returns:
+            ``(model_key, calibration_id)`` tuple matching the HeadInfo convention.
+        """
+        from nomarr.components.ml.ml_discovery_comp import MODEL_SUITE_VERSION
+
+        embedder_release = self._backbone_data.get("release_date", "")
+        embedder_date = embedder_release.replace("-", "") if embedder_release else "unknown"
+        head_release = self._head_data.get("release_date", "")
+        head_date = head_release.replace("-", "") if head_release else "unknown"
+        embedder_part = f"{self.backbone_name}{embedder_date}"
+        head_part = f"{label}{head_date}"
+        model_key = f"{label}_{MODEL_SUITE_VERSION}_{embedder_part}_{head_part}"
+        calibration_id = f"{calib_method}_{calib_version}"
+        return (model_key, calibration_id)

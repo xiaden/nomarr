@@ -24,6 +24,7 @@ from nomarr.helpers.time_helper import internal_s
 if TYPE_CHECKING:
     from multiprocessing.synchronize import Event as EventType
 
+    from nomarr.components.ml.ml_onnx_cache import ONNXModelCache
     from nomarr.helpers.dto.processing_dto import ProcessorConfig
 
 logger = logging.getLogger(__name__)
@@ -327,6 +328,7 @@ class DiscoveryWorker(multiprocessing.Process):
         consecutive_errors = 0
         files_processed = 0
         cache_warmed = False  # Lazy cache warmup - only warm when work arrives
+        onnx_cache: ONNXModelCache | None = None  # ONNX model cache, lazily warmed
         holds_gpu_claim = False  # Whether this worker holds the GPU warmup claim
         # NOTE: also stored as self._holds_gpu_claim for health writer thread access
         recovering_until: float | None = None  # Recovery deadline if in recovering state
@@ -364,6 +366,9 @@ class DiscoveryWorker(multiprocessing.Process):
 
                     if check_and_evict_idle_cache():
                         cache_warmed = False  # Cache was evicted, will need re-warmup
+                        if onnx_cache is not None:
+                            onnx_cache.warm = False
+                            onnx_cache = None
                         if holds_gpu_claim:
                             release_gpu_claim(db, self.worker_id)
                             holds_gpu_claim = False
@@ -428,6 +433,16 @@ class DiscoveryWorker(multiprocessing.Process):
                                     cache_idle_timeout=CACHE_IDLE_TIMEOUT_S,
                                 )
                                 logger.info("[%s] ML cache ready: %d predictors loaded", self.worker_id, count)
+                                # Warm the ONNX model cache alongside the predictor cache
+                                from nomarr.components.ml.ml_onnx_cache import (
+                                    ONNXModelCache as _ONNXModelCache,
+                                )
+                                if self.prefer_gpu:
+                                    onnx_cache = _ONNXModelCache(config.models_dir, "gpu")
+                                else:
+                                    onnx_cache = _ONNXModelCache(config.models_dir, "cpu")
+                                onnx_cache.warm = True
+                                logger.info("[%s] ONNX model cache ready: %d models loaded", self.worker_id, onnx_cache.model_count)
                             except Exception as e:
                                 logger.exception("[%s] Failed to warm ML cache: %s", self.worker_id, e)
                                 # Warmup failed - release claim so another worker can try
@@ -482,6 +497,7 @@ class DiscoveryWorker(multiprocessing.Process):
                         db=db,
                         file_id=file_id,
                         prefer_gpu=True,
+                        cache=onnx_cache,
                     )
                     logger.debug("[%s] Workflow returned for %s", self.worker_id, file_path)
 
