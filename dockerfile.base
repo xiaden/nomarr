@@ -87,6 +87,7 @@ RUN python3 -m pip install --no-cache-dir --break-system-packages \
     "pytest==8.3.3" \
     "pytest-cov==5.0.0" \
     "psutil==7.2.1" \
+    "setproctitle" \
     # Sanity probes
     && python3 -c "import onnxruntime; print('ONNX Runtime:', onnxruntime.__version__, '| providers:', onnxruntime.get_available_providers())" \
     && python3 -c "import essentia; import essentia.standard as es; es.MonoLoader; print('essentia:', essentia.__version__, '| MonoLoader: ok')"
