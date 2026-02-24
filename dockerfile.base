@@ -1,7 +1,7 @@
 # ----------------------------------------------------------------------
 #  Nomarr Base Image - Heavy dependencies only
 #  Build once, reuse for all app builds
-#  Last rebuild: 2026-02-21 (essentia restored: minimal build AudioLoader+MonoLoader only, no TF)
+#  Last rebuild: 2026-02-23 (essentia restored: 14 algos, no TF; librosa/soundfile removed)
 # ----------------------------------------------------------------------
 
 # ==============================================================
@@ -72,8 +72,6 @@ RUN apt-get purge -y g++ pkg-config git python3-dev \
 RUN python3 -m pip install --no-cache-dir --break-system-packages \
     "numpy==1.26.4" \
     "scipy>=1.13.1" \
-    "soundfile" \
-    "librosa>=0.10.0" \
     "onnxruntime-gpu>=1.18.0" \
     "mutagen==1.47.0" \
     "pyyaml==6.0.2" \
@@ -91,7 +89,6 @@ RUN python3 -m pip install --no-cache-dir --break-system-packages \
     "psutil==7.2.1" \
     # Sanity probes
     && python3 -c "import onnxruntime; print('ONNX Runtime:', onnxruntime.__version__, '| providers:', onnxruntime.get_available_providers())" \
-    && python3 -c "import librosa; print('librosa:', librosa.__version__)" \
     && python3 -c "import essentia; import essentia.standard as es; es.MonoLoader; print('essentia:', essentia.__version__, '| MonoLoader: ok')"
 
 WORKDIR /app
