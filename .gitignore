@@ -134,3 +134,5 @@ fpcalc.exe
 /playwright/.cache/
 /playwright/.auth/
 /.playwright-mcp/
+
+build_resources/models-prepatch/
