@@ -1,9 +1,10 @@
 # Production dependencies — minimum versions align with dockerfile.base
 numpy==1.26.4              # Pinned: onnxruntime compatibility
 scipy>=1.13.1
-soundfile>=0.13.0
-librosa>=0.10.0
-onnxruntime>=1.18.0
+# Use onnxruntime-gpu to match dockerfile.base; falls back to CPU automatically
+# if CUDA is unavailable (Windows dev without CUDA, or CI). Do NOT swap for the
+# CPU-only 'onnxruntime' package — that silently drops CUDAExecutionProvider.
+onnxruntime-gpu>=1.18.0
 mutagen>=1.47.0
 pyyaml>=6.0.2
 fastapi>=0.115.0
@@ -14,6 +15,7 @@ bcrypt>=4.2.0
 python-arango>=8.0.0
 watchdog>=6.0.0
 psutil>=7.0.0
+setproctitle>=1.3.0
 rapidfuzz>=3.0.0
 spotipy>=2.24.0
 

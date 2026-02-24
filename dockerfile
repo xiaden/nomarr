@@ -30,7 +30,7 @@ WORKDIR /app
 # ----------------------------------------------------------------------
 # Copy directories preserving structure
 COPY nomarr/ /app/nomarr/
-COPY build_resources/models/ /app/models/
+COPY build_resources/models-patched/ /app/models/
 COPY build_resources/config/ /app/config/
 COPY build_resources/scripts/ /app/scripts/
 COPY docs/ /app/docs/

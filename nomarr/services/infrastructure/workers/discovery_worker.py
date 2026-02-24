@@ -25,7 +25,8 @@ if TYPE_CHECKING:
     from multiprocessing.synchronize import Event as EventType
 
     from nomarr.components.ml.ml_onnx_cache import ONNXModelCache
-    from nomarr.helpers.dto.processing_dto import ProcessorConfig
+    from nomarr.helpers.dto.processing_dto import DeferredFileWrites, ProcessorConfig
+    from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +42,8 @@ HEALTH_FRAME_PREFIX = "HEALTH|"
 
 
 def _execute_deferred_writes(
-    db: Any,
-    writes: Any,
+    db: Database,
+    writes: DeferredFileWrites,
     worker_id: str,
 ) -> None:
     """Execute deferred DB writes for one file on a background thread.
@@ -262,6 +263,10 @@ class DiscoveryWorker(multiprocessing.Process):
 
         faulthandler.enable()
 
+        import setproctitle
+
+        setproctitle.setproctitle(f"nomarr-{self.worker_id}")
+
         # Register stop event for shutdown-aware audio loading
         from nomarr.components.ml.ml_audio_comp import set_stop_event
 
@@ -304,6 +309,19 @@ class DiscoveryWorker(multiprocessing.Process):
         db = Database(hosts=self.db_hosts, password=self.db_password)
         self._db = db  # Store for health writer thread heartbeat access
 
+        # Register worker context for process-local ML coordinator access
+        from nomarr.components.ml.ml_worker_context_comp import register_worker_context
+        register_worker_context(db, self.worker_id)
+
+        # Clear any stale VRAM promises from a previous crash of this worker.
+        # The service owner also does this via on_status_change("dead"), but we
+        # clear here too in case of a restart race or service-side failure.
+        from nomarr.components.ml.ml_vram_coordinator_comp import release_worker_promises
+        try:
+            release_worker_promises(db, self.worker_id)
+        except Exception:
+            logger.debug("[%s] Failed to clear stale VRAM promises at startup", self.worker_id, exc_info=True)
+
         # Reconstruct ProcessorConfig from dict
         config = ProcessorConfig(**self.processor_config_dict)
 
@@ -328,6 +346,7 @@ class DiscoveryWorker(multiprocessing.Process):
         consecutive_errors = 0
         files_processed = 0
         cache_warmed = False  # Lazy cache warmup - only warm when work arrives
+        last_work_time: float | None = None  # Monotonic timestamp of last successful file claim
         onnx_cache: ONNXModelCache | None = None  # ONNX model cache, lazily warmed
         holds_gpu_claim = False  # Whether this worker holds the GPU warmup claim
         # NOTE: also stored as self._holds_gpu_claim for health writer thread access
@@ -361,24 +380,26 @@ class DiscoveryWorker(multiprocessing.Process):
 
                 if file_id is None:
                     logger.debug("[%s] No work found, sleeping %.1fs", self.worker_id, IDLE_SLEEP_S)
-                    # No work available - check for cache eviction (idle timeout)
-                    from nomarr.components.ml.ml_cache_comp import check_and_evict_idle_cache
-
-                    if check_and_evict_idle_cache():
-                        cache_warmed = False  # Cache was evicted, will need re-warmup
-                        if onnx_cache is not None:
-                            onnx_cache.warm = False
-                            onnx_cache = None
+                    # Evict ONNX cache after idle timeout
+                    if (
+                        onnx_cache is not None
+                        and last_work_time is not None
+                        and internal_s().value - last_work_time > CACHE_IDLE_TIMEOUT_S
+                    ):
+                        onnx_cache.warm = False
+                        onnx_cache = None
+                        cache_warmed = False
                         if holds_gpu_claim:
                             release_gpu_claim(db, self.worker_id)
                             holds_gpu_claim = False
                             self._holds_gpu_claim = False
-                        logger.info("[%s] ML cache evicted due to idle timeout", self.worker_id)
+                        logger.info("[%s] ONNX cache evicted due to idle timeout", self.worker_id)
 
                     time.sleep(IDLE_SLEEP_S)
                     continue
 
                 logger.debug("[%s] Work found: claimed file %s", self.worker_id, file_id)
+                last_work_time = internal_s().value
 
                 # Per-file resource check (GPU_REFACTOR_PLAN.md Section 11)
                 # Only if resource management is enabled
@@ -415,55 +436,73 @@ class DiscoveryWorker(multiprocessing.Process):
                             resource_status.ram_used_mb,
                         )
 
-                # Lazy cache warmup: warm cache on first file discovered
+                # Lazy cache warmup: warm ONNX model cache on first file discovered
                 # This avoids VRAM allocation until actual work arrives
                 if not cache_warmed:
-                    from nomarr.components.ml.ml_cache_comp import is_initialized, warmup_predictor_cache
-
-                    if not is_initialized():
-                        # Attempt GPU warmup claim before loading models into VRAM
-                        claimed = attempt_acquire_gpu_claim(db, self.worker_id)
-                        if claimed:
-                            holds_gpu_claim = True
-                            self._holds_gpu_claim = True
-                            logger.info("[%s] Acquired GPU warmup claim - warming ML cache...", self.worker_id)
-                            try:
-                                count = warmup_predictor_cache(
-                                    models_dir=config.models_dir,
-                                    cache_idle_timeout=CACHE_IDLE_TIMEOUT_S,
-                                )
-                                logger.info("[%s] ML cache ready: %d predictors loaded", self.worker_id, count)
-                                # Warm the ONNX model cache alongside the predictor cache
-                                from nomarr.components.ml.ml_onnx_cache import (
-                                    ONNXModelCache as _ONNXModelCache,
-                                )
-                                if self.prefer_gpu:
-                                    onnx_cache = _ONNXModelCache(config.models_dir, "gpu")
-                                else:
-                                    onnx_cache = _ONNXModelCache(config.models_dir, "cpu")
-                                onnx_cache.warm = True
-                                logger.info("[%s] ONNX model cache ready: %d models loaded", self.worker_id, onnx_cache.model_count)
-                            except Exception as e:
-                                logger.exception("[%s] Failed to warm ML cache: %s", self.worker_id, e)
-                                # Warmup failed - release claim so another worker can try
-                                release_gpu_claim(db, self.worker_id)
-                                holds_gpu_claim = False
-                                self._holds_gpu_claim = False
-                                # Continue anyway - workflow will create predictors inline (slower but works)
-                        else:
-                            # Another worker holds the GPU — process CPU-only this round
-                            logger.info(
-                                "[%s] GPU claim held by another worker, processing CPU-only",
-                                self.worker_id,
+                    # Attempt GPU warmup claim before loading models into VRAM
+                    claimed = attempt_acquire_gpu_claim(db, self.worker_id)
+                    if claimed:
+                        holds_gpu_claim = True
+                        self._holds_gpu_claim = True
+                        logger.info("[%s] Acquired GPU warmup claim - warming ONNX model cache...", self.worker_id)
+                        try:
+                            from nomarr.components.ml.ml_onnx_base import DevicePlacement as _DevicePlacement
+                            from nomarr.components.ml.ml_onnx_cache import (
+                                ONNXModelCache as _ONNXModelCache,
                             )
-                            # Don't set cache_warmed so we re-attempt on next file
-                            continue
+                            from nomarr.components.ml.ml_vram_probe_comp import (
+                                has_model_vram_measurements,
+                                probe_all_models,
+                            )
+                            from nomarr.components.platform.resource_monitor_comp import (
+                                check_nvidia_gpu_capability,
+                            )
+                            if (
+                                self.prefer_gpu
+                                and check_nvidia_gpu_capability()
+                                and not has_model_vram_measurements(db)
+                            ):
+                                logger.info("[%s] Running per-model VRAM probe...", self.worker_id)
+                                probe_all_models(db, config.models_dir)
+                            _cache_device: _DevicePlacement = "gpu" if self.prefer_gpu else "cpu"
+                            onnx_cache = _ONNXModelCache(config.models_dir, _cache_device)
+                            from nomarr.components.ml import ml_vram_coordinator_comp as _coordinator
+                            onnx_cache.warm = True
+                            _fleet = _coordinator.get_fleet_vram_state(db)
+                            _vram = _fleet["vram"]
+                            _promises = _fleet["promises"]
+                            _promise_rows = [
+                                f"  {p.get('worker_id', '?'):<20}  "
+                                f"{os.path.basename(p.get('model_path', '?')):<32}  "
+                                f"{p.get('promised_mb', 0):.0f} MB"
+                                for p in _promises
+                            ]
+                            logger.info(
+                                "[%s] ONNX cache ready (%d models). "
+                                "Fleet promises: %d  |  GPU %d/%d MB\n%s",
+                                self.worker_id,
+                                onnx_cache.model_count,
+                                len(_promises),
+                                _vram.get("used_mb", 0),
+                                _vram.get("total_mb", 0),
+                                "\n".join(_promise_rows) if _promise_rows else "  (none)",
+                            )
+                        except Exception as e:
+                            logger.exception("[%s] Failed to warm ONNX model cache: %s", self.worker_id, e)
+                            # Warmup failed - release claim so another worker can try
+                            release_gpu_claim(db, self.worker_id)
+                            holds_gpu_claim = False
+                            self._holds_gpu_claim = False
+                            # Continue anyway - workflow will create sessions inline (slower but works)
+                    else:
+                        # Another worker holds the GPU — process CPU-only this round
+                        logger.info(
+                            "[%s] GPU claim held by another worker, processing CPU-only",
+                            self.worker_id,
+                        )
+                        # Don't set cache_warmed so we re-attempt on next file
+                        continue
                     cache_warmed = True
-
-                # Mark cache as active for the duration of processing
-                from nomarr.components.ml.ml_cache_comp import mark_active, mark_idle
-
-                mark_active()
 
                 # Process the claimed file
                 try:
@@ -491,12 +530,12 @@ class DiscoveryWorker(multiprocessing.Process):
                     sys.stderr.flush()
 
                     # Run the processing workflow
+                    assert onnx_cache is not None, "onnx_cache must be warmed before processing"
                     result = process_file_workflow(
                         path=file_path,
                         config=config,
                         db=db,
                         file_id=file_id,
-                        prefer_gpu=True,
                         cache=onnx_cache,
                     )
                     logger.debug("[%s] Workflow returned for %s", self.worker_id, file_path)
@@ -556,8 +595,6 @@ class DiscoveryWorker(multiprocessing.Process):
                             consecutive_errors,
                         )
                         break
-                finally:
-                    mark_idle()
 
         finally:
             # Drain any pending async writes before shutdown
@@ -585,13 +622,21 @@ class DiscoveryWorker(multiprocessing.Process):
                 except Exception:
                     logger.debug("[%s] Failed to release GPU claim on shutdown", self.worker_id, exc_info=True)
 
+            # Release VRAM promises — belt-and-suspenders for graceful exits;
+            # the service owner handles this for crashes via on_status_change("dead")
+            try:
+                from nomarr.components.ml.ml_vram_coordinator_comp import release_worker_promises
+                release_worker_promises(db, self.worker_id)
+            except Exception:
+                logger.debug("[%s] Failed to release VRAM promises on shutdown", self.worker_id, exc_info=True)
+
             # Shut down persistent audio loader subprocess
             from nomarr.components.ml.ml_audio_comp import shutdown_audio_loader
 
             shutdown_audio_loader()
 
             # Shut down head prediction thread pool (bounded exit)
-            from nomarr.workflows.processing.process_file_wf import shutdown_head_pool
+            from nomarr.components.ml.ml_head_pipeline_comp import shutdown_head_pool
 
             shutdown_head_pool()
 

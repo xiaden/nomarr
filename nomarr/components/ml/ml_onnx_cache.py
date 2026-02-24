@@ -3,7 +3,12 @@
 The cache owns all backbone and head models for a given models directory.  It
 discoveries models at construction time and provides two high-level controls:
 
-- ``cache.warm = True/False`` — load or unload all ONNX sessions atomically.
+- ``cache.warm = True`` — load all sessions.  Worker identity and database are
+  retrieved from the process-local registry (see :mod:`ml_worker_context_comp`);
+  if no context is registered (probe processes, tests), the coordinator check
+  is skipped and models are loaded directly.  GPU models that don't fit are
+  automatically retried on CPU.
+- ``cache.warm = False`` — unload all sessions immediately.
 - ``cache.device = "cpu"/"gpu"`` — transition all sessions to a new device;
   if the cache is warm, unloads and reloads them; otherwise just stores the
   device for the next warm cycle.
@@ -22,7 +27,11 @@ from nomarr.components.ml.ml_discovery_comp import (
     discover_head_models,
 )
 from nomarr.components.ml.ml_onnx_backbone import ONNXBackboneModel
-from nomarr.components.ml.ml_onnx_base import BaseONNXModel, DevicePlacement
+from nomarr.components.ml.ml_onnx_base import (
+    BaseONNXModel,
+    DevicePlacement,
+    VramFitError,
+)
 from nomarr.components.ml.ml_onnx_head import ONNXHeadModel
 
 logger = logging.getLogger(__name__)
@@ -33,7 +42,7 @@ class ONNXModelCache:
 
     Constructed from a *models_dir* root and a *device* target.  Immediately
     discovers all ``.onnx`` files and wraps each in the appropriate class;
-    no sessions are loaded until :attr:`warm` is set to ``True``.
+    no sessions are loaded until ``warm = True`` is set.
 
     Attributes:
         backbones: Backbone models keyed by backbone name (e.g. ``"effnet"``).
@@ -43,10 +52,10 @@ class ONNXModelCache:
     Example usage::
 
         cache = ONNXModelCache("/models", device="gpu")
-        cache.warm = True          # load all sessions
+        cache.warm = True    # load all sessions via coordinator
         emb = cache.backbones["effnet"].run(waveform)
         # ... run heads ...
-        cache.warm = False         # unload all sessions (idle eviction)
+        cache.warm = False   # unload all sessions (idle eviction)
     """
 
     backbones: dict[str, ONNXBackboneModel]
@@ -58,13 +67,12 @@ class ONNXModelCache:
     def __init__(self, models_dir: str, device: DevicePlacement) -> None:
         """Discover all ONNX models under *models_dir* and prepare them for warming.
 
-        No sessions are loaded during construction.  Call ``cache.warm = True``
-        to load all sessions.
+        No sessions are loaded during construction.  Set ``warm = True`` to
+        load all sessions.
 
         Args:
             models_dir: Root directory containing backbone sub-directories.
-            device: Default execution device (``"cpu"`` or ``"gpu"``).  Used
-                whenever sessions are loaded.
+            device: Default execution device (``"cpu"`` or ``"gpu"``).
         """
         self._models_dir = models_dir
         self._device: DevicePlacement = device
@@ -104,7 +112,11 @@ class ONNXModelCache:
     def warm(self) -> bool:
         """``True`` when every model in the cache has a loaded ONNX session.
 
-        Setting to ``True`` loads any unloaded models on :attr:`device`.
+        Setting to ``True`` loads all unloaded sessions.  Models that are
+        rejected by the VRAM coordinator (GPU headroom exhausted) are
+        automatically retried on CPU.  Worker identity and database are
+        retrieved from the process-local registry; no arguments required.
+
         Setting to ``False`` unloads all sessions immediately.
 
         A cache with no models is trivially warm (vacuous truth).
@@ -114,11 +126,22 @@ class ONNXModelCache:
     @warm.setter
     def warm(self, value: bool) -> None:
         if value:
+            loaded = 0
             for m in self._all_models():
-                if m._session is None:
-                    m.load(self._device)
+                if m._session is not None:
+                    continue
+                try:
+                    m.device = self._device
+                except VramFitError:
+                    logger.info(
+                        "[cache] VRAM coordinator rejected GPU for %s — loaded on CPU instead",
+                        m._path,
+                    )
+                loaded += 1
             logger.info(
-                "[cache] Warmed %d models on device=%s", self.model_count, self._device
+                "[cache] Warmed %d model(s) (preferred device=%s)",
+                loaded,
+                self._device,
             )
         else:
             for m in self._all_models():
@@ -138,7 +161,7 @@ class ONNXModelCache:
         - If the cache is **warm**: transitions every model (unload + reload on
           new device) via :attr:`BaseONNXModel.device` setter.
         - If the cache is **cold**: stores the device; it will be used on the
-          next ``cache.warm = True`` call.
+          next ``warm = True`` call.
         """
         return self._device
 
@@ -150,7 +173,7 @@ class ONNXModelCache:
         self._device = value
         if self.warm:
             logger.info(
-                "[cache] Transitioning %d models: %s → %s",
+                "[cache] Transitioning %d models: %s -> %s",
                 self.model_count,
                 old,
                 value,

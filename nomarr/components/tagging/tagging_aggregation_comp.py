@@ -476,3 +476,28 @@ def aggregate_mood_tiers(
     label_map = _build_label_map(tier_map, LABEL_PAIRS)
     tier_sets = _build_tier_term_sets(tier_map, suppressed_keys, label_map)
     return _make_inclusive_mood_tags(tier_sets.strict_terms, tier_sets.regular_terms, tier_sets.loose_terms)
+
+
+
+def collect_mood_outputs(
+    regression_heads: list[tuple[Any, list[float]]],
+    all_head_outputs: list[Any],
+) -> dict[str, Any]:
+    r"""Collect and aggregate all mood outputs from classification and regression heads.
+
+    Combines regression-based HeadOutput objects with classification head outputs,
+    then aggregates them into mood tier tag dictionaries.
+
+    Args:
+        regression_heads: List of (HeadInfo, segment_values) tuples for regression heads.
+        all_head_outputs: List of HeadOutput objects from classification heads
+            (mutated in place by appending regression outputs).
+
+    Returns:
+        Dict of mood-\* tag strings for the file.
+
+    """
+    regression_outputs = add_regression_mood_tiers(regression_heads)
+    all_head_outputs.extend(regression_outputs)
+    logger.debug("[aggregation] Total HeadOutput objects: %d", len(all_head_outputs))
+    return aggregate_mood_tiers(all_head_outputs)

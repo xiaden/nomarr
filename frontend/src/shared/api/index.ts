@@ -15,6 +15,7 @@ export * from "./auth";
 export * from "./calibration";
 export * from "./filesystem";
 export * from "./metadata";
+export * from "./ml";
 export * from "./processing";
 export * from "./tags";
 export * from "./worker";

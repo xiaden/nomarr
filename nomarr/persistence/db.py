@@ -24,6 +24,7 @@ from nomarr.persistence.database.vectors_track_aql import (
     VectorsTrackColdOperations,
     VectorsTrackHotOperations,
 )
+from nomarr.persistence.database.vram_promises_aql import VramPromisesOperations
 from nomarr.persistence.database.worker_claims_aql import WorkerClaimsOperations
 from nomarr.persistence.database.worker_restart_policy_aql import WorkerRestartPolicyOperations
 
@@ -136,6 +137,7 @@ class Database:
         self.worker_restart_policy = WorkerRestartPolicyOperations(self.db)
         self.worker_claims = WorkerClaimsOperations(self.db)
         self.gpu_claims = GpuClaimOperations(self.db)
+        self.vram_promises = VramPromisesOperations(self.db)
         self.ml_capacity = MLCapacityOperations(self.db)
         self.segment_scores_stats = SegmentScoresStatsOperations(self.db)
         # Unified tag operations (TAG_UNIFICATION_REFACTOR)

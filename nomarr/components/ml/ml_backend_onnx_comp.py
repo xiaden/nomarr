@@ -3,6 +3,13 @@
 Provides session creation with CUDAExecutionProvider / CPUExecutionProvider
 selection, and the standard is_available / require / get_version contract
 used by the ML component layer.
+
+VRAM budgeting
+--------------
+Each GPU session accepts an explicit ``vram_limit_bytes`` at creation time.
+The value comes from per-model VRAM probe measurements stored in meta
+(see ml_vram_probe_comp.py / Plan A).  When not provided, no explicit
+``gpu_mem_limit`` is set and ONNX Runtime allocates as needed.
 """
 
 from __future__ import annotations
@@ -19,6 +26,11 @@ try:
     import onnxruntime as _ort
 except ImportError:
     _ort = None  # type: ignore[assignment]
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
 
 
 def is_available() -> bool:
@@ -65,6 +77,7 @@ def get_version() -> str:
 def create_session(
     model_path: str,
     device: str = "cpu",
+    vram_limit_bytes: int | None = None,
 ) -> ort.InferenceSession:
     """Create an ONNX Runtime InferenceSession for the given model file.
 
@@ -72,9 +85,16 @@ def create_session(
     CUDA is unavailable on this machine).  Always appends
     CPUExecutionProvider as the final fallback.
 
+    When creating a GPU session with *vram_limit_bytes* provided, the CUDA
+    provider is given an explicit ``gpu_mem_limit`` equal to that value.
+    When not provided, no explicit memory limit is set.
+
     Args:
         model_path: Absolute path to the .onnx model file.
         device: ``"gpu"`` or ``"cpu"``.  Any other value is treated as ``"cpu"``.
+        vram_limit_bytes: Optional explicit GPU memory limit in bytes.  When
+            provided and *device* is ``"gpu"``, applied directly as
+            ``gpu_mem_limit`` in the CUDA provider options.
 
     Returns:
         A ready-to-use ``onnxruntime.InferenceSession``.
@@ -91,13 +111,24 @@ def create_session(
         msg = f"ONNX model file not found: {model_path}"
         raise FileNotFoundError(msg)
 
-    providers: list[str] = []
+    providers: list[str | tuple[str, dict[str, object]]] = []
 
     if device == "gpu":
         available = _ort.get_available_providers()  # type: ignore[union-attr]
         if "CUDAExecutionProvider" in available:
-            providers.append("CUDAExecutionProvider")
-            logger.debug("[onnx] Using CUDAExecutionProvider for %s", model_path)
+            cuda_opts = _build_cuda_provider_options(vram_limit_bytes)
+            providers.append(("CUDAExecutionProvider", cuda_opts))
+            if vram_limit_bytes is not None:
+                logger.debug(
+                    "[onnx] Using CUDAExecutionProvider for %s (gpu_mem_limit=%dMB)",
+                    model_path,
+                    vram_limit_bytes // (1024 * 1024),
+                )
+            else:
+                logger.debug(
+                    "[onnx] Using CUDAExecutionProvider for %s (no explicit limit)",
+                    model_path,
+                )
         else:
             logger.warning(
                 "[onnx] GPU requested but CUDAExecutionProvider not available; "
@@ -115,9 +146,43 @@ def create_session(
         sess_options=sess_options,
         providers=providers,
     )
+
     logger.debug(
         "[onnx] Session created: %s (providers=%s)",
         model_path,
         session.get_providers(),
     )
     return session
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
+def _build_cuda_provider_options(vram_limit_bytes: int | None) -> dict[str, object]:
+    """Build CUDA provider options dict.
+
+    When *vram_limit_bytes* is provided (normal warmup): caps the arena and
+    uses ``kSameAsRequested`` so the arena only holds what is currently live.
+
+    When *vram_limit_bytes* is None (probe mode): returns an empty dict so ORT
+    uses its default ``kNextPowerOfTwo`` arena strategy, which retains all peak
+    allocations after ``run()`` returns.  This makes the post-run nvidia-smi
+    snapshot reflect the true inference peak (weights + max activation workspace)
+    rather than just the settled weight footprint.
+
+    Args:
+        vram_limit_bytes: Optional explicit GPU memory limit in bytes.
+
+    Returns:
+        Dict suitable for ``("CUDAExecutionProvider", opts)``.
+    """
+    if vram_limit_bytes is None:
+        # Probe mode: let ORT use default kNextPowerOfTwo so peak is retained
+        return {}
+    return {
+        # Don't double the arena on each extension — only take what we need
+        "arena_extend_strategy": "kSameAsRequested",
+        "gpu_mem_limit": vram_limit_bytes,
+    }

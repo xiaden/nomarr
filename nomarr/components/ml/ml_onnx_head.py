@@ -17,6 +17,7 @@ import numpy as np
 
 from nomarr.components.ml.ml_inference_comp import _run_in_batches
 from nomarr.components.ml.ml_onnx_base import BaseONNXModel
+from nomarr.components.ml.ml_onnx_types import MODEL_SUITE_VERSION, Sidecar
 
 if TYPE_CHECKING:
     from nomarr.components.ml.ml_onnx_base import DevicePlacement
@@ -196,11 +197,6 @@ class ONNXHeadModel(BaseONNXModel):
         self.num_classes = None
         self._head_data: dict[str, Any] = _read_sidecar_json(path)
         self._backbone_data: dict[str, Any] = _find_backbone_sidecar_json(path)
-        # Create a Sidecar object so components that expect one (e.g. run_head_decision)
-        # can receive it directly without needing the old HeadInfo wrapper.
-        # Import inline to avoid a circular dependency: ml_discovery_comp → (inline)
-        # ml_onnx_head, so a top-level import in the other direction is prohibited.
-        from nomarr.components.ml.ml_discovery_comp import Sidecar
         _json_path = str(Path(path).with_suffix(".json"))
         self._sidecar = Sidecar(_json_path, self._head_data)
 
@@ -211,7 +207,11 @@ class ONNXHeadModel(BaseONNXModel):
         ``input_dim``, and ``num_classes`` are all populated from the session.
 
         Args:
-            device: Target execution device (``"cpu"`` or ``"gpu"``)
+            request: Load parameters forwarded to :meth:`BaseONNXModel.load`.
+
+        Raises:
+            VramFitError: If ``request.device == "gpu"`` and the VRAM
+                coordinator rejects the GPU placement request.
         """
         super().load(device)
         assert self._session is not None  # guaranteed by super().load()
@@ -232,7 +232,7 @@ class ONNXHeadModel(BaseONNXModel):
             self.input_dim,
             self.output_node,
             self.num_classes,
-            device,
+            self._device,
         )
 
     def unload(self) -> None:
@@ -307,7 +307,6 @@ class ONNXHeadModel(BaseONNXModel):
         Returns:
             ``(model_key, calibration_id)`` tuple matching the HeadInfo convention.
         """
-        from nomarr.components.ml.ml_discovery_comp import MODEL_SUITE_VERSION
 
         embedder_release = self._backbone_data.get("release_date", "")
         embedder_date = embedder_release.replace("-", "") if embedder_release else "unknown"

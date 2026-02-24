@@ -30,6 +30,7 @@ from nomarr.components.ml.ml_tier_selection_comp import (
     TierSelection,
     select_execution_tier,
 )
+from nomarr.components.ml.ml_vram_coordinator_comp import release_worker_promises
 from nomarr.components.platform.resource_monitor_comp import check_nvidia_gpu_capability
 from nomarr.components.workers import should_restart_worker
 from nomarr.components.workers.worker_discovery_comp import (
@@ -247,13 +248,23 @@ class WorkerSystemService(ComponentLifecycleHandler):
         )
 
         if new_status == "dead":
-            # Release claims for crashed worker
+            # Release file claims for crashed worker
             released_file_ids = release_claims_for_worker(self.db, component_id)
             if released_file_ids:
                 logger.info(
                     "[WorkerSystemService] Released %d claim(s) for dead worker %s - files will be reprocessed",
                     len(released_file_ids),
                     component_id,
+                )
+
+            # Release VRAM promises for crashed worker so fleet headroom is reclaimed
+            try:
+                release_worker_promises(self.db, component_id)
+            except Exception:
+                logger.debug(
+                    "[WorkerSystemService] Failed to release VRAM promises for dead worker %s",
+                    component_id,
+                    exc_info=True,
                 )
 
             # Check if shutdown was requested (graceful stop)
@@ -591,6 +602,18 @@ class WorkerSystemService(ComponentLifecycleHandler):
                     )
                     worker.kill()
                     worker.join(timeout=0.5)
+
+        # Release VRAM promises for all workers (covers force-killed workers whose
+        # finally blocks did not execute)
+        for worker in self._workers:
+            try:
+                release_worker_promises(self.db, worker.worker_id)
+            except Exception:
+                logger.debug(
+                    "[WorkerSystemService] Failed to release VRAM promises for worker %s",
+                    worker.worker_id,
+                    exc_info=True,
+                )
 
         self._workers.clear()
         self._started = False

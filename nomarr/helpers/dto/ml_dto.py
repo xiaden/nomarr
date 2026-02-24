@@ -106,3 +106,32 @@ class AnalyzeWithSegmentsResult:
     pooled_vector: Any  # np.ndarray - pooled embedding vector
     segments: Any  # Segments object with waves and bounds
     duration: float  # audio duration in seconds
+
+
+
+@dataclass
+class ProcessHeadPredictionsResult:
+    """Result from running all heads for a single backbone."""
+
+    heads_succeeded: int
+    head_results: dict[str, Any]
+    regression_heads: list[tuple[Any, list[float]]]
+    all_head_outputs: list[Any]
+    raw_segments_per_head: dict[str, tuple[Any, list[str]]]  # head -> (scores, labels)
+    per_head_timings: dict[str, float]  # head_name -> duration_ms
+
+
+@dataclass
+class SingleHeadResult:
+    """Result from processing a single head (thread-safe, no shared mutation)."""
+
+    head_name: str
+    status: str  # "success", "error_processing", "error_aggregation"
+    error: str | None = None
+    head_tags: dict[str, Any] | None = None
+    head_outputs: list[Any] | None = None
+    regression_data: tuple[Any, list[float]] | None = None
+    raw_segment_scores: Any | None = None  # np.ndarray — deferred to async write thread
+    segment_labels: list[str] | None = None  # labels for segment stats computation
+    elapsed_ms: float = 0.0
+    decisions_count: int = 0

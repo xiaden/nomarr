@@ -1,17 +1,21 @@
-"""ML Service: Manages ML model discovery and cache lifecycle.
+"""ML Service: Model discovery facade.
 
-This service owns ML model discovery, cache lifecycle, and provides a clean
-interface for model operations without exposing component details to interfaces.
+This service provides a clean interface for discovering available models
+without exposing component details to interfaces.  Cache lifecycle is
+owned by DiscoveryWorker, not this service.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING
 
-from nomarr.components.ml.ml_cache_comp import get_cache_size, warmup_predictor_cache
 from nomarr.components.ml.ml_discovery_comp import discover_backbones, discover_heads
+from nomarr.persistence.db import Database
+
+if TYPE_CHECKING:
+    from nomarr.components.ml.ml_discovery_comp import HeadInfo
 
 logger = logging.getLogger(__name__)
 
@@ -21,57 +25,28 @@ class MLConfig:
     """Configuration for MLService."""
 
     models_dir: str
-    cache_idle_timeout: int
 
 
 class MLService:
-    """Service for ML model discovery and cache management.
+    """ML model discovery facade.
 
     Provides a clean interface for:
     - Discovering available backbones (embedding extractors)
     - Discovering model heads (classifiers)
-    - Cache warmup and monitoring
+
+    Cache lifecycle is owned by DiscoveryWorker, not this service.
     """
 
-    def __init__(self, cfg: MLConfig) -> None:
+    def __init__(self, db: Database, cfg: MLConfig) -> None:
         """Initialize ML service.
 
         Args:
+            db: Database instance.
             cfg: ML configuration
 
         """
+        self.db = db
         self.cfg = cfg
-
-    def warmup_cache(self) -> int:
-        """Pre-load all model predictors into cache.
-
-        Returns:
-            Number of predictors cached
-
-        Raises:
-            RuntimeError: If cache warmup fails
-
-        """
-        try:
-            count = warmup_predictor_cache(
-                models_dir=self.cfg.models_dir,
-                cache_idle_timeout=self.cfg.cache_idle_timeout,
-            )
-            logger.info(f"[MLService] Warmed up {count} predictors")
-            return count
-        except Exception as e:
-            logger.exception("[MLService] Cache warmup failed")
-            msg = f"Failed to warm up ML cache: {e}"
-            raise RuntimeError(msg) from e
-
-    def get_cache_size(self) -> int:
-        """Get number of predictors currently in cache.
-
-        Returns:
-            Number of cached predictors
-
-        """
-        return get_cache_size()
 
     def list_backbones(self) -> list[str]:
         """List available embedding backbones.
@@ -85,7 +60,7 @@ class MLService:
         """
         return discover_backbones(self.cfg.models_dir)
 
-    def discover_heads(self) -> list[Any]:
+    def discover_heads(self) -> list[HeadInfo]:
         """Discover all available model heads in models directory.
 
         Returns:
@@ -103,3 +78,14 @@ class MLService:
             logger.exception("[MLService] Model discovery failed")
             msg = f"Failed to discover model heads: {e}"
             raise RuntimeError(msg) from e
+
+    def clear_vram_measurements(self) -> None:
+        """Delete all per-model VRAM measurements from meta.
+
+        The next discovery worker startup will re-run the probe and record
+        fresh measurements.
+        """
+        from nomarr.components.ml.ml_vram_probe_comp import clear_model_vram_measurements
+
+        clear_model_vram_measurements(self.db)
+        logger.info("[MLService] VRAM measurements cleared — probe will re-run on next worker start")

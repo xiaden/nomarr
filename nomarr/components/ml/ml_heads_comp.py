@@ -16,7 +16,8 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from nomarr.components.ml.ml_discovery_comp import Sidecar
+    from nomarr.components.ml.ml_onnx_head import ONNXHeadModel
+    from nomarr.components.ml.ml_onnx_types import Sidecar
 
 
 def _safe_get(data_dict: dict[str, Any], *keys, default=None):
@@ -33,9 +34,6 @@ def _as_float_list(element: Any) -> list[float]:
     if isinstance(element, list | tuple | np.ndarray):
         return [float(vec_element) for vec_element in element]
     return [float(element)]
-
-
-
 
 
 def _to_prob(vector: np.ndarray, already_prob: bool) -> np.ndarray:
@@ -146,7 +144,11 @@ def decide_regression(values: np.ndarray, labels: list[str]) -> dict[str, float]
 
 
 def _find_counter_confidence(
-    label: str, label_idx: int, probs: np.ndarray, label_to_idx: dict[str, int], num_labels: int,
+    label: str,
+    label_idx: int,
+    probs: np.ndarray,
+    label_to_idx: dict[str, int],
+    num_labels: int,
 ) -> float:
     """Find counter-confidence for a label.
 
@@ -207,6 +209,7 @@ def _determine_tier(
 
     Returns:
         Tier string ("high", "medium", "low") or None if no tier requirements are met.
+
     """
     if stability_thresholds is None:
         stability_thresholds = DEFAULT_STABILITY_THRESHOLDS
@@ -231,9 +234,13 @@ def _determine_tier(
 
 
 def decide_multilabel(
-    scores: np.ndarray, spec: HeadSpec, *, segment_std: np.ndarray | None = None,
+    scores: np.ndarray,
+    spec: HeadSpec,
+    *,
+    segment_std: np.ndarray | None = None,
 ) -> dict[str, Any]:
     """Multilabel: select all labels with score >= (per-label threshold or cascade.low).
+
     Also provide tier mapping (high/medium/low) per selected label.
 
     Returns ALL labels with their probabilities, but only assigns tiers to labels
@@ -279,7 +286,10 @@ def decide_multilabel(
 
 
 def decide_binary_multiclass(
-    scores: np.ndarray, spec: HeadSpec, *, segment_std: np.ndarray | None = None,
+    scores: np.ndarray,
+    spec: HeadSpec,
+    *,
+    segment_std: np.ndarray | None = None,
 ) -> dict[str, Any]:
     """Binary multiclass (2-class softmax): uses the model's native counter-confidence.
 
@@ -334,7 +344,6 @@ def decide_binary_multiclass(
     return {"selected": out, "all_probs": all_probs}
 
 
-
 class HeadDecision:
     """A lightweight container for the decision of a single head."""
 
@@ -370,8 +379,11 @@ class HeadDecision:
         return tags
 
     def to_head_outputs(
-        self, head_info: Any, prefix: str = "", key_builder: Callable[[str], str] | None = None,
-    ) -> list[Any]:
+        self,
+        head_info: ONNXHeadModel,
+        prefix: str = "",
+        key_builder: Callable[[str], str] | None = None,
+    ) -> list[HeadOutput]:
         """Convert HeadDecision to list of HeadOutput objects.
 
         For multilabel heads, creates one HeadOutput per selected label with tier information.
@@ -406,7 +418,12 @@ class HeadDecision:
                 tier = None
             outputs.append(
                 HeadOutput(
-                    head=head_info, model_key=tag_key, label=label, value=prob, tier=tier, calibration_id=calibration_id,
+                    head=head_info,
+                    model_key=tag_key,
+                    label=label,
+                    value=prob,
+                    tier=tier,
+                    calibration_id=calibration_id,
                 ),
             )
         for label, prob in self.all_probs.items():
@@ -440,7 +457,11 @@ def head_is_multiclass(spec: HeadSpec) -> bool:
 
 
 def run_head_decision(
-    sc: Sidecar, scores: np.ndarray, *, prefix: str = "", emit_all_scores: bool = True,
+    sc: Sidecar,
+    scores: np.ndarray,
+    *,
+    prefix: str = "",
+    emit_all_scores: bool = True,
     segment_std: np.ndarray | None = None,
 ) -> HeadDecision:
     """Turn the raw output vector for a head into a HeadDecision.

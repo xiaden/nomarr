@@ -1,1 +1,0 @@
-import{ct as e,er as t,nr as n}from"./index-B2iLb_wf.js";var r=n(t(),1);function i(){let t=(0,r.useContext)(e);if(!t)throw Error(`useNotification must be used within NotificationProvider`);return t}export{i as t};

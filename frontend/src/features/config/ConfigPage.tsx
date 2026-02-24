@@ -22,6 +22,7 @@ import {
 import { ConfirmDialog, PageContainer } from "@shared/components/ui";
 
 import { InspectTags } from "../admin/components/InspectTags";
+import { MLControls } from "../admin/components/MLControls";
 import { SystemControls } from "../admin/components/SystemControls";
 import { VectorMaintenance } from "../admin/components/VectorMaintenance";
 import { WorkerControls } from "../admin/components/WorkerControls";
@@ -33,7 +34,7 @@ import { useConfigData } from "./hooks/useConfigData";
 export function ConfigPage() {
   const { config, loading, error, saveLoading, hasChanges, handleSaveAll, handleChange } =
     useConfigData();
-  const { actionLoading, handlePauseWorker, handleResumeWorker, handleRestart, dialogState } =
+  const { actionLoading, handlePauseWorker, handleResumeWorker, handleRestart, handleVramProbe, dialogState } =
     useAdminActions();
 
   return (
@@ -76,6 +77,7 @@ export function ConfigPage() {
                   actionLoading={actionLoading}
                 />
                 <SystemControls onRestart={handleRestart} actionLoading={actionLoading} />
+                <MLControls onVramProbe={handleVramProbe} actionLoading={actionLoading} />
                 <VectorMaintenance />
                 <InspectTags />
               </Stack>

@@ -102,7 +102,6 @@ class Application:
         self.db_path: str = str(self._config["db_path"])
         self.library_root: str | None = self._config.get("library_root")
         self.models_dir: str = str(self._config.get("models_dir", "/app/models"))
-        self.cache_idle_timeout: int = int(self._config.get("cache_idle_timeout", 300))
         self.calibrate_heads: bool = bool(self._config.get("calibrate_heads", False))
         self.library_auto_tag: bool = bool(self._config.get("library_auto_tag", False))
         self.library_ignore_patterns: str = str(self._config.get("library_ignore_patterns", ""))
@@ -243,8 +242,8 @@ class Application:
         logger.debug("[Application] Initializing services...")
         from nomarr.services.infrastructure.ml_svc import MLConfig, MLService
 
-        ml_cfg = MLConfig(models_dir=str(self.models_dir), cache_idle_timeout=self.cache_idle_timeout)
-        ml_service = MLService(cfg=ml_cfg)
+        ml_cfg = MLConfig(models_dir=str(self.models_dir))
+        ml_service = MLService(db=self.db, cfg=ml_cfg)
         self.register_service("ml", ml_service)
         from nomarr.services.infrastructure.health_monitor_svc import HealthMonitorConfig
 
@@ -425,18 +424,6 @@ class Application:
     def is_running(self) -> bool:
         """Check if application is running."""
         return self._running
-
-    def warmup_cache(self) -> None:
-        """Warmup the ML predictor cache.
-
-        Interfaces should call this method rather than importing ml.cache directly.
-        Uses instance config attributes.
-        """
-        ml_service = self.services.get("ml")
-        if ml_service is None:
-            msg = "ML service not initialized"
-            raise RuntimeError(msg)
-        ml_service.warmup_cache()
 
 
 # Module-level singleton, initialized at import time (except during tests)

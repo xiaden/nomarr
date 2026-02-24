@@ -5,8 +5,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-import essentia  # noqa: F401  # imported for __version__ access
-import essentia.standard as _estd
 import numpy as np
 
 from nomarr.helpers.dto.ml_dto import LoadAudioMonoResult
@@ -16,7 +14,7 @@ if TYPE_CHECKING:
 
 # Essentia: minimal build (AudioLoader+MonoLoader+MonoMixer+Resample, no TF).
 # AudioLoader has crash-hardening patches. Built from build_resources/essentia/.
-
+# Imported lazily (inside functions) so the module loads without essentia installed.
 logger = logging.getLogger(__name__)
 
 
@@ -84,6 +82,8 @@ def load_audio_mono(path: LibraryPath | str, target_sr: int = 16000) -> LoadAudi
         raise AudioLoadShutdownError("Shutdown requested before audio load")
 
     try:
+        import essentia.standard as _estd  # lazy import
+
         audio: np.ndarray = _estd.MonoLoader(
             filename=path_str,
             sampleRate=target_sr,

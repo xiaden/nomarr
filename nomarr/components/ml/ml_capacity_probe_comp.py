@@ -225,10 +225,11 @@ def _run_capacity_probe(
             backbones,
         )
 
-        # Warm up backbone cache to measure actual VRAM usage
-        from nomarr.components.ml.ml_cache_comp import warmup_predictor_cache
+        # Warm up ONNX model cache to measure actual memory usage
+        from nomarr.components.ml.ml_onnx_cache import ONNXModelCache as _ONNXModelCache
 
-        warmup_predictor_cache(models_dir=models_dir, cache_idle_timeout=300000)
+        _probe_cache = _ONNXModelCache(models_dir, "gpu" if gpu_capable else "cpu")
+        _probe_cache.warm = True
 
         # Measure RAM after loading
         ram_after = get_ram_usage_mb(ram_detection_mode)

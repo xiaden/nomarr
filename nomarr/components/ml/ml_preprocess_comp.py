@@ -20,7 +20,6 @@ from __future__ import annotations
 import logging
 from typing import NamedTuple
 
-import essentia.standard as _estd
 import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -166,6 +165,8 @@ def compute_log_mel(
         Float32 array of shape ``[n_frames, n_mels]``.
     """
     fft_size = params.n_fft + params.zero_padding
+
+    import essentia.standard as _estd  # lazy import
 
     windowing = _estd.Windowing(
         size=params.n_fft,

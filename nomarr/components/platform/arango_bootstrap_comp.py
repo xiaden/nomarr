@@ -67,6 +67,8 @@ def _create_collections(db: DatabaseLike) -> None:
         "applied_migrations",
         # GPU warmup claim (serializes multi-worker GPU cache warming)
         "gpu_warmup_claims",
+        # VRAM promise registry (fleet-aware per-model GPU placement coordination)
+        "vram_promises",
     ]
 
     for collection_name in document_collections:
@@ -227,6 +229,10 @@ def _create_indexes(db: DatabaseLike) -> None:
         ["file_id", "head_name", "tagger_version"],
         unique=True,
     )
+
+    # Note: V010 added a TTL index on vram_promises.last_seen_ms, but V011 dropped it
+    # (the ms vs s unit mismatch made it non-functional, and explicit owner-driven
+    # cleanup via release_worker_promises() replaced it). No TTL index here.
 
 
 def _ensure_index(
