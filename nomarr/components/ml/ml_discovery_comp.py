@@ -385,12 +385,10 @@ def compute_model_suite_hash(
 
     This hash changes when:
     - Model files are added/removed
-    - Backbone or head configurations change
+    - A model file is replaced with different weights (file size changes)
 
-    The hash is computed from sorted ``(backbone, model_stem)`` tuples by
-    walking ``*.onnx`` files directly.  No database connection required.
-    Release dates are not included because JSON sidecar files do not exist
-    for ONNX-only deployments.
+    Hashes sorted ``(relative_path, file_size)`` tuples for every ``*.onnx``
+    file under *models_dir*.  No database connection or sidecar files required.
 
     Args:
         models_dir: Directory containing model files.
@@ -401,14 +399,16 @@ def compute_model_suite_hash(
 
     """
     try:
-        heads = discover_heads_no_db(models_dir)
-        if not heads:
+        entries: list[tuple[str, int]] = []
+        for root, _dirs, files in sorted(os.walk(models_dir)):
+            for filename in sorted(files):
+                if filename.endswith(".onnx"):
+                    filepath = os.path.join(root, filename)
+                    rel_path = os.path.relpath(filepath, models_dir)
+                    entries.append((rel_path, os.path.getsize(filepath)))
+        if not entries:
             return "unknown"
-
-        model_signatures: list[tuple[str, str]] = sorted(
-            (head.backbone, head.model_stem) for head in heads
-        )
-        sig_str = "|".join(f"{b}:{s}" for b, s in model_signatures)
+        sig_str = "|".join(f"{p}:{s}" for p, s in entries)
         return hashlib.md5(sig_str.encode("utf-8")).hexdigest()[:12]
 
     except Exception:
