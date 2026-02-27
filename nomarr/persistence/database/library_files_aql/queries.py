@@ -63,7 +63,7 @@ class LibraryFilesQueriesMixin:
                 LET file = DOCUMENT(file_id)
                 FILTER file != null
                 LET tags = (
-                    FOR edge IN song_tag_edges
+                    FOR edge IN song_has_tags
                         FILTER edge._from == file._id
                         LET tag = DOCUMENT(edge._to)
                         FILTER tag != null
@@ -344,7 +344,7 @@ class LibraryFilesQueriesMixin:
             filters.append(
                 """
             LENGTH(
-                FOR edge IN song_tag_edges
+                FOR edge IN song_has_tags
                     FILTER edge._from == file._id
                     LET tag = DOCUMENT(edge._to)
                     FILTER tag != null AND tag.rel == @tag_key AND tag.value == @tag_value
@@ -357,7 +357,7 @@ class LibraryFilesQueriesMixin:
             filters.append(
                 """
             LENGTH(
-                FOR edge IN song_tag_edges
+                FOR edge IN song_has_tags
                     FILTER edge._from == file._id
                     LET tag = DOCUMENT(edge._to)
                     FILTER tag != null AND tag.rel == @tag_key
@@ -426,7 +426,7 @@ class LibraryFilesQueriesMixin:
                 SORT file.artist, file.album, file.title
                 LIMIT @offset, @limit
                 LET tags = (
-                    FOR edge IN song_tag_edges
+                    FOR edge IN song_has_tags
                         FILTER edge._from == file._id
                         LET tag = DOCUMENT(edge._to)
                         FILTER tag != null
@@ -483,3 +483,145 @@ class LibraryFilesQueriesMixin:
         """
         cursor = cast("Cursor", self.db.aql.execute(query, bind_vars=bind_vars))
         return list(cursor)
+
+    def get_folder_rel_paths(self, library_id: str) -> set[str]:
+        """Get all known folder rel_paths for a library.
+
+        Queries the ``library_folders`` cache collection, which is updated
+        after every folder is processed during a scan.
+
+        Args:
+            library_id: Library document ``_id``
+
+        Returns:
+            Set of POSIX folder rel_paths (e.g., ``{"Rock/Beatles", ""}``).  Empty string
+            represents the library root folder.
+
+        """
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(
+                """
+            FOR folder IN library_folders
+                FILTER folder.library_id == @library_id
+                RETURN folder.path
+            """,
+                bind_vars=cast("dict[str, Any]", {"library_id": library_id}),
+            ),
+        )
+        return set(cursor)
+
+    def get_files_for_folder(
+        self,
+        library_id: str,
+        folder_rel_path: str,
+    ) -> dict[str, dict[str, Any]]:
+        """Get all file documents for a single folder.
+
+        Args:
+            library_id: Library document ``_id``
+            folder_rel_path: POSIX relative folder path (``""`` for library root)
+
+        Returns:
+            Dict mapping absolute file path → file document.
+
+        """
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(
+                """
+            FOR file IN library_files
+                FILTER file.library_id == @library_id
+                AND (
+                    (@folder_rel_path == "" AND NOT CONTAINS(file.normalized_path, "/"))
+                    OR
+                    (@folder_rel_path != "" AND STARTS_WITH(file.normalized_path, CONCAT(@folder_rel_path, "/")))
+                )
+                RETURN file
+            """,
+                bind_vars=cast(
+                    "dict[str, Any]",
+                    {"library_id": library_id, "folder_rel_path": folder_rel_path},
+                ),
+            ),
+        )
+        return {f["path"]: f for f in cursor}
+
+    def get_files_for_folders(
+        self,
+        library_id: str,
+        folder_rel_paths: list[str],
+    ) -> dict[str, dict[str, Any]]:
+        """Batch-fetch file documents for multiple folders.
+
+        Intended for loading file docs for vanished folders before the
+        scan loop starts so they can seed the ``missing_docs`` list.
+
+        Args:
+            library_id: Library document ``_id``
+            folder_rel_paths: POSIX relative paths of the folders.
+
+        Returns:
+            Dict mapping absolute file path → file document.
+
+        """
+        if not folder_rel_paths:
+            return {}
+        has_root = "" in folder_rel_paths
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(
+                """
+            LET has_root = @has_root
+            FOR file IN library_files
+                FILTER file.library_id == @library_id
+                AND (
+                    (has_root AND NOT CONTAINS(file.normalized_path, "/"))
+                    OR
+                    LENGTH(
+                        FOR fp IN @folder_rel_paths
+                            FILTER fp != "" AND STARTS_WITH(file.normalized_path, CONCAT(fp, "/"))
+                            LIMIT 1
+                            RETURN 1
+                    ) > 0
+                )
+                RETURN file
+            """,
+                bind_vars=cast(
+                    "dict[str, Any]",
+                    {
+                        "library_id": library_id,
+                        "folder_rel_paths": folder_rel_paths,
+                        "has_root": has_root,
+                    },
+                ),
+            ),
+        )
+        return {f["path"]: f for f in cursor}
+
+    def count_library_files(self, library_id: str) -> int:
+        """Count total files for a library.
+
+        Used to set accurate progress totals at scan start without
+        loading all file documents.
+
+        Args:
+            library_id: Library document ``_id``
+
+        Returns:
+            Total number of file documents for the library.
+
+        """
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(
+                """
+            FOR file IN library_files
+                FILTER file.library_id == @library_id
+                COLLECT WITH COUNT INTO total
+                RETURN total
+            """,
+                bind_vars=cast("dict[str, Any]", {"library_id": library_id}),
+            ),
+        )
+        return next(iter(cursor), 0)

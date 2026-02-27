@@ -25,7 +25,7 @@ import sys
 
 import numpy as np
 
-from nomarr.components.ml.ml_discovery_comp import discover_backbone_models, discover_head_models
+from nomarr.components.ml.ml_discovery_comp import discover_backbone_models, discover_head_models_no_db
 from nomarr.components.ml.ml_onnx_base import BaseONNXModel
 from nomarr.components.platform.resource_monitor_comp import (
     get_vram_usage_mb,
@@ -76,24 +76,32 @@ def parse_oom_requested_bytes(error: BaseException) -> int | None:
 def update_model_vram_from_oom(db: Database, model_path: str, requested_bytes: int) -> int:
     """Write a corrected VRAM limit after a BFC arena OOM.
 
-    Adds 10% headroom to *requested_bytes* and persists it to
-    ``meta[ml_model_vram:<model_path>]``, overwriting whatever the probe
-    wrote.  The corrected value will be picked up on the next
-    ``BaseONNXModel.device = "gpu"`` reload.
+    Bumps the *existing probe measurement* by 25% and persists it to
+    ``meta[ml_model_vram:<model_path>]``.  The probe value is used as the
+    baseline because it reflects the model's true total VRAM footprint;
+    *requested_bytes* from the OOM message is only a single layer's
+    activation allocation and is not representative of the whole model.
+
+    If no probe value exists yet, falls back to ``requested_bytes * 1.25``
+    as a best-effort estimate.
 
     Args:
         db:              Database instance.
         model_path:      Model path key (the part after the prefix).
-        requested_bytes: Byte count parsed from the OOM message.
+        requested_bytes: Byte count parsed from the OOM message (used only
+                         as fallback when no probe entry exists).
 
     Returns:
-        The new VRAM limit in bytes (``int(requested_bytes * 1.1)``).
+        The new VRAM limit in bytes.
     """
-    new_limit = int(requested_bytes * 1.1)
+    raw = db.meta.get(f"{_META_PREFIX}{model_path}")
+    base = int(raw) if raw is not None else requested_bytes
+    new_limit = int(base * 1.25)
     db.meta.set(f"{_META_PREFIX}{model_path}", str(new_limit))
     logger.warning(
-        "[vram_probe] OOM self-heal: updated %s to %s (%s) — old probe underestimated",
+        "[vram_probe] OOM self-heal: updated %s from %s to %s (%d bytes) — bumped probe by 25%%",
         model_path,
+        _fmt_bytes(base),
         _fmt_bytes(new_limit),
         new_limit,
     )
@@ -136,7 +144,7 @@ def _init_cuda_context() -> None:
         dummy = np.zeros((1, 16000), dtype=np.float32)
         sess.run(None, {"X": dummy})
         del sess
-        logger.info("[vram_probe] CUDA context warmed")
+        logger.debug("[vram_probe] CUDA context warmed")
     except Exception:
         logger.warning("[vram_probe] CUDA context warming failed", exc_info=True)
 
@@ -261,15 +269,15 @@ def probe_all_models(db: Database, models_dir: str) -> None:
         models_dir: Root directory containing backbone sub-directories.
     """
     backbones = discover_backbone_models(models_dir)
-    heads = discover_head_models(models_dir)
+    heads = discover_head_models_no_db(models_dir)
 
     n_backbones = len(backbones)
     n_heads = len(heads)
-    logger.info("[vram_probe] Probing %d backbone(s) and %d head(s)", n_backbones, n_heads)
+    logger.debug("[vram_probe] Probing %d backbone(s) and %d head(s)", n_backbones, n_heads)
 
     vram_info = get_vram_usage_mb()
     available_mb = int(vram_info.get("total_mb", 0)) - int(vram_info.get("used_mb", 0))
-    logger.info("[vram_probe] Available VRAM: %d MB — probing without limits", available_mb)
+    logger.debug("[vram_probe] Available VRAM: %d MB — probing without limits", available_mb)
 
     _init_cuda_context()
 
@@ -282,16 +290,24 @@ def probe_all_models(db: Database, models_dir: str) -> None:
         (m, None) for m in heads
     ]
 
+    results: list[str] = []
     for model, waveform in all_models:
-        logger.info("[vram_probe] Probing %s", model._path)
         delta = _probe_single_model(model, waveform)
         delta_with_headroom = int(delta * 1.1) if delta is not None else None
         value = str(delta_with_headroom) if delta_with_headroom is not None else str(sys.maxsize)
         db.meta.set(f"{_META_PREFIX}{model._path}", value)
-        readable = _fmt_bytes(delta_with_headroom) if delta_with_headroom is not None else "unmeasured (sys.maxsize → CPU forced)"
-        logger.info("[vram_probe] %s -> %s (%s bytes, includes 10%% headroom)", model._path, readable, value)
+        readable = _fmt_bytes(delta_with_headroom) if delta_with_headroom is not None else "unmeasured"
+        results.append(f"  {model._path} -> {readable}")
 
-    logger.info("[vram_probe] Complete — %d measurements written", len(all_models))
+    summary = "\n".join(results)
+    logger.info(
+        "[vram_probe] Complete — %d measurements (%d backbone(s), %d head(s), %d MB available)\n%s",
+        len(all_models),
+        n_backbones,
+        n_heads,
+        available_mb,
+        summary,
+    )
 
 
 def has_model_vram_measurements(db: Database) -> bool:

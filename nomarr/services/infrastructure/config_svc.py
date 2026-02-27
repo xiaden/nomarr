@@ -376,7 +376,7 @@ class ConfigService:
                     config_overrides[config_key] = parsed
 
                 if config_overrides:
-                    self._logger.info(f"Loaded {len(config_overrides)} config overrides from database")
+                    self._logger.debug(f"Loaded {len(config_overrides)} config overrides from database")
                 return config_overrides
 
             finally:

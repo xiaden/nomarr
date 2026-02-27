@@ -36,7 +36,7 @@ class TagMoodMixin:
             query = """
             FOR tag IN tags
                 FILTER tag.rel == @rel
-                FOR edge IN song_tag_edges
+                FOR edge IN song_has_tags
                     FILTER edge._to == tag._id
                     RETURN [edge._from, tag.value]
             """
@@ -59,7 +59,7 @@ class TagMoodMixin:
             query = """
             FOR tag IN tags
                 FILTER tag.rel == @tier_rel
-                FOR edge IN song_tag_edges
+                FOR edge IN song_has_tags
                     FILTER edge._to == tag._id
                     RETURN [edge._from, tag.value]
             """
@@ -99,7 +99,7 @@ class TagMoodMixin:
             query = f"""
             FOR tag IN tags
                 FILTER tag.rel == @mood_type
-                FOR edge IN song_tag_edges
+                FOR edge IN song_has_tags
                     FILTER edge._to == tag._id
                     {library_filter}
                     RETURN tag.value
@@ -156,7 +156,7 @@ class TagMoodMixin:
             LET tagged_files = (
                 FOR tag IN tags
                     FILTER tag.rel == @rel
-                    FOR edge IN song_tag_edges
+                    FOR edge IN song_has_tags
                         FILTER edge._to == tag._id
                         RETURN DISTINCT edge._from
             )
@@ -216,7 +216,7 @@ class TagMoodMixin:
             query = f"""
             FOR tag IN tags
                 FILTER tag.rel == @rel
-                FOR edge IN song_tag_edges
+                FOR edge IN song_has_tags
                     FILTER edge._to == tag._id
                     {library_filter}
                     RETURN {{
@@ -298,7 +298,8 @@ class TagMoodMixin:
         LET by_song = (
             FOR tag IN tags
                 FILTER tag.rel IN @rels
-                FOR edge IN song_tag_edges
+                FILTER tag.value != null
+                FOR edge IN song_has_tags
                     FILTER edge._to == tag._id
                     LET file = DOCUMENT(edge._from)
                     FILTER file != null
@@ -307,12 +308,14 @@ class TagMoodMixin:
                     RETURN {{ song, moods: UNIQUE(mood_vals) }}
         )
         FOR entry IN by_song
-            LET ms = entry.moods
+            LET ms = (FOR v IN UNIQUE(entry.moods) FILTER v != null RETURN v)
+            FILTER LENGTH(ms) >= 2
             FOR i IN 0..LENGTH(ms)-2
                 FOR j IN i+1..LENGTH(ms)-1
                     LET m1 = ms[i] < ms[j] ? ms[i] : ms[j]
                     LET m2 = ms[i] < ms[j] ? ms[j] : ms[i]
                     COLLECT mood1 = m1, mood2 = m2 WITH COUNT INTO pair_count
+                    FILTER mood1 != null AND mood2 != null
                     SORT pair_count DESC
                     LIMIT @limit
                     RETURN {{
@@ -336,7 +339,7 @@ class TagMoodMixin:
         """
         query = """
         RETURN LENGTH(
-            FOR edge IN song_tag_edges
+            FOR edge IN song_has_tags
                 FILTER edge._to == @tag_id
                 RETURN 1
         )

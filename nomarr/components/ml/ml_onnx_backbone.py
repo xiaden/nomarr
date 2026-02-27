@@ -92,11 +92,11 @@ class ONNXBackboneModel(BaseONNXModel):
         self.output_node = "embeddings"
         self.preprocess_params = get_params(self.backbone_name)
 
-    def run(self, waveform: np.ndarray) -> np.ndarray:
+    def _run(self, waveform: np.ndarray) -> np.ndarray:
         """Run backbone inference on a mono float32 waveform.
 
-        Preprocessing (mel-spectrogram computation + patch extraction) is
-        performed internally before the ONNX forward pass.
+        Called by :meth:`BaseONNXModel.run`, which wraps this with BFC OOM
+        recovery.  Do not call this directly.
 
         Args:
             waveform: Mono float32 audio at 16 kHz.

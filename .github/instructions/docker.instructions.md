@@ -58,7 +58,7 @@ $r.result | ConvertTo-Json -Depth 5
 $queries = @(
   "RETURN LENGTH(library_files)"
   "RETURN LENGTH(tags)"
-  "RETURN LENGTH(song_tag_edges)"
+  "RETURN LENGTH(song_has_tags)"
   "FOR lib IN libraries RETURN { name: lib.name, scan_status: lib.scan_status }"
 )
 foreach ($q in $queries) {
@@ -71,7 +71,7 @@ foreach ($q in $queries) {
 ```
 
 **IMPORTANT: Query and API performance expectations:**
-- AQL queries against `song_tag_edges` (~200k+ docs) or `tags` (~30k+ docs) are **not instant** — expect 5-30+ seconds
+- AQL queries against `song_has_tags` (~200k+ docs) or `tags` (~30k+ docs) are **not instant** — expect 5-30+ seconds
 - Full-table scans (e.g., orphaned edge checks) can take 30-60+ seconds
 - Calibration generation scans all edges and takes 30-120 seconds depending on data volume
 - API calls that trigger background work (calibration, scanning) return quickly but the work continues in-container
@@ -85,7 +85,7 @@ foreach ($q in $queries) {
 - `libraries` — library config and scan state
 - `library_files` — scanned audio files (one doc per file)
 - `tags` — tag vertices with `{rel, value}` (e.g. `{rel: "artist", value: "Beatles"}`)
-- `song_tag_edges` — edges from `library_files/*` → `tags/*` (edge `_from` = file, `_to` = tag)
+- `song_has_tags` — edges from `library_files/*` → `tags/*` (edge `_from` = file, `_to` = tag)
 - `library_folders` — folder-level cache for quick scan skipping
 - `calibration_state`, `calibration_history` — calibration data
 - `sessions` — auth sessions
@@ -106,11 +106,11 @@ RETURN LENGTH(library_files)
 FOR t IN tags COLLECT rel = t.rel WITH COUNT INTO c SORT c DESC RETURN {rel, c}
 
 -- Sample edges to verify direction
-FOR edge IN song_tag_edges LIMIT 3 RETURN { from: edge._from, to: edge._to }
+FOR edge IN song_has_tags LIMIT 3 RETURN { from: edge._from, to: edge._to }
 
 -- Find orphaned edges (pointing to deleted files)
 RETURN LENGTH(
-  FOR edge IN song_tag_edges
+  FOR edge IN song_has_tags
     FILTER !DOCUMENT(edge._from)
     RETURN 1
 )

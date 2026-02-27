@@ -197,7 +197,7 @@ class LibraryFilesStatusMixin:
         logger.debug("[DB] discover_next_unprocessed_file raw results count: %d", len(results))
         result = results[0] if results else None
         if result:
-            logger.info("[DB] discover_next_unprocessed_file: found %s", result.get("_id"))
+            logger.debug("[DB] discover_next_unprocessed_file: found %s", result.get("_id"))
         else:
             # Debug query: count files by filter stage
             diag = cast(

@@ -17,7 +17,7 @@ from nomarr.components.ml.calibration_state_comp import (
     compute_convergence_status,
     compute_reconciliation_info,
 )
-from nomarr.components.ml.ml_discovery_comp import discover_heads
+from nomarr.components.ml.ml_discovery_comp import discover_heads_no_db
 from nomarr.helpers.time_helper import now_ms
 from nomarr.workflows.calibration.generate_calibration_wf import (
     generate_histogram_calibration_wf,
@@ -248,7 +248,7 @@ class CalibrationService:
             }
 
         # Not running: fall back to DB query for head completion counts
-        heads = discover_heads(self.cfg.models_dir)
+        heads = discover_heads_no_db(self.cfg.models_dir)
         total_heads = len(heads)
 
         # Count heads with recent calibration_state (within 24 hours)

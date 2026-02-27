@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from nomarr.components.ml.ml_embed_comp import pool_scores
-from nomarr.components.ml.ml_heads_comp import run_head_decision
+from nomarr.components.ml.ml_heads_comp import HeadSpec, run_head_decision
 from nomarr.components.tagging.mood_labels_comp import normalize_tag_label
 from nomarr.helpers.dto.ml_dto import ProcessHeadPredictionsResult, SingleHeadResult
 from nomarr.helpers.time_helper import internal_ms
@@ -107,7 +107,12 @@ def run_single_head(
         )
     # Phase 2: Decision + tag generation (pure Python/numpy)
     try:
-        decision = run_head_decision(head_model._sidecar, pooled_vec, prefix="", segment_std=seg_std)
+        spec = HeadSpec(
+            name=head_model.name,
+            kind=head_model.head_type,
+            labels=head_model.labels,
+        )
+        decision = run_head_decision(spec, pooled_vec, prefix="", segment_std=seg_std)
 
         key_builder = partial(_build_tag_key, head_model=head_model)
 

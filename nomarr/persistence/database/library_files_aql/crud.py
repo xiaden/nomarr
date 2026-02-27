@@ -165,9 +165,9 @@ class LibraryFilesCrudMixin:
         # Delete entity edges (referential integrity)
         self.db.aql.execute(
             """
-            FOR edge IN song_tag_edges
+            FOR edge IN song_has_tags
                 FILTER edge._from == @file_id
-                REMOVE edge IN song_tag_edges
+                REMOVE edge IN song_has_tags
             """,
             bind_vars={"file_id": file_id},
         )
@@ -289,6 +289,20 @@ class LibraryFilesCrudMixin:
 
         self.db.aql.execute(aql, bind_vars=bind_vars)
 
+    def update_file_modified_time(self, file_key: str, modified_time_ms: int) -> None:
+        """Update only the modified_time of a library file after a tag write.
+
+        Args:
+            file_key: Document _key (e.g., "12345")
+            modified_time_ms: New mtime in milliseconds since epoch
+
+        """
+        bind_vars: dict[str, Any] = {"key": file_key, "mtime": modified_time_ms}
+        self.db.aql.execute(
+            "UPDATE @key WITH { modified_time: @mtime } IN library_files",
+            bind_vars=bind_vars,
+        )
+
     def bulk_delete_files(self, paths: list[str]) -> int:
         """Delete multiple files by path and clean up entity edges.
 
@@ -332,9 +346,9 @@ class LibraryFilesCrudMixin:
             """
             FOR file IN library_files
                 FILTER file.path IN @paths
-                FOR edge IN song_tag_edges
+                FOR edge IN song_has_tags
                     FILTER edge._from == file._id
-                    REMOVE edge IN song_tag_edges
+                    REMOVE edge IN song_has_tags
             """,
             bind_vars={"paths": paths},
         )
@@ -364,7 +378,7 @@ class LibraryFilesCrudMixin:
         Removes, in order:
         1. Track-level embedding vectors (all backbones, hot + cold)
         2. segment_scores_stats (per-label head stats)
-        3. song_tag_edges (entity edges)
+        3. song_has_tags (entity edges)
         4. library_files documents
 
         Args:
@@ -404,12 +418,12 @@ class LibraryFilesCrudMixin:
             bind_vars={"file_ids": file_ids},
         )
 
-        # Delete song_tag_edges
+        # Delete song_has_tags
         self.db.aql.execute(
             """
-            FOR edge IN song_tag_edges
+            FOR edge IN song_has_tags
                 FILTER edge._from IN @file_ids
-                REMOVE edge IN song_tag_edges
+                REMOVE edge IN song_has_tags
             """,
             bind_vars={"file_ids": file_ids},
         )

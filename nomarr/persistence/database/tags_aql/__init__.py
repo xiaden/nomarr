@@ -15,7 +15,7 @@ The main class TagOperations composes these mixins.
 
 Schema:
     tags vertex collection: { _key, rel: str, value: scalar }
-    song_tag_edges edge collection: { _from: library_files/_id, _to: tags/_id }
+    song_has_tags edge collection: { _from: library_files/_id, _to: tags/_id }
 
 Uniqueness:
     A tag is uniquely identified by (rel, value) pair.

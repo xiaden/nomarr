@@ -8,16 +8,15 @@ loaded ONNX session at :meth:`load` time and cached as attributes.
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from nomarr.components.ml.ml_inference_comp import _run_in_batches
 from nomarr.components.ml.ml_onnx_base import BaseONNXModel
-from nomarr.components.ml.ml_onnx_types import MODEL_SUITE_VERSION, Sidecar
+from nomarr.components.ml.ml_onnx_types import MODEL_SUITE_VERSION
 
 if TYPE_CHECKING:
     from nomarr.components.ml.ml_onnx_base import DevicePlacement
@@ -60,82 +59,7 @@ def _head_parts_from_path(path: str) -> tuple[str, str, str]:
     raise ValueError(msg)
 
 
-def _read_labels(path: str) -> list[str]:
-    """Read class labels from the co-located sidecar JSON, if present.
 
-    Looks for a ``.json`` file with the same base name as the ``.onnx`` file.
-    Checks the ``"classes"`` and ``"labels"`` keys, in that order.  Returns
-    an empty list if the file does not exist or contains no recognised key.
-
-    Args:
-        path: Absolute path to the ``.onnx`` file.
-
-    Returns:
-        List of class label strings (may be empty).
-    """
-    labels_path = Path(path).with_suffix(".json")
-    if not labels_path.exists():
-        return []
-    try:
-        data = json.loads(labels_path.read_text(encoding="utf-8"))
-        return list(data.get("classes") or data.get("labels") or [])
-    except (json.JSONDecodeError, OSError):
-        logger.warning("[head] Failed to read labels from %s", labels_path)
-        return []
-
-
-
-def _read_sidecar_json(path: str) -> dict[str, Any]:
-    """Read the co-located JSON sidecar for an ONNX file.
-
-    Looks for a ``.json`` file with the same base name as the ``.onnx`` file
-    and returns the parsed content.  Returns an empty dict if the file does
-    not exist or cannot be parsed.
-
-    Args:
-        path: Absolute path to the ``.onnx`` file.
-
-    Returns:
-        Parsed sidecar data, or ``{}`` on failure.
-    """
-    json_path = Path(path).with_suffix(".json")
-    if not json_path.exists():
-        return {}
-    try:
-        return dict(json.loads(json_path.read_text(encoding="utf-8")))
-    except (json.JSONDecodeError, OSError):
-        logger.warning("[head] Failed to read sidecar from %s", json_path)
-        return {}
-
-
-def _find_backbone_sidecar_json(head_onnx_path: str) -> dict[str, Any]:
-    """Locate and read the backbone embedding sidecar JSON for a head model.
-
-    Directory convention::
-
-        models/<backbone>/heads/<head_type>/<model>.onnx
-        models/<backbone>/embeddings/<backbone>.json   ← backbone sidecar
-
-    Navigates three levels up from the ``.onnx`` file to reach the backbone
-    root, then searches the ``embeddings`` (or ``embedding``) sub-directory
-    for the first ``.json`` file.
-
-    Args:
-        head_onnx_path: Absolute path to the head ``.onnx`` file.
-
-    Returns:
-        Parsed backbone sidecar data, or ``{}`` if not found.
-    """
-    backbone_dir = Path(head_onnx_path).parent.parent.parent
-    for emb_dir_name in ("embeddings", "embedding"):
-        emb_dir = backbone_dir / emb_dir_name
-        if emb_dir.is_dir():
-            for json_file in sorted(emb_dir.glob("*.json")):
-                try:
-                    return dict(json.loads(json_file.read_text(encoding="utf-8")))
-                except (json.JSONDecodeError, OSError):
-                    continue
-    return {}
 class ONNXHeadModel(BaseONNXModel):
     """ONNX wrapper for classification and regression head models.
 
@@ -164,7 +88,7 @@ class ONNXHeadModel(BaseONNXModel):
     """Stem of the ONNX filename (e.g. ``"happy"``)."""
 
     labels: list[str]
-    """Class label strings read from the co-located JSON sidecar; may be empty."""
+    """Class label strings; injected via constructor or empty."""
 
     is_regression: bool
     """True when *head_type* is ``"identity"`` (linear activation → regression)."""
@@ -181,24 +105,34 @@ class ONNXHeadModel(BaseONNXModel):
     num_classes: int | None
     """Number of output activations; resolved at :meth:`load` time."""
 
-    def __init__(self, path: str) -> None:
+    def __init__(
+        self,
+        path: str,
+        *,
+        labels: list[str] | None = None,
+        head_release_date: str = "",
+        embedder_release_date: str = "",
+    ) -> None:
         """Initialise the head model wrapper.
 
         Args:
             path: Absolute path to the head ``.onnx`` file.
+            labels: Class label strings.  When ``None`` (default) labels
+                are left empty — the caller is responsible for injecting
+                labels read from the database.
+            head_release_date: ISO date string (e.g. ``"2022-08-25"``).
+            embedder_release_date: ISO date string for the backbone embedder.
         """
         super().__init__(path)
         self.backbone_name, self.head_type, self.model_name = _head_parts_from_path(path)
-        self.labels = _read_labels(path)
+        self.labels = list(labels) if labels is not None else []
         self.is_regression = self.head_type == "identity"
         self.input_node = None
         self.output_node = None
         self.input_dim = None
         self.num_classes = None
-        self._head_data: dict[str, Any] = _read_sidecar_json(path)
-        self._backbone_data: dict[str, Any] = _find_backbone_sidecar_json(path)
-        _json_path = str(Path(path).with_suffix(".json"))
-        self._sidecar = Sidecar(_json_path, self._head_data)
+        self._head_release_date = head_release_date
+        self._embedder_release_date = embedder_release_date
 
     def load(self, device: DevicePlacement) -> None:
         """Load the ONNX session and resolve tensor metadata.
@@ -243,8 +177,11 @@ class ONNXHeadModel(BaseONNXModel):
         self.input_dim = None
         self.num_classes = None
 
-    def run(self, embeddings: np.ndarray) -> np.ndarray:
+    def _run(self, embeddings: np.ndarray) -> np.ndarray:
         """Run head inference on a batch of embedding vectors.
+
+        Called by :meth:`BaseONNXModel.run`, which wraps this with BFC OOM
+        recovery.  Do not call this directly.
 
         Args:
             embeddings: Float32 array of shape ``(n_patches, embed_dim)``.
@@ -272,16 +209,8 @@ class ONNXHeadModel(BaseONNXModel):
 
     @property
     def name(self) -> str:
-        """Display name from sidecar data, falling back to the model filename stem.
-
-        Checks ``"name"`` then ``"head_name"`` keys in the sidecar JSON before
-        returning :attr:`model_name` as a last resort.
-        """
-        return (
-            self._head_data.get("name")
-            or self._head_data.get("head_name")
-            or self.model_name
-        )
+        """Display name derived from the ONNX filename stem."""
+        return self.model_name
 
     def build_versioned_tag_key(
         self,
@@ -289,15 +218,11 @@ class ONNXHeadModel(BaseONNXModel):
         calib_method: str = "none",
         calib_version: int = 0,
     ) -> tuple[str, str]:
-        """Build a versioned tag key mirroring the :meth:`HeadInfo.build_versioned_tag_key` format.
+        """Build a versioned tag key mirroring :meth:`HeadInfo.build_versioned_tag_key`.
 
         Format::
 
             {label}_{suite_version}_{backbone}{embedder_date}_{label}{head_date}
-
-        Release dates are read from the sidecar JSON files:
-        - backbone embedder date → :attr:`_backbone_data`
-        - head release date → :attr:`_head_data`
 
         Args:
             label: Normalised tag label (e.g. ``"happy"``).
@@ -307,11 +232,16 @@ class ONNXHeadModel(BaseONNXModel):
         Returns:
             ``(model_key, calibration_id)`` tuple matching the HeadInfo convention.
         """
-
-        embedder_release = self._backbone_data.get("release_date", "")
-        embedder_date = embedder_release.replace("-", "") if embedder_release else "unknown"
-        head_release = self._head_data.get("release_date", "")
-        head_date = head_release.replace("-", "") if head_release else "unknown"
+        embedder_date = (
+            self._embedder_release_date.replace("-", "")
+            if self._embedder_release_date
+            else "unknown"
+        )
+        head_date = (
+            self._head_release_date.replace("-", "")
+            if self._head_release_date
+            else "unknown"
+        )
         embedder_part = f"{self.backbone_name}{embedder_date}"
         head_part = f"{label}{head_date}"
         model_key = f"{label}_{MODEL_SUITE_VERSION}_{embedder_part}_{head_part}"

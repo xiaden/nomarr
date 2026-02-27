@@ -140,6 +140,12 @@ def create_session(
 
     sess_options = _ort.SessionOptions()  # type: ignore[union-attr]
     sess_options.log_severity_level = 3  # ERROR only — suppress ONNX RT info/warnings
+    # Cap thread pools per session.  Head models are tiny (< 1MB) and gain
+    # nothing from parallelism; backbone runs on GPU so CPU threads are idle.
+    # Without limits, ORT spawns one pool per session x nproc threads, which
+    # balloons thread-stack RSS into the gigabytes (nproc x sessions).
+    sess_options.intra_op_num_threads = 2
+    sess_options.inter_op_num_threads = 1
 
     session: ort.InferenceSession = _ort.InferenceSession(  # type: ignore[union-attr]
         model_path,

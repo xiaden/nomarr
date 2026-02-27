@@ -28,6 +28,7 @@ from nomarr.components.ml.ml_onnx_cache import ONNXModelCache
 from nomarr.components.ml.ml_timing_comp import build_timing_summary
 from nomarr.components.ml.ml_vector_persist_comp import persist_backbone_vector
 from nomarr.components.tagging.tagging_aggregation_comp import collect_mood_outputs
+from nomarr.helpers.dto.ml_edge_dto import MLEdgeWrites
 from nomarr.helpers.dto.processing_dto import DeferredFileWrites, ProcessFileResult, ProcessorConfig
 from nomarr.helpers.dto.tags_dto import Tags
 from nomarr.helpers.time_helper import internal_ms
@@ -201,6 +202,18 @@ def process_file_workflow(
     mood_tags = collect_mood_outputs(regression_heads, all_head_outputs)
     timings["mood_aggregation"] = internal_ms().value - t_mood.value
     tags_accum.update(mood_tags)
+    # Build tag→output edge mapping for deferred tag_model_output writes.
+    # Queries the graph once to map model ONNX path+label → output vertex _id.
+    output_edges: dict[str, tuple[str, float]] = {}
+    if db is not None and all_head_outputs:
+        output_id_map = db.ml_model_outputs.get_output_id_map()
+        for ho in all_head_outputs:
+            path_map = output_id_map.get(ho.head._path)
+            if path_map is not None:
+                output_id = path_map.get(ho.label)
+                if output_id is not None:
+                    output_edges[f"nom:{ho.model_key}"] = (output_id, ho.value)
+
     # Build deferred DB writes (executed async by caller, not here)
     tags_accum[config.version_tag_key] = config.tagger_version
     db_tags = dict(tags_accum)
@@ -214,6 +227,7 @@ def process_file_workflow(
             tagger_version=config.tagger_version,
             chromaprint=shared_chromaprint,
             raw_segments=all_raw_segments if all_raw_segments else {},
+            ml_edges=MLEdgeWrites(output_edges=output_edges) if output_edges else None,
         )
     elapsed_ms = internal_ms().value - start_all.value
     elapsed = round(elapsed_ms / 1000, 2)

@@ -13,11 +13,6 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from nomarr.components.ml import ml_worker_context_comp as _worker_ctx
-from nomarr.components.ml.ml_vram_probe_comp import (
-    parse_oom_requested_bytes,
-    update_model_vram_from_oom,
-)
 from nomarr.helpers.time_helper import internal_ms
 
 if TYPE_CHECKING:
@@ -78,22 +73,7 @@ def compute_backbone_embeddings(
     def _run_one(backbone: str, backbone_heads: list[ONNXHeadModel]) -> BackboneEmbedding:
         t0 = internal_ms()
         model = cache.backbones[backbone]
-        try:
-            embeddings_2d = model.run(wave_f32)
-        except RuntimeError as _oom_e:
-            requested = parse_oom_requested_bytes(_oom_e)
-            if requested is None:
-                raise  # not a BFC arena OOM — propagate unchanged
-            ctx = _worker_ctx.get_worker_context()
-            if ctx is None:
-                raise  # probe / test context — no DB, cannot self-heal
-            db, _ = ctx
-            update_model_vram_from_oom(db, model._path, requested)
-            # Re-assigning device re-reads the updated limit from DB.
-            # If it still doesn't fit, VramFitError in the setter silently
-            # falls back to CPU, and the retry run() below succeeds on CPU.
-            model.device = "gpu"
-            embeddings_2d = model.run(wave_f32)  # single retry
+        embeddings_2d = model.run(wave_f32)
         result.timings[f"emb_{backbone}"] = internal_ms().value - t0.value
         return BackboneEmbedding(backbone=backbone, heads=backbone_heads, embeddings=embeddings_2d)
 
@@ -109,7 +89,7 @@ def compute_backbone_embeddings(
                 bb = future_to_backbone[future]
                 try:
                     result.embeddings.append(future.result())
-                except RuntimeError as e:
+                except Exception as e:
                     logger.warning("[embeddings] Skipping backbone %s: %s", bb, e)
                     result.errors[bb] = str(e)
         wall_ms = internal_ms().value - t_wall.value
@@ -125,7 +105,7 @@ def compute_backbone_embeddings(
         for backbone, backbone_heads in backbone_items:
             try:
                 result.embeddings.append(_run_one(backbone, backbone_heads))
-            except RuntimeError as e:
+            except Exception as e:
                 logger.warning("[embeddings] Skipping backbone %s: %s", backbone, e)
                 result.errors[backbone] = str(e)
 

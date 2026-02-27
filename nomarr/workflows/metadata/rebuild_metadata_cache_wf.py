@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 def rebuild_all_metadata_caches(db: "Database", limit: int | None = None) -> dict[str, int]:
     """Rebuild metadata cache for all songs (or limited subset).
 
-    Reads song_tag_edges for each song and writes derived embedded fields.
+    Reads song_has_tags for each song and writes derived embedded fields.
     This is the authoritative repair workflow for the hybrid model.
 
     Args:

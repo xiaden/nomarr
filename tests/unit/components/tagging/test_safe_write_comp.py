@@ -36,7 +36,8 @@ class TestSafeWriteVerification:
         ) as mock_probe:
             mock_probe.return_value = _GOOD_PROPS
 
-            result = safe_write_tags(library_path, tmp_path, mock_write_fn)
+            mtime_ms = int(test_file.stat().st_mtime * 1000)
+            result = safe_write_tags(library_path, tmp_path, mock_write_fn, mtime_ms)
 
             # Probed twice: original before copy, temp after write
             assert mock_probe.call_count == 2
@@ -64,7 +65,8 @@ class TestSafeWriteVerification:
         ) as mock_probe:
             mock_probe.side_effect = [_GOOD_PROPS, truncated_props]
 
-            result = safe_write_tags(library_path, tmp_path, mock_write_fn)
+            mtime_ms = int(test_file.stat().st_mtime * 1000)
+            result = safe_write_tags(library_path, tmp_path, mock_write_fn, mtime_ms)
 
             assert result.success is False
             assert "Duration changed" in (result.error or "")
@@ -91,7 +93,8 @@ class TestSafeWriteVerification:
         ) as mock_probe:
             mock_probe.side_effect = [_GOOD_PROPS, wrong_sr_props]
 
-            result = safe_write_tags(library_path, tmp_path, mock_write_fn)
+            mtime_ms = int(test_file.stat().st_mtime * 1000)
+            result = safe_write_tags(library_path, tmp_path, mock_write_fn, mtime_ms)
 
             assert result.success is False
             assert "Sample rate changed" in (result.error or "")
@@ -112,7 +115,8 @@ class TestSafeWriteVerification:
             "nomarr.components.tagging.safe_write_comp._probe_audio_properties",
             side_effect=RuntimeError("mutagen could not read audio file"),
         ):
-            result = safe_write_tags(library_path, tmp_path, lambda _: None)
+            mtime_ms = int(test_file.stat().st_mtime * 1000)
+            result = safe_write_tags(library_path, tmp_path, lambda _: None, mtime_ms)
 
             assert result.success is False
             assert "Failed to probe original file" in (result.error or "")

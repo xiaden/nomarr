@@ -116,7 +116,7 @@ class Application:
         from nomarr.components.ml.ml_discovery_comp import compute_model_suite_hash
 
         self.tagger_version: str = compute_model_suite_hash(self.models_dir)
-        logger.info(f"[Application] Model suite hash (tagger_version): {self.tagger_version}")
+        logger.debug(f"[Application] Model suite hash (tagger_version): {self.tagger_version}")
         self._ensure_database_provisioned()
         self.db = Database()
         from nomarr.workflows.platform.prepare_database_wf import prepare_database_workflow
@@ -170,8 +170,8 @@ class Application:
         After first run:
         - Config file already has credentials, this is a no-op
         """
+        from nomarr.components.platform.arango_bootstrap_comp import wait_for_arango
         from nomarr.components.platform.arango_first_run_comp import (
-            _wait_for_arango,
             get_root_password_from_env,
             is_first_run,
             provision_database_and_user,
@@ -182,7 +182,7 @@ class Application:
         if not config_path.exists():
             config_path = Path.cwd() / "config" / "nomarr.yaml"
         hosts = os.getenv("ARANGO_HOST", "http://nomarr-arangodb:8529")
-        if not _wait_for_arango(hosts):
+        if not wait_for_arango(hosts):
             msg = f"Cannot connect to ArangoDB at {hosts} after 60 seconds"
             raise RuntimeError(msg)
         if not is_first_run(config_path, hosts=hosts):
@@ -210,7 +210,7 @@ class Application:
 
         self._heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True, name="AppHeartbeat")
         self._heartbeat_thread.start()
-        logger.info("[Application] App heartbeat started")
+        logger.debug("[Application] App heartbeat started")
 
     def start(self) -> None:
         """Start the application - initialize all services, workers, and background tasks.
@@ -228,7 +228,7 @@ class Application:
         if self._running:
             logger.warning("[Application] Already running, ignoring start() call")
             return
-        logger.info("[Application] Starting...")
+        logger.debug("[Application] Starting...")
         logger.debug("[Application] Cleaning ephemeral runtime state...")
         self.db.health.clean_all()
         self.db.health.mark_starting(component_id="app", component_type="app")
@@ -386,7 +386,7 @@ class Application:
             worker_count,
             "enabled" if "info" in self.services else "disabled",
         )
-        logger.info("[Application] Started successfully")
+        logger.debug("[Application] Started successfully")
 
     def stop(self) -> None:
         """Stop the application - clean shutdown of all services and workers.

@@ -16,16 +16,8 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from nomarr.components.ml.ml_discovery_comp import HeadInfo
     from nomarr.components.ml.ml_onnx_head import ONNXHeadModel
-    from nomarr.components.ml.ml_onnx_types import Sidecar
-
-
-def _safe_get(data_dict: dict[str, Any], *keys, default=None):
-    """Return first matching key present in dict d (top-level), else default."""
-    for key in keys:
-        if key in data_dict:
-            return data_dict[key]
-    return default
 
 
 def _as_float_list(element: Any) -> list[float]:
@@ -65,27 +57,6 @@ class Cascade:
     gap_medium: float = 0.08
     gap_low: float = 0.03
 
-    @classmethod
-    def from_sidecar(cls, sc: Sidecar, fallback: Cascade | None = None) -> Cascade:
-        meta = sc.data or {}
-        levels = _safe_get(meta, "cascade", "tiers", default=None)
-        if isinstance(levels, dict):
-            return cls(
-                high=float(levels.get("high", fallback.high if fallback else 0.8)),
-                medium=float(levels.get("medium", fallback.medium if fallback else 0.6)),
-                low=float(levels.get("low", fallback.low if fallback else 0.4)),
-                ratio_high=float(levels.get("ratio_high", getattr(fallback, "ratio_high", 1.25) if fallback else 1.25)),
-                ratio_medium=float(
-                    levels.get("ratio_medium", getattr(fallback, "ratio_medium", 1.15) if fallback else 1.15),
-                ),
-                ratio_low=float(levels.get("ratio_low", getattr(fallback, "ratio_low", 1.05) if fallback else 1.05)),
-                gap_high=float(levels.get("gap_high", getattr(fallback, "gap_high", 0.2) if fallback else 0.2)),
-                gap_medium=float(levels.get("gap_medium", getattr(fallback, "gap_medium", 0.1) if fallback else 0.1)),
-                gap_low=float(levels.get("gap_low", getattr(fallback, "gap_low", 0.05) if fallback else 0.05)),
-            )
-        if isinstance(levels, list | tuple) and len(levels) >= 3:
-            return cls(high=float(levels[0]), medium=float(levels[1]), low=float(levels[2]))
-        return fallback or cls()
 
 
 @dataclass
@@ -100,38 +71,16 @@ class HeadSpec:
     top_ratio: float = 0.5
     prob_input: bool = True
 
+
+
     @classmethod
-    def from_sidecar(cls, sc: Sidecar) -> HeadSpec:
-        meta = sc.data or {}
-        head_name = str(_safe_get(meta, "head_name", "name") or "head")
-        head_type = str(_safe_get(meta, "head_type", "type") or "multilabel")
-        labels = _safe_get(meta, "classes", "labels", default=[]) or []
-        labels = [str(x) for x in labels]
-        cascade = Cascade.from_sidecar(sc)
-        thresh_dict = _safe_get(meta, "label_thresholds", "thresholds", default={}) or {}
-        if isinstance(thresh_dict, list):
-            thresh_dict = {labels[i]: float(v) for i, v in enumerate(thresh_dict) if i < len(labels)}
-        elif isinstance(thresh_dict, dict):
-            thresh_dict = {str(k): float(v) for k, v in thresh_dict.items()}
-        else:
-            thresh_dict = {}
-        min_conf = float(_safe_get(meta, "min_conf", "min_confidence", default=0.15) or 0.15)
-        max_classes = int(_safe_get(meta, "max_classes", "top_k_cap", default=5) or 5)
-        top_ratio = float(_safe_get(meta, "top_ratio", "top_k_ratio", default=0.5) or 0.5)
-        prob_input = bool(_safe_get(meta, "prob_input", default=True))
+    def from_head_info(cls, hi: HeadInfo) -> HeadSpec:
+        """Build a :class:`HeadSpec` from a :class:`HeadInfo` (DB-backed path)."""
         return cls(
-            name=head_name,
-            kind=head_type,
-            labels=labels,
-            cascade=cascade,
-            label_thresholds=thresh_dict,
-            min_conf=min_conf,
-            max_classes=max_classes,
-            top_ratio=top_ratio,
-            prob_input=prob_input,
+            name=hi.name,
+            kind=hi.head_type,
+            labels=list(hi.labels),
         )
-
-
 def decide_regression(values: np.ndarray, labels: list[str]) -> dict[str, float]:
     """Return raw float outputs keyed by label; preserves full precision."""
     out: dict[str, float] = {}
@@ -457,20 +406,23 @@ def head_is_multiclass(spec: HeadSpec) -> bool:
 
 
 def run_head_decision(
-    sc: Sidecar,
+    spec: HeadSpec,
     scores: np.ndarray,
     *,
     prefix: str = "",
     emit_all_scores: bool = True,
     segment_std: np.ndarray | None = None,
 ) -> HeadDecision:
-    """Turn the raw output vector for a head into a HeadDecision.
-    - sc: Sidecar describing the head (labels, thresholds, cascade)
-    - scores: head outputs (logits or probs depending on sidecar)
-    - prefix: optional string to prepend to tag keys (e.g., "yamnet_").
-    - segment_std: optional per-label segment standard deviation for stability gating.
+    """Turn the raw output vector for a head into a :class:`HeadDecision`.
+
+    Args:
+        spec: Head specification describing labels, thresholds, and cascade.
+        scores: Head outputs (logits or probabilities).
+        prefix: Optional string to prepend to tag keys.
+        emit_all_scores: (unused, kept for signature compat).
+        segment_std: Optional per-label segment standard deviation
+            for stability gating.
     """
-    spec = HeadSpec.from_sidecar(sc)
     kind = spec.kind.lower()
     vec = np.asarray(scores).reshape(-1)
     if "regression" in kind:

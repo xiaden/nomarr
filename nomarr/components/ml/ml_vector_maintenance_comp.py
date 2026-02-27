@@ -16,52 +16,51 @@ logger = logging.getLogger(__name__)
 
 
 def derive_embed_dim(models_dir: str, backbone_id: str) -> int:
-    """Derive embedding dimension from backbone model metadata.
+    """Derive embedding dimension by probing the backbone ONNX model.
 
-    Probes backbone sidecar JSON to extract embedding dimension from
-    output schema. Single source of truth for embed_dim.
+    Opens the backbone embedding graph with ``onnxruntime`` and inspects
+    the output named ``"embeddings"`` for its last dimension.
 
     Args:
         models_dir: Path to ML models directory.
-        backbone_id: Backbone identifier (e.g., "discogs_effnet").
+        backbone_id: Backbone identifier (e.g., ``"discogs_effnet"``).
 
     Returns:
         Embedding dimension (e.g., 1280 for effnet).
 
     Raises:
-        ValueError: If backbone not found or embed_dim cannot be determined.
+        ValueError: If backbone ONNX file not found or embed_dim cannot be determined.
 
     """
+    from nomarr.components.ml.ml_discovery_comp import _resolve_embedding_graph
+
+    embedding_graph = _resolve_embedding_graph(models_dir, backbone_id)
+    if not embedding_graph:
+        raise ValueError(
+            f"No embedding graph found for backbone '{backbone_id}' in {models_dir}"
+        )
+
     try:
-        from nomarr.components.ml.ml_discovery_comp import discover_heads
+        import onnxruntime as ort
 
-        heads = discover_heads(models_dir)
+        session = ort.InferenceSession(
+            embedding_graph, providers=["CPUExecutionProvider"]
+        )
+        for output in session.get_outputs():
+            if output.name == "embeddings":
+                shape = output.shape
+                if isinstance(shape, list) and len(shape) >= 2:
+                    dim = shape[-1]
+                    if isinstance(dim, int) and dim > 0:
+                        return dim
     except Exception as exc:
-        raise ValueError(f"Failed to discover models in {models_dir}") from exc
-
-    # Find any head for this backbone to access embedding_sidecar
-    for head in heads:
-        if head.backbone == backbone_id:
-            if not head.embedding_sidecar:
-                continue
-
-            # Probe embedding dimension from outputs with output_purpose="embeddings"
-            outputs = head.embedding_sidecar.outputs
-            if outputs and isinstance(outputs, list):
-                for output in outputs:
-                    if (
-                        isinstance(output, dict)
-                        and output.get("output_purpose") == "embeddings"
-                    ):
-                        shape = output.get("shape")
-                        if isinstance(shape, list) and len(shape) >= 2:
-                            embed_dim = int(shape[-1])
-                            if embed_dim > 0:
-                                return embed_dim
+        raise ValueError(
+            f"Failed to probe embedding graph '{embedding_graph}'"
+        ) from exc
 
     raise ValueError(
         f"Cannot determine embed_dim for backbone '{backbone_id}'. "
-        "Ensure model sidecar has output with output_purpose='embeddings' and valid shape."
+        "Ensure backbone ONNX model has output named 'embeddings' with valid shape."
     )
 
 

@@ -361,7 +361,7 @@ async def cleanup_orphaned_tags(
     """Clean up orphaned tags (tags not referenced by any file).
 
     This endpoint identifies and removes tags from the tags collection that are
-    no longer referenced by any file via song_tag_edges. Useful for database maintenance
+    no longer referenced by any file via song_has_tags. Useful for database maintenance
     after deleting files or changing tag structures.
 
     Args:

@@ -100,7 +100,7 @@ def apply_calibration_wf(
     # --- Pre-compute small invariants once (cheap, shared across all chunks) ---
     _t0 = internal_ms()
     logger.info("[apply_calibration] Pre-computing batch context...")
-    heads = discover_heads(models_dir)
+    heads = discover_heads(models_dir, db)
     calibrations = load_calibrations_from_db_wf(db)
     calibration_version = get_calibration_version(db)
 

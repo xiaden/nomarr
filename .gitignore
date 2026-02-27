@@ -128,11 +128,8 @@ $RECYCLE.BIN/
 fpcalc.exe
 
 # Playwright
-/test-results/
-/playwright-report/
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
-/.playwright-mcp/
 
 build_resources/models-prepatch/

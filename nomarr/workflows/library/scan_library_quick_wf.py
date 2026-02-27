@@ -12,9 +12,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.file_batch_scanner_comp import scan_folder_files
-from nomarr.components.library.folder_analysis_comp import discover_library_folders, plan_incremental_scan
+from nomarr.components.library.folder_analysis_comp import discover_library_folders
 from nomarr.components.library.library_root_comp import validate_library_root
-from nomarr.components.library.missing_file_detection_comp import detect_missing_files
 from nomarr.components.library.move_detection_comp import (
     apply_detected_moves,
     detect_file_moves,
@@ -27,7 +26,6 @@ from nomarr.components.library.scan_lifecycle_comp import (
     remove_deleted_files,
     resolve_library_for_scan,
     save_folder_record,
-    snapshot_existing_files,
     update_scan_progress,
     upsert_scanned_files,
 )
@@ -81,139 +79,204 @@ def scan_library_quick_workflow(
     mark_scan_started(db, library_id, scan_type="quick")
 
     try:
-        # Step 2 — Discover folders, then plan incremental scan (cache-aware)
+        # Step 2 — Pre-scan DB lookups (no global file snapshot)
+        db_folder_paths = db.library_files.get_folder_rel_paths(library_id)
+        has_tagged_files = db.library_files.library_has_tagged_files(library_id)
+        file_count = db.library_files.count_library_files(library_id)
+        cached_folders = get_cached_folders(db, library_id)  # one upfront call
+
+        # Step 3 — Discover folders on disk
         all_folders = discover_library_folders(library_root, [library_root])
-        folder_plan = plan_incremental_scan(
-            all_folders,
-            get_cached_folders(db, library_id),
-        )
-        stats["folders_scanned"] = len(folder_plan.folders_to_scan)
-        stats["folders_skipped"] = folder_plan.folders_skipped
-        stats["files_discovered"] = folder_plan.total_files_to_scan
-        update_scan_progress(db, library_id, total=folder_plan.total_files_to_scan)
+        discovered_folder_paths = {f.rel_path for f in all_folders}
 
-        # Step 3 — Snapshot existing files for comparison
-        existing_files_dict, has_tagged_files = snapshot_existing_files(db, library_id)
+        update_scan_progress(db, library_id, total=file_count or sum(f.file_count for f in all_folders))
 
+        # Step 4 — Seed missing_docs from vanished folders (in DB but absent on disk)
+        vanished_folder_paths = db_folder_paths - discovered_folder_paths
+        missing_docs_map: dict[str, dict[str, Any]] = {}
+        if vanished_folder_paths:
+            missing_docs_map.update(
+                db.library_files.get_files_for_folders(
+                    library_id, list(vanished_folder_paths),
+                ),
+            )
+
+        unmatched_new: list[dict[str, Any]] = []
+        unmatched_new_metadata: dict[str, dict[str, Any]] = {}
         all_discovered_paths: set[str] = set()
-        deferred_new_entries: list[dict[str, Any]] = []
-        deferred_new_metadata: dict[str, dict[str, Any]] = {}
         all_metadata: dict[str, dict[str, Any]] = {}
 
-        # Step 4 — Scan files folder-by-folder, upsert + seed entities
-        for folder in folder_plan.folders_to_scan:
-            batch = scan_folder_files(
-                folder_path=Path(folder.abs_path),
-                folder_rel_path=folder.rel_path,
-                library_root=library_root,
-                library_id=library_id,
-                existing_files=existing_files_dict,
-                tagger_version=tagger_version,
-                db=db,
-                min_duration_s=min_duration_s,
-            )
+        # Step 5 — Per-folder scan with cache-check and incremental move detection
+        for folder in all_folders:
+            # Cache check: skip if folder mtime and file_count match DB record
+            cached = cached_folders.get(folder.rel_path)
+            if (
+                cached
+                and cached["mtime"] == folder.mtime
+                and cached["file_count"] == folder.file_count
+            ):
+                stats["folders_skipped"] += 1
+                logger.debug("Skipping unchanged folder: %s", folder.rel_path)
+                continue
 
-            stats["files_updated"] += batch.stats["files_updated"]
-            stats["files_failed"] += batch.stats["files_failed"]
-            stats["files_skipped"] += batch.stats.get("files_skipped", 0)
-            warnings.extend(batch.warnings)
-            all_discovered_paths.update(batch.discovered_paths)
-            all_metadata.update(batch.metadata_map)
+            stats["folders_scanned"] += 1
 
-            # Split into updated (existing path) vs new entries
-            updated_entries = [
-                e for e in batch.file_entries if e["path"] in existing_files_dict
-            ]
-            new_entries = [
-                e for e in batch.file_entries if e["path"] not in existing_files_dict
-            ]
+            for attempt in range(2):
+                try:
+                    # Fetch only this folder's files from DB
+                    existing_for_folder = db.library_files.get_files_for_folder(
+                        library_id, folder.rel_path,
+                    )
+                    batch = scan_folder_files(
+                        folder_path=Path(folder.abs_path),
+                        folder_rel_path=folder.rel_path,
+                        library_root=library_root,
+                        library_id=library_id,
+                        existing_files=existing_for_folder,
+                        tagger_version=tagger_version,
+                        db=db,
+                        min_duration_s=min_duration_s,
+                    )
 
-            # Defer new entries for move detection (if library has chromaprints)
-            if has_tagged_files and new_entries:
-                deferred_new_entries.extend(new_entries)
-                for e in new_entries:
-                    if e["path"] in batch.metadata_map:
-                        deferred_new_metadata[e["path"]] = batch.metadata_map[e["path"]]
+                    stats["files_updated"] += batch.stats["files_updated"]
+                    stats["files_failed"] += batch.stats["files_failed"]
+                    stats["files_skipped"] += batch.stats.get("files_skipped", 0)
+                    stats["files_discovered"] += len(batch.discovered_paths)
+                    warnings.extend(batch.warnings)
+                    all_discovered_paths.update(batch.discovered_paths)
+                    all_metadata.update(batch.metadata_map)
 
-            # Upsert only updated entries immediately (new entries deferred)
-            if updated_entries:
-                file_ids = upsert_scanned_files(db, updated_entries)
-                # Build metadata map keyed by file_id
-                metadata_by_id = {
-                    file_id: batch.metadata_map[entry["path"]]
-                    for file_id, entry in zip(file_ids, updated_entries, strict=True)
-                    if entry["path"] in batch.metadata_map
-                }
-                seed_entities_for_scan_batch(db, file_ids, metadata_by_id)
+                    # Files in DB for this folder that are no longer on disk → could be moves
+                    missing_docs_map.update(
+                        {
+                            path: doc
+                            for path, doc in existing_for_folder.items()
+                            if path not in batch.discovered_paths
+                        }
+                    )
 
-            # If no tagged files, upsert new entries immediately (no move detection)
-            if not has_tagged_files and new_entries:
-                file_ids = upsert_scanned_files(db, new_entries)
-                stats["files_added"] += len(new_entries)
-                metadata_by_id = {
-                    file_id: batch.metadata_map[entry["path"]]
-                    for file_id, entry in zip(file_ids, new_entries, strict=True)
-                    if entry["path"] in batch.metadata_map
-                }
-                seed_entities_for_scan_batch(db, file_ids, metadata_by_id)
+                    # Split entries: updated (DB knows them) vs new to this folder
+                    updated_entries = [
+                        e for e in batch.file_entries if e["path"] in existing_for_folder
+                    ]
+                    new_entries = [
+                        e for e in batch.file_entries if e["path"] not in existing_for_folder
+                    ]
 
-            save_folder_record(
-                db, library_id, folder.rel_path, folder.mtime, folder.file_count,
-            )
+                    # Upsert updated entries immediately
+                    if updated_entries:
+                        file_ids = upsert_scanned_files(db, updated_entries)
+                        metadata_by_id = {
+                            fid: batch.metadata_map[entry["path"]]
+                            for fid, entry in zip(file_ids, updated_entries, strict=True)
+                            if entry["path"] in batch.metadata_map
+                        }
+                        seed_entities_for_scan_batch(db, file_ids, metadata_by_id)
+
+                    # Incremental move detection for new entries
+                    if has_tagged_files and new_entries:
+                        move_result = detect_file_moves(
+                            list(missing_docs_map.values()), new_entries, db,
+                        )
+                        if move_result.moves:
+                            apply_detected_moves(
+                                move_result.moves, all_metadata, db, library_root,
+                            )
+                            stats["files_moved"] += move_result.files_moved_count
+                            for m in move_result.moves:
+                                missing_docs_map.pop(m.old_path, None)
+                        matched_new_paths = {m.new_path for m in move_result.moves}
+                        folder_unmatched = [
+                            e for e in new_entries if e["path"] not in matched_new_paths
+                        ]
+                        unmatched_new.extend(folder_unmatched)
+                        for e in folder_unmatched:
+                            if e["path"] in batch.metadata_map:
+                                unmatched_new_metadata[e["path"]] = batch.metadata_map[e["path"]]
+                    elif new_entries:
+                        # No tagged files — upsert new entries immediately
+                        file_ids = upsert_scanned_files(db, new_entries)
+                        stats["files_added"] += len(new_entries)
+                        metadata_by_id = {
+                            fid: batch.metadata_map[entry["path"]]
+                            for fid, entry in zip(file_ids, new_entries, strict=True)
+                            if entry["path"] in batch.metadata_map
+                        }
+                        seed_entities_for_scan_batch(db, file_ids, metadata_by_id)
+
+                    save_folder_record(
+                        db,
+                        library_id,
+                        folder.rel_path,
+                        folder.mtime,
+                        folder.file_count,
+                    )
+                    break  # Folder processed successfully
+
+                except Exception as e:
+                    if attempt == 0:
+                        logger.warning(
+                            "Folder %r scan attempt 1 failed, retrying: %s",
+                            folder.rel_path,
+                            e,
+                        )
+                    else:
+                        logger.error(
+                            "Folder %r failed after retry, skipping: %s",
+                            folder.rel_path,
+                            e,
+                        )
+                        stats["files_failed"] += folder.file_count
+                        warnings.append(
+                            f"Folder {folder.rel_path!r} skipped after error: {e}"
+                        )
+
             update_scan_progress(db, library_id, progress=len(all_discovered_paths))
 
-        # Step 5 — Detect missing files (folder-aware)
-        scanned_folder_paths = {f.abs_path for f in folder_plan.folders_to_scan}
-        all_on_disk_folder_paths = {f.abs_path for f in folder_plan.all_folders}
+        # Step 6 — Final move detection pass for unmatched new files
+        truly_new: list[dict[str, Any]] = []
+        if unmatched_new and has_tagged_files:
+            final_move_result = detect_file_moves(
+                list(missing_docs_map.values()), unmatched_new, db,
+            )
+            if final_move_result.moves:
+                apply_detected_moves(
+                    final_move_result.moves, all_metadata, db, library_root,
+                )
+                stats["files_moved"] += final_move_result.files_moved_count
+                for m in final_move_result.moves:
+                    missing_docs_map.pop(m.old_path, None)
+                moved_new_paths = {m.new_path for m in final_move_result.moves}
+                truly_new = [
+                    e for e in unmatched_new if e["path"] not in moved_new_paths
+                ]
+            else:
+                truly_new = unmatched_new
 
-        missing_paths = detect_missing_files(
-            existing_files=existing_files_dict,
-            discovered_paths=all_discovered_paths,
-            scanned_folder_paths=scanned_folder_paths,
-            all_on_disk_folder_paths=all_on_disk_folder_paths,
-        )
+        if truly_new:
+            file_ids = upsert_scanned_files(db, truly_new)
+            stats["files_added"] += len(truly_new)
+            metadata_by_id = {
+                fid: unmatched_new_metadata[entry["path"]]
+                for fid, entry in zip(file_ids, truly_new, strict=True)
+                if entry["path"] in unmatched_new_metadata
+            }
+            seed_entities_for_scan_batch(db, file_ids, metadata_by_id)
 
-        # Step 6 — Move detection + upsert remaining new files + delete unmatched missing
-        moved_new_paths: set[str] = set()
-        if missing_paths and has_tagged_files:
-            files_to_remove = [existing_files_dict[p] for p in missing_paths]
-            move_result = detect_file_moves(files_to_remove, deferred_new_entries, db)
-            stats["files_moved"] = move_result.files_moved_count
-            apply_detected_moves(move_result.moves, all_metadata, db, library_root)
-            moved_new_paths = {m.new_path for m in move_result.moves}
-            unmatched = missing_paths - {m.old_path for m in move_result.moves}
-            if unmatched:
-                stats["files_removed"] += remove_deleted_files(db, list(unmatched))
-        elif missing_paths:
-            # No tagged files - just remove missing
-            stats["files_removed"] += remove_deleted_files(db, list(missing_paths))
+        # Step 7 — Remove truly deleted files
+        if missing_docs_map:
+            stats["files_removed"] += remove_deleted_files(db, list(missing_docs_map.keys()))
 
-        # Upsert remaining deferred new entries (not consumed by move detection)
-        if has_tagged_files and deferred_new_entries:
-            remaining_new_entries = [
-                e for e in deferred_new_entries if e["path"] not in moved_new_paths
-            ]
-            if remaining_new_entries:
-                file_ids = upsert_scanned_files(db, remaining_new_entries)
-                stats["files_added"] += len(remaining_new_entries)
-                metadata_by_id = {
-                    file_id: deferred_new_metadata[entry["path"]]
-                    for file_id, entry in zip(file_ids, remaining_new_entries, strict=True)
-                    if entry["path"] in deferred_new_metadata
-                }
-                seed_entities_for_scan_batch(db, file_ids, metadata_by_id)
+        # Step 8 — Clean up stale folder records
+        cleanup_stale_folders(db, library_id, discovered_folder_paths)
 
-        # Step 7 — Clean up stale folder records
-        existing_folder_rel_paths = {f.rel_path for f in folder_plan.all_folders}
-        cleanup_stale_folders(db, library_id, existing_folder_rel_paths)
-
-        # Step 8 — Entity graph cleanup
+        # Step 9 — Entity graph cleanup
         try:
             cleanup_orphaned_entities_workflow(db, dry_run=False)
         except Exception as e:
             logger.warning("Entity cleanup failed: %s", e)
 
-        # Step 9 — Finalize
+        # Step 10 — Finalize
         scan_duration = internal_s().value - start_time.value
         mark_scan_completed(db, library_id)
         update_scan_progress(

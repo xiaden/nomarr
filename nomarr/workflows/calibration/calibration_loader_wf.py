@@ -12,7 +12,7 @@ DEPENDENCIES:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from nomarr.components.ml.calibration_state_comp import load_all_calibration_states
 
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def load_calibrations_from_db_wf(db: Database) -> dict[str, dict[str, float]]:
+def load_calibrations_from_db_wf(db: Database) -> dict[str, dict[str, Any]]:
     """Load all calibrations from calibration_state collection.
 
     Returns dict mapping label -> {p5, p95} for use in aggregation.
@@ -38,8 +38,8 @@ def load_calibrations_from_db_wf(db: Database) -> dict[str, dict[str, float]]:
 
     Example:
         {
-            "happy": {"p5": 0.123, "p95": 0.876},
-            "sad": {"p5": 0.100, "p95": 0.900}
+            "happy": {"p5": 0.123, "p95": 0.876, "calibration_def_hash": "b539fc8a..."},
+            "sad": {"p5": 0.100, "p95": 0.900, "calibration_def_hash": "a1b2c3d4..."}
         }
 
     Note:
@@ -55,15 +55,16 @@ def load_calibrations_from_db_wf(db: Database) -> dict[str, dict[str, float]]:
             return {}
 
         # Build lookup by label (the actual label field from calibration_state)
-        calibrations: dict[str, dict[str, float]] = {}
+        calibrations: dict[str, dict[str, Any]] = {}
 
         for state in calibration_states:
             label = state.get("label")
             p5 = state.get("p5")
             p95 = state.get("p95")
+            calib_hash = state.get("calibration_def_hash")
 
             if label and p5 is not None and p95 is not None:
-                calibrations[label] = {"p5": p5, "p95": p95}
+                calibrations[label] = {"p5": p5, "p95": p95, "calibration_def_hash": calib_hash}
 
         logger.info(f"[calibration_loader] Loaded {len(calibrations)} calibrations from database")
         return calibrations

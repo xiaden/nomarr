@@ -69,6 +69,7 @@ def assign_regression_outputs(
     stability_thresholds: StabilityThresholds,
     regression_thresholds: RegressionThresholds,
     log_prefix: str = "aggregation",
+    applied_calibration_id: str | None = None,
 ) -> list[HeadOutput]:
     """Shared regression-to-HeadOutput conversion used by both inference and reconstruction.
 
@@ -86,6 +87,9 @@ def assign_regression_outputs(
         stability_thresholds: Thresholds for stability gating
         regression_thresholds: Thresholds for mood determination
         log_prefix: Logging prefix tag (e.g. "aggregation" or "reconstruction")
+        applied_calibration_id: Calibration ID string to record on each HeadOutput.
+            When provided (non-None), reflects that calibration was applied to the values.
+            When None, records that no calibration was applied.
 
     Returns:
         List of HeadOutput objects (1 for decisive, 2 for neutral)
@@ -100,16 +104,18 @@ def assign_regression_outputs(
 
     # Neutral case: emit both terms with no tier
     if not is_high and not is_low:
-        model_key_high, calib_id_high = head_info.build_versioned_tag_key(
+        model_key_high, _key_calib_id_high = head_info.build_versioned_tag_key(
             high_term,
             calib_method="none",
             calib_version=0,
         )
-        model_key_low, calib_id_low = head_info.build_versioned_tag_key(
+        model_key_low, _key_calib_id_low = head_info.build_versioned_tag_key(
             low_term,
             calib_method="none",
             calib_version=0,
         )
+        effective_calib_id_high = applied_calibration_id if applied_calibration_id is not None else _key_calib_id_high
+        effective_calib_id_low = applied_calibration_id if applied_calibration_id is not None else _key_calib_id_low
         logger.debug(
             "[%s] Regression neutral: %s \u2192 both %s/%s (mean=%.3f, std=%.3f)",
             log_prefix,
@@ -126,7 +132,7 @@ def assign_regression_outputs(
                 label=high_term,
                 value=mean_val,
                 tier=None,
-                calibration_id=calib_id_high,
+                calibration_id=effective_calib_id_high,
             ),
             HeadOutput(
                 head=head_info,
@@ -134,17 +140,18 @@ def assign_regression_outputs(
                 label=low_term,
                 value=1.0 - mean_val,
                 tier=None,
-                calibration_id=calib_id_low,
+                calibration_id=effective_calib_id_low,
             ),
         ]
 
     # Decisive case: pick one term and assign tier via stability gating
     mood_term = high_term if is_high else low_term
-    model_key, calibration_id = head_info.build_versioned_tag_key(
+    model_key, _key_calib_id = head_info.build_versioned_tag_key(
         mood_term,
         calib_method="none",
         calib_version=0,
     )
+    effective_calib_id = applied_calibration_id if applied_calibration_id is not None else _key_calib_id
 
     tier: str | None = None
     if std_val >= stability_thresholds.acceptable:
@@ -182,7 +189,7 @@ def assign_regression_outputs(
             label=mood_term,
             value=mean_val,
             tier=tier,
-            calibration_id=calibration_id,
+            calibration_id=effective_calib_id,
         ),
     ]
 
@@ -302,6 +309,18 @@ def _compute_suppressed_keys(
         Set of model keys to suppress due to conflicts
 
     """
+    def get_best(keys: list[str]) -> str | None:
+        tier_order = {"high": 3, "strict": 3, "medium": 2, "norm": 2, "normal": 2, "low": 1}
+        best = None
+        best_score: float = 0
+        for tag_key in keys:
+            tier, prob, _label = tier_map[tag_key]
+            score = tier_order.get(tier, 0) * 100 + prob
+            if score > best_score:
+                best = tag_key
+                best_score = score
+        return best
+
     suppressed_keys: set[str] = set()
     for pos_pat, neg_pat, _pos_label, _neg_label in label_pairs:
         pos_keys = [k for k, (_tier, _value, label) in tier_map.items() if simplify_label(label) == pos_pat]
@@ -315,18 +334,6 @@ def _compute_suppressed_keys(
         )
         if not pos_keys or not neg_keys:
             continue
-
-        def get_best(keys: list[str]) -> str | None:
-            tier_order = {"high": 3, "strict": 3, "medium": 2, "norm": 2, "normal": 2, "low": 1}
-            best = None
-            best_score: float = 0
-            for tag_key in keys:
-                tier, prob, _label = tier_map[tag_key]
-                score = tier_order.get(tier, 0) * 100 + prob
-                if score > best_score:
-                    best = tag_key
-                    best_score = score
-            return best
 
         pos_key = get_best(pos_keys)
         neg_key = get_best(neg_keys)

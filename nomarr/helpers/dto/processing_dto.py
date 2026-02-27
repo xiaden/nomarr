@@ -13,6 +13,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
+from nomarr.helpers.dto.ml_edge_dto import MLEdgeWrites
+
 if TYPE_CHECKING:
     from nomarr.helpers.dto.tags_dto import Tags
 
@@ -122,11 +124,12 @@ class DeferredFileWrites:
 
     The expected execution order is:
     1. ``save_file_tags``   (tag vertices + edges)
-    2. ``set_chromaprint``  (fingerprint)
-    3. compute segment stats from raw_segments (deferred from hot path)
-    4. ``upsert_stats``     (segment statistics)
-    5. ``mark_file_tagged`` (only if 1-4 succeeded)
-    6. ``release_claim``    (always, even on error)
+    2. write ``tag_model_output`` edges via ``ml_edges``
+    3. ``set_chromaprint``  (fingerprint)
+    4. compute segment stats from raw_segments (deferred from hot path)
+    5. ``upsert_stats``     (segment statistics)
+    6. ``mark_file_tagged`` (only if 1-5 succeeded)
+    7. ``release_claim``    (always, even on error)
     """
 
     file_id: str
@@ -136,6 +139,7 @@ class DeferredFileWrites:
     tagger_version: str
     chromaprint: str | None
     raw_segments: dict[str, tuple[Any, list[str]]]  # head_name -> (segment_scores ndarray, labels)
+    ml_edges: MLEdgeWrites | None = None
 
 @dataclass
 class ProcessFileResult:

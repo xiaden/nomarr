@@ -40,6 +40,23 @@ CACHE_IDLE_TIMEOUT_S = 40  # Evict cache after 40 seconds of no work (matches de
 HEALTH_FRAME_PREFIX = "HEALTH|"
 
 
+def _malloc_trim() -> None:
+    """Advise glibc to release free heap pages back to the OS.
+
+    Called after large per-track numpy arrays are freed (post-workflow) and
+    after the ONNX cache is evicted at idle.  This prevents glibc arena pools
+    from retaining freed pages across the 29K-track high-water mark.
+
+    No-op on non-Linux platforms or if libc.so.6 is unavailable.
+    """
+    import ctypes
+    import sys
+
+    if sys.platform != "linux":
+        return
+    with contextlib.suppress(OSError):
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+
 
 def _execute_deferred_writes(
     db: Database,
@@ -48,8 +65,9 @@ def _execute_deferred_writes(
 ) -> None:
     """Execute deferred DB writes for one file on a background thread.
 
-    Order: save_tags → set_chromaprint → compute_segment_stats → upsert_stats
-           → mark_tagged → release_claim.
+    Order: save_tags → tag_model_output edges → set_chromaprint
+           → compute_segment_stats → upsert_stats → mark_tagged
+           → release_claim.
     Segment stats are computed here (deferred from the ML hot path) so the
     pipeline doesn't pay numpy reduction costs per head during inference.
     mark_tagged only runs if prior writes succeeded. release_claim always runs.
@@ -69,11 +87,24 @@ def _execute_deferred_writes(
         }
         save_file_tags(db, file_id, prefixed_nom_tags)
 
-        # 2. Store chromaprint fingerprint
+        # 2. Write tag_model_output edges (link tags to ML model outputs)
+        if writes.ml_edges:
+            output_edges = writes.ml_edges.output_edges
+            pairs = [(rel, score) for rel, (_, score) in output_edges.items()]
+            tag_ids = db.tags.resolve_tag_ids(pairs)
+            edge_tuples: list[tuple[str, str, float]] = []
+            for tag_rel, (output_id, score) in output_edges.items():
+                tag_id = tag_ids.get((tag_rel, score))
+                if tag_id is not None:
+                    edge_tuples.append((tag_id, output_id, score))
+            if edge_tuples:
+                db.tag_model_output.write_edges_batch(edge_tuples)
+
+        # 3. Store chromaprint fingerprint
         if writes.chromaprint:
             set_chromaprint(db, file_id, writes.chromaprint)
 
-        # 3. Compute segment statistics from raw scores (deferred from hot path)
+        # 4. Compute segment statistics from raw scores (deferred from hot path)
         if writes.raw_segments:
             stats_entries: list[dict[str, Any]] = []
             for head_name, (segment_scores, labels) in writes.raw_segments.items():
@@ -89,13 +120,13 @@ def _execute_deferred_writes(
             if stats_entries:
                 db.segment_scores_stats.upsert_stats_batch(stats_entries)
 
-        # 4. All writes succeeded — mark file as tagged
+        # 5. All writes succeeded — mark file as tagged
         db.library_files.mark_file_tagged(file_id, writes.tagger_version)
         logger.debug("[%s] Async writes done for %s (%d tags)", worker_id, writes.path, len(writes.db_tags))
     except Exception:
         logger.exception("[%s] Async write failed for %s — file will be retried", worker_id, writes.path)
     finally:
-        # 5. Always release claim so file is re-discoverable on failure
+        # 6. Always release claim so file is re-discoverable on failure
         release_claim(db, file_id)
 class DiscoveryWorker(multiprocessing.Process):
     """Discovery-based ML processing worker.
@@ -147,8 +178,6 @@ class DiscoveryWorker(multiprocessing.Process):
         self._current_status: str = "pending"  # Current health status for frame emission
         self.execution_tier = execution_tier  # GPU/CPU tier from admission control
         self.prefer_gpu = prefer_gpu  # GPU preference from tier config
-        self._holds_gpu_claim: bool = False  # Whether this worker holds the GPU warmup claim
-        self._db: Any = None  # Database connection (set in run(), used by health writer thread)
 
     def _configure_subprocess_logging(self) -> None:
         """Configure logging for the subprocess.
@@ -218,34 +247,9 @@ class DiscoveryWorker(multiprocessing.Process):
             logger.debug("[%s] Failed to send health frame: %s", self.worker_id, e)
 
     def _health_writer_loop(self) -> None:
-        """Background thread that periodically sends health frames to parent.
-
-        Also heartbeats the GPU warmup claim if held, to prevent stale expiry
-        during long file processing.
-        """
-        heartbeat_counter = 0  # Count iterations to heartbeat every ~5th frame (15s)
+        """Background thread that periodically sends health frames to parent."""
         while not self._stop_event.is_set():
             self._send_health_frame(self._current_status)
-
-            # Heartbeat GPU claim every ~5 frames (15s at 3s interval)
-            heartbeat_counter += 1
-            if heartbeat_counter >= 5 and self._holds_gpu_claim and self._db is not None:
-                heartbeat_counter = 0
-                try:
-                    from nomarr.components.workers.worker_gpu_claim_comp import (
-                        heartbeat_gpu_claim,
-                    )
-
-                    still_held = heartbeat_gpu_claim(self._db, self.worker_id)
-                    if not still_held:
-                        # Claim was stolen (e.g., we were stale due to process pause)
-                        self._holds_gpu_claim = False
-                        logger.warning(
-                            "[%s] GPU warmup claim lost (stolen by another worker)",
-                            self.worker_id,
-                        )
-                except Exception:
-                    logger.debug("[%s] GPU claim heartbeat failed", self.worker_id, exc_info=True)
 
             # Sleep in small increments to allow faster shutdown
             for _ in range(int(HEALTH_FRAME_INTERVAL_S * 10)):
@@ -279,10 +283,6 @@ class DiscoveryWorker(multiprocessing.Process):
             discover_and_claim_file,
             release_claim,
         )
-        from nomarr.components.workers.worker_gpu_claim_comp import (
-            attempt_acquire_gpu_claim,
-            release_gpu_claim,
-        )
         from nomarr.helpers.dto.processing_dto import ProcessorConfig, ResourceManagementConfig
         from nomarr.persistence.db import Database
         from nomarr.workflows.processing.process_file_wf import process_file_workflow
@@ -307,7 +307,6 @@ class DiscoveryWorker(multiprocessing.Process):
 
         # Create database connection in subprocess
         db = Database(hosts=self.db_hosts, password=self.db_password)
-        self._db = db  # Store for health writer thread heartbeat access
 
         # Register worker context for process-local ML coordinator access
         from nomarr.components.ml.ml_worker_context_comp import register_worker_context
@@ -348,8 +347,6 @@ class DiscoveryWorker(multiprocessing.Process):
         cache_warmed = False  # Lazy cache warmup - only warm when work arrives
         last_work_time: float | None = None  # Monotonic timestamp of last successful file claim
         onnx_cache: ONNXModelCache | None = None  # ONNX model cache, lazily warmed
-        holds_gpu_claim = False  # Whether this worker holds the GPU warmup claim
-        # NOTE: also stored as self._holds_gpu_claim for health writer thread access
         recovering_until: float | None = None  # Recovery deadline if in recovering state
 
         # Single-thread executor for async DB writes — overlaps I/O with next file's ML
@@ -389,11 +386,11 @@ class DiscoveryWorker(multiprocessing.Process):
                         onnx_cache.warm = False
                         onnx_cache = None
                         cache_warmed = False
-                        if holds_gpu_claim:
-                            release_gpu_claim(db, self.worker_id)
-                            holds_gpu_claim = False
-                            self._holds_gpu_claim = False
                         logger.info("[%s] ONNX cache evicted due to idle timeout", self.worker_id)
+                        # Belt-and-suspenders: reclaim any remaining fragmented pages that
+                        # survived the per-track trim (e.g. ORT's internal session buffers
+                        # which are only freed when the cache is evicted, not per-track).
+                        _malloc_trim()
 
                     time.sleep(IDLE_SLEEP_S)
                     continue
@@ -439,69 +436,57 @@ class DiscoveryWorker(multiprocessing.Process):
                 # Lazy cache warmup: warm ONNX model cache on first file discovered
                 # This avoids VRAM allocation until actual work arrives
                 if not cache_warmed:
-                    # Attempt GPU warmup claim before loading models into VRAM
-                    claimed = attempt_acquire_gpu_claim(db, self.worker_id)
-                    if claimed:
-                        holds_gpu_claim = True
-                        self._holds_gpu_claim = True
-                        logger.info("[%s] Acquired GPU warmup claim - warming ONNX model cache...", self.worker_id)
-                        try:
-                            from nomarr.components.ml.ml_onnx_base import DevicePlacement as _DevicePlacement
-                            from nomarr.components.ml.ml_onnx_cache import (
-                                ONNXModelCache as _ONNXModelCache,
-                            )
-                            from nomarr.components.ml.ml_vram_probe_comp import (
-                                has_model_vram_measurements,
-                                probe_all_models,
-                            )
-                            from nomarr.components.platform.resource_monitor_comp import (
-                                check_nvidia_gpu_capability,
-                            )
-                            if (
-                                self.prefer_gpu
-                                and check_nvidia_gpu_capability()
-                                and not has_model_vram_measurements(db)
-                            ):
-                                logger.info("[%s] Running per-model VRAM probe...", self.worker_id)
-                                probe_all_models(db, config.models_dir)
-                            _cache_device: _DevicePlacement = "gpu" if self.prefer_gpu else "cpu"
-                            onnx_cache = _ONNXModelCache(config.models_dir, _cache_device)
-                            from nomarr.components.ml import ml_vram_coordinator_comp as _coordinator
-                            onnx_cache.warm = True
-                            _fleet = _coordinator.get_fleet_vram_state(db)
-                            _vram = _fleet["vram"]
-                            _promises = _fleet["promises"]
-                            _promise_rows = [
-                                f"  {p.get('worker_id', '?'):<20}  "
-                                f"{os.path.basename(p.get('model_path', '?')):<32}  "
-                                f"{p.get('promised_mb', 0):.0f} MB"
-                                for p in _promises
-                            ]
-                            logger.info(
-                                "[%s] ONNX cache ready (%d models). "
-                                "Fleet promises: %d  |  GPU %d/%d MB\n%s",
-                                self.worker_id,
-                                onnx_cache.model_count,
-                                len(_promises),
-                                _vram.get("used_mb", 0),
-                                _vram.get("total_mb", 0),
-                                "\n".join(_promise_rows) if _promise_rows else "  (none)",
-                            )
-                        except Exception as e:
-                            logger.exception("[%s] Failed to warm ONNX model cache: %s", self.worker_id, e)
-                            # Warmup failed - release claim so another worker can try
-                            release_gpu_claim(db, self.worker_id)
-                            holds_gpu_claim = False
-                            self._holds_gpu_claim = False
-                            # Continue anyway - workflow will create sessions inline (slower but works)
-                    else:
-                        # Another worker holds the GPU — process CPU-only this round
-                        logger.info(
-                            "[%s] GPU claim held by another worker, processing CPU-only",
-                            self.worker_id,
+                    logger.debug("[%s] Warming ONNX model cache...", self.worker_id)
+                    try:
+                        from nomarr.components.ml.ml_onnx_base import DevicePlacement as _DevicePlacement
+                        from nomarr.components.ml.ml_onnx_cache import (
+                            ONNXModelCache as _ONNXModelCache,
                         )
-                        # Don't set cache_warmed so we re-attempt on next file
-                        continue
+                        from nomarr.components.ml.ml_vram_probe_comp import (
+                            has_model_vram_measurements,
+                            probe_all_models,
+                        )
+                        from nomarr.components.platform.resource_monitor_comp import (
+                            check_nvidia_gpu_capability,
+                        )
+                        if (
+                            self.prefer_gpu
+                            and check_nvidia_gpu_capability()
+                            and not has_model_vram_measurements(db)
+                        ):
+                            logger.info("[%s] Running per-model VRAM probe...", self.worker_id)
+                            probe_all_models(db, config.models_dir)
+                        _cache_device: _DevicePlacement = "gpu" if self.prefer_gpu else "cpu"
+                        onnx_cache = _ONNXModelCache(config.models_dir, _cache_device, db=db)
+                        from nomarr.components.ml import ml_vram_coordinator_comp as _coordinator
+                        onnx_cache.warm = True
+                        _fleet = _coordinator.get_fleet_vram_state(db)
+                        _vram = _fleet["vram"]
+                        _promises = _fleet["promises"]
+                        _device_lookup: dict[str, str] = {
+                            m._path: (m._device or "cpu").upper()
+                            for m in onnx_cache._all_models()
+                        }
+                        _promise_rows = [
+                            f"  {p.get('worker_id', '?'):<20}  "
+                            f"{os.path.basename(p.get('model_path', '?')):<40}  "
+                            f"{p.get('promised_mb', 0):.0f} MB"
+                            f"  [{_device_lookup.get(p.get('model_path', ''), 'UNKNOWN')}]"
+                            for p in _promises
+                        ]
+                        logger.info(
+                            "[%s] ONNX cache ready (%d models). "
+                            "Fleet promises: %d  |  GPU %d/%d MB\n%s",
+                            self.worker_id,
+                            onnx_cache.model_count,
+                            len(_promises),
+                            _vram.get("used_mb", 0),
+                            _vram.get("total_mb", 0),
+                            "\n".join(_promise_rows) if _promise_rows else "  (none)",
+                        )
+                    except Exception as e:
+                        logger.exception("[%s] Failed to warm ONNX model cache: %s", self.worker_id, e)
+                        # Continue anyway - workflow will create sessions inline (slower but works)
                     cache_warmed = True
 
                 # Process the claimed file
@@ -539,6 +524,11 @@ class DiscoveryWorker(multiprocessing.Process):
                         cache=onnx_cache,
                     )
                     logger.debug("[%s] Workflow returned for %s", self.worker_id, file_path)
+                    # Large per-track allocations (audio waveform, mel spectrogram, backbone
+                    # embeddings) are freed when process_file_workflow returns.  Trim the
+                    # glibc heap now so those pages return to the OS rather than sitting in
+                    # arena pools until the end of the library run.
+                    _malloc_trim()
 
                     # Wait for previous file's async writes to finish (backpressure)
                     if pending_write is not None:
@@ -612,15 +602,6 @@ class DiscoveryWorker(multiprocessing.Process):
                 files_processed,
             )
             db.health.mark_stopping(self.worker_id)
-
-            # Release GPU warmup claim if held
-            if holds_gpu_claim:
-                try:
-                    release_gpu_claim(db, self.worker_id)
-                    holds_gpu_claim = False
-                    self._holds_gpu_claim = False
-                except Exception:
-                    logger.debug("[%s] Failed to release GPU claim on shutdown", self.worker_id, exc_info=True)
 
             # Release VRAM promises — belt-and-suspenders for graceful exits;
             # the service owner handles this for crashes via on_status_change("dead")

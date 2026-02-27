@@ -23,7 +23,7 @@ import logging
 import os
 from typing import Any
 
-from nomarr.components.ml.ml_discovery_comp import discover_heads
+from nomarr.components.ml.ml_discovery_comp import discover_heads_no_db
 from nomarr.helpers.dto.calibration_dto import EnsureCalibrationsExistResult
 
 logger = logging.getLogger(__name__)
@@ -110,13 +110,13 @@ def check_missing_calibrations(models_dir: str) -> list[dict[str, str]]:
     logger.info(f"[calibration_download] Scanning for heads in {models_dir}")
 
     # Discover all heads
-    heads = discover_heads(models_dir)
+    heads = discover_heads_no_db(models_dir)
 
     missing = []
 
     for head in heads:
         # Determine expected calibration file path
-        model_path = head.sidecar.path
+        model_path = head.model_path
         model_dir = os.path.dirname(model_path)
         model_base = os.path.basename(model_path).rsplit(".", 1)[0]
 
@@ -133,7 +133,7 @@ def check_missing_calibrations(models_dir: str) -> list[dict[str, str]]:
                 missing.append(
                     {
                         "model": head.backbone,
-                        "head": head.sidecar.data.get("name", model_base),
+                        "head": head.name,
                         "path": calib_path,
                     },
                 )

@@ -35,7 +35,7 @@ async def lifespan(_app_instance: FastAPI):
     """
     from nomarr.app import application
 
-    logger.info("[API] FastAPI starting (Application already initialized)")
+    logger.info("[API] Serving at http://%s:%d/", application.api_host, application.api_port)
     try:
         yield
     finally:

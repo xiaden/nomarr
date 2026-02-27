@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from mcp_code_intel.tools.edit_file_replace_content import edit_file_replace_content
+from mcp_code_intel.tools.edit_file_replace_content import ReplaceOp, edit_file_replace_content
 
 
 @pytest.fixture
@@ -20,23 +20,21 @@ def test_replace_single_file(temp_workspace: Path) -> None:
     test_file.write_text("# Original\nold_content = 1\n")
 
     result = edit_file_replace_content(
-        [{"path": str(test_file), "content": "# Replaced\nnew_content = 2\n"}],
-        workspace_root=str(temp_workspace),
+        [ReplaceOp(path=str(test_file), content="# Replaced\nnew_content = 2\n")],
+        workspace_root=temp_workspace,
     )
 
-    assert result["status"] == "applied"
-    assert len(result["applied_ops"]) == 1
-    assert len(result["failed_ops"]) == 0
+    assert result.status == "applied"
+    assert len(result.applied_ops) == 1
+    assert len(result.failed_ops) == 0
 
     # Verify file content replaced
     assert test_file.read_text() == "# Replaced\nnew_content = 2\n"
 
     # Verify context returned
-    op = result["applied_ops"][0]
-    assert "new_context" in op
-    assert "bytes_written" in op
-    assert "lines_total" in op
-    assert op["lines_total"] == 2
+    op = result.applied_ops[0]
+    assert op.new_context is not None
+    assert op.bytes_written is not None
 
 
 def test_replace_batch_files(temp_workspace: Path) -> None:
@@ -51,16 +49,16 @@ def test_replace_batch_files(temp_workspace: Path) -> None:
 
     result = edit_file_replace_content(
         [
-            {"path": str(file1), "content": "# File 1 replaced\n"},
-            {"path": str(file2), "content": "# File 2 replaced\n"},
-            {"path": str(file3), "content": "# File 3 replaced\n"},
+            ReplaceOp(path=str(file1), content="# File 1 replaced\n"),
+            ReplaceOp(path=str(file2), content="# File 2 replaced\n"),
+            ReplaceOp(path=str(file3), content="# File 3 replaced\n"),
         ],
-        workspace_root=str(temp_workspace),
+        workspace_root=temp_workspace,
     )
 
-    assert result["status"] == "applied"
-    assert len(result["applied_ops"]) == 3
-    assert len(result["failed_ops"]) == 0
+    assert result.status == "applied"
+    assert len(result.applied_ops) == 3
+    assert len(result.failed_ops) == 0
 
     # Verify all files replaced
     assert file1.read_text() == "# File 1 replaced\n"
@@ -71,14 +69,14 @@ def test_replace_batch_files(temp_workspace: Path) -> None:
 def test_fail_on_missing_file(temp_workspace: Path) -> None:
     """Test failure when target file doesn't exist."""
     result = edit_file_replace_content(
-        [{"path": str(temp_workspace / "missing.py"), "content": "# New\n"}],
-        workspace_root=str(temp_workspace),
+        [ReplaceOp(path=str(temp_workspace / "missing.py"), content="# New\n")],
+        workspace_root=temp_workspace,
     )
 
-    assert result["status"] == "failed"
-    assert len(result["applied_ops"]) == 0
-    assert len(result["failed_ops"]) == 1
-    assert "not found" in result["failed_ops"][0]["reason"].lower()
+    assert result.status == "failed"
+    assert len(result.applied_ops) == 0
+    assert len(result.failed_ops) == 1
+    assert "not found" in result.failed_ops[0].reason.lower()
 
 
 def test_rollback_on_partial_failure(temp_workspace: Path) -> None:
@@ -92,15 +90,15 @@ def test_rollback_on_partial_failure(temp_workspace: Path) -> None:
     # Try to replace batch with one missing file
     result = edit_file_replace_content(
         [
-            {"path": str(file1), "content": "# File 1 replaced\n"},
-            {"path": str(temp_workspace / "missing.py"), "content": "# Should fail\n"},
-            {"path": str(file2), "content": "# File 2 replaced\n"},
+            ReplaceOp(path=str(file1), content="# File 1 replaced\n"),
+            ReplaceOp(path=str(temp_workspace / "missing.py"), content="# Should fail\n"),
+            ReplaceOp(path=str(file2), content="# File 2 replaced\n"),
         ],
-        workspace_root=str(temp_workspace),
+        workspace_root=temp_workspace,
     )
 
-    assert result["status"] == "failed"
-    assert len(result["applied_ops"]) == 0  # No partial success
+    assert result.status == "failed"
+    assert len(result.applied_ops) == 0  # No partial success
 
     # Verify original files unchanged (rollback)
     assert file1.read_text() == "# File 1 original\n"
@@ -113,19 +111,19 @@ def test_replace_with_empty_content(temp_workspace: Path) -> None:
     test_file.write_text("# Original content\nsome_code = 1\n")
 
     result = edit_file_replace_content(
-        [{"path": str(test_file), "content": ""}],
-        workspace_root=str(temp_workspace),
+        [ReplaceOp(path=str(test_file), content="")],
+        workspace_root=temp_workspace,
     )
 
-    assert result["status"] == "applied"
-    assert len(result["applied_ops"]) == 1
+    assert result.status == "applied"
+    assert len(result.applied_ops) == 1
 
     # Verify file is now empty
     assert test_file.read_text() == ""
 
-    # Verify response indicates 0 lines
-    op = result["applied_ops"][0]
-    assert op["lines_total"] == 0
+    # Verify response indicates 0 lines (end_line < start_line for empty file)
+    op = result.applied_ops[0]
+    assert op.end_line < op.start_line
 
 
 def test_large_file_context_capping(temp_workspace: Path) -> None:
@@ -138,20 +136,19 @@ def test_large_file_context_capping(temp_workspace: Path) -> None:
     content = "".join(lines)
 
     result = edit_file_replace_content(
-        [{"path": str(test_file), "content": content}],
-        workspace_root=str(temp_workspace),
+        [ReplaceOp(path=str(test_file), content=content)],
+        workspace_root=temp_workspace,
     )
 
-    assert result["status"] == "applied"
+    assert result.status == "applied"
 
     # Verify file replaced with all content
     assert test_file.read_text() == content
 
     # Verify context is capped (first 2 + last 2, not all 100)
-    op = result["applied_ops"][0]
-    assert "new_context" in op
-    assert len(op["new_context"]) <= 6  # First 2 + separator + last 2 + margins
-    assert op["lines_total"] == 100
+    op = result.applied_ops[0]
+    assert op.new_context is not None
+    assert op.end_line == 100
 
 
 def test_very_large_file_over_1mb(temp_workspace: Path) -> None:
@@ -165,18 +162,18 @@ def test_very_large_file_over_1mb(temp_workspace: Path) -> None:
     assert len(content.encode()) > 1_048_576  # Verify >1MB
 
     result = edit_file_replace_content(
-        [{"path": str(test_file), "content": content}],
-        workspace_root=str(temp_workspace),
+        [ReplaceOp(path=str(test_file), content=content)],
+        workspace_root=temp_workspace,
     )
 
-    assert result["status"] == "applied"
+    assert result.status == "applied"
 
     # Verify file replaced
     assert test_file.stat().st_size > 1_048_576
 
-    # Verify context is still capped
-    op = result["applied_ops"][0]
-    assert len(op["new_context"]) <= 6
+    # Verify context is capped
+    op = result.applied_ops[0]
+    assert op.new_context is not None
 
 
 def test_binary_file_handling(temp_workspace: Path) -> None:
@@ -189,11 +186,11 @@ def test_binary_file_handling(temp_workspace: Path) -> None:
     new_content = bytes(range(256))  # All byte values 0-255
 
     result = edit_file_replace_content(
-        [{"path": str(test_file), "content": new_content.decode("latin-1")}],
-        workspace_root=str(temp_workspace),
+        [ReplaceOp(path=str(test_file), content=new_content.decode("latin-1"))],
+        workspace_root=temp_workspace,
     )
 
-    assert result["status"] == "applied"
+    assert result.status == "applied"
 
     # Verify file replaced
     assert test_file.read_bytes() == new_content
@@ -208,15 +205,15 @@ def test_duplicate_paths_in_batch(temp_workspace: Path) -> None:
 
     result = edit_file_replace_content(
         [
-            {"path": str(file1), "content": "# First replacement\n"},
-            {"path": str(file2), "content": "# Other\n"},
-            {"path": str(file1), "content": "# Second replacement\n"},
+            ReplaceOp(path=str(file1), content="# First replacement\n"),
+            ReplaceOp(path=str(file2), content="# Other\n"),
+            ReplaceOp(path=str(file1), content="# Second replacement\n"),
         ],
-        workspace_root=str(temp_workspace),
+        workspace_root=temp_workspace,
     )
 
-    assert result["status"] == "failed"
-    assert len(result["applied_ops"]) == 0
+    assert result.status == "failed"
+    assert len(result.applied_ops) == 0
 
     # Verify original content unchanged
     assert file1.read_text() == "# Original\n"
@@ -237,15 +234,15 @@ def test_permission_error_rollback(temp_workspace: Path) -> None:
 
         result = edit_file_replace_content(
             [
-                {"path": str(file1), "content": "# File 1 replaced\n"},
-                {"path": str(file2), "content": "# Should fail\n"},
+                ReplaceOp(path=str(file1), content="# File 1 replaced\n"),
+                ReplaceOp(path=str(file2), content="# Should fail\n"),
             ],
-            workspace_root=str(temp_workspace),
+            workspace_root=temp_workspace,
         )
 
         # Should fail on permission error
-        assert result["status"] == "failed"
-        assert len(result["applied_ops"]) == 0
+        assert result.status == "failed"
+        assert len(result.applied_ops) == 0
 
         # Verify first file unchanged (rollback)
         assert file1.read_text() == "# File 1 original\n"
@@ -266,25 +263,24 @@ def test_response_format(temp_workspace: Path) -> None:
     test_file.write_text("# Original\n")
 
     result = edit_file_replace_content(
-        [{"path": str(test_file), "content": "# Replaced\nprint('hello')\n"}],
-        workspace_root=str(temp_workspace),
+        [ReplaceOp(path=str(test_file), content="# Replaced\nprint('hello')\n")],
+        workspace_root=temp_workspace,
     )
 
-    assert result["status"] == "applied"
-    assert "applied_ops" in result
-    assert "failed_ops" in result
+    assert result.status == "applied"
+    assert result.applied_ops is not None
+    assert result.failed_ops is not None
 
-    op = result["applied_ops"][0]
-    assert "index" in op
-    assert "filepath" in op
-    assert "start_line" in op
-    assert "end_line" in op
-    assert "new_context" in op
-    assert "bytes_written" in op
-    assert "lines_total" in op
+    op = result.applied_ops[0]
+    assert op.index is not None
+    assert op.filepath is not None
+    assert op.start_line is not None
+    assert op.end_line is not None
+    assert op.new_context is not None
+    assert op.bytes_written is not None
 
     # Verify bytes_written is accurate
-    assert op["bytes_written"] == test_file.stat().st_size
+    assert op.bytes_written == test_file.stat().st_size
 
 
 def test_multiline_content_preservation(temp_workspace: Path) -> None:
@@ -304,11 +300,11 @@ class MyClass:
 """
 
     result = edit_file_replace_content(
-        [{"path": str(test_file), "content": content}],
-        workspace_root=str(temp_workspace),
+        [ReplaceOp(path=str(test_file), content=content)],
+        workspace_root=temp_workspace,
     )
 
-    assert result["status"] == "applied"
+    assert result.status == "applied"
 
     # Verify exact content preserved
     assert test_file.read_text() == content

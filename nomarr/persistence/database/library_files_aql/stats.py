@@ -140,7 +140,7 @@ class LibraryFilesStatsMixin:
             self.db.aql.execute(
                 """
                 RETURN LENGTH(
-                  FOR edge IN song_tag_edges
+                  FOR edge IN song_has_tags
                     LET tag = DOCUMENT(edge._to)
                     FILTER STARTS_WITH(tag.rel, CONCAT(@namespace, ":"))
                     COLLECT file_id = edge._from
@@ -197,10 +197,10 @@ class LibraryFilesStatsMixin:
         return {"artist_rows": artist_rows, "album_rows": album_rows}
 
     def clear_library_data(self) -> None:
-        """Clear all library files and song_tag_edges.
+        """Clear all library files and song_has_tags.
 
         WARNING: This is a cross-collection operation that deletes from:
-        - song_tag_edges
+        - song_has_tags
         - library_files
         """
         # Truncate vectors_track collections first (derived data — per-backbone)
@@ -210,8 +210,8 @@ class LibraryFilesStatsMixin:
                 self.db.collection(coll_name).truncate()
         # Delete segment_scores_stats (derived data)
         self.db.aql.execute("FOR doc IN segment_scores_stats REMOVE doc IN segment_scores_stats")
-        # Delete song_tag_edges (edge collection)
-        self.db.aql.execute("FOR edge IN song_tag_edges REMOVE edge IN song_tag_edges")
+        # Delete song_has_tags (edge collection)
+        self.db.aql.execute("FOR edge IN song_has_tags REMOVE edge IN song_has_tags")
         # Delete library_files
         self.db.aql.execute("FOR file IN library_files REMOVE file IN library_files")
 
@@ -251,7 +251,7 @@ class LibraryFilesStatsMixin:
                     LET distance = ABS(tag.value - @target_value)
 
                     // Find files with this tag
-                    FOR edge IN song_tag_edges
+                    FOR edge IN song_has_tags
                         FILTER edge._to == tag._id
                         LET file = DOCUMENT(edge._from)
                         FILTER file != null
@@ -261,7 +261,7 @@ class LibraryFilesStatsMixin:
 
                         // Get all tags for the file
                         LET all_tags = (
-                            FOR e2 IN song_tag_edges
+                            FOR e2 IN song_has_tags
                                 FILTER e2._from == file._id
                                 LET t2 = DOCUMENT(e2._to)
                                 FILTER t2 != null
@@ -295,7 +295,7 @@ class LibraryFilesStatsMixin:
                     FILTER tag.rel == @tag_key AND tag.value == @target_value
 
                     // Find files with this tag
-                    FOR edge IN song_tag_edges
+                    FOR edge IN song_has_tags
                         FILTER edge._to == tag._id
                         LET file = DOCUMENT(edge._from)
                         FILTER file != null
@@ -305,7 +305,7 @@ class LibraryFilesStatsMixin:
 
                         // Get all tags for the file
                         LET all_tags = (
-                            FOR e2 IN song_tag_edges
+                            FOR e2 IN song_has_tags
                                 FILTER e2._from == file._id
                                 LET t2 = DOCUMENT(e2._to)
                                 FILTER t2 != null

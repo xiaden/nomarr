@@ -498,7 +498,7 @@ class WorkerSystemService(ComponentLifecycleHandler):
             return
 
         actual_worker_count = tier_selection.calculated_workers
-        logger.info(
+        logger.debug(
             "[WorkerSystemService] Starting %d discovery worker(s) at %s",
             actual_worker_count,
             tier_selection.config.description,
@@ -516,6 +516,7 @@ class WorkerSystemService(ComponentLifecycleHandler):
         self._stop_event.clear()
 
         # Create and start workers with stagger delay, registering each with HealthMonitor
+        started_workers: list[str] = []
         for i in range(actual_worker_count):
             # Stagger worker starts to avoid resource contention
             if i > 0:
@@ -550,9 +551,13 @@ class WorkerSystemService(ComponentLifecycleHandler):
                     policy=DEFAULT_WORKER_POLICY,
                 )
 
-            logger.info("[WorkerSystemService] Started worker:tag:%d (pid=%s)", i, worker.pid)
+            started_workers.append(f"worker:tag:{i} (pid={worker.pid})")
 
-        logger.info("[WorkerSystemService] Started %d worker(s)", actual_worker_count)
+        logger.info(
+            "[WorkerSystemService] Started %d worker(s): %s",
+            actual_worker_count,
+            ", ".join(started_workers),
+        )
         self._started = True
 
     def stop_all_workers(self, timeout: float = 10.0) -> None:

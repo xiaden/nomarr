@@ -95,8 +95,9 @@ def reconstruct_head_outputs_from_stats(
             raw_std = stat["std"]
 
             # Apply calibration to regression mean BEFORE tier logic
-            reg_label = stat["label"]
+            reg_label = normalize_tag_label(stat["label"])
             calib_scale = 1.0
+            applied_calibration_id: str | None = None
             if calibrations and reg_label in calibrations:
                 calib_data = calibrations[reg_label]
                 mean_val = apply_minmax_calibration(raw_mean, calib_data)
@@ -104,6 +105,7 @@ def reconstruct_head_outputs_from_stats(
                 span = p95 - p5
                 if span > 0:
                     calib_scale = 1.0 / span
+                applied_calibration_id = f"minmax_{calib_data.get('calibration_def_hash')}"
             else:
                 mean_val = raw_mean
 
@@ -119,15 +121,17 @@ def reconstruct_head_outputs_from_stats(
                     stability_thresholds=stability_thresholds,
                     regression_thresholds=regression_thresholds,
                     log_prefix="reconstruction",
+                    applied_calibration_id=applied_calibration_id,
                 ),
             )
         else:
             # Classification head: reconstruct from numeric tags + segment std
-            spec = HeadSpec.from_sidecar(head_info.sidecar)
+            spec = HeadSpec.from_head_info(head_info)
             is_multiclass = head_is_multiclass(spec)
 
             probs = np.zeros(len(spec.labels), dtype=np.float32)
             segment_std_array = np.zeros(len(spec.labels), dtype=np.float32)
+            calibration_ids_by_norm_label: dict[str, str | None] = {}
 
             for i, label in enumerate(spec.labels):
                 norm_label = normalize_tag_label(label)
@@ -136,16 +140,23 @@ def reconstruct_head_outputs_from_stats(
                     calib_method="none",
                     calib_version=0,
                 )
+
+                # Compute calib_scale from calibration data whenever it exists,
+                # independently of whether this label's score is in numeric_tags.
+                # This ensures std is correctly scaled even if the tag value is missing.
                 calib_scale = 1.0
+                label_calib: dict[str, Any] | None = calibrations.get(norm_label) if calibrations else None
+                if label_calib is not None:
+                    p5, p95 = label_calib.get("p5", 0.0), label_calib.get("p95", 1.0)
+                    span = p95 - p5
+                    if span > 0:
+                        calib_scale = 1.0 / span
+                    calibration_ids_by_norm_label[norm_label] = f"minmax_{label_calib.get('calibration_def_hash')}"
+
                 if model_key in numeric_tags:
                     raw_prob = numeric_tags[model_key]
-                    if calibrations and norm_label in calibrations:
-                        calib_data = calibrations[norm_label]
-                        probs[i] = apply_minmax_calibration(raw_prob, calib_data)
-                        p5, p95 = calib_data.get("p5", 0.0), calib_data.get("p95", 1.0)
-                        span = p95 - p5
-                        if span > 0:
-                            calib_scale = 1.0 / span
+                    if label_calib is not None:
+                        probs[i] = apply_minmax_calibration(raw_prob, label_calib)
                     else:
                         probs[i] = raw_prob
 
@@ -182,7 +193,7 @@ def reconstruct_head_outputs_from_stats(
                         label=label,
                         value=prob,
                         tier=tier_val,
-                        calibration_id=None,
+                        calibration_id=calibration_ids_by_norm_label.get(normalize_tag_label(label)),
                     ),
                 )
 
@@ -197,7 +208,7 @@ def reconstruct_head_outputs_from_stats(
                         label=label,
                         value=float(prob),
                         tier=None,
-                        calibration_id=None,
+                        calibration_id=calibration_ids_by_norm_label.get(normalize_tag_label(label)),
                     ),
                 )
 

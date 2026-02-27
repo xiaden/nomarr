@@ -21,10 +21,12 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Generator
+from typing import TYPE_CHECKING
 
 from nomarr.components.ml.ml_discovery_comp import (
     discover_backbone_models,
     discover_head_models,
+    discover_head_models_no_db,
 )
 from nomarr.components.ml.ml_onnx_backbone import ONNXBackboneModel
 from nomarr.components.ml.ml_onnx_base import (
@@ -33,6 +35,9 @@ from nomarr.components.ml.ml_onnx_base import (
     VramFitError,
 )
 from nomarr.components.ml.ml_onnx_head import ONNXHeadModel
+
+if TYPE_CHECKING:
+    from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +56,7 @@ class ONNXModelCache:
 
     Example usage::
 
-        cache = ONNXModelCache("/models", device="gpu")
+        cache = ONNXModelCache("/models", device="gpu", db=my_db)
         cache.warm = True    # load all sessions via coordinator
         emb = cache.backbones["effnet"].run(waveform)
         # ... run heads ...
@@ -64,7 +69,12 @@ class ONNXModelCache:
     heads: dict[str, list[ONNXHeadModel]]
     """Head models keyed by backbone name; each list is sorted by model name."""
 
-    def __init__(self, models_dir: str, device: DevicePlacement) -> None:
+    def __init__(
+        self,
+        models_dir: str,
+        device: DevicePlacement,
+        db: Database | None = None,
+    ) -> None:
         """Discover all ONNX models under *models_dir* and prepare them for warming.
 
         No sessions are loaded during construction.  Set ``warm = True`` to
@@ -73,12 +83,18 @@ class ONNXModelCache:
         Args:
             models_dir: Root directory containing backbone sub-directories.
             device: Default execution device (``"cpu"`` or ``"gpu"``).
+            db: Optional database handle; when provided, head labels and
+                release dates are sourced from the database.
         """
         self._models_dir = models_dir
         self._device: DevicePlacement = device
 
         backbone_list: list[ONNXBackboneModel] = discover_backbone_models(models_dir)  # type: ignore[assignment]
-        head_list: list[ONNXHeadModel] = discover_head_models(models_dir)  # type: ignore[assignment]
+        head_list: list[ONNXHeadModel] = (
+            discover_head_models(models_dir, db)  # type: ignore[assignment]
+            if db is not None
+            else discover_head_models_no_db(models_dir)  # type: ignore[assignment]
+        )
 
         self.backbones = {m.backbone_name: m for m in backbone_list}
 
@@ -86,7 +102,7 @@ class ONNXModelCache:
         for head in head_list:
             self.heads.setdefault(head.backbone_name, []).append(head)
 
-        logger.info(
+        logger.debug(
             "[cache] Discovered %d backbone(s), %d head(s) in %s (device=%s)",
             len(self.backbones),
             len(head_list),
@@ -138,7 +154,7 @@ class ONNXModelCache:
                         m._path,
                     )
                 loaded += 1
-            logger.info(
+            logger.debug(
                 "[cache] Warmed %d model(s) (preferred device=%s)",
                 loaded,
                 self._device,

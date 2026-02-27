@@ -78,7 +78,7 @@ def compute_model_set_hash(models_dir: str) -> str:
     try:
         for root, _dirs, files in sorted(os.walk(models_dir)):
             for filename in sorted(files):
-                if filename.endswith((".pb", ".h5", ".json")):
+                if filename.endswith(".onnx"):
                     filepath = os.path.join(root, filename)
                     rel_path = os.path.relpath(filepath, models_dir)
                     file_size = os.path.getsize(filepath)
@@ -199,10 +199,10 @@ def _run_capacity_probe(
 
         # Import ML components to trigger model loading
         # This simulates the actual resource usage during processing
-        from nomarr.components.ml.ml_discovery_comp import discover_heads
+        from nomarr.components.ml.ml_discovery_comp import discover_heads_no_db
 
         # Discover heads to understand model requirements
-        heads = discover_heads(models_dir)
+        heads = discover_heads_no_db(models_dir)
         if not heads:
             logger.warning(
                 "[ml_capacity_probe] No heads found in %s, using conservative estimates",

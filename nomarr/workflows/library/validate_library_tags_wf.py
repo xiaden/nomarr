@@ -28,14 +28,12 @@ def validate_library_tags_workflow(
     Missing any head rel marks the file incomplete. Auto-repair marks incomplete
     files ``needs_tagging=true`` to trigger full reprocessing on the next scan.
     """
-    heads = discover_heads(models_dir)
+    heads = discover_heads(models_dir, db)
     expected_heads: list[dict[str, Any]] = []
     for head in heads:
         embedder_date = "unknown"
-        if head.embedding_sidecar:
-            embedder_release = head.embedding_sidecar.data.get("release_date", "")
-            if embedder_release:
-                embedder_date = embedder_release.replace("-", "")
+        if head.embedder_release_date:
+            embedder_date = head.embedder_release_date.replace("-", "")
 
         model_key = f"{head.backbone}-{embedder_date}"
         expected_heads.append(
@@ -75,7 +73,7 @@ def validate_library_tags_workflow(
       FILTER file.is_valid == true
       {filter_library_clause}
       LET matched_heads = UNIQUE(
-        FOR edge IN song_tag_edges
+        FOR edge IN song_has_tags
           FILTER edge._from == file._id
           LET tag = DOCUMENT(edge._to)
           FILTER tag != null

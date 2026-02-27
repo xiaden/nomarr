@@ -59,16 +59,16 @@ def save_calibration_sidecars(calibration_data: dict[str, Any], models_dir: str,
         Summary of saved files with paths and tag counts
 
     """
-    from nomarr.components.ml.ml_discovery_comp import discover_heads
+    from nomarr.components.ml.ml_discovery_comp import discover_heads_no_db
     logger.info("[calibration] Saving calibration sidecars")
-    heads = discover_heads(models_dir)
+    heads = discover_heads_no_db(models_dir)
     if not heads:
         msg = f"No heads found in {models_dir}"
         raise ValueError(msg)
     head_lookup = {}
     for head_info in heads:
-        head_date = head_info.sidecar.data.get("release_date", "").replace("-", "")
-        for label in head_info.sidecar.labels:
+        head_date = head_info.head_release_date.replace("-", "")
+        for label in head_info.labels:
             from nomarr.components.tagging.mood_labels_comp import normalize_tag_label
             norm_label = normalize_tag_label(label)
             key = (head_info.backbone, head_date, norm_label)
@@ -86,7 +86,7 @@ def save_calibration_sidecars(calibration_data: dict[str, Any], models_dir: str,
             logger.debug(f"[calibration] No head found for {tag_key} (backbone={backbone}, date={head_date}, label={label})")
             continue
         head_info = head_info_maybe
-        model_path = head_info.sidecar.path
+        model_path = head_info.model_path
         model_dir = os.path.dirname(model_path)
         model_base = os.path.basename(model_path).rsplit(".", 1)[0]
         if model_path not in model_calibrations:

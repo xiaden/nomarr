@@ -11,7 +11,10 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from nomarr.components.ml.ml_discovery_comp import discover_backbones, discover_heads
+from nomarr.components.ml.ml_discovery_comp import (
+    discover_backbones,
+    discover_heads,
+)
 from nomarr.persistence.db import Database
 
 if TYPE_CHECKING:
@@ -63,6 +66,10 @@ class MLService:
     def discover_heads(self) -> list[HeadInfo]:
         """Discover all available model heads in models directory.
 
+        Only returns heads whose corresponding ``ml_models`` entry is
+        ``fully_configured=True``.  Unconfigured models are logged as
+        warnings and excluded from inference.
+
         Returns:
             List of HeadInfo objects describing available models
 
@@ -71,8 +78,8 @@ class MLService:
 
         """
         try:
-            heads = discover_heads(self.cfg.models_dir)
-            logger.info(f"[MLService] Discovered {len(heads)} model heads")
+            heads = discover_heads(self.cfg.models_dir, self.db)
+            logger.info("[MLService] Discovered %d model heads", len(heads))
             return heads
         except Exception as e:
             logger.exception("[MLService] Model discovery failed")

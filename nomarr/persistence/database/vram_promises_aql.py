@@ -66,8 +66,7 @@ class VramPromisesOperations:
     The AQL fit-check is a single write statement — its atomicity relies on
     ArangoDB serialising concurrent writes to the same document key. Race
     conditions between two workers reading the aggregate before either inserts
-    are theoretically possible but practically unlikely: workers serialise GPU
-    warm-up via the gpu_warmup_claims collection, and the 256 MB reserve
+    are theoretically possible but practically unlikely; the 256 MB reserve
     provides an additional safety buffer.
     """
 

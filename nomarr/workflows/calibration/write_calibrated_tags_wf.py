@@ -312,7 +312,7 @@ def write_calibrated_tags_wf(
     # Use discovered heads or discover them
     heads_list: list[Any]
     if heads is None:
-        heads_list = discover_heads(models_dir)
+        heads_list = discover_heads(models_dir, db)
         if not heads_list:
             msg = f"No heads discovered in {models_dir}"
             raise ValueError(msg)

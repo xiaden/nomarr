@@ -91,7 +91,7 @@ class BaseONNXModel(ABC):
             VramFitError: If ``device == "gpu"`` and the VRAM coordinator
                 rejects the GPU placement request.
         """
-        vram_limit_bytes = 0
+        vram_limit_bytes: int | None = None
         if device == "gpu":
             ctx = _worker_ctx.get_worker_context()
             if ctx is not None:
@@ -99,17 +99,24 @@ class BaseONNXModel(ABC):
                 raw = db.meta.get(f"{_VRAM_META_PREFIX}{self._path}")
                 if raw is not None:
                     vram_limit_bytes = int(raw)
+                logger.debug(
+                    "[model] load(%s) gpu: DB key=%s%s raw=%r vram_limit_bytes=%s",
+                    self._path,
+                    _VRAM_META_PREFIX,
+                    self._path,
+                    raw,
+                    vram_limit_bytes,
+                )
                 registered = _coordinator.register_vram_promise(
                     db,
                     worker_id,
                     os.getpid(),
                     self._path,
-                    vram_limit_bytes / (1024 * 1024),
+                    vram_limit_bytes / (1024 * 1024) if vram_limit_bytes is not None else 0.0,
                 )
                 if not registered:
                     raise VramFitError(
-                        f"VRAM coordinator rejected GPU placement for {self._path}: "
-                        f"insufficient fleet headroom"
+                        f"VRAM coordinator rejected GPU placement for {self._path}: insufficient fleet headroom"
                     )
 
         self._session = backend_onnx.create_session(
@@ -172,9 +179,75 @@ class BaseONNXModel(ABC):
     # ------------------------------------------------------------------
 
     @abstractmethod
-    def run(self, inputs: np.ndarray) -> np.ndarray:
-        """Run inference on *inputs*.
+    def _run(self, inputs: np.ndarray) -> np.ndarray:
+        """Execute one forward pass on *inputs*.
+
+        Subclasses implement this.  External callers use :meth:`run`, which
+        wraps this with BFC-arena OOM recovery.
 
         Raises:
             RuntimeError: If the model is not loaded.
+
         """
+
+    def run(self, inputs: np.ndarray) -> np.ndarray:
+        """Run inference, self-healing and falls back to CPU when needed.
+
+        The loop repeats until either:
+        - inference succeeds, or
+        - the model is running on CPU (no further VRAM adjustments possible),
+          in which case the error propagates.
+
+        Non-BFC errors (wrong shapes, missing session, etc.) are re-raised
+        immediately on the first occurrence.
+
+        Args:
+            inputs: Input tensor for the model.
+
+        Returns:
+            Float32 output array from the model.
+
+        Raises:
+            RuntimeError: If the model is not loaded, inputs are invalid, or
+                the error is not a recoverable BFC arena OOM.
+
+        """
+        from nomarr.components.ml.ml_vram_probe_comp import (
+            parse_oom_requested_bytes,
+            update_model_vram_from_oom,
+        )
+
+        while True:
+            try:
+                return self._run(inputs)
+            except Exception as e:
+                if self._device != "gpu":
+                    raise  # already on CPU — nothing to heal
+                requested = parse_oom_requested_bytes(e)
+                if requested is None:
+                    raise  # not a BFC arena OOM — propagate unchanged
+                ctx = _worker_ctx.get_worker_context()
+                if ctx is None:
+                    raise  # probe / test context — no DB, cannot self-heal
+                db, _ = ctx
+                new_limit = update_model_vram_from_oom(db, self._path, requested)
+                logger.warning(
+                    "[model] BFC OOM on %s (requested=%d bytes) — "
+                    "updated DB limit to %d bytes; reloading (will fall to CPU if still too large)",
+                    self._path,
+                    requested,
+                    new_limit,
+                )
+                # Force a reload to pick up the updated VRAM limit from DB.
+                # Cannot use self.device = "gpu" here — the setter is a no-op
+                # when _device is already "gpu" (session failed at inference
+                # time, not at load time).
+                self.unload()
+                try:
+                    self.load("gpu")
+                except VramFitError:
+                    # Coordinator rejected the larger limit — not enough free
+                    # VRAM in the fleet.  Model is already on CPU after the
+                    # VramFitError path in load().  Loop will see
+                    # self._device == "cpu" and raise on next iteration.
+                    self.load("cpu")
