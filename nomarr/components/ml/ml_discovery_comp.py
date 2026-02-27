@@ -6,15 +6,14 @@ Structure: ``models/<backbone>/embeddings/*.onnx`` and
 
 When a :class:`~nomarr.persistence.db.Database` is available,
 :func:`discover_heads` resolves labels and release dates from
-``ml_models`` / ``ml_model_outputs`` vertices rather than reading
-JSON sidecar files.
+``ml_models`` / ``ml_model_outputs`` vertices.  JSON sidecar files are
+**not** read at runtime — they are irrelevant for ONNX-only deployments.
 """
 
 from __future__ import annotations
 
 import glob
 import hashlib
-import json
 import logging
 import os
 from typing import TYPE_CHECKING, Any
@@ -257,16 +256,19 @@ def _discover_heads_from_db(models_dir: str, db: Database) -> list[HeadInfo]:
 
 
 def discover_heads_no_db(models_dir: str) -> list[HeadInfo]:
-    """Discover heads WITHOUT a database by walking ``*.json`` sidecar files.
+    """Discover heads WITHOUT a database by walking ``*.onnx`` files.
 
-    **For capacity probing and model-suite hashing only.**  Reads stale
-    on-disk sidecar files whose label data may diverge from the live
-    database.  Inference-path code must use :func:`discover_heads` with a
-    real :class:`Database` handle.
+    **For capacity probing and model-suite hashing only.**  Returns
+    :class:`HeadInfo` objects with empty labels — label data requires a
+    live database.  Inference-path code must use :func:`discover_heads`
+    with a real :class:`Database` handle.
+
+    JSON sidecar files are **not** read; they do not exist for ONNX-only
+    deployments.
     """
     heads: list[HeadInfo] = []
 
-    for backbone_dir in glob.glob(os.path.join(models_dir, "*")):
+    for backbone_dir in sorted(glob.glob(os.path.join(models_dir, "*"))):
         if not os.path.isdir(backbone_dir):
             continue
 
@@ -276,73 +278,29 @@ def discover_heads_no_db(models_dir: str) -> list[HeadInfo]:
         if not embedding_graph:
             continue
 
-        # Read embedder release date from first JSON sidecar in embeddings/
-        embedder_release_date = ""
-        for embed_folder in ("embeddings", "embedding"):
-            embed_dir = os.path.join(backbone_dir, embed_folder)
-            if not os.path.isdir(embed_dir):
-                continue
-            for jf in sorted(glob.glob(os.path.join(embed_dir, "*.json"))):
-                try:
-                    with open(jf, encoding="utf-8") as fh:
-                        edata = json.load(fh)
-                    if isinstance(edata, dict):
-                        embedder_release_date = str(edata.get("release_date", ""))
-                except Exception:
-                    pass
-                break  # first sidecar only
-            if embedder_release_date:
-                break
-
         heads_dir = os.path.join(backbone_dir, "heads")
         if not os.path.isdir(heads_dir):
             continue
 
-        for head_type_dir in glob.glob(os.path.join(heads_dir, "*")):
+        for head_type_dir in sorted(glob.glob(os.path.join(heads_dir, "*"))):
             if not os.path.isdir(head_type_dir):
                 continue
 
             head_type = os.path.basename(head_type_dir)
 
-            for json_path in glob.glob(os.path.join(head_type_dir, "*.json")):
-                try:
-                    with open(json_path, encoding="utf-8") as fh:
-                        data = json.load(fh)
-                    if not isinstance(data, dict):
-                        continue
-
-                    sidecar_name: str = data.get(
-                        "name",
-                        os.path.splitext(os.path.basename(json_path))[0],
+            for onnx_path in sorted(glob.glob(os.path.join(head_type_dir, "*.onnx"))):
+                model_stem = os.path.splitext(os.path.basename(onnx_path))[0]
+                heads.append(
+                    HeadInfo(
+                        name=model_stem,
+                        labels=[],
+                        backbone=backbone,
+                        head_type=head_type,
+                        model_stem=model_stem,
+                        model_path=onnx_path,
+                        embedding_graph=embedding_graph,
                     )
-                    classes_or_labels = data.get("classes") or data.get("labels") or []
-                    raw_labels: list[str] = (
-                        list(classes_or_labels) if isinstance(classes_or_labels, list) else []
-                    )
-
-                    # Derive model_stem — strip .json, same convention as ONNX stem
-                    model_stem = os.path.splitext(os.path.basename(json_path))[0]
-
-                    # Head ONNX path (co-located with JSON)
-                    onnx_path = os.path.splitext(json_path)[0] + ".onnx"
-                    model_path = onnx_path if os.path.exists(onnx_path) else json_path
-
-                    heads.append(
-                        HeadInfo(
-                            name=sidecar_name,
-                            labels=raw_labels,
-                            backbone=backbone,
-                            head_type=head_type,
-                            model_stem=model_stem,
-                            model_path=model_path,
-                            embedding_graph=embedding_graph,
-                            head_release_date=str(data.get("release_date", "")),
-                            embedder_release_date=embedder_release_date,
-                            is_regression_head=sidecar_name in _REGRESSION_HEADS,
-                        )
-                    )
-                except Exception:
-                    continue
+                )
 
     heads.sort(key=lambda h: h.name)
     return heads
@@ -427,12 +385,12 @@ def compute_model_suite_hash(
 
     This hash changes when:
     - Model files are added/removed
-    - Model release dates change
     - Backbone or head configurations change
 
-    The hash is computed from sorted (backbone, head_name, release_date) tuples
-    to ensure determinism across runs.  Uses :func:`discover_heads_no_db` to
-    read JSON sidecar files — no database connection required.
+    The hash is computed from sorted ``(backbone, model_stem)`` tuples by
+    walking ``*.onnx`` files directly.  No database connection required.
+    Release dates are not included because JSON sidecar files do not exist
+    for ONNX-only deployments.
 
     Args:
         models_dir: Directory containing model files.
@@ -447,20 +405,11 @@ def compute_model_suite_hash(
         if not heads:
             return "unknown"
 
-        model_signatures: list[tuple[str, str, str, str]] = [
-            (
-                head.backbone,
-                head.name,
-                head.head_release_date or "unknown",
-                head.embedder_release_date or "unknown",
-            )
-            for head in heads
-        ]
-
-        model_signatures.sort()
-        sig_str = "|".join(f"{b}:{n}:{hr}:{er}" for b, n, hr, er in model_signatures)
-        full_hash = hashlib.md5(sig_str.encode("utf-8")).hexdigest()
-        return full_hash[:12]
+        model_signatures: list[tuple[str, str]] = sorted(
+            (head.backbone, head.model_stem) for head in heads
+        )
+        sig_str = "|".join(f"{b}:{s}" for b, s in model_signatures)
+        return hashlib.md5(sig_str.encode("utf-8")).hexdigest()[:12]
 
     except Exception:
         return "unknown"

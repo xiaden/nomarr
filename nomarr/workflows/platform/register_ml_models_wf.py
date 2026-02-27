@@ -4,15 +4,13 @@ Walks the models directory for ``*.onnx`` files under
 ``<backbone>/heads/<type>/``, introspects each session for output shape,
 upserts model and output vertices, and seeds labels for known shipped models.
 
-Release dates are read from co-located JSON sidecars (one-time at
-registration) and stored on the ``ml_models`` vertex so that the
-inference pipeline never needs to touch sidecar files.
+JSON sidecar files are **not** read.  Release dates are stored as empty
+strings; they do not exist for ONNX-only deployments.
 """
 
 from __future__ import annotations
 
 import glob
-import json
 import logging
 import os
 from typing import TYPE_CHECKING
@@ -26,50 +24,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _read_sidecar_date(json_path: str) -> str:
-    """Read ``release_date`` from a JSON sidecar file.
-
-    Args:
-        json_path: Absolute path to the ``.json`` sidecar.
-
-    Returns:
-        ISO date string (e.g. ``"2022-08-25"``) or empty string
-        if the file is missing, unreadable, or lacks the key.
-
-    """
-    try:
-        with open(json_path, encoding="utf-8") as fh:
-            data = json.load(fh)
-        if isinstance(data, dict):
-            return str(data.get("release_date", ""))
-    except Exception:
-        pass
-    return ""
-
-
-def _find_embedder_release_date(onnx_head_path: str) -> str:
-    """Resolve the backbone sidecar and return its ``release_date``.
-
-    Given a head path like ``models/<backbone>/heads/<type>/model.onnx``,
-    navigates to ``models/<backbone>/embeddings/*.json`` (or the
-    ``embedding/`` variant) and reads the first sidecar found.
-
-    """
-    head_dir = os.path.dirname(onnx_head_path)          # …/heads/<type>
-    heads_dir = os.path.dirname(head_dir)                # …/heads
-    backbone_dir = os.path.dirname(heads_dir)            # …/<backbone>
-
-    for embed_folder in ("embeddings", "embedding"):
-        embed_dir = os.path.join(backbone_dir, embed_folder)
-        if not os.path.isdir(embed_dir):
-            continue
-        for jf in sorted(glob.glob(os.path.join(embed_dir, "*.json"))):
-            date = _read_sidecar_date(jf)
-            if date:
-                return date
-    return ""
-
-
 def register_ml_models_workflow(
     db: Database,
     models_dir: str,
@@ -80,10 +34,9 @@ def register_ml_models_workflow(
 
     1. Parse path metadata (backbone, head type, model stem)
     2. Introspect ONNX session for output dimension count
-    3. Read release dates from co-located JSON sidecars
-    4. Upsert model vertex into ``ml_models``
-    5. Ensure output vertices exist in ``ml_model_outputs``
-    6. Seed labels from known defaults if the model is shipped by nomarr
+    3. Upsert model vertex into ``ml_models``
+    4. Ensure output vertices exist in ``ml_model_outputs``
+    5. Seed labels from known defaults if the model is shipped by nomarr
 
     Models with all outputs labeled are marked ``fully_configured=True``.
     Unknown models remain unconfigured until the user labels them via UI.
@@ -113,12 +66,7 @@ def register_ml_models_workflow(
         output_shape = session.get_outputs()[0].shape
         output_count = int(output_shape[-1])
 
-        # Step 3: Read release dates from JSON sidecars
-        head_json = os.path.splitext(onnx_path)[0] + ".json"
-        head_release_date = _read_sidecar_date(head_json)
-        embedder_release_date = _find_embedder_release_date(onnx_path)
-
-        # Step 4: Upsert model vertex
+        # Step 3: Upsert model vertex
         known_outputs = get_known_outputs(model_stem)
         source = "known" if known_outputs is not None else "discovered"
         model_doc = db.ml_models.upsert_model(
@@ -128,15 +76,13 @@ def register_ml_models_workflow(
             model_stem=model_stem,
             output_count=output_count,
             source=source,
-            head_release_date=head_release_date,
-            embedder_release_date=embedder_release_date,
         )
         model_id: str = model_doc["_id"]
 
-        # Step 5: Ensure output vertices exist
+        # Step 4: Ensure output vertices exist
         outputs = db.ml_model_outputs.upsert_outputs(model_id, output_count)
 
-        # Step 6: Seed labels for known shipped models
+        # Step 5: Seed labels for known shipped models
         if known_outputs is not None:
             for output_index, label, is_positive, display_hint in known_outputs:
                 output_doc = outputs[output_index]
