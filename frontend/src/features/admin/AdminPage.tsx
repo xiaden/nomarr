@@ -2,7 +2,6 @@
  * Admin page.
  *
  * Features:
- * - Worker control (pause/resume)
  * - Server restart
  * - Inspect tags (debug tool)
  */
@@ -14,21 +13,15 @@ import { ConfirmDialog, PageContainer } from "@shared/components/ui";
 import { InspectTags } from "./components/InspectTags";
 import { SystemControls } from "./components/SystemControls";
 import { VectorMaintenance } from "./components/VectorMaintenance";
-import { WorkerControls } from "./components/WorkerControls";
 import { useAdminActions } from "./hooks/useAdminActions";
 
 export function AdminPage() {
-  const { actionLoading, handlePauseWorker, handleResumeWorker, handleRestart, dialogState } =
+  const { actionLoading, handleRestart, dialogState } =
     useAdminActions();
 
   return (
     <PageContainer title="Admin">
       <Stack spacing={2.5}>
-        <WorkerControls
-          onPause={handlePauseWorker}
-          onResume={handleResumeWorker}
-          actionLoading={actionLoading}
-        />
         <SystemControls onRestart={handleRestart} actionLoading={actionLoading} />
         <VectorMaintenance />
         <InspectTags />

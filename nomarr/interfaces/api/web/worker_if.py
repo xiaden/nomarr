@@ -9,8 +9,6 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from nomarr.interfaces.api.auth import verify_session
-from nomarr.interfaces.api.types.admin_types import WorkerOperationResponse
-from nomarr.interfaces.api.web.dependencies import get_workers_coordinator
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/worker", tags=["worker"])
@@ -22,20 +20,6 @@ class RestartResponse(BaseModel):
 
     status: str
     message: str
-
-
-@router.post("/pause", dependencies=[Depends(verify_session)])
-async def web_admin_worker_pause(workers_coordinator=Depends(get_workers_coordinator)) -> WorkerOperationResponse:
-    """Pause all workers (web UI proxy)."""
-    result = workers_coordinator.pause_all_workers()
-    return WorkerOperationResponse.from_dto(result)
-
-
-@router.post("/resume", dependencies=[Depends(verify_session)])
-async def web_admin_worker_resume(workers_coordinator=Depends(get_workers_coordinator)) -> WorkerOperationResponse:
-    """Resume all workers (web UI proxy)."""
-    result = workers_coordinator.resume_all_workers()
-    return WorkerOperationResponse.from_dto(result)
 
 
 @router.post("/restart", dependencies=[Depends(verify_session)])
