@@ -1,4 +1,4 @@
-"""V013: Add ml_models, ml_model_outputs, and tag_model_output collections.
+"""V014: Add ml_models, ml_model_outputs, and tag_model_output collections.
 
 Background
 ----------
@@ -67,17 +67,17 @@ def upgrade(db: DatabaseLike) -> None:  # type: ignore[override]
     if not db.has_collection("ml_models"):  # type: ignore[union-attr]
         with contextlib.suppress(CollectionCreateError):
             db.create_collection("ml_models")  # type: ignore[union-attr]
-        logger.info("Migration V013: Created ml_models collection")
+        logger.info("Migration V014: Created ml_models collection")
     else:
-        logger.info("Migration V013: ml_models already exists — skipping creation")
+        logger.info("Migration V014: ml_models already exists — skipping creation")
 
     try:
         coll = db.collection("ml_models")  # type: ignore[union-attr]
         coll.add_persistent_index(fields=["path"], unique=True, sparse=False)  # type: ignore[union-attr]
-        logger.info("Migration V013: Created unique persistent index on ml_models.path")
+        logger.info("Migration V014: Created unique persistent index on ml_models.path")
     except IndexCreateError as exc:
         if exc.http_code == 409:
-            logger.info("Migration V013: ml_models.path index already exists — skipping")
+            logger.info("Migration V014: ml_models.path index already exists — skipping")
         else:
             raise
 
@@ -87,9 +87,9 @@ def upgrade(db: DatabaseLike) -> None:  # type: ignore[override]
     if not db.has_collection("ml_model_outputs"):  # type: ignore[union-attr]
         with contextlib.suppress(CollectionCreateError):
             db.create_collection("ml_model_outputs")  # type: ignore[union-attr]
-        logger.info("Migration V013: Created ml_model_outputs collection")
+        logger.info("Migration V014: Created ml_model_outputs collection")
     else:
-        logger.info("Migration V013: ml_model_outputs already exists — skipping creation")
+        logger.info("Migration V014: ml_model_outputs already exists — skipping creation")
 
     try:
         coll = db.collection("ml_model_outputs")  # type: ignore[union-attr]
@@ -98,10 +98,10 @@ def upgrade(db: DatabaseLike) -> None:  # type: ignore[override]
             unique=True,
             sparse=False,
         )
-        logger.info("Migration V013: Created unique persistent index on ml_model_outputs.(model_id, output_index)")
+        logger.info("Migration V014: Created unique persistent index on ml_model_outputs.(model_id, output_index)")
     except IndexCreateError as exc:
         if exc.http_code == 409:
-            logger.info("Migration V013: ml_model_outputs.(model_id, output_index) index already exists — skipping")
+            logger.info("Migration V014: ml_model_outputs.(model_id, output_index) index already exists — skipping")
         else:
             raise
 
@@ -111,18 +111,18 @@ def upgrade(db: DatabaseLike) -> None:  # type: ignore[override]
     if not db.has_collection("tag_model_output"):  # type: ignore[union-attr]
         with contextlib.suppress(CollectionCreateError):
             db.create_collection("tag_model_output", edge=True)  # type: ignore[union-attr]
-        logger.info("Migration V013: Created tag_model_output edge collection")
+        logger.info("Migration V014: Created tag_model_output edge collection")
     else:
-        logger.info("Migration V013: tag_model_output already exists — skipping creation")
+        logger.info("Migration V014: tag_model_output already exists — skipping creation")
 
     try:
         coll = db.collection("tag_model_output")  # type: ignore[union-attr]
         coll.add_persistent_index(fields=["_to"], unique=False, sparse=False)  # type: ignore[union-attr]
-        logger.info("Migration V013: Created persistent index on tag_model_output._to")
+        logger.info("Migration V014: Created persistent index on tag_model_output._to")
     except IndexCreateError as exc:
         if exc.http_code == 409:
-            logger.info("Migration V013: tag_model_output._to index already exists — skipping")
+            logger.info("Migration V014: tag_model_output._to index already exists — skipping")
         else:
             raise
 
-    logger.info("Migration V013: Complete")
+    logger.info("Migration V014: Complete")

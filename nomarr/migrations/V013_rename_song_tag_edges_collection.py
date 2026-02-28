@@ -61,6 +61,15 @@ def upgrade(db: DatabaseLike) -> None:  # type: ignore[override]
         )
         return
 
+    if has_old and has_new:
+        # ensure_schema created song_has_tags (empty) before migrations ran.
+        # Drop the empty shell so the rename can proceed.
+        db.delete_collection(_NEW_NAME)  # type: ignore[union-attr]
+        logger.info(
+            "Migration V013: Dropped empty %s shell created by ensure_schema",
+            _NEW_NAME,
+        )
+
     db.collection(_OLD_NAME).rename(_NEW_NAME)  # type: ignore[union-attr]
     logger.info(
         "Migration V013: Renamed collection %s → %s", _OLD_NAME, _NEW_NAME
