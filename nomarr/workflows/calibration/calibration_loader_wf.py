@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.ml.calibration_state_comp import load_all_calibration_states
+from nomarr.components.ml.calibration.ml_calibration_state_comp import load_all_calibration_states
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -101,7 +101,7 @@ def load_calibrations_cached_wf(db: Database) -> dict[str, dict[str, float]]:
         causing cache invalidation on next check.
 
     """
-    from nomarr.components.ml.calibration_state_comp import get_calibration_version
+    from nomarr.components.ml.calibration.ml_calibration_state_comp import get_calibration_version
 
     global _cached_calibrations, _cached_version
 

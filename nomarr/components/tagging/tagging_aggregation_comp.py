@@ -8,11 +8,8 @@ from typing import Any
 
 import numpy as np
 
-from nomarr.components.tagging.mood_labels_comp import (
-    LABEL_PAIRS,
-    MOOD_MAPPING,
-    simplify_label,
-)
+from nomarr.components.ml.onnx.ml_known_models_comp import OPPONENT_MAP
+from nomarr.components.tagging.mood_labels_comp import MOOD_MAPPING
 from nomarr.helpers.dto.ml_dto import HeadOutput
 from nomarr.helpers.dto.tagging_dto import BuildTierTermSetsResult
 
@@ -293,105 +290,89 @@ def _build_tier_map(
 
 
 def _compute_suppressed_keys(
-    tier_map: dict[str, tuple[str, float, str]],
-    label_pairs: list[tuple[str, str, str, str]],
+    head_outputs: list[HeadOutput],
+    opponent_map: dict[str, set[str]],
 ) -> set[str]:
-    """Identify conflicting mood pairs and return keys to suppress.
+    """Identify conflicting mood outputs and return model keys to suppress.
 
-    Uses exact matching on simplified labels (not substring matching on model keys)
-    to avoid false matches like "tonal" matching inside "atonal" model keys.
+    Two suppression cases are handled:
+
+    1. **Intra-head**: multiple tiered outputs sharing the *same* head instance
+       (structurally rare for binary classifiers but handled defensively).
+       Keep the strongest; suppress the rest.
+
+    2. **Cross-head**: tiered outputs from *different* head instances whose
+       labels are semantic opponents per the derived opponent map (e.g.
+       ``"aggressive"`` from ``mood_aggressive`` vs ``"relaxed"`` from
+       ``mood_relaxed``).  Suppress both sides to avoid contradictory tags.
 
     Args:
-        tier_map: Dictionary mapping model_key -> (tier, value, label)
-        label_pairs: List of opposing mood pairs
+        head_outputs: All HeadOutput objects (tiered and non-tiered).
+        opponent_map: Label -> set of opponent labels, derived from
+            ``KNOWN_MODELS`` via :data:`OPPONENT_MAP`.
 
     Returns:
-        Set of model keys to suppress due to conflicts
+        Set of ``model_key`` strings to suppress.
 
     """
-    def get_best(keys: list[str]) -> str | None:
-        tier_order = {"high": 3, "strict": 3, "medium": 2, "norm": 2, "normal": 2, "low": 1}
-        best = None
-        best_score: float = 0
-        for tag_key in keys:
-            tier, prob, _label = tier_map[tag_key]
-            score = tier_order.get(tier, 0) * 100 + prob
-            if score > best_score:
-                best = tag_key
-                best_score = score
-        return best
+    _tier_rank: dict[str, int] = {
+        "high": 3, "strict": 3, "medium": 2, "norm": 2, "normal": 2, "low": 1,
+    }
+    tiered = [ho for ho in head_outputs if ho.tier is not None]
+    suppressed: set[str] = set()
 
-    suppressed_keys: set[str] = set()
-    for pos_pat, neg_pat, _pos_label, _neg_label in label_pairs:
-        pos_keys = [k for k, (_tier, _value, label) in tier_map.items() if simplify_label(label) == pos_pat]
-        neg_keys = [k for k, (_tier, _value, label) in tier_map.items() if simplify_label(label) == neg_pat]
-        logger.debug(
-            "[aggregation] Checking pair (%s, %s): found pos=%s neg=%s",
-            pos_pat,
-            neg_pat,
-            len(pos_keys),
-            len(neg_keys),
-        )
-        if not pos_keys or not neg_keys:
+    # --- Intra-head pass -------------------------------------------------
+    by_head: dict[int, list[HeadOutput]] = {}
+    for ho in tiered:
+        key = id(ho.head)
+        by_head.setdefault(key, []).append(ho)
+
+    for group in by_head.values():
+        if len(group) <= 1:
             continue
+        best = max(group, key=lambda ho: (_tier_rank.get(ho.tier or "", 0), ho.value))
+        for ho in group:
+            if ho is not best:
+                suppressed.add(ho.model_key)
+                logger.debug(
+                    "[aggregation] Intra-head suppress: %s (%s) loses to %s (%s)",
+                    ho.model_key, ho.tier, best.model_key, best.tier,
+                )
 
-        pos_key = get_best(pos_keys)
-        neg_key = get_best(neg_keys)
-        if pos_key and neg_key:
-            pos_tier, _, _ = tier_map[pos_key]
-            neg_tier, _, _ = tier_map[neg_key]
-            suppressed_keys.add(pos_key)
-            suppressed_keys.add(neg_key)
-            logger.debug(
-                "[aggregation] Suppressing conflicting pair: %s (%s) vs %s (%s)",
-                pos_key,
-                pos_tier,
-                neg_key,
-                neg_tier,
-            )
-    return suppressed_keys
+    # --- Cross-head pass -------------------------------------------------
+    active = [ho for ho in tiered if ho.model_key not in suppressed]
+    for i, ho_a in enumerate(active):
+        if ho_a.model_key in suppressed:
+            continue
+        for ho_b in active[i + 1 :]:
+            if ho_b.model_key in suppressed:
+                continue
+            if id(ho_a.head) == id(ho_b.head):
+                continue  # Same head — already handled above
+            if ho_b.label in opponent_map.get(ho_a.label, set()):
+                suppressed.add(ho_a.model_key)
+                suppressed.add(ho_b.model_key)
+                logger.debug(
+                    "[aggregation] Cross-head suppress: %s (%s) vs %s (%s) — semantic conflict",
+                    ho_a.model_key, ho_a.label, ho_b.model_key, ho_b.label,
+                )
 
-
-def _build_label_map(
-    tier_map: dict[str, tuple[str, float, str]],
-    label_pairs: list[tuple[str, str, str, str]],
-) -> dict[str, str]:
-    """Build label map for improved human-readable mood terms.
-
-    Args:
-        tier_map: Dictionary mapping model_key -> (tier, value, label)
-        label_pairs: List of opposing mood pairs with improved labels
-
-    Returns:
-        Dictionary mapping simplified keys to human-readable labels
-
-    """
-    label_map = {}
-    for pos_pat, neg_pat, pos_label, neg_label in label_pairs:
-        for _tier, _value, label in tier_map.values():
-            simplified = simplify_label(label)
-            if simplified == pos_pat:
-                label_map[simplified] = pos_label
-            if simplified == f"not {pos_pat}":
-                label_map[simplified] = f"not {pos_label}"
-            if simplified == neg_pat:
-                label_map[simplified] = neg_label
-            if simplified == f"not {neg_pat}":
-                label_map[simplified] = f"not {neg_label}"
-    return label_map
+    return suppressed
 
 
 def _build_tier_term_sets(
     tier_map: dict[str, tuple[str, float, str]],
     suppressed_keys: set[str],
-    label_map: dict[str, str],
 ) -> BuildTierTermSetsResult:
     """Build strict, regular, and loose term sets from tier map.
+
+    Labels in ``tier_map`` are already human-readable display terms (set at
+    inference time from ``KNOWN_MODELS``), so no additional label remapping
+    is needed.
 
     Args:
         tier_map: Dictionary mapping model_key -> (tier, value, label)
         suppressed_keys: Set of keys to skip due to conflicts
-        label_map: Dictionary mapping simplified keys to human-readable labels
 
     Returns:
         BuildTierTermSetsResult with strict_terms, regular_terms, loose_terms
@@ -403,15 +384,13 @@ def _build_tier_term_sets(
     for model_key, (tier, value, label) in tier_map.items():
         if model_key in suppressed_keys:
             continue
-        simplified = simplify_label(label)
-        term = label_map.get(simplified, simplified)
-        logger.debug("[aggregation] Adding %s=%.3f (%s) to tier '%s'", model_key, value, term, tier)
+        logger.debug("[aggregation] Adding %s=%.3f (%s) to tier '%s'", model_key, value, label, tier)
         if tier in ("high", "strict"):
-            strict_terms.add(term)
+            strict_terms.add(label)
         elif tier in ("medium", "norm", "normal"):
-            regular_terms.add(term)
+            regular_terms.add(label)
         else:
-            loose_terms.add(term)
+            loose_terms.add(label)
     logger.debug(
         "[aggregation] Mood aggregation: strict=%s, regular=%s, loose=%s",
         len(strict_terms),
@@ -479,9 +458,8 @@ def aggregate_mood_tiers(
     tier_map = _build_tier_map(head_outputs)
     if not tier_map:
         return {}
-    suppressed_keys = _compute_suppressed_keys(tier_map, LABEL_PAIRS)
-    label_map = _build_label_map(tier_map, LABEL_PAIRS)
-    tier_sets = _build_tier_term_sets(tier_map, suppressed_keys, label_map)
+    suppressed_keys = _compute_suppressed_keys(head_outputs, OPPONENT_MAP)
+    tier_sets = _build_tier_term_sets(tier_map, suppressed_keys)
     return _make_inclusive_mood_tags(tier_sets.strict_terms, tier_sets.regular_terms, tier_sets.loose_terms)
 
 

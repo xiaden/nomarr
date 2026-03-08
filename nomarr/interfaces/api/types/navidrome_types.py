@@ -245,3 +245,21 @@ class StaticPlaylistResponse(BaseModel):
             track_count=dto.track_count,
             missing_ids=dto.missing_ids,
         )
+
+
+
+class SyncSongsResponse(BaseModel):
+    """Response for Navidrome song map sync."""
+
+    total_songs: int = Field(..., description="Total songs found in Navidrome")
+    resolved: int = Field(..., description="Songs matched to Nomarr library files")
+    unresolved: int = Field(..., description="Songs that could not be matched")
+    duration_ms: int = Field(..., description="Sync duration in milliseconds")
+
+
+
+class PingResponse(BaseModel):
+    """Response from the Navidrome connection test endpoint."""
+
+    ok: bool
+    error: str | None = None

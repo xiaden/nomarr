@@ -113,7 +113,7 @@ class Application:
         self.library_scan_poll_interval: int = INTERNAL_LIBRARY_SCAN_POLL_INTERVAL
         self.namespace: str = INTERNAL_NAMESPACE
         self.version_tag_key: str = INTERNAL_VERSION_TAG
-        from nomarr.components.ml.ml_discovery_comp import compute_model_suite_hash
+        from nomarr.components.ml.onnx.ml_discovery_comp import compute_model_suite_hash
 
         self.tagger_version: str = compute_model_suite_hash(self.models_dir)
         logger.debug(f"[Application] Model suite hash (tagger_version): {self.tagger_version}")
@@ -267,7 +267,13 @@ class Application:
         logger.debug("[Application] Initializing NavidromeService...")
         from nomarr.services.domain.navidrome_svc import NavidromeConfig
 
-        navidrome_cfg = NavidromeConfig(namespace=self.namespace)
+        navidrome_cfg = NavidromeConfig(
+            namespace=self.namespace,
+            api_url=self._config.get("navidrome_api_url"),
+            api_user=self._config.get("navidrome_api_user"),
+            api_password=self._config.get("navidrome_api_password"),
+            path_prefix_map=self._parse_path_prefix_map(self._config.get("navidrome_path_prefix_map", "")),
+        )
         navidrome_service = NavidromeService(db=self.db, cfg=navidrome_cfg)
         self.register_service("navidrome", navidrome_service)
         logger.debug("[Application] Initializing PlaylistImportService...")
@@ -333,7 +339,7 @@ class Application:
 
         metadata_service = MetadataService(db=self.db)
         self.register_service("metadata", metadata_service)
-        self.register_service("tagging", TaggingService(
+        tagging_service = TaggingService(
             database=self.db,
             cfg=TaggingServiceConfig(
                 models_dir=self.models_dir,
@@ -342,7 +348,10 @@ class Application:
                 calibrate_heads=self.calibrate_heads,
             ),
             library_service=self.services.get("library"),
-        ))
+        )
+        self.register_service("tagging", tagging_service)
+        calibration_service.set_post_generation_hook(tagging_service.start_apply_calibration_background)
+        logger.debug("[Application] Wired calibration post-generation hook → TaggingService.start_apply_calibration_background")
         # Vector services (search and maintenance)
         from nomarr.services.domain.vector_maintenance_svc import VectorMaintenanceService
         from nomarr.services.domain.vector_search_svc import VectorSearchService
@@ -420,6 +429,27 @@ class Application:
             logger.warning(f"[Application] DB unavailable during shutdown (expected if containers stopping): {e}")
         self._running = False
         logger.info("[Application] Shutdown complete - all workers stopped")
+
+    @staticmethod
+    def _parse_path_prefix_map(raw: str | None) -> list[tuple[str, str]]:
+        """Parse comma-separated 'from:to' prefix pairs.
+
+        Format: 'navidrome_prefix:nomarr_prefix,navidrome_prefix2:nomarr_prefix2'
+        Example: '/music:/media/library,/podcasts:/media/pods'
+
+        Returns:
+            List of (navidrome_prefix, nomarr_prefix) tuples.
+        """
+        if not raw or not raw.strip():
+            return []
+        pairs: list[tuple[str, str]] = []
+        for entry in raw.split(","):
+            entry = entry.strip()
+            if ":" not in entry:
+                continue
+            parts = entry.split(":", 1)
+            pairs.append((parts[0].strip(), parts[1].strip()))
+        return pairs
 
     def is_running(self) -> bool:
         """Check if application is running."""

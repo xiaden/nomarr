@@ -15,8 +15,8 @@ import logging
 import os
 from typing import TYPE_CHECKING
 
-from nomarr.components.ml.ml_known_models import get_known_outputs
-from nomarr.components.ml.ml_onnx_head import _head_parts_from_path
+from nomarr.components.ml.onnx.ml_head import head_parts_from_path
+from nomarr.components.ml.onnx.ml_known_models_comp import get_known_outputs
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -59,7 +59,7 @@ def register_ml_models_workflow(
 
     for onnx_path in onnx_paths:
         # Step 1: Parse path metadata
-        backbone, head_type, model_stem = _head_parts_from_path(onnx_path)
+        backbone, head_type, model_stem = head_parts_from_path(onnx_path)
 
         # Step 2: Introspect ONNX session for output count
         session = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
@@ -84,13 +84,11 @@ def register_ml_models_workflow(
 
         # Step 5: Seed labels for known shipped models
         if known_outputs is not None:
-            for output_index, label, is_positive, display_hint in known_outputs:
+            for output_index, label in known_outputs:
                 output_doc = outputs[output_index]
                 db.ml_model_outputs.update_label(
                     output_id=output_doc["_id"],
                     label=label,
-                    is_positive=is_positive,
-                    display_hint=display_hint,
                 )
             fully_labeled = db.ml_model_outputs.get_fully_labeled_outputs(model_id)
             if len(fully_labeled) == output_count:

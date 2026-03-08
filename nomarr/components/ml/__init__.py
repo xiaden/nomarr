@@ -1,6 +1,6 @@
 """Ml package."""
 
-from .ml_audio_comp import (
+from .audio.ml_audio_comp import (
     AudioLoadCrashError,
     AudioLoadShutdownError,
     load_audio_mono,
@@ -8,21 +8,21 @@ from .ml_audio_comp import (
     should_skip_short,
     shutdown_audio_loader,
 )
-from .ml_calibration_comp import apply_minmax_calibration, save_calibration_sidecars
-from .ml_capacity_probe_comp import (
+from .calibration.ml_calibration_comp import apply_minmax_calibration, save_calibration_sidecars
+from .onnx.ml_discovery_comp import compute_model_suite_hash
+from .resources.ml_capacity_probe_comp import (
     CapacityEstimate,
     compute_model_set_hash,
     get_or_run_capacity_probe,
     invalidate_capacity_estimate,
 )
-from .ml_discovery_comp import compute_model_suite_hash
-from .ml_tier_selection_comp import (
+from .resources.ml_tier_selection_comp import (
     ExecutionTier,
     TierConfig,
     TierSelection,
     select_execution_tier,
 )
-from .ml_vram_probe_comp import (
+from .resources.ml_vram_probe_comp import (
     parse_oom_requested_bytes,
     update_model_vram_from_oom,
 )

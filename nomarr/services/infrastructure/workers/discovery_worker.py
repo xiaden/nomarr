@@ -24,7 +24,7 @@ from nomarr.helpers.time_helper import internal_s
 if TYPE_CHECKING:
     from multiprocessing.synchronize import Event as EventType
 
-    from nomarr.components.ml.ml_onnx_cache import ONNXModelCache
+    from nomarr.components.ml.onnx.ml_cache import ONNXModelCache
     from nomarr.helpers.dto.processing_dto import DeferredFileWrites, ProcessorConfig
     from nomarr.persistence.db import Database
 
@@ -73,7 +73,7 @@ def _execute_deferred_writes(
     mark_tagged only runs if prior writes succeeded. release_claim always runs.
     """
     from nomarr.components.library.file_sync_comp import save_file_tags, set_chromaprint
-    from nomarr.components.ml.segment_stats_comp import compute_segment_stats
+    from nomarr.components.ml.inference.ml_segment_stats_comp import compute_segment_stats
     from nomarr.components.tagging.tag_parsing_comp import parse_tag_values
     from nomarr.components.workers.worker_discovery_comp import release_claim
 
@@ -272,12 +272,12 @@ class DiscoveryWorker(multiprocessing.Process):
         setproctitle.setproctitle(f"nomarr-{self.worker_id}")
 
         # Register stop event for shutdown-aware audio loading
-        from nomarr.components.ml.ml_audio_comp import set_stop_event
+        from nomarr.components.ml.audio.ml_audio_comp import set_stop_event
 
         set_stop_event(self._stop_event)
 
         # Late imports to avoid import-time issues in subprocess
-        from nomarr.components.ml.ml_backend_onnx_comp import is_available as ml_is_available
+        from nomarr.components.ml.onnx.ml_session_comp import is_available as ml_is_available
         from nomarr.components.platform.resource_monitor_comp import check_resource_headroom
         from nomarr.components.workers.worker_discovery_comp import (
             discover_and_claim_file,
@@ -309,13 +309,13 @@ class DiscoveryWorker(multiprocessing.Process):
         db = Database(hosts=self.db_hosts, password=self.db_password)
 
         # Register worker context for process-local ML coordinator access
-        from nomarr.components.ml.ml_worker_context_comp import register_worker_context
+        from nomarr.components.ml.resources.ml_worker_context_comp import register_worker_context
         register_worker_context(db, self.worker_id)
 
         # Clear any stale VRAM promises from a previous crash of this worker.
         # The service owner also does this via on_status_change("dead"), but we
         # clear here too in case of a restart race or service-side failure.
-        from nomarr.components.ml.ml_vram_coordinator_comp import release_worker_promises
+        from nomarr.components.ml.resources.ml_vram_coordinator_comp import release_worker_promises
         try:
             release_worker_promises(db, self.worker_id)
         except Exception:
@@ -438,11 +438,11 @@ class DiscoveryWorker(multiprocessing.Process):
                 if not cache_warmed:
                     logger.debug("[%s] Warming ONNX model cache...", self.worker_id)
                     try:
-                        from nomarr.components.ml.ml_onnx_base import DevicePlacement as _DevicePlacement
-                        from nomarr.components.ml.ml_onnx_cache import (
+                        from nomarr.components.ml.onnx.ml_base import DevicePlacement as _DevicePlacement
+                        from nomarr.components.ml.onnx.ml_cache import (
                             ONNXModelCache as _ONNXModelCache,
                         )
-                        from nomarr.components.ml.ml_vram_probe_comp import (
+                        from nomarr.components.ml.resources.ml_vram_probe_comp import (
                             has_model_vram_measurements,
                             probe_all_models,
                         )
@@ -458,7 +458,7 @@ class DiscoveryWorker(multiprocessing.Process):
                             probe_all_models(db, config.models_dir)
                         _cache_device: _DevicePlacement = "gpu" if self.prefer_gpu else "cpu"
                         onnx_cache = _ONNXModelCache(config.models_dir, _cache_device, db=db)
-                        from nomarr.components.ml import ml_vram_coordinator_comp as _coordinator
+                        from nomarr.components.ml.resources import ml_vram_coordinator_comp as _coordinator
                         onnx_cache.warm = True
                         _fleet = _coordinator.get_fleet_vram_state(db)
                         _vram = _fleet["vram"]
@@ -606,18 +606,18 @@ class DiscoveryWorker(multiprocessing.Process):
             # Release VRAM promises — belt-and-suspenders for graceful exits;
             # the service owner handles this for crashes via on_status_change("dead")
             try:
-                from nomarr.components.ml.ml_vram_coordinator_comp import release_worker_promises
+                from nomarr.components.ml.resources.ml_vram_coordinator_comp import release_worker_promises
                 release_worker_promises(db, self.worker_id)
             except Exception:
                 logger.debug("[%s] Failed to release VRAM promises on shutdown", self.worker_id, exc_info=True)
 
             # Shut down persistent audio loader subprocess
-            from nomarr.components.ml.ml_audio_comp import shutdown_audio_loader
+            from nomarr.components.ml.audio.ml_audio_comp import shutdown_audio_loader
 
             shutdown_audio_loader()
 
             # Shut down head prediction thread pool (bounded exit)
-            from nomarr.components.ml.ml_head_pipeline_comp import shutdown_head_pool
+            from nomarr.components.ml.inference.ml_head_pipeline_comp import shutdown_head_pool
 
             shutdown_head_pool()
 

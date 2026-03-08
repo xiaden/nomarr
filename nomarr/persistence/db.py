@@ -9,6 +9,7 @@ from nomarr.persistence.arango_client import SafeDatabase, create_arango_client
 # Import operation classes (AQL versions)
 from nomarr.persistence.database.calibration_history_aql import CalibrationHistoryOperations
 from nomarr.persistence.database.calibration_state_aql import CalibrationStateOperations
+from nomarr.persistence.database.file_states_aql import FileStatesOperations
 from nomarr.persistence.database.health_aql import HealthOperations
 from nomarr.persistence.database.libraries_aql import LibrariesOperations
 from nomarr.persistence.database.library_files_aql import LibraryFilesOperations
@@ -18,6 +19,7 @@ from nomarr.persistence.database.migrations_aql import MigrationOperations
 from nomarr.persistence.database.ml_capacity_aql import MLCapacityOperations
 from nomarr.persistence.database.ml_model_outputs_aql import MLModelOutputsOperations
 from nomarr.persistence.database.ml_models_aql import MLModelsOperations
+from nomarr.persistence.database.navidrome_song_map_aql import NavidromeSongMapOperations
 from nomarr.persistence.database.segment_scores_stats_aql import SegmentScoresStatsOperations
 from nomarr.persistence.database.sessions_aql import SessionOperations
 from nomarr.persistence.database.tag_model_output_aql import TagModelOutputOperations
@@ -137,6 +139,8 @@ class Database:
         self.calibration_history = CalibrationHistoryOperations(self.db)
         self.health = HealthOperations(self.db)
         self.worker_restart_policy = WorkerRestartPolicyOperations(self.db)
+        self.navidrome_song_map = NavidromeSongMapOperations(self.db)
+        self.file_states = FileStatesOperations(self.db)
         self.worker_claims = WorkerClaimsOperations(self.db)
         self.vram_promises = VramPromisesOperations(self.db)
         self.ml_capacity = MLCapacityOperations(self.db)

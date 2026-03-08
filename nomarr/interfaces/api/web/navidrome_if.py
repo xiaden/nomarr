@@ -15,12 +15,14 @@ from nomarr.interfaces.api.types.navidrome_types import (
     GenerateTemplateFilesResponse,
     GetTemplateSummaryResponse,
     NavidromeConfigResponse,
+    PingResponse,
     PlaylistGenerateRequest,
     PlaylistPreviewRequest,
     PlaylistPreviewResponse,
     PreviewTagStatsResponse,
     StaticPlaylistRequest,
     StaticPlaylistResponse,
+    SyncSongsResponse,
     TagValuesResponse,
 )
 from nomarr.interfaces.api.web.dependencies import get_navidrome_service
@@ -130,3 +132,35 @@ async def web_navidrome_static_playlist(request: StaticPlaylistRequest, navidrom
     except Exception as e:
         logger.exception("[Web API] Error generating static playlist")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to generate static playlist")) from e
+
+
+
+@router.post("/sync-songs", dependencies=[Depends(verify_session)])
+async def web_navidrome_sync_songs(
+    navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
+) -> SyncSongsResponse:
+    """Trigger a full Navidrome song map sync."""
+    try:
+        result = await asyncio.to_thread(navidrome_service.sync_song_map)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as e:
+        logger.exception("[Web API] Error syncing Navidrome song map")
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to sync song map")) from e
+
+    return SyncSongsResponse(
+        total_songs=result["total_songs"],
+        resolved=result["resolved"],
+        unresolved=result["unresolved"],
+        duration_ms=result["duration_ms"],
+    )
+
+
+
+@router.post("/ping", response_model=PingResponse)
+async def navidrome_ping(
+    navidrome_service: "NavidromeService" = Depends(get_navidrome_service),
+) -> PingResponse:
+    """Test connectivity to the Navidrome server."""
+    ok, error = await asyncio.to_thread(navidrome_service.ping)
+    return PingResponse(ok=ok, error=error or None)

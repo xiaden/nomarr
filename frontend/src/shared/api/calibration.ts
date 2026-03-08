@@ -4,44 +4,6 @@
 
 import { del, get, post } from "./client";
 
-export interface CalibrationData {
-  method: string;
-  library_size: number;
-  min_samples: number;
-  calibrations: Record<string, unknown>;
-  skipped_tags: number;
-}
-
-export interface SavedFiles {
-  saved_files: number;
-  total_files: number;
-  total_labels: number;
-}
-
-export interface AffectedLibrary {
-  library_id: string;
-  name: string;
-  outdated_files: number;
-  file_write_mode: string;
-}
-
-export interface GenerateCalibrationResponse {
-  status: string;
-  data: CalibrationData;
-  saved_files?: SavedFiles;
-  requires_reconciliation?: boolean;
-  affected_libraries?: AffectedLibrary[];
-}
-
-/**
- * Generate new calibration from library data.
- */
-export async function generate(
-  saveSidecars = true
-): Promise<GenerateCalibrationResponse> {
-  return post("/api/web/calibration/generate", { save_sidecars: saveSidecars });
-}
-
 export interface ApplyCalibrationResponse {
   processed: number;
   failed: number;

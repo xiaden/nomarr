@@ -110,6 +110,7 @@ def scan_library_full_workflow(
 
         unmatched_new: list[dict[str, Any]] = []
         unmatched_new_metadata: dict[str, dict[str, Any]] = {}
+        unmatched_edge_bootstraps: list[dict[str, Any]] = []
         all_discovered_paths: set[str] = set()
         all_metadata: dict[str, dict[str, Any]] = {}
 
@@ -158,7 +159,7 @@ def scan_library_full_workflow(
 
                     # Upsert updated entries immediately
                     if updated_entries:
-                        file_ids = upsert_scanned_files(db, updated_entries)
+                        file_ids = upsert_scanned_files(db, updated_entries, batch.edge_bootstraps)
                         metadata_by_id = {
                             fid: batch.metadata_map[entry["path"]]
                             for fid, entry in zip(file_ids, updated_entries, strict=True)
@@ -183,12 +184,13 @@ def scan_library_full_workflow(
                             e for e in new_entries if e["path"] not in matched_new_paths
                         ]
                         unmatched_new.extend(folder_unmatched)
+                        unmatched_edge_bootstraps.extend(batch.edge_bootstraps)
                         for e in folder_unmatched:
                             if e["path"] in batch.metadata_map:
                                 unmatched_new_metadata[e["path"]] = batch.metadata_map[e["path"]]
                     elif new_entries:
                         # No tagged files — upsert new entries immediately
-                        file_ids = upsert_scanned_files(db, new_entries)
+                        file_ids = upsert_scanned_files(db, new_entries, batch.edge_bootstraps)
                         stats["files_added"] += len(new_entries)
                         metadata_by_id = {
                             fid: batch.metadata_map[entry["path"]]
@@ -247,7 +249,7 @@ def scan_library_full_workflow(
                 truly_new = unmatched_new
 
         if truly_new:
-            file_ids = upsert_scanned_files(db, truly_new)
+            file_ids = upsert_scanned_files(db, truly_new, unmatched_edge_bootstraps)
             stats["files_added"] += len(truly_new)
             metadata_by_id = {
                 fid: unmatched_new_metadata[entry["path"]]

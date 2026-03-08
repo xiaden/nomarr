@@ -25,7 +25,7 @@ export * from "./vectors";
 export {
     cleanupOrphanedTags, create, deleteLibrary, getFileTags, getLibrary, getReconcileStatus, getStats,
     list, reconcileTags,
-    scan, update, updateWriteMode,
+    scanFull, scanQuick, update, updateWriteMode,
     type CleanupTagsResult, type CreateLibraryPayload, type FileTagsResult, type LibraryStats,
     type ReconcileStatusResult, type ReconcileTagsResult, type UpdateLibraryPayload, type UpdateWriteModeResult
 } from "./library";

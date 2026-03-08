@@ -128,7 +128,7 @@ def mark_file_tagged(db: Database, file_id: str, tagged_version: str) -> None:
         tagged_version: Tagger version string
 
     """
-    db.library_files.mark_file_tagged(file_id, tagged_version)
+    db.file_states.set_ml_tagged(file_id, version=tagged_version)
 
 
 # ---------------------------------------------------------------------------

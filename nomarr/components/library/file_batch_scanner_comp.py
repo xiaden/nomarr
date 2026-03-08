@@ -24,12 +24,13 @@ logger = logging.getLogger(__name__)
 class FileBatchResult:
     """Result of scanning a single folder."""
 
-    file_entries: list[dict[str, Any]]  # Ready for DB upsert
+    file_entries: list[dict[str, Any]]  # Ready for DB upsert (no state fields)
     metadata_map: dict[str, dict[str, Any]]  # path → full metadata for entity seeding
     discovered_paths: set[str]  # All paths found
     new_file_paths: set[str]  # Paths that are new (not in existing_files)
     stats: dict[str, int]  # files_updated, files_failed, files_skipped
     warnings: list[str]
+    edge_bootstraps: list[dict[str, Any]]  # Post-upsert edge creation metadata
 
 
 def scan_folder_files(
@@ -66,6 +67,7 @@ def scan_folder_files(
     new_file_paths: set[str] = set()
     stats: dict[str, int] = {"files_updated": 0, "files_failed": 0, "files_skipped": 0}
     warnings: list[str] = []
+    edge_bootstraps: list[dict[str, Any]] = []
 
     # Get audio files in this folder (non-recursive)
     try:
@@ -84,6 +86,7 @@ def scan_folder_files(
             new_file_paths=new_file_paths,
             stats=stats,
             warnings=warnings,
+            edge_bootstraps=edge_bootstraps,
         )
 
     # Process each file
@@ -128,46 +131,55 @@ def scan_folder_files(
             # Check if file needs ML tagging
             # Compare file's nom_version tag against current tagger_version (model suite hash)
             file_version = metadata.get("nom_tags", {}).get("nom_version")
-            needs_tagging = (
-                existing_file is None  # New file
-                or not existing_file.get("tagged")  # Not yet tagged in DB
-                or file_version != tagger_version  # Tagged with different model suite
-            )
+            skip_ml = False
+            ml_skip_reason: str | None = None
 
-            # Override: files too short for ML get marked as done at scan time
-            tagging_skipped_reason: str | None = None
+            if existing_file is not None and existing_file.get("tagged") and file_version == tagger_version:
+                skip_ml = True  # Already tagged with current model suite
+
+            # Override: files too short for ML get skipped at scan time
             duration = metadata.get("duration")
             if (
-                needs_tagging
+                not skip_ml
                 and min_duration_s is not None
                 and duration is not None
                 and duration < min_duration_s
             ):
-                needs_tagging = False
-                tagging_skipped_reason = "too_short"
+                skip_ml = True
+                ml_skip_reason = "too_short"
 
-            # Compute namespace tracking fields
+            # Compute namespace tracking for edge bootstrap
             nom_tags = metadata.get("nom_tags", {})
             has_nomarr_namespace = bool(nom_tags)
             last_written_mode = infer_write_mode_from_tags(set(nom_tags.keys())) if has_nomarr_namespace else None
 
-            # Prepare batch entry with normalized_path for identity
+            # Prepare batch entry — pure file data, no state fields
             file_entry = {
-                "path": file_path_str,  # Absolute path for access
-                "normalized_path": normalized_path,  # POSIX relative path for identity
+                "path": file_path_str,
+                "normalized_path": normalized_path,
                 "library_id": library_id,
                 "file_size": file_size,
                 "modified_time": modified_time,
                 "duration_seconds": metadata.get("duration"),
-                "title": metadata.get("title"),  # Title is direct metadata, not derived
-                "needs_tagging": needs_tagging,
-                "tagging_skipped_reason": tagging_skipped_reason,
-                "is_valid": True,
+                "title": metadata.get("title"),
                 "scanned_at": now_ms().value,
-                "has_nomarr_namespace": has_nomarr_namespace,
-                "last_written_mode": last_written_mode,
             }
             file_entries.append(file_entry)
+
+            # Track edge bootstrap data for post-upsert processing
+            if skip_ml:
+                edge_bootstraps.append({
+                    "normalized_path": normalized_path,
+                    "type": "ml_tagged",
+                    "version": "scan_skipped" if ml_skip_reason else tagger_version,
+                })
+            if has_nomarr_namespace and last_written_mode:
+                edge_bootstraps.append({
+                    "normalized_path": normalized_path,
+                    "type": "reconciled",
+                    "mode": last_written_mode,
+                    "has_namespace": True,
+                })
 
             # Store metadata for entity seeding
             metadata_map[file_path_str] = metadata
@@ -191,6 +203,7 @@ def scan_folder_files(
         new_file_paths=new_file_paths,
         stats=stats,
         warnings=warnings,
+        edge_bootstraps=edge_bootstraps,
     )
 
 

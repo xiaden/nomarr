@@ -20,17 +20,17 @@ import time
 from multiprocessing import Event, Pipe
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.ml.ml_capacity_probe_comp import (
+from nomarr.components.ml.resources.ml_capacity_probe_comp import (
     CapacityEstimate,
     get_or_run_capacity_probe,
 )
-from nomarr.components.ml.ml_tier_selection_comp import (
+from nomarr.components.ml.resources.ml_tier_selection_comp import (
     TIER_CONFIGS,
     ExecutionTier,
     TierSelection,
     select_execution_tier,
 )
-from nomarr.components.ml.ml_vram_coordinator_comp import release_worker_promises
+from nomarr.components.ml.resources.ml_vram_coordinator_comp import release_worker_promises
 from nomarr.components.platform.resource_monitor_comp import check_nvidia_gpu_capability
 from nomarr.components.workers import should_restart_worker
 from nomarr.components.workers.worker_discovery_comp import (

@@ -22,12 +22,12 @@ import {
 import { ConfirmDialog, PageContainer } from "@shared/components/ui";
 
 import { InspectTags } from "../admin/components/InspectTags";
-import { MLControls } from "../admin/components/MLControls";
 import { SystemControls } from "../admin/components/SystemControls";
 import { VectorMaintenance } from "../admin/components/VectorMaintenance";
 import { useAdminActions } from "../admin/hooks/useAdminActions";
 
 import { ConfigSettings } from "./components/ConfigSettings";
+import { MLInference } from "./components/MLInference";
 import { useConfigData } from "./hooks/useConfigData";
 
 export function ConfigPage() {
@@ -71,10 +71,23 @@ export function ConfigPage() {
             <AccordionDetails>
               <Stack spacing={2.5}>
                 <SystemControls onRestart={handleRestart} actionLoading={actionLoading} />
-                <MLControls onVramProbe={handleVramProbe} actionLoading={actionLoading} />
                 <VectorMaintenance />
                 <InspectTags />
               </Stack>
+            </AccordionDetails>
+          </Accordion>
+          {/* ML Inference accordion */}
+          <Accordion disableGutters>
+            <AccordionSummary expandIcon={<ExpandMore />}>
+              <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                ML Inference
+              </Typography>
+            </AccordionSummary>
+            <AccordionDetails>
+              <MLInference
+                onVramProbe={handleVramProbe}
+                actionLoading={actionLoading}
+              />
             </AccordionDetails>
           </Accordion>
         </Stack>

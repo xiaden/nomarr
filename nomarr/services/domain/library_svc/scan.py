@@ -9,12 +9,14 @@ This module handles:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 from nomarr.helpers.dto.library_dto import LibraryScanStatusResult, StartScanResult
 from nomarr.helpers.time_helper import now_ms
 from nomarr.services.infrastructure.config_svc import INTERNAL_MIN_DURATION_S
-from nomarr.workflows.library.start_library_scan_wf import start_library_scan_workflow
+from nomarr.workflows.library.scan_library_full_wf import scan_library_full_workflow
+from nomarr.workflows.library.scan_library_quick_wf import scan_library_quick_workflow
+from nomarr.workflows.library.scan_setup_wf import scan_setup_workflow
 from nomarr.workflows.library.validate_library_tags_wf import validate_library_tags_workflow
 
 logger = logging.getLogger(__name__)
@@ -70,33 +72,82 @@ class LibraryScanMixin:
         libraries = self.db.libraries.list_libraries(enabled_only=False)
         return any(lib.get("scan_status") == "scanning" for lib in libraries)
 
-    def start_scan_for_library(
-        self,
-        library_id: str,
-        scan_type: Literal["quick", "full"] = "quick",
-    ) -> StartScanResult:
-        """Start a library scan.
+    def start_quick_scan(self, library_id: str) -> StartScanResult:
+        """Start a quick (incremental) library scan.
+
+        Validates the library synchronously then dispatches the scan as a
+        background task.
 
         Args:
             library_id: ID of the library to scan
-            scan_type: ``"quick"`` (incremental) or ``"full"`` (rescan all)
 
         Returns:
             StartScanResult DTO with scan statistics and task_id
 
         Raises:
-            ValueError: If library not found, already scanning, or invalid scan_type
+            LibraryNotFoundError: If library not found
+            LibraryAlreadyScanningError: If library is already being scanned
 
         """
-        return start_library_scan_workflow(
+        scan_setup_workflow(self.db, library_id, scan_type="quick")
+        task_id = f"scan_library_{library_id}"
+        if self.background_tasks is None:
+            msg = "Background task service is not available"
+            raise RuntimeError(msg)
+        self.background_tasks.start_task(
+            task_id=task_id,
+            task_fn=scan_library_quick_workflow,
             db=self.db,
-            background_tasks=self.background_tasks,
-            tagger_version=self.cfg.tagger_version,
             library_id=library_id,
-            scan_type=scan_type,
+            tagger_version=self.cfg.tagger_version,
+            min_duration_s=INTERNAL_MIN_DURATION_S,
+        )
+        return StartScanResult(
+            files_discovered=0,
+            files_queued=0,
+            files_skipped=0,
+            files_removed=0,
+            job_ids=[task_id],
+        )
+
+    def start_full_scan(self, library_id: str) -> StartScanResult:
+        """Start a full library scan.
+
+        Validates the library synchronously then dispatches the scan as a
+        background task.
+
+        Args:
+            library_id: ID of the library to scan
+
+        Returns:
+            StartScanResult DTO with scan statistics and task_id
+
+        Raises:
+            LibraryNotFoundError: If library not found
+            LibraryAlreadyScanningError: If library is already being scanned
+
+        """
+        scan_setup_workflow(self.db, library_id, scan_type="full")
+        task_id = f"scan_library_{library_id}"
+        if self.background_tasks is None:
+            msg = "Background task service is not available"
+            raise RuntimeError(msg)
+        self.background_tasks.start_task(
+            task_id=task_id,
+            task_fn=scan_library_full_workflow,
+            db=self.db,
+            library_id=library_id,
+            tagger_version=self.cfg.tagger_version,
             models_dir=self.cfg.models_dir,
             namespace=self.cfg.namespace,
             min_duration_s=INTERNAL_MIN_DURATION_S,
+        )
+        return StartScanResult(
+            files_discovered=0,
+            files_queued=0,
+            files_skipped=0,
+            files_removed=0,
+            job_ids=[task_id],
         )
 
     def cancel_scan(self, library_id: str | None = None) -> bool:

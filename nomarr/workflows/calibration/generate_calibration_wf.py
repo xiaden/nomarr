@@ -40,7 +40,7 @@ import numpy as np
 from scipy.spatial.distance import jensenshannon
 from scipy.stats import iqr
 
-from nomarr.components.ml.calibration_state_comp import (
+from nomarr.components.ml.calibration.ml_calibration_state_comp import (
     load_all_calibration_states,
     save_calibration_state,
     set_calibration_last_run,
@@ -331,12 +331,12 @@ def generate_histogram_calibration_wf(
         results keys are "model:head:label" format (e.g., "effnet-20220825:gender:male").
 
     """
-    from nomarr.components.ml.ml_calibration_comp import (
+    from nomarr.components.ml.calibration.ml_calibration_comp import (
         compute_calibration_def_hash,
         compute_global_calibration_hash,
         generate_calibration_from_histogram,
     )
-    from nomarr.components.ml.ml_discovery_comp import discover_heads
+    from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads
     from nomarr.components.tagging.mood_labels_comp import normalize_tag_label
 
     logger.info("[histogram_calibration_wf] Starting histogram-based calibration generation")

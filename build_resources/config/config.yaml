@@ -69,3 +69,16 @@ admin_password: # Admin password for web UI
 # Get credentials at https://developer.spotify.com/dashboard
 spotify_client_id: # Spotify Developer App client ID
 spotify_client_secret: # Spotify Developer App client secret
+
+
+# ----------------------------------------------------------------------
+# Navidrome API Integration (Optional)
+# ----------------------------------------------------------------------
+# Connect to Navidrome for Instant Mix via ML-powered audio similarity.
+# Requires Navidrome v0.60.0+ with the nomarr.ndp plugin installed.
+navidrome_api_url:            # Navidrome server URL (e.g. http://navidrome:4533)
+navidrome_api_user:           # Navidrome admin username
+navidrome_api_password:       # Navidrome admin password
+navidrome_path_prefix_map:    # Comma-separated from:to path prefix pairs
+  # Maps Navidrome file paths to Nomarr normalized paths
+  # Example: "/music:/media/library,/podcasts:/media/pods"

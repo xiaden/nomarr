@@ -45,11 +45,11 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.file_sync_comp import get_library_file
-from nomarr.components.ml.calibration_state_comp import (
+from nomarr.components.ml.calibration.ml_calibration_state_comp import (
     get_calibration_version,
     update_file_calibration_hash,
 )
-from nomarr.components.ml.ml_discovery_comp import discover_heads
+from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads
 from nomarr.components.processing.file_write_comp import get_nomarr_tags, save_mood_tags
 from nomarr.components.tagging.tagging_aggregation_comp import aggregate_mood_tiers
 from nomarr.components.tagging.tagging_reconstruction_comp import (

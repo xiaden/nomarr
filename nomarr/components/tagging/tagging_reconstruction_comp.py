@@ -18,8 +18,8 @@ from typing import Any
 
 import numpy as np
 
-from nomarr.components.ml.ml_calibration_comp import apply_minmax_calibration
-from nomarr.components.ml.ml_heads_comp import (
+from nomarr.components.ml.calibration.ml_calibration_comp import apply_minmax_calibration
+from nomarr.components.ml.inference.ml_heads_comp import (
     HeadSpec,
     decide_binary_multiclass,
     decide_multilabel,

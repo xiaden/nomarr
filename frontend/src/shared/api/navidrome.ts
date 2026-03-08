@@ -234,3 +234,13 @@ export async function generateStaticPlaylist(
     playlist_name: playlistName,
   });
 }
+
+
+export interface PingResponse {
+  ok: boolean;
+  error: string | null;
+}
+
+export async function pingNavidrome(): Promise<PingResponse> {
+  return post<PingResponse>("/api/web/navidrome/ping");
+}

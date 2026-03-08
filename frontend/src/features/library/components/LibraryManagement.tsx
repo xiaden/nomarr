@@ -36,7 +36,8 @@ import {
   getReconcileStatus,
   list as listLibraries,
   reconcileTags,
-  scan as scanLibrary,
+  scanFull,
+  scanQuick,
   update as updateLibrary,
   updateWriteMode,
 } from "../../../shared/api/library";
@@ -321,7 +322,7 @@ export function LibraryManagement() {
       setError(null);
       setScanningId(id);
 
-      const result = await scanLibrary(id, scanType);
+      const result = await (scanType === "quick" ? scanQuick(id) : scanFull(id));
       showSuccess(
         result.message || `Library scan started (${result.stats?.files_queued ?? 0} files)`
       );

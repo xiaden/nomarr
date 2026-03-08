@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from nomarr.components.ml.ml_vector_maintenance_comp import (
+from nomarr.components.ml.vectors.ml_vector_maintenance_comp import (
     build_cold_vector_index,
     derive_embed_dim,
     drain_hot_to_cold,

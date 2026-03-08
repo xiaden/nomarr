@@ -1,0 +1,140 @@
+"""Find tracks similar to a Navidrome seed track using vector ANN search.
+
+Resolves a Navidrome song ID to a Nomarr file, retrieves its vector
+embedding from the cold collection, runs approximate nearest neighbor
+search, maps results back to Navidrome IDs, and enriches with metadata.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING, TypedDict
+
+if TYPE_CHECKING:
+    from nomarr.persistence.db import Database
+
+logger = logging.getLogger(__name__)
+
+
+class SimilarTrackResult(TypedDict):
+    """A single similar track result with Navidrome ID and metadata."""
+
+    nd_id: str
+    name: str
+    artist: str
+    album: str
+    score: float
+
+
+def find_similar_tracks(
+    seed_nd_id: str,
+    count: int,
+    backbone_id: str,
+    db: Database,
+) -> list[SimilarTrackResult]:
+    """Find tracks similar to a Navidrome seed track.
+
+    Pipeline:
+        1. Resolve seed Navidrome ID to Nomarr file_id
+        2. Fetch seed vector from cold collection (fallback to hot)
+        3. Run ANN search on cold collection (over-fetch 2x to compensate for unmapped)
+        4. Resolve result file_ids to Navidrome IDs
+        5. Enrich mapped results with metadata (title, artist, album)
+        6. Return up to ``count`` results sorted by similarity score
+
+    Args:
+        seed_nd_id: Navidrome mediafile ID of the seed track.
+        count: Maximum number of similar tracks to return.
+        backbone_id: Vector backbone identifier (e.g., "effnet-discogs").
+        db: Database instance for persistence access.
+
+    Returns:
+        List of similar tracks with Navidrome IDs and metadata,
+        sorted by descending similarity score.
+
+    Raises:
+        ValueError: If seed ID is not in the song map or has no vector.
+
+    """
+    # 1. Resolve seed Navidrome ID to Nomarr file_id
+    seed_file_id = db.navidrome_song_map.lookup_by_nd_id(seed_nd_id)
+    if seed_file_id is None:
+        msg = f"Navidrome song ID '{seed_nd_id}' not found in song map. Run sync first."
+        raise ValueError(msg)
+
+    logger.debug("Seed ND ID %s resolved to file_id %s", seed_nd_id, seed_file_id)
+
+    # 2. Get seed vector from cold collection
+    cold_ops = db.get_vectors_track_cold(backbone_id)
+    seed_doc = cold_ops.get_vector(seed_file_id)
+
+    if seed_doc is None:
+        msg = (
+            f"No vector embedding found for file '{seed_file_id}' "
+            f"with backbone '{backbone_id}'. Ensure ML processing has completed."
+        )
+        raise ValueError(msg)
+
+    seed_vector: list[float] = seed_doc["vector_n"]
+    logger.debug("Seed vector retrieved, dim=%d", len(seed_vector))
+
+    # 3. ANN search on cold collection (over-fetch to compensate for unmapped results)
+    fetch_limit = count * 2 + 1  # +1 for potential self-match
+    raw_results = cold_ops.search_similar(seed_vector, fetch_limit)
+
+    # Exclude the seed track itself from results
+    results = [r for r in raw_results if r["file_id"] != seed_file_id]
+    logger.debug("ANN search returned %d results (excluding seed)", len(results))
+
+    if not results:
+        return []
+
+    # 4. Resolve result file_ids to Navidrome IDs
+    result_file_ids = [r["file_id"] for r in results]
+    file_id_to_nd_id = db.navidrome_song_map.bulk_lookup_by_file_ids(result_file_ids)
+
+    # Filter to only results that have a Navidrome mapping
+    mapped_results = [
+        (r, file_id_to_nd_id[r["file_id"]])
+        for r in results
+        if r["file_id"] in file_id_to_nd_id
+    ]
+
+    unmapped_count = len(results) - len(mapped_results)
+    if unmapped_count > 0:
+        logger.debug("%d ANN results had no Navidrome mapping, skipped", unmapped_count)
+
+    if not mapped_results:
+        return []
+
+    # Trim to requested count before metadata enrichment
+    mapped_results = mapped_results[:count]
+
+    # 5. Enrich with metadata
+    enrichment_file_ids = [r["file_id"] for r, _ in mapped_results]
+    file_docs = db.library_files.get_files_by_ids_with_tags(enrichment_file_ids)
+    file_docs_by_id: dict[str, dict] = {doc["_id"]: doc for doc in file_docs}
+
+    # 6. Build result list
+    output: list[SimilarTrackResult] = []
+    for result, nd_id in mapped_results:
+        file_id = result["file_id"]
+        doc = file_docs_by_id.get(file_id, {})
+
+        output.append(
+            SimilarTrackResult(
+                nd_id=nd_id,
+                name=doc.get("title", ""),
+                artist=doc.get("artist", ""),
+                album=doc.get("album", ""),
+                score=float(result["score"]),
+            )
+        )
+
+    logger.info(
+        "find_similar_tracks: seed=%s, requested=%d, returned=%d",
+        seed_nd_id,
+        count,
+        len(output),
+    )
+    return output

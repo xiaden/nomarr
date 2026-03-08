@@ -367,7 +367,7 @@ def _discover_backbone_ids(models_dir: str) -> list[str]:
 
     """
     try:
-        from nomarr.components.ml.ml_discovery_comp import discover_heads_no_db
+        from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads_no_db
 
         heads = discover_heads_no_db(models_dir)
         backbones = sorted({h.backbone for h in heads})

@@ -77,11 +77,11 @@ def apply_calibration_wf(
     """
     import math
 
-    from nomarr.components.ml.calibration_state_comp import (
+    from nomarr.components.ml.calibration.ml_calibration_state_comp import (
         get_calibration_version,
         update_file_calibration_hashes_batch,
     )
-    from nomarr.components.ml.ml_discovery_comp import discover_heads
+    from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads
     from nomarr.components.processing.file_write_comp import save_mood_tags_batch
     from nomarr.workflows.calibration.calibration_loader_wf import load_calibrations_from_db_wf
     from nomarr.workflows.calibration.write_calibrated_tags_wf import BatchContext

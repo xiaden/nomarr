@@ -19,7 +19,7 @@ Architecture:
 - Only relevant file types are processed (audio, playlists, artwork)
 - Triggers full library scans; folder-level caching in the scan workflow
   handles incremental optimization
-- Calls LibraryService.start_scan_for_library() - NO direct persistence access
+- Calls LibraryService.start_quick_scan() / start_full_scan() - NO direct persistence access
 
 CRITICAL (event mode): Watchdog callbacks run on background threads, NOT the asyncio event loop.
 Must use thread-safe handoff via loop.call_soon_threadsafe().
@@ -37,6 +37,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
+from nomarr.helpers.exceptions import LibraryAlreadyScanningError, LibraryNotFoundError
 from nomarr.helpers.time_helper import InternalSeconds, internal_s
 
 if TYPE_CHECKING:
@@ -411,19 +412,14 @@ class FileWatcherService:
                 logger.info(f"Polling library {library_id}: triggering quick scan")
 
                 try:
-                    self.library_service.start_scan_for_library(library_id, scan_type="quick")
-                except ValueError as e:
-                    error_msg = str(e)
-                    # Library not found - stop watching it
-                    if "Library not found" in error_msg:
-                        logger.warning(f"Library {library_id} no longer exists, stopping watcher")
-                        self._schedule_cleanup(library_id)
-                        return
-                    # Already scanning - skip this poll cycle, continue polling
-                    if "already being scanned" in error_msg:
-                        logger.debug(f"Library {library_id} is already being scanned, skipping this poll")
-                        continue  # Don't exit the loop! Continue polling.
-                    logger.error(f"Failed to trigger poll scan for library {library_id}: {e}", exc_info=True)
+                    self.library_service.start_quick_scan(library_id)
+                except LibraryNotFoundError:
+                    logger.warning(f"Library {library_id} no longer exists, stopping watcher")
+                    self._schedule_cleanup(library_id)
+                    return
+                except LibraryAlreadyScanningError:
+                    logger.debug(f"Library {library_id} is already being scanned, skipping this poll")
+                    continue  # Don't exit the loop! Continue polling.
                 except Exception as e:
                     logger.error(f"Failed to trigger poll scan for library {library_id}: {e}", exc_info=True)
 
@@ -575,7 +571,7 @@ class FileWatcherService:
         # folders are actually re-scanned.
         for library_id in affected_libraries:
             try:
-                self.library_service.start_scan_for_library(library_id, scan_type="quick")
+                self.library_service.start_quick_scan(library_id)
             except Exception as e:
                 logger.error(f"Failed to trigger scan for library {library_id}: {e}", exc_info=True)
 

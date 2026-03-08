@@ -5,11 +5,9 @@ ONNX head model.  Documents are keyed by a stable hash of
 ``(model_id, output_index)`` so upserts are idempotent.
 
 Each output document carries the human-readable ``label`` string that
-displays in the UI, a ``is_positive`` flag (``True`` means higher score
-→ more matching), and an optional ``display_hint`` — all editable by
-the user at runtime.  The ``fully_labeled`` flag is recomputed on every
-label write and mirrors whether *both* ``label`` and ``is_positive`` have
-been set for this activation.
+displays in the UI, editable by the user at runtime.  The
+``fully_labeled`` flag mirrors whether a ``label`` has been set for this
+activation.
 """
 
 from __future__ import annotations
@@ -49,8 +47,8 @@ class MLModelOutputsOperations:
         """Ensure *output_count* output vertices exist for *model_id*.
 
         Existing documents are left untouched so that user-assigned labels
-        and ``is_positive`` settings survive a restart. New documents are
-        inserted with ``fully_labeled=False``.
+        survive a restart. New documents are inserted with
+        ``fully_labeled=False``.
 
         Args:
             model_id: ArangoDB ``_id`` of the parent model vertex
@@ -72,8 +70,6 @@ class MLModelOutputsOperations:
                     "model_id": model_id,
                     "output_index": i,
                     "label": None,
-                    "is_positive": None,
-                    "display_hint": None,
                     "fully_labeled": False,
                     "created_at": ts,
                     "updated_at": ts,
@@ -85,20 +81,15 @@ class MLModelOutputsOperations:
         self,
         output_id: str,
         label: str,
-        is_positive: bool,
-        display_hint: str | None = None,
     ) -> None:
         """Write label metadata for a single output vertex.
 
-        Also sets ``fully_labeled=True`` on the document because both
-        required fields are being supplied.
+        Also sets ``fully_labeled=True`` on the document.
 
         Args:
             output_id: ArangoDB ``_id`` of the output vertex
                 (e.g. ``"ml_model_outputs/abc1234567890123"``).
             label: Human-readable tag name for this activation.
-            is_positive: Whether higher activation score means "more matching".
-            display_hint: Optional rendering hint for the UI.
 
         """
         _key = output_id.split("/", 1)[-1]
@@ -106,8 +97,6 @@ class MLModelOutputsOperations:
             {
                 "_key": _key,
                 "label": label,
-                "is_positive": is_positive,
-                "display_hint": display_hint,
                 "fully_labeled": True,
                 "updated_at": now_ms().value,
             }

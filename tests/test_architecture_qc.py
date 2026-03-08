@@ -256,16 +256,16 @@ def test_no_essentia_imports_outside_backend():
     """Test 5: Ensure Essentia is only imported in its two permitted components.
 
     Essentia is no longer the ML inference backend — it is a thin library used for:
-    - Audio loading (MonoLoader): ml_audio_comp.py
-    - Mel spectrogram preprocessing: ml_preprocess_comp.py
+    - Audio loading (MonoLoader): audio/ml_audio_comp.py
+    - Mel spectrogram preprocessing: audio/ml_preprocess_comp.py
 
     All other code must remain essentia-free. The ML inference backend is ONNX.
     """
     violations = []
     # The only two files permitted to import essentia
     allowed_files = {
-        NOMARR_DIR / "components" / "ml" / "ml_audio_comp.py",
-        NOMARR_DIR / "components" / "ml" / "ml_preprocess_comp.py",
+        NOMARR_DIR / "components" / "ml" / "audio" / "ml_audio_comp.py",
+        NOMARR_DIR / "components" / "ml" / "audio" / "ml_preprocess_comp.py",
     }
 
     for py_file in find_python_files(NOMARR_DIR):
@@ -291,8 +291,8 @@ def test_no_essentia_imports_outside_backend():
         msg = (
             "Found Essentia imports outside the two permitted components.\n\n"
             "Essentia is only allowed in:\n"
-            "  - components/ml/ml_audio_comp.py  (MonoLoader — audio loading)\n"
-            "  - components/ml/ml_preprocess_comp.py  (mel spectrogram preprocessing)\n\n"
+            "  - components/ml/audio/ml_audio_comp.py  (MonoLoader — audio loading)\n"
+            "  - components/ml/audio/ml_preprocess_comp.py  (mel spectrogram preprocessing)\n\n"
             "The ML inference backend is ONNX. Essentia is NOT the inference layer.\n\n"
             "Violations:\n" + "\n".join(violations)
         )

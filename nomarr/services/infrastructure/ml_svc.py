@@ -9,16 +9,16 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from nomarr.components.ml.ml_discovery_comp import (
+from nomarr.components.ml.onnx.ml_discovery_comp import (
     discover_backbones,
     discover_heads,
 )
 from nomarr.persistence.db import Database
 
 if TYPE_CHECKING:
-    from nomarr.components.ml.ml_discovery_comp import HeadInfo
+    from nomarr.components.ml.onnx.ml_discovery_comp import HeadInfo
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +92,48 @@ class MLService:
         The next discovery worker startup will re-run the probe and record
         fresh measurements.
         """
-        from nomarr.components.ml.ml_vram_probe_comp import clear_model_vram_measurements
+        from nomarr.components.ml.resources.ml_vram_probe_comp import clear_model_vram_measurements
 
         clear_model_vram_measurements(self.db)
         logger.info("[MLService] VRAM measurements cleared — probe will re-run on next worker start")
+
+    def list_all_models(self) -> list[dict[str, Any]]:
+        """Return all registered ML model vertices.
+
+        Returns:
+            List of ml_models documents.
+
+        """
+        return self.db.ml_models.list_models()
+
+    def get_model_outputs(self, model_id: str) -> list[dict[str, Any]]:
+        """Return output vertices for a specific model.
+
+        Args:
+            model_id: ArangoDB ``_id`` of the model vertex.
+
+        Returns:
+            List of ml_model_outputs documents ordered by output_index.
+
+        """
+        return self.db.ml_model_outputs.get_outputs_for_model(model_id)
+
+    def update_output_label(self, output_id: str, label: str) -> None:
+        """Write a human-readable label for a model output vertex.
+
+        Args:
+            output_id: ArangoDB ``_id`` of the output vertex.
+            label: Human-readable tag label for this activation.
+
+        """
+        self.db.ml_model_outputs.update_label(output_id=output_id, label=label)
+
+    def mark_model_configured(self, model_id: str, value: bool) -> None:
+        """Set the fully_configured flag on a model vertex.
+
+        Args:
+            model_id: ArangoDB ``_id`` of the model vertex.
+            value: True to enable model for inference, False to disable.
+
+        """
+        self.db.ml_models.set_fully_configured(model_id, value)

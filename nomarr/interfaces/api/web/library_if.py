@@ -2,12 +2,13 @@
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Annotated, Literal
+from typing import TYPE_CHECKING, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from nomarr.helpers.dto.library_dto import SearchFilesQuery
+from nomarr.helpers.exceptions import LibraryAlreadyScanningError, LibraryNotFoundError
 from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.id_codec import decode_path_id
@@ -32,6 +33,7 @@ from nomarr.interfaces.api.web.dependencies import (
     get_file_watcher_service,
     get_library_service,
     get_metadata_service,
+    get_navidrome_service,
     get_tagging_service,
 )
 
@@ -39,6 +41,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from nomarr.services.domain.library_svc import LibraryService
     from nomarr.services.domain.metadata_svc import MetadataService
+    from nomarr.services.domain.navidrome_svc import NavidromeService
     from nomarr.services.domain.tagging_svc import TaggingService
 router = APIRouter(prefix="/libraries", tags=["Library"])
 
@@ -443,46 +446,72 @@ async def get_file_tags(
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get file tags")) from e
 
 
-@router.post("/{library_id}/scan", dependencies=[Depends(verify_session)])
-async def scan_library(
+@router.post("/{library_id}/scan/quick", dependencies=[Depends(verify_session)])
+async def scan_library_quick(
     library_id: str,
-    scan_type: Annotated[
-        Literal["quick", "full"],
-        Query(description="Scan type: 'quick' (skip unchanged files) or 'full' (rescan all)"),
-    ] = "quick",
     library_service: "LibraryService" = Depends(get_library_service),
 ) -> StartScanWithStatusResponse:
-    """Start a scan for a specific library.
+    """Start a quick scan for a specific library.
 
-    This endpoint triggers a scan for the specified library, discovering files
-    and enqueuing them for background processing. The scan uses the library's
-    root_path and always runs recursively with clean_missing enabled.
+    Discovers new files and skips unchanged files based on hash comparison.
 
     Args:
         library_id: Library ID to scan
-        scan_type: Scan mode - 'quick' uses hash-based skipping, 'full' rescans all files
         library_service: LibraryService instance (injected)
 
     Returns:
         StartScanWithStatusResponse with scan statistics and status message
 
     Raises:
-        HTTPException: 404 if library not found, 400 for invalid scan_type, 500 for other errors
+        HTTPException: 404 if library not found, 409 if already scanning, 500 for other errors
 
     """
     library_id = decode_path_id(library_id)
     try:
-        stats = library_service.start_scan_for_library(library_id=library_id, scan_type=scan_type)
+        stats = library_service.start_quick_scan(library_id=library_id)
         return StartScanWithStatusResponse.from_dto(stats, library_id)
-    except ValueError as e:
-        error_msg = str(e)
-        if "not found" in error_msg.lower():
-            raise HTTPException(status_code=404, detail="Library not found") from None
-        if "already being scanned" in error_msg.lower():
-            raise HTTPException(status_code=409, detail="Library is already being scanned") from None
-        raise HTTPException(status_code=400, detail=error_msg) from None
+    except LibraryNotFoundError:
+        raise HTTPException(status_code=404, detail="Library not found") from None
+    except LibraryAlreadyScanningError:
+        raise HTTPException(status_code=409, detail="Library is already being scanned") from None
     except Exception as e:
-        logger.exception(f"[Web API] Error starting scan for library {library_id}")
+        logger.exception(f"[Web API] Error starting quick scan for library {library_id}")
+        raise HTTPException(
+            status_code=500,
+            detail=sanitize_exception_message(e, "Failed to start library scan"),
+        ) from e
+
+
+@router.post("/{library_id}/scan/full", dependencies=[Depends(verify_session)])
+async def scan_library_full(
+    library_id: str,
+    library_service: "LibraryService" = Depends(get_library_service),
+) -> StartScanWithStatusResponse:
+    """Start a full scan for a specific library.
+
+    Rescans all files regardless of hash state.
+
+    Args:
+        library_id: Library ID to scan
+        library_service: LibraryService instance (injected)
+
+    Returns:
+        StartScanWithStatusResponse with scan statistics and status message
+
+    Raises:
+        HTTPException: 404 if library not found, 409 if already scanning, 500 for other errors
+
+    """
+    library_id = decode_path_id(library_id)
+    try:
+        stats = library_service.start_full_scan(library_id=library_id)
+        return StartScanWithStatusResponse.from_dto(stats, library_id)
+    except LibraryNotFoundError:
+        raise HTTPException(status_code=404, detail="Library not found") from None
+    except LibraryAlreadyScanningError:
+        raise HTTPException(status_code=409, detail="Library is already being scanned") from None
+    except Exception as e:
+        logger.exception(f"[Web API] Error starting full scan for library {library_id}")
         raise HTTPException(
             status_code=500,
             detail=sanitize_exception_message(e, "Failed to start library scan"),
@@ -547,6 +576,7 @@ async def reconcile_library_tags(
     library_id: str,
     batch_size: Annotated[int, Query(description="Number of files to process per batch", ge=1, le=1000)] = 100,
     tagging_service: "TaggingService" = Depends(get_tagging_service),
+    navidrome_service: "NavidromeService" = Depends(get_navidrome_service),
 ) -> ReconcileTagsResponse:
     """Reconcile file tags for a library.
 
@@ -570,6 +600,8 @@ async def reconcile_library_tags(
         result = await asyncio.to_thread(
             tagging_service.reconcile_library, library_id=library_id, batch_size=batch_size
         )
+        # Trigger incremental Navidrome rescan after tag writes.
+        await asyncio.to_thread(navidrome_service.trigger_rescan)
         return ReconcileTagsResponse.from_dto(result)
     except ValueError:
         raise HTTPException(status_code=404, detail="Library not found") from None

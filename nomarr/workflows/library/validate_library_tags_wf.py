@@ -6,7 +6,7 @@ import logging
 from collections import Counter
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.ml.ml_discovery_comp import discover_heads
+from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database

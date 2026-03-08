@@ -134,6 +134,8 @@ class WorkerClaimsOperations:
     def cleanup_completed_file_claims(self) -> int:
         """Remove claims for files that are already tagged.
 
+        Uses edge-based state: files with ``ml_tagged`` edge are tagged.
+
         Returns:
             Number of claims removed
 
@@ -143,8 +145,15 @@ class WorkerClaimsOperations:
             self.db.aql.execute(
                 """
                 FOR claim IN worker_claims
+                    FILTER claim.claim_type != "reconcile"  // ML claims only
                     LET file = DOCUMENT(claim.file_id)
-                    FILTER file.tagged == true OR file.needs_tagging == false
+                    LET has_tagged = LENGTH(
+                        FOR edge IN file_has_state
+                            FILTER edge._from == claim.file_id AND edge._to == "file_states/ml_tagged"
+                            LIMIT 1
+                            RETURN 1
+                    )
+                    FILTER has_tagged > 0
                     REMOVE claim IN worker_claims
                     RETURN 1
                 """,
@@ -157,8 +166,7 @@ class WorkerClaimsOperations:
 
         Removes claims where:
         - File document no longer exists
-        - File no longer needs tagging
-        - File is marked invalid
+        - File already has ml_tagged edge (for ML claims)
 
         Returns:
             Number of claims removed
@@ -169,8 +177,15 @@ class WorkerClaimsOperations:
             self.db.aql.execute(
                 """
                 FOR claim IN worker_claims
+                    FILTER claim.claim_type != "reconcile"  // ML claims only
                     LET file = DOCUMENT(claim.file_id)
-                    FILTER file == null OR file.needs_tagging == false OR file.is_valid == false
+                    LET has_tagged = LENGTH(
+                        FOR edge IN file_has_state
+                            FILTER edge._from == claim.file_id AND edge._to == "file_states/ml_tagged"
+                            LIMIT 1
+                            RETURN 1
+                    )
+                    FILTER file == null OR has_tagged > 0
                     REMOVE claim IN worker_claims
                     RETURN 1
                 """,

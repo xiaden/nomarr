@@ -19,11 +19,7 @@ from .analytics_types import (
 )
 from .calibration_types import (
     ApplyCalibrationResponse,
-    CalibrationRequest,
-    GenerateCalibrationResponse,
-    GenerateMinmaxCalibrationResponse,
     RecalibrationStatusResponse,
-    SaveCalibrationSidecarsResponse,
 )
 from .config_types import ConfigResponse, ConfigUpdateRequest, ConfigUpdateResponse
 from .info_types import (
@@ -86,7 +82,6 @@ __all__ = [
     "BatchProcessRequest",
     "BatchProcessResponse",
     "CalibrationHistoryResponse",
-    "CalibrationRequest",
     "ConfigInfoResponse",
     "ConfigResponse",
     "ConfigUpdateRequest",
@@ -98,8 +93,6 @@ __all__ = [
     "FileTagResponse",
     "FileTagsResponse",
     "GPUHealthResponse",
-    "GenerateCalibrationResponse",
-    "GenerateMinmaxCalibrationResponse",
     "GeneratePlaylistResponse",
     "GenerateTemplateFilesRequest",
     "GenerateTemplateFilesResponse",
@@ -128,7 +121,6 @@ __all__ = [
     "ReconcilePathsResponse",
     "RetagAllResponse",
     "RunCalibrationResponse",
-    "SaveCalibrationSidecarsResponse",
     "SearchFilesResponse",
     "SmartPlaylistFilterResponse",
     "SongListResponse",

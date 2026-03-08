@@ -1,11 +1,10 @@
 """Calibration operations for library_files collection."""
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from nomarr.persistence.arango_client import DatabaseLike
 
 if TYPE_CHECKING:
-    from arango.cursor import Cursor
 
     from nomarr.persistence.db import Database
 
@@ -20,9 +19,12 @@ class LibraryFilesCalibrationMixin:
     def update_calibration_hash(self, file_id: str, calibration_hash: str) -> None:
         """Update the calibration version hash for a file.
 
+        Delegates to edge-based state via ``db.file_states.set_calibrated()``.
+        Upserts a ``file_has_state`` edge to ``file_states/calibrated``.
+
         CALIBRATION_HASH SEMANTICS:
-        - NULL: File never recalibrated (initial processing with raw scores)
-        - Hash value: MD5 of all calibration_state.calibration_def_hash values
+        - NULL (no edge): File never recalibrated (initial processing with raw scores)
+        - Hash value (edge): MD5 of all calibration_state.calibration_def_hash values
           at the time this file's mood tags were last computed via recalibration
 
         Used to determine if recalibration is needed by comparing against
@@ -33,17 +35,13 @@ class LibraryFilesCalibrationMixin:
             calibration_hash: Global calibration version hash from meta collection
 
         """
-        self.db.aql.execute(
-            """
-            UPDATE PARSE_IDENTIFIER(@file_id).key WITH {
-                calibration_hash: @calibration_hash
-            } IN library_files
-            """,
-            bind_vars={"file_id": file_id, "calibration_hash": calibration_hash},
-        )
+        assert self.parent_db is not None, "parent_db required for edge-based state"
+        self.parent_db.file_states.set_calibrated(file_id, calibration_hash)
 
     def update_calibration_hashes_batch(self, items: list[tuple[str, str]]) -> None:
         """Update calibration_hash for multiple files in a single AQL query.
+
+        Delegates to edge-based state via ``db.file_states.set_calibrated_batch()``.
 
         Args:
             items: List of (file_id, calibration_hash) tuples.
@@ -52,45 +50,26 @@ class LibraryFilesCalibrationMixin:
         """
         if not items:
             return
-
-        bind_items = [
-            {"file_id": file_id, "calibration_hash": calibration_hash}
-            for file_id, calibration_hash in items
-        ]
-        self.db.aql.execute(
-            """
-            FOR item IN @items
-                UPDATE PARSE_IDENTIFIER(item.file_id).key WITH {
-                    calibration_hash: item.calibration_hash
-                } IN library_files
-            """,
-            bind_vars=cast("dict[str, Any]", {"items": bind_items}),
-        )
+        assert self.parent_db is not None, "parent_db required for edge-based state"
+        self.parent_db.file_states.set_calibrated_batch(items)
 
     def clear_all_calibration_hashes(self) -> int:
-        """Set calibration_hash and last_written_calibration_hash to null on all files.
+        """Clear calibration state for all files.
 
+        Removes all ``calibrated`` edges from ``file_has_state``.
         Used when clearing calibration data to mark all files as needing recalibration.
 
         Returns:
-            Number of files updated.
-
+            Number of calibrated edges removed.
         """
-        cursor = self.db.aql.execute(
-            """
-            FOR f IN library_files
-                FILTER f.calibration_hash != null OR f.last_written_calibration_hash != null
-                UPDATE f WITH {
-                    calibration_hash: null,
-                    last_written_calibration_hash: null
-                } IN library_files
-                RETURN 1
-            """,
-        )
-        return len(list(cursor))  # type: ignore[arg-type]
+        assert self.parent_db is not None, "parent_db required for edge-based state"
+        return self.parent_db.file_states.clear_all_calibrated()
 
     def get_calibration_status_by_library(self, expected_hash: str) -> list[dict[str, Any]]:
         """Get calibration status counts grouped by library.
+
+        Delegates to edge-based state via
+        ``db.file_states.get_calibration_status_by_library()``.
 
         Returns count of files with current calibration hash vs outdated/missing.
 
@@ -101,24 +80,5 @@ class LibraryFilesCalibrationMixin:
             List of {library_id, total_files, current_count, outdated_count}
 
         """
-        cursor = cast(
-            "Cursor",
-            self.db.aql.execute(
-                """
-                FOR f IN library_files
-                    COLLECT lib_id = f.library_id
-                    AGGREGATE
-                        total = COUNT(1),
-                        current = SUM(f.calibration_hash == @expected_hash ? 1 : 0)
-                    LET outdated = total - current
-                    RETURN {
-                        library_id: lib_id,
-                        total_files: total,
-                        current_count: current,
-                        outdated_count: outdated
-                    }
-                """,
-                bind_vars=cast("dict[str, Any]", {"expected_hash": expected_hash}),
-            ),
-        )
-        return list(cursor)
+        assert self.parent_db is not None, "parent_db required for edge-based state"
+        return self.parent_db.file_states.get_calibration_status_by_library(expected_hash)

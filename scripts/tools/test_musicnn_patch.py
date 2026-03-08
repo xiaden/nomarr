@@ -53,7 +53,7 @@ def _collect_audio_files(audio_dir: str, limit: int) -> list[str]:
 
 
 def _load_backbone(path: str) -> ONNXBackboneModel:  # type: ignore[name-defined]  # noqa: F821
-    from nomarr.components.ml.ml_onnx_backbone import ONNXBackboneModel
+    from nomarr.components.ml.onnx.ml_backbone import ONNXBackboneModel
     model = ONNXBackboneModel(path)
     model.load("cpu")
     return model

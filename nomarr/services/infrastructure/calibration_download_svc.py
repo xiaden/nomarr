@@ -23,7 +23,7 @@ import logging
 import os
 from typing import Any
 
-from nomarr.components.ml.ml_discovery_comp import discover_heads_no_db
+from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads_no_db
 from nomarr.helpers.dto.calibration_dto import EnsureCalibrationsExistResult
 
 logger = logging.getLogger(__name__)

@@ -17,8 +17,8 @@ from mutagen.flac import FLAC
 from mutagen.id3 import ID3
 from mutagen.mp4 import MP4
 
-from nomarr.components.ml.chromaprint_comp import compute_chromaprint
-from nomarr.components.ml.ml_audio_comp import load_audio_mono
+from nomarr.components.ml.audio.ml_audio_comp import load_audio_mono
+from nomarr.components.ml.audio.ml_chromaprint_comp import compute_chromaprint
 from nomarr.components.tagging.tag_normalization_comp import (
     normalize_id3_tags,
     normalize_mp4_tags,

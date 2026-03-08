@@ -171,3 +171,18 @@ class StaticPlaylistResult:
     m3u_content: str
     track_count: int
     missing_ids: list[str]
+
+
+@dataclass(frozen=True)
+class PushPlaylistResult:
+    """Result from pushing a playlist to Navidrome via Subsonic API.
+
+    Attributes:
+        resolved_count: Number of file IDs successfully mapped to Navidrome song IDs.
+        unresolved_count: Number of file IDs with no Navidrome mapping.
+        playlist_id: Navidrome playlist ID (from create or replace).
+    """
+
+    resolved_count: int
+    unresolved_count: int
+    playlist_id: str

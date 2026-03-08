@@ -81,8 +81,8 @@ def mock_library_service():
         def __init__(self):
             self.scan_calls = []
 
-        def start_scan_for_library(self, library_id, scan_type="quick"):
-            self.scan_calls.append({"library_id": library_id, "scan_type": scan_type})
+        def start_quick_scan(self, library_id: str) -> dict[str, str]:
+            self.scan_calls.append({"library_id": library_id, "scan_type": "quick"})
             return {"status": "ok"}
 
     return MockLibraryService()
@@ -569,7 +569,7 @@ class TestPerLibraryWatchMode:
             def __init__(self):
                 self.scan_call_count = 0
 
-            def start_scan_for_library(self, library_id, scan_type="quick"):
+            def start_quick_scan(self, library_id: str) -> None:
                 self.scan_call_count += 1
                 raise RuntimeError("Scan failed")
 

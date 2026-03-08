@@ -23,7 +23,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.ml.calibration_state_comp import (
+from nomarr.components.ml.calibration.ml_calibration_state_comp import (
     get_calibration_version,
     load_all_calibration_states,
 )

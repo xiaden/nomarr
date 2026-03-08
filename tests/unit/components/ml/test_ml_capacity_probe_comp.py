@@ -6,7 +6,7 @@ import os
 import tempfile
 from unittest.mock import MagicMock, patch
 
-from nomarr.components.ml.ml_capacity_probe_comp import (
+from nomarr.components.ml.resources.ml_capacity_probe_comp import (
     CapacityEstimate,
     compute_model_set_hash,
     get_or_run_capacity_probe,
@@ -22,7 +22,7 @@ class TestComputeModelSetHash:
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create fake model files
             os.makedirs(os.path.join(tmpdir, "effnet", "heads"))
-            model_file = os.path.join(tmpdir, "effnet", "heads", "genre.pb")
+            model_file = os.path.join(tmpdir, "effnet", "heads", "genre.onnx")
             with open(model_file, "wb") as f:
                 f.write(b"fake model data")
 
@@ -30,24 +30,31 @@ class TestComputeModelSetHash:
             hash2 = compute_model_set_hash(tmpdir)
 
             assert hash1 == hash2
+            # Verify we actually hashed file content, not empty input
+            empty_hash = compute_model_set_hash(tempfile.mkdtemp())
+            assert hash1 != empty_hash
 
     def test_hash_changes_with_different_files(self):
         """Hash changes when model files change."""
         with tempfile.TemporaryDirectory() as tmpdir1, tempfile.TemporaryDirectory() as tmpdir2:
             # First dir with one model
             os.makedirs(os.path.join(tmpdir1, "effnet"))
-            with open(os.path.join(tmpdir1, "effnet", "model.pb"), "wb") as f:
+            with open(os.path.join(tmpdir1, "effnet", "model.onnx"), "wb") as f:
                 f.write(b"model1")
 
             # Second dir with different model
             os.makedirs(os.path.join(tmpdir2, "effnet"))
-            with open(os.path.join(tmpdir2, "effnet", "model.pb"), "wb") as f:
+            with open(os.path.join(tmpdir2, "effnet", "model.onnx"), "wb") as f:
                 f.write(b"model2_different")
 
             hash1 = compute_model_set_hash(tmpdir1)
             hash2 = compute_model_set_hash(tmpdir2)
 
             assert hash1 != hash2
+            # Both should have found files (not empty hashes)
+            empty_hash = compute_model_set_hash(tempfile.mkdtemp())
+            assert hash1 != empty_hash
+            assert hash2 != empty_hash
 
     def test_hash_handles_empty_dir(self):
         """Hash handles empty models directory gracefully."""
@@ -103,11 +110,11 @@ class TestGetOrRunCapacityProbe:
         with (
             tempfile.TemporaryDirectory() as tmpdir,
             patch(
-                "nomarr.components.ml.ml_capacity_probe_comp.compute_model_set_hash",
+                "nomarr.components.ml.resources.ml_capacity_probe_comp.compute_model_set_hash",
                 return_value="abc123",
             ),
             patch(
-                "nomarr.components.ml.ml_capacity_probe_comp.check_nvidia_gpu_capability",
+                "nomarr.components.ml.resources.ml_capacity_probe_comp.check_nvidia_gpu_capability",
                 return_value=True,
             ),
         ):
@@ -132,7 +139,7 @@ class TestInvalidateCapacityEstimate:
         with (
             tempfile.TemporaryDirectory() as tmpdir,
             patch(
-                "nomarr.components.ml.ml_capacity_probe_comp.compute_model_set_hash",
+                "nomarr.components.ml.resources.ml_capacity_probe_comp.compute_model_set_hash",
                 return_value="abc123",
             ),
         ):

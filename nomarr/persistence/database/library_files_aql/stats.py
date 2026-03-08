@@ -20,13 +20,15 @@ class LibraryFilesStatsMixin:
     def get_library_stats(self, library_id: int | None = None) -> dict[str, Any]:
         """Get library statistics.
 
+        Uses ``db.file_states.count_untagged_files()`` for the
+        ``needs_tagging_count`` metric.
+
         Args:
-            library_id: Optional library ID to filter
+            library_id: Optional library ID to filter.
 
         Returns:
             Dict with: total_files, total_artists, total_albums, total_duration, total_size,
-                       needs_tagging_count (files awaiting processing)
-
+                       needs_tagging_count (files awaiting processing).
         """
         filter_clause = "FILTER file.library_id == @library_id" if library_id is not None else ""
         bind_vars = {"library_id": library_id} if library_id is not None else {}
@@ -42,60 +44,42 @@ class LibraryFilesStatsMixin:
                     total_artists = COUNT_DISTINCT(file.artist),
                     total_albums = COUNT_DISTINCT(file.album),
                     total_duration = SUM(file.duration_seconds),
-                    total_size = SUM(file.file_size),
-                    needs_tagging_count = SUM(file.needs_tagging == true ? 1 : 0)
+                    total_size = SUM(file.file_size)
                 RETURN {{
                     total_files,
                     total_artists,
                     total_albums,
                     total_duration,
-                    total_size,
-                    needs_tagging_count
+                    total_size
                 }}
             """,
                 bind_vars=cast("dict[str, Any]", bind_vars),
             ),
         )
         result: dict[str, Any] = next(cursor, {})
+        assert self.parent_db is not None, "parent_db required for edge-based state"
+        result["needs_tagging_count"] = self.parent_db.file_states.count_untagged_files(library_id)
         return result
 
     def count_recently_tagged(self, window_seconds: int = 300) -> int:
         """Count files tagged within a recent time window.
 
-        Used for computing processing velocity (files/minute).
+        Delegates to ``db.file_states.count_recently_tagged()``.
 
         Args:
-            window_seconds: Lookback window in seconds (default 300 = 5 minutes)
+            window_seconds: Lookback window in seconds (default 300 = 5 minutes).
 
         Returns:
-            Number of files with last_tagged_at within the window
-
+            Number of files tagged within the window.
         """
-        from nomarr.helpers.time_helper import now_ms
-
-        cutoff = now_ms().value - (window_seconds * 1000)
-        cursor = cast(
-            "Cursor",
-            self.db.aql.execute(
-                """
-            FOR file IN library_files
-                FILTER file.last_tagged_at != null
-                FILTER file.last_tagged_at >= @cutoff
-                COLLECT WITH COUNT INTO cnt
-                RETURN cnt
-            """,
-                bind_vars=cast("dict[str, Any]", {"cutoff": cutoff}),
-            ),
-        )
-        result = next(cursor, 0)
-        return int(result)
+        assert self.parent_db is not None, "parent_db required for edge-based state"
+        return self.parent_db.file_states.count_recently_tagged(window_seconds)
 
     def get_library_counts(self) -> dict[str, dict[str, int]]:
         """Get file and folder counts for all libraries.
 
         Returns:
             Dict mapping library_id to {"file_count": int, "folder_count": int}
-            Only includes valid files (is_valid == true or 1).
 
         """
         cursor = cast(
@@ -103,7 +87,6 @@ class LibraryFilesStatsMixin:
             self.db.aql.execute(
                 """
                 FOR file IN library_files
-                    FILTER file.is_valid == true
                     COLLECT library_id = file.library_id
                     AGGREGATE
                         file_count = COUNT(1),

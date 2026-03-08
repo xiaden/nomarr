@@ -14,19 +14,19 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_db
-from nomarr.components.ml.chromaprint_comp import compute_chromaprint
-from nomarr.components.ml.ml_audio_comp import (
+from nomarr.components.ml.audio.ml_audio_comp import (
     AudioLoadCrashError,
     AudioLoadShutdownError,
     load_audio_mono,
     should_skip_short,
 )
-from nomarr.components.ml.ml_backbone_embed_comp import compute_backbone_embeddings
-from nomarr.components.ml.ml_discovery_comp import compute_model_suite_hash
-from nomarr.components.ml.ml_head_pipeline_comp import run_heads
-from nomarr.components.ml.ml_onnx_cache import ONNXModelCache
-from nomarr.components.ml.ml_timing_comp import build_timing_summary
-from nomarr.components.ml.ml_vector_persist_comp import persist_backbone_vector
+from nomarr.components.ml.audio.ml_chromaprint_comp import compute_chromaprint
+from nomarr.components.ml.inference.ml_backbone_embed_comp import compute_backbone_embeddings
+from nomarr.components.ml.inference.ml_head_pipeline_comp import run_heads
+from nomarr.components.ml.onnx.ml_cache import ONNXModelCache
+from nomarr.components.ml.onnx.ml_discovery_comp import compute_model_suite_hash
+from nomarr.components.ml.resources.ml_timing_comp import build_timing_summary
+from nomarr.components.ml.vectors.ml_vector_persist_comp import persist_backbone_vector
 from nomarr.components.tagging.tagging_aggregation_comp import collect_mood_outputs
 from nomarr.helpers.dto.ml_edge_dto import MLEdgeWrites
 from nomarr.helpers.dto.processing_dto import DeferredFileWrites, ProcessFileResult, ProcessorConfig
@@ -117,8 +117,8 @@ def process_file_workflow(
     except AudioLoadCrashError as e:
         logger.error(f"[processor] Audio load crashed for {path}: {e}")
         if db:
-            db.library_files.mark_file_invalid(path)
-            logger.info(f"[processor] Marked file as invalid: {path}")
+            db.library_files.bulk_delete_files([path])
+            logger.info(f"[processor] Deleted invalid file: {path}")
         elapsed = round((internal_ms().value - start_all.value) / 1000, 2)
         return ProcessFileResult(
             file_path=path,
