@@ -19,17 +19,17 @@ queries Nomarr's vector similarity API and returns sonically similar tracks.
 ## Build
 
 ```bash
-# Compile to WASM
+# Compile WASM from src/ into dist/
 make build
 
-# Compile and package as .ndp
+# Compile and package as dist/nomarr.ndp
 make package
 
-# Clean build artifacts
+# Clean dist/ directory
 make clean
 ```
 
-The `make package` command produces `nomarr.ndp` — a ZIP archive containing
+The `make package` command produces `dist/nomarr.ndp` — a ZIP archive containing
 `plugin.wasm` and `manifest.json`.
 
 ## Deployment
@@ -37,7 +37,7 @@ The `make package` command produces `nomarr.ndp` — a ZIP archive containing
 1. **Copy the plugin** to Navidrome's plugins directory:
 
    ```bash
-   cp nomarr.ndp /path/to/navidrome/plugins/nomarr/
+   cp dist/nomarr.ndp /path/to/navidrome/plugins/nomarr/
    cd /path/to/navidrome/plugins/nomarr/
    unzip nomarr.ndp
    ```
@@ -89,20 +89,24 @@ the sandbox permissions declared in `manifest.json`.
 ### Plugin not loading
 
 - Check Navidrome logs for plugin load errors:
+
   ```
   ND_PLUGINS_LOGLEVEL=debug
   ```
+
 - Verify `plugin.wasm` and `manifest.json` are in the plugins directory
 - Ensure Navidrome v0.60.0+ is running with plugins enabled
 
 ### No results from Instant Mix
 
 - Verify Nomarr is reachable from the Navidrome host:
+
   ```bash
   curl -H "X-API-Key: YOUR_KEY" http://nomarr:8356/api/v1/navidrome/similar-tracks \
     -H "Content-Type: application/json" \
     -d '{"song_id": "SOME_NAVIDROME_ID", "count": 10}'
   ```
+
 - Check that Navidrome's song map is synced (the Nomarr API needs to know the
   mapping between Navidrome mediafile IDs and Nomarr's internal IDs)
 - Review Navidrome plugin logs for error messages from the nomarr plugin
@@ -123,10 +127,12 @@ the sandbox permissions declared in `manifest.json`.
 4. In a Navidrome client (web UI or Subsonic app), select a track and click
    **Instant Mix** (or "Play Radio")
 5. Check Navidrome logs for plugin invocation messages:
+
    ```
    nomarr: querying http://nomarr:8356/api/v1/navidrome/similar-tracks for song <id>
    nomarr: found N similar tracks for song <id>
    ```
+
 6. Verify similar tracks appear in the generated playlist
 
 ## License

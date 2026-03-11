@@ -5,21 +5,27 @@
 
 .PHONY: build package clean
 
-WASM_OUT    := plugin.wasm
-NDP_OUT     := nomarr.ndp
+SRC_DIR     := src
+DIST_DIR    := dist
+WASM_OUT    := $(DIST_DIR)/plugin.wasm
+NDP_OUT     := $(DIST_DIR)/nomarr.ndp
 NDP_FILES   := $(WASM_OUT) manifest.json
 
 ifdef USE_TINYGO
-  BUILD_CMD = tinygo build -target=wasip1 -scheduler=none -buildmode=c-shared -o $(WASM_OUT) .
+  BUILD_CMD = cd $(SRC_DIR) && tinygo build -target=wasip1 -scheduler=none -buildmode=c-shared -o ../$(WASM_OUT) .
 else
-  BUILD_CMD = GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o $(WASM_OUT) .
+  BUILD_CMD = cd $(SRC_DIR) && GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o ../$(WASM_OUT) .
 endif
 
-build:
+build: | $(DIST_DIR)
 	$(BUILD_CMD)
 
+$(DIST_DIR):
+	mkdir -p $(DIST_DIR)
+
 package: build
-	zip -j $(NDP_OUT) $(NDP_FILES)
+	cp manifest.json $(DIST_DIR)/manifest.json
+	cd $(DIST_DIR) && zip -j ../$(NDP_OUT) plugin.wasm manifest.json
 
 clean:
-	rm -f $(WASM_OUT) $(NDP_OUT)
+	rm -rf $(DIST_DIR)
