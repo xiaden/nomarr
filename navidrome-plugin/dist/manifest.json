@@ -1,0 +1,57 @@
+{
+  "name": "nomarr",
+  "author": "Nomarr",
+  "version": "0.1.0",
+  "description": "Nomarr ML-powered audio similarity for Instant Mix",
+  "website": "https://github.com/xiaden/nomarr",
+  "permissions": {
+    "http": {
+      "reason": "To query Nomarr API for ML-powered audio similarity results",
+      "requiredHosts": ["*"]
+    }
+  },
+  "config": {
+    "schema": {
+      "type": "object",
+      "properties": {
+        "nomarr_url": {
+          "type": "string",
+          "title": "Nomarr API URL",
+          "description": "Base URL of your Nomarr instance (e.g. http://nomarr:8356)",
+          "minLength": 1
+        },
+        "nomarr_api_key": {
+          "type": "string",
+          "title": "Nomarr API Key",
+          "description": "API key for authenticating with Nomarr",
+          "format": "password",
+          "minLength": 1
+        },
+        "backbone_id": {
+          "type": "string",
+          "title": "ML Backbone",
+          "description": "ML backbone model to use for similarity. Default: effnet-discogs",
+          "default": "effnet-discogs"
+        }
+      },
+      "required": ["nomarr_url", "nomarr_api_key"]
+    },
+    "uiSchema": {
+      "type": "VerticalLayout",
+      "elements": [
+        {
+          "type": "Control",
+          "scope": "#/properties/nomarr_url"
+        },
+        {
+          "type": "Control",
+          "scope": "#/properties/nomarr_api_key"
+        },
+        {
+          "type": "Control",
+          "scope": "#/properties/backbone_id"
+        }
+      ]
+    }
+  }
+}
