@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from nomarr.helpers.exceptions import PlaylistConversionError
 from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.types.playlist_import_types import (
@@ -16,9 +17,6 @@ from nomarr.interfaces.api.types.playlist_import_types import (
     SpotifyCredentialsStatusResponse,
 )
 from nomarr.interfaces.api.web.dependencies import get_playlist_import_service
-from nomarr.workflows.playlist_import.convert_playlist_wf import (
-    PlaylistConversionError,
-)
 
 logger = logging.getLogger(__name__)
 

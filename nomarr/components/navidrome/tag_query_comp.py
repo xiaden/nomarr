@@ -89,3 +89,63 @@ def get_playlist_preview_tracks(
         order_by=order_by,
         limit=limit,
     )
+
+
+
+def get_short_to_versioned_mapping(
+    db: Database,
+    namespace: str = "nom",
+) -> dict[str, list[str]]:
+    """Build mapping from short names to versioned storage keys.
+
+    Used by playlist query resolution to convert user-friendly short names
+    to actual stored tag keys for database queries.
+
+    Args:
+        db: Database instance
+        namespace: Tag namespace (default: "nom")
+
+    Returns:
+        Dict mapping short_name → list of versioned keys that share that label.
+        Most short names map to exactly one versioned key, but future calibrations
+        could create multiple versions of the same label.
+
+    """
+    from nomarr.helpers.tag_key_mapping import is_versioned_ml_key, make_short_tag_name
+
+    all_rels = get_nomarr_tag_rels(db)
+    nom_rels = [rel for rel in all_rels if rel.startswith(f"{namespace}:")]
+
+    mapping: dict[str, list[str]] = {}
+
+    for rel in nom_rels:
+        # Determine if numeric by checking if it's a versioned key
+        is_numeric = is_versioned_ml_key(rel)
+        short_name = make_short_tag_name(rel, is_numeric=is_numeric)
+
+        if short_name not in mapping:
+            mapping[short_name] = []
+        mapping[short_name].append(rel)
+
+    return mapping
+
+
+def resolve_short_to_versioned_keys(
+    short_name: str,
+    db: Database,
+    namespace: str = "nom",
+) -> list[str]:
+    """Resolve a short tag name to its versioned storage key(s).
+
+    Args:
+        short_name: Short tag name (e.g., "nom-happy-raw")
+        db: Database instance
+        namespace: Tag namespace (default: "nom")
+
+    Returns:
+        List of versioned keys that match this short name.
+        Empty list if no match found.
+
+    """
+    mapping = get_short_to_versioned_mapping(db, namespace)
+    return mapping.get(short_name, [])

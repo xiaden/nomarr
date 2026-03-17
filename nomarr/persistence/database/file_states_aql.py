@@ -641,11 +641,13 @@ class FileStatesOperations:
             File dict or ``None`` if no work available.
         """
         duration_filter = ""
+        bind_vars: dict[str, Any] = {"@coll": _EDGE_COLLECTION, "ml_tagged_state": _STATE_ML_TAGGED}
         if min_duration_s is not None and not allow_short:
             duration_filter = (
-                f"\n                    FILTER file.duration_seconds == null"
-                f" OR file.duration_seconds >= {min_duration_s}"
+                "\n                    FILTER file.duration_seconds == null"
+                " OR file.duration_seconds >= @min_duration_s"
             )
+            bind_vars["min_duration_s"] = min_duration_s
 
         query = f"""\
                 FOR file IN library_files{duration_filter}
@@ -667,10 +669,7 @@ class FileStatesOperations:
             "Cursor",
             self.db.aql.execute(  # type: ignore[union-attr]
                 query,
-                bind_vars=cast(
-                    "dict[str, Any]",
-                    {"@coll": _EDGE_COLLECTION, "ml_tagged_state": _STATE_ML_TAGGED},
-                ),
+                bind_vars=cast("dict[str, Any]", bind_vars),
             ),
         )
         results = list(cursor)
@@ -679,7 +678,8 @@ class FileStatesOperations:
         if result:
             logger.debug("[DB] discover_next_untagged_file: found %s", result.get("_id"))
         else:
-            self._log_tagging_diagnostics()
+            if logger.isEnabledFor(logging.DEBUG):
+                self._log_tagging_diagnostics()
         return result
 
     def count_untagged_files(self, library_id: int | None = None) -> int:

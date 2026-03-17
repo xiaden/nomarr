@@ -23,6 +23,10 @@ class LibraryAlreadyScanningError(ValueError):
 
 
 
+class PlaylistConversionError(Exception):
+    """Raised when playlist conversion fails."""
+
+
 class SubsonicApiError(Exception):
     """Raised when the Subsonic API returns a non-ok response."""
 

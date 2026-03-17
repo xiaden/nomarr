@@ -62,7 +62,7 @@ class NavidromeSongMapOperations:
             UPDATE { file_id: doc.file_id, nd_path: doc.nd_path, synced_at: doc.synced_at }
             IN @@collection
         """
-        cursor: Cursor = self.db.aql.execute(  # type: ignore[union-attr]
+        cursor: Cursor = self.db.aql.execute(  # type: ignore[union-attr, assignment]  # python-arango stubs return union for sync/async/batch; we only use sync
             query,
             bind_vars={"docs": docs, "@collection": _COLLECTION},
         )
@@ -83,7 +83,7 @@ class NavidromeSongMapOperations:
             FILTER doc._key == @nd_id
             RETURN doc.file_id
         """
-        cursor: Cursor = self.db.aql.execute(  # type: ignore[union-attr]
+        cursor: Cursor = self.db.aql.execute(  # type: ignore[union-attr, assignment]  # python-arango stubs return union for sync/async/batch; we only use sync
             query,
             bind_vars={"nd_id": nd_id, "@collection": _COLLECTION},
         )
@@ -107,7 +107,7 @@ class NavidromeSongMapOperations:
             FILTER doc.file_id == @file_id
             RETURN doc._key
         """
-        cursor: Cursor = self.db.aql.execute(  # type: ignore[union-attr]
+        cursor: Cursor = self.db.aql.execute(  # type: ignore[union-attr, assignment]  # python-arango stubs return union for sync/async/batch; we only use sync
             query,
             bind_vars={"file_id": file_id, "@collection": _COLLECTION},
         )
@@ -133,7 +133,7 @@ class NavidromeSongMapOperations:
             FILTER doc.file_id IN @file_ids
             RETURN { file_id: doc.file_id, nd_id: doc._key }
         """
-        cursor: Cursor = self.db.aql.execute(  # type: ignore[union-attr]
+        cursor: Cursor = self.db.aql.execute(  # type: ignore[union-attr, assignment]  # python-arango stubs return union for sync/async/batch; we only use sync
             query,
             bind_vars={"file_ids": file_ids, "@collection": _COLLECTION},
         )
@@ -144,7 +144,7 @@ class NavidromeSongMapOperations:
     def count(self) -> int:
         """Return the total number of mappings in the collection."""
         query = "RETURN LENGTH(@@collection)"
-        cursor: Cursor = self.db.aql.execute(  # type: ignore[union-attr]
+        cursor: Cursor = self.db.aql.execute(  # type: ignore[union-attr, assignment]  # python-arango stubs return union for sync/async/batch; we only use sync
             query,
             bind_vars={"@collection": _COLLECTION},
         )
@@ -154,4 +154,4 @@ class NavidromeSongMapOperations:
 
     def truncate(self) -> None:
         """Remove all documents from the collection."""
-        self.collection.truncate()  # type: ignore[union-attr]
+        self.collection.truncate()  # type: ignore[union-attr, assignment]  # python-arango stubs return union for sync/async/batch; we only use sync

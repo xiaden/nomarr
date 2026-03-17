@@ -2,7 +2,7 @@
 
 This module holds a per-process registry of the worker database handle and
 worker identity.  It is populated once at worker startup and read by
-:class:`~nomarr.components.ml.ml_onnx_base.BaseONNXModel` during
+:class:`~nomarr.components.ml.onnx.ml_base.BaseONNXModel` during
 ``load()`` and ``unload()`` to drive VRAM promise coordination.
 
 This pattern is intentional and by design for this layer.  Workers are
