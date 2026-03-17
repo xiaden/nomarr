@@ -85,10 +85,7 @@ def edit_file_move(
     except (OSError, shutil.Error) as e:
         return {"error": f"Move failed: {e}"}
 
-    # Return workspace-relative paths — the caller already knows the relative
-    # paths it passed in, and absolute paths leak workstation layout needlessly.
-    # The server wrapper uses these for wrap_mcp_result_with_file_link which
-    # handles absolute resolution itself.
+    # Return workspace-relative paths — absolute paths leak workstation layout.
     rel_old = str(resolved_old.relative_to(workspace_root))
     rel_new = str(resolved_new.relative_to(workspace_root))
     dirs_created = [

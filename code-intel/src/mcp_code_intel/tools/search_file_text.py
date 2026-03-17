@@ -8,7 +8,6 @@ __all__ = ["search_file_text"]
 from pathlib import Path
 
 from ..helpers.file_lines import read_raw_line_range
-from ..helpers.semantic_tool_examples import get_semantic_tool_examples
 
 
 def search_file_text(file_path: str, search_string: str, workspace_root: Path) -> dict:
@@ -96,13 +95,6 @@ def search_file_text(file_path: str, search_string: str, workspace_root: Path) -
             "matches": matches,
             "total_matches": len(matches),
         }
-
-        # Add Python file semantic tool guidance
-        if target_path.suffix == ".py":
-            result["semantic_tools_available"] = {
-                "hint": "Python files: semantic tools provide structured output",
-                "example_outputs": get_semantic_tool_examples(),
-            }
 
         return result
 

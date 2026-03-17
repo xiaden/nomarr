@@ -25,7 +25,7 @@ Call tracing:
 - trace_project_endpoint: Resolve FastAPI DI to trace full endpoint behavior
 
 Quality validation:
-- lint_project_backend: Run ruff, mypy, and import-linter on specified path
+- lint_project_backend: Run ruff+mypy on modified files, or all files+import-linter (check_all=True)
 - lint_project_frontend: Run ESLint and TypeScript type checking on frontend
 
 Task plan tools:
@@ -59,9 +59,8 @@ from mcp.types import CallToolResult
 
 from .helpers.config_loader import load_config
 from .helpers.mcp_output_helper import (
-    wrap_mcp_result,
-    wrap_mcp_result_with_file_link,
-    wrap_mcp_result_with_multiple_file_links,
+    FileLink,
+    ToolOutput,
 )
 from .tools.analyze_project_api_coverage import (
     analyze_project_api_coverage as analyze_project_api_coverage_impl,
@@ -238,9 +237,9 @@ def _validate_config_on_startup() -> dict:
 
 # Initialize MCP server
 mcp = FastMCP(
-    name="nom:coding-tools",
+    name="coding-tools",
     instructions=(
-        "Provides read-only, static analysis access to the Nomarr codebase. "
+        "Provides static analysis of files, and editing tools. "
         "Tool priority: project_list_dir → module_discover_api → "
         "module_locate_symbol → module_get_source → "
         "file_symbol_at_line → trace_calls/trace_endpoint. "
@@ -277,11 +276,11 @@ def list_project_directory_tree(
     Excludes: .venv, node_modules, __pycache__, etc.
     """
     result = list_project_directory_tree_impl(folder, workspace_root=ROOT)
-    return wrap_mcp_result(
-        result,
-        user_summary=f"Listed directory: {folder or 'root'}",
+    return ToolOutput(
         tool_name="list_project_directory_tree",
-    )
+        breadcrumb=f"Listed directory: {folder or 'root'}",
+        metadata=result,
+    ).to_call_tool_result()
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -298,18 +297,13 @@ def read_module_api(
     """Discover the entire API of any Python module."""
     result = read_module_api_impl(module_name)
     file_path = result.get("file")
-    if file_path:
-        return wrap_mcp_result_with_file_link(
-            result,
-            file_path=file_path,
-            action="Read API",
-            tool_name="read_module_api",
-        )
-    return wrap_mcp_result(
-        result,
-        user_summary=f"Read API for module: {module_name}",
+    file_links = [FileLink(file_path=file_path, action="")] if file_path else None
+    return ToolOutput(
         tool_name="read_module_api",
-    )
+        breadcrumb=f"Read API for module: {module_name} at:",
+        metadata=result,
+        file_links=file_links,
+    ).to_call_tool_result()
 
 
 @mcp.tool()
@@ -328,26 +322,28 @@ def read_module_source(
     Returns:
         - line/line_count: Context range (includes surrounding lines for reading)
         - symbol_start_line/symbol_end_line: Actual symbol boundaries (use for replacements)
+
     """
     result = read_module_source_impl(qualified_name, large_context=large_context)
     file_path = result.get("file")
     start_line = result.get("symbol_start_line")
     end_line = result.get("symbol_end_line")
+    source = result.pop("source", "")
+    file_links = None
     if file_path and start_line:
-        return wrap_mcp_result_with_file_link(
-            result,
-            file_path=file_path,
-            start_line=start_line,
-            end_line=end_line,
-            action="Read source",
-            tool_name="read_module_source",
-            text_field_keys=["source"],
-        )
-    return wrap_mcp_result(
-        result,
-        user_summary=f"Read source: {qualified_name}",
+        file_links = [
+            FileLink(
+                file_path=file_path, start_line=start_line,
+                end_line=end_line, action="",
+            ),
+        ]
+    return ToolOutput(
         tool_name="read_module_source",
-    )
+        breadcrumb="Read source:",
+        assistant_content=[source] if source else None,
+        metadata=result,
+        file_links=file_links,
+    ).to_call_tool_result()
 
 
 @mcp.tool()
@@ -363,16 +359,20 @@ def read_file_symbol_at_line(
     Returns the innermost containing symbol so you can reason about full context.
     """
     result = read_file_symbol_at_line_impl(file_path, line_number, ROOT)
-    return wrap_mcp_result_with_file_link(
-        result,
-        file_path=file_path,
-        start_line=line_number,
-        end_line=line_number,
-        action="Read symbol at",
+    source = result.pop("source", "")
+    symbol_name = result.get("qualified_name", "symbol")
+    return ToolOutput(
         tool_name="read_file_symbol_at_line",
-        text_field_keys=["source"],
-    )
-
+        breadcrumb=f"Read {symbol_name} at:",
+        assistant_content=[source] if source else None,
+        metadata=result,
+        file_links=[
+            FileLink(
+                file_path=file_path, start_line=line_number,
+                end_line=line_number, action="",
+            ),
+        ],
+    ).to_call_tool_result()
 
 @mcp.tool()
 def locate_module_symbol(
@@ -389,24 +389,24 @@ def locate_module_symbol(
     """
     result = locate_module_symbol_impl(symbol_name)
     matches = result.get("matches", [])
+    file_links = None
     if matches:
-        # Build file locations from matches (relative paths resolved to absolute)
-        file_locations = [
-            (ROOT / m["file"], m["line"], m.get("line") + m.get("length", 1) - 1, "Found")
+        file_links = [
+            FileLink(
+                file_path=str(ROOT / m["file"]),
+                start_line=m["line"],
+                end_line=m.get("line") + m.get("length", 1) - 1,
+                action="",
+            )
             for m in matches
             if m.get("file") and m.get("line")
-        ]
-        if file_locations:
-            return wrap_mcp_result_with_multiple_file_links(
-                result,
-                file_locations=file_locations,
-                tool_name="locate_module_symbol",
-            )
-    return wrap_mcp_result(
-        result,
-        user_summary=f"Located symbol: {symbol_name}",
+        ] or None
+    return ToolOutput(
         tool_name="locate_module_symbol",
-    )
+        breadcrumb=f"Located {symbol_name} at:",
+        metadata=result,
+        file_links=file_links,
+    ).to_call_tool_result()
 
 
 @mcp.tool()
@@ -427,19 +427,21 @@ def trace_module_calls(
     tree = result.get("tree", {})
     file_path = tree.get("file")
     line = tree.get("line")
+    file_links = None
     if file_path and line:
-        return wrap_mcp_result_with_file_link(
-            result,
-            file_path=ROOT / file_path,
-            start_line=line,
-            action="Traced calls from",
-            tool_name="trace_module_calls",
-        )
-    return wrap_mcp_result(
-        result,
-        user_summary=f"Traced calls from: {function}",
+        file_links = [
+            FileLink(
+                file_path=str(ROOT / file_path),
+                start_line=line,
+                action="",
+            ),
+        ]
+    return ToolOutput(
         tool_name="trace_module_calls",
-    )
+        breadcrumb=f"Traced calls from: {function} at:",
+        metadata=result,
+        file_links=file_links,
+    ).to_call_tool_result()
 
 
 @mcp.tool()
@@ -450,17 +452,18 @@ def list_project_routes() -> CallToolResult:
     function, file, and line.
     """
     result = list_project_routes_impl(ROOT, config=_config)
-    return wrap_mcp_result(
-        result,
-        user_summary="Listed all API routes",
+    return ToolOutput(
         tool_name="list_project_routes",
-    )
+        breadcrumb="Listed all API routes",
+        metadata=result,
+    ).to_call_tool_result()
 
 
 @mcp.tool()
 def trace_project_endpoint(
     endpoint: Annotated[
-        str, "Fully qualified endpoint name (e.g., 'nomarr.interfaces.api.web.info_if.web_info')"
+        str,
+        "Fully qualified endpoint name (e.g., 'nomarr.interfaces.api.web.info_if.web_info')",
     ],
 ) -> CallToolResult:
     """Trace an API endpoint through FastAPI DI to service methods.
@@ -477,19 +480,21 @@ def trace_project_endpoint(
     ep = result.get("endpoint", {})
     file_path = ep.get("file")
     line = ep.get("line")
+    file_links = None
     if file_path and line:
-        return wrap_mcp_result_with_file_link(
-            result,
-            file_path=ROOT / file_path,
-            start_line=line,
-            action="Traced endpoint",
-            tool_name="trace_project_endpoint",
-        )
-    return wrap_mcp_result(
-        result,
-        user_summary=f"Traced endpoint: {endpoint}",
+        file_links = [
+            FileLink(
+                file_path=str(ROOT / file_path),
+                start_line=line,
+                action="",
+            ),
+        ]
+    return ToolOutput(
         tool_name="trace_project_endpoint",
-    )
+        breadcrumb=f"Traced endpoint: {endpoint} at:",
+        metadata=result,
+        file_links=file_links,
+    ).to_call_tool_result()
 
 
 @mcp.tool()
@@ -499,7 +504,8 @@ def analyze_project_api_coverage(
         "Filter: 'used' (only used endpoints), 'unused' (only unused), or None (all)",
     ] = None,
     route_path: Annotated[
-        str | None, "Specific route to check (e.g., '/api/web/libraries')"
+        str | None,
+        "Specific route to check (e.g., '/api/web/libraries')",
     ] = None,
 ) -> CallToolResult:
     """Check which backend API endpoints are used by the frontend.
@@ -509,11 +515,11 @@ def analyze_project_api_coverage(
     result = analyze_project_api_coverage_impl(
         filter_mode=filter_mode, route_path=route_path, config=_config, project_root=ROOT
     )
-    return wrap_mcp_result(
-        result,
-        user_summary="Analyzed API coverage",
+    return ToolOutput(
         tool_name="analyze_project_api_coverage",
-    )
+        breadcrumb=f"Analyzed API of {route_path}",
+        metadata=result,
+    ).to_call_tool_result()
 
 
 @mcp.tool()
@@ -524,52 +530,50 @@ def lint_project_backend(
     *,
     check_all: Annotated[
         bool,
-        "If True, lint all files in path; if False, only lint modified and untracked files.",
+        "If True, lint ALL files in path and also run import-linter. "
+        "If False (default), only lint git-modified and untracked files (import-linter skipped).",
     ] = False,
 ) -> CallToolResult:
     """Run backend linting tools on specified path.
 
-    Runs ruff, mypy, and import-linter (for directories only).
+    Runs ruff and mypy. Default: only git-modified/untracked files.
+    With check_all=True: all files in path + import-linter contracts.
     """
     result = lint_project_backend_impl(path, check_all)
     summary = result.get("summary", {})
+    is_clean = summary.get("clean", False)
 
-    if summary.get("clean", False):
-        return wrap_mcp_result(
-            result,
-            user_summary=f"Linted {path or 'nomarr/'} - all checks passed",
-            tool_name="lint_project_backend",
-        )
-
-    # Build file locations from errors
-    file_locations: list[tuple[str | Path, int | None, int | None, str]] = []
-    for tool_name in ("ruff", "mypy", "import-linter"):
-        tool_errors = result.get(tool_name, {})
-        for code_info in tool_errors.values():
-            for occ in code_info.get("occurrences", []):
-                file_path = occ.get("file")
-                line = occ.get("line")
-                if file_path:
-                    file_locations.append((file_path, line, None, "Error"))
-                if len(file_locations) >= 10:
+    # Build file locations from errors (max 10)
+    file_links: list[FileLink] = []
+    if not is_clean:
+        for tool_name in ("ruff", "mypy", "import-linter"):
+            tool_errors = result.get(tool_name, {})
+            for code_info in tool_errors.values():
+                for occ in code_info.get("occurrences", []):
+                    file_path = occ.get("file")
+                    line = occ.get("line")
+                    if file_path:
+                        file_links.append(
+                            FileLink(file_path=file_path, start_line=line, action="Error")
+                        )
+                    if len(file_links) >= 10:
+                        break
+                if len(file_links) >= 10:
                     break
-            if len(file_locations) >= 10:
+            if len(file_links) >= 10:
                 break
-        if len(file_locations) >= 10:
-            break
 
-    if file_locations:
-        return wrap_mcp_result_with_multiple_file_links(
-            result,
-            file_locations=file_locations,
-            tool_name="lint_project_backend",
-        )
-
-    return wrap_mcp_result(
-        result,
-        user_summary=f"Linted {path or 'nomarr/'} with errors",
-        tool_name="lint_project_backend",
+    breadcrumb = (
+        f"Linted {path or 'nomarr/'} - all checks passed"
+        if is_clean
+        else f"Linted {path or 'nomarr/'} with errors"
     )
+    return ToolOutput(
+        tool_name="lint_project_backend",
+        breadcrumb=breadcrumb,
+        metadata=result,
+        file_links=file_links or None,
+    ).to_call_tool_result()
 
 
 @mcp.tool()
@@ -577,44 +581,34 @@ def lint_project_frontend() -> CallToolResult:
     """Run frontend linting tools (ESLint and TypeScript)."""
     result = lint_project_frontend_impl()
     status = result.get("status", "")
+    is_error = status == "error"
 
-    if status == "clean":
-        return wrap_mcp_result(
-            result,
-            user_summary="Linted frontend - all checks passed",
-            tool_name="lint_project_frontend",
-        )
+    # Build file locations from errors (max 10)
+    file_links: list[FileLink] = []
+    if status == "errors":
+        for err in result.get("errors", [])[:10]:
+            file_path = err.get("file")
+            line = err.get("line")
+            if file_path:
+                file_links.append(
+                    FileLink(file_path=file_path, start_line=line, action="Error")
+                )
 
-    if status == "error":
+    if is_error:
         error_msg = result.get("summary", {}).get("error", "unknown")
-        return wrap_mcp_result(
-            result,
-            user_summary=f"Frontend lint error: {error_msg}",
-            tool_name="lint_project_frontend",
-            is_error=True,
-        )
+        breadcrumb = f"Frontend lint error: {error_msg}"
+    elif status == "clean":
+        breadcrumb = "Linted frontend - all checks passed"
+    else:
+        breadcrumb = "Frontend lint completed with errors"
 
-    # status == "errors" - build file locations
-    errors = result.get("errors", [])
-    file_locations: list[tuple[str | Path, int | None, int | None, str]] = []
-    for err in errors[:10]:
-        file_path = err.get("file")
-        line = err.get("line")
-        if file_path:
-            file_locations.append((file_path, line, None, "Error"))
-
-    if file_locations:
-        return wrap_mcp_result_with_multiple_file_links(
-            result,
-            file_locations=file_locations,
-            tool_name="lint_project_frontend",
-        )
-
-    return wrap_mcp_result(
-        result,
-        user_summary="Frontend lint completed with errors",
+    return ToolOutput(
         tool_name="lint_project_frontend",
-    )
+        breadcrumb=breadcrumb,
+        metadata=result,
+        error=result.get("summary", {}).get("error") if is_error else None,
+        file_links=file_links or None,
+    ).to_call_tool_result()
 
 
 @mcp.tool()
@@ -647,18 +641,33 @@ def read_file_line_range(
         file_path, start_line, end_line, ROOT, include_imports=include_imports
     )
 
-    # Extract warning from structuredContent and build user summary
+    # Keep warning in structured content for assistant; don't leak into user summary
     warning = result.pop("warning", None)
-    action = f"Read (⚠️ {warning})" if warning else "Read"
+    if warning:
+        result["_assistant_warning"] = warning
 
-    return wrap_mcp_result_with_file_link(
-        result,
-        file_path=file_path,
-        start_line=start_line,
-        end_line=end_line,
-        action=action,
+    # Extract text content for assistant
+    assistant_content: list[str] = []
+    requested = result.get("requested")
+    if isinstance(requested, dict):
+        content = requested.pop("content", None)
+        if content:
+            assistant_content.append(content)
+    imports = result.get("imports")
+    if isinstance(imports, dict):
+        content = imports.pop("content", None)
+        if content:
+            assistant_content.append(content)
+
+    return ToolOutput(
         tool_name="read_file_line_range",
-    )
+        breadcrumb="Read",
+        assistant_content=assistant_content or None,
+        metadata=result,
+        file_links=[
+            FileLink(file_path=file_path, start_line=start_line, end_line=end_line, action=""),
+        ],
+    ).to_call_tool_result()
 
 
 @mcp.tool()
@@ -684,18 +693,33 @@ def read_file_line(
     """
     result = read_file_line_impl(file_path, line_number, ROOT, include_imports=include_imports)
 
-    # Extract warning from structuredContent and build user summary
+    # Keep warning in structured content for assistant; don't leak into user summary
     warning = result.pop("warning", None)
-    action = f"Read (⚠️ {warning})" if warning else "Read"
+    if warning:
+        result["_assistant_warning"] = warning
 
-    return wrap_mcp_result_with_file_link(
-        result,
-        file_path=file_path,
-        start_line=line_number,
-        end_line=line_number,
-        action=action,
+    # Extract text content for assistant
+    assistant_content: list[str] = []
+    requested = result.get("requested")
+    if isinstance(requested, dict):
+        content = requested.pop("content", None)
+        if content:
+            assistant_content.append(content)
+    imports = result.get("imports")
+    if isinstance(imports, dict):
+        content = imports.pop("content", None)
+        if content:
+            assistant_content.append(content)
+
+    return ToolOutput(
         tool_name="read_file_line",
-    )
+        breadcrumb="Read",
+        assistant_content=assistant_content or None,
+        metadata=result,
+        file_links=[
+            FileLink(file_path=file_path, start_line=line_number, end_line=line_number, action=""),
+        ],
+    ).to_call_tool_result()
 
 
 @mcp.tool()
@@ -708,46 +732,43 @@ def search_file_text(
     matches = result.get("matches", [])
 
     # Extract content from each match for assistant-targeted content
-    assistant_content = []
+    assistant_content: list[str] = []
     if matches and isinstance(result, dict) and "matches" in result:
-        # Build clean metadata-only matches array and extract content
         clean_matches = []
         for match in matches:
             if isinstance(match, dict):
-                # Extract content for assistant
                 content = match.get("content")
                 if content:
                     line_range = match.get("line_range", "")
                     assistant_content.append(f"Lines {line_range}:\n{content}")
-
-                # Keep only metadata in structuredContent
-                clean_match = {
-                    k: v for k, v in match.items() if k != "content"
-                }
+                clean_match = {k: v for k, v in match.items() if k != "content"}
                 clean_matches.append(clean_match)
-
-        # Replace matches with metadata-only version
         result["matches"] = clean_matches
 
+    file_links = None
     if matches:
-        file_locations: list[tuple[str | Path, int | None, int | None, str]] = [
-            (file_path, m.get("line_number"), m.get("line_number"), f"Found '{search_string}'")
+        file_links = [
+            FileLink(
+                file_path=file_path,
+                start_line=m.get("line_number"),
+                end_line=m.get("line_number"),
+                action="",
+            )
             for m in matches
             if m.get("line_number")
-        ]
-        if file_locations:
-            return wrap_mcp_result_with_multiple_file_links(
-                result,
-                file_locations=file_locations,
-                tool_name="search_file_text",
-                assistant_content=assistant_content if assistant_content else None,
-            )
-    return wrap_mcp_result(
-        result,
-        user_summary=f"Searched {file_path}",
+        ] or None
+    match_count = len(file_links) if file_links else 0
+    if match_count:
+        breadcrumb = f"Found {match_count} instance(s) of '{search_string}':"
+    else:
+        breadcrumb = f"No matches for '{search_string}' in {file_path}"
+    return ToolOutput(
         tool_name="search_file_text",
-        assistant_content=assistant_content if assistant_content else None,
-    )
+        breadcrumb=breadcrumb,
+        assistant_content=assistant_content or None,
+        metadata=result,
+        file_links=file_links,
+    ).to_call_tool_result()
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -768,14 +789,30 @@ def edit_file_replace_string(
     """
     replacements_dicts = [rep.model_dump() for rep in replacements]
     result = edit_file_replace_string_impl(file_path, replacements_dicts, ROOT)
-    return wrap_mcp_result_with_file_link(
-        result,
-        file_path=file_path,
-        action=f"Edited ({len(replacements)} replacements)",
+    total_replaced = result.get("replacements_applied", 0)
+
+    # Build per-replacement file links from new_context line numbers
+    file_links: list[FileLink] = []
+    for detail in result.get("details", []):
+        if detail.get("status") != "applied":
+            continue
+        new_context = detail.get("new_context", "")
+        # Each context block separated by --- for multi-match replacements
+        for block in new_context.split("\n---\n") if new_context else []:
+            lines_with_nums = [ln for ln in block.splitlines() if "|" in ln]
+            if lines_with_nums:
+                first = int(lines_with_nums[0].split("|")[0].strip())
+                last = int(lines_with_nums[-1].split("|")[0].strip())
+                file_links.append(
+                    FileLink(file_path=file_path, start_line=first, end_line=last, action=""),
+                )
+
+    return ToolOutput(
         tool_name="edit_file_replace_string",
-    )
-
-
+        breadcrumb=f"Made {total_replaced} replacement(s):",
+        metadata=result,
+        file_links=file_links or None,
+    ).to_call_tool_result()
 
 
 @mcp.tool()
@@ -796,8 +833,7 @@ def edit_file_move_by_content(
     ],
     target_position: Annotated[
         str,
-        "Insert 'before' or 'after' the target anchor line. "
-        "Ignored when target_anchor is None.",
+        "Insert 'before' or 'after' the target anchor line. Ignored when target_anchor is None.",
     ],
     target_anchor: Annotated[
         str | None,
@@ -831,11 +867,11 @@ def edit_file_move_by_content(
         ROOT,
         target_file,
     )
-    return wrap_mcp_result(
-        result,
-        user_summary=f"Moved content in {file_path}",
+    return ToolOutput(
         tool_name="edit_file_move_by_content",
-    )
+        breadcrumb=f"Moved content in {file_path}",
+        metadata=result,
+    ).to_call_tool_result()
 
 
 @mcp.tool()
@@ -851,22 +887,17 @@ def edit_file_move(
     automatically, and performs the move. Fails if target already exists.
     """
     result = edit_file_move_impl(old_path, new_path, workspace_root=ROOT)
-    if "error" in result:
-        return wrap_mcp_result(
-            result,
-            user_summary=f"Move failed: {result['error']}",
-            tool_name="edit_file_move",
-        )
-    return wrap_mcp_result_with_file_link(
-        result,
-        file_path=result["new_path"],
-        start_line=1,
-        end_line=None,
-        action="Moved to",
+    error = result.get("error")
+    file_links = None
+    if not error:
+        file_links = [FileLink(file_path=result["new_path"], action="")]
+    return ToolOutput(
         tool_name="edit_file_move",
-    )
-
-
+        breadcrumb=f"Move failed: {error}" if error else f"Moved {old_path} to",
+        error=error,
+        metadata=result,
+        file_links=file_links,
+    ).to_call_tool_result()
 
 
 @mcp.tool()
@@ -904,11 +935,11 @@ def edit_file_replace_by_content(
     result = edit_file_replace_by_content_impl(
         file_path, start_boundary, end_boundary, expected_line_count, new_content, ROOT
     )
-    return wrap_mcp_result(
-        result,
-        user_summary=f"Replaced content range in {file_path}",
+    return ToolOutput(
         tool_name="edit_file_replace_by_content",
-    )
+        breadcrumb=f"Replaced content range in {file_path}",
+        metadata=result,
+    ).to_call_tool_result()
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -928,21 +959,17 @@ def plan_read(
     Returns phases with steps, completion status, notes, and next step info.
     """
     result = plan_read_impl(plan_name, workspace_root=ROOT)
-    # Construct plan file path
     plan_file = plan_name if plan_name.endswith(".md") else f"{plan_name}.md"
     plan_path = ROOT / "plans" / plan_file
+    file_links = None
     if plan_path.exists():
-        return wrap_mcp_result_with_file_link(
-            result,
-            file_path=plan_path,
-            action="Read plan",
-            tool_name="plan_read",
-        )
-    return wrap_mcp_result(
-        result,
-        user_summary=f"Read plan: {plan_name}",
+        file_links = [FileLink(file_path=plan_path, action="")]
+    return ToolOutput(
         tool_name="plan_read",
-    )
+        breadcrumb="Read Plan at",
+        metadata=result,
+        file_links=file_links,
+    ).to_call_tool_result()
 
 
 @mcp.tool()
@@ -976,28 +1003,30 @@ def plan_complete_step(
     if annotation_marker and annotation_text:
         ann_dict = {"marker": annotation_marker, "text": annotation_text}
     elif annotation_marker or annotation_text:
-        return wrap_mcp_result(
-            {"error": "Both annotation_marker and annotation_text must be provided together."},
-            user_summary="Error: incomplete annotation",
+        err_msg = "Both annotation_marker and annotation_text must be provided together."
+        return ToolOutput(
             tool_name="plan_complete_step",
-            is_error=True,
-        )
+            breadcrumb="Error: incomplete annotation",
+            error=err_msg,
+            metadata={"error": err_msg},
+        ).to_call_tool_result()
     result = plan_complete_step_impl(plan_name, step_id, workspace_root=ROOT, annotation=ann_dict)
-    # Construct plan file path
     plan_file = plan_name if plan_name.endswith(".md") else f"{plan_name}.md"
     plan_path = ROOT / "plans" / plan_file
+    file_links = None
     if plan_path.exists():
-        return wrap_mcp_result_with_file_link(
-            result,
-            file_path=plan_path,
-            action=f"Completed step {step_id}",
-            tool_name="plan_complete_step",
-        )
-    return wrap_mcp_result(
-        result,
-        user_summary=f"Completed step {step_id} in {plan_name}",
+        file_links = [FileLink(file_path=plan_path, action="")]
+    # Parse P<n>-S<m> into readable "Phase N Step M"
+    parts = step_id.split("-")
+    phase_num = parts[0][1:] if len(parts) >= 1 else "?"
+    step_num = parts[1][1:] if len(parts) >= 2 else "?"
+    breadcrumb_text = f"Completed Phase {phase_num} Step {step_num} at"
+    return ToolOutput(
         tool_name="plan_complete_step",
-    )
+        breadcrumb=breadcrumb_text,
+        metadata=result,
+        file_links=file_links,
+    ).to_call_tool_result()
 
 
 @mcp.tool()
@@ -1012,23 +1041,21 @@ def edit_file_create(
     files_dicts = [f.model_dump() for f in files]
     result = edit_file_create_impl(files_dicts, workspace_root=ROOT)
     applied_ops = result.get("applied_ops", [])
-    if applied_ops:
-        file_locations: list[tuple[str | Path, int | None, int | None, str]] = [
-            (op["filepath"], 1, op.get("end_line"), "Created")
-            for op in applied_ops
-            if op.get("filepath")
-        ]
-        if file_locations:
-            return wrap_mcp_result_with_multiple_file_links(
-                result,
-                file_locations=file_locations,
-                tool_name="edit_file_create",
-            )
-    return wrap_mcp_result(
-        result,
-        user_summary=f"Created {len(files)} file(s)",
+    file_links = [
+        FileLink(
+            file_path=op["filepath"],
+            action="",
+            line_count=op.get("end_line"),
+        )
+        for op in applied_ops
+        if op.get("filepath")
+    ] or None
+    return ToolOutput(
         tool_name="edit_file_create",
-    )
+        breadcrumb=f"Created {len(files)} file(s):",
+        metadata=result,
+        file_links=file_links,
+    ).to_call_tool_result()
 
 
 @mcp.tool()
@@ -1042,23 +1069,21 @@ def edit_file_replace_content(
     """
     result = edit_file_replace_content_impl(ops, workspace_root=ROOT).model_dump(exclude_none=True)
     applied_ops = result.get("applied_ops", [])
-    if applied_ops:
-        file_locations: list[tuple[str | Path, int | None, int | None, str]] = [
-            (op["filepath"], 1, op.get("end_line"), "Replaced")
-            for op in applied_ops
-            if op.get("filepath")
-        ]
-        if file_locations:
-            return wrap_mcp_result_with_multiple_file_links(
-                result,
-                file_locations=file_locations,
-                tool_name="edit_file_replace_content",
-            )
-    return wrap_mcp_result(
-        result,
-        user_summary=f"Replaced content in {len(ops)} file(s)",
+    file_links = [
+        FileLink(
+            file_path=op["filepath"],
+            action="",
+            line_count=op.get("end_line"),
+        )
+        for op in applied_ops
+        if op.get("filepath")
+    ] or None
+    return ToolOutput(
         tool_name="edit_file_replace_content",
-    )
+        breadcrumb="Replaced:",
+        metadata=result,
+        file_links=file_links,
+    ).to_call_tool_result()
 
 
 @mcp.tool()
@@ -1075,23 +1100,22 @@ def edit_file_insert_at_boundary(
     ops_dicts = [{"path": op.path, "content": op.content, "at": position} for op in ops]
     result = edit_file_insert_text_impl(ops_dicts, workspace_root=ROOT)
     applied_ops = result.get("applied_ops", [])
-    if applied_ops:
-        file_locations: list[tuple[str | Path, int | None, int | None, str]] = [
-            (op["filepath"], op.get("start_line"), op.get("end_line"), "Inserted")
-            for op in applied_ops
-            if op.get("filepath")
-        ]
-        if file_locations:
-            return wrap_mcp_result_with_multiple_file_links(
-                result,
-                file_locations=file_locations,
-                tool_name="edit_file_insert_at_boundary",
-            )
-    return wrap_mcp_result(
-        result,
-        user_summary=f"Inserted text at {position} in {len(ops)} file(s)",
+    file_links = [
+        FileLink(
+            file_path=op["filepath"],
+            start_line=op.get("start_line"),
+            end_line=op.get("end_line"),
+            action="",
+        )
+        for op in applied_ops
+        if op.get("filepath")
+    ] or None
+    return ToolOutput(
         tool_name="edit_file_insert_at_boundary",
-    )
+        breadcrumb=f"Inserted text at {position} in {len(ops)} file(s):",
+        metadata=result,
+        file_links=file_links,
+    ).to_call_tool_result()
 
 
 @mcp.tool()
@@ -1116,23 +1140,22 @@ def edit_file_insert_at_line(
     ]
     result = edit_file_insert_text_impl(ops_dicts, workspace_root=ROOT)
     applied_ops = result.get("applied_ops", [])
-    if applied_ops:
-        file_locations: list[tuple[str | Path, int | None, int | None, str]] = [
-            (op["filepath"], op.get("start_line"), op.get("end_line"), "Inserted")
-            for op in applied_ops
-            if op.get("filepath")
-        ]
-        if file_locations:
-            return wrap_mcp_result_with_multiple_file_links(
-                result,
-                file_locations=file_locations,
-                tool_name="edit_file_insert_at_line",
-            )
-    return wrap_mcp_result(
-        result,
-        user_summary=f"Inserted text at {len(ops)} anchor location(s)",
+    file_links = [
+        FileLink(
+            file_path=op["filepath"],
+            start_line=op.get("start_line"),
+            end_line=op.get("end_line"),
+            action="",
+        )
+        for op in applied_ops
+        if op.get("filepath")
+    ] or None
+    return ToolOutput(
         tool_name="edit_file_insert_at_line",
-    )
+        breadcrumb=f"Inserted text at {len(ops)} anchor location(s):",
+        metadata=result,
+        file_links=file_links,
+    ).to_call_tool_result()
 
 
 @mcp.tool()
@@ -1148,23 +1171,22 @@ def edit_file_copy_paste_text(
     ops_dicts = [op.model_dump() for op in ops]
     result = edit_file_copy_paste_text_impl(ops_dicts, workspace_root=ROOT)
     applied_ops = result.get("applied_ops", [])
-    if applied_ops:
-        file_locations: list[tuple[str | Path, int | None, int | None, str]] = [
-            (op["filepath"], op.get("start_line"), op.get("end_line"), "Pasted")
-            for op in applied_ops
-            if op.get("filepath")
-        ]
-        if file_locations:
-            return wrap_mcp_result_with_multiple_file_links(
-                result,
-                file_locations=file_locations,
-                tool_name="edit_file_copy_paste_text",
-            )
-    return wrap_mcp_result(
-        result,
-        user_summary=f"Copied and pasted text in {len(ops)} operation(s)",
+    file_links = [
+        FileLink(
+            file_path=op["filepath"],
+            start_line=op.get("start_line"),
+            end_line=op.get("end_line"),
+            action="",
+        )
+        for op in applied_ops
+        if op.get("filepath")
+    ] or None
+    return ToolOutput(
         tool_name="edit_file_copy_paste_text",
-    )
+        breadcrumb=f"Pasted text {len(ops)} time(s):",
+        metadata=result,
+        file_links=file_links,
+    ).to_call_tool_result()
 
 
 @mcp.tool()
@@ -1211,11 +1233,11 @@ def py_introspect(
         errors = result.get("errors", [])
         summary = f"Error: {errors[0]}" if errors else "Unknown error"
 
-    return wrap_mcp_result(
-        result,
-        user_summary=summary,
+    return ToolOutput(
         tool_name="py_introspect",
-    )
+        breadcrumb=summary,
+        metadata=result,
+    ).to_call_tool_result()
 
 
 # ──────────────────────────────────────────────────────────────────────
