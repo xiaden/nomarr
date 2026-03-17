@@ -18,6 +18,24 @@ queries Nomarr's vector similarity API and returns sonically similar tracks.
 
 ## Build
 
+### PowerShell (Windows / cross-platform)
+
+```powershell
+# Compile WASM from src/ into dist/
+./build.ps1
+
+# Compile and package as dist/nomarr.ndp
+./build.ps1 -Package
+
+# Clean dist/ directory
+./build.ps1 -Clean
+
+# Build with TinyGo instead of standard Go
+./build.ps1 -UseTinyGo
+```
+
+### Make (Linux / macOS)
+
 ```bash
 # Compile WASM from src/ into dist/
 make build
@@ -29,7 +47,7 @@ make package
 make clean
 ```
 
-The `make package` command produces `dist/nomarr.ndp` — a ZIP archive containing
+The package command produces `dist/nomarr.ndp` — a ZIP archive containing
 `plugin.wasm` and `manifest.json`.
 
 ## Deployment

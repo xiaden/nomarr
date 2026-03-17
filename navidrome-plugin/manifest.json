@@ -24,7 +24,6 @@
           "type": "string",
           "title": "Nomarr API Key",
           "description": "API key for authenticating with Nomarr",
-          "format": "password",
           "minLength": 1
         },
         "backbone_id": {
@@ -45,7 +44,10 @@
         },
         {
           "type": "Control",
-          "scope": "#/properties/nomarr_api_key"
+          "scope": "#/properties/nomarr_api_key",
+          "options": {
+            "format": "password"
+          }
         },
         {
           "type": "Control",
