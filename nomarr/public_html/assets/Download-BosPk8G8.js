@@ -1,0 +1,1 @@
+import{Jn as e,_n as t,sr as n}from"./index-TG6DnD19.js";var r=t((0,n(e()).jsx)(`path`,{d:`M5 20h14v-2H5zM19 9h-4V3H9v6H5l7 7z`}),`Download`);export{r as t};

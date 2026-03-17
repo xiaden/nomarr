@@ -1,0 +1,1 @@
+import{ar as e,pt as t,sr as n}from"./index-TG6DnD19.js";var r=n(e(),1);function i(){let e=(0,r.useContext)(t);if(!e)throw Error(`useNotification must be used within NotificationProvider`);return e}export{i as t};

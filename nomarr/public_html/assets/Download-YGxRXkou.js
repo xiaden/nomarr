@@ -1,1 +1,0 @@
-import{Kn as e,ar as t,hn as n}from"./index-DKf5dAD7.js";var r=n((0,t(e()).jsx)(`path`,{d:`M5 20h14v-2H5zM19 9h-4V3H9v6H5l7 7z`}),`Download`);export{r as t};
