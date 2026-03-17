@@ -9,7 +9,7 @@ import logging
 import secrets
 from typing import Any
 
-import httpx
+import requests
 
 from nomarr.helpers.exceptions import SubsonicApiError
 
@@ -31,7 +31,8 @@ class SubsonicClient:
         self._base_url = base_url.rstrip("/")
         self._user = user
         self._password = password
-        self._http = httpx.Client(timeout=60.0)
+        self._http = requests.Session()
+        self._timeout = 60.0
 
     def close(self) -> None:
         """Close the underlying HTTP client to release resources."""
@@ -77,7 +78,7 @@ class SubsonicClient:
 
         Raises:
             SubsonicApiError: If the Subsonic response status is not ``ok``.
-            httpx.HTTPStatusError: If the HTTP status code indicates failure.
+            requests.HTTPError: If the HTTP status code indicates failure.
         """
         url = f"{self._base_url}/rest/{endpoint}"
         query_params: list[tuple[str, str | int | float | bool | None]] = list(self._make_auth_params().items())
@@ -86,7 +87,7 @@ class SubsonicClient:
         if raw_params:
             query_params.extend(raw_params)
 
-        response = self._http.get(url, params=httpx.QueryParams(query_params))
+        response = self._http.get(url, params=query_params, timeout=self._timeout)
         response.raise_for_status()
 
         data: dict[str, Any] = response.json()
@@ -114,7 +115,7 @@ class SubsonicClient:
         """
         try:
             self._request("ping.view")
-        except (SubsonicApiError, httpx.HTTPError):
+        except (SubsonicApiError, requests.RequestException):
             return False
         return True
 
