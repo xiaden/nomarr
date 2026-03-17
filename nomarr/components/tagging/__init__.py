@@ -13,7 +13,6 @@ from .tagging_aggregation_comp import (
     aggregate_mood_tiers,
 )
 from .tagging_reader_comp import read_tags_from_file
-from .tagging_reconstruction_comp import reconstruct_head_outputs_from_stats
 from .tagging_remove_comp import remove_tags_from_file
 from .tagging_writer_comp import TagWriter
 
@@ -28,6 +27,5 @@ __all__ = [
     "normalize_tag_label",
     "normalize_vorbis_tags",
     "read_tags_from_file",
-    "reconstruct_head_outputs_from_stats",
     "remove_tags_from_file",
 ]

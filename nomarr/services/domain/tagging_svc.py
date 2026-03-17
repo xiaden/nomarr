@@ -439,6 +439,11 @@ class TaggingService:
                 )
                 if result.success:
                     processed += 1
+                elif result.error == "file_modified_externally":
+                    # File changed on disk since DB was last scanned; release claim
+                    # so it can be retried after the scanner updates the mtime.
+                    logger.debug(f"[reconcile] Skipping {file_key}: modified externally, will retry after rescan")
+                    self.db.library_files.release_claim(file_key)
                 else:
                     failed += 1
                     logger.warning(f"[reconcile] Failed to write tags for {file_key}: {result.error}")

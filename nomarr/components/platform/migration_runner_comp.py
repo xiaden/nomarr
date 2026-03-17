@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import importlib
 import logging
+import re
 from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING
@@ -121,6 +122,29 @@ def get_current_schema_version(migrations: list[tuple[str, ModuleType]]) -> int:
     if not migrations:
         return 0
     return int(max(mod.SCHEMA_VERSION_AFTER for _, mod in migrations))
+
+
+def get_code_schema_version_from_files() -> int:
+    """Derive the current code schema version by scanning migration filenames only.
+
+    Reads filenames from the migrations directory without importing any module.
+    Convention: ``V{NNN}_<description>.py`` where NNN == SCHEMA_VERSION_AFTER.
+
+    Use this as a cheap pre-check before calling the heavier
+    ``discover_migrations()`` + ``get_current_schema_version()`` path.
+
+    Returns:
+        Highest version number found in filenames, or 0 if no migrations exist.
+
+    """
+    if not MIGRATIONS_DIR.exists():
+        return 0
+    version = 0
+    for path in MIGRATIONS_DIR.glob("V*.py"):
+        m = re.match(r"V(\d+)_", path.stem)
+        if m:
+            version = max(version, int(m.group(1)))
+    return version
 
 
 def get_pending_migrations(

@@ -47,6 +47,7 @@ class SafeWriteResult:
 
     success: bool
     error: str | None = None
+    new_mtime_ms: int | None = None
 
 
 @dataclass
@@ -127,6 +128,7 @@ def safe_write_tags(
     library_path: LibraryPath,
     library_root: Path,
     write_fn: Callable[[Path], None],
+    expected_mtime_ms: int,
 ) -> SafeWriteResult:
     """Safely write tags to an audio file using copy-modify-verify-replace.
 
@@ -151,6 +153,15 @@ def safe_write_tags(
     original_path = library_path.absolute
     filename = original_path.name
 
+    # Pre-flight: abort if file was modified externally since caller read it
+    actual_mtime_ms = int(os.stat(original_path).st_mtime * 1000)
+    if actual_mtime_ms != expected_mtime_ms:
+        return SafeWriteResult(
+            success=False,
+            error="file_modified_externally",
+            new_mtime_ms=None,
+        )
+
     # Probe original before any writes
     try:
         original_props = _probe_audio_properties(original_path)
@@ -162,8 +173,8 @@ def safe_write_tags(
     use_hardlink = _supports_hardlinks(original_path, temp_folder)
 
     if use_hardlink:
-        return _safe_write_hardlink(original_path, temp_folder, filename, original_props, write_fn)
-    return _safe_write_fallback(original_path, original_props, write_fn)
+        return _safe_write_hardlink(original_path, temp_folder, filename, original_props, write_fn, expected_mtime_ms)
+    return _safe_write_fallback(original_path, original_props, write_fn, expected_mtime_ms)
 
 
 def _safe_write_hardlink(
@@ -172,6 +183,7 @@ def _safe_write_hardlink(
     filename: str,
     original_props: _AudioProperties,
     write_fn: Callable[[Path], None],
+    expected_mtime_ms: int,
 ) -> SafeWriteResult:
     """Safe write using hardlink replacement (atomic, no folder mtime change)."""
     temp_path = temp_folder / f"{uuid.uuid4().hex}_{filename}"
@@ -207,7 +219,8 @@ def _safe_write_hardlink(
             msg = f"Hardlink replacement failed: {e}"
             raise RuntimeError(msg) from e
 
-        return SafeWriteResult(success=True)
+        new_mtime_ms = int(os.stat(original_path).st_mtime * 1000)
+        return SafeWriteResult(success=True, new_mtime_ms=new_mtime_ms)
 
     except Exception as e:
         logger.exception(f"[safe_write] Hardlink write failed: {e}")
@@ -223,6 +236,7 @@ def _safe_write_fallback(
     original_path: Path,
     original_props: _AudioProperties,
     write_fn: Callable[[Path], None],
+    expected_mtime_ms: int,
 ) -> SafeWriteResult:
     """Safe write using .tmp file (modifies folder mtime)."""
     temp_path = original_path.with_suffix(original_path.suffix + ".tmp")
@@ -249,7 +263,8 @@ def _safe_write_fallback(
         os.rename(temp_path, original_path)
         logger.debug("[safe_write] Fallback replacement complete")
 
-        return SafeWriteResult(success=True)
+        new_mtime_ms = int(os.stat(original_path).st_mtime * 1000)
+        return SafeWriteResult(success=True, new_mtime_ms=new_mtime_ms)
 
     except Exception as e:
         logger.exception(f"[safe_write] Fallback write failed: {e}")

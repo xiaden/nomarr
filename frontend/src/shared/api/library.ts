@@ -146,13 +146,21 @@ export async function deleteLibrary(id: string): Promise<void> {
 }
 
 /**
- * Scan a specific library.
+ * Start a quick scan for a specific library (skips unchanged files).
  * @param id - Library ID
- * @param scanType - 'quick' (skip unchanged files) or 'full' (rescan all)
  */
-export async function scan(id: string, scanType: "quick" | "full" = "quick"): Promise<ScanResult> {
+export async function scanQuick(id: string): Promise<ScanResult> {
   // ID is already HTTP-encoded (e.g., "libraries:3970")
-  return post<ScanResult>(`/api/web/libraries/${id}/scan?scan_type=${scanType}`, {});
+  return post<ScanResult>(`/api/web/libraries/${id}/scan/quick`, {});
+}
+
+/**
+ * Start a full scan for a specific library (rescans all files).
+ * @param id - Library ID
+ */
+export async function scanFull(id: string): Promise<ScanResult> {
+  // ID is already HTTP-encoded (e.g., "libraries:3970")
+  return post<ScanResult>(`/api/web/libraries/${id}/scan/full`, {});
 }
 
 export interface CleanupTagsResult {

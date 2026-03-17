@@ -48,7 +48,7 @@ VALID_COLLECTIONS = frozenset(
         "library_files",
         "library_folders",
         "tags",
-        "song_tag_edges",
+        "song_has_tags",
         "sessions",
         "calibration_state",
         "calibration_history",

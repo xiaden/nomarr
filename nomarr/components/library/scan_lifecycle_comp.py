@@ -10,6 +10,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from nomarr.helpers.exceptions import LibraryNotFoundError
+
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
@@ -38,7 +40,7 @@ def resolve_library_for_scan(db: Database, library_id: str) -> dict[str, Any]:
     library = db.libraries.get_library(library_id)
     if not library:
         msg = f"Library {library_id} not found"
-        raise ValueError(msg)
+        raise LibraryNotFoundError(msg)
     return library
 
 
@@ -147,20 +149,77 @@ def snapshot_existing_files(
 # ---------------------------------------------------------------------------
 
 
-def upsert_scanned_files(db: Database, file_entries: list[dict[str, Any]]) -> list[str]:
-    """Batch-upsert scanned file documents.
+def upsert_scanned_files(
+    db: Database,
+    file_entries: list[dict[str, Any]],
+    edge_bootstraps: list[dict[str, Any]] | None = None,
+) -> list[str]:
+    """Batch-upsert scanned file documents and optionally bootstrap state edges.
 
     Args:
         db: Database instance
         file_entries: File documents to upsert
+        edge_bootstraps: Optional edge bootstrap metadata from FileBatchResult.
+            If provided, creates ml_tagged/reconciled edges for matching files.
 
     Returns:
         List of document _ids (inserted or updated)
 
     """
-    return db.library_files.upsert_batch(file_entries)
+    file_ids = db.library_files.upsert_batch(file_entries)
+
+    if edge_bootstraps:
+        # Build path → id map from results
+        file_id_by_path: dict[str, str] = {}
+        for fid, entry in zip(file_ids, file_entries, strict=True):
+            normalized = entry.get("normalized_path")
+            if normalized:
+                file_id_by_path[normalized] = fid
+
+        bootstrap_file_state_edges(db, edge_bootstraps, file_id_by_path)
+
+    return file_ids
 
 
+
+def bootstrap_file_state_edges(
+    db: Database,
+    edge_bootstraps: list[dict[str, Any]],
+    file_id_by_path: dict[str, str],
+) -> int:
+    """Create state edges for files based on scan-time metadata.
+
+    Called after upsert_scanned_files to create ml_tagged/reconciled edges
+    for files that should skip ML processing or already have written tags.
+
+    Args:
+        db: Database instance
+        edge_bootstraps: List of edge bootstrap dicts from FileBatchResult
+        file_id_by_path: Map of normalized_path → file _id from upsert results
+
+    Returns:
+        Number of edges created
+
+    """
+    count = 0
+    for bootstrap in edge_bootstraps:
+        normalized_path = bootstrap["normalized_path"]
+        file_id = file_id_by_path.get(normalized_path)
+        if not file_id:
+            continue
+
+        if bootstrap["type"] == "ml_tagged":
+            db.file_states.set_ml_tagged(file_id, version=bootstrap["version"])
+            count += 1
+        elif bootstrap["type"] == "reconciled":
+            db.file_states.set_reconciled(
+                file_id=file_id,
+                mode=bootstrap["mode"],
+                calibration_hash=None,
+                has_namespace=bootstrap.get("has_namespace", False),
+            )
+            count += 1
+    return count
 def remove_deleted_files(db: Database, paths: list[str]) -> int:
     """Bulk-delete files that are no longer on disk.
 

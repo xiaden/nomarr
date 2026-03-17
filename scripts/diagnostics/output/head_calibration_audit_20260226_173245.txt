@@ -1,0 +1,74 @@
+# Head Calibration + STD Gate Audit — 2026-02-26 17:32
+# Gates: acceptable=0.25  stable=0.15  very_stable=0.08
+
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+HEAD                         LABEL                   N |    p50    p75    p90    p95    max | cal_p5 cal_p95 scale |   full%    med%    low%   none% |  strict     reg   loose | shape         cal_rec                         mp10  mp50  mp90
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+approachability_regression   approachability     28973 | 0.1213 0.1523 0.1860 0.2085 0.3864 | 0.2310 0.9472  1.4x |    1.1%   34.7%   51.9%   12.2% |       0       0       0 | skewed-high   → log or isotonic preferred     0.335  0.648  0.897
+danceability classifier      danceable           28973 | 0.2430 0.3102 0.3596 0.3870 0.4864 | 0.0148 0.9999  1.0x |   11.5%   13.3%   26.2%   49.0% |       0       0       0 | bimodal       → platt/isotonic preferred; minmax OK as fallback  0.095  0.732  0.976
+danceability classifier      not_danceable       28973 | 0.2430 0.3102 0.3596 0.3870 0.4864 | 0.0000 0.9851  1.0x |   11.5%   13.3%   26.2%   49.0% |       0       0       0 | bimodal       → platt/isotonic preferred; minmax OK as fallback  0.024  0.268  0.905
+engagement_regression        engagement          28973 | 0.0950 0.1224 0.1544 0.1769 0.3891 | 0.3426 0.9816  1.6x |    7.8%   43.3%   40.5%    8.5% |       0       0       0 | skewed-high   → log or isotonic preferred     0.436  0.702  0.939
+gender                       female              28973 | 0.1958 0.2371 0.2696 0.2896 0.4475 | 0.0644 0.8761  1.2x |    1.4%   13.0%   40.0%   45.6% |       0       0       0 | bimodal       → platt/isotonic preferred; minmax OK as fallback  0.153  0.488  0.804
+gender                       male                28973 | 0.1958 0.2371 0.2696 0.2896 0.4475 | 0.1238 0.9355  1.2x |    1.4%   13.0%   40.0%   45.6% |       0       0       0 | bimodal       → platt/isotonic preferred; minmax OK as fallback  0.196  0.512  0.847
+mood aggressive              aggressive          28973 | 0.1414 0.2958 0.3717 0.4024 0.4963 | 0.0000 0.9994  1.0x |   34.5%   16.9%   15.7%   32.9% |     983    1815    3555 | bimodal       → platt/isotonic preferred; minmax OK as fallback  0.002  0.100  0.921
+mood aggressive              not_aggressive      28973 | 0.1414 0.2958 0.3717 0.4024 0.4963 | 0.0005 0.9999  1.0x |   34.5%   16.9%   15.7%   32.9% |    9012   13077   15888 | bimodal       → platt/isotonic preferred; minmax OK as fallback  0.079  0.900  0.998
+mood happy                   happy               28973 | 0.2627 0.3196 0.3556 0.3742 0.4716 | 0.0021 0.9636  1.0x |   14.5%    7.8%   20.3%   57.4% |       0       0       0 | bimodal       → platt/isotonic preferred; minmax OK as fallback  0.017  0.453  0.862
+mood happy                   non_happy           28973 | 0.2627 0.3196 0.3556 0.3742 0.4716 |    N/A    N/A   N/A |    0.0%    0.0%    0.0%  100.0% |       0       0       0 | bimodal       → platt/isotonic preferred; minmax OK as fallback  0.138  0.547  0.983
+mood party                   non_party           28973 | 0.2259 0.3031 0.3495 0.3754 0.4892 |    N/A    N/A   N/A |    0.0%    0.0%    0.0%  100.0% |       0       0       0 | bimodal       → platt/isotonic preferred; minmax OK as fallback  0.155  0.717  0.998
+mood party                   party               28973 | 0.2259 0.3031 0.3495 0.3754 0.4892 | 0.0002 0.9696  1.0x |   24.8%    9.8%   19.6%   45.7% |       0       0       0 | bimodal       → platt/isotonic preferred; minmax OK as fallback  0.002  0.283  0.845
+mood relaxed                 non_relaxed         28973 | 0.2214 0.3118 0.3725 0.4025 0.4937 |    N/A    N/A   N/A |    0.0%    0.0%    0.0%  100.0% |       0       0       0 | bimodal       → platt/isotonic preferred; minmax OK as fallback  0.003  0.661  0.970
+mood relaxed                 relaxed             28973 | 0.2214 0.3118 0.3725 0.4025 0.4937 | 0.0004 0.9999  1.0x |   21.3%   12.1%   24.1%   42.5% |    4808    6092    8129 | bimodal       → platt/isotonic preferred; minmax OK as fallback  0.030  0.339  0.997
+mood sad                     non_sad             28973 | 0.2456 0.3197 0.3662 0.3904 0.4803 |    N/A    N/A   N/A |    0.0%    0.0%    0.0%  100.0% |       0       0       0 | bimodal       → platt/isotonic preferred; minmax OK as fallback  0.098  0.702  0.969
+mood sad                     sad                 28973 | 0.2456 0.3197 0.3662 0.3904 0.4803 | 0.0009 0.9791  1.0x |   10.0%   14.0%   25.6%   50.4% |       0       0       0 | bimodal       → platt/isotonic preferred; minmax OK as fallback  0.031  0.298  0.902
+timbre color                 bright              28973 | 0.0267 0.0319 0.0377 0.0419 0.0972 | 0.4447 0.5357 11.0x |    0.0%    0.9%   25.6%   73.5% |       0       0       0 | compressed    → PROBLEM: span collapse; minmax meaningless  0.458  0.496  0.526
+timbre color                 dark                28973 | 0.0267 0.0319 0.0377 0.0419 0.0972 | 0.4642 0.5552 11.0x |    0.0%    0.9%   25.6%   73.5% |       0       0       0 | compressed    → PROBLEM: span collapse; minmax meaningless  0.474  0.504  0.542
+tonal/atonal                 atonal              28973 | 0.1894 0.2852 0.3401 0.3654 0.4929 | 0.0375 0.9999  1.0x |   22.4%   16.3%   24.0%   37.3% |    6249    9877   14539 | bimodal       → platt/isotonic preferred; minmax OK as fallback  0.149  0.869  0.995
+tonal/atonal                 tonal               28973 | 0.1894 0.2852 0.3401 0.3654 0.4929 | 0.0000 0.9624  1.0x |   22.4%   16.3%   24.0%   37.3% |     235    1342    3632 | bimodal       → platt/isotonic preferred; minmax OK as fallback  0.005  0.131  0.851
+voice/instrumental classifiers instrumental        28973 | 0.2521 0.3160 0.3627 0.3857 0.4789 | 0.0032 0.9015  1.1x |    3.8%    9.5%   25.8%   60.9% |       0       0       0 | bimodal       → platt/isotonic preferred; minmax OK as fallback  0.056  0.225  0.796
+voice/instrumental classifiers voice               28973 | 0.2521 0.3160 0.3627 0.3857 0.4789 | 0.0984 0.9967  1.1x |    3.8%    9.5%   25.8%   60.9% |       0       0       0 | bimodal       → platt/isotonic preferred; minmax OK as fallback  0.204  0.775  0.944
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+── Gate problems (>40% of files excluded from all tiers) ──
+  danceability classifier / danceable: 49% gated out, scale=1.0x, shape=bimodal
+  danceability classifier / not_danceable: 49% gated out, scale=1.0x, shape=bimodal
+  gender / female: 46% gated out, scale=1.2x, shape=bimodal
+  gender / male: 46% gated out, scale=1.2x, shape=bimodal
+  mood happy / happy: 57% gated out, scale=1.0x, shape=bimodal
+  mood happy / non_happy: 100% gated out, scale=N/A, shape=bimodal
+  mood party / non_party: 100% gated out, scale=N/A, shape=bimodal
+  mood party / party: 46% gated out, scale=1.0x, shape=bimodal
+  mood relaxed / non_relaxed: 100% gated out, scale=N/A, shape=bimodal
+  mood relaxed / relaxed: 43% gated out, scale=1.0x, shape=bimodal
+  mood sad / non_sad: 100% gated out, scale=N/A, shape=bimodal
+  mood sad / sad: 50% gated out, scale=1.0x, shape=bimodal
+  timbre color / bright: 74% gated out, scale=11.0x, shape=compressed
+  timbre color / dark: 74% gated out, scale=11.0x, shape=compressed
+  voice/instrumental classifiers / instrumental: 61% gated out, scale=1.1x, shape=bimodal
+  voice/instrumental classifiers / voice: 61% gated out, scale=1.1x, shape=bimodal
+
+── Calibration method mismatch (non-bell distributions) ──
+  approachability_regression / approachability: skewed-high — → log or isotonic preferred
+  danceability classifier / danceable: bimodal — → platt/isotonic preferred; minmax OK as fallback
+  danceability classifier / not_danceable: bimodal — → platt/isotonic preferred; minmax OK as fallback
+  engagement_regression / engagement: skewed-high — → log or isotonic preferred
+  gender / female: bimodal — → platt/isotonic preferred; minmax OK as fallback
+  gender / male: bimodal — → platt/isotonic preferred; minmax OK as fallback
+  mood aggressive / aggressive: bimodal — → platt/isotonic preferred; minmax OK as fallback
+  mood aggressive / not_aggressive: bimodal — → platt/isotonic preferred; minmax OK as fallback
+  mood happy / happy: bimodal — → platt/isotonic preferred; minmax OK as fallback
+  mood happy / non_happy: bimodal — → platt/isotonic preferred; minmax OK as fallback
+  mood party / non_party: bimodal — → platt/isotonic preferred; minmax OK as fallback
+  mood party / party: bimodal — → platt/isotonic preferred; minmax OK as fallback
+  mood relaxed / non_relaxed: bimodal — → platt/isotonic preferred; minmax OK as fallback
+  mood relaxed / relaxed: bimodal — → platt/isotonic preferred; minmax OK as fallback
+  mood sad / non_sad: bimodal — → platt/isotonic preferred; minmax OK as fallback
+  mood sad / sad: bimodal — → platt/isotonic preferred; minmax OK as fallback
+  timbre color / bright: compressed — → PROBLEM: span collapse; minmax meaningless
+  timbre color / dark: compressed — → PROBLEM: span collapse; minmax meaningless
+  tonal/atonal / atonal: bimodal — → platt/isotonic preferred; minmax OK as fallback
+  tonal/atonal / tonal: bimodal — → platt/isotonic preferred; minmax OK as fallback
+  voice/instrumental classifiers / instrumental: bimodal — → platt/isotonic preferred; minmax OK as fallback
+  voice/instrumental classifiers / voice: bimodal — → platt/isotonic preferred; minmax OK as fallback
+
+── Scale collapse (compressed distributions) ──
+  (none)

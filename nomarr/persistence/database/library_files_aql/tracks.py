@@ -109,7 +109,7 @@ class LibraryFilesTracksMixin:
 
             // Left join to get ISRC from tags
             LET isrc_tag = FIRST(
-                FOR e IN song_tag_edges
+                FOR e IN song_has_tags
                     FILTER e._from == f._id
                     FOR t IN tags
                         FILTER t._id == e._to

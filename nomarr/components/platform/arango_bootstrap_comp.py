@@ -11,12 +11,53 @@ Persistence layer is "AQL only" - no upward dependencies.
 
 import contextlib
 import logging
+import os
+import time
 
+from arango import ArangoClient
 from arango.exceptions import CollectionCreateError, GraphCreateError, IndexCreateError
 
 from nomarr.persistence.arango_client import DatabaseLike
 
 logger = logging.getLogger(__name__)
+
+
+def wait_for_arango(hosts: str, max_attempts: int = 30, delay_s: float = 2.0) -> bool:
+    """Wait until ArangoDB is reachable.
+
+    The single, canonical place to block startup until the database is up.
+    Uses root credentials from ARANGO_ROOT_PASSWORD; if that env var is not
+    set, the function returns True immediately (dev/test environments that
+    already have the app user configured).
+
+    Args:
+        hosts: ArangoDB server URL(s)
+        max_attempts: Maximum connection attempts (default 30 = 60 seconds)
+        delay_s: Delay between attempts in seconds
+
+    Returns:
+        True if connected, False if timeout
+
+    """
+    root_password = os.getenv("ARANGO_ROOT_PASSWORD")
+    if not root_password:
+        logger.debug("ARANGO_ROOT_PASSWORD not set, skipping connection wait")
+        return True
+    for attempt in range(1, max_attempts + 1):
+        try:
+            client = ArangoClient(hosts=hosts)
+            sys_db = client.db("_system", username="root", password=root_password)
+            sys_db.properties()
+            logger.debug("ArangoDB connection established (attempt %d/%d)", attempt, max_attempts)
+            return True
+        except Exception as e:
+            if attempt < max_attempts:
+                logger.info("Waiting for ArangoDB... (%d/%d): %s", attempt, max_attempts, e)
+                time.sleep(delay_s)
+            else:
+                logger.exception("ArangoDB connection timeout after %d attempts: %s", max_attempts, e)
+                return False
+    return False
 
 
 
@@ -65,8 +106,8 @@ def _create_collections(db: DatabaseLike) -> None:
         # Future: "segment_scores_blob" -- full segment x class matrix for re-pooling
         # Migration tracking (database migration system)
         "applied_migrations",
-        # GPU warmup claim (serializes multi-worker GPU cache warming)
-        "gpu_warmup_claims",
+        # VRAM promise registry (fleet-aware per-model GPU placement coordination)
+        "vram_promises",
     ]
 
     for collection_name in document_collections:
@@ -77,7 +118,7 @@ def _create_collections(db: DatabaseLike) -> None:
 
     # Edge collections
     edge_collections = [
-        "song_tag_edges",  # song→tag relationships (unified)
+        "song_has_tags",  # song→tag relationships (unified)
     ]
 
     for edge_collection_name in edge_collections:
@@ -190,10 +231,10 @@ def _create_indexes(db: DatabaseLike) -> None:
         sparse=False,
     )
 
-    # song_tag_edges: song→tag edges (minimal shape: _from, _to only)
+    # song_has_tags: song→tag edges (minimal shape: _from, _to only)
     _ensure_index(
         db,
-        "song_tag_edges",
+        "song_has_tags",
         "persistent",
         ["_from"],  # Get all tags for a song
         unique=False,
@@ -201,7 +242,7 @@ def _create_indexes(db: DatabaseLike) -> None:
     )
     _ensure_index(
         db,
-        "song_tag_edges",
+        "song_has_tags",
         "persistent",
         ["_to"],  # Get all songs for a tag
         unique=False,
@@ -209,7 +250,7 @@ def _create_indexes(db: DatabaseLike) -> None:
     )
     _ensure_index(
         db,
-        "song_tag_edges",
+        "song_has_tags",
         "persistent",
         ["_from", "_to"],  # Prevent duplicate edges (idempotent inserts)
         unique=True,
@@ -227,6 +268,10 @@ def _create_indexes(db: DatabaseLike) -> None:
         ["file_id", "head_name", "tagger_version"],
         unique=True,
     )
+
+    # Note: V010 added a TTL index on vram_promises.last_seen_ms, but V011 dropped it
+    # (the ms vs s unit mismatch made it non-functional, and explicit owner-driven
+    # cleanup via release_worker_promises() replaced it). No TTL index here.
 
 
 def _ensure_index(
@@ -282,7 +327,7 @@ def _create_graphs(db: DatabaseLike) -> None:
                 name=graph_name,
                 edge_definitions=[
                     {
-                        "edge_collection": "song_tag_edges",
+                        "edge_collection": "song_has_tags",
                         "from_vertex_collections": ["library_files"],
                         "to_vertex_collections": ["tags"],
                     },
@@ -322,11 +367,11 @@ def _discover_backbone_ids(models_dir: str) -> list[str]:
 
     """
     try:
-        from nomarr.components.ml.ml_discovery_comp import discover_heads
+        from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads_no_db
 
-        heads = discover_heads(models_dir)
+        heads = discover_heads_no_db(models_dir)
         backbones = sorted({h.backbone for h in heads})
-        logger.info("[bootstrap] Discovered backbones for vectors_track: %s", backbones)
+        logger.debug("[bootstrap] Discovered backbones for vectors_track: %s", backbones)
         return backbones
     except Exception:
         logger.warning("[bootstrap] Could not discover backbones from %s — skipping vectors_track", models_dir)

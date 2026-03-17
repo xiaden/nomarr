@@ -10,20 +10,6 @@ export interface WorkerResponse {
 }
 
 /**
- * Pause the worker.
- */
-export async function pauseWorker(): Promise<WorkerResponse> {
-  return post("/api/web/worker/pause");
-}
-
-/**
- * Resume the worker.
- */
-export async function resumeWorker(): Promise<WorkerResponse> {
-  return post("/api/web/worker/resume");
-}
-
-/**
  * Restart the API server.
  */
 export async function restart(): Promise<WorkerResponse> {

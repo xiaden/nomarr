@@ -21,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 
 import nomarr
 from nomarr.interfaces.api import web
-from nomarr.interfaces.api.v1 import admin_if, public_if
+from nomarr.interfaces.api.v1 import admin_if, navidrome_v1_if, public_if
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ async def lifespan(_app_instance: FastAPI):
     """
     from nomarr.app import application
 
-    logger.info("[API] FastAPI starting (Application already initialized)")
+    logger.info("[API] Serving at http://%s:%d/", application.api_host, application.api_port)
     try:
         yield
     finally:
@@ -56,6 +56,7 @@ async def exception_handler(request, exc: Exception):
 integration_router = APIRouter(prefix="/api")
 integration_router.include_router(public_if.router, tags=["Integration: Public"])
 integration_router.include_router(admin_if.router, tags=["Integration: Admin"])
+integration_router.include_router(navidrome_v1_if.router, tags=["Integration: Navidrome"])
 
 
 api_app.include_router(integration_router)

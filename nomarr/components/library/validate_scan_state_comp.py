@@ -1,25 +1,21 @@
 """Validate and heal DB state for unchanged files during full scan.
 
 During a full scan, files whose mtime hasn't changed are skipped for performance.
-However, their DB state may be stale (e.g., needs_tagging=true for short files
-that should be marked skipped). This component validates and heals such cases.
+However, their edge state may be missing (e.g., short files that should have an
+``ml_tagged`` edge with version="scan_skipped" but don't). This component
+validates and heals such cases.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from arango.cursor import Cursor
-
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
-
-# Batch size for DB operations (balance memory vs round-trips)
-_BATCH_SIZE = 1000
 
 
 @dataclass
@@ -35,10 +31,10 @@ def validate_unchanged_files(
     library_id: str,
     min_duration_s: int,
 ) -> ValidationStats:
-    """Validate and heal DB state for unchanged files in a library.
+    """Validate and heal edge state for unchanged files in a library.
 
     Currently handles:
-    - Short files with needs_tagging=true → heal to needs_tagging=false
+    - Short files without ml_tagged edge → create edge with version="scan_skipped"
 
     Args:
         db: Database instance
@@ -51,14 +47,9 @@ def validate_unchanged_files(
     """
     stats = ValidationStats()
 
-    # Find and heal short files that still have needs_tagging=true
-    # This happens for files scanned before the short-file filter was added
     short_healed = _heal_short_files(db, library_id, min_duration_s)
     stats.short_files_healed = short_healed
-
-    # Count total unchanged files that were checked
-    # (For now, just the short file check - can expand later)
-    stats.files_checked = short_healed  # Only checked files that needed healing
+    stats.files_checked = short_healed
 
     if short_healed > 0:
         logger.info(
@@ -76,7 +67,10 @@ def _heal_short_files(
     library_id: str,
     min_duration_s: int,
 ) -> int:
-    """Find and heal short files with stale needs_tagging=true.
+    """Find and heal short files without ml_tagged edge.
+
+    Creates ``ml_tagged`` edges with version="scan_skipped" for short files
+    that don't already have an ml_tagged edge.
 
     Args:
         db: Database instance
@@ -87,35 +81,37 @@ def _heal_short_files(
         Number of files healed
 
     """
-    # Single query to find and update short files
-    # This is efficient because:
-    # 1. Uses index on library_id + needs_tagging
-    # 2. Only touches files that actually need healing
-    # 3. Single round-trip for the update
-    query = """
-    FOR file IN library_files
-        FILTER file.library_id == @library_id
-        FILTER file.needs_tagging == true
-        FILTER file.is_valid == true
-        FILTER file.duration_seconds != null
-        FILTER file.duration_seconds < @min_duration_s
-        UPDATE file WITH {
-            needs_tagging: false,
-            tagging_skipped_reason: "too_short"
-        } IN library_files
-        RETURN 1
-    """
+    from nomarr.helpers.time_helper import now_ms
 
-    cursor = cast(
-        "Cursor",
-        db.db.aql.execute(
-            query,
-            bind_vars={
-                "library_id": library_id,
-                "min_duration_s": min_duration_s,
-            },
-        ),
+    ts = now_ms().value
+    # Find short files without ml_tagged edge and create edges for them
+    cursor = db.db.aql.execute(
+        """
+        FOR file IN library_files
+            FILTER file.library_id == @library_id
+            FILTER file.duration_seconds != null
+            FILTER file.duration_seconds < @min_duration_s
+            LET has_tagged = LENGTH(
+                FOR edge IN file_has_state
+                    FILTER edge._from == file._id AND edge._to == "file_states/ml_tagged"
+                    LIMIT 1
+                    RETURN 1
+            )
+            FILTER has_tagged == 0
+            INSERT {
+                _from: file._id,
+                _to: "file_states/ml_tagged",
+                version: "scan_skipped",
+                tagged_at: @ts
+            } INTO file_has_state
+            OPTIONS { ignoreErrors: true }
+            RETURN 1
+        """,
+        bind_vars={
+            "library_id": library_id,
+            "min_duration_s": min_duration_s,
+            "ts": ts,
+        },
     )
 
-    # Count results (each updated doc returns 1)
     return sum(1 for _ in cursor)

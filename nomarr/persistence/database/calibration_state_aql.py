@@ -48,27 +48,32 @@ class CalibrationStateOperations:
         """
         bin_width = (hi - lo) / bins
 
-        # Convert model_key format from "backbone-date" to "backbonedate" to match tag format
-        # Tags store "yamnet20220825" but calibration uses "yamnet-20220825"
+        # Tags use backbone+date without dashes (e.g. "musicnn20200331"), calibration key uses dashes ("musicnn-20200331")
         model_key_for_tag = model_key.replace("-", "")
 
         query = """
-            FOR edge IN song_tag_edges
+            FOR edge IN song_has_tags
               LET tag = DOCUMENT(edge._to)
               // Match individual head score tags containing model_key and label
-              // Versioned tag format: nom:<label>_<framework>_<embedder>_<head>
-              // Example: nom:happy_essentia21b6dev1389_yamnet20220825_happy20220825
-              // model_key format in DB: <backbone><embedder_date> (e.g., "yamnet20220825")
+              // Versioned tag format: nom:<label>_<framework>_<embedder><date>_<label><date>
+              // Example: nom:not_aggressive_v1_musicnn20200331_not_aggressive20220825
+              // model_key_for_tag in DB: <backbone><embedder_date> (e.g., "musicnn20200331")
               FILTER STARTS_WITH(tag.rel, "nom:")
               FILTER IS_NUMBER(tag.value)
               // Check if tag contains the model backbone/date pattern
               LET rel_without_prefix = SUBSTRING(tag.rel, 4)
               FILTER CONTAINS(rel_without_prefix, @model_key_for_tag)
-              // Extract label: everything before "_essentia" (framework marker).
-              // Labels may contain underscores (e.g., "not_happy"), so splitting
-              // on the first underscore is incorrect.
-              LET essentia_pos = FIND_FIRST(rel_without_prefix, "_essentia")
-              LET extracted_label = essentia_pos >= 0 ? SUBSTRING(rel_without_prefix, 0, essentia_pos) : rel_without_prefix
+              // Extract label dynamically — works for any framework version string
+              // (e.g. "_v1_" ONNX tags or legacy "_essentia..._" tags).
+              // Tag format: {label}_{framework}_{backbone}{embedder_date}_{label}{head_date}
+              // Step 1: find "_{embedder_part}" — everything before it is "{label}_{framework}"
+              // Step 2: strip the last "_"-delimited segment (framework, e.g. "v1") to get the bare label
+              // This handles multi-underscore labels (e.g. "not_aggressive") correctly.
+              LET embedder_marker = CONCAT("_", @model_key_for_tag)
+              LET embedder_pos = FIND_FIRST(rel_without_prefix, embedder_marker)
+              LET label_and_framework = embedder_pos > 0 ? SUBSTRING(rel_without_prefix, 0, embedder_pos) : rel_without_prefix
+              LET framework_sep = FIND_LAST(label_and_framework, "_")
+              LET extracted_label = framework_sep > 0 ? SUBSTRING(label_and_framework, 0, framework_sep) : label_and_framework
               // Check if extracted label matches the specified label
               FILTER extracted_label == @label
 

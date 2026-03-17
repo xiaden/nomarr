@@ -2,7 +2,7 @@
 
 import logging
 
-from nomarr.components.ml.ml_vector_maintenance_comp import has_vector_index
+from nomarr.components.ml.vectors.ml_vector_maintenance_comp import has_vector_index
 from nomarr.persistence.db import Database
 from nomarr.workflows.platform.promote_and_rebuild_vectors_wf import (
     promote_and_rebuild_workflow,

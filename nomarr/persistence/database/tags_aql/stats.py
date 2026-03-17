@@ -57,7 +57,7 @@ class TagStatsMixin:
         FOR tag IN tags
             FILTER tag.rel == @rel
             LET song_count = LENGTH(
-                FOR edge IN song_tag_edges
+                FOR edge IN song_has_tags
                     FILTER edge._to == tag._id
                     RETURN 1
             )
@@ -80,7 +80,7 @@ class TagStatsMixin:
         # Then join with tags to get rel/value, and group by rel
         query = """
         LET edge_counts = (
-            FOR edge IN song_tag_edges
+            FOR edge IN song_has_tags
                 COLLECT tag_id = edge._to WITH COUNT INTO cnt
                 RETURN {tag_id, cnt}
         )
@@ -150,7 +150,7 @@ class TagStatsMixin:
         FOR tag IN tags
             FILTER STARTS_WITH(tag.rel, @prefix)
             LET song_count = LENGTH(
-                FOR edge IN song_tag_edges
+                FOR edge IN song_has_tags
                     FILTER edge._to == tag._id
                     RETURN 1
             )
@@ -172,7 +172,7 @@ class TagStatsMixin:
         FOR tag IN tags
             FILTER tag.rel == "genre"
             LET song_count = LENGTH(
-                FOR edge IN song_tag_edges
+                FOR edge IN song_has_tags
                     FILTER edge._to == tag._id
                     RETURN 1
             )

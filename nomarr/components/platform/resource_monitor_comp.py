@@ -100,7 +100,7 @@ def check_nvidia_gpu_capability(timeout: float = NVIDIA_SMI_TIMEOUT_S) -> bool:
 
         # Success if nvidia-smi ran and returned GPU name(s)
         if result.stdout.strip():
-            logger.info(
+            logger.debug(
                 "[resource_monitor] NVIDIA GPU detected (%s) - GPU tiers enabled (%dms)",
                 result.stdout.strip().split("\n")[0],
                 duration_ms,

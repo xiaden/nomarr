@@ -15,7 +15,7 @@ from typing import Any, Literal
 
 import yaml
 
-from nomarr.components.ml.ml_discovery_comp import compute_model_suite_hash
+from nomarr.components.ml.onnx.ml_discovery_comp import compute_model_suite_hash
 from nomarr.helpers.dto.config_dto import ConfigResult, GetInternalInfoResult, WebConfigResult
 from nomarr.helpers.dto.processing_dto import ProcessorConfig
 from nomarr.persistence.db import Database
@@ -76,6 +76,11 @@ _ALLOWED_CONFIG_KEYS = {
     # Playlist import (Spotify credentials)
     "spotify_client_id",
     "spotify_client_secret",
+    # Navidrome API integration
+    "navidrome_api_url",
+    "navidrome_api_user",
+    "navidrome_api_password",
+    "navidrome_path_prefix_map",
 }
 
 
@@ -308,6 +313,11 @@ class ConfigService:
             # Playlist import settings (optional)
             "spotify_client_id": None,  # Spotify Developer App client ID
             "spotify_client_secret": None,  # Spotify Developer App client secret
+            # Navidrome API integration (optional)
+            "navidrome_api_url": None,  # Navidrome server URL (e.g. http://navidrome:4533)
+            "navidrome_api_user": None,  # Navidrome admin username
+            "navidrome_api_password": None,  # Navidrome admin password
+            "navidrome_path_prefix_map": "",  # Comma-separated from:to pairs for path remapping
         }
 
     def _deep_merge(self, base_dict: dict[str, Any], override_dict: dict[str, Any]) -> dict[str, Any]:
@@ -376,7 +386,7 @@ class ConfigService:
                     config_overrides[config_key] = parsed
 
                 if config_overrides:
-                    self._logger.info(f"Loaded {len(config_overrides)} config overrides from database")
+                    self._logger.debug(f"Loaded {len(config_overrides)} config overrides from database")
                 return config_overrides
 
             finally:

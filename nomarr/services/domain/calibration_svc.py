@@ -9,15 +9,16 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 from typing import cast as type_cast
 
-from nomarr.components.ml.calibration_state_comp import (
+from nomarr.components.ml.calibration.ml_calibration_state_comp import (
     compute_convergence_status,
     compute_reconciliation_info,
 )
-from nomarr.components.ml.ml_discovery_comp import discover_heads
+from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads_no_db
 from nomarr.helpers.time_helper import now_ms
 from nomarr.workflows.calibration.generate_calibration_wf import (
     generate_histogram_calibration_wf,
@@ -66,6 +67,19 @@ class CalibrationService:
         self._generation_error: Exception | None = None
         self._progress_lock = threading.Lock()
         self._progress: dict[str, Any] = {}
+        self._post_generation_hook: Callable[[], None] | None = None
+
+    def set_post_generation_hook(self, hook: Callable[[], None]) -> None:
+        """Register a callable to be invoked after successful histogram generation.
+
+        The hook is called only when generation completes with heads_failed == 0.
+        Intended for wiring at the composition root (app.py) — not configuration.
+
+        Args:
+            hook: Zero-argument callable, e.g. tagging_service.start_apply_calibration_background
+
+        """
+        self._post_generation_hook = hook
 
     # -------------------------------------------------------------------------
     #  Histogram-Based Calibration (Primary System)
@@ -160,6 +174,9 @@ class CalibrationService:
                 f"[CalibrationService] Background generation completed: "
                 f"{result['heads_success']} success, {result['heads_failed']} failed",
             )
+            if self._post_generation_hook is not None and result["heads_failed"] == 0:
+                logger.info("[CalibrationService] Generation complete — auto-triggering calibration apply")
+                self._post_generation_hook()
         except Exception as e:
             logger.error(f"[CalibrationService] Background generation failed: {e}", exc_info=True)
             self._generation_error = e
@@ -248,7 +265,7 @@ class CalibrationService:
             }
 
         # Not running: fall back to DB query for head completion counts
-        heads = discover_heads(self.cfg.models_dir)
+        heads = discover_heads_no_db(self.cfg.models_dir)
         total_heads = len(heads)
 
         # Count heads with recent calibration_state (within 24 hours)
@@ -396,7 +413,7 @@ class CalibrationService:
             msg = "Cannot clear calibration while generation is running."
             raise RuntimeError(msg)
 
-        from nomarr.components.ml.calibration_state_comp import clear_all_calibration_data
+        from nomarr.components.ml.calibration.ml_calibration_state_comp import clear_all_calibration_data
 
         return clear_all_calibration_data(self._db)
 

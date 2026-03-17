@@ -102,7 +102,6 @@ class Application:
         self.db_path: str = str(self._config["db_path"])
         self.library_root: str | None = self._config.get("library_root")
         self.models_dir: str = str(self._config.get("models_dir", "/app/models"))
-        self.cache_idle_timeout: int = int(self._config.get("cache_idle_timeout", 300))
         self.calibrate_heads: bool = bool(self._config.get("calibrate_heads", False))
         self.library_auto_tag: bool = bool(self._config.get("library_auto_tag", False))
         self.library_ignore_patterns: str = str(self._config.get("library_ignore_patterns", ""))
@@ -114,10 +113,10 @@ class Application:
         self.library_scan_poll_interval: int = INTERNAL_LIBRARY_SCAN_POLL_INTERVAL
         self.namespace: str = INTERNAL_NAMESPACE
         self.version_tag_key: str = INTERNAL_VERSION_TAG
-        from nomarr.components.ml.ml_discovery_comp import compute_model_suite_hash
+        from nomarr.components.ml.onnx.ml_discovery_comp import compute_model_suite_hash
 
         self.tagger_version: str = compute_model_suite_hash(self.models_dir)
-        logger.info(f"[Application] Model suite hash (tagger_version): {self.tagger_version}")
+        logger.debug(f"[Application] Model suite hash (tagger_version): {self.tagger_version}")
         self._ensure_database_provisioned()
         self.db = Database()
         from nomarr.workflows.platform.prepare_database_wf import prepare_database_workflow
@@ -171,8 +170,8 @@ class Application:
         After first run:
         - Config file already has credentials, this is a no-op
         """
+        from nomarr.components.platform.arango_bootstrap_comp import wait_for_arango
         from nomarr.components.platform.arango_first_run_comp import (
-            _wait_for_arango,
             get_root_password_from_env,
             is_first_run,
             provision_database_and_user,
@@ -183,7 +182,7 @@ class Application:
         if not config_path.exists():
             config_path = Path.cwd() / "config" / "nomarr.yaml"
         hosts = os.getenv("ARANGO_HOST", "http://nomarr-arangodb:8529")
-        if not _wait_for_arango(hosts):
+        if not wait_for_arango(hosts):
             msg = f"Cannot connect to ArangoDB at {hosts} after 60 seconds"
             raise RuntimeError(msg)
         if not is_first_run(config_path, hosts=hosts):
@@ -211,7 +210,7 @@ class Application:
 
         self._heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True, name="AppHeartbeat")
         self._heartbeat_thread.start()
-        logger.info("[Application] App heartbeat started")
+        logger.debug("[Application] App heartbeat started")
 
     def start(self) -> None:
         """Start the application - initialize all services, workers, and background tasks.
@@ -229,7 +228,7 @@ class Application:
         if self._running:
             logger.warning("[Application] Already running, ignoring start() call")
             return
-        logger.info("[Application] Starting...")
+        logger.debug("[Application] Starting...")
         logger.debug("[Application] Cleaning ephemeral runtime state...")
         self.db.health.clean_all()
         self.db.health.mark_starting(component_id="app", component_type="app")
@@ -243,8 +242,8 @@ class Application:
         logger.debug("[Application] Initializing services...")
         from nomarr.services.infrastructure.ml_svc import MLConfig, MLService
 
-        ml_cfg = MLConfig(models_dir=str(self.models_dir), cache_idle_timeout=self.cache_idle_timeout)
-        ml_service = MLService(cfg=ml_cfg)
+        ml_cfg = MLConfig(models_dir=str(self.models_dir))
+        ml_service = MLService(db=self.db, cfg=ml_cfg)
         self.register_service("ml", ml_service)
         from nomarr.services.infrastructure.health_monitor_svc import HealthMonitorConfig
 
@@ -268,7 +267,13 @@ class Application:
         logger.debug("[Application] Initializing NavidromeService...")
         from nomarr.services.domain.navidrome_svc import NavidromeConfig
 
-        navidrome_cfg = NavidromeConfig(namespace=self.namespace)
+        navidrome_cfg = NavidromeConfig(
+            namespace=self.namespace,
+            api_url=self._config.get("navidrome_api_url"),
+            api_user=self._config.get("navidrome_api_user"),
+            api_password=self._config.get("navidrome_api_password"),
+            path_prefix_map=self._parse_path_prefix_map(self._config.get("navidrome_path_prefix_map", "")),
+        )
         navidrome_service = NavidromeService(db=self.db, cfg=navidrome_cfg)
         self.register_service("navidrome", navidrome_service)
         logger.debug("[Application] Initializing PlaylistImportService...")
@@ -334,7 +339,7 @@ class Application:
 
         metadata_service = MetadataService(db=self.db)
         self.register_service("metadata", metadata_service)
-        self.register_service("tagging", TaggingService(
+        tagging_service = TaggingService(
             database=self.db,
             cfg=TaggingServiceConfig(
                 models_dir=self.models_dir,
@@ -343,7 +348,10 @@ class Application:
                 calibrate_heads=self.calibrate_heads,
             ),
             library_service=self.services.get("library"),
-        ))
+        )
+        self.register_service("tagging", tagging_service)
+        calibration_service.set_post_generation_hook(tagging_service.start_apply_calibration_background)
+        logger.debug("[Application] Wired calibration post-generation hook → TaggingService.start_apply_calibration_background")
         # Vector services (search and maintenance)
         from nomarr.services.domain.vector_maintenance_svc import VectorMaintenanceService
         from nomarr.services.domain.vector_search_svc import VectorSearchService
@@ -387,7 +395,7 @@ class Application:
             worker_count,
             "enabled" if "info" in self.services else "disabled",
         )
-        logger.info("[Application] Started successfully")
+        logger.debug("[Application] Started successfully")
 
     def stop(self) -> None:
         """Stop the application - clean shutdown of all services and workers.
@@ -422,21 +430,30 @@ class Application:
         self._running = False
         logger.info("[Application] Shutdown complete - all workers stopped")
 
+    @staticmethod
+    def _parse_path_prefix_map(raw: str | None) -> list[tuple[str, str]]:
+        """Parse comma-separated 'from:to' prefix pairs.
+
+        Format: 'navidrome_prefix:nomarr_prefix,navidrome_prefix2:nomarr_prefix2'
+        Example: '/music:/media/library,/podcasts:/media/pods'
+
+        Returns:
+            List of (navidrome_prefix, nomarr_prefix) tuples.
+        """
+        if not raw or not raw.strip():
+            return []
+        pairs: list[tuple[str, str]] = []
+        for entry in raw.split(","):
+            entry = entry.strip()
+            if ":" not in entry:
+                continue
+            parts = entry.split(":", 1)
+            pairs.append((parts[0].strip(), parts[1].strip()))
+        return pairs
+
     def is_running(self) -> bool:
         """Check if application is running."""
         return self._running
-
-    def warmup_cache(self) -> None:
-        """Warmup the ML predictor cache.
-
-        Interfaces should call this method rather than importing ml.cache directly.
-        Uses instance config attributes.
-        """
-        ml_service = self.services.get("ml")
-        if ml_service is None:
-            msg = "ML service not initialized"
-            raise RuntimeError(msg)
-        ml_service.warmup_cache()
 
 
 # Module-level singleton, initialized at import time (except during tests)

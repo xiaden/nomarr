@@ -5,7 +5,7 @@
  * - View current configuration
  * - Update individual config values
  * - Restart server to apply changes
- * - Admin controls (worker, system, inspect tags)
+ * - Admin controls (system, ML, inspect tags)
  */
 
 import { ExpandMore } from "@mui/icons-material";
@@ -24,16 +24,16 @@ import { ConfirmDialog, PageContainer } from "@shared/components/ui";
 import { InspectTags } from "../admin/components/InspectTags";
 import { SystemControls } from "../admin/components/SystemControls";
 import { VectorMaintenance } from "../admin/components/VectorMaintenance";
-import { WorkerControls } from "../admin/components/WorkerControls";
 import { useAdminActions } from "../admin/hooks/useAdminActions";
 
 import { ConfigSettings } from "./components/ConfigSettings";
+import { MLInference } from "./components/MLInference";
 import { useConfigData } from "./hooks/useConfigData";
 
 export function ConfigPage() {
   const { config, loading, error, saveLoading, hasChanges, handleSaveAll, handleChange } =
     useConfigData();
-  const { actionLoading, handlePauseWorker, handleResumeWorker, handleRestart, dialogState } =
+  const { actionLoading, handleRestart, handleVramProbe, dialogState } =
     useAdminActions();
 
   return (
@@ -70,15 +70,24 @@ export function ConfigPage() {
             </AccordionSummary>
             <AccordionDetails>
               <Stack spacing={2.5}>
-                <WorkerControls
-                  onPause={handlePauseWorker}
-                  onResume={handleResumeWorker}
-                  actionLoading={actionLoading}
-                />
                 <SystemControls onRestart={handleRestart} actionLoading={actionLoading} />
                 <VectorMaintenance />
                 <InspectTags />
               </Stack>
+            </AccordionDetails>
+          </Accordion>
+          {/* ML Inference accordion */}
+          <Accordion disableGutters>
+            <AccordionSummary expandIcon={<ExpandMore />}>
+              <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                ML Inference
+              </Typography>
+            </AccordionSummary>
+            <AccordionDetails>
+              <MLInference
+                onVramProbe={handleVramProbe}
+                actionLoading={actionLoading}
+              />
             </AccordionDetails>
           </Accordion>
         </Stack>

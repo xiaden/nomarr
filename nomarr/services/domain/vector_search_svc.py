@@ -3,7 +3,7 @@
 import logging
 from typing import Any
 
-from nomarr.components.ml.ml_vector_maintenance_comp import has_vector_index
+from nomarr.components.ml.vectors.ml_vector_maintenance_comp import has_vector_index
 from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)

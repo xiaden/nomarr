@@ -40,7 +40,7 @@ import numpy as np
 from scipy.spatial.distance import jensenshannon
 from scipy.stats import iqr
 
-from nomarr.components.ml.calibration_state_comp import (
+from nomarr.components.ml.calibration.ml_calibration_state_comp import (
     load_all_calibration_states,
     save_calibration_state,
     set_calibration_last_run,
@@ -331,18 +331,18 @@ def generate_histogram_calibration_wf(
         results keys are "model:head:label" format (e.g., "effnet-20220825:gender:male").
 
     """
-    from nomarr.components.ml.ml_calibration_comp import (
+    from nomarr.components.ml.calibration.ml_calibration_comp import (
         compute_calibration_def_hash,
         compute_global_calibration_hash,
         generate_calibration_from_histogram,
     )
-    from nomarr.components.ml.ml_discovery_comp import discover_heads
+    from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads
     from nomarr.components.tagging.mood_labels_comp import normalize_tag_label
 
     logger.info("[histogram_calibration_wf] Starting histogram-based calibration generation")
 
     # Discover all heads
-    heads = discover_heads(models_dir)
+    heads = discover_heads(models_dir, db)
     if not heads:
         logger.warning("[histogram_calibration_wf] No heads found in models directory")
         return {"version": 0, "heads_processed": 0, "heads_success": 0, "heads_failed": 0, "results": {}}
@@ -357,15 +357,13 @@ def generate_histogram_calibration_wf(
     for head_idx, head_info in enumerate(heads):
         # Construct identifiers
         embedder_date = "unknown"
-        if head_info.embedding_sidecar:
-            embedder_release = head_info.embedding_sidecar.data.get("release_date", "")
-            if embedder_release:
-                embedder_date = embedder_release.replace("-", "")
+        if head_info.embedder_release_date:
+            embedder_date = head_info.embedder_release_date.replace("-", "")
 
         model_key = f"{head_info.backbone}-{embedder_date}"
         head_name = head_info.name
         labels = head_info.labels
-        version = head_info.sidecar.data.get("version", 1)
+        version = 1  # model version (stable across ONNX era)
 
         logger.info(f"[histogram_calibration_wf] Processing head {head_name} (version {version}, labels={labels})")
 

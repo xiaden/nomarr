@@ -20,16 +20,17 @@ import time
 from multiprocessing import Event, Pipe
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.ml.ml_capacity_probe_comp import (
+from nomarr.components.ml.resources.ml_capacity_probe_comp import (
     CapacityEstimate,
     get_or_run_capacity_probe,
 )
-from nomarr.components.ml.ml_tier_selection_comp import (
+from nomarr.components.ml.resources.ml_tier_selection_comp import (
     TIER_CONFIGS,
     ExecutionTier,
     TierSelection,
     select_execution_tier,
 )
+from nomarr.components.ml.resources.ml_vram_coordinator_comp import release_worker_promises
 from nomarr.components.platform.resource_monitor_comp import check_nvidia_gpu_capability
 from nomarr.components.workers import should_restart_worker
 from nomarr.components.workers.worker_discovery_comp import (
@@ -247,13 +248,23 @@ class WorkerSystemService(ComponentLifecycleHandler):
         )
 
         if new_status == "dead":
-            # Release claims for crashed worker
+            # Release file claims for crashed worker
             released_file_ids = release_claims_for_worker(self.db, component_id)
             if released_file_ids:
                 logger.info(
                     "[WorkerSystemService] Released %d claim(s) for dead worker %s - files will be reprocessed",
                     len(released_file_ids),
                     component_id,
+                )
+
+            # Release VRAM promises for crashed worker so fleet headroom is reclaimed
+            try:
+                release_worker_promises(self.db, component_id)
+            except Exception:
+                logger.debug(
+                    "[WorkerSystemService] Failed to release VRAM promises for dead worker %s",
+                    component_id,
+                    exc_info=True,
                 )
 
             # Check if shutdown was requested (graceful stop)
@@ -487,7 +498,7 @@ class WorkerSystemService(ComponentLifecycleHandler):
             return
 
         actual_worker_count = tier_selection.calculated_workers
-        logger.info(
+        logger.debug(
             "[WorkerSystemService] Starting %d discovery worker(s) at %s",
             actual_worker_count,
             tier_selection.config.description,
@@ -505,6 +516,7 @@ class WorkerSystemService(ComponentLifecycleHandler):
         self._stop_event.clear()
 
         # Create and start workers with stagger delay, registering each with HealthMonitor
+        started_workers: list[str] = []
         for i in range(actual_worker_count):
             # Stagger worker starts to avoid resource contention
             if i > 0:
@@ -539,9 +551,13 @@ class WorkerSystemService(ComponentLifecycleHandler):
                     policy=DEFAULT_WORKER_POLICY,
                 )
 
-            logger.info("[WorkerSystemService] Started worker:tag:%d (pid=%s)", i, worker.pid)
+            started_workers.append(f"worker:tag:{i} (pid={worker.pid})")
 
-        logger.info("[WorkerSystemService] Started %d worker(s)", actual_worker_count)
+        logger.info(
+            "[WorkerSystemService] Started %d worker(s): %s",
+            actual_worker_count,
+            ", ".join(started_workers),
+        )
         self._started = True
 
     def stop_all_workers(self, timeout: float = 10.0) -> None:
@@ -591,6 +607,18 @@ class WorkerSystemService(ComponentLifecycleHandler):
                     )
                     worker.kill()
                     worker.join(timeout=0.5)
+
+        # Release VRAM promises for all workers (covers force-killed workers whose
+        # finally blocks did not execute)
+        for worker in self._workers:
+            try:
+                release_worker_promises(self.db, worker.worker_id)
+            except Exception:
+                logger.debug(
+                    "[WorkerSystemService] Failed to release VRAM promises for worker %s",
+                    worker.worker_id,
+                    exc_info=True,
+                )
 
         self._workers.clear()
         self._started = False

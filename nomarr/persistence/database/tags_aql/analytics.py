@@ -43,7 +43,7 @@ class TagAnalyticsMixin:
         FOR tag IN tags
             FILTER tag.rel == "year"
             LET song_count = LENGTH(
-                FOR edge IN song_tag_edges
+                FOR edge IN song_has_tags
                     FILTER edge._to == tag._id
                     {library_filter}
                     RETURN 1
@@ -92,7 +92,7 @@ class TagAnalyticsMixin:
         FOR tag IN tags
             FILTER tag.rel == "genre"
             LET song_count = LENGTH(
-                FOR edge IN song_tag_edges
+                FOR edge IN song_has_tags
                     FILTER edge._to == tag._id
                     {library_filter}
                     RETURN 1

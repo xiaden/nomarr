@@ -1,58 +1,20 @@
 /**
  * Custom hook for admin actions.
- * Provides worker pause/resume and server restart functionality.
+ * Provides server restart and ML controls functionality.
  */
 
 import { useState } from "react";
 
 import { useConfirmDialog } from "../../../hooks/useConfirmDialog";
 import { useNotification } from "../../../hooks/useNotification";
-import { pauseWorker, restart, resumeWorker } from "../../../shared/api/worker";
+import { triggerVramProbe } from "../../../shared/api/ml";
+import { restart } from "../../../shared/api/worker";
 
 export function useAdminActions() {
   const { showSuccess, showError } = useNotification();
   const { confirm, isOpen, options, handleConfirm, handleCancel } = useConfirmDialog();
-  
+
   const [actionLoading, setActionLoading] = useState(false);
-
-  const handlePauseWorker = async () => {
-    const confirmed = await confirm({
-      title: "Pause Worker?",
-      message: "Pause the worker? Processing will stop.",
-      confirmLabel: "Pause",
-      severity: "warning",
-    });
-    if (!confirmed) return;
-
-    try {
-      setActionLoading(true);
-      const result = await pauseWorker();
-      showSuccess(result.message);
-    } catch (err) {
-      showError(err instanceof Error ? err.message : "Failed to pause worker");
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleResumeWorker = async () => {
-    const confirmed = await confirm({
-      title: "Resume Worker?",
-      message: "Resume the worker? Processing will start.",
-      confirmLabel: "Resume",
-    });
-    if (!confirmed) return;
-
-    try {
-      setActionLoading(true);
-      const result = await resumeWorker();
-      showSuccess(result.message);
-    } catch (err) {
-      showError(err instanceof Error ? err.message : "Failed to resume worker");
-    } finally {
-      setActionLoading(false);
-    }
-  };
 
   const handleRestart = async () => {
     const confirmed = await confirm({
@@ -77,11 +39,31 @@ export function useAdminActions() {
     }
   };
 
+  const handleVramProbe = async () => {
+    const confirmed = await confirm({
+      title: "Re-run VRAM Probe?",
+      message:
+        "This will clear stored VRAM measurements. The next worker startup will re-probe all models.",
+      confirmLabel: "Re-run Probe",
+      severity: "warning",
+    });
+    if (!confirmed) return;
+
+    try {
+      setActionLoading(true);
+      await triggerVramProbe();
+      showSuccess("VRAM probe scheduled — measurements will refresh on next worker start.");
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Failed to schedule VRAM probe");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   return {
     actionLoading,
-    handlePauseWorker,
-    handleResumeWorker,
     handleRestart,
+    handleVramProbe,
     // Dialog state for rendering ConfirmDialog
     dialogState: { isOpen, options, handleConfirm, handleCancel },
   };

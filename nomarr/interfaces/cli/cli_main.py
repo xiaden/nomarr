@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 
-from nomarr.interfaces.cli.commands.cache_refresh_cli import cmd_cache_refresh
 from nomarr.interfaces.cli.commands.cleanup_cli import cmd_cleanup
 from nomarr.interfaces.cli.commands.manage_password_cli import cmd_manage_password
 
@@ -18,7 +17,6 @@ def build_parser() -> argparse.ArgumentParser:
         epilog="Examples:\n"
         "  nom cleanup                                # Remove orphaned entities\n"
         "  nom cleanup --dry-run                      # Preview orphaned entities\n"
-        "  nom cache-refresh                          # Rebuild model cache\n"
         "  nom manage-password reset                  # Change admin password",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -33,10 +31,6 @@ def build_parser() -> argparse.ArgumentParser:
     subparser = sub.add_parser("cleanup", help="Remove orphaned entities (artists, albums, etc.) with no songs")
     subparser.add_argument("--dry-run", action="store_true", help="show what would be deleted without deleting")
     subparser.set_defaults(func=cmd_cleanup)
-
-    # cache-refresh: Rebuild predictor cache
-    subparser = sub.add_parser("cache-refresh", help="Rebuild model cache (use after adding/removing models)")
-    subparser.set_defaults(func=cmd_cache_refresh)
 
     # manage-password: Admin password management
     subparser = sub.add_parser("manage-password", help="Manage admin password for web UI")

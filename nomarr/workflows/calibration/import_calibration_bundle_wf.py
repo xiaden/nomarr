@@ -22,7 +22,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.ml.calibration_state_comp import (
+from nomarr.components.ml.calibration.ml_calibration_state_comp import (
     load_all_calibration_states,
     save_calibration_state,
     set_calibration_version,
@@ -154,7 +154,7 @@ def import_calibration_bundle_wf(
             logger.exception(f"[import_calibration] Failed to import {label}: {e}")
 
     # Update global calibration version
-    from nomarr.components.ml.ml_calibration_comp import compute_global_calibration_hash
+    from nomarr.components.ml.calibration.ml_calibration_comp import compute_global_calibration_hash
 
     calibration_states = load_all_calibration_states(db)
     global_version = compute_global_calibration_hash(calibration_states)
@@ -246,7 +246,7 @@ def import_calibration_bundles_from_directory_wf(
             total_skipped += 1
 
     # Final global version (computed after all imports)
-    from nomarr.components.ml.ml_calibration_comp import compute_global_calibration_hash
+    from nomarr.components.ml.calibration.ml_calibration_comp import compute_global_calibration_hash
 
     calibration_states = load_all_calibration_states(db)
     global_version = compute_global_calibration_hash(calibration_states)

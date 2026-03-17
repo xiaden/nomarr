@@ -18,7 +18,6 @@ This is not "lazy provisioning" - it's explicit onboarding.
 import logging
 import os
 import secrets
-import time
 from pathlib import Path
 
 import yaml
@@ -99,44 +98,11 @@ def _has_db_config(config_path: Path) -> bool:
         return False
 
 
-def _wait_for_arango(hosts: str, max_attempts: int = 30, delay_s: float = 2.0) -> bool:
-    """Wait for ArangoDB to become available.
-
-    Args:
-        hosts: ArangoDB server URL(s)
-        max_attempts: Maximum connection attempts (default 30 = 60 seconds)
-        delay_s: Delay between attempts in seconds
-
-    Returns:
-        True if connected, False if timeout
-
-    """
-    root_password = os.getenv("ARANGO_ROOT_PASSWORD")
-    if not root_password:
-        logger.debug("ARANGO_ROOT_PASSWORD not set, skipping connection wait")
-        return True
-    for attempt in range(1, max_attempts + 1):
-        try:
-            client = ArangoClient(hosts=hosts)
-            sys_db = client.db("_system", username="root", password=root_password)
-            sys_db.properties()
-            logger.info(f"ArangoDB connection established (attempt {attempt}/{max_attempts})")
-            return True
-        except Exception as e:
-            if attempt < max_attempts:
-                logger.info(f"Waiting for ArangoDB... ({attempt}/{max_attempts}): {e}")
-                time.sleep(delay_s)
-            else:
-                logger.exception(f"ArangoDB connection timeout after {max_attempts} attempts: {e}")
-                return False
-    return False
-
-
 def _database_exists(hosts: str | None = None) -> bool:
     """Check if the 'nomarr' database exists in ArangoDB.
 
-    Uses root credentials from environment to check system database.
-    This handles the case where the DB volume was reset but config still has old password.
+    Caller is responsible for ensuring ArangoDB is already reachable before
+    calling this (e.g. via arango_bootstrap_comp.wait_for_arango).
 
     Args:
         hosts: ArangoDB server URL(s). Read from ARANGO_HOST env var if not provided.
@@ -146,9 +112,6 @@ def _database_exists(hosts: str | None = None) -> bool:
 
     """
     actual_hosts: str = hosts or os.getenv("ARANGO_HOST") or "http://nomarr-arangodb:8529"
-    if not _wait_for_arango(actual_hosts):
-        logger.error("Cannot check database existence - ArangoDB not available")
-        return False
     try:
         root_password = os.getenv("ARANGO_ROOT_PASSWORD")
         if not root_password:

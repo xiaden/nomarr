@@ -15,9 +15,11 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from nomarr.components.navidrome.tag_query_comp import find_files_matching_tag
+from nomarr.components.navidrome.tag_query_comp import (
+    find_files_matching_tag,
+    resolve_short_to_versioned_keys,
+)
 from nomarr.helpers.dto.navidrome_dto import STANDARD_TAG_RELS
-from nomarr.helpers.tag_key_mapping import resolve_short_to_versioned_keys
 
 logger = logging.getLogger(__name__)
 

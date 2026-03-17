@@ -51,7 +51,8 @@ class TagFrequenciesResponse(BaseModel):
     """Response for tag frequencies endpoint."""
 
     tag_frequencies: list[TagFrequencyItemResponse] = Field(
-        default_factory=list, description="List of tag frequency statistics",
+        default_factory=list,
+        description="List of tag frequency statistics",
     )
 
     @classmethod
@@ -81,7 +82,8 @@ class MoodDistributionResponse(BaseModel):
     """Response for mood distribution endpoint."""
 
     mood_distribution: list[MoodDistributionItemResponse] = Field(
-        default_factory=list, description="Mood distribution statistics",
+        default_factory=list,
+        description="Mood distribution statistics",
     )
 
     @classmethod
@@ -94,10 +96,12 @@ class TagCorrelationsResponse(BaseModel):
     """Pydantic model for TagCorrelationData DTO."""
 
     mood_correlations: dict[str, dict[str, float]] = Field(
-        default_factory=dict, description="Mood-to-mood correlation matrix",
+        default_factory=dict,
+        description="Mood-to-mood correlation matrix",
     )
     mood_tier_correlations: dict[str, dict[str, float]] = Field(
-        default_factory=dict, description="Mood-to-tier correlation matrix",
+        default_factory=dict,
+        description="Mood-to-tier correlation matrix",
     )
 
     @classmethod
@@ -144,7 +148,6 @@ class TagCoOccurrencesResponse(BaseModel):
         )
 
 
-
 # ──────────────────────────────────────────────────────────────────────
 # Collection Profile Response Models
 # ──────────────────────────────────────────────────────────────────────
@@ -173,17 +176,17 @@ class GenreDistributionItemResponse(BaseModel):
     count: int = Field(..., description="Number of tracks")
 
 
-
-
 class CollectionOverviewResponse(BaseModel):
     """Response for collection overview endpoint."""
 
     stats: LibraryStatsResponse = Field(..., description="Library statistics")
     year_distribution: list[YearDistributionItemResponse] = Field(
-        default_factory=list, description="Year distribution",
+        default_factory=list,
+        description="Year distribution",
     )
     genre_distribution: list[GenreDistributionItemResponse] = Field(
-        default_factory=list, description="Genre distribution",
+        default_factory=list,
+        description="Genre distribution",
     )
 
 
@@ -199,7 +202,8 @@ class MoodCoverageResponse(BaseModel):
 
     total_files: int = Field(..., description="Total files in scope")
     tiers: dict[str, MoodCoverageTierResponse] = Field(
-        default_factory=dict, description="Coverage per tier (strict, relaxed, genre)",
+        default_factory=dict,
+        description="Coverage per tier (strict, relaxed, genre)",
     )
 
 
@@ -230,11 +234,14 @@ class MoodAnalysisResponse(BaseModel):
 
     coverage: MoodCoverageResponse = Field(..., description="Mood coverage statistics")
     balance: dict[str, list[MoodBalanceItemResponse]] = Field(
-        default_factory=dict, description="Mood balance per tier",
+        default_factory=dict,
+        description="Mood balance per tier",
     )
     top_pairs_by_tier: dict[str, list[MoodPairItemResponse]] = Field(
-        default_factory=dict, description="Top co-occurring mood pairs per tier (strict/regular/loose)",
+        default_factory=dict,
+        description="Top co-occurring mood pairs per tier (strict/regular/loose)",
     )
     dominant_vibes: list[DominantVibeItemResponse] = Field(
-        default_factory=list, description="Dominant mood vibes",
+        default_factory=list,
+        description="Dominant mood vibes",
     )

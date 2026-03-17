@@ -26,7 +26,9 @@ import {
 import { useCallback, useState } from "react";
 
 import type { LibraryFile } from "@shared/api/files";
+import { listEntities } from "@shared/api/metadata";
 import { Panel } from "@shared/components/ui";
+import type { Entity } from "@shared/types";
 
 import type { GroupedSearchResults } from "../hooks/useLibrarySearch";
 
@@ -84,22 +86,45 @@ export function SearchResults({ results, onNavigate }: SearchResultsProps) {
   }, []);
 
   const handleArtistClick = useCallback(
-    (artistName: string) => {
-      onNavigate({
-        type: "albums",
-        artist: { entity_id: "", key: "", display_name: artistName },
-      });
+    async (artistName: string) => {
+      let artist: Entity = { entity_id: "", key: "", display_name: artistName };
+      try {
+        const result = await listEntities("artists", { search: artistName, limit: 5 });
+        const match = result.entities.find(
+          (e) => e.display_name.toLowerCase() === artistName.toLowerCase()
+        ) ?? result.entities[0];
+        if (match) artist = match;
+      } catch {
+        // Fall through with empty entity_id — LibraryBrowser will show an error
+      }
+      onNavigate({ type: "albums", artist });
     },
     [onNavigate],
   );
 
   const handleAlbumClick = useCallback(
-    (albumName: string, artistName: string) => {
-      onNavigate({
-        type: "tracks",
-        artist: { entity_id: "", key: "", display_name: artistName },
-        album: { entity_id: "", display_name: albumName },
-      });
+    async (albumName: string, artistName: string) => {
+      let artist: Entity = { entity_id: "", key: "", display_name: artistName };
+      let album = { entity_id: "", display_name: albumName };
+      try {
+        const [artistResult, albumResult] = await Promise.all([
+          listEntities("artists", { search: artistName, limit: 5 }),
+          listEntities("albums", { search: albumName, limit: 5 }),
+        ]);
+        const artistMatch =
+          artistResult.entities.find(
+            (e) => e.display_name.toLowerCase() === artistName.toLowerCase()
+          ) ?? artistResult.entities[0];
+        if (artistMatch) artist = artistMatch;
+        const albumMatch =
+          albumResult.entities.find(
+            (e) => e.display_name.toLowerCase() === albumName.toLowerCase()
+          ) ?? albumResult.entities[0];
+        if (albumMatch) album = { entity_id: albumMatch.entity_id, display_name: albumMatch.display_name };
+      } catch {
+        // Fall through
+      }
+      onNavigate({ type: "tracks", artist, album });
     },
     [onNavigate],
   );

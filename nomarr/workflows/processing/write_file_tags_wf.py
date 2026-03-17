@@ -179,6 +179,17 @@ def write_file_tags_workflow(
                 error=f"Library not found: {library_id}",
             )
 
+        # Require known mtime to prevent writing to externally-modified files
+        expected_mtime_ms = file_doc.get("modified_time")
+        if not isinstance(expected_mtime_ms, int):
+            return WriteResult(
+                file_key=file_key,
+                tags_written=0,
+                tags_filtered=0,
+                success=False,
+                error=f"No valid modified_time in file_doc: {expected_mtime_ms}",
+            )
+
         # Get tags from database (nomarr tags only) - returns Tags DTO
         db_tags = get_nomarr_tags(db, file_id)
 
@@ -190,8 +201,16 @@ def write_file_tags_workflow(
         tag_writer = TagWriter(overwrite=True, namespace=namespace)
 
         # Write tags using atomic safe write
-        result = tag_writer.write_safe(library_path, tags_to_write, library_root)
+        result = tag_writer.write_safe(library_path, tags_to_write, library_root, expected_mtime_ms)
         if not result.success:
+            if result.error == "file_modified_externally":
+                return WriteResult(
+                    file_key=file_key,
+                    tags_written=0,
+                    tags_filtered=tags_filtered,
+                    success=False,
+                    error="file_modified_externally",
+                )
             release_file_claim(db, file_key)
             return WriteResult(
                 file_key=file_key,
@@ -200,6 +219,10 @@ def write_file_tags_workflow(
                 success=False,
                 error=f"Safe write failed: {result.error}",
             )
+
+        # Sync mtime in DB so scanner skips this file on next scan
+        if result.new_mtime_ms is not None:
+            db.library_files.update_file_modified_time(file_key, result.new_mtime_ms)
 
         # Update file projection state in database
         mark_file_written(db, file_key, mode=target_mode, calibration_hash=calibration_hash)

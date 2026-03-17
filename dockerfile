@@ -30,7 +30,7 @@ WORKDIR /app
 # ----------------------------------------------------------------------
 # Copy directories preserving structure
 COPY nomarr/ /app/nomarr/
-COPY build_resources/models/ /app/models/
+COPY build_resources/models-patched/ /app/models/
 COPY build_resources/config/ /app/config/
 COPY build_resources/scripts/ /app/scripts/
 COPY docs/ /app/docs/
@@ -56,16 +56,11 @@ RUN chmod +x /app/cleanup-cron.sh /usr/local/bin/nom && \
 #  Environment variables
 # ----------------------------------------------------------------------
 ENV NOMARR_MODELS=/app/models \
-    NOMARR_DB=/app/config/db/essentia.sqlite \
+    NOMARR_DB=/app/config/db/nomarr.db \
     NOMARR_CONFIG=/app/config/config.yaml \
-    PYTHONPATH=/app \
+    PYTHONPATH=/app:/usr/local/lib/python3/dist-packages \
     PORT=8356 \
-    TF_CPP_MIN_LOG_LEVEL=3 \
-    TF_ENABLE_ONEDNN_OPTS=0 \
-    TF_FORCE_GPU_ALLOW_GROWTH=true \
-    TF_GPU_THREAD_MODE=gpu_private \
-    TF_GPU_ALLOCATOR=cuda_malloc_async \
-    XLA_FLAGS=--xla_gpu_cuda_data_dir=/usr/local/cuda
+    ORT_DISABLE_TELEMETRY=1
 
 # ----------------------------------------------------------------------
 #  Healthcheck (internal)

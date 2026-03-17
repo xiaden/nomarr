@@ -17,7 +17,7 @@ def test_create_single_file(temp_workspace: Path) -> None:
     """Test creating a single file."""
     result = edit_file_create(
         [{"path": str(temp_workspace / "test.py"), "content": "# Test\n"}],
-        workspace_root=str(temp_workspace),
+        workspace_root=temp_workspace,
     )
 
     assert result["status"] == "applied"
@@ -44,7 +44,7 @@ def test_create_batch_files(temp_workspace: Path) -> None:
             {"path": str(temp_workspace / "file2.py"), "content": "# File 2\n"},
             {"path": str(temp_workspace / "file3.py"), "content": "# File 3\n"},
         ],
-        workspace_root=str(temp_workspace),
+        workspace_root=temp_workspace,
     )
 
     assert result["status"] == "applied"
@@ -74,7 +74,7 @@ def test_create_nested_directories(temp_workspace: Path) -> None:
                 "content": "# Profile\n",
             },
         ],
-        workspace_root=str(temp_workspace),
+        workspace_root=temp_workspace,
     )
 
     assert result["status"] == "applied"
@@ -90,7 +90,7 @@ def test_create_empty_file(temp_workspace: Path) -> None:
     """Test creating an empty file."""
     result = edit_file_create(
         [{"path": str(temp_workspace / "empty.txt")}],
-        workspace_root=str(temp_workspace),
+        workspace_root=temp_workspace,
     )
 
     assert result["status"] == "applied"
@@ -111,7 +111,7 @@ def test_fail_on_existing_file(temp_workspace: Path) -> None:
     # Try to create it again
     result = edit_file_create(
         [{"path": str(existing), "content": "# New\n"}],
-        workspace_root=str(temp_workspace),
+        workspace_root=temp_workspace,
     )
 
     assert result["status"] == "failed"
@@ -137,7 +137,7 @@ def test_rollback_on_partial_failure(temp_workspace: Path) -> None:
             {"path": str(existing), "content": "# Should fail\n"},
             {"path": str(temp_workspace / "new3.py"), "content": "# New 3\n"},
         ],
-        workspace_root=str(temp_workspace),
+        workspace_root=temp_workspace,
     )
 
     assert result["status"] == "failed"
@@ -160,7 +160,7 @@ def test_duplicate_paths_in_batch(temp_workspace: Path) -> None:
             {"path": str(temp_workspace / "other.py"), "content": "# Other\n"},
             {"path": str(temp_workspace / "dup.py"), "content": "# Second\n"},
         ],
-        workspace_root=str(temp_workspace),
+        workspace_root=temp_workspace,
     )
 
     assert result["status"] == "failed"
@@ -179,7 +179,7 @@ def test_large_file_context_capping(temp_workspace: Path) -> None:
 
     result = edit_file_create(
         [{"path": str(temp_workspace / "large.py"), "content": content}],
-        workspace_root=str(temp_workspace),
+        workspace_root=temp_workspace,
     )
 
     assert result["status"] == "applied"
@@ -206,7 +206,7 @@ def test_very_large_file_over_1mb(temp_workspace: Path) -> None:
 
     result = edit_file_create(
         [{"path": str(temp_workspace / "huge.py"), "content": content}],
-        workspace_root=str(temp_workspace),
+        workspace_root=temp_workspace,
     )
 
     assert result["status"] == "applied"
@@ -242,7 +242,7 @@ def test_permission_error_rollback(temp_workspace: Path) -> None:
                 {"path": str(temp_workspace / "good.py"), "content": "# Good\n"},
                 {"path": str(readonly_dir / "bad.py"), "content": "# Bad\n"},
             ],
-            workspace_root=str(temp_workspace),
+            workspace_root=temp_workspace,
         )
 
         # Should fail on permission error
@@ -266,7 +266,7 @@ def test_response_format(temp_workspace: Path) -> None:
     """Test response includes all required fields."""
     result = edit_file_create(
         [{"path": str(temp_workspace / "test.py"), "content": "# Test\nprint('hello')\n"}],
-        workspace_root=str(temp_workspace),
+        workspace_root=temp_workspace,
     )
 
     assert result["status"] == "applied"

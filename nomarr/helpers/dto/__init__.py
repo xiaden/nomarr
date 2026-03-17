@@ -51,8 +51,10 @@ from nomarr.helpers.dto.ml_dto import (
     ComputeEmbeddingsForBackboneParams,
     GenerateMinmaxCalibrationResult,
     LoadAudioMonoResult,
+    ProcessHeadPredictionsResult,
     SaveCalibrationSidecarsResult,
     SegmentWaveformParams,
+    SingleHeadResult,
 )
 from nomarr.helpers.dto.navidrome_dto import (
     PlaylistPreviewResult,
@@ -91,9 +93,11 @@ __all__ = [
     "PlaylistPreviewResult",
     "PlaylistTrackInput",
     "ProcessFileResult",
+    "ProcessHeadPredictionsResult",
     "ProcessorConfig",
     "SaveCalibrationSidecarsResult",
     "SegmentWaveformParams",
+    "SingleHeadResult",
     "SmartPlaylistFilter",
     "StaticPlaylistResult",
     "StatusChangeContext",

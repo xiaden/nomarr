@@ -15,6 +15,7 @@ export * from "./auth";
 export * from "./calibration";
 export * from "./filesystem";
 export * from "./metadata";
+export * from "./ml";
 export * from "./processing";
 export * from "./tags";
 export * from "./worker";
@@ -24,7 +25,7 @@ export * from "./vectors";
 export {
     cleanupOrphanedTags, create, deleteLibrary, getFileTags, getLibrary, getReconcileStatus, getStats,
     list, reconcileTags,
-    scan, update, updateWriteMode,
+    scanFull, scanQuick, update, updateWriteMode,
     type CleanupTagsResult, type CreateLibraryPayload, type FileTagsResult, type LibraryStats,
     type ReconcileStatusResult, type ReconcileTagsResult, type UpdateLibraryPayload, type UpdateWriteModeResult
 } from "./library";

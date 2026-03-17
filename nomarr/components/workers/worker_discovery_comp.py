@@ -126,7 +126,7 @@ def discover_and_claim_file(
         return None
 
     if claim_file(db, file_id, worker_id):
-        logger.info("[Discovery] Claimed %s for %s", file_id, worker_id)
+        logger.debug("[Discovery] Claimed %s for %s", file_id, worker_id)
         return file_id
     # Another worker claimed this file - caller should retry
     logger.debug("[Discovery] File %s already claimed, retrying discovery", file_id)

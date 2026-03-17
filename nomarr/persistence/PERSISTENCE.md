@@ -53,6 +53,7 @@ persistence/
     ├── segment_scores_stats_aql.py
     ├── sessions_aql.py
     ├── vectors_track_aql.py
+    ├── vram_promises_aql.py
     ├── worker_claims_aql.py
     ├── worker_restart_policy_aql.py
     │
@@ -80,11 +81,13 @@ persistence/
 **Subpackage Pattern:**
 
 The `database/` directory is a Python package that:
+
 - Exports all Operations classes via `__init__.py`
 - Contains single-file modules for simple operations (one class per file)
 - Contains multi-file subpackages for complex operations (library_files_aql/, tags_aql/)
 
 When operations grow large (500+ lines), split into a subpackage:
+
 - Create `<collection>_aql/` directory
 - Move operations class to `<collection>_aql/__init__.py`
 - Split methods into logical modules (crud.py, queries.py, stats.py, etc.)
@@ -105,12 +108,14 @@ Naming rules:
 **Purpose:** Single entry point for all database operations.
 
 **Responsibilities:**
+
 - Establish connection to ArangoDB
 - Wire all `*Operations` classes
 - Expose operations via named attributes
 - Handle schema versioning and bootstrap
 
 **Usage pattern:**
+
 ```python
 # Services receive db as parameter
 db = Database(hosts=config.arango_host, password=config.arango_password)
@@ -121,6 +126,7 @@ files = db.library_files.get_files_for_library(library_id)
 ```
 
 **Key features:**
+
 - **Connection pooling:** Handled automatically by python-arango
 - **Thread-safe:** Within a single process
 - **Hardcoded credentials:** Username and db_name are `"nomarr"` (not user-configurable)
@@ -131,6 +137,7 @@ files = db.library_files.get_files_for_library(library_id)
 **Purpose:** Create ArangoDB connections.
 
 **Usage:**
+
 ```python
 from nomarr.persistence.arango_client import create_arango_client
 
@@ -149,6 +156,7 @@ db = create_arango_client(
 **Purpose:** Collection-oriented data access (one class per collection).
 
 **Pattern:**
+
 ```python
 class LibrariesOperations:
     """Operations for the libraries collection."""
@@ -172,6 +180,7 @@ class LibrariesOperations:
 ```
 
 **Each operations class:**
+
 - Accepts `StandardDatabase` in `__init__`
 - Stores reference to its collection
 - Provides CRUD + query methods
@@ -245,6 +254,7 @@ def file_exists_in_library(self, library_id: str, file_path: str) -> bool:
 ### ❌ Business Logic
 
 **Bad:**
+
 ```python
 def should_process_file(self, file_id: str) -> bool:
     """Check if file needs processing."""
@@ -263,6 +273,7 @@ def should_process_file(self, file_id: str) -> bool:
 ### ❌ Validation
 
 **Bad:**
+
 ```python
 def create_library(self, name: str, root_path: str) -> str:
     """Create a new library entry."""
@@ -280,6 +291,7 @@ def create_library(self, name: str, root_path: str) -> str:
 ### ❌ Orchestration
 
 **Bad:**
+
 ```python
 def create_library_with_scan(self, name: str, root_path: str) -> str:
     """Create library and trigger scan."""
@@ -295,6 +307,7 @@ def create_library_with_scan(self, name: str, root_path: str) -> str:
 ### ❌ DTO Transformation
 
 **Bad:**
+
 ```python
 def get_library_for_api(self, library_id: str) -> LibraryDict:
     """Get library formatted for API response."""
@@ -321,6 +334,7 @@ def get_library_for_api(self, library_id: str) -> LibraryDict:
 **Critical rule:** Never rename `_id` or `_key`.
 
 ArangoDB uses:
+
 - `_id`: Full document identifier (e.g., `"libraries/12345"`)
 - `_key`: Collection-local identifier (e.g., `"12345"`)
 
@@ -404,6 +418,7 @@ def create_library(self, name: str, root_path: str) -> str:
 ```
 
 **Never use:**
+
 - `internal_ms()` / `internal_s()` (monotonic) - Not for persistence!
 - `time.time()` directly - Use helpers for type safety
 
@@ -442,6 +457,7 @@ SCHEMA_VERSION = 3  # GPU/CPU adaptive resource management collections
 ```
 
 Schema changes require:
+
 1. Increment `SCHEMA_VERSION`
 2. Add new collections/indexes to bootstrap
 3. Document manual intervention if destructive
@@ -453,6 +469,7 @@ Schema changes require:
 ### 7.2 Bootstrap Process
 
 Schema bootstrap is **idempotent**:
+
 - Creates missing collections
 - Creates missing indexes
 - Does NOT handle:
@@ -463,12 +480,13 @@ Schema bootstrap is **idempotent**:
 ### 7.3 Collections
 
 **Current collections** (schema v3):
+
 - `libraries` - Library roots
 - `library_files` - Audio files
 - `library_folders` - Folder metadata
 - `library_tags` - Available tags
 - `file_tags` - ML-generated tags (document store)
-- `song_tag_edges` - Tag relationships (edges)
+- `song_has_tags` - Tag relationships (edges)
 - `entities` - Shared entities (artists, albums)
 - `sessions` - User sessions
 - `meta` - System metadata
@@ -484,6 +502,7 @@ Schema bootstrap is **idempotent**:
 Nomarr uses a **hot/cold architecture** for vector embeddings to prevent OOM crashes during active ML processing. This design separates write operations from read/search operations into different collections with different indexing strategies.
 
 **Design principles:**
+
 - **Hot collections:** Write-only, no vector index (no HNSW maintenance overhead)
 - **Cold collections:** Read/search-only, vector index created manually via maintenance workflow
 - **Convergent promotion:** Hot drains to cold via UPSERT with unique `_key` (idempotent, safe to retry)
@@ -493,16 +512,19 @@ Nomarr uses a **hot/cold architecture** for vector embeddings to prevent OOM cra
 ### 8.2 Collection Naming
 
 **Hot collections:**
+
 ```
 vectors_track_hot__{backbone}
 ```
 
 **Cold collections:**
+
 ```
 vectors_track_cold__{backbone}
 ```
 
 Examples:
+
 - `vectors_track_hot__discogs_effnet`
 - `vectors_track_cold__discogs_effnet`
 - `vectors_track_hot__musicnn`
@@ -537,6 +559,7 @@ def _make_key(file_id: str, model_suite_hash: str) -> str:
 ```
 
 **Why this works:**
+
 - Same `(file_id, model_suite_hash)` produces same `_key` in both hot and cold
 - UPSERT operations during drain use `_key` to prevent duplication
 - Re-running drain is safe (convergent operation)
@@ -579,7 +602,7 @@ def _make_key(file_id: str, model_suite_hash: str) -> str:
 
 **Vector index** (created manually via maintenance workflow):
 
-3. **Vector index on `vector` field** (similarity search)
+1. **Vector index on `vector` field** (similarity search)
    - Type: `vector`
    - Fields: `["vector"]`
    - Created: **Only via `promote_and_rebuild_workflow`**, never by bootstrap
@@ -591,11 +614,13 @@ def _make_key(file_id: str, model_suite_hash: str) -> str:
 **Requirement:** Both hot and cold collections MUST have a unique persistent index on `_key`.
 
 **Why:** Prevents duplication during convergent drain operations. Without the unique index:
+
 - Multiple drain attempts could create duplicate docs in cold
 - UPSERT semantics would fail (no unique constraint to match on)
 - Data integrity would be violated
 
 **Enforcement:**
+
 - Bootstrap creates unique `_key` index for hot collections
 - Migration m007 creates unique `_key` index for cold collections
 - Operations classes assume this constraint exists
@@ -603,16 +628,19 @@ def _make_key(file_id: str, model_suite_hash: str) -> str:
 ### 8.7 Collection Lifecycle Contract
 
 **Bootstrap phase:**
+
 1. Creates hot collections with persistent indexes only
 2. Does NOT create cold collections (not needed until first drain)
 3. Does NOT create vector indexes (architectural violation if bootstrap does this)
 
 **Active ML processing:**
+
 1. Embeddings written to hot collection via `VectorsTrackHotOperations.upsert_vector()`
 2. No vector index maintenance occurs (writes are fast, no OOM risk)
 3. Hot collection accumulates vectors until promotion
 
 **Maintenance phase:**
+
 1. Maintenance workflow triggered manually or by scheduler
 2. Hot vectors drained to cold via convergent UPSERT (unique `_key` prevents duplication)
 3. Hot collection verified empty (completeness check)
@@ -621,11 +649,13 @@ def _make_key(file_id: str, model_suite_hash: str) -> str:
 6. Search becomes available with "as of rebuild" semantics
 
 **Search phase:**
+
 1. Similarity search queries cold collection only (never hot)
 2. Results reflect state at last rebuild (acceptable staleness)
 3. If cold has no vector index, search returns error (expected)
 
 **Cascade delete:**
+
 1. When file deleted, vectors removed from BOTH hot and cold
 2. Centralized via `Database.delete_vectors_by_file_id()`
 3. No orphaned vectors in either collection
@@ -633,12 +663,14 @@ def _make_key(file_id: str, model_suite_hash: str) -> str:
 ### 8.8 Architectural Constraints
 
 **NEVER:**
+
 - Create vector indexes in bootstrap (lifecycle owned by maintenance workflow)
 - Write to cold collection directly (hot is the only write path)
 - Search hot collection (search is cold-only)
 - Let hot collection accumulate vectors indefinitely (triggers OOM eventually)
 
 **ALWAYS:**
+
 - Write embeddings to hot collection only
 - Promote hot → cold via maintenance workflow
 - Drop old cold vector index before rebuilding new one (avoid double memory cost)
@@ -650,6 +682,7 @@ def _make_key(file_id: str, model_suite_hash: str) -> str:
 **Problem solved:** Continuous HNSW graph maintenance during active ML processing causes OOM on low-end systems.
 
 **Solution:**
+
 - Defers expensive vector index operations to scheduled maintenance window
 - Separates write concerns (hot) from read/search concerns (cold)
 - Makes search semantics explicit: "as of last rebuild" (predictable, acceptable)
@@ -657,6 +690,7 @@ def _make_key(file_id: str, model_suite_hash: str) -> str:
 - Convergent drain operation is safe to retry (idempotent via unique `_key`)
 
 **Trade-off:** Search results may be stale (not real-time). This is acceptable because:
+
 - Vector search is for discovery, not transactional consistency
 - Users understand "last rebuilt at" timestamp
 - Explicit rebuild gives control over when CPU burn happens
@@ -706,6 +740,7 @@ def test_library_operations(db):
 ### 8.3 Test Isolation
 
 Each test should be independent:
+
 - Use unique names/keys
 - Don't rely on test order
 - Clean up in try/finally or fixtures
@@ -852,12 +887,14 @@ file_exists_in_library(library_id: str, file_path: str) -> bool
 
 ## 11. Import Rules
 
-### Allowed Imports:
+### Allowed Imports
+
 - ✅ `arango` (python-arango client)
 - ✅ `nomarr.helpers.*` (time utilities, DTOs, exceptions)
 - ✅ Standard library (`typing`, etc.)
 
-### Forbidden Imports:
+### Forbidden Imports
+
 - ❌ `nomarr.services.*`
 - ❌ `nomarr.workflows.*`
 - ❌ `nomarr.components.*`
@@ -872,6 +909,7 @@ file_exists_in_library(library_id: str, file_path: str) -> bool
 ### 12.1 Connection Pooling
 
 **Handled automatically** by python-arango:
+
 - Pool size managed by client
 - Thread-safe within a single process
 - Each process creates its own pool
@@ -881,6 +919,7 @@ file_exists_in_library(library_id: str, file_path: str) -> bool
 ### 12.2 Multi-Process
 
 Each process needs its own `Database` instance:
+
 - Spawn worker → create new `Database()`
 - Worker exit → connection pool cleaned up automatically
 
@@ -889,6 +928,7 @@ Each process needs its own `Database` instance:
 ### 12.3 First-Run Provisioning
 
 First run requires special handling:
+
 - App connects as root to provision database
 - Creates `nomarr` user and database
 - Generates app password
@@ -903,6 +943,7 @@ After first run, app connects as `nomarr` user.
 ### 13.1 Use Indexes
 
 Query performance depends on proper indexes:
+
 ```python
 # Ensure indexes exist during schema bootstrap
 self.db.collection("libraries").add_hash_index(fields=["name"], unique=True)
@@ -912,6 +953,7 @@ self.db.collection("library_files").add_persistent_index(fields=["library_id"])
 ### 13.2 Limit Result Sets
 
 Always provide limits for unbounded queries:
+
 ```python
 def get_unprocessed_files(self, limit: int = 100) -> list[dict[str, Any]]:
     cursor = self.db.aql.execute(
@@ -924,6 +966,7 @@ def get_unprocessed_files(self, limit: int = 100) -> list[dict[str, Any]]:
 ### 13.3 Batch Operations
 
 Use bulk operations when possible:
+
 ```python
 # ✅ Efficient - single transaction
 self.collection.insert_many(files)
@@ -936,6 +979,7 @@ for file in files:
 ### 13.4 Cursor Iteration
 
 For large result sets, iterate cursor instead of materializing list:
+
 ```python
 # ✅ Memory-efficient
 cursor = self.db.aql.execute("FOR f IN library_files RETURN f")
@@ -953,12 +997,14 @@ for file in files:
 ## 14. Summary
 
 **Persistence is:**
+
 - Pure data access layer
 - AQL-based queries
 - Collection-organized operations (one class per collection)
 - Type-safe, dependency-injected
 
 **Persistence is NOT:**
+
 - Business logic
 - Validation
 - Orchestration

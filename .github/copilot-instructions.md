@@ -209,7 +209,7 @@ Create a task plan in `plans/` (e.g., `TASK-refactor-library-service.md`) follow
 
 **MANDATORY: Use the Plan subagent for complex tasks.**
 
-When given a complex task (5+ coordinated edits, cross-layer changes, architectural decisions requiring research), do NOT attempt to manage it through todos and context alone. Instead:
+When given a complex task (multiple coordinated edits across layers, architectural decisions requiring research), do NOT attempt to manage it through todos and context alone. Instead:
 
 1. **Invoke the Plan subagent** to research the problem and create a formal plan in `plans/`
 2. **Execute the plan** using `mcp_nomarr_dev_plan_complete_step` to track progress
@@ -217,12 +217,11 @@ When given a complex task (5+ coordinated edits, cross-layer changes, architectu
    - Only use `plan_read` when resuming in a fresh context without the plan attached
 
 This is required because:
-- Plans persist across context windows — a fresh context can resume via `plan_read` or by attaching the plan file
-- Step completion is durable (not lost if context resets mid-task)
 - The Plan agent performs upfront research, avoiding mid-execution surprises
-- Todos disappear when context ends; plans survive
+- Plans are structured and parseable, making them easy to resume if a session ends mid-task
+- Step completion is tracked in the plan file itself, not in ephemeral state
 
-**Threshold for plan creation:** Any task where you would otherwise create 4+ todo items, or where the work requires understanding multiple modules before starting implementation.
+**Threshold for plan creation:** Any task involving 7+ coordinated edits across multiple layers, or where significant upfront research is needed before implementation can begin. Do not create plans for routine multi-step work that fits comfortably in a single session.
 
 **Required structure:**
 ```markdown
@@ -335,13 +334,14 @@ Import-linter enforces layer boundaries.
 
 **Never:**
 
-- Import `essentia` anywhere except `components/ml/ml_backend_essentia_comp.py`
+- Import `essentia` anywhere except `components/ml/audio/ml_audio_comp.py` (MonoLoader audio loading) and `components/ml/audio/ml_preprocess_comp.py` (mel spectrogram preprocessing). Essentia is no longer the ML backend — ONNX is. Essentia is a thin set of functions for audio I/O and preprocessing only.
 - Read config or env vars at module import time
 - Create or mutate global state
 - Rename `_id` or `_key` (ArangoDB-native identifiers)
 - Let workflows import services or interfaces
 - Let helpers import any `nomarr.*` modules
 - Guess context or line counts in tool usage
+- Create plans, memories, or summaries solely to "preserve context" — if the task doesn't require durable tracking, use todos and finish the work
 
 **Always:**
 

@@ -39,8 +39,8 @@ class LibraryFilesCrudMixin:
         Stores both absolute path (for filesystem access) and normalized_path
         (POSIX relative path for identity).
 
-        Note: calibration_hash field remains NULL until first recalibration.
-        Initial processing stores raw scores only.
+        State fields (tagged, calibrated, reconciled) are managed via
+        ``file_has_state`` edges, not flat fields on the document.
 
         Args:
             path: LibraryPath with validated file path (must have status == "valid")
@@ -51,7 +51,7 @@ class LibraryFilesCrudMixin:
             artist: Artist name
             album: Album name
             title: Track title
-            last_tagged_at: Last tagging timestamp
+            last_tagged_at: Last tagging timestamp (for scan-time edge bootstrap)
             has_nomarr_namespace: Whether file has nomarr tags in audio file
             last_written_mode: Inferred write mode from existing file tags
 
@@ -85,20 +85,7 @@ class LibraryFilesCrudMixin:
                 album: @album,
                 title: @title,
                 scanned_at: @scanned_at,
-                last_tagged_at: @last_tagged_at,
-                tagged: null,
-                tagged_version: null,
-                chromaprint: null,
-                calibration_hash: null,
-                needs_tagging: true,
-                is_valid: true,
-                // Tag writing projection state fields
-                last_written_mode: @last_written_mode,
-                last_written_calibration_hash: null,
-                last_written_at: null,
-                has_nomarr_namespace: @has_nomarr_namespace == null ? false : @has_nomarr_namespace,
-                write_claimed_by: null,
-                write_claimed_at: null
+                chromaprint: null
             }
             UPDATE {
                 library_id: @library_id,
@@ -109,10 +96,7 @@ class LibraryFilesCrudMixin:
                 artist: @artist,
                 album: @album,
                 title: @title,
-                scanned_at: @scanned_at,
-                last_tagged_at: @last_tagged_at != null ? @last_tagged_at : OLD.last_tagged_at,
-                has_nomarr_namespace: @has_nomarr_namespace != null ? @has_nomarr_namespace : OLD.has_nomarr_namespace,
-                last_written_mode: @last_written_mode != null ? @last_written_mode : OLD.last_written_mode
+                scanned_at: @scanned_at
             }
             IN library_files
             RETURN NEW._id
@@ -130,16 +114,31 @@ class LibraryFilesCrudMixin:
                         "album": album,
                         "title": title,
                         "scanned_at": scanned_at,
-                        "last_tagged_at": last_tagged_at,
-                        "has_nomarr_namespace": has_nomarr_namespace,
-                        "last_written_mode": last_written_mode,
                     },
                 ),
             ),
         )
 
         result = next(cursor)
-        return str(result)
+        file_id = str(result)
+
+        # Bootstrap edge-based state from scan-time information
+        if self.parent_db is not None and last_tagged_at is not None:
+            # File was previously tagged — create ml_tagged edge
+            self.parent_db.file_states.set_ml_tagged(
+                file_id, version="scan_inferred", tagged_at=last_tagged_at
+            )
+
+        if self.parent_db is not None and last_written_mode is not None:
+            # File had existing tags on disk — create reconciled edge
+            self.parent_db.file_states.set_reconciled(
+                file_id=file_id,
+                mode=last_written_mode,
+                calibration_hash=None,
+                has_namespace=has_nomarr_namespace or False,
+            )
+
+        return file_id
 
     def delete_library_file(self, file_id: str) -> None:
         """Remove a file from the library and clean up entity edges.
@@ -165,13 +164,17 @@ class LibraryFilesCrudMixin:
         # Delete entity edges (referential integrity)
         self.db.aql.execute(
             """
-            FOR edge IN song_tag_edges
+            FOR edge IN song_has_tags
                 FILTER edge._from == @file_id
-                REMOVE edge IN song_tag_edges
+                REMOVE edge IN song_has_tags
             """,
             bind_vars={"file_id": file_id},
         )
 
+
+        # Delete file state edges
+        if self.parent_db is not None:
+            self.parent_db.file_states.clear_all_states(file_id)
         # Then delete the file
         self.db.aql.execute(
             """
@@ -289,6 +292,20 @@ class LibraryFilesCrudMixin:
 
         self.db.aql.execute(aql, bind_vars=bind_vars)
 
+    def update_file_modified_time(self, file_key: str, modified_time_ms: int) -> None:
+        """Update only the modified_time of a library file after a tag write.
+
+        Args:
+            file_key: Document _key (e.g., "12345")
+            modified_time_ms: New mtime in milliseconds since epoch
+
+        """
+        bind_vars: dict[str, Any] = {"key": file_key, "mtime": modified_time_ms}
+        self.db.aql.execute(
+            "UPDATE @key WITH { modified_time: @mtime } IN library_files",
+            bind_vars=bind_vars,
+        )
+
     def bulk_delete_files(self, paths: list[str]) -> int:
         """Delete multiple files by path and clean up entity edges.
 
@@ -332,13 +349,16 @@ class LibraryFilesCrudMixin:
             """
             FOR file IN library_files
                 FILTER file.path IN @paths
-                FOR edge IN song_tag_edges
+                FOR edge IN song_has_tags
                     FILTER edge._from == file._id
-                    REMOVE edge IN song_tag_edges
+                    REMOVE edge IN song_has_tags
             """,
             bind_vars={"paths": paths},
         )
 
+        # Delete file state edges
+        if file_ids and self.parent_db is not None:
+            self.parent_db.file_states.clear_all_states_batch(file_ids)
         # Delete files and count
         cursor = cast(
             "Cursor",
@@ -364,8 +384,9 @@ class LibraryFilesCrudMixin:
         Removes, in order:
         1. Track-level embedding vectors (all backbones, hot + cold)
         2. segment_scores_stats (per-label head stats)
-        3. song_tag_edges (entity edges)
-        4. library_files documents
+        3. song_has_tags (entity edges)
+        4. file_has_state (state edges)
+        5. library_files documents
 
         Args:
             library_id: Library _id (e.g., "libraries/12345")
@@ -404,15 +425,19 @@ class LibraryFilesCrudMixin:
             bind_vars={"file_ids": file_ids},
         )
 
-        # Delete song_tag_edges
+        # Delete song_has_tags
         self.db.aql.execute(
             """
-            FOR edge IN song_tag_edges
+            FOR edge IN song_has_tags
                 FILTER edge._from IN @file_ids
-                REMOVE edge IN song_tag_edges
+                REMOVE edge IN song_has_tags
             """,
             bind_vars={"file_ids": file_ids},
         )
+
+        # Delete file state edges
+        if self.parent_db is not None:
+            self.parent_db.file_states.clear_all_states_batch(file_ids)
 
         # Delete library_files and return count
         cursor = cast(

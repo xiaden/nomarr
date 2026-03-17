@@ -9,7 +9,6 @@ import ast
 from pathlib import Path
 
 from ..helpers.file_lines import calculate_range_with_context, read_raw_line_range
-from ..helpers.semantic_tool_examples import get_semantic_tool_examples
 
 
 def _find_imports_end(all_lines: list[str]) -> int:
@@ -179,12 +178,6 @@ def read_file_range(
                 if warning:
                     result["warning"] = warning
 
-                if target_path.suffix == ".py":
-                    result["semantic_tools_available"] = {
-                        "hint": "Python files: semantic tools provide structured output",
-                        "example_outputs": get_semantic_tool_examples(),
-                    }
-
                 return result
             # Overlapping: single contiguous read from line 1
             result_content = read_raw_line_range(str(target_path), 1, actual_end)
@@ -201,12 +194,13 @@ def read_file_range(
         if warning:
             result["warning"] = warning
 
-        # Add Python file semantic tool guidance
+        # Add Python file suggestion
         if target_path.suffix == ".py":
-            result["semantic_tools_available"] = {
-                "hint": "Python files: semantic tools provide structured output",
-                "example_outputs": get_semantic_tool_examples(),
-            }
+            result["warning"] = (
+                "WARNING: Reading Python files with read_line wastes tokens and loses structure. "
+                "Use discover_api (module overview), locate_symbol (find definitions), or "
+                "get_symbol_body_at_line (get function/class at line) instead."
+            )
 
         return result
 

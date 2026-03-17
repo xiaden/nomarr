@@ -15,7 +15,7 @@ Architecture rules enforced:
 2. Workflows must not import services or app - ALSO in import-linter
 3. Helpers must not import upward layers - ALSO in import-linter
 4. Leaf slices (ml/tagging/analytics) must not import orchestration layers - ALSO in import-linter
-5. Essentia imports ONLY in ml/backend_essentia.py - NOT in import-linter
+5. Essentia imports ONLY in ml_audio_comp.py and ml_preprocess_comp.py - NOT in import-linter
 """
 
 import re
@@ -253,25 +253,23 @@ def test_leaf_slices_do_not_depend_on_higher_layers():
 
 
 def test_no_essentia_imports_outside_backend():
-    """Test 5: Ensure Essentia is ONLY imported in components/ml/ml_backend_essentia_comp.py.
+    """Test 5: Ensure Essentia is only imported in its two permitted components.
 
-    Essentia is an optional dependency and must be completely isolated:
-    - ONLY components/ml/ml_backend_essentia_comp.py may import essentia/essentia_tensorflow
-    - All other code must use the backend module's interface
-    - Dependencies are passed via function parameters (dependency injection)
+    Essentia is no longer the ML inference backend — it is a thin library used for:
+    - Audio loading (MonoLoader): audio/ml_audio_comp.py
+    - Mel spectrogram preprocessing: audio/ml_preprocess_comp.py
 
-    This ensures:
-    - Single point of Essentia integration
-    - Clear boundary for optional dependency
-    - Easy to mock/test without Essentia
-    - No scattered try/except blocks throughout codebase
+    All other code must remain essentia-free. The ML inference backend is ONNX.
     """
     violations = []
-    backend_file = NOMARR_DIR / "components" / "ml" / "ml_backend_essentia_comp.py"
+    # The only two files permitted to import essentia
+    allowed_files = {
+        NOMARR_DIR / "components" / "ml" / "audio" / "ml_audio_comp.py",
+        NOMARR_DIR / "components" / "ml" / "audio" / "ml_preprocess_comp.py",
+    }
 
     for py_file in find_python_files(NOMARR_DIR):
-        # Skip test files and the dedicated backend module
-        if "test" in py_file.parts or py_file == backend_file:
+        if "test" in py_file.parts or py_file in allowed_files:
             continue
 
         try:
@@ -279,11 +277,9 @@ def test_no_essentia_imports_outside_backend():
                 for line_num, line in enumerate(f, start=1):
                     stripped = line.strip()
 
-                    # Skip comments and empty lines
                     if not stripped or stripped.startswith("#"):
                         continue
 
-                    # Check for any Essentia imports
                     if re.match(r"^(import\s+essentia|from\s+essentia)", stripped):
                         rel_path = py_file.relative_to(PROJECT_ROOT)
                         violations.append(f"  {rel_path}:{line_num}: {line.rstrip()}")
@@ -293,12 +289,11 @@ def test_no_essentia_imports_outside_backend():
 
     if violations:
         msg = (
-            "Found Essentia imports outside components/ml/ml_backend_essentia_comp.py.\n\n"
-            "Essentia must ONLY be imported in the dedicated backend module:\n"
-            "  - components/ml/ml_backend_essentia_comp.py is the ONLY file allowed to import Essentia\n"
-            "  - All other code must use ml_backend_essentia_comp.py's interface\n"
-            "  - Pass dependencies via parameters (dependency injection)\n\n"
-            "This maintains a single integration point and clear boundaries.\n\n"
+            "Found Essentia imports outside the two permitted components.\n\n"
+            "Essentia is only allowed in:\n"
+            "  - components/ml/audio/ml_audio_comp.py  (MonoLoader — audio loading)\n"
+            "  - components/ml/audio/ml_preprocess_comp.py  (mel spectrogram preprocessing)\n\n"
+            "The ML inference backend is ONNX. Essentia is NOT the inference layer.\n\n"
             "Violations:\n" + "\n".join(violations)
         )
         pytest.fail(msg)

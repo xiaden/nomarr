@@ -316,6 +316,7 @@ class TagWriter:
         path: LibraryPath,
         tags: Tags,
         library_root: Path,
+        expected_mtime_ms: int,
     ) -> SafeWriteResult:
         """Write tags using atomic copy-modify-verify-replace pattern.
 
@@ -342,4 +343,4 @@ class TagWriter:
         def write_fn(temp_path: PathLib) -> None:
             self._write_to_path(str(temp_path), tags_dict)
 
-        return safe_write_tags(path, library_root, write_fn)
+        return safe_write_tags(path, library_root, write_fn, expected_mtime_ms)

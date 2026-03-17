@@ -37,12 +37,9 @@ from nomarr.helpers.dto.playlist_import_dto import (
     PlaylistMetadata,
     PlaylistTrackInput,
 )
+from nomarr.helpers.exceptions import PlaylistConversionError
 
 logger = logging.getLogger(__name__)
-
-
-class PlaylistConversionError(Exception):
-    """Raised when playlist conversion fails."""
 
 
 

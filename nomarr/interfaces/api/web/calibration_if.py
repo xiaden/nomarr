@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
-from nomarr.interfaces.api.types.calibration_types import CalibrationRequest
 from nomarr.interfaces.api.web.dependencies import get_calibration_service, get_tagging_service
 
 logger = logging.getLogger(__name__)
@@ -120,27 +119,14 @@ async def get_calibration_status(tagging_service: Annotated["TaggingService", De
         logger.exception("[Web API] Error fetching calibration status")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get calibration status")) from e
 
-@router.post("/generate", dependencies=[Depends(verify_session)])
-async def generate_calibration(request: CalibrationRequest, calibration_service: Annotated["CalibrationService", Depends(get_calibration_service)]) -> dict[str, Any]:
-    """DEPRECATED: Use /start-histogram instead.
-
-    This endpoint is kept for backward compatibility. Now starts background generation
-    and returns immediately. Use GET /histogram-status to check progress.
-    """
-    try:
-        if calibration_service.is_generation_running():
-            return {"status": "already_running", "message": "Calibration generation already in progress"}
-        calibration_service.start_histogram_calibration_background()
-        return {"status": "started", "message": "Calibration generation started in background"}
-    except Exception as e:
-        logger.error(f"[Web] Calibration generation failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Calibration generation failed")) from e
-
 @router.post("/start-histogram", dependencies=[Depends(verify_session)])
 async def start_histogram_calibration_background(calibration_service: Annotated["CalibrationService", Depends(get_calibration_service)]) -> dict[str, Any]:
     """Start histogram-based calibration generation in background thread.
 
     Non-blocking: returns immediately. Use GET /calibration/histogram-status to check progress.
+
+    On success, automatically triggers DB tag-writing (equivalent to POST /calibration/start-apply).
+    Writing tags to audio files on disk remains a separate manual step (reconcile endpoint).
 
     Returns:
         {"status": "started"} or {"status": "already_running"}

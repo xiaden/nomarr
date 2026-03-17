@@ -12,8 +12,8 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 from nomarr.helpers.dto.playlist_import_dto import PlaylistConversionResult
+from nomarr.helpers.exceptions import PlaylistConversionError
 from nomarr.workflows.playlist_import.convert_playlist_wf import (
-    PlaylistConversionError,
     convert_playlist_workflow,
 )
 

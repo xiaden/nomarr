@@ -78,7 +78,7 @@ class LibraryDict:
 
 @dataclass
 class StartScanResult:
-    """Result from library_service.start_scan or start_scan_for_library."""
+    """Result from library_service.start_quick_scan or start_full_scan."""
 
     files_discovered: int
     files_queued: int

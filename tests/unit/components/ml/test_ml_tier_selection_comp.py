@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from nomarr.components.ml.ml_capacity_probe_comp import CapacityEstimate
-from nomarr.components.ml.ml_tier_selection_comp import (
+from nomarr.components.ml.resources.ml_capacity_probe_comp import CapacityEstimate
+from nomarr.components.ml.resources.ml_tier_selection_comp import (
     ExecutionTier,
     select_execution_tier,
 )

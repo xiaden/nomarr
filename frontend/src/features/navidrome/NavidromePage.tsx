@@ -17,6 +17,7 @@ import {
 
 import { PageContainer } from "@shared/components/ui";
 
+import { ApiSettingsPanel } from "./components/ApiSettingsPanel";
 import { ConfigTab } from "./components/ConfigTab";
 import { PlaylistTab } from "./components/PlaylistTab";
 import { useNavidromeData } from "./hooks/useNavidromeData";
@@ -95,6 +96,18 @@ export function NavidromePage() {
               onPreview={previewPlaylist}
               onGenerate={generatePlaylist}
             />
+          </AccordionDetails>
+        </Accordion>
+
+        {/* API Settings accordion */}
+        <Accordion disableGutters>
+          <AccordionSummary expandIcon={<ExpandMore />}>
+            <Typography variant="h6" sx={{ fontWeight: 600 }}>
+              API Settings
+            </Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <ApiSettingsPanel />
           </AccordionDetails>
         </Accordion>
       </Stack>

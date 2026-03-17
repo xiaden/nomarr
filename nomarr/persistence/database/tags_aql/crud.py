@@ -65,11 +65,11 @@ class TagCrudMixin:
         """
         # First, delete existing edges for this song+rel
         delete_query = """
-        FOR edge IN song_tag_edges
+        FOR edge IN song_has_tags
             FILTER edge._from == @song_id
             LET tag = DOCUMENT(edge._to)
             FILTER tag != null AND tag.rel == @rel
-            REMOVE edge IN song_tag_edges
+            REMOVE edge IN song_has_tags
         """
         self.db.aql.execute(delete_query, bind_vars=cast("dict[str, Any]", {"song_id": song_id, "rel": rel}))
 
@@ -97,7 +97,7 @@ class TagCrudMixin:
                 UPSERT { _from: @song_id, _to: tag._id }
                 INSERT { _from: @song_id, _to: tag._id }
                 UPDATE {}
-                IN song_tag_edges
+                IN song_has_tags
             """
             self.db.aql.execute(
                 edge_create_query,
@@ -133,11 +133,11 @@ class TagCrudMixin:
         self.db.aql.execute(
             """
             FOR entry IN @entries
-                FOR edge IN song_tag_edges
+                FOR edge IN song_has_tags
                     FILTER edge._from == entry.song_id
                     LET tag = DOCUMENT(edge._to)
                     FILTER tag != null AND tag.rel == entry.rel
-                    REMOVE edge IN song_tag_edges
+                    REMOVE edge IN song_has_tags
             """,
             bind_vars=cast("dict[str, Any]", {"entries": bind_entries}),
         )
@@ -174,11 +174,44 @@ class TagCrudMixin:
                     UPSERT { _from: entry.song_id, _to: tag._id }
                     INSERT { _from: entry.song_id, _to: tag._id }
                     UPDATE {}
-                    IN song_tag_edges
+                    IN song_has_tags
             """,
             bind_vars=cast("dict[str, Any]", {"entries": with_values}),
         )
 
+    def resolve_tag_ids(
+        self,
+        pairs: list[tuple[str, float]],
+    ) -> dict[tuple[str, float], str]:
+        """Batch-resolve tag ``_id`` values from ``(rel, value)`` pairs.
+
+        Used after :meth:`set_song_tags_batch` to obtain the ArangoDB
+        ``_id`` of each upserted tag vertex so that ``tag_model_output``
+        edges can be written.
+
+        Args:
+            pairs: List of ``(rel, value)`` tuples to look up.
+
+        Returns:
+            ``{(rel, value): tag_id}`` for every pair that matches an
+            existing tag vertex.
+
+        """
+        if not pairs:
+            return {}
+        bind_pairs = [{"rel": rel, "value": value} for rel, value in pairs]
+        query = """
+            FOR p IN @pairs
+                LET tag = FIRST(
+                    FOR t IN tags
+                        FILTER t.rel == p.rel AND t.value == p.value
+                        RETURN t._id
+                )
+                FILTER tag != null
+                RETURN {rel: p.rel, value: p.value, tag_id: tag}
+        """
+        cursor = cast("Any", self.db.aql.execute(query, bind_vars={"pairs": bind_pairs}))
+        return {(doc["rel"], doc["value"]): doc["tag_id"] for doc in cursor}
     def add_song_tag(self, song_id: str, rel: str, value: TagValue) -> None:
         """Add a single tag to a song (without replacing existing tags for this rel).
 
@@ -209,7 +242,7 @@ class TagCrudMixin:
         UPSERT { _from: @song_id, _to: @tag_id }
         INSERT { _from: @song_id, _to: @tag_id }
         UPDATE {}
-        IN song_tag_edges
+        IN song_has_tags
         """
         self.db.aql.execute(edge_query, bind_vars=cast("dict[str, Any]", {"song_id": song_id, "tag_id": tag_id}))
 
@@ -221,8 +254,8 @@ class TagCrudMixin:
 
         """
         query = """
-        FOR edge IN song_tag_edges
+        FOR edge IN song_has_tags
             FILTER edge._from == @song_id
-            REMOVE edge IN song_tag_edges
+            REMOVE edge IN song_has_tags
         """
         self.db.aql.execute(query, bind_vars=cast("dict[str, Any]", {"song_id": song_id}))

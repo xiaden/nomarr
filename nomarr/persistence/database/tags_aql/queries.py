@@ -57,7 +57,7 @@ class TagQueriesMixin:
                     FILTER tag.rel == @rel
                     FILTER CONTAINS(LOWER(TO_STRING(tag.value)), LOWER(@search))
                     LET song_count = LENGTH(
-                        FOR edge IN song_tag_edges
+                        FOR edge IN song_has_tags
                             FILTER edge._to == tag._id
                             RETURN 1
                     )
@@ -77,7 +77,7 @@ class TagQueriesMixin:
                 FOR tag IN tags
                     FILTER tag.rel == @rel
                     LET song_count = LENGTH(
-                        FOR edge IN song_tag_edges
+                        FOR edge IN song_has_tags
                             FILTER edge._to == tag._id
                             RETURN 1
                     )
@@ -100,7 +100,7 @@ class TagQueriesMixin:
                 SORT tag.value
                 LIMIT @offset, @limit
                 LET song_count = LENGTH(
-                    FOR edge IN song_tag_edges
+                    FOR edge IN song_has_tags
                         FILTER edge._to == tag._id
                         RETURN 1
                 )
@@ -120,7 +120,7 @@ class TagQueriesMixin:
                 SORT tag.value
                 LIMIT @offset, @limit
                 LET song_count = LENGTH(
-                    FOR edge IN song_tag_edges
+                    FOR edge IN song_has_tags
                         FILTER edge._to == tag._id
                         RETURN 1
                 )
@@ -184,7 +184,7 @@ class TagQueriesMixin:
         """
         if rel:
             query = """
-            FOR edge IN song_tag_edges
+            FOR edge IN song_has_tags
                 FILTER edge._from == @song_id
                 LET tag = DOCUMENT(edge._to)
                 FILTER tag != null AND tag.rel == @rel
@@ -193,7 +193,7 @@ class TagQueriesMixin:
             bind_vars: dict[str, Any] = {"song_id": song_id, "rel": rel}
         elif nomarr_only:
             query = """
-            FOR edge IN song_tag_edges
+            FOR edge IN song_has_tags
                 FILTER edge._from == @song_id
                 LET tag = DOCUMENT(edge._to)
                 FILTER tag != null AND STARTS_WITH(tag.rel, "nom:")
@@ -202,7 +202,7 @@ class TagQueriesMixin:
             bind_vars = {"song_id": song_id}
         else:
             query = """
-            FOR edge IN song_tag_edges
+            FOR edge IN song_has_tags
                 FILTER edge._from == @song_id
                 LET tag = DOCUMENT(edge._to)
                 FILTER tag != null
@@ -228,7 +228,7 @@ class TagQueriesMixin:
             return {}
 
         query = """
-        FOR edge IN song_tag_edges
+        FOR edge IN song_has_tags
             FILTER edge._from IN @file_ids
             LET tag = DOCUMENT(edge._to)
             FILTER tag != null AND STARTS_WITH(tag.rel, "nom:")
@@ -258,7 +258,7 @@ class TagQueriesMixin:
 
         """
         query = """
-        FOR edge IN song_tag_edges
+        FOR edge IN song_has_tags
             FILTER edge._to == @tag_id
             SORT edge._from
             LIMIT @offset, @limit
@@ -289,7 +289,7 @@ class TagQueriesMixin:
             FOR tag IN tags
                 FILTER tag.rel == @rel
                 FILTER CONTAINS(LOWER(TO_STRING(tag.value)), LOWER(@value))
-                FOR edge IN song_tag_edges
+                FOR edge IN song_has_tags
                     FILTER edge._to == tag._id
                     RETURN DISTINCT edge._from
             """
@@ -298,7 +298,7 @@ class TagQueriesMixin:
             FOR tag IN tags
                 FILTER tag.rel == @rel
                 FILTER !CONTAINS(LOWER(TO_STRING(tag.value)), LOWER(@value))
-                FOR edge IN song_tag_edges
+                FOR edge IN song_has_tags
                     FILTER edge._to == tag._id
                     RETURN DISTINCT edge._from
             """
@@ -319,7 +319,7 @@ class TagQueriesMixin:
             FOR tag IN tags
                 FILTER tag.rel == @rel
                 FILTER tag.value {op} @value
-                FOR edge IN song_tag_edges
+                FOR edge IN song_has_tags
                     FILTER edge._to == tag._id
                     RETURN DISTINCT edge._from
             """
@@ -369,7 +369,7 @@ class TagQueriesMixin:
                 query = f"""
                 FOR tag IN tags
                     FILTER tag.rel == @rel
-                    FOR edge IN song_tag_edges
+                    FOR edge IN song_has_tags
                         FILTER edge._to == tag._id
                         {library_filter}
                         RETURN edge._from
@@ -379,7 +379,7 @@ class TagQueriesMixin:
                 query = f"""
                 FOR tag IN tags
                     FILTER tag.rel == @rel AND tag.value == @value
-                    FOR edge IN song_tag_edges
+                    FOR edge IN song_has_tags
                         FILTER edge._to == tag._id
                         {library_filter}
                         RETURN edge._from
@@ -425,7 +425,7 @@ class TagQueriesMixin:
             FOR tag IN tags
                 FILTER tag.rel == @rel
                 FILTER tag.value == @plain_value
-                FOR edge IN song_tag_edges
+                FOR edge IN song_has_tags
                     FILTER edge._to == tag._id
                     {library_filter}
                     RETURN edge._from

@@ -35,6 +35,9 @@ def get_config(
             "calibration_repo",
             "spotify_client_id",
             "spotify_client_secret",
+            "navidrome_api_url",
+            "navidrome_api_user",
+            "navidrome_api_password",
         }
         filtered_config = {k: v for k, v in result.config.items() if k in editable_keys}
         filtered_result = WebConfigResult(
@@ -72,6 +75,9 @@ def update_config(
             "calibration_repo",
             "spotify_client_id",
             "spotify_client_secret",
+            "navidrome_api_url",
+            "navidrome_api_user",
+            "navidrome_api_password",
         }
         if key not in editable_keys:
             raise HTTPException(
