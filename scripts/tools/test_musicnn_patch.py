@@ -62,7 +62,8 @@ def _load_backbone(path: str) -> ONNXBackboneModel:  # type: ignore[name-defined
 def _run_head_session(session: ort.InferenceSession, embeddings: np.ndarray) -> np.ndarray:  # type: ignore[name-defined]  # noqa: F821
     """Run a head ONNX session on embeddings [N, embed_dim] → raw scores."""
     input_name = session.get_inputs()[0].name
-    return session.run(None, {input_name: embeddings})[0]
+    result: np.ndarray = session.run(None, {input_name: embeddings})[0]  # type: ignore[name-defined]  # ort.run returns list[Any]
+    return result
 
 
 def main() -> None:
@@ -97,7 +98,7 @@ def main() -> None:
 
     # -- Load models --
     try:
-        from nomarr.components.ml.ml_audio_comp import load_audio_mono
+        from nomarr.components.ml.audio.ml_audio_comp import load_audio_mono
     except ImportError as e:
         print(f"ERROR: Could not import nomarr — is the package installed? {e}")
         sys.exit(1)

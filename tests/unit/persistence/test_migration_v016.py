@@ -4,7 +4,7 @@ Verifies idempotency: upgrade() handles both fresh-DB and already-exists scenari
 without errors.
 """
 
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -139,7 +139,7 @@ class TestPopulationQueries:
     def test_ml_tagged_reads_correct_fields(self, mock_db):
         """ml_tagged population reads tagged, tagged_version, last_tagged_at."""
         upgrade(mock_db)
-        ml_query = [c.args[0] for c in mock_db.aql.execute.call_args_list if "ml_tagged" in c.args[0]][0]
+        ml_query = next(c.args[0] for c in mock_db.aql.execute.call_args_list if "ml_tagged" in c.args[0])
         assert "file.tagged == true" in ml_query
         assert "file.tagged_version" in ml_query
         assert "file.last_tagged_at" in ml_query
@@ -148,7 +148,7 @@ class TestPopulationQueries:
     def test_calibrated_reads_correct_fields(self, mock_db):
         """calibrated population reads calibration_hash."""
         upgrade(mock_db)
-        cal_query = [c.args[0] for c in mock_db.aql.execute.call_args_list if "file_states/calibrated" in c.args[0]][0]
+        cal_query = next(c.args[0] for c in mock_db.aql.execute.call_args_list if "file_states/calibrated" in c.args[0])
         assert "file.calibration_hash != null" in cal_query
         assert "file.calibration_hash" in cal_query
 
@@ -156,7 +156,7 @@ class TestPopulationQueries:
     def test_reconciled_reads_correct_fields(self, mock_db):
         """reconciled population reads last_written_mode and related fields."""
         upgrade(mock_db)
-        rec_query = [c.args[0] for c in mock_db.aql.execute.call_args_list if "file_states/reconciled" in c.args[0]][0]
+        rec_query = next(c.args[0] for c in mock_db.aql.execute.call_args_list if "file_states/reconciled" in c.args[0])
         assert "file.last_written_mode != null" in rec_query
         assert "file.last_written_mode" in rec_query
         assert "file.last_written_calibration_hash" in rec_query
