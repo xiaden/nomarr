@@ -15,7 +15,7 @@ import os
 import time
 
 from arango import ArangoClient
-from arango.exceptions import CollectionCreateError, GraphCreateError, IndexCreateError
+from arango.exceptions import CollectionCreateError, DocumentInsertError, GraphCreateError, IndexCreateError
 
 from nomarr.persistence.arango_client import DatabaseLike
 
@@ -111,6 +111,8 @@ def _create_collections(db: DatabaseLike) -> None:
         # ML model registry and output activations
         "ml_models",
         "ml_model_outputs",
+        # File state vertices (edge targets for file_has_state)
+        "file_states",
     ]
 
     for collection_name in document_collections:
@@ -123,6 +125,7 @@ def _create_collections(db: DatabaseLike) -> None:
     edge_collections = [
         "song_has_tags",  # song→tag relationships (unified)
         "tag_model_output",  # tag→ml_model_output edges
+        "file_has_state",  # library_files→file_states state edges
     ]
 
     for edge_collection_name in edge_collections:
@@ -130,6 +133,23 @@ def _create_collections(db: DatabaseLike) -> None:
             with contextlib.suppress(CollectionCreateError):
                 # Collection already exists (race condition)
                 db.create_collection(edge_collection_name, edge=True)
+
+    # Seed file_states vertex documents (fixed set of state targets)
+    _seed_file_states(db)
+
+
+def _seed_file_states(db: DatabaseLike) -> None:
+    """Ensure fixed file_states vertex documents exist.
+
+    These are the edge targets for ``file_has_state``:
+    ``file_states/ml_tagged``, ``file_states/calibrated``, ``file_states/reconciled``.
+
+    Idempotent — inserts only if the document is missing.
+    """
+    coll = db.collection("file_states")  # type: ignore[union-attr]
+    for key in ("ml_tagged", "calibrated", "reconciled"):
+        with contextlib.suppress(DocumentInsertError):
+            coll.insert({"_key": key})  # type: ignore[union-attr]
 
 
 def _create_indexes(db: DatabaseLike) -> None:
@@ -212,6 +232,10 @@ def _create_indexes(db: DatabaseLike) -> None:
     # calibration_history indexes (NEW - optional drift tracking)
     _ensure_index(db, "calibration_history", "persistent", ["calibration_key"], unique=False, sparse=False)
     _ensure_index(db, "calibration_history", "persistent", ["snapshot_at"], unique=False, sparse=False)
+
+    # file_has_state indexes (edge-based file state management)
+    _ensure_index(db, "file_has_state", "persistent", ["_from", "_to"], unique=True)
+    _ensure_index(db, "file_has_state", "persistent", ["_to"])
 
     # ─────────────────────────────────────────────────────────────────────
     # Unified tag schema indexes (TAG_UNIFICATION_REFACTOR)
