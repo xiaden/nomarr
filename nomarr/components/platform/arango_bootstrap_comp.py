@@ -108,6 +108,9 @@ def _create_collections(db: DatabaseLike) -> None:
         "applied_migrations",
         # VRAM promise registry (fleet-aware per-model GPU placement coordination)
         "vram_promises",
+        # ML model registry and output activations
+        "ml_models",
+        "ml_model_outputs",
     ]
 
     for collection_name in document_collections:
@@ -119,6 +122,7 @@ def _create_collections(db: DatabaseLike) -> None:
     # Edge collections
     edge_collections = [
         "song_has_tags",  # song→tag relationships (unified)
+        "tag_model_output",  # tag→ml_model_output edges
     ]
 
     for edge_collection_name in edge_collections:
