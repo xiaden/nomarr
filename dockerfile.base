@@ -10,7 +10,7 @@
 #  onnxruntime-gpu's CUDA EP (the provider plugin does NOT bundle them).
 #  The NVIDIA Container Runtime injects libcuda.so.1 (driver) at run time.
 # ==============================================================
-FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu24.04
+FROM nvidia/cuda:13.2.0-cudnn-runtime-ubuntu24.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
