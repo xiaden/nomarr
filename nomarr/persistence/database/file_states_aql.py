@@ -863,3 +863,124 @@ class FileStatesOperations:
             ),
         )
         return next(cursor, 0)  # type: ignore[arg-type]
+
+    # ------------------------------------------------------------------
+    # Batch ML Tagged operations
+    # ------------------------------------------------------------------
+
+    def clear_ml_tagged_batch(self, file_ids: list[str]) -> int:
+        """Remove ml_tagged edges for multiple files in one query.
+
+        Marks all listed files as needing re-tagging by removing their
+        ``ml_tagged`` edges.
+
+        Args:
+            file_ids: List of document ``_id`` values.
+
+        Returns:
+            Number of edges removed.
+        """
+        if not file_ids:
+            return 0
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(  # type: ignore[union-attr]
+                """
+                FOR edge IN @@coll
+                    FILTER edge._from IN @file_ids AND edge._to == @state
+                    REMOVE edge IN @@coll
+                    COLLECT WITH COUNT INTO cnt
+                    RETURN cnt
+                """,
+                bind_vars=cast(
+                    "dict[str, Any]",
+                    {
+                        "file_ids": file_ids,
+                        "state": _STATE_ML_TAGGED,
+                        "@coll": _EDGE_COLLECTION,
+                    },
+                ),
+            ),
+        )
+        return next(cursor, 0)  # type: ignore[arg-type]
+
+    # ------------------------------------------------------------------
+    # Tag completeness validation
+    # ------------------------------------------------------------------
+
+    def get_files_with_incomplete_tags(
+        self,
+        expected_heads: list[dict[str, Any]],
+        namespace_prefix: str,
+        library_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Find ml_tagged files whose tag edges are incomplete.
+
+        For each file with an ``ml_tagged`` edge, checks whether it has at
+        least one ``song_has_tags`` edge per expected head (model_key + label)
+        under the given namespace prefix.
+
+        Args:
+            expected_heads: List of ``{head_key, labels, model_key_for_tag}``
+                dicts describing the heads every tagged file should have.
+            namespace_prefix: Namespace prefix including colon (e.g. ``"nom:"``).
+            library_id: Optional library ``_id`` to restrict the scan.
+
+        Returns:
+            List of ``{file_id, file_key, library_id, matched_count,
+            missing_count, missing_heads}`` for **all** tagged files
+            (caller filters for incomplete ones).
+        """
+        library_filter = ""
+        bind_vars: dict[str, Any] = {
+            "namespace_prefix": namespace_prefix,
+            "expected_heads": expected_heads,
+        }
+        if library_id:
+            library_filter = "FILTER file.library_id == @library_id"
+            bind_vars["library_id"] = library_id
+
+        query = f"""
+        LET expected = @expected_heads
+        FOR edge IN file_has_state
+          FILTER edge._to == "file_states/ml_tagged"
+          LET file = DOCUMENT(edge._from)
+          FILTER file != null
+          {library_filter}
+          LET matched_heads = UNIQUE(
+            FOR tag_edge IN song_has_tags
+              FILTER tag_edge._from == file._id
+              LET tag = DOCUMENT(tag_edge._to)
+              FILTER tag != null
+              FILTER STARTS_WITH(tag.rel, @namespace_prefix)
+              LET rel_without_prefix = SUBSTRING(tag.rel, 4)
+              LET first_underscore = FIND_FIRST(rel_without_prefix, "_")
+              LET label = first_underscore >= 0
+                ? SUBSTRING(rel_without_prefix, 0, first_underscore)
+                : rel_without_prefix
+              FOR exp IN expected
+                FILTER label IN exp.labels
+                FILTER CONTAINS(rel_without_prefix, exp.model_key_for_tag)
+                RETURN exp.head_key
+          )
+          LET missing_heads = (
+            FOR exp IN expected
+              FILTER exp.head_key NOT IN matched_heads
+              RETURN exp.head_key
+          )
+          RETURN {{
+            file_id: file._id,
+            file_key: file._key,
+            library_id: file.library_id,
+            matched_count: LENGTH(matched_heads),
+            missing_count: LENGTH(missing_heads),
+            missing_heads: missing_heads
+          }}
+        """
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(  # type: ignore[union-attr]
+                query, bind_vars=bind_vars
+            ),
+        )
+        return list(cursor)

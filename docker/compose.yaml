@@ -1,12 +1,13 @@
 services:
   # ArangoDB database service
   nomarr-arangodb:
-    image: arangodb:3.11
+    image: arangodb:latest
     container_name: nomarr-arangodb
     networks:
       - internal_network  # Internal only, no public exposure
     env_file:
       - nomarr-arangodb.env
+    command: ["--vector-index"]
     volumes:
       - ./config/arangodb:/var/lib/arangodb3
     # CRITICAL: NO PORT EXPOSURE - Internal network only

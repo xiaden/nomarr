@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+import threading
 from typing import Any, Literal
 
 import yaml
@@ -59,6 +60,27 @@ INTERNAL_CALIBRATION_MEDIAN_THRESHOLD = 0.05  # Max median drift (5%)
 INTERNAL_CALIBRATION_IQR_THRESHOLD = 0.1  # Max IQR drift (10%)
 
 
+# Subset of allowed config keys that can be edited via the web UI.
+# Infrastructure paths (models_dir, db_path, library_root) and admin_password
+# must be set via config file or environment, not the web UI.
+WEB_EDITABLE_KEYS: frozenset[str] = frozenset({
+    "file_write_mode",
+    "overwrite_tags",
+    "library_auto_tag",
+    "library_ignore_patterns",
+    "tagger_worker_count",
+    "cache_idle_timeout",
+    "calibrate_heads",
+    "calibration_repo",
+    "spotify_client_id",
+    "spotify_client_secret",
+    "navidrome_api_url",
+    "navidrome_api_user",
+    "navidrome_api_password",
+    "navidrome_path_prefix_map",
+})
+
+
 # Whitelist of allowed config keys for DB and environment overrides
 _ALLOWED_CONFIG_KEYS = {
     "models_dir",
@@ -87,78 +109,76 @@ _ALLOWED_CONFIG_KEYS = {
 class ConfigService:
     """Service for loading and caching application configuration.
 
-    Loads config from multiple sources (defaults → YAML → env → DB),
-    caches the result, and provides reload capability.
+    Architecture (post-refactor):
+    - Bootstrap: defaults → YAML → ENV → seed to DB (once at startup)
+    - Cache: mutable dict populated from DB after bootstrap
+    - Reads: always from cache (fast, no recomposition)
+    - Writes: mutate cache → cache setter triggers DB write
 
-    This is a service because it:
-    - Answers questions about configuration
-    - Is long-lived (cached state)
-    - Can reload when needed (runtime changes)
+    DB is the durable store. Cache is the fast read path.
     """
 
     def __init__(self) -> None:
-        """Initialize ConfigService with empty cache."""
-        self._config: dict[str, Any] | None = None
+        """Initialize ConfigService: bootstrap config to DB, load cache."""
+        self._cache: dict[str, Any] = {}
+        self._lock = threading.Lock()
         self._logger = logging.getLogger(__name__)
+        self._bootstrap_and_load()
 
-    def get_config(self, force_reload: bool = False) -> ConfigResult:
-        """Get the composed configuration.
-
-        Args:
-            force_reload: If True, bypass cache and reload from sources
+    def get_config(self) -> ConfigResult:
+        """Get a snapshot of the current configuration.
 
         Returns:
-            ConfigResult wrapping complete configuration dict
+            ConfigResult wrapping a shallow copy of the cache
 
         """
-        if self._config is None or force_reload:
-            self._config = self._compose()
-        return ConfigResult(config=self._config)
+        with self._lock:
+            return ConfigResult(config=dict(self._cache))
 
-    def get(self, key_path: str, default: Any = None) -> Any:
-        """Get a config value by dotted path.
+    def get(self, key: str, default: Any = None) -> Any:
+        """Get a config value by flat key from the mutable cache.
 
         Args:
-            key_path: Dotted path like "namespace" or "worker.poll_interval"
+            key: Flat config key (e.g. "namespace", "overwrite_tags")
             default: Default value if key not found
 
         Returns:
-            Config value or default
-
-        Example:
-            >>> service.get("namespace")
-            'essentia'
-            >>> service.get("worker.poll_interval", 2)
-            2
+            Config value (typed Python object) or default
 
         """
-        cfg = self.get_config()
-        node: Any = cfg.config
-        for part in key_path.split("."):
-            if not isinstance(node, dict) or part not in node:
-                return default
-            node = node[part]
-        return node
+        with self._lock:
+            return self._cache.get(key, default)
 
-    def set_config_value(self, key: str, value: str) -> None:
-        """Store a user-editable config value in DB meta.
-
-        This persists configuration changes made via web UI. The value is stored
-        with a 'config_' prefix and will be picked up on next reload/restart.
+    def set(self, key: str, value: Any) -> None:
+        """Write-through setter: update cache then persist to DB.
 
         Args:
-            key: Config key (without 'config_' prefix)
-            value: String value to store
+            key: Config key (must be in _ALLOWED_CONFIG_KEYS)
+            value: Typed Python value (stored as-is in cache, stringified for DB)
 
-        Note:
-            Changes take effect after reload() or application restart.
-            Caller is responsible for validating that key is editable.
+        Raises:
+            ValueError: If key is not in _ALLOWED_CONFIG_KEYS
 
         """
-        # Create temporary DB connection for write
-        db = Database()
-        db.meta.set(f"config_{key}", value)
-        self._logger.info(f"[ConfigService] Set config_{key} = {value}")
+        if key not in _ALLOWED_CONFIG_KEYS:
+            msg = f"Config key '{key}' is not an allowed config key"
+            raise ValueError(msg)
+
+        with self._lock:
+            self._cache[key] = value
+        self._write_to_db(key, str(value) if value is not None else "")
+        self._logger.info("Config '%s' updated (cache + DB)", key)
+
+    def _write_to_db(self, key: str, value: str) -> None:
+        """Persist a config value to DB meta table via throwaway connection."""
+        try:
+            db = Database()
+            try:
+                db.meta.set(f"config_{key}", value)
+            finally:
+                db.close()
+        except Exception:
+            self._logger.exception("Failed to persist config '%s' to DB", key)
 
     def get_internal_info(self) -> GetInternalInfoResult:
         """Get internal (read-only) configuration constants.
@@ -180,23 +200,24 @@ class ConfigService:
         )
 
     def get_config_for_web(self, worker_service: Any | None = None) -> WebConfigResult:
-        """Get complete configuration for web UI endpoint.
+        """Get configuration for the web UI endpoint.
 
-        Combines user-editable config, internal constants, and live worker status.
-        This is a facade method for the web config endpoint.
+        Returns only WEB_EDITABLE_KEYS subset, plus internal constants
+        and live worker status.
 
         Args:
             worker_service: Optional WorkersCoordinator to check live worker status
 
         Returns:
-            WebConfigResult with complete config info
+            WebConfigResult with filtered config for web UI
 
         """
-        config_dto = self.get_config()
+        with self._lock:
+            filtered_config = {k: v for k, v in self._cache.items() if k in WEB_EDITABLE_KEYS}
         internal_info = self.get_internal_info()
         worker_enabled = worker_service.is_worker_system_enabled() if worker_service else internal_info.worker_enabled
 
-        return WebConfigResult(config=config_dto.config, internal_info=internal_info, worker_enabled=worker_enabled)
+        return WebConfigResult(config=filtered_config, internal_info=internal_info, worker_enabled=worker_enabled)
 
     def get_worker_count(self, kind: Literal["tagger"] = "tagger") -> int:
         """Get worker count for the tagger worker pool.
@@ -228,17 +249,68 @@ class ConfigService:
     # Private composition logic
     # ----------------------------------------------------------------------
 
-    def _compose(self, overrides: dict[str, Any] | None = None) -> dict[str, Any]:
-        """Load final configuration from:
-          1) Built-in defaults
-          2) /etc/nomarr/config.yaml  (if present)
-          3) /app/config/config.yaml or ./config/config.yaml
-          4) $CONFIG_PATH (if set)
-          5) overrides dict passed in
-          6) Environment variables (TAGGER_* / NOMARR_TAGGER_*)
-          7) Database meta table (config_* keys, user customizations via web UI).
+    def _bootstrap_and_load(self) -> None:
+        """Bootstrap config to DB and load cache from DB.
 
-        Returns merged config as dict.
+        Opens ONE throwaway Database connection and performs:
+        1. Compose bootstrap config (defaults → YAML → ENV)
+        2. Seed to DB: write keys NOT already present (preserves web UI changes)
+        3. Load all config_* keys from DB into self._cache (parsed to Python types)
+
+        Cache holds parsed Python types (bool, int, float, str).
+        DB holds string representations.
+        """
+        bootstrap_config = self._build_bootstrap_config()
+
+        try:
+            db = Database()
+            try:
+                # Batch-read existing config keys from DB
+                existing = db.meta.get_by_prefix("config_")
+                existing_keys = {k[7:] for k in existing}  # Strip 'config_' prefix
+
+                # Seed: write only keys NOT already in DB
+                for key in _ALLOWED_CONFIG_KEYS:
+                    if key not in existing_keys and key in bootstrap_config:
+                        value = bootstrap_config[key]
+                        db.meta.set(f"config_{key}", str(value) if value is not None else "")
+
+                # Load: read all config_* keys back into cache
+                all_config = db.meta.get_by_prefix("config_")
+                for db_key, db_value in all_config.items():
+                    config_key = db_key[7:]  # Strip 'config_' prefix
+                    if config_key in _ALLOWED_CONFIG_KEYS:
+                        self._cache[config_key] = self._parse_db_value(db_value)
+
+                self._logger.debug("Config bootstrap complete: %d keys loaded", len(self._cache))
+            finally:
+                db.close()
+
+        except Exception as e:
+            # DB unavailable at startup — fall back to bootstrap config directly
+            self._logger.warning("DB unavailable for config bootstrap, using file/env config: %s", e)
+            for key in _ALLOWED_CONFIG_KEYS:
+                if key in bootstrap_config:
+                    self._cache[key] = bootstrap_config[key]
+
+    @staticmethod
+    def _parse_db_value(value: str) -> bool | int | float | str:
+        """Parse a DB string value to the appropriate Python type."""
+        if value.lower() in ("true", "false"):
+            return value.lower() == "true"
+        # Handle negative integers: strip optional leading minus for digit check
+        stripped = value.lstrip("-")
+        if stripped.isdigit() and (len(stripped) == len(value) or len(value) == len(stripped) + 1):
+            return int(value)
+        if value.replace(".", "", 1).replace("-", "", 1).isdigit():
+            return float(value)
+        return value
+
+    def _build_bootstrap_config(self) -> dict[str, Any]:
+        """Build bootstrap config from defaults → YAML → ENV (no DB).
+
+        Called once during bootstrap. DB seeding is handled separately
+        in _bootstrap_and_load(). This method only composes the file/env layers.
         """
         cfg = self._default_config()
 
@@ -246,7 +318,6 @@ class ConfigService:
         self._deep_merge(cfg, self._load_yaml("/etc/nomarr/config.yaml"))
 
         # 1b) Container-mounted or repo-local config (common Docker layout)
-        # Prefer /app/config/config.yaml when mounted in containers, then ./config/config.yaml in repo root.
         app_cfg = self._load_yaml("/app/config/config.yaml")
         if app_cfg:
             self._deep_merge(cfg, app_cfg)
@@ -259,25 +330,11 @@ class ConfigService:
         if env_path:
             self._deep_merge(cfg, self._load_yaml(env_path))
 
-        # 3) Direct overrides
-        if overrides:
-            self._deep_merge(cfg, overrides)
-
-        # 4) Environment variable overrides (flat -> nested mapping)
+        # 3) Environment variable overrides (flat -> nested mapping)
         self._apply_env_overrides(cfg)
 
-        # 5) Database meta table overrides (web UI customizations)
-        # Can be disabled via NOMARR_IGNORE_DB_CONFIG=true for recovery
-        if os.getenv("NOMARR_IGNORE_DB_CONFIG", "").lower() != "true":
-            db_overrides = self._load_db_config()
-            if db_overrides:
-                self._deep_merge(cfg, db_overrides)
-        else:
-            self._logger.warning("Ignoring DB config (NOMARR_IGNORE_DB_CONFIG=true)")
-
-        # Log effective config source for easier debugging in containers
         with contextlib.suppress(Exception):
-            self._logger.debug("compose() loaded config; keys: %s", list(cfg.keys()))
+            self._logger.debug("Bootstrap config composed; keys: %s", list(cfg.keys()))
 
         return cfg
 
@@ -339,64 +396,6 @@ class ConfigService:
         except Exception:
             return {}
 
-    def _load_db_config(self) -> dict[str, Any]:
-        """Load configuration overrides from database meta table.
-
-        Only allows overrides for the 11 user-configurable keys.
-        All other config_* keys in the DB are ignored (internal constants
-        cannot be overridden at runtime).
-
-        Graceful fallback if DB is unavailable or corrupted.
-
-        Returns:
-            dict: Config overrides from DB meta table (empty if unavailable)
-
-        """
-        try:
-            db = Database()
-            try:
-                # Query all config_* keys from meta table via persistence layer
-                meta_dict = db.meta.get_by_prefix("config_")
-
-                if not meta_dict:
-                    self._logger.debug("DB config skipped: no config_* keys in meta table")
-                    return {}
-
-                config_overrides = {}
-                for key, value in meta_dict.items():
-                    # Remove 'config_' prefix
-                    config_key = key[7:]  # len('config_') == 7
-
-                    # Only allow whitelisted keys
-                    if config_key not in _ALLOWED_CONFIG_KEYS:
-                        self._logger.debug(f"Ignoring DB config for internal key: {config_key}")
-                        continue
-
-                    # Parse value to correct type
-                    parsed: bool | int | float | str
-                    if value.lower() in ("true", "false"):
-                        parsed = value.lower() == "true"
-                    elif value.isdigit():
-                        parsed = int(value)
-                    elif value.replace(".", "", 1).replace("-", "", 1).isdigit():
-                        parsed = float(value)
-                    else:
-                        parsed = value
-
-                    config_overrides[config_key] = parsed
-
-                if config_overrides:
-                    self._logger.debug(f"Loaded {len(config_overrides)} config overrides from database")
-                return config_overrides
-
-            finally:
-                db.close()
-
-        except Exception as e:
-            # Graceful fallback - DB config is optional, YAML/env config continues
-            self._logger.warning(f"Failed to load DB config (using YAML/env fallback): {e}")
-            return {}
-
     def _apply_env_overrides(self, cfg: dict[str, Any]) -> None:
         """Support environment overrides for the 12 user-configurable keys only.
 
@@ -447,12 +446,11 @@ class ConfigService:
     def make_processor_config(self) -> ProcessorConfig:
         """Build a ProcessorConfig from the current configuration.
 
-        This is the boundary where we extract and validate processor-specific
-        settings from the raw config dict, combining user-configurable settings
-        with internal constants.
+        Contains only startup-fixed values (model paths, internal constants,
+        tagger versioning). Created once and serialized to worker subprocesses.
 
         Returns:
-            ProcessorConfig instance ready for injection into process_file()
+            ProcessorConfig instance for injection into worker spawn.
 
         """
         cfg = self.get_config()
@@ -462,12 +460,7 @@ class ConfigService:
         tagger_version = compute_model_suite_hash(models_dir)
 
         return ProcessorConfig(
-            # User-configurable settings
             models_dir=models_dir,
-            overwrite_tags=bool(cfg.config["overwrite_tags"]),
-            file_write_mode=str(cfg.config.get("file_write_mode", "minimal")),  # type: ignore
-            calibrate_heads=bool(cfg.config.get("calibrate_heads", False)),
-            # Internal constants (not user-configurable)
             min_duration_s=INTERNAL_MIN_DURATION_S,
             allow_short=INTERNAL_ALLOW_SHORT,
             batch_size=INTERNAL_BATCH_SIZE,

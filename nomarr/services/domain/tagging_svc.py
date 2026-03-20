@@ -22,6 +22,7 @@ from nomarr.workflows.processing.write_file_tags_wf import write_file_tags_workf
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
     from nomarr.services.domain.library_svc import LibraryService
+    from nomarr.services.infrastructure.config_svc import ConfigService
 
 
 logger = logging.getLogger(__name__)
@@ -35,14 +36,12 @@ class TaggingServiceConfig:
         models_dir: Path to ML models directory
         namespace: Tag namespace (e.g., "nom")
         version_tag_key: Metadata key for version tracking
-        calibrate_heads: Whether to apply calibration heads
 
     """
 
     models_dir: str
     namespace: str
     version_tag_key: str
-    calibrate_heads: bool = False
 
 
 class TaggingService:
@@ -62,6 +61,7 @@ class TaggingService:
         self,
         database: Database,
         cfg: TaggingServiceConfig,
+        config_service: ConfigService,
         library_service: LibraryService | None = None,
     ) -> None:
         """Initialize the tagging service.
@@ -69,11 +69,13 @@ class TaggingService:
         Args:
             database: Database instance for persistence operations
             cfg: Service configuration (models_dir, namespace, etc.)
+            config_service: Live configuration provider (for calibrate_heads)
             library_service: LibraryService instance (optional, for library operations)
 
         """
         self.db = database
         self.cfg = cfg
+        self._config_service = config_service
         self.library_service = library_service
 
         # Background apply state — explicit lifecycle: idle → running → completed/failed
@@ -103,7 +105,7 @@ class TaggingService:
             models_dir=self.cfg.models_dir,
             namespace=self.cfg.namespace,
             version_tag_key=self.cfg.version_tag_key,
-            calibrate_heads=self.cfg.calibrate_heads,
+            calibrate_heads=self._config_service.get("calibrate_heads", False),
         )
 
         write_calibrated_tags_wf(db=self.db, params=params)
@@ -154,7 +156,7 @@ class TaggingService:
             models_dir=self.cfg.models_dir,
             namespace=self.cfg.namespace,
             version_tag_key=self.cfg.version_tag_key,
-            calibrate_heads=self.cfg.calibrate_heads,
+            calibrate_heads=self._config_service.get("calibrate_heads", False),
             on_progress=self._update_apply_progress,
         )
 

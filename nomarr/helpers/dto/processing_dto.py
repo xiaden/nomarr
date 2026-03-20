@@ -58,8 +58,13 @@ class ResourceManagementConfig:
 class ProcessorConfig:
     """Configuration for the audio processing pipeline.
 
-    All fields are required to ensure explicit configuration.
-    Validation should happen at the service layer when constructing this.
+    Contains values fixed at startup: model paths, internal constants,
+    and tagger versioning. Created once by ConfigService.make_processor_config()
+    and serialized to worker subprocesses at spawn time.
+
+    These fields never change at runtime. User-changeable processing settings
+    (overwrite_tags, calibrate_heads, file_write_mode) are read live from
+    ConfigService by each consuming service at use time.
     """
 
     # Path to models directory containing embeddings and heads
@@ -74,9 +79,6 @@ class ProcessorConfig:
     # Batch size for head prediction (VRAM control)
     batch_size: int
 
-    # Whether to overwrite existing tags
-    overwrite_tags: bool
-
     # Tag namespace (e.g., "essentia")
     namespace: str
 
@@ -85,12 +87,6 @@ class ProcessorConfig:
 
     # Current tagger version string
     tagger_version: str
-
-    # Whether to load calibration files
-    calibrate_heads: bool
-
-    # File write mode: controls what tags go to media files
-    file_write_mode: Literal["none", "minimal", "full"] = "minimal"
 
     # Resource management configuration (GPU/CPU adaptive)
     resource_management: ResourceManagementConfig | None = None

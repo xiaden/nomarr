@@ -7,7 +7,7 @@ Navidrome config/playlist generation without exposing DB to interfaces.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from nomarr.components.navidrome.templates_comp import generate_template_files, get_template_summary
@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from nomarr.components.navidrome.subsonic_client_comp import SubsonicClient
     from nomarr.helpers.dto.navidrome_dto import PlaylistPreviewResult
     from nomarr.persistence.db import Database
+    from nomarr.services.infrastructure.config_svc import ConfigService
     from nomarr.workflows.navidrome.find_similar_tracks_wf import SimilarTrackResult
     from nomarr.workflows.navidrome.sync_song_map_wf import SyncResult
 
@@ -44,29 +45,32 @@ class NavidromeConfig:
     """Configuration for NavidromeService."""
 
     namespace: str
-    api_url: str | None = None
-    api_user: str | None = None
-    api_password: str | None = None
-    path_prefix_map: list[tuple[str, str]] = field(default_factory=list)
 
 
 class NavidromeService:
     """Service for Navidrome integration (config, playlists, templates).
 
     Wraps workflows from workflows/navidrome/* to hide DB dependency from interfaces.
+    API credentials are read live from ConfigService so changes via the web UI
+    take effect without restarting the application.
     """
 
-    def __init__(self, db: Database, cfg: NavidromeConfig) -> None:
+    def __init__(self, db: Database, cfg: NavidromeConfig, config_service: ConfigService) -> None:
         """Initialize Navidrome service.
 
         Args:
             db: Database instance
-            cfg: Navidrome configuration
+            cfg: Navidrome configuration (static settings)
+            config_service: Live configuration provider (for API credentials)
 
         """
         self._db = db
         self.cfg = cfg
+        self._config_service = config_service
         self._client: SubsonicClient | None = None
+        # Track credentials used for the cached client so we can invalidate
+        # when the user changes them via the web UI.
+        self._client_creds: tuple[str, str, str] | None = None
 
     def preview_tag_stats(self) -> PreviewTagStatsResult:
         """Get preview of tags for Navidrome config generation."""
@@ -147,7 +151,11 @@ class NavidromeService:
         result = GeneratePlaylistResult(playlist_structure=playlist_structure)
 
         # Optionally push an evaluated snapshot to Navidrome via Subsonic API.
-        if self._client is not None:
+        try:
+            client = self._get_client()
+        except ValueError:
+            pass
+        else:
             try:
                 playlist_filter = parse_smart_playlist_query(query, namespace=self.cfg.namespace)
                 matching_ids = execute_smart_playlist_filter(self._db, playlist_filter)
@@ -156,7 +164,7 @@ class NavidromeService:
                     file_ids = file_ids[:limit]
                 push_playlist(
                     db=self._db,
-                    client=self._client,
+                    client=client,
                     playlist_name=playlist_name,
                     file_ids=file_ids,
                 )
@@ -206,11 +214,15 @@ class NavidromeService:
         )
 
         # Optionally push to Navidrome via Subsonic API.
-        if self._client is not None:
+        try:
+            client = self._get_client()
+        except ValueError:
+            pass
+        else:
             try:
                 push_playlist(
                     db=self._db,
-                    client=self._client,
+                    client=client,
                     playlist_name=playlist_name,
                     file_ids=file_ids,
                 )
@@ -221,29 +233,75 @@ class NavidromeService:
 
 
     # ------------------------------------------------------------------
-    # Subsonic client (lazy)
+    # API credentials (live from ConfigService)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _parse_path_prefix_map(raw: str | None) -> list[tuple[str, str]]:
+        """Parse comma-separated 'from:to' prefix pairs.
+
+        Format: 'navidrome_prefix:nomarr_prefix,navidrome_prefix2:nomarr_prefix2'
+        Example: '/music:/media/library,/podcasts:/media/pods'
+
+        Returns:
+            List of (navidrome_prefix, nomarr_prefix) tuples.
+        """
+        if not raw or not raw.strip():
+            return []
+        pairs: list[tuple[str, str]] = []
+        for entry in raw.split(","):
+            entry = entry.strip()
+            if ":" not in entry:
+                continue
+            parts = entry.split(":", 1)
+            pairs.append((parts[0].strip(), parts[1].strip()))
+        return pairs
+
+    def _get_api_credentials(self) -> tuple[str | None, str | None, str | None]:
+        """Read Navidrome API credentials live from ConfigService.
+
+        Returns:
+            Tuple of (api_url, api_user, api_password) — any may be None.
+        """
+        api_url = self._config_service.get("navidrome_api_url")
+        api_user = self._config_service.get("navidrome_api_user")
+        api_password = self._config_service.get("navidrome_api_password")
+        return api_url, api_user, api_password
+
+    # ------------------------------------------------------------------
+    # Subsonic client (lazy, invalidated on credential change)
     # ------------------------------------------------------------------
 
     def _get_client(self) -> SubsonicClient:
         """Get or create the Subsonic API client.
 
+        Reads credentials live from ConfigService.  If the credentials have
+        changed since the last client was created, the cached client is
+        discarded and rebuilt.
+
         Raises:
             ValueError: If Navidrome API credentials are not configured.
         """
-        if self._client is not None:
-            return self._client
+        api_url, api_user, api_password = self._get_api_credentials()
 
-        if not self.cfg.api_url or not self.cfg.api_user or not self.cfg.api_password:
+        if not api_url or not api_user or not api_password:
             msg = "Navidrome API credentials not configured (api_url, api_user, api_password)"
             raise ValueError(msg)
+
+        current_creds = (api_url, api_user, api_password)
+
+        # Invalidate cached client if credentials changed
+        if self._client is not None and self._client_creds == current_creds:
+            return self._client
 
         from nomarr.components.navidrome.subsonic_client_comp import SubsonicClient
 
         self._client = SubsonicClient(
-            base_url=self.cfg.api_url,
-            user=self.cfg.api_user,
-            password=self.cfg.api_password,
+            base_url=api_url,
+            user=api_user,
+            password=api_password,
         )
+        self._client_creds = current_creds
         return self._client
 
     # ------------------------------------------------------------------
@@ -276,15 +334,15 @@ class NavidromeService:
     def ping(self) -> tuple[bool, str]:
         """Test connectivity to the Navidrome server.
 
-        Constructs a temporary SubsonicClient from the current config and
-        attempts a ping. Returns (ok, error_message).
+        Reads credentials live from ConfigService and constructs a fresh
+        SubsonicClient.  Returns (ok, error_message).
         """
-        if not self.cfg.api_url or not self.cfg.api_user or not self.cfg.api_password:
-            return False, "Navidrome API URL, username, or password not configured"
         try:
             client = self._get_client()
             client.ping()
             return True, ""
+        except ValueError as e:
+            return False, str(e)
         except Exception as e:
             return False, str(e)
 
@@ -307,9 +365,12 @@ class NavidromeService:
         from nomarr.workflows.navidrome.sync_song_map_wf import sync_song_map
 
         client = self._get_client()
+        path_prefix_map = self._parse_path_prefix_map(
+            self._config_service.get("navidrome_path_prefix_map", "")
+        )
         return sync_song_map(
             client=client,
-            path_prefix_map=self.cfg.path_prefix_map,
+            path_prefix_map=path_prefix_map,
             db=self._db,
         )
 

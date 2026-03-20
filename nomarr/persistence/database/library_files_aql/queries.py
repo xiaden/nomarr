@@ -434,7 +434,10 @@ class LibraryFilesQueriesMixin:
     def get_recently_processed(
         self, limit: int = 20, library_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Get recently processed files ordered by last_tagged_at descending.
+        """Get recently processed files ordered by tagged_at descending.
+
+        Joins through ``file_has_state`` edges to ``file_states/ml_tagged``
+        to find the tagging timestamp (``tagged_at`` on the edge).
 
         Args:
             limit: Maximum number of files to return.
@@ -452,10 +455,12 @@ class LibraryFilesQueriesMixin:
             bind_vars["library_id"] = library_id
 
         query = f"""
-        FOR f IN library_files
-            FILTER f.last_tagged_at != null
+        FOR edge IN file_has_state
+            FILTER edge._to == "file_states/ml_tagged"
+            LET f = DOCUMENT(edge._from)
+            FILTER f != null
             {library_filter}
-            SORT f.last_tagged_at DESC
+            SORT edge.tagged_at DESC
             LIMIT @limit
             RETURN {{
                 file_id: f._id,
@@ -463,7 +468,7 @@ class LibraryFilesQueriesMixin:
                 title: f.title,
                 artist: f.artist,
                 album: f.album,
-                last_tagged_at: f.last_tagged_at
+                last_tagged_at: edge.tagged_at
             }}
         """
         cursor = cast("Cursor", self.db.aql.execute(query, bind_vars=bind_vars))

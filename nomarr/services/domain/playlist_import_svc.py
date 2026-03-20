@@ -5,30 +5,17 @@ Provides playlist conversion from Spotify/Deezer URLs to local Navidrome playlis
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
+    from nomarr.services.infrastructure.config_svc import ConfigService
 
 from nomarr.helpers.dto.playlist_import_dto import PlaylistConversionResult
 from nomarr.helpers.exceptions import PlaylistConversionError
 from nomarr.workflows.playlist_import.convert_playlist_wf import (
     convert_playlist_workflow,
 )
-
-
-@dataclass
-class PlaylistImportConfig:
-    """Configuration for PlaylistImportService.
-
-    Attributes:
-        spotify_client_id: Optional Spotify API client ID
-        spotify_client_secret: Optional Spotify API client secret
-    """
-
-    spotify_client_id: str | None = None
-    spotify_client_secret: str | None = None
 
 
 class PlaylistImportService:
@@ -38,22 +25,22 @@ class PlaylistImportService:
     by matching tracks against the imported library.
 
     Example:
-        >>> service = PlaylistImportService(db, PlaylistImportConfig())
+        >>> service = PlaylistImportService(db, config_service)
         >>> result = service.convert_playlist(
         ...     "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M"
         ... )
         >>> print(result.match_rate)  # 0.92 = 92% matched
     """
 
-    def __init__(self, db: Database, cfg: PlaylistImportConfig) -> None:
+    def __init__(self, db: Database, config_service: ConfigService) -> None:
         """Initialize PlaylistImportService.
 
         Args:
             db: ArangoDB database instance
-            cfg: Service configuration with Spotify credentials
+            config_service: Live configuration provider (for Spotify credentials)
         """
         self._db = db
-        self._cfg = cfg
+        self._config_service = config_service
 
     def convert_playlist(
         self,
@@ -84,8 +71,8 @@ class PlaylistImportService:
             self._db,
             playlist_url,
             library_id=library_id,
-            spotify_client_id=self._cfg.spotify_client_id,
-            spotify_client_secret=self._cfg.spotify_client_secret,
+            spotify_client_id=self._config_service.get("spotify_client_id"),
+            spotify_client_secret=self._config_service.get("spotify_client_secret"),
         )
 
     def has_spotify_credentials(self) -> bool:
@@ -94,12 +81,11 @@ class PlaylistImportService:
         Returns:
             True if both client_id and client_secret are set
         """
-        return bool(self._cfg.spotify_client_id and self._cfg.spotify_client_secret)
+        return bool(self._config_service.get("spotify_client_id") and self._config_service.get("spotify_client_secret"))
 
 
 __all__ = [
     "PlaylistConversionError",
     "PlaylistConversionResult",
-    "PlaylistImportConfig",
     "PlaylistImportService",
 ]

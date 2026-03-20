@@ -23,10 +23,10 @@ def validate_library_tags_workflow(
 ) -> dict[str, Any]:
     """Validate per-file completeness of nom:* rels for all discovered heads.
 
-    A file marked tagged is considered *complete* only if it has at least one
-    tag edge for every discovered head (model_key + label) under the namespace.
-    Missing any head rel marks the file incomplete. Auto-repair marks incomplete
-    files ``needs_tagging=true`` to trigger full reprocessing on the next scan.
+    A file with an ``ml_tagged`` edge is considered *complete* only if it has
+    at least one tag edge for every discovered head (model_key + label) under
+    the namespace.  Missing any head rel marks the file incomplete.  Auto-repair
+    removes the ``ml_tagged`` edge so the file is rediscovered for tagging.
     """
     heads = discover_heads(models_dir, db)
     expected_heads: list[dict[str, Any]] = []
@@ -57,52 +57,12 @@ def validate_library_tags_workflow(
         }
 
     namespace_prefix = f"{namespace}:"
-    filter_library_clause = ""
-    bind_vars: dict[str, Any] = {
-        "namespace_prefix": namespace_prefix,
-        "expected_heads": expected_heads,
-    }
-    if library_id:
-        filter_library_clause = "FILTER file.library_id == @library_id"
-        bind_vars["library_id"] = library_id
 
-    query = f"""
-    LET expected = @expected_heads
-    FOR file IN library_files
-      FILTER file.tagged == true
-      FILTER file.is_valid == true
-      {filter_library_clause}
-      LET matched_heads = UNIQUE(
-        FOR edge IN song_has_tags
-          FILTER edge._from == file._id
-          LET tag = DOCUMENT(edge._to)
-          FILTER tag != null
-          FILTER STARTS_WITH(tag.rel, @namespace_prefix)
-          LET rel_without_prefix = SUBSTRING(tag.rel, 4)
-          LET first_underscore = FIND_FIRST(rel_without_prefix, "_")
-          LET label = first_underscore >= 0 ? SUBSTRING(rel_without_prefix, 0, first_underscore) : rel_without_prefix
-          FOR exp IN expected
-            FILTER label IN exp.labels
-            FILTER CONTAINS(rel_without_prefix, exp.model_key_for_tag)
-            RETURN exp.head_key
-      )
-      LET missing_heads = (
-        FOR exp IN expected
-          FILTER exp.head_key NOT IN matched_heads
-          RETURN exp.head_key
-      )
-      RETURN {{
-        file_id: file._id,
-        file_key: file._key,
-        library_id: file.library_id,
-        matched_count: LENGTH(matched_heads),
-        missing_count: LENGTH(missing_heads),
-        missing_heads: missing_heads
-      }}
-    """
-
-    cursor = db.db.aql.execute(query, bind_vars=bind_vars)
-    results = list(cursor)
+    results = db.file_states.get_files_with_incomplete_tags(
+        expected_heads=expected_heads,
+        namespace_prefix=namespace_prefix,
+        library_id=library_id,
+    )
 
     incomplete = [r for r in results if r["missing_count"] > 0]
     missing_counter: Counter[str] = Counter()
@@ -112,19 +72,8 @@ def validate_library_tags_workflow(
 
     repaired = 0
     if auto_repair and incomplete:
-        repair_query = """
-        FOR file_id IN @file_ids
-          UPDATE PARSE_IDENTIFIER(file_id).key WITH {
-            tagged: false,
-            needs_tagging: true,
-            tagged_version: null,
-            last_tagged_at: null
-          } IN library_files
-        """
-        db.db.aql.execute(
-            repair_query,
-            bind_vars={"file_ids": [row["file_id"] for row in incomplete]},
-        )
+        file_ids = [row["file_id"] for row in incomplete]
+        db.file_states.clear_ml_tagged_batch(file_ids)
         repaired = len(incomplete)
 
     return {

@@ -29,7 +29,7 @@ from nomarr.services.domain.analytics_svc import AnalyticsService
 from nomarr.services.domain.calibration_svc import CalibrationService
 from nomarr.services.domain.library_svc import LibraryService, LibraryServiceConfig
 from nomarr.services.domain.navidrome_svc import NavidromeService
-from nomarr.services.domain.playlist_import_svc import PlaylistImportConfig, PlaylistImportService
+from nomarr.services.domain.playlist_import_svc import PlaylistImportService
 from nomarr.services.domain.tagging_svc import TaggingService, TaggingServiceConfig
 from nomarr.services.infrastructure.config_svc import ConfigService
 from nomarr.services.infrastructure.health_monitor_svc import HealthMonitorService
@@ -88,7 +88,6 @@ class Application:
         """
         validate_environment()
         config_service = ConfigService()
-        self._config = config_service.get_config().config
         from nomarr.services.infrastructure.config_svc import (
             INTERNAL_HOST,
             INTERNAL_LIBRARY_SCAN_POLL_INTERVAL,
@@ -99,13 +98,13 @@ class Application:
             INTERNAL_WORKER_ENABLED,
         )
 
-        self.db_path: str = str(self._config["db_path"])
-        self.library_root: str | None = self._config.get("library_root")
-        self.models_dir: str = str(self._config.get("models_dir", "/app/models"))
-        self.calibrate_heads: bool = bool(self._config.get("calibrate_heads", False))
-        self.library_auto_tag: bool = bool(self._config.get("library_auto_tag", False))
-        self.library_ignore_patterns: str = str(self._config.get("library_ignore_patterns", ""))
-        self.admin_password_config: str | None = self._config.get("admin_password")
+        # Static snapshots — infrastructure values that cannot change at runtime
+        self.db_path: str = str(config_service.get("db_path"))
+        self.library_root: str | None = config_service.get("library_root")
+        self.models_dir: str = str(config_service.get("models_dir", "/app/models"))
+        self.library_auto_tag: bool = bool(config_service.get("library_auto_tag", False))
+        self.library_ignore_patterns: str = str(config_service.get("library_ignore_patterns", ""))
+        self.admin_password_config: str | None = config_service.get("admin_password")
         self.api_host: str = INTERNAL_HOST
         self.api_port: int = INTERNAL_PORT
         self.worker_enabled_default: bool = INTERNAL_WORKER_ENABLED
@@ -269,19 +268,13 @@ class Application:
 
         navidrome_cfg = NavidromeConfig(
             namespace=self.namespace,
-            api_url=self._config.get("navidrome_api_url"),
-            api_user=self._config.get("navidrome_api_user"),
-            api_password=self._config.get("navidrome_api_password"),
-            path_prefix_map=self._parse_path_prefix_map(self._config.get("navidrome_path_prefix_map", "")),
         )
-        navidrome_service = NavidromeService(db=self.db, cfg=navidrome_cfg)
+        navidrome_service = NavidromeService(db=self.db, cfg=navidrome_cfg, config_service=self._config_service)
         self.register_service("navidrome", navidrome_service)
         logger.debug("[Application] Initializing PlaylistImportService...")
-        playlist_import_cfg = PlaylistImportConfig(
-            spotify_client_id=self._config.get("spotify_client_id"),
-            spotify_client_secret=self._config.get("spotify_client_secret"),
+        playlist_import_service = PlaylistImportService(
+            db=self.db, config_service=self._config_service
         )
-        playlist_import_service = PlaylistImportService(db=self.db, cfg=playlist_import_cfg)
         self.register_service("playlist_import", playlist_import_service)
         from nomarr.services.infrastructure.info_svc import InfoConfig, InfoService
 
@@ -345,8 +338,8 @@ class Application:
                 models_dir=self.models_dir,
                 namespace=self.namespace,
                 version_tag_key=self.version_tag_key,
-                calibrate_heads=self.calibrate_heads,
             ),
+            config_service=self._config_service,
             library_service=self.services.get("library"),
         )
         self.register_service("tagging", tagging_service)
@@ -430,26 +423,6 @@ class Application:
         self._running = False
         logger.info("[Application] Shutdown complete - all workers stopped")
 
-    @staticmethod
-    def _parse_path_prefix_map(raw: str | None) -> list[tuple[str, str]]:
-        """Parse comma-separated 'from:to' prefix pairs.
-
-        Format: 'navidrome_prefix:nomarr_prefix,navidrome_prefix2:nomarr_prefix2'
-        Example: '/music:/media/library,/podcasts:/media/pods'
-
-        Returns:
-            List of (navidrome_prefix, nomarr_prefix) tuples.
-        """
-        if not raw or not raw.strip():
-            return []
-        pairs: list[tuple[str, str]] = []
-        for entry in raw.split(","):
-            entry = entry.strip()
-            if ":" not in entry:
-                continue
-            parts = entry.split(":", 1)
-            pairs.append((parts[0].strip(), parts[1].strip()))
-        return pairs
 
     def is_running(self) -> bool:
         """Check if application is running."""

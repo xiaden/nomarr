@@ -17,11 +17,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_key
 from nomarr.interfaces.api.types.admin_types import WorkerOperationResponse
-from nomarr.interfaces.api.web.dependencies import get_calibration_service, get_workers_coordinator
+from nomarr.interfaces.api.web.dependencies import get_calibration_service, get_config_service, get_workers_coordinator
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from nomarr.services.domain.calibration_svc import CalibrationService
+    from nomarr.services.infrastructure.config_svc import ConfigService
     from nomarr.services.infrastructure.worker_system_svc import WorkerSystemService
 router = APIRouter(tags=["admin"], prefix="/v1/admin")
 
@@ -45,7 +46,10 @@ async def admin_resume_worker(
 
 
 @router.post("/calibration/run", dependencies=[Depends(verify_key)])
-async def admin_run_calibration(calibration_service: Annotated[CalibrationService, Depends(get_calibration_service)]):
+async def admin_run_calibration(
+    calibration_service: Annotated[CalibrationService, Depends(get_calibration_service)],
+    config_service: Annotated[ConfigService, Depends(get_config_service)],
+):
     """Generate calibrations using histogram-based approach.
 
     Analyzes library tags using DB histogram queries (memory-bounded).
@@ -56,7 +60,7 @@ async def admin_run_calibration(calibration_service: Annotated[CalibrationServic
 
     """
     try:
-        if not calibration_service.cfg.calibrate_heads:
+        if not config_service.get("calibrate_heads", False):
             raise HTTPException(
                 status_code=403,
                 detail="Calibration generation disabled. Set calibrate_heads: true in config to enable.",
