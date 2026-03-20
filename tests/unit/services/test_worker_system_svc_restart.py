@@ -36,11 +36,9 @@ def worker_service(mock_db, mock_health_monitor):
         min_duration_s=30,
         allow_short=False,
         batch_size=11,
-        overwrite_tags=False,
         namespace="nom",
         version_tag_key="nom_version",
         tagger_version="test",
-        calibrate_heads=False,
     )
     service = WorkerSystemService(
         db=mock_db,
