@@ -244,3 +244,37 @@ export interface PingResponse {
 export async function pingNavidrome(): Promise<PingResponse> {
   return post<PingResponse>("/api/web/navidrome/ping");
 }
+
+
+// ── Navidrome Status ──
+
+export interface NavidromeStatusResponse {
+  configured: boolean;
+}
+
+export async function getNavidromeStatus(): Promise<NavidromeStatusResponse> {
+  return get<NavidromeStatusResponse>("/api/web/navidrome/status");
+}
+
+
+// ── Push Static Playlist (Vector Search → Navidrome) ──
+
+export interface PushStaticPlaylistResponse {
+  playlist_name: string;
+  playlist_id: string;
+  track_count: number;
+  unresolved_count: number;
+}
+
+/**
+ * Push a static playlist to Navidrome by song IDs.
+ */
+export async function pushStaticPlaylist(
+  fileIds: string[],
+  playlistName = "Vector Search Playlist",
+): Promise<PushStaticPlaylistResponse> {
+  return post("/api/web/navidrome/playlists/push", {
+    file_ids: fileIds,
+    playlist_name: playlistName,
+  });
+}

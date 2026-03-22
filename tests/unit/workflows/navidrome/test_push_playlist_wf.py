@@ -11,9 +11,9 @@ from nomarr.workflows.navidrome.push_playlist_wf import push_playlist
 
 
 def _make_db(id_map: dict[str, str]) -> MagicMock:
-    """Create a mock Database with navidrome_song_map.bulk_lookup_by_file_ids."""
+    """Create a mock Database with navidrome_tracks.bulk_resolve_files_to_nd."""
     db = MagicMock()
-    db.navidrome_song_map.bulk_lookup_by_file_ids.return_value = id_map
+    db.navidrome_tracks.bulk_resolve_files_to_nd.return_value = id_map
     return db
 
 

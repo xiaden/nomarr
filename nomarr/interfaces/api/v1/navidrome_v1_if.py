@@ -10,7 +10,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from nomarr.interfaces.api.auth import verify_key
@@ -93,9 +93,9 @@ async def navidrome_similar_tracks(
 async def navidrome_sync_songs(
     svc: Annotated[NavidromeService, Depends(get_navidrome_service)],
 ) -> SyncSongsResponse:
-    """Trigger a full Navidrome song map sync."""
+    """Trigger a full Navidrome song sync to graph collections."""
     try:
-        result = await asyncio.to_thread(svc.sync_song_map)
+        result = await asyncio.to_thread(svc.sync_navidrome)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -103,5 +103,109 @@ async def navidrome_sync_songs(
         total_songs=result["total_songs"],
         resolved=result["resolved"],
         unresolved=result["unresolved"],
+        tracks_upserted=result["tracks_upserted"],
+        play_edges_upserted=result["play_edges_upserted"],
+        orphans_removed=result["orphans_removed"],
         duration_ms=result["duration_ms"],
+    )
+
+
+# ------------------------------------------------------------------
+# Scrobble models
+# ------------------------------------------------------------------
+
+
+class ScrobbleTrack(BaseModel):
+    """Track identification from a scrobble event."""
+
+    id: str
+    title: str = ""
+    duration: float = 0.0
+
+
+class ScrobbleRequest(BaseModel):
+    """Scrobble request body (Navidrome Scrobbler plugin format).
+
+    ``timestamp`` is epoch seconds (Navidrome convention).
+    """
+
+    username: str
+    track: ScrobbleTrack
+    timestamp: int
+
+
+@router.post("/scrobble", dependencies=[Depends(verify_key)], status_code=204)
+async def navidrome_scrobble(
+    body: ScrobbleRequest,
+    svc: Annotated[NavidromeService, Depends(get_navidrome_service)],
+) -> Response:
+    """Ingest a real-time scrobble event from Navidrome."""
+    timestamp_ms = body.timestamp * 1000
+    await asyncio.to_thread(
+        svc.ingest_scrobble,
+        user_id=body.username,
+        nd_id=body.track.id,
+        timestamp_ms=timestamp_ms,
+    )
+    return Response(status_code=204)
+
+
+# ------------------------------------------------------------------
+# Playlist generation models
+# ------------------------------------------------------------------
+
+
+class GeneratePlaylistsRequest(BaseModel):
+    """Request body for personal playlist generation."""
+
+    user_id: str
+    max_songs: int | None = None
+    enabled_types: list[str] | None = None
+
+
+class PlaylistResultResponse(BaseModel):
+    """A single generated playlist in the response."""
+
+    playlist_type: str
+    playlist_name: str
+    track_nd_ids: list[str]
+    track_count: int
+
+
+class GeneratePlaylistsResponse(BaseModel):
+    """Response for personal playlist generation."""
+
+    playlists: list[PlaylistResultResponse]
+
+
+# ------------------------------------------------------------------
+# Playlist generation endpoint
+# ------------------------------------------------------------------
+
+
+@router.post("/generate-playlists", dependencies=[Depends(verify_key)])
+async def navidrome_generate_playlists(
+    body: GeneratePlaylistsRequest,
+    svc: Annotated[NavidromeService, Depends(get_navidrome_service)],
+) -> GeneratePlaylistsResponse:
+    """Generate personal playlists for a Navidrome user."""
+    results = await asyncio.to_thread(
+        svc.generate_playlists,
+        user_id=body.user_id,
+    )
+
+    # Resolve internal file_ids to Navidrome track IDs (external concern).
+    all_file_ids = list({fid for r in results for fid in r["file_ids"]})
+    nd_map = await asyncio.to_thread(svc.resolve_files_to_nd, all_file_ids)
+
+    return GeneratePlaylistsResponse(
+        playlists=[
+            PlaylistResultResponse(
+                playlist_type=r["playlist_type"],
+                playlist_name=r["playlist_name"],
+                track_nd_ids=[nd_map[fid] for fid in r["file_ids"] if fid in nd_map],
+                track_count=len([fid for fid in r["file_ids"] if fid in nd_map]),
+            )
+            for r in results
+        ],
     )

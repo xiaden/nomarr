@@ -10,6 +10,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, TypedDict
 
+from nomarr.helpers.vector_params_helper import compute_nlists, compute_nprobe
+
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
@@ -31,6 +33,9 @@ def find_similar_tracks(
     count: int,
     backbone_id: str,
     db: Database,
+    library_key: str,
+    vector_group_size: int = 15,
+    vector_search_thoroughness: int = 10,
 ) -> list[SimilarTrackResult]:
     """Find tracks similar to a Navidrome seed track.
 
@@ -47,6 +52,9 @@ def find_similar_tracks(
         count: Maximum number of similar tracks to return.
         backbone_id: Vector backbone identifier (e.g., "effnet-discogs").
         db: Database instance for persistence access.
+        library_key: ArangoDB ``_key`` of the library document.
+        vector_group_size: Songs per neighbourhood for nLists calculation.
+        vector_search_thoroughness: Percentage of neighbourhoods to probe (1-100).
 
     Returns:
         List of similar tracks with Navidrome IDs and metadata,
@@ -57,15 +65,15 @@ def find_similar_tracks(
 
     """
     # 1. Resolve seed Navidrome ID to Nomarr file_id
-    seed_file_id = db.navidrome_song_map.lookup_by_nd_id(seed_nd_id)
+    seed_file_id = db.navidrome_tracks.resolve_nd_to_file(seed_nd_id)
     if seed_file_id is None:
-        msg = f"Navidrome song ID '{seed_nd_id}' not found in song map. Run sync first."
+        msg = f"Navidrome song ID '{seed_nd_id}' not found in track map. Run sync first."
         raise ValueError(msg)
 
     logger.debug("Seed ND ID %s resolved to file_id %s", seed_nd_id, seed_file_id)
 
     # 2. Get seed vector from cold collection
-    cold_ops = db.get_vectors_track_cold(backbone_id)
+    cold_ops = db.get_vectors_track_cold(backbone_id, library_key)
     seed_doc = cold_ops.get_vector(seed_file_id)
 
     if seed_doc is None:
@@ -80,7 +88,10 @@ def find_similar_tracks(
 
     # 3. ANN search on cold collection (over-fetch to compensate for unmapped results)
     fetch_limit = count * 2 + 1  # +1 for potential self-match
-    raw_results = cold_ops.search_similar(seed_vector, fetch_limit)
+    doc_count = cold_ops.count()
+    nlists = compute_nlists(doc_count, vector_group_size)
+    nprobe = compute_nprobe(nlists, vector_search_thoroughness)
+    raw_results = cold_ops.search_similar(seed_vector, fetch_limit, nprobe=nprobe)
 
     # Exclude the seed track itself from results
     results = [r for r in raw_results if r["file_id"] != seed_file_id]
@@ -91,7 +102,7 @@ def find_similar_tracks(
 
     # 4. Resolve result file_ids to Navidrome IDs
     result_file_ids = [r["file_id"] for r in results]
-    file_id_to_nd_id = db.navidrome_song_map.bulk_lookup_by_file_ids(result_file_ids)
+    file_id_to_nd_id = db.navidrome_tracks.bulk_resolve_files_to_nd(result_file_ids)
 
     # Filter to only results that have a Navidrome mapping
     mapped_results = [

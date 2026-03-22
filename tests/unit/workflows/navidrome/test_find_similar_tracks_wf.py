@@ -33,17 +33,18 @@ def _make_db(
 
     db = MagicMock()
 
-    # navidrome_song_map
-    db.navidrome_song_map.lookup_by_nd_id.return_value = nd_lookup
+    # navidrome_tracks
+    db.navidrome_tracks.resolve_nd_to_file.return_value = nd_lookup
 
     # cold ops
     cold_ops = MagicMock()
     cold_ops.get_vector.return_value = {"vector_n": seed_vector, "file_id": nd_lookup} if nd_lookup else None
     cold_ops.search_similar.return_value = ann_results
+    cold_ops.count.return_value = 300  # reasonable default for nprobe calculation
     db.get_vectors_track_cold.return_value = cold_ops
 
     # bulk ND lookup
-    db.navidrome_song_map.bulk_lookup_by_file_ids.return_value = nd_bulk_map
+    db.navidrome_tracks.bulk_resolve_files_to_nd.return_value = nd_bulk_map
 
     # library files metadata
     db.library_files.get_files_by_ids_with_tags.return_value = file_docs
@@ -80,7 +81,7 @@ class TestFindSimilarTracksHappyPath:
             ],
         )
 
-        results = find_similar_tracks("nd-seed", count=10, backbone_id="effnet-discogs", db=db)
+        results = find_similar_tracks("nd-seed", count=10, backbone_id="effnet-discogs", db=db, library_key="test_lib")
 
         assert len(results) == 2
         assert results[0]["nd_id"] == "nd-id-1"
@@ -101,7 +102,7 @@ class TestFindSimilarTracksHappyPath:
             file_docs=[{"_id": "library_files/other", "title": "Other", "artist": "A", "album": "B"}],
         )
 
-        results = find_similar_tracks("nd-seed", count=10, backbone_id="effnet-discogs", db=db)
+        results = find_similar_tracks("nd-seed", count=10, backbone_id="effnet-discogs", db=db, library_key="test_lib")
 
         assert len(results) == 1
         assert results[0]["nd_id"] == "nd-other"
@@ -115,7 +116,7 @@ class TestFindSimilarTracksHappyPath:
 
         db = _make_db(ann_results=ann, nd_bulk_map=nd_map, file_docs=docs)
 
-        results = find_similar_tracks("nd-seed", count=3, backbone_id="effnet-discogs", db=db)
+        results = find_similar_tracks("nd-seed", count=3, backbone_id="effnet-discogs", db=db, library_key="test_lib")
 
         assert len(results) == 3
 
@@ -124,7 +125,7 @@ class TestFindSimilarTracksHappyPath:
         """ANN search limit should be count * 2 + 1."""
         db = _make_db(ann_results=[])
 
-        find_similar_tracks("nd-seed", count=25, backbone_id="effnet-discogs", db=db)
+        find_similar_tracks("nd-seed", count=25, backbone_id="effnet-discogs", db=db, library_key="test_lib")
 
         cold_ops = db.get_vectors_track_cold.return_value
         cold_ops.search_similar.assert_called_once()
@@ -145,8 +146,8 @@ class TestFindSimilarTracksErrors:
         """ValueError when Navidrome ID is not mapped."""
         db = _make_db(nd_lookup=None)
 
-        with pytest.raises(ValueError, match="not found in song map"):
-            find_similar_tracks("unknown-nd-id", count=10, backbone_id="effnet-discogs", db=db)
+        with pytest.raises(ValueError, match="not found in track map"):
+            find_similar_tracks("unknown-nd-id", count=10, backbone_id="effnet-discogs", db=db, library_key="test_lib")
 
     @pytest.mark.unit
     def test_raises_when_no_vector_exists(self) -> None:
@@ -156,7 +157,7 @@ class TestFindSimilarTracksErrors:
         cold_ops.get_vector.return_value = None
 
         with pytest.raises(ValueError, match="No vector embedding found"):
-            find_similar_tracks("nd-seed", count=10, backbone_id="effnet-discogs", db=db)
+            find_similar_tracks("nd-seed", count=10, backbone_id="effnet-discogs", db=db, library_key="test_lib")
 
 
 # ---------------------------------------------------------------------------
@@ -172,7 +173,7 @@ class TestFindSimilarTracksEdgeCases:
         """Returns empty list when ANN search finds nothing."""
         db = _make_db(ann_results=[])
 
-        results = find_similar_tracks("nd-seed", count=10, backbone_id="effnet-discogs", db=db)
+        results = find_similar_tracks("nd-seed", count=10, backbone_id="effnet-discogs", db=db, library_key="test_lib")
 
         assert results == []
 
@@ -188,7 +189,7 @@ class TestFindSimilarTracksEdgeCases:
             file_docs=[{"_id": "library_files/mapped", "title": "Mapped", "artist": "A", "album": "B"}],
         )
 
-        results = find_similar_tracks("nd-seed", count=10, backbone_id="effnet-discogs", db=db)
+        results = find_similar_tracks("nd-seed", count=10, backbone_id="effnet-discogs", db=db, library_key="test_lib")
 
         assert len(results) == 1
         assert results[0]["nd_id"] == "nd-mapped"
@@ -201,7 +202,7 @@ class TestFindSimilarTracksEdgeCases:
             nd_bulk_map={},  # nothing maps
         )
 
-        results = find_similar_tracks("nd-seed", count=10, backbone_id="effnet-discogs", db=db)
+        results = find_similar_tracks("nd-seed", count=10, backbone_id="effnet-discogs", db=db, library_key="test_lib")
 
         assert results == []
 
@@ -214,7 +215,7 @@ class TestFindSimilarTracksEdgeCases:
             file_docs=[{"_id": "library_files/sparse"}],  # no title/artist/album
         )
 
-        results = find_similar_tracks("nd-seed", count=10, backbone_id="effnet-discogs", db=db)
+        results = find_similar_tracks("nd-seed", count=10, backbone_id="effnet-discogs", db=db, library_key="test_lib")
 
         assert len(results) == 1
         assert results[0]["name"] == ""
@@ -226,6 +227,6 @@ class TestFindSimilarTracksEdgeCases:
         """Backbone ID is forwarded to get_vectors_track_cold."""
         db = _make_db(ann_results=[])
 
-        find_similar_tracks("nd-seed", count=5, backbone_id="custom-backbone", db=db)
+        find_similar_tracks("nd-seed", count=5, backbone_id="custom-backbone", db=db, library_key="test_lib")
 
-        db.get_vectors_track_cold.assert_called_once_with("custom-backbone")
+        db.get_vectors_track_cold.assert_called_once_with("custom-backbone", "test_lib")

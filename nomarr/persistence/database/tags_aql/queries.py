@@ -463,3 +463,78 @@ class TagQueriesMixin:
         )
         return [v for v in cursor if isinstance(v, str)]
 
+    def get_distinct_tag_values_for_files(
+        self, file_ids: list[str], rel: str,
+    ) -> list[str]:
+        """Get distinct tag values for a set of files filtered by ``rel``.
+
+        Traverses ``song_has_tags`` edges from each file ID to tag vertices
+        where ``tag.rel == @rel``, returning distinct string values.
+
+        Args:
+            file_ids: Full document IDs (e.g. ``["library_files/abc", ...]``).
+            rel: Tag relationship key (e.g. ``"artist"``, ``"genre"``).
+
+        Returns:
+            Distinct tag values (unordered).
+
+        """
+        if not file_ids:
+            return []
+
+        query = """
+        FOR file_id IN @file_ids
+            FOR edge IN song_has_tags
+                FILTER edge._from == file_id
+                LET tag = DOCUMENT(edge._to)
+                FILTER tag != null AND tag.rel == @rel
+                RETURN DISTINCT tag.value
+        """
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(query, bind_vars=cast("dict[str, Any]", {"file_ids": file_ids, "rel": rel})),
+        )
+        result: list[str] = [v for v in cursor if isinstance(v, str)]
+        return result
+
+    def get_tag_values_grouped_by_file(
+        self, file_ids: list[str], rel: str,
+    ) -> dict[str, set[str]]:
+        """Get tag values per file for a given ``rel``.
+
+        For each file, traverses ``song_has_tags`` edges to tag vertices
+        filtered by ``tag.rel == @rel`` and collects the values.
+
+        Args:
+            file_ids: Full document IDs (e.g. ``["library_files/abc", ...]``).
+            rel: Tag relationship key (e.g. ``"artist"``, ``"genre"``).
+
+        Returns:
+            Mapping of file document ID to set of tag value strings.
+            Files with no matching tags are absent from the result.
+
+        """
+        if not file_ids:
+            return {}
+
+        query = """
+        FOR file_id IN @file_ids
+            LET vals = (
+                FOR edge IN song_has_tags
+                    FILTER edge._from == file_id
+                    LET tag = DOCUMENT(edge._to)
+                    FILTER tag != null AND tag.rel == @rel
+                    RETURN tag.value
+            )
+            FILTER LENGTH(vals) > 0
+            RETURN { file_id: file_id, values: vals }
+        """
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(query, bind_vars=cast("dict[str, Any]", {"file_ids": file_ids, "rel": rel})),
+        )
+        result: dict[str, set[str]] = {}
+        for row in cursor:
+            result[row["file_id"]] = {v for v in row["values"] if isinstance(v, str)}
+        return result
+

@@ -15,11 +15,13 @@ from nomarr.interfaces.api.types.navidrome_types import (
     GenerateTemplateFilesResponse,
     GetTemplateSummaryResponse,
     NavidromeConfigResponse,
+    NavidromeStatusResponse,
     PingResponse,
     PlaylistGenerateRequest,
     PlaylistPreviewRequest,
     PlaylistPreviewResponse,
     PreviewTagStatsResponse,
+    PushStaticPlaylistResponse,
     StaticPlaylistRequest,
     StaticPlaylistResponse,
     SyncSongsResponse,
@@ -134,24 +136,54 @@ async def web_navidrome_static_playlist(request: StaticPlaylistRequest, navidrom
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to generate static playlist")) from e
 
 
+@router.post("/playlists/push", dependencies=[Depends(verify_session)], response_model=PushStaticPlaylistResponse)
+async def web_navidrome_push_playlist(
+    request: StaticPlaylistRequest,
+    navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
+) -> PushStaticPlaylistResponse:
+    """Push a static playlist to Navidrome via Subsonic API.
+
+    Creates or replaces a Navidrome playlist using song IDs resolved from
+    the supplied Nomarr file IDs.  Returns the Navidrome playlist ID and
+    resolution details.
+    """
+    try:
+        result_dto = await asyncio.to_thread(
+            navidrome_service.push_static_playlist,
+            file_ids=[decode_id(fid) for fid in request.file_ids],
+            playlist_name=request.playlist_name,
+        )
+        return PushStaticPlaylistResponse.from_dto(result_dto)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("[Web API] Error pushing static playlist to Navidrome")
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to push playlist")) from e
+
+
 
 @router.post("/sync-songs", dependencies=[Depends(verify_session)])
 async def web_navidrome_sync_songs(
     navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
 ) -> SyncSongsResponse:
-    """Trigger a full Navidrome song map sync."""
+    """Trigger a full Navidrome song sync to graph collections."""
     try:
-        result = await asyncio.to_thread(navidrome_service.sync_song_map)
+        result = await asyncio.to_thread(navidrome_service.sync_navidrome)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as e:
-        logger.exception("[Web API] Error syncing Navidrome song map")
-        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to sync song map")) from e
+        logger.exception("[Web API] Error syncing Navidrome songs")
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to sync songs")) from e
 
     return SyncSongsResponse(
         total_songs=result["total_songs"],
         resolved=result["resolved"],
         unresolved=result["unresolved"],
+        tracks_upserted=result["tracks_upserted"],
+        play_edges_upserted=result["play_edges_upserted"],
+        orphans_removed=result["orphans_removed"],
         duration_ms=result["duration_ms"],
     )
 
@@ -164,3 +196,12 @@ async def navidrome_ping(
     """Test connectivity to the Navidrome server."""
     ok, error = await asyncio.to_thread(navidrome_service.ping)
     return PingResponse(ok=ok, error=error or None)
+
+
+@router.get("/status", response_model=NavidromeStatusResponse)
+async def navidrome_status(
+    navidrome_service: "NavidromeService" = Depends(get_navidrome_service),
+) -> NavidromeStatusResponse:
+    """Check whether Navidrome integration is configured (no connection attempt)."""
+    configured = navidrome_service.is_navidrome_configured()
+    return NavidromeStatusResponse(configured=configured)

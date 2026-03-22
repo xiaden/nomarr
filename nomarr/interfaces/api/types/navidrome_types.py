@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from nomarr.helpers.dto.navidrome_dto import (
         GeneratePlaylistResult,
         GetTemplateSummaryResult,
+        NavidromeStaticPlaylistResult,
         PlaylistPreviewResult,
         PreviewTagStatsResult,
         RuleGroup,
@@ -249,11 +250,14 @@ class StaticPlaylistResponse(BaseModel):
 
 
 class SyncSongsResponse(BaseModel):
-    """Response for Navidrome song map sync."""
+    """Response for Navidrome song sync."""
 
     total_songs: int = Field(..., description="Total songs found in Navidrome")
     resolved: int = Field(..., description="Songs matched to Nomarr library files")
     unresolved: int = Field(..., description="Songs that could not be matched")
+    tracks_upserted: int = Field(..., description="Track vertices upserted")
+    play_edges_upserted: int = Field(..., description="Play count edges upserted")
+    orphans_removed: int = Field(..., description="Orphan tracks removed")
     duration_ms: int = Field(..., description="Sync duration in milliseconds")
 
 
@@ -263,3 +267,28 @@ class PingResponse(BaseModel):
 
     ok: bool
     error: str | None = None
+
+
+class NavidromeStatusResponse(BaseModel):
+    """Response indicating whether Navidrome integration is configured."""
+
+    configured: bool = Field(..., description="True when Navidrome credentials are fully set")
+
+
+class PushStaticPlaylistResponse(BaseModel):
+    """Response after pushing a static playlist to Navidrome."""
+
+    playlist_name: str = Field(..., description="Display name written to Navidrome")
+    playlist_id: str = Field(..., description="Navidrome-assigned playlist ID")
+    track_count: int = Field(..., description="Number of tracks resolved and pushed")
+    unresolved_count: int = Field(..., description="Number of file IDs with no Navidrome mapping")
+
+    @classmethod
+    def from_dto(cls, dto: NavidromeStaticPlaylistResult) -> PushStaticPlaylistResponse:
+        """Convert NavidromeStaticPlaylistResult DTO to Pydantic response."""
+        return cls(
+            playlist_name=dto["playlist_name"],
+            playlist_id=dto["playlist_id"],
+            track_count=len(dto["track_nd_ids"]),
+            unresolved_count=len(dto["unresolved_file_ids"]),
+        )

@@ -40,7 +40,7 @@ def push_playlist(
 
     """
     # 1. Resolve Nomarr file_ids to Navidrome song IDs.
-    id_map = db.navidrome_song_map.bulk_lookup_by_file_ids(file_ids)
+    id_map = db.navidrome_tracks.bulk_resolve_files_to_nd(file_ids)
     resolved_ids = [id_map[fid] for fid in file_ids if fid in id_map]
     unresolved_count = len(file_ids) - len(resolved_ids)
 
