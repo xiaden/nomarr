@@ -455,3 +455,30 @@ class LibraryFilesCrudMixin:
         )
         results = list(cursor)
         return results[0] if results else 0
+
+
+    def get_file_library_key(self, file_id: str) -> str | None:
+        """Return the library ``_key`` for a given file document ID.
+
+        Reads the ``library_id`` field (e.g. ``"libraries/50607"``) and
+        returns the trailing key component (e.g. ``"50607"``).
+
+        Args:
+            file_id: Document ``_id`` (e.g. ``"library_files/12345"``).
+
+        Returns:
+            Library ``_key`` string, or ``None`` if the document is not found.
+
+        """
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(
+                "FOR f IN library_files FILTER f._id == @file_id LIMIT 1 RETURN f.library_id",
+                bind_vars={"file_id": file_id},
+            ),
+        )
+        results = list(cursor)
+        if not results or not results[0]:
+            return None
+        library_id: str = results[0]
+        return library_id.split("/")[-1]

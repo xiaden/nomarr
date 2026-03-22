@@ -369,6 +369,57 @@ class VectorsTrackColdOperations:
         return list(cursor)  # type: ignore[arg-type]
 
     # ------------------------------------------------------------------
+
+    def search_similar_by_genre(
+        self,
+        vector: list[float],
+        genre: str,
+        limit: int,
+        nprobe: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Search for similar vectors filtered to a specific genre using ANN index.
+
+        Like `search_similar`, but restricts results to documents whose ``genres``
+        list contains *genre*.  The vector index must have ``storedValues`` set to
+        ``[{"fields": ["genres"]}]`` so that ArangoDB can apply the filter without
+        fetching the full document from storage.
+
+        Args:
+            vector: Query embedding vector.
+            genre: Genre string to filter on (must appear in doc.genres).
+            limit: Maximum number of results to return.
+            nprobe: Number of centroids to probe during search. Higher values improve
+                recall at the cost of latency. Overrides defaultNProbe from the index.
+                Should be roughly 10% of nLists (e.g. nprobe=20 for nLists=170).
+
+        Returns:
+            List of dicts with keys:
+                - file_id: Library file document ID
+                - score: Cosine similarity (higher = more similar)
+                - vector: The stored embedding vector
+                - All other document fields (_key, model_suite_hash, genres, etc.)
+
+        Raises:
+            ArangoDB error if no vector index exists on collection.
+
+        """
+        cursor = self.db.aql.execute(
+            f"""
+            FOR doc IN {self.collection_name}
+                LET score = APPROX_NEAR_COSINE(doc.vector_n, @query_vector, {{nProbe: {nprobe}}})
+                FILTER @genre IN doc.genres
+                SORT score DESC
+                LIMIT @limit
+                RETURN MERGE(doc, {{ score: score }})
+            """,
+            bind_vars=cast(
+                "dict[str, Any]",
+                {"query_vector": vector, "limit": limit, "genre": genre},
+            ),
+        )
+        return list(cursor)  # type: ignore[arg-type]
+
+    # ------------------------------------------------------------------
     # Maintenance
     # ------------------------------------------------------------------
 

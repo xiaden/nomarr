@@ -5,10 +5,11 @@
 # MINOR: New features, backward compatible
 # PATCH: Bug fixes, backward compatible
 
-__version__ = "0.1.4"
+__version__ = "0.2.0"
 __version_info__ = tuple(int(x) for x in __version__.split("."))
 
 # Version history:
+# 0.2.0 - Migration versioning system rewrite (semver-based runner)
 # 0.1.4 - Frontend improvements and architecture refactoring
 #         Frontend:
 #         - New Browse Files page with search, pagination, and expandable file cards

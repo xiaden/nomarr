@@ -14,11 +14,9 @@ from typing import TYPE_CHECKING
 
 from nomarr.components.ml.vectors.ml_vector_maintenance_comp import (
     build_cold_vector_index,
-    build_genre_partitioned_indexes,
     derive_embed_dim,
     drain_hot_to_cold,
     drop_cold_vector_index,
-    drop_genre_indexes,
     has_vector_index,
     verify_hot_empty,
 )
@@ -134,21 +132,7 @@ def promote_and_rebuild_workflow(
     )
     build_cold_vector_index(db.db, backbone_id, library_key, embed_dim, nlists)
 
-    # Step 7: Drop stale genre sub-collections, then rebuild
-    dropped_genres = drop_genre_indexes(db.db, backbone_id, library_key)
-    logger.info(
-        "[promote & rebuild] Dropped %d stale genre sub-collections",
-        dropped_genres,
-    )
-    genres_created = build_genre_partitioned_indexes(
-        db.db, backbone_id, library_key, embed_dim, nlists
-    )
-    logger.info(
-        "[promote & rebuild] Created %d genre-partitioned indexes",
-        genres_created,
-    )
-
-    # Step 8: Log completion state
+    # Step 7: Log completion state
     hot_count_after = hot_ops.count()  # type: ignore[assignment]  # count() returns int in sync context
     cold_count_after = cold_ops.count()  # type: ignore[assignment]
     index_exists_after = has_vector_index(db.db, backbone_id, library_key)

@@ -7,16 +7,18 @@ from __future__ import annotations
 
 import importlib
 import logging
-import re
+from collections import defaultdict
 from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING
 
+from packaging.version import InvalidVersion, Version
+
+from nomarr.__version__ import __version__
 from nomarr.helpers.time_helper import format_wall_timestamp, internal_ms, now_ms
 
 if TYPE_CHECKING:
-    from nomarr.persistence.arango_client import DatabaseLike
-    from nomarr.persistence.database.migrations_aql import MigrationOperations
+    from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
 
@@ -25,13 +27,14 @@ MIGRATIONS_PACKAGE = "nomarr.migrations"
 MIGRATIONS_DIR = Path(__file__).resolve().parent.parent.parent / "migrations"
 
 # Required attributes in each migration module
-_REQUIRED_ATTRS = ("SCHEMA_VERSION_BEFORE", "SCHEMA_VERSION_AFTER", "DESCRIPTION", "upgrade")
+_REQUIRED_ATTRS = ("MIGRATION_VERSION", "DESCRIPTION", "upgrade")
 
 
 class MigrationError(Exception):
     """Raised when a migration fails during execution."""
 
 
+# TODO: remove MigrationChainError — no callers
 class MigrationChainError(Exception):
     """Raised when the migration version chain is broken."""
 
@@ -56,13 +59,15 @@ def _validate_migration_module(module: ModuleType, filename: str) -> None:
             msg = f"Migration {filename} is missing required attribute: {attr}"
             raise MigrationError(msg)
 
-    if not isinstance(module.SCHEMA_VERSION_BEFORE, int):
-        msg = f"Migration {filename}: SCHEMA_VERSION_BEFORE must be int, got {type(module.SCHEMA_VERSION_BEFORE).__name__}"
+    if not isinstance(module.MIGRATION_VERSION, str):
+        msg = f"Migration {filename}: MIGRATION_VERSION must be str, got {type(module.MIGRATION_VERSION).__name__}"
         raise MigrationError(msg)
 
-    if not isinstance(module.SCHEMA_VERSION_AFTER, int):
-        msg = f"Migration {filename}: SCHEMA_VERSION_AFTER must be int, got {type(module.SCHEMA_VERSION_AFTER).__name__}"
-        raise MigrationError(msg)
+    try:
+        Version(module.MIGRATION_VERSION)
+    except InvalidVersion as exc:
+        msg = f"Migration {filename}: MIGRATION_VERSION {module.MIGRATION_VERSION!r} is not a valid semver string: {exc}"
+        raise MigrationError(msg) from exc
 
     if not isinstance(module.DESCRIPTION, str):
         msg = f"Migration {filename}: DESCRIPTION must be str, got {type(module.DESCRIPTION).__name__}"
@@ -77,8 +82,8 @@ def discover_migrations() -> list[tuple[str, ModuleType]]:
     """Discover and load all migration files from nomarr/migrations/.
 
     Returns:
-        List of (name, module) tuples sorted by filename (lexical order).
-        Name is the filename stem (e.g., "V006_example").
+        List of (name, module) tuples sorted by MIGRATION_VERSION semver order.
+        Name is the filename stem (e.g., "V0.14.0_example").
 
     Raises:
         MigrationError: If any migration module is invalid.
@@ -102,76 +107,63 @@ def discover_migrations() -> list[tuple[str, ModuleType]]:
         _validate_migration_module(module, path.name)
         migrations.append((name, module))
 
+    # Sort by semver order (not lexical filename order)
+    migrations.sort(key=lambda item: Version(item[1].MIGRATION_VERSION))
+
     logger.info("Discovered %d migration(s)", len(migrations))
     return migrations
 
 
-def get_current_schema_version(migrations: list[tuple[str, ModuleType]]) -> int:
-    """Derive the current code schema version from discovered migration files.
-
-    Returns the highest SCHEMA_VERSION_AFTER across all discovered migrations,
-    eliminating the need for a manually maintained SCHEMA_VERSION constant.
+def check_duplicate_versions(migrations: list[tuple[str, ModuleType]]) -> None:
+    """Check for duplicate MIGRATION_VERSION values across discovered migrations.
 
     Args:
         migrations: All discovered migrations (name, module) pairs.
 
-    Returns:
-        Highest schema version number, or 0 if no migrations exist.
+    Raises:
+        MigrationError: If any MIGRATION_VERSION appears more than once,
+            naming the colliding version and conflicting file names.
 
     """
-    if not migrations:
-        return 0
-    return int(max(mod.SCHEMA_VERSION_AFTER for _, mod in migrations))
+    version_to_names: dict[str, list[str]] = defaultdict(list)
+    for name, module in migrations:
+        version_to_names[module.MIGRATION_VERSION].append(name)
 
-
-def get_code_schema_version_from_files() -> int:
-    """Derive the current code schema version by scanning migration filenames only.
-
-    Reads filenames from the migrations directory without importing any module.
-    Convention: ``V{NNN}_<description>.py`` where NNN == SCHEMA_VERSION_AFTER.
-
-    Use this as a cheap pre-check before calling the heavier
-    ``discover_migrations()`` + ``get_current_schema_version()`` path.
-
-    Returns:
-        Highest version number found in filenames, or 0 if no migrations exist.
-
-    """
-    if not MIGRATIONS_DIR.exists():
-        return 0
-    version = 0
-    for path in MIGRATIONS_DIR.glob("V*.py"):
-        m = re.match(r"V(\d+)_", path.stem)
-        if m:
-            version = max(version, int(m.group(1)))
-    return version
+    conflicts = {ver: names for ver, names in version_to_names.items() if len(names) > 1}
+    if conflicts:
+        conflict_lines = ", ".join(
+            f"{ver!r} in [{', '.join(names)}]" for ver, names in sorted(conflicts.items())
+        )
+        msg = f"Duplicate MIGRATION_VERSION detected: {conflict_lines}"
+        raise MigrationError(msg)
 
 
 def get_pending_migrations(
     all_migrations: list[tuple[str, ModuleType]],
-    applied_names: set[str],
-    current_db_version: int,
+    current_db_version: str | None,
 ) -> list[tuple[str, ModuleType]]:
-    """Filter to only migrations that have not been applied and are needed.
-
-    A migration is skipped if its SCHEMA_VERSION_AFTER is already at or below
-    the current database version. This prevents fresh installs from running
-    historical migrations that were already incorporated into the base schema.
+    """Filter to only migrations that have not yet been applied.
 
     Args:
         all_migrations: All discovered migrations (name, module) pairs.
-        applied_names: Set of migration names already applied.
-        current_db_version: Current schema version stored in the database.
+        current_db_version: Current schema version stored in the database,
+            or None if no version has been recorded (fresh database).
 
     Returns:
-        List of (name, module) pairs for pending migrations, in order.
+        List of (name, module) pairs for pending migrations, in semver order.
 
     """
-    pending = [
-        (name, mod)
-        for name, mod in all_migrations
-        if name not in applied_names and current_db_version < mod.SCHEMA_VERSION_AFTER
-    ]
+    if current_db_version is None:
+        # Fresh database — all migrations are pending
+        pending = list(all_migrations)
+    else:
+        current = Version(current_db_version)
+        pending = [
+            (name, mod)
+            for name, mod in all_migrations
+            if Version(mod.MIGRATION_VERSION) > current
+        ]
+
     if pending:
         logger.info(
             "Found %d pending migration(s): %s",
@@ -183,38 +175,7 @@ def get_pending_migrations(
     return pending
 
 
-def validate_version_chain(
-    pending: list[tuple[str, ModuleType]],
-    current_db_version: int,
-) -> None:
-    """Validate that the pending migration version chain is contiguous.
-
-    Args:
-        pending: Pending migrations in execution order.
-        current_db_version: Current schema version in the database.
-
-    Raises:
-        MigrationChainError: If the version chain has gaps.
-
-    """
-    expected_version = current_db_version
-    for name, module in pending:
-        if expected_version != module.SCHEMA_VERSION_BEFORE:
-            msg = (
-                f"Migration version chain broken at {name}: "
-                f"expects version {module.SCHEMA_VERSION_BEFORE} "
-                f"but current version is {expected_version}"
-            )
-            raise MigrationChainError(msg)
-        expected_version = module.SCHEMA_VERSION_AFTER
-
-
-def apply_migration(
-    name: str,
-    module: ModuleType,
-    db: DatabaseLike,
-    migration_ops: MigrationOperations,
-) -> None:
+def apply_migration(name: str, module: ModuleType, db: Database) -> None:
     """Apply a single migration with two-phase recording.
 
     Records the migration as 'in_progress' BEFORE running upgrade(), then
@@ -226,78 +187,103 @@ def apply_migration(
     processed data.
 
     Args:
-        name: Migration identifier.
+        name: Migration identifier (filename stem).
         module: Migration module with upgrade() function.
-        db: ArangoDB database handle.
-        migration_ops: Operations for recording applied migrations.
+        db: Database wrapper (provides .migrations and .set_version).
 
     Raises:
         MigrationError: If the migration's upgrade() function fails.
 
     """
     logger.info(
-        "Applying migration %s: %s (v%d -> v%d)",
+        "Applying migration %s: %s (version %s)",
         name,
         module.DESCRIPTION,
-        module.SCHEMA_VERSION_BEFORE,
-        module.SCHEMA_VERSION_AFTER,
+        module.MIGRATION_VERSION,
     )
 
     started_at = format_wall_timestamp(now_ms(), fmt="%Y-%m-%dT%H:%M:%SZ")
-    migration_ops.record_migration_started(
+    db.migrations.record_migration_started(
         name=name,
-        schema_version_before=module.SCHEMA_VERSION_BEFORE,
-        schema_version_after=module.SCHEMA_VERSION_AFTER,
+        migration_version=module.MIGRATION_VERSION,
         started_at=started_at,
     )
 
     start_time = internal_ms()
     try:
-        module.upgrade(db)
+        module.upgrade(db.db)
     except Exception as exc:
-        msg = f"Migration {name} failed: {exc}"
+        msg = f"Migration {name} (version {module.MIGRATION_VERSION}) failed: {exc}"
         raise MigrationError(msg) from exc
 
     duration_ms = internal_ms().value - start_time.value
     applied_at = format_wall_timestamp(now_ms(), fmt="%Y-%m-%dT%H:%M:%SZ")
 
-    migration_ops.mark_migration_applied(
+    db.migrations.mark_migration_applied(
         name=name,
         duration_ms=duration_ms,
         applied_at=applied_at,
     )
 
+    # Write the new version only after the migration is fully recorded
+    db.set_version(module.MIGRATION_VERSION)
+
     logger.info(
-        "Migration %s completed in %dms",
+        "Migration %s (version %s) completed in %dms",
         name,
+        module.MIGRATION_VERSION,
         duration_ms,
     )
 
 
-def check_schema_version_mismatch(
-    current_db_version: int,
-    code_schema_version: int,
-) -> None:
-    """Check if the database schema is ahead of the running code.
+def run_pending_migrations(db: Database) -> None:
+    """Discover and apply all pending migrations, then verify version compatibility.
 
-    Should be called before running migrations to fail fast on
-    forward-version mismatches.
+    This is the unified public entry point for the migration subsystem.
+    Steps:
+        1. Read current DB version.
+        2. Discover all migration modules.
+        3. Check for duplicate MIGRATION_VERSION values.
+        4. Determine which migrations are pending.
+        5. Apply each pending migration in semver order.
+        6. After all applied, verify DB version is not ahead of the running code.
 
     Args:
-        current_db_version: Current schema version stored in the database.
-        code_schema_version: Schema version expected by the running code.
+        db: Database wrapper used for version reads/writes and migration recording.
 
     Raises:
-        SchemaVersionMismatchError: If database is newer than code.
+        MigrationError: If discovery, validation, or a migration upgrade fails.
+        SchemaVersionMismatchError: If the database version after migrations
+            exceeds the running application version.
 
     """
-    if current_db_version > code_schema_version:
+    current = db.get_version()
+    logger.debug("Current database version: %s", current or "<none>")
+
+    migrations = discover_migrations()
+    check_duplicate_versions(migrations)
+
+    pending = get_pending_migrations(migrations, current)
+    for name, module in pending:
+        apply_migration(name, module, db)
+
+    # After applying all migrations, guard against DB being ahead of the code
+    final_version = db.get_version()
+    if final_version is not None and Version(final_version) > Version(__version__):
         msg = (
-            f"Database schema version ({current_db_version}) is newer than "
-            f"code ({code_schema_version}). Upgrade the application to match "
-            f"the database, or restore the database from backup."
+            f"Database schema version ({final_version}) is newer than "
+            f"application version ({__version__}). "
+            f"Upgrade the application to match the database, or restore the database from backup."
         )
         raise SchemaVersionMismatchError(msg)
 
 
-
+# NOTE: The following functions have been removed as part of the migration-versioning refactor
+# (Part A, Phase 2). prepare_database_wf.py currently imports some of them and will have
+# broken imports until Part B updates that workflow.
+#
+# Deleted:
+#   - get_current_schema_version
+#   - get_code_schema_version_from_files
+#   - validate_version_chain
+#   - check_schema_version_mismatch

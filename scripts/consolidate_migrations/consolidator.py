@@ -247,12 +247,11 @@ def generate_baseline_source(shape: SchemaShape) -> str:
         logger = logging.getLogger(__name__)
 
         # Required metadata
-        SCHEMA_VERSION_BEFORE: int = 0
-        SCHEMA_VERSION_AFTER: int = 1
+        MIGRATION_VERSION: str = "0.0.0"
         DESCRIPTION: str = "Consolidated baseline schema — replaces V004\\u2013V019"
 
 
-        def upgrade(db: DatabaseLike) -> None:  # type: ignore[override]
+        def upgrade(db: DatabaseLike) -> None:
             """Create all schema objects idempotently.
 
             This is the consolidated baseline migration produced by the

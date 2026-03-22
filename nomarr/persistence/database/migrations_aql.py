@@ -33,8 +33,7 @@ class MigrationOperations:
             - _key: migration name (e.g., "V006_example")
             - name: same as _key
             - applied_at: ISO 8601 timestamp
-            - schema_version_before: int
-            - schema_version_after: int
+            - migration_version: semver string (e.g. "0.14.0")
             - duration_ms: int
 
         """
@@ -101,8 +100,7 @@ class MigrationOperations:
         self,
         name: str,
         *,
-        schema_version_before: int,
-        schema_version_after: int,
+        migration_version: str,
         started_at: str,
     ) -> None:
         """Record that a migration has started (pre-upgrade record).
@@ -114,8 +112,7 @@ class MigrationOperations:
 
         Args:
             name: Migration identifier (filename without .py).
-            schema_version_before: Schema version before migration.
-            schema_version_after: Schema version after migration.
+            migration_version: Semver string of the migration (e.g. "0.14.0").
             started_at: ISO 8601 timestamp when execution began.
 
         """
@@ -125,8 +122,7 @@ class MigrationOperations:
                 "name": name,
                 "status": "in_progress",
                 "started_at": started_at,
-                "schema_version_before": schema_version_before,
-                "schema_version_after": schema_version_after,
+                "migration_version": migration_version,
             },
             overwrite=True,
         )
@@ -160,44 +156,6 @@ class MigrationOperations:
         )
         logger.debug("Marked migration %s as applied (%dms)", name, duration_ms)
 
-    def record_migration(
-        self,
-        name: str,
-        *,
-        schema_version_before: int,
-        schema_version_after: int,
-        duration_ms: int,
-        applied_at: str,
-    ) -> None:
-        """Record a successfully applied migration.
-
-        Uses _key = name for automatic duplicate prevention.
-
-        Args:
-            name: Migration identifier (filename without .py).
-            schema_version_before: Schema version before migration.
-            schema_version_after: Schema version after migration.
-            duration_ms: Execution duration in milliseconds.
-            applied_at: ISO 8601 timestamp of application.
-
-        """
-        self.collection.insert(
-            {
-                "_key": name,
-                "name": name,
-                "applied_at": applied_at,
-                "schema_version_before": schema_version_before,
-                "schema_version_after": schema_version_after,
-                "duration_ms": duration_ms,
-            },
-        )
-        logger.info(
-            "Recorded migration %s (v%d -> v%d, %dms)",
-            name,
-            schema_version_before,
-            schema_version_after,
-            duration_ms,
-        )
 
     def is_migration_applied(self, name: str) -> bool:
         """Check if a specific migration has been applied.

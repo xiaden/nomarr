@@ -33,7 +33,6 @@ def find_similar_tracks(
     count: int,
     backbone_id: str,
     db: Database,
-    library_key: str,
     vector_group_size: int = 15,
     vector_search_thoroughness: int = 10,
 ) -> list[SimilarTrackResult]:
@@ -50,9 +49,8 @@ def find_similar_tracks(
     Args:
         seed_nd_id: Navidrome mediafile ID of the seed track.
         count: Maximum number of similar tracks to return.
-        backbone_id: Vector backbone identifier (e.g., "effnet-discogs").
+        backbone_id: Vector backbone identifier (e.g., "effnet").
         db: Database instance for persistence access.
-        library_key: ArangoDB ``_key`` of the library document.
         vector_group_size: Songs per neighbourhood for nLists calculation.
         vector_search_thoroughness: Percentage of neighbourhoods to probe (1-100).
 
@@ -71,6 +69,14 @@ def find_similar_tracks(
         raise ValueError(msg)
 
     logger.debug("Seed ND ID %s resolved to file_id %s", seed_nd_id, seed_file_id)
+
+    # Auto-resolve library_key from the file document (library_id field is "libraries/{key}")
+    library_key = db.library_files.get_file_library_key(seed_file_id)
+    if library_key is None:
+        msg = f"Could not resolve library for file '{seed_file_id}'. File may have been deleted."
+        raise ValueError(msg)
+
+    logger.debug("Resolved library_key=%s for file_id %s", library_key, seed_file_id)
 
     # 2. Get seed vector from cold collection
     cold_ops = db.get_vectors_track_cold(backbone_id, library_key)
