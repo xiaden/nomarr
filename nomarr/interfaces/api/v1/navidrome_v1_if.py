@@ -1,6 +1,6 @@
 """Navidrome v1 API endpoints for integration use.
 
-Routes: /v1/navidrome/similar-tracks, /v1/navidrome/sync-songs.
+Routes: /v1/navidrome/similar-tracks, /v1/navidrome/scrobble, /v1/navidrome/generate-playlists.
 Auth: API key (verify_key).
 """
 
@@ -14,7 +14,6 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from nomarr.interfaces.api.auth import verify_key
-from nomarr.interfaces.api.types.navidrome_types import SyncSongsResponse
 from nomarr.interfaces.api.web.dependencies import get_navidrome_service
 
 logger = logging.getLogger(__name__)
@@ -88,26 +87,6 @@ async def navidrome_similar_tracks(
         ],
     )
 
-
-@router.post("/sync-songs", dependencies=[Depends(verify_key)])
-async def navidrome_sync_songs(
-    svc: Annotated[NavidromeService, Depends(get_navidrome_service)],
-) -> SyncSongsResponse:
-    """Trigger a full Navidrome song sync to graph collections."""
-    try:
-        result = await asyncio.to_thread(svc.sync_navidrome)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    return SyncSongsResponse(
-        total_songs=result["total_songs"],
-        resolved=result["resolved"],
-        unresolved=result["unresolved"],
-        tracks_upserted=result["tracks_upserted"],
-        play_edges_upserted=result["play_edges_upserted"],
-        orphans_removed=result["orphans_removed"],
-        duration_ms=result["duration_ms"],
-    )
 
 
 # ------------------------------------------------------------------

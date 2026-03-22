@@ -279,3 +279,22 @@ export async function pushStaticPlaylist(
     playlist_name: playlistName,
   });
 }
+
+// ── Sync Songs ──
+
+export interface SyncSongsResponse {
+  total_songs: number;
+  resolved: number;
+  unresolved: number;
+  tracks_upserted: number;
+  play_edges_upserted: number;
+  orphans_removed: number;
+  duration_ms: number;
+}
+
+/**
+ * Trigger a full Navidrome song sync to graph collections.
+ */
+export async function syncNavidromeSongs(): Promise<SyncSongsResponse> {
+  return post<SyncSongsResponse>("/api/web/navidrome/sync-songs");
+}
