@@ -1,4 +1,4 @@
-﻿// Package main implements the Nomarr plugin for Navidrome.
+// Package main implements the Nomarr plugin for Navidrome.
 //
 // This plugin bridges Navidrome to Nomarr's ML-powered APIs:
 //   - metadata.SimilarSongsByTrackProvider — Instant Mix via vector ANN search
@@ -223,6 +223,7 @@ type userConfig struct {
 	EnabledTypes []string `json:"enabled_types,omitempty"`
 	MaxSongs     *int     `json:"max_songs,omitempty"`
 	MinSongs     *int     `json:"min_songs,omitempty"`
+	MaxGenrePlaylists *int     `json:"max_genre_playlists,omitempty"`
 }
 
 // generatePlaylistsRequest is the JSON body sent to Nomarr's generate-playlists endpoint.
@@ -231,6 +232,7 @@ type generatePlaylistsRequest struct {
 	EnabledTypes []string `json:"enabled_types,omitempty"`
 	MaxSongs     *int     `json:"max_songs,omitempty"`
 	MinSongs     *int     `json:"min_songs,omitempty"`
+	MaxGenrePlaylists *int     `json:"max_genre_playlists,omitempty"`
 }
 
 // playlistResult is a single generated playlist in Nomarr's response.
@@ -264,7 +266,7 @@ func (p *nomarrPlugin) GetSimilarSongsByTrack(req metadata.SimilarSongsByTrackRe
 
 	backbone, found := pdk.GetConfig("backbone_id")
 	if !found || backbone == "" {
-		backbone = "effnet-discogs"
+		backbone = "effnet"
 	}
 
 	// Build the request to Nomarr's similarity endpoint.
@@ -466,6 +468,7 @@ func generateAndPushPlaylists() {
 			EnabledTypes: user.EnabledTypes,
 			MaxSongs:     user.MaxSongs,
 			MinSongs:     user.MinSongs,
+			MaxGenrePlaylists: user.MaxGenrePlaylists,
 		}
 
 		bodyBytes, err := json.Marshal(reqBody)

@@ -34,7 +34,7 @@ class SimilarTracksRequest(BaseModel):
 
     song_id: str
     count: int = Field(default=50, ge=1, le=500)
-    backbone_id: str = "effnet-discogs"
+    backbone_id: str = "effnet"
 
 
 class SongResult(BaseModel):
@@ -162,6 +162,7 @@ class GeneratePlaylistsRequest(BaseModel):
     max_songs: int | None = None
     enabled_types: list[str] | None = None
     min_songs: int | None = None
+    max_genre_playlists: int | None = Field(default=None, ge=1, le=25)
 
 
 class PlaylistResultResponse(BaseModel):
@@ -196,6 +197,7 @@ async def navidrome_generate_playlists(
         enabled_types=body.enabled_types,
         max_songs=body.max_songs,
         min_songs=body.min_songs,
+        max_genre_playlists=body.max_genre_playlists,
     )
 
     # Resolve internal file_ids to Navidrome track IDs (external concern).

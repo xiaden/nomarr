@@ -82,7 +82,7 @@ After the plugin is loaded, configure it in Navidrome's admin UI under
 |---------|----------|-------------|
 | **Nomarr API URL** | Yes | Base URL of your Nomarr instance (e.g. `http://nomarr:8356`) |
 | **Nomarr API Key** | Yes | API key for authenticating with Nomarr's v1 API |
-| **ML Backbone** | No | ML backbone model for similarity (default: `effnet-discogs`) |
+| **ML Backbone** | No | ML backbone model for similarity (default: `effnet`) |
 
 ### Generating a Nomarr API Key
 
@@ -101,6 +101,58 @@ When a user triggers Instant Mix on a track in Navidrome:
 
 The plugin uses Navidrome's host HTTP service for network requests, respecting
 the sandbox permissions declared in `manifest.json`.
+
+## Personal Playlists
+
+The plugin can generate personal playlists on a schedule and push them directly
+to Navidrome via the Subsonic `createPlaylist` API. Playlists are built from
+Nomarr's ML audio embeddings and tailored per user.
+
+### Configuration
+
+Enable personal playlists with the **Enable Personal Playlists** toggle and set
+a cron schedule via **Playlist Schedule** (default: `0 3 * * *`, daily at 3 AM).
+
+The **Users (JSON)** field accepts a JSON array of user configurations. Each
+entry maps a Navidrome username to the playlist types you want generated for
+that user:
+
+```json
+[
+  {
+    "username": "alice",
+    "enabled_types": ["familiar", "discovery", "genre"],
+    "max_songs": 30,
+    "max_genre_playlists": 5
+  },
+  {
+    "username": "bob"
+  }
+]
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `username` | string (required) | Navidrome username |
+| `enabled_types` | string[] (optional) | Playlist types to generate. Omit to generate all types. |
+| `max_songs` | int (optional) | Maximum tracks per playlist |
+| `min_songs` | int (optional) | Minimum tracks required to create a playlist |
+| `max_genre_playlists` | int (optional) | Maximum number of genre playlists to generate per user (1–25, default 5) |
+
+### Playlist Types
+
+| `enabled_types` value | Playlist Name | Description |
+|-----------------------|---------------|-------------|
+| `familiar` | Your Favorites | Sonically coherent mix of tracks near your taste centroid |
+| `discovery` | Discover Weekly | Unplayed tracks near your taste centroid |
+| `hidden_gems` | Hidden Gems | Unplayed tracks from unfamiliar artists |
+| `universal` | Your Mix | Diversified blend sampled across your full taste profile |
+| `genre` | Your {Genre} Mix | One playlist per genre in your taste profile (e.g. "Your Rock Mix") |
+
+> **Note:** If `enabled_types` is omitted for a user, all five types are generated.
+
+> **Note:** `genre` playlists are only created for genres that have at least 100
+> similar tracks in the ML index.
 
 ## Troubleshooting
 

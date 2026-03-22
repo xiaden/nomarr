@@ -283,6 +283,15 @@ class NavidromePersonalPlaylistContext(TypedDict):
 
     ``played_file_ids`` uses ``list[str]`` (not ``set``) because TypedDict
     values must be JSON-serialisable; builders convert to ``set`` internally.
+
+    ``played_tracks`` includes the full play data (playcount + last_played) for
+    builders that need to compute per-entity centroids (e.g. genre playlists).
+
+    ``max_genre_playlists`` caps the number of per-genre playlists produced;
+    enforced by the genre builder. Hard server-side cap is 25.
+
+    ``half_life_days`` is the recency decay parameter used for per-genre
+    centroid computation in the genre builder.
     """
 
     backbone_id: str
@@ -290,6 +299,9 @@ class NavidromePersonalPlaylistContext(TypedDict):
     centroid: list[float]
     max_songs: int
     played_file_ids: list[str]
+    played_tracks: list[TrackPlayData]
+    max_genre_playlists: int
+    half_life_days: float
 
 
 class NavidromePersonalPlaylistEntry(TypedDict):

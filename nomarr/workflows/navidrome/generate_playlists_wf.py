@@ -1,7 +1,7 @@
 """Generate personal playlists for a Navidrome user from taste profile.
 
 Produces multiple playlist types (Familiar, Discovery, Hidden Gems,
-Genre, Universal) via vector ANN search on cold collections.
+Universal) via vector ANN search on cold collections.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from nomarr.components.navidrome.taste_profile_comp import compute_taste_profile
 from nomarr.helpers.dto.navidrome_dto import (
     NavidromePersonalPlaylistContext,
     NavidromePersonalPlaylistEntry,
+    TrackPlayData,
 )
 
 if TYPE_CHECKING:
@@ -31,8 +32,8 @@ _BUILDERS = {
     "familiar": build_familiar_playlist,
     "discovery": build_discovery_playlist,
     "hidden_gems": build_hidden_gems_playlist,
-    "genre": build_genre_playlists,
     "universal": build_universal_playlist,
+    "genre": build_genre_playlists,
 }
 
 
@@ -48,6 +49,7 @@ def generate_playlists(
     max_songs: int,
     min_play_count: int,
     min_songs: int,
+    max_genre_playlists: int = 5,
 ) -> list[NavidromePersonalPlaylistEntry]:
     """Generate personal playlists for *user_id*.
 
@@ -69,6 +71,7 @@ def generate_playlists(
         max_songs: Maximum tracks per playlist.
         min_play_count: Minimum plays for a track to count.
         min_songs: Minimum tracks for a playlist to be kept.
+        max_genre_playlists: Maximum genre-specific playlists to generate (hard cap: 25).
 
     Returns:
         List of generated playlists with ``library_files/_id`` track lists.
@@ -89,10 +92,12 @@ def generate_playlists(
 
     # Step 2: Get user's played tracks and filter by min_play_count
     plays = db.navidrome_playcounts.get_top_plays(user_id, top_n)
-    played_file_ids: list[str] = [
-        p["file_id"]
-        for p in plays
+    played_tracks: list[TrackPlayData] = [
+        p for p in plays
         if p["file_id"] is not None and p["playcount"] >= min_play_count
+    ]
+    played_file_ids: list[str] = [
+        p["file_id"] for p in played_tracks if p["file_id"] is not None
     ]
 
     # Step 3: Build context DTO
@@ -102,6 +107,9 @@ def generate_playlists(
         centroid=profile["centroid"],
         max_songs=max_songs,
         played_file_ids=played_file_ids,
+        played_tracks=played_tracks,
+        max_genre_playlists=max_genre_playlists,
+        half_life_days=half_life_days,
     )
 
     # Step 4: Dispatch enabled types to component builders

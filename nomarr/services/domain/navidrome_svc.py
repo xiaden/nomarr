@@ -430,8 +430,7 @@ class NavidromeService:
         self,
         nd_song_id: str,
         count: int,
-        backbone_id: str = "effnet-discogs",
-        library_key: str = "",
+        backbone_id: str = "effnet",
     ) -> list[SimilarTrackResult]:
         """Find tracks similar to a Navidrome song via vector ANN search.
 
@@ -439,7 +438,6 @@ class NavidromeService:
             nd_song_id: Navidrome mediafile ID of the seed track.
             count: Maximum number of similar tracks to return.
             backbone_id: Vector backbone identifier.
-            library_key: ArangoDB ``_key`` of the library document.
 
         Returns:
             List of similar tracks with Navidrome IDs and metadata.
@@ -458,7 +456,6 @@ class NavidromeService:
             count=count,
             backbone_id=backbone_id,
             db=self._db,
-            library_key=library_key,
             vector_group_size=group_size,
             vector_search_thoroughness=thoroughness,
         )
@@ -494,6 +491,7 @@ class NavidromeService:
         enabled_types: list[str] | None = None,
         max_songs: int | None = None,
         min_songs: int | None = None,
+        max_genre_playlists: int | None = None,
     ) -> list[NavidromePersonalPlaylistEntry]:
         """Generate personal playlists for a Navidrome user.
 
@@ -505,6 +503,7 @@ class NavidromeService:
             enabled_types: Override for playlist types. Falls back to config.
             max_songs: Override for max songs per playlist. Falls back to config.
             min_songs: Override for min songs per playlist. Falls back to config.
+            max_genre_playlists: Override for max genre playlists (1-25). Falls back to config.
 
         Returns:
             List of generated playlists with ``library_files/_id`` track lists.
@@ -533,6 +532,12 @@ class NavidromeService:
             if min_songs is not None
             else self._config_service.get("playlist_min_songs", 5)
         )
+        resolved_max_genre_playlists = min(
+            max_genre_playlists
+            if max_genre_playlists is not None
+            else self._config_service.get("playlist_max_genre_playlists", 5),
+            25,
+        )
 
         return generate_playlists(
             db=self._db,
@@ -545,6 +550,7 @@ class NavidromeService:
             max_songs=resolved_max_songs,
             min_play_count=self._config_service.get("playlist_min_play_count", 1),
             min_songs=resolved_min_songs,
+            max_genre_playlists=resolved_max_genre_playlists,
         )
 
     def resolve_files_to_nd(self, file_ids: list[str]) -> dict[str, str]:

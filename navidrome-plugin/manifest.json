@@ -80,6 +80,14 @@
                 "description": "Minimum number of songs required to create a playlist. Default: 5.",
                 "minimum": 1,
                 "default": 5
+              },
+              "max_genre_playlists": {
+                "type": "integer",
+                "title": "Max Genre Playlists",
+                "description": "Maximum number of per-genre playlists to generate. Valid range: 1-25. Default: 5.",
+                "minimum": 1,
+                "maximum": 25,
+                "default": 5
               }
             },
             "required": ["username"]
