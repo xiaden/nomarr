@@ -77,6 +77,18 @@ class KeyManagementService:
         logger.info("[KeyManagement] Generated new API key on first run.")
         return new_key
 
+    def regenerate_api_key(self) -> str:
+        """Generate a new API key, replacing the existing one.
+
+        Returns:
+            The newly generated API key string.
+
+        """
+        new_key = secrets.token_urlsafe(32)
+        self._db.meta.set("api_key", new_key)
+        logger.info("[KeyManagement] API key regenerated.")
+        return new_key
+
     @staticmethod
     def hash_password(password: str) -> str:
         """Hash a password using bcrypt (secure password hashing).

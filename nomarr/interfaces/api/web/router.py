@@ -7,6 +7,7 @@ into a single router that can be included in the main FastAPI app.
 from fastapi import APIRouter
 
 from nomarr.interfaces.api.web import analytics_if as analytics
+from nomarr.interfaces.api.web import api_key_if as api_key
 from nomarr.interfaces.api.web import auth_if as auth
 from nomarr.interfaces.api.web import calibration_if as calibration
 from nomarr.interfaces.api.web import config_if as config
@@ -28,6 +29,7 @@ router = APIRouter(prefix="/api/web")
 # Include all web UI routers
 router.include_router(auth.router)
 router.include_router(analytics.router)
+router.include_router(api_key.router)
 router.include_router(calibration.router)
 router.include_router(config.router)
 router.include_router(fs.router)
