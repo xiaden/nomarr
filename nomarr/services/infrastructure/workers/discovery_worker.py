@@ -351,6 +351,7 @@ class DiscoveryWorker(multiprocessing.Process):
         recovering_until: float | None = None  # Recovery deadline if in recovering state
         idle_consecutive_polls: int = 0  # Count of consecutive idle polls (for promotion trigger)
         promotion_running: threading.Thread | None = None  # Background promotion thread
+        promotion_suppressed: bool = False  # True when last promotion found nothing to do
 
         # Single-thread executor for async DB writes — overlaps I/O with next file's ML
         write_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="db-write")
@@ -397,21 +398,35 @@ class DiscoveryWorker(multiprocessing.Process):
                         _malloc_trim()
 
                     # Spawn idle vector promotion if enough consecutive idle polls
+                    # and a previous run didn't already report "nothing to promote".
+                    # promotion_suppressed resets when new work arrives (new hot vectors).
                     if (
                         idle_consecutive_polls >= IDLE_POLLS_BEFORE_PROMOTION
+                        and not promotion_suppressed
                         and (promotion_running is None or not promotion_running.is_alive())
                     ):
                         from nomarr.workflows.platform.idle_promotion_vectors_wf import (
                             idle_promotion_vectors_workflow as run_idle_promotion,
                         )
 
+                        def _promotion_wrapper(
+                            _db: Database,
+                            _wid: str,
+                            _mdir: str,
+                        ) -> None:
+                            nonlocal promotion_suppressed
+                            promoted = run_idle_promotion(_db, _wid, _mdir)
+                            if promoted == 0:
+                                promotion_suppressed = True
+
                         promotion_running = threading.Thread(
-                            target=run_idle_promotion,
+                            target=_promotion_wrapper,
                             args=(db, self.worker_id, config.models_dir),
                             daemon=True,
                             name=f"VecPromo-{self.worker_id}",
                         )
                         promotion_running.start()
+                        idle_consecutive_polls = 0
                         logger.info("[%s] Spawning idle vector promotion thread", self.worker_id)
 
                     time.sleep(IDLE_SLEEP_S)
@@ -419,6 +434,7 @@ class DiscoveryWorker(multiprocessing.Process):
 
                 logger.debug("[%s] Work found: claimed file %s", self.worker_id, file_id)
                 idle_consecutive_polls = 0
+                promotion_suppressed = False  # New work may produce hot vectors to promote
                 last_work_time = internal_s().value
 
                 # Per-file resource check (GPU_REFACTOR_PLAN.md Section 11)
