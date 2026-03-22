@@ -41,7 +41,7 @@ def _song(nd_id: str, path: str, play_count: int = 0, last_played_ms: int = 0) -
 
 
 _CRAWL_PATH = "nomarr.workflows.navidrome.sync_navidrome_wf.crawl_navidrome_songs"
-_REMAP_PATH = "nomarr.workflows.navidrome.sync_navidrome_wf.remap_path"
+_DETECT_PREFIX = "nomarr.workflows.navidrome.sync_navidrome_wf._detect_prefix"
 
 
 # ---------------------------------------------------------------------------
@@ -61,22 +61,21 @@ class TestSyncNavidrome:
         ]
         db = _make_db(
             path_map={
-                "/nomarr/t1.mp3": {"_id": "library_files/f1"},
-                "/nomarr/t2.mp3": {"_id": "library_files/f2"},
+                "/t1.mp3": {"_id": "library_files/f1"},
+                "/t2.mp3": {"_id": "library_files/f2"},
             },
             existing_track_keys=["nd-1", "nd-2"],
         )
         db.navidrome_tracks.bulk_upsert_tracks.return_value = 2
         db.navidrome_playcounts.bulk_upsert_plays.return_value = 1
 
-        prefix_map = [("/nd", "/nomarr")]
         client = MagicMock()
 
         with (
             patch(_CRAWL_PATH, return_value=songs),
-            patch(_REMAP_PATH, side_effect=lambda p, _m: p.replace("/nd", "/nomarr")),
+            patch(_DETECT_PREFIX, return_value="/nd"),
         ):
-            result = sync_navidrome(client, prefix_map, db, "user-1")
+            result = sync_navidrome(client, db, "user-1")
 
         assert isinstance(result, dict)
         assert result["total_songs"] == 2
@@ -96,7 +95,7 @@ class TestSyncNavidrome:
             _song("nd-2", "/nd/unknown.mp3"),
         ]
         db = _make_db(
-            path_map={"/nomarr/t1.mp3": {"_id": "library_files/f1"}},
+            path_map={"/t1.mp3": {"_id": "library_files/f1"}},
             existing_track_keys=[],
         )
         db.navidrome_tracks.bulk_upsert_tracks.return_value = 2
@@ -104,9 +103,9 @@ class TestSyncNavidrome:
 
         with (
             patch(_CRAWL_PATH, return_value=songs),
-            patch(_REMAP_PATH, side_effect=lambda p, _m: p.replace("/nd", "/nomarr")),
+            patch(_DETECT_PREFIX, return_value="/nd"),
         ):
-            result = sync_navidrome(client, [("/nd", "/nomarr")], db, "user-1")
+            result = sync_navidrome(client, db, "user-1")
 
         assert result["total_songs"] == 2
         assert result["resolved"] == 1
@@ -117,8 +116,11 @@ class TestSyncNavidrome:
         db = _make_db(existing_track_keys=[])
         client = MagicMock()
 
-        with patch(_CRAWL_PATH, return_value=[]):
-            result = sync_navidrome(client, [], db, "user-1")
+        with (
+            patch(_CRAWL_PATH, return_value=[]),
+            patch(_DETECT_PREFIX, return_value=""),
+        ):
+            result = sync_navidrome(client, db, "user-1")
 
         assert result["total_songs"] == 0
         assert result["resolved"] == 0
@@ -130,7 +132,7 @@ class TestSyncNavidrome:
         """Tracks in DB but not in Navidrome are removed."""
         songs = [_song("nd-1", "/nd/t1.mp3")]
         db = _make_db(
-            path_map={"/nomarr/t1.mp3": {"_id": "library_files/f1"}},
+            path_map={"/t1.mp3": {"_id": "library_files/f1"}},
             existing_track_keys=["nd-1", "nd-orphan-1", "nd-orphan-2"],
         )
         db.navidrome_tracks.bulk_upsert_tracks.return_value = 1
@@ -139,9 +141,9 @@ class TestSyncNavidrome:
 
         with (
             patch(_CRAWL_PATH, return_value=songs),
-            patch(_REMAP_PATH, side_effect=lambda p, _m: p.replace("/nd", "/nomarr")),
+            patch(_DETECT_PREFIX, return_value="/nd"),
         ):
-            result = sync_navidrome(client, [("/nd", "/nomarr")], db, "user-1")
+            result = sync_navidrome(client, db, "user-1")
 
         assert result["orphans_removed"] == 2
         db.navidrome_tracks.delete_tracks_cascade.assert_called_once_with(
@@ -152,7 +154,7 @@ class TestSyncNavidrome:
         """delete_tracks_cascade is not called when there are no orphans."""
         songs = [_song("nd-1", "/nd/t1.mp3")]
         db = _make_db(
-            path_map={"/nomarr/t1.mp3": {"_id": "library_files/f1"}},
+            path_map={"/t1.mp3": {"_id": "library_files/f1"}},
             existing_track_keys=["nd-1"],
         )
         db.navidrome_tracks.bulk_upsert_tracks.return_value = 1
@@ -160,9 +162,9 @@ class TestSyncNavidrome:
 
         with (
             patch(_CRAWL_PATH, return_value=songs),
-            patch(_REMAP_PATH, side_effect=lambda p, _m: p.replace("/nd", "/nomarr")),
+            patch(_DETECT_PREFIX, return_value="/nd"),
         ):
-            result = sync_navidrome(client, [("/nd", "/nomarr")], db, "user-1")
+            result = sync_navidrome(client, db, "user-1")
 
         assert result["orphans_removed"] == 0
         db.navidrome_tracks.delete_tracks_cascade.assert_not_called()
@@ -176,9 +178,9 @@ class TestSyncNavidrome:
         ]
         db = _make_db(
             path_map={
-                "/nomarr/t1.mp3": {"_id": "library_files/f1"},
-                "/nomarr/t2.mp3": {"_id": "library_files/f2"},
-                "/nomarr/t3.mp3": {"_id": "library_files/f3"},
+                "/t1.mp3": {"_id": "library_files/f1"},
+                "/t2.mp3": {"_id": "library_files/f2"},
+                "/t3.mp3": {"_id": "library_files/f3"},
             },
             existing_track_keys=[],
         )
@@ -188,9 +190,9 @@ class TestSyncNavidrome:
 
         with (
             patch(_CRAWL_PATH, return_value=songs),
-            patch(_REMAP_PATH, side_effect=lambda p, _m: p.replace("/nd", "/nomarr")),
+            patch(_DETECT_PREFIX, return_value="/nd"),
         ):
-            result = sync_navidrome(client, [("/nd", "/nomarr")], db, "user-1")
+            result = sync_navidrome(client, db, "user-1")
 
         assert result["play_edges_upserted"] == 2
         # bulk_upsert_plays(user_id, plays) — plays is the second positional arg

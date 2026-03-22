@@ -1,4 +1,4 @@
-"""Unit tests for subsonic_crawl_comp: remap_path and crawl_navidrome_songs."""
+"""Unit tests for subsonic_crawl_comp: crawl_navidrome_songs."""
 
 from __future__ import annotations
 
@@ -7,41 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from nomarr.components.navidrome.subsonic_crawl_comp import crawl_navidrome_songs, remap_path
-
-# ---------------------------------------------------------------------------
-# remap_path
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestRemapPath:
-    """Verify path prefix remapping logic."""
-
-    def test_matching_prefix_replaced(self) -> None:
-        prefix_map = [("/music", "/media/library")]
-        result = remap_path("/music/Artist/Album/track.mp3", prefix_map)
-        assert result == "/media/library/Artist/Album/track.mp3"
-
-    def test_first_matching_prefix_wins(self) -> None:
-        prefix_map = [("/music", "/media/lib1"), ("/music/special", "/media/lib2")]
-        result = remap_path("/music/special/track.mp3", prefix_map)
-        assert result == "/media/lib1/special/track.mp3"
-
-    def test_no_match_returns_original(self) -> None:
-        prefix_map = [("/other", "/media/other")]
-        result = remap_path("/music/track.mp3", prefix_map)
-        assert result == "/music/track.mp3"
-
-    def test_empty_prefix_map(self) -> None:
-        result = remap_path("/music/track.mp3", [])
-        assert result == "/music/track.mp3"
-
-    def test_exact_prefix_match(self) -> None:
-        prefix_map = [("/music/track.mp3", "/new/path.mp3")]
-        result = remap_path("/music/track.mp3", prefix_map)
-        assert result == "/new/path.mp3"
-
+from nomarr.components.navidrome.subsonic_crawl_comp import crawl_navidrome_songs
 
 # ---------------------------------------------------------------------------
 # crawl_navidrome_songs
