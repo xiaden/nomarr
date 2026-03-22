@@ -63,10 +63,14 @@ def wait_for_arango(hosts: str, max_attempts: int = 30, delay_s: float = 2.0) ->
 
 
 def ensure_schema(db: DatabaseLike, *, models_dir: str | None = None) -> None:
-    """Ensure all collections, indexes, and graphs exist.
+    """Ensure all collections, indexes, and graphs exist (frozen baseline).
 
-    Idempotent - safe to call on every startup.
-    Creates missing collections/indexes but does NOT alter existing ones.
+    This is a **frozen baseline** representing the schema at the last
+    consolidation point.  It is idempotent and safe to call on every startup,
+    but it must NOT be edited when writing new migrations.
+
+    New schema changes go in a migration file only.  This function is updated
+    only during consolidation (see ``scripts/consolidate_migrations.py``).
 
     Args:
         db: ArangoDB database handle
@@ -113,6 +117,11 @@ def _create_collections(db: DatabaseLike) -> None:
         "ml_model_outputs",
         # File state vertices (edge targets for file_has_state)
         "file_states",
+        # Navidrome graph model — track identity and user play counts
+        "navidrome_tracks",
+        "navidrome_playcounts",
+        # Vector promotion coordination lock (V019)
+        "vector_promotion_locks",
     ]
 
     for collection_name in document_collections:
@@ -126,6 +135,8 @@ def _create_collections(db: DatabaseLike) -> None:
         "song_has_tags",  # song→tag relationships (unified)
         "tag_model_output",  # tag→ml_model_output edges
         "file_has_state",  # library_files→file_states state edges
+        "has_nd_id",  # navidrome_tracks→library_files file resolution
+        "has_plays",  # navidrome_playcounts→navidrome_tracks play data
     ]
 
     for edge_collection_name in edge_collections:
@@ -301,6 +312,21 @@ def _create_indexes(db: DatabaseLike) -> None:
     # (the ms vs s unit mismatch made it non-functional, and explicit owner-driven
     # cleanup via release_worker_promises() replaced it). No TTL index here.
 
+    # ─────────────────────────────────────────────────────────────────────
+    # Navidrome graph model indexes
+    # ─────────────────────────────────────────────────────────────────────
+
+    # has_nd_id: unique edge (one file per track), reverse lookup by _to
+    _ensure_index(db, "has_nd_id", "persistent", ["_from", "_to"], unique=True)
+    _ensure_index(db, "has_nd_id", "persistent", ["_to"])
+
+    # navidrome_playcounts: compound index for fast sorted queries by user
+    _ensure_index(db, "navidrome_playcounts", "persistent", ["userid", "playcount"])
+
+    # has_plays: unique edge per (track, bucket), reverse lookup by _to for INBOUND traversal
+    _ensure_index(db, "has_plays", "persistent", ["_from", "_to"], unique=True)
+    _ensure_index(db, "has_plays", "persistent", ["_to"])
+
 
 def _ensure_index(
     db: DatabaseLike,
@@ -362,6 +388,28 @@ def _create_graphs(db: DatabaseLike) -> None:
                 ],
             )
 
+    # Navidrome graph: play traversal path
+    # tracks →[has_plays]→ playcount buckets; tracks →[has_nd_id]→ library_files
+    nd_graph = "navidrome_graph"
+
+    if not db.has_graph(nd_graph):
+        with contextlib.suppress(GraphCreateError):
+            db.create_graph(
+                name=nd_graph,
+                edge_definitions=[
+                    {
+                        "edge_collection": "has_plays",
+                        "from_vertex_collections": ["navidrome_tracks"],
+                        "to_vertex_collections": ["navidrome_playcounts"],
+                    },
+                    {
+                        "edge_collection": "has_nd_id",
+                        "from_vertex_collections": ["navidrome_tracks"],
+                        "to_vertex_collections": ["library_files"],
+                    },
+                ],
+            )
+
 
 def _validate_no_legacy_calibration(db: DatabaseLike) -> None:
     """Warn if legacy calibration collections exist.
@@ -409,24 +457,45 @@ def _discover_backbone_ids(models_dir: str) -> list[str]:
 
 
 def _create_vectors_track_collections(db: DatabaseLike, models_dir: str) -> None:
-    """Create a ``vectors_track_hot__{backbone}`` collection per discovered backbone.
+    """Create per-library ``vectors_track_hot__{backbone}__{library_key}`` collections.
 
-    Hot collections must never have vector indexes. Use promote_and_rebuild_workflow
-    to create cold indexes after ML processing completes.
+    For each (backbone, library_key) combination discovered from the models
+    directory and the ``libraries`` collection, creates a hot collection with
+    persistent indexes on ``_key`` (unique) and ``file_id``.
+
+    Hot collections must never have vector indexes. Use
+    ``promote_and_rebuild_workflow`` to create cold indexes after ML
+    processing completes.
 
     Idempotent — skips existing collections.
     """
-    for backbone in _discover_backbone_ids(models_dir):
-        collection_name = f"vectors_track_hot__{backbone}"
-        if not db.has_collection(collection_name):
-            with contextlib.suppress(CollectionCreateError):
-                db.create_collection(collection_name)
-                logger.info("[bootstrap] Created collection %s", collection_name)
+    backbones = _discover_backbone_ids(models_dir)
+    if not backbones:
+        return
 
-        # Unique persistent index on _key (enforce uniqueness invariant for convergent drain)
-        _ensure_index(db, collection_name, "persistent", ["_key"], unique=True)
+    # Guard: libraries collection may not exist on first-ever startup
+    if not db.has_collection("libraries"):  # type: ignore[union-attr]
+        logger.info("[bootstrap] No libraries collection — skipping per-library vector collections")
+        return
 
-        # Persistent index on file_id for cascade delete performance
-        _ensure_index(db, collection_name, "persistent", ["file_id"])
+    cursor = db.aql.execute("FOR lib IN libraries RETURN lib._key")  # type: ignore[union-attr]
+    library_keys: list[str] = list(cursor)  # type: ignore[arg-type]
+    if not library_keys:
+        logger.info("[bootstrap] No libraries found — skipping per-library vector collections")
+        return
+
+    for backbone in backbones:
+        for library_key in library_keys:
+            collection_name = f"vectors_track_hot__{backbone}__{library_key}"
+            if not db.has_collection(collection_name):  # type: ignore[union-attr]
+                with contextlib.suppress(CollectionCreateError):
+                    db.create_collection(collection_name)  # type: ignore[union-attr]
+                    logger.info("[bootstrap] Created collection %s", collection_name)
+
+            # Unique persistent index on _key (enforce uniqueness invariant for convergent drain)
+            _ensure_index(db, collection_name, "persistent", ["_key"], unique=True)
+
+            # Persistent index on file_id for cascade delete performance
+            _ensure_index(db, collection_name, "persistent", ["file_id"])
 
 

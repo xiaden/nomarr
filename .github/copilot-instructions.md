@@ -223,6 +223,10 @@ This is required because:
 
 **Threshold for plan creation:** Any task involving 7+ coordinated edits across multiple layers, or where significant upfront research is needed before implementation can begin. Do not create plans for routine multi-step work that fits comfortably in a single session.
 
+**For multi-part features (3+ plans with dependencies):** Use the `feature-planning` skill. It handles decomposition, dependency ordering, contracts ledger, and cross-plan validation. Single plans go through the Plan subagent directly; multi-plan features go through the skill's pipeline.
+
+**To execute multi-part feature plans:** Use the `feature-execution` skill. It orchestrates execution subagents (one phase at a time), dispatches thorough review subagents after each plan, and manages fix cycles when review finds issues. Use after `feature-planning` has produced validated plans.
+
 **Required structure:**
 ```markdown
 # Task: <title>
@@ -294,7 +298,7 @@ Nomarr is **alpha software** with forward-only migrations. Breaking changes are 
 - Rename modules to match actual responsibilities
 - Delete unused code even if recently added
 - Refactor workflows to eliminate temporal coupling
-- Change database schemas (add a migration in `nomarr/migrations/`)
+- Change database schemas (add a migration in `nomarr/migrations/` — do NOT edit `ensure_schema`, it is a frozen baseline)
 
 **Fix the breakage by:**
 - Updating all callers (use `find_referencing_symbols`)

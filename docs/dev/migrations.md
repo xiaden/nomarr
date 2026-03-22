@@ -1,16 +1,25 @@
 # Database Migration System
 
-Nomarr uses a forward-only migration system to handle schema changes that require data transformation.
+Nomarr uses a **baseline + delta** migration system. The baseline schema is created by `ensure_schema()` on every startup, and migrations apply incremental changes on top of it.
 
-## Overview
+## Core Principle: Single Source of Truth
 
-**Key concepts:**
+**`ensure_schema()` is a frozen baseline.** It represents the schema state at the last consolidation point. It is NOT edited when writing new migrations.
 
-- `ensure_schema()` handles DDL (creating collections, indexes, graphs) — idempotent, runs every startup
-- **Migrations** handle DML and destructive DDL (data transformation, field renames, collection drops)
-- Migrations run **after** `ensure_schema()` and **before** service initialization
-- Each migration is a Python module with a standardized interface
-- Migrations are forward-only — no rollback/down functions (alpha policy)
+**Migrations are the ONLY place for schema changes.** When you need a new collection, index, graph, or data transformation, you write a migration file. You do NOT touch `ensure_schema()`.
+
+This eliminates the drift problem: there is exactly one place that defines each schema change.
+
+### When ensure_schema Gets Updated
+
+`ensure_schema()` is updated **only during consolidation** — when all existing migrations are squashed into a new baseline (typically at a major release boundary). The consolidation process:
+
+1. Captures the current DB state (all migrations applied) as the new `ensure_schema()`
+2. Deletes all historical migration files
+3. Resets the schema version
+4. Creates a single baseline verification migration (V001)
+
+Use `scripts/consolidate_migrations.py` for this. It is an alpha-only operation.
 
 ## Architecture
 
@@ -19,8 +28,8 @@ Startup Flow:
   validate_environment()
   → ConfigService
   → Database()
-  → prepare_database_workflow()   # Single workflow call from Application.__init__
-      → ensure_schema()           # Creates missing collections/indexes (idempotent)
+  → prepare_database_workflow()
+      → ensure_schema()           # Creates baseline collections/indexes (frozen)
       → ensure_schema_version()   # Reads/initializes schema version
       → check_version_mismatch()  # Fails fast if DB is ahead of code
       → discover_migrations()     # Finds migration files
@@ -31,17 +40,21 @@ Startup Flow:
   → Application.start()           # Services initialize
 ```
 
+**Fresh install:** `ensure_schema()` creates the baseline, then all migrations run sequentially to bring the schema to the current version.
+
+**Existing install:** `ensure_schema()` is a no-op (everything already exists), then only pending migrations run.
+
 ### Migration Tracking
 
 Applied migrations are tracked in the `applied_migrations` collection:
 
 ```json
 {
-  "_key": "V006_example_migration",
-  "name": "V006_example_migration",
-  "applied_at": "2026-02-15T12:00:00Z",
-  "schema_version_before": 5,
-  "schema_version_after": 6,
+  "_key": "V020_example_migration",
+  "name": "V020_example_migration",
+  "applied_at": "2026-03-22T12:00:00Z",
+  "schema_version_before": 19,
+  "schema_version_after": 20,
   "duration_ms": 142
 }
 ```
@@ -50,8 +63,7 @@ Duplicate prevention is automatic via ArangoDB's `_key` uniqueness constraint.
 
 ### Execution Order
 
-Migrations execute in **lexical sort order** of their filenames. The version prefix
-(`V006_`, `V007_`) guarantees correct ordering.
+Migrations execute in **lexical sort order** of their filenames. The version prefix (`V019_`, `V020_`) guarantees correct ordering.
 
 The runner:
 
@@ -74,6 +86,14 @@ The runner:
 
 ## Writing Migrations
 
+### Workflow
+
+1. **Create a migration file** in `nomarr/migrations/`
+2. **Define the schema change** in the migration's `upgrade()` function
+3. **Do NOT edit `ensure_schema()`** — the migration is the single source of truth
+4. **Run `lint_project_backend`** to verify
+5. Test on a fresh database (ensure_schema + all migrations must produce correct state)
+
 ### File Location
 
 All migration files live in `nomarr/migrations/`.
@@ -89,16 +109,14 @@ Where:
 - `description` is snake_case describing what the migration does
 
 Examples:
-- `V006_add_applied_migrations.py`
-- `V007_normalize_tag_values.py`
-- `V008_drop_legacy_calibration_collections.py`
+- `V020_add_playlist_collection.py`
+- `V021_normalize_tag_values.py`
+- `V022_drop_legacy_collection.py`
 
 ### Required Interface
 
-Every migration module must define:
-
 ```python
-"""V006: Add applied_migrations collection.
+"""V020: Add playlist collection.
 
 Brief description of what this migration does and why.
 """
@@ -108,12 +126,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from nomarr.persistence.types import DatabaseLike
+    from nomarr.persistence.arango_client import DatabaseLike
 
 # Required metadata
-SCHEMA_VERSION_BEFORE: int = 5
-SCHEMA_VERSION_AFTER: int = 6
-DESCRIPTION: str = "Add applied_migrations collection"
+SCHEMA_VERSION_BEFORE: int = 19
+SCHEMA_VERSION_AFTER: int = 20
+DESCRIPTION: str = "Add playlist collection"
 
 
 def upgrade(db: DatabaseLike) -> None:
@@ -126,7 +144,8 @@ def upgrade(db: DatabaseLike) -> None:
     Raises:
         Any exception aborts the migration and prevents startup.
     """
-    # Migration logic here
+    # Create the collection, index, graph, or transform data here.
+    # This is the ONLY place for this schema change.
     ...
 ```
 
@@ -143,7 +162,19 @@ The runner validates the version chain: each migration's `SCHEMA_VERSION_BEFORE`
 match the previous migration's `SCHEMA_VERSION_AFTER` (or the current DB version for
 the first pending migration).
 
-### Migration Best Practices
+### Migration Responsibilities
+
+Since migrations are now the single source of truth for schema changes, they must handle ALL DDL for the change:
+
+- **New collections**: create with `db.create_collection(name, edge=bool)`
+- **New indexes**: create with `collection.add_persistent_index(fields=..., unique=...)`
+- **New graphs**: create with `db.create_graph(name=..., edge_definitions=[...])`
+- **Data transforms**: use AQL for bulk operations
+- **Collection drops**: guard with `db.has_collection()` for idempotency
+
+All operations should be idempotent — guard creation with existence checks and use `contextlib.suppress` for race conditions.
+
+### Best Practices
 
 1. **Make migrations idempotent** where possible. If a migration partially completes
    and fails, it will re-run on next startup. Guard destructive operations:
@@ -175,6 +206,16 @@ the first pending migration).
    before services are initialized. Only import from `nomarr.persistence` and
    `nomarr.helpers` if needed.
 
+## Schema Consolidation
+
+When the migration chain grows long, consolidate:
+
+1. Run `scripts/consolidate_migrations.py` — this captures the current cumulative schema state into `ensure_schema()`, deletes all migration files, and creates a V001 baseline verification migration
+2. Reset existing databases' schema version (the script provides AQL commands)
+3. Future migrations start at V002
+
+This is an alpha-only operation. After 1.0, migration history is preserved.
+
 ## Testing Migrations
 
 ### Requirements
@@ -187,6 +228,7 @@ Every migration must:
    `SCHEMA_VERSION_AFTER` of migration N
 4. **Be idempotent**: Running the migration twice on the same database must not fail
    or corrupt data
+5. **Work on fresh install**: `ensure_schema()` (baseline) + all migrations must produce the correct final state
 
 ### Manual Testing
 
@@ -194,7 +236,7 @@ Use the Docker test environment to validate migrations:
 
 ```powershell
 # Start fresh environment
-cd .docker; docker compose down -v; docker compose up -d
+cd docker; docker compose down -v; docker compose up -d
 
 # Check migration ran in startup logs
 docker compose logs nomarr | Select-String "migration"
@@ -208,35 +250,31 @@ Invoke-RestMethod -Uri "http://127.0.0.1:8529/_db/nomarr/_api/cursor" -Method Po
 
 ## Expected Startup Logs
 
-### Fresh database (first startup with migrations)
+### Fresh database (first startup)
 
 ```
-INFO  [Application] Database schema version: 5, code schema version: 6
-INFO  [nomarr.components.platform.migration_runner_comp] Discovered 1 migration(s)
-INFO  [nomarr.components.platform.migration_runner_comp] Found 1 pending migration(s): V006_add_applied_migrations
-INFO  [nomarr.components.platform.migration_runner_comp] Running 1 pending migration(s) (v5 -> v6)
-INFO  [nomarr.components.platform.migration_runner_comp] Applying migration V006_add_applied_migrations: Add applied_migrations collection for migration tracking (v5 -> v6)
-INFO  [nomarr.migrations.V006_add_applied_migrations] Migration V006: applied_migrations collection verified.
-INFO  [nomarr.persistence.database.migrations_aql] Recorded migration V006_add_applied_migrations (v5 -> v6, 12ms)
-INFO  [nomarr.components.platform.migration_runner_comp] Migration V006_add_applied_migrations completed in 12ms
-INFO  [nomarr.components.platform.migration_runner_comp] All migrations completed. Schema version: 6
-INFO  [Application] Schema version updated: 5 -> 6
+INFO  ensure_schema: Created collections, indexes, graphs (baseline)
+INFO  Database schema version: 0, code schema version: 19
+INFO  Running 16 pending migration(s) (v0 -> v19)
+INFO  Applying migration V004_add_segment_scores_stats...
+...
+INFO  All migrations completed. Schema version: 19
 ```
 
-### Existing database (all migrations already applied)
+### Existing database (all migrations applied)
 
 ```
-INFO  [Application] Database schema version: 6, code schema version: 6
-INFO  [nomarr.components.platform.migration_runner_comp] Discovered 1 migration(s)
-INFO  [nomarr.components.platform.migration_runner_comp] All migrations already applied
+INFO  Database schema version: 19, code schema version: 19
+INFO  All migrations already applied
 ```
 
-### Migration failure
+### New migration pending
 
 ```
-INFO  [Application] Database schema version: 5, code schema version: 6
-INFO  [nomarr.components.platform.migration_runner_comp] Running 1 pending migration(s) (v5 -> v6)
-CRITICAL [Application] Database migration failed: Migration V006_add_applied_migrations failed: <error details>. Application cannot start.
+INFO  Database schema version: 19, code schema version: 20
+INFO  Running 1 pending migration(s) (v19 -> v20)
+INFO  Applying migration V020_add_playlist_collection...
+INFO  All migrations completed. Schema version: 20
 ```
 
 ## Troubleshooting
@@ -256,3 +294,9 @@ missing migration files or incorrect version numbers.
 The app will not start until the migration succeeds. Check logs for the specific error.
 If the migration partially completed, it must handle re-execution (idempotency).
 Fix the migration code and restart.
+
+### Fresh install schema doesn't match migrated install
+
+This means `ensure_schema()` is out of date relative to the migrations. If you're
+post-consolidation, this shouldn't happen. If it does, run the consolidation script
+to re-sync the baseline.

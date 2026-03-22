@@ -114,7 +114,7 @@ nomarr/                     # Python backend package
   components/               # Heavy domain logic
   persistence/              # ArangoDB data access
   helpers/                  # Pure utilities + DTOs
-  migrations/               # DB schema migrations (V004-V014)
+  migrations/               # DB schema migrations (baseline + delta pattern)
   public_html/              # Built frontend assets (committed)
 frontend/                   # React + TypeScript + Vite source
 tests/                      # pytest test suite
