@@ -236,6 +236,7 @@ class StaticPlaylistResponse(BaseModel):
     m3u_content: str = Field(..., description="M3U playlist file content")
     track_count: int = Field(..., description="Number of tracks in the playlist")
     missing_ids: list[str] = Field(default_factory=list, description="File IDs not found in the library")
+    saved_path: str | None = Field(None, description="Server-side path where M3U was saved, null if disabled")
 
     @classmethod
     def from_dto(cls, dto: StaticPlaylistResult) -> StaticPlaylistResponse:
@@ -245,6 +246,7 @@ class StaticPlaylistResponse(BaseModel):
             m3u_content=dto.m3u_content,
             track_count=dto.track_count,
             missing_ids=dto.missing_ids,
+            saved_path=dto.saved_path,
         )
 
 

@@ -220,6 +220,7 @@ export interface StaticPlaylistResponse {
   m3u_content: string;
   track_count: number;
   missing_ids: string[];
+  saved_path: string | null;
 }
 
 /**

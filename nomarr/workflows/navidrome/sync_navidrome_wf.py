@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 from nomarr.components.navidrome.subsonic_crawl_comp import crawl_navidrome_songs, remap_path
 from nomarr.helpers.dto.navidrome_dto import NdSyncResult
-from nomarr.helpers.time_helper import now_ms
+from nomarr.helpers.time_helper import internal_ms
 
 if TYPE_CHECKING:
     from nomarr.components.navidrome.subsonic_client_comp import SubsonicClient
@@ -52,7 +52,7 @@ def sync_navidrome(
         NdSyncResult with sync statistics.
 
     """
-    start_time = now_ms()
+    start_time = internal_ms()
 
     # Step 1: Crawl all albums and collect song data
     all_songs: list[CrawledSong] = crawl_navidrome_songs(client)
@@ -106,7 +106,7 @@ def sync_navidrome(
     if orphans_removed:
         logger.info("sync_navidrome: Removed %d orphan tracks", orphans_removed)
 
-    duration = now_ms().value - start_time.value
+    duration = internal_ms().value - start_time.value
 
     if unresolved_count > 0:
         logger.warning(

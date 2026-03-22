@@ -206,6 +206,7 @@ class StaticPlaylistResult:
     m3u_content: str
     track_count: int
     missing_ids: list[str]
+    saved_path: str | None = None
 
 
 @dataclass(frozen=True)

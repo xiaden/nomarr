@@ -55,6 +55,7 @@ class DynamicConfig:
     navidrome_api_user: str | None = None
     navidrome_api_password: str | None = None
     navidrome_path_prefix_map: str = ""
+    m3u_output_path: str = ""
     vector_group_size: int = 15
     vector_search_thoroughness: int = 10
 
@@ -137,6 +138,11 @@ DYNAMIC_FIELD_META: dict[str, FieldMeta] = {
     "navidrome_path_prefix_map": {
         "label": "Path Prefix Map",
         "description": "Comma-separated from:to pairs for path remapping between Nomarr and Navidrome",
+        "ui_type": "text",
+    },
+    "m3u_output_path": {
+        "label": "M3U Output Path",
+        "description": "Directory path (relative to library root) where M3U playlist files are saved. Leave empty to disable M3U file output.",
         "ui_type": "text",
     },
     "vector_group_size": {

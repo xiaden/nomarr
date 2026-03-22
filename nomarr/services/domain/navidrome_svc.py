@@ -239,8 +239,11 @@ class NavidromeService:
     ) -> StaticPlaylistResult:
         """Generate a static M3U playlist from file IDs.
 
-        Used by vector search to export results as an M3U playlist of
-        specific tracks.  Does **not** push to Navidrome — call
+        Produces M3U content with relative paths (relative to the library
+        root, resolved from the file records).  When the ``m3u_output_path``
+        config key is set, the M3U file is also saved server-side.
+
+        Does **not** push to Navidrome — call
         :meth:`push_static_playlist` explicitly for that.
 
         Args:
@@ -248,13 +251,17 @@ class NavidromeService:
             playlist_name: Name for the playlist header.
 
         Returns:
-            StaticPlaylistResult with M3U content, track count, and missing IDs.
+            StaticPlaylistResult with M3U content, track count, missing IDs,
+            and optionally the server-side save path.
 
         """
+        m3u_output_path: str = self._config_service.get("m3u_output_path", "")
+
         return generate_static_playlist_workflow(
             db=self._db,
             file_ids=file_ids,
             playlist_name=playlist_name,
+            m3u_output_path=m3u_output_path,
         )
 
 
