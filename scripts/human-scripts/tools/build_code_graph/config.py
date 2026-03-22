@@ -9,7 +9,7 @@ from typing import Any
 
 # Resolve script path for config loading
 SCRIPT_PATH = Path(__file__).resolve()
-SCRIPT_DIR = SCRIPT_PATH.parent.parent.parent  # scripts/tools/build_code_graph -> scripts
+SCRIPT_DIR = SCRIPT_PATH.parent.parent.parent  # scripts/human-scripts/tools/build_code_graph -> scripts/human-scripts
 CONFIG_FILE = SCRIPT_DIR / "configs" / "code_graph_config.json"
 
 

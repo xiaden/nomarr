@@ -1,5 +1,5 @@
 {
-  "project_root": "..",
+  "project_root": "../..",
   "search_paths": ["nomarr"],
   "output_path": "outputs/code_graph.json"
 }
