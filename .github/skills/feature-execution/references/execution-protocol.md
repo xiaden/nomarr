@@ -69,13 +69,25 @@ If Phase 1, write: "This is the first phase. No prior work."}
 
 ### What to always include
 
-| Context | Why |
-|---|---|
-| Full plan content | Subagent needs phase boundaries and step descriptions |
-| CONTRACTS.md entries for called methods | Prevents the subagent from guessing signatures |
-| Architecture rules relevant to this plan's layers | Prevents layer violations |
+| Context | Source | Purpose |
+|---|---|---|
+| Target plan | `plans/TASK-{feature}-{letter}-*.md` | Phase boundaries, step descriptions, what NOT to implement yet |
+| Contracts ledger | `plans/dev/{feature}-parts/CONTRACTS.md` | Method signatures to call or create — prevents guessing |
+| Feature parts README | `plans/dev/{feature}-parts/README.md` | Execution rounds, dependency order, scope boundaries |
+| This prompt template | `.github/skills/feature-execution/references/execution-protocol.md` | Reference for constructing the subagent prompt |
+| **Layer instructions — include ALL that apply to this phase:** | | |
+| Interfaces layer | `.github/instructions/interfaces.instructions.md` | Route handlers, auth, Pydantic-only-here rule |
+| Services layer | `.github/instructions/services.instructions.md` | DI wiring, thinness, no business logic |
+| Workflows layer | `.github/instructions/workflows.instructions.md` | Use-case orchestration, one public function per file |
+| Components layer | `.github/instructions/components.instructions.md` | Domain logic, stateless functions, ML isolation |
+| Persistence layer | `.github/instructions/persistence.instructions.md` | AQL queries, db.module.method() access pattern |
+| Helpers layer | `.github/instructions/helpers.instructions.md` | Pure utilities, DTOs, no nomarr imports |
+| Frontend | `.github/instructions/frontend.instructions.md` | React/TS conventions, MUI sx prop, no `any` |
+
+Only include the layer docs for layers the phase actually touches. A frontend-only phase does not need persistence.instructions.md.
 
 ### What to include conditionally
+
 
 | Context | When |
 |---|---|

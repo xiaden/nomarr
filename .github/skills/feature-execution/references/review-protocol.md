@@ -24,7 +24,27 @@ Review the implementation of:
 
 ## Task
 Plan: {plan file path}
+Round: {N}  ← Orchestrator fills this in. Round 1 = first review of this plan. Round 2 = after a fix cycle. Round 3+ = auto-flag DISCUSS regardless of issue severity.
 All phases of this plan are complete. Review the full implementation for quality, correctness, and architectural compliance.
+
+## Layer Docs
+{Include ALL that apply to layers touched by this plan. Copy the relevant rows from the table below.}
+
+| Layer | File | Purpose |
+|---|---|---|
+| Interfaces | `.github/instructions/interfaces.instructions.md` | Route handlers, auth, Pydantic-only-here rule |
+| Services | `.github/instructions/services.instructions.md` | DI wiring, thinness, no business logic |
+| Workflows | `.github/instructions/workflows.instructions.md` | Use-case orchestration, one public function per file |
+| Components | `.github/instructions/components.instructions.md` | Domain logic, stateless functions, ML isolation |
+| Persistence | `.github/instructions/persistence.instructions.md` | AQL queries, db.module.method() access pattern |
+| Helpers | `.github/instructions/helpers.instructions.md` | Pure utilities, DTOs, no nomarr imports |
+| Frontend | `.github/instructions/frontend.instructions.md` | React/TS conventions, MUI sx prop, no `any` |
+
+Also include:
+- Target plan: `plans/TASK-{feature}-{letter}-*.md`
+- Contracts ledger: `plans/dev/{feature}-parts/CONTRACTS.md`
+- Feature parts README: `plans/dev/{feature}-parts/README.md`
+- This review protocol: `.github/skills/feature-execution/references/review-protocol.md`
 
 ## Plan Content
 {Paste the full plan file. The reviewer needs to verify that what was implemented
@@ -111,6 +131,18 @@ Return your review in this exact structure:
 
 ### Verdict: {PASS | ISSUES_FOUND}
 
+### Scope Classification: {NO_PLAN_NEEDED | PLAN_NEEDED | DISCUSS}
+
+**Rationale:** {1-2 sentences. Example:
+- NO_PLAN_NEEDED: "Two minor issues in one file — a stale comment and an unused import. Single subagent fix."
+- PLAN_NEEDED: "Contract drift across 3 layers and a missing migration require coordinated multi-step fix."
+- DISCUSS: "Persistence schema change is incompatible with migration baseline. User must decide approach first."}
+
+**Classification guide:**
+- **NO_PLAN_NEEDED** — All issues are in already-identified files, no architectural decisions needed, a single subagent with file pointers can resolve them in one pass.
+- **PLAN_NEEDED** — Issues span multiple layers/files, require coordinated changes, or involve architectural decisions (schema, contract drift, layer violations).
+- **DISCUSS** — Fundamental problem: design is wrong, damage scope is unknown, requirements unclear, or this is the 3rd fix round.
+
 ### Summary
 {2-3 sentence overview of implementation quality}
 
@@ -160,38 +192,41 @@ The orchestrator must tell the review agent which files to inspect. Methods to d
 
 ## Interpreting Review Results
 
+The review agent outputs a **Scope Classification** alongside its verdict. Route on it directly — no additional judgment needed.
+
 ### PASS
 
 Proceed to ledger update (Phase 5 of main workflow).
 
-### ISSUES_FOUND with only minor severity
+### ISSUES_FOUND + NO_PLAN_NEEDED
 
-Use judgment:
-- If 1-2 minor issues → fix them directly (no fix plan needed), then update ledger
-- If 3+ minor issues → generate a fix plan for consistency
-
-### ISSUES_FOUND with major or critical severity
-
-**Always generate a fix plan.** Dispatch the Plan subagent with:
+Dispatch a single subagent. No research required — the review report is the full brief:
 
 ```
-Create a fix plan for:
+Fix the following issues found during review:
 
-## Review Findings
-{Paste the full review output — all issues with their details}
+## Issues
+{Paste the issues section verbatim from the review report}
 
-## Original Plan
-{Plan file path — the fix plan subagent can read it for context}
+## Files to Edit
+{List the file paths from "Location" fields above}
 
 ## Constraints
-- Fix only the reported issues. Do not refactor beyond what's needed.
-- Create the fix plan at: plans/TASK-{feature}-{letter}-fix.md
-- Each issue should map to one or more fix steps
-- Include a lint verification step at the end
-- Critical issues first, then major, then minor
+- Fix only the reported issues — no scope creep
+- Run lint_project_{backend|frontend}() after fixing and confirm zero errors
 ```
 
-After the fix plan is created and validated, execute it using the standard execution protocol, then re-review.
+After the fix subagent completes, dispatch a full re-review (Round N+1) using this same protocol. Do not skip to ledger update — re-review is the gate regardless of fix size.
+
+### ISSUES_FOUND + PLAN_NEEDED
+
+Dispatch the Plan subagent with the full review report as input. Execute and re-review per the fix cycle protocol below.
+
+### ISSUES_FOUND + DISCUSS
+
+Stop. Surface the review findings directly to the user. Do not generate a fix plan. The user must make a decision before work continues.
+
+After the fix plan is created and validated (PLAN_NEEDED path), execute it using the standard execution protocol, then re-review.
 
 ---
 

@@ -10,7 +10,6 @@ __pycache__/
 *.so
 *.egg
 *.egg-info/
-dist/
 build/
 .venv/
 venv/
@@ -90,7 +89,6 @@ scripts/temp/
 *~
 
 # Build outputs
-dist/
 build/
 *.spec
 frontend/dist/

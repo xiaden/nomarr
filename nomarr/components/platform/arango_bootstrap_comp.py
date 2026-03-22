@@ -296,6 +296,11 @@ def _create_indexes(db: DatabaseLike) -> None:
         sparse=False,
     )
 
+    # ML model graph indexes (introduced by V014)
+    _ensure_index(db, "ml_models", "persistent", ["path"], unique=True)
+    _ensure_index(db, "ml_model_outputs", "persistent", ["model_id", "output_index"], unique=True)
+    _ensure_index(db, "tag_model_output", "persistent", ["_to"])
+
     # segment_scores_stats indexes (per-label segment statistics)
     _ensure_index(db, "segment_scores_stats", "persistent", ["file_id"])
     _ensure_index(db, "segment_scores_stats", "persistent", ["head_name"])

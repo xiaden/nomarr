@@ -5,12 +5,9 @@
 
 import {
   Box,
-  Checkbox,
-  FormControlLabel,
   MenuItem,
   Select,
   TextField,
-  Tooltip,
   Typography,
 } from "@mui/material";
 
@@ -18,7 +15,7 @@ import {
 const CONFIG_METADATA: Record<string, {
   label: string;
   description?: string;
-  type?: 'text' | 'password' | 'boolean' | 'select' | 'number' | 'checkbox';
+  type?: 'text' | 'password' | 'boolean' | 'select' | 'number';
   options?: { value: string; label: string }[];
 }> = {
   library_auto_tag: {
@@ -61,12 +58,7 @@ const CONFIG_METADATA: Record<string, {
     description: "Percentage of neighborhoods searched (1-50). Higher = more accurate, slower. Libraries can override.",
     type: "number",
   },
-  // -- Personal playlists --
-  pp_enabled: {
-    label: "Enabled",
-    description: "Enable personal playlist generation",
-    type: "boolean",
-  },
+  // -- Personal playlists (algorithm tuning) --
   pp_backbone_id: {
     label: "Backbone",
     description: "Embedding backbone model used for similarity calculations",
@@ -74,7 +66,7 @@ const CONFIG_METADATA: Record<string, {
   },
   pp_half_life_days: {
     label: "Recency Half-Life (days)",
-    description: "Half-life in days for exponential time-decay weighting of play history",
+    description: "Exponential decay rate for play-history weighting (server default)",
     type: "number",
   },
   pp_top_n: {
@@ -87,45 +79,10 @@ const CONFIG_METADATA: Record<string, {
     description: "Minimum play count for a song to be included in taste profile calculation",
     type: "number",
   },
-  pp_max_songs: {
-    label: "Max Songs per Playlist",
-    description: "Maximum number of songs in each generated playlist",
-    type: "number",
-  },
-  pp_min_songs: {
-    label: "Min Songs per Playlist",
-    description: "Minimum number of songs required to create a playlist",
-    type: "number",
-  },
   pp_overwrite_playlists: {
     label: "Overwrite Playlists",
     description: "Replace existing playlists on each generation run instead of appending",
     type: "boolean",
-  },
-  pp_type_familiar: {
-    label: "Familiar Favorites",
-    description: "Playlists from highly-played songs",
-    type: "checkbox",
-  },
-  pp_type_discovery: {
-    label: "Discovery",
-    description: "Playlists with unheard songs similar to favorites",
-    type: "checkbox",
-  },
-  pp_type_hidden_gems: {
-    label: "Hidden Gems",
-    description: "Playlists with rarely-played songs that match your taste",
-    type: "checkbox",
-  },
-  pp_type_genre: {
-    label: "Genre",
-    description: "Genre-focused playlists based on top genre preferences",
-    type: "checkbox",
-  },
-  pp_type_universal: {
-    label: "Universal Mix",
-    description: "A universal mix playlist blending all taste dimensions",
-    type: "checkbox",
   },
 };
 
@@ -215,30 +172,6 @@ export function ConfigField({
       />
     );
   };
-
-  // Checkbox variant: compact inline rendering for playlist type toggles
-  if (fieldType === "checkbox") {
-    const checked = stringValue === "true";
-    return (
-      <Tooltip title={description || ""} arrow placement="top">
-        <FormControlLabel
-          control={
-            <Checkbox
-              checked={checked}
-              onChange={(e) => onChange(configKey, e.target.checked ? "true" : "false")}
-              disabled={disabled}
-              size="small"
-            />
-          }
-          label={
-            <Typography variant="body2" component="span" sx={{ fontWeight: 500 }}>
-              {label}
-            </Typography>
-          }
-        />
-      </Tooltip>
-    );
-  }
 
   return (
     <Box sx={{ display: "flex", gap: 2, alignItems: "flex-start", py: 1 }}>

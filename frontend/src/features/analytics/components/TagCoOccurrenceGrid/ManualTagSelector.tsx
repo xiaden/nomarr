@@ -111,18 +111,14 @@ export function ManualTagSelector({
     void loadTagValues();
   }, [selectedKey]);
 
-  const isTagInEitherAxis = (key: string, value: string): boolean => {
-    return (
-      xTags.some((t) => t.key === key && t.value === value) ||
-      yTags.some((t) => t.key === key && t.value === value)
-    );
-  };
+  const isTagOnX = (key: string, value: string): boolean => xTags.some((t) => t.key === key && t.value === value);
+  const isTagOnY = (key: string, value: string): boolean => yTags.some((t) => t.key === key && t.value === value);
 
   const maxValues = PRESET_METADATA.manual.maxValues;
   const canAddToX = xIsManual && selectedKey && selectedValue &&
-    xTags.length < maxValues && !isTagInEitherAxis(selectedKey, selectedValue);
+    xTags.length < maxValues && !isTagOnX(selectedKey, selectedValue);
   const canAddToY = yIsManual && selectedKey && selectedValue &&
-    yTags.length < maxValues && !isTagInEitherAxis(selectedKey, selectedValue);
+    yTags.length < maxValues && !isTagOnY(selectedKey, selectedValue);
 
   const handleAddToX = () => {
     if (canAddToX) {

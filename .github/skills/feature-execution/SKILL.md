@@ -102,16 +102,15 @@ The review agent returns a structured report: **PASS** or **ISSUES_FOUND** with 
 
 ## Phase 4: Fix Cycle
 
-If review returns **ISSUES_FOUND**:
+If review returns **ISSUES_FOUND**, route on the **Scope Classification** from the review report:
 
-1. **Dispatch a Plan subagent** with the review report as input — it generates a fix plan (`plans/TASK-{feature}-{letter}-fix.md`)
-2. **Execute the fix plan** using the same Phase 2 protocol (phase-by-phase dispatch)
-3. **Re-review** using the same Phase 3 protocol
-4. **Repeat** until review passes
+- **NO_PLAN_NEEDED** → Dispatch a single targeted subagent with the issue list and file paths. No research, no plan file. See [references/review-protocol.md](references/review-protocol.md) for the prompt template. After the fix subagent completes, dispatch a full re-review (Round N+1) — not just lint. Re-review is always the gate.
+- **PLAN_NEEDED** → Dispatch the Plan subagent with the full review report. Execute the resulting fix plan phase-by-phase. Re-review after execution.
+- **DISCUSS** → Stop. Present the review findings to the user. Do not proceed until they respond.
 
-Fix plans are typically small (1 phase, 3-5 steps). If a fix plan exceeds 8 steps, the original plan had deeper issues — flag this to the user.
+After any fix (NO_PLAN_NEEDED or PLAN_NEEDED path), re-review using the Phase 3 protocol.
 
-**Fix plan naming:** `TASK-{feature}-{letter}-fix.md`, or `-fix2.md` for a second round. More than 2 fix rounds on the same plan indicates a systemic problem — stop and discuss with the user.
+**Fix plan naming** (PLAN_NEEDED path): `TASK-{feature}-{letter}-fix.md`, or `-fix2.md` for a second round. More than 2 fix rounds on the same plan triggers DISCUSS classification — execution stops until the user decides.
 
 ---
 

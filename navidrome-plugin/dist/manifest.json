@@ -1,12 +1,12 @@
 {
   "name": "nomarr",
   "author": "Nomarr",
-  "version": "0.1.0",
-  "description": "Nomarr ML-powered audio similarity for Instant Mix",
+  "version": "0.2.0",
+  "description": "Nomarr ML-powered audio similarity for Instant Mix and personal playlist generation",
   "website": "https://github.com/xiaden/nomarr",
   "permissions": {
     "http": {
-      "reason": "To query Nomarr API for ML-powered audio similarity results",
+      "reason": "To query Nomarr API for ML-powered audio similarity and playlist generation",
       "requiredHosts": ["*"]
     }
   },
@@ -31,6 +31,23 @@
           "title": "ML Backbone",
           "description": "ML backbone model to use for similarity. Default: effnet-discogs",
           "default": "effnet-discogs"
+        },
+        "pp_enabled": {
+          "type": "boolean",
+          "title": "Enable Personal Playlists",
+          "description": "Enable scheduled personal playlist generation from Nomarr",
+          "default": false
+        },
+        "pp_schedule_cron": {
+          "type": "string",
+          "title": "Playlist Schedule (Cron)",
+          "description": "Cron expression for playlist generation schedule. Default: daily at 3 AM",
+          "default": "0 3 * * *"
+        },
+        "pp_user_id": {
+          "type": "string",
+          "title": "Playlist User ID",
+          "description": "Nomarr user ID for playlist generation (required when personal playlists are enabled)"
         }
       },
       "required": ["nomarr_url", "nomarr_api_key"]
@@ -52,6 +69,18 @@
         {
           "type": "Control",
           "scope": "#/properties/backbone_id"
+        },
+        {
+          "type": "Control",
+          "scope": "#/properties/pp_enabled"
+        },
+        {
+          "type": "Control",
+          "scope": "#/properties/pp_schedule_cron"
+        },
+        {
+          "type": "Control",
+          "scope": "#/properties/pp_user_id"
         }
       ]
     }

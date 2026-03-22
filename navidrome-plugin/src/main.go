@@ -1,4 +1,4 @@
-// Package main implements the Nomarr plugin for Navidrome.
+﻿// Package main implements the Nomarr plugin for Navidrome.
 //
 // This plugin bridges Navidrome to Nomarr's ML-powered APIs:
 //   - metadata.SimilarSongsByTrackProvider — Instant Mix via vector ANN search
@@ -65,6 +65,111 @@ func readConfig() (nomarrURL string, apiKey string, ok bool) {
 	return nomarrURL, apiKey, true
 }
 
+// subsonicCallAs calls a Subsonic API endpoint on behalf of a specific user.
+// It prepends /rest/ and appends ?u=<username> to the endpoint URI so the
+// Subsonic server executes the call in the context of that user.
+// Follows the LBZ plugin pattern.
+func subsonicCallAs(endpoint string, username string) (string, error) {
+	sep := "?"
+	if strings.Contains(endpoint, "?") {
+		sep = "&"
+	}
+	uri := fmt.Sprintf("/rest/%s%su=%s", endpoint, sep, url.QueryEscape(username))
+	return host.SubsonicAPICall(uri)
+}
+
+// xmlDecodeEntities replaces XML character entities with their literal values.
+func xmlDecodeEntities(s string) string {
+	s = strings.ReplaceAll(s, "&amp;", "&")
+	s = strings.ReplaceAll(s, "&lt;", "<")
+	s = strings.ReplaceAll(s, "&gt;", ">")
+	s = strings.ReplaceAll(s, "&quot;", "\"")
+	s = strings.ReplaceAll(s, "&apos;", "'")
+	return s
+}
+
+// xmlAttr extracts the value of a named attribute from an XML tag string.
+// tag should be the full opening tag content (e.g., `<playlist id="123" name="My List"/>`).
+// Returns the decoded value and true if found, or ("", false) otherwise.
+func xmlAttr(tag string, attr string) (string, bool) {
+	// Look for: attr="value" or attr='value'
+	needle := attr + `="`
+	idx := strings.Index(tag, needle)
+	if idx >= 0 {
+		start := idx + len(needle)
+		end := strings.Index(tag[start:], `"`)
+		if end >= 0 {
+			return xmlDecodeEntities(tag[start : start+end]), true
+		}
+	}
+	// Try single quotes
+	needle = attr + "='"
+	idx = strings.Index(tag, needle)
+	if idx >= 0 {
+		start := idx + len(needle)
+		end := strings.Index(tag[start:], "'")
+		if end >= 0 {
+			return xmlDecodeEntities(tag[start : start+end]), true
+		}
+	}
+	return "", false
+}
+
+// findExistingPlaylists queries the Subsonic getPlaylists API for a given user
+// and returns a map of playlist name → playlist ID. This is used to determine
+// whether to update an existing playlist or create a new one.
+//
+// On any failure (API error, parse error), returns an empty map with a warning
+// log — callers degrade gracefully by creating all playlists as new.
+//
+// NOTE: TinyGo/WASM cannot use encoding/xml, so we parse with string operations.
+func findExistingPlaylists(username string) map[string]string {
+	result := make(map[string]string)
+
+	resp, err := subsonicCallAs("getPlaylists", username)
+	if err != nil {
+		pdk.Log(pdk.LogWarn, fmt.Sprintf("nomarr: getPlaylists failed for user %s: %v", username, err))
+		return result
+	}
+
+	// Find all <playlist ...> tags and extract id + name attributes.
+	// Handles both self-closing (<playlist .../>) and open (<playlist ...>...</playlist>) forms.
+	remaining := resp
+	for {
+		idx := strings.Index(remaining, "<playlist ")
+		if idx < 0 {
+			break
+		}
+		remaining = remaining[idx:]
+
+		// Find the end of the opening tag (either /> or >)
+		endSelfClose := strings.Index(remaining, "/>")
+		endOpen := strings.Index(remaining, ">")
+
+		var tag string
+		if endSelfClose >= 0 && (endOpen < 0 || endSelfClose <= endOpen) {
+			// Self-closing tag: <playlist ... />
+			tag = remaining[:endSelfClose+2]
+			remaining = remaining[endSelfClose+2:]
+		} else if endOpen >= 0 {
+			// Open tag: <playlist ...>
+			tag = remaining[:endOpen+1]
+			remaining = remaining[endOpen+1:]
+		} else {
+			break
+		}
+
+		id, hasID := xmlAttr(tag, "id")
+		name, hasName := xmlAttr(tag, "name")
+		if hasID && hasName {
+			result[name] = id
+		}
+	}
+
+	pdk.Log(pdk.LogDebug, fmt.Sprintf("nomarr: found %d existing playlists for user %s", len(result), username))
+	return result
+}
+
 // ---------------------------------------------------------------------------
 // Similar-tracks types
 // ---------------------------------------------------------------------------
@@ -112,9 +217,20 @@ type scrobbleRequest struct {
 // Playlist generation types
 // ---------------------------------------------------------------------------
 
+// userConfig represents a single user entry from the plugin's "users" config array.
+type userConfig struct {
+	Username     string   `json:"username"`
+	EnabledTypes []string `json:"enabled_types,omitempty"`
+	MaxSongs     *int     `json:"max_songs,omitempty"`
+	MinSongs     *int     `json:"min_songs,omitempty"`
+}
+
 // generatePlaylistsRequest is the JSON body sent to Nomarr's generate-playlists endpoint.
 type generatePlaylistsRequest struct {
-	UserID string `json:"user_id"`
+	UserID       string   `json:"user_id"`
+	EnabledTypes []string `json:"enabled_types,omitempty"`
+	MaxSongs     *int     `json:"max_songs,omitempty"`
+	MinSongs     *int     `json:"min_songs,omitempty"`
 }
 
 // playlistResult is a single generated playlist in Nomarr's response.
@@ -305,73 +421,116 @@ func (p *nomarrPlugin) OnCallback(req scheduler.SchedulerCallbackRequest) error 
 // Playlist generation
 // ---------------------------------------------------------------------------
 
-// generateAndPushPlaylists calls Nomarr's generate-playlists API and pushes
-// each resulting playlist into Navidrome via the Subsonic createPlaylist API.
+// generateAndPushPlaylists calls Nomarr's generate-playlists API for each
+// configured user and pushes the resulting playlists into Navidrome via the
+// Subsonic createPlaylist API. Users are read from the "users" config key as a
+// JSON array of userConfig objects. If a user fails at any step, the error is
+// logged and iteration continues with the next user (error isolation).
 func generateAndPushPlaylists() {
 	nomarrURL, apiKey, ok := readConfig()
 	if !ok {
 		return
 	}
 
-	ppUserID, ok := pdk.GetConfig("pp_user_id")
-	if !ok || ppUserID == "" {
-		pdk.Log(pdk.LogWarn, "nomarr: pp_user_id not configured, skipping playlist generation")
+	// Read and parse the users config array.
+	usersJSON, ok := pdk.GetConfig("users")
+	if !ok || usersJSON == "" {
+		pdk.Log(pdk.LogWarn, "nomarr: no users configured, skipping playlist generation")
 		return
 	}
 
-	// Request playlist generation from Nomarr.
-	reqBody := generatePlaylistsRequest{UserID: ppUserID}
-	bodyBytes, err := json.Marshal(reqBody)
-	if err != nil {
-		pdk.Log(pdk.LogError, fmt.Sprintf("nomarr: failed to marshal generate-playlists request: %v", err))
+	var users []userConfig
+	if err := json.Unmarshal([]byte(usersJSON), &users); err != nil {
+		pdk.Log(pdk.LogError, fmt.Sprintf("nomarr: failed to parse users config: %v", err))
+		return
+	}
+
+	if len(users) == 0 {
+		pdk.Log(pdk.LogWarn, "nomarr: users array is empty, skipping playlist generation")
 		return
 	}
 
 	endpoint := strings.TrimRight(nomarrURL, "/") + "/api/v1/navidrome/generate-playlists"
 
-	pdk.Log(pdk.LogInfo, fmt.Sprintf("nomarr: requesting playlist generation for user %s", ppUserID))
-
-	resp, err := host.HTTPSend(host.HTTPRequest{
-		Method: "POST",
-		URL:    endpoint,
-		Headers: map[string]string{
-			"Content-Type": "application/json",
-			"X-API-Key":    apiKey,
-		},
-		Body:      bodyBytes,
-		TimeoutMs: 120000,
-	})
-	if err != nil {
-		pdk.Log(pdk.LogError, fmt.Sprintf("nomarr: generate-playlists HTTP request failed: %v", err))
-		return
-	}
-
-	if resp.StatusCode != 200 {
-		pdk.Log(pdk.LogWarn, fmt.Sprintf("nomarr: generate-playlists API returned status %d: %s", resp.StatusCode, string(resp.Body)))
-		return
-	}
-
-	var genResp generatePlaylistsResponse
-	if err := json.Unmarshal(resp.Body, &genResp); err != nil {
-		pdk.Log(pdk.LogError, fmt.Sprintf("nomarr: failed to parse generate-playlists response: %v", err))
-		return
-	}
-
-	pdk.Log(pdk.LogInfo, fmt.Sprintf("nomarr: received %d playlists from Nomarr", len(genResp.Playlists)))
-
-	// Push each playlist into Navidrome via Subsonic createPlaylist API.
-	for _, pl := range genResp.Playlists {
-		uri := "createPlaylist?name=" + url.QueryEscape(pl.PlaylistName)
-		for _, songID := range pl.TrackNdIDs {
-			uri += "&songId=" + url.QueryEscape(songID)
-		}
-
-		if _, err := host.SubsonicAPICall(uri); err != nil {
-			pdk.Log(pdk.LogError, fmt.Sprintf("nomarr: failed to push playlist %q: %v", pl.PlaylistName, err))
+	for _, user := range users {
+		if user.Username == "" {
+			pdk.Log(pdk.LogWarn, "nomarr: skipping user entry with empty username")
 			continue
 		}
 
-		pdk.Log(pdk.LogInfo, fmt.Sprintf("nomarr: pushed playlist %q (%s, %d tracks)", pl.PlaylistName, pl.PlaylistType, pl.TrackCount))
+		pdk.Log(pdk.LogInfo, fmt.Sprintf("nomarr: requesting playlist generation for user %s", user.Username))
+
+		// Build per-user request — only include optional fields when set.
+		reqBody := generatePlaylistsRequest{
+			UserID:       user.Username,
+			EnabledTypes: user.EnabledTypes,
+			MaxSongs:     user.MaxSongs,
+			MinSongs:     user.MinSongs,
+		}
+
+		bodyBytes, err := json.Marshal(reqBody)
+		if err != nil {
+			pdk.Log(pdk.LogError, fmt.Sprintf("nomarr: failed to marshal request for user %s: %v", user.Username, err))
+			continue
+		}
+
+		resp, err := host.HTTPSend(host.HTTPRequest{
+			Method: "POST",
+			URL:    endpoint,
+			Headers: map[string]string{
+				"Content-Type": "application/json",
+				"X-API-Key":    apiKey,
+			},
+			Body:      bodyBytes,
+			TimeoutMs: 120000,
+		})
+		if err != nil {
+			pdk.Log(pdk.LogError, fmt.Sprintf("nomarr: generate-playlists HTTP request failed for user %s: %v", user.Username, err))
+			continue
+		}
+
+		if resp.StatusCode != 200 {
+			pdk.Log(pdk.LogWarn, fmt.Sprintf("nomarr: generate-playlists API returned status %d for user %s: %s", resp.StatusCode, user.Username, string(resp.Body)))
+			continue
+		}
+
+		var genResp generatePlaylistsResponse
+		if err := json.Unmarshal(resp.Body, &genResp); err != nil {
+			pdk.Log(pdk.LogError, fmt.Sprintf("nomarr: failed to parse generate-playlists response for user %s: %v", user.Username, err))
+			continue
+		}
+
+		pdk.Log(pdk.LogInfo, fmt.Sprintf("nomarr: received %d playlists for user %s", len(genResp.Playlists), user.Username))
+
+		// Fetch existing playlists to determine create vs. update.
+		existingPlaylists := findExistingPlaylists(user.Username)
+
+		// Push each playlist into Navidrome via Subsonic createPlaylist API.
+		for _, pl := range genResp.Playlists {
+			var uri string
+			var action string
+
+			if playlistID, exists := existingPlaylists[pl.PlaylistName]; exists {
+				// Playlist exists — update it by ID.
+				uri = "createPlaylist?playlistId=" + url.QueryEscape(playlistID)
+				action = "update"
+			} else {
+				// New playlist — create by name.
+				uri = "createPlaylist?name=" + url.QueryEscape(pl.PlaylistName)
+				action = "create"
+			}
+
+			for _, songID := range pl.TrackNdIDs {
+				uri += "&songId=" + url.QueryEscape(songID)
+			}
+
+			if _, err := subsonicCallAs(uri, user.Username); err != nil {
+				pdk.Log(pdk.LogError, fmt.Sprintf("nomarr: failed to %s playlist %q for user %s: %v", action, pl.PlaylistName, user.Username, err))
+				continue
+			}
+
+			pdk.Log(pdk.LogInfo, fmt.Sprintf("nomarr: %s playlist %q (%s, %d tracks) for user %s", action, pl.PlaylistName, pl.PlaylistType, pl.TrackCount, user.Username))
+		}
 	}
 }
 

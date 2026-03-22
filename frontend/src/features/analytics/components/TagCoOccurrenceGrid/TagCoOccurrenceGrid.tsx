@@ -5,7 +5,7 @@
 
 import { Alert, Box, CircularProgress, Stack } from "@mui/material";
 import type { JSX } from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Panel, SectionHeader } from "@shared/components/ui";
 
@@ -17,6 +17,7 @@ import { ManualTagSelector } from "./ManualTagSelector";
 import { PresetSelector } from "./PresetSelector";
 import type { MatrixData, TagCoOccurrenceGridProps } from "./types";
 import { useAxisState } from "./useAxisState";
+import { fetchPresetTags } from "./usePresetData";
 
 export function TagCoOccurrenceGrid({
   libraryId,
@@ -29,11 +30,55 @@ export function TagCoOccurrenceGrid({
     removeTag,
     isLoading,
     canBuildMatrix,
+    dispatch,
   } = useAxisState();
+
+  const xFetchVersion = useRef(0);
+  const yFetchVersion = useRef(0);
 
   const [matrix, setMatrix] = useState<MatrixData | null>(null);
   const [matrixLoading, setMatrixLoading] = useState(false);
   const [matrixError, setMatrixError] = useState<string | null>(null);
+
+  // Fetch tags when X axis preset changes
+  useEffect(() => {
+    const version = ++xFetchVersion.current;
+    if (state.x.preset === "manual") return;
+    dispatch({ type: "SET_LOADING", axis: "x", loading: true });
+    void fetchPresetTags(state.x.preset)
+      .then((tags) => {
+        if (xFetchVersion.current !== version) return;
+        dispatch({ type: "SET_TAGS", axis: "x", tags });
+      })
+      .catch((err: unknown) => {
+        if (xFetchVersion.current !== version) return;
+        dispatch({
+          type: "SET_ERROR",
+          axis: "x",
+          error: err instanceof Error ? err.message : "Failed to load tags",
+        });
+      });
+  }, [state.x.preset, dispatch]);
+
+  // Fetch tags when Y axis preset changes
+  useEffect(() => {
+    const version = ++yFetchVersion.current;
+    if (state.y.preset === "manual") return;
+    dispatch({ type: "SET_LOADING", axis: "y", loading: true });
+    void fetchPresetTags(state.y.preset)
+      .then((tags) => {
+        if (yFetchVersion.current !== version) return;
+        dispatch({ type: "SET_TAGS", axis: "y", tags });
+      })
+      .catch((err: unknown) => {
+        if (yFetchVersion.current !== version) return;
+        dispatch({
+          type: "SET_ERROR",
+          axis: "y",
+          error: err instanceof Error ? err.message : "Failed to load tags",
+        });
+      });
+  }, [state.y.preset, dispatch]);
 
   // Build matrix when axes change
   const buildMatrix = useCallback(async () => {

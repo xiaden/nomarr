@@ -1,7 +1,7 @@
 {
   "name": "nomarr",
   "author": "Nomarr",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Nomarr ML-powered audio similarity for Instant Mix and personal playlist generation",
   "website": "https://github.com/xiaden/nomarr",
   "permissions": {
@@ -26,12 +26,6 @@
           "description": "API key for authenticating with Nomarr",
           "minLength": 1
         },
-        "backbone_id": {
-          "type": "string",
-          "title": "ML Backbone",
-          "description": "ML backbone model to use for similarity. Default: effnet-discogs",
-          "default": "effnet-discogs"
-        },
         "pp_enabled": {
           "type": "boolean",
           "title": "Enable Personal Playlists",
@@ -44,10 +38,52 @@
           "description": "Cron expression for playlist generation schedule. Default: daily at 3 AM",
           "default": "0 3 * * *"
         },
-        "pp_user_id": {
-          "type": "string",
-          "title": "Playlist User ID",
-          "description": "Nomarr user ID for playlist generation (required when personal playlists are enabled)"
+        "users": {
+          "type": "array",
+          "title": "Playlist Users",
+          "description": "Users for personal playlist generation. Each entry specifies a Navidrome username and optional preferences.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "username": {
+                "type": "string",
+                "title": "Username",
+                "description": "Navidrome username to generate playlists for",
+                "minLength": 1
+              },
+              "enabled_types": {
+                "type": "array",
+                "title": "Enabled Playlist Types",
+                "description": "Which playlist types to generate. Default: all types.",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "familiar_favorites",
+                    "deep_cuts",
+                    "discovery_mix",
+                    "mood_journey",
+                    "recent_radar"
+                  ]
+                },
+                "uniqueItems": true
+              },
+              "max_songs": {
+                "type": "integer",
+                "title": "Max Songs",
+                "description": "Maximum number of songs per playlist. Default: 50.",
+                "minimum": 1,
+                "default": 50
+              },
+              "min_songs": {
+                "type": "integer",
+                "title": "Min Songs",
+                "description": "Minimum number of songs required to create a playlist. Default: 5.",
+                "minimum": 1,
+                "default": 5
+              }
+            },
+            "required": ["username"]
+          }
         }
       },
       "required": ["nomarr_url", "nomarr_api_key"]
@@ -68,10 +104,6 @@
         },
         {
           "type": "Control",
-          "scope": "#/properties/backbone_id"
-        },
-        {
-          "type": "Control",
           "scope": "#/properties/pp_enabled"
         },
         {
@@ -80,7 +112,7 @@
         },
         {
           "type": "Control",
-          "scope": "#/properties/pp_user_id"
+          "scope": "#/properties/users"
         }
       ]
     }

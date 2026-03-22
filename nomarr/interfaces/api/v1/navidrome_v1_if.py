@@ -161,6 +161,7 @@ class GeneratePlaylistsRequest(BaseModel):
     user_id: str
     max_songs: int | None = None
     enabled_types: list[str] | None = None
+    min_songs: int | None = None
 
 
 class PlaylistResultResponse(BaseModel):
@@ -192,6 +193,9 @@ async def navidrome_generate_playlists(
     results = await asyncio.to_thread(
         svc.generate_playlists,
         user_id=body.user_id,
+        enabled_types=body.enabled_types,
+        max_songs=body.max_songs,
+        min_songs=body.min_songs,
     )
 
     # Resolve internal file_ids to Navidrome track IDs (external concern).

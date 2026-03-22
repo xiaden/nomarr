@@ -1,7 +1,13 @@
+import { renderHook, waitFor, act, fireEvent } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
+import { getTagCoOccurrence } from "../../../../shared/api/analytics";
+import { getMoodValues } from "../../../../shared/api/files";
 import { renderWithProviders, screen } from "../../../../test/render";
 import { TagCoOccurrenceGrid } from "../TagCoOccurrenceGrid";
+
+import { useAxisState } from "./useAxisState";
+import { fetchPresetTags } from "./usePresetData";
 
 // Mock the API calls
 vi.mock("../../../../shared/api/files", () => ({
@@ -15,6 +21,7 @@ vi.mock("../../../../shared/api/files", () => ({
     }
     return Promise.resolve({ tag_keys: [], count: 0 });
   }),
+  getMoodValues: vi.fn().mockResolvedValue({ tag_keys: ["aggressive", "happy"], count: 2 }),
 }));
 
 vi.mock("../../../../shared/api/analytics", () => ({
@@ -81,5 +88,89 @@ describe("TagCoOccurrenceGrid", () => {
         screen.queryByText("Advanced (Manual Tag Selection)")
       ).not.toBeInTheDocument();
     });
+  });
+});
+
+describe("mood preset key", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("every tag returned by fetchPresetTags for mood has key === 'nom:mood-strict'", async () => {
+    const tags = await fetchPresetTags("mood");
+
+    expect(tags.length).toBeGreaterThan(0);
+    expect(tags.every((t) => t.key === "nom:mood-strict")).toBe(true);
+    expect(tags.some((t) => t.key === "nom:mood-*")).toBe(false);
+  });
+});
+
+describe("cross-axis manual tags", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("allows the same tag to be added to both X and Y axes independently", async () => {
+    const { result } = renderHook(() => useAxisState());
+
+    // Wait for initial preset data to settle
+    await waitFor(() => {
+      expect(result.current.state.x.loading).toBe(false);
+      expect(result.current.state.y.loading).toBe(false);
+    });
+
+    // Set both axes to manual mode
+    act(() => {
+      result.current.selectPreset("x", "manual");
+    });
+    act(() => {
+      result.current.selectPreset("y", "manual");
+    });
+
+    // Add the same tag to both axes
+    act(() => {
+      result.current.addManualTag("x", { key: "genre", value: "Rock" });
+    });
+    act(() => {
+      result.current.addManualTag("y", { key: "genre", value: "Rock" });
+    });
+
+    expect(result.current.state.x.tags).toContainEqual({ key: "genre", value: "Rock" });
+    expect(result.current.state.y.tags).toContainEqual({ key: "genre", value: "Rock" });
+  });
+});
+
+
+describe("preset switching", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("switching X axis to Mood fetches mood values and calls getTagCoOccurrence with nom:mood-strict tags", async () => {
+    renderWithProviders(<TagCoOccurrenceGrid />);
+
+    // Wait for initial genre/year data to settle and matrix to render
+    await screen.findByRole("table");
+
+    // Clear call history so we can assert on only post-switch calls
+    vi.clearAllMocks();
+
+    // Click the first Mood button (X axis — rendered before Y axis)
+    fireEvent.click(screen.getAllByText("Mood")[0]);
+
+    // Wait for mood values API to be called
+    await waitFor(() => {
+      expect(vi.mocked(getMoodValues)).toHaveBeenCalledTimes(1);
+    });
+
+    // Wait for co-occurrence matrix to be rebuilt with new tags
+    await waitFor(() => {
+      expect(vi.mocked(getTagCoOccurrence)).toHaveBeenCalled();
+    });
+
+    // Assert the most recent getTagCoOccurrence call used nom:mood-strict tags on X
+    const calls = vi.mocked(getTagCoOccurrence).mock.calls;
+    const lastCall = calls[calls.length - 1];
+    expect(lastCall[0].x.every((tag) => tag.key === "nom:mood-strict")).toBe(true);
   });
 });

@@ -487,7 +487,14 @@ class NavidromeService:
     # Playlist generation
     # ------------------------------------------------------------------
 
-    def generate_playlists(self, user_id: str) -> list[NavidromePersonalPlaylistEntry]:
+    def generate_playlists(
+        self,
+        user_id: str,
+        *,
+        enabled_types: list[str] | None = None,
+        max_songs: int | None = None,
+        min_songs: int | None = None,
+    ) -> list[NavidromePersonalPlaylistEntry]:
         """Generate personal playlists for a Navidrome user.
 
         Reads backbone, library, and playlist config from ``ConfigService``,
@@ -495,6 +502,9 @@ class NavidromeService:
 
         Args:
             user_id: Navidrome user identifier.
+            enabled_types: Override for playlist types. Falls back to config.
+            max_songs: Override for max songs per playlist. Falls back to config.
+            min_songs: Override for min songs per playlist. Falls back to config.
 
         Returns:
             List of generated playlists with ``library_files/_id`` track lists.
@@ -505,20 +515,36 @@ class NavidromeService:
         backbone_id: str = self._config_service.get("vector_backbone_id", "effnet-discogs")
         library_key: str = self._config_service.get("library_key", "")
 
+        resolved_enabled_types = (
+            enabled_types
+            if enabled_types is not None
+            else self._config_service.get(
+                "playlist_enabled_types",
+                ["familiar", "discovery", "hidden_gems", "genre", "universal"],
+            )
+        )
+        resolved_max_songs = (
+            max_songs
+            if max_songs is not None
+            else self._config_service.get("playlist_max_songs", 50)
+        )
+        resolved_min_songs = (
+            min_songs
+            if min_songs is not None
+            else self._config_service.get("playlist_min_songs", 5)
+        )
+
         return generate_playlists(
             db=self._db,
             user_id=user_id,
             backbone_id=backbone_id,
             library_key=library_key,
-            enabled_types=self._config_service.get(
-                "playlist_enabled_types",
-                ["familiar", "discovery", "hidden_gems", "genre", "universal"],
-            ),
+            enabled_types=resolved_enabled_types,
             half_life_days=self._config_service.get("playlist_half_life_days", 30.0),
             top_n=self._config_service.get("playlist_top_n", 200),
-            max_songs=self._config_service.get("playlist_max_songs", 50),
+            max_songs=resolved_max_songs,
             min_play_count=self._config_service.get("playlist_min_play_count", 1),
-            min_songs=self._config_service.get("playlist_min_songs", 5),
+            min_songs=resolved_min_songs,
         )
 
     def resolve_files_to_nd(self, file_ids: list[str]) -> dict[str, str]:
