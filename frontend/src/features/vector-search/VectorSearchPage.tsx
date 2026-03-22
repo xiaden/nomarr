@@ -219,14 +219,17 @@ export function VectorSearchPage() {
 
             <Box>
               <Typography variant="body2" gutterBottom>
-                Min Score: {minScore.toFixed(2)}
+                Minimum Similarity: {minScore.toFixed(1)}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: "block" }}>
+                Filter out results below this threshold. Higher = stricter matching.
               </Typography>
               <Slider
                 value={minScore}
                 onChange={(_, v) => setMinScore(v as number)}
                 min={0}
-                max={1}
-                step={0.01}
+                max={100}
+                step={0.5}
                 valueLabelDisplay="auto"
               />
             </Box>
