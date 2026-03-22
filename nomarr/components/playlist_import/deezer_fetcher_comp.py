@@ -88,8 +88,8 @@ def fetch_deezer_playlist(
 
     # Check for API error response
     if "error" in data:
-        error_msg = data["error"].get("message", "Unknown error")
-        raise DeezerFetchError(f"Deezer API error: {error_msg}")
+        error_message = data["error"].get("message", "Unknown error")
+        raise DeezerFetchError(f"Deezer API error: {error_message}")
 
     # Extract metadata
     metadata = PlaylistMetadata(

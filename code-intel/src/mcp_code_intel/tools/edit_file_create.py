@@ -130,8 +130,8 @@ def _create_files_atomically(
             write_result = atomic_write(resolved_path, create_op.content)
             if write_result is not None:
                 # Write failed, trigger rollback via exception
-                error_msg = write_result["error"]
-                msg = f"Write failed for {resolved_path}: {error_msg}"
+                error_message = write_result["error"]
+                msg = f"Write failed for {resolved_path}: {error_message}"
                 raise OSError(msg) from None  # noqa: TRY301
 
             created_files.append(resolved_path)

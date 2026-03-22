@@ -595,8 +595,8 @@ def lint_project_frontend() -> CallToolResult:
                 )
 
     if is_error:
-        error_msg = result.get("summary", {}).get("error", "unknown")
-        breadcrumb = f"Frontend lint error: {error_msg}"
+        error_message = result.get("summary", {}).get("error", "unknown")
+        breadcrumb = f"Frontend lint error: {error_message}"
     elif status == "clean":
         breadcrumb = "Linted frontend - all checks passed"
     else:
@@ -1003,12 +1003,12 @@ def plan_complete_step(
     if annotation_marker and annotation_text:
         ann_dict = {"marker": annotation_marker, "text": annotation_text}
     elif annotation_marker or annotation_text:
-        err_msg = "Both annotation_marker and annotation_text must be provided together."
+        error_message = "Both annotation_marker and annotation_text must be provided together."
         return ToolOutput(
             tool_name="plan_complete_step",
             breadcrumb="Error: incomplete annotation",
-            error=err_msg,
-            metadata={"error": err_msg},
+            error=error_message,
+            metadata={"error": error_message},
         ).to_call_tool_result()
     result = plan_complete_step_impl(plan_name, step_id, workspace_root=ROOT, annotation=ann_dict)
     plan_file = plan_name if plan_name.endswith(".md") else f"{plan_name}.md"

@@ -128,10 +128,10 @@ def check_nvidia_gpu_capability(timeout: float = NVIDIA_SMI_TIMEOUT_S) -> bool:
         return False
 
     except subprocess.CalledProcessError as e:
-        error_msg = e.stderr.strip() if e.stderr else f"exit code {e.returncode}"
+        error_message = e.stderr.strip() if e.stderr else f"exit code {e.returncode}"
         logger.warning(
             "[resource_monitor] nvidia-smi failed (%s) - Docker GPU injection may have failed, forcing CPU-only",
-            error_msg[:100],
+            error_message[:100],
         )
         _gpu_capable_cache = False
         return False

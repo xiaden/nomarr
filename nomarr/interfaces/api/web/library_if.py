@@ -599,8 +599,8 @@ async def reconcile_library_paths(
         )
         return ReconcilePathsResponse.from_dict(stats)
     except ValueError as e:
-        error_msg = str(e).lower()
-        if "policy" in error_msg:
+        error_message = str(e).lower()
+        if "policy" in error_message:
             raise HTTPException(status_code=400, detail="Invalid reconciliation policy") from None
         raise HTTPException(status_code=404, detail="Library not found") from None
     except Exception as e:

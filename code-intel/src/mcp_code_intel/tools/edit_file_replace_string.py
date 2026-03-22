@@ -226,10 +226,10 @@ def _validate_all_replacements_upfront(
 
         if actual_count != expected_count:
             # Count mismatch - fail with helpful guidance
-            error_msg, status = _build_count_mismatch_error(
+            error_message, status = _build_count_mismatch_error(
                 i, old_preview, expected_count, actual_count, len(old_string)
             )
-            errors.append(error_msg)
+            errors.append(error_message)
             details.append({"old_string_preview": old_preview, "status": status})
         else:
             # Count matches - process all occurrences
