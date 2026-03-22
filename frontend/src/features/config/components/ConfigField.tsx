@@ -3,13 +3,22 @@
  * Renders a single configuration field with appropriate input type.
  */
 
-import { Box, MenuItem, Select, TextField, Typography } from "@mui/material";
+import {
+  Box,
+  Checkbox,
+  FormControlLabel,
+  MenuItem,
+  Select,
+  TextField,
+  Tooltip,
+  Typography,
+} from "@mui/material";
 
 // Human-readable labels and field configurations for config keys
 const CONFIG_METADATA: Record<string, {
   label: string;
   description?: string;
-  type?: 'text' | 'password' | 'boolean' | 'select' | 'number';
+  type?: 'text' | 'password' | 'boolean' | 'select' | 'number' | 'checkbox';
   options?: { value: string; label: string }[];
 }> = {
   library_auto_tag: {
@@ -59,9 +68,9 @@ const CONFIG_METADATA: Record<string, {
     type: "boolean",
   },
   pp_backbone_id: {
-    label: "Backbone ID",
-    description: "Embedding backbone model ID used for similarity calculations",
-    type: "text",
+    label: "Backbone",
+    description: "Embedding backbone model used for similarity calculations",
+    type: "select",
   },
   pp_half_life_days: {
     label: "Recency Half-Life (days)",
@@ -94,29 +103,29 @@ const CONFIG_METADATA: Record<string, {
     type: "boolean",
   },
   pp_type_familiar: {
-    label: "Familiar Type",
-    description: "Generate 'Familiar Favorites' playlists from highly-played songs",
-    type: "boolean",
+    label: "Familiar Favorites",
+    description: "Playlists from highly-played songs",
+    type: "checkbox",
   },
   pp_type_discovery: {
-    label: "Discovery Type",
-    description: "Generate 'Discovery' playlists with unheard songs similar to favorites",
-    type: "boolean",
+    label: "Discovery",
+    description: "Playlists with unheard songs similar to favorites",
+    type: "checkbox",
   },
   pp_type_hidden_gems: {
-    label: "Hidden Gems Type",
-    description: "Generate 'Hidden Gems' playlists with rarely-played songs that match your taste",
-    type: "boolean",
+    label: "Hidden Gems",
+    description: "Playlists with rarely-played songs that match your taste",
+    type: "checkbox",
   },
   pp_type_genre: {
-    label: "Genre Type",
-    description: "Generate genre-focused playlists based on top genre preferences",
-    type: "boolean",
+    label: "Genre",
+    description: "Genre-focused playlists based on top genre preferences",
+    type: "checkbox",
   },
   pp_type_universal: {
-    label: "Universal Type",
-    description: "Generate a universal mix playlist blending all taste dimensions",
-    type: "boolean",
+    label: "Universal Mix",
+    description: "A universal mix playlist blending all taste dimensions",
+    type: "checkbox",
   },
 };
 
@@ -125,6 +134,8 @@ interface ConfigFieldProps {
   value: unknown;
   onChange: (key: string, value: string) => void;
   disabled: boolean;
+  /** Dynamic select options — used for fields like backbone_id where options come from the API. */
+  dynamicOptions?: { value: string; label: string }[];
 }
 
 export function ConfigField({
@@ -132,6 +143,7 @@ export function ConfigField({
   value,
   onChange,
   disabled,
+  dynamicOptions,
 }: ConfigFieldProps) {
   const stringValue = value === null || value === undefined ? "" : String(value);
   const metadata = CONFIG_METADATA[configKey];
@@ -140,7 +152,7 @@ export function ConfigField({
   const label = metadata?.label || configKey;
   const description = metadata?.description;
   const fieldType = metadata?.type || (typeof value === "boolean" ? "boolean" : "text");
-  const options = metadata?.options || [];
+  const options = dynamicOptions || metadata?.options || [];
 
   const renderField = () => {
     if (fieldType === "select" && options.length > 0) {
@@ -157,6 +169,20 @@ export function ConfigField({
               {optionLabel}
             </MenuItem>
           ))}
+        </Select>
+      );
+    }
+
+    // Select field with no options yet — show disabled placeholder
+    if (fieldType === "select") {
+      return (
+        <Select
+          value={stringValue}
+          disabled
+          size="small"
+          fullWidth
+        >
+          <MenuItem value={stringValue}>{stringValue || "Loading…"}</MenuItem>
         </Select>
       );
     }
@@ -189,6 +215,30 @@ export function ConfigField({
       />
     );
   };
+
+  // Checkbox variant: compact inline rendering for playlist type toggles
+  if (fieldType === "checkbox") {
+    const checked = stringValue === "true";
+    return (
+      <Tooltip title={description || ""} arrow placement="top">
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={checked}
+              onChange={(e) => onChange(configKey, e.target.checked ? "true" : "false")}
+              disabled={disabled}
+              size="small"
+            />
+          }
+          label={
+            <Typography variant="body2" component="span" sx={{ fontWeight: 500 }}>
+              {label}
+            </Typography>
+          }
+        />
+      </Tooltip>
+    );
+  }
 
   return (
     <Box sx={{ display: "flex", gap: 2, alignItems: "flex-start", py: 1 }}>
