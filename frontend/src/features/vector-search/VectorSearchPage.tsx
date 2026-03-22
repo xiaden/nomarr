@@ -219,7 +219,7 @@ export function VectorSearchPage() {
 
             <Box>
               <Typography variant="body2" gutterBottom>
-                Minimum Similarity: {minScore.toFixed(1)}
+                Minimum Similarity: {minScore.toFixed(2)}
               </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: "block" }}>
                 Filter out results below this threshold. Higher = stricter matching.
@@ -228,8 +228,8 @@ export function VectorSearchPage() {
                 value={minScore}
                 onChange={(_, v) => setMinScore(v as number)}
                 min={0}
-                max={100}
-                step={0.5}
+                max={1}
+                step={0.01}
                 valueLabelDisplay="auto"
               />
             </Box>

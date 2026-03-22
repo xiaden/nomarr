@@ -168,7 +168,7 @@ async def get_track_vector(
     return VectorGetResponse(
         file_id=encode_id(file_id),
         backbone_id=backbone_id,
-        vector=result["vector"],
+        vector=result["vector_n"],
     )
 
 

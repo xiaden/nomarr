@@ -11,6 +11,7 @@ from nomarr.services.infrastructure.config_svc import ConfigService
 logger = logging.getLogger(__name__)
 
 
+
 class VectorSearchService:
     """Service for vector similarity search operations.
 
@@ -49,7 +50,8 @@ class VectorSearchService:
                 Used for single-library search and as the default scope.
             vector: Query embedding vector
             limit: Maximum number of results
-            min_score: Minimum similarity score threshold (filters raw results)
+            min_score: Minimum cosine similarity threshold (0-1). Results below
+                this value are filtered out.
             nprobe: Centroids to probe per query. When ``None`` (default),
                 auto-calculated from ``vector_group_size`` and
                 ``vector_search_thoroughness`` in dynamic config.
@@ -62,7 +64,7 @@ class VectorSearchService:
         Returns:
             List of matching results with keys:
                 - file_id: Library file document ID
-                - score: Similarity score
+                - score: Cosine similarity (0-1, higher = more similar)
                 - vector: The stored embedding vector
                 - Other document fields
 

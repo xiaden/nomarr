@@ -345,7 +345,7 @@ class VectorsTrackColdOperations:
         Returns:
             List of dicts with keys:
                 - file_id: Library file document ID
-                - score: Similarity score (lower distance = more similar)
+                - score: Cosine similarity (higher = more similar)
                 - vector: The stored embedding vector
                 - All other document fields (_key, model_suite_hash, etc.)
 
