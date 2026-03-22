@@ -8,6 +8,15 @@
     "http": {
       "reason": "To query Nomarr API for ML-powered audio similarity and playlist generation",
       "requiredHosts": ["*"]
+    },
+    "scheduler": {
+      "reason": "Schedule recurring personal playlist generation"
+    },
+    "users": {
+      "reason": "Receive scrobble events and access user information for Subsonic API calls and playlist generation"
+    },
+    "subsonicapi": {
+      "reason": "Manage personal playlists in Navidrome on behalf of configured users"
     }
   },
   "config": {
