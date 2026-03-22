@@ -272,11 +272,15 @@ def scan_library_quick_workflow(
         # Step 8 — Clean up stale folder records
         cleanup_stale_folders(db, library_id, discovered_folder_paths)
 
-        # Step 9 — Entity graph cleanup
-        try:
-            cleanup_orphaned_entities_workflow(db, dry_run=False)
-        except Exception as e:
-            logger.warning("Entity cleanup failed: %s", e)
+        # Step 9 — Entity graph cleanup (skip when scan was a no-op)
+        has_changes = (
+            stats["files_added"] + stats["files_updated"] + stats["files_removed"] + stats["files_moved"] > 0
+        )
+        if has_changes:
+            try:
+                cleanup_orphaned_entities_workflow(db, dry_run=False)
+            except Exception as e:
+                logger.warning("Entity cleanup failed: %s", e)
 
         # Step 10 — Finalize
         scan_duration = internal_s().value - start_time.value
@@ -285,7 +289,8 @@ def scan_library_quick_workflow(
             db, library_id, status="complete", progress=stats["files_discovered"], scan_error=None,
         )
 
-        logger.info(
+        scan_log = logger.info if has_changes or stats["files_failed"] else logger.debug
+        scan_log(
             "Quick scan complete in %.1fs: folders=%d/%d, added=%d, updated=%d, skipped=%d, moved=%d, removed=%d, failed=%d",
             scan_duration,
             stats["folders_scanned"],

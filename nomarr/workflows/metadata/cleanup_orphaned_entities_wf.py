@@ -33,12 +33,13 @@ def cleanup_orphaned_entities_workflow(db: Database, dry_run: bool = False) -> d
         - 'total_deleted': Total deleted tags (0 if dry_run)
 
     """
-    logger.info("[tag_cleanup] Starting orphaned tag cleanup workflow")
+    logger.debug("[tag_cleanup] Starting orphaned tag cleanup workflow")
 
     # Count orphaned tags
     orphaned_count = get_orphaned_tag_count(db)
 
-    logger.info(f"[tag_cleanup] Found {orphaned_count} orphaned tags")
+    orphaned_log = logger.info if orphaned_count > 0 else logger.debug
+    orphaned_log("[tag_cleanup] Found %d orphaned tags", orphaned_count)
 
     orphaned_counts = {"tags": orphaned_count}
 
@@ -54,7 +55,8 @@ def cleanup_orphaned_entities_workflow(db: Database, dry_run: bool = False) -> d
     # Delete orphaned tags
     deleted_count = cleanup_orphaned_tags(db)
 
-    logger.info(f"[tag_cleanup] Deleted {deleted_count} orphaned tags")
+    deleted_log = logger.info if deleted_count > 0 else logger.debug
+    deleted_log("[tag_cleanup] Deleted %d orphaned tags", deleted_count)
 
     return {
         "orphaned_counts": orphaned_counts,

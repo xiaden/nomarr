@@ -21,12 +21,14 @@ def cleanup_orphaned_tags_workflow(db: Database, dry_run: bool=False) -> dict[st
         Dict with 'orphaned_count' and 'deleted_count' keys
 
     """
-    logger.info("[tag_cleanup] Starting orphaned tag cleanup workflow")
+    logger.debug("[tag_cleanup] Starting orphaned tag cleanup workflow")
     orphaned_count = get_orphaned_tag_count(db)
-    logger.info(f"[tag_cleanup] Found {orphaned_count} orphaned tags")
+    orphaned_log = logger.info if orphaned_count > 0 else logger.debug
+    orphaned_log("[tag_cleanup] Found %d orphaned tags", orphaned_count)
     if dry_run:
         logger.info("[tag_cleanup] Dry run - no tags deleted")
         return {"orphaned_count": orphaned_count, "deleted_count": 0}
     deleted_count = cleanup_orphaned_tags(db)
-    logger.info(f"[tag_cleanup] Deleted {deleted_count} orphaned tags")
+    deleted_log = logger.info if deleted_count > 0 else logger.debug
+    deleted_log("[tag_cleanup] Deleted %d orphaned tags", deleted_count)
     return {"orphaned_count": orphaned_count, "deleted_count": deleted_count}

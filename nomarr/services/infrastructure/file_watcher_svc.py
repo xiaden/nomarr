@@ -160,7 +160,7 @@ class FileWatcherService:
         library_service: LibraryService,
         debounce_seconds: float = 2.0,
         event_loop: asyncio.AbstractEventLoop | None = None,
-        polling_interval_seconds: float = 60.0,
+        polling_interval_seconds: float = 300.0,
     ) -> None:
         self.db = db
         self.library_service = library_service
@@ -409,7 +409,7 @@ class FileWatcherService:
                 # Update last poll time
                 self.last_poll_time[library_id] = internal_s()
 
-                logger.info(f"Polling library {library_id}: triggering quick scan")
+                logger.debug(f"Polling library {library_id}: triggering quick scan")
 
                 try:
                     self.library_service.start_quick_scan(library_id)
