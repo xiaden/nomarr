@@ -23,6 +23,7 @@ def persist_backbone_vector(
     embeddings_2d: np.ndarray,
     model_suite_hash: str,
     path: str,
+    library_key: str,
 ) -> float | None:
     """Persist a pooled track-level embedding vector for one backbone.
 
@@ -36,6 +37,7 @@ def persist_backbone_vector(
         embeddings_2d: Shape ``[num_segments, embed_dim]`` backbone output.
         model_suite_hash: Hash of the model suite used to produce the embeddings.
         path: File path — used only for warning log messages on failure.
+        library_key: ArangoDB ``_key`` of the library document.
 
     Returns:
         Elapsed milliseconds on success, ``None`` on failure (warning logged).
@@ -44,7 +46,7 @@ def persist_backbone_vector(
     try:
         vector = pool_embedding_for_storage(embeddings_2d)
         embed_dim = get_embedding_dimension(embeddings_2d)
-        ops = db.register_vectors_track_backbone(backbone)
+        ops = db.register_vectors_track_backbone(backbone, library_key)
         ops.upsert_vector(
             file_id=file_id,
             model_suite_hash=model_suite_hash,

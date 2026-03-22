@@ -20,13 +20,14 @@ class VectorsTrackHotOperations:
     triggering expensive HNSW graph maintenance. Vectors are later promoted
     to cold collection via maintenance workflow.
 
-    Collection naming: vectors_track_hot__{backbone_id}
+    Collection naming: vectors_track_hot__{backbone_id}__{library_key}
     """
 
-    def __init__(self, db: DatabaseLike, backbone_id: str) -> None:
+    def __init__(self, db: DatabaseLike, backbone_id: str, library_key: str) -> None:
         self.db = db
         self.backbone_id = backbone_id
-        self.collection_name = f"vectors_track_hot__{backbone_id}"
+        self.library_key = library_key
+        self.collection_name = f"vectors_track_hot__{backbone_id}__{library_key}"
         self.collection = db.collection(self.collection_name)
 
     @staticmethod
@@ -253,13 +254,21 @@ class VectorsTrackColdOperations:
     Cold collections hold promoted vectors with vector indexes for similarity search.
     Vector indexes are created manually via maintenance workflow, never by bootstrap.
 
-    Collection naming: vectors_track_cold__{backbone_id}
+    Collection naming: vectors_track_cold__{backbone_id}__{library_key}[__{suffix}]
     """
 
-    def __init__(self, db: DatabaseLike, backbone_id: str) -> None:
+    def __init__(
+        self,
+        db: DatabaseLike,
+        backbone_id: str,
+        library_key: str,
+        collection_suffix: str | None = None,
+    ) -> None:
         self.db = db
         self.backbone_id = backbone_id
-        self.collection_name = f"vectors_track_cold__{backbone_id}"
+        self.library_key = library_key
+        base = f"vectors_track_cold__{backbone_id}__{library_key}"
+        self.collection_name = f"{base}__{collection_suffix}" if collection_suffix else base
         self.collection = db.collection(self.collection_name)
 
     # ------------------------------------------------------------------
