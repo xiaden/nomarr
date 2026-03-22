@@ -16,10 +16,13 @@ from nomarr.components.library.library_admin_comp import (
     delete_library,
     update_library_root,
 )
+from nomarr.helpers.config_schema import validate_library_config
 from nomarr.helpers.dto.library_dto import LibraryDict
+from nomarr.helpers.dto.vector_config_dto import VectorConfigResult
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
+    from nomarr.services.infrastructure.config_svc import ConfigService
 
     from .config import LibraryServiceConfig
 
@@ -193,3 +196,68 @@ class LibraryAdminMixin:
     def clear_library_data(self) -> None:
         """Clear all library data (files, tags, scan queue)."""
         clear_library_data(db=self.db, library_root=self.cfg.library_root)
+
+    def get_vector_config(self, library_id: str, config_service: ConfigService) -> VectorConfigResult:
+        """Resolve effective vector config for a library.
+
+        Per-library overrides fall back to global defaults from DynamicConfig.
+
+        Args:
+            library_id: Library _id or _key
+            config_service: ConfigService for global defaults
+
+        Returns:
+            VectorConfigResult with effective values and inheritance flags
+
+        Raises:
+            ValueError: If library not found
+
+        """
+        lib = self._get_library_or_error(library_id)
+        global_group_size: int = config_service.get("vector_group_size", 15)
+        global_thoroughness: int = config_service.get("vector_search_thoroughness", 10)
+        return VectorConfigResult(
+            vector_group_size=lib.get("vector_group_size", global_group_size),
+            vector_search_thoroughness=lib.get("vector_search_thoroughness", global_thoroughness),
+            is_group_size_inherited="vector_group_size" not in lib,
+            is_thoroughness_inherited="vector_search_thoroughness" not in lib,
+        )
+
+    def update_vector_config(
+        self,
+        library_id: str,
+        *,
+        vector_group_size: int | None = None,
+        vector_search_thoroughness: int | None = None,
+    ) -> None:
+        """Update per-library vector config fields.
+
+        Non-None values are validated and persisted on the library document.
+        None values clear the override so the library inherits the global default.
+
+        Args:
+            library_id: Library _id or _key
+            vector_group_size: New group size (None to inherit global)
+            vector_search_thoroughness: New thoroughness (None to inherit global)
+
+        Raises:
+            ValueError: If library not found or values out of range
+
+        """
+        self._get_library_or_error(library_id)
+        set_fields: dict[str, Any] = {}
+        unset_fields: list[str] = []
+
+        if vector_group_size is not None:
+            validate_library_config({"vector_group_size": vector_group_size})
+            set_fields["vector_group_size"] = vector_group_size
+        else:
+            unset_fields.append("vector_group_size")
+
+        if vector_search_thoroughness is not None:
+            validate_library_config({"vector_search_thoroughness": vector_search_thoroughness})
+            set_fields["vector_search_thoroughness"] = vector_search_thoroughness
+        else:
+            unset_fields.append("vector_search_thoroughness")
+
+        self.db.libraries.update_library_config_fields(library_id, set_fields or None, unset_fields or None)

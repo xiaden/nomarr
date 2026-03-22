@@ -214,6 +214,41 @@ class LibrariesOperations:
             bind_vars={"library_id": library_id, "fields": update_fields},
         )
 
+    def update_library_config_fields(
+        self,
+        library_id: str,
+        set_fields: dict[str, Any] | None = None,
+        unset_fields: list[str] | None = None,
+    ) -> None:
+        """Update or remove arbitrary config fields on a library document.
+
+        Uses a two-pass approach: first sets new values, then removes fields
+        by setting them to ``None`` with ``keepNull: false``.
+
+        Args:
+            library_id: Library _id (e.g., "libraries/12345") or _key
+            set_fields: Fields to set/update (values must be serialisable)
+            unset_fields: Field names to remove from the document
+
+        """
+        if not library_id.startswith("libraries/"):
+            library_id = f"libraries/{library_id}"
+
+        if set_fields:
+            fields = {**set_fields, "updated_at": now_ms().value}
+            self.db.aql.execute(
+                "UPDATE PARSE_IDENTIFIER(@id).key WITH @fields IN libraries",
+                bind_vars={"id": library_id, "fields": fields},
+            )
+
+        if unset_fields:
+            null_obj: dict[str, Any] = dict.fromkeys(unset_fields)
+            null_obj["updated_at"] = now_ms().value
+            self.db.aql.execute(
+                "UPDATE PARSE_IDENTIFIER(@id).key WITH @fields IN libraries OPTIONS { keepNull: false }",
+                bind_vars={"id": library_id, "fields": null_obj},
+            )
+
     def delete_library(self, library_id: str) -> None:
         """Delete a library.
 

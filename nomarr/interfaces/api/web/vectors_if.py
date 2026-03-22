@@ -96,9 +96,11 @@ async def search_vectors(
         # Call service layer
         results = vector_search_service.search_similar_tracks(
             backbone_id=request.backbone_id,
+            library_key=request.library_key,
             vector=request.vector,
             limit=request.limit,
             min_score=request.min_score,
+            library_scope=request.library_scope,
         )
 
         # Convert to response model
@@ -132,6 +134,7 @@ async def search_vectors(
 async def get_track_vector(
     backbone_id: str,
     file_id: str,
+    library_key: str = "",
     vector_search_service: VectorSearchService = Depends(get_vector_search_service),
 ) -> VectorGetResponse:
     """Get embedding vector for a specific track.
@@ -154,7 +157,7 @@ async def get_track_vector(
 
     """
     file_id = decode_path_id(file_id)
-    result = vector_search_service.get_track_vector(backbone_id, file_id)
+    result = vector_search_service.get_track_vector(backbone_id, file_id, library_key=library_key)
 
     if result is None:
         raise HTTPException(
@@ -199,21 +202,28 @@ async def get_vector_stats(
     def _get_stats_sync() -> list[VectorHotColdStats]:
         """Run blocking DB queries in thread pool."""
         stats_list = []
-        for backbone_id in known_backbones:
-            try:
-                stats = vector_maintenance_service.get_hot_cold_stats(backbone_id)
-                stats_list.append(
-                    VectorHotColdStats(
-                        backbone_id=backbone_id,
-                        hot_count=int(stats["hot_count"]),
-                        cold_count=int(stats["cold_count"]),
-                        index_exists=bool(stats["index_exists"]),
+        libraries = vector_maintenance_service.db.libraries.list_libraries()
+        for lib in libraries:
+            library_key = lib["_key"]
+            for backbone_id in known_backbones:
+                try:
+                    stats = vector_maintenance_service.get_hot_cold_stats(
+                        backbone_id, library_key=library_key
                     )
-                )
-            except Exception as e:
-                logger.warning(f"Failed to get stats for backbone {backbone_id}: {e}")
-                # Skip backbones that don't exist or have errors
-                continue
+                    stats_list.append(
+                        VectorHotColdStats(
+                            backbone_id=backbone_id,
+                            library_key=library_key,
+                            hot_count=int(stats["hot_count"]),
+                            cold_count=int(stats["cold_count"]),
+                            index_exists=bool(stats["index_exists"]),
+                        )
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to get stats for backbone {backbone_id}, library {library_key}: {e}"
+                    )
+                    continue
         return stats_list
 
     # Run blocking DB operations in thread pool to avoid blocking event loop
@@ -253,6 +263,7 @@ async def promote_vectors(
         # Call service layer (synchronous - blocks until complete)
         vector_maintenance_service.promote_and_rebuild(
             backbone_id=request.backbone_id,
+            library_key=request.library_key,
             nlists=request.nlists,
         )
 
@@ -310,6 +321,7 @@ async def rebuild_vector_index(
     try:
         vector_maintenance_service.rebuild_index(
             backbone_id=request.backbone_id,
+            library_key=request.library_key,
             nlists=request.nlists,
         )
 

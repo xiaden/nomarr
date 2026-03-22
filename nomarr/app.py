@@ -349,12 +349,13 @@ class Application:
         from nomarr.services.domain.vector_maintenance_svc import VectorMaintenanceService
         from nomarr.services.domain.vector_search_svc import VectorSearchService
 
-        vector_search_service = VectorSearchService(db=self.db)
+        vector_search_service = VectorSearchService(db=self.db, config_svc=self._config_service)
         self.register_service("vector_search", vector_search_service)
 
         vector_maintenance_service = VectorMaintenanceService(
             db=self.db,
             models_dir=self.models_dir,
+            config_svc=self._config_service,
         )
         self.register_service("vector_maintenance", vector_maintenance_service)
         logger.debug("[Application] Initializing discovery-based worker system...")

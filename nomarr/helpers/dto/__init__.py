@@ -57,10 +57,17 @@ from nomarr.helpers.dto.ml_dto import (
     SingleHeadResult,
 )
 from nomarr.helpers.dto.navidrome_dto import (
+    NavidromePersonalPlaylistContext,
+    NavidromePersonalPlaylistEntry,
+    NavidromeStaticPlaylistResult,
+    NdSyncResult,
     PlaylistPreviewResult,
     SmartPlaylistFilter,
     StaticPlaylistResult,
     TagCondition,
+    TasteCluster,
+    TasteProfile,
+    TrackPlayData,
 )
 from nomarr.helpers.dto.path_dto import LibraryPath
 from nomarr.helpers.dto.playlist_import_dto import (
@@ -75,6 +82,7 @@ from nomarr.helpers.dto.processing_dto import (
     TagWriteProfile,
 )
 from nomarr.helpers.dto.tags_dto import Tag, Tags, TagValue
+from nomarr.helpers.dto.vector_config_dto import VectorConfigResult
 
 __all__ = [
     "AnalyzeWithSegmentsResult",
@@ -88,6 +96,10 @@ __all__ = [
     "LoadAudioMonoResult",
     "MatchResult",
     "MoodDistributionData",
+    "NavidromePersonalPlaylistContext",
+    "NavidromePersonalPlaylistEntry",
+    "NavidromeStaticPlaylistResult",
+    "NdSyncResult",
     "PlaylistConversionResult",
     "PlaylistMetadata",
     "PlaylistPreviewResult",
@@ -109,4 +121,8 @@ __all__ = [
     "TagValue",
     "TagWriteProfile",
     "Tags",
+    "TasteCluster",
+    "TasteProfile",
+    "TrackPlayData",
+    "VectorConfigResult",
 ]

@@ -14,10 +14,18 @@ class VectorSearchRequest(BaseModel):
     backbone_id: str = Field(
         ..., description="Backbone identifier (e.g., 'effnet', 'yamnet')"
     )
+    library_key: str = Field(..., description="ArangoDB library _key")
     vector: list[float] = Field(..., description="Query embedding vector")
     limit: int = Field(10, description="Maximum number of results", ge=1, le=100)
     min_score: float = Field(
         0.0, description="Minimum similarity score threshold", ge=0.0
+    )
+    library_scope: str | None = Field(
+        None,
+        description=(
+            "Search scope: 'own' (same library, default), 'all' (fan-out across "
+            "all libraries), or a specific library _key to search."
+        ),
     )
 
 
@@ -41,6 +49,7 @@ class VectorHotColdStats(BaseModel):
     """Hot/cold statistics for a single backbone."""
 
     backbone_id: str = Field(..., description="Backbone identifier")
+    library_key: str = Field(..., description="ArangoDB library _key")
     hot_count: int = Field(..., description="Number of vectors in hot collection")
     cold_count: int = Field(
         ..., description="Number of vectors in cold collection"
@@ -64,6 +73,7 @@ class VectorPromoteRequest(BaseModel):
     backbone_id: str = Field(
         ..., description="Backbone identifier (e.g., 'effnet', 'yamnet')"
     )
+    library_key: str = Field(..., description="ArangoDB library _key")
     nlists: int | None = Field(
         None,
         description="Number of HNSW graph lists (auto-calculated if omitted)",
@@ -95,6 +105,7 @@ class VectorRebuildIndexRequest(BaseModel):
     backbone_id: str = Field(
         ..., description="Backbone identifier (e.g., 'effnet', 'yamnet')"
     )
+    library_key: str = Field(..., description="ArangoDB library _key")
     nlists: int | None = Field(
         None,
         description="Number of Voronoi cells (auto-calculated if omitted)",

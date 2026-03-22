@@ -4,7 +4,7 @@
 
 import type { Library, ScanResult } from "../types";
 
-import { del, get, patch, post } from "./client";
+import { del, get, patch, post, put } from "./client";
 
 export interface LibraryStats {
   total_files: number;
@@ -294,4 +294,57 @@ export async function getRecentActivity(
   params.append("limit", limit.toString());
   if (libraryId) params.append("library_id", libraryId);
   return get(`/api/web/libraries/recent-activity?${params.toString()}`);
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Vector Search Configuration
+// ────────────────────────────────────────────────────────────────────────────────
+
+export interface VectorConfigResponse {
+  vector_group_size: number;
+  vector_search_thoroughness: number;
+  is_group_size_inherited: boolean;
+  is_thoroughness_inherited: boolean;
+}
+
+export interface VectorConfigUpdate {
+  vector_group_size: number | null;
+  vector_search_thoroughness: number | null;
+}
+
+export interface VectorStatsItem {
+  backbone_id: string;
+  hot_count: number;
+  cold_count: number;
+  index_exists: boolean;
+}
+
+export interface LibraryVectorStatsResponse {
+  library_key: string;
+  stats: VectorStatsItem[];
+}
+
+/**
+ * Get the effective vector search config for a library.
+ */
+export async function getLibraryVectorConfig(libraryId: string): Promise<VectorConfigResponse> {
+  return get(`/api/web/libraries/${libraryId}/vector-config`);
+}
+
+/**
+ * Update per-library vector search config overrides.
+ * Pass null values to clear the override and inherit the global default.
+ */
+export async function updateLibraryVectorConfig(
+  libraryId: string,
+  config: VectorConfigUpdate
+): Promise<VectorConfigResponse> {
+  return put(`/api/web/libraries/${libraryId}/vector-config`, config);
+}
+
+/**
+ * Get per-library vector statistics (hot/cold counts per backbone, index status).
+ */
+export async function getLibraryVectorStats(libraryId: string): Promise<LibraryVectorStatsResponse> {
+  return get(`/api/web/libraries/${libraryId}/vector-stats`);
 }

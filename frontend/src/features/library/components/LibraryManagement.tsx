@@ -23,7 +23,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ConfirmDialog, ErrorMessage, Panel, SectionHeader } from "@shared/components/ui";
 
@@ -44,6 +44,11 @@ import {
 import { getWorkStatus } from "../../../shared/api/processing";
 import { ServerFilePicker } from "../../../shared/components/ServerFilePicker";
 import type { Library } from "../../../shared/types";
+import { useLibraryVectorConfig } from "../hooks/useLibraryVectorConfig";
+import { useLibraryVectorStats } from "../hooks/useLibraryVectorStats";
+
+import { VectorConfigSection } from "./VectorConfigSection";
+import { VectorStatsCard } from "./VectorStatsCard";
 
 export function LibraryManagement() {
   const { showSuccess } = useNotification();
@@ -67,6 +72,15 @@ export function LibraryManagement() {
   const [reconcilingId, setReconcilingId] = useState<string | null>(null);
   const [reconcileStatus, setReconcileStatus] = useState<Record<string, { pending: number; inProgress: boolean }>>({});
   const [originalFileWriteMode, setOriginalFileWriteMode] = useState<"none" | "minimal" | "full">("full");
+
+  // Vector search config and stats for the editing library
+  const { config: vectorConfig, loading: vectorConfigLoading, saving: vectorSaving, updateConfig: updateVectorConfig } = useLibraryVectorConfig(editingId);
+  const { stats: vectorStats } = useLibraryVectorStats(editingId);
+
+  const vectorTotalTracks = useMemo(() => {
+    if (!vectorStats) return 0;
+    return vectorStats.stats.reduce((sum, s) => sum + s.hot_count + s.cold_count, 0);
+  }, [vectorStats]);
 
   // Initial load - shows loading state
   const loadLibraries = useCallback(async () => {
@@ -591,6 +605,21 @@ export function LibraryManagement() {
                 </Select>
               </FormControl>
             </Box>
+
+            {/* Vector Search Config (edit mode only) */}
+            {!isCreating && vectorConfig && !vectorConfigLoading && (
+              <VectorConfigSection
+                config={vectorConfig}
+                totalTracks={vectorTotalTracks}
+                onUpdate={updateVectorConfig}
+                disabled={vectorSaving}
+              />
+            )}
+
+            {/* Vector Stats (edit mode only) */}
+            {!isCreating && vectorStats && (
+              <VectorStatsCard stats={vectorStats} />
+            )}
 
             <Stack direction="row" spacing={1.25}>
               <Button
