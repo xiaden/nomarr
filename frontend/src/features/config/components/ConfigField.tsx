@@ -9,24 +9,9 @@ import { Box, MenuItem, Select, TextField, Typography } from "@mui/material";
 const CONFIG_METADATA: Record<string, {
   label: string;
   description?: string;
-  type?: 'text' | 'password' | 'boolean' | 'select';
+  type?: 'text' | 'password' | 'boolean' | 'select' | 'number';
   options?: { value: string; label: string }[];
 }> = {
-  file_write_mode: {
-    label: "Tag Writing Mode",
-    description: "Controls which tags are written to audio files",
-    type: "select",
-    options: [
-      { value: "none", label: "None - Tags stored in database only" },
-      { value: "minimal", label: "Minimal - Essential tags only (artist, album, title, genre)" },
-      { value: "full", label: "Full - All generated tags written to files" },
-    ],
-  },
-  overwrite_tags: {
-    label: "Overwrite Existing Tags",
-    description: "Whether to overwrite existing tags in audio files",
-    type: "boolean",
-  },
   library_auto_tag: {
     label: "Auto-Tag New Files",
     description: "Automatically process new files found during library scans",
@@ -42,20 +27,10 @@ const CONFIG_METADATA: Record<string, {
     description: "Number of parallel worker processes for tagging (0 = auto-detect)",
     type: "text",
   },
-  cache_idle_timeout: {
-    label: "Cache Timeout (seconds)",
-    description: "How long to keep ML models in memory when idle",
-    type: "text",
-  },
   calibrate_heads: {
     label: "Auto-Calibrate Heads",
     description: "Automatically calibrate tag thresholds for optimal results",
     type: "boolean",
-  },
-  calibration_repo: {
-    label: "Calibration Repository",
-    description: "Git repository URL for calibration data downloads",
-    type: "text",
   },
   spotify_client_id: {
     label: "Spotify Client ID",
@@ -66,6 +41,82 @@ const CONFIG_METADATA: Record<string, {
     label: "Spotify Client Secret",
     description: "From https://developer.spotify.com/dashboard - keep this private",
     type: "password",
+  },
+  vector_group_size: {
+    label: "Vector Group Size",
+    description: "Songs per similarity neighborhood (5-100). Individual libraries can override this.",
+    type: "number",
+  },
+  vector_search_thoroughness: {
+    label: "Search Thoroughness",
+    description: "Percentage of neighborhoods searched (1-50). Higher = more accurate, slower. Libraries can override.",
+    type: "number",
+  },
+  // -- Personal playlists --
+  pp_enabled: {
+    label: "Enabled",
+    description: "Enable personal playlist generation",
+    type: "boolean",
+  },
+  pp_backbone_id: {
+    label: "Backbone ID",
+    description: "Embedding backbone model ID used for similarity calculations",
+    type: "text",
+  },
+  pp_half_life_days: {
+    label: "Recency Half-Life (days)",
+    description: "Half-life in days for exponential time-decay weighting of play history",
+    type: "number",
+  },
+  pp_top_n: {
+    label: "Top Plays to Fetch",
+    description: "Number of top-played songs to consider when building taste profiles",
+    type: "number",
+  },
+  pp_min_play_count: {
+    label: "Min Play Count",
+    description: "Minimum play count for a song to be included in taste profile calculation",
+    type: "number",
+  },
+  pp_max_songs: {
+    label: "Max Songs per Playlist",
+    description: "Maximum number of songs in each generated playlist",
+    type: "number",
+  },
+  pp_min_songs: {
+    label: "Min Songs per Playlist",
+    description: "Minimum number of songs required to create a playlist",
+    type: "number",
+  },
+  pp_overwrite_playlists: {
+    label: "Overwrite Playlists",
+    description: "Replace existing playlists on each generation run instead of appending",
+    type: "boolean",
+  },
+  pp_type_familiar: {
+    label: "Familiar Type",
+    description: "Generate 'Familiar Favorites' playlists from highly-played songs",
+    type: "boolean",
+  },
+  pp_type_discovery: {
+    label: "Discovery Type",
+    description: "Generate 'Discovery' playlists with unheard songs similar to favorites",
+    type: "boolean",
+  },
+  pp_type_hidden_gems: {
+    label: "Hidden Gems Type",
+    description: "Generate 'Hidden Gems' playlists with rarely-played songs that match your taste",
+    type: "boolean",
+  },
+  pp_type_genre: {
+    label: "Genre Type",
+    description: "Generate genre-focused playlists based on top genre preferences",
+    type: "boolean",
+  },
+  pp_type_universal: {
+    label: "Universal Type",
+    description: "Generate a universal mix playlist blending all taste dimensions",
+    type: "boolean",
   },
 };
 
@@ -125,10 +176,10 @@ export function ConfigField({
       );
     }
     
-    // Default to text field
+    // Number and text fields
     return (
       <TextField
-        type={fieldType === "password" ? "password" : "text"}
+        type={fieldType === "password" ? "password" : fieldType === "number" ? "number" : "text"}
         value={stringValue}
         onChange={(e) => onChange(configKey, e.target.value)}
         disabled={disabled}

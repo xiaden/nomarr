@@ -63,7 +63,7 @@ class ProcessorConfig:
     and serialized to worker subprocesses at spawn time.
 
     These fields never change at runtime. User-changeable processing settings
-    (overwrite_tags, calibrate_heads, file_write_mode) are read live from
+    (calibrate_heads) are read live from
     ConfigService by each consuming service at use time.
     """
 

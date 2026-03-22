@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import logging
 import os
 import threading
@@ -17,6 +18,7 @@ from typing import Any, Literal
 import yaml
 
 from nomarr.components.ml.onnx.ml_discovery_comp import compute_model_suite_hash
+from nomarr.helpers.config_schema import ALL_CONFIG_KEYS, WEB_EDITABLE_KEYS, DynamicConfig, StaticConfig
 from nomarr.helpers.dto.config_dto import ConfigResult, GetInternalInfoResult, WebConfigResult
 from nomarr.helpers.dto.processing_dto import ProcessorConfig
 from nomarr.persistence.db import Database
@@ -60,50 +62,10 @@ INTERNAL_CALIBRATION_MEDIAN_THRESHOLD = 0.05  # Max median drift (5%)
 INTERNAL_CALIBRATION_IQR_THRESHOLD = 0.1  # Max IQR drift (10%)
 
 
-# Subset of allowed config keys that can be edited via the web UI.
-# Infrastructure paths (models_dir, db_path, library_root) and admin_password
-# must be set via config file or environment, not the web UI.
-WEB_EDITABLE_KEYS: frozenset[str] = frozenset({
-    "file_write_mode",
-    "overwrite_tags",
-    "library_auto_tag",
-    "library_ignore_patterns",
-    "tagger_worker_count",
-    "cache_idle_timeout",
-    "calibrate_heads",
-    "calibration_repo",
-    "spotify_client_id",
-    "spotify_client_secret",
-    "navidrome_api_url",
-    "navidrome_api_user",
-    "navidrome_api_password",
-    "navidrome_path_prefix_map",
-})
 
-
-# Whitelist of allowed config keys for DB and environment overrides
-_ALLOWED_CONFIG_KEYS = {
-    "models_dir",
-    "db_path",
-    "library_root",
-    "library_auto_tag",
-    "library_ignore_patterns",
-    "file_write_mode",
-    "overwrite_tags",
-    "admin_password",
-    "cache_idle_timeout",
-    "tagger_worker_count",
-    "calibrate_heads",
-    "calibration_repo",
-    # Playlist import (Spotify credentials)
-    "spotify_client_id",
-    "spotify_client_secret",
-    # Navidrome API integration
-    "navidrome_api_url",
-    "navidrome_api_user",
-    "navidrome_api_password",
-    "navidrome_path_prefix_map",
-}
+# Key sets derived from config_schema — see nomarr.helpers.config_schema
+# ALL_CONFIG_KEYS and WEB_EDITABLE_KEYS are imported at the top of this file.
+_ALLOWED_CONFIG_KEYS = ALL_CONFIG_KEYS
 
 
 class ConfigService:
@@ -139,7 +101,7 @@ class ConfigService:
         """Get a config value by flat key from the mutable cache.
 
         Args:
-            key: Flat config key (e.g. "namespace", "overwrite_tags")
+            key: Flat config key (e.g. "namespace", "calibrate_heads")
             default: Default value if key not found
 
         Returns:
@@ -339,8 +301,9 @@ class ConfigService:
         return cfg
 
     def _default_config(self) -> dict[str, Any]:
-        """Base defaults for USER-CONFIGURABLE settings only.
+        """Base defaults for all user-configurable settings.
 
+        Derived from StaticConfig and DynamicConfig dataclass defaults.
         These settings are exposed to users via config.yaml,
         environment variables, or database overrides.
 
@@ -348,33 +311,8 @@ class ConfigService:
         defined at module level.
         """
         return {
-            # Filesystem paths
-            "models_dir": "/app/models",
-            "db_path": "/app/config/db/nomarr.db",
-            "library_root": "/media",  # Required: music library root for security
-            # Tag writing settings
-            "file_write_mode": "full",  # "none", "minimal", or "full"
-            "overwrite_tags": True,
-            # Library scanner settings
-            "library_auto_tag": True,
-            "library_ignore_patterns": "",
-            # Worker settings
-            "tagger_worker_count": None,  # ML tagging workers (1-8, controls VRAM usage)
-            # Calibration settings
-            "calibrate_heads": False,
-            "calibration_repo": "https://github.com/xiaden/nom-cal",
-            # Web UI authentication
-            "admin_password": None,  # Optional; auto-generated if not set
-            # Model cache settings
-            "cache_idle_timeout": 300,  # Seconds before unloading models (0=never)
-            # Playlist import settings (optional)
-            "spotify_client_id": None,  # Spotify Developer App client ID
-            "spotify_client_secret": None,  # Spotify Developer App client secret
-            # Navidrome API integration (optional)
-            "navidrome_api_url": None,  # Navidrome server URL (e.g. http://navidrome:4533)
-            "navidrome_api_user": None,  # Navidrome admin username
-            "navidrome_api_password": None,  # Navidrome admin password
-            "navidrome_path_prefix_map": "",  # Comma-separated from:to pairs for path remapping
+            **dataclasses.asdict(StaticConfig()),
+            **dataclasses.asdict(DynamicConfig()),
         }
 
     def _deep_merge(self, base_dict: dict[str, Any], override_dict: dict[str, Any]) -> dict[str, Any]:
@@ -397,27 +335,21 @@ class ConfigService:
             return {}
 
     def _apply_env_overrides(self, cfg: dict[str, Any]) -> None:
-        """Support environment overrides for the 12 user-configurable keys only.
+        """Apply NOMARR_* environment variable overrides to the config dict.
 
-        Supported formats:
-          NOMARR_MODELS_DIR=/custom/path
-          NOMARR_DB_PATH=/custom/db.sqlite
-          NOMARR_LIBRARY_ROOT=/music
-          NOMARR_LIBRARY_AUTO_TAG=true
-          NOMARR_LIBRARY_IGNORE_PATTERNS=*.wav,*/Audiobooks/*
-          NOMARR_FILE_WRITE_MODE=full
-          NOMARR_OVERWRITE_TAGS=false
-          NOMARR_ADMIN_PASSWORD=secretpass
-          NOMARR_CACHE_IDLE_TIMEOUT=600
-          NOMARR_WORKER_COUNT=4
-          NOMARR_CALIBRATE_HEADS=true
-          NOMARR_CALIBRATION_REPO=https://github.com/user/repo
+        Scans os.environ for keys prefixed with NOMARR_ (primary) or legacy
+        TAGGER_/AUTOTAG_ prefixes.  Only keys present in ALL_CONFIG_KEYS
+        (derived from StaticConfig + DynamicConfig) are accepted.
+
+        Values are parsed with the same ``_parse_db_value`` logic used for
+        DB reads, which correctly handles booleans, negative integers, floats,
+        and plain strings.
 
         Internal constants cannot be overridden via environment.
         """
         for env_key, env_value in os.environ.items():
             # Support NOMARR_* prefix (primary), TAGGER_* and AUTOTAG_* (legacy)
-            if not (env_key.startswith(("NOMARR_", "TAGGER_", "AUTOTAG_"))):
+            if not env_key.startswith(("NOMARR_", "TAGGER_", "AUTOTAG_")):
                 continue
 
             # Normalize to lowercase key name
@@ -425,21 +357,11 @@ class ConfigService:
 
             # Only allow whitelisted keys
             if key not in _ALLOWED_CONFIG_KEYS:
-                self._logger.debug(f"Ignoring environment override for internal key: {key}")
+                self._logger.debug("Ignoring environment override for unknown key: %s", key)
                 continue
 
             try:
-                # Parse typed values
-                if env_value.lower() in ("true", "false"):
-                    parsed_value: Any = env_value.lower() == "true"
-                elif env_value.isdigit():
-                    parsed_value = int(env_value)
-                elif env_value.replace(".", "", 1).replace("-", "", 1).isdigit():
-                    parsed_value = float(env_value)
-                else:
-                    parsed_value = env_value
-
-                cfg[key] = parsed_value
+                cfg[key] = self._parse_db_value(env_value)
             except Exception:
                 continue
 

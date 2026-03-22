@@ -5,11 +5,11 @@ from typing import TYPE_CHECKING, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from nomarr.helpers.config_schema import WEB_EDITABLE_KEYS
 from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.types.config_types import ConfigResponse, ConfigUpdateRequest, ConfigUpdateResponse
 from nomarr.interfaces.api.web.dependencies import get_config_service
-from nomarr.services.infrastructure.config_svc import WEB_EDITABLE_KEYS
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:

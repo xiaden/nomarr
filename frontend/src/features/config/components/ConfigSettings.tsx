@@ -1,9 +1,9 @@
 /**
  * ConfigSettings component.
- * Displays all configuration fields with save button.
+ * Displays all configuration fields with save button, grouped by section.
  */
 
-import { Box, Button, Stack, Typography } from "@mui/material";
+import { Box, Button, Divider, Stack, Typography } from "@mui/material";
 
 import { Panel, SectionHeader } from "@shared/components/ui";
 
@@ -17,6 +17,22 @@ interface ConfigSettingsProps {
   onSaveAll: () => Promise<void>;
 }
 
+/** Partition config entries into general and personal-playlist groups. */
+function partitionConfig(config: Record<string, unknown>) {
+  const general: [string, unknown][] = [];
+  const personalPlaylist: [string, unknown][] = [];
+
+  for (const [key, value] of Object.entries(config)) {
+    if (key.startsWith("pp_")) {
+      personalPlaylist.push([key, value]);
+    } else {
+      general.push([key, value]);
+    }
+  }
+
+  return { general, personalPlaylist };
+}
+
 export function ConfigSettings({
   config,
   hasChanges,
@@ -24,6 +40,8 @@ export function ConfigSettings({
   onChange,
   onSaveAll,
 }: ConfigSettingsProps) {
+  const { general, personalPlaylist } = partitionConfig(config);
+
   return (
     <Panel>
       <SectionHeader title="Settings" />
@@ -33,10 +51,16 @@ export function ConfigSettings({
         sx={{ mb: 2.5 }}
       >
         Changes are saved to the database and will take effect on server
-        restart. Use "Restart Server" in the Admin section below to apply changes.
+        restart. Use &ldquo;Restart Server&rdquo; in the Admin section below to apply changes.
       </Typography>
+
+      {/* General settings */}
+      <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, mt: 1 }}>
+        General
+      </Typography>
+      <Divider sx={{ mb: 1.5 }} />
       <Stack spacing={1.875}>
-        {Object.entries(config).map(([key, value]) => (
+        {general.map(([key, value]) => (
           <ConfigField
             key={key}
             configKey={key}
@@ -46,6 +70,27 @@ export function ConfigSettings({
           />
         ))}
       </Stack>
+
+      {/* Personal playlists settings */}
+      {personalPlaylist.length > 0 && (
+        <>
+          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, mt: 3 }}>
+            Personal Playlists
+          </Typography>
+          <Divider sx={{ mb: 1.5 }} />
+          <Stack spacing={1.875}>
+            {personalPlaylist.map(([key, value]) => (
+              <ConfigField
+                key={key}
+                configKey={key}
+                value={value}
+                onChange={onChange}
+                disabled={saveLoading}
+              />
+            ))}
+          </Stack>
+        </>
+      )}
 
       <Box
         sx={{

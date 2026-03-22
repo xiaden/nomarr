@@ -7,11 +7,10 @@
 #
 # These settings cover the essential user-facing configuration:
 # - Where files live (models, DB, library)
-# - How tags are written (file write mode, overwrite behavior)
+# - How tags are written (per-library file_write_mode on library settings)
 # - Library scanning (auto-tag, ignore patterns)
 # - Worker counts (global and per-pool for parallel processing, VRAM usage)
-# - Model cache behavior (idle timeout)
-# - Calibration (enable calibration mode, repo URL)
+# - Calibration (enable calibration generation mode)
 # - Authentication (admin password)
 # ======================================================================
 
@@ -22,14 +21,7 @@ models_dir: /app/models # Directory containing ML models
 db_path: /app/config/db/nomarr.db # SQLite database path
 library_root: /media # Path to music library root
 
-# ----------------------------------------------------------------------
-# Tag Writing Behavior
-# ----------------------------------------------------------------------
-file_write_mode: full # Tag writing mode:
-  #   "none"    - DB only, no file writes
-  #   "minimal" - mood-* tags + summary only
-  #   "full"    - numeric + mood-* tags
-overwrite_tags: true # Overwrite existing tags in files
+
 
 # ----------------------------------------------------------------------
 # Library Scanning
@@ -46,16 +38,17 @@ library_ignore_patterns:  "" # Comma-separated path patterns to skip
 tagger_worker_count: 1
 
 # ----------------------------------------------------------------------
-# Model Cache
-# ----------------------------------------------------------------------
-cache_idle_timeout: 300 # Seconds before unloading idle models
-  # (0 = never unload, useful for dev)
-
-# ----------------------------------------------------------------------
 # Calibration (Developer Feature)
 # ----------------------------------------------------------------------
+
+# ----------------------------------------------------------------------
+# Vector Search Quality
+# ----------------------------------------------------------------------
+# Controls the trade-off between search accuracy and performance.
+# These are global defaults; individual libraries can override them.
+vector_group_size: 15          # Songs per similarity neighborhood (5-100)
+vector_search_thoroughness: 10 # Percentage of neighborhoods to scan (1-100)
 calibrate_heads: false # Enable calibration generation mode
-calibration_repo: "https://github.com/xiaden/nom-cal" # Calibration repo URL
 
 # ----------------------------------------------------------------------
 # Authentication
