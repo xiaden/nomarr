@@ -264,7 +264,7 @@ def build_cold_vector_index(
                     "dimension": embed_dim,
                     "nLists": nlists,
                 },
-                "storedValues": [{"fields": ["genres"]}],
+                "storedValues": ["genres"],
             },
         )
         logger.info("Vector index created successfully on %s", cold_name)
