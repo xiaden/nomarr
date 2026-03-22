@@ -6,12 +6,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+DISCOVERY_MODULE = "nomarr.components.ml.onnx.ml_discovery_comp"
+
 
 @pytest.mark.unit
 class TestListHotVectorTargets:
     """Tests for list_hot_vector_targets."""
 
-    @patch("nomarr.components.ml.vectors.ml_vector_idle_promotion_comp.discover_backbones")
+    @patch(f"{DISCOVERY_MODULE}.discover_backbones")
     def test_returns_pairs_with_hot_vectors(
         self, mock_discover: MagicMock
     ) -> None:
@@ -60,7 +62,7 @@ class TestListHotVectorTargets:
         assert result == [("effnet", "lib1"), ("musicnn", "lib2")]
         mock_discover.assert_called_once_with("/models")
 
-    @patch("nomarr.components.ml.vectors.ml_vector_idle_promotion_comp.discover_backbones")
+    @patch(f"{DISCOVERY_MODULE}.discover_backbones")
     def test_returns_empty_when_no_backbones(
         self, mock_discover: MagicMock
     ) -> None:
@@ -77,7 +79,7 @@ class TestListHotVectorTargets:
         assert result == []
         db.libraries.list_libraries.assert_not_called()
 
-    @patch("nomarr.components.ml.vectors.ml_vector_idle_promotion_comp.discover_backbones")
+    @patch(f"{DISCOVERY_MODULE}.discover_backbones")
     def test_returns_empty_when_no_libraries(
         self, mock_discover: MagicMock
     ) -> None:
@@ -93,173 +95,3 @@ class TestListHotVectorTargets:
         result = list_hot_vector_targets(db, "/models")
 
         assert result == []
-
-
-@pytest.mark.unit
-class TestRunIdlePromotion:
-    """Tests for run_idle_promotion."""
-
-    @patch(
-        "nomarr.components.ml.vectors.ml_vector_idle_promotion_comp.list_hot_vector_targets"
-    )
-    def test_returns_zero_when_no_targets(
-        self, mock_targets: MagicMock
-    ) -> None:
-        """Returns 0 when no hot vector targets exist."""
-        from nomarr.components.ml.vectors.ml_vector_idle_promotion_comp import (
-            run_idle_promotion,
-        )
-
-        mock_targets.return_value = []
-        db = MagicMock()
-
-        result = run_idle_promotion(db, "worker:tag:0", "/models")
-
-        assert result == 0
-
-    @patch(
-        "nomarr.components.ml.vectors.ml_vector_idle_promotion_comp.promote_and_rebuild_workflow"
-    )
-    @patch(
-        "nomarr.components.ml.vectors.ml_vector_idle_promotion_comp.list_hot_vector_targets"
-    )
-    @patch(
-        "nomarr.components.ml.vectors.ml_vector_idle_promotion_comp._compute_nlists"
-    )
-    def test_promotes_when_lock_acquired(
-        self,
-        mock_nlists: MagicMock,
-        mock_targets: MagicMock,
-        mock_workflow: MagicMock,
-    ) -> None:
-        """Promotes backbones when lock is successfully acquired."""
-        from nomarr.components.ml.vectors.ml_vector_idle_promotion_comp import (
-            run_idle_promotion,
-        )
-
-        mock_targets.return_value = [("effnet", "lib1"), ("musicnn", "lib2")]
-        mock_nlists.return_value = 100
-
-        db = MagicMock()
-        db.vector_promotion_locks.get_stale_locks.return_value = []
-        db.vector_promotion_locks.try_acquire_lock.return_value = True
-
-        result = run_idle_promotion(db, "worker:tag:0", "/models")
-
-        assert result == 2
-        assert mock_workflow.call_count == 2
-        mock_workflow.assert_any_call(db, "effnet", "lib1", 100, "/models")
-        mock_workflow.assert_any_call(db, "musicnn", "lib2", 100, "/models")
-
-        # Verify locks released for both
-        assert db.vector_promotion_locks.release_lock.call_count == 2
-        db.vector_promotion_locks.release_lock.assert_any_call(
-            "effnet", "lib1", "worker:tag:0"
-        )
-        db.vector_promotion_locks.release_lock.assert_any_call(
-            "musicnn", "lib2", "worker:tag:0"
-        )
-
-    @patch(
-        "nomarr.components.ml.vectors.ml_vector_idle_promotion_comp.promote_and_rebuild_workflow"
-    )
-    @patch(
-        "nomarr.components.ml.vectors.ml_vector_idle_promotion_comp.list_hot_vector_targets"
-    )
-    @patch(
-        "nomarr.components.ml.vectors.ml_vector_idle_promotion_comp._compute_nlists"
-    )
-    def test_skips_when_lock_not_acquired(
-        self,
-        mock_nlists: MagicMock,
-        mock_targets: MagicMock,
-        mock_workflow: MagicMock,
-    ) -> None:
-        """Skips promotion when lock is held by another worker."""
-        from nomarr.components.ml.vectors.ml_vector_idle_promotion_comp import (
-            run_idle_promotion,
-        )
-
-        mock_targets.return_value = [("effnet", "lib1")]
-        mock_nlists.return_value = 100
-
-        db = MagicMock()
-        db.vector_promotion_locks.get_stale_locks.return_value = []
-        db.vector_promotion_locks.try_acquire_lock.return_value = False
-
-        result = run_idle_promotion(db, "worker:tag:0", "/models")
-
-        assert result == 0
-        mock_workflow.assert_not_called()
-        db.vector_promotion_locks.release_lock.assert_not_called()
-
-    @patch(
-        "nomarr.components.ml.vectors.ml_vector_idle_promotion_comp.promote_and_rebuild_workflow"
-    )
-    @patch(
-        "nomarr.components.ml.vectors.ml_vector_idle_promotion_comp.list_hot_vector_targets"
-    )
-    @patch(
-        "nomarr.components.ml.vectors.ml_vector_idle_promotion_comp._compute_nlists"
-    )
-    def test_releases_lock_on_workflow_failure(
-        self,
-        mock_nlists: MagicMock,
-        mock_targets: MagicMock,
-        mock_workflow: MagicMock,
-    ) -> None:
-        """Lock is released even when promote_and_rebuild_workflow raises."""
-        from nomarr.components.ml.vectors.ml_vector_idle_promotion_comp import (
-            run_idle_promotion,
-        )
-
-        mock_targets.return_value = [("effnet", "lib1")]
-        mock_nlists.return_value = 100
-        mock_workflow.side_effect = RuntimeError("drain failed")
-
-        db = MagicMock()
-        db.vector_promotion_locks.get_stale_locks.return_value = []
-        db.vector_promotion_locks.try_acquire_lock.return_value = True
-
-        result = run_idle_promotion(db, "worker:tag:0", "/models")
-
-        # Promotion failed but lock was still released
-        assert result == 0
-        db.vector_promotion_locks.release_lock.assert_called_once_with(
-            "effnet", "lib1", "worker:tag:0"
-        )
-
-    @patch(
-        "nomarr.components.ml.vectors.ml_vector_idle_promotion_comp.promote_and_rebuild_workflow"
-    )
-    @patch(
-        "nomarr.components.ml.vectors.ml_vector_idle_promotion_comp.list_hot_vector_targets"
-    )
-    @patch(
-        "nomarr.components.ml.vectors.ml_vector_idle_promotion_comp._compute_nlists"
-    )
-    def test_reaps_stale_locks(
-        self,
-        mock_nlists: MagicMock,
-        mock_targets: MagicMock,
-        mock_workflow: MagicMock,
-    ) -> None:
-        """Stale locks from crashed workers are force-released."""
-        from nomarr.components.ml.vectors.ml_vector_idle_promotion_comp import (
-            run_idle_promotion,
-        )
-
-        mock_targets.return_value = [("effnet", "lib1")]
-        mock_nlists.return_value = 100
-
-        db = MagicMock()
-        db.vector_promotion_locks.get_stale_locks.return_value = [
-            ("yamnet", "lib3"),
-        ]
-        db.vector_promotion_locks.try_acquire_lock.return_value = True
-
-        run_idle_promotion(db, "worker:tag:0", "/models")
-
-        db.vector_promotion_locks.force_release_lock.assert_called_once_with(
-            "yamnet", "lib3"
-        )

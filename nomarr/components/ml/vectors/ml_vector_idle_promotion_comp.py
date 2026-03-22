@@ -1,15 +1,8 @@
 """Idle vector promotion component.
 
-Automatically promotes hot vectors to cold collections and rebuilds HNSW
-indexes when a discovery worker is idle.  Called from a background thread
-spawned by ``DiscoveryWorker.run()``.
-
-Thread safety
--------------
-The ``Database`` instance passed to functions in this module is the same
-object used by the worker's main loop.  This is safe because python-arango
-uses HTTP connection pooling that is thread-safe within a single process.
-Each request gets its own connection from the pool.
+Provides domain logic for idle vector promotion: enumerating hot vector
+targets and computing optimal nlists parameters.  The orchestration logic
+lives in ``nomarr.workflows.platform.idle_promotion_vectors_wf``.
 """
 
 from __future__ import annotations
@@ -64,7 +57,7 @@ def list_hot_vector_targets(
     return targets
 
 
-def _compute_nlists(db: Database, backbone_id: str, library_key: str) -> int:
+def compute_promotion_nlists(db: Database, backbone_id: str, library_key: str) -> int:
     """Compute optimal nlists for a backbone+library pair.
 
     Reads per-library ``vector_group_size`` from the library document,
@@ -105,90 +98,3 @@ def _compute_nlists(db: Database, backbone_id: str, library_key: str) -> int:
     return compute_nlists(hot_count + cold_count, group_size)
 
 
-def run_idle_promotion(db: Database, worker_id: str, models_dir: str) -> int:
-    """Run hot→cold vector promotion for all pending backbone+library pairs.
-
-    Intended to be called from a background thread when the discovery worker
-    is idle.  Coordinates with other workers via DB-level locks.
-
-    Steps:
-    1. Find backbone+library pairs with pending hot vectors.
-    2. Reap stale locks (crashed workers, >10 min).
-    3. For each target, attempt to acquire lock.
-    4. If acquired, promote and rebuild (lock always released in finally).
-
-    Args:
-        db: Database instance (thread-safe via python-arango pooling).
-        worker_id: Worker identifier for lock ownership.
-        models_dir: Root directory containing model folders.
-
-    Returns:
-        Number of backbone+library pairs successfully promoted.
-
-    """
-    from nomarr.workflows.platform.promote_and_rebuild_vectors_wf import (
-        promote_and_rebuild_workflow,
-    )
-
-    targets = list_hot_vector_targets(db, models_dir)
-    if not targets:
-        logger.debug("[%s] No hot vectors pending promotion", worker_id)
-        return 0
-
-    logger.info(
-        "[%s] Found %d backbone+library pairs with hot vectors",
-        worker_id,
-        len(targets),
-    )
-
-    # Reap stale locks (crashed workers, >10 minutes)
-    stale_locks = db.vector_promotion_locks.get_stale_locks(stale_after_ms=600_000)
-    for stale_backbone, stale_library in stale_locks:
-        db.vector_promotion_locks.force_release_lock(stale_backbone, stale_library)
-        logger.warning(
-            "[%s] Reaped stale promotion lock for %s__%s",
-            worker_id,
-            stale_backbone,
-            stale_library,
-        )
-
-    promoted = 0
-    for backbone_id, library_key in targets:
-        if not db.vector_promotion_locks.try_acquire_lock(
-            backbone_id, library_key, worker_id
-        ):
-            logger.debug(
-                "[%s] Lock held for %s__%s — skipping",
-                worker_id,
-                backbone_id,
-                library_key,
-            )
-            continue
-
-        try:
-            nlists = _compute_nlists(db, backbone_id, library_key)
-            logger.info(
-                "[%s] Promoting %s__%s (nlists=%d)",
-                worker_id,
-                backbone_id,
-                library_key,
-                nlists,
-            )
-            promote_and_rebuild_workflow(
-                db, backbone_id, library_key, nlists, models_dir
-            )
-            promoted += 1
-        except Exception:
-            logger.exception(
-                "[%s] Promotion failed for %s__%s",
-                worker_id,
-                backbone_id,
-                library_key,
-            )
-        finally:
-            db.vector_promotion_locks.release_lock(
-                backbone_id, library_key, worker_id
-            )
-
-    logger.info("[%s] Idle promotion complete: %d promoted", worker_id, promoted)
-    return promoted

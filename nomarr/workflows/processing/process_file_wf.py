@@ -70,15 +70,15 @@ def process_file_workflow(
     if db is not None:
         library_path = build_library_path_from_db(stored_path=path, db=db, library_id=None, check_disk=True)
         if not library_path.is_valid():
-            error_msg = f"Path validation failed ({library_path.status}): {library_path.reason}"
-            logger.error(f"[process_file_workflow] {error_msg} - {path}")
-            raise ValueError(error_msg)
+            error_message = f"Path validation failed ({library_path.status}): {library_path.reason}"
+            logger.error(f"[process_file_workflow] {error_message} - {path}")
+            raise ValueError(error_message)
         path = str(library_path.absolute)
         logger.debug(f"[process_file_workflow] Path validated for library_id={library_path.library_id}: {path}")
     else:
-        error_msg = "Database not available!"
-        logger.error(f"[process_file_workflow] {error_msg}")
-        raise ValueError(error_msg)
+        error_message = "Database not available!"
+        logger.error(f"[process_file_workflow] {error_message}")
+        raise ValueError(error_message)
     start_all = internal_ms()
     timings: dict[str, float] = {}  # operation_name -> duration_ms
     # Use the caller-provided ONNXModelCache; fall back to on-demand discovery
@@ -152,9 +152,9 @@ def process_file_workflow(
     timings.update(embed_result.timings)
 
     # Mark skipped heads from failed backbones
-    for bb, err_msg in embed_result.errors.items():
+    for bb, error_message in embed_result.errors.items():
         for head in heads_by_backbone[bb]:
-            all_head_results[head.name] = {"status": "skipped", "reason": err_msg}
+            all_head_results[head.name] = {"status": "skipped", "reason": error_message}
 
     # Process head predictions sequentially (cheap, mutates shared state)
     for item in embed_result.embeddings:

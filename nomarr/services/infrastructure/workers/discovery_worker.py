@@ -401,8 +401,8 @@ class DiscoveryWorker(multiprocessing.Process):
                         idle_consecutive_polls >= IDLE_POLLS_BEFORE_PROMOTION
                         and (promotion_running is None or not promotion_running.is_alive())
                     ):
-                        from nomarr.components.ml.vectors.ml_vector_idle_promotion_comp import (
-                            run_idle_promotion,
+                        from nomarr.workflows.platform.idle_promotion_vectors_wf import (
+                            idle_promotion_vectors_workflow as run_idle_promotion,
                         )
 
                         promotion_running = threading.Thread(
