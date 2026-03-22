@@ -86,17 +86,6 @@ def crawl_navidrome_songs(client: SubsonicClient) -> list[CrawledSong]:
     return all_songs
 
 
-def remap_path(nd_path: str, prefix_map: list[tuple[str, str]]) -> str:
-    """Apply path prefix remapping from Navidrome to Nomarr format.
-
-    Tries each (navidrome_prefix, nomarr_prefix) pair in order.
-    Returns the original path unchanged if no prefix matches.
-    """
-    for nd_prefix, nomarr_prefix in prefix_map:
-        if nd_path.startswith(nd_prefix):
-            return nomarr_prefix + nd_path[len(nd_prefix) :]
-    return nd_path
-
 
 def _parse_played_to_ms(played: str) -> int:
     """Convert Subsonic ``played`` datetime string to epoch milliseconds.

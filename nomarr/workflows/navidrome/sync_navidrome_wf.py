@@ -1,7 +1,8 @@
 """Sync Navidrome song inventory to graph-based collections.
 
-Walks Navidrome's album inventory via the Subsonic API, matches file paths
-(with configurable prefix remapping) to Nomarr library_files, upserts
+Walks Navidrome's album inventory via the Subsonic API, auto-detects the
+path prefix mapping from crawled paths vs. Nomarr normalized_paths,
+resolves Navidrome file paths to Nomarr library_files, upserts
 ``navidrome_tracks`` vertices + ``has_nd_id`` edges, captures per-user play
 counts as ``has_plays`` edges, and removes orphaned tracks no longer present
 in Navidrome.
@@ -12,7 +13,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.navidrome.subsonic_crawl_comp import crawl_navidrome_songs, remap_path
+from nomarr.components.navidrome.subsonic_crawl_comp import crawl_navidrome_songs
 from nomarr.helpers.dto.navidrome_dto import NdSyncResult
 from nomarr.helpers.time_helper import internal_ms
 
@@ -24,18 +25,43 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _UPSERT_BATCH_SIZE = 500
+_PREFIX_SAMPLE_SIZE = 20
+
+
+def _detect_prefix(songs: list[CrawledSong], db: Database) -> str:
+    """Auto-detect the Navidrome path prefix from a sample of crawled songs.
+
+    Tries up to ``_PREFIX_SAMPLE_SIZE`` paths against library_files until one
+    matches a ``normalized_path`` suffix.  Returns the detected prefix (e.g.
+    ``"/music/"``) or ``""`` if the paths already match without stripping.
+
+    Raises:
+        ValueError: If no sample path matches any Nomarr file — library may
+            not have been scanned yet.
+    """
+    sample = [s["nd_path"] for s in songs[:_PREFIX_SAMPLE_SIZE]]
+    for nd_path in sample:
+        prefix = db.library_files.detect_nd_path_prefix(nd_path)
+        if prefix is not None:
+            logger.info("sync_navidrome: auto-detected path prefix %r", prefix)
+            return prefix
+    msg = (
+        "Could not detect path prefix from Navidrome paths. "
+        "Ensure the Nomarr library has been scanned before syncing. "
+        f"Sample path: {sample[0] if sample else '(no songs)'}"
+    )
+    raise ValueError(msg)
 
 
 def sync_navidrome(
     client: SubsonicClient,
-    path_prefix_map: list[tuple[str, str]],
     db: Database,
     user_id: str,
 ) -> NdSyncResult:
     """Sync Navidrome's song inventory into graph collections.
 
     Walks all albums via ``getAlbumList2`` (paginated), fetches each album's
-    songs via ``getAlbum``, applies path prefix remapping, resolves Nomarr
+    songs via ``getAlbum``, auto-detects the path prefix, resolves Nomarr
     file IDs via ``db.library_files.get_files_by_paths_bulk()``, and writes
     to ``navidrome_tracks``, ``has_nd_id``, ``navidrome_playcounts``, and
     ``has_plays`` collections.  Orphan tracks (present in DB but absent from
@@ -43,8 +69,6 @@ def sync_navidrome(
 
     Args:
         client: Authenticated Subsonic API client.
-        path_prefix_map: List of (navidrome_prefix, nomarr_prefix) tuples
-            for converting Navidrome file paths to Nomarr normalized_paths.
         db: Database instance.
         user_id: Navidrome user identifier for play count attribution.
 
@@ -57,8 +81,9 @@ def sync_navidrome(
     # Step 1: Crawl all albums and collect song data
     all_songs: list[CrawledSong] = crawl_navidrome_songs(client)
 
-    # Step 2: Remap paths and resolve to Nomarr file IDs
-    remapped_paths = [remap_path(s["nd_path"], path_prefix_map) for s in all_songs]
+    # Step 2: Auto-detect path prefix and strip it from all ND paths
+    nd_prefix = _detect_prefix(all_songs, db)
+    remapped_paths = [s["nd_path"].removeprefix(nd_prefix) for s in all_songs]
     path_to_doc = db.library_files.get_files_by_paths_bulk(remapped_paths)
 
     # Step 3: Build resolved mappings and play edge data

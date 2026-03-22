@@ -54,7 +54,6 @@ class DynamicConfig:
     navidrome_api_url: str | None = None
     navidrome_api_user: str | None = None
     navidrome_api_password: str | None = None
-    navidrome_path_prefix_map: str = ""
     m3u_output_path: str = ""
     vector_group_size: int = 15
     vector_search_thoroughness: int = 10
@@ -134,11 +133,6 @@ DYNAMIC_FIELD_META: dict[str, FieldMeta] = {
         "label": "Navidrome Password",
         "description": "Navidrome admin password for API access",
         "ui_type": "password",
-    },
-    "navidrome_path_prefix_map": {
-        "label": "Path Prefix Map",
-        "description": "Comma-separated from:to pairs for path remapping between Nomarr and Navidrome",
-        "ui_type": "text",
     },
     "m3u_output_path": {
         "label": "M3U Output Path",

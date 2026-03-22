@@ -155,6 +155,33 @@ class LibraryFilesQueriesMixin:
                 result[abs_path] = doc
         return result
 
+    def detect_nd_path_prefix(self, nd_path: str) -> str | None:
+        """Detect the Navidrome path prefix by matching an absolute ND path against
+        normalized_path suffixes stored in library_files.
+
+        For example, if ``nd_path`` is ``/music/Artist/Album/track.flac`` and a
+        library file has ``normalized_path = "Artist/Album/track.flac"``, this
+        returns ``"/music/"`` (the prefix to strip).
+
+        Returns:
+            Detected prefix string (may be empty ``""`` if paths already match),
+            or ``None`` if no library file matches the given path as a suffix.
+        """
+        query = """
+        FOR f IN library_files
+            FILTER LENGTH(f.normalized_path) > 0
+                AND ENDS_WITH(@nd_path, f.normalized_path)
+            LIMIT 1
+            RETURN SUBSTRING(@nd_path, 0, LENGTH(@nd_path) - LENGTH(f.normalized_path))
+        """
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(query, bind_vars=cast("dict[str, Any]", {"nd_path": nd_path})),
+        )
+        result: list[str] = list(cursor)
+        cursor.close(ignore_missing=True)
+        return result[0] if result else None
+
     def get_file_modified_times(self) -> dict[str, int]:
         """Get all file paths and their modified times.
 

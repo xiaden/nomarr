@@ -269,27 +269,6 @@ class NavidromeService:
     # API credentials (live from ConfigService)
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _parse_path_prefix_map(raw: str | None) -> list[tuple[str, str]]:
-        """Parse comma-separated 'from:to' prefix pairs.
-
-        Format: 'navidrome_prefix:nomarr_prefix,navidrome_prefix2:nomarr_prefix2'
-        Example: '/music:/media/library,/podcasts:/media/pods'
-
-        Returns:
-            List of (navidrome_prefix, nomarr_prefix) tuples.
-        """
-        if not raw or not raw.strip():
-            return []
-        pairs: list[tuple[str, str]] = []
-        for entry in raw.split(","):
-            entry = entry.strip()
-            if ":" not in entry:
-                continue
-            parts = entry.split(":", 1)
-            pairs.append((parts[0].strip(), parts[1].strip()))
-        return pairs
-
     def is_navidrome_configured(self) -> bool:
         """Check whether Navidrome credentials are fully configured.
 
@@ -410,13 +389,9 @@ class NavidromeService:
         from nomarr.workflows.navidrome.sync_navidrome_wf import sync_navidrome
 
         client = self._get_client()
-        path_prefix_map = self._parse_path_prefix_map(
-            self._config_service.get("navidrome_path_prefix_map", ""),
-        )
         api_user: str = self._config_service.get("navidrome_api_user", "")
         return sync_navidrome(
             client=client,
-            path_prefix_map=path_prefix_map,
             db=self._db,
             user_id=api_user,
         )
