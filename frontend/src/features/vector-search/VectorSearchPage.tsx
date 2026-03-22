@@ -8,7 +8,7 @@
  * - Results display with track links
  */
 
-import { Download } from "@mui/icons-material";
+import { CloudUpload } from "@mui/icons-material";
 import {
   Alert,
   Box,
@@ -34,7 +34,7 @@ import { Link, useSearchParams } from "react-router-dom";
 
 import type { LibraryFile } from "@shared/api/files";
 import { getFilesByIds } from "@shared/api/files";
-import { generateStaticPlaylist } from "@shared/api/navidrome";
+import { getNavidromeStatus, pushStaticPlaylist } from "@shared/api/navidrome";
 import { listBackbones } from "@shared/api/vectors";
 import { TrackSearchPicker } from "@shared/components/TrackSearchPicker";
 import { PageContainer, Panel, SectionHeader } from "@shared/components/ui";
@@ -48,6 +48,19 @@ export function VectorSearchPage() {
   const [selectedTrack, setSelectedTrack] = useState<LibraryFile | null>(null);
   const [limit, setLimit] = useState(10);
   const [minScore, setMinScore] = useState(0);
+
+  // Navidrome availability check
+  const [ndConfigured, setNdConfigured] = useState(false);
+  useEffect(() => {
+    (async () => {
+      try {
+        const status = await getNavidromeStatus();
+        setNdConfigured(status.configured);
+      } catch {
+        setNdConfigured(false);
+      }
+    })();
+  }, []);
 
   // Fetch available backbones on mount
   useEffect(() => {
@@ -132,33 +145,28 @@ export function VectorSearchPage() {
     await searchByFileId(backboneId, selectedTrack.file_id, limit, minScore);
   }, [backboneId, selectedTrack, limit, minScore, searchByFileId]);
 
-  // ── Static playlist generation ──
+  // ── Push playlist to Navidrome ──
   const [playlistLoading, setPlaylistLoading] = useState(false);
   const [playlistError, setPlaylistError] = useState<string | null>(null);
+  const [playlistSuccess, setPlaylistSuccess] = useState<string | null>(null);
 
-  const handleGeneratePlaylist = useCallback(async () => {
+  const handlePushPlaylist = useCallback(async () => {
     if (!results || results.length === 0) return;
     setPlaylistLoading(true);
     setPlaylistError(null);
+    setPlaylistSuccess(null);
     try {
       const fileIds = results.map((r) => r.file_id).slice(0, 200);
       const artist = selectedTrack?.artist ?? "Unknown";
       const title = selectedTrack?.title ?? "Unknown";
-      const playlistName = `Similar to ${artist} - ${title}`;
-      const response = await generateStaticPlaylist(fileIds, playlistName);
-      // Trigger browser download
-      const blob = new Blob([response.m3u_content], { type: "audio/x-mpegurl" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${response.playlist_name}.m3u`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      const playlistName = `Songs like ${artist} - ${title}`;
+      const response = await pushStaticPlaylist(fileIds, playlistName);
+      setPlaylistSuccess(
+        `Playlist "${response.playlist_name}" pushed to Navidrome (${response.track_count} tracks)`
+      );
     } catch (err) {
-      console.error("Failed to generate playlist:", err);
-      setPlaylistError(err instanceof Error ? err.message : "Failed to generate playlist");
+      console.error("Failed to push playlist:", err);
+      setPlaylistError(err instanceof Error ? err.message : "Failed to push playlist to Navidrome");
     } finally {
       setPlaylistLoading(false);
     }
@@ -240,22 +248,27 @@ export function VectorSearchPage() {
           <Panel>
             <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 1 }}>
               <SectionHeader title={`Results (${results.length})`} />
-              <Tooltip title="Download M3U playlist of these results">
+              <Tooltip title={ndConfigured ? "Push playlist to Navidrome" : "Navidrome not configured"}>
                 <span>
                   <Button
                     variant="outlined"
                     size="small"
-                    startIcon={playlistLoading ? <CircularProgress size={16} /> : <Download />}
-                    onClick={handleGeneratePlaylist}
-                    disabled={playlistLoading}
+                    startIcon={playlistLoading ? <CircularProgress size={16} /> : <CloudUpload />}
+                    onClick={handlePushPlaylist}
+                    disabled={playlistLoading || !ndConfigured}
                   >
-                    Generate Navidrome Playlist
+                    Push to Navidrome
                   </Button>
                 </span>
               </Tooltip>
             </Box>
+            {playlistSuccess && (
+              <Alert severity="success" sx={{ mb: 1 }} onClose={() => setPlaylistSuccess(null)}>
+                {playlistSuccess}
+              </Alert>
+            )}
             {playlistError && (
-              <Alert severity="error" sx={{ mb: 1 }}>
+              <Alert severity="error" sx={{ mb: 1 }} onClose={() => setPlaylistError(null)}>
                 {playlistError}
               </Alert>
             )}

@@ -1,0 +1,1 @@
+import{Zn as e,bn as t,ur as n}from"./index-3N9AhIxS.js";var r=t((0,n(e()).jsx)(`path`,{d:`M5 20h14v-2H5zM19 9h-4V3H9v6H5l7 7z`}),`Download`);export{r as t};
