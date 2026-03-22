@@ -23,6 +23,7 @@ from .meta_aql import MetaOperations
 from .segment_scores_stats_aql import SegmentScoresStatsOperations
 from .sessions_aql import SessionOperations
 from .tags_aql import TagOperations
+from .vector_promotion_lock_aql import VectorPromotionLockOperations
 
 # JoinedQueryOperations has circular import with workflows - imported directly in db.py
 
@@ -37,4 +38,5 @@ __all__ = [
     "SegmentScoresStatsOperations",
     "SessionOperations",
     "TagOperations",
+    "VectorPromotionLockOperations",
 ]

@@ -19,11 +19,13 @@ from nomarr.persistence.database.migrations_aql import MigrationOperations
 from nomarr.persistence.database.ml_capacity_aql import MLCapacityOperations
 from nomarr.persistence.database.ml_model_outputs_aql import MLModelOutputsOperations
 from nomarr.persistence.database.ml_models_aql import MLModelsOperations
-from nomarr.persistence.database.navidrome_song_map_aql import NavidromeSongMapOperations
+from nomarr.persistence.database.navidrome_playcounts_aql import NavidromePlaycountsOperations
+from nomarr.persistence.database.navidrome_tracks_aql import NavidromeTracksOperations
 from nomarr.persistence.database.segment_scores_stats_aql import SegmentScoresStatsOperations
 from nomarr.persistence.database.sessions_aql import SessionOperations
 from nomarr.persistence.database.tag_model_output_aql import TagModelOutputOperations
 from nomarr.persistence.database.tags_aql import TagOperations
+from nomarr.persistence.database.vector_promotion_lock_aql import VectorPromotionLockOperations
 from nomarr.persistence.database.vectors_track_aql import (
     VectorsTrackColdOperations,
     VectorsTrackHotOperations,
@@ -139,10 +141,12 @@ class Database:
         self.calibration_history = CalibrationHistoryOperations(self.db)
         self.health = HealthOperations(self.db)
         self.worker_restart_policy = WorkerRestartPolicyOperations(self.db)
-        self.navidrome_song_map = NavidromeSongMapOperations(self.db)
+        self.navidrome_tracks = NavidromeTracksOperations(self.db)
+        self.navidrome_playcounts = NavidromePlaycountsOperations(self.db)
         self.file_states = FileStatesOperations(self.db)
         self.worker_claims = WorkerClaimsOperations(self.db)
         self.vram_promises = VramPromisesOperations(self.db)
+        self.vector_promotion_locks = VectorPromotionLockOperations(self.db)
         self.ml_capacity = MLCapacityOperations(self.db)
         self.ml_models = MLModelsOperations(self.db)
         self.ml_model_outputs = MLModelOutputsOperations(self.db)
@@ -163,8 +167,10 @@ class Database:
         # from nomarr.persistence.database.joined_queries_aql import JoinedQueryOperations
         # self.joined_queries = JoinedQueryOperations(self.db)
 
-    def register_vectors_track_backbone(self, backbone_id: str) -> VectorsTrackHotOperations:
-        """Get or create a VectorsTrackHotOperations instance for a backbone.
+    def register_vectors_track_backbone(
+        self, backbone_id: str, library_key: str
+    ) -> VectorsTrackHotOperations:
+        """Get or create a VectorsTrackHotOperations instance for a backbone+library.
 
         Hot operations are for write-only vector storage (no vector index overhead).
 
@@ -172,17 +178,26 @@ class Database:
 
         Args:
             backbone_id: Backbone identifier (e.g., "effnet", "yamnet").
+            library_key: ArangoDB ``_key`` of the library document.
 
         Returns:
-            The cached VectorsTrackHotOperations for this backbone.
+            The cached VectorsTrackHotOperations for this backbone+library.
 
         """
-        if backbone_id not in self.vectors_track:
-            self.vectors_track[backbone_id] = VectorsTrackHotOperations(self.db, backbone_id)
-        return self.vectors_track[backbone_id]
+        cache_key = f"{backbone_id}__{library_key}"
+        if cache_key not in self.vectors_track:
+            self.vectors_track[cache_key] = VectorsTrackHotOperations(
+                self.db, backbone_id, library_key
+            )
+        return self.vectors_track[cache_key]
 
-    def get_vectors_track_cold(self, backbone_id: str) -> VectorsTrackColdOperations:
-        """Get or create a VectorsTrackColdOperations instance for a backbone.
+    def get_vectors_track_cold(
+        self,
+        backbone_id: str,
+        library_key: str,
+        collection_suffix: str | None = None,
+    ) -> VectorsTrackColdOperations:
+        """Get or create a VectorsTrackColdOperations instance for a backbone+library.
 
         Cold operations are for read/search on promoted vectors with vector indexes.
 
@@ -190,28 +205,34 @@ class Database:
 
         Args:
             backbone_id: Backbone identifier (e.g., "effnet", "yamnet").
+            library_key: ArangoDB ``_key`` of the library document.
+            collection_suffix: Optional suffix appended to the collection name
+                (e.g., ``"genre__rock"`` for genre-specific sub-collections).
 
         Returns:
-            The cached VectorsTrackColdOperations for this backbone.
+            The cached VectorsTrackColdOperations for this backbone+library[+suffix].
 
         """
-        if backbone_id not in self._vectors_track_cold:
-            self._vectors_track_cold[backbone_id] = VectorsTrackColdOperations(self.db, backbone_id)
-        return self._vectors_track_cold[backbone_id]
+        cache_key = f"{backbone_id}__{library_key}"
+        if collection_suffix:
+            cache_key = f"{cache_key}__{collection_suffix}"
+        if cache_key not in self._vectors_track_cold:
+            self._vectors_track_cold[cache_key] = VectorsTrackColdOperations(
+                self.db, backbone_id, library_key, collection_suffix=collection_suffix
+            )
+        return self._vectors_track_cold[cache_key]
 
     def delete_vectors_by_file_id(self, file_id: str) -> int:
-        """Delete vectors for a file from ALL backbones (both hot and cold).
+        """Delete vectors for a file from ALL backbones and libraries (both hot and cold).
 
         Single orchestration point for cascade delete. Iterates all registered
-        backbones and removes vectors from both hot and cold collections.
-        Gracefully skips cold collections that don't exist yet (created only
-        after promote & rebuild).
+        backbone+library combinations and removes vectors from both hot and cold collections.
 
         Args:
             file_id: Library file document ID.
 
         Returns:
-            Total number of vectors deleted across all backbones.
+            Total number of vectors deleted across all backbones and libraries.
 
         """
         total_deleted = 0
@@ -226,20 +247,10 @@ class Database:
             deleted = cold_ops.delete_by_file_id(file_id)
             total_deleted += deleted
 
-        # Also check cold collections not yet cached (only if they exist)
-        for backbone_id in self.vectors_track:
-            if backbone_id not in self._vectors_track_cold:
-                cold_name = f"vectors_track_cold__{backbone_id}"
-                if not self.db.has_collection(cold_name):
-                    continue
-                cold_ops = self.get_vectors_track_cold(backbone_id)
-                deleted = cold_ops.delete_by_file_id(file_id)
-                total_deleted += deleted
-
         return total_deleted
 
     def delete_vectors_by_file_ids(self, file_ids: list[str]) -> int:
-        """Delete vectors for multiple files from ALL backbones (both hot and cold).
+        """Delete vectors for multiple files from ALL backbones and libraries (both hot and cold).
 
         Bulk version of delete_vectors_by_file_id.
 
@@ -247,7 +258,7 @@ class Database:
             file_ids: List of library file document IDs.
 
         Returns:
-            Total number of vectors deleted across all backbones.
+            Total number of vectors deleted across all backbones and libraries.
 
         """
         if not file_ids:
@@ -264,16 +275,6 @@ class Database:
         for cold_ops in self._vectors_track_cold.values():
             deleted = cold_ops.delete_by_file_ids(file_ids)
             total_deleted += deleted
-
-        # Also check cold collections not yet cached (only if they exist)
-        for backbone_id in self.vectors_track:
-            if backbone_id not in self._vectors_track_cold:
-                cold_name = f"vectors_track_cold__{backbone_id}"
-                if not self.db.has_collection(cold_name):
-                    continue
-                cold_ops = self.get_vectors_track_cold(backbone_id)
-                deleted = cold_ops.delete_by_file_ids(file_ids)
-                total_deleted += deleted
 
         return total_deleted
 

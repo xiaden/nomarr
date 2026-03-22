@@ -35,6 +35,7 @@ HEALTH_FRAME_INTERVAL_S = 3.0  # Send health frame every 3 seconds (faster than 
 IDLE_SLEEP_S = 1.0  # Sleep when no work available
 MAX_CONSECUTIVE_ERRORS = 10  # Shutdown after this many consecutive failures
 CACHE_IDLE_TIMEOUT_S = 40  # Evict cache after 40 seconds of no work (matches default)
+IDLE_POLLS_BEFORE_PROMOTION: int = 3  # Trigger hot→cold promotion after this many idle polls
 
 # Health frame prefix
 HEALTH_FRAME_PREFIX = "HEALTH|"
@@ -348,6 +349,8 @@ class DiscoveryWorker(multiprocessing.Process):
         last_work_time: float | None = None  # Monotonic timestamp of last successful file claim
         onnx_cache: ONNXModelCache | None = None  # ONNX model cache, lazily warmed
         recovering_until: float | None = None  # Recovery deadline if in recovering state
+        idle_consecutive_polls: int = 0  # Count of consecutive idle polls (for promotion trigger)
+        promotion_running: threading.Thread | None = None  # Background promotion thread
 
         # Single-thread executor for async DB writes — overlaps I/O with next file's ML
         write_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="db-write")
@@ -376,6 +379,7 @@ class DiscoveryWorker(multiprocessing.Process):
                 )
 
                 if file_id is None:
+                    idle_consecutive_polls += 1
                     logger.debug("[%s] No work found, sleeping %.1fs", self.worker_id, IDLE_SLEEP_S)
                     # Evict ONNX cache after idle timeout
                     if (
@@ -392,10 +396,29 @@ class DiscoveryWorker(multiprocessing.Process):
                         # which are only freed when the cache is evicted, not per-track).
                         _malloc_trim()
 
+                    # Spawn idle vector promotion if enough consecutive idle polls
+                    if (
+                        idle_consecutive_polls >= IDLE_POLLS_BEFORE_PROMOTION
+                        and (promotion_running is None or not promotion_running.is_alive())
+                    ):
+                        from nomarr.components.ml.vectors.ml_vector_idle_promotion_comp import (
+                            run_idle_promotion,
+                        )
+
+                        promotion_running = threading.Thread(
+                            target=run_idle_promotion,
+                            args=(db, self.worker_id, config.models_dir),
+                            daemon=True,
+                            name=f"VecPromo-{self.worker_id}",
+                        )
+                        promotion_running.start()
+                        logger.info("[%s] Spawning idle vector promotion thread", self.worker_id)
+
                     time.sleep(IDLE_SLEEP_S)
                     continue
 
                 logger.debug("[%s] Work found: claimed file %s", self.worker_id, file_id)
+                idle_consecutive_polls = 0
                 last_work_time = internal_s().value
 
                 # Per-file resource check (GPU_REFACTOR_PLAN.md Section 11)
@@ -594,6 +617,10 @@ class DiscoveryWorker(multiprocessing.Process):
                 except Exception:
                     logger.exception("[%s] Pending write failed during shutdown", self.worker_id)
             write_executor.shutdown(wait=True)
+
+            # Wait for in-progress promotion to finish gracefully
+            if promotion_running is not None and promotion_running.is_alive():
+                promotion_running.join(timeout=60)
 
             # Cleanup on exit
             logger.info(

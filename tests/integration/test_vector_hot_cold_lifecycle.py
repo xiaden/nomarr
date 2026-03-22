@@ -149,15 +149,26 @@ class FakeArangoCollection:
         self.harness = harness
         self.name = name
 
+    @staticmethod
+    def _extract_backbone(name: str) -> str:
+        """Extract backbone id from a per-library collection name.
+
+        Collection names follow the pattern
+        ``vectors_track_{tier}__{backbone}__{library_key}``.
+        We split on ``"__"`` and take the second segment.
+        """
+        parts = name.split("__")
+        return parts[1] if len(parts) >= 2 else name
+
     def indexes(self) -> list[dict[str, Any]]:
         if "vectors_track_cold__" in self.name:
-            backbone = self.name.split("__", maxsplit=1)[1]
+            backbone = self._extract_backbone(self.name)
             if self.harness.has_vector_index(backbone):
                 return [{"type": "vector"}]
         return []
 
     def truncate(self) -> None:
-        backbone = self.name.split("__", maxsplit=1)[1]
+        backbone = self._extract_backbone(self.name)
         if "vectors_track_hot__" in self.name:
             self.harness.hot_docs[backbone].clear()
         else:
@@ -169,13 +180,19 @@ class FakeArangoHandle:
 
     def __init__(self, harness: VectorLifecycleHarness) -> None:
         self.harness = harness
+        self._collections: set[str] = set()
+
+    def register_collection(self, name: str) -> None:
+        self._collections.add(name)
 
     def has_collection(self, name: str) -> bool:
+        if name in self._collections:
+            return True
+        # Also check harness state for backwards-compat with older test patterns
+        backbone = FakeArangoCollection._extract_backbone(name)
         if "vectors_track_hot__" in name:
-            backbone = name.split("__", maxsplit=1)[1]
             return backbone in self.harness.known_backbones
         if "vectors_track_cold__" in name:
-            backbone = name.split("__", maxsplit=1)[1]
             return backbone in self.harness.cold_collections
         return False
 
@@ -252,14 +269,16 @@ class FakeDatabaseAdapter:
         self.vectors_track: dict[str, FakeHotOperations] = {}
         self._vectors_track_cold: dict[str, FakeColdOperations] = {}
 
-    def register_vectors_track_backbone(self, backbone_id: str) -> FakeHotOperations:
+    def register_vectors_track_backbone(self, backbone_id: str, library_key: str = "test_lib") -> FakeHotOperations:
         self.harness.register_backbone(backbone_id)
+        self.db.register_collection(f"vectors_track_hot__{backbone_id}__{library_key}")
         return self.vectors_track.setdefault(
             backbone_id, FakeHotOperations(self.harness, backbone_id)
         )
 
-    def get_vectors_track_cold(self, backbone_id: str) -> FakeColdOperations:
+    def get_vectors_track_cold(self, backbone_id: str, library_key: str = "test_lib") -> FakeColdOperations:
         self.harness.ensure_cold_collection(backbone_id)
+        self.db.register_collection(f"vectors_track_cold__{backbone_id}__{library_key}")
         return self._vectors_track_cold.setdefault(
             backbone_id, FakeColdOperations(self.harness, backbone_id)
         )
@@ -280,7 +299,13 @@ def test_bootstrap_creates_hot_collections_only(monkeypatch: pytest.MonkeyPatch)
     """Bootstrap should only create hot collections with indexes."""
 
     db_mock = MagicMock()
-    db_mock.has_collection.return_value = False
+
+    def _has_collection(name: str) -> bool:
+        # The "libraries" collection exists; new per-library vector collections do not
+        return name == "libraries"
+
+    db_mock.has_collection.side_effect = _has_collection
+    db_mock.aql.execute.return_value = iter(["lib1"])
     created_collections: list[str] = []
     db_mock.create_collection.side_effect = created_collections.append
 
@@ -306,8 +331,8 @@ def test_bootstrap_creates_hot_collections_only(monkeypatch: pytest.MonkeyPatch)
     _create_vectors_track_collections(db_mock, models_dir="/tmp/models")
 
     assert created_collections == [
-        "vectors_track_hot__effnet",
-        "vectors_track_hot__yamnet",
+        "vectors_track_hot__effnet__lib1",
+        "vectors_track_hot__yamnet__lib1",
     ]
     assert all(name.startswith("vectors_track_hot__") for name in indexed_collections)
     assert all("cold" not in name for name in created_collections)
@@ -341,7 +366,7 @@ def test_promote_and_rebuild_moves_hot_vectors_to_cold(
     """Maintenance workflow drains hot vectors, builds index, and leaves cold ready."""
 
     service = VectorMaintenanceService(
-        cast("Database", fake_database), models_dir="/ml-models"
+        cast("Database", fake_database), models_dir="/ml-models", config_svc=MagicMock()
     )
     hot_ops = fake_database.register_vectors_track_backbone("effnet")
     hot_ops.upsert_vector(
@@ -363,7 +388,7 @@ def test_promote_and_rebuild_moves_hot_vectors_to_cold(
         fake_workflow,
     )
 
-    service.promote_and_rebuild("effnet", nlists=48)
+    service.promote_and_rebuild("effnet", library_key="test_lib", nlists=48)
 
     assert vector_harness.hot_count("effnet") == 0
     assert vector_harness.cold_count("effnet") == 1
@@ -376,7 +401,7 @@ def test_search_similar_uses_cold_only(
 ) -> None:
     """Similarity search must ignore hot data and honor cold-only semantics."""
 
-    service = VectorSearchService(cast("Database", fake_database))
+    service = VectorSearchService(cast("Database", fake_database), config_svc=MagicMock())
     backbone = "effnet"
     hot_ops = fake_database.register_vectors_track_backbone(backbone)
     fake_database.get_vectors_track_cold(backbone)  # ensure cold fixture exists
@@ -403,9 +428,11 @@ def test_search_similar_uses_cold_only(
 
     results = service.search_similar_tracks(
         backbone_id=backbone,
+        library_key="test_lib",
         vector=[0.1, 0.8, 0.2],
         limit=5,
         min_score=0.0,
+        nprobe=20,  # explicit nprobe to avoid config lookup in test
     )
 
     assert [item["file_id"] for item in results] == ["library_files/cold_doc"]
@@ -417,7 +444,7 @@ def test_get_track_vector_falls_back_to_hot(
 ) -> None:
     """Direct vector retrieval should read hot when cold misses the file."""
 
-    service = VectorSearchService(cast("Database", fake_database))
+    service = VectorSearchService(cast("Database", fake_database), config_svc=MagicMock())
     backbone = "effnet"
     hot_ops = fake_database.register_vectors_track_backbone(backbone)
 
@@ -430,7 +457,7 @@ def test_get_track_vector_falls_back_to_hot(
     )
 
     assert vector_harness.cold_count(backbone) == 0
-    result = service.get_track_vector(backbone, "library_files/404")
+    result = service.get_track_vector(backbone, "library_files/404", library_key="test_lib")
     assert result is not None
     assert result["file_id"] == "library_files/404"
 
@@ -462,7 +489,7 @@ def test_promote_is_safe_no_op_when_hot_empty(
     """Running promote on an empty hot collection should succeed without changes."""
 
     service = VectorMaintenanceService(
-        cast("Database", fake_database), models_dir="/ml-models"
+        cast("Database", fake_database), models_dir="/ml-models", config_svc=MagicMock()
     )
     call_counter = {"count": 0}
 
@@ -478,7 +505,7 @@ def test_promote_is_safe_no_op_when_hot_empty(
         fake_workflow,
     )
 
-    service.promote_and_rebuild("effnet", nlists=24)
+    service.promote_and_rebuild("effnet", library_key="test_lib", nlists=24)
 
     assert call_counter["count"] == 1
     assert vector_harness.hot_count("effnet") == 0
@@ -493,7 +520,7 @@ def test_promote_twice_keeps_cold_collection_convergent(
     """Repeated promote cycles should not duplicate cold vectors (unique _key)."""
 
     service = VectorMaintenanceService(
-        cast("Database", fake_database), models_dir="/ml-models"
+        cast("Database", fake_database), models_dir="/ml-models", config_svc=MagicMock()
     )
 
     def fake_workflow(**kwargs: Any) -> None:
@@ -515,7 +542,7 @@ def test_promote_twice_keeps_cold_collection_convergent(
         vector=[0.3, 0.4, 0.5],
         num_segments=3,
     )
-    service.promote_and_rebuild("effnet", nlists=16)
+    service.promote_and_rebuild("effnet", library_key="test_lib", nlists=16)
 
     hot_ops.upsert_vector(
         file_id="library_files/99",
@@ -524,7 +551,7 @@ def test_promote_twice_keeps_cold_collection_convergent(
         vector=[0.6, 0.7, 0.8],
         num_segments=3,
     )
-    service.promote_and_rebuild("effnet", nlists=16)
+    service.promote_and_rebuild("effnet", library_key="test_lib", nlists=16)
 
     assert vector_harness.cold_count("effnet") == 1
     stored = vector_harness.get_cold_vector("effnet", "library_files/99")
