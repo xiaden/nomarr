@@ -1,1 +1,0 @@
-import{_t as e,dr as t,lr as n}from"./index-CHPWcDb2.js";var r=t(n(),1);function i(){let t=(0,r.useContext)(e);if(!t)throw Error(`useNotification must be used within NotificationProvider`);return t}export{i as t};

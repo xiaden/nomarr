@@ -38,6 +38,8 @@ export interface VectorSearchResponse {
 export interface VectorHotColdStats {
   /** Backbone identifier */
   backbone_id: string;
+  /** ArangoDB library _key */
+  library_key: string;
   /** Number of vectors in hot collection */
   hot_count: number;
   /** Number of vectors in cold collection */
@@ -54,6 +56,8 @@ export interface VectorStatsResponse {
 export interface VectorPromoteRequest {
   /** Backbone identifier (e.g., "effnet", "yamnet") */
   backbone_id: string;
+  /** ArangoDB library _key */
+  library_key: string;
   /** Number of HNSW graph lists (optional, auto-calculated if null) */
   nlists?: number | null;
 }
@@ -147,10 +151,12 @@ export async function getVectorStats(): Promise<VectorStatsResponse> {
  */
 export async function promoteVectors(
   backbone_id: string,
+  library_key: string,
   nlists?: number | null
 ): Promise<VectorPromoteResponse> {
   const body: VectorPromoteRequest = {
     backbone_id,
+    library_key,
     nlists: nlists ?? null,
   };
   return post("/api/web/vectors/promote", body);
@@ -179,6 +185,8 @@ export async function getTrackVector(
 export interface VectorRebuildIndexRequest {
   /** Backbone identifier (e.g., "effnet", "yamnet") */
   backbone_id: string;
+  /** ArangoDB library _key */
+  library_key: string;
   /** Number of Voronoi cells (optional, auto-calculated if null) */
   nlists?: number | null;
 }
@@ -206,10 +214,12 @@ export interface VectorRebuildIndexResponse {
  */
 export async function rebuildVectorIndex(
   backbone_id: string,
+  library_key: string,
   nlists?: number | null
 ): Promise<VectorRebuildIndexResponse> {
   const body: VectorRebuildIndexRequest = {
     backbone_id,
+    library_key,
     nlists: nlists ?? null,
   };
   return post("/api/web/vectors/rebuild-index", body);

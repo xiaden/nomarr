@@ -39,6 +39,8 @@ import { listBackbones } from "@shared/api/vectors";
 import { TrackSearchPicker } from "@shared/components/TrackSearchPicker";
 import { PageContainer, Panel, SectionHeader } from "@shared/components/ui";
 
+import { VectorMaintenance } from "../admin/components/VectorMaintenance";
+
 import { useVectorSearch } from "./hooks/useVectorSearch";
 
 export function VectorSearchPage() {
@@ -175,6 +177,9 @@ export function VectorSearchPage() {
   return (
     <PageContainer title="Vector Search">
       <Stack spacing={3}>
+        {/* Vector Store Maintenance */}
+        <VectorMaintenance />
+
         {/* Search Controls */}
         <Panel>
           <SectionHeader title="Search Parameters" />
