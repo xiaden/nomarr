@@ -295,7 +295,7 @@ def main() -> int:
     args = parser.parse_args()
 
     # Find repo root (script is in scripts/)
-    repo_root = Path(__file__).parent.parent
+    repo_root = Path(__file__).parent.parent.parent
 
     # Find skills to validate
     if args.skill:

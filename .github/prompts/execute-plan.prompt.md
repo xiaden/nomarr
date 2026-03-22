@@ -3,7 +3,7 @@ name: execute-plan
 description: Execute the linked task plan sequentially using MCP plan tools
 agent: agent
 tools:
-  ['execute/runInTerminal', 'context7/*', 'nomarr_dev/*', 'oraios/serena/activate_project', 'oraios/serena/find_file', 'oraios/serena/find_symbol', 'oraios/serena/rename_symbol', 'todo']
+  ['execute/runInTerminal', 'context7/*', 'nomarr_dev/*', 'oraios/serena/activate_project', 'oraios/serena/find_file', 'oraios/serena/find_symbol', 'oraios/serena/rename_symbol', 'todo', 'agent']
 ---
 
 # Execute Task Plan
