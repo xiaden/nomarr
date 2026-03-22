@@ -100,7 +100,7 @@ class NavidromePlaycountsOperations:
                 "@has_plays": _HAS_PLAYS,
             },
         )
-        cursor.close()
+        cursor.close(ignore_missing=True)
 
     def increment_play(
         self,
@@ -164,7 +164,7 @@ class NavidromePlaycountsOperations:
                 "@has_plays": _HAS_PLAYS,
             },
         )
-        cursor.close()
+        cursor.close(ignore_missing=True)
 
     # ── Bulk sync operations ─────────────────────────────────────────
 
@@ -209,7 +209,7 @@ class NavidromePlaycountsOperations:
                 "@has_plays": _HAS_PLAYS,
             },
         )
-        cursor.close()
+        cursor.close(ignore_missing=True)
 
         # Step 2: Delete orphaned bucket vertices for this user (they'll be recreated)
         cleanup_query = """
@@ -221,7 +221,7 @@ class NavidromePlaycountsOperations:
             cleanup_query,
             bind_vars={"user_id": user_id, "@playcounts": _PLAYCOUNTS},
         )
-        cursor.close()
+        cursor.close(ignore_missing=True)
 
         # Step 3: Build bucket vertices and edges
         buckets: list[dict[str, Any]] = []
@@ -253,7 +253,7 @@ class NavidromePlaycountsOperations:
                 bucket_query,
                 bind_vars={"buckets": buckets, "@playcounts": _PLAYCOUNTS},  # type: ignore[dict-item]
             )
-            cursor.close()
+            cursor.close(ignore_missing=True)
 
         # Step 5: Insert edges
         if edges:
@@ -265,7 +265,7 @@ class NavidromePlaycountsOperations:
                 edge_query,
                 bind_vars={"edges": edges, "@has_plays": _HAS_PLAYS},  # type: ignore[dict-item]
             )
-            cursor.close()
+            cursor.close(ignore_missing=True)
 
         logger.debug(
             "bulk_upsert_plays: user=%s buckets=%d edges=%d",
@@ -332,5 +332,5 @@ class NavidromePlaycountsOperations:
             },
         )
         result: list[TrackPlayData] = list(cursor)  # type: ignore[arg-type]
-        cursor.close()
+        cursor.close(ignore_missing=True)
         return result

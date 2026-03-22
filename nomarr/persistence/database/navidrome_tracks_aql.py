@@ -44,7 +44,7 @@ class NavidromeTracksOperations:
             query,
             bind_vars={"nd_id": nd_id, "@collection": _TRACKS},
         )
-        cursor.close()
+        cursor.close(ignore_missing=True)
 
     def bulk_upsert_tracks(self, nd_ids: list[str]) -> int:
         """Ensure vertices exist for all *nd_ids*.
@@ -67,7 +67,7 @@ class NavidromeTracksOperations:
             query,
             bind_vars={"docs": docs, "@collection": _TRACKS},  # type: ignore[dict-item]  # python-arango stubs don't accept list[dict] as bind_vars
         )
-        cursor.close()
+        cursor.close(ignore_missing=True)
         return len(nd_ids)
 
     def get_all_track_keys(self) -> list[str]:
@@ -81,7 +81,7 @@ class NavidromeTracksOperations:
             bind_vars={"@collection": _TRACKS},
         )
         result: list[str] = list(cursor)
-        cursor.close()
+        cursor.close(ignore_missing=True)
         return result
 
     def delete_tracks_cascade(self, nd_ids: list[str]) -> int:
@@ -127,7 +127,7 @@ class NavidromeTracksOperations:
             bind_vars={"nd_ids": nd_ids, "@collection": _TRACKS},
         )
         count = sum(1 for _ in cursor)
-        cursor.close()
+        cursor.close(ignore_missing=True)
         return count
 
     # ── Edge operations (has_nd_id) ──────────────────────────────────
@@ -149,7 +149,7 @@ class NavidromeTracksOperations:
             query,
             bind_vars={"from_id": from_id, "to_id": file_id, "@collection": _HAS_ND_ID},
         )
-        cursor.close()
+        cursor.close(ignore_missing=True)
 
     def bulk_ensure_file_links(self, mappings: list[dict[str, str]]) -> int:
         """Ensure edges exist for a batch of nd_id→file_id mappings.
@@ -178,7 +178,7 @@ class NavidromeTracksOperations:
             query,
             bind_vars={"edges": edges, "@collection": _HAS_ND_ID},  # type: ignore[dict-item]  # python-arango stubs don't accept list[dict] as bind_vars
         )
-        cursor.close()
+        cursor.close(ignore_missing=True)
         return len(mappings)
 
     # ── Resolution queries ───────────────────────────────────────────
@@ -203,7 +203,7 @@ class NavidromeTracksOperations:
             bind_vars={"from_id": from_id, "@collection": _HAS_ND_ID},
         )
         result: list[str] = list(cursor)
-        cursor.close()
+        cursor.close(ignore_missing=True)
         return result[0] if result else None
 
     def resolve_file_to_nd(self, file_id: str) -> str | None:
@@ -225,7 +225,7 @@ class NavidromeTracksOperations:
             bind_vars={"file_id": file_id, "@collection": _HAS_ND_ID},
         )
         result: list[str] = list(cursor)
-        cursor.close()
+        cursor.close(ignore_missing=True)
         return result[0] if result else None
 
     def bulk_resolve_nd_to_files(self, nd_ids: list[str]) -> dict[str, str]:
@@ -249,7 +249,7 @@ class NavidromeTracksOperations:
             bind_vars={"full_ids": full_ids, "@collection": _HAS_ND_ID},
         )
         result: dict[str, str] = {row["nd_id"]: row["file_id"] for row in cursor}
-        cursor.close()
+        cursor.close(ignore_missing=True)
         return result
 
     def bulk_resolve_files_to_nd(self, file_ids: list[str]) -> dict[str, str]:
@@ -274,5 +274,5 @@ class NavidromeTracksOperations:
             bind_vars={"file_ids": file_ids, "@collection": _HAS_ND_ID},
         )
         result: dict[str, str] = {row["file_id"]: row["nd_id"] for row in cursor}
-        cursor.close()
+        cursor.close(ignore_missing=True)
         return result
