@@ -268,6 +268,9 @@ class FakeDatabaseAdapter:
         self.db = FakeArangoHandle(harness)
         self.vectors_track: dict[str, FakeHotOperations] = {}
         self._vectors_track_cold: dict[str, FakeColdOperations] = {}
+        self.library_files = MagicMock()
+        # Default: all file_ids belong to "test_lib"
+        self.library_files.get_file_library_key.return_value = "test_lib"
 
     def register_vectors_track_backbone(self, backbone_id: str, library_key: str = "test_lib") -> FakeHotOperations:
         self.harness.register_backbone(backbone_id)
@@ -414,12 +417,14 @@ def test_search_similar_uses_cold_only(
         num_segments=2,
     )
 
+    query_vector = [0.1, 0.9, 0.2]
     vector_harness.seed_cold(
         backbone,
         {
             "file_id": "library_files/cold_doc",
             "model_suite_hash": "suite",
-            "vector": [0.1, 0.9, 0.2],
+            "vector": query_vector,
+            "vector_n": query_vector,
             "embed_dim": 3,
             "num_segments": 2,
         },
@@ -427,9 +432,8 @@ def test_search_similar_uses_cold_only(
     vector_harness.install_vector_index(backbone)
 
     results = service.search_similar_tracks(
+        file_id="library_files/cold_doc",
         backbone_id=backbone,
-        library_key="test_lib",
-        vector=[0.1, 0.8, 0.2],
         limit=5,
         min_score=0.0,
         nprobe=20,  # explicit nprobe to avoid config lookup in test
@@ -438,28 +442,45 @@ def test_search_similar_uses_cold_only(
     assert [item["file_id"] for item in results] == ["library_files/cold_doc"]
 
 
-def test_get_track_vector_falls_back_to_hot(
+def test_get_track_vector_cold_only(
     fake_database: FakeDatabaseAdapter,
     vector_harness: VectorLifecycleHarness,
 ) -> None:
-    """Direct vector retrieval should read hot when cold misses the file."""
+    """Vector retrieval reads cold only — returns None when only hot data exists."""
 
     service = VectorSearchService(cast("Database", fake_database), config_svc=MagicMock())
     backbone = "effnet"
     hot_ops = fake_database.register_vectors_track_backbone(backbone)
+    fake_database.get_vectors_track_cold(backbone)  # ensure cold fixture exists
 
     hot_ops.upsert_vector(
-        file_id="library_files/404",
+        file_id="library_files/hot_only",
         model_suite_hash="suite",
         embed_dim=3,
         vector=[0.2, 0.3, 0.4],
         num_segments=1,
     )
 
+    # No cold data — should return None
     assert vector_harness.cold_count(backbone) == 0
-    result = service.get_track_vector(backbone, "library_files/404", library_key="test_lib")
+    result = service.get_track_vector(backbone, "library_files/hot_only")
+    assert result is None
+
+    # After seeding cold, should return the vector
+    vector_harness.seed_cold(
+        backbone,
+        {
+            "file_id": "library_files/hot_only",
+            "model_suite_hash": "suite",
+            "vector": [0.2, 0.3, 0.4],
+            "vector_n": [0.2, 0.3, 0.4],
+            "embed_dim": 3,
+            "num_segments": 1,
+        },
+    )
+    result = service.get_track_vector(backbone, "library_files/hot_only")
     assert result is not None
-    assert result["file_id"] == "library_files/404"
+    assert result["file_id"] == "library_files/hot_only"
 
 
 def test_cascade_delete_calls_hot_and_cold_ops() -> None:

@@ -6,12 +6,12 @@ applyTo: nomarr/persistence/**
 
 # Persistence Layer
 
-**Purpose:** Own all database and queue access. Provide a clean data access API for higher layers.
+**Purpose:** Own all database access. Provide a clean data access API for higher layers.
 
 Persistence is the **data access layer**:
 - `Database` class owns the connection
-- `*Operations` classes own SQL for specific tables
-- External code accesses via `db.queue.enqueue()`, `db.tags.get_track_tags()`
+- `*AQL` classes own AQL queries for specific collections
+- External code accesses via `db.tags.get_track_tags()`, `db.library_files.get_pending_files()`
 - Returns [DTOs defined in helpers](./helpers.instructions.md)
 
 ---
@@ -178,7 +178,8 @@ Before committing persistence code, verify:
 
 ---
 
-## Layer Scripts
+## Validation
 
-- `lint.py` - Runs ruff, mypy, vulture, bandit, radon, lint-imports
-- `check_naming.py` - Validates `_aql.py` suffix, `Operations` class suffix
+**Run `lint_project_backend(path="nomarr/persistence")` after every edit.** Zero errors is the only acceptable state.
+
+This MCP tool runs ruff, mypy, and import-linter — covering style, types, and layer boundary enforcement.

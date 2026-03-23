@@ -31,9 +31,8 @@ class VectorSearchService:
 
     def search_similar_tracks(
         self,
+        file_id: str,
         backbone_id: str,
-        library_key: str,
-        vector: list[float],
         limit: int,
         min_score: float = 0.0,
         nprobe: int | None = None,
@@ -41,14 +40,12 @@ class VectorSearchService:
     ) -> list[dict[str, Any]]:
         """Search for similar tracks using vector similarity.
 
-        Searches cold collection only (never falls back to hot).
-        Requires cold collection to have a vector index.
+        Resolves the source track's library and vector internally from
+        ``file_id``, then searches cold collection(s).
 
         Args:
+            file_id: Library file document ID to find similar tracks for.
             backbone_id: Backbone identifier (e.g., "effnet", "yamnet")
-            library_key: ArangoDB ``_key`` of the source track's library.
-                Used for single-library search and as the default scope.
-            vector: Query embedding vector
             limit: Maximum number of results
             min_score: Minimum cosine similarity threshold (0-1). Results below
                 this value are filtered out.
@@ -57,7 +54,7 @@ class VectorSearchService:
                 ``vector_search_thoroughness`` in dynamic config.
                 Pass an explicit int to override.
             library_scope: Controls which libraries to search.
-                ``None`` or ``"own"`` — search *library_key*'s collection only.
+                ``None`` or ``"own"`` — search source track's library only.
                 ``"all"`` — fan-out across every library's cold collection.
                 Any other string — treated as a specific library ``_key``.
 
@@ -69,10 +66,32 @@ class VectorSearchService:
                 - Other document fields
 
         Raises:
-            ValueError: If cold collection has no vector index (search not available)
+            ValueError: If file not found, no vector exists, or cold collection
+                has no vector index.
             RuntimeError: If search query fails
         """
-        # Resolve effective target library based on scope
+        from nomarr.components.library.file_library_comp import get_file_library_key
+        from nomarr.components.ml.vectors.ml_vector_retrieve_comp import (
+            get_cold_track_vector,
+        )
+
+        # Step 1: Resolve library_key from file_id
+        library_key = get_file_library_key(self.db, file_id)
+        if library_key is None:
+            msg = f"File '{file_id}' not found or has no library association"
+            raise ValueError(msg)
+
+        # Step 2: Get the source track's vector
+        vector_doc = get_cold_track_vector(self.db, file_id, backbone_id, library_key)
+        if vector_doc is None:
+            msg = (
+                f"No vector found for file '{file_id}' with backbone "
+                f"'{backbone_id}'. Track may not have been processed yet."
+            )
+            raise ValueError(msg)
+        vector: list[float] = vector_doc["vector_n"]
+
+        # Step 3: Search
         if library_scope == "all":
             return self._search_fan_out(
                 backbone_id=backbone_id,
@@ -205,46 +224,22 @@ class VectorSearchService:
         return unique[:limit]
 
     def get_track_vector(
-        self, backbone_id: str, file_id: str, library_key: str
+        self, backbone_id: str, file_id: str
     ) -> dict[str, Any] | None:
         """Get vector for a specific track.
 
-        Tries cold collection first, then falls back to hot if not found.
-        Fallback to hot allows retrieval of not-yet-promoted vectors.
+        Delegates to the get_track_vector workflow, which resolves the
+        owning library and fetches from cold collection only.
 
         Args:
             backbone_id: Backbone identifier
             file_id: Library file document ID
-            library_key: ArangoDB ``_key`` of the library document.
 
         Returns:
-            Vector document or None if not found in either collection
+            Vector document or None if not found
         """
-        hot_coll_name = f"vectors_track_hot__{backbone_id}__{library_key}"
-        cold_coll_name = f"vectors_track_cold__{backbone_id}__{library_key}"
+        from nomarr.workflows.vectors.get_track_vector_wf import (
+            get_track_vector as get_track_vector_wf,
+        )
 
-        # Try cold first (promoted vectors) - only if collection exists
-        result = None
-        if self.db.db.has_collection(cold_coll_name):
-            cold_ops = self.db.get_vectors_track_cold(backbone_id, library_key)
-            result = cold_ops.get_vector(file_id)
-
-        if result is not None:
-            logger.debug(
-                f"Vector found in cold: backbone={backbone_id}, file_id={file_id}"
-            )
-            return result
-
-        # Fallback to hot (not yet promoted) - only if collection exists
-        if self.db.db.has_collection(hot_coll_name):
-            hot_ops = self.db.register_vectors_track_backbone(backbone_id, library_key)
-            result = hot_ops.get_vector(file_id)
-
-        if result is not None:
-            logger.debug(
-                f"Vector found in hot: backbone={backbone_id}, file_id={file_id}"
-            )
-            return result
-
-        logger.debug(f"Vector not found: backbone={backbone_id}, file_id={file_id}")
-        return None
+        return get_track_vector_wf(self.db, file_id, backbone_id)

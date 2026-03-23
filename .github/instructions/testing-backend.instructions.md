@@ -103,7 +103,7 @@ Every test MUST have at least one type marker.
 | `@pytest.mark.requires_audio` | Needs real audio files (not just fixtures) |
 | `@pytest.mark.requires_database` | Needs ArangoDB running |
 | `@pytest.mark.requires_essentia` | Needs Essentia library installed |
-| `@pytest.mark.requires_tensorflow` | Needs TensorFlow installed |
+| `@pytest.mark.requires_onnx` | Needs ONNX Runtime installed |
 | `@pytest.mark.container_only` | Must run inside Docker (GPU, prod-like env) |
 
 ### Informational Markers (optional)
@@ -213,7 +213,7 @@ Integration tests verify multiple components working together. They may use real
 @pytest.mark.requires_database
 def test_library_scan_discovers_files(test_db, good_library_root) -> None:
     """Library scan workflow should discover all audio files in fixture library."""
-    result = start_scan_workflow(
+    result = scan_library_full_workflow(
         db=test_db,
         library_root=str(good_library_root),
     )

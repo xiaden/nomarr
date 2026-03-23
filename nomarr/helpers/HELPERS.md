@@ -8,49 +8,55 @@ They are:
 - **Data Transfer Objects (DTOs)** (cross-layer contracts)
 - **Shared exceptions** (custom error types)
 
-> **Rule:** Helpers know nothing about Nomarr. They could be extracted into a standalone utility library tomorrow.
+> **Rule:** Helpers know nothing about Nomarr. They could be extracted into a standalone utility library tomorrow. They **must not import** any `nomarr.*` modules.
 
 ---
 
 ## 1. Position in the Architecture
 
-Layers:
+```
+interfaces → services → workflows → components → (persistence / helpers)
+```
 
-- **Interfaces** – HTTP/CLI/SSE, Pydantic, auth, HTTP status codes
-- **Services** – dependency wiring, thin orchestration, DTO boundaries
-- **Workflows** – domain flows, multi-step operations, control logic
-- **Components** – heavy computations, analytics, ML, tagging
-- **Persistence** – DB access, AQL queries
-- **Helpers** – stateless utilities, DTOs, exceptions
-
-Helpers sit at the **bottom** of the architecture and **must not import** any `nomarr.*` modules.
+Helpers sit at the **bottom** of the dependency chain. Every layer above may import helpers, but helpers never import upward.
 
 ---
 
-## 2. Directory Structure & Naming
-
-Helpers live under `nomarr/helpers/`:
+## 2. Directory Structure
 
 ```text
 helpers/
-├── dataclasses.py              # Shared dataclasses (currently empty)
-├── exceptions.py               # Custom exception types
-├── file_validation_helper.py   # Audio file validation utilities
-├── files_helper.py             # File path utilities
-├── logging_helper.py           # Logging utilities and filters
-├── sql_helper.py               # SQL fragment builders
-├── time_helper.py              # Time/timestamp conversions
-└── dto/                        # Data Transfer Objects
-    ├── analytics_dto.py        # Analytics domain DTOs
-    ├── config_dto.py           # Configuration DTOs
-    ├── health_dto.py           # Health monitoring DTOs
-    ├── info_dto.py             # System information DTOs
-    ├── library_dto.py          # Library domain DTOs
-    ├── processing_dto.py       # Processing pipeline DTOs
-    └── queue_dto.py            # Queue domain DTOs
+├── config_schema.py              # Configuration schema definitions
+├── dataclasses.py                # Shared dataclasses
+├── exceptions.py                 # Custom exception types
+├── file_validation_helper.py     # Audio file validation utilities
+├── files_helper.py               # File path utilities
+├── logging_helper.py             # Logging utilities and filters
+├── tag_key_mapping.py            # Tag key ↔ display name mapping
+├── time_helper.py                # Time/timestamp conversions
+├── vector_params_helper.py       # Vector dimension/parameter utilities
+└── dto/                          # Data Transfer Objects
+    ├── admin_dto.py              # Admin/management DTOs
+    ├── analytics_dto.py          # Analytics domain DTOs
+    ├── calibration_dto.py        # Calibration DTOs
+    ├── config_dto.py             # Configuration DTOs
+    ├── health_dto.py             # Health monitoring DTOs
+    ├── info_dto.py               # System information DTOs
+    ├── library_dto.py            # Library domain DTOs
+    ├── metadata_dto.py           # Metadata DTOs
+    ├── ml_dto.py                 # ML pipeline DTOs
+    ├── ml_edge_dto.py            # ML edge/boundary DTOs
+    ├── navidrome_dto.py          # Navidrome integration DTOs
+    ├── path_dto.py               # Path resolution DTOs
+    ├── playlist_import_dto.py    # Playlist import DTOs
+    ├── processing_dto.py         # Processing pipeline DTOs
+    ├── recalibration_dto.py      # Recalibration DTOs
+    ├── tagging_dto.py            # Tagging pipeline DTOs
+    ├── tags_dto.py               # Tag data DTOs
+    └── vector_config_dto.py      # Vector configuration DTOs
 ```
 
-Naming rules:
+**Naming rules:**
 
 - Modules: `snake_case_helper.py` by domain (e.g., `files_helper.py`, `time_helper.py`).
 - Functions: clear verb–noun names (`validate_file_exists`, `compute_normalized_path`, `now_ms`).
@@ -68,18 +74,9 @@ Functions that:
 - Don't access databases or networks
 - Are deterministic (same input → same output)
 
-**Examples:**
-- Path validation and normalization
-- SQL fragment building
-- Time/date conversions
-- String formatting
-- Math calculations
+**Examples:** path validation, time/date conversions, string formatting, math calculations.
 
-**Anti-patterns:**
-- Reading files
-- Making HTTP requests
-- Querying databases
-- Containing business rules
+**Anti-patterns:** reading files, making HTTP requests, querying databases, containing business rules.
 
 ### 3.2 Data Transfer Objects (DTOs)
 
@@ -88,142 +85,69 @@ Functions that:
 **Rules:**
 1. Pure dataclasses (no methods beyond `__init__`)
 2. Only stdlib and typing imports
-3. No business logic
-4. No validation (validation happens at service layer)
+3. No business logic, no validation
 
-**Placement:**
-- **Single-service DTOs:** Define at top of service file (not exported to `helpers/dto/`)
-- **Cross-layer DTOs:** Must live in `helpers/dto/<domain>.py`
-
-**Decision tree:**
-```python
-# If used by multiple services OR used by interfaces/workflows:
-from nomarr.helpers.dto.library import LibraryDict
-
-# If only used within one service file:
-# Keep it local to that service (don't export to helpers/dto/)
-```
-
-**DTO Requirements for Services:**
-
-Every public service method that returns non-trivial structured data must return a DTO.
-
-- **Trivial returns** (bool, int, str, None, list of primitives) do NOT require a DTO.
-- **Private methods** (prefixed with `_`) do NOT require a DTO.
-- **Structured data** (dicts with multiple fields, complex nested data) MUST use a DTO.
+**Placement decision tree:**
+- **Cross-layer DTOs** (used by multiple services or workflows): must live in `helpers/dto/<domain>.py`
+- **Single-service DTOs** (only used within one service file): keep local to that service
 
 ### 3.3 Shared Exceptions
 
-Custom exception types used across multiple layers.
+Custom exception types used across multiple layers. Inherit from appropriate base exception, no business logic.
 
-**Rules:**
-- Inherit from appropriate base exception
-- No business logic in exceptions
-- Clear, descriptive names
-- Include helpful error messages
-
-**Example:**
 ```python
 class PlaylistQueryError(Exception):
     """Raised when a smart playlist query is invalid."""
     pass
 ```
 
-### 3.4 Shared Dataclasses (Rare)
-
-**Purpose:** Dataclasses used by multiple top-level packages.
-
-**Current status:** `dataclasses.py` is currently empty. Most dataclasses should live in `dto/` instead.
-
-**Use only when:**
-- Truly shared across multiple top-level packages
-- Not a DTO (doesn't cross layer boundaries)
-- Can't be placed in a more specific location
-
 ---
 
-## 4. Complexity Guidelines
+## 4. Rules
 
-### Rule: Keep It Simple
+### Keep It Simple
 
-Helpers should be **trivially correct**:
 - Small, focused functions (< 30 lines typical)
-- Minimal branching
-- Easy to test
-- Easy to understand
+- Minimal branching, easy to test
+- If a helper has complex logic, it probably belongs in a component
 
-If a helper function has complex logic, it probably belongs in a component instead.
+### No Hidden Dependencies
 
-### Rule: No Hidden Dependencies
-
-Every helper function must be **self-contained**:
 - All inputs via parameters
-- No global state
-- No environment variables
-- No config file reads
+- No global state, no environment variables, no config file reads
 
-### Rule: Stateless
+### Stateless
 
-Helpers must be **pure functions**:
 - Same input → same output
-- No side effects
-- No mutation of input parameters
-- No I/O operations
+- No side effects, no mutation of input parameters
+- Exception: transparent caching that doesn't affect behavior
 
-**Exception:** Caching is acceptable if it's transparent and doesn't affect behavior.
+### Import Rules
 
----
-
-## 5. Import Rules
-
-### Allowed Imports:
+**Allowed:**
 - ✅ Standard library (`os`, `pathlib`, `datetime`, `json`, etc.)
 - ✅ Typing (`typing`, `typing_extensions`)
 - ✅ Third-party libraries (`mutagen`, `numpy`, etc.)
 
-### Forbidden Imports:
+**Forbidden:**
 - ❌ Any `nomarr.*` modules
 - ❌ Any imports that would create circular dependencies
 
-**Rationale:** Helpers are the foundation. They can't depend on anything above them.
-
 ---
 
-## 6. Testing Helpers
+## 5. Common Patterns
 
-Helpers should be **easy to test**:
-- Pure functions → simple unit tests
-- No mocking needed (usually)
-- Test edge cases and error conditions
-
-**Example test structure:**
-```python
-class TestNowMs:
-    def test_returns_milliseconds_type(self):
-        result = now_ms()
-        assert isinstance(result, Milliseconds)
-    
-    def test_returns_positive_value(self):
-        result = now_ms()
-        assert result.value > 0
-```
-
----
-
-## 7. Common Patterns
-
-### 7.1 Path Utilities
+### Path Utilities
 
 ```python
 def validate_file_exists(path: Path) -> None:
-    """Validate file exists and is readable."""
     if not path.exists():
         raise FileNotFoundError(f"File not found: {path}")
     if not path.is_file():
         raise ValueError(f"Not a file: {path}")
 ```
 
-### 7.2 Time Utilities
+### Time Utilities
 
 ```python
 def now_ms() -> Milliseconds:
@@ -231,7 +155,7 @@ def now_ms() -> Milliseconds:
     return Milliseconds(int(time.time() * 1000))
 ```
 
-### 7.3 DTOs
+### DTOs
 
 ```python
 @dataclass
@@ -246,102 +170,11 @@ class LibraryDict:
 
 ---
 
-## 8. Anti-Patterns to Avoid
+## 6. Anti-Patterns
 
-### ❌ Business Logic in Helpers
-
-**Bad:**
-```python
-def should_process_file(file_path: str, force: bool, config: Config) -> bool:
-    """Check if file needs processing."""
-    if force:
-        return True
-    if is_already_tagged(file_path):  # reads file!
-        return False
-    return True
-```
-
-**Why:** Contains business rules, performs I/O, reads config.
-
-**Fix:** Move to a component or workflow.
-
-### ❌ Hidden Dependencies
-
-**Bad:**
-```python
-def get_config_value(key: str) -> str:
-    """Get configuration value."""
-    config = load_config_file()  # hidden dependency!
-    return config.get(key)
-```
-
-**Why:** Hidden file I/O, not pure.
-
-**Fix:** Pass config as parameter or move to service.
-
-### ❌ Stateful Helpers
-
-**Bad:**
-```python
-_cache = {}
-
-def cached_compute(value: int) -> int:
-    """Compute with caching."""
-    if value in _cache:
-        return _cache[value]
-    result = expensive_computation(value)
-    _cache[value] = result
-    return result
-```
-
-**Why:** Mutable global state.
-
-**Fix:** Either make cache local to function or use a proper cache decorator.
-
-### ❌ Importing from Upper Layers
-
-**Bad:**
-```python
-from nomarr.services import LibraryService  # FORBIDDEN!
-
-def get_library_stats(library_id: str) -> dict:
-    """Get library statistics."""
-    service = LibraryService()
-    return service.get_stats(library_id)
-```
-
-**Why:** Helpers can't depend on upper layers.
-
-**Fix:** This belongs in a service or workflow, not helpers.
-
----
-
-## 9. When to Create a New Helper
-
-**Create a new helper when:**
-- You have a pure utility function used in 2+ places
-- You need a DTO for cross-layer communication
-- You have a custom exception used in multiple modules
-
-**Don't create a helper when:**
-- The logic contains business rules (use component instead)
-- The function performs I/O (use workflow/service instead)
-- It's only used in one place (keep it local)
-
----
-
-## 10. Summary
-
-**Helpers are:**
-- Pure, stateless utilities
-- Data transfer objects
-- Shared exceptions
-- The foundation of the codebase
-
-**Helpers are NOT:**
-- Business logic
-- I/O operations
-- Configuration management
-- Service orchestration
-
-**Think of helpers as:** A utility library that knows nothing about Nomarr's domain and could be extracted into a standalone package with zero changes.
+| Anti-Pattern | Why It's Wrong | Fix |
+|---|---|---|
+| Business logic in helpers | Contains rules, reads config | Move to component or workflow |
+| Hidden I/O (`load_config_file()`) | Not pure, hidden dependency | Pass as parameter or move to service |
+| Mutable global state (`_cache = {}`) | Side effects between calls | Use cache decorator or pass cache object |
+| Importing `nomarr.*` | Violates layer boundary | Keep helpers self-contained |

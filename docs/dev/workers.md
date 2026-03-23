@@ -2,285 +2,226 @@
 
 **Audience:** Developers working on worker processes, health monitoring, or debugging worker behavior.
 
-Nomarr uses a unified discovery-based worker system for background ML processing and library scanning. Workers query `library_files` directly for claiming work via ephemeral claim documents. This document describes the worker lifecycle, health system, health monitoring via pipe/FD channels, and runtime behavior.
+Nomarr uses a unified discovery-based worker system for background ML processing. Workers query `library_files` for work and claim files via the `worker_claims` collection. This document describes the worker lifecycle, claim-based processing, and crash recovery.
 
 ---
 
 ## Worker Process Model
 
-### Architecture
+### Single Worker Type: DiscoveryWorker
 
-Nomarr runs a unified set of discovery-based workers, all managed by `WorkerSystemService`:
+**Location:** `services/infrastructure/workers/discovery_worker.py`
 
-**Single Worker Type: Discovery Workers**
-- Process audio files for ML inference and tag writing
-- Discover work by querying `library_files` collection for `needs_tagging=true`
-- Claim files via ephemeral claim documents (one file per worker at a time)
-- All workers are identical; no separate scanner/calibration workers
+All workers are identical `DiscoveryWorker` processes. There are no separate scanner, calibration, or queue workers.
+
+**Worker loop:**
+1. Query `library_files` for next unprocessed file (`needs_tagging=1`)
+2. Claim file by inserting a deterministic claim document into `worker_claims`
+3. Process file using `process_file_workflow` (ONNX backbone + heads → tags)
+4. Execute deferred DB writes (tags, model outputs, segment stats) on background thread
+5. Release claim
+6. Repeat immediately (no sleep between files; sleep only when idle)
 
 Each worker:
 - Runs in a separate Python process (`multiprocessing.Process`)
-- Has its own database connection (required for multiprocessing safety)
-- Reports health via pipe/FD channels (real-time, not DB-based)
-- Can be paused, resumed, or terminated
+- Creates its own `Database` connection (process isolation)
+- Reports health via OS pipe to `HealthMonitorService` (see [Health System](health.md))
+- Manages its own ONNX model cache with lazy warmup and idle eviction
 
 ### Component IDs
 
 Workers are identified by hierarchical component IDs:
+
 ```
-worker:discovery:{id}
+worker:discovery:{index}
 ```
 
-Examples:
-- `worker:discovery:0` - First discovery worker (typically the only one)
-- `worker:discovery:1` - Second discovery worker (if scaling is enabled)
+Examples: `worker:discovery:0`, `worker:discovery:1`
 
 ---
 
-## Worker Lifecycle
+## Lifecycle
 
 ### 1. Spawn
 
-When `WorkerSystemService.start_workers()` is called:
+When `WorkerSystemService.start_all_workers()` is called:
 
-1. Service creates a `multiprocessing.Process` for each worker type
-2. Worker process starts and creates its own `Database` connection
-3. Worker writes initial heartbeat with `status='starting'` to `health` table
-4. Worker enters main processing loop
-5. Within ~5 seconds, status transitions to `status='healthy'`
+1. **Admission control** runs: GPU capability check → capacity probe → tier selection → worker count
+2. Service creates one OS pipe per worker (read-end for parent, write-end for worker)
+3. Service spawns `DiscoveryWorker` as `multiprocessing.Process` with stagger delay (2s between workers)
+4. Service registers each worker with `HealthMonitorService` (pipe + policy + callback handler)
+5. Worker subprocess:
+   - Configures subprocess logging
+   - Starts health writer thread (sends `HEALTH|{json}` frames every 3s)
+   - Checks ML backend availability (ONNX Runtime)
+   - Creates its own `Database` connection
+   - Clears any stale VRAM promises from previous crashes
+   - Transitions to `healthy` status
 
-**Database Safety:** Each worker creates its own ArangoDB connection via `Database()`. The python-arango client handles connection pooling internally.
+### 2. Discovery & Claiming
 
-### 2. Discovery & Claiming Loop
+**Work discovery** uses `components/workers/worker_discovery_comp.py`:
 
-While running, workers:
-
-1. Query `library_files` for files with `needs_tagging=true`
-2. Attempt to claim one file by inserting ephemeral claim document
-3. If claim succeeds: process file, write tags, delete claim
-4. If claim fails (another worker claimed it): try next file
-5. Write health frames via pipe/FD every **5 seconds**:
-   - `component`: Worker ID
-   - `status`: `"healthy"` during normal operation
-   - `current_job`: File ID if processing, `None` if idle
-   - Optional: telemetry fields (files_processed, errors, etc.)
-
-**Health Monitoring:** 
-- Real-time health via pipe/FD (in-memory status in main process)
-- DB writes are optional history-only (for audit/debugging)
-- Main process detects worker death via channel closure or write failure
-
-### 3. Pause
-
-When `WorkerSystemService.pause_all_workers()` is called:
-
-1. Service sets global `worker_enabled=False` flag
-2. Workers finish their **current job** (no interruption)
-3. Workers stop picking up new jobs
-4. Workers continue heartbeating with `status='healthy'` but `current_job=None`
-5. Worker processes remain alive but idle
-
-**Resume:** Calling `resume_all_workers()` sets `worker_enabled=True` and workers resume processing immediately.
-
-### 4. Graceful Termination
-
-When `WorkerSystemService.stop_workers()` is called:
-
-1. Service sends termination signal to each worker process
-2. Worker writes `status='stopping'` to `health` table
-3. Worker completes current job if processing one (up to 10 seconds)
-4. Worker cleans up resources (closes DB connection, flushes logs)
-5. Worker exits with code `0` (clean exit)
-
-If worker doesn't exit within **10 seconds**, service sends `SIGTERM` to force termination.
-
-### 5. Crash Detection & Claim Recovery
-
-The health system detects crashes via:
-
-**Pipe/FD Channel Closure:**
-- Main process detects pipe closure or write failure
-- Indicates worker died unexpectedly
-- Main process marks worker as `crashed`
-
-**Ephemeral Claim Cleanup:**
-- When a worker crashes mid-file, its claim document is ephemeral (no TTL)
-- Crashed worker's claim can be manually cleaned up or auto-expires
-- File remains in `library_files` with `needs_tagging=true`
-- Next healthy worker will pick it up automatically
-- No file gets stuck; just re-processed by next available worker
-
-### 6. Automatic Restart
-
-When a worker crashes:
-
-1. Health system marks worker as `crashed` in DB
-2. `WorkerSystemService` requeues any interrupted job (if applicable)
-3. Service increments `restart_count` for that worker
-4. Service waits for **exponential backoff delay**: `min(2^N seconds, 60s)`
-   - First restart: 1 second
-   - Second restart: 2 seconds
-   - Third restart: 4 seconds
-   - Fourth restart: 8 seconds
-   - Fifth+ restart: 16, 32, 60 seconds (capped at 60)
-5. Service spawns new worker process with same component ID
-6. New worker's `restart_count` carries over from crashed worker
-
-**Two-Tier Restart Limiting:**
-
-Nomarr uses two-tier limits to catch both rapid crashes (OOM loops) and slow thrashing:
-
-1. **Rapid Restart Limit:** 5 restarts within **5 minutes**
-   - Catches tight crash loops (e.g., immediate OOM on startup)
-   - Worker marked `status='failed'` and stops restarting
-
-2. **Lifetime Restart Limit:** 20 restarts **total**
-   - Catches slow thrashing (e.g., crashes every 30 minutes for hours)
-   - Worker marked `status='failed'` after 20th restart regardless of timing
-
-**Manual Recovery:**
-- Failed workers are **not** automatically restarted
-- Manual intervention required: check logs, fix root cause, call `resume_all_workers()`
-- Restart counts reset after successful 5+ minute operation
-
-**Restart Count Persistence:**
-- Restart counts persist across pause/resume cycles
-- Prevents bypassing limits by toggling pause/resume
-- Counts cleared only on manual service restart or after successful operation window
-
----
-
-## Health System: Pipe/FD Channels
-
-### Real-Time Health (Single Source of Truth)
-
-Workers write health frames to pipe/FD channels (in-memory in main process):
-
-**Frame Format:**
-```
-HEALTH|{"component_id":"worker:discovery:0","status":"healthy","current_job":"file_123"}
+```python
+file_id = discover_and_claim_file(
+    db,
+    worker_id="worker:discovery:0",
+    min_duration_s=config.min_duration_s,
+    allow_short=config.allow_short,
+)
 ```
 
-**Frame Frequency:** Every 5 seconds (configurable)
+**Claim mechanism** uses `persistence/database/worker_claims_aql.py`:
 
-**Channel Model:**
-- Main process creates one pipe per worker at spawn time
-- Worker writes periodic frames to that pipe
-- Main process reads frames, updates in-memory status registry
-- HealthMonitor polls registry for status snapshot
+| Operation | Method | Description |
+|-----------|--------|-------------|
+| Claim file | `try_claim_file(file_id, worker_id)` | Insert claim with deterministic `_key` (atomic uniqueness) |
+| Release claim | `release_claim(file_id)` | Delete claim after processing |
+| Get claim | `get_claim(file_id)` | Check if file is claimed |
+| Worker claims | `get_claims_for_worker(worker_id)` | All claims held by a worker |
+| Release all | `release_claims_for_worker(worker_id)` | Release all claims (crash recovery) |
+| Cleanup stale | `cleanup_all_stale_claims(timeout_ms)` | Remove inactive/completed/ineligible claims |
 
-### Database History (Write-Only, Optional)
-
-Optional append-only collection for audit/debugging:
-
+**Claim document structure:**
 ```json
 {
-  "_key": "snap_2025_01_20_001",
-  "timestamp": 1705779600000,
-  "components": [
-    {"component_id": "worker:discovery:0", "status": "healthy", "current_job": "file_123"},
-    {"component_id": "worker:discovery:1", "status": "healthy", "current_job": null}
-  ]
+  "_key": "claim_{file_key}",
+  "file_id": "library_files/12345",
+  "worker_id": "worker:discovery:0",
+  "claimed_at": 1705779600000
 }
 ```
 
-**Key invariant:** If pipe is wrong, fix pipe—do not maintain dual real-time paths.
+**Key properties:**
+- **Deterministic `_key`:** Based on file `_key`; ArangoDB uniqueness prevents duplicate claims
+- **One claim per file:** Only one worker can process a file at a time
+- **Ephemeral:** Represents active work, not scheduled work; deleted after processing
 
-### Main Process Death Detection
+### 3. File Processing
 
-Workers detect main process death via channel closure:
-- Worker writes frame fails (broken pipe)
-- Worker logs, finishes current file, exits gracefully
-- No orphaned claims (worker dies before inserting claim, or deletes claim before exiting)
+For each claimed file:
 
-### Status State Machine
+1. Fetch file document from `library_files`
+2. Lazy-warm ONNX model cache on first file (avoids VRAM allocation until work arrives)
+3. Run `process_file_workflow` (audio load → mel spectrogram → backbone embedding → head inference → tag aggregation)
+4. Submit deferred DB writes to background thread (overlaps I/O with next file's ML)
+5. Trim glibc heap to release freed numpy arrays back to OS
+6. Release claim (via deferred write chain, or immediately on skip/error)
 
-```
-starting → healthy ↔ paused → stopped
-    ↓
-  crashed
-```
+**Resource management:** If both VRAM and RAM are exhausted, the worker releases the claim, enters `recovering` status (reported via health frame), and waits 30 seconds before retrying.
 
-**State Values:**
+### 4. Idle Behavior
 
-- `starting`: Worker process spawned, ML models initializing
-- `healthy`: Normal operation, claiming and processing files
-- `paused`: Not claiming new files (current file completes)
-- `crashed`: Pipe closed or worker exited unexpectedly
-- `stopped`: Graceful shutdown (no active work)
+When no work is found:
+- Sleep for 1 second between polls (`IDLE_SLEEP_S`)
+- After 40 seconds idle (`CACHE_IDLE_TIMEOUT_S`), evict ONNX model cache to free VRAM
+- After enough idle polls, spawn background vector promotion thread
 
-### Invariants
+### 5. Pause/Resume
 
-1. **Ephemeral Claims:** Claim documents have no TTL; they represent active work
-2. **Single Writer:** Each worker writes only to its own pipe (no conflicts)
-3. **Frame Frequency:** Workers write frames every ~5 seconds
-4. **Status Consistency:** `status='healthy'` requires recent frame (< 30s old)
-5. **Channel Closure:** Broken pipe = worker death (automatic detection by main process)
-6. **Claim Cleanup:** Worker cleans up claim after processing file (before next claim or on exit)
-
----
-
-## Pause/Resume Behavior
-
-### Global Control
-
-The `worker_enabled` flag (stored in `meta` table) controls all workers globally:
+`WorkerSystemService` controls workers globally via the `worker_enabled` flag in the `meta` collection:
 
 ```python
-# Pause all workers
-service.pause_all_workers()  # Sets worker_enabled=False
-
-# Resume all workers
-service.resume_all_workers()  # Sets worker_enabled=True
+worker_svc.pause_worker_system()   # Disables processing, stops workers
+worker_svc.resume_worker_system()  # Enables processing, starts workers
 ```
 
-### Per-Worker Behavior
+### 6. Graceful Termination
 
-When paused:
-- Workers check `worker_enabled` flag before picking up new jobs
-- Current job completes normally (no interruption mid-processing)
-- Workers remain alive, heartbeating, but idle (`current_job=None`)
-- Resume takes effect immediately (next poll cycle, typically <2s)
+When `WorkerSystemService.stop_all_workers()` is called:
 
-### Restart Count Preservation
-
-Pause/resume **does not** reset restart counts:
-- If a worker has crashed 3 times, pausing and resuming keeps count at 3
-- This prevents users from bypassing restart limits by toggling pause
-- Restart counts only reset after 5 minutes of successful operation
+1. Service sets the shared `stop_event`
+2. Workers finish current file (drain pending async writes, up to 30s)
+3. Workers release VRAM promises, shut down audio loader and head pool
+4. Workers close health pipe (signals EOF to parent → status transitions to `dead`)
+5. If worker doesn't exit within timeout, service force-kills the process
 
 ---
 
-## Exit Codes
+## Crash Recovery
 
-### Nomarr-Specific Codes
+Crash recovery is coordinated between `HealthMonitorService` and `WorkerSystemService`.
 
-| Code | Meaning | Action |
-|------|---------|--------|
-| `0` | Clean exit | Normal - no restart needed |
-| `-1` | Fatal initialization error | Logged, automatic restart attempted |
-| `-2` | Database corruption | Logged, automatic restart attempted |
-| `-3` | ML model loading failed | Logged, automatic restart attempted |
+### Detection
 
-### Standard Python Codes
+`HealthMonitorService` detects worker death via:
+- **Pipe closure:** Worker process exits → pipe EOF → immediate `dead` status
+- **Staleness:** Worker stops sending health frames → `healthy` → `unhealthy` → `dead` (after `max_consecutive_misses`)
+- **Startup timeout:** Worker never sends first frame → `pending` → `dead`
 
-| Code | Meaning |
-|------|---------|
-| `1` | Uncaught exception |
-| `2` | Command-line usage error (shouldn't occur in workers) |
-| `130` | Terminated by SIGINT (Ctrl+C) |
-| `137` | Killed by SIGKILL |
-| `143` | Terminated by SIGTERM |
+See [Health System](health.md) for the full status state machine.
+
+### Recovery Flow
+
+When `HealthMonitorService` transitions a worker to `dead`, it calls `WorkerSystemService.on_status_change()`:
+
+1. **Release file claims:** `release_claims_for_worker(worker_id)` frees all claimed files for rediscovery
+2. **Release VRAM promises:** Reclaims fleet headroom from the dead worker
+3. **Consult restart policy:** `worker_restart_policy` collection tracks per-worker restart count and history
+4. **Decision:**
+   - **Restart:** Increment restart count, schedule replacement worker with backoff delay
+   - **Mark failed:** Call `health_monitor.set_failed()` → permanent, no further monitoring
+
+### Restart Policy
+
+Restart decisions use `should_restart_worker(restart_count, last_restart_wall_ms)` which returns:
+- `action="restart"` with `backoff_seconds` (exponential backoff)
+- `action="mark_failed"` with `failure_reason` (restart limit exceeded)
+
+**Restart state** is tracked in `worker_restart_policy` collection per component ID.
+
+### Claim Recovery
+
+When a worker crashes mid-file:
+- Its claim document remains in `worker_claims`
+- `WorkerSystemService.on_status_change("dead")` immediately releases the claim
+- The file returns to `needs_tagging=1` state and becomes rediscoverable
+- The replacement worker (or any other worker) will pick it up
+
+Additionally, `WorkerSystemService.cleanup_stale_claims()` can be called periodically to catch edge cases.
 
 ---
 
-## Debugging Workers
+## WorkerSystemService
 
-### Check Worker Health
+**Location:** `services/infrastructure/worker_system_svc.py`
+
+Manages the worker pool lifecycle and implements `ComponentLifecycleHandler` for health callbacks.
+
+### Key Methods
+
+| Method | Purpose |
+|--------|--------|
+| `start_all_workers()` | Admission control → tier selection → spawn workers |
+| `stop_all_workers(timeout)` | Graceful shutdown with force-kill fallback |
+| `pause_worker_system()` | Disable processing, stop workers |
+| `resume_worker_system()` | Enable processing, start workers |
+| `is_running()` | Check if any workers are running |
+| `get_workers_status()` | Worker pool status dict |
+| `get_resource_status()` | GPU/CPU tier and capacity info |
+| `cleanup_stale_claims()` | Remove orphaned claims |
+| `on_status_change(...)` | Health callback → restart/fail decisions |
+
+### Admission Control
+
+Before spawning workers, `WorkerSystemService` runs admission control:
+
+1. **GPU capability check:** `nvidia-smi` succeeds? (cached at startup)
+2. **Capacity probe:** Measure available GPU/CPU resources
+3. **Tier selection:** Choose execution tier (0–4)
+   - Tier 0–3: Workers started with varying resource allocation
+   - Tier 4: Refusal — no workers started (insufficient resources)
+4. **Worker count:** Calculated based on tier and available resources
+
+---
+
+## Debugging
+
+### Check Worker Status
 
 ```bash
 # Via API
-curl http://localhost:8356/api/v1/info
+curl http://127.0.0.1:8356/api/v1/info
 ```
 
 ### View Worker Logs
@@ -295,105 +236,43 @@ docker logs nomarr 2>&1 | grep "worker:discovery:0"
 
 ### Common Issues
 
-**Worker stuck in 'starting' state:**
-- Check if ML models are loading (may take 30-60s on first run)
-- Verify GPU is accessible (`nvidia-smi` in container)
-- Check disk space for database writes
+**Worker stuck in `pending`:**
+- ONNX model loading can take 30–60s on first run
+- Check GPU accessibility (`nvidia-smi` in container)
+- Startup timeout (`startup_timeout_s=60.0` default) will transition to `dead` automatically
 
 **Worker keeps crashing:**
-- Review logs for exceptions or error codes (look for specific file paths that trigger crashes)
-- Check restart count in health system
-- Verify file permissions on database and music library
-- Check available VRAM (effnet requires 9GB)
-- If specific files consistently crash workers, inspect with `ffprobe` or audio editor (may be corrupted)
+- Check logs for specific file paths causing crashes
+- Verify VRAM availability (effnet backbone requires significant GPU memory)
+- Check restart count via `worker_restart_policy` collection
+- Inspect problematic files with `ffprobe`
 
 **Workers not processing files:**
 - Verify `worker_enabled=True` (check `/api/v1/info`)
-- Ensure files exist in `library_files` with `needs_tagging=true`
-- Check worker is `healthy` (pipe/FD channel active)
-- Check for orphaned claims: query `library_file_claims` collection for stale claims
+- Ensure files exist in `library_files` with tagging state needing processing
+- Check worker is `healthy` (health pipe active)
+- Check for orphaned claims: query `worker_claims` collection
 
-**Database lock errors:**
-- Each worker creates its own database connection on spawn
-- If seeing "database is locked" errors, verify ArangoDB MVCC is working
-- Check for stuck transactions in database logs
+**Consecutive error shutdown:**
+- After 10 consecutive errors (`MAX_CONSECUTIVE_ERRORS`), worker shuts down
+- Check logs for the error pattern and fix root cause
+- Worker will be restarted by health system (if within restart limits)
 
----
+### Exit Codes
 
-## Advanced Topics
-
-### Worker Process Communication via Pipe/FD
-
-Workers use **pipe/FD channels for real-time health** (no database IPC):
-
-1. Main process creates one pipe per worker at spawn time
-2. Workers write periodic health frames to their pipe
-3. Main process reads frames, updates in-memory status registry
-4. HealthMonitor queries registry for snapshots
-5. Web UI receives status via API endpoint (not SSE)
-
-This architecture ensures:
-- Real-time health without database polling
-- Immediate crash detection via pipe closure
-- Multiprocessing safety (no shared memory)
-- Minimal latency and overhead
-
-**Pipe Frame Format:**
-```
-HEALTH|{"component_id":"worker:discovery:0","status":"healthy","current_job":"file_123"}
-```
-
-### Claim Document Structure
-
-When a worker claims a file for processing, it creates an ephemeral claim document:
-
-```json
-{
-  "_key": "file_123_claim_worker0",
-  "file_id": "file_123",
-  "claimed_by": "worker:discovery:0",
-  "claimed_at": 1705779600000,
-  "ttl": null
-}
-```
-
-**Key Properties:**
-- **Ephemeral (no TTL):** Represents active work, not scheduled work
-- **Unique per file:** Only one worker can hold claim at a time
-- **Auto-cleanup:** Worker deletes claim after processing file
-- **Crash recovery:** Stale claims can be manually cleaned up; file remains in `needs_tagging=true`
-
-### Debugging Pipe Health
-
-```bash
-# Check pipe file descriptors for a running worker
-lsof -p $(docker inspect -f '{{.State.Pid}}' nomarr) | grep pipe
-
-# Monitor pipe writes in real time
-strace -p $(docker inspect -f '{{.State.Pid}}' nomarr) -e write
-```
-
-### Restart Backoff Formula
-
-```python
-delay_seconds = min(2 ** restart_count, 60)
-```
-
-Examples:
-- 0 restarts: 1s (2^0)
-- 1 restart: 2s (2^1)
-- 2 restarts: 4s (2^2)
-- 3 restarts: 8s (2^3)
-- 4 restarts: 16s (2^4)
-- 5 restarts: 32s (2^5)
-- 6+ restarts: 60s (2^6=64, capped at 60)
-
-This exponential backoff prevents restart storms while allowing quick recovery from transient failures. The 60-second cap ensures workers don't wait excessively long between restart attempts.
+| Code | Meaning |
+|------|--------|
+| `0` | Clean exit |
+| `1` | Uncaught exception |
+| `130` | SIGINT (Ctrl+C) |
+| `137` | SIGKILL |
+| `143` | SIGTERM |
 
 ---
 
 ## Related Documentation
 
-- [Health System](health.md) - Detailed health monitoring via pipe/FD channels
-- [Calibration Refactor](CALIBRATION_REFACTOR.md) - Historical background on discovery worker design
-- [Services Layer](services.md) - WorkerSystemService API reference
+- [Health System](health.md) — Pipe/FD-based health monitoring, ComponentStatus state machine, ComponentPolicy
+- [Architecture Overview](architecture.md) — System design, layer structure, data flow
+- [Domains](domains.md) — Workers domain (claims, crash recovery) and platform domain
+- [Migrations](migrations.md) — Database migration system

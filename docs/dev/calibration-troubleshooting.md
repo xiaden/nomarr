@@ -58,7 +58,7 @@ FOR doc IN calibration_state
 
 ### Expected State
 
-**22 calibration documents total** (one per label across all heads):
+**23 calibration documents total** (one per label across all heads):
 
 | Head Type | Head Name | Labels | Document Count |
 |-----------|-----------|--------|----------------|
@@ -119,7 +119,7 @@ FOR doc IN calibration_state
 
 ---
 
-### Issue: "Calibration generation produces fewer than 22 documents"
+### Issue: "Calibration generation produces fewer than 23 documents"
 
 **Possible Causes:**
 1. **No predictions for label:** If no files have predictions for a label (e.g., no `tonal` predictions), no calibration document is created
@@ -129,7 +129,7 @@ FOR doc IN calibration_state
 **Verification:**
 ```aql
 // Check which labels have predictions
-FOR label IN ["male", "female", "voice", "instrumental", /* ... all 22 labels ... */]
+FOR label IN ["male", "female", "voice", "instrumental", /* ... all 23 labels ... */]
   LET count = (
     FOR file IN library_files
       FILTER file.song.predictions.effnet_discogs[label] != null
@@ -203,7 +203,7 @@ FOR doc IN calibration_state
 
 3. **Verify result:**
    ```aql
-   RETURN LENGTH(calibration_state)  // Should be 22
+   RETURN LENGTH(calibration_state)  // Should be 23
    ```
 
 ### Testing Calibration Changes
@@ -225,5 +225,5 @@ Use Docker environment (`.docker/compose.yaml`) to test with realistic data:
 
 - **Query implementation:** [nomarr/persistence/database/calibration_state_aql.py](../../nomarr/persistence/database/calibration_state_aql.py)
 - **Workflow orchestration:** [nomarr/workflows/calibration/generate_calibration_wf.py](../../nomarr/workflows/calibration/generate_calibration_wf.py)
-- **API endpoints:** [nomarr/interfaces/api/routes/calibration_if.py](../../nomarr/interfaces/api/routes/calibration_if.py)
-- **Frontend display:** [frontend/src/routes/library-management/calibration-settings/CalibrationDisplay.tsx](../../frontend/src/routes/library-management/calibration-settings/CalibrationDisplay.tsx)
+- **API endpoints:** [nomarr/interfaces/api/web/calibration_if.py](../../nomarr/interfaces/api/web/calibration_if.py)
+- **Frontend display:** [frontend/src/features/calibration/CalibrationPage.tsx](../../frontend/src/features/calibration/CalibrationPage.tsx)

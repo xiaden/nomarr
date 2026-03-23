@@ -1,266 +1,225 @@
 # Workflows Layer
 
-This layer implements core use cases ("what Nomarr does").
+The **workflows layer** implements use cases — the "stories" of what Nomarr does. Each workflow is a clear sequence of component calls that accepts dependencies as parameters, orchestrates components to perform work, and returns a DTO.
 
-## Purpose
+They are:
 
-Workflows are **use case implementations** that:
-1. Accept dependencies as parameters (DB, config, ML backends)
-2. Orchestrate components to perform work
-3. Return DTOs
+- **Use case implementations** (scan a library, generate calibration, process a file)
+- **Recipes** composed of component calls
+- **Dependency-injected** (receive DB, config, backends as parameters)
 
-**Workflows contain the "story" of how Nomarr performs operations.**
+> **⚠️ Persistence Rule:** Workflows may receive `Database` as a parameter for **DI pass-through** to components, but **MUST NOT** call persistence methods (`db.*`) directly. Only components may access the database.
+
+> **Rule:** Control flow composition lives here. Heavy logic lives in components. Wiring lives in services.
 
 ---
 
-## Directory Structure
+## 1. Position in the Architecture
 
 ```
+interfaces → services → workflows → components → (persistence / helpers)
+```
+
+Workflows sit **between services and components**. Services call workflows; workflows call components and other workflows. Lateral (same-layer) imports are allowed — workflows may call other workflows.
+
+---
+
+## 2. Directory Structure
+
+```text
 workflows/
 ├── calibration/
-│   ├── calibration_loader_wf.py          # Load calibration data
-│   ├── export_calibration_bundle_wf.py   # Export calibration bundle
-│   ├── generate_calibration_wf.py        # Generate calibration thresholds
-│   ├── import_calibration_bundle_wf.py   # Import calibration bundle
-│   └── write_calibrated_tags_wf.py       # Write calibrated tags to files
+│   ├── apply_calibration_wf.py            # Apply calibration to tags
+│   ├── calibration_loader_wf.py           # Load calibration data
+│   ├── export_calibration_bundle_wf.py    # Export calibration bundle
+│   ├── generate_calibration_wf.py         # Generate calibration thresholds
+│   ├── import_calibration_bundle_wf.py    # Import calibration bundle
+│   └── write_calibrated_tags_wf.py        # Write calibrated tags to files
+│
 ├── library/
-│   ├── cleanup_orphaned_tags_wf.py       # Remove orphan tags
-│   ├── file_tags_io_wf.py                # File tag I/O operations
-│   ├── reconcile_paths_wf.py             # Reconcile file paths
-│   ├── scan_library_direct_wf.py         # Direct library scan (no queue)
-│   ├── start_scan_wf.py                  # Start queued library scan
-│   └── sync_file_to_library_wf.py        # Sync single file to library
+│   ├── cleanup_orphaned_tags_wf.py        # Remove orphan tags
+│   ├── file_tags_io_wf.py                 # File tag I/O operations
+│   ├── reconcile_paths_wf.py              # Reconcile file paths
+│   ├── scan_library_full_wf.py            # Full library scan
+│   ├── scan_library_quick_wf.py           # Quick library scan
+│   ├── scan_setup_wf.py                   # Scan initialization/setup
+│   ├── sync_file_to_library_wf.py         # Sync single file to library
+│   └── validate_library_tags_wf.py        # Validate library tag state
+│
 ├── metadata/
-│   └── rebuild_metadata_cache_wf.py      # Rebuild metadata cache
+│   ├── cleanup_orphaned_entities_wf.py    # Clean up orphaned entities
+│   └── rebuild_metadata_cache_wf.py       # Rebuild metadata cache
+│
 ├── navidrome/
-│   ├── filter_engine_wf.py               # Smart playlist filter engine
-│   ├── generate_navidrome_config_wf.py   # Generate Navidrome config
-│   ├── generate_smart_playlist_wf.py     # Generate smart playlist
-│   ├── parse_smart_playlist_query_wf.py  # Parse playlist query syntax
-│   ├── preview_smart_playlist_wf.py      # Preview playlist results
-│   └── preview_tag_stats_wf.py           # Preview tag statistics
+│   ├── filter_engine_wf.py                # Smart playlist filter engine
+│   ├── find_similar_tracks_wf.py          # Find similar tracks by vector
+│   ├── generate_navidrome_config_wf.py    # Generate Navidrome config
+│   ├── generate_playlists_wf.py           # Batch playlist generation
+│   ├── generate_smart_playlist_wf.py      # Generate smart playlist
+│   ├── generate_static_playlist_wf.py     # Generate static playlist
+│   ├── ingest_scrobble_wf.py              # Ingest scrobble data
+│   ├── parse_smart_playlist_query_wf.py   # Parse playlist query syntax
+│   ├── preview_smart_playlist_wf.py       # Preview playlist results
+│   ├── preview_tag_stats_wf.py            # Preview tag statistics
+│   ├── push_playlist_wf.py               # Push playlist to Navidrome
+│   └── sync_navidrome_wf.py               # Sync with Navidrome
+│
+├── platform/
+│   ├── idle_promotion_vectors_wf.py       # Idle vector promotion
+│   ├── prepare_database_wf.py             # Database preparation
+│   ├── promote_and_rebuild_vectors_wf.py  # Promote vectors and rebuild index
+│   ├── rebuild_vector_index_wf.py         # Rebuild vector search index
+│   └── register_ml_models_wf.py           # Register ML models in DB
+│
+├── playlist_import/
+│   └── convert_playlist_wf.py             # Convert imported playlist
+│
 ├── processing/
-│   └── process_file_wf.py                # Process single file (ML + tags)
-└── queue/
-    ├── clear_queue_wf.py                 # Clear queue
-    ├── enqueue_files_wf.py               # Enqueue files for processing
-    ├── remove_jobs_wf.py                 # Remove specific jobs
-    └── reset_jobs_wf.py                  # Reset failed jobs
+│   ├── process_file_wf.py                 # Process single file (ML + tags)
+│   └── write_file_tags_wf.py              # Write tags to file
+│
+└── vectors/
+    └── get_track_vector_wf.py             # Retrieve track vector embedding
 ```
 
----
+**Naming rules:**
 
-## WORKFLOW NAMING & STRUCTURE
-
-### 1. File naming
-
-- One main workflow per file.
-- File name: `verb_object_wf.py`
-  
-  Examples:
-  - `scan_library_direct_wf.py`
-  - `start_scan_wf.py`
-  - `process_file_wf.py`
-  - `generate_calibration_wf.py`
-  - `write_calibrated_tags_wf.py`
-
-### 2. Function naming
-
-- Primary entrypoint: `verb_object_workflow(...)`
-- Everything else in the module is:
-  - a private helper (`_something_internal`), or
-  - a very closely related variant.
-
-### 3. Size / complexity
-
-- Soft limit: ~300–400 LOC per workflow module.
-- If the file has multiple exported workflows that are different user stories,
-  split into multiple files.
-- Exceptions: "analytics-style" modules can group a few related
-  read-only workflows (e.g. analytics.py) as long as they stay cohesive.
-
-### 4. Layering rules
-
-- Workflows NEVER import services or nomarr.app.
-- Workflows NEVER import Pydantic models.
-- Workflows CAN import persistence, components, and helpers.
+- Modules: `verb_object_wf.py` (e.g., `scan_library_full_wf.py`, `process_file_wf.py`)
+- Primary entrypoint: `verb_object_workflow(...)` — one public function per file
+- Private helpers: `_prefix` (e.g., `_validate_paths`, `_collect_results`)
 
 ---
 
-## Complexity Guidelines
+## 3. Workflow Anatomy
 
-### Rule: Clear Sequences of Component Calls
-
-Workflows should read like a **recipe**:
-1. Do step 1 (call component)
-2. Do step 2 (call component)
-3. Do step 3 (call component)
-4. Return result
-
-**Judge by clarity, not line count. Allow lots of component calls as long as they form a clear sequence.**
+Workflows read like a **recipe** — clear sequences of component calls:
 
 ```python
-# ✅ Good - clear sequence, easy to read
 def process_file_workflow(
     db: Database,
     file_path: str,
     models_dir: str,
     namespace: str,
 ) -> ProcessFileResult:
-    # Load file from DB
+    # Step 1: Load file from DB
     file_record = load_file_from_db(db, file_path)
     
-    # Compute embeddings for all backbones
+    # Step 2: Compute embeddings
     embeddings = compute_all_embeddings(file_path, models_dir)
     
-    # Run inference for each head
+    # Step 3: Run inference
     predictions = run_inference_for_heads(embeddings, models_dir)
     
-    # Convert predictions to tags
+    # Step 4: Convert to tags
     tags = predictions_to_tags(predictions, namespace)
     
-    # Write tags to Navidrome
-    write_tags_to_navidrome(db, file_record.id, tags)
+    # Step 5: Write tags via component (component calls persistence)
+    write_tags_to_library(db, file_record.id, tags)
     
-    # Return result DTO
-    return ProcessFileResult(
-        file=file_path,
-        tags_written=len(tags),
-        # ...
-    )
+    return ProcessFileResult(file=file_path, tags_written=len(tags))
 ```
+
+**Key pattern:** The workflow passes `db` to components — it does **not** call `db.*` itself.
+
+---
+
+## 4. Complexity Guidelines
+
+### Size Limits
+
+- Soft limit: ~300–400 LOC per workflow module
+- One public workflow per file
+- Exception: analytics-style modules may group related read-only workflows
 
 ### When to Extract
 
 **Extract to a component if:**
-- The workflow is doing non-trivial computation itself
-- There's complex branching logic embedded in the workflow
-- The workflow becomes hard to read as a sequence
+- The workflow does non-trivial computation itself
+- Complex branching is embedded in the workflow
+- The logic is reusable across workflows
 
-**Split into smaller workflows or private helpers if:**
-- The workflow becomes hard to read
-- You have large, reusable sub-sequences
+**Split into smaller workflows if:**
+- The workflow exceeds the size limit
+- It has large, reusable sub-sequences
+- Multiple user stories live in one file
 
-```python
-# Before - hard to read
-def complex_workflow(db: Database, ...) -> Result:
-    # 50 lines of file discovery
-    # 50 lines of validation
-    # 50 lines of processing
-    # 50 lines of cleanup
+---
 
-# After - split with private helpers
-def complex_workflow(db: Database, ...) -> Result:
-    discovered = _discover_and_validate(db, ...)
-    processed = _process_files(db, discovered, ...)
-    _cleanup_orphans(db, ...)
-    return Result(...)
+## 5. Boundaries & Import Rules
 
-def _discover_and_validate(db: Database, ...) -> list[str]:
-    # 50 lines of clear logic
-    ...
-```
+**Allowed:**
+- ✅ Components (`nomarr.components.*`)
+- ✅ Other workflows (`nomarr.workflows.*`) — lateral imports
+- ✅ Helpers (`nomarr.helpers.*`)
+- ✅ Persistence **type only** (`from nomarr.persistence import Database`) — for DI pass-through
+- ✅ Standard library, numpy, etc.
 
-## Patterns
+**Forbidden:**
+- ❌ Services (`nomarr.services.*`)
+- ❌ Interfaces (`nomarr.interfaces.*`)
+- ❌ `nomarr.app`
+- ❌ Pydantic models
+- ❌ Calling `db.*` methods directly (pass `db` to components instead)
+
+---
+
+## 6. Patterns
 
 ### Accept All Dependencies as Parameters
 
-Workflows receive everything via parameters:
-
 ```python
-# ✅ Good - dependencies injected
-def process_file_workflow(
+# ✅ Good — dependencies injected
+def scan_library_workflow(
     db: Database,
-    file_path: str,
+    library_id: str,
     models_dir: str,
-    namespace: str,
-) -> ProcessFileResult:
+) -> ScanResult:
     ...
 
-# ❌ Bad - reading config at runtime
-def process_file_workflow(file_path: str) -> ProcessFileResult:
-    from nomarr.config import db, models_dir  # ← No globals
-    ...
+# ❌ Bad — reading config at runtime
+def scan_library_workflow(library_id: str) -> ScanResult:
+    from nomarr.config import db  # ← No globals
 ```
 
 ### Return DTOs
 
-Workflows always return typed DTOs:
+Workflows always return typed DTOs from `helpers/dto/`:
 
 ```python
 # ✅ Good
 def process_file_workflow(...) -> ProcessFileResult:
-    return ProcessFileResult(
-        file=file_path,
-        elapsed=elapsed,
-        tags_written=len(tags),
-    )
+    return ProcessFileResult(file=file_path, tags_written=len(tags))
 
-# ❌ Bad - returning dict
+# ❌ Bad — returning dict
 def process_file_workflow(...) -> dict[str, Any]:
-    return {"file": file_path, "elapsed": elapsed}
+    return {"file": file_path, "tags_written": len(tags)}
 ```
 
-## Allowed Imports
+### Database Pass-Through
+
+Workflows receive `Database` and pass it to components — never calling persistence directly:
 
 ```python
-# ✅ Workflows can import:
-from nomarr.persistence import Database
-from nomarr.components.ml import compute_embeddings
-from nomarr.components.tagging import predictions_to_tags
-from nomarr.helpers.dto import ProcessFileResult
+# ✅ Good — pass db to component
+def cleanup_workflow(db: Database, library_id: str) -> CleanupResult:
+    orphans = find_orphaned_tags(db, library_id)  # component calls db
+    removed = remove_tags(db, orphans)             # component calls db
+    return CleanupResult(removed=removed)
 
-# ❌ Workflows must NOT import:
-from nomarr.services import ProcessingService  # ← No service imports
-from nomarr.interfaces.api import router  # ← No interface imports
-from pydantic import BaseModel  # ← No Pydantic
+# ❌ Bad — workflow calling persistence
+def cleanup_workflow(db: Database, library_id: str) -> CleanupResult:
+    tags = db.tags.get_all()  # ← Only components may call db.*
 ```
 
-## Anti-Patterns
+---
 
-### ❌ Complex Computation in Workflows
-```python
-# NEVER do this
-def process_file_workflow(db: Database, file_path: str) -> ProcessFileResult:
-    # ❌ Implementing ML inference here
-    audio = librosa.load(file_path)
-    features = librosa.feature.mfcc(audio)
-    predictions = model.predict(features)
-    # This should be: predictions = run_inference(file_path, models_dir)
-```
+## 7. Anti-Patterns
 
-### ❌ Importing Services
-```python
-# NEVER do this
-from nomarr.services import ProcessingService
-
-def workflow(db: Database) -> Result:
-    service = ProcessingService(db)  # ← Workflows don't call services
-    return service.process_file(...)
-```
-
-## Summary
-
-**Workflows are recipes:**
-- Accept dependencies as parameters (DB, config, backends)
-- Orchestrate components to perform work
-- Return DTOs
-- One public method per file
-- Judge by clarity, not line count
-- No complex computation - delegate to components
-
-- Soft limit: ~300–400 LOC per workflow module.
-- If the file has multiple exported workflows that are different user stories,
-  split into multiple files.
-- Exceptions: "analytics-style" modules can group a few related
-  read-only workflows (e.g. analytics.py) as long as they stay cohesive.
-
-### 4. Layering rules
-
-- Workflows NEVER import services or nomarr.app.
-   - Workflows may import:
-     - nomarr.ml.\*
-     - nomarr.tagging.\*
-     - nomarr.persistence.\*
-     - nomarr.helpers.\*
-   - Services call workflows; interfaces call services.
+| Anti-Pattern | Why It's Wrong | Fix |
+|---|---|---|
+| Complex computation in workflow | Logic belongs in components | Extract to component |
+| Calling `db.tags.*`, `db.libraries.*` | Only components access persistence | Pass `db` to component function |
+| Importing services | Violates layer direction | Services call workflows, not reverse |
+| Importing Pydantic models | Interface concern only | Use DTOs from `helpers/dto/` |
+| Returning raw dicts | Untyped, fragile contract | Return a DTO |
+| Reading env vars / global config | Hidden dependency | Accept config as parameter |

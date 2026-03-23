@@ -92,8 +92,8 @@ Starting with SCHEMA_VERSION 6, Nomarr uses a **forward-only migration system**:
 0.1.0 → Initial release
 0.2.0 → Added calibration system (new feature)
 0.2.1 → Fixed calibration race condition (bug fix)
-0.3.0 → Restructured queue system (breaking change)
-0.3.1 → Fixed queue concurrency bug (bug fix)
+0.3.0 → Added hot/cold vector architecture (breaking change)
+0.3.1 → Fixed vector promotion race condition (bug fix)
 ```
 
 ---
@@ -107,7 +107,7 @@ Starting with SCHEMA_VERSION 6, Nomarr uses a **forward-only migration system**:
 **Allowed:**
 - Remove endpoints
 - Change response formats
-- Rename database tables
+- Rename database collections
 - Remove config options
 - Change CLI command syntax
 
@@ -121,7 +121,7 @@ Starting with SCHEMA_VERSION 6, Nomarr uses a **forward-only migration system**:
 **Allowed:**
 - Add new endpoints
 - Add optional config fields
-- Add database columns (with defaults)
+- Add database collections or fields (with defaults)
 - Add CLI commands
 - Performance improvements
 
@@ -180,7 +180,7 @@ __version__ = "0.3.1"
 **Step 4: Tag release**
 
 ```bash
-git tag -a v0.3.1 -m "Release 0.3.1: Fix queue concurrency bug"
+git tag -a v0.3.1 -m "Release 0.3.1: Fix vector promotion race condition"
 git push origin v0.3.1
 ```
 
@@ -302,10 +302,10 @@ No manual version specification in CI config needed.
 - Change required fields
 
 **Database:**
-- Remove table or column
-- Change column type (incompatible)
+- Remove collection or field
+- Change collection field type (incompatible)
 - Change schema without migration
-- Change queue job format
+- Change worker claim format
 
 **Behavior:**
 - Change tag calculation logic (breaks reproducibility)
@@ -332,7 +332,7 @@ No manual version specification in CI config needed.
 - Improve error messages
 
 **Database:**
-- Add table or column (with defaults)
+- Add collection or field (with defaults)
 - Add index
 - Add migration support
 
@@ -365,7 +365,7 @@ All notable changes to Nomarr will be documented in this file.
 ## [0.3.1] - 2025-01-15
 
 ### Fixed
-- Queue concurrency bug causing duplicate job processing
+- Queue concurrency bug causing duplicate processing
 
 ## [0.3.0] - 2025-01-10
 
@@ -374,7 +374,7 @@ All notable changes to Nomarr will be documented in this file.
 - Analytics API for tag statistics
 
 ### Changed
-- **BREAKING:** Restructured queue system (requires database rebuild)
+- **BREAKING:** Restructured vector storage (hot/cold architecture)
 
 ### Removed
 - Legacy processing mode
@@ -420,7 +420,7 @@ echo '__version__ = "0.3.1"' > nomarr/__version__.py
 ```bash
 git add nomarr/__version__.py CHANGELOG.md
 git commit -m "Release 0.3.1"
-git tag -a v0.3.1 -m "Release 0.3.1: Fix queue concurrency bug"
+git tag -a v0.3.1 -m "Release 0.3.1: Fix vector promotion race condition"
 git push origin main
 git push origin v0.3.1
 ```
@@ -449,9 +449,9 @@ docker pull ghcr.io/nomarr/nomarr:latest
   ↓
 0.2.1 (2024-12-20) - Calibration bug fixes
   ↓
-0.3.0 (2025-01-10) - Queue system restructure (breaking)
+0.3.0 (2025-01-10) - Hot/cold vector architecture (breaking)
   ↓
-0.3.1 (2025-01-15) - Queue concurrency fix
+0.3.1 (2025-01-15) - Vector promotion fix
   ↓
 ... (future releases)
   ↓

@@ -24,15 +24,23 @@ Components are the **workhorses** that do the real computational work:
 
 ```
 components/
-├── analytics/          # Tag statistics, co-occurrence
+├── analytics/          # Tag statistics, co-occurrence, mood analysis
+├── infrastructure/     # Health checks, path management
+├── library/            # Library file operations, scanning, sync
+├── metadata/           # Entity cleanup, seeding, metadata cache
 ├── ml/                 # ML inference, embeddings, calibration
-│   └── ml_backend_essentia_comp.py  # ONLY file that imports Essentia
+│   ├── audio/          # Audio loading (Essentia), mel preprocessing
+│   ├── calibration/    # Model calibration
+│   ├── inference/      # Embedding computation, head pipelines
+│   ├── onnx/           # ONNX Runtime session management, model discovery
+│   ├── resources/      # VRAM coordination, GPU probing, timing
+│   └── vectors/        # Vector persistence, pooling, retrieval
+├── navidrome/          # Navidrome integration, Subsonic API
+├── platform/           # GPU, bootstrap, migrations
+├── playlist_import/    # External playlist import (Spotify, Deezer)
+├── processing/         # File write operations
 ├── tagging/            # Tag parsing, writing, aggregation
-├── queue/              # Queue operations
-├── library/            # Library file operations
-├── metadata/           # Metadata extraction
-├── platform/           # GPU, bootstrap
-└── workers/            # Worker crash handling, job recovery
+└── workers/            # Worker crash handling, discovery
 ```
 
 ---
@@ -56,8 +64,8 @@ from nomarr.workflows import ...     # No workflows
 from nomarr.interfaces import ...    # No interfaces
 from pydantic import BaseModel       # No Pydantic
 
-# ❌ ESSENTIA ONLY IN backend_essentia.py
-import essentia_tensorflow  # Only in ml_backend_essentia_comp.py
+# ❌ ESSENTIA ONLY IN ml/audio/ml_audio_comp.py and ml/audio/ml_preprocess_comp.py
+import essentia  # Only in the two files above
 ```
 
 ---
@@ -77,21 +85,19 @@ import essentia_tensorflow  # Only in ml_backend_essentia_comp.py
 
 ## Essentia Isolation Rule
 
-**Only `nomarr/components/ml/ml_backend_essentia_comp.py` may import Essentia.**
+**Only `nomarr/components/ml/audio/ml_audio_comp.py` (audio loading) and `nomarr/components/ml/audio/ml_preprocess_comp.py` (mel spectrogram preprocessing) may import Essentia.**
 
-All other ML code calls functions in that file:
+Essentia is used **only** for audio I/O and preprocessing — it is **not** the ML backend. ONNX Runtime (`components/ml/onnx/`) is the ML inference backend.
+
+All other ML code calls functions in those files:
 
 ```python
-# In ml_backend_essentia_comp.py:
-try:
-    import essentia_tensorflow as essentia_tf
-except ImportError:
-    essentia_tf = None
+# In ml_audio_comp.py:
+import essentia
 
-def compute_embeddings_essentia(file_path: str, ...) -> np.ndarray:
-    if essentia_tf is None:
-        raise RuntimeError("Essentia not installed")
-    # ... use essentia_tf
+def load_audio_mono(file_path: str, sample_rate: int = 16000) -> np.ndarray:
+    """Load audio file as mono waveform via Essentia MonoLoader."""
+    ...
 ```
 
 ---
@@ -198,7 +204,7 @@ def should_restart_worker(restart_count: int, last_restart_ms: int) -> RestartDe
 Before committing component code, verify:
 
 - [ ] Does this file import from services, workflows, or interfaces? **→ Violation**
-- [ ] Does this file import Essentia directly (and isn't `ml_backend_essentia_comp.py`)? **→ Violation**
+- [ ] Does this file import Essentia directly (and isn't `ml/audio/ml_audio_comp.py` or `ml/audio/ml_preprocess_comp.py`)? **→ Violation**
 - [ ] Does this accept raw path strings where `LibraryPath` should be used? **→ Violation**
 - [ ] Is this doing orchestration instead of computation? **→ Should be a workflow**
 - [ ] Are heavy functions split into `_private` helpers? **→ Recommended**
@@ -207,12 +213,8 @@ Before committing component code, verify:
 
 ---
 
-## Layer Scripts
+## Validation
 
-Validation scripts in `.github/skills/layer-components/scripts/`:
+**Run `lint_project_backend(path="nomarr/components")` after every edit.** Zero errors is the only acceptable state.
 
-### `lint.py`
-Runs all linters on the components layer: ruff, mypy, vulture, bandit, radon, lint-imports
-
-### `check_naming.py`
-Validates components naming conventions: Files must end in `_comp.py`, Essentia imports only allowed in `ml_backend_essentia_comp.py`
+This MCP tool runs ruff, mypy, and import-linter — covering style, types, and layer boundary enforcement.

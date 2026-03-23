@@ -1,5 +1,6 @@
 """Library package."""
 
+from .file_library_comp import get_file_library_key
 from .file_sync_comp import (
     find_library_for_file,
     get_library_file,
@@ -52,6 +53,7 @@ __all__ = [
     "find_library_for_file",
     "get_base_library_root",
     "get_cached_folders",
+    "get_file_library_key",
     "get_file_tags_with_path",
     "get_library_file",
     "get_orphaned_tag_count",

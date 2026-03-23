@@ -273,6 +273,10 @@ These files are parsed by `code-intel/src/mcp_code_intel/helpers/plan_md.py` and
 
 The MCP servers exist specifically to avoid context bloat and leverage architectural knowledge. Use them.
 
+**If you don't use a standard tool before writing a script to replace or search first, you have failed the task**
+
+standard tools are not disallowed, only heavily discouraged.
+
 ### Why This Hierarchy Works
 
 The semantic tools answer the *real* question, not the proxy question. Instead of reading file imports to understand dependencies, use `trace_module_calls`. Instead of reading the top of a file to find class attributes, use `read_module_source` on the class. The tools understand what you're actually asking.

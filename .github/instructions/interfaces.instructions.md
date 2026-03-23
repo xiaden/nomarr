@@ -35,6 +35,8 @@ from nomarr.components import ...     # Call services, not components
 from nomarr.persistence import ...    # No direct DB access
 ```
 
+**Interfaces must never access the database.** All data flows through services. The `persistence` import ban in Forbidden Imports above is load-bearing — interfaces have no reason to touch `Database` or any AQL class.
+
 ---
 
 ## MCP Server Tools
@@ -150,7 +152,8 @@ Before committing interface code, verify:
 
 ---
 
-## Layer Scripts
+## Validation
 
-- `lint.py` - Runs ruff, mypy, vulture, bandit, radon, lint-imports
-- `check_naming.py` - Validates `_if.py` suffix, thin route handlers
+**Run `lint_project_backend(path="nomarr/interfaces")` after every edit.** Zero errors is the only acceptable state.
+
+This MCP tool runs ruff, mypy, and import-linter — covering style, types, and layer boundary enforcement.

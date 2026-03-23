@@ -1,658 +1,318 @@
 # Health System Reference
 
-**Health Table Schema, Operations, and Invariants**
+**Audience:** Developers working on worker health monitoring, crash detection, or debugging worker behavior.
 
 ---
 
 ## Overview
 
-Nomarr uses a **health table** for worker process monitoring and crash detection. This is the primary mechanism for:
+Nomarr uses a **pipe/FD-based health monitoring system** for worker process lifecycle tracking and crash detection. The `HealthMonitorService` is the single source of truth for component status.
 
-- Tracking worker liveness (heartbeats)
-- Detecting crashes (missed heartbeats)
-- Coordinating pause/resume operations
-- Tracking restart counts and history
-
-**Key principle:** Workers write to health table; coordinator reads from it.
+**Key properties:**
+- Real-time health via OS pipes (not database polling)
+- In-memory status registry owned by `HealthMonitorService`
+- Domain services receive status change callbacks and own restart/recovery decisions
+- DB writes are optional history snapshots (best-effort, write-only)
 
 ---
 
-## Health Collection Schema
+## Architecture
 
-**Collection:** `health`
+### Ownership Split
 
-**Location:** `nomarr/persistence/database/health_ops.py`
+| Concern | Owner |
+|---------|-------|
+| Status tracking | `HealthMonitorService` (services/infrastructure) |
+| Status types | `ComponentStatus` (helpers/dto/health_dto.py) |
+| Monitoring policy | `ComponentPolicy` (helpers/dto/health_dto.py) |
+| Lifecycle callbacks | `ComponentLifecycleHandler` protocol (helpers/dto/health_dto.py) |
+| Restart/failure decisions | Domain services (e.g., `WorkerSystemService`) |
+| Pipe creation | `WorkerSystemService` (at worker spawn time) |
+
+### Data Flow
+
+```
+DiscoveryWorker (subprocess)
+  │  writes HEALTH|{json} every 3s
+  │
+  └→ OS pipe (write-end)
+      │
+      └→ HealthMonitorService (main process, monitor thread)
+          ├→ Updates in-memory status registry
+          ├→ Checks staleness / deadlines
+          ├→ Emits on_status_change() callback to handler
+          │   └→ WorkerSystemService decides: restart? backoff? fail?
+          └→ Periodically writes history snapshot to DB (optional)
+```
+
+---
+
+## ComponentStatus
+
+**Location:** `nomarr/helpers/dto/health_dto.py`
+
+```python
+ComponentStatus = Literal["pending", "healthy", "unhealthy", "recovering", "dead", "failed"]
+```
+
+### Status Definitions
+
+| Status | Meaning |
+|--------|--------|
+| `pending` | Registered but no health frame received yet (startup phase) |
+| `healthy` | Receiving regular health frames, operating normally |
+| `unhealthy` | Missed one or more health frames but below death threshold |
+| `recovering` | Component reported it's recovering (e.g., reloading ONNX models); has a deadline |
+| `dead` | Pipe closed or missed too many frames; eligible for restart |
+| `failed` | Permanently failed; no further monitoring or callbacks |
+
+### State Machine
+
+```
+pending → healthy          (first health frame received)
+pending → dead              (startup timeout exceeded)
+healthy → unhealthy         (missed one staleness interval)
+healthy → recovering        (frame reports status="recovering")
+healthy → dead              (pipe closed)
+unhealthy → healthy          (health frame received)
+unhealthy → dead             (consecutive misses >= max_consecutive_misses)
+unhealthy → dead             (pipe closed)
+recovering → healthy         (frame reports status="healthy")
+recovering → dead            (recovery deadline exceeded)
+recovering → dead            (pipe closed)
+dead → (unregistered)       (domain decides to restart or give up)
+failed → (terminal)          (no further transitions; set via set_failed())
+```
+
+**Key invariant:** `failed` is terminal and idempotent. Once `set_failed()` is called, no further health checks, callbacks, or state transitions occur for that component.
+
+---
+
+## ComponentPolicy
+
+**Location:** `nomarr/helpers/dto/health_dto.py`
+
+```python
+@dataclass
+class ComponentPolicy:
+    startup_timeout_s: float = 30.0     # Max time in 'pending' before -> dead
+    staleness_interval_s: float = 5.0   # Seconds between expected frames
+    max_consecutive_misses: int = 3     # Misses before -> dead
+    min_recovery_s: float = 5.0         # Minimum recovery deadline
+    max_recovery_s: float = 60.0        # Maximum recovery deadline
+```
+
+Domain services provide a `ComponentPolicy` at registration time to configure monitoring behavior per component. If omitted, defaults apply.
+
+**Worker default policy** (from `WorkerSystemService`):
+```python
+DEFAULT_WORKER_POLICY = ComponentPolicy(
+    startup_timeout_s=60.0,     # Workers load ONNX models at startup (slow)
+    staleness_interval_s=9.0,   # Health frames every 3s; miss window = 3 intervals
+    max_consecutive_misses=3,   # 3 misses = ~27s of silence before dead
+    min_recovery_s=5.0,
+    max_recovery_s=60.0,
+)
+```
+
+---
+
+## ComponentLifecycleHandler
+
+**Location:** `nomarr/helpers/dto/health_dto.py`
+
+```python
+class ComponentLifecycleHandler(Protocol):
+    def on_status_change(
+        self,
+        component_id: str,
+        old_status: ComponentStatus,
+        new_status: ComponentStatus,
+        context: StatusChangeContext,
+    ) -> None: ...
+```
+
+Domain services implement this protocol to receive callbacks when component status changes. The `HealthMonitorService` owns status tracking; the domain owns restart/backoff/failure decisions.
+
+**`StatusChangeContext`** provides additional information:
+```python
+@dataclass
+class StatusChangeContext:
+    consecutive_misses: int = 0            # Number of missed frames
+    recovery_deadline: float | None = None # When recovery must complete
+    reported_recover_for_s: float | None = None  # Worker-reported recovery duration
+```
+
+**Example handler** (`WorkerSystemService.on_status_change`):
+- `dead` → unregister component, apply backoff delay, spawn replacement worker
+- `failed` → log permanent failure, no restart
+- `unhealthy` → log warning, wait for automatic recovery or death
+
+---
+
+## Registration Model
+
+Components are registered individually with `HealthMonitorService`:
+
+```python
+health_monitor.register_component(
+    component_id="worker:discovery:0",    # Unique identifier
+    handler=worker_system_service,         # Implements ComponentLifecycleHandler
+    pipe_conn=parent_pipe_end,             # Read-end of OS pipe
+    policy=ComponentPolicy(                # Optional; defaults if None
+        startup_timeout_s=60.0,
+        staleness_interval_s=9.0,
+    ),
+)
+```
+
+**Component ID format:** `worker:discovery:{index}` (e.g., `worker:discovery:0`, `worker:discovery:1`)
+
+**Lifecycle:**
+1. `WorkerSystemService` creates an OS pipe per worker
+2. Worker subprocess gets the write-end; parent keeps the read-end
+3. Parent calls `health_monitor.register_component()` with read-end
+4. Worker sends `HEALTH|{json}` frames every 3 seconds
+5. On worker death: pipe closes → `HealthMonitorService` detects → status → `dead` → callback
+6. Parent calls `health_monitor.unregister_component()` during cleanup
+
+---
+
+## Health Frames
+
+Workers write health frames to their pipe as prefixed JSON strings:
+
+```
+HEALTH|{"component_id":"worker:discovery:0","status":"healthy","current_job":"library_files/12345"}
+```
+
+**Frame fields:**
+| Field | Type | Description |
+|-------|------|-------------|
+| `component_id` | `str` | Worker identifier |
+| `status` | `str` | `"healthy"` or `"recovering"` |
+| `current_job` | `str \| null` | File document ID if processing, null if idle |
+| `recover_for_s` | `float \| null` | Requested recovery duration (only with `status="recovering"`) |
+
+**Frame frequency:** Every 3 seconds (`HEALTH_FRAME_INTERVAL_S = 3.0` in `discovery_worker.py`)
+
+**Frame processing:**
+- `status="healthy"` → resets consecutive misses, transitions to `healthy`
+- `status="recovering"` → sets recovery deadline, transitions to `recovering`
+- Other status values in frames are ignored
+
+---
+
+## HealthMonitorService API
+
+**Location:** `nomarr/services/infrastructure/health_monitor_svc.py`
+
+### Constructor
+
+```python
+HealthMonitorService(
+    cfg: HealthMonitorConfig,
+    db: Database | None = None,  # None disables history snapshots
+)
+```
+
+`HealthMonitorConfig`:
+```python
+@dataclass
+class HealthMonitorConfig:
+    monitor_poll_timeout_s: float = 1.0      # Pipe poll timeout
+    history_snapshot_interval_s: int = 30     # DB snapshot frequency
+```
+
+### Key Methods
+
+| Method | Purpose |
+|--------|--------|
+| `register_component(id, handler, pipe, policy)` | Start monitoring a component |
+| `unregister_component(id)` | Stop monitoring, close pipe |
+| `set_failed(id)` | Permanently mark as failed (terminal, idempotent) |
+| `get_status(id)` | Get current status for one component |
+| `get_all_statuses()` | Get all component statuses |
+| `get_component_ids()` | List registered component IDs |
+| `start()` | Start monitoring background thread |
+| `stop()` | Stop monitoring background thread |
+
+### Internal Architecture
+
+A single consolidated monitor thread:
+1. Polls all pipes using `multiprocessing.connection.wait()` with timeout
+2. Reads frames from ready pipes
+3. Checks startup timeouts, staleness intervals, and recovery deadlines
+4. Emits `on_status_change()` callbacks to registered handlers
+
+A separate history thread periodically writes status snapshots to `db.health` (best-effort, write-only).
+
+**Design constraints:**
+- Never calls `Process`/`Thread` lifecycle methods
+- Never holds `Process`/`Thread` references (tracks by component_id string)
+- DB writes are history-only; if DB is unavailable, health monitoring still works
+
+---
+
+## DB History Snapshots
+
+Optional append-only snapshots for audit/debugging:
 
 ```json
-// ArangoDB document structure
 {
-  "_key": "worker:processing:0",     // Worker identifier (document key)
-  "component": "worker:processing:0", // Worker identifier (duplicated for queries)
-  "last_seen": 1737158400000,         // Unix timestamp (milliseconds) of last heartbeat
-  "status": "healthy",                // Worker status (starting, healthy, stopping, crashed, failed)
-  "pid": 12345,                       // Process ID (null if not running)
-  "current_job": "queue/12345",       // Job document key (null if idle)
-  "details_json": { ... },            // Additional metadata (embedded object)
-  "restart_count": 0,                 // Number of restarts
-  "last_restart": null,               // Unix timestamp of last restart
-  "created_at": 1737158000000         // Unix timestamp of first registration
+  "_key": "snap_1705779600",
+  "timestamp": 1705779600000,
+  "components": [
+    {"component_id": "worker:discovery:0", "status": "healthy", "current_job": "library_files/12345"},
+    {"component_id": "worker:discovery:1", "status": "healthy", "current_job": null}
+  ]
 }
 ```
 
-### Column Descriptions
-
-**`component` (TEXT, PRIMARY KEY):**
-- Unique identifier for worker
-- Format: `worker:<queue_type>:<id>`
-- Examples: `worker:processing:0`, `worker:processing:1`, `worker:calibration:0`
-- Persists across restarts (same component ID reused)
-
-**`last_seen` (INTEGER):**
-- Unix timestamp (seconds since epoch)
-- Updated every heartbeat (default: every 5 seconds)
-- Used for crash detection (if `now() - last_seen > timeout`, worker is crashed)
-
-**`status` (TEXT):**
-- Current worker state
-- Valid values: `starting`, `healthy`, `stopping`, `crashed`, `failed`
-- State machine enforced by application logic
-
-**`pid` (INTEGER, nullable):**
-- Operating system process ID
-- NULL when worker not running
-- Used for process management (send signals, check if alive)
-
-**`current_job` (INTEGER, nullable):**
-- ID from `queue` table
-- NULL when worker idle
-- Used to track what worker is doing
-
-**`details_json` (TEXT, nullable):**
-- JSON string with additional metadata
-- Typical contents:
-  ```json
-  {
-    "queue_type": "processing",
-    "batch_size": 8,
-    "paused": false,
-    "error_message": null
-  }
-  ```
-
-**`restart_count` (INTEGER):**
-- Number of times worker has been restarted
-- Incremented on crash detection and restart
-- Reset to 0 on manual restart
-- Used for restart limiting (5 restarts in 5 minutes → permanent failure)
-
-**`last_restart` (INTEGER, nullable):**
-- Unix timestamp of last restart
-- Used for sliding window restart limiting
-- NULL if never restarted
-
-**`created_at` (INTEGER):**
-- Unix timestamp of first registration
-- Never changes (persists across restarts)
-
----
-
-## Status State Machine
-
-### Valid States
-
-```
-starting → healthy
-healthy → stopping
-healthy → crashed (missed heartbeat)
-stopping → (row deleted or marked as crashed)
-crashed → starting (on restart)
-crashed → failed (restart limit exceeded)
-failed → (permanent, requires manual intervention)
-```
-
-### State Descriptions
-
-**`starting`:**
-- Worker process spawned but not yet sending heartbeats
-- Transitions to `healthy` after first heartbeat
-- Timeout: 30 seconds (if no heartbeat, mark as `crashed`)
-
-**`healthy`:**
-- Worker sending regular heartbeats
-- Processing jobs normally
-- Transitions to `stopping` on graceful shutdown
-- Transitions to `crashed` if heartbeat timeout exceeded
-
-**`stopping`:**
-- Worker received SIGTERM and is shutting down gracefully
-- Should finish current job and exit
-- Timeout: 30 seconds (then mark as `crashed` if still present)
-
-**`crashed`:**
-- Worker stopped sending heartbeats unexpectedly
-- Process may be dead or hung
-- Eligible for automatic restart
-
-**`failed`:**
-- Worker exceeded restart limit (5 restarts in 5 minutes)
-- Will not be restarted automatically
-- Requires manual intervention (investigate, fix, manual restart)
-
----
-
-## Operations
-
-### Worker Operations (Write)
-
-**Register (on startup):**
-```python
-db.health.register_worker(
-    component="worker:processing:0",
-    pid=os.getpid(),
-    status="starting"
-)
-```
-
-**Heartbeat (every 5 seconds):**
-```python
-db.health.update_heartbeat(
-    component="worker:processing:0",
-    status="healthy",
-    current_job=job_id  # or None if idle
-)
-```
-
-**Mark stopping (on SIGTERM):**
-```python
-db.health.update_status(
-    component="worker:processing:0",
-    status="stopping"
-)
-```
-
-**Unregister (on clean exit):**
-```python
-db.health.remove_worker(
-    component="worker:processing:0"
-)
-```
-
-### Coordinator Operations (Read)
-
-**Get all workers:**
-```python
-workers = db.health.get_all_workers()
-for worker in workers:
-    print(f"{worker['component']}: {worker['status']}")
-```
-
-**Check for crashes (every 10 seconds):**
-```python
-now = time.time()
-timeout = 30  # seconds
-
-workers = db.health.get_all_workers()
-for worker in workers:
-    if worker['status'] in ('healthy', 'starting'):
-        if now - worker['last_seen'] > timeout:
-            db.health.update_status(
-                component=worker['component'],
-                status='crashed'
-            )
-```
-
-**Restart crashed worker:**
-```python
-worker = db.health.get_worker("worker:processing:0")
-if worker['status'] == 'crashed':
-    # Check restart limit
-    if can_restart(worker):
-        db.health.increment_restart_count(worker['component'])
-        spawn_worker(worker['component'])
-        db.health.update_status(
-            component=worker['component'],
-            status='starting',
-            pid=new_pid
-        )
-    else:
-        db.health.update_status(
-            component=worker['component'],
-            status='failed'
-        )
-```
-
-### Pause/Resume Operations
-
-**Pause (coordinator):**
-```python
-# Set paused flag in all workers' details_json
-for worker in db.health.get_all_workers():
-    details = json.loads(worker['details_json'] or '{}')
-    details['paused'] = True
-    db.health.update_details(worker['component'], json.dumps(details))
-```
-
-**Resume (coordinator):**
-```python
-# Clear paused flag
-for worker in db.health.get_all_workers():
-    details = json.loads(worker['details_json'] or '{}')
-    details['paused'] = False
-    db.health.update_details(worker['component'], json.dumps(details))
-```
-
-**Check paused (worker):**
-```python
-# Worker checks own status
-worker = db.health.get_worker(self.component_id)
-details = json.loads(worker['details_json'] or '{}')
-if details.get('paused'):
-    # Don't dequeue new jobs, finish current job
-    pass
-```
-
----
-
-## Invariants
-
-### 1. Unique Component IDs
-
-**Invariant:** Each worker has a unique `component` value.
-
-**Enforcement:** Primary key constraint on `component` column.
-
-**Violation:** Multiple workers with same component ID.
-
-**Prevention:**
-- Workers use deterministic IDs based on queue type and index
-- Coordinator ensures no duplicate IDs when spawning workers
-
-### 2. Heartbeat Freshness
-
-**Invariant:** `last_seen` for `healthy` workers is recent (within timeout).
-
-**Enforcement:** Coordinator periodically checks and marks stale workers as `crashed`.
-
-**Violation:** Worker stops sending heartbeats but not marked as crashed.
-
-**Prevention:**
-- Coordinator runs crash detection every 10 seconds
-- Timeout set to 30 seconds (6 missed heartbeats → crash)
-
-### 3. PID Validity
-
-**Invariant:** `pid` is NULL or refers to an existing process.
-
-**Enforcement:** Coordinator checks if process exists using `psutil.pid_exists()`.
-
-**Violation:** PID refers to dead process.
-
-**Prevention:**
-- Coordinator checks PID validity during crash detection
-- If process dead but heartbeat recent, mark as crashed
-
-### 4. Status Transitions
-
-**Invariant:** Status changes follow state machine rules.
-
-**Enforcement:** Application logic in worker and coordinator.
-
-**Violation:** Invalid state transition (e.g., `stopping` → `starting` without going through `crashed`).
-
-**Prevention:**
-- Workers only set `starting`, `healthy`, `stopping`
-- Coordinator only sets `crashed`, `failed`
-- No direct transitions from `stopping` to `starting`
-
-### 5. Restart Count Accuracy
-
-**Invariant:** `restart_count` reflects actual number of restarts.
-
-**Enforcement:** Incremented only on crash restart, reset on manual restart.
-
-**Violation:** Incorrect restart count.
-
-**Prevention:**
-- Only coordinator increments restart count
-- Manual restart via API clears restart count
-- Restart history tracked in `last_restart`
-
-### 6. Current Job Validity
-
-**Invariant:** `current_job` is NULL or refers to existing job in `queue` table.
-
-**Enforcement:** Validated by application (ArangoDB uses document references, not foreign keys).
-
-**Violation:** Current job ID doesn't exist in queue.
-
-**Prevention:**
-- Workers set `current_job` when dequeuing
-- Workers clear `current_job` when job completes/fails
-- Coordinator validates job IDs during status checks
-
----
-
-## Concurrency
-
-### Read-Write Pattern
-
-**Workers (write):**
-- Each worker updates only its own row
-- No contention between workers
-- Writes are small (single row UPDATE)
-
-**Coordinator (read):**
-- Reads all rows periodically
-- No writes except during crash recovery
-- Uses transactions for consistency
-
-**Contention:** Minimal (workers write different rows, coordinator mostly reads).
-
-### Lock Duration
-
-**Heartbeat write:**
-```python
-# ~1ms
-UPDATE health SET last_seen = ?, current_job = ? WHERE component = ?
-```
-
-**Crash detection read:**
-```python
-# ~5-10ms (depends on worker count)
-SELECT * FROM health WHERE status IN ('healthy', 'starting')
-```
-
-**No lock escalation** (ArangoDB uses document-level MVCC for concurrent access).
-
-### Race Conditions
-
-**Scenario 1: Worker dies between heartbeat and crash detection**
-- **Impact:** Detected on next crash detection cycle (10 seconds)
-- **Acceptable:** 10-second delay in crash detection is fine
-
-**Scenario 2: Worker restarts while coordinator marking as crashed**
-- **Prevention:** Coordinator checks PID before marking crashed
-- **Resolution:** New PID → new registration, old row cleaned up
-
-**Scenario 3: Multiple coordinators running**
-- **Impact:** Duplicate crash detection, duplicate restarts
-- **Prevention:** Nomarr runs single coordinator process (design constraint)
-- **Future:** Add coordinator election if multi-coordinator needed
-
----
-
-## Performance
-
-### Table Size
-
-**Growth:** One row per worker (typically 2-4 workers).
-
-**Size:** ~200 bytes per row × 4 workers = 800 bytes.
-
-**No cleanup needed** (fixed row count).
-
-### Query Performance
-
-**Heartbeat update (hot path):**
-```sql
--- Uses primary key, ~1ms
-UPDATE health SET last_seen = ?, current_job = ? WHERE component = ?
-```
-
-**Crash detection (every 10s):**
-```sql
--- Full table scan, but only 4 rows, ~5ms
-SELECT * FROM health WHERE status IN ('healthy', 'starting')
-```
-
-**No indexes needed** (primary key sufficient).
-
-### Write Frequency
-
-**Per worker:**
-- Heartbeat every 5 seconds = 0.2 writes/second
-- Status updates occasional (start, stop, pause)
-
-**Total:**
-- 4 workers × 0.2 writes/second = 0.8 writes/second
-- Negligible load
-
----
-
-## Monitoring
-
-### Health Checks
-
-**Check all workers healthy:**
-```python
-def all_workers_healthy(db: Database) -> bool:
-    workers = db.health.get_all_workers()
-    return all(w['status'] == 'healthy' for w in workers)
-```
-
-**Check for crashed workers:**
-```python
-def get_crashed_workers(db: Database) -> list[str]:
-    workers = db.health.get_all_workers()
-    return [w['component'] for w in workers if w['status'] == 'crashed']
-```
-
-**Check for failed workers:**
-```python
-def get_failed_workers(db: Database) -> list[str]:
-    workers = db.health.get_all_workers()
-    return [w['component'] for w in workers if w['status'] == 'failed']
-```
-
-### Metrics
-
-**Track over time:**
-- Worker restart count (gauge)
-- Worker crash count (counter)
-- Time since last crash (gauge)
-- Workers in each status (gauge)
-
-**Alert on:**
-- Any worker in `failed` status
-- Restart count > 3 in 5 minutes
-- All workers crashed simultaneously
+**Key invariant:** If pipe status and DB history disagree, pipe is authoritative. DB history is write-only and best-effort.
 
 ---
 
 ## Debugging
 
-### View Health Collection
+### Check Worker Health
 
 ```bash
-# Using arangosh (inside container)
+# Via API
+curl http://127.0.0.1:8356/api/v1/info
+```
+
+### View Health History (ArangoDB)
+
+```bash
 docker exec -it nomarr-arangodb arangosh \
   --server.username nomarr \
-  --server.password "$(grep arango_password config/nomarr.yaml | cut -d: -f2 | tr -d ' ')" \
+  --server.password "<password>" \
   --server.database nomarr \
   --javascript.execute-string 'db.health.toArray().forEach(d => print(JSON.stringify(d, null, 2)))'
-
-# Using Python
-docker exec -it nomarr python -c "
-from nomarr.persistence.db import Database
-db = Database()
-for worker in db.health.get_all_workers():
-    print(f\"{worker['component']}: {worker['status']} (PID {worker['pid']})\")
-"
 ```
 
-### Check Worker Process
+### Common Issues
 
-```bash
-# Check if process exists
-ps aux | grep <pid>
+**Worker stuck in `pending`:**
+- Worker is loading ONNX models (can take 30–60s on first run)
+- Check GPU accessibility (`nvidia-smi` in container)
+- If exceeds `startup_timeout_s`, transitions to `dead` automatically
 
-# Check if process is zombie
-ps -o stat= -p <pid>
+**Worker flapping between `healthy` and `unhealthy`:**
+- Health frames arriving inconsistently (GC pauses, I/O contention)
+- Check `staleness_interval_s` relative to `HEALTH_FRAME_INTERVAL_S`
+- Increase `max_consecutive_misses` in policy if needed
 
-# Send test signal (no-op)
-kill -0 <pid>
-```
-
-### Force Worker Restart
-
-```bash
-# Kill worker process
-kill <pid>
-
-# Wait for crash detection (10 seconds)
-# Or manually mark as crashed via arangosh
-docker exec -it nomarr-arangodb arangosh \
-  --server.username nomarr \
-  --server.password "<password>" \
-  --server.database nomarr \
-  --javascript.execute-string 'db.health.update("worker:processing:0", {status: "crashed"})'
-```
-
-### Clear Failed Worker
-
-```bash
-# Reset restart count and status via arangosh
-docker exec -it nomarr-arangodb arangosh \
-  --server.username nomarr \
-  --server.password "<password>" \
-  --server.database nomarr \
-  --javascript.execute-string '
-    db.health.update("worker:processing:0", {
-      status: "crashed",
-      restart_count: 0,
-      last_restart: null
-    })
-  '
-
-# Coordinator will restart on next cycle
-```
-
----
-
-## Common Issues
-
-### Worker Stuck in "starting"
-
-**Symptoms:**
-- Worker in `starting` status for > 30 seconds
-- No heartbeat updates
-
-**Causes:**
-- Worker process failed to start (import error, missing dependency)
-- Worker deadlocked during initialization
-
-**Resolution:**
-1. Check worker logs for errors
-2. Check PID still exists: `ps -p <pid>`
-3. If process dead, mark as crashed via arangosh: `db.health.update("<component>", {status: "crashed"})`
-4. If process alive but hung, kill: `kill -9 <pid>`
-
-### Worker Marked "crashed" But Still Running
-
-**Symptoms:**
-- Worker status is `crashed`
-- Worker process still exists and appears healthy
-
-**Causes:**
-- Database writes blocked (lock timeout)
-- Worker deadlocked (can't send heartbeat)
-- Clock skew (worker and coordinator have different times)
-
-**Resolution:**
-1. Check worker logs for database errors
-2. Check database connectivity: `docker exec -it nomarr-arangodb arangosh --server.database nomarr --javascript.execute-string 'db.queue.count()'`
-3. Restart worker: `kill <pid>` (coordinator will restart)
-
-### Restart Loop
-
-**Symptoms:**
-- Worker repeatedly crashes and restarts
-- Eventually marks as `failed`
-
-**Causes:**
-- Persistent error (bad config, missing model, permission issue)
-- Resource exhaustion (OOM, disk full)
-- Corrupt job in queue
-
-**Resolution:**
-1. Check worker logs for crash reason
-2. Fix underlying issue (config, permissions, resources)
-3. Clear failed jobs: `DELETE FROM queue WHERE status = 'error';`
-4. Manually restart: Use API `/api/web/worker/restart`
-
----
-
-## API Integration
-
-### Health Endpoints
-
-**Get worker status:**
-```bash
-curl http://localhost:8888/api/web/worker/status
-```
-
-Response:
-```json
-[
-  {
-    "component": "worker:processing:0",
-    "status": "healthy",
-    "pid": 12345,
-    "current_job": 67890,
-    "restart_count": 0,
-    "last_seen": 1733407200
-  }
-]
-```
-
-**Restart workers:**
-```bash
-curl -X POST http://localhost:8888/api/web/worker/restart
-```
-
-See [../user/api_reference.md](../user/api_reference.md) for full API documentation.
-
----
-
-## Schema Migration
-
-### Adding Columns
-
-**If adding non-critical column:**
-```sql
--- Safe to add with default value
-ALTER TABLE health ADD COLUMN new_field TEXT DEFAULT '';
-```
-
-**If adding critical column:**
-- Stop all workers
-- Add column with migration script
-- Restart workers
-
-**Pre-alpha:** No backward compatibility needed. Can drop and recreate table.
+**Worker `dead` but process still running:**
+- Pipe may be blocked (full buffer)
+- Worker may be deadlocked
+- `WorkerSystemService` will force-kill after timeout and spawn replacement
 
 ---
 
 ## Related Documentation
 
-- [Workers](workers.md) - Worker process lifecycle
-- [Services](services.md) - ProcessingService and worker management
-- [Architecture](architecture.md) - System design
-- [API Reference](../user/api_reference.md) - Worker API endpoints
-
----
-
-## Summary
-
-**Health table purpose:**
-- Track worker liveness via heartbeats
-- Detect crashes via timeout
-- Coordinate pause/resume operations
-- Track restart history
-
-**Key points:**
-- One row per worker (2-4 total)
-- Workers write own row, coordinator reads all
-- 5-second heartbeat, 30-second timeout
-- State machine enforced by application
-- Minimal contention, high performance
+- [Workers & Lifecycle](workers.md) — DiscoveryWorker process model, claim-based processing, restart behavior
+- [Architecture Overview](architecture.md) — System design and dependency direction
+- [Domains](domains.md) — Workers and platform domain definitions

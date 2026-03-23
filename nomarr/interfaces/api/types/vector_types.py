@@ -11,11 +11,12 @@ from pydantic import BaseModel, Field
 class VectorSearchRequest(BaseModel):
     """Request model for vector similarity search."""
 
+    file_id: str = Field(
+        ..., description="Library file document ID to find similar tracks for"
+    )
     backbone_id: str = Field(
         ..., description="Backbone identifier (e.g., 'effnet', 'yamnet')"
     )
-    library_key: str = Field(..., description="ArangoDB library _key")
-    vector: list[float] = Field(..., description="Query embedding vector")
     limit: int = Field(10, description="Maximum number of results", ge=1, le=100)
     min_score: float = Field(
         0.0, description="Minimum similarity score threshold", ge=0.0

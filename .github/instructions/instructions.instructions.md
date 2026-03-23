@@ -226,16 +226,16 @@ Always cross-reference the main Copilot instructions:
 Follow the general architecture rules in [copilot-instructions.md](../.github/copilot-instructions.md).
 ```
 
-### Reference Layer Skills
+### Reference Related Instructions
 
-When instructions apply to a specific architectural layer:
+When instructions apply to a specific architectural layer, cross-reference other instruction files:
 
 ```markdown
-See the comprehensive layer documentation: [layer-services/SKILL.md](../skills/layer-services/SKILL.md)
+For persistence rules, see [persistence.instructions.md](./persistence.instructions.md).
 
-**YOU MUST** run the validation script after changes:
-\`\`\`bash
-python .github/skills/layer-services/scripts/check_naming.py
+**YOU MUST** validate after changes:
+\`\`\`python
+lint_project_backend(path="nomarr/services")
 \`\`\`
 ```
 

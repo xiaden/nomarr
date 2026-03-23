@@ -1,164 +1,125 @@
-## Services Layer
+# Services Layer
 
-The **services layer** owns runtime wiring and long-lived resources (config, DB, queues, workers) and exposes a clean, predictable surface for the rest of the application.
+The **services layer** owns runtime wiring and long-lived resources (config, DB, ML backends, workers) and exposes a clean, predictable surface for interfaces to call.
 
 Services are:
 
-- **Dependency coordinators** (wire config, DB, ML backends, queues, workers)
+- **Dependency coordinators** (wire config, DB, ML backends, workers)
 - **Thin orchestrators** (call workflows, aggregate results)
-- **DTO providers** (shape data for interfaces and other callers)
+- **DTO providers** (shape data for interfaces)
 
-**No complex business logic lives here.** That belongs in workflows.
+> **⚠️ Persistence Rule:** Services may hold a `Database` reference for DI wiring, but **MUST NOT** call persistence methods (`db.*`) directly. Database access flows through: service → workflow → component → persistence.
 
----
-
-## 1. Purpose of Services
-
-A service answers the question:
-
-> “Given these dependencies, how do I perform this operation in this domain?”
-
-Concretely, a service method should:
-
-1. Gather dependencies (DB handles, config values, queue objects, ML backends, etc.).
-2. Call one or more workflows (or leaf helpers) with those dependencies.
-3. Return a DTO (or simple primitive) that callers can use directly.
-
-Services **do not**:
-- Know about HTTP or CLI specifics.
-- Embed Pydantic models.
-- Own domain rules or heavy branching logic.
-
-They are the **wiring hubs** between interfaces and workflows.
+> **Rule:** No complex business logic lives here. That belongs in workflows and components.
 
 ---
 
-## 2. Structure of the Services Layer
+## 1. Position in the Architecture
 
-The services layer lives under `nomarr/services/` and is organized into two categories:
+```
+interfaces → services → workflows → components → (persistence / helpers)
+```
+
+Services sit **between interfaces and workflows**:
+
+- **Interfaces** call services (the only thing interfaces may call)
+- **Services** call workflows and/or components directly for simple operations
+- **Services never import** interfaces
+- **Services may skip workflows** for simple single-step operations
+
+---
+
+## 2. Directory Structure
 
 ### Domain Services (`services/domain/`)
 
 Domain-specific business operations:
 
-```
+```text
 services/domain/
-├── analytics_svc.py        # Tag analytics, statistics
-├── calibration_svc.py      # Calibration generation and application
-├── library_svc/            # Library management (multi-file)
-│   ├── admin.py            # Add/remove libraries
-│   ├── config.py           # Library configuration
-│   ├── entities.py         # Artists/albums/tracks
-│   ├── files.py            # File operations
-│   ├── query.py            # Search and listing
-│   └── scan.py             # Scanning operations
-├── metadata_svc.py         # Metadata entity operations
-├── navidrome_svc.py        # Navidrome integration
-├── tagging_svc.py          # Tag writing operations
-└── _library_mapping.py     # Internal library ID mapping
+├── analytics_svc.py            # Tag analytics, statistics
+├── calibration_svc.py          # Calibration generation and application
+├── metadata_svc.py             # Metadata entity operations
+├── navidrome_svc.py            # Navidrome integration
+├── playlist_import_svc.py      # External playlist import
+├── tagging_svc.py              # Tag writing operations
+├── vector_maintenance_svc.py   # Vector index maintenance
+├── vector_search_svc.py        # Vector similarity search
+├── _library_mapping.py         # Internal library ID mapping
+└── library_svc/                # Library management (multi-file)
+    ├── admin.py                # Add/remove libraries
+    ├── config.py               # Library configuration
+    ├── entities.py             # Artists/albums/tracks
+    ├── files.py                # File operations
+    ├── query.py                # Search and listing
+    └── scan.py                 # Scanning operations
 ```
 
 ### Infrastructure Services (`services/infrastructure/`)
 
 Runtime resource management and system operations:
 
-```
+```text
 services/infrastructure/
 ├── background_tasks_svc.py     # Async task management
 ├── calibration_download_svc.py # Calibration file downloads
 ├── cli_bootstrap_svc.py        # CLI initialization
 ├── config_svc.py               # Configuration loading
-├── events_svc.py               # SSE event streaming
 ├── file_watcher_svc.py         # Filesystem watching
 ├── health_monitor_svc.py       # Component health monitoring
 ├── info_svc.py                 # System information
 ├── keys_svc.py                 # API key management
 ├── ml_svc.py                   # ML backend management
-├── queue_svc.py                # Job queue operations
 ├── worker_system_svc.py        # Worker lifecycle management
 └── workers/                    # Worker implementations
-    ├── base.py                 # Base worker class
-    └── tagger.py               # Tag processing worker
+    └── discovery_worker.py     # File discovery worker
 ```
 
-Guidelines:
-- One service per domain or infrastructure concern.
-- Large services can split into sub-modules (like `library_svc/`).
-- Workers under `services/infrastructure/workers/` as background processes.
+**Naming rules:**
+
+- Service files: `<domain>_svc.py` (e.g., `analytics_svc.py`, `ml_svc.py`)
+- Service classes: `<Domain>Service` (e.g., `AnalyticsService`, `MLService`)
+- Large services: split into subpackage directory (e.g., `library_svc/`)
+- Workers: single worker type — `discovery_worker.py` handles file discovery
 
 ---
 
-## 3. Service Method Naming & Surface
+## 3. Service Method Naming
 
-Service methods are the primary programmable surface. They must be:
-
-- Predictable
-- Discoverable
-- Stable
-
-### 3.1. Verb–Noun Pattern
-
-All **public** service methods must use:
+Service methods are the primary programmable surface. All public methods use the **verb–noun** pattern:
 
 ```
 <verb>_<noun>
 ```
 
-Example:
-- `get_library`
-- `list_libraries`
-- `scan_library`
-- `tag_file`
-- `queue_file_for_tagging`
+### Allowed Verbs
 
-### 3.2. Allowed Verbs
+| Category | Verbs |
+|---|---|
+| **Read** | `get_`, `list_`, `exists_`, `count_`, `fetch_` |
+| **Create/Update/Delete** | `create_`, `update_`, `delete_`, `set_`, `rename_` |
+| **Domain Ops** | `scan_`, `tag_`, `recalibrate_`, `start_`, `stop_`, `sync_`, `reindex_`, `import_`, `export_` |
+| **Boolean Toggles** | `enable_`, `disable_`, `activate_`, `deactivate_` |
+| **Command** | `apply_`, `execute_` |
 
-**Read:** get_, list_, exists_, count_, fetch_
-
-**Create/Update/Delete:** create_, update_, delete_, set_, rename_
-
-**Domain Ops:** scan_, tag_, recalibrate_, queue_, start_, stop_, sync_, reindex_, import_, export_
-
-**Boolean Toggles:** enable_, disable_, activate_, deactivate_
-
-**Command:** apply_, execute_
-
-### 3.3. Forbidden Name Patterns
-
-- No "api_", "web_", "cli_"
-- No "for_admin"
-- No HTTP or transport semantics
+**Forbidden:** `api_*`, `web_*`, `cli_*`, `for_admin` — no transport semantics in service names.
 
 ---
 
-## 4. Responsibilities of Services
+## 4. Responsibilities
 
-### 4.1. Services
+A service method should:
+1. Gather dependencies (DB, config, ML backends)
+2. Call one or more workflows (or components for simple ops)
+3. Return a DTO or simple primitive
 
-- Accept Python types and DTOs
-- Orchestrate workflows
-- Own long-lived resources
-- Provide stable domain-centric methods
-
-They do **not**:
-- Parse HTTP
-- Raise HTTPException
-- Depend on FastAPI or Pydantic
-
-### 4.2. Workflows
-
-Workflows contain domain logic:
-- Loops
-- Branching
-- Transformations
-
-Services should delegate complex logic to workflows.
-
-### 4.3. Interfaces
-
-Interfaces:
-- Map transport → services
-- Apply auth, HTTP status codes
+| Services DO | Services DON'T |
+|---|---|
+| Wire config, DB, ML backends | Parse HTTP/CLI input |
+| Call workflows and components | Raise `HTTPException` |
+| Own long-lived resources | Contain domain rules or heavy branching |
+| Return DTOs | Embed Pydantic models |
+| Skip workflows for simple ops | Call persistence directly |
 
 ---
 
@@ -168,91 +129,84 @@ Interfaces:
 
 A service method should:
 - Collect dependencies
-- Call workflow(s)
+- Call workflow(s) or component(s)
 - Return result
 
-Extract workflow when:
-- Multi-step logic
-- Loops
-- Branching
-- Transformations
+**Extract to a workflow when:**
+- Multi-step logic with coordination
+- Loops or branching over business rules
+- Complex transformations
+
+```python
+# ✅ Good — thin orchestration
+def scan_library(self, library_id: str) -> ScanResult:
+    return scan_library_full_workflow(
+        db=self.db,
+        library_id=library_id,
+        models_dir=self.config.models_dir,
+    )
+
+# ❌ Bad — too much logic in service
+def scan_library(self, library_id: str) -> ScanResult:
+    files = find_unprocessed_files(self.db, library_id)
+    for f in files:
+        embeddings = compute_embeddings(f)  # ← This is a workflow
+        tags = run_inference(embeddings)
+        write_tags(self.db, f, tags)
+```
 
 ---
 
 ## 6. DTO Policies
 
-### When DTOs Are Required
+| Scope | Placement |
+|---|---|
+| Cross-layer DTOs (used by multiple services/workflows) | `helpers/dto/<domain>.py` |
+| Single-service DTOs (internal to one service) | Local to that service |
 
-Public methods must return DTOs when returning structured data.
-
-DTOs **not needed** for:
-- bool, int, float, str, None
-- Lists of primitives
-
-### DTO Placement
-
-Service-local DTOs:
-- If used only within the service.
-
-Cross-layer DTOs:
-- Must live under `helpers/dto/`.
+Public methods returning structured data **must** return DTOs. DTOs not needed for: `bool`, `int`, `float`, `str`, `None`, or lists of primitives.
 
 ---
 
-## 7. Long-Lived Resources
-
-Allowed to own:
-- DB connections
-- Config snapshots
-- ML model backends
-- Queues / workers
-
-Avoid globals.
-
----
-
-## 8. Dependency Injection
+## 7. Dependency Injection
 
 Use constructor injection:
 
-```
+```python
 class LibraryService:
     def __init__(self, db: Database, config: ConfigService):
-        ...
+        self.db = db
+        self.config = config
 ```
 
-Avoid runtime imports or globals.
+Config is loaded once by `ConfigService` and passed via parameters. No global singletons, no runtime imports.
 
 ---
 
-## 9. Allowed Imports
+## 8. Boundaries & Import Rules
 
-### Allowed
+**Allowed:**
+- ✅ Workflows (`nomarr.workflows.*`)
+- ✅ Components (`nomarr.components.*`) — for simple direct operations
+- ✅ Helpers (`nomarr.helpers.*`)
+- ✅ Persistence **type only** (`from nomarr.persistence import Database`) — for DI wiring
+- ✅ Standard library, third-party
 
-- Workflows
-- Persistence abstractions
-- DTOs
-- Helpers
-
-### Forbidden
-
-- FastAPI
-- HTTPException
-- Pydantic
-- Interface modules
+**Forbidden:**
+- ❌ Interfaces (`nomarr.interfaces.*`)
+- ❌ FastAPI, Pydantic
+- ❌ HTTP or CLI frameworks
+- ❌ Calling `db.*` methods directly
 
 ---
 
-## 10. Anti-Patterns
+## 9. Anti-Patterns
 
-### 10.1. Business Logic in Services
-
-Complex logic belongs in workflows.
-
-### 10.2. Returning Raw Dicts
-
-Use DTOs.
-
-### 10.3. API/Transport Logic in Services
-
-No status codes, HTTP semantics, or auth inside services.
+| Anti-Pattern | Why It's Wrong | Fix |
+|---|---|---|
+| Business logic in services | Domain rules belong in workflows/components | Extract to workflow |
+| Returning raw dicts | Untyped contracts | Return a DTO |
+| Transport logic (`status_code`, `HTTPException`) | Interface concern | Keep HTTP in interfaces |
+| Calling `db.tags.*`, `db.libraries.*` directly | Only components access persistence | Route through workflow → component |
+| Global state or singletons | Hidden dependency, test-unfriendly | Use constructor injection |
+| Embedding Pydantic models | Interface concern | Use DTOs from `helpers/dto/` |

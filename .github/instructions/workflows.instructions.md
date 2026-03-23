@@ -40,6 +40,26 @@ from pydantic import BaseModel                 # No Pydantic
 
 ---
 
+## Persistence Rule
+
+**Workflows must NEVER call persistence methods directly.** All data access is delegated to components.
+
+Workflows receive `Database` as a parameter for passing to components, but they must not call `db.<collection>.<method>()` themselves.
+
+```python
+# ✅ Correct - delegate data access to component
+def scan_library_quick_workflow(db: Database, library_id: str, ...) -> ScanResult:
+    library = get_library_record(db, library_id)  # Component call
+    ...
+
+# ❌ Wrong - workflow calling persistence directly
+def scan_library_quick_workflow(db: Database, library_id: str, ...) -> ScanResult:
+    library = db.libraries.get_library(library_id)  # Belongs in a component
+    ...
+```
+
+---
+
 ## MCP Server Tools
 
 **Use the Nomarr MCP server to navigate this layer efficiently:**
@@ -122,8 +142,8 @@ Two workflows that share most of their steps (e.g., quick scan vs. full scan) sh
 ```python
 # ✅ Good: Two workflows calling different components, clear recipe in each
 def scan_library_quick_workflow(db, library_id, tagger_version):
-    # Step 1: Resolve library
-    library = db.libraries.get_library(library_id)
+    # Step 1: Resolve library (via component)
+    library = get_library_record(db, library_id)
     # Step 2: Discover folders, plan incremental scan (cache-aware)
     all_folders = discover_library_folders(library_root, [library_root])
     folder_plan = plan_incremental_scan(all_folders, cached_folders)
@@ -131,8 +151,8 @@ def scan_library_quick_workflow(db, library_id, tagger_version):
     ...
 
 def scan_library_full_workflow(db, library_id, tagger_version):
-    # Step 1: Resolve library
-    library = db.libraries.get_library(library_id)
+    # Step 1: Resolve library (via component)
+    library = get_library_record(db, library_id)
     # Step 2: Discover folders, plan full scan (no cache)
     all_folders = discover_library_folders(library_root, [library_root])
     folder_plan = plan_full_scan(all_folders)

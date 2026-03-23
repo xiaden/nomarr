@@ -6,10 +6,10 @@ applyTo: nomarr/services/**
 
 # Services Layer
 
-**Purpose:** Own runtime wiring and long-lived resources (config, DB, queues, workers) and expose a clean API for interfaces.
+**Purpose:** Own runtime wiring and long-lived resources (config, DB, workers) and expose a clean API for interfaces.
 
 Services are:
-- **Dependency coordinators** (wire config, DB, ML backends, queues, workers)
+- **Dependency coordinators** (wire config, DB, ML backends, workers)
 - **Thin orchestrators** (call [workflows](./workflows.instructions.md), aggregate results)
 - **DTO providers** (shape data for interfaces using [helpers DTOs](./helpers.instructions.md))
 
@@ -112,6 +112,24 @@ from pydantic import BaseModel        # No Pydantic models
 
 ---
 
+## Persistence Rule
+
+**Services must NEVER call persistence methods directly.** All data access flows through components.
+
+Services may hold a `Database` instance for DI wiring (passing it to workflows and components), but they must not call `db.<collection>.<method>()` themselves.
+
+```python
+# ✅ Correct - pass Database to workflow/component
+def scan_library(self, library_id: str) -> ScanResult:
+    return scan_library_full_workflow(db=self.db, library_id=library_id, ...)
+
+# ❌ Wrong - service calling persistence directly
+def get_pending_files(self, library_key: str) -> list[FileDict]:
+    return self.db.library_files.get_pending_files(library_key)  # Belongs in a component
+```
+
+---
+
 ## MCP Server Tools
 
 **Use the Nomarr MCP server to navigate this layer efficiently:**
@@ -134,7 +152,6 @@ All public methods use `<verb>_<noun>`:
 get_library()
 list_libraries()
 scan_library()
-queue_file_for_tagging()
 start_processing()
 stop_workers()
 
@@ -147,7 +164,7 @@ get_library_for_admin()  # No audience suffixes
 
 - **Read:** `get_`, `list_`, `exists_`, `count_`, `fetch_`
 - **Write:** `create_`, `update_`, `delete_`, `set_`, `rename_`
-- **Domain:** `scan_`, `tag_`, `queue_`, `start_`, `stop_`, `sync_`, `import_`, `export_`
+- **Domain:** `scan_`, `tag_`, `start_`, `stop_`, `sync_`, `import_`, `export_`
 - **Boolean:** `enable_`, `disable_`
 
 ---
@@ -215,7 +232,6 @@ Services own:
 - DB connections (`Database`)
 - Config snapshots (`ConfigService`)
 - ML backends
-- Queue handles
 - Worker managers
 
 Use constructor injection:
@@ -243,7 +259,8 @@ Before committing service code, verify:
 
 ---
 
-## Layer Scripts
+## Validation
 
-- `lint.py` - Runs ruff, mypy, vulture, bandit, radon, lint-imports
-- `check_naming.py` - Validates `_svc.py` suffix (or `_svc/` packages), `Service` class suffix, `<verb>_<noun>` method pattern
+**Run `lint_project_backend(path="nomarr/services")` after every edit.** Zero errors is the only acceptable state.
+
+This MCP tool runs ruff, mypy, and import-linter — covering style, types, and layer boundary enforcement.

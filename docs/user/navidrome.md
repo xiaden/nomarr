@@ -6,13 +6,16 @@
 
 ## Overview
 
-Nomarr can automatically generate smart playlists for [Navidrome](https://www.navidrome.org/) based on the tags it extracts from your music. This allows you to create dynamic playlists like "Energetic Electronic", "Mellow Acoustic", or "Danceable Pop" that update automatically as you process more music.
+Nomarr can generate smart playlists for [Navidrome](https://www.navidrome.org/) based on the ML tags it extracts from your music. You can create playlists like "Energetic Electronic", "Mellow Acoustic", or "Danceable Pop" and either download them as files or push them directly to Navidrome.
 
 **What this integration provides:**
-- **Automatic playlist generation** based on tag combinations
-- **TOML format** compatible with Navidrome's smart playlist system
-- **Regular exports** that sync with your processed tracks
-- **Customizable rules** for different genres and moods
+
+- **Smart playlist generation** using a visual rule builder with nested AND/OR logic
+- **Direct push to Navidrome** via the Subsonic API (no file copying needed)
+- **Static M3U playlists** from hand-picked tracks
+- **Playlist templates** for common genres and moods with batch generation
+- **Song sync** to pull your Navidrome library into Nomarr for cross-referencing
+- **Connectivity testing** to verify your Navidrome connection
 
 ---
 
@@ -25,463 +28,161 @@ Audio Analysis (ML models)
     ↓
 Tag Extraction (mood, genre, energy, etc.)
     ↓
-Tag Storage (ArangoDB)
+Tag Storage (database)
     ↓
-Playlist Export (TOML files)
+Playlist Builder (Web UI rule builder)
     ↓
-Copy to Navidrome
-    ↓
-Smart Playlists in Navidrome
+Download .nsp file  OR  Push directly to Navidrome via Subsonic API
 ```
 
-**Playlist format (example):**
-```toml
-# Energetic Electronic Music
-name = "Energetic Electronic"
-comment = "High-energy electronic tracks with strong beats"
-
-[[rules]]
-field = "tag"
-operator = "contains"
-value = "electronic"
-
-[[rules]]
-field = "tag"
-operator = "contains"
-value = "energetic"
-
-[[rules]]
-field = "tag"
-operator = "contains"
-value = "danceable"
-```
+Unlike file-based export workflows, Nomarr connects to Navidrome over the network using the Subsonic API. You configure the connection in the Web UI, and playlists are pushed directly — no shared volumes or file copying required.
 
 ---
 
 ## Prerequisites
 
-1. **Nomarr installed and configured** (see [getting_started.md](getting_started.md))
-2. **Music library processed** (at least partial processing complete)
-3. **Calibration applied** (optional but recommended)
-4. **Navidrome installed** and configured with your music library
+1. **Nomarr installed and running** (see [Getting Started](getting_started.md))
+2. **Music library processed** (at least some tracks analyzed)
+3. **Navidrome installed** and accessible over the network
 
 **Navidrome requirements:**
-- Version 0.49.0 or newer (smart playlist support)
-- Access to Navidrome's playlist directory
+
+- Navidrome with Subsonic API enabled (enabled by default)
+- A Navidrome user account with playlist permissions
+- Network connectivity between Nomarr and Navidrome containers (or hosts)
 
 ---
 
 ## Configuration
 
-### 1. Configure Nomarr Export Settings
+All Navidrome configuration is done through the Web UI — no config file editing required.
 
-Edit `config/config.yaml`:
+### 1. Open the Navidrome Page
 
-```yaml
-navidrome:
-  export_dir: "/data/playlists"  # Where to write TOML files
-  auto_export: true              # Export automatically after processing
-  export_interval: 3600          # Export every hour (seconds)
-  
-  # Playlist generation rules
-  playlists:
-    # Mood-based playlists
-    - name: "Energetic"
-      comment: "High-energy tracks"
-      rules:
-        - tag: "energetic"
-          tier: "strong"  # Only strong matches
-    
-    - name: "Mellow"
-      comment: "Calm and relaxing"
-      rules:
-        - tag: "mellow"
-          tier: "strong"
-        - tag: "acoustic"
-          tier: "moderate"
-    
-    # Genre-based playlists
-    - name: "Electronic"
-      comment: "Electronic music"
-      rules:
-        - tag: "electronic"
-          tier: "strong"
-    
-    - name: "Rock"
-      comment: "Rock music"
-      rules:
-        - tag: "rock"
-          tier: "strong"
-    
-    # Combined playlists
-    - name: "Danceable Pop"
-      comment: "Danceable pop tracks"
-      rules:
-        - tag: "danceable"
-          tier: "strong"
-        - tag: "pop"
-          tier: "moderate"
-    
-    - name: "Chill Electronic"
-      comment: "Mellow electronic music"
-      rules:
-        - tag: "electronic"
-          tier: "strong"
-        - tag: "mellow"
-          tier: "moderate"
-```
+In the Nomarr Web UI, click **Navidrome** in the sidebar.
 
-**Rule options:**
-- `tag`: Tag name (from Nomarr's tag vocabulary)
-- `tier`: Tag strength (`strong`, `moderate`, `weak`)
-- `operator`: How to combine rules (`and`, `or`)
+### 2. Configure API Settings
 
-### 2. Configure Navidrome Playlist Directory
+Expand the **API Settings** panel at the bottom of the page:
 
-**Option A: Docker volume mount (recommended)**
+1. **Navidrome URL** — The base URL of your Navidrome server (e.g., `http://navidrome:4533` or `https://music.yourdomain.com`)
+2. **Username** — Your Navidrome username
+3. **Password** — Your Navidrome password
+4. Click **Save**
 
-If both Nomarr and Navidrome run in Docker on the same host:
+### 3. Test Connectivity
 
-```yaml
-# compose.yaml
-services:
-  nomarr:
-    volumes:
-      - navidrome-playlists:/data/playlists
-  
-  navidrome:
-    volumes:
-      - navidrome-playlists:/data/playlists:ro
+Click the **Ping** button to verify Nomarr can reach your Navidrome server. You should see a success message.
 
-volumes:
-  navidrome-playlists:
-```
+!!! tip
+    If Navidrome and Nomarr both run in Docker, use the Navidrome container name and internal port (e.g., `http://navidrome:4533`). They must share a Docker network.
 
-**Option B: Copy to Navidrome directory**
+### 4. Sync Songs (Optional but Recommended)
 
-If Navidrome runs elsewhere, set up periodic copy:
+Click **Sync Songs** to pull your Navidrome library into Nomarr’s database. This enables:
 
-```bash
-# Copy playlists to Navidrome
-rsync -av /opt/nomarr/data/playlists/ navidrome-server:/var/lib/navidrome/playlists/
-```
-
-**Option C: Network share**
-
-Mount shared directory on both systems:
-
-```yaml
-# compose.yaml (Nomarr)
-services:
-  nomarr:
-    volumes:
-      - /mnt/nas/playlists:/data/playlists
-```
+- Resolving Nomarr file IDs to Navidrome song IDs when pushing playlists
+- Better cross-referencing between the two systems
 
 ---
 
-## Generating Playlists
+## Generating Smart Playlists
 
-Nomarr provides a Web UI for generating Navidrome-compatible smart playlists.
+The **Playlist Maker** panel is where you build smart playlists using Nomarr’s ML tags.
 
-### Using the Web UI
+### Using the Rule Builder
 
-1. Navigate to the **Navidrome** page from the sidebar
-2. **Preview Tags:** See available tags and their distribution across your library
-3. **Use Templates:** Choose from predefined playlist templates (e.g., "Energetic", "Mellow Acoustic")
-4. **Custom Queries:** Write custom tag queries for more control
-5. **Preview Results:** See which tracks match before generating
-6. **Generate Playlist:** Export the playlist as a `.nsp` file
+1. **Add a rule** — Select a tag (e.g., "electronic"), an operator (e.g., "greater than"), and a threshold value (e.g., 0.7)
+2. **Combine rules** — Use AND/OR logic to combine multiple tag conditions
+3. **Add groups** — Click "Add Group" to create nested rule groups for complex boolean logic
+4. **Sort and limit** — Use the sort picker and limit to control playlist order and size
+5. **Preview** — Click "Preview" to see matching tracks before generating
+6. **Generate** — Click "Generate" to create a `.nsp` playlist file for download
 
-### Template System
+### Example Queries
 
-Templates are predefined playlist configurations. From the Navidrome page:
+**Energetic Electronic:**
 
-1. View available templates with descriptions
-2. Click a template to preview matching tracks
-3. Generate the playlist file
-
-### Custom Playlist Queries
-
-For more control, use the query builder:
-
-1. Select tags and tiers (strong, moderate, weak)
-2. Combine with AND/OR logic
-3. Preview matching tracks
-4. Adjust query until satisfied
-5. Generate and export
-
-### Automatic Export
-
-Configure automatic playlist generation in `config/config.yaml`:
-
-```yaml
-navidrome:
-  export_dir: "/data/playlists"  # Where to write .nsp files
-  auto_export: true              # Export after processing
-  export_interval: 3600          # Export every hour (seconds)
 ```
-
----
-
-## Playlist Examples
-
-### Simple Tag-Based
-
-**High Energy:**
-```yaml
-playlists:
-  - name: "High Energy"
-    comment: "Tracks with high energy"
-    rules:
-      - tag: "energetic"
-        tier: "strong"
+tag:electronic > 0.7 AND tag:energetic > 0.7
 ```
-
-### Multiple Tags (AND)
 
 **Mellow Acoustic:**
-```yaml
-playlists:
-  - name: "Mellow Acoustic"
-    comment: "Calm acoustic tracks"
-    operator: "and"  # All rules must match
-    rules:
-      - tag: "mellow"
-        tier: "strong"
-      - tag: "acoustic"
-        tier: "moderate"
-```
-
-### Multiple Tags (OR)
-
-**Rock or Metal:**
-```yaml
-playlists:
-  - name: "Rock or Metal"
-    comment: "Rock and metal tracks"
-    operator: "or"  # Any rule can match
-    rules:
-      - tag: "rock"
-        tier: "strong"
-      - tag: "metal"
-        tier: "strong"
-```
-
-### Complex Rules
-
-**Upbeat Dance Music:**
-```yaml
-playlists:
-  - name: "Upbeat Dance"
-    comment: "High-energy danceable tracks"
-    operator: "and"
-    rules:
-      - tag: "danceable"
-        tier: "strong"
-      - tag: "energetic"
-        tier: "strong"
-    exclude:
-      - tag: "acoustic"  # No acoustic versions
-      - tag: "slow"
-```
-
-### Nested Rule Groups (Advanced)
-
-For complex boolean logic, use parentheses to group rules together. This allows combining AND/OR logic in ways not possible with flat rules.
-
-**Query Syntax:**
-```
-(condition AND condition) OR (condition AND condition)
-```
-
-**Example: Energetic Electronic OR Mellow Acoustic**
-
-Matches tracks that are EITHER (energetic AND electronic) OR (mellow AND acoustic):
 
 ```
-(tag:energetic > 0.7 AND tag:electronic > 0.7) OR (tag:mellow > 0.7 AND tag:acoustic > 0.7)
+tag:mellow > 0.7 AND tag:acoustic > 0.6
 ```
 
-Without nesting, you could only express "all must match" or "any can match" — nesting gives you full boolean control.
-
-**More Examples:**
+**Rock or Metal (Energetic):**
 
 ```
-# Happy dance music OR calm acoustic
-(tag:happy > 0.6 AND tag:danceable > 0.6) OR (tag:calm > 0.7 AND tag:acoustic > 0.6)
-
-# Rock or metal, but must be energetic
 (tag:rock > 0.7 OR tag:metal > 0.7) AND tag:energetic > 0.6
-
-# Complex three-level nesting
-((tag:electronic > 0.7 AND tag:danceable > 0.7) OR tag:pop > 0.8) AND tag:happy > 0.5
 ```
 
-**Max Nesting Depth:** 5 levels
+**Happy Dance Music OR Calm Acoustic:**
 
-The backend enforces a maximum nesting depth of 5 to prevent overly complex queries. This limit is more than sufficient for practical playlist rules.
-
-**Invalid (too deep):**
 ```
-(((((tag:a > 0.5)))))
+(tag:happy > 0.6 AND tag:danceable > 0.6) OR (tag:calm > 0.7 AND tag:acoustic > 0.6)
 ```
 
-**UI Support:**
+### Nested Rule Groups
 
-The Web UI rule builder supports nested groups:
-1. Click "Add Group" to create a nested group
-2. Set the group's logic (AND/OR) independently
-3. Add rules or more nested groups within
-4. The UI prevents exceeding max depth
+The rule builder supports nested AND/OR groups up to 5 levels deep, giving you full boolean control over playlist criteria.
 
-### Tier-Based Filtering
+Without nesting, you can only express "all must match" (AND) or "any can match" (OR). Nesting lets you combine both:
 
-**Only Strong Matches:**
-```yaml
-playlists:
-  - name: "Definitely Electronic"
-    comment: "Strong electronic tag only"
-    rules:
-      - tag: "electronic"
-        tier: "strong"  # Exclude moderate/weak matches
+```
+# Electronic dance OR acoustic chill, but must be happy
+((tag:electronic > 0.7 AND tag:danceable > 0.7) OR (tag:acoustic > 0.7 AND tag:mellow > 0.6)) AND tag:happy > 0.5
 ```
 
-**Include Moderate:**
-```yaml
-playlists:
-  - name: "Probably Electronic"
-    comment: "Strong or moderate electronic tag"
-    rules:
-      - tag: "electronic"
-        tier: ["strong", "moderate"]
-```
+### Using Templates
+
+Templates are predefined playlist configurations for common genres and moods:
+
+1. Expand the **Playlist Maker** panel
+2. View available templates with descriptions
+3. Click a template to load its rules into the builder
+4. Preview matching tracks
+5. Generate the playlist
+
+**Batch generation:** Use the **Generate All Templates** option to create all template playlists at once.
 
 ---
 
-## Using Playlists in Navidrome
+## Pushing Playlists to Navidrome
 
-### 1. Reload Navidrome
+Instead of downloading `.nsp` files, you can push playlists directly to Navidrome:
 
-After exporting playlists, Navidrome needs to scan for new files:
+1. Build your playlist using the rule builder or templates
+2. Preview the matching tracks
+3. Click **Push to Navidrome**
+4. Nomarr resolves your local file IDs to Navidrome song IDs via the synced library
+5. The playlist is created (or updated) in Navidrome via the Subsonic API
 
-**Automatic:**
-- Navidrome scans playlists on startup
-- Periodic scans (if configured)
-
-**Manual:**
-```bash
-# Trigger Navidrome rescan
-# (Method depends on your Navidrome setup)
-
-# Docker
-docker exec navidrome /app/navidrome --scan
-
-# Native
-navidrome --scan
-```
-
-### 2. View Playlists
-
-In Navidrome web UI:
-1. Navigate to "Playlists"
-2. Find Nomarr-generated playlists
-3. Click playlist to view tracks
-
-**Nomarr playlists are prefixed** (optional):
-```yaml
-# Add prefix to distinguish from manual playlists
-navidrome:
-  playlist_prefix: "[Auto] "
-```
-
-Result: `[Auto] Energetic`, `[Auto] Mellow`, etc.
-
-### 3. Playlist Updates
-
-**How updates work:**
-- Nomarr regenerates TOML files on export
-- Navidrome reads updated files on next scan
-- Playlists reflect current tag data
-
-**Update frequency:**
-- Depends on `export_interval` setting
-- Manual exports via the Navidrome page in Web UI
+!!! note
+    Push requires that you’ve run **Sync Songs** at least once so Nomarr can map its files to Navidrome’s song IDs.
 
 ---
 
-## Advanced Configuration
+## Static Playlists (M3U)
 
-### Custom Tag Queries
+For hand-picked playlists (not based on tags), you can create static M3U playlists:
 
-**Query by score range:**
-```yaml
-playlists:
-  - name: "Very Electronic"
-    comment: "Electronic score > 0.8"
-    rules:
-      - tag: "electronic"
-        score_min: 0.8  # Raw model output score
-```
+1. Select specific tracks by their file IDs
+2. Generate an M3U playlist file
+3. Download or use in Navidrome
 
-**Query by calibrated threshold:**
-```yaml
-playlists:
-  - name: "Electronic (Calibrated)"
-    comment: "Above calibrated threshold"
-    rules:
-      - tag: "electronic"
-        use_calibration: true  # Use calibrated thresholds
-```
+This is useful for curated playlists that don’t follow tag-based rules.
 
-### Exclude Rules
+---
 
-**Exclude specific tags:**
-```yaml
-playlists:
-  - name: "Electronic (No Ambient)"
-    comment: "Electronic but not ambient"
-    rules:
-      - tag: "electronic"
-        tier: "strong"
-    exclude:
-      - tag: "ambient"
-      - tag: "drone"
-```
+## Generating Navidrome Config
 
-### Minimum Track Count
+The **Generate Config** panel lets you:
 
-**Only create playlist if enough tracks:**
-```yaml
-playlists:
-  - name: "Energetic"
-    comment: "High-energy tracks"
-    min_tracks: 50  # Don't create if < 50 tracks
-    rules:
-      - tag: "energetic"
-        tier: "strong"
-```
-
-### Custom TOML Templates
-
-**Override default template:**
-```yaml
-navidrome:
-  template: |
-    name = "{{ playlist.name }}"
-    comment = "{{ playlist.comment }}"
-    
-    # Custom metadata
-    owner = "Nomarr Auto-Generated"
-    public = false
-    
-    {% for rule in playlist.rules %}
-    [[rules]]
-    field = "tag"
-    operator = "{{ rule.operator }}"
-    value = "{{ rule.tag }}"
-    {% endfor %}
-```
+1. **Preview tag statistics** — See which tags are available and how they’re distributed across your library
+2. **Generate TOML config** — Create a Navidrome-compatible configuration file based on your tag data
 
 ---
 
@@ -489,315 +190,137 @@ navidrome:
 
 **Common tags extracted by Nomarr:**
 
-**Mood:**
-- `energetic`, `mellow`, `happy`, `sad`, `aggressive`, `peaceful`
+| Category | Examples |
+|----------|----------|
+| **Mood** | energetic, mellow, happy, sad, aggressive, peaceful |
+| **Genre** | rock, pop, electronic, jazz, classical, hip hop, metal |
+| **Instrumentation** | acoustic, electric, vocal, instrumental |
+| **Rhythm** | danceable, fast, slow |
+| **Production** | live, studio, lo-fi, hi-fi |
 
-**Genre:**
-- `rock`, `pop`, `electronic`, `jazz`, `classical`, `hip hop`, `metal`
+See the full tag vocabulary in the Nomarr Web UI under the **Tags** page.
 
-**Instrumentation:**
-- `acoustic`, `electric`, `vocal`, `instrumental`
+**Tag scores** range from 0.0 to 1.0, where higher values indicate stronger presence of that characteristic. When building playlists, you set threshold values to filter tracks.
 
-**Rhythm:**
-- `danceable`, `fast`, `slow`
-
-**Production:**
-- `live`, `studio`, `lo-fi`, `hi-fi`
-
-See full vocabulary in Nomarr web UI under "Tags" page.
-
-**Tag tiers:**
-- **Strong:** High confidence (> calibrated threshold or score > 0.7)
-- **Moderate:** Medium confidence (score 0.4-0.7)
-- **Weak:** Low confidence (score 0.2-0.4)
+If you’ve enabled **calibration**, tag thresholds are automatically tuned to your specific library for better accuracy.
 
 ---
 
 ## Troubleshooting
 
-### Playlists Not Appearing in Navidrome
+### Cannot Connect to Navidrome
 
-**Check export directory:**
-```bash
-# List exported playlists
-docker exec -it nomarr ls -l /data/playlists/
+**Symptoms:** Ping fails, "connection refused" or timeout errors.
 
-# Should see .nsp files
-```
+**Solutions:**
 
-**Verify Navidrome can read files:**
-```bash
-docker exec navidrome ls -l /data/playlists/
-```
+1. **Check the URL** — Ensure the Navidrome URL is correct and includes the port (e.g., `http://navidrome:4533`)
+2. **Docker networking** — If both run in Docker, they must share a network. Add Navidrome to your `front_network` or create a shared network.
+3. **Firewall** — Ensure the Navidrome port is accessible from the Nomarr container
+4. **Credentials** — Verify username and password are correct
 
-**Check Navidrome logs:**
-```bash
-docker logs navidrome | grep -i playlist
-```
+### Push Fails with "Song Not Found"
 
-**Trigger manual scan:**
-```bash
-docker exec navidrome /app/navidrome --scan
-```
+**Symptoms:** Push to Navidrome reports unresolved songs.
 
-### Empty Playlists
+**Solutions:**
 
-**Check if tracks processed:**
-Navigate to the **Dashboard** page in Nomarr - should show completed tracks.
+1. **Run Sync Songs** — Nomarr needs an up-to-date copy of Navidrome’s library to resolve file IDs to song IDs
+2. **Check library paths** — Both Nomarr and Navidrome must see the same music files. Path mismatches prevent song resolution.
 
-**Check tag coverage:**
-Navigate to the **Analytics** page to see tag distribution and verify tags are being extracted.
+### Empty Playlist Results
 
-**Verify calibration applied:**
-Navigate to the **Calibration** page to see which tags have calibration thresholds.
+**Symptoms:** Preview shows no matching tracks.
 
-**Lower tier requirements:**
-```yaml
-# If "strong" yields no results, try "moderate"
-playlists:
-  - name: "Electronic"
-    rules:
-      - tag: "electronic"
-        tier: "moderate"  # Lower bar
-```
+**Solutions:**
 
-### Playlists Too Large
-
-**Reduce matches:**
-```yaml
-# Increase tier requirement
-playlists:
-  - name: "Electronic"
-    rules:
-      - tag: "electronic"
-        tier: "strong"  # Only high-confidence
-
-# Or increase score threshold
-playlists:
-  - name: "Very Electronic"
-    rules:
-      - tag: "electronic"
-        score_min: 0.8  # Higher threshold
-```
-
-### Playlists Not Updating
-
-**Check auto-export enabled:**
-```yaml
-navidrome:
-  auto_export: true
-```
-
-**Verify export interval:**
-```yaml
-navidrome:
-  export_interval: 3600  # 1 hour
-```
-
-**Trigger manual export:**
-Navigate to the **Navidrome** page in the Web UI and generate playlists manually.
-
-**Check Navidrome scan schedule:**
-Navidrome must rescan to see updated playlists.
-
----
-
-## Example Workflow
-
-### 1. Process Music Library
-
-1. Navigate to the **Libraries** page in Nomarr Web UI
-2. Click **Scan** on your library
-3. Monitor progress on the **Dashboard** page
-4. Wait for processing to complete (workers run automatically)
-
-### 2. Apply Calibration
-
-1. Navigate to the **Calibration** page
-2. Review calibration statistics
-3. Trigger recalibration if needed (after adding significant new music)
-
-### 3. Generate Playlists
-
-1. Navigate to the **Navidrome** page
-2. Preview available tags and their distribution
-3. Choose a template or create a custom query
-4. Preview matching tracks
-5. Generate the playlist file
-
-### 4. Configure Navidrome Access
-
-Ensure Navidrome can read the exported playlists:
-
-```bash
-# Verify files created
-docker exec -it nomarr ls -l /data/playlists/
-
-# Check Navidrome has access
-docker exec navidrome ls -l /data/playlists/
-```
-
-### 5. Load in Navidrome
-
-```bash
-# Trigger Navidrome scan
-docker exec navidrome /app/navidrome --scan
-
-# Or wait for scheduled scan
-# Then check Navidrome UI → Playlists
-```
-
-### 6. Ongoing Sync
-
-With `auto_export: true` in config, new tracks are automatically included in playlists as they're processed.
+1. **Check processing** — Ensure tracks have been analyzed (check the Dashboard)
+2. **Lower thresholds** — Try reducing tag threshold values (e.g., from 0.8 to 0.5)
+3. **Check calibration** — If calibration is enabled, ensure it has completed. Visit the Calibration page.
+4. **Preview tags** — Use the Generate Config panel to see which tags have data in your library
 
 ---
 
 ## API Integration
 
-### Generate Playlist via HTTP API
+For programmatic access, Nomarr provides a full REST API for all Navidrome operations. Visit `http://localhost:8356/docs` for interactive API documentation.
 
-```bash
-# Generate playlist
-curl -X POST http://localhost:8888/api/web/navidrome/playlists/generate \
-  -H "Cookie: session=YOUR_SESSION" \
-  -H "Content-Type: application/json" \
-  -d '{"query": "energetic:strong", "playlist_name": "Energetic"}'
-```
+**Key endpoints:**
 
-### Preview Playlist Query
-
-```bash
-curl -X POST http://localhost:8888/api/web/navidrome/playlists/preview \
-  -H "Cookie: session=YOUR_SESSION" \
-  -H "Content-Type: application/json" \
-  -d '{"query": "electronic:strong AND danceable:moderate", "preview_limit": 50}'
-```
-
-### Get Tag Statistics Preview
-
-```bash
-curl http://localhost:8888/api/web/navidrome/preview \
-  -H "Cookie: session=YOUR_SESSION"
-```
-
-Response includes tag distribution, track counts, and available templates.
-
-See [api_reference.md](api_reference.md) for full API documentation.
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/web/navidrome/preview` | GET | Tag statistics for your library |
+| `/api/web/navidrome/tag-values` | GET | Distinct values for a specific tag |
+| `/api/web/navidrome/config` | GET | Generate TOML config text |
+| `/api/web/navidrome/playlists/preview` | POST | Preview playlist query results |
+| `/api/web/navidrome/playlists/generate` | POST | Generate .nsp playlist file |
+| `/api/web/navidrome/playlists/static` | POST | Generate static M3U playlist |
+| `/api/web/navidrome/playlists/push` | POST | Push playlist to Navidrome |
+| `/api/web/navidrome/templates` | GET | List available templates |
+| `/api/web/navidrome/templates` | POST | Batch generate from templates |
+| `/api/web/navidrome/sync-songs` | POST | Sync Navidrome songs to Nomarr |
+| `/api/web/navidrome/ping` | POST | Test Navidrome connectivity |
+| `/api/web/navidrome/status` | GET | Check if Navidrome is configured |
 
 ---
 
-## Advanced Use Cases
+## Example Workflow
 
-### Dynamic Genre Playlists
+### First-Time Setup
 
-Create playlists for every genre tag:
+1. **Process your music** — Scan and process your library in Nomarr (see [Getting Started](getting_started.md))
+2. **Configure Navidrome connection** — Go to Navidrome page → API Settings → enter URL, username, password → Save
+3. **Test connectivity** — Click Ping to verify the connection works
+4. **Sync songs** — Click Sync Songs to import Navidrome’s library
 
-```yaml
-navidrome:
-  auto_genre_playlists: true
-  genre_tags:
-    - rock
-    - pop
-    - electronic
-    - jazz
-    - classical
-    - hip hop
-    - metal
-```
+### Creating Playlists
 
-Generates: `Rock.toml`, `Pop.toml`, `Electronic.toml`, etc.
+1. **Preview tags** — Check tag statistics to see what’s available
+2. **Build rules** — Use the rule builder to define your playlist criteria
+3. **Preview results** — See which tracks match before committing
+4. **Generate or push** — Download as `.nsp` file or push directly to Navidrome
 
-### Mood-Based Radio Stations
+### Ongoing Use
 
-Combine multiple moods:
-
-```yaml
-playlists:
-  - name: "Morning Energy"
-    rules:
-      - tag: "happy"
-        tier: "strong"
-      - tag: "energetic"
-        tier: "moderate"
-  
-  - name: "Evening Chill"
-    rules:
-      - tag: "mellow"
-        tier: "strong"
-      - tag: "peaceful"
-        tier: "moderate"
-```
-
-### Decade-Based Smart Playlists
-
-If your library has year metadata:
-
-```yaml
-playlists:
-  - name: "Energetic 80s"
-    rules:
-      - tag: "energetic"
-        tier: "strong"
-    filters:
-      year_min: 1980
-      year_max: 1989
-```
-
-### Workout Playlists
-
-High-energy, fast tempo:
-
-```yaml
-playlists:
-  - name: "Workout"
-    rules:
-      - tag: "energetic"
-        tier: "strong"
-      - tag: "fast"
-        tier: "moderate"
-      - tag: "danceable"
-        tier: "moderate"
-    exclude:
-      - tag: "mellow"
-```
-
----
-
-## Next Steps
-
-**Learn more:**
-- [Getting Started](getting_started.md) - Basic setup
-- [API Reference](api_reference.md) - HTTP API for automation
-- [Calibration Guide](../dev/calibration.md) - Tune tag thresholds
-
-**Navidrome resources:**
-- [Navidrome Documentation](https://www.navidrome.org/docs/)
-- [Smart Playlists](https://www.navidrome.org/docs/usage/playlists/)
+- After processing new music, revisit the Navidrome page to regenerate playlists
+- Run Sync Songs periodically if your Navidrome library changes independently
+- Use templates for quick batch generation of common playlist types
 
 ---
 
 ## FAQ
 
-**Q: Can I edit generated playlists manually?**
+**Q: Do I need to set up shared volumes between Nomarr and Navidrome?**
 
-A: Not recommended. Nomarr will overwrite changes on next export. For custom playlists, create separate files with different names.
+A: No. Nomarr pushes playlists to Navidrome over the Subsonic API. No shared filesystem is needed for playlist delivery. However, both must be able to access the same music files at some path.
 
-**Q: How often should I export?**
+**Q: What’s an .nsp file?**
 
-A: Depends on processing frequency:
-- Active processing: Every 1-2 hours
-- Occasional rescans: Daily or weekly
-- Static library: Once after processing completes
+A: It’s a Navidrome Smart Playlist file containing a query expression. You can download it and import it into Navidrome, or use the Push feature to skip the file entirely.
 
-**Q: Can I use Nomarr tags in Navidrome's query language?**
+**Q: How often should I push or regenerate playlists?**
 
-A: Yes, if tags are written to file metadata. Currently Nomarr stores tags in its database only. File tagging is planned for future release.
+A: After processing new music or running calibration. Playlists are based on current tag data, so they reflect whatever has been analyzed.
+
+**Q: Can I edit playlists after pushing?**
+
+A: Yes, in Navidrome. However, if you push the same playlist name again from Nomarr, it will be replaced with the new version.
 
 **Q: Do playlists update when calibration changes?**
 
-A: Yes, recalibration affects tag tiers, which affects playlist membership. Export after calibration to update playlists.
+A: Calibration affects tag thresholds, which affects which tracks match your rules. Regenerate playlists after recalibration to reflect the changes.
 
-**Q: Can I share playlists with other Navidrome users?**
+---
 
-A: Yes, copy `.toml` files to other Navidrome instances. Tags are based on file paths, so music libraries must match.
+## See Also
+
+- [Getting Started](getting_started.md) — Initial setup
+- [Playlist Import](playlist_import.md) — Import Spotify/Deezer playlists
+- [Troubleshooting](troubleshooting.md) — Common issues and solutions
+- [Calibration Troubleshooting](../dev/calibration-troubleshooting.md) — Tune tag thresholds
+- Interactive API docs at `http://localhost:8356/docs`
+
+**Navidrome resources:**
+
+- [Navidrome Documentation](https://www.navidrome.org/docs/)
+- [Smart Playlists](https://www.navidrome.org/docs/usage/playlists/)

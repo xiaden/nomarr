@@ -65,7 +65,9 @@ interfaces → services → workflows → components → (persistence / helpers)
 2. **Dependency injection** is used for major resources (database, config, ML backends)
 3. **No global state** - config is loaded once and passed via parameters
 4. **Type annotations are mandatory** - all Python code must be fully typed
-5. **Essentia is isolated** - only `components/ml/ml_backend_essentia_comp.py` imports essentia
+5. **Essentia is isolated** — only `components/ml/audio/ml_audio_comp.py` (audio loading) and `components/ml/audio/ml_preprocess_comp.py` (mel spectrogram) import essentia. Essentia is not the ML backend — ONNX Runtime is.
+6. **Persistence is components-only** — only the components layer may call persistence. Services, workflows, and interfaces must never access the database directly.
+7. **Discovery-based workers** — a single worker type claims files from the `library_files` collection. There is no queue-based processing.
 
 **Layer-specific instructions:**
 
@@ -76,7 +78,7 @@ interfaces → services → workflows → components → (persistence / helpers)
 - `nomarr/persistence/` - Database access, ArangoDB queries
 - `nomarr/helpers/` - Pure utility functions, no nomarr imports
 
-See [.github/instructions/](`.github/instructions/`) for detailed layer conventions.
+See [.github/instructions/](.github/instructions/) for detailed layer conventions.
 
 ## 🔧 Development Setup
 
@@ -122,7 +124,7 @@ See [.github/instructions/](`.github/instructions/`) for detailed layer conventi
 
    # In one terminal - backend
    source .venv/bin/activate
-   uvicorn nomarr.interfaces.main:app --reload --port 8356
+   uvicorn nomarr.interfaces.api.api_app:api_app --reload --port 8356
 
    # In another terminal - frontend
    cd frontend
@@ -138,7 +140,7 @@ pytest tests/
 # Backend linting (MUST pass before submitting PR)
 ruff check nomarr/
 mypy nomarr/
-python -m import_linter  # Check layer boundaries
+lint-imports  # Check layer boundaries
 
 # Frontend linting
 cd frontend && npm run lint
@@ -153,7 +155,7 @@ npx playwright test
 
 - **Formatter:** `ruff format` (automatically applied)
 - **Linter:** `ruff check` (must pass with zero errors)
-- **Type checker:** `mypy --strict` (must pass with zero errors)
+- **Type checker:** `mypy` (must pass with zero errors, config in `pyproject.toml`)
 - **Line length:** 100 characters
 - **Imports:** Sorted with `ruff` (groups: stdlib, third-party, local)
 
@@ -186,7 +188,6 @@ Refactor service layer to use workflow orchestration
 ## 📚 Resources
 
 - [Architecture Documentation](docs/dev/architecture.md)
-- [API Reference](docs/user/api_reference.md)
 - [Copilot Instructions](.github/copilot-instructions.md) (developer context)
 - [Layer-Specific Instructions](.github/instructions/)
 

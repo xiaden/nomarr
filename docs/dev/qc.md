@@ -19,6 +19,30 @@ The QC system provides **automated and manual checks** to maintain code quality 
 
 ---
 
+## Primary QC Tool
+
+**`lint_project_backend`** is the single entry point for all Python code quality checks. It runs:
+
+- **ruff** — Linting and formatting
+- **mypy** — Static type checking
+- **import-linter** — Layer boundary enforcement (with `check_all=True`)
+
+```python
+# Via MCP tool (preferred)
+lint_project_backend()                              # Lint git-modified files only
+lint_project_backend(path="nomarr/services")        # Lint a specific path
+lint_project_backend(check_all=True)                # Full lint + import-linter contracts
+```
+
+**Frontend QC:**
+```python
+lint_project_frontend()  # Runs ESLint + TypeScript
+```
+
+Zero errors is the only acceptable state. If `lint_project_backend` reports errors, fix them before moving on.
+
+---
+
 ## QC Categories
 
 ### 1. Code Standards
@@ -31,32 +55,30 @@ The QC system provides **automated and manual checks** to maintain code quality 
 - [ ] No unused imports/variables (`ruff`)
 
 **Tools:**
-- `scripts/check_naming.py` - Naming violations
-- `ruff check .` - Linting
-- `mypy .` - Type checking
-- `interrogate nomarr/` - Docstring coverage
+- `ruff check .` — Linting
+- `mypy .` — Type checking
+- `import-linter` — Layer boundary enforcement
 
 ### 2. Architecture & Design
 
 **Checks:**
 - [ ] Layer boundaries respected (see [architecture.md](architecture.md))
 - [ ] No circular dependencies
-- [ ] Business logic in workflows, not services
-- [ ] Database access through persistence layer only
-- [ ] Proper dependency flow: interfaces → services → workflows → components → persistence → helpers
+- [ ] Business logic in workflows/components, not services
+- [ ] Database access only through persistence layer and components
+- [ ] Proper dependency flow: interfaces → services → workflows → components → persistence/helpers
 
 **Tools:**
-- `import-linter` - Enforce layer boundaries
-- `scripts/discover_import_chains.py` - Detect circular imports
-- Manual review
+- `import-linter` — Enforce layer boundaries (run via `lint_project_backend(check_all=True)`)
+- `trace_module_calls` / `trace_project_endpoint` — MCP tools to trace call chains
 
 **Layer rules:**
 - Interfaces may import services only
-- Services may import workflows, persistence, components
-- Workflows may import components, persistence, helpers
-- Components may import persistence, helpers
+- Services may import workflows and components
+- Workflows may import components and other workflows
+- Components may import persistence and helpers
 - Persistence may import helpers only
-- Helpers may not import any nomarr.* modules
+- Helpers may not import any `nomarr.*` modules
 
 ### 3. Error Handling
 
@@ -92,8 +114,8 @@ result = process_file(path)  # May crash entire service
 - [ ] Test fixtures available
 
 **Tools:**
-- `pytest tests/ -v` - Run tests
-- `pytest --cov=nomarr --cov-report=html` - Coverage report
+- `pytest tests/ -v` — Run tests
+- `pytest --cov=nomarr --cov-report=html` — Coverage report
 
 **Targets:**
 - Overall coverage > 80%
@@ -105,15 +127,13 @@ result = process_file(path)  # May crash entire service
 **Checks:**
 - [ ] User documentation up to date (see [../user/](../user/))
 - [ ] Developer documentation up to date (see [../dev/](../dev/))
-- [ ] API endpoints documented in [../user/api_reference.md](../user/api_reference.md)
 - [ ] Config options explained
 - [ ] Code comments for complex logic
 
 **Locations:**
-- `docs/user/` - User-facing documentation
-- `docs/dev/` - Developer documentation
-- `docs/design/` - Design documents and roadmaps
-- Docstrings - In-code documentation
+- `docs/user/` — User-facing documentation
+- `docs/dev/` — Developer documentation
+- Docstrings — In-code documentation
 
 ### 6. Security
 
@@ -121,147 +141,68 @@ result = process_file(path)  # May crash entire service
 - [ ] Authentication required where needed
 - [ ] No hardcoded secrets/keys
 - [ ] Input validation on all endpoints
-- [ ] SQL injection protection (parameterized queries)
 - [ ] File path validation (no directory traversal)
 - [ ] Session secrets not in version control
 
 **Patterns:**
 ```python
-# ✅ Good - parameterized query
-cursor.execute("SELECT * FROM queue WHERE id = ?", (job_id,))
-
-# ❌ Bad - SQL injection risk
-cursor.execute(f"SELECT * FROM queue WHERE id = {job_id}")
+# ✅ Good - AQL parameterized query
+db.aql.execute(
+    "FOR doc IN library_files FILTER doc._key == @key RETURN doc",
+    bind_vars={"key": file_key}
+)
 
 # ✅ Good - path validation
 if not path.startswith(library_path):
     raise ValueError("Invalid path")
-
-# ❌ Bad - directory traversal risk
-open(path, 'r')  # No validation
 ```
 
 ### 7. Performance
 
 **Checks:**
 - [ ] No N+1 queries
-- [ ] Database indices on queried columns
-- [ ] Model cache working correctly
+- [ ] ArangoDB indexes on queried fields
+- [ ] ONNX model cache working correctly
 - [ ] No blocking operations in async code
 - [ ] Resource cleanup (file handles, connections)
-
-**Tools:**
-- `radon cc nomarr/ -s` - Cyclomatic complexity
-- `radon mi nomarr/ -s` - Maintainability index
-- Manual profiling with `cProfile`
 
 ### 8. Configuration
 
 **Checks:**
-- [ ] All settings in `config.yaml`
+- [ ] All settings read via `ConfigService` (never at import time)
 - [ ] Sensible defaults
-- [ ] Environment variable overrides work
 - [ ] Config validation on startup
 - [ ] Deprecated settings marked
 
-**Pattern:**
-```python
-# ✅ Good - validated config
-class ProcessorConfig:
-    workers: int = 2
-    batch_size: int = 8
-    timeout: int = 300
-    
-    def __post_init__(self):
-        if self.workers < 1:
-            raise ValueError("workers must be >= 1")
-```
-
 ---
 
-## QC Scripts
+## QC Workflow
 
-### Automated Checks
-
-Run these to catch issues automatically:
+### Daily (Before Commit)
 
 ```bash
-# 1. Naming conventions
-python scripts/check_naming.py
-
-# 2. Linting and formatting
+# Quick automated checks (5-10 seconds)
 ruff check .
 ruff format --check .
-
-# 3. Type checking (requires running environment)
-docker exec nomarr mypy nomarr/
-
-# 4. Import boundaries
 import-linter
 
-# 5. Complexity metrics
-radon cc nomarr/ -s -a
-
-# 6. Docstring coverage
-interrogate nomarr/ -vv
-
-# 7. Security scan
-docker exec nomarr bandit -r nomarr/
-
-# 8. Dead code detection
-docker exec nomarr vulture nomarr/
+# Or via MCP tool
+lint_project_backend(check_all=True)
 ```
 
-### Quick QC Check
+### Per-Change
 
-**Fast checks (no ML dependencies):**
-```bash
-#!/bin/bash
-# scripts/qc_quick.sh
-
-echo "Running quick QC checks..."
-
-echo "\n1. Naming conventions..."
-python scripts/check_naming.py
-
-echo "\n2. Linting..."
-ruff check .
-
-echo "\n3. Formatting..."
-ruff format --check .
-
-echo "\n4. Import boundaries..."
-import-linter
-
-echo "\nQuick QC complete."
+After editing any Python file, run:
+```python
+lint_project_backend(path="nomarr/services")  # or the specific path you changed
 ```
 
-### Full QC Check
+### Full Audit
 
-**Complete checks (in Docker with ML dependencies):**
 ```bash
-#!/bin/bash
-# scripts/qc_full.sh
-
-echo "Running full QC checks..."
-
-# Fast checks
-./scripts/qc_quick.sh
-
-# ML-dependent checks
-echo "\n5. Type checking..."
+# Complete checks (in Docker for ML dependencies)
 docker exec nomarr mypy nomarr/
-
-echo "\n6. Security scan..."
-docker exec nomarr bandit -r nomarr/
-
-echo "\n7. Dead code..."
-docker exec nomarr vulture nomarr/
-
-echo "\n8. Running tests..."
-docker exec nomarr pytest tests/ -v
-
-echo "\nFull QC complete."
+docker exec nomarr pytest tests/ -v --cov=nomarr
 ```
 
 ---
@@ -286,60 +227,25 @@ For each Python file:
 ### Priority Modules (Review First)
 
 **1. Core Processing:**
-- `nomarr/workflows/processing/` - Audio processing workflows
-- `nomarr/components/ml/inference.py` - ML model execution
-- `nomarr/components/tagging/` - Tag extraction and aggregation
+- `nomarr/workflows/processing/` — Audio processing workflows
+- `nomarr/components/ml/` — ONNX inference, audio preprocessing
+- `nomarr/components/tagging/` — Tag extraction and aggregation
 
-**2. Services (Business Logic):**
-- `nomarr/services/processing_service.py`
-- `nomarr/services/queue_service.py`
-- `nomarr/services/library_service.py`
-- `nomarr/services/calibration_service.py`
+**2. Services:**
+- `nomarr/services/domain/library_svc/` — Library management
+- `nomarr/services/domain/calibration_svc.py` — Calibration
+- `nomarr/services/domain/tagging_svc.py` — Tagging operations
+- `nomarr/services/infrastructure/worker_system_svc.py` — Worker lifecycle
 
 **3. Persistence Layer:**
-- `nomarr/persistence/db.py` - Database connection
-- `nomarr/persistence/database/*_operations.py` - Table operations
+- `nomarr/persistence/db.py` — Database facade
+- `nomarr/persistence/database/` — AQL operations modules
 
 **4. API Layer:**
-- `nomarr/interfaces/api/app.py` - Main API setup
-- `nomarr/interfaces/api/routes/` - API endpoints
-- `nomarr/interfaces/api/auth.py` - Authentication
+- `nomarr/interfaces/api/` — FastAPI routes and auth
 
 **5. CLI Layer:**
-- `nomarr/interfaces/cli/main.py` - CLI dispatcher
-- `nomarr/interfaces/cli/commands/` - CLI commands
-
----
-
-## QC Workflow
-
-### Full Codebase Audit
-
-```bash
-# Phase 1: Automated checks
-mkdir -p qc_reports
-python scripts/check_naming.py > qc_reports/naming.txt
-ruff check . > qc_reports/linting.txt
-docker exec nomarr pytest tests/ --cov=nomarr --cov-report=html
-
-# Phase 2: Module-by-module review
-# Use checklist above for each module
-python scripts/review_module.py nomarr/services/ > qc_reports/services_review.txt
-```
-
-### Per-Module Review
-
-```bash
-# Review specific module
-python scripts/review_module.py nomarr/services/queue_service.py
-```
-
-**Output includes:**
-- Complexity metrics
-- Missing docstrings
-- Type hint coverage
-- Import issues
-- TODOs/FIXMEs
+- `nomarr/interfaces/cli/` — CLI commands
 
 ---
 
@@ -349,38 +255,8 @@ python scripts/review_module.py nomarr/services/queue_service.py
 
 ```
 qc_reports/
-├── 2025-12-05_naming.txt           # Naming violations
-├── 2025-12-05_linting.txt          # Ruff output
-├── 2025-12-05_complexity.txt       # Radon complexity
-├── 2025-12-05_coverage.html        # Test coverage
-├── 2025-12-05_manual_review.md     # Manual findings
-└── action_items.md                 # Issues to fix
-```
-
-### Action Item Template
-
-```markdown
-## [Module] Issue Title
-
-**Severity:** High / Medium / Low
-**Category:** Code Standards / Architecture / Error Handling / Testing / Documentation / Security / Performance / Configuration
-**File:** path/to/file.py
-**Lines:** 123-145
-
-**Issue:**
-Description of what's wrong
-
-**Impact:**
-Why this matters (security, bugs, maintainability)
-
-**Fix:**
-Proposed solution
-
-**Priority:** P0 (critical) / P1 (important) / P2 (nice to have)
-
-**Estimated Effort:** Hours or story points
-
-**Assigned To:** (if applicable)
+├── YYYY-MM-DD_HHMMSS_qc_report.txt  # Timestamped QC output
+└── ...                               # Historical reports
 ```
 
 ---
@@ -389,92 +265,71 @@ Proposed solution
 
 ### The Problem
 
-Some QC tools (mypy, vulture, bandit) need to import modules, which triggers ML dependency loading:
+Some QC tools (mypy, vulture) need to import modules, which may trigger ML dependency loading:
 
-- essentia-tensorflow (requires CUDA)
-- TensorFlow models (~2GB)
-- GPU initialization (~30s)
+- ONNX Runtime models
+- Essentia audio I/O
+- GPU initialization
 
-This makes local development slow on Windows.
+This can be slow on development machines without GPU.
 
 ### The Solution
 
 **On development machine (fast):**
 ```bash
-# No ML dependencies
-python scripts/check_naming.py
+# No ML dependencies needed
 ruff check .
 import-linter
-radon cc nomarr/ -s
+lint_project_backend(check_all=True)
 ```
 
 **In Docker container (complete):**
 ```bash
 # With ML dependencies
 docker exec nomarr mypy nomarr/
-docker exec nomarr bandit -r nomarr/
-docker exec nomarr vulture nomarr/
 docker exec nomarr pytest tests/
 ```
 
-### Practical QC Workflow
-
-**Daily (before commit):**
-```bash
-./scripts/qc_quick.sh  # 5-10 seconds
-```
-
-**Weekly:**
-```bash
-./scripts/qc_full.sh   # 2-3 minutes in Docker
-```
-
-**Before release:**
-- Full automated QC
-- Manual review of changed modules
-- Update documentation
-- Review test coverage
-
 ---
 
-## Ongoing QC
+## Tool Reference
 
-### Pre-Commit Checks
+### MCP Tools (Preferred)
 
-**Recommended pre-commit hook** (`.git/hooks/pre-commit`):
+| Tool | Purpose |
+|------|---------|
+| `lint_project_backend()` | Run ruff + mypy (+ import-linter with `check_all`) |
+| `lint_project_frontend()` | Run ESLint + TypeScript |
+| `read_module_api(module)` | Inspect module's public API without reading full file |
+| `locate_module_symbol(name)` | Find where a symbol is defined |
+| `trace_module_calls(fn)` | Follow call chains from entry points |
+| `trace_project_endpoint(ep)` | Trace FastAPI route through DI layers |
+
+### CLI Tools
+
+**Always available (no ML deps):**
+
+| Tool | Purpose |
+|------|---------|
+| `ruff` | Fast linter and formatter |
+| `import-linter` | Architecture boundary enforcer |
+| `radon` | Complexity metrics |
+| `interrogate` | Docstring coverage |
+
+**Requires Docker (ML deps):**
+
+| Tool | Purpose |
+|------|---------|
+| `mypy` | Static type checking |
+| `bandit` | Security scanner |
+| `vulture` | Dead code detector |
+| `pytest` | Test runner with coverage |
+
+### Installing CLI Tools
 
 ```bash
-#!/bin/bash
-echo "Running pre-commit QC checks..."
-
-# Fast checks only
-python scripts/check_naming.py || exit 1
-ruff check . || exit 1
-ruff format --check . || exit 1
-
-echo "Pre-commit checks passed."
+pip install ruff radon interrogate import-linter
 ```
-
-Make executable:
-```bash
-chmod +x .git/hooks/pre-commit
-```
-
-### Weekly Review
-
-- [ ] Run full automated QC suite
-- [ ] Review one major module thoroughly
-- [ ] Update documentation if needed
-- [ ] Address P0/P1 action items
-- [ ] Update QC metrics
-
-### Monthly Audit
-
-- [ ] Full codebase review
-- [ ] Update QC checklist if needed
-- [ ] Review test coverage gaps
-- [ ] Check for tech debt accumulation
-- [ ] Update dependency versions
 
 ---
 
@@ -483,7 +338,6 @@ chmod +x .git/hooks/pre-commit
 ### Track Over Time
 
 **Code Quality:**
-- Naming violations: Target = 0
 - Linting errors: Target = 0
 - Type coverage: Target > 95%
 - Docstring coverage: Target > 90%
@@ -498,145 +352,27 @@ chmod +x .git/hooks/pre-commit
 - Critical path coverage: Target > 90%
 - Failed tests: Target = 0
 
-**Maintenance:**
-- Open action items: Target < 10
-- Critical issues: Target = 0
-- TODOs in code: Target < 20
-
-### Visualize Metrics
-
-**Generate report:**
-```bash
-python scripts/qc_metrics.py > qc_reports/metrics.json
-```
-
-**Track in spreadsheet or dashboard.**
-
----
-
-## Tool Reference
-
-### Available Tools
-
-**Always available (no ML deps):**
-1. `ruff` - Fast linter and formatter
-2. `check_naming.py` - Naming convention checker
-3. `import-linter` - Architecture boundary enforcer
-4. `radon` - Complexity metrics
-5. `interrogate` - Docstring coverage
-6. `discover_api.py` - Module API inspection (see below)
-
-**Requires Docker (ML deps):**
-1. `mypy` - Static type checking
-2. `bandit` - Security scanner
-3. `vulture` - Dead code detector
-4. `pytest` - Test runner with coverage
-
-### API Discovery Tools
-
-Nomarr provides utility scripts to explore module APIs without reading full source files.
-
-#### discover_api.py
-
-Shows the public API of any Python module.
-
-**Usage:**
-```bash
-python scripts/discover_api.py <module.path>
-```
-
-**Examples:**
-```bash
-# Discover database operations
-python scripts/discover_api.py nomarr.persistence.db
-
-# Discover workflow functions
-python scripts/discover_api.py nomarr.workflows.processing.process_file
-
-# Discover ML inference API
-python scripts/discover_api.py nomarr.components.ml.inference
-```
-
-**Output includes:**
-- Functions with parameters, return types, and docstrings
-- Classes with methods and docstrings
-- Module-level constants
-
-**Important:** Do NOT use the `--summary` flag - it only shows names without signatures.
-
-**Use cases:**
-- Verify function signatures before calling them
-- Update documentation to reflect actual APIs
-- See what needs to be mocked in tests
-- Avoid guessing or inventing function names
-
-#### discover_imports.py
-
-Shows what a module imports and uses.
-
-**Usage:**
-```bash
-python scripts/discover_imports.py <module.path>
-```
-
-**Examples:**
-```bash
-# Check workflow dependencies
-python scripts/discover_imports.py nomarr.workflows.processing.process_file
-
-# Check service dependencies
-python scripts/discover_imports.py nomarr.services.processing_service
-```
-
-**Output includes:**
-- Direct imports (`import X`)
-- From imports (`from X import Y`)
-- Function calls within the module
-- Class instantiations
-
-**Use cases:**
-- Identify what to mock when writing tests
-- Verify architecture boundaries (workflows shouldn't import services)
-- Understand module dependencies
-
-**Technical notes:**
-- Both tools automatically mock ML dependencies (essentia, tensorflow)
-- Safe to run on development machines without GPU
-- Static analysis only (does not execute code)
-
-### Installing Tools
-
-```bash
-# Development machine (no ML deps)
-pip install ruff radon interrogate import-linter
-
-# Docker container (with ML deps)
-# Already installed in nomarr Docker image
-```
-
 ---
 
 ## Related Documentation
 
-- [Naming Standards](naming.md) - Naming conventions
-- [Architecture](architecture.md) - System design and layer rules
-- [Services](services.md) - Service patterns
-- [Testing](../../tests/TEST_STRUCTURE.md) - Test organization
+- [Naming Standards](naming.md) — Naming conventions
+- [Architecture](architecture.md) — System design and layer rules
+- [Domains](domains.md) — Domain catalog
 
 ---
 
 ## Summary
 
 **QC is systematic:**
-1. Run automated checks regularly
+1. Run `lint_project_backend` after every change
 2. Manual review of changed code
 3. Track metrics over time
 4. Fix issues before they accumulate
 
 **QC is fast:**
-- Quick checks: 5-10 seconds (pre-commit)
-- Full checks: 2-3 minutes (Docker)
-- Weekly reviews: 30 minutes
+- Per-change checks: 5–10 seconds via `lint_project_backend`
+- Full Docker checks: 2–3 minutes
 
 **QC prevents:**
 - Architecture violations

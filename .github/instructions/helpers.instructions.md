@@ -9,7 +9,7 @@ applyTo: nomarr/helpers/**
 **Purpose:** Provide pure utilities and shared data types used across all layers.
 
 Helpers are **stateless utilities** that:
-- Perform generic operations (file handling, time, SQL fragments)
+- Perform generic operations (file handling, time, data formatting)
 - Define DTOs (data transfer objects)
 - Define exceptions
 - Have **no knowledge of Nomarr's domain**
@@ -209,7 +209,12 @@ Before committing helper code, verify:
 
 ---
 
-## Layer Scripts
+## Validation Tool
 
-- `lint.py` - Runs ruff, mypy, vulture, bandit, radon, lint-imports
-- `check_naming.py` - Validates `_helper.py`/`_dto.py` suffix, no stateful classes, no `nomarr.*` imports
+**Run after every change to helper files:**
+
+```python
+lint_project_backend(path="nomarr/helpers")
+```
+
+Zero errors is the only acceptable state.

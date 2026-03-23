@@ -4,8 +4,8 @@ This directory contains documentation for the Agent Skills system used to custom
 
 ## Contents
 
-- [specification.md](specification.md) - The Agent Skills format specification
-- [nomarr-skills.md](nomarr-skills.md) - Nomarr-specific skill conventions
+- [specification.md](specification.md) — The Agent Skills format specification
+- [nomarr-skills.md](nomarr-skills.md) — Nomarr-specific skill conventions and inventory
 
 ## Quick Reference
 
@@ -13,13 +13,17 @@ Skills are stored in `.github/skills/<skill-name>/SKILL.md`.
 
 ```
 .github/skills/
-├── layer-helpers/
-│   └── SKILL.md
-├── layer-components/
-│   └── SKILL.md
-├── layer-workflows/
-│   └── SKILL.md
-└── ...
+├── code-discovery/
+├── code-generation/
+├── code-migration/
+├── doc-coauthoring/
+├── feature-execution/
+├── feature-planning/
+├── mcp-builder/
+├── playwright-cli/
+├── quality-analysis/
+├── skill-creator/
+└── skill-maintenance/
 ```
 
 ## How Skills Work

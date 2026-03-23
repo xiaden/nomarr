@@ -1,0 +1,65 @@
+site_name: Nomarr
+site_description: Intelligent audio auto-tagging for your music library
+site_url: https://github.com/xiaden/nomarr
+
+docs_dir: docs
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.expand
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+  palette:
+    - scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - User Guide:
+      - Getting Started: user/getting_started.md
+      - Deployment: user/deployment.md
+      - Navidrome Integration: user/navidrome.md
+      - Playlist Import: user/playlist_import.md
+      - Troubleshooting: user/troubleshooting.md
+  - Developer Guide:
+      - Architecture: dev/architecture.md
+      - Domains: dev/domains.md
+      - Workers & Lifecycle: dev/workers.md
+      - Health System: dev/health.md
+      - Naming Standards: dev/naming.md
+      - Migrations: dev/migrations.md
+      - Vector Stores: dev/vector-stores.md
+      - Versioning: dev/versioning.md
+      - QC System: dev/qc.md
+      - Reference:
+          - Calibration Troubleshooting: dev/calibration-troubleshooting.md
+          - MCP Config Defaults: dev/mcp-config-defaults.md
+          - MCP Config Examples: dev/mcp-config-examples.md
+          - MUI Integration: dev/mui-integration.md
+          - Server File Picker: dev/server-file-picker.md

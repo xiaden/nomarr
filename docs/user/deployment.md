@@ -4,32 +4,14 @@
 
 ---
 
-## Overview
-
-This guide covers production deployment of Nomarr with:
-
-- Docker and Docker Compose
-- GPU acceleration
-- Reverse proxy (Nginx)
-- SSL/TLS with Let's Encrypt
-- Monitoring and logging
-- Backup strategies
-- Performance optimization
-
----
-
 ## ⚠️ Pre-Production Checklist
 
-**Before deploying to production:**
-
-- [ ] Nomarr is alpha software (breaking changes possible before 1.0)
+- [ ] Nomarr is **alpha software** (breaking changes possible before 1.0)
 - [ ] Database migrations auto-apply on startup (forward-only, no rollback)
 - [ ] Plan for regular backups
-- [ ] GPU required for acceptable performance
-- [ ] Budget 10-20 GB storage for models and cache
-- [ ] Ensure library storage is fast (SSD recommended)
-
-**Production-ready status:** Not yet recommended for mission-critical deployments.
+- [ ] GPU strongly recommended for acceptable performance
+- [ ] Budget 5–10 GB storage for application + database
+- [ ] Ensure library storage is reasonably fast (SSD recommended)
 
 ---
 
@@ -37,13 +19,11 @@ This guide covers production deployment of Nomarr with:
 
 ### Minimum Production Server
 
-- **CPU:** 4 cores (8+ recommended for concurrent users)
+- **CPU:** 4 cores (8+ recommended)
 - **RAM:** 16 GB (32 GB recommended)
 - **Storage:**
   - System: 50 GB SSD
-  - Models: 10 GB
-  - Database: 100 MB per 10,000 tracks
-  - Embedding cache: 1 GB per 10,000 tracks (optional)
+  - Database: ~100 MB per 10,000 tracks
 - **GPU:** NVIDIA GTX 1660 or better (RTX series recommended)
 - **Network:** 100 Mbps+ for remote library access
 
@@ -51,24 +31,17 @@ This guide covers production deployment of Nomarr with:
 
 - **CPU:** 8+ cores (AMD Ryzen 7 / Intel i7 or better)
 - **RAM:** 32 GB
-- **Storage:**
-  - System: 100 GB NVMe SSD
-  - Music library: Fast SSD or NAS with 10GbE
-  - Models + cache: 50 GB SSD
-- **GPU:** NVIDIA RTX 3060 (12GB) or better
+- **Storage:** 100 GB NVMe SSD for system + database
+- **GPU:** NVIDIA RTX 3060 (12 GB) or better
 - **Network:** 1 Gbps or 10 Gbps for NAS
 
 ### Operating System
 
 **Supported:**
+
 - Ubuntu 22.04 LTS (recommended)
 - Debian 12
-- CentOS Stream 9
-- Rocky Linux 9
-
-**Not recommended:**
-- Windows Server (WSL2 adds overhead)
-- macOS (GPU support experimental)
+- CentOS Stream 9 / Rocky Linux 9
 
 ---
 
@@ -77,14 +50,11 @@ This guide covers production deployment of Nomarr with:
 ### 1. Install Docker and Docker Compose
 
 ```bash
-# Update system
 sudo apt update && sudo apt upgrade -y
 
 # Install Docker
 curl -fsSL https://get.docker.com -o get-docker.sh
 sudo sh get-docker.sh
-
-# Add user to docker group
 sudo usermod -aG docker $USER
 
 # Install Docker Compose plugin
@@ -94,6 +64,7 @@ sudo apt install docker-compose-plugin
 ```
 
 Verify installation:
+
 ```bash
 docker --version
 docker compose version
@@ -119,8 +90,9 @@ sudo systemctl restart docker
 ```
 
 Verify GPU access:
+
 ```bash
-docker run --rm --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi
+docker run --rm --gpus all nvidia/cuda:12.0.0-base-ubuntu22.04 nvidia-smi
 ```
 
 ### 3. Create Deployment Directory
@@ -131,12 +103,6 @@ sudo chown $USER:$USER /opt/nomarr
 cd /opt/nomarr
 ```
 
-### 4. Clone Repository
-
-```bash
-git clone https://github.com/yourusername/nomarr.git .
-```
-
 ---
 
 ## Production Configuration
@@ -145,62 +111,75 @@ git clone https://github.com/yourusername/nomarr.git .
 
 Nomarr uses two environment files:
 
-**`nomarr-arangodb.env`** (for ArangoDB container):
+**`nomarr-arangodb.env`**:
+
 ```bash
 # Root password for initial database provisioning
 ARANGO_ROOT_PASSWORD=<generate-with-openssl-rand-hex-32>
 ARANGO_NO_AUTH=0
 ```
 
-**`nomarr.env`** (for Nomarr container):
+**`nomarr.env`**:
+
 ```bash
 # ArangoDB connection
 ARANGO_HOST=http://nomarr-arangodb:8529
 
-# Root password - must match nomarr-arangodb.env
+# Root password — must match nomarr-arangodb.env
 # Only needed for first-run provisioning
 ARANGO_ROOT_PASSWORD=<same-as-above>
 ```
 
-Generate secrets:
+Generate a strong password:
+
 ```bash
-openssl rand -hex 32  # For ARANGO_ROOT_PASSWORD
+openssl rand -hex 32
 ```
 
-**Note:** On first run, Nomarr automatically:
-1. Provisions the ArangoDB database and user
-2. Generates a secure application password
-3. Stores the password in `config/nomarr.yaml` as `arango_password`
+!!! note
+    On first run, Nomarr automatically provisions the ArangoDB database, generates a secure application password, and stores it in `config/nomarr.yaml` as `arango_password`.
 
-### 2. Production config/nomarr.yaml
+### 2. Production `config/nomarr.yaml`
+
+```bash
+mkdir -p config
+```
 
 Create `config/nomarr.yaml`:
 
 ```yaml
 # Production Nomarr Configuration
-# Note: Database password is auto-generated on first run and stored here.
+# Database password is auto-generated on first run and stored here.
 
-# Library root - base path for all libraries (inside container)
 library_root: "/media"
-
-# Models directory (packaged in image)
 models_dir: "/app/models"
 ```
 
-**Note:** Most settings have sensible defaults. Libraries are configured via the Web UI.
+Most settings have sensible defaults. Libraries are configured via the Web UI.
 
-### 3. Production compose.yaml
+**Optional settings you may want to tune** (via `config/nomarr.yaml` or environment variables):
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `tagger_worker_count` | auto (1) | Number of ML worker processes (1–8) |
+| `library_auto_tag` | `true` | Automatically process discovered files |
+| `calibrate_heads` | `false` | Enable calibration for tag thresholds |
+
+All settings can also be changed via the Web UI’s Settings page at runtime.
+
+### 3. Production `compose.yaml`
 
 ```yaml
 services:
   nomarr-arangodb:
-    image: arangodb:3.11
+    image: arangodb:latest
     container_name: nomarr-arangodb
     networks:
       - internal_network
     restart: unless-stopped
     env_file:
       - nomarr-arangodb.env
+    command: ["--vector-index"]
     volumes:
       - ./config/arangodb:/var/lib/arangodb3
     healthcheck:
@@ -211,12 +190,10 @@ services:
       start_period: 30s
 
   nomarr:
-    # Use pre-built image from GitHub Container Registry
     image: ghcr.io/xiaden/nomarr:latest
-    # Or build locally: comment out 'image' and uncomment 'build'
-    # build: .
     container_name: nomarr
     user: "1000:1000"
+    stop_grace_period: 30s
     networks:
       - front_network
       - internal_network
@@ -226,17 +203,12 @@ services:
         condition: service_healthy
     env_file:
       - nomarr.env
-    
-    # Ports exposed via reverse proxy (nginx proxy manager, traefik, etc.)
-    # Uncomment for direct access (development only)
+    # Uncomment for direct access (without reverse proxy):
     # ports:
     #   - "8356:8356"
-    
     volumes:
       - ./config:/app/config
       - /path/to/your/music:/media:ro  # CHANGE THIS
-      # Models are packaged in the image, no need to mount
-    
     deploy:
       resources:
         reservations:
@@ -247,12 +219,13 @@ services:
 
 networks:
   internal_network:
-    internal: true  # Isolated network for DB (no external access)
+    internal: true   # Isolated network for DB (no external access)
   front_network:
-    external: true  # Your reverse proxy network
+    external: true   # Your reverse proxy network
 ```
 
 **Production features:**
+
 - ArangoDB on isolated internal network (no external access)
 - Nomarr waits for healthy database before starting
 - Pre-built image from GitHub Container Registry
@@ -260,6 +233,7 @@ networks:
 - Non-root user (1000:1000)
 - GPU reservation for CUDA acceleration
 - Reverse proxy network for external access
+- 30-second graceful shutdown period
 
 ---
 
@@ -276,9 +250,8 @@ sudo apt install nginx certbot python3-certbot-nginx
 Create `/etc/nginx/sites-available/nomarr`:
 
 ```nginx
-# Nomarr reverse proxy configuration
 upstream nomarr {
-    server nomarr:8356;  # Container name on Docker network
+    server nomarr:8356;
     keepalive 32;
 }
 
@@ -287,11 +260,11 @@ server {
     listen 80;
     listen [::]:80;
     server_name nomarr.yourdomain.com;
-    
+
     location /.well-known/acme-challenge/ {
         root /var/www/html;
     }
-    
+
     location / {
         return 301 https://$server_name$request_uri;
     }
@@ -302,94 +275,53 @@ server {
     listen 443 ssl http2;
     listen [::]:443 ssl http2;
     server_name nomarr.yourdomain.com;
-    
-    # SSL certificates (managed by certbot)
+
     ssl_certificate /etc/letsencrypt/live/nomarr.yourdomain.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/nomarr.yourdomain.com/privkey.pem;
-    
-    # SSL configuration (Mozilla Intermediate)
     ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
     ssl_prefer_server_ciphers off;
     ssl_session_cache shared:SSL:10m;
-    ssl_session_timeout 10m;
-    ssl_stapling on;
-    ssl_stapling_verify on;
-    
+
     # Security headers
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
     add_header X-Frame-Options "SAMEORIGIN" always;
     add_header X-Content-Type-Options "nosniff" always;
-    add_header X-XSS-Protection "1; mode=block" always;
-    
-    # Logging
-    access_log /var/log/nginx/nomarr.access.log;
-    error_log /var/log/nginx/nomarr.error.log;
-    
-    # Client limits
+
     client_max_body_size 100M;
-    
-    # Proxy settings
+
+    # Main proxy
     location / {
         proxy_pass http://nomarr;
         proxy_http_version 1.1;
-        
-        # Headers
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Forwarded-Host $host;
-        
-        # Timeouts
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
-        
-        # Buffering
         proxy_buffering off;
     }
-    
+
     # Server-Sent Events (SSE) endpoint
     location /api/web/events {
         proxy_pass http://nomarr;
         proxy_http_version 1.1;
-        
-        # SSE requires these settings
         proxy_set_header Connection '';
         proxy_set_header Cache-Control 'no-cache';
         proxy_set_header X-Accel-Buffering 'no';
-        
         proxy_buffering off;
         proxy_cache off;
-        
         chunked_transfer_encoding on;
         tcp_nodelay on;
-        
-        # Long timeout for persistent connections
         proxy_read_timeout 24h;
-    }
-    
-    # Metrics endpoint (restrict access)
-    location /metrics {
-        proxy_pass http://127.0.0.1:9090/metrics;
-        allow 10.0.0.0/8;  # Internal network only
-        deny all;
     }
 }
 ```
 
-**Key features:**
-- HTTP to HTTPS redirect
-- SSL/TLS with strong ciphers
-- Security headers
-- Special handling for SSE endpoint (no buffering, long timeout)
-- Restricted metrics endpoint
+!!! tip
+    If you use a reverse proxy manager like Nginx Proxy Manager or Traefik, configure it to proxy to `nomarr:8356` on the `front_network` Docker network.
 
 ### 3. Enable Site and Get SSL Certificate
 
 ```bash
-# Enable site
 sudo ln -s /etc/nginx/sites-available/nomarr /etc/nginx/sites-enabled/
 sudo nginx -t
 sudo systemctl reload nginx
@@ -407,113 +339,58 @@ sudo certbot renew --dry-run
 
 ### Optimize GPU Settings
 
-**Check current GPU status:**
 ```bash
+# Check GPU status
 nvidia-smi
-```
 
-**Configure persistence mode (survives reboots):**
-```bash
-# Enable persistence mode (reduces latency)
+# Enable persistence mode (reduces startup latency)
 sudo nvidia-smi -pm 1
-
-# Set power limit (optional, for power savings)
-sudo nvidia-smi -pl 200  # 200W limit (adjust for your card)
-
-# Make permanent (Ubuntu)
 sudo systemctl enable nvidia-persistenced
 ```
 
-**Monitor GPU usage:**
+### Monitor GPU Usage
+
 ```bash
 # Real-time monitoring
 watch -n 1 nvidia-smi
 
-# Or use nvtop for better UI
+# Or install nvtop for a better UI
 sudo apt install nvtop
 nvtop
 ```
 
 ### Multi-GPU Setup
 
-If you have multiple GPUs:
-
-**compose.yaml:**
 ```yaml
 services:
   nomarr:
     environment:
-      - CUDA_VISIBLE_DEVICES=0,1  # Use GPU 0 and 1
+      - CUDA_VISIBLE_DEVICES=0,1
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              count: 2  # Reserve 2 GPUs
+              count: 2
               capabilities: [gpu]
 ```
 
-**config.yaml:**
-```yaml
-processing:
-  workers: 4  # 2 workers per GPU
-  gpu_per_worker: 0.5  # Each worker uses half a GPU
-```
+Increase `tagger_worker_count` in `config/nomarr.yaml` or via the Web UI to take advantage of multiple GPUs.
 
 ---
 
-## Monitoring and Logging
-
-### System Monitoring
-
-**Install monitoring tools:**
-```bash
-sudo apt install prometheus node-exporter grafana
-```
-
-**Configure Prometheus** (`/etc/prometheus/prometheus.yml`):
-```yaml
-global:
-  scrape_interval: 15s
-
-scrape_configs:
-  - job_name: 'nomarr'
-    static_configs:
-      - targets: ['localhost:9090']
-  
-  - job_name: 'node'
-    static_configs:
-      - targets: ['localhost:9100']
-  
-  - job_name: 'nvidia'
-    static_configs:
-      - targets: ['localhost:9445']  # nvidia-smi exporter
-```
-
-**Install NVIDIA GPU exporter:**
-```bash
-docker run -d --restart=unless-stopped \
-  --gpus all \
-  -p 9445:9445 \
-  nvidia/dcgm-exporter:latest
-```
-
-### Log Aggregation
+## Logging
 
 **View Docker logs:**
+
 ```bash
 docker compose logs -f nomarr
-```
-
-**View Nomarr application logs:**
-```bash
-docker exec -it nomarr tail -f /data/nomarr.log
 ```
 
 **Export logs to external system:**
 
 ```yaml
-# compose.yaml
+# In compose.yaml
 services:
   nomarr:
     logging:
@@ -525,21 +402,15 @@ services:
 
 ### Health Checks
 
-**Manual health check (from host with port exposed):**
 ```bash
-curl http://localhost:8356/api/web/health
-```
-
-**Or from inside Docker network:**
-```bash
+# From inside Docker network
 docker exec nomarr curl -s http://localhost:8356/api/web/health
 ```
 
-**Automated monitoring script** (`/opt/nomarr/monitor.sh`):
+**Simple automated monitoring** (`/opt/nomarr/monitor.sh`):
+
 ```bash
 #!/bin/bash
-# Simple health check script
-
 HEALTH_URL="http://localhost:8356/api/web/health"
 LOG_FILE="/var/log/nomarr-monitor.log"
 
@@ -549,14 +420,13 @@ if [ "$response" != "200" ]; then
     echo "$(date): Health check failed (HTTP $response)" >> "$LOG_FILE"
     docker compose -f /opt/nomarr/compose.yaml restart nomarr
 else
-    echo "$(date): Health check OK" >> "$LOG_FILE"
+    echo "$(date): OK" >> "$LOG_FILE"
 fi
 ```
 
-**Add to crontab:**
 ```bash
 crontab -e
-# Add line:
+# Add: check every 5 minutes
 */5 * * * * /opt/nomarr/monitor.sh
 ```
 
@@ -567,10 +437,9 @@ crontab -e
 ### Database Backup
 
 **Automated backup script** (`/opt/nomarr/backup.sh`):
+
 ```bash
 #!/bin/bash
-# Nomarr ArangoDB backup using arangodump
-
 BACKUP_DIR="/opt/nomarr/backups"
 DATE=$(date +%Y%m%d_%H%M%S)
 
@@ -579,7 +448,7 @@ mkdir -p "$BACKUP_DIR"
 # Get password from config
 PASSWORD=$(grep arango_password /opt/nomarr/config/nomarr.yaml | cut -d: -f2 | tr -d ' "')
 
-# Backup database using arangodump (hot backup, no downtime)
+# Hot backup using arangodump (no downtime)
 docker exec nomarr-arangodb arangodump \
   --server.username nomarr \
   --server.password "$PASSWORD" \
@@ -599,107 +468,52 @@ echo "$(date): Backup completed: nomarr_$DATE"
 ```
 
 **Schedule daily backups:**
+
 ```bash
 crontab -e
-# Add line (backup at 3 AM):
+# Add (backup at 3 AM):
 0 3 * * * /opt/nomarr/backup.sh >> /var/log/nomarr-backup.log 2>&1
-```
-
-### Hot Backup (Alternative Method)
-
-Use ArangoDB's built-in backup directly:
-
-```bash
-# Backup via arangodump
-docker compose exec nomarr-arangodb arangodump \
-  --server.database nomarr \
-  --output-directory /var/lib/arangodb3/backup_$(date +%Y%m%d)
-
-# Copy backup out of container
-docker cp nomarr-arangodb:/var/lib/arangodb3/backup_$(date +%Y%m%d) /opt/nomarr/backups/
 ```
 
 ### Configuration Backup
 
 ```bash
-# Backup config and models list
 tar -czf /opt/nomarr/backups/config_$(date +%Y%m%d).tar.gz \
   /opt/nomarr/config \
-  /opt/nomarr/compose.yaml \
-  /opt/nomarr/.env
+  /opt/nomarr/compose.yaml
 ```
 
 ---
 
 ## Performance Optimization
 
-### Database Optimization
+### Database
 
-ArangoDB handles optimization automatically. For large deployments:
+ArangoDB handles optimization automatically. For large libraries, ensure the database volume is on fast storage (SSD/NVMe).
 
-**Check collection statistics:**
-```bash
-docker compose exec nomarr-arangodb arangosh --server.database nomarr \
-  --javascript.execute-string 'db._collections().forEach(c => print(c.name(), c.count()))'
-```
-
-**Compact collections (rarely needed):**
-```bash
-docker compose exec nomarr-arangodb arangosh --server.database nomarr \
-  --javascript.execute-string 'db.queue.compact()'
-```
-
-### Disk I/O Optimization
-
-**Use SSD for database and cache:**
-```yaml
-volumes:
-  nomarr-data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: /mnt/nvme/nomarr-data  # Fast SSD mount
-```
+### Disk I/O
 
 **Mount music library read-only:**
+
 ```yaml
 volumes:
-  - ${MUSIC_LIBRARY}:/music:ro  # Read-only reduces writes
+  - /mnt/music:/media:ro
 ```
 
 ### Worker Tuning
 
-**Find optimal worker count:**
+Start with the default worker count (1) and increase via the Web UI’s Settings page:
 
-Start with `workers: 1` and gradually increase:
-
-```bash
-# Edit config.yaml
-vim /opt/nomarr/config/config.yaml
-
-# Change workers: 2
-# Restart
-docker compose restart nomarr
-
-# Monitor GPU memory
-watch -n 1 nvidia-smi
-
-# Check processing rate in Web UI Dashboard
-```
-
-**Increase if:**
-- GPU memory < 80% used
-- GPU utilization < 90%
-
-**Decrease if:**
-- Out of memory errors
-- Database locked errors
+- **Increase if:** GPU memory usage < 80%, GPU utilization < 90%
+- **Decrease if:** Out of memory errors or instability
 
 **Typical configurations:**
-- 6GB GPU: 1 worker, batch 8
-- 12GB GPU: 2 workers, batch 16
-- 24GB GPU: 3-4 workers, batch 32
+
+| GPU | Workers | Notes |
+|-----|---------|-------|
+| 6 GB (GTX 1660) | 1 | Default is fine |
+| 12 GB (RTX 3060) | 1–2 | Monitor GPU memory |
+| 24 GB (RTX 4090) | 2–4 | Can handle more parallel work |
 
 ---
 
@@ -708,7 +522,6 @@ watch -n 1 nvidia-smi
 ### Firewall Configuration
 
 ```bash
-# Allow SSH, HTTP, HTTPS only
 sudo ufw default deny incoming
 sudo ufw default allow outgoing
 sudo ufw allow ssh
@@ -719,50 +532,23 @@ sudo ufw enable
 
 ### Container Security
 
-**Run as non-root** (in compose.yaml):
+The default compose.yaml already runs as non-root (`user: "1000:1000"`). For additional hardening:
+
 ```yaml
 services:
   nomarr:
-    user: "1000:1000"  # Non-root user
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    cap_add:
-      - NET_BIND_SERVICE  # Only if binding to port 80/443
 ```
 
 ### Authentication
 
-**Enable API key authentication:**
+Nomarr includes built-in admin password authentication for the Web UI. Change the default password:
 
-```yaml
-# config.yaml
-server:
-  require_auth: true
-  api_key: "${API_KEY}"  # From .env
-```
-
-**Restrict CORS:**
-```yaml
-server:
-  cors_origins:
-    - "https://yourdomain.com"  # Only your domain
-```
-
-### SSL/TLS Best Practices
-
-**Strong cipher suites** (already in Nginx config above)
-
-**Test SSL configuration:**
 ```bash
-# Using SSL Labs
-# Visit: https://www.ssllabs.com/ssltest/analyze.html?d=nomarr.yourdomain.com
-
-# Or using testssl.sh
-git clone https://github.com/drwetter/testssl.sh.git
-cd testssl.sh
-./testssl.sh https://nomarr.yourdomain.com
+docker exec -it nomarr nom manage-password reset
 ```
 
 ---
@@ -777,21 +563,19 @@ cd /opt/nomarr
 # Backup database first
 ./backup.sh
 
-# Pull latest code
-git fetch origin
-git checkout main
-git pull origin main
+# Pull latest image
+docker compose pull
 
-# Rebuild container
-docker compose build --no-cache
-
-# Restart
+# Restart with new image
 docker compose down
 docker compose up -d
 
-# Check logs
+# Check logs for migration messages
 docker compose logs -f nomarr
 ```
+
+!!! warning
+    Database migrations are forward-only. Always back up before updating. Rollback requires restoring from backup.
 
 ### Rollback Procedure
 
@@ -799,14 +583,11 @@ docker compose logs -f nomarr
 # Stop current version
 docker compose down
 
-# Restore previous version
-git checkout <previous-commit-hash>
-
-# Rebuild and restart
-docker compose build --no-cache
+# Use previous image version
+# Edit compose.yaml to pin: image: ghcr.io/xiaden/nomarr:<previous-tag>
 docker compose up -d
 
-# If database incompatible, restore from backup using arangorestore
+# If database is incompatible, restore from backup:
 PASSWORD=$(grep arango_password /opt/nomarr/config/nomarr.yaml | cut -d: -f2 | tr -d ' "')
 docker cp /opt/nomarr/backups/nomarr_YYYYMMDD nomarr-arangodb:/tmp/restore
 docker exec nomarr-arangodb arangorestore \
@@ -821,117 +602,44 @@ docker exec nomarr-arangodb arangorestore \
 
 ## Troubleshooting Production Issues
 
-### High CPU Usage
+### High CPU / Memory Usage
 
-**Diagnose:**
-```bash
-docker stats nomarr
-htop
-```
-
-**Common causes:**
-- Too many workers for CPU cores
-- Database locked (workers retrying)
-- Scanning large library
-
-**Solutions:**
-- Reduce worker count
-- Increase database timeout
-- Limit scan intervals
-
-### High Memory Usage
-
-**Diagnose:**
 ```bash
 docker stats nomarr
 nvidia-smi  # GPU memory
 ```
 
-**Common causes:**
-- Batch size too high
-- Embedding cache growing
-- Memory leak (rare)
+**Common causes:** Too many workers, scanning a very large library
 
-**Solutions:**
-- Reduce batch size
-- Disable embedding cache
-- Restart container regularly (cron job)
+**Solutions:** Reduce `tagger_worker_count` via Web UI Settings, restart
 
 ### Slow Processing
 
-**Diagnose:**
-Check queue status in Web UI Dashboard, then run:
-```bash
-nvidia-smi dmon  # GPU monitoring
-```
-
-**Common causes:**
-- GPU not being used (CPU fallback)
-- Disk I/O bottleneck (slow NAS)
-- Database locked errors
+**Common causes:** GPU not being used (CPU fallback), disk I/O bottleneck on NAS
 
 **Solutions:**
-- Verify GPU with `nvidia-smi` inside container
-- Move database to fast SSD
-- Reduce worker count if locked errors
+
+1. Verify GPU: `docker exec -it nomarr nvidia-smi`
+2. Move database to fast SSD
+3. Reduce worker count if seeing errors
 
 ### Connection Refused
 
-**Diagnose:**
 ```bash
 docker compose ps
 docker exec nomarr curl -s http://localhost:8356/api/web/health
 sudo nginx -t
 ```
 
-**Common causes:**
-- Container not running
-- Port binding conflict
-- Nginx misconfiguration
-
-**Solutions:**
-- Check container status: `docker compose ps`
-- Check logs: `docker compose logs nomarr`
-- Verify Nginx config: `sudo nginx -t`
+**Common causes:** Container not running, port binding conflict, Nginx misconfiguration
 
 ---
 
 ## Additional Resources
 
-- [Getting Started](getting_started.md) - Initial setup guide
-- [API Reference](api_reference.md) - HTTP API documentation
-- [Worker System](../dev/workers.md) - Worker architecture
-- [Architecture](../dev/architecture.md) - System design
-
----
-
-## Production Checklist
-
-**Before going live:**
-
-- [ ] GPU verified with `nvidia-smi` in container
-- [ ] SSL certificate obtained and auto-renewal configured
-- [ ] Strong session secret and API key set
-- [ ] CORS origins restricted to your domain
-- [ ] Firewall configured (only SSH, HTTP, HTTPS)
-- [ ] Reverse proxy configured with security headers
-- [ ] Automated backups scheduled (daily)
-- [ ] Log rotation configured
-- [ ] Health monitoring configured
-- [ ] Worker count tuned for your GPU
-- [ ] Database optimization scheduled (monthly)
-- [ ] Container running as non-root user
-- [ ] Memory limits set in compose.yaml
-- [ ] Update procedure tested
-- [ ] Rollback procedure tested
-
-**Post-deployment:**
-
-- [ ] Monitor logs for errors (first 24 hours)
-- [ ] Verify GPU usage with `nvidia-smi`
-- [ ] Check processing rate meets expectations
-- [ ] Test health check endpoint
-- [ ] Verify backup script works
-- [ ] Test SSL configuration (SSL Labs)
-- [ ] Monitor disk space usage
-- [ ] Document any custom configuration
+- [Getting Started](getting_started.md) — Initial setup guide
+- [Navidrome Integration](navidrome.md) — Smart playlists for Navidrome
+- [Troubleshooting](troubleshooting.md) — Common issues and solutions
+- [Worker System](../dev/workers.md) — Worker architecture (developer reference)
+- [Architecture](../dev/architecture.md) — System design (developer reference)
+- Interactive API docs at `http://localhost:8356/docs`

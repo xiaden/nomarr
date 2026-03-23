@@ -2,7 +2,7 @@
 
 **Intelligent audio auto-tagging for your music library using state-of-the-art machine learning.**
 
-Nomarr is an alpha audio tagging system that analyzes your music files with Essentia's pre-trained ML models and writes rich metadata tags directly into your audio files (MP3, M4A, FLAC, OGG, Opus, WAV, AAC, AIFF, and more). Perfect for organizing large libraries, discovering moods, and enriching metadata for music servers like Navidrome and Plex.
+Nomarr is an alpha audio tagging system that analyzes your music files using ONNX Runtime for ML inference (with a custom Essentia build for audio loading and preprocessing) and writes rich metadata tags directly into your audio files (MP3, M4A, FLAC, OGG, Opus, WAV, AAC, AIFF, and more). Perfect for organizing large libraries, discovering moods, and enriching metadata for music servers like Navidrome and Plex.
 
 Nomarr tags your audio files with:
 
@@ -161,11 +161,12 @@ Each numeric tag includes the full model head identifier: `{label}_{framework}_{
 ## Documentation
 
 - **[Getting Started](docs/user/getting_started.md)** — Installation, setup, and first steps
-- **[API Reference](docs/user/api_reference.md)** — Complete endpoint documentation and examples
 - **[Deployment Guide](docs/user/deployment.md)** — Docker setup, configuration, and production best practices
 - **[Navidrome Integration](docs/user/navidrome.md)** — Smart playlist generation guide
 - **[Architecture](docs/dev/architecture.md)** — System design and component overview
 - **[Developer Documentation](docs/index.md)** — Complete documentation index
+
+> **API Reference:** Nomarr exposes interactive API documentation via FastAPI's built-in Swagger UI at the `/docs` endpoint when running.
 
 ---
 
@@ -175,9 +176,12 @@ Each numeric tag includes the full model head identifier: `{label}_{framework}_{
 |-----------|--------|
 | `nomarr/` | Python backend (FastAPI, clean architecture) |
 | `frontend/` | React/TypeScript SPA |
+| `docker/` | Compose files, env examples, deployment config |
+| `docs/` | User and developer documentation (MkDocs) |
 | `code-intel/` | MCP server for Python code navigation |
+| `navidrome-plugin/` | Navidrome Go plugin for smart playlists |
 | `scripts/` | Build tools, viewers, analysis scripts |
-| `e2e/`, `tests/` | Integration and unit tests |
+| `e2e/`, `tests/` | End-to-end and unit tests |
 
 ---
 
@@ -199,8 +203,9 @@ See [LICENSE](LICENSE) and [NOTICE](NOTICE) for complete attribution and third-p
 
 Built with:
 
-- **[Essentia](https://essentia.upf.edu/)** — Audio analysis and ML models by Music Technology Group, UPF
-- **[TensorFlow](https://www.tensorflow.org/)** — Machine learning inference
+- **[Essentia](https://essentia.upf.edu/)** — Audio loading and preprocessing by Music Technology Group, UPF
+- **[ONNX Runtime](https://onnxruntime.ai/)** — Machine learning inference
+- **[ArangoDB](https://www.arangodb.com/)** — Multi-model database backend
 - **[FastAPI](https://fastapi.tiangolo.com/)** — Modern Python web framework
 - **[Rich](https://github.com/Textualize/rich)** — Beautiful terminal UI
 

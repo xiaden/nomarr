@@ -53,7 +53,7 @@ Display results & allow download
 
 ## Prerequisites
 
-1. **Nomarr installed and configured** (see [getting_started.md](getting_started.md))
+1. **Nomarr installed and configured** (see [Getting Started](getting_started.md))
 2. **Library imported** with at least one library configured
 3. **For Spotify playlists**: Spotify API credentials (see Configuration below)
 4. **For Deezer playlists**: No additional configuration needed (public API)
@@ -81,7 +81,7 @@ To import from Spotify, you need to create a Spotify app and obtain API credenti
 
 **2. Add to Nomarr Config:**
 
-Edit `config.yaml`:
+Edit `config/nomarr.yaml`:
 
 ```yaml
 spotify_client_id: "your_client_id_here"
@@ -142,7 +142,7 @@ Deezer playlists work out of the box using their public API. No credentials requ
 
 ### API
 
-See [API Reference](api_reference.md#playlist-import-endpoints) for programmatic usage.
+See the interactive API docs at `http://localhost:8356/docs` for programmatic usage.
 
 ---
 
@@ -208,7 +208,7 @@ Generated M3U files follow the extended M3U format:
 
 **Solution**:
 
-1. Verify credentials are in `config.yaml`:
+1. Verify credentials are in `config/nomarr.yaml`:
 
    ```yaml
    spotify_client_id: "your_client_id"
@@ -305,6 +305,6 @@ Generated M3U files follow the extended M3U format:
 
 ## See Also
 
-- [API Reference](api_reference.md#playlist-import-endpoints) - Programmatic playlist conversion
+- Interactive API docs at `http://localhost:8356/docs` for programmatic usage
 - [Navidrome Integration](navidrome.md) - Smart playlists using Nomarr tags
 - [Getting Started](getting_started.md) - Initial setup and configuration

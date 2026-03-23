@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 from fastapi import APIRouter, Depends, HTTPException
 
 from nomarr.interfaces.api.auth import verify_session
-from nomarr.interfaces.api.id_codec import decode_path_id, encode_id
+from nomarr.interfaces.api.id_codec import decode_id, decode_path_id, encode_id
 from nomarr.interfaces.api.types.vector_types import (
     VectorGetResponse,
     VectorHotColdStats,
@@ -73,31 +73,29 @@ async def search_vectors(
 ) -> VectorSearchResponse:
     """Search for similar vectors using ANN.
 
-    Searches cold collection only (promoted vectors with indexes).
-    Returns results as of last rebuild (stale is acceptable).
+    Resolves the source track's vector internally from file_id, then
+    searches cold collection(s). Returns results as of last rebuild.
 
     Requires:
     - Authentication (admin or library owner)
     - Cold collection must have vector index
 
     Args:
-        request: Search parameters (backbone_id, vector, limit, min_score)
+        request: Search parameters (file_id, backbone_id, limit, min_score)
 
     Returns:
         VectorSearchResponse with matching vectors and scores
 
     Raises:
-        400: If vector dimension doesn't match backbone
-        404: If backbone not found
+        400: If file not found or no vector exists
         503: If cold collection has no vector index (search not available)
 
     """
     try:
         # Call service layer
         results = vector_search_service.search_similar_tracks(
+            file_id=decode_id(request.file_id),
             backbone_id=request.backbone_id,
-            library_key=request.library_key,
-            vector=request.vector,
             limit=request.limit,
             min_score=request.min_score,
             library_scope=request.library_scope,
@@ -134,13 +132,12 @@ async def search_vectors(
 async def get_track_vector(
     backbone_id: str,
     file_id: str,
-    library_key: str = "",
     vector_search_service: VectorSearchService = Depends(get_vector_search_service),
 ) -> VectorGetResponse:
     """Get embedding vector for a specific track.
 
-    Tries cold collection first, then falls back to hot if not found.
-    Use this to retrieve a track's vector before performing similarity search.
+    Resolves the owning library internally from the file ID.
+    Searches cold (promoted) collection only.
 
     Requires:
     - Authentication (admin or library owner)
@@ -153,11 +150,11 @@ async def get_track_vector(
         VectorGetResponse with the track's embedding vector
 
     Raises:
-        404: If vector not found in hot or cold collections
+        404: If vector not found in cold collection
 
     """
     file_id = decode_path_id(file_id)
-    result = vector_search_service.get_track_vector(backbone_id, file_id, library_key=library_key)
+    result = vector_search_service.get_track_vector(backbone_id, file_id)
 
     if result is None:
         raise HTTPException(

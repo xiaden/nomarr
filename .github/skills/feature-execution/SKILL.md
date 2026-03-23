@@ -8,10 +8,10 @@ description: Use when executing implementation plans produced by the feature-pla
 Pipeline for implementing a set of feature plans produced by `feature-planning`. Manages context injection, phase-scoped execution dispatch, post-plan review, and fix cycles.
 
 ```
-Plans + Ledger → Execute Phase → Track Steps → Review Plan → Fix Cycle? → Update Ledger → Next Plan
-                     ↓                ↓             ↓              ↓
-              Execution Agent   plan_complete  Review Agent   Plan Agent
-              (one phase)        _step          (thorough)    (fix plan)
+Plans + Ledger → Execute Phase → Track Steps → Review Plan → Fix Cycle? → Update Ledger → Next Plan → Archive
+                     ↓                ↓             ↓              ↓                                    ↓
+              Execution Agent   plan_complete  Review Agent   Plan Agent                          COMPLETION.md
+              (one phase)        _step          (thorough)    (fix plan)                       → plans/completed/
 ```
 
 ---
@@ -24,6 +24,7 @@ Plans + Ledger → Execute Phase → Track Steps → Review Plan → Fix Cycle? 
 4. **Never execute out of dependency order.** Follow the execution rounds from the feature README. A plan that depends on Plan A's outputs cannot run before Plan A passes review.
 5. **Update the ledger with actuals, not plans.** After review passes, update CONTRACTS.md with *implemented* signatures, which may differ from what was planned.
 6. **If context budget is exhausted, stop at a plan boundary.** The ledger and plan step checkboxes preserve all progress. A new session resumes cleanly.
+7. **Never leave completed features unarchived.** After the last plan passes review plus ledger update, execute the archival protocol. Completed artifacts in `plans/` and `plans/dev/` rot into confusion.
 
 ---
 
@@ -135,6 +136,48 @@ Proceed to the next plan in dependency order. Return to Phase 2.
 
 ---
 
+## Phase 7: Archive Feature
+
+After all plans pass review, the ledger is updated, and the user is informed of any deviations — archive the feature.
+
+See [references/archival-protocol.md](references/archival-protocol.md) for the full completion manifest template and move protocol.
+
+### 7a. Generate Completion Manifest
+
+Create `plans/dev/{feature}-parts/COMPLETION.md`:
+
+1. **Execution Summary** — table of all plans with review round counts and fix plan references
+2. **Design Deviations** — extracted from CONTRACTS.md Decisions table
+3. **Key Decisions** — architectural decisions from plan annotations not in the design doc
+4. **Files Created/Modified** — deduplicated from review reports, grouped by layer
+5. **Final Lint Status** — run `lint_project_backend()` (and `lint_project_frontend()` if applicable) one final time
+
+**Sources:** `plan_read` for completion status, CONTRACTS.md for deviations, plan step annotations for decisions, review reports for file lists.
+
+### 7b. Move Artifacts to `plans/completed/`
+
+Use `edit_file_move` for each artifact:
+
+| Source | Destination |
+|---|---|
+| `plans/TASK-{feature}-*.md` | `plans/completed/TASK-{feature}-*.md` |
+| `plans/dev/design-{feature}.md` | `plans/completed/design-{feature}.md` |
+| `plans/dev/{feature}-parts/` | `plans/completed/{feature}-parts/` |
+
+Move plans and design doc first, parts directory last (it contains the manifest you just wrote).
+
+### 7c. Verify Clean State
+
+After moving:
+- No `TASK-{feature}-*.md` files remain in `plans/`
+- No `{feature}-parts/` directory remains in `plans/dev/`
+- No `design-{feature}.md` remains in `plans/dev/`
+- `plans/completed/{feature}-parts/COMPLETION.md` exists
+
+**Standalone plans** (no letter suffix, no parts directory): just move the plan file. No manifest needed — the plan's own checkboxes and annotations are sufficient.
+
+---
+
 ## Session Continuity
 
 When starting a new session mid-feature:
@@ -163,3 +206,6 @@ Before declaring feature execution complete:
 - [ ] `lint_project_backend` passes on full workspace **→ Zero errors**
 - [ ] No orphaned fix plans with incomplete steps **→ Clean state**
 - [ ] User informed of any design deviations **→ Alignment**
+- [ ] COMPLETION.md generated in `{feature}-parts/` **→ Audit trail**
+- [ ] All artifacts moved to `plans/completed/` **→ Clean working directory**
+- [ ] No feature files remain in `plans/` or `plans/dev/` **→ Verified clean state**

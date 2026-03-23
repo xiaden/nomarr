@@ -11,14 +11,16 @@ import { get, post } from "./client";
 // ============================================================================
 
 export interface VectorSearchRequest {
+  /** Library file document ID to find similar tracks for */
+  file_id: string;
   /** Backbone identifier (e.g., "effnet", "yamnet") */
   backbone_id: string;
-  /** Query embedding vector */
-  vector: number[];
   /** Maximum number of results (1-100) */
   limit?: number;
   /** Minimum similarity score threshold */
   min_score?: number;
+  /** Search scope: 'own' (same library), 'all' (fan-out), or a specific library _key */
+  library_scope?: string | null;
 }
 
 export interface VectorSearchResultItem {
@@ -103,27 +105,31 @@ export async function listBackbones(): Promise<VectorBackbonesResponse> {
 /**
  * Search for similar tracks using vector similarity.
  *
- * Searches cold collection only (never falls back to hot).
- * Requires cold collection to have a vector index.
+ * Resolves the source track's vector internally. Searches cold
+ * collection only (never falls back to hot). Requires cold collection
+ * to have a vector index.
  *
  * @param backbone_id - Backbone identifier (e.g., "effnet", "yamnet")
- * @param vector - Query embedding vector
+ * @param file_id - Library file document ID to find similar tracks for
  * @param limit - Maximum number of results (default 10, max 100)
  * @param min_score - Minimum similarity score threshold (default 0)
+ * @param library_scope - Search scope: 'own', 'all', or specific library _key
  * @returns List of matching vectors with scores
  * @throws ApiError with status 503 if no vector index exists
  */
 export async function searchVectors(
   backbone_id: string,
-  vector: number[],
+  file_id: string,
   limit = 10,
-  min_score = 0.0
+  min_score = 0.0,
+  library_scope?: string | null
 ): Promise<VectorSearchResponse> {
   const body: VectorSearchRequest = {
+    file_id,
     backbone_id,
-    vector,
     limit,
     min_score,
+    library_scope: library_scope ?? null,
   };
   return post("/api/web/vectors/search", body);
 }

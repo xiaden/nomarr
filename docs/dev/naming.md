@@ -7,9 +7,9 @@
 ## Overview
 
 Nomarr enforces naming rules to ensure:
-- **Predictability** - Names indicate purpose and behavior
-- **Discoverability** - Tools and developers can find what they need
-- **Clean Architecture** - Names reflect layer boundaries
+- **Predictability** — Names indicate purpose and behavior
+- **Discoverability** — Tools and developers can find what they need
+- **Clean Architecture** — Names reflect layer boundaries
 
 This document defines public-facing naming rules for all code.
 
@@ -28,25 +28,35 @@ This document defines public-facing naming rules for all code.
 **Rules:**
 - End with `Service`
 - Singular noun (not plural)
-- Describes the domain
+- Describes the domain or infrastructure concern
 
-**Examples:**
+**Domain services** (in `services/domain/`):
 ```python
 ✅ LibraryService
 ✅ AnalyticsService
-✅ QueueService
-✅ ProcessingService
 ✅ CalibrationService
+✅ MetadataService
 ✅ NavidromeService
+✅ TaggingService
+✅ VectorSearchService
+✅ VectorMaintenanceService
 
 ❌ LibrariesService  # Use singular
 ❌ ServiceLibrary    # Wrong order
-❌ WorkersCoordinator  # Not a service (special case allowed for coordinator)
 ```
 
-**Special cases:**
-- `WorkersCoordinator` - Manages workers (not technically a service)
-- `StateBroker` - Manages state (not technically a service)
+**Infrastructure services** (in `services/infrastructure/`):
+```python
+✅ ConfigService
+✅ HealthMonitorService
+✅ InfoService
+✅ KeyManagementService
+✅ MLService
+✅ WorkerSystemService
+
+❌ WorkersCoordinator  # Use <Noun>Service pattern
+❌ ConfigManager       # Use Service suffix
+```
 
 ---
 
@@ -69,10 +79,10 @@ This document defines public-facing naming rules for all code.
 
 **Read Operations:**
 ```python
-get_      # Retrieve single item (get_library, get_job)
-list_     # Retrieve multiple items (list_libraries, list_jobs)
+get_      # Retrieve single item (get_library, get_config)
+list_     # Retrieve multiple items (list_libraries, list_models)
 exists_   # Check existence (exists_library)
-count_    # Count items (count_pending_jobs)
+count_    # Count items (count_pending_files)
 ```
 
 **Write Operations:**
@@ -81,7 +91,7 @@ create_   # Create new item (create_library)
 add_      # Add item (add_library)
 update_   # Modify existing item (update_library)
 delete_   # Remove item (delete_library)
-remove_   # Remove item (remove_library)
+remove_   # Remove item (remove_library_file)
 set_      # Set value (set_threshold)
 ```
 
@@ -90,11 +100,10 @@ set_      # Set value (set_threshold)
 scan_     # Scan library (scan_library)
 process_  # Process file (process_file)
 tag_      # Tag file (tag_file)
-enqueue_  # Add to queue (enqueue_file)
-dequeue_  # Remove from queue (dequeue_job)
 export_   # Export data (export_playlists)
 import_   # Import data (import_library)
 sync_     # Synchronize (sync_with_navidrome)
+promote_  # Promote vectors (promote_and_rebuild)
 ```
 
 **State Operations:**
@@ -114,19 +123,19 @@ generate_ # Generate data (generate_calibration)
 apply_    # Apply changes (apply_calibration)
 clear_    # Clear data (clear_completed)
 retry_    # Retry failed (retry_errors)
-requeue_  # Requeue job (requeue_job)
+rebuild_  # Rebuild index or cache (rebuild_vector_index)
 ```
 
 ### Examples
 
 **Good:**
 ```python
-def get_library(self, library_id: int) -> LibraryDict | None
+def get_library(self, library_id: str) -> LibraryDict | None
 def list_libraries(self) -> list[LibraryDict]
-def scan_library(self, library_id: int) -> ScanResultDict
-def enqueue_file(self, path: str, library_id: int) -> int
+def scan_library(self, library_id: str) -> ScanResultDict
+def generate_calibration(self, library_id: str) -> CalibrationResultDict
 def pause_workers(self) -> None
-def generate_calibration(self) -> CalibrationResultDict
+def promote_and_rebuild(self, backbone: str) -> PromoteResultDict
 ```
 
 **Bad:**
@@ -167,56 +176,31 @@ New verbs require:
 ```python
 class LibraryDict(TypedDict):
     """Library metadata."""
-    id: int
+    _key: str
     name: str
     path: str
     created_at: int
 
-class QueueStatusDict(TypedDict):
-    """Queue status counts."""
-    pending: int
-    running: int
-    completed: int
-    errors: int
-
-class JobDict(TypedDict):
-    """Queue job details."""
-    id: int
-    path: str
+class HealthStatusDict(TypedDict):
+    """Component health report."""
+    component: str
     status: str
-    error: str | None
-```
-
-**Dataclass (for DTOs with methods):**
-```python
-@dataclass
-class ProcessorConfigDTO:
-    """Processing configuration."""
-    workers: int
-    batch_size: int
-    timeout: int
-    
-    def validate(self) -> list[str]:
-        """Validate configuration."""
-        errors = []
-        if self.workers < 1:
-            errors.append("workers must be >= 1")
-        return errors
-```
-
-**Result DTOs:**
-```python
-class ScanResultDict(TypedDict):
-    """Library scan result."""
-    files_found: int
-    files_added: int
-    files_updated: int
-    errors: list[str]
+    last_heartbeat: float
 
 class CalibrationResultDict(TypedDict):
     """Calibration operation result."""
     tags_calibrated: int
     tracks_updated: int
+```
+
+**Dataclass (for DTOs with methods or defaults):**
+```python
+@dataclass
+class MLModelConfig:
+    """ML model configuration."""
+    backbone: str
+    batch_size: int = 8
+    device: str = "cpu"
 ```
 
 ### DTO Placement
@@ -234,11 +218,14 @@ class CalibrationResultDict(TypedDict):
 ```
 helpers/dto/
 ├── __init__.py
-├── queue.py          # Queue-related DTOs
-├── library.py        # Library-related DTOs
-├── calibration.py    # Calibration-related DTOs
-├── analytics.py      # Analytics-related DTOs
-└── navidrome.py      # Navidrome-related DTOs
+├── analytics_dto.py      # Analytics-related DTOs
+├── calibration_dto.py    # Calibration-related DTOs
+├── health_dto.py         # Health monitoring DTOs
+├── library_dto.py        # Library-related DTOs
+├── ml_dto.py             # ML pipeline DTOs
+├── navidrome_dto.py      # Navidrome integration DTOs
+├── processing_dto.py     # File processing DTOs
+└── tagging_dto.py        # Tagging-related DTOs
 ```
 
 ---
@@ -247,39 +234,42 @@ helpers/dto/
 
 ### Services
 
-**Format:** `<domain>_service.py`
+**Format:** `<domain>_svc.py` (simple) or `<domain>_svc/` (package)
 
 ```python
-✅ library_service.py
-✅ queue_service.py
-✅ processing_service.py
-✅ calibration_service.py
+✅ analytics_svc.py
+✅ calibration_svc.py
+✅ config_svc.py
+✅ health_monitor_svc.py
+✅ library_svc/         # Package for complex service
 
-❌ library.py  # Too generic
-❌ svc_library.py  # Wrong order
+❌ library.py           # Too generic
+❌ svc_library.py       # Wrong order
+❌ library_service.py   # Use _svc suffix
 ```
 
 ### Workflows
 
-**Format:** `<domain>_workflow.py` or `<domain>/<operation>.py`
+**Format:** `<domain>/<operation>_wf.py`
 
 ```python
-✅ processing/process_file.py
-✅ library/scan_library.py
-✅ calibration/generate_calibration.py
+✅ library/scan_library_full_wf.py
+✅ calibration/generate_calibration_wf.py
+✅ processing/process_file_wf.py
+✅ navidrome/sync_navidrome_wf.py
 
-❌ process.py  # Too generic
-❌ workflow_process.py  # Wrong order
+❌ process.py           # Too generic, missing _wf suffix
+❌ workflow_process.py   # Wrong order
 ```
 
 ### Components
 
-**Format:** `<domain>/<component>.py`
+**Format:** `<domain>/<component>_comp.py`
 
 ```python
-✅ analytics/tag_stats.py
-✅ tagging/aggregation.py
-✅ ml/inference.py
+✅ analytics/tag_stats_comp.py
+✅ tagging/aggregation_comp.py
+✅ ml/audio/ml_audio_comp.py
 
 ❌ utils.py  # Too generic
 ```
@@ -291,11 +281,10 @@ helpers/dto/
 ```python
 ✅ audio.py
 ✅ files.py
-✅ logging.py
-✅ dataclasses.py
+✅ logging_config.py
 
 ❌ audio_utils.py  # Redundant suffix
-❌ helpers.py  # Too generic
+❌ helpers.py       # Too generic
 ```
 
 ---
@@ -307,20 +296,20 @@ helpers/dto/
 **Simple services: one class per file ending in `_svc.py`:**
 
 ```python
-# processing_svc.py
+# analytics_svc.py
 
 from nomarr.persistence.db import Database
-from nomarr.helpers.dto.processing import ProcessingResult
+from nomarr.helpers.dto.analytics_dto import TagStatsDict
 
-class ProcessingService:
-    """Manage file processing operations."""
-    
+class AnalyticsService:
+    """Manage analytics operations."""
+
     def __init__(self, db: Database):
         self.db = db
-    
-    def get_status(self) -> ProcessingResult:
-        """Get processing status."""
-        pass
+
+    def get_tag_stats(self, library_id: str) -> TagStatsDict:
+        """Get tag statistics."""
+        ...
 ```
 
 ### Service Packages
@@ -334,6 +323,7 @@ nomarr/services/domain/library_svc/
 ├── scan.py          # LibraryScanMixin
 ├── query.py         # LibraryQueryMixin
 ├── files.py         # LibraryFilesMixin
+├── entities.py      # LibraryEntitiesMixin
 └── config.py        # LibraryServiceConfig dataclass
 ```
 
@@ -354,45 +344,28 @@ class LibraryService(LibraryAdminMixin, LibraryScanMixin, LibraryQueryMixin):
     pass
 ```
 
-**Service-local DTOs at top:**
-
-```python
-# queue_service.py
-
-from typing import TypedDict
-
-# Service-local DTO (not exported)
-class _QueueInternalState(TypedDict):
-    """Internal queue state (not for external use)."""
-    lock_acquired: bool
-    last_dequeue: int
-
-class QueueService:
-    # ... service implementation
-```
-
 ### Avoid Ad-Hoc Splitting
 
-**Bad - splitting without a package:**
+**Bad — splitting without a package:**
 ```python
-# library_service.py
+# library_svc.py
 class LibraryService:
     def get_library(...): pass
 
-# library_service_scan.py  # ❌ Splitting same service without package
+# library_svc_scan.py  # ❌ Splitting same service without package
 class LibraryService:
     def scan_library(...): pass
 ```
 
-**Good - simple service in one file:**
+**Good — simple service in one file:**
 ```python
 # analytics_svc.py
 class AnalyticsService:
-    def get_stats(...): pass
+    def get_tag_stats(...): pass
     def compute_insights(...): pass
 ```
 
-**Good - complex service in a package:**
+**Good — complex service in a package:**
 ```
 library_svc/
 ├── __init__.py     # Exports composed LibraryService
@@ -408,30 +381,31 @@ library_svc/
 ### Predictability
 
 **Given a service name, you know:**
-- It's in `services/<name>_service.py`
+- It's in `services/domain/<name>_svc.py` or `services/infrastructure/<name>_svc.py`
 - It has a class `<Name>Service`
 - Methods follow `<verb>_<noun>` pattern
 
 **Example:**
 ```python
 # I need to scan a library
-# → LibraryService → library_service.py → scan_library()
+# → LibraryService → services/domain/library_svc/ → scan_library()
 ```
 
 ### Discoverability
 
-**Tools work better:**
-- Copilot suggests correct names
-- `grep` finds all services: `grep "class.*Service"`
-- `scripts/discover_api.py` generates accurate docs
+**MCP tools work well with consistent names:**
+- `read_module_api` shows exported classes/functions
+- `locate_module_symbol` finds any symbol by name
+- `lint_project_backend` catches naming violations via import-linter
 
 ### Clean Boundaries
 
 **Names encode layer information:**
-- `*Service` → Service layer
+- `*Service` → Service layer (domain or infrastructure)
 - `*Dict` → DTO (crosses layers)
-- `*Operations` → Persistence layer
-- `*workflow` → Workflow layer
+- `*Operations` / `*_aql` → Persistence layer
+- `*_wf` → Workflow layer
+- `*_comp` → Component layer
 
 **You can't accidentally:**
 - Call workflow from interface (no direct import)
@@ -450,14 +424,19 @@ library_svc/
 
 ### Automated
 
-**`scripts/check_naming.py`:**
-- Checks service names
-- Checks method names against allowed verbs
-- Reports violations
+**`lint_project_backend`** is the primary QC tool:
+- **ruff** — linting and formatting
+- **mypy** — type checking
+- **import-linter** — layer boundary enforcement
 
-**Run:**
 ```bash
-python scripts/check_naming.py
+# Via MCP tool (preferred)
+lint_project_backend(path="nomarr/services")
+
+# Or run tools directly
+ruff check nomarr/
+mypy nomarr/
+import-linter
 ```
 
 ### Manual Review
@@ -468,6 +447,7 @@ python scripts/check_naming.py
 - [ ] DTOs end with `Dict` or `DTO`
 - [ ] No transport prefixes in names
 - [ ] No context suffixes in names
+- [ ] Module suffixes match layer (`_svc`, `_wf`, `_comp`)
 
 ---
 
@@ -479,10 +459,10 @@ python scripts/check_naming.py
 
 **When renaming:**
 1. Update service/method name
-2. Update all call sites
+2. Update all call sites (use `find_referencing_symbols`)
 3. Update tests
 4. Update documentation
-5. Run `check_naming.py` to verify
+5. Run `lint_project_backend` to verify
 
 ### Example Refactor
 
@@ -496,17 +476,8 @@ class LibraryManager:  # ❌ Not "Service"
 **After:**
 ```python
 class LibraryService:  # ✅
-    def get_library(self, library_id: int) -> LibraryDict | None:  # ✅
+    def get_library(self, library_id: str) -> LibraryDict | None:  # ✅
         pass
-```
-
-**Update callers:**
-```python
-# Before
-library = library_manager.api_get_library(1)
-
-# After
-library = library_service.get_library(1)
 ```
 
 ---
@@ -515,29 +486,31 @@ library = library_service.get_library(1)
 
 ```python
 # Services
-<Noun>Service                 # LibraryService
+<Noun>Service                       # LibraryService, MLService
 
 # Methods
-<verb>_<noun>                 # get_library, scan_library, pause_workers
+<verb>_<noun>                       # get_library, scan_library, pause_workers
 
 # DTOs
-<Name>Dict                    # LibraryDict, QueueStatusDict
-<Name>DTO                     # ProcessorConfigDTO (if dataclass)
+<Name>Dict                          # LibraryDict, HealthStatusDict
+<Name>DTO                           # MLModelConfig (if dataclass)
 
 # Files
-services/<domain>_service.py  # library_service.py
-workflows/<domain>/<op>.py    # library/scan_library.py
-helpers/<name>.py             # audio.py
-helpers/dto/<domain>.py       # dto/library.py
+services/domain/<domain>_svc.py     # analytics_svc.py
+services/infrastructure/<name>_svc.py # config_svc.py
+workflows/<domain>/<op>_wf.py       # library/scan_library_full_wf.py
+components/<domain>/<name>_comp.py  # ml/audio/ml_audio_comp.py
+helpers/<name>.py                   # audio.py
+helpers/dto/<domain>_dto.py         # dto/library_dto.py
 ```
 
 ---
 
 ## 10. Related Documentation
 
-- [Services](services.md) - Service layer patterns
-- [Architecture](architecture.md) - System design
-- [QC System](qc.md) - Code quality checks
+- [Architecture](architecture.md) — System design and layer rules
+- [QC System](qc.md) — Code quality checks
+- [Domains](domains.md) — Domain catalog and data ownership
 
 ---
 
@@ -549,5 +522,6 @@ helpers/dto/<domain>.py       # dto/library.py
 3. DTOs: `<Name>Dict` or `<Name>DTO`
 4. No transport prefixes (`api_`, `web_`, `cli_`)
 5. No context suffixes (`_for_admin`, `_internal`)
+6. Module suffixes match layer: `_svc`, `_wf`, `_comp`
 
 **When in doubt:** Choose clarity, consistency, and predictability over brevity.

@@ -51,7 +51,17 @@ frontend/src/
 ├── hooks/             # Custom React hooks
 ├── router/            # Route definitions
 └── shared/            # API client, types, utilities
-    ├── api.ts         # Typed backend client
+    ├── api/           # Typed backend client (domain-split modules)
+    │   ├── index.ts   # Re-exports all domain modules
+    │   ├── client.ts  # Base HTTP client, ApiError, helpers
+    │   ├── library.ts # Library CRUD, scan, reconcile
+    │   ├── files.ts   # File search, tag queries
+    │   ├── tags.ts    # Tag operations
+    │   ├── ml.ts      # ML model status
+    │   ├── processing.ts  # Processing pipeline
+    │   ├── calibration.ts # Calibration endpoints
+    │   ├── analytics.ts   # Analytics queries
+    │   └── ...        # Other domain modules
     ├── types.ts       # TypeScript interfaces
     └── auth.ts        # Session utilities
 ```
@@ -82,17 +92,21 @@ frontend/src/
 
 ## API Client
 
-All backend calls use `shared/api.ts`:
+Backend calls use domain-specific modules in `shared/api/`:
 
 ```typescript
-import { api } from '../shared/api';
+// Import from domain module directly
+import { getProcessingStatus } from "@/shared/api/processing";
+import { list, create } from "@/shared/api/library";
 
-const stats = await api.library.getStats();
+// Or import from the barrel for convenience
+import { getProcessingStatus, list } from "@/shared/api";
 ```
 
 Adding endpoints:
-1. Add interface to `shared/types.ts`
-2. Add method to `shared/api.ts`
+1. Add TypeScript interfaces to `shared/types.ts` (or co-locate in the domain module)
+2. Add the fetch function to the appropriate `shared/api/<domain>.ts` module
+3. Re-export from `shared/api/index.ts` if not already covered by a wildcard re-export
 
 ---
 
@@ -105,7 +119,12 @@ Adding endpoints:
 
 ---
 
-## Layer Scripts
+## Validation Tool
 
-- `lint.py` - ESLint and TypeScript type checking
-- `build.py` - Full build (typecheck + Vite)
+**Run after every frontend change:**
+
+```python
+lint_project_frontend()
+```
+
+Zero errors from ESLint and TypeScript is the only acceptable state.

@@ -6,7 +6,6 @@ import { useCallback, useState } from "react";
 
 import { ApiError } from "@shared/api/client";
 import {
-  getTrackVector,
   searchVectors,
   type VectorSearchResultItem,
 } from "@shared/api/vectors";
@@ -21,20 +20,13 @@ export interface UseVectorSearchResult {
     limit?: number,
     minScore?: number
   ) => Promise<void>;
-  searchByVector: (
-    backboneId: string,
-    vector: number[],
-    limit?: number,
-    minScore?: number
-  ) => Promise<void>;
 }
 
 /**
  * Hook for performing vector similarity searches.
  *
  * Provides:
- * - searchByFileId: Fetches vector for a file, then searches for similar
- * - searchByVector: Direct search with a raw vector
+ * - searchByFileId: Single-call search by file ID (backend resolves vector internally)
  * - Loading and error state management
  */
 export function useVectorSearch(): UseVectorSearchResult {
@@ -42,7 +34,6 @@ export function useVectorSearch(): UseVectorSearchResult {
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<VectorSearchResultItem[] | null>(null);
 
-  // Search by file ID - first get vector then search
   const searchByFileId = useCallback(
     async (
       backboneId: string,
@@ -55,18 +46,13 @@ export function useVectorSearch(): UseVectorSearchResult {
       setResults(null);
 
       try {
-        // Step 1: Get the track's vector from the backend
-        const trackVectorResponse = await getTrackVector(backboneId, fileId);
-
-        // Step 2: Use that vector to search for similar tracks
-        const searchResponse = await searchVectors(
+        const response = await searchVectors(
           backboneId,
-          trackVectorResponse.vector,
+          fileId,
           limit,
           minScore
         );
-
-        setResults(searchResponse.results);
+        setResults(response.results);
       } catch (err) {
         if (err instanceof ApiError) {
           if (err.status === 404) {
@@ -94,48 +80,10 @@ export function useVectorSearch(): UseVectorSearchResult {
     []
   );
 
-  // Search by raw vector
-  const searchByVector = useCallback(
-    async (
-      backboneId: string,
-      vector: number[],
-      limit = 10,
-      minScore = 0
-    ): Promise<void> => {
-      setLoading(true);
-      setError(null);
-      setResults(null);
-
-      try {
-        const response = await searchVectors(backboneId, vector, limit, minScore);
-        setResults(response.results);
-      } catch (err) {
-        if (err instanceof ApiError) {
-          if (err.status === 503) {
-            setError(
-              "Vector search not available: no vector index exists. " +
-                "Run promote & rebuild from the admin panel first."
-            );
-          } else {
-            setError(`API Error (${err.status}): ${err.message}`);
-          }
-        } else if (err instanceof Error) {
-          setError(err.message);
-        } else {
-          setError("Unknown error occurred");
-        }
-      } finally {
-        setLoading(false);
-      }
-    },
-    []
-  );
-
   return {
     loading,
     error,
     results,
     searchByFileId,
-    searchByVector,
   };
 }

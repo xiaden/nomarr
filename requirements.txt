@@ -38,3 +38,7 @@ import-linter>=2.0
 # Type stubs
 types-PyYAML
 types-requests
+
+
+# Documentation site
+mkdocs-material>=9.5.0
