@@ -33,7 +33,7 @@ from nomarr.helpers.dto import ProcessFileResult
 
 ```python
 # ❌ NEVER import these in workflows
-from nomarr.services import ProcessingService  # Workflows don't call services
+from nomarr.services import ...                # Workflows don't call services
 from nomarr.interfaces import ...              # No interface imports
 from pydantic import BaseModel                 # No Pydantic
 ```

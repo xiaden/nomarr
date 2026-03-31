@@ -5,13 +5,25 @@ description: Use when decomposing a major feature design into dependency-ordered
 
 # Feature Planning
 
-Pipeline for turning a design document into a set of validated, dependency-ordered implementation plans. Each plan is self-contained, references concrete codebase patterns, and declares its contracts for downstream plans.
+Pipeline for turning requirements or a design document into a set of validated, dependency-ordered implementation plans. Each plan is self-contained, references concrete codebase patterns, and declares its contracts for downstream plans.
 
 ```
-Design Doc → Decompose → Initialize Ledger → Plan in Rounds → Cross-Validate
-                ↓              ↓                    ↓                ↓
-          parts/README.md  CONTRACTS.md     plans/TASK-*-{A..Z}.md  Fixes
+Requirements → [DDAuthor] → Design Doc → Decompose → Initialize Ledger → Plan in Rounds → Cross-Validate
+     ↓               ↓             ↓            ↓              ↓                    ↓                ↓
+  Optional    DD Author agent   Already has  parts/README  CONTRACTS.md    plans/TASK-*-{A..Z}.md  Fixes
+              for new features    one?
 ```
+
+## Agent Integration
+
+This skill may dispatch agents from the `.github/agents/` hierarchy:
+
+| Agent | When Used |
+|-------|-----------|
+| `DDAuthor` | Phase 0: When requirements exist but no design doc |
+| `Planner` | Phase 3: For each plan in dependency order |
+
+See [.github/agents/README.md](../../agents/README.md) for agent specifications.
 
 ---
 
@@ -19,12 +31,44 @@ Design Doc → Decompose → Initialize Ledger → Plan in Rounds → Cross-Vali
 
 These exist because every one was violated during real usage and caused drift or errors.
 
-1. **Never write plans directly.** Always dispatch to the Plan subagent. Direct plan authoring skips codebase research and produces layer violations, wrong method signatures, and missing patterns.
+1. **Never write plans directly.** Always dispatch to the Planner agent. Direct plan authoring skips codebase research and produces layer violations, wrong method signatures, and missing patterns.
 2. **Never plan out of dependency order.** A plan referencing methods from an unplanned upstream part will guess signatures.
 3. **Never skip the ledger update.** The contracts ledger is the only mechanism preventing cross-plan drift. Update it after every validated plan.
 4. **Never batch-validate.** Validate each plan immediately after creation. Errors found after all plans exist require multi-file fixes.
 5. **Never combine parts into one subagent call.** Each part gets its own dispatch with focused context.
 6. **If context budget is exhausted, stop at the round boundary.** The ledger preserves all progress. A new session resumes cleanly.
+
+---
+
+## Phase 0: Create Design Document (Optional)
+
+**Skip this phase if:** Design document already exists at `plans/dev/design-{feature}.md`
+
+If the user has requirements but no design doc, dispatch the DDAuthor agent:
+
+```yaml
+# Dispatch to DDAuthor agent
+contextFiles:
+  - .github/copilot-instructions.md              # Architecture rules
+  - .github/instructions/{relevant_layers}.instructions.md  # Layer patterns
+
+task:
+  type: CREATE
+  title: "{feature title}"
+  requirements:
+    - "{requirement 1 from user}"
+    - "{requirement 2 from user}"
+  researchFocus:
+    - "existing patterns for {similar feature}"
+    - "current {domain} implementation"
+```
+
+**After DDAuthor returns:**
+- If `status: DONE` → design doc created at `plans/dev/design-{feature}.md`, proceed to Phase 1
+- If `status: NEEDS_DECISION` → present questions to user, re-dispatch with answers
+- If `status: BLOCKED` → critical information missing, stop and discuss with user
+
+**Present the design doc to the user for review before proceeding to decomposition.**
 
 ---
 
@@ -99,9 +143,25 @@ Initial content:
 
 For each execution round from the README:
 
-### 3a. Dispatch Plan Subagent
+### 3a. Dispatch Planner Agent
 
-For each part in the round, invoke the Plan subagent following the protocol in [references/subagent-protocol.md](references/subagent-protocol.md).
+For each part in the round, dispatch the Planner agent:
+
+```yaml
+# Dispatch to Planner agent (see .github/agents/planner.agent.md)
+contextFiles:
+  - plans/dev/design-{feature}.md               # Design doc
+  - plans/dev/{feature}-parts/README.md         # Parts breakdown
+  - plans/dev/{feature}-parts/CONTRACTS.md      # Current contracts
+  - .github/instructions/{layers}.instructions.md  # Per layer in this part
+
+task:
+  type: CREATE
+  feature: "{feature}"
+  part: "{letter}"
+  partScope: "{scope from README}"              # 3-5 sentence scope summary
+  priorContracts: true                          # Ledger has upstream methods
+```
 
 **Parallel dispatch** within a round is allowed — parts in the same round have no mutual dependencies. But only if token budget permits; otherwise dispatch sequentially within the round.
 
