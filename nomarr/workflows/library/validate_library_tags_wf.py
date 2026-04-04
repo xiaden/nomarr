@@ -23,19 +23,15 @@ def validate_library_tags_workflow(
 ) -> dict[str, Any]:
     """Validate per-file completeness of nom:* rels for all discovered heads.
 
-    A file with an ``ml_tagged`` edge is considered *complete* only if it has
+    A file with a ``tagged`` edge is considered *complete* only if it has
     at least one tag edge for every discovered head (model_key + label) under
     the namespace.  Missing any head rel marks the file incomplete.  Auto-repair
-    removes the ``ml_tagged`` edge so the file is rediscovered for tagging.
+    removes the ``tagged`` edge so the file is rediscovered for tagging.
     """
     heads = discover_heads(models_dir, db)
     expected_heads: list[dict[str, Any]] = []
     for head in heads:
-        embedder_date = "unknown"
-        if head.embedder_release_date:
-            embedder_date = head.embedder_release_date.replace("-", "")
-
-        model_key = f"{head.backbone}-{embedder_date}"
+        model_key = head.backbone
         expected_heads.append(
             {
                 "head_key": f"{model_key}:{head.name}",
@@ -73,7 +69,7 @@ def validate_library_tags_workflow(
     repaired = 0
     if auto_repair and incomplete:
         file_ids = [row["file_id"] for row in incomplete]
-        db.file_states.clear_ml_tagged_batch(file_ids)
+        db.file_states.clear_tagged_batch(file_ids)
         repaired = len(incomplete)
 
     return {

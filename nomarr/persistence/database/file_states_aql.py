@@ -1,39 +1,83 @@
 """File state edge operations for ArangoDB.
 
 CRUD operations on the ``file_has_state`` edge collection which connects
-``library_files/*`` vertices to ``file_states/*`` state vertices.
+``library_files/*`` vertices to ``file_states/*`` singleton vertices.
 
-Edge presence = file has reached that processing stage.
-Edge absence  = file still needs processing.
+Each file has exactly one edge per state axis, pointing to either the
+positive or negative vertex. State edges are pure boolean — no domain
+payload (version, hash, timestamps).
 
-State vertices (fixed, created by migration V016):
-    ``file_states/ml_tagged``   — ML tagging complete
-    ``file_states/calibrated``  — Calibration applied
-    ``file_states/reconciled``  — Tags written to disk
+State axes (positive / negative):
+    tagged / not_tagged           — ML tagging complete
+    too_short / not_too_short     — Below minimum duration for ML
+    calibrated / not_calibrated   — Calibration applied
+    tags_written / tags_not_written — Tags physically written to disk
+    tags_current / tags_stale     — Disk tags match DB state
+    scanned / not_scanned         — File processed by scanner
+    vectors_extracted / not_vectors_extracted — Embedding vectors exist
+    errored / not_errored         — Processing error encountered
 
-Edge attribute schemas:
-    ml_tagged:   ``{version: str, tagged_at: int}``
-    calibrated:  ``{hash: str, calibrated_at: int}``
-    reconciled:  ``{mode: str, calibration_hash: str|null, written_at: int, has_namespace: bool}``
+Discovery uses INBOUND traversal on negative vertices for O(1) lookup.
 """
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Any, cast
 
-from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.arango_client import DatabaseLike
-
-logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from arango.cursor import Cursor
 
 _EDGE_COLLECTION = "file_has_state"
-_STATE_ML_TAGGED = "file_states/ml_tagged"
-_STATE_CALIBRATED = "file_states/calibrated"
-_STATE_RECONCILED = "file_states/reconciled"
+
+# -- State vertex constants (8 axes, 16 vertices) ---------------------
+STATE_TAGGED = "file_states/tagged"
+STATE_NOT_TAGGED = "file_states/not_tagged"
+STATE_TOO_SHORT = "file_states/too_short"
+STATE_NOT_TOO_SHORT = "file_states/not_too_short"
+STATE_CALIBRATED = "file_states/calibrated"
+STATE_NOT_CALIBRATED = "file_states/not_calibrated"
+STATE_TAGS_WRITTEN = "file_states/tags_written"
+STATE_TAGS_NOT_WRITTEN = "file_states/tags_not_written"
+STATE_TAGS_CURRENT = "file_states/tags_current"
+STATE_TAGS_STALE = "file_states/tags_stale"
+STATE_SCANNED = "file_states/scanned"
+STATE_NOT_SCANNED = "file_states/not_scanned"
+STATE_VECTORS_EXTRACTED = "file_states/vectors_extracted"
+STATE_NOT_VECTORS_EXTRACTED = "file_states/not_vectors_extracted"
+STATE_ERRORED = "file_states/errored"
+STATE_NOT_ERRORED = "file_states/not_errored"
+
+ALL_STATE_VERTICES = (
+    STATE_TAGGED,
+    STATE_NOT_TAGGED,
+    STATE_TOO_SHORT,
+    STATE_NOT_TOO_SHORT,
+    STATE_CALIBRATED,
+    STATE_NOT_CALIBRATED,
+    STATE_TAGS_WRITTEN,
+    STATE_TAGS_NOT_WRITTEN,
+    STATE_TAGS_CURRENT,
+    STATE_TAGS_STALE,
+    STATE_SCANNED,
+    STATE_NOT_SCANNED,
+    STATE_VECTORS_EXTRACTED,
+    STATE_NOT_VECTORS_EXTRACTED,
+    STATE_ERRORED,
+    STATE_NOT_ERRORED,
+)
+
+AXIS_PAIRS: dict[str, tuple[str, str]] = {
+    "tagged": (STATE_TAGGED, STATE_NOT_TAGGED),
+    "too_short": (STATE_TOO_SHORT, STATE_NOT_TOO_SHORT),
+    "calibrated": (STATE_CALIBRATED, STATE_NOT_CALIBRATED),
+    "tags_written": (STATE_TAGS_WRITTEN, STATE_TAGS_NOT_WRITTEN),
+    "tags_current": (STATE_TAGS_CURRENT, STATE_TAGS_STALE),
+    "scanned": (STATE_SCANNED, STATE_NOT_SCANNED),
+    "vectors_extracted": (STATE_VECTORS_EXTRACTED, STATE_NOT_VECTORS_EXTRACTED),
+    "errored": (STATE_ERRORED, STATE_NOT_ERRORED),
+}
 
 
 class FileStatesOperations:
@@ -44,167 +88,606 @@ class FileStatesOperations:
         self.collection = db.collection(_EDGE_COLLECTION)  # type: ignore[union-attr]
 
     # ------------------------------------------------------------------
-    # ML Tagged state
+    # Axis transition helper
     # ------------------------------------------------------------------
 
-    def set_ml_tagged(self, file_id: str, version: str, tagged_at: int | None = None) -> None:
-        """Upsert the ml_tagged edge for a file.
+    def _transition_state(self, file_id: str, axis: str, to_positive: bool) -> None:
+        """Atomically transition a file's state on a single axis.
 
-        Creates the edge if absent, updates attributes if present.
-
-        Args:
-            file_id: Document _id (e.g., ``library_files/12345``).
-            version: Model version string.
-            tagged_at: Timestamp in ms (defaults to now).
+        Removes the existing edge (if any) for the axis and inserts a new
+        edge pointing to the target vertex.
         """
-        if tagged_at is None:
-            tagged_at = now_ms().value
+        positive, negative = AXIS_PAIRS[axis]
+        new_state = positive if to_positive else negative
         self.db.aql.execute(  # type: ignore[union-attr]
             """
-            UPSERT { _from: @file_id, _to: @state }
-            INSERT { _from: @file_id, _to: @state, version: @version, tagged_at: @tagged_at }
-            UPDATE { version: @version, tagged_at: @tagged_at }
-            IN @@coll
+            LET old = FIRST(
+                FOR e IN file_has_state
+                    FILTER e._from == @file_id
+                        AND (e._to == @positive OR e._to == @negative)
+                    RETURN e
+            )
+            LET _ = old != null ? (REMOVE old._key IN file_has_state) : null
+            INSERT { _from: @file_id, _to: @new_state } INTO file_has_state
             """,
             bind_vars=cast(
                 "dict[str, Any]",
                 {
                     "file_id": file_id,
-                    "state": _STATE_ML_TAGGED,
-                    "version": version,
-                    "tagged_at": tagged_at,
-                    "@coll": _EDGE_COLLECTION,
+                    "positive": positive,
+                    "negative": negative,
+                    "new_state": new_state,
                 },
             ),
         )
 
-    def clear_ml_tagged(self, file_id: str) -> None:
-        """Remove the ml_tagged edge for a file (marks it as needing re-tagging).
+    # ------------------------------------------------------------------
+    # Positive axis setters
+    # ------------------------------------------------------------------
 
-        Args:
-            file_id: Document _id.
-        """
-        self.db.aql.execute(  # type: ignore[union-attr]
-            """
-            FOR edge IN @@coll
-                FILTER edge._from == @file_id AND edge._to == @state
-                REMOVE edge IN @@coll
-            """,
-            bind_vars=cast(
-                "dict[str, Any]",
-                {"file_id": file_id, "state": _STATE_ML_TAGGED, "@coll": _EDGE_COLLECTION},
-            ),
-        )
+    def set_tagged(self, file_id: str) -> None:
+        self._transition_state(file_id, "tagged", to_positive=True)
 
-    def is_ml_tagged(self, file_id: str) -> bool:
-        """Check if a file has been ML tagged.
+    def set_too_short(self, file_id: str) -> None:
+        self._transition_state(file_id, "too_short", to_positive=True)
 
-        Args:
-            file_id: Document _id.
+    def set_calibrated(self, file_id: str) -> None:
+        self._transition_state(file_id, "calibrated", to_positive=True)
 
-        Returns:
-            True if the ml_tagged edge exists.
-        """
+    def set_tags_written(self, file_id: str) -> None:
+        self._transition_state(file_id, "tags_written", to_positive=True)
+
+    def set_tags_current(self, file_id: str) -> None:
+        self._transition_state(file_id, "tags_current", to_positive=True)
+
+    def set_scanned(self, file_id: str) -> None:
+        self._transition_state(file_id, "scanned", to_positive=True)
+
+    def set_vectors_extracted(self, file_id: str) -> None:
+        self._transition_state(file_id, "vectors_extracted", to_positive=True)
+
+    def set_errored(self, file_id: str) -> None:
+        self._transition_state(file_id, "errored", to_positive=True)
+
+    # ------------------------------------------------------------------
+    # Negative axis setters
+    # ------------------------------------------------------------------
+
+    def set_not_tagged(self, file_id: str) -> None:
+        self._transition_state(file_id, "tagged", to_positive=False)
+
+    def set_not_too_short(self, file_id: str) -> None:
+        self._transition_state(file_id, "too_short", to_positive=False)
+
+    def set_not_calibrated(self, file_id: str) -> None:
+        self._transition_state(file_id, "calibrated", to_positive=False)
+
+    def set_tags_not_written(self, file_id: str) -> None:
+        self._transition_state(file_id, "tags_written", to_positive=False)
+
+    def set_tags_stale(self, file_id: str) -> None:
+        self._transition_state(file_id, "tags_current", to_positive=False)
+
+    def set_not_scanned(self, file_id: str) -> None:
+        self._transition_state(file_id, "scanned", to_positive=False)
+
+    def set_not_vectors_extracted(self, file_id: str) -> None:
+        self._transition_state(file_id, "vectors_extracted", to_positive=False)
+
+    def set_not_errored(self, file_id: str) -> None:
+        self._transition_state(file_id, "errored", to_positive=False)
+
+    # ------------------------------------------------------------------
+    # Bulk transitions
+    # ------------------------------------------------------------------
+
+    def bulk_set_not_calibrated(self) -> int:
+        """Transition ALL files from calibrated to not_calibrated."""
         cursor = cast(
             "Cursor",
             self.db.aql.execute(  # type: ignore[union-attr]
                 """
-                FOR edge IN @@coll
-                    FILTER edge._from == @file_id AND edge._to == @state
-                    LIMIT 1
-                    RETURN true
+                FOR e IN file_has_state
+                    FILTER e._to == @calibrated
+                    LET r = (REMOVE e._key IN file_has_state RETURN 1)
+                    INSERT { _from: e._from, _to: @not_calibrated } INTO file_has_state
+                    RETURN 1
                 """,
                 bind_vars=cast(
                     "dict[str, Any]",
-                    {"file_id": file_id, "state": _STATE_ML_TAGGED, "@coll": _EDGE_COLLECTION},
+                    {
+                        "calibrated": STATE_CALIBRATED,
+                        "not_calibrated": STATE_NOT_CALIBRATED,
+                    },
                 ),
             ),
         )
-        return bool(next(cursor, False))
+        return len(list(cursor))
 
-    def get_ml_tagged(self, file_id: str) -> dict[str, Any] | None:
-        """Get ml_tagged edge attributes for a file.
-
-        Args:
-            file_id: Document _id.
-
-        Returns:
-            Dict with ``version`` and ``tagged_at``, or None if not tagged.
-        """
-        cursor = cast(
-            "Cursor",
-            self.db.aql.execute(  # type: ignore[union-attr]
-                """
-                FOR edge IN @@coll
-                    FILTER edge._from == @file_id AND edge._to == @state
-                    RETURN { version: edge.version, tagged_at: edge.tagged_at }
-                """,
-                bind_vars=cast(
-                    "dict[str, Any]",
-                    {"file_id": file_id, "state": _STATE_ML_TAGGED, "@coll": _EDGE_COLLECTION},
-                ),
-            ),
-        )
-        return next(cursor, None)  # type: ignore[arg-type]
-
-    def get_untagged_file_ids(
-        self,
-        library_id: str | None = None,
-        limit: int = 100,
-    ) -> list[str]:
-        """Get IDs of files without the ml_tagged edge.
-
-        Args:
-            library_id: Restrict to a single library (None = all libraries).
-            limit: Maximum number of IDs to return.
-
-        Returns:
-            List of file ``_id`` values needing tagging.
-        """
-        library_filter = "FILTER file.library_id == @library_id" if library_id else ""
-        query = f"""
-            FOR file IN library_files
-                {library_filter}
-                LET has_state = LENGTH(
-                    FOR edge IN @@coll
-                        FILTER edge._from == file._id AND edge._to == @state
-                        LIMIT 1
-                        RETURN 1
+    def bulk_set_tags_stale(self, library_id: str | None = None) -> int:
+        """Transition files from tags_current to tags_stale, optionally scoped to a library."""
+        if library_id is not None:
+            query = """
+                LET lib_file_ids = (
+                    FOR f IN OUTBOUND @library_id library_contains_file RETURN f._id
                 )
-                FILTER has_state == 0
-                SORT file._key
-                LIMIT @limit
-                RETURN file._id
-        """
-        bind_vars: dict[str, Any] = {
-            "state": _STATE_ML_TAGGED,
-            "@coll": _EDGE_COLLECTION,
-            "limit": limit,
-        }
-        if library_id:
-            bind_vars["library_id"] = library_id
-
+                FOR e IN file_has_state
+                    FILTER e._to == @tags_current AND e._from IN lib_file_ids
+                    LET r = (REMOVE e._key IN file_has_state RETURN 1)
+                    INSERT { _from: e._from, _to: @tags_stale } INTO file_has_state
+                    RETURN 1
+            """
+            bind_vars: dict[str, Any] = {
+                "library_id": library_id,
+                "tags_current": STATE_TAGS_CURRENT,
+                "tags_stale": STATE_TAGS_STALE,
+            }
+        else:
+            query = """
+                FOR e IN file_has_state
+                    FILTER e._to == @tags_current
+                    LET r = (REMOVE e._key IN file_has_state RETURN 1)
+                    INSERT { _from: e._from, _to: @tags_stale } INTO file_has_state
+                    RETURN 1
+            """
+            bind_vars = {
+                "tags_current": STATE_TAGS_CURRENT,
+                "tags_stale": STATE_TAGS_STALE,
+            }
         cursor = cast(
             "Cursor",
             self.db.aql.execute(query, bind_vars=cast("dict[str, Any]", bind_vars)),  # type: ignore[union-attr]
         )
+        return len(list(cursor))
+
+    def bulk_set_scanned(self, file_ids: list[str]) -> int:
+        """Transition specified files from not_scanned to scanned."""
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(  # type: ignore[union-attr]
+                """
+                FOR e IN file_has_state
+                    FILTER e._to == @not_scanned AND e._from IN @file_ids
+                    LET r = (REMOVE e._key IN file_has_state RETURN 1)
+                    INSERT { _from: e._from, _to: @scanned } INTO file_has_state
+                    RETURN 1
+                """,
+                bind_vars=cast(
+                    "dict[str, Any]",
+                    {
+                        "not_scanned": STATE_NOT_SCANNED,
+                        "scanned": STATE_SCANNED,
+                        "file_ids": file_ids,
+                    },
+                ),
+            ),
+        )
+        return len(list(cursor))
+
+    def bulk_set_not_vectors_extracted(self) -> int:
+        """Transition ALL files from vectors_extracted to not_vectors_extracted."""
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(  # type: ignore[union-attr]
+                """
+                FOR e IN file_has_state
+                    FILTER e._to == @vectors_extracted
+                    LET r = (REMOVE e._key IN file_has_state RETURN 1)
+                    INSERT { _from: e._from, _to: @not_vectors_extracted } INTO file_has_state
+                    RETURN 1
+                """,
+                bind_vars=cast(
+                    "dict[str, Any]",
+                    {
+                        "vectors_extracted": STATE_VECTORS_EXTRACTED,
+                        "not_vectors_extracted": STATE_NOT_VECTORS_EXTRACTED,
+                    },
+                ),
+            ),
+        )
+        return len(list(cursor))
+
+    def bulk_set_not_errored(self, file_ids: list[str]) -> int:
+        """Transition specified files from errored to not_errored."""
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(  # type: ignore[union-attr]
+                """
+                FOR e IN file_has_state
+                    FILTER e._to == @errored AND e._from IN @file_ids
+                    LET r = (REMOVE e._key IN file_has_state RETURN 1)
+                    INSERT { _from: e._from, _to: @not_errored } INTO file_has_state
+                    RETURN 1
+                """,
+                bind_vars=cast(
+                    "dict[str, Any]",
+                    {
+                        "errored": STATE_ERRORED,
+                        "not_errored": STATE_NOT_ERRORED,
+                        "file_ids": file_ids,
+                    },
+                ),
+            ),
+        )
+        return len(list(cursor))
+
+    # ------------------------------------------------------------------
+    # Initialization
+    # ------------------------------------------------------------------
+
+    def initialize_file_states(self, file_id: str) -> None:
+        """Create all-negative edges for a new file (one per axis)."""
+        negative_states = [pair[1] for pair in AXIS_PAIRS.values()]
+        self.db.aql.execute(  # type: ignore[union-attr]
+            """
+            FOR state IN @negative_states
+                INSERT { _from: @file_id, _to: state } INTO file_has_state
+                OPTIONS { ignoreErrors: true }
+            """,
+            bind_vars=cast(
+                "dict[str, Any]",
+                {"file_id": file_id, "negative_states": negative_states},
+            ),
+        )
+
+    def initialize_file_states_batch(self, file_ids: list[str]) -> None:
+        """Create all-negative edges for multiple new files in a single AQL query."""
+        if not file_ids:
+            return
+        negative_states = [pair[1] for pair in AXIS_PAIRS.values()]
+        self.db.aql.execute(  # type: ignore[union-attr]
+            """
+            FOR file_id IN @file_ids
+                FOR state IN @negative_states
+                    INSERT { _from: file_id, _to: state } INTO file_has_state
+                    OPTIONS { ignoreErrors: true }
+            """,
+            bind_vars=cast(
+                "dict[str, Any]",
+                {"file_ids": file_ids, "negative_states": negative_states},
+            ),
+        )
+
+    # ------------------------------------------------------------------
+    # Discovery queries (INBOUND traversal on negative state vertices)
+    # ------------------------------------------------------------------
+
+    def discover_next_untagged_file(
+        self,
+        library_id: str | None = None,
+        exclude_claimed: bool = True,
+    ) -> dict[str, Any] | None:
+        """Find next file needing ML tagging via INBOUND traversal.
+
+        Uses negative state vertex ``not_tagged`` for O(1) discovery.
+        Excludes files that are ``too_short`` or ``errored`` via set difference.
+
+        Args:
+            library_id: Optional library ``_id`` to scope the search.
+            exclude_claimed: If True, skip files with active worker claims.
+
+        Returns:
+            File dict or None if no work available.
+        """
+        parts: list[str] = []
+        bind_vars: dict[str, Any] = {
+            "not_tagged": STATE_NOT_TAGGED,
+            "too_short": STATE_TOO_SHORT,
+            "errored": STATE_ERRORED,
+        }
+
+        parts.append("LET too_short_ids = (FOR f IN INBOUND @too_short file_has_state RETURN f._id)")
+        parts.append("LET errored_ids = (FOR f IN INBOUND @errored file_has_state RETURN f._id)")
+
+        if library_id is not None:
+            parts.append("LET lib_files = (FOR f IN OUTBOUND @library_id library_contains_file RETURN f._id)")
+            bind_vars["library_id"] = library_id
+
+        parts.append("FOR file IN INBOUND @not_tagged file_has_state")
+        parts.append("    FILTER file._id NOT IN too_short_ids")
+        parts.append("    FILTER file._id NOT IN errored_ids")
+
+        if library_id is not None:
+            parts.append("    FILTER file._id IN lib_files")
+
+        if exclude_claimed:
+            parts.append(
+                "    FILTER LENGTH("
+                "FOR c IN worker_claims "
+                'FILTER c.file_id == file._id AND c.status == "active" '
+                "RETURN 1) == 0"
+            )
+
+        parts.append("    SORT file._key")
+        parts.append("    LIMIT 1")
+        parts.append("    RETURN file")
+
+        query = "\n".join(parts)
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(  # type: ignore[union-attr]
+                query,
+                bind_vars=cast("dict[str, Any]", bind_vars),
+            ),
+        )
+        results = list(cursor)
+        return results[0] if results else None
+
+    def get_untagged_file_ids(self, library_id: str | None = None, limit: int = 100) -> list[str]:
+        """Get IDs of files in the ``not_tagged`` state.
+
+        Args:
+            library_id: Optional library ``_id`` to scope the query.
+            limit: Maximum number of IDs to return.
+
+        Returns:
+            List of file ``_id`` values.
+        """
+        parts: list[str] = []
+        bind_vars: dict[str, Any] = {
+            "not_tagged": STATE_NOT_TAGGED,
+            "limit": limit,
+        }
+
+        if library_id is not None:
+            parts.append("LET lib_files = (FOR f IN OUTBOUND @library_id library_contains_file RETURN f._id)")
+            bind_vars["library_id"] = library_id
+
+        parts.append("FOR file IN INBOUND @not_tagged file_has_state")
+
+        if library_id is not None:
+            parts.append("    FILTER file._id IN lib_files")
+
+        parts.append("    SORT file._key")
+        parts.append("    LIMIT @limit")
+        parts.append("    RETURN file._id")
+
+        query = "\n".join(parts)
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(  # type: ignore[union-attr]
+                query,
+                bind_vars=cast("dict[str, Any]", bind_vars),
+            ),
+        )
+        return list(cursor)
+
+    def count_untagged_files(self, library_id: str | None = None) -> int:
+        """Count files in the ``not_tagged`` state.
+
+        Args:
+            library_id: Optional library ``_id`` to scope the count.
+
+        Returns:
+            Number of untagged files.
+        """
+        parts: list[str] = []
+        bind_vars: dict[str, Any] = {"not_tagged": STATE_NOT_TAGGED}
+
+        if library_id is not None:
+            parts.append("LET lib_files = (FOR f IN OUTBOUND @library_id library_contains_file RETURN f._id)")
+            bind_vars["library_id"] = library_id
+
+        inner = "FOR f IN INBOUND @not_tagged file_has_state"
+        if library_id is not None:
+            inner += " FILTER f._id IN lib_files"
+        inner += " RETURN 1"
+
+        parts.append(f"LET untagged = ({inner})")
+        parts.append("RETURN LENGTH(untagged)")
+
+        query = "\n".join(parts)
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(  # type: ignore[union-attr]
+                query,
+                bind_vars=cast("dict[str, Any]", bind_vars),
+            ),
+        )
+        results = list(cursor)
+        return results[0] if results else 0
+
+    def count_uncalibrated_files(self) -> int:
+        """Count files in the ``not_calibrated`` state.
+
+        Returns:
+            Number of uncalibrated files.
+        """
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(  # type: ignore[union-attr]
+                "RETURN LENGTH(FOR f IN INBOUND @not_calibrated file_has_state RETURN 1)",
+                bind_vars=cast(
+                    "dict[str, Any]",
+                    {"not_calibrated": STATE_NOT_CALIBRATED},
+                ),
+            ),
+        )
+        results = list(cursor)
+        return results[0] if results else 0
+
+    def get_errored_file_ids(self, library_id: str, limit: int = 500) -> list[str]:
+        """Get IDs of files in the ``errored`` state, scoped by library.
+
+        Args:
+            library_id: Library key (e.g. ``"abc123"``).
+            limit: Maximum number of IDs to return.
+
+        Returns:
+            List of file ``_id`` values.
+        """
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(  # type: ignore[union-attr]
+                """
+                LET lib_files = (FOR f IN OUTBOUND @library_id library_contains_file RETURN f._id)
+                FOR e IN file_has_state
+                    FILTER e._to == @errored AND e._from IN lib_files
+                    LIMIT @limit
+                    RETURN e._from
+                """,
+                bind_vars=cast(
+                    "dict[str, Any]",
+                    {
+                        "library_id": f"libraries/{library_id}",
+                        "errored": STATE_ERRORED,
+                        "limit": limit,
+                    },
+                ),
+            ),
+        )
+        return list(cursor)
+
+    def count_errored_files(self, library_id: str) -> int:
+        """Count files in the ``errored`` state, scoped by library.
+
+        Args:
+            library_id: Library key (e.g. ``"abc123"``).
+
+        Returns:
+            Number of errored files.
+        """
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(  # type: ignore[union-attr]
+                """
+                LET lib_files = (FOR f IN OUTBOUND @library_id library_contains_file RETURN f._id)
+                LET errored = (FOR e IN file_has_state FILTER e._to == @errored AND e._from IN lib_files RETURN 1)
+                RETURN LENGTH(errored)
+                """,
+                bind_vars=cast(
+                    "dict[str, Any]",
+                    {
+                        "library_id": f"libraries/{library_id}",
+                        "errored": STATE_ERRORED,
+                    },
+                ),
+            ),
+        )
+        results = list(cursor)
+        return results[0] if results else 0
+
+    def get_uncalibrated_tagged_file_ids(self, library_id: str) -> list[str]:
+        """Get IDs of files that are tagged but not calibrated, scoped by library.
+
+        Uses set intersection of INBOUND ``tagged`` and INBOUND ``not_calibrated``.
+
+        Args:
+            library_id: Library document ``_id`` (e.g. ``"libraries/abc"``).
+
+        Returns:
+            List of file ``_id`` values.
+        """
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(  # type: ignore[union-attr]
+                """
+                LET lib_files = (FOR f IN OUTBOUND @library_id library_contains_file RETURN f._id)
+                LET tagged = (FOR e IN file_has_state FILTER e._to == @tagged AND e._from IN lib_files RETURN e._from)
+                LET uncalibrated = (FOR e IN file_has_state FILTER e._to == @not_calibrated AND e._from IN lib_files RETURN e._from)
+                FOR id IN INTERSECTION(tagged, uncalibrated)
+                    RETURN id
+                """,
+                bind_vars=cast(
+                    "dict[str, Any]",
+                    {
+                        "tagged": STATE_TAGGED,
+                        "not_calibrated": STATE_NOT_CALIBRATED,
+                        "library_id": library_id,
+                    },
+                ),
+            ),
+        )
+        return list(cursor)
+
+    def get_stale_file_ids(self, library_id: str | None = None) -> list[str]:
+        """Get IDs of files in the ``tags_stale`` state.
+
+        Args:
+            library_id: Optional library ``_id`` to scope the query.
+
+        Returns:
+            List of file ``_id`` values.
+        """
+        parts: list[str] = []
+        bind_vars: dict[str, Any] = {"tags_stale": STATE_TAGS_STALE}
+
+        if library_id is not None:
+            parts.append("LET lib_files = (FOR f IN OUTBOUND @library_id library_contains_file RETURN f._id)")
+            bind_vars["library_id"] = library_id
+
+        parts.append("FOR file IN INBOUND @tags_stale file_has_state")
+
+        if library_id is not None:
+            parts.append("    FILTER file._id IN lib_files")
+
+        parts.append("    RETURN file._id")
+
+        query = "\n".join(parts)
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(  # type: ignore[union-attr]
+                query,
+                bind_vars=cast("dict[str, Any]", bind_vars),
+            ),
+        )
+        return list(cursor)
+
+    # ------------------------------------------------------------------
+    # Retained / adapted methods
+    # ------------------------------------------------------------------
+
+    def get_calibration_status_by_library(self) -> list[dict[str, Any]]:
+        """Get calibration status counts grouped by library."""
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(  # type: ignore[union-attr]
+                """
+                FOR lib IN libraries
+                    LET lib_file_ids = (
+                        FOR f IN OUTBOUND lib._id library_contains_file RETURN f._id
+                    )
+                    LET calibrated_count = LENGTH(
+                        FOR f IN INBOUND @calibrated file_has_state
+                            FILTER f._id IN lib_file_ids
+                            RETURN 1
+                    )
+                    LET not_calibrated_count = LENGTH(
+                        FOR f IN INBOUND @not_calibrated file_has_state
+                            FILTER f._id IN lib_file_ids
+                            RETURN 1
+                    )
+                    RETURN {
+                        library_id: lib._id,
+                        calibrated_count: calibrated_count,
+                        not_calibrated_count: not_calibrated_count
+                    }
+                """,
+                bind_vars=cast(
+                    "dict[str, Any]",
+                    {
+                        "calibrated": STATE_CALIBRATED,
+                        "not_calibrated": STATE_NOT_CALIBRATED,
+                    },
+                ),
+            ),
+        )
         return list(cursor)
 
     def library_has_tagged_files(self, library_id: str) -> bool:
-        """Check if any file in a library has the ml_tagged edge.
+        """Check if any file in a library has the tagged edge.
 
         Args:
             library_id: Library document _id.
 
         Returns:
-            True if at least one file in the library is ml_tagged.
+            True if at least one file in the library is tagged.
         """
         cursor = cast(
             "Cursor",
             self.db.aql.execute(  # type: ignore[union-attr]
                 """
-                FOR file IN library_files
-                    FILTER file.library_id == @library_id
+                FOR file IN OUTBOUND @library_id library_contains_file
                     FOR edge IN @@coll
                         FILTER edge._from == file._id AND edge._to == @state
                         LIMIT 1
@@ -214,7 +697,7 @@ class FileStatesOperations:
                     "dict[str, Any]",
                     {
                         "library_id": library_id,
-                        "state": _STATE_ML_TAGGED,
+                        "state": STATE_TAGGED,
                         "@coll": _EDGE_COLLECTION,
                     },
                 ),
@@ -222,701 +705,15 @@ class FileStatesOperations:
         )
         return bool(next(cursor, False))
 
-    # ------------------------------------------------------------------
-    # Calibration state
-    # ------------------------------------------------------------------
-
-    def set_calibrated(
-        self, file_id: str, calibration_hash: str, calibrated_at: int | None = None
-    ) -> None:
-        """Upsert the calibrated edge for a file.
-
-        Args:
-            file_id: Document _id.
-            calibration_hash: Global calibration version hash.
-            calibrated_at: Timestamp in ms (defaults to now).
-        """
-        if calibrated_at is None:
-            calibrated_at = now_ms().value
-        self.db.aql.execute(  # type: ignore[union-attr]
-            """
-            UPSERT { _from: @file_id, _to: @state }
-            INSERT { _from: @file_id, _to: @state, hash: @hash, calibrated_at: @calibrated_at }
-            UPDATE { hash: @hash, calibrated_at: @calibrated_at }
-            IN @@coll
-            """,
-            bind_vars=cast(
-                "dict[str, Any]",
-                {
-                    "file_id": file_id,
-                    "state": _STATE_CALIBRATED,
-                    "hash": calibration_hash,
-                    "calibrated_at": calibrated_at,
-                    "@coll": _EDGE_COLLECTION,
-                },
-            ),
-        )
-
-    def set_calibrated_batch(self, items: list[tuple[str, str]]) -> None:
-        """Upsert calibrated edges for multiple files in a single AQL query.
-
-        Args:
-            items: List of ``(file_id, calibration_hash)`` tuples.
-        """
-        if not items:
-            return
-        ts = now_ms().value
-        docs = [
-            {"_from": file_id, "_to": _STATE_CALIBRATED, "hash": h, "calibrated_at": ts}
-            for file_id, h in items
-        ]
-        self.db.aql.execute(  # type: ignore[union-attr]
-            """
-            FOR doc IN @docs
-                UPSERT { _from: doc._from, _to: doc._to }
-                INSERT doc
-                UPDATE { hash: doc.hash, calibrated_at: doc.calibrated_at }
-                IN @@coll
-            """,
-            bind_vars=cast(
-                "dict[str, Any]",
-                {"docs": docs, "@coll": _EDGE_COLLECTION},
-            ),
-        )
-
-    def clear_calibrated(self, file_id: str) -> None:
-        """Remove the calibrated edge for a file.
-
-        Args:
-            file_id: Document _id.
-        """
-        self.db.aql.execute(  # type: ignore[union-attr]
-            """
-            FOR edge IN @@coll
-                FILTER edge._from == @file_id AND edge._to == @state
-                REMOVE edge IN @@coll
-            """,
-            bind_vars=cast(
-                "dict[str, Any]",
-                {"file_id": file_id, "state": _STATE_CALIBRATED, "@coll": _EDGE_COLLECTION},
-            ),
-        )
-
-    def clear_all_calibrated(self) -> int:
-        """Remove all calibrated edges.
-
-        Used when clearing calibration data to mark all files as needing
-        recalibration.
-
-        Returns:
-            Number of edges removed.
-        """
-        cursor = cast(
-            "Cursor",
-            self.db.aql.execute(  # type: ignore[union-attr]
-                """
-                FOR edge IN @@coll
-                    FILTER edge._to == @state
-                    REMOVE edge IN @@coll
-                    COLLECT WITH COUNT INTO cnt
-                    RETURN cnt
-                """,
-                bind_vars=cast(
-                    "dict[str, Any]",
-                    {"state": _STATE_CALIBRATED, "@coll": _EDGE_COLLECTION},
-                ),
-            ),
-        )
-        return next(cursor, 0)  # type: ignore[arg-type]
-
-    def get_calibration_status_by_library(self, expected_hash: str) -> list[dict[str, Any]]:
-        """Get calibration status counts grouped by library.
-
-        Returns count of files with current calibration hash vs outdated/missing.
-
-        Args:
-            expected_hash: Expected global calibration version hash.
-
-        Returns:
-            List of ``{library_id, total_files, current_count, outdated_count}``.
-        """
-        cursor = cast(
-            "Cursor",
-            self.db.aql.execute(  # type: ignore[union-attr]
-                """
-                FOR file IN library_files
-                    LET cal_edge = FIRST(
-                        FOR edge IN @@coll
-                            FILTER edge._from == file._id AND edge._to == @state
-                            RETURN edge
-                    )
-                    COLLECT lib = file.library_id
-                    AGGREGATE
-                        total = COUNT(1),
-                        current = SUM(cal_edge != null AND cal_edge.hash == @expected_hash ? 1 : 0),
-                        outdated = SUM(cal_edge == null OR cal_edge.hash != @expected_hash ? 1 : 0)
-                    RETURN {
-                        library_id: lib,
-                        total_files: total,
-                        current_count: current,
-                        outdated_count: outdated
-                    }
-                """,
-                bind_vars=cast(
-                    "dict[str, Any]",
-                    {
-                        "state": _STATE_CALIBRATED,
-                        "expected_hash": expected_hash,
-                        "@coll": _EDGE_COLLECTION,
-                    },
-                ),
-            ),
-        )
-        return list(cursor)
-
-    # ------------------------------------------------------------------
-    def get_tagged_paths_needing_calibration(self, calibration_hash: str) -> list[str]:
-        """Get paths of tagged files whose DB mood tags are stale.
-
-        Finds files with an ``ml_tagged`` edge but no ``calibrated`` edge
-        matching the expected hash.
-
-        Args:
-            calibration_hash: The current global calibration version.
-
-        Returns:
-            List of file paths needing mood tag recomputation.
-        """
-        cursor = cast(
-            "Cursor",
-            self.db.aql.execute(  # type: ignore[union-attr]
-                """
-            FOR file IN library_files
-                LET has_tagged = LENGTH(
-                    FOR edge IN @@coll
-                        FILTER edge._from == file._id AND edge._to == @ml_tagged_state
-                        LIMIT 1
-                        RETURN 1
-                )
-                FILTER has_tagged > 0
-                LET cal_edge = FIRST(
-                    FOR edge IN @@coll
-                        FILTER edge._from == file._id AND edge._to == @cal_state
-                        RETURN edge
-                )
-                FILTER cal_edge == null OR cal_edge.hash != @hash
-                RETURN file.path
-            """,
-                bind_vars=cast(
-                    "dict[str, Any]",
-                    {
-                        "@coll": _EDGE_COLLECTION,
-                        "ml_tagged_state": _STATE_ML_TAGGED,
-                        "cal_state": _STATE_CALIBRATED,
-                        "hash": calibration_hash,
-                    },
-                ),
-            ),
-        )
-        return list(cursor)
-
-    # ------------------------------------------------------------------
-    # Reconciliation state
-    # ------------------------------------------------------------------
-
-    def set_reconciled(
-        self,
-        file_id: str,
-        mode: str,
-        calibration_hash: str | None,
-        written_at: int | None = None,
-        has_namespace: bool = False,
-    ) -> None:
-        """Upsert the reconciled edge for a file.
-
-        Args:
-            file_id: Document _id.
-            mode: Write mode used (``none``, ``minimal``, ``full``).
-            calibration_hash: Calibration hash at time of write.
-            written_at: Timestamp in ms (defaults to now).
-            has_namespace: Whether file has essentia:* namespace tags.
-        """
-        if written_at is None:
-            written_at = now_ms().value
-        self.db.aql.execute(  # type: ignore[union-attr]
-            """
-            UPSERT { _from: @file_id, _to: @state }
-            INSERT {
-                _from: @file_id, _to: @state,
-                mode: @mode, calibration_hash: @calibration_hash,
-                written_at: @written_at, has_namespace: @has_namespace
-            }
-            UPDATE {
-                mode: @mode, calibration_hash: @calibration_hash,
-                written_at: @written_at, has_namespace: @has_namespace
-            }
-            IN @@coll
-            """,
-            bind_vars=cast(
-                "dict[str, Any]",
-                {
-                    "file_id": file_id,
-                    "state": _STATE_RECONCILED,
-                    "mode": mode,
-                    "calibration_hash": calibration_hash,
-                    "written_at": written_at,
-                    "has_namespace": has_namespace,
-                    "@coll": _EDGE_COLLECTION,
-                },
-            ),
-        )
-
-    def clear_reconciled(self, file_id: str) -> None:
-        """Remove the reconciled edge for a file.
-
-        Args:
-            file_id: Document _id.
-        """
-        self.db.aql.execute(  # type: ignore[union-attr]
-            """
-            FOR edge IN @@coll
-                FILTER edge._from == @file_id AND edge._to == @state
-                REMOVE edge IN @@coll
-            """,
-            bind_vars=cast(
-                "dict[str, Any]",
-                {"file_id": file_id, "state": _STATE_RECONCILED, "@coll": _EDGE_COLLECTION},
-            ),
-        )
-
-    def get_files_needing_reconciliation(
-        self,
-        library_id: str,
-        target_mode: str,
-        calibration_hash: str | None,
-        batch_size: int = 100,
-    ) -> list[dict[str, Any]]:
-        """Get files that need tag reconciliation.
-
-        A file needs reconciliation when it has an ``ml_tagged`` edge (file has
-        ML tags in the database) AND:
-        - No reconciled edge exists (never written), OR
-        - Edge mode != target_mode, OR
-        - Edge calibration_hash != expected hash (for modes using mood tags)
-
-        Args:
-            library_id: Library document _id.
-            target_mode: Desired write mode.
-            calibration_hash: Current calibration hash (None = ignore hash matching).
-            batch_size: Maximum files to return.
-
-        Returns:
-            List of file dicts (``_id``, ``_key``, ``path``).
-        """
-        # Build hash mismatch clause only when calibration matters
-        hash_clause = ""
-        if calibration_hash is not None:
-            hash_clause = "OR rec_edge.calibration_hash != @calibration_hash"
-
-        query = f"""
-            FOR file IN library_files
-                FILTER file.library_id == @library_id
-                LET has_tagged = LENGTH(
-                    FOR edge IN @@coll
-                        FILTER edge._from == file._id AND edge._to == @ml_tagged_state
-                        LIMIT 1
-                        RETURN 1
-                )
-                FILTER has_tagged > 0
-                LET rec_edge = FIRST(
-                    FOR edge IN @@coll
-                        FILTER edge._from == file._id AND edge._to == @state
-                        RETURN edge
-                )
-                FILTER rec_edge == null
-                    OR rec_edge.mode != @target_mode
-                    {hash_clause}
-                SORT file._key
-                LIMIT @batch_size
-                RETURN {{ _id: file._id, _key: file._key, path: file.path }}
-        """
-        bind_vars: dict[str, Any] = {
-            "library_id": library_id,
-            "ml_tagged_state": _STATE_ML_TAGGED,
-            "state": _STATE_RECONCILED,
-            "target_mode": target_mode,
-            "@coll": _EDGE_COLLECTION,
-            "batch_size": batch_size,
-        }
-        if calibration_hash is not None:
-            bind_vars["calibration_hash"] = calibration_hash
-
-        cursor = cast(
-            "Cursor",
-            self.db.aql.execute(query, bind_vars=cast("dict[str, Any]", bind_vars)),  # type: ignore[union-attr]
-        )
-        return list(cursor)
-
-    def count_files_needing_reconciliation(
-        self,
-        library_id: str,
-        target_mode: str,
-        calibration_hash: str | None,
-    ) -> int:
-        """Count files needing tag reconciliation.
-
-        Same logic as ``get_files_needing_reconciliation`` but returns count only.
-        Only counts files that have an ``ml_tagged`` edge (ML tags exist in DB).
-
-        Args:
-            library_id: Library document _id.
-            target_mode: Desired write mode.
-            calibration_hash: Current calibration hash.
-
-        Returns:
-            Number of files needing reconciliation.
-        """
-        hash_clause = ""
-        if calibration_hash is not None:
-            hash_clause = "OR rec_edge.calibration_hash != @calibration_hash"
-
-        query = f"""
-            FOR file IN library_files
-                FILTER file.library_id == @library_id
-                LET has_tagged = LENGTH(
-                    FOR edge IN @@coll
-                        FILTER edge._from == file._id AND edge._to == @ml_tagged_state
-                        LIMIT 1
-                        RETURN 1
-                )
-                FILTER has_tagged > 0
-                LET rec_edge = FIRST(
-                    FOR edge IN @@coll
-                        FILTER edge._from == file._id AND edge._to == @state
-                        RETURN edge
-                )
-                FILTER rec_edge == null
-                    OR rec_edge.mode != @target_mode
-                    {hash_clause}
-                COLLECT WITH COUNT INTO cnt
-                RETURN cnt
-        """
-        bind_vars: dict[str, Any] = {
-            "library_id": library_id,
-            "ml_tagged_state": _STATE_ML_TAGGED,
-            "state": _STATE_RECONCILED,
-            "target_mode": target_mode,
-            "@coll": _EDGE_COLLECTION,
-        }
-        if calibration_hash is not None:
-            bind_vars["calibration_hash"] = calibration_hash
-
-        cursor = cast(
-            "Cursor",
-            self.db.aql.execute(query, bind_vars=cast("dict[str, Any]", bind_vars)),  # type: ignore[union-attr]
-        )
-        return next(cursor, 0)  # type: ignore[arg-type]
-
-    # ------------------------------------------------------------------
-    # ML tagging discovery
-    # ------------------------------------------------------------------
-
-    def discover_next_untagged_file(
-        self,
-        min_duration_s: int | None = None,
-        allow_short: bool = True,
-    ) -> dict[str, Any] | None:
-        """Find next file needing ML tagging for worker discovery.
-
-        Finds files WITHOUT an ``ml_tagged`` edge and without active
-        ``worker_claims``.  Used by ML workers to claim work.
-
-        Args:
-            min_duration_s: Minimum duration in seconds for ML processing.
-                If provided and *allow_short* is ``False``, files shorter
-                than this are excluded from discovery.
-            allow_short: If ``True``, skip duration filtering.
-
-        Returns:
-            File dict or ``None`` if no work available.
-        """
-        duration_filter = ""
-        bind_vars: dict[str, Any] = {"@coll": _EDGE_COLLECTION, "ml_tagged_state": _STATE_ML_TAGGED}
-        if min_duration_s is not None and not allow_short:
-            duration_filter = (
-                "\n                    FILTER file.duration_seconds == null"
-                " OR file.duration_seconds >= @min_duration_s"
-            )
-            bind_vars["min_duration_s"] = min_duration_s
-
-        query = f"""\
-                FOR file IN library_files{duration_filter}
-                    LET has_tagged = LENGTH(
-                        FOR edge IN @@coll
-                            FILTER edge._from == file._id AND edge._to == @ml_tagged_state
-                            LIMIT 1
-                            RETURN 1
-                    )
-                    FILTER has_tagged == 0
-                    LET claim_key = CONCAT("claim_", file._key)
-                    FILTER DOCUMENT(CONCAT("worker_claims/", claim_key)) == null
-                    SORT file._key
-                    LIMIT 1
-                    RETURN file
-                """
-        logger.debug("[DB] discover_next_untagged_file query: %s", query.strip())
-        cursor = cast(
-            "Cursor",
-            self.db.aql.execute(  # type: ignore[union-attr]
-                query,
-                bind_vars=cast("dict[str, Any]", bind_vars),
-            ),
-        )
-        results = list(cursor)
-        logger.debug("[DB] discover_next_untagged_file raw results count: %d", len(results))
-        result = results[0] if results else None
-        if result:
-            logger.debug("[DB] discover_next_untagged_file: found %s", result.get("_id"))
-        else:
-            if logger.isEnabledFor(logging.DEBUG):
-                self._log_tagging_diagnostics()
-        return result
-
-    def count_untagged_files(self, library_id: int | None = None) -> int:
-        """Count files without an ``ml_tagged`` edge.
-
-        Args:
-            library_id: Optional library ID to scope the count.
-
-        Returns:
-            Number of files missing the ``ml_tagged`` edge.
-        """
-        filter_clause = "FILTER file.library_id == @library_id" if library_id is not None else ""
-        bind_vars: dict[str, Any] = {"@coll": _EDGE_COLLECTION, "ml_tagged_state": _STATE_ML_TAGGED}
-        if library_id is not None:
-            bind_vars["library_id"] = library_id
-
-        cursor = cast(
-            "Cursor",
-            self.db.aql.execute(  # type: ignore[union-attr]
-                f"""
-                FOR file IN library_files
-                    {filter_clause}
-                    LET has_tagged = LENGTH(
-                        FOR edge IN @@coll
-                            FILTER edge._from == file._id AND edge._to == @ml_tagged_state
-                            LIMIT 1
-                            RETURN 1
-                    )
-                    FILTER has_tagged == 0
-                    COLLECT WITH COUNT INTO cnt
-                    RETURN cnt
-                """,
-                bind_vars=cast("dict[str, Any]", bind_vars),
-            ),
-        )
-        return next(cursor, 0)  # type: ignore[arg-type]
-
-    def count_recently_tagged(self, window_seconds: int = 300) -> int:
-        """Count files tagged within a recent time window.
-
-        Queries ``ml_tagged`` edges with ``tagged_at`` attribute within
-        the lookback window.
-
-        Args:
-            window_seconds: Lookback window in seconds (default 300 = 5 minutes).
-
-        Returns:
-            Number of files tagged within the window.
-        """
-        cutoff = now_ms().value - (window_seconds * 1000)
-        cursor = cast(
-            "Cursor",
-            self.db.aql.execute(  # type: ignore[union-attr]
-                """
-                FOR edge IN @@coll
-                    FILTER edge._to == @ml_tagged_state
-                    FILTER edge.tagged_at != null
-                    FILTER edge.tagged_at >= @cutoff
-                    COLLECT WITH COUNT INTO cnt
-                    RETURN cnt
-                """,
-                bind_vars=cast(
-                    "dict[str, Any]",
-                    {
-                        "@coll": _EDGE_COLLECTION,
-                        "ml_tagged_state": _STATE_ML_TAGGED,
-                        "cutoff": cutoff,
-                    },
-                ),
-            ),
-        )
-        return next(cursor, 0)  # type: ignore[arg-type]
-
-    def _log_tagging_diagnostics(self) -> None:
-        """Log diagnostic counts for tagging discovery debugging."""
-        diag = cast(
-            "Cursor",
-            self.db.aql.execute(  # type: ignore[union-attr]
-                """\
-                LET total = LENGTH(FOR f IN library_files RETURN 1)
-                LET untagged = LENGTH(
-                    FOR f IN library_files
-                        LET has_tagged = LENGTH(
-                            FOR edge IN @@coll
-                                FILTER edge._from == f._id AND edge._to == @ml_tagged_state
-                                LIMIT 1
-                                RETURN 1
-                        )
-                        FILTER has_tagged == 0
-                        RETURN 1
-                )
-                LET unclaimed = LENGTH(
-                    FOR f IN library_files
-                        LET has_tagged = LENGTH(
-                            FOR edge IN @@coll
-                                FILTER edge._from == f._id AND edge._to == @ml_tagged_state
-                                LIMIT 1
-                                RETURN 1
-                        )
-                        FILTER has_tagged == 0
-                        LET claim_key = CONCAT("claim_", f._key)
-                        FILTER DOCUMENT(CONCAT("worker_claims/", claim_key)) == null
-                        RETURN 1
-                )
-                RETURN {total, untagged, unclaimed}
-                """,
-                bind_vars=cast(
-                    "dict[str, Any]",
-                    {"@coll": _EDGE_COLLECTION, "ml_tagged_state": _STATE_ML_TAGGED},
-                ),
-            ),
-        )
-        diag_result: dict[str, Any] = next(iter(diag), {})
-        logger.debug(
-            "[DB] discover_next_untagged_file: no files found. "
-            "Diagnostics: total=%s, untagged=%s, unclaimed=%s",
-            diag_result.get("total"),
-            diag_result.get("untagged"),
-            diag_result.get("unclaimed"),
-        )
-
-    # ------------------------------------------------------------------
-    # Cross-state utilities
-    # ------------------------------------------------------------------
-
-    def clear_all_states(self, file_id: str) -> int:
-        """Remove all state edges for a file (e.g., on file deletion).
-
-        Args:
-            file_id: Document _id.
-
-        Returns:
-            Number of edges removed.
-        """
-        cursor = cast(
-            "Cursor",
-            self.db.aql.execute(  # type: ignore[union-attr]
-                """
-                FOR edge IN @@coll
-                    FILTER edge._from == @file_id
-                    REMOVE edge IN @@coll
-                    COLLECT WITH COUNT INTO cnt
-                    RETURN cnt
-                """,
-                bind_vars=cast(
-                    "dict[str, Any]",
-                    {"file_id": file_id, "@coll": _EDGE_COLLECTION},
-                ),
-            ),
-        )
-        return next(cursor, 0)  # type: ignore[arg-type]
-
-
-    def clear_all_states_batch(self, file_ids: list[str]) -> int:
-        """Remove all state edges for a batch of files.
-
-        Used during bulk file deletion to cascade edge cleanup.
-
-        Args:
-            file_ids: List of document _id values.
-
-        Returns:
-            Number of edges removed.
-        """
-        if not file_ids:
-            return 0
-        cursor = cast(
-            "Cursor",
-            self.db.aql.execute(  # type: ignore[union-attr]
-                """
-                FOR edge IN @@coll
-                    FILTER edge._from IN @file_ids
-                    REMOVE edge IN @@coll
-                    COLLECT WITH COUNT INTO cnt
-                    RETURN cnt
-                """,
-                bind_vars=cast(
-                    "dict[str, Any]",
-                    {"file_ids": file_ids, "@coll": _EDGE_COLLECTION},
-                ),
-            ),
-        )
-        return next(cursor, 0)  # type: ignore[arg-type]
-
-    # ------------------------------------------------------------------
-    # Batch ML Tagged operations
-    # ------------------------------------------------------------------
-
-    def clear_ml_tagged_batch(self, file_ids: list[str]) -> int:
-        """Remove ml_tagged edges for multiple files in one query.
-
-        Marks all listed files as needing re-tagging by removing their
-        ``ml_tagged`` edges.
-
-        Args:
-            file_ids: List of document ``_id`` values.
-
-        Returns:
-            Number of edges removed.
-        """
-        if not file_ids:
-            return 0
-        cursor = cast(
-            "Cursor",
-            self.db.aql.execute(  # type: ignore[union-attr]
-                """
-                FOR edge IN @@coll
-                    FILTER edge._from IN @file_ids AND edge._to == @state
-                    REMOVE edge IN @@coll
-                    COLLECT WITH COUNT INTO cnt
-                    RETURN cnt
-                """,
-                bind_vars=cast(
-                    "dict[str, Any]",
-                    {
-                        "file_ids": file_ids,
-                        "state": _STATE_ML_TAGGED,
-                        "@coll": _EDGE_COLLECTION,
-                    },
-                ),
-            ),
-        )
-        return next(cursor, 0)  # type: ignore[arg-type]
-
-    # ------------------------------------------------------------------
-    # Tag completeness validation
-    # ------------------------------------------------------------------
-
     def get_files_with_incomplete_tags(
         self,
         expected_heads: list[dict[str, Any]],
         namespace_prefix: str,
         library_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Find ml_tagged files whose tag edges are incomplete.
+        """Find tagged files whose tag edges are incomplete.
 
-        For each file with an ``ml_tagged`` edge, checks whether it has at
+        For each file with a ``tagged`` edge, checks whether it has at
         least one ``song_has_tags`` edge per expected head (model_key + label)
         under the given namespace prefix.
 
@@ -943,7 +740,7 @@ class FileStatesOperations:
         query = f"""
         LET expected = @expected_heads
         FOR edge IN file_has_state
-          FILTER edge._to == "file_states/ml_tagged"
+          FILTER edge._to == "file_states/tagged"
           LET file = DOCUMENT(edge._from)
           FILTER file != null
           {library_filter}
@@ -984,3 +781,110 @@ class FileStatesOperations:
             ),
         )
         return list(cursor)
+
+    # ------------------------------------------------------------------
+    # Batch operations
+    # ------------------------------------------------------------------
+
+    def clear_tagged_batch(self, file_ids: list[str]) -> int:
+        """Remove tagged edges and insert not_tagged edges for multiple files.
+
+        Marks all listed files as needing re-tagging by removing their
+        ``tagged`` edges and inserting ``not_tagged`` counterparts.
+
+        Args:
+            file_ids: List of document ``_id`` values.
+
+        Returns:
+            Number of files processed.
+        """
+        if not file_ids:
+            return 0
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(  # type: ignore[union-attr]
+                """
+                FOR edge IN @@coll
+                    FILTER edge._from IN @file_ids AND edge._to == @tagged
+                    REMOVE edge IN @@coll
+
+                FOR fid IN @file_ids
+                    INSERT { _from: fid, _to: @not_tagged } INTO @@coll
+                    OPTIONS { ignoreErrors: true }
+
+                RETURN LENGTH(@file_ids)
+                """,
+                bind_vars=cast(
+                    "dict[str, Any]",
+                    {
+                        "file_ids": file_ids,
+                        "tagged": STATE_TAGGED,
+                        "not_tagged": STATE_NOT_TAGGED,
+                        "@coll": _EDGE_COLLECTION,
+                    },
+                ),
+            ),
+        )
+        return next(cursor, 0)  # type: ignore[arg-type]
+
+    # ------------------------------------------------------------------
+    # Cross-state utilities
+    # ------------------------------------------------------------------
+
+    def clear_all_states(self, file_id: str) -> int:
+        """Remove all state edges for a file (e.g., on file deletion).
+
+        Args:
+            file_id: Document _id.
+
+        Returns:
+            Number of edges removed.
+        """
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(  # type: ignore[union-attr]
+                """
+                FOR edge IN @@coll
+                    FILTER edge._from == @file_id
+                    REMOVE edge IN @@coll
+                    COLLECT WITH COUNT INTO cnt
+                    RETURN cnt
+                """,
+                bind_vars=cast(
+                    "dict[str, Any]",
+                    {"file_id": file_id, "@coll": _EDGE_COLLECTION},
+                ),
+            ),
+        )
+        return next(cursor, 0)  # type: ignore[arg-type]
+
+    def clear_all_states_batch(self, file_ids: list[str]) -> int:
+        """Remove all state edges for a batch of files.
+
+        Used during bulk file deletion to cascade edge cleanup.
+
+        Args:
+            file_ids: List of document _id values.
+
+        Returns:
+            Number of edges removed.
+        """
+        if not file_ids:
+            return 0
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(  # type: ignore[union-attr]
+                """
+                FOR edge IN @@coll
+                    FILTER edge._from IN @file_ids
+                    REMOVE edge IN @@coll
+                    COLLECT WITH COUNT INTO cnt
+                    RETURN cnt
+                """,
+                bind_vars=cast(
+                    "dict[str, Any]",
+                    {"file_ids": file_ids, "@coll": _EDGE_COLLECTION},
+                ),
+            ),
+        )
+        return next(cursor, 0)  # type: ignore[arg-type]

@@ -138,8 +138,45 @@ def list_project_directory_tree(folder: str = "", *, workspace_root: Path) -> di
         target = workspace_root
 
     if not target.exists():
-        msg = f"Folder not found: {folder or '.'}"
-        raise FileNotFoundError(msg)
+        if not folder:
+            msg = f"Folder not found: {folder or '.'}"
+            raise FileNotFoundError(msg)
+        # Walk up to find the deepest existing ancestor
+        resolved_target = None
+        candidate = target.parent
+        while True:
+            try:
+                candidate.relative_to(workspace_root)
+            except ValueError:
+                break
+            if candidate.exists() and candidate.is_dir() and not should_exclude(candidate):
+                resolved_target = candidate
+                break
+            if candidate == workspace_root:
+                break
+            candidate = candidate.parent
+        if resolved_target is None:
+            # Fall back to workspace root
+            resolved_target = workspace_root
+        try:
+            resolved_relative = str(resolved_target.relative_to(workspace_root)).replace("\\", "/")
+        except ValueError:
+            resolved_relative = "."
+        if resolved_relative == ".":
+            resolved_relative = "."
+
+        tree = build_tree(resolved_target, max_depth=3, show_files_at_root_only=False)
+        return {
+            "error": f"NOT FOUND: '{folder}' does not exist.",
+            "resolved_path": resolved_relative,
+            "requested_path": folder,
+            "structure": tree,
+            "note": (
+                f"The requested folder was not found. The output below shows "
+                f"the nearest existing parent directory ('{resolved_relative}') "
+                f"to help you find the correct path."
+            ),
+        }
 
     if not target.is_dir():
         msg = f"Not a directory: {folder}"
@@ -171,15 +208,5 @@ def list_project_directory_tree(folder: str = "", *, workspace_root: Path) -> di
     result: dict[str, Any] = {"path": folder or ".", "structure": tree}
     if note:
         result["note"] = note
-
-    return result
-
-    # Return structured dict
-    result = {"path": folder or ".", "structure": tree}
-    if show_files_at_root_only:
-        result["note"] = (
-            "Files shown at root level only. Subdirectories show folder structure only. "
-            "Use folder parameter to see files in specific directories."
-        )
 
     return result

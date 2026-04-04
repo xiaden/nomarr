@@ -97,8 +97,7 @@ def _tokenize_parentheses(
     for i, char in enumerate(query):
         if char == "(":
             depth += 1
-            if depth > max_seen_depth:
-                max_seen_depth = depth
+            max_seen_depth = max(max_seen_depth, depth)
             if depth > max_depth:
                 msg = f"Query nesting depth {depth} exceeds maximum of {max_depth}"
                 raise PlaylistQueryError(msg)

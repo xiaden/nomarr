@@ -182,13 +182,6 @@ def release_file_claim(
 def mark_file_written(
     db: Database,
     file_key: str,
-    *,
-    mode: str,
-    calibration_hash: str | None,
 ) -> None:
     """Record that tags were successfully written to *file_key*."""
-    db.library_files.set_file_written(
-        file_key,
-        mode=mode,
-        calibration_hash=calibration_hash,
-    )
+    db.library_files.set_file_written(file_key)

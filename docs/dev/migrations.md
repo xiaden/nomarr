@@ -206,6 +206,53 @@ All operations should be idempotent — guard creation with existence checks and
    before services are initialized. Only import from `nomarr.persistence` and
    `nomarr.helpers` if needed.
 
+### AQL Safety Rules
+
+These rules were learned from production migration failures (V021/V022 fix cycles). Violating them produces errors that only manifest on databases with existing data — they pass on fresh installs.
+
+1. **Never read and write the same collection in a single AQL statement** (beyond the document being modified). ArangoDB raises `ERR 1579` ("access after data-modification") when a query reads a collection that was already modified by an earlier operation in the same statement. The simple `FOR doc IN X UPDATE doc IN X` pattern is safe, but any cross-operation read (subqueries, LET lookups after INSERT/REMOVE) is not.
+
+   Split into sequential Python calls — first a read-only query to collect data into a Python variable, then a write-only query using bind vars:
+   ```python
+   # WRONG — reads library_files after INSERT into library_files
+   db.aql.execute("""
+       FOR doc IN source_collection
+           INSERT { ... } INTO library_files
+           LET existing = (FOR f IN library_files FILTER f.path == doc.path RETURN f)
+           ...
+   """)
+
+   # RIGHT — separate read and write phases
+   cursor = db.aql.execute("FOR doc IN source_collection RETURN doc")
+   rows = [doc for doc in cursor]
+   for batch in chunked(rows, 1000):
+       db.aql.execute("FOR item IN @batch INSERT item INTO library_files", bind_vars={"batch": batch})
+   ```
+
+2. **Drop conflicting indexes BEFORE any UPDATE/UPSERT that changes indexed fields.** If a unique index exists on fields being nullified or modified, the UPDATE will hit `ERR 1210` (unique constraint violated) when two documents collapse to the same indexed values (e.g., multiple documents with `field: null`).
+
+   Use a broad match — drop any index where the modified field appears in the fields array, not just exact field-list matches. This future-proofs against compound indexes you don't know about:
+   ```python
+   for idx in coll.indexes():
+       if idx.get("type") == "persistent" and "field_name" in (idx.get("fields") or []):
+           coll.delete_index(idx["id"])
+   ```
+
+3. **`ensure_schema` does NOT run on existing databases (ADR-016).** The frozen baseline is a no-op when collections already exist. Migrations cannot rely on `ensure_schema` to repair partial failures or create missing indexes. Each migration must be self-contained and handle its own collection/index creation if needed.
+
+4. **Guard against empty collections on fresh databases.** Migrations run on both existing databases (with data) and fresh databases (empty collections after `ensure_schema`). Every AQL query should handle empty result sets gracefully — don't assume documents exist. Use `FILTER != null` guards and test both paths.
+
+5. **Never UPSERT with user-generated or external data as `_key`.** ArangoDB `_key` has strict character restrictions (no `/`, `?`, `#`, etc.). If source data may contain these characters, use a different field for lookup and let ArangoDB auto-generate `_key`:
+   ```python
+   # WRONG — path may contain forbidden characters
+   db.aql.execute('UPSERT { _key: @path } INSERT { ... } UPDATE { ... } IN files', bind_vars={"path": path})
+
+   # RIGHT — use a non-key field for matching
+   db.aql.execute('UPSERT { path: @path } INSERT { ... } UPDATE { ... } IN files', bind_vars={"path": path})
+   ```
+
+6. **Test migrations against both fresh and populated databases.** The same migration can succeed on one and fail on the other — `ERR 1579` only fires when the collection has data, unique constraint violations only fire when duplicates exist. Always test both paths before merging.
+
 ## Schema Consolidation
 
 When the migration chain grows long, consolidate:
@@ -300,3 +347,36 @@ Fix the migration code and restart.
 This means `ensure_schema()` is out of date relative to the migrations. If you're
 post-consolidation, this shouldn't happen. If it does, run the consolidation script
 to re-sync the baseline.
+
+## Migration History
+
+### V021_schema_refactor_v1 — FK-to-Edge Schema Refactor
+
+Major schema refactor converting foreign key properties to edge collections for graph-native traversal.
+
+**Edge collections created:**
+
+- `library_contains_file` — library → file relationship
+- `library_has_scan` — library → scan state (separated from libraries)
+- `model_has_output` — ML model → output relationship
+- `model_has_calibration` — ML model → calibration state relationship
+- `file_has_vectors` — file → vector storage relationship
+- `file_has_segment_stats` — file → segment statistics relationship
+
+**Data migrations:**
+
+- Populates all edge collections from existing FK properties
+- Uses `OPTIONS { ignoreErrors: true }` for idempotent edge creation
+
+**FK fields dropped after edge migration:**
+
+- `library_id` (from library_files, library_scans)
+- `model_key` (from ml_model_outputs, calibration_states)
+- `file_id` (from vectors_track_hot, vectors_track_cold, segment_scores_stats)
+
+**Additional changes:**
+
+- Creates unified `locks` collection (consolidates ml_capacity_probe_locks + vector_promotion_locks)
+- Updates graphs: `LibraryGraph`, `MLGraph`, `FileArtifactsGraph`
+
+**Idempotency:** Fully idempotent via `IF NOT EXISTS`, `FILTER != null` guards, and `ignoreErrors` options.

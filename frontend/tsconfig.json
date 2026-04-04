@@ -14,19 +14,9 @@
     "noImplicitOverride": true,
     "noFallthroughCasesInSwitch": true,
     "jsx": "react-jsx",
-    "baseUrl": "src",
     "paths": {
-      "@features/*": [
-        "features/*"
-      ],
       "@shared/*": [
-        "shared/*"
-      ],
-      "@components/*": [
-        "components/*"
-      ],
-      "@hooks/*": [
-        "hooks/*"
+        "./src/shared/*"
       ]
     }
   }

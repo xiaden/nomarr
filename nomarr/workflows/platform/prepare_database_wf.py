@@ -8,7 +8,7 @@ Called once from Application.__init__ before service initialization.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from nomarr.components.platform.arango_bootstrap_comp import ensure_schema
 from nomarr.components.platform.migration_runner_comp import (
@@ -26,6 +26,28 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _is_fresh_database(raw_db: Any) -> bool:
+    """Check if this is a fresh database with no schema version.
+
+    A fresh database has either no ``meta`` collection at all, or a ``meta``
+    collection with no version entry. Either case means ``ensure_schema``
+    must run to bootstrap the baseline schema before migrations execute.
+
+    Args:
+        raw_db: Raw ArangoDB database handle (``db.db``).
+
+    Returns:
+        True if this is a fresh (uninitialized) database.
+
+    """
+    if not raw_db.has_collection("meta"):
+        return True
+    cursor = raw_db.aql.execute(
+        "FOR doc IN meta FILTER doc.key == 'version' LIMIT 1 RETURN doc.value"
+    )
+    return next(cursor, None) is None
+
+
 def prepare_database_workflow(
     db: Database,
     *,
@@ -34,7 +56,7 @@ def prepare_database_workflow(
     """Prepare the database for application startup.
 
     Runs the full startup sequence:
-    1. Ensure schema (collections, indexes, graphs)
+    1. Ensure schema (collections, indexes, graphs) — only on fresh databases
     2. Discover and apply pending migrations
     3. Register ML models and seed known labels
 
@@ -46,8 +68,14 @@ def prepare_database_workflow(
         SystemExit: If any step fails. Startup is fail-fast.
 
     """
-    # Step 1: Ensure schema (collections, indexes, graphs) - always idempotent
-    ensure_schema(db.db, models_dir=models_dir)
+    # Step 1: Bootstrap schema only on fresh databases.
+    # ensure_schema is a frozen baseline — running it on existing databases
+    # would recreate indexes that migrations have intentionally dropped.
+    if _is_fresh_database(db.db):
+        logger.info("Fresh database detected — bootstrapping schema")
+        ensure_schema(db.db, models_dir=models_dir)
+    else:
+        logger.info("Existing database detected — skipping schema bootstrap")
 
     # Step 2: Run all pending migrations (owns version read/compare/apply cycle)
     try:

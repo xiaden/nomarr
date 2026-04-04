@@ -24,11 +24,10 @@ logger = logging.getLogger(__name__)
 def save_calibration_state(
     db: Database,
     *,
-    model_key: str,
+    model_id: str,
     head_name: str,
     label: str,
     calibration_def_hash: str,
-    version: int,
     histogram_spec: dict[str, Any],
     p5: float,
     p95: float,
@@ -37,13 +36,28 @@ def save_calibration_state(
     overflow_count: int,
     histogram_bins: list[dict[str, Any]] | None = None,
 ) -> None:
-    """Persist a single label's calibration state (upsert)."""
+    """Persist a single label's calibration state (upsert).
+
+    Args:
+        db: Database instance
+        model_id: ArangoDB ``_id`` of the parent model vertex
+        head_name: Head name (e.g., "mood_happy")
+        label: Label to calibrate (e.g., "happy")
+        calibration_def_hash: MD5 hash of calibration definition
+        histogram_spec: Histogram parameters {lo, hi, bins, bin_width}
+        p5: 5th percentile value
+        p95: 95th percentile value
+        sample_count: Total samples in histogram
+        underflow_count: Samples below lo
+        overflow_count: Samples above hi
+        histogram_bins: Sparse histogram bins
+
+    """
     db.calibration_state.upsert_calibration_state(
-        model_key=model_key,
+        model_id=model_id,
         head_name=head_name,
         label=label,
         calibration_def_hash=calibration_def_hash,
-        version=version,
         histogram_spec=histogram_spec,
         p5=p5,
         p95=p95,
@@ -89,25 +103,24 @@ def set_calibration_last_run(db: Database, timestamp: str) -> None:
 def update_file_calibration_hash(
     db: Database,
     file_id: str,
-    calibration_hash: str,
 ) -> None:
-    """Set the ``calibration_hash`` field on a single library file."""
-    db.library_files.update_calibration_hash(file_id, calibration_hash)
+    """Mark a single library file as calibrated."""
+    db.file_states.set_calibrated(file_id)
 
 
 def update_file_calibration_hashes_batch(
     db: Database,
-    items: list[tuple[str, str]],
+    file_ids: list[str],
 ) -> None:
-    """Set ``calibration_hash`` for multiple library files in one AQL query.
+    """Mark multiple library files as calibrated.
 
     Args:
         db: Database instance
-        items: List of (file_id, calibration_hash) tuples.
-               file_id is the full _id (e.g. "library_files/abc123").
+        file_ids: List of file _id values (e.g. "library_files/abc123").
 
     """
-    db.library_files.update_calibration_hashes_batch(items)
+    for file_id in file_ids:
+        db.file_states.set_calibrated(file_id)
 
 
 # ---------------------------------------------------------------------------
@@ -178,18 +191,18 @@ def compute_reconciliation_info(
         return {"requires_reconciliation": False, "affected_libraries": []}
 
     # Get calibration status by library
-    calibration_status = db.library_files.get_calibration_status_by_library(global_version)
+    calibration_status = db.file_states.get_calibration_status_by_library()
 
     affected_libraries = []
     for status in calibration_status:
         library_id = status["library_id"]
-        if library_id in writable_libraries and status["outdated_count"] > 0:
+        if library_id in writable_libraries and status["not_calibrated_count"] > 0:
             lib = writable_libraries[library_id]
             affected_libraries.append(
                 {
                     "library_id": library_id,
                     "name": lib.get("name", "Unknown"),
-                    "outdated_files": status["outdated_count"],
+                    "outdated_files": status["not_calibrated_count"],
                     "file_write_mode": lib.get("file_write_mode"),
                 }
             )
@@ -223,7 +236,8 @@ def clear_all_calibration_data(db: Database) -> dict[str, int]:
             db.meta.delete(key)
             meta_keys_cleared += 1
 
-    # Null out calibration hashes on library files
-    files_updated = db.library_files.clear_all_calibration_hashes()
+    # Mark all files as not calibrated and not vectors extracted
+    files_updated = db.file_states.bulk_set_not_calibrated()
+    db.file_states.bulk_set_not_vectors_extracted()
 
     return {"files_updated": files_updated, "meta_keys_cleared": meta_keys_cleared}

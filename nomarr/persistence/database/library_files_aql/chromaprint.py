@@ -17,38 +17,39 @@ class LibraryFilesChromaprintMixin:
     collection: Any
     parent_db: "Database | None"
 
-    def get_files_by_chromaprint(self, chromaprint: str, library_id: int | None = None) -> list[dict[str, Any]]:
+    def get_files_by_chromaprint(
+        self, chromaprint: str, library_id: str | None = None
+    ) -> list[dict[str, Any]]:
         """Get library files matching a chromaprint (for move detection).
+
+        Uses ``library_contains_file`` edge traversal when scoped to a library.
+        Uses ``collection.find()`` for global search (no AQL needed).
 
         Args:
             chromaprint: Audio fingerprint hash to search for
-            library_id: Optional library ID to restrict search
+            library_id: Optional library document ``_id`` to restrict search
 
         Returns:
             List of file dicts with matching chromaprint
 
         """
-        filters = ["file.chromaprint == @chromaprint"]
-        bind_vars: dict[str, Any] = {"chromaprint": chromaprint}
-
         if library_id is not None:
-            filters.append("file.library_id == @library_id")
-            bind_vars["library_id"] = library_id
+            # Edge traversal requires AQL — no python-arango API equivalent
+            cursor = cast(
+                "Cursor",
+                self.db.aql.execute(
+                    """
+                    FOR file IN OUTBOUND @library_id library_contains_file
+                        FILTER file.chromaprint == @chromaprint
+                        RETURN file
+                    """,
+                    bind_vars={"library_id": library_id, "chromaprint": chromaprint},
+                ),
+            )
+            return list(cursor)
 
-        filter_clause = " AND ".join(filters)
-
-        cursor = cast(
-            "Cursor",
-            self.db.aql.execute(
-                f"""
-            FOR file IN library_files
-                FILTER {filter_clause}
-                RETURN file
-            """,
-                bind_vars=bind_vars,
-            ),
-        )
-        return list(cursor)
+        # Simple equality filter — use python-arango API, no AQL
+        return list(self.collection.find({"chromaprint": chromaprint}))
 
     def set_chromaprint(self, file_id: str, chromaprint: str) -> None:
         """Set chromaprint for a file.
@@ -58,11 +59,5 @@ class LibraryFilesChromaprintMixin:
             chromaprint: Audio fingerprint hash
 
         """
-        self.db.aql.execute(
-            """
-            UPDATE PARSE_IDENTIFIER(@file_id).key WITH {
-                chromaprint: @chromaprint
-            } IN library_files
-            """,
-            bind_vars={"file_id": file_id, "chromaprint": chromaprint},
-        )
+        doc_key = file_id.split("/", 1)[1] if "/" in file_id else file_id
+        self.collection.update({"_key": doc_key, "chromaprint": chromaprint})

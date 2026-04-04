@@ -19,6 +19,8 @@ AQL query modules providing typed operations for every ArangoDB collection in No
 | `health_aql.py` | `HealthOperations` — component health, heartbeats, restart tracking |
 | `libraries_aql.py` | `LibrariesOperations` — library CRUD, scan status, file watchers |
 | `library_folders_aql.py` | `LibraryFoldersOperations` — folder-level scan cache |
+| `library_scans_aql.py` | `LibraryScansOperations` — separated scan state (V021) |
+| `locks_aql.py` | `LocksOperations` — unified locking (capacity probes, vector promotion) |
 | `meta_aql.py` | `MetaOperations` — key-value configuration store, GPU snapshots |
 | `migrations_aql.py` | `MigrationOperations` — applied migration tracking, crash recovery |
 | `ml_capacity_aql.py` | `MLCapacityOperations` — VRAM probe locks and capacity estimates |
@@ -29,7 +31,6 @@ AQL query modules providing typed operations for every ArangoDB collection in No
 | `segment_scores_stats_aql.py` | `SegmentScoresStatsOperations` — per-head segment-level statistics |
 | `sessions_aql.py` | `SessionOperations` — session CRUD with TTL auto-expiry |
 | `tag_model_output_aql.py` | `TagModelOutputOperations` — tag → ML output provenance edges |
-| `vector_promotion_lock_aql.py` | `VectorPromotionLockOperations` — exclusive hot→cold promotion leases |
 | `vectors_track_aql.py` | `VectorsTrackHotOperations` / `VectorsTrackColdOperations` — hot/cold vector storage and ANN search |
 | `vram_promises_aql.py` | `VramPromisesOperations` — fleet-wide GPU VRAM placement coordination |
 | `worker_claims_aql.py` | `WorkerClaimsOperations` — file processing claim locks |
@@ -52,3 +53,58 @@ AQL query modules providing typed operations for every ArangoDB collection in No
 ## Access Rule
 
 **Only components may import these modules.** Services, workflows, interfaces, and helpers must not import from `persistence/database/` directly. All database access flows through components.
+
+## Graph Traversal Patterns
+
+After V021, FK properties are replaced by edge traversals. Use these AQL patterns:
+
+### File → Library
+
+```aql
+FOR lib IN INBOUND @file_id library_contains_file
+    RETURN lib
+```
+
+### Library → Files
+
+```aql
+FOR file IN OUTBOUND @library_id library_contains_file
+    RETURN file
+```
+
+### Model → Outputs
+
+```aql
+FOR output IN OUTBOUND @model_id model_has_output
+    RETURN output
+```
+
+### Model → Calibration States
+
+```aql
+FOR state IN OUTBOUND @model_id model_has_calibration
+    RETURN state
+```
+
+### File → Vectors
+
+```aql
+FOR vec IN OUTBOUND @file_id file_has_vectors
+    RETURN vec
+```
+
+### File → Segment Stats
+
+```aql
+FOR stats IN OUTBOUND @file_id file_has_segment_stats
+    RETURN stats
+```
+
+### Library → Scans
+
+```aql
+FOR scan IN OUTBOUND @library_id library_has_scan
+    RETURN scan
+```
+
+**Key principle:** Edge traversals replace direct FK property access. This enables graph-native queries and proper referential integrity.

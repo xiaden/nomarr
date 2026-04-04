@@ -11,9 +11,11 @@ from nomarr.helpers.dto.library_dto import SearchFilesQuery
 from nomarr.helpers.exceptions import LibraryAlreadyScanningError, LibraryNotFoundError
 from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
-from nomarr.interfaces.api.id_codec import decode_path_id
+from nomarr.interfaces.api.id_codec import decode_path_id, encode_id
 from nomarr.interfaces.api.types.library_types import (
     CreateLibraryRequest,
+    ErroredFileItemResponse,
+    ErroredFilesResponse,
     FileTagsResponse,
     LibraryResponse,
     LibraryStatsResponse,
@@ -21,6 +23,8 @@ from nomarr.interfaces.api.types.library_types import (
     ReconcilePathsResponse,
     ReconcileStatusResponse,
     ReconcileTagsResponse,
+    RetryErroredRequest,
+    RetryErroredResponse,
     SearchFilesResponse,
     StartScanWithStatusResponse,
     TagCleanupResponse,
@@ -50,8 +54,6 @@ if TYPE_CHECKING:
     from nomarr.services.infrastructure.config_svc import ConfigService
     from nomarr.services.infrastructure.ml_svc import MLService
 router = APIRouter(prefix="/libraries", tags=["Library"])
-
-
 
 
 class VectorConfigResponse(BaseModel):
@@ -142,18 +144,15 @@ async def web_library_recent_activity(
     """
     try:
         decoded_library_id = decode_path_id(library_id) if library_id else None
-        files = library_service.get_recently_processed(
-            limit=limit, library_id=decoded_library_id
-        )
-        return RecentFilesResponse(
-            files=[RecentFileItem(**f) for f in files]
-        )
+        files = library_service.get_recently_processed(limit=limit, library_id=decoded_library_id)
+        return RecentFilesResponse(files=[RecentFileItem(**f) for f in files])
     except Exception as e:
         logger.exception("[Web API] Error getting recent activity")
         raise HTTPException(
             status_code=500,
             detail=sanitize_exception_message(e, "Failed to get recent activity"),
         ) from e
+
 
 @router.get("/{library_id}", dependencies=[Depends(verify_session)])
 async def get_library(
@@ -594,9 +593,7 @@ async def reconcile_library_paths(
     """
     library_id = decode_path_id(library_id)
     try:
-        stats = await asyncio.to_thread(
-            library_service.reconcile_library_paths, policy=policy, batch_size=batch_size
-        )
+        stats = await asyncio.to_thread(library_service.reconcile_library_paths, policy=policy, batch_size=batch_size)
         return ReconcilePathsResponse.from_dict(stats)
     except ValueError as e:
         error_message = str(e).lower()
@@ -713,6 +710,7 @@ async def update_write_mode(
         raise HTTPException(status_code=400, detail="file_write_mode must be 'none', 'minimal', or 'full'")
     try:
         library_service.update_library(library_id, file_write_mode=file_write_mode)
+        tagging_service.mark_tags_stale(library_id)
         status = tagging_service.get_reconcile_status(library_id=library_id)
         return UpdateWriteModeResponse(
             file_write_mode=file_write_mode,
@@ -879,3 +877,75 @@ async def get_library_vector_stats(
     return LibraryVectorStatsResponse(library_key=library_key, stats=stats)
 
 
+@router.get("/{library_id}/errored-files", dependencies=[Depends(verify_session)])
+async def get_errored_files(
+    library_id: str,
+    library_service: "LibraryService" = Depends(get_library_service),
+) -> ErroredFilesResponse:
+    """Get errored files for a library.
+
+    Returns files that failed ML processing and are currently in the errored state.
+
+    Args:
+        library_id: Library ID to query
+        library_service: LibraryService instance (injected)
+
+    Returns:
+        ErroredFilesResponse with list of errored files and total count
+
+    """
+    library_id = decode_path_id(library_id)
+    try:
+        result = library_service.get_errored_files(library_id=library_id)
+        return ErroredFilesResponse(
+            files=[
+                ErroredFileItemResponse(
+                    file_id=encode_id(f["_id"]),
+                    path=f["path"],
+                    duration_seconds=f["duration_seconds"],
+                    artist=f["artist"],
+                    title=f["title"],
+                )
+                for f in result["files"]
+            ],
+            total=result["total"],
+        )
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Library not found") from None
+    except Exception as e:
+        logger.exception(f"[Web API] Error getting errored files for library {library_id}")
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get errored files")) from e
+
+
+@router.post("/{library_id}/retry-errored", dependencies=[Depends(verify_session)])
+async def retry_errored_files(
+    library_id: str,
+    request: RetryErroredRequest | None = None,
+    library_service: "LibraryService" = Depends(get_library_service),
+) -> RetryErroredResponse:
+    """Retry errored files by clearing their errored state and re-queuing for tagging.
+
+    Optionally accepts a list of file IDs to retry selectively. If no file IDs
+    are provided, all errored files in the library are retried.
+
+    Args:
+        library_id: Library ID to retry errored files for
+        request: Optional request body with file_ids to retry selectively
+        library_service: LibraryService instance (injected)
+
+    Returns:
+        RetryErroredResponse with count of retried files
+
+    """
+    library_id = decode_path_id(library_id)
+    file_ids = [decode_path_id(fid) for fid in request.file_ids] if request and request.file_ids else None
+    try:
+        result = library_service.retry_errored_files(library_id=library_id, file_ids=file_ids)
+        return RetryErroredResponse(retried=result["retried"])
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Library not found") from None
+    except Exception as e:
+        logger.exception(f"[Web API] Error retrying errored files for library {library_id}")
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Failed to retry errored files")
+        ) from e

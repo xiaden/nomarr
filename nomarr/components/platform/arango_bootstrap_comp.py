@@ -60,8 +60,6 @@ def wait_for_arango(hosts: str, max_attempts: int = 30, delay_s: float = 2.0) ->
     return False
 
 
-
-
 def ensure_schema(db: DatabaseLike, *, models_dir: str | None = None) -> None:
     """Ensure all collections, indexes, and graphs exist (frozen baseline).
 
@@ -86,7 +84,6 @@ def ensure_schema(db: DatabaseLike, *, models_dir: str | None = None) -> None:
         _create_vectors_track_collections(db, models_dir)
 
 
-
 def _create_collections(db: DatabaseLike) -> None:
     """Create document and edge collections."""
     # Document collections
@@ -103,7 +100,7 @@ def _create_collections(db: DatabaseLike) -> None:
         "worker_claims",  # Discovery worker claims (Phase 2)
         # ML capacity probe collections (GPU/CPU adaptive resource management)
         "ml_capacity_estimates",  # Stores probe results per model_set_hash
-        "ml_capacity_probe_locks",  # Prevents concurrent probes
+        "locks",  # Unified lock system (capacity_probe, vector_promotion, etc.)
         "worker_restart_policy",  # Worker restart state persistence
         # Segment-level ML statistics (per-label aggregates from head predictions)
         "segment_scores_stats",
@@ -120,8 +117,6 @@ def _create_collections(db: DatabaseLike) -> None:
         # Navidrome graph model — track identity and user play counts
         "navidrome_tracks",
         "navidrome_playcounts",
-        # Vector promotion coordination lock (V019)
-        "vector_promotion_locks",
     ]
 
     for collection_name in document_collections:
@@ -150,17 +145,16 @@ def _create_collections(db: DatabaseLike) -> None:
 
 
 def _seed_file_states(db: DatabaseLike) -> None:
-    """Ensure fixed file_states vertex documents exist.
-
-    These are the edge targets for ``file_has_state``:
-    ``file_states/ml_tagged``, ``file_states/calibrated``, ``file_states/reconciled``.
+    """Ensure all 16 file_states vertex documents exist (8 axes x positive + negative).
 
     Idempotent — inserts only if the document is missing.
     """
+    from nomarr.persistence.database.file_states_aql import ALL_STATE_VERTICES
+
     coll = db.collection("file_states")  # type: ignore[union-attr]
-    for key in ("ml_tagged", "calibrated", "reconciled"):
+    for vertex in ALL_STATE_VERTICES:
         with contextlib.suppress(DocumentInsertError):
-            coll.insert({"_key": key})  # type: ignore[union-attr]
+            coll.insert({"_key": vertex.split("/")[1]})  # type: ignore[union-attr]
 
 
 def _create_indexes(db: DatabaseLike) -> None:
@@ -299,7 +293,11 @@ def _create_indexes(db: DatabaseLike) -> None:
     # ML model graph indexes (introduced by V014)
     _ensure_index(db, "ml_models", "persistent", ["path"], unique=True)
     _ensure_index(db, "ml_model_outputs", "persistent", ["model_id", "output_index"], unique=True)
+
+    # tag_model_output: tag→ml_model_output edges (bidirectional traversal)
+    _ensure_index(db, "tag_model_output", "persistent", ["_from"])
     _ensure_index(db, "tag_model_output", "persistent", ["_to"])
+    _ensure_index(db, "tag_model_output", "persistent", ["_from", "_to"], unique=True)
 
     # segment_scores_stats indexes (per-label segment statistics)
     _ensure_index(db, "segment_scores_stats", "persistent", ["file_id"])
@@ -434,7 +432,6 @@ def _validate_no_legacy_calibration(db: DatabaseLike) -> None:
         )
 
 
-
 # ─────────────────────────────────────────────────────────────────────
 # Vectors track: per-backbone embedding collections
 # ─────────────────────────────────────────────────────────────────────
@@ -457,8 +454,6 @@ def _discover_backbone_ids(models_dir: str) -> list[str]:
     except Exception:
         logger.warning("[bootstrap] Could not discover backbones from %s — skipping vectors_track", models_dir)
         return []
-
-
 
 
 def _create_vectors_track_collections(db: DatabaseLike, models_dir: str) -> None:
@@ -502,5 +497,3 @@ def _create_vectors_track_collections(db: DatabaseLike, models_dir: str) -> None
 
             # Persistent index on file_id for cascade delete performance
             _ensure_index(db, collection_name, "persistent", ["file_id"])
-
-

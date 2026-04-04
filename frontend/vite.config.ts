@@ -10,9 +10,6 @@ export default defineConfig({
   resolve: {
     alias: {
       "@shared": path.resolve(__dirname, "./src/shared"),
-      "@features": path.resolve(__dirname, "./src/features"),
-      "@components": path.resolve(__dirname, "./src/components"),
-      "@hooks": path.resolve(__dirname, "./src/hooks"),
     },
   },
   build: {

@@ -1,7 +1,9 @@
 """ML Capacity operations for ArangoDB.
 
-Manages ml_capacity_estimates and ml_capacity_probe_locks collections for
-GPU/CPU adaptive resource management.
+Manages ml_capacity_estimates collection for GPU/CPU adaptive resource management.
+
+Probe locks have been consolidated into the unified `locks` collection (V021).
+Probe lock operations delegate to `parent_db.locks` with lock_type="capacity_probe".
 
 Per GPU_REFACTOR_PLAN.md Section 7:
 - One-time probe per model_set_hash
@@ -9,9 +11,9 @@ Per GPU_REFACTOR_PLAN.md Section 7:
 - Results stored as measured_backbone_vram_mb and estimated_worker_ram_mb
 """
 
-from typing import TYPE_CHECKING, Any, cast
+from __future__ import annotations
 
-from arango.exceptions import DocumentInsertError
+from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.arango_client import DatabaseLike
@@ -19,20 +21,32 @@ from nomarr.persistence.arango_client import DatabaseLike
 if TYPE_CHECKING:
     from arango.cursor import Cursor
 
+    from nomarr.persistence.db import Database
+
 
 class MLCapacityOperations:
     """Operations for ML capacity estimation collections."""
 
-    def __init__(self, db: DatabaseLike) -> None:
+    # Default TTL for probe locks (30 minutes)
+    PROBE_LOCK_TTL_SECONDS = 1800
+
+    def __init__(self, db: DatabaseLike, *, parent_db: Database) -> None:
+        """Initialize with database handles.
+
+        Args:
+            db: ArangoDB database handle
+            parent_db: Parent Database instance for cross-operations access
+
+        """
         self.db = db
+        self.parent_db = parent_db
 
     # ==================== Probe Lock Operations ====================
 
     def try_acquire_probe_lock(self, model_set_hash: str, worker_id: str) -> bool:
         """Attempt to acquire probe lock for a model_set_hash.
 
-        Uses ArangoDB unique constraint on _key to prevent race conditions.
-        Only one worker can acquire the lock at a time.
+        Delegates to unified locks collection with lock_type="capacity_probe".
 
         Args:
             model_set_hash: Hash of the model set being probed
@@ -42,32 +56,17 @@ class MLCapacityOperations:
             True if lock acquired, False if another worker owns the lock
 
         """
-        try:
-            self.db.aql.execute(
-                """
-                INSERT {
-                    _key: @model_set_hash,
-                    status: "in_progress",
-                    worker_id: @worker_id,
-                    started_at: @started_at
-                } INTO ml_capacity_probe_locks
-                """,
-                bind_vars=cast(
-                    "dict[str, Any]",
-                    {
-                        "model_set_hash": model_set_hash,
-                        "worker_id": worker_id,
-                        "started_at": now_ms().value,
-                    },
-                ),
-            )
-            return True
-        except DocumentInsertError:
-            # Lock already exists - another worker owns it
-            return False
+        return self.parent_db.locks.try_acquire(
+            "capacity_probe",
+            model_set_hash,
+            worker_id,
+            self.PROBE_LOCK_TTL_SECONDS,
+        )
 
     def get_probe_lock_status(self, model_set_hash: str) -> dict[str, Any] | None:
         """Get the status of a probe lock.
+
+        Delegates to unified locks collection.
 
         Args:
             model_set_hash: Hash of the model set
@@ -76,55 +75,30 @@ class MLCapacityOperations:
             Lock document or None if not found
 
         """
-        cursor = cast(
-            "Cursor",
-            self.db.aql.execute(
-                """
-                FOR lock IN ml_capacity_probe_locks
-                    FILTER lock._key == @model_set_hash
-                    RETURN lock
-                """,
-                bind_vars={"model_set_hash": model_set_hash},
-            ),
-        )
-        return next(cursor, None)
+        return self.parent_db.locks.get_lock_status("capacity_probe", model_set_hash)
 
     def complete_probe_lock(self, model_set_hash: str) -> None:
         """Mark a probe lock as complete.
 
+        Delegates to unified locks collection.
+
         Args:
             model_set_hash: Hash of the model set
 
         """
-        self.db.aql.execute(
-            """
-            UPDATE { _key: @model_set_hash }
-            WITH { status: "complete", completed_at: @completed_at }
-            IN ml_capacity_probe_locks
-            """,
-            bind_vars=cast(
-                "dict[str, Any]",
-                {
-                    "model_set_hash": model_set_hash,
-                    "completed_at": now_ms().value,
-                },
-            ),
-        )
+        self.parent_db.locks.complete_lock("capacity_probe", model_set_hash)
 
     def release_probe_lock(self, model_set_hash: str) -> None:
         """Release (delete) a probe lock, typically on failure.
 
+        Since the caller (probe component) doesn't track worker_id for release,
+        this uses force_release.
+
         Args:
             model_set_hash: Hash of the model set
 
         """
-        self.db.aql.execute(
-            """
-            REMOVE { _key: @model_set_hash } IN ml_capacity_probe_locks
-            OPTIONS { ignoreErrors: true }
-            """,
-            bind_vars={"model_set_hash": model_set_hash},
-        )
+        self.parent_db.locks.force_release("capacity_probe", model_set_hash)
 
     # ==================== Capacity Estimate Operations ====================
 

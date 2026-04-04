@@ -225,7 +225,7 @@ def write_file_tags_workflow(
             db.library_files.update_file_modified_time(file_key, result.new_mtime_ms)
 
         # Update file projection state in database
-        mark_file_written(db, file_key, mode=target_mode, calibration_hash=calibration_hash)
+        mark_file_written(db, file_key)
 
         logger.debug(
             f"[write_file_tags] Wrote {len(tags_to_write)} tags to {library_path.relative} "

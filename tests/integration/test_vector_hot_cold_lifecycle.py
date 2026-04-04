@@ -74,9 +74,7 @@ class VectorLifecycleHarness:
 
     def seed_cold(self, backbone_id: str, doc: dict[str, Any]) -> None:
         self.ensure_cold_collection(backbone_id)
-        key = doc.get("_key") or _make_vector_key(
-            doc["file_id"], doc.get("model_suite_hash", "default")
-        )
+        key = doc.get("_key") or _make_vector_key(doc["file_id"], doc.get("model_suite_hash", "default"))
         stored = doc | {"_key": key, "created_at": self._next_timestamp()}
         self.cold_docs[backbone_id][key] = stored
 
@@ -96,21 +94,13 @@ class VectorLifecycleHarness:
         return len(self.cold_docs[backbone_id])
 
     def get_hot_vector(self, backbone_id: str, file_id: str) -> dict[str, Any] | None:
-        candidates = [
-            doc
-            for doc in self.hot_docs[backbone_id].values()
-            if doc["file_id"] == file_id
-        ]
+        candidates = [doc for doc in self.hot_docs[backbone_id].values() if doc["file_id"] == file_id]
         if not candidates:
             return None
         return max(candidates, key=lambda doc: doc["created_at"])
 
     def get_cold_vector(self, backbone_id: str, file_id: str) -> dict[str, Any] | None:
-        candidates = [
-            doc
-            for doc in self.cold_docs[backbone_id].values()
-            if doc["file_id"] == file_id
-        ]
+        candidates = [doc for doc in self.cold_docs[backbone_id].values() if doc["file_id"] == file_id]
         if not candidates:
             return None
         return max(candidates, key=lambda doc: doc["created_at"])
@@ -275,16 +265,12 @@ class FakeDatabaseAdapter:
     def register_vectors_track_backbone(self, backbone_id: str, library_key: str = "test_lib") -> FakeHotOperations:
         self.harness.register_backbone(backbone_id)
         self.db.register_collection(f"vectors_track_hot__{backbone_id}__{library_key}")
-        return self.vectors_track.setdefault(
-            backbone_id, FakeHotOperations(self.harness, backbone_id)
-        )
+        return self.vectors_track.setdefault(backbone_id, FakeHotOperations(self.harness, backbone_id))
 
     def get_vectors_track_cold(self, backbone_id: str, library_key: str = "test_lib") -> FakeColdOperations:
         self.harness.ensure_cold_collection(backbone_id)
         self.db.register_collection(f"vectors_track_cold__{backbone_id}__{library_key}")
-        return self._vectors_track_cold.setdefault(
-            backbone_id, FakeColdOperations(self.harness, backbone_id)
-        )
+        return self._vectors_track_cold.setdefault(backbone_id, FakeColdOperations(self.harness, backbone_id))
 
 
 @pytest.fixture
@@ -295,7 +281,6 @@ def vector_harness() -> VectorLifecycleHarness:
 @pytest.fixture
 def fake_database(vector_harness: VectorLifecycleHarness) -> FakeDatabaseAdapter:
     return FakeDatabaseAdapter(vector_harness)
-
 
 
 def test_bootstrap_creates_hot_collections_only(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -368,9 +353,7 @@ def test_promote_and_rebuild_moves_hot_vectors_to_cold(
 ) -> None:
     """Maintenance workflow drains hot vectors, builds index, and leaves cold ready."""
 
-    service = VectorMaintenanceService(
-        cast("Database", fake_database), models_dir="/ml-models", config_svc=MagicMock()
-    )
+    service = VectorMaintenanceService(cast("Database", fake_database), models_dir="/ml-models", config_svc=MagicMock())
     hot_ops = fake_database.register_vectors_track_backbone("effnet")
     hot_ops.upsert_vector(
         file_id="library_files/42",
@@ -494,6 +477,7 @@ def test_cascade_delete_calls_hot_and_cold_ops() -> None:
 
     database.vectors_track = {"effnet": hot_ops}
     database._vectors_track_cold = {"effnet": cold_ops}
+    database.db = MagicMock()
 
     deleted = Database.delete_vectors_by_file_id(database, "library_files/7")
 
@@ -509,9 +493,7 @@ def test_promote_is_safe_no_op_when_hot_empty(
 ) -> None:
     """Running promote on an empty hot collection should succeed without changes."""
 
-    service = VectorMaintenanceService(
-        cast("Database", fake_database), models_dir="/ml-models", config_svc=MagicMock()
-    )
+    service = VectorMaintenanceService(cast("Database", fake_database), models_dir="/ml-models", config_svc=MagicMock())
     call_counter = {"count": 0}
 
     def fake_workflow(**kwargs: Any) -> None:
@@ -540,9 +522,7 @@ def test_promote_twice_keeps_cold_collection_convergent(
 ) -> None:
     """Repeated promote cycles should not duplicate cold vectors (unique _key)."""
 
-    service = VectorMaintenanceService(
-        cast("Database", fake_database), models_dir="/ml-models", config_svc=MagicMock()
-    )
+    service = VectorMaintenanceService(cast("Database", fake_database), models_dir="/ml-models", config_svc=MagicMock())
 
     def fake_workflow(**kwargs: Any) -> None:
         vector_harness.move_hot_to_cold(

@@ -114,7 +114,8 @@ class CalibrationService:
 
         # Compute reconciliation info after calibration completes
         reconciliation_info = compute_reconciliation_info(
-            self._db, result.get("global_version"),
+            self._db,
+            result.get("global_version"),
         )
         result["requires_reconciliation"] = reconciliation_info["requires_reconciliation"]
         result["affected_libraries"] = reconciliation_info["affected_libraries"]
@@ -147,7 +148,7 @@ class CalibrationService:
 
     # -- Threading infrastructure (NOT domain logic; see services.instructions.md) --
 
-    def _update_progress(self, **kwargs: int | float | str | None) -> None:
+    def _update_progress(self, **kwargs: float | str | None) -> None:
         """Thread-safe update of progress state from background thread.
 
         Args:
@@ -344,7 +345,6 @@ class CalibrationService:
         """Get latest convergence metrics for all heads."""
         return compute_convergence_status(self._db)
 
-
     def get_histogram_for_head(self, model_key: str, head_name: str, label: str) -> dict[str, Any]:
         """Get stored histogram bins for a specific label.
 
@@ -369,7 +369,7 @@ class CalibrationService:
             ValueError: If no calibration state found for label
 
         """
-        state = self._db.calibration_state.get_calibration_state(model_key, head_name, label)
+        state = self._db.calibration_state.get_calibration_state(head_name, label)
         if not state:
             raise ValueError(f"No calibration state found for {model_key}:{head_name}:{label}")
 

@@ -21,7 +21,6 @@ from nomarr.components.library.file_sync_comp import (
 from nomarr.components.metadata.entity_seeding_comp import seed_song_entities_from_tags
 from nomarr.components.metadata.metadata_cache_comp import rebuild_song_metadata_cache
 from nomarr.components.tagging.tag_parsing_comp import parse_tag_values
-from nomarr.components.tagging.tagging_reader_comp import infer_write_mode_from_tags
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
@@ -92,7 +91,7 @@ def _sync_tags_and_entities(
         logger.debug(f"[sync_file_to_library] Stored chromaprint for {file_path}")
 
     if tagged_version:
-        mark_file_tagged(db, file_id, tagged_version)
+        mark_file_tagged(db, file_id)
 
     logger.debug(f"[sync_file_to_library] Synced {file_path}")
 
@@ -162,10 +161,6 @@ def sync_file_to_library(
             )
             return
 
-        nom_tags = metadata.get("nom_tags", {})
-        has_nomarr_namespace = bool(nom_tags)
-        last_written_mode = infer_write_mode_from_tags(set(nom_tags.keys())) if has_nomarr_namespace else None
-
         upsert_library_file(
             db,
             path=library_path,
@@ -176,8 +171,6 @@ def sync_file_to_library(
             artist=metadata.get("artist"),
             album=metadata.get("album"),
             title=metadata.get("title"),
-            has_nomarr_namespace=has_nomarr_namespace,
-            last_written_mode=last_written_mode,
         )
 
         file_record = get_library_file(db, file_path)

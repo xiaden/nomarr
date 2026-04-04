@@ -67,10 +67,9 @@ def _heal_short_files(
     library_id: str,
     min_duration_s: int,
 ) -> int:
-    """Find and heal short files without ml_tagged edge.
+    """Find and heal short files without too_short state.
 
-    Creates ``ml_tagged`` edges with version="scan_skipped" for short files
-    that don't already have an ml_tagged edge.
+    Sets ``too_short`` state for short files that don't already have it.
 
     Args:
         db: Database instance
@@ -81,37 +80,30 @@ def _heal_short_files(
         Number of files healed
 
     """
-    from nomarr.helpers.time_helper import now_ms
-
-    ts = now_ms().value
-    # Find short files without ml_tagged edge and create edges for them
+    # Find short files missing too_short state
     cursor = db.db.aql.execute(
         """
         FOR file IN library_files
             FILTER file.library_id == @library_id
             FILTER file.duration_seconds != null
             FILTER file.duration_seconds < @min_duration_s
-            LET has_tagged = LENGTH(
+            LET has_too_short = LENGTH(
                 FOR edge IN file_has_state
-                    FILTER edge._from == file._id AND edge._to == "file_states/ml_tagged"
+                    FILTER edge._from == file._id AND edge._to == "file_states/too_short"
                     LIMIT 1
                     RETURN 1
             )
-            FILTER has_tagged == 0
-            INSERT {
-                _from: file._id,
-                _to: "file_states/ml_tagged",
-                version: "scan_skipped",
-                tagged_at: @ts
-            } INTO file_has_state
-            OPTIONS { ignoreErrors: true }
-            RETURN 1
+            FILTER has_too_short == 0
+            RETURN file._id
         """,
         bind_vars={
             "library_id": library_id,
             "min_duration_s": min_duration_s,
-            "ts": ts,
         },
     )
 
-    return sum(1 for _ in cursor)
+    file_ids = list(cursor)
+    for file_id in file_ids:
+        db.file_states.set_too_short(file_id)
+
+    return len(file_ids)

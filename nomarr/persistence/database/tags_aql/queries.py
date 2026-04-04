@@ -19,6 +19,7 @@ class TagQueriesMixin:
 
     db: Any
     collection: Any
+
     def get_tag(self, tag_id: str) -> dict[str, Any] | None:
         """Get tag by _id. Returns {_id, _key, rel, value} or None."""
         query = """
@@ -27,6 +28,7 @@ class TagQueriesMixin:
         cursor = cast("Cursor", self.db.aql.execute(query, bind_vars=cast("dict[str, Any]", {"tag_id": tag_id})))
         result = list(cursor)
         return result[0] if result and result[0] else None
+
     def list_tags_by_rel(
         self,
         rel: str,
@@ -136,6 +138,7 @@ class TagQueriesMixin:
 
         cursor = cast("Cursor", self.db.aql.execute(query, bind_vars=cast("dict[str, Any]", bind_vars)))
         return list(cursor)
+
     def count_tags_by_rel(self, rel: str, search: str | None = None) -> int:
         """Count unique tags for a rel.
 
@@ -170,6 +173,7 @@ class TagQueriesMixin:
         cursor = cast("Cursor", self.db.aql.execute(query, bind_vars=cast("dict[str, Any]", bind_vars)))
         result = list(cursor)
         return result[0] if result else 0
+
     def get_song_tags(self, song_id: str, rel: str | None = None, nomarr_only: bool = False) -> Tags:
         """Get all tags for a song, optionally filtered by rel or Nomarr prefix.
 
@@ -267,7 +271,8 @@ class TagQueriesMixin:
         cursor = cast(
             "Cursor",
             self.db.aql.execute(
-                query, bind_vars=cast("dict[str, Any]", {"tag_id": tag_id, "limit": limit, "offset": offset}),
+                query,
+                bind_vars=cast("dict[str, Any]", {"tag_id": tag_id, "limit": limit, "offset": offset}),
             ),
         )
         return list(cursor)
@@ -307,7 +312,7 @@ class TagQueriesMixin:
             # Safe operators only - map from query syntax to AQL syntax
             safe_ops = {
                 "==": "==",
-                "=": "==",   # Parser uses "=" for equality
+                "=": "==",  # Parser uses "=" for equality
                 ">=": ">=",
                 "<=": "<=",
                 ">": ">",
@@ -325,11 +330,15 @@ class TagQueriesMixin:
             """
 
         cursor = cast(
-            "Cursor", self.db.aql.execute(query, bind_vars=cast("dict[str, Any]", {"rel": rel, "value": value})),
+            "Cursor",
+            self.db.aql.execute(query, bind_vars=cast("dict[str, Any]", {"rel": rel, "value": value})),
         )
         return set(cursor)
+
     def get_file_ids_for_tags(
-        self, tag_specs: list[tuple[str, str]], library_id: str | None = None,
+        self,
+        tag_specs: list[tuple[str, str]],
+        library_id: str | None = None,
     ) -> dict[tuple[str, str], set[str]]:
         """Get file IDs for tag co-occurrence analysis.
 
@@ -347,8 +356,13 @@ class TagQueriesMixin:
         bind_vars_base: dict[str, Any] = {}
         if library_id:
             library_filter = """
-                LET file = DOCUMENT(edge._from)
-                FILTER file != null AND file.library_id == @library_id
+                LET lib_match = (
+                    FOR file IN OUTBOUND @library_id library_contains_file
+                        FILTER edge._from == file._id
+                        LIMIT 1
+                        RETURN 1
+                )
+                FILTER LENGTH(lib_match) > 0
             """
             bind_vars_base["library_id"] = library_id
 
@@ -385,14 +399,18 @@ class TagQueriesMixin:
                         RETURN edge._from
                 """
             cursor = cast(
-                "Cursor", self.db.aql.execute(query, bind_vars=cast("dict[str, Any]", bind_vars)),
+                "Cursor",
+                self.db.aql.execute(query, bind_vars=cast("dict[str, Any]", bind_vars)),
             )
             result[(rel, value)] = set(cursor)
 
         return result
 
     def get_file_ids_for_mood_tags(
-        self, mood_values: list[str], mood_tier: str = "mood-strict", library_id: str | None = None,
+        self,
+        mood_values: list[str],
+        mood_tier: str = "mood-strict",
+        library_id: str | None = None,
     ) -> dict[str, set[str]]:
         """Get file IDs for mood tag co-occurrence.
 
@@ -414,8 +432,13 @@ class TagQueriesMixin:
         bind_vars_base: dict[str, Any] = {"rel": rel}
         if library_id:
             library_filter = """
-                LET file = DOCUMENT(edge._from)
-                FILTER file != null AND file.library_id == @library_id
+                LET lib_match = (
+                    FOR file IN OUTBOUND @library_id library_contains_file
+                        FILTER edge._from == file._id
+                        LIMIT 1
+                        RETURN 1
+                )
+                FILTER LENGTH(lib_match) > 0
             """
             bind_vars_base["library_id"] = library_id
 
@@ -431,14 +454,17 @@ class TagQueriesMixin:
                     RETURN edge._from
             """
             cursor = cast(
-                "Cursor", self.db.aql.execute(query, bind_vars=cast("dict[str, Any]", bind_vars)),
+                "Cursor",
+                self.db.aql.execute(query, bind_vars=cast("dict[str, Any]", bind_vars)),
             )
             result[mood_value] = set(cursor)
 
         return result
 
     def get_unique_mood_values(
-        self, mood_tier: str = "mood-strict", limit: int = 100,
+        self,
+        mood_tier: str = "mood-strict",
+        limit: int = 100,
     ) -> list[str]:
         """Return unique mood tag values for a given tier, sorted alphabetically.
 
@@ -459,12 +485,15 @@ class TagQueriesMixin:
             RETURN DISTINCT tag.value
         """
         cursor = cast(
-            "Cursor", self.db.aql.execute(query, bind_vars=cast("dict[str, Any]", {"rel": rel, "limit": limit})),
+            "Cursor",
+            self.db.aql.execute(query, bind_vars=cast("dict[str, Any]", {"rel": rel, "limit": limit})),
         )
         return [v for v in cursor if isinstance(v, str)]
 
     def get_distinct_tag_values_for_files(
-        self, file_ids: list[str], rel: str,
+        self,
+        file_ids: list[str],
+        rel: str,
     ) -> list[str]:
         """Get distinct tag values for a set of files filtered by ``rel``.
 
@@ -498,7 +527,9 @@ class TagQueriesMixin:
         return result
 
     def get_tag_values_grouped_by_file(
-        self, file_ids: list[str], rel: str,
+        self,
+        file_ids: list[str],
+        rel: str,
     ) -> dict[str, set[str]]:
         """Get tag values per file for a given ``rel``.
 
@@ -537,4 +568,3 @@ class TagQueriesMixin:
         for row in cursor:
             result[row["file_id"]] = {v for v in row["values"] if isinstance(v, str)}
         return result
-

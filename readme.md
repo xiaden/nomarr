@@ -1,145 +1,158 @@
 # Nomarr
 
-**Intelligent audio auto-tagging for your music library using state-of-the-art machine learning.**
+**The interesting part between raw audio files and actually usable discovery data.**
 
-Nomarr is an alpha audio tagging system that analyzes your music files using ONNX Runtime for ML inference (with a custom Essentia build for audio loading and preprocessing) and writes rich metadata tags directly into your audio files (MP3, M4A, FLAC, OGG, Opus, WAV, AAC, AIFF, and more). Perfect for organizing large libraries, discovering moods, and enriching metadata for music servers like Navidrome and Plex.
+Nomarr analyzes your music library with ML models and writes the results back into your files as tags. Not into some proprietary database that disappears when you switch tools. Your files. Your metadata. Portable forever.
 
-Nomarr tags your audio files with:
-
-- **Mood & Emotion** — Happy, sad, aggressive, relaxed, party, etc.
-- **Acoustic Properties** — Danceability, energy, timbre, brightness
-- **Audio Characteristics** — Vocal presence, tonal/atonal classification
-
-All tags are written as native metadata (ID3v2 for MP3, iTunes atoms for M4A, Vorbis comments for OGG/FLAC/Opus) with the `nom:` namespace prefix — no external database required.
-
-You set a library path, scan, and get high quality ML tags in roughly a day (based on an 18k song library over a NAS share — your time may be lower or higher).
-
-**Note:** Nomarr comes with mood and acoustic property models. Additional models (genre, instruments, etc.) can be added by users but are not included by default.
-
-## WARNING
-
-A BIG CAPITAL WARNING that the EFFNET embedder (so any EFFNET HEADS used) REQUIRES 9 GB of VRAM to run. It's the difference between a 40s per song and a 2 second per song during ML analysis. The embedder is cached in VRAM to prevent spin-up time each song, and will remain resident on VRAM for about 30 seconds after the last song is tagged.
+> **Alpha software** — breaking changes happen, forward-only migrations, back up before upgrading.
 
 ---
 
+## Why Nomarr?
 
-## ✨ Key Features
+Most music analysis tools do one of two things: index your library into a database you can't take anywhere, or dump CSVs that require a data science degree to actually use.
 
-- **🌐 Modern Web UI** — Full browser interface for library management, analytics, calibration, and integrations
-- **📚 Library Scanner** — Background scanning with tag extraction and real-time progress tracking
-- **👁️ File Watching** — Monitors filesystem for changes and triggers incremental scans (2–5 second response)
-- **📊 Calibration System** — Normalize model outputs across heads with convergence tracking and drift detection
-- **🔍 Library Insights** — Collection overview, mood analysis, tag co-occurrence matrix, and genre/year distributions
-- **🎵 Navidrome Integration** — Smart playlist (.nsp) generation and TOML config export
-- **📥 Playlist Import** — Convert Spotify and Deezer playlists to local M3U with fuzzy matching, metadata display, and manual search
-- **⚡ GPU Accelerated** — NVIDIA CUDA support for fast ML inference
-- **🎨 Rich Metadata** — Writes probabilities, tiers, and aggregated mood tags in native format
-- **🧠 Vector Search** — Cold-only ANN search with manual promote & rebuild workflow for predictable "as of last rebuild" results
-- **🔐 Secure** — API key authentication for automation, session-based auth for web UI
-- **🐳 Docker Native** — Compose-based deployment with NVIDIA GPU passthrough and ArangoDB backend
+Nomarr writes directly into your audio files. Genre predictions, mood tags, BPM, key — it all lives in standard metadata fields your music player already knows how to read. Scan once, use everywhere. Rescan when you want. The tags stay with your library.
+
+Supports all common audio formats except WMA.
 
 ---
 
-## Quick Start
+## Tags that actually mean something
 
-### Prerequisites
+Most ML taggers spray predictions at your files — 47 genres, 23 moods, whatever the model spits out. You end up with every song tagged "electronic" and "chill" because technically the model was 51% confident.
 
-- Docker with NVIDIA GPU support (for GPU acceleration)
-- Music library mounted at consistent path
+Nomarr takes a different approach: comparative analysis between model outputs. We run multiple embedding models on every track and only surface tags where there's meaningful agreement. Fewer tags, but tags you can actually trust.
 
-### Installation
-
-1. **Clone and configure:**
-
-   ```bash
-   git clone https://github.com/xiaden/nomarr.git
-   cd nomarr/docker
-   ```
-
-2. **Configure environment files:**
-
-   ```bash
-   # Copy example env files
-   cp nomarr-arangodb.env.example nomarr-arangodb.env
-   cp nomarr.env.example nomarr.env
-
-   # Edit nomarr-arangodb.env and set a strong root password
-   # Edit nomarr.env and set the same root password
-   ```
-
-3. **Create config directories and start:**
-
-   ```bash
-   mkdir -p config/arangodb
-   docker compose up -d
-   ```
-
-   On first run, Nomarr will:
-   - Provision the ArangoDB database
-   - Generate an app password (stored in `config/nomarr.yaml`)
-   - Create an admin password for the web UI
-
-4. **Get your admin password:**
-
-   Check container logs for the auto-generated password:
-
-   ```bash
-   docker compose logs nomarr | grep "Admin password"
-   ```
-
-5. **Access the Web UI:**
-
-   - Navigate to `http://localhost:8356/` (if port is exposed in compose) or via your reverse proxy
-   - Login with the admin password from step 4
-   - Add a library and start scanning!
+Quality over quantity. Your playlists will thank you.
 
 ---
 
-## Web UI
+## How fast?
+
+Real numbers, real hardware:
+
+| Library size | Setup | Time |
+|--------------|-------|------|
+| 30k songs | Nomarr, 2 workers, 2080 Ti | ~8 hours |
+| 30k songs | Audiomuse, CPU only (default) | 56+ hours |
+
+GPU inference isn't optional if you value your time.
+
+---
+
+## What it looks like
 
 ### Dashboard
 
-Real-time system overview with processing progress (including velocity tracking and ETA), library statistics with genre/year charts, and recent scan activity.
+Monitor scans, track velocity, watch your library grow.
 
-<img width="100%" alt="Dashboard" src="docs/screenshots/dashboard.png" />
+![Dashboard](docs/screenshots/dashboard.png)
 
-### Browse
+### Browse & Manage
 
-Hierarchical library browser with Artist → Album → Track drill-down, plus flat entity tabs for Artists, Albums, Genres, and Years. Tag-based exploration lets you find songs by exact string match or nearest numeric value.
+Explore your library, check tag coverage, manage library settings.
 
-<img width="100%" alt="Browse" src="docs/screenshots/browse.png" />
-
-Library management is built in — add libraries, trigger scans, and monitor scan status from a collapsible panel:
-
-<img width="60%" alt="Library Management" src="docs/screenshots/library-management.png" />
+![Browse](docs/screenshots/browse.png)
 
 ### Insights
 
-Library analytics organized into three sections: **Collection Overview** (stats, top genres, years, artists), **Mood Analysis** (coverage, balance, vibes, mood combos), and **Advanced** (tag frequency distributions and a full co-occurrence matrix). All filterable by library.
+Collection-level analytics and tag distribution across your music.
 
-<img width="100%" alt="Insights" src="docs/screenshots/insights.png" />
-
-### Calibration
-
-Generate calibration profiles from your library data, apply them to normalize model outputs, and update new files. Convergence tracking shows per-head stability across calibration rounds with summary stats and P5/P95 charts.
-
-<img width="100%" alt="Calibration" src="docs/screenshots/calibration.png" />
-
-### Navidrome
-
-Two tools for Navidrome users: **Generate Config** creates a TOML configuration file mapping Nomarr tags to Navidrome's smart playlist fields. **Playlist Maker** builds `.nsp` smart playlist files using tag-based filter groups with preview and sort options.
-
-<img width="100%" alt="Navidrome" src="docs/screenshots/navidrome.png" />
-
-### Playlist Import
-
-Paste a Spotify or Deezer playlist URL and Nomarr converts it to a local M3U file by fuzzy-matching tracks against your library. Results show match confidence, matched file metadata (artist, album, duration, bitrate), and let you search for alternatives or manually add tracks.
-
-<img width="100%" alt="Playlist Import" src="docs/screenshots/playlist-import.png" />
+![Insights](docs/screenshots/insights.png)
 
 ---
 
-## Example Output
+## Features
+
+- **Scan & tag** — analyze audio with ONNX-accelerated ML, write results to file metadata
+- **File watching** — optional per-library modes (`off` / `event` / `poll`), not always-on by default
+- **Calibration** — tune model output before applying it across your collection
+- **Vector search** — find similar tracks, explore your library by audio similarity
+- **Navidrome integration** — not just playlist export, but real integration:
+  - **Instant mix** — "find me 20 songs like this one" on the fly
+  - **Smart playlist builder** — tag-based rules that auto-update
+  - **Daily mixes** — scheduled playlist generation based on your library's characteristics
+- **Playlist import** — pull Spotify or Deezer playlists into local M3U files with fuzzy matching
+- **Full web UI** — Dashboard, Library, Insights, Calibration, Vector Search, Navidrome, Playlist Import, Config, Admin
+- **API access** — session auth for the UI, API keys for automation
+
+---
+
+## Under the hood
+
+For the technically curious:
+
+- **Dual embedding models** — out of the box, every song gets processed by TWO different embedding models. BYO models supported with proper folder structure.
+- **Custom Essentia build** — audio loading and preprocessing via a hardened Essentia fork. Corrupt files won't crash the application. This is why Docker-only is the supported path.
+- **ArangoDB** — graph database dynamics for relationship queries ("songs similar to X that share tags with Y"), relational speed for standard operations. Best of both worlds.
+
+---
+
+## Before you deploy
+
+Let's be honest about what you're getting into:
+
+- **Docker only.** That's the supported path. If you want to run it bare-metal, you're on your own (we use a custom Essentia build for audio loading, and there's a LOT of pinned dependencies).
+- **GPU strongly recommended.** CPU inference works, but you'll be waiting a while. CUDA (NVIDIA GPUs) makes this practical for large libraries.
+- **Alpha means alpha.** It works. It's useful. It will also change.
+
+---
+
+## Getting started
+
+```bash
+git clone https://github.com/xiaden/nomarr.git
+cd nomarr/docker
+cp nomarr.env.example nomarr.env
+cp nomarr-arangodb.env.example nomarr-arangodb.env
+# Edit both .env files — set a strong root password, map your music library volume
+docker compose up -d
+docker compose logs nomarr | grep "Admin password"
+```
+
+That gets you running. The **[Getting Started guide](docs/user/getting_started.md)** has the full walkthrough — GPU setup, reverse proxy, first scan.
+
+Once running, the API docs live at **`/docs`** (FastAPI's built-in OpenAPI UI).
+
+---
+
+## Documentation
+
+### For users
+
+- [Getting Started](docs/user/getting_started.md)
+- [Deployment Guide](docs/user/deployment.md)
+- [Navidrome Integration](docs/user/navidrome.md)
+- [Playlist Import](docs/user/playlist_import.md)
+- [Troubleshooting](docs/user/troubleshooting.md)
+
+### For developers
+
+- [Documentation Index](docs/index.md)
+- [Architecture](docs/dev/architecture.md)
+- [Domains](docs/dev/domains.md)
+- [Workers](docs/dev/workers.md)
+- [Migrations](docs/dev/migrations.md)
+- [Vector Stores](docs/dev/vector-stores.md)
+
+---
+
+## Repository structure
+
+| Path | What's there |
+|------|------|
+| `nomarr/` | Python backend — interfaces, services, workflows, components, persistence |
+| `frontend/` | React + TypeScript web UI |
+| `docker/` | Compose files, environment examples, deployment assets |
+| `docs/` | User and developer docs |
+| `tests/` | Backend tests |
+| `e2e/` | End-to-end tests |
+| `scripts/` | Build and dev tooling |
+
+---
+
+## What ends up in your files
 
 Nomarr writes tags using the `nom:` namespace prefix:
 
@@ -147,55 +160,22 @@ Nomarr writes tags using the `nom:` namespace prefix:
 nom:happy_essentia21b6dev1389_effnet20220825_happy20220825 = 0.7234
 nom:aggressive_essentia21b6dev1389_effnet20220825_aggressive20220825 = 0.1203
 nom:danceability_essentia21b6dev1389_effnet20220825_danceability20220825 = 0.8941
-nom:voice_instrumental_essentia21b6dev1389_effnet20220825_voice_instrumental20220825 = 0.2341
 nom:mood-strict = ["peppy", "party-like", "synth-like", "bright timbre"]
 nom:mood-regular = ["peppy", "party-like", "synth-like", "bright timbre", "easy to dance to"]
 nom:mood-loose = ["peppy", "party-like", "synth-like", "bright timbre", "easy to dance to", "has vocals"]
 nom_version = 1.0.0
 ```
 
-Each numeric tag includes the full model head identifier: `{label}_{framework}_{embedder}_{head}`. Aggregated mood tags combine predictions across multiple heads into three confidence tiers (strict ⊂ regular ⊂ loose) using human-readable labels. The `nom_version` tag tracks which tagger version processed each file.
+Each numeric tag includes the full model head identifier: `{label}_{framework}_{embedder}_{head}`. Aggregated mood tags combine predictions across multiple heads into three confidence tiers (strict ⊂ regular ⊂ loose) using human-readable labels.
 
 ---
 
-## Documentation
+## Contributing
 
-- **[Getting Started](docs/user/getting_started.md)** — Installation, setup, and first steps
-- **[Deployment Guide](docs/user/deployment.md)** — Docker setup, configuration, and production best practices
-- **[Navidrome Integration](docs/user/navidrome.md)** — Smart playlist generation guide
-- **[Architecture](docs/dev/architecture.md)** — System design and component overview
-- **[Developer Documentation](docs/index.md)** — Complete documentation index
+Contributions welcome. Read **[CONTRIBUTING.md](CONTRIBUTING.md)** first.
 
-> **API Reference:** Nomarr exposes interactive API documentation via FastAPI's built-in Swagger UI at the `/docs` endpoint when running.
-
----
-
-## Repository Structure
-
-| Directory | Purpose |
-|-----------|--------|
-| `nomarr/` | Python backend (FastAPI, clean architecture) |
-| `frontend/` | React/TypeScript SPA |
-| `docker/` | Compose files, env examples, deployment config |
-| `docs/` | User and developer documentation (MkDocs) |
-| `code-intel/` | MCP server for Python code navigation |
-| `navidrome-plugin/` | Navidrome Go plugin for smart playlists |
-| `scripts/` | Build tools, viewers, analysis scripts |
-| `e2e/`, `tests/` | End-to-end and unit tests |
-
----
-
-## License & Usage
-
-**Nomarr is licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) — Non-Commercial use only**
-
-This project is designed for the self-hosted music community and personal use. Commercial use is not permitted.
-
-- **Attribution Required:** Credit Nomarr and the Music Technology Group, Universitat Pompeu Fabra (for Essentia models)
-- **ShareAlike:** Derivative works must use the same license
-- **Non-Commercial:** No commercial use without explicit permission
-
-See [LICENSE](LICENSE) and [NOTICE](NOTICE) for complete attribution and third-party license information.
+- [Issues](https://github.com/xiaden/nomarr/issues)
+- [Discussions](https://github.com/xiaden/nomarr/discussions)
 
 ---
 
@@ -203,29 +183,13 @@ See [LICENSE](LICENSE) and [NOTICE](NOTICE) for complete attribution and third-p
 
 Built with:
 
-- **[Essentia](https://essentia.upf.edu/)** — Audio loading and preprocessing by Music Technology Group, UPF
-- **[ONNX Runtime](https://onnxruntime.ai/)** — Machine learning inference
-- **[ArangoDB](https://www.arangodb.com/)** — Multi-model database backend
-- **[FastAPI](https://fastapi.tiangolo.com/)** — Modern Python web framework
-- **[Rich](https://github.com/Textualize/rich)** — Beautiful terminal UI
-
-See [Developer Documentation](docs/index.md) for complete technical details.
+- **[Essentia](https://essentia.upf.edu/)** — Audio loading and preprocessing, by the Music Technology Group, Universitat Pompeu Fabra
+- **[ONNX Runtime](https://onnxruntime.ai/)** — ML inference engine
+- **[FastAPI](https://fastapi.tiangolo.com/)** — Python web framework
+- **[ArangoDB](https://www.arangodb.com/)** — Multi-model database
 
 ---
 
-## Contributing
+## License
 
-Contributions are welcome! This project is in active development.
-
-**Note:** Please consult with MTG, UPF regarding any contributions that modify model processing or create derivative works of the ML models, as they are subject to CC BY-NC-SA 4.0 ShareAlike terms.
-
----
-
-## Support
-
-- **Issues:** [GitHub Issues](https://github.com/xiaden/nomarr/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/xiaden/nomarr/discussions)
-
----
-
-**Made with ❤️ for the self-hosted music community**
+**[CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)** — see [LICENSE](LICENSE) and [NOTICE](NOTICE).

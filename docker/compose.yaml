@@ -1,28 +1,4 @@
 services:
-  # ArangoDB database service
-  nomarr-arangodb:
-    image: arangodb:latest
-    container_name: nomarr-arangodb
-    networks:
-      - internal_network  # Internal only, no public exposure
-    env_file:
-      - nomarr-arangodb.env
-    command: ["--vector-index"]
-    volumes:
-      - ./config/arangodb:/var/lib/arangodb3
-    # CRITICAL: NO PORT EXPOSURE - Internal network only
-    # External access ONLY via nginx proxy manager (reverse proxy)
-    # Uncomment for development debugging only, never in production
-    # ports:
-    #   - "8529:8529"  # ArangoDB Web UI (DEVELOPMENT ONLY)
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "arangosh --server.endpoint tcp://127.0.0.1:8529 --server.username root --server.password \"$$ARANGO_ROOT_PASSWORD\" --javascript.execute-string 'db._version()' >/dev/null 2>&1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
-
   nomarr:
     # Use pre-built image from GitHub Container Registry
     # To build locally instead: uncomment 'build: .' and comment out 'image:'
@@ -32,11 +8,8 @@ services:
     user: "1000:1000"
     # Graceful shutdown: Give Nomarr 30s to shut down cleanly
     stop_grace_period: 30s
-    networks:
-      - front_network
-      - internal_network
-    # ports:
-    #   - "8356:8356"  # Only expose if needed outside Docker network
+    ports:
+      - "8356:8356"  # Only expose if needed outside Docker network
     volumes:
       # Required: Config and database persistence
       - ./config:/app/config
@@ -58,8 +31,21 @@ services:
               capabilities: [gpu]
     restart: unless-stopped
 
-networks:
-  internal_network:
-    internal: true  # Isolated network (external access via nginx proxy manager)
-  front_network:
-    external: true  # External network for reverse proxy access
+  # ArangoDB database service
+  nomarr-arangodb:
+    image: arangodb:latest
+    container_name: nomarr-arangodb
+    env_file:
+      - nomarr-arangodb.env
+    command: ["--vector-index", "--query.memory-limit=1073741824"]
+    volumes:
+      - ./config/arangodb:/var/lib/arangodb3
+    ports:
+      - "8529:8529"  # ArangoDB Web UI
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "arangosh --server.endpoint tcp://127.0.0.1:8529 --server.username root --server.password \"$$ARANGO_ROOT_PASSWORD\" --javascript.execute-string 'db._version()' >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s

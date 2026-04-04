@@ -4,6 +4,7 @@ Tracks folder metadata for quick scan optimization.
 Quick scans check folder mtime and file_count to skip unchanged folders.
 """
 
+import hashlib
 from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.helpers.time_helper import now_ms
@@ -19,6 +20,15 @@ class LibraryFoldersOperations:
     def __init__(self, db: DatabaseLike) -> None:
         self.db = db
         self.collection = db.collection("library_folders")
+
+    def _make_folder_key(self, library_id: str, folder_path: str) -> str:
+        """Generate a stable document key from library + path.
+
+        Uses MD5 hash for uniqueness across libraries while keeping
+        the key deterministic.
+        """
+        composite = f"{library_id}/{folder_path}"
+        return hashlib.md5(composite.encode("utf-8")).hexdigest()
 
     def upsert_folder(
         self,
@@ -40,13 +50,17 @@ class LibraryFoldersOperations:
 
         """
         scanned_at = now_ms().value
+        folder_key = self._make_folder_key(library_id, folder_path)
+        folder_id = f"library_folders/{folder_key}"
+
+        # Upsert folder document using key-based lookup (no library_id in body)
         cursor = cast(
             "Cursor",
             self.db.aql.execute(
                 """
-                UPSERT { library_id: @library_id, path: @path }
+                UPSERT { _key: @folder_key }
                 INSERT {
-                    library_id: @library_id,
+                    _key: @folder_key,
                     path: @path,
                     mtime: @mtime,
                     file_count: @file_count,
@@ -63,7 +77,7 @@ class LibraryFoldersOperations:
                 bind_vars=cast(
                     "dict[str, Any]",
                     {
-                        "library_id": library_id,
+                        "folder_key": folder_key,
                         "path": folder_path,
                         "mtime": mtime,
                         "file_count": file_count,
@@ -72,8 +86,23 @@ class LibraryFoldersOperations:
                 ),
             ),
         )
-        results = list(cursor)
-        return results[0] if results else ""
+        list(cursor)  # Execute upsert
+
+        # Upsert ownership edge (library -> folder)
+        self.db.aql.execute(
+            """
+            UPSERT { _from: @library_id, _to: @folder_id }
+            INSERT { _from: @library_id, _to: @folder_id }
+            UPDATE {}
+            IN library_contains_folder
+            """,
+            bind_vars={
+                "library_id": library_id,
+                "folder_id": folder_id,
+            },
+        )
+
+        return folder_id
 
     def get_folder(
         self,
@@ -90,19 +119,19 @@ class LibraryFoldersOperations:
             Folder dict or None if not found
 
         """
+        folder_key = self._make_folder_key(library_id, folder_path)
+        folder_id = f"library_folders/{folder_key}"
+
+        # Direct document lookup using computed key (key encodes library ownership)
         cursor = cast(
             "Cursor",
             self.db.aql.execute(
                 """
-                FOR folder IN library_folders
-                    FILTER folder.library_id == @library_id
-                    FILTER folder.path == @path
-                    RETURN folder
+                LET folder = DOCUMENT(@folder_id)
+                FILTER folder != null
+                RETURN folder
                 """,
-                bind_vars={
-                    "library_id": library_id,
-                    "path": folder_path,
-                },
+                bind_vars={"folder_id": folder_id},
             ),
         )
         results = list(cursor)
@@ -125,8 +154,7 @@ class LibraryFoldersOperations:
             "Cursor",
             self.db.aql.execute(
                 """
-                FOR folder IN library_folders
-                    FILTER folder.library_id == @library_id
+                FOR folder IN OUTBOUND @library_id library_contains_folder
                     RETURN folder
                 """,
                 bind_vars={"library_id": library_id},
@@ -148,11 +176,13 @@ class LibraryFoldersOperations:
             "Cursor",
             self.db.aql.execute(
                 """
-                FOR folder IN library_folders
-                    FILTER folder.library_id == @library_id
-                    REMOVE folder IN library_folders
-                    COLLECT WITH COUNT INTO deleted
-                    RETURN deleted
+                LET folders_to_delete = (
+                    FOR folder, edge IN OUTBOUND @library_id library_contains_folder
+                        REMOVE edge IN library_contains_folder
+                        REMOVE folder IN library_folders
+                        RETURN 1
+                )
+                RETURN LENGTH(folders_to_delete)
                 """,
                 bind_vars={"library_id": library_id},
             ),
@@ -179,12 +209,14 @@ class LibraryFoldersOperations:
             "Cursor",
             self.db.aql.execute(
                 """
-                FOR folder IN library_folders
-                    FILTER folder.library_id == @library_id
-                    FILTER folder.path NOT IN @existing_paths
-                    REMOVE folder IN library_folders
-                    COLLECT WITH COUNT INTO deleted
-                    RETURN deleted
+                LET folders_to_delete = (
+                    FOR folder, edge IN OUTBOUND @library_id library_contains_folder
+                        FILTER folder.path NOT IN @existing_paths
+                        REMOVE edge IN library_contains_folder
+                        REMOVE folder IN library_folders
+                        RETURN 1
+                )
+                RETURN LENGTH(folders_to_delete)
                 """,
                 bind_vars={
                     "library_id": library_id,
@@ -210,8 +242,7 @@ class LibraryFoldersOperations:
             self.db.aql.execute(
                 """
                 RETURN LENGTH(
-                    FOR folder IN library_folders
-                        FILTER folder.library_id == @library_id
+                    FOR folder IN OUTBOUND @library_id library_contains_folder
                         RETURN 1
                 )
                 """,

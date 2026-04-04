@@ -348,3 +348,43 @@ export async function updateLibraryVectorConfig(
 export async function getLibraryVectorStats(libraryId: string): Promise<LibraryVectorStatsResponse> {
   return get(`/api/web/libraries/${libraryId}/vector-stats`);
 }
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Errored Files
+// ────────────────────────────────────────────────────────────────────────────────
+
+export interface ErroredFileItem {
+  file_id: string;
+  path: string;
+  duration_seconds: number | null;
+  artist: string | null;
+  title: string | null;
+}
+
+export interface ErroredFilesResult {
+  total: number;
+  files: ErroredFileItem[];
+}
+
+/**
+ * Get errored files for a library.
+ */
+export async function getErroredFiles(libraryId: string): Promise<ErroredFilesResult> {
+  return get(`/api/web/libraries/${libraryId}/errored-files`);
+}
+
+export interface RetryErroredResult {
+  retried: number;
+}
+
+/**
+ * Retry errored files for a library.
+ * If fileIds is provided, only those files are retried; otherwise all errored files are retried.
+ */
+export async function retryErroredFiles(
+  libraryId: string,
+  fileIds?: string[]
+): Promise<RetryErroredResult> {
+  const body = fileIds ? { file_ids: fileIds } : {};
+  return post(`/api/web/libraries/${libraryId}/retry-errored`, body);
+}

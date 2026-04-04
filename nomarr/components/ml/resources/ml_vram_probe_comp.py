@@ -188,8 +188,7 @@ def _probe_single_model(
         while not stop_event.wait(_poll_interval_s):
             reset_telemetry_cache()
             current_mb = int(get_vram_usage_mb().get("used_mb", 0))
-            if current_mb > peak_mb:
-                peak_mb = current_mb
+            peak_mb = max(peak_mb, current_mb)
 
     poller = threading.Thread(target=_poll, daemon=True)
     poller.start()
@@ -235,8 +234,7 @@ def _probe_single_model(
         # Final sample after run so the poller catches any late arena growth
         reset_telemetry_cache()
         final_mb = int(get_vram_usage_mb().get("used_mb", 0))
-        if final_mb > peak_mb:
-            peak_mb = final_mb
+        peak_mb = max(peak_mb, final_mb)
 
     finally:
         stop_event.set()

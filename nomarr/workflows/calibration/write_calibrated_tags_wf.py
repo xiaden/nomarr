@@ -91,7 +91,7 @@ class BatchContext:
         prefetched_stats: Optional pre-fetched segment stats keyed by file_id.
             When populated, avoids per-file stats DB queries.
         pending_mood_tags: Accumulated (file_id, mood_tags) for deferred batch write.
-        pending_calibration_hashes: Accumulated (file_id, hash) for deferred batch write.
+        pending_calibration_hashes: Accumulated file_ids for deferred batch calibration mark.
 
     """
 
@@ -102,7 +102,7 @@ class BatchContext:
     prefetched_tags: dict[str, Tags] | None = None
     prefetched_stats: dict[str, list[dict[str, Any]]] | None = None
     pending_mood_tags: list[tuple[str, Tags]] = field(default_factory=list)
-    pending_calibration_hashes: list[tuple[str, str]] = field(default_factory=list)
+    pending_calibration_hashes: list[str] = field(default_factory=list)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
 
@@ -342,11 +342,11 @@ def write_calibrated_tags_wf(
             batch_ctx.pending_mood_tags.append((str(file_id), mood_tags))
             global_version = batch_ctx.calibration_version
             if global_version:
-                batch_ctx.pending_calibration_hashes.append((str(file_id), global_version))
+                batch_ctx.pending_calibration_hashes.append(str(file_id))
     else:
         save_mood_tags(db, str(file_id), mood_tags)
         global_version = get_calibration_version(db)
         if global_version:
-            update_file_calibration_hash(db, str(file_id), global_version)
+            update_file_calibration_hash(db, str(file_id))
             logger.debug("[calibrated_tags] Updated calibration_hash for %s", file_path)
         logger.debug("[calibrated_tags] Updated mood tags in DB for %s", file_path)

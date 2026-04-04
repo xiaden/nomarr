@@ -52,8 +52,6 @@ def upsert_library_file(
     artist: str | None = None,
     album: str | None = None,
     title: str | None = None,
-    has_nomarr_namespace: bool | None = None,
-    last_written_mode: str | None = None,
 ) -> str:
     """Insert or update a library file record.
 
@@ -67,8 +65,6 @@ def upsert_library_file(
         artist: Artist name
         album: Album name
         title: Track title
-        has_nomarr_namespace: Whether file has nomarr tags
-        last_written_mode: Inferred write mode from existing file tags
 
     Returns:
         Document ``_id``
@@ -83,8 +79,6 @@ def upsert_library_file(
         artist=artist,
         album=album,
         title=title,
-        has_nomarr_namespace=has_nomarr_namespace,
-        last_written_mode=last_written_mode,
     )
 
 
@@ -119,16 +113,15 @@ def set_chromaprint(db: Database, file_id: str, chromaprint: str) -> None:
     db.library_files.set_chromaprint(file_id, chromaprint)
 
 
-def mark_file_tagged(db: Database, file_id: str, tagged_version: str) -> None:
-    """Mark a file as tagged with the given version.
+def mark_file_tagged(db: Database, file_id: str) -> None:
+    """Mark a file as tagged.
 
     Args:
         db: Database instance
         file_id: Document ``_id``
-        tagged_version: Tagger version string
 
     """
-    db.file_states.set_ml_tagged(file_id, version=tagged_version)
+    db.file_states.set_tagged(file_id)
 
 
 # ---------------------------------------------------------------------------

@@ -9,15 +9,13 @@ ARCHITECTURE:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Annotated
+from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
 from nomarr.interfaces.api.types.info_types import PublicInfoResponse
 from nomarr.interfaces.api.web.dependencies import get_info_service
-
-if TYPE_CHECKING:
-    from nomarr.services.infrastructure.info_svc import InfoService
+from nomarr.services.infrastructure.info_svc import InfoService
 
 # Router instance (will be included in main app under /api prefix)
 router = APIRouter(prefix="/v1", tags=["public"])

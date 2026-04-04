@@ -13,13 +13,16 @@ from nomarr.persistence.arango_client import DatabaseLike
 if TYPE_CHECKING:
     from arango.cursor import Cursor
 
+    from nomarr.persistence.db import Database
+
 
 class LibrariesOperations:
     """Operations for the libraries collection."""
 
-    def __init__(self, db: DatabaseLike) -> None:
+    def __init__(self, db: DatabaseLike, parent_db: "Database | None" = None) -> None:
         self.db = db
         self.collection = db.collection("libraries")
+        self.parent_db = parent_db
 
     def create_library(
         self,
@@ -42,7 +45,7 @@ class LibrariesOperations:
             Library _id (e.g., "libraries/12345")
 
         Raises:
-            Duplicate key error if name already exists
+Duplicate key error if name already exists
 
         """
         now = now_ms().value
@@ -56,11 +59,6 @@ class LibrariesOperations:
                     "is_enabled": is_enabled,
                     "watch_mode": watch_mode,
                     "file_write_mode": file_write_mode,
-                    "scan_status": "idle",
-                    "scan_progress": 0,
-                    "scan_total": 0,
-                    "scanned_at": None,
-                    "scan_error": None,
                     "created_at": now,
                     "updated_at": now,
                 },
@@ -72,11 +70,13 @@ class LibrariesOperations:
     def get_library(self, library_id: str) -> dict[str, Any] | None:
         r"""Get a library by _id or _key.
 
+        Joins scan state from library_scans collection for API compatibility.
+
         Args:
             library_id: Library _id (e.g., \"libraries/12345\") or just _key (e.g., \"12345\")
 
         Returns:
-            Library dict or None if not found
+            Library dict with scan state merged, or None if not found
 
         """
         # Normalize: if not prefixed with collection name, add it
@@ -87,8 +87,22 @@ class LibrariesOperations:
             "Cursor",
             self.db.aql.execute(
                 """
-            RETURN DOCUMENT(@library_id)
-            """,
+                LET lib = DOCUMENT(@library_id)
+                FILTER lib != null
+                LET scan = FIRST(
+                    FOR s IN OUTBOUND lib library_has_scan
+                        RETURN s
+                )
+                RETURN MERGE(lib, {
+                    scan_status: scan.status || "idle",
+                    scan_progress: scan.files_processed || 0,
+                    scan_total: scan.files_total || 0,
+                    scanned_at: scan.completed_at,
+                    scan_error: scan.error,
+                    last_scan_started_at: scan.started_at,
+                    scan_type_in_progress: scan.scan_type
+                })
+                """,
                 bind_vars={"library_id": library_id},
             ),
         )
@@ -121,13 +135,15 @@ class LibrariesOperations:
         return next(cursor, None)
 
     def list_libraries(self, enabled_only: bool = False) -> list[dict[str, Any]]:
-        """List all libraries.
+        """List all libraries with scan state joined.
+
+        Batch-joins scan state from library_scans collection for API compatibility.
 
         Args:
             enabled_only: If True, only return enabled libraries
 
         Returns:
-            List of library dicts
+            List of library dicts with scan state merged
 
         """
         filter_clause = "FILTER lib.is_enabled == true" if enabled_only else ""
@@ -138,8 +154,20 @@ class LibrariesOperations:
                 f"""
             FOR lib IN libraries
                 {filter_clause}
+                LET scan = FIRST(
+                    FOR s IN OUTBOUND lib library_has_scan
+                        RETURN s
+                )
                 SORT lib.created_at ASC
-                RETURN lib
+                RETURN MERGE(lib, {{
+                    scan_status: scan.status || "idle",
+                    scan_progress: scan.files_processed || 0,
+                    scan_total: scan.files_total || 0,
+                    scanned_at: scan.completed_at,
+                    scan_error: scan.error,
+                    last_scan_started_at: scan.started_at,
+                    scan_type_in_progress: scan.scan_type
+                }})
             """,
             ),
         )
@@ -277,11 +305,8 @@ class LibrariesOperations:
     ) -> None:
         """Update library scan status.
 
-        Only updates fields that are explicitly provided. Does not reset
-        scan_status when only updating progress/total.
-
-        When status is set to 'complete', scan_error is automatically cleared
-        unless an explicit error value is provided.
+        Delegates to library_scans.update_scan() for actual storage.
+        Maintains backward-compatible parameter names.
 
         Args:
             library_id: Library _id (e.g., "libraries/12345")
@@ -291,39 +316,36 @@ class LibrariesOperations:
             error or scan_error: Error message if status is 'error'
 
         """
+        assert self.parent_db is not None, "parent_db required for scan operations"
+
         # Support both old and new parameter names
-        # IMPORTANT: Only include scan_status if explicitly provided
-        final_status = status or scan_status  # None if not provided
+        final_status = status or scan_status
         final_progress = progress if progress is not None else scan_progress
         final_total = total if total is not None else scan_total
         final_error = error or scan_error
 
-        # Build update fields dynamically - only include what was provided
-        update_fields: dict[str, Any] = {"updated_at": now_ms().value}
+        # Build update fields for library_scans (using new field names)
+        update_fields: dict[str, Any] = {}
 
         if final_status is not None:
-            update_fields["scan_status"] = final_status
+            update_fields["status"] = final_status
             if final_status == "complete":
-                update_fields["scanned_at"] = now_ms().value
-                # Clear scan_error on successful completion unless explicitly set
+                update_fields["completed_at"] = now_ms().value
+                # Clear error on successful completion unless explicitly set
                 if final_error is None:
-                    update_fields["scan_error"] = None
+                    update_fields["error"] = None
 
         if final_progress is not None:
-            update_fields["scan_progress"] = final_progress
+            update_fields["files_processed"] = final_progress
 
         if final_total is not None:
-            update_fields["scan_total"] = final_total
+            update_fields["files_total"] = final_total
 
         if final_error is not None:
-            update_fields["scan_error"] = final_error
+            update_fields["error"] = final_error
 
-        self.db.aql.execute(
-            """
-            UPDATE PARSE_IDENTIFIER(@library_id).key WITH @fields IN libraries
-            """,
-            bind_vars=cast("dict[str, Any]", {"library_id": library_id, "fields": update_fields}),
-        )
+        if update_fields:
+            self.parent_db.library_scans.update_scan(library_id, **update_fields)
 
     def find_library_containing_path(self, file_path: str) -> dict[str, Any] | None:
         """Find the library that contains the given file path.
@@ -377,9 +399,9 @@ class LibrariesOperations:
         return None
 
     def mark_scan_started(self, library_id: str, scan_type: str) -> None:
-        """Mark a scan as started by updating library document.
+        """Mark a scan as started.
 
-        Sets last_scan_started_at to current timestamp and records scan type.
+        Sets started_at timestamp and records scan type.
         Used to detect interrupted scans on restart.
 
         Args:
@@ -387,80 +409,52 @@ class LibrariesOperations:
             scan_type: Scan type string ("quick" or "full")
 
         """
+        assert self.parent_db is not None, "parent_db required for scan operations"
         now = now_ms().value
-
-        self.db.aql.execute(
-            """
-            UPDATE PARSE_IDENTIFIER(@library_id).key WITH {
-                last_scan_started_at: @timestamp,
-                scan_type_in_progress: @scan_type
-            } IN libraries
-            """,
-            bind_vars=cast(
-                "dict[str, Any]",
-                {
-                    "library_id": library_id,
-                    "timestamp": now,
-                    "scan_type": scan_type,
-                },
-            ),
+        self.parent_db.library_scans.update_scan(
+            library_id,
+            started_at=now,
+            scan_type=scan_type,
         )
 
     def mark_scan_completed(self, library_id: str) -> None:
-        """Mark a scan as completed by clearing start timestamp.
+        """Mark a scan as completed by setting completed_at and clearing started_at.
 
         Args:
             library_id: Library document _id (e.g., "libraries/12345")
 
         """
+        assert self.parent_db is not None, "parent_db required for scan operations"
         now = now_ms().value
-
-        self.db.aql.execute(
-            """
-            UPDATE PARSE_IDENTIFIER(@library_id).key WITH {
-                last_scan_at: @timestamp,
-                last_scan_started_at: null,
-                scan_type_in_progress: null
-            } IN libraries
-            """,
-            bind_vars=cast(
-                "dict[str, Any]",
-                {
-                    "library_id": library_id,
-                    "timestamp": now,
-                },
-            ),
+        self.parent_db.library_scans.update_scan(
+            library_id,
+            completed_at=now,
+            started_at=None,
+            scan_type=None,
         )
 
     def get_scan_state(self, library_id: str) -> dict[str, Any] | None:
-        """Get current scan state from library document.
+        """Get current scan state from library_scans collection.
 
         Args:
             library_id: Library document _id (e.g., "libraries/12345")
 
         Returns:
-            Dict with last_scan_started_at, last_scan_at, scan_type_in_progress
-            or None if library not found
+            Dict with started_at, completed_at, scan_type
+            or None if no scan exists
 
         """
-        cursor = cast(
-            "Cursor",
-            self.db.aql.execute(
-                """
-                FOR lib IN libraries
-                    FILTER lib._id == @library_id
-                    RETURN {
-                        last_scan_started_at: lib.last_scan_started_at,
-                        last_scan_at: lib.last_scan_at,
-                        scan_type_in_progress: lib.scan_type_in_progress
-                    }
-                """,
-                bind_vars={"library_id": library_id},
-            ),
-        )
+        assert self.parent_db is not None, "parent_db required for scan operations"
+        scan = self.parent_db.library_scans.get_scan_state(library_id)
+        if not scan:
+            return None
 
-        results = list(cursor)
-        return results[0] if results else None
+        # Map to backward-compatible field names for check_interrupted_scan
+        return {
+            "last_scan_started_at": scan.get("started_at"),
+            "last_scan_at": scan.get("completed_at"),
+            "scan_type_in_progress": scan.get("scan_type"),
+        }
 
     def check_interrupted_scan(self, library_id: str) -> tuple[bool, str | None]:
         r"""Check if a scan was interrupted.

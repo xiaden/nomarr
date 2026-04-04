@@ -81,7 +81,7 @@ def scan_library_quick_workflow(
     try:
         # Step 2 — Pre-scan DB lookups (no global file snapshot)
         db_folder_paths = db.library_files.get_folder_rel_paths(library_id)
-        has_tagged_files = db.library_files.library_has_tagged_files(library_id)
+        has_tagged_files = db.file_states.library_has_tagged_files(library_id)
         file_count = db.library_files.count_library_files(library_id)
         cached_folders = get_cached_folders(db, library_id)  # one upfront call
 
@@ -167,6 +167,8 @@ def scan_library_quick_workflow(
                     # Upsert updated entries immediately
                     if updated_entries:
                         file_ids = upsert_scanned_files(db, updated_entries, batch.edge_bootstraps)
+                        db.file_states.bulk_set_scanned(file_ids)
+                        db.file_states.bulk_set_not_errored(file_ids)
                         metadata_by_id = {
                             fid: batch.metadata_map[entry["path"]]
                             for fid, entry in zip(file_ids, updated_entries, strict=True)
@@ -198,6 +200,8 @@ def scan_library_quick_workflow(
                     elif new_entries:
                         # No tagged files — upsert new entries immediately
                         file_ids = upsert_scanned_files(db, new_entries, batch.edge_bootstraps)
+                        db.file_states.bulk_set_scanned(file_ids)
+                        db.file_states.bulk_set_not_errored(file_ids)
                         stats["files_added"] += len(new_entries)
                         metadata_by_id = {
                             fid: batch.metadata_map[entry["path"]]
@@ -257,6 +261,8 @@ def scan_library_quick_workflow(
 
         if truly_new:
             file_ids = upsert_scanned_files(db, truly_new, unmatched_edge_bootstraps)
+            db.file_states.bulk_set_scanned(file_ids)
+            db.file_states.bulk_set_not_errored(file_ids)
             stats["files_added"] += len(truly_new)
             metadata_by_id = {
                 fid: unmatched_new_metadata[entry["path"]]

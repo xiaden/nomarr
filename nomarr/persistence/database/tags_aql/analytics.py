@@ -34,8 +34,10 @@ class TagAnalyticsMixin:
 
         if library_id:
             library_filter = """
-                LET file = DOCUMENT(edge._from)
-                FILTER file != null AND file.library_id == @library_id
+                FOR file IN OUTBOUND @library_id library_contains_file
+                    FILTER edge._from == file._id
+                    LIMIT 1
+                    RETURN 1
             """
             bind_vars["library_id"] = library_id
 
@@ -45,7 +47,7 @@ class TagAnalyticsMixin:
             LET song_count = LENGTH(
                 FOR edge IN song_has_tags
                     FILTER edge._to == tag._id
-                    {library_filter}
+                    {"LET lib_match = (" + library_filter + ") FILTER LENGTH(lib_match) > 0" if library_id else ""}
                     RETURN 1
             )
             FILTER song_count > 0
@@ -83,8 +85,10 @@ class TagAnalyticsMixin:
 
         if library_id:
             library_filter = """
-                LET file = DOCUMENT(edge._from)
-                FILTER file != null AND file.library_id == @library_id
+                FOR file IN OUTBOUND @library_id library_contains_file
+                    FILTER edge._from == file._id
+                    LIMIT 1
+                    RETURN 1
             """
             bind_vars["library_id"] = library_id
 
@@ -94,7 +98,7 @@ class TagAnalyticsMixin:
             LET song_count = LENGTH(
                 FOR edge IN song_has_tags
                     FILTER edge._to == tag._id
-                    {library_filter}
+                    {"LET lib_match = (" + library_filter + ") FILTER LENGTH(lib_match) > 0" if library_id else ""}
                     RETURN 1
             )
             FILTER song_count > 0

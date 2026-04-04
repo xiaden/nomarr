@@ -254,7 +254,10 @@ def _compare_calibrations(
 
     # Calculate all metrics
     apd_p5, apd_p95 = _calculate_apd(
-        old_calibration["p5"], old_calibration["p95"], new_calibration["p5"], new_calibration["p95"],
+        old_calibration["p5"],
+        old_calibration["p95"],
+        new_calibration["p5"],
+        new_calibration["p95"],
     )
     srd = _calculate_srd(old_calibration["p5"], old_calibration["p95"], new_calibration["p5"], new_calibration["p95"])
     jsd = _calculate_jsd(old_scores, new_scores)
@@ -355,17 +358,18 @@ def generate_histogram_calibration_wf(
     total_heads = len(heads)
 
     for head_idx, head_info in enumerate(heads):
-        # Construct identifiers
-        embedder_date = "unknown"
-        if head_info.embedder_release_date:
-            embedder_date = head_info.embedder_release_date.replace("-", "")
+        # Resolve model_id from head's model_path
+        model_doc = db.ml_models.get_model_by_path(head_info.model_path)
+        if model_doc is None:
+            logger.error(f"[histogram_calibration_wf] No model found for path: {head_info.model_path}")
+            failed_count += 1
+            continue
 
-        model_key = f"{head_info.backbone}-{embedder_date}"
+        model_id = model_doc["_id"]
         head_name = head_info.name
         labels = head_info.labels
-        version = 1  # model version (stable across ONNX era)
 
-        logger.info(f"[histogram_calibration_wf] Processing head {head_name} (version {version}, labels={labels})")
+        logger.info(f"[histogram_calibration_wf] Processing head {head_name} (model_id={model_id}, labels={labels})")
 
         # Report progress (per-head, outer loop)
         if progress_callback:
@@ -379,33 +383,31 @@ def generate_histogram_calibration_wf(
         for raw_label in labels:
             # Normalize label to match DB tag format ("non_party" → "not_party")
             label = normalize_tag_label(raw_label)
-            label_key = f"{model_key}:{head_name}:{label}"
+            label_key = f"{model_id}:{head_name}:{label}"
             logger.info(f"[histogram_calibration_wf] Processing label {label_key}")
 
             try:
                 # Generate calibration from histogram (single label)
                 calib_result = generate_calibration_from_histogram(
                     db=db,
-                    model_key=model_key,
+                    model_id=model_id,
                     head_name=head_name,
                     label=label,
-                    version=version,
                     lo=0.0,
                     hi=1.0,
                     bins=10000,
                 )
 
                 # Compute calibration definition hash (includes label)
-                calib_def_hash = compute_calibration_def_hash(model_key, head_name, label, version)
+                calib_def_hash = compute_calibration_def_hash(model_id, head_name, label)
 
                 # Upsert calibration_state (includes label)
                 save_calibration_state(
                     db,
-                    model_key=model_key,
+                    model_id=model_id,
                     head_name=head_name,
                     label=label,
                     calibration_def_hash=calib_def_hash,
-                    version=version,
                     histogram_spec={"lo": 0.0, "hi": 1.0, "bins": 10000, "bin_width": 0.0001},
                     p5=calib_result["p5"],
                     p95=calib_result["p95"],
@@ -447,5 +449,3 @@ def generate_histogram_calibration_wf(
         "results": results,
         "global_version": global_version_hash,
     }
-
-

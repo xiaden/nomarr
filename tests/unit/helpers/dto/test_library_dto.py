@@ -202,6 +202,59 @@ class TestLibraryDict:
         )
         assert lib._id.startswith("libraries/")
 
+    @pytest.mark.unit
+    def test_can_create_library_with_joined_scan_state(self) -> None:
+        """Should include scan fields joined from library_scans collection.
+
+        After schema refactor, scan state lives in library_scans collection
+        and is joined into library responses. This test verifies LibraryDict
+        accepts the joined fields.
+        """
+        lib = LibraryDict(
+            _id="libraries/12345",
+            _key="12345",
+            _rev="_abc123",
+            name="Music",
+            root_path="/music",
+            is_enabled=True,
+            created_at=1700000000000,
+            updated_at=1700000000000,
+            # Joined scan state fields
+            scan_status="complete",
+            scan_progress=1000,
+            scan_total=1000,
+            scanned_at=1700001000000,
+            last_scan_started_at=1700000500000,
+            last_scan_at=1700001000000,
+            scan_type_in_progress=None,  # No scan running
+        )
+        # Verify joined fields are accessible
+        assert lib.last_scan_started_at == 1700000500000
+        assert lib.last_scan_at == 1700001000000
+        assert lib.scan_type_in_progress is None
+
+    @pytest.mark.unit
+    def test_can_create_library_with_active_scan(self) -> None:
+        """Should handle library with active scan in progress."""
+        lib = LibraryDict(
+            _id="libraries/12345",
+            _key="12345",
+            _rev="_abc123",
+            name="Music",
+            root_path="/music",
+            is_enabled=True,
+            created_at=1700000000000,
+            updated_at=1700000000000,
+            scan_status="scanning",
+            scan_progress=250,
+            scan_total=1000,
+            last_scan_started_at=1700000500000,
+            scan_type_in_progress="quick",
+        )
+        assert lib.scan_status == "scanning"
+        assert lib.scan_type_in_progress == "quick"
+        assert lib.last_scan_started_at == 1700000500000
+
 
 class TestStartScanResult:
     """Tests for StartScanResult dataclass."""

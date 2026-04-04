@@ -3,11 +3,9 @@
 This is a multi-file subpackage that splits LibraryFilesOperations into logical modules:
 - crud.py: Basic CRUD operations
 - queries.py: General file queries
-- calibration.py: Calibration-specific queries
 - chromaprint.py: Chromaprint queries
 - reconciliation.py: File reconciliation operations
 - stats.py: Statistics queries
-- status.py: Status queries
 - tracks.py: Track-specific queries
 
 The main class LibraryFilesOperations composes these mixins.
@@ -20,13 +18,11 @@ from typing import TYPE_CHECKING
 
 from nomarr.persistence.arango_client import DatabaseLike
 
-from .calibration import LibraryFilesCalibrationMixin
 from .chromaprint import LibraryFilesChromaprintMixin
 from .crud import LibraryFilesCrudMixin
 from .queries import LibraryFilesQueriesMixin
 from .reconciliation import LibraryFilesReconciliationMixin
 from .stats import LibraryFilesStatsMixin
-from .status import LibraryFilesStatusMixin
 from .tracks import LibraryFilesTracksMixin
 
 if TYPE_CHECKING:
@@ -36,8 +32,6 @@ if TYPE_CHECKING:
 class LibraryFilesOperations(
     LibraryFilesCrudMixin,
     LibraryFilesQueriesMixin,
-    LibraryFilesStatusMixin,
-    LibraryFilesCalibrationMixin,
     LibraryFilesReconciliationMixin,
     LibraryFilesStatsMixin,
     LibraryFilesChromaprintMixin,

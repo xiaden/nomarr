@@ -10,7 +10,7 @@ Processing state is now managed directly via library_files.needs_tagging field.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Annotated
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -18,12 +18,11 @@ from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_key
 from nomarr.interfaces.api.types.admin_types import WorkerOperationResponse
 from nomarr.interfaces.api.web.dependencies import get_calibration_service, get_config_service, get_workers_coordinator
+from nomarr.services.domain.calibration_svc import CalibrationService
+from nomarr.services.infrastructure.config_svc import ConfigService
+from nomarr.services.infrastructure.worker_system_svc import WorkerSystemService
 
 logger = logging.getLogger(__name__)
-if TYPE_CHECKING:
-    from nomarr.services.domain.calibration_svc import CalibrationService
-    from nomarr.services.infrastructure.config_svc import ConfigService
-    from nomarr.services.infrastructure.worker_system_svc import WorkerSystemService
 router = APIRouter(tags=["admin"], prefix="/v1/admin")
 
 
@@ -73,4 +72,3 @@ async def admin_run_calibration(
         raise HTTPException(
             status_code=500, detail=sanitize_exception_message(e, "Calibration generation failed")
         ) from e
-

@@ -280,6 +280,80 @@ def upgrade(db: DatabaseLike) -> None:
                 ],
             )
             logger.info("[V001] Created graph tag_graph")
+    if not db.has_graph("library_graph"):  # type: ignore[union-attr]
+        with contextlib.suppress(GraphCreateError):
+            db.create_graph(  # type: ignore[union-attr]
+                "library_graph",
+                edge_definitions=[
+                    {
+                        "edge_collection": "library_contains_file",
+                        "from_vertex_collections": ["libraries"],
+                        "to_vertex_collections": ["library_files"],
+                    },
+                    {
+                        "edge_collection": "library_contains_folder",
+                        "from_vertex_collections": ["libraries"],
+                        "to_vertex_collections": ["library_folders"],
+                    },
+                    {
+                        "edge_collection": "library_has_scan",
+                        "from_vertex_collections": ["libraries"],
+                        "to_vertex_collections": ["library_scans"],
+                    },
+                ],
+            )
+            logger.info("[V021] Created graph library_graph")
+    if not db.has_graph("file_graph"):  # type: ignore[union-attr]
+        with contextlib.suppress(GraphCreateError):
+            db.create_graph(  # type: ignore[union-attr]
+                "file_graph",
+                edge_definitions=[
+                    {
+                        "edge_collection": "file_has_state",
+                        "from_vertex_collections": ["library_files"],
+                        "to_vertex_collections": ["file_states"],
+                    },
+                    {
+                        "edge_collection": "song_has_tags",
+                        "from_vertex_collections": ["library_files"],
+                        "to_vertex_collections": ["tags"],
+                    },
+                    {
+                        "edge_collection": "file_has_vectors",
+                        "from_vertex_collections": ["library_files"],
+                        "to_vertex_collections": ["vectors_track_hot", "vectors_track_cold"],
+                    },
+                    {
+                        "edge_collection": "file_has_segment_stats",
+                        "from_vertex_collections": ["library_files"],
+                        "to_vertex_collections": ["segment_scores_stats"],
+                    },
+                ],
+            )
+            logger.info("[V021] Created graph file_graph")
+    if not db.has_graph("ml_graph"):  # type: ignore[union-attr]
+        with contextlib.suppress(GraphCreateError):
+            db.create_graph(  # type: ignore[union-attr]
+                "ml_graph",
+                edge_definitions=[
+                    {
+                        "edge_collection": "model_has_output",
+                        "from_vertex_collections": ["ml_models"],
+                        "to_vertex_collections": ["ml_model_outputs"],
+                    },
+                    {
+                        "edge_collection": "model_has_calibration",
+                        "from_vertex_collections": ["ml_models"],
+                        "to_vertex_collections": ["calibration_state"],
+                    },
+                    {
+                        "edge_collection": "tag_model_output",
+                        "from_vertex_collections": ["tags"],
+                        "to_vertex_collections": ["ml_model_outputs"],
+                    },
+                ],
+            )
+            logger.info("[V021] Created graph ml_graph")
 
     # -- Seed documents --
     if not db.collection("file_states").get("calibrated"):  # type: ignore[union-attr]

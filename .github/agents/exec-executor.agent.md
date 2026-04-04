@@ -1,6 +1,7 @@
 ---
 name: Exec-Executor
 description: Implements one phase of a plan. Reads context files, executes steps sequentially, marks steps complete with annotations. Purely mechanical — no analytical decisions. No spawning children. Reports phase completion to Exec-Manager.
+model: GPT-5.4 (copilot)
 user-invocable: false
 agents: []
 tools: [read/readFile, edit/editFiles, search/codebase, search/fileSearch, search/listDirectory, search/textSearch, nomarr_dev/edit_file_create, nomarr_dev/edit_file_insert_at_boundary, nomarr_dev/edit_file_replace_string, nomarr_dev/locate_module_symbol, nomarr_dev/plan_complete_step, nomarr_dev/plan_read, nomarr_dev/read_file_line, nomarr_dev/read_file_line_range, nomarr_dev/read_file_symbol_at_line, nomarr_dev/read_module_api, nomarr_dev/read_module_source]

@@ -91,8 +91,13 @@ class TagMoodMixin:
 
             if library_id:
                 library_filter = """
-                    LET file = DOCUMENT(edge._from)
-                    FILTER file != null AND file.library_id == @library_id
+                    LET lib_match = (
+                        FOR file IN OUTBOUND @library_id library_contains_file
+                            FILTER edge._from == file._id
+                            LIMIT 1
+                            RETURN 1
+                    )
+                    FILTER LENGTH(lib_match) > 0
                 """
                 bind_vars["library_id"] = library_id
 
@@ -145,30 +150,36 @@ class TagMoodMixin:
         tiers: dict[str, dict[str, Any]] = {}
 
         for tier_name, rel in tier_map.items():
-            library_filter = ""
             bind_vars: dict[str, Any] = {"rel": rel}
 
             if library_id:
-                library_filter = "FILTER file.library_id == @library_id"
                 bind_vars["library_id"] = library_id
-
-            query = f"""
-            LET tagged_files = (
-                FOR tag IN tags
-                    FILTER tag.rel == @rel
-                    FOR edge IN song_has_tags
-                        FILTER edge._to == tag._id
-                        RETURN DISTINCT edge._from
-            )
-            LET filtered = (
-                FOR file_id IN tagged_files
-                    LET file = DOCUMENT(file_id)
-                    FILTER file != null
-                    {library_filter}
-                    RETURN 1
-            )
-            RETURN LENGTH(filtered)
-            """
+                query = """
+                LET library_file_ids = (
+                    FOR file IN OUTBOUND @library_id library_contains_file
+                        RETURN file._id
+                )
+                LET tagged_files = (
+                    FOR tag IN tags
+                        FILTER tag.rel == @rel
+                        FOR edge IN song_has_tags
+                            FILTER edge._to == tag._id
+                            FILTER edge._from IN library_file_ids
+                            RETURN DISTINCT edge._from
+                )
+                RETURN LENGTH(tagged_files)
+                """
+            else:
+                query = """
+                LET tagged_files = (
+                    FOR tag IN tags
+                        FILTER tag.rel == @rel
+                        FOR edge IN song_has_tags
+                            FILTER edge._to == tag._id
+                            RETURN DISTINCT edge._from
+                )
+                RETURN LENGTH(tagged_files)
+                """
             cursor = cast("Cursor", self.db.aql.execute(query, bind_vars=cast("dict[str, Any]", bind_vars)))
             tagged_count = next(cursor, 0)
 
@@ -206,8 +217,13 @@ class TagMoodMixin:
 
             if library_id:
                 library_filter = """
-                    LET file = DOCUMENT(edge._from)
-                    FILTER file != null AND file.library_id == @library_id
+                    LET lib_match = (
+                        FOR file IN OUTBOUND @library_id library_contains_file
+                            FILTER edge._from == file._id
+                            LIMIT 1
+                            RETURN 1
+                    )
+                    FILTER LENGTH(lib_match) > 0
                 """
                 bind_vars["library_id"] = library_id
 
@@ -285,7 +301,15 @@ class TagMoodMixin:
         bind_vars: dict[str, Any] = {"limit": limit, "rels": rels}
 
         if library_id:
-            library_filter_clause = "FILTER file.library_id == @library_id"
+            library_filter_clause = """
+                LET lib_match = (
+                    FOR lf IN OUTBOUND @library_id library_contains_file
+                        FILTER edge._from == lf._id
+                        LIMIT 1
+                        RETURN 1
+                )
+                FILTER LENGTH(lib_match) > 0
+            """
             bind_vars["library_id"] = library_id
         else:
             library_filter_clause = ""
@@ -301,8 +325,6 @@ class TagMoodMixin:
                 FILTER tag.value != null
                 FOR edge IN song_has_tags
                     FILTER edge._to == tag._id
-                    LET file = DOCUMENT(edge._from)
-                    FILTER file != null
                     {library_filter_clause}
                     COLLECT song = edge._from INTO mood_vals = tag.value
                     RETURN {{ song, moods: UNIQUE(mood_vals) }}

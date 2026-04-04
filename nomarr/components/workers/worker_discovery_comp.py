@@ -17,27 +17,20 @@ logger = logging.getLogger(__name__)
 
 def discover_next_file(
     db: Database,
-    min_duration_s: int | None = None,
-    allow_short: bool = True,
 ) -> str | None:
-    """Discover next unprocessed file.
+    """Discover next untagged file.
 
-    Queries library_files for files with needs_tagging=1 and is_valid=1.
-    Uses deterministic ordering by _key for consistent work distribution.
+    Uses file_states graph traversal to find files in the not_tagged state,
+    excluding too_short and already-claimed files.
 
     Args:
         db: Database instance
-        min_duration_s: Minimum duration in seconds (skip shorter files at DB level)
-        allow_short: If True, skip duration filtering
 
     Returns:
         File _id or None if no work available
 
     """
-    file_doc = db.library_files.discover_next_unprocessed_file(
-        min_duration_s=min_duration_s,
-        allow_short=allow_short,
-    )
+    file_doc = db.file_states.discover_next_untagged_file(exclude_claimed=True)
     if file_doc:
         return str(file_doc["_id"])
     return None
@@ -94,13 +87,11 @@ def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
 def discover_and_claim_file(
     db: Database,
     worker_id: str,
-    min_duration_s: int | None = None,
-    allow_short: bool = True,
 ) -> str | None:
     """Discover and claim the next available file for processing.
 
     Combined operation that:
-    1. Discovers next unprocessed file (optionally filtered by duration)
+    1. Discovers next untagged file (excludes too_short and claimed)
     2. Attempts to claim it
     3. Returns file_id if successful, None otherwise
 
@@ -109,18 +100,12 @@ def discover_and_claim_file(
     Args:
         db: Database instance
         worker_id: Worker identifier (e.g., "worker:tag:0")
-        min_duration_s: Minimum duration in seconds (skip shorter files at DB level)
-        allow_short: If True, skip duration filtering
 
     Returns:
         Claimed file _id or None if no work available or claim failed
 
     """
-    file_id = discover_next_file(
-        db,
-        min_duration_s=min_duration_s,
-        allow_short=allow_short,
-    )
+    file_id = discover_next_file(db)
     if not file_id:
         logger.debug("[Discovery] No files found needing processing (worker=%s)", worker_id)
         return None

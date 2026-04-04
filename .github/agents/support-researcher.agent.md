@@ -1,6 +1,7 @@
 ---
 name: Support-Researcher
 description: Deep research agent for codebase exploration and external documentation. Returns structured findings with code locations, API references, and design-relevant facts. Read-only — no edits, no execution. Invokable directly or via any manager/design agent.
+model: Claude Sonnet 4.6 (copilot)
 argument-hint: Describe what to research (codebase/external/both) and depth (quick/standard/thorough)
 agents: []
 tools: [vscode/runCommand, vscode/vscodeAPI, vscode/askQuestions, execute/getTerminalOutput, execute/awaitTerminal, execute/killTerminal, execute/runInTerminal, read/readFile, read/viewImage, read/terminalLastCommand, search/codebase, search/fileSearch, search/listDirectory, search/textSearch, search/usages, web, 'context7/*', nomarr_dev/list_project_directory_tree, nomarr_dev/locate_module_symbol, nomarr_dev/read_file_line, nomarr_dev/read_file_line_range, nomarr_dev/read_file_symbol_at_line, nomarr_dev/read_module_api, nomarr_dev/read_module_source, nomarr_dev/search_file_text, nomarr_dev/trace_module_calls, nomarr_dev/trace_project_endpoint, oraios/serena/activate_project, oraios/serena/find_file, oraios/serena/find_referencing_symbols, oraios/serena/get_symbols_overview, oraios/serena/list_dir, oraios/serena/search_for_pattern, oraios/serena/find_symbol]

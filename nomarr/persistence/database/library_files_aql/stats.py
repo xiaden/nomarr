@@ -17,66 +17,74 @@ class LibraryFilesStatsMixin:
     collection: Any
     parent_db: "Database | None"
 
-    def get_library_stats(self, library_id: int | None = None) -> dict[str, Any]:
+    def get_library_stats(self, library_id: str | None = None) -> dict[str, Any]:
         """Get library statistics.
 
+        Uses edge traversal via library_contains_file when library_id is provided.
         Uses ``db.file_states.count_untagged_files()`` for the
         ``needs_tagging_count`` metric.
 
         Args:
-            library_id: Optional library ID to filter.
+            library_id: Optional library _id to filter (uses edge traversal).
 
         Returns:
             Dict with: total_files, total_artists, total_albums, total_duration, total_size,
                        needs_tagging_count (files awaiting processing).
         """
-        filter_clause = "FILTER file.library_id == @library_id" if library_id is not None else ""
-        bind_vars = {"library_id": library_id} if library_id is not None else {}
+        if library_id is not None:
+            # Use edge traversal for library-specific stats
+            query = """
+                FOR file IN OUTBOUND @library_id library_contains_file
+                    COLLECT AGGREGATE
+                        total_files = COUNT(1),
+                        total_artists = COUNT_DISTINCT(file.artist),
+                        total_albums = COUNT_DISTINCT(file.album),
+                        total_duration = SUM(file.duration_seconds),
+                        total_size = SUM(file.file_size)
+                    RETURN {
+                        total_files,
+                        total_artists,
+                        total_albums,
+                        total_duration,
+                        total_size
+                    }
+            """
+            bind_vars: dict[str, Any] = {"library_id": library_id}
+        else:
+            # Global stats — scan all files
+            query = """
+                FOR file IN library_files
+                    COLLECT AGGREGATE
+                        total_files = COUNT(1),
+                        total_artists = COUNT_DISTINCT(file.artist),
+                        total_albums = COUNT_DISTINCT(file.album),
+                        total_duration = SUM(file.duration_seconds),
+                        total_size = SUM(file.file_size)
+                    RETURN {
+                        total_files,
+                        total_artists,
+                        total_albums,
+                        total_duration,
+                        total_size
+                    }
+            """
+            bind_vars = {}
 
         cursor = cast(
             "Cursor",
-            self.db.aql.execute(
-                f"""
-            FOR file IN library_files
-                {filter_clause}
-                COLLECT AGGREGATE
-                    total_files = COUNT(1),
-                    total_artists = COUNT_DISTINCT(file.artist),
-                    total_albums = COUNT_DISTINCT(file.album),
-                    total_duration = SUM(file.duration_seconds),
-                    total_size = SUM(file.file_size)
-                RETURN {{
-                    total_files,
-                    total_artists,
-                    total_albums,
-                    total_duration,
-                    total_size
-                }}
-            """,
-                bind_vars=cast("dict[str, Any]", bind_vars),
-            ),
+            self.db.aql.execute(query, bind_vars=cast("dict[str, Any]", bind_vars)),
         )
         result: dict[str, Any] = next(cursor, {})
         assert self.parent_db is not None, "parent_db required for edge-based state"
-        result["needs_tagging_count"] = self.parent_db.file_states.count_untagged_files(library_id)
+        # TODO(schema-refactor): count_untagged_files will be updated to str|None in later phase
+        result["needs_tagging_count"] = self.parent_db.file_states.count_untagged_files(library_id)  # type: ignore[arg-type]
         return result
-
-    def count_recently_tagged(self, window_seconds: int = 300) -> int:
-        """Count files tagged within a recent time window.
-
-        Delegates to ``db.file_states.count_recently_tagged()``.
-
-        Args:
-            window_seconds: Lookback window in seconds (default 300 = 5 minutes).
-
-        Returns:
-            Number of files tagged within the window.
-        """
-        assert self.parent_db is not None, "parent_db required for edge-based state"
-        return self.parent_db.file_states.count_recently_tagged(window_seconds)
 
     def get_library_counts(self) -> dict[str, dict[str, int]]:
         """Get file and folder counts for all libraries.
+
+        Aggregates via library_contains_file edges rather than a library_id field
+        on file documents.
 
         Returns:
             Dict mapping library_id to {"file_count": int, "folder_count": int}
@@ -86,8 +94,9 @@ class LibraryFilesStatsMixin:
             "Cursor",
             self.db.aql.execute(
                 """
-                FOR file IN library_files
-                    COLLECT library_id = file.library_id
+                FOR edge IN library_contains_file
+                    LET file = DOCUMENT(edge._to)
+                    COLLECT library_id = edge._from
                     AGGREGATE
                         file_count = COUNT(1),
                         folders = UNIQUE(

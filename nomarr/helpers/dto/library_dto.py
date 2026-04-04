@@ -87,9 +87,6 @@ class StartScanResult:
     job_ids: list[int] | list[str]  # Can be int (legacy queue IDs) or str (task IDs)
 
 
-
-
-
 @dataclass
 @dataclass
 class UpdateLibraryFromTagsParams:
@@ -191,9 +188,6 @@ class FileTagsResult:
     tags: list[FileTag]
 
 
-
-
-
 @dataclass
 class ReconcileTagsResult:
     """Result from tagging_svc.reconcile_library."""
@@ -211,7 +205,32 @@ class ReconcileStatusResult:
     in_progress: bool  # Whether reconciliation is currently running
 
 
+class ErroredFileItem(TypedDict):
+    """Single errored file with basic metadata."""
+
+    _id: str
+    path: str
+    duration_seconds: float | None
+    artist: str | None
+    title: str | None
+
+
+class ErroredFilesResult(TypedDict):
+    """Result from library_service.get_errored_files."""
+
+    files: list[ErroredFileItem]
+    total: int
+
+
+class RetryErroredResult(TypedDict):
+    """Result from library_service.retry_errored_files."""
+
+    retried: int
+
+
 __all__ = [
+    "ErroredFileItem",
+    "ErroredFilesResult",
     "FileTag",
     "FileTagsResult",
     "LibraryDict",
@@ -220,6 +239,7 @@ __all__ = [
     "LibraryStatsResult",
     "ReconcileStatusResult",
     "ReconcileTagsResult",
+    "RetryErroredResult",
     "SearchFilesQuery",
     "SearchFilesResult",
     "StartScanResult",

@@ -30,30 +30,29 @@ class LibraryFilesCrudMixin:
         album: str | None = None,
         title: str | None = None,
         last_tagged_at: int | None = None,
-        has_nomarr_namespace: bool | None = None,
-        last_written_mode: str | None = None,
     ) -> str:
         """Insert or update a library file entry.
 
-        Uses (library_id, normalized_path) as upsert key, matching batch upsert.
+        Uses absolute path as upsert key (globally unique across all libraries).
         Stores both absolute path (for filesystem access) and normalized_path
-        (POSIX relative path for identity).
+        (POSIX relative path for display/identity within library).
 
-        State fields (tagged, calibrated, reconciled) are managed via
+        Library ownership is tracked via ``library_contains_file`` edges,
+        not via a ``library_id`` field on the document.
+
+        State fields (tagged, calibrated, etc.) are managed via
         ``file_has_state`` edges, not flat fields on the document.
 
         Args:
             path: LibraryPath with validated file path (must have status == "valid")
-            library_id: ID of owning library
+            library_id: ID of owning library (used for edge, not stored on doc)
             file_size: File size in bytes
             modified_time: Last modified timestamp
             duration_seconds: Audio duration
             artist: Artist name
             album: Album name
             title: Track title
-            last_tagged_at: Last tagging timestamp (for scan-time edge bootstrap)
-            has_nomarr_namespace: Whether file has nomarr tags in audio file
-            last_written_mode: Inferred write mode from existing file tags
+            last_tagged_at: Last tagging timestamp (triggers set_tagged edge)
 
         Returns:
             Document _id (e.g., "library_files/12345")
@@ -69,13 +68,14 @@ class LibraryFilesCrudMixin:
         scanned_at = now_ms().value
         normalized_path = str(path.relative)
         absolute_path = str(path.absolute)
+
+        # Upsert file document — key on absolute path (globally unique)
         cursor = cast(
             "Cursor",
             self.db.aql.execute(
                 """
-            UPSERT { library_id: @library_id, normalized_path: @normalized_path }
+            UPSERT { path: @path }
             INSERT {
-                library_id: @library_id,
                 path: @path,
                 normalized_path: @normalized_path,
                 file_size: @file_size,
@@ -88,8 +88,7 @@ class LibraryFilesCrudMixin:
                 chromaprint: null
             }
             UPDATE {
-                library_id: @library_id,
-                path: @path,
+                normalized_path: @normalized_path,
                 file_size: @file_size,
                 modified_time: @modified_time,
                 duration_seconds: @duration_seconds,
@@ -104,7 +103,6 @@ class LibraryFilesCrudMixin:
                 bind_vars=cast(
                     "dict[str, Any]",
                     {
-                        "library_id": library_id,
                         "path": absolute_path,
                         "normalized_path": normalized_path,
                         "file_size": file_size,
@@ -122,21 +120,24 @@ class LibraryFilesCrudMixin:
         result = next(cursor)
         file_id = str(result)
 
-        # Bootstrap edge-based state from scan-time information
-        if self.parent_db is not None and last_tagged_at is not None:
-            # File was previously tagged — create ml_tagged edge
-            self.parent_db.file_states.set_ml_tagged(
-                file_id, version="scan_inferred", tagged_at=last_tagged_at
-            )
+        # Upsert library->file edge for ownership tracking
+        self.db.aql.execute(
+            """
+            UPSERT { _from: @library_id, _to: @file_id }
+            INSERT { _from: @library_id, _to: @file_id }
+            UPDATE {}
+            IN library_contains_file
+            """,
+            bind_vars={"library_id": library_id, "file_id": file_id},
+        )
 
-        if self.parent_db is not None and last_written_mode is not None:
-            # File had existing tags on disk — create reconciled edge
-            self.parent_db.file_states.set_reconciled(
-                file_id=file_id,
-                mode=last_written_mode,
-                calibration_hash=None,
-                has_namespace=has_nomarr_namespace or False,
-            )
+        # Initialize file state edges (all-negative) for new files
+        if self.parent_db is not None:
+            self.parent_db.file_states.initialize_file_states(file_id)
+
+            # File was previously tagged — transition to tagged state
+            if last_tagged_at is not None:
+                self.parent_db.file_states.set_tagged(file_id)
 
         return file_id
 
@@ -187,11 +188,15 @@ class LibraryFilesCrudMixin:
         """Batch upsert file documents to ArangoDB.
 
         More efficient than individual upserts - reduces DB roundtrips.
-        Uses (library_id, normalized_path) as unique key for upsert logic.
+        Uses absolute path as unique key (globally unique across libraries).
+
+        Library ownership is tracked via ``library_contains_file`` edges,
+        not via a ``library_id`` field on the document.
 
         Args:
             file_docs: List of file documents. Each must have:
-                - library_id: Library document _id
+                - path: Absolute file path (used as upsert key)
+                - library_id: Library document _id (for edge creation, not stored)
                 - normalized_path: POSIX-style path relative to library root
                 - Other fields as needed (file_size, modified_time, etc.)
 
@@ -205,25 +210,50 @@ class LibraryFilesCrudMixin:
         if not file_docs:
             return []
 
+        # Extract library_ids before removing from docs (needed for edge creation)
+        library_ids = [doc.get("library_id") for doc in file_docs]
+
+        # Remove library_id from docs - ownership tracked via edges
+        clean_docs = [{k: v for k, v in doc.items() if k != "library_id"} for doc in file_docs]
+
         # Use AQL UPSERT for atomic insert-or-update, return _ids
-        # Key on (library_id, normalized_path) tuple
+        # Key on path (absolute path is globally unique)
         cursor = self.db.aql.execute(
             """
             FOR doc IN @docs
-                UPSERT {
-                    library_id: doc.library_id,
-                    normalized_path: doc.normalized_path
-                }
+                UPSERT { path: doc.path }
                 INSERT doc
                 UPDATE doc
                 IN library_files
                 RETURN NEW._id
             """,
-            bind_vars={"docs": file_docs},
+            bind_vars={"docs": clean_docs},
         )
 
-        # Cast cursor to list for type checker
         result: list[str] = list(cursor)  # type: ignore[arg-type]
+
+        # Batch upsert edges for library ownership
+        edge_docs = [
+            {"_from": lib_id, "_to": file_id}
+            for lib_id, file_id in zip(library_ids, result, strict=True)
+            if lib_id is not None
+        ]
+        if edge_docs:
+            self.db.aql.execute(
+                """
+                FOR edge IN @edges
+                    UPSERT { _from: edge._from, _to: edge._to }
+                    INSERT edge
+                    UPDATE {}
+                    IN library_contains_file
+                """,
+                bind_vars={"edges": edge_docs},
+            )
+
+        # Initialize file state edges for all upserted files
+        if self.parent_db is not None and result:
+            self.parent_db.file_states.initialize_file_states_batch(result)
+
         return result
 
     def update_file_path(
@@ -381,12 +411,15 @@ class LibraryFilesCrudMixin:
     def delete_files_for_library(self, library_id: str) -> int:
         """Delete all files for a library and cascade to derived data.
 
+        Uses edge traversal via ``library_contains_file`` for library filtering.
+
         Removes, in order:
         1. Track-level embedding vectors (all backbones, hot + cold)
         2. segment_scores_stats (per-label head stats)
         3. song_has_tags (entity edges)
         4. file_has_state (state edges)
-        5. library_files documents
+        5. library_contains_file edges
+        6. library_files documents
 
         Args:
             library_id: Library _id (e.g., "libraries/12345")
@@ -398,11 +431,11 @@ class LibraryFilesCrudMixin:
         if not library_id:
             return 0
 
-        # Collect file_ids for this library first
+        # Collect file_ids via edge traversal
         cursor = cast(
             "Cursor",
             self.db.aql.execute(
-                "FOR f IN library_files FILTER f.library_id == @library_id RETURN f._id",
+                "FOR f IN OUTBOUND @library_id library_contains_file RETURN f._id",
                 bind_vars={"library_id": library_id},
             ),
         )
@@ -439,18 +472,28 @@ class LibraryFilesCrudMixin:
         if self.parent_db is not None:
             self.parent_db.file_states.clear_all_states_batch(file_ids)
 
-        # Delete library_files and return count
+        # Delete library_contains_file edges
+        self.db.aql.execute(
+            """
+            FOR edge IN library_contains_file
+                FILTER edge._from == @library_id
+                REMOVE edge IN library_contains_file
+            """,
+            bind_vars={"library_id": library_id},
+        )
+
+        # Delete library_files documents by collected IDs
         cursor = cast(
             "Cursor",
             self.db.aql.execute(
                 """
                 FOR f IN library_files
-                    FILTER f.library_id == @library_id
+                    FILTER f._id IN @file_ids
                     REMOVE f IN library_files
                     COLLECT WITH COUNT INTO deleted
                     RETURN deleted
                 """,
-                bind_vars={"library_id": library_id},
+                bind_vars={"file_ids": file_ids},
             ),
         )
         results = list(cursor)
@@ -460,20 +503,25 @@ class LibraryFilesCrudMixin:
     def get_file_library_key(self, file_id: str) -> str | None:
         """Return the library ``_key`` for a given file document ID.
 
-        Reads the ``library_id`` field (e.g. ``"libraries/50607"``) and
-        returns the trailing key component (e.g. ``"50607"``).
+        Uses edge traversal via ``library_contains_file`` to find the owning
+        library, then returns the trailing key component.
 
         Args:
             file_id: Document ``_id`` (e.g. ``"library_files/12345"``).
 
         Returns:
-            Library ``_key`` string, or ``None`` if the document is not found.
+            Library ``_key`` string, or ``None`` if no edge found.
 
         """
         cursor = cast(
             "Cursor",
             self.db.aql.execute(
-                "FOR f IN library_files FILTER f._id == @file_id LIMIT 1 RETURN f.library_id",
+                """
+                FOR edge IN library_contains_file
+                    FILTER edge._to == @file_id
+                    LIMIT 1
+                    RETURN edge._from
+                """,
                 bind_vars={"file_id": file_id},
             ),
         )
