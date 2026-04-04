@@ -47,7 +47,14 @@ def test_insert_before_line(temp_workspace: Path) -> None:
     test_file.write_text("line 1\nline 2\nline 3\n")
 
     result = edit_file_insert_text(
-        [{"path": str(test_file), "content": "inserted\n", "at": "before_line", "line": 2}],
+        [
+            {
+                "path": str(test_file),
+                "content": "inserted\n",
+                "at": "before_line",
+                "anchor": "line 2",
+            },
+        ],
         workspace_root=temp_workspace,
     )
 
@@ -61,7 +68,14 @@ def test_insert_after_line(temp_workspace: Path) -> None:
     test_file.write_text("line 1\nline 2\nline 3\n")
 
     result = edit_file_insert_text(
-        [{"path": str(test_file), "content": "inserted\n", "at": "after_line", "line": 2}],
+        [
+            {
+                "path": str(test_file),
+                "content": "inserted\n",
+                "at": "after_line",
+                "anchor": "line 2",
+            },
+        ],
         workspace_root=temp_workspace,
     )
 
@@ -70,21 +84,30 @@ def test_insert_after_line(temp_workspace: Path) -> None:
 
 
 def test_batch_same_file_coordinate_preservation(temp_workspace: Path) -> None:
-    """Test that multiple insertions to same file use original coordinates."""
+    """Test that multiple insertions to same file apply in order with anchors."""
     test_file = temp_workspace / "test.py"
     test_file.write_text("line 1\nline 2\nline 3\nline 4\n")
 
-    # Insert at lines 2 and 3 (both refer to original file state)
+    # Anchor-based ops applied in order; each anchor resolves against current state
     result = edit_file_insert_text(
         [
-            {"path": str(test_file), "content": "after 3\n", "at": "after_line", "line": 3},
-            {"path": str(test_file), "content": "after 2\n", "at": "after_line", "line": 2},
+            {
+                "path": str(test_file),
+                "content": "after 2\n",
+                "at": "after_line",
+                "anchor": "line 2",
+            },
+            {
+                "path": str(test_file),
+                "content": "after 3\n",
+                "at": "after_line",
+                "anchor": "line 3",
+            },
         ],
         workspace_root=temp_workspace,
     )
 
     assert result["status"] == "applied"
-    # Should insert bottom-to-top: first after 3, then after 2
     content = test_file.read_text()
     assert content == "line 1\nline 2\nafter 2\nline 3\nafter 3\nline 4\n"
 
@@ -110,13 +133,13 @@ def test_batch_multi_file(temp_workspace: Path) -> None:
 
 
 def test_edge_case_line_1(temp_workspace: Path) -> None:
-    """Test inserting before/after line 1."""
+    """Test inserting before/after line 1 using anchors."""
     test_file = temp_workspace / "test.py"
     test_file.write_text("line 1\nline 2\n")
 
     # After line 1
     result = edit_file_insert_text(
-        [{"path": str(test_file), "content": "inserted\n", "at": "after_line", "line": 1}],
+        [{"path": str(test_file), "content": "inserted\n", "at": "after_line", "anchor": "line 1"}],
         workspace_root=temp_workspace,
     )
     assert result["status"] == "applied"
@@ -125,7 +148,14 @@ def test_edge_case_line_1(temp_workspace: Path) -> None:
     # Before line 1
     test_file.write_text("line 1\nline 2\n")
     result = edit_file_insert_text(
-        [{"path": str(test_file), "content": "inserted\n", "at": "before_line", "line": 1}],
+        [
+            {
+                "path": str(test_file),
+                "content": "inserted\n",
+                "at": "before_line",
+                "anchor": "line 1",
+            },
+        ],
         workspace_root=temp_workspace,
     )
     assert result["status"] == "applied"
@@ -176,7 +206,7 @@ def test_context_return(temp_workspace: Path) -> None:
     test_file.write_text("line 1\nline 2\nline 3\nline 4\nline 5\n")
 
     result = edit_file_insert_text(
-        [{"path": str(test_file), "content": "inserted\n", "at": "after_line", "line": 3}],
+        [{"path": str(test_file), "content": "inserted\n", "at": "after_line", "anchor": "line 3"}],
         workspace_root=temp_workspace,
     )
 
@@ -206,3 +236,88 @@ def test_response_format(temp_workspace: Path) -> None:
             assert "filepath" in op
             assert "start_line" in op
             assert "end_line" in op
+
+
+def test_insert_crlf_file(temp_workspace: Path) -> None:
+    """Test that CRLF line endings are handled without corruption."""
+    test_file = temp_workspace / "test.py"
+    # Write raw bytes with CRLF endings
+    test_file.write_bytes(b"line 1\r\nline 2\r\nline 3\r\n")
+
+    result = edit_file_insert_text(
+        [{"path": str(test_file), "content": "inserted\n", "at": "after_line", "anchor": "line 2"}],
+        workspace_root=temp_workspace,
+    )
+
+    assert result["status"] == "applied"
+    content = test_file.read_text()
+    assert "\r" not in content or content.count("\r\n") == content.count("\r")
+    # Verify inserted content is present and in correct position
+    lines = content.replace("\r\n", "\n").split("\n")
+    assert "line 1" in lines
+    assert "inserted" in lines
+    assert "line 2" in lines
+    assert lines.index("inserted") > lines.index("line 2")
+
+
+def test_insert_preserves_blank_lines_bof(temp_workspace: Path) -> None:
+    """Test that blank lines in inserted content are preserved at bof."""
+    test_file = temp_workspace / "test.py"
+    test_file.write_text("existing\n")
+
+    result = edit_file_insert_text(
+        [{"path": str(test_file), "content": "line1\nline2\n\n", "at": "bof"}],
+        workspace_root=temp_workspace,
+    )
+
+    assert result["status"] == "applied"
+    content = test_file.read_text()
+    # The blank line between inserted content and existing content should be preserved
+    lines = content.split("\n")
+    assert "line1" in lines
+    assert "line2" in lines
+    # There should be a blank line (empty string) after line2
+    line2_idx = lines.index("line2")
+    assert lines[line2_idx + 1] == ""
+
+
+def test_insert_preserves_blank_lines_anchor(temp_workspace: Path) -> None:
+    """Test that intermediate blank lines in inserted content are preserved with anchors."""
+    test_file = temp_workspace / "test.py"
+    test_file.write_text("alpha\nbeta\ngamma\n")
+
+    result = edit_file_insert_text(
+        [
+            {
+                "path": str(test_file),
+                "content": "line1\n\nline2\n",
+                "at": "before_line",
+                "anchor": "beta",
+            },
+        ],
+        workspace_root=temp_workspace,
+    )
+
+    assert result["status"] == "applied"
+    content = test_file.read_text()
+    lines = content.split("\n")
+    # Verify blank line between line1 and line2 is preserved
+    line1_idx = lines.index("line1")
+    assert lines[line1_idx + 1] == ""  # blank line preserved
+    assert lines[line1_idx + 2] == "line2"
+
+
+def test_tab_warning_propagated(temp_workspace: Path) -> None:
+    """Test that tab_warning from file metadata is propagated in the response."""
+    test_file = temp_workspace / "test.py"
+    # Write file with tab indentation to trigger tab_warning
+    test_file.write_text("def foo():\n\treturn 1\n")
+
+    result = edit_file_insert_text(
+        [{"path": str(test_file), "content": "# comment\n", "at": "bof"}],
+        workspace_root=temp_workspace,
+    )
+
+    assert result["status"] == "applied"
+    assert "tab_warning" in result
+    assert isinstance(result["tab_warning"], str)

@@ -110,7 +110,6 @@ def detect_eol(file_path: Path) -> str:
     if b"\r" in raw_bytes:
         return "\r"
     return "\n"  # Default to Unix
-    return "\n"  # Default to Unix
 
 
 def read_file_with_metadata(file_path: Path) -> dict:
@@ -124,7 +123,10 @@ def read_file_with_metadata(file_path: Path) -> dict:
         - content: str - File content as UTF-8 text
         - mtime: float - File modification time
         - eol: str - Detected line ending style (detected on raw bytes before decode)
-        - error: str - Error message if read failed
+        - tab_warning: str (optional) - Present when file contains tab
+          indentation; includes the line number of the first occurrence.
+        - error: str - Error message if read failed (mutually exclusive with
+          content/mtime/eol)
 
     """
     # Detect EOL on raw bytes first (before any encoding assumptions)
@@ -137,32 +139,41 @@ def read_file_with_metadata(file_path: Path) -> dict:
 
     content = read_result["content"]
 
+    # Normalize line endings to LF for consistent splitting
+    content = content.replace("\r\n", "\n").replace("\r", "\n")
+
     try:
         mtime = file_path.stat().st_mtime
     except OSError as e:
         return {"error": f"Failed to get file metadata: {e}"}
 
     # Check for tabs in leading whitespace
+    tab_warning: str | None = None
     lines = content.split("\n")
     for i, line in enumerate(lines, 1):
         if line and line[0] == "\t":
-            return {
-                "error": f"File contains tab in leading whitespace at line {i}. "
-                "Please convert tabs to spaces before editing.",
-            }
+            tab_warning = (
+                f"File contains tab indentation at line {i}. "
+                "Tabs preserved but may affect boundary matching."
+            )
+            break
         # Check for tabs after spaces at line start
         stripped = line.lstrip(" ")
         if stripped and stripped[0] == "\t":
-            return {
-                "error": f"File contains mixed spaces and tabs in leading whitespace at line {i}. "
-                "Please convert tabs to spaces before editing.",
-            }
+            tab_warning = (
+                f"File contains mixed spaces and tabs at line {i}. "
+                "Tabs preserved but may affect boundary matching."
+            )
+            break
 
-    return {
+    result: dict = {
         "content": content,
         "mtime": mtime,
         "eol": eol,
     }
+    if tab_warning is not None:
+        result["tab_warning"] = tab_warning
+    return result
 
 
 def resolve_file_path(file_path: str, workspace_root: Path) -> Path | dict:

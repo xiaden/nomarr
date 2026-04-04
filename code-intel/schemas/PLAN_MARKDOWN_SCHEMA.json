@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://nomarr.dev/schemas/task-plan.json",
   "title": "Nomarr Task Plan",
-  "description": "Schema for task plan markdown files in docs/dev/plans/. A plan is a static job card composed of ordered phases and flat step lists. Plans describe outcomes and constraints, not implementation procedures.",
+  "description": "Schema for task plan markdown files in artifacts/plans/. A plan is a static job card composed of ordered phases and flat step lists. Plans describe outcomes and constraints, not implementation procedures.",
   "type": "object",
   "required": ["title", "phases"],
   "properties": {

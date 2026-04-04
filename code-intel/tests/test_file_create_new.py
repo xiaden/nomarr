@@ -199,8 +199,8 @@ def test_large_file_context_capping(temp_workspace: Path) -> None:
 def test_very_large_file_over_1mb(temp_workspace: Path) -> None:
     """Test handling files larger than 1MB."""
     # Create content over 1MB (1048576 bytes)
-    # Each line is ~100 bytes, so 11000 lines = ~1.1MB
-    lines = [f"# This is line {i} with some padding text to make it longer\n" for i in range(11000)]
+    # Each line is ~61 bytes, so 18000 lines = ~1.1MB
+    lines = [f"# This is line {i} with some padding text to make it longer\n" for i in range(18000)]
     content = "".join(lines)
     assert len(content.encode()) > 1_048_576  # Verify >1MB
 
@@ -226,6 +226,7 @@ def test_very_large_file_over_1mb(temp_workspace: Path) -> None:
 def test_permission_error_rollback(temp_workspace: Path) -> None:
     """Test rollback on permission errors (if applicable)."""
     import sys
+
     if sys.platform == "win32":
         pytest.skip("Permission error simulation not reliable on Windows")
 

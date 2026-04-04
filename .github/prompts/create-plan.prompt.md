@@ -9,7 +9,7 @@ tools:
 
 # Task Plan Creation and Syntax Guide
 
-**Applies when creating or editing files in `plans/`**
+**Applies when creating or editing files in `artifacts/plans/`**
 
 Plans are parsed by `mcp_code_intel.helpers.plan_md` according to `code-intel/src/mcp_code_intel/schemas/PLAN_MARKDOWN_SCHEMA.json`. Invalid structure causes `ValueError`.
 
@@ -147,7 +147,7 @@ Fix: Unnest as flat steps, move to `**Notes:**`, or split into phases.
 
 ## Complete Examples
 
-See `plans/examples/`:
+See `artifacts/scratch/examples/`:
 - `TASK-example-A-discovery.md` through `D-cleanup.md` — Split plan set
 
 ---

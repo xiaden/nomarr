@@ -139,7 +139,8 @@ def edit_file_replace_content(ops: list[ReplaceOp], workspace_root: Path) -> Bat
             )
 
         # Extract context for response (first 2 + last 2 lines)
-        lines = op.content.split("\n")
+        normalized_content = op.content.replace("\r\n", "\n").replace("\r", "\n")
+        lines = normalized_content.split("\n")
         if not lines or (len(lines) == 1 and lines[0] == ""):
             # Empty file
             context_lines = []

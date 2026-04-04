@@ -9,7 +9,7 @@ The contracts ledger (`CONTRACTS.md`) is a living document updated after every v
 ```markdown
 # {Feature} — Contracts Ledger
 
-**Design doc:** `plans/dev/design-{feature}.md`
+**Design doc:** `artifacts/designs/pending/DD-{feature}.md`
 **Last updated:** {date} (after Plan {letter})
 
 ---

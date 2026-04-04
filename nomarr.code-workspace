@@ -5,7 +5,6 @@
 		}
 	],
 	"settings": {
-		"python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
 		"python.terminal.activateEnvironment": true,
 		"python.testing.pytestEnabled": true,
 		"python.testing.unittestEnabled": false,
@@ -13,7 +12,6 @@
 			"tests"
 		],
 		"terminal.integrated.defaultProfile.windows": "PowerShell",
-		"terminal.integrated.windowsUseConptyDll": false,
 		"files.exclude": {
 			"**/__pycache__": true,
 			"**/*.pyc": true,
@@ -27,8 +25,6 @@
 			"**/__pycache__": true,
 			"**/.pytest_cache": true
 		},
-		"git.ignoredRepositories": [],
-		"git.scanRepositories": [],
 		"editor.formatOnSave": false,
 		"editor.codeActionsOnSave": {},
 		"[python]": {
@@ -40,11 +36,20 @@
 		"diffEditor.experimental.showMoves": true,
 		"diffEditor.hideUnchangedRegions.enabled": true,
 		"task.autoDetect": "on",
-		"codeIntel.mcpServerPath": "D:\\Github\\nomarr\\code-intel\\src\\mcp_code_intel",
-		"python.terminal.activateEnvInCurrentTerminal": true,
 		"terminal.integrated.autoReplies": {
 
-		}
+		},
+		"git.ignoredRepositories": [
+			"build_resources/essentia"
+		],
+		"git.scanRepositories": [],
+		"chat.agentFilesLocations": {
+			".github/agents/Exec": true,
+			".github/agents/QA": true,
+			".github/agents/RnD": true,
+			".github/agents/Support": true
+		},
+		"chat.subagents.allowInvocationsFromSubagents": true
 	},
 	"extensions": {
 		"recommendations": [
@@ -55,35 +60,7 @@
 	},
 	"tasks": {
 		"version": "2.0.0",
-		"tasks": [
-			{
-				"label": "Setup Python Environment",
-				"type": "shell",
-				"command": "py",
-				"args": [
-					"-3",
-					"scripts/tools/ensure_venv.py"
-				],
-				"problemMatcher": [],
-				"presentation": {
-					"echo": true,
-					"reveal": "always",
-					"focus": false,
-					"panel": "shared",
-					"showReuseMessage": false,
-					"clear": false
-				},
-				"runOptions": {
-					"runOn": "folderOpen"
-				},
-				"options": {
-					"env": {
-						"PYTHONPATH": "",
-						"VIRTUAL_ENV": ""
-					}
-				}
-			}
-		]
+		"tasks": []
 	}
 }
 

@@ -38,10 +38,7 @@ def _find_all_substring_matches(
     last_possible_start = len(file_lines) - boundary_len
 
     for i in range(search_start, last_possible_start + 1):
-        if all(
-            stripped_boundary[j] in file_lines[i + j].strip()
-            for j in range(boundary_len)
-        ):
+        if all(stripped_boundary[j] in file_lines[i + j].strip() for j in range(boundary_len)):
             matches.append(i)
 
     return matches
@@ -92,8 +89,12 @@ def find_content_boundaries(
     start_boundary: str,
     end_boundary: str,
     expected_line_count: int,
-) -> tuple[int, int] | str:
+) -> tuple[int, int] | tuple[int, int, str] | str:
     """Locate a unique text range by its start and end content boundaries.
+
+    Tries exact line-count matching first.  If no exact candidate is found,
+    retries with a ±2 tolerance.  A single tolerance match is returned as a
+    3-tuple with a warning string describing the deviation.
 
     Args:
         file_lines: All lines in the file (no trailing newlines).
@@ -101,15 +102,23 @@ def find_content_boundaries(
             multiple lines (separated by ``\\n``).  Each line is stripped and
             matched as a substring.
         end_boundary: Content marking the end of the range. Same rules.
-        expected_line_count: Exact number of lines the matched range must span
-            (inclusive of boundary lines).  Serves as a safety check.
+        expected_line_count: Expected number of lines the matched range should
+            span (inclusive of boundary lines).  Exact matches are preferred;
+            a ±2 tolerance is applied when no exact match exists.
 
     Returns:
-        ``(start_line, end_line)`` 1-indexed inclusive, or an error string.
+        ``(start_line, end_line)`` — 1-indexed inclusive, exact match.
+        ``(start_line, end_line, warning)`` — 1-indexed inclusive, tolerance
+        match with a warning describing the line-count deviation.
+        ``str`` — error message when no unique range can be determined.
 
     """
+    # Normalize CRLF / bare CR in boundaries before splitting
+    start_boundary = start_boundary.replace("\r\n", "\n").replace("\r", "\n")
+    end_boundary = end_boundary.replace("\r\n", "\n").replace("\r", "\n")
+
     if expected_line_count == 1 and start_boundary == end_boundary:
-        collapsed_line = start_boundary.split("\n", 1)[0].rstrip("\r")
+        collapsed_line = start_boundary.split("\n", 1)[0]
         start_bl = [collapsed_line]
         end_bl = [collapsed_line]
     else:
@@ -119,10 +128,7 @@ def find_content_boundaries(
     # --- find all start-boundary matches ---
     start_matches = _find_all_substring_matches(file_lines, start_bl)
     if not start_matches:
-        return (
-            f"Start boundary not found in file.\n"
-            f"  Searched for: {start_boundary!r}"
-        )
+        return f"Start boundary not found in file.\n  Searched for: {start_boundary!r}"
 
     # --- for each start, find matching end + line-count candidates ---
     candidates: list[tuple[int, int]] = []  # (start_0idx, end_0idx_last_line)
@@ -134,7 +140,9 @@ def find_content_boundaries(
             # Single-line boundaries: end can be the SAME line as start
             search_from = s
         end_matches = _find_all_substring_matches(
-            file_lines, end_bl, search_start=search_from,
+            file_lines,
+            end_bl,
+            search_start=search_from,
         )
 
         for e in end_matches:
@@ -148,7 +156,49 @@ def find_content_boundaries(
         return (s0 + 1, e0 + 1)  # convert to 1-indexed
 
     if len(candidates) == 0:
-        # Provide diagnostics with context
+        # Tolerance retry: re-scan with ±2 line count tolerance
+        tolerance_candidates: list[tuple[int, int, int]] = []  # (s, e, actual)
+        for s in start_matches:
+            search_from = s + len(start_bl) - 1
+            if len(start_bl) == 1 and len(end_bl) == 1:
+                search_from = s
+            end_matches = _find_all_substring_matches(
+                file_lines,
+                end_bl,
+                search_start=search_from,
+            )
+            for e in end_matches:
+                end_last = e + len(end_bl) - 1
+                actual_count = end_last - s + 1
+                if abs(actual_count - expected_line_count) <= 2:
+                    tolerance_candidates.append((s, end_last, actual_count))
+
+        if len(tolerance_candidates) == 1:
+            s0, e0, actual = tolerance_candidates[0]
+            warning = (
+                f"expected_line_count={expected_line_count} but matched range "
+                f"has {actual} lines (off by {actual - expected_line_count:+d}). "
+                f"Proceeding with matched range."
+            )
+            return (s0 + 1, e0 + 1, warning)
+
+        if len(tolerance_candidates) > 1:
+            ambig_parts: list[str] = [
+                f"Ambiguous: {len(tolerance_candidates)} ranges found within "
+                f"±2 tolerance of expected_line_count={expected_line_count}.",
+            ]
+            for i, (s, e, actual) in enumerate(tolerance_candidates[:3]):
+                ambig_parts.append(
+                    f"  Candidate {i + 1}: lines {s + 1}-{e + 1} "
+                    f"({actual} lines, off by {actual - expected_line_count:+d})"
+                )
+                ambig_parts.append(f"    Start (line {s + 1}):")
+                ambig_parts.append(_format_match_context(file_lines, s))
+            if len(tolerance_candidates) > 3:
+                ambig_parts.append(f"  ... and {len(tolerance_candidates) - 3} more candidates")
+            return "\n".join(ambig_parts)
+
+        # Zero tolerance matches — provide diagnostics
         diag_parts: list[str] = [
             f"No matching range found with expected_line_count={expected_line_count}.",
         ]
@@ -166,7 +216,9 @@ def find_content_boundaries(
         if start_matches:
             first_s = start_matches[0]
             end_matches = _find_all_substring_matches(
-                file_lines, end_bl, search_start=first_s,
+                file_lines,
+                end_bl,
+                search_start=first_s,
             )
             if end_matches:
                 # Show up to 2 end matches with context
@@ -187,23 +239,22 @@ def find_content_boundaries(
         return "\n".join(diag_parts)
 
     # Multiple candidates - show context for up to 3
-    ambig_parts: list[str] = [
-        f"Ambiguous: {len(candidates)} matching ranges found. "
-        f"Provide more specific boundaries.",
+    exact_ambig_parts: list[str] = [
+        f"Ambiguous: {len(candidates)} matching ranges found. Provide more specific boundaries.",
     ]
 
     shown_candidates = candidates[:3]
     for i, (s, e) in enumerate(shown_candidates):
-        ambig_parts.append(f"  Candidate {i + 1}: lines {s + 1}-{e + 1}")
-        ambig_parts.append(f"    Start (line {s + 1}):")
-        ambig_parts.append(_format_match_context(file_lines, s))
-        ambig_parts.append(f"    End (line {e + 1}):")
-        ambig_parts.append(_format_match_context(file_lines, e))
+        exact_ambig_parts.append(f"  Candidate {i + 1}: lines {s + 1}-{e + 1}")
+        exact_ambig_parts.append(f"    Start (line {s + 1}):")
+        exact_ambig_parts.append(_format_match_context(file_lines, s))
+        exact_ambig_parts.append(f"    End (line {e + 1}):")
+        exact_ambig_parts.append(_format_match_context(file_lines, e))
 
     if len(candidates) > 3:
-        ambig_parts.append(f"  ... and {len(candidates) - 3} more candidates")
+        exact_ambig_parts.append(f"  ... and {len(candidates) - 3} more candidates")
 
-    return "\n".join(ambig_parts)
+    return "\n".join(exact_ambig_parts)
 
 
 def find_anchor_line(
@@ -238,18 +289,11 @@ def find_anchor_line(
 
     # Show first few matches for diagnostics
     preview_count = min(5, len(matches))
-    previews = [
-        f"  Line {m + 1}: {file_lines[m].strip()!r}"
-        for m in matches[:preview_count]
-    ]
+    previews = [f"  Line {m + 1}: {file_lines[m].strip()!r}" for m in matches[:preview_count]]
     suffix = (
-        f"\n  ... and {len(matches) - preview_count} more"
-        if len(matches) > preview_count
-        else ""
+        f"\n  ... and {len(matches) - preview_count} more" if len(matches) > preview_count else ""
     )
     return (
         f"Ambiguous anchor: {len(matches)} matches found for {anchor!r}. "
-        f"Provide more specific anchor text.\n"
-        + "\n".join(previews)
-        + suffix
+        f"Provide more specific anchor text.\n" + "\n".join(previews) + suffix
     )

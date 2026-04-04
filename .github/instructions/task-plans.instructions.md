@@ -1,7 +1,7 @@
 ---
 name: Task Plans
 description: Valid syntax for task plan markdown files parsed by mcp_code_intel
-applyTo: plans/**
+applyTo: artifacts/plans/**
 ---
 
 # Task Plan Syntax
@@ -135,7 +135,7 @@ Fix: Unnest as flat steps, move to `**Notes:**`, or split into phases.
 
 ## Complete Examples
 
-See `plans/examples/`:
+See `artifacts/scratch/examples/`:
 - `TASK-example-A-discovery.md` through `D-cleanup.md` — Split plan set
 
 ---

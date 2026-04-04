@@ -143,7 +143,10 @@ def _insert_at_boundary(
         Tuple of (modified_lines, start_line, end_line)
 
     """
-    insert_lines = content.rstrip("\n").split("\n")
+    content = content.replace("\r\n", "\n").replace("\r", "\n")
+    insert_lines = content.split("\n")
+    if insert_lines and insert_lines[-1] == "":
+        insert_lines.pop()
 
     if position == "bof":
         modified_lines = insert_lines + lines
@@ -187,7 +190,10 @@ def _insert_at_line(
         return line_error
 
     target_line_idx = line - 1  # Convert to 0-indexed
-    insert_lines = content.rstrip("\n").split("\n")
+    content = content.replace("\r\n", "\n").replace("\r", "\n")
+    insert_lines = content.split("\n")
+    if insert_lines and insert_lines[-1] == "":
+        insert_lines.pop()
 
     if position == "before":
         modified_lines = lines[:target_line_idx] + insert_lines + lines[target_line_idx:]
@@ -225,7 +231,7 @@ def _insert_text(
 def _apply_insertions_to_file(
     file_path: Path,
     ops_for_file: list[tuple[int, dict]],
-) -> tuple[list[AppliedOp], list[FailedOp]]:
+) -> tuple[list[AppliedOp], list[FailedOp], str | None]:
     """Apply all insertions to a single file.
 
     With content-anchor based operations, each insertion resolves its anchor
@@ -235,18 +241,23 @@ def _apply_insertions_to_file(
     # Read file
     file_data = read_file_with_metadata(file_path)
     if "error" in file_data:
-        return [], [
-            FailedOp(
-                index=ops_for_file[0][0],
-                filepath=str(file_path),
-                reason=file_data["error"],
-            ),
-        ]
+        return (
+            [],
+            [
+                FailedOp(
+                    index=ops_for_file[0][0],
+                    filepath=str(file_path),
+                    reason=file_data["error"],
+                ),
+            ],
+            None,
+        )
 
     content = file_data["content"]
     eol = file_data["eol"]
     original_mtime = file_data["mtime"]
-    lines = content.split("\n")
+    tab_warning = file_data.get("tab_warning")
+    lines = content.replace("\r\n", "\n").replace("\r", "\n").split("\n")
 
     # Apply insertions in order (anchors resolve against current state)
     applied_ops: list[AppliedOp] = []
@@ -255,13 +266,17 @@ def _apply_insertions_to_file(
         result = _insert_text(lines, op_dict)
 
         if isinstance(result, str):  # Error
-            return [], [
-                FailedOp(
-                    index=idx,
-                    filepath=str(file_path),
-                    reason=result,
-                ),
-            ]
+            return (
+                [],
+                [
+                    FailedOp(
+                        index=idx,
+                        filepath=str(file_path),
+                        reason=result,
+                    ),
+                ],
+                None,
+            )
 
         lines, start_line, end_line = result
 
@@ -282,27 +297,35 @@ def _apply_insertions_to_file(
     # Check mtime before write (detect concurrent modification)
     mtime_error = check_mtime(file_path, original_mtime)
     if mtime_error:
-        return [], [
-            FailedOp(
-                index=ops_for_file[0][0],
-                filepath=str(file_path),
-                reason=mtime_error,
-            ),
-        ]
+        return (
+            [],
+            [
+                FailedOp(
+                    index=ops_for_file[0][0],
+                    filepath=str(file_path),
+                    reason=mtime_error,
+                ),
+            ],
+            None,
+        )
 
     # Write modified content atomically
     new_content = "\n".join(lines)
     write_error = atomic_write(file_path, new_content, eol=eol)
     if write_error:
-        return [], [
-            FailedOp(
-                index=ops_for_file[0][0],
-                filepath=str(file_path),
-                reason=write_error["error"],
-            ),
-        ]
+        return (
+            [],
+            [
+                FailedOp(
+                    index=ops_for_file[0][0],
+                    filepath=str(file_path),
+                    reason=write_error["error"],
+                ),
+            ],
+            None,
+        )
 
-    return applied_ops, []
+    return applied_ops, [], tab_warning
 
 
 def edit_file_insert_text(ops: list[dict], workspace_root: Path) -> dict:
@@ -339,6 +362,7 @@ def edit_file_insert_text(ops: list[dict], workspace_root: Path) -> dict:
     # Phase 3: Apply insertions file by file
     all_applied_ops: list[AppliedOp] = []
     original_contents: dict[Path, bytes] = {}  # For rollback
+    tab_warning: str | None = None
 
     for file_path, ops_for_file in grouped_ops.items():
         # Backup original content
@@ -362,7 +386,12 @@ def edit_file_insert_text(ops: list[dict], workspace_root: Path) -> dict:
             ).model_dump(exclude_none=True)
 
         # Apply insertions (bottom-to-top within file)
-        applied_ops, failed_ops = _apply_insertions_to_file(file_path, ops_for_file)
+        applied_ops, failed_ops, file_tab_warning = _apply_insertions_to_file(
+            file_path,
+            ops_for_file,
+        )
+        if file_tab_warning and tab_warning is None:
+            tab_warning = file_tab_warning
 
         if failed_ops:
             # Rollback all files
@@ -380,7 +409,12 @@ def edit_file_insert_text(ops: list[dict], workspace_root: Path) -> dict:
     # Success: sort by original index
     all_applied_ops.sort(key=lambda op: op.index)
 
-    return BatchResponse(
+    response = BatchResponse(
         status="applied",
         applied_ops=all_applied_ops,
     ).model_dump(exclude_none=True)
+
+    if tab_warning:
+        response["tab_warning"] = tab_warning
+
+    return response

@@ -195,10 +195,13 @@ def _parse_steps_with_tree_sitter(phase_heading_line: int, raw_lines: list[str])
                 # Indented continuation is handled by _capture_step_annotations
                 for para_child in child.children:
                     if para_child.type == "inline":
-                        inline_text = phase_markdown_bytes[
-                            para_child.start_byte : para_child.end_byte
-                        ].decode("utf8").strip()
+                        inline_text = (
+                            phase_markdown_bytes[para_child.start_byte : para_child.end_byte]
+                            .decode("utf8")
+                            .strip()
+                        )
                         # Only take first line - rest is annotations
+                        inline_text = inline_text.replace("\r\n", "\n").replace("\r", "\n")
                         text_content = inline_text.split("\n")[0].strip()
                         break
 
