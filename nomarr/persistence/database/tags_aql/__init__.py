@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING
 from .analytics import TagAnalyticsMixin
 from .cleanup import TagCleanupMixin
 from .crud import TagCrudMixin
+from .curation import TagCurationMixin
 from .mood import TagMoodMixin
 from .queries import TagQueriesMixin
 from .stats import TagStatsMixin
@@ -50,6 +51,7 @@ class TagOperations(
     TagAnalyticsMixin,
     TagMoodMixin,
     TagCleanupMixin,
+    TagCurationMixin,
 ):
     """Operations for the tags collection."""
 

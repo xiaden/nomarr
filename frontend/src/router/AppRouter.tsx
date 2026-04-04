@@ -16,6 +16,7 @@ const NavidromePage = lazy(() => import("../features/navidrome/NavidromePage").t
 const PlaylistImportPage = lazy(() => import("../features/playlist-import/PlaylistImportPage").then((m) => ({ default: m.PlaylistImportPage })));
 const VectorSearchPage = lazy(() => import("../features/vector-search/VectorSearchPage").then((m) => ({ default: m.VectorSearchPage })));
 const AdminPage = lazy(() => import("../features/admin/AdminPage").then((m) => ({ default: m.AdminPage })));
+const TagCurationPage = lazy(() => import("../features/tag-curation/TagCurationPage").then((m) => ({ default: m.TagCurationPage })));
 
 /**
  * Main application router.
@@ -73,6 +74,7 @@ export function AppRouter() {
                     <Route path="/playlist-import" element={<PlaylistImportPage />} />
                     <Route path="/vector-search" element={<VectorSearchPage />} />
                     <Route path="/admin" element={<AdminPage />} />
+                    <Route path="/tag-curation" element={<TagCurationPage />} />
                   </Routes>
                 </AppShell>
               </ProtectedRoute>

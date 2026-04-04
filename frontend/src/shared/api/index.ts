@@ -13,6 +13,7 @@
 export * from "./analytics";
 export * from "./auth";
 export * from "./calibration";
+export * from "./tagCuration";
 export * from "./filesystem";
 export * from "./metadata";
 export * from "./ml";
@@ -23,10 +24,10 @@ export * from "./vectors";
 
 // Library - explicit exports to avoid conflicts with files module
 export {
-    cleanupOrphanedTags, create, deleteLibrary, getFileTags, getLibrary, getReconcileStatus, getStats,
+    create, deleteLibrary, getLibrary, getReconcileStatus, getStats,
     list, reconcileTags,
     scanFull, scanQuick, update, updateWriteMode,
-    type CleanupTagsResult, type CreateLibraryPayload, type FileTagsResult, type LibraryStats,
+    type CreateLibraryPayload, type LibraryStats,
     type ReconcileStatusResult, type ReconcileTagsResult, type UpdateLibraryPayload, type UpdateWriteModeResult
 } from "./library";
 

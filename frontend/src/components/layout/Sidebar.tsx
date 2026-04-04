@@ -25,6 +25,7 @@ const navItems: NavItem[] = [
   { path: "/vector-search", label: "Vector Search" },
   { path: "/navidrome", label: "Navidrome" },
   { path: "/playlist-import", label: "Playlist Import" },
+  { path: "/tag-curation", label: "Tag Curation" },
   { path: "/config", label: "Config" },
 ];
 

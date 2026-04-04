@@ -318,7 +318,7 @@ class TagSearchRequest(BaseModel):
 @router.post("/files/by-tag", dependencies=[Depends(verify_session)])
 async def search_files_by_tag(
     request: TagSearchRequest,
-    library_service: Annotated["LibraryService", Depends(get_library_service)],
+    tagging_service: Annotated["TaggingService", Depends(get_tagging_service)],
 ) -> SearchFilesResponse:
     """Search files by tag value with distance sorting (float) or exact match (string).
 
@@ -326,7 +326,7 @@ async def search_files_by_tag(
     For string values: Returns files with exact match on the tag value.
     """
     try:
-        result = library_service.search_files_by_tag(
+        result = tagging_service.search_files_by_tag(
             tag_key=request.tag_key,
             target_value=request.target_value,
             limit=request.limit,
@@ -341,14 +341,14 @@ async def search_files_by_tag(
 @router.get("/files/tags/unique-keys", dependencies=[Depends(verify_session)])
 async def get_unique_tag_keys(
     nomarr_only: Annotated[bool, Query(description="Only show Nomarr tags")] = False,
-    library_service: "LibraryService" = Depends(get_library_service),
+    tagging_service: "TaggingService" = Depends(get_tagging_service),
 ) -> UniqueTagKeysResponse:
     """Get list of unique tag keys for filtering.
 
     Returns all distinct tag keys found in the database.
     """
     try:
-        result = library_service.get_unique_tag_keys(nomarr_only=nomarr_only)
+        result = tagging_service.get_unique_tag_keys(nomarr_only=nomarr_only)
         return UniqueTagKeysResponse.from_dto(result)
     except Exception as e:
         logger.exception("[Web API] Error getting unique tag keys")
@@ -359,14 +359,14 @@ async def get_unique_tag_keys(
 async def get_unique_tag_values(
     tag_key: Annotated[str, Query(description="Tag key to get values for")],
     nomarr_only: Annotated[bool, Query(description="Only show Nomarr tag values")] = True,
-    library_service: "LibraryService" = Depends(get_library_service),
+    tagging_service: "TaggingService" = Depends(get_tagging_service),
 ) -> UniqueTagKeysResponse:
     """Get list of unique values for a specific tag key.
 
     Returns all distinct values for the given tag key.
     """
     try:
-        result = library_service.get_unique_tag_values(tag_key=tag_key, nomarr_only=nomarr_only)
+        result = tagging_service.get_unique_tag_values(tag_key=tag_key, nomarr_only=nomarr_only)
         return UniqueTagKeysResponse.from_dto(result)
     except Exception as e:
         logger.exception("[Web API] Error getting unique tag values")
@@ -377,7 +377,7 @@ async def get_unique_tag_values(
 async def get_unique_mood_values(
     mood_tier: Annotated[str, Query(description="Mood tier (mood-strict, mood-regular, mood-loose)")] = "mood-strict",
     limit: Annotated[int, Query(description="Maximum values to return")] = 100,
-    library_service: "LibraryService" = Depends(get_library_service),
+    tagging_service: "TaggingService" = Depends(get_tagging_service),
 ) -> UniqueTagKeysResponse:
     """Get unique individual mood values from tuple string tags.
 
@@ -388,7 +388,7 @@ async def get_unique_mood_values(
         List of unique mood values (e.g., ["aggressive", "happy", "party-like"])
     """
     try:
-        result = library_service.get_unique_mood_values(mood_tier=mood_tier, limit=limit)
+        result = tagging_service.get_unique_mood_values(mood_tier=mood_tier, limit=limit)
         return UniqueTagKeysResponse.from_dto(result)
     except Exception as e:
         logger.exception("[Web API] Error getting unique mood values")
@@ -398,7 +398,7 @@ async def get_unique_mood_values(
 @router.post("/cleanup-tags", dependencies=[Depends(verify_session)])
 async def cleanup_orphaned_tags(
     dry_run: Annotated[bool, Query(description="Preview orphaned tags without deleting")] = False,
-    library_service: "LibraryService" = Depends(get_library_service),
+    tagging_service: "TaggingService" = Depends(get_tagging_service),
 ) -> TagCleanupResponse:
     """Clean up orphaned tags (tags not referenced by any file).
 
@@ -408,14 +408,14 @@ async def cleanup_orphaned_tags(
 
     Args:
         dry_run: If True, only count orphaned tags without deleting them
-        library_service: LibraryService instance (injected)
+        tagging_service: TaggingService instance (injected)
 
     Returns:
         TagCleanupResponse with orphaned_count and deleted_count
 
     """
     try:
-        result = library_service.cleanup_orphaned_tags(dry_run=dry_run)
+        result = tagging_service.cleanup_orphaned_tags(dry_run=dry_run)
         return TagCleanupResponse.from_dto(result)
     except Exception as e:
         logger.exception("[Web API] Error cleaning up orphaned tags")
@@ -455,7 +455,7 @@ async def cleanup_orphaned_entities(
 async def get_file_tags(
     file_id: str,
     nomarr_only: Annotated[bool, Query(description="Only return Nomarr-generated tags")] = False,
-    library_service: "LibraryService" = Depends(get_library_service),
+    tagging_service: "TaggingService" = Depends(get_tagging_service),
 ) -> FileTagsResponse:
     """Get all tags for a specific file.
 
@@ -465,7 +465,7 @@ async def get_file_tags(
     Args:
         file_id: Library file ID to get tags for
         nomarr_only: If True, only return Nomarr-generated tags
-        library_service: LibraryService instance (injected)
+        tagging_service: TaggingService instance (injected)
 
     Returns:
         FileTagsResponse with file_id, path, and list of tags
@@ -476,7 +476,7 @@ async def get_file_tags(
     """
     file_id = decode_path_id(file_id)
     try:
-        result = library_service.get_file_tags(file_id=file_id, nomarr_only=nomarr_only)
+        result = tagging_service.get_file_tags(file_id=file_id, nomarr_only=nomarr_only)
         return FileTagsResponse.from_dto(result)
     except ValueError:
         raise HTTPException(status_code=404, detail="File not found") from None
