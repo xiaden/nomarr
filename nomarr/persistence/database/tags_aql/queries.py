@@ -31,16 +31,17 @@ class TagQueriesMixin:
 
     def list_tags_by_rel(
         self,
-        rel: str,
+        rel: str | None = None,
         limit: int = 100,
         offset: int = 0,
         search: str | None = None,
         sort_by_count: bool = False,
     ) -> list[dict[str, Any]]:
-        """List all unique tag values for a rel. For browse UI.
+        """List unique tag values, optionally filtered by rel. For browse UI.
 
         Args:
-            rel: Tag key to filter by (e.g., "artist", "album")
+            rel: Tag key to filter by (e.g., "artist", "album").
+                 If None, list across all rels.
             limit: Max results
             offset: Pagination offset
             search: Optional substring search on value (case-insensitive)
@@ -51,74 +52,40 @@ class TagQueriesMixin:
             List of {_id, _key, rel, value, song_count}
 
         """
+        filters: list[str] = []
+        bind_vars: dict[str, Any] = {"limit": limit, "offset": offset}
+
+        if rel is not None:
+            filters.append("FILTER tag.rel == @rel")
+            bind_vars["rel"] = rel
+        if search is not None:
+            filters.append("FILTER CONTAINS(LOWER(TO_STRING(tag.value)), LOWER(@search))")
+            bind_vars["search"] = search
+
+        filter_block = "\n                    ".join(filters)
         if sort_by_count:
-            # Must compute song_count before SORT/LIMIT to order by frequency.
-            if search:
-                query = """
-                FOR tag IN tags
-                    FILTER tag.rel == @rel
-                    FILTER CONTAINS(LOWER(TO_STRING(tag.value)), LOWER(@search))
-                    LET song_count = LENGTH(
-                        FOR edge IN song_has_tags
-                            FILTER edge._to == tag._id
-                            RETURN 1
-                    )
-                    SORT song_count DESC
-                    LIMIT @offset, @limit
-                    RETURN {
-                        _id: tag._id,
-                        _key: tag._key,
-                        rel: tag.rel,
-                        value: tag.value,
-                        song_count: song_count
-                    }
-                """
-                bind_vars: dict[str, Any] = {"rel": rel, "search": search, "limit": limit, "offset": offset}
-            else:
-                query = """
-                FOR tag IN tags
-                    FILTER tag.rel == @rel
-                    LET song_count = LENGTH(
-                        FOR edge IN song_has_tags
-                            FILTER edge._to == tag._id
-                            RETURN 1
-                    )
-                    SORT song_count DESC
-                    LIMIT @offset, @limit
-                    RETURN {
-                        _id: tag._id,
-                        _key: tag._key,
-                        rel: tag.rel,
-                        value: tag.value,
-                        song_count: song_count
-                    }
-                """
-                bind_vars = {"rel": rel, "limit": limit, "offset": offset}
-        elif search:
-            query = """
+            query = f"""
             FOR tag IN tags
-                FILTER tag.rel == @rel
-                FILTER CONTAINS(LOWER(TO_STRING(tag.value)), LOWER(@search))
-                SORT tag.value
-                LIMIT @offset, @limit
+                {filter_block}
                 LET song_count = LENGTH(
                     FOR edge IN song_has_tags
                         FILTER edge._to == tag._id
                         RETURN 1
                 )
-                RETURN {
+                SORT song_count DESC
+                LIMIT @offset, @limit
+                RETURN {{
                     _id: tag._id,
                     _key: tag._key,
                     rel: tag.rel,
                     value: tag.value,
                     song_count: song_count
-                }
+                }}
             """
-            bind_vars = {"rel": rel, "search": search, "limit": limit, "offset": offset}
         else:
-            query = """
+            query = f"""
             FOR tag IN tags
-                FILTER tag.rel == @rel
+                {filter_block}
                 SORT tag.value
                 LIMIT @offset, @limit
                 LET song_count = LENGTH(
@@ -126,49 +93,47 @@ class TagQueriesMixin:
                         FILTER edge._to == tag._id
                         RETURN 1
                 )
-                RETURN {
+                RETURN {{
                     _id: tag._id,
                     _key: tag._key,
                     rel: tag.rel,
                     value: tag.value,
                     song_count: song_count
-                }
+                }}
             """
-            bind_vars = {"rel": rel, "limit": limit, "offset": offset}
 
         cursor = cast("Cursor", self.db.aql.execute(query, bind_vars=cast("dict[str, Any]", bind_vars)))
         return list(cursor)
 
-    def count_tags_by_rel(self, rel: str, search: str | None = None) -> int:
-        """Count unique tags for a rel.
+    def count_tags_by_rel(self, rel: str | None = None, search: str | None = None) -> int:
+        """Count unique tags, optionally filtered by rel.
 
         Args:
-            rel: Tag key to filter by
+            rel: Tag key to filter by. If None, count across all rels.
             search: Optional substring search on value
 
         Returns:
             Count of matching tags
 
         """
-        if search:
-            query = """
-            RETURN LENGTH(
-                FOR tag IN tags
-                    FILTER tag.rel == @rel
-                    FILTER CONTAINS(LOWER(TO_STRING(tag.value)), LOWER(@search))
-                    RETURN 1
-            )
-            """
-            bind_vars = {"rel": rel, "search": search}
-        else:
-            query = """
-            RETURN LENGTH(
-                FOR tag IN tags
-                    FILTER tag.rel == @rel
-                    RETURN 1
-            )
-            """
-            bind_vars = {"rel": rel}
+        filters: list[str] = []
+        bind_vars: dict[str, Any] = {}
+
+        if rel is not None:
+            filters.append("FILTER tag.rel == @rel")
+            bind_vars["rel"] = rel
+        if search is not None:
+            filters.append("FILTER CONTAINS(LOWER(TO_STRING(tag.value)), LOWER(@search))")
+            bind_vars["search"] = search
+
+        filter_block = "\n                    ".join(filters)
+        query = f"""
+        RETURN LENGTH(
+            FOR tag IN tags
+                {filter_block}
+                RETURN 1
+        )
+        """
 
         cursor = cast("Cursor", self.db.aql.execute(query, bind_vars=cast("dict[str, Any]", bind_vars)))
         result = list(cursor)
@@ -568,3 +533,54 @@ class TagQueriesMixin:
         for row in cursor:
             result[row["file_id"]] = {v for v in row["values"] if isinstance(v, str)}
         return result
+
+    def get_tag_songs_with_metadata(
+        self,
+        tag_id: str,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """Get songs linked to a tag with file metadata for drill-down UI.
+
+        Traverses ``song_has_tags`` INBOUND from the tag vertex to find
+        linked library files, then returns metadata for each.
+
+        Args:
+            tag_id: Tag ``_id`` (e.g., ``"tags/12345"``).
+            limit: Max results.
+            offset: Pagination offset.
+
+        Returns:
+            List of ``{file_id, title, artist, album, path}``.
+
+        """
+        query = """
+        FOR file IN INBOUND @tag_id song_has_tags
+            SORT file._key
+            LIMIT @offset, @limit
+            LET artist_vals = (
+                FOR e IN OUTBOUND file._id song_has_tags
+                    FILTER e.rel == "artist"
+                    RETURN e.value
+            )
+            LET album_vals = (
+                FOR e IN OUTBOUND file._id song_has_tags
+                    FILTER e.rel == "album"
+                    RETURN e.value
+            )
+            RETURN {
+                file_id: file._id,
+                title: file.title,
+                artist: FIRST(artist_vals) || "",
+                album: FIRST(album_vals) || "",
+                path: file.path
+            }
+        """
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(
+                query,
+                bind_vars=cast("dict[str, Any]", {"tag_id": tag_id, "limit": limit, "offset": offset}),
+            ),
+        )
+        return list(cursor)

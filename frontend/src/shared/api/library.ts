@@ -163,28 +163,6 @@ export async function scanFull(id: string): Promise<ScanResult> {
   return post<ScanResult>(`/api/web/libraries/${id}/scan/full`, {});
 }
 
-export interface CleanupTagsResult {
-  orphaned_count: number;
-  deleted_count: number;
-}
-
-/**
- * Clean up orphaned tags (tags not referenced by any file).
- */
-export async function cleanupOrphanedTags(
-  dryRun = false
-): Promise<CleanupTagsResult> {
-  const queryParams = new URLSearchParams();
-  if (dryRun) queryParams.append("dry_run", "true");
-
-  const query = queryParams.toString();
-  const endpoint = query
-    ? `/api/web/libraries/cleanup-tags?${query}`
-    : "/api/web/libraries/cleanup-tags";
-
-  return post(endpoint);
-}
-
 // ──────────────────────────────────────────────────────────────────────────────
 // Tag Reconciliation API
 // ──────────────────────────────────────────────────────────────────────────────
@@ -233,38 +211,6 @@ export async function updateWriteMode(
 ): Promise<UpdateWriteModeResult> {
   return patch(`/api/web/libraries/${libraryId}/write-mode?file_write_mode=${mode}`);
 }
-
-export interface FileTag {
-  key: string;
-  value: string;
-  type: string;
-  is_nomarr: boolean;
-}
-
-export interface FileTagsResult {
-  file_id: string;
-  path: string;
-  tags: FileTag[];
-}
-
-/**
- * Get all tags for a specific file.
- */
-export async function getFileTags(
-  fileId: string,
-  nomarrOnly = false
-): Promise<FileTagsResult> {
-  const queryParams = new URLSearchParams();
-  if (nomarrOnly) queryParams.append("nomarr_only", "true");
-
-  const query = queryParams.toString();
-  const endpoint = query
-    ? `/api/web/libraries/files/${fileId}/tags?${query}`
-    : `/api/web/libraries/files/${fileId}/tags`;
-
-  return get(endpoint);
-}
-
 
 // ────────────────────────────────────────────────────────────────────────────────
 // Recent Activity

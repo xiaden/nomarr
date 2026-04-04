@@ -888,3 +888,55 @@ class FileStatesOperations:
             ),
         )
         return next(cursor, 0)  # type: ignore[arg-type]
+
+
+    def count_pending_tag_writes(self) -> int:
+        """Count files in the ``tags_not_written`` state.
+
+        Uses INBOUND traversal on the ``tags_not_written`` state vertex
+        for O(1) discovery per ADR-003.
+
+        Returns:
+            Number of files with pending tag writes.
+        """
+        query = """
+        RETURN LENGTH(
+            FOR f IN INBOUND @tags_not_written file_has_state
+                RETURN 1
+        )
+        """
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(  # type: ignore[union-attr]
+                query,
+                bind_vars=cast("dict[str, Any]", {"tags_not_written": STATE_TAGS_NOT_WRITTEN}),
+            ),
+        )
+        results = list(cursor)
+        return results[0] if results else 0
+
+    def get_pending_tag_write_file_ids(self, limit: int = 100) -> list[str]:
+        """Get IDs of files in the ``tags_not_written`` state.
+
+        For commit: discover files needing tag writeback.
+
+        Args:
+            limit: Maximum number of IDs to return.
+
+        Returns:
+            List of file ``_id`` values.
+        """
+        query = """
+        FOR file IN INBOUND @tags_not_written file_has_state
+            SORT file._key
+            LIMIT @limit
+            RETURN file._id
+        """
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(  # type: ignore[union-attr]
+                query,
+                bind_vars=cast("dict[str, Any]", {"tags_not_written": STATE_TAGS_NOT_WRITTEN, "limit": limit}),
+            ),
+        )
+        return list(cursor)

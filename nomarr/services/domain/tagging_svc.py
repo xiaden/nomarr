@@ -7,15 +7,35 @@ import threading
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Any
 
+from nomarr.components.library.file_tags_comp import get_file_tags_with_path
+from nomarr.components.library.search_files_comp import get_unique_tag_keys, get_unique_tag_values
 from nomarr.helpers.dto.calibration_dto import (
     GlobalCalibrationStatus,
     LibraryCalibrationStatus,
     WriteCalibratedTagsParams,
 )
-from nomarr.helpers.dto.library_dto import ReconcileTagsResult
+from nomarr.helpers.dto.library_dto import (
+    FileTag,
+    FileTagsResult,
+    ReconcileTagsResult,
+    SearchFilesResult,
+    TagCleanupResult,
+    UniqueTagKeysResult,
+)
 from nomarr.helpers.dto.recalibration_dto import ApplyCalibrationResult
+from nomarr.helpers.dto.tag_curation_dto import (
+    CommitResult,
+    MergeResult,
+    RenameResult,
+    SplitResult,
+    TagListResult,
+    TagSongItem,
+    TagValueItem,
+)
+from nomarr.services.domain._library_mapping import map_file_with_tags_to_dto
 from nomarr.workflows.calibration.apply_calibration_wf import apply_calibration_wf
 from nomarr.workflows.calibration.write_calibrated_tags_wf import write_calibrated_tags_wf
+from nomarr.workflows.library.cleanup_orphaned_tags_wf import cleanup_orphaned_tags_workflow
 from nomarr.workflows.library.file_tags_io_wf import read_file_tags_workflow, remove_file_tags_workflow
 from nomarr.workflows.processing.write_file_tags_wf import write_file_tags_workflow
 
@@ -140,9 +160,7 @@ class TaggingService:
         # When no calibration has ever run, all tagged files will be not_calibrated.
         paths = self.library_service.get_paths_needing_calibration()
         if paths:
-            logger.info(
-                f"[TaggingService] {len(paths)} files need calibration update"
-            )
+            logger.info(f"[TaggingService] {len(paths)} files need calibration update")
         else:
             logger.info("[TaggingService] All tagged files are already calibrated")
 
@@ -504,3 +522,348 @@ class TaggingService:
             "pending_count": pending_count,
             "in_progress": False,
         }
+
+    # ── Nom-prefix guard ──────────────────────────────────────────────
+
+    @staticmethod
+    def _reject_nom_prefix(rel: str | None = None, *, tag_doc: dict[str, Any] | None = None) -> None:
+        """Raise ValueError if the tag or rel has the read-only nom: prefix (ADR-009)."""
+        if rel is not None and rel.startswith("nom:"):
+            msg = f"Tags with 'nom:' prefix are read-only and cannot be edited: rel={rel}"
+            raise ValueError(msg)
+        if tag_doc is not None and str(tag_doc.get("rel", "")).startswith("nom:"):
+            msg = f"Tags with 'nom:' prefix are read-only and cannot be edited: {tag_doc.get('rel')}={tag_doc.get('value')}"
+            raise ValueError(msg)
+
+    def _get_tag_or_error(self, tag_id: str) -> dict[str, Any]:
+        """Fetch a tag document or raise ValueError."""
+        tag = self.db.tags.get_tag(tag_id)
+        if not tag:
+            msg = f"Tag not found: {tag_id}"
+            raise ValueError(msg)
+        return tag
+
+    # ── Curation methods (P1-S1) ──────────────────────────────────────
+
+    def rename_tag(self, tag_id: str, new_value: str) -> RenameResult:
+        """Rename a tag to a new value.
+
+        Rejects nom: prefix tags (ADR-009). Creates target tag if needed,
+        then relinks all edges from source to target.
+
+        Args:
+            tag_id: Source tag _id (e.g., "tags/12345")
+            new_value: New value for the tag
+
+        Returns:
+            RenameResult with moved count and whether it merged into existing
+
+        Raises:
+            ValueError: If tag not found or has nom: prefix
+
+        """
+        source_tag = self._get_tag_or_error(tag_id)
+        self._reject_nom_prefix(tag_doc=source_tag)
+
+        # Find or create target tag with same rel
+        target_tag_id = self.db.tags.find_or_create_tag(source_tag["rel"], new_value)
+        merged_into_existing = target_tag_id != tag_id
+
+        # Relink all edges from source to target
+        relink = self.db.tags.relink_tag_edges(tag_id, target_tag_id)
+
+        # Mark affected files as needing writeback
+        song_ids = self.db.tags.list_songs_for_tag(target_tag_id)
+        for song_id in song_ids:
+            self.db.file_states.set_tags_not_written(song_id)
+
+        return RenameResult(moved=relink["moved"], merged_into_existing=merged_into_existing)
+
+    def merge_tags(self, source_tag_ids: list[str], canonical_tag_id: str) -> MergeResult:
+        """Merge multiple source tags into a canonical tag.
+
+        Rejects nom: prefix tags (ADR-009). Iterates each source through
+        relink_tag_edges to the canonical target.
+
+        Args:
+            source_tag_ids: Tag _ids to merge FROM
+            canonical_tag_id: Tag _id to merge INTO
+
+        Returns:
+            MergeResult with total_moved and sources_removed counts
+
+        Raises:
+            ValueError: If any tag not found or has nom: prefix
+
+        """
+        canonical_tag = self._get_tag_or_error(canonical_tag_id)
+        self._reject_nom_prefix(tag_doc=canonical_tag)
+
+        total_moved = 0
+        sources_removed = 0
+
+        for source_id in source_tag_ids:
+            if source_id == canonical_tag_id:
+                continue
+            source_tag = self._get_tag_or_error(source_id)
+            self._reject_nom_prefix(tag_doc=source_tag)
+
+            relink = self.db.tags.relink_tag_edges(source_id, canonical_tag_id)
+            total_moved += relink["moved"]
+            if relink["source_orphaned"]:
+                sources_removed += 1
+
+        # Mark affected files as needing writeback
+        song_ids = self.db.tags.list_songs_for_tag(canonical_tag_id)
+        for song_id in song_ids:
+            self.db.file_states.set_tags_not_written(song_id)
+
+        return MergeResult(total_moved=total_moved, sources_removed=sources_removed)
+
+    def split_tag(self, source_tag_id: str, song_ids: list[str], new_value: str) -> SplitResult:
+        """Split selected songs from a tag into a new tag value.
+
+        Rejects nom: prefix tags (ADR-009). Creates a new tag with the given
+        value and relinks only the specified songs.
+
+        Args:
+            source_tag_id: Tag _id to split FROM
+            song_ids: Song _ids to move to the new tag
+            new_value: Value for the new tag
+
+        Returns:
+            SplitResult with moved count and whether a new tag was created
+
+        Raises:
+            ValueError: If tag not found or has nom: prefix
+
+        """
+        source_tag = self._get_tag_or_error(source_tag_id)
+        self._reject_nom_prefix(tag_doc=source_tag)
+
+        # Find or create target tag with same rel
+        target_tag_id = self.db.tags.find_or_create_tag(source_tag["rel"], new_value)
+        new_tag_created = target_tag_id != source_tag_id
+
+        # Relink only the specified songs
+        relink = self.db.tags.relink_tag_edges(source_tag_id, target_tag_id, song_ids=song_ids)
+
+        # Mark affected files as needing writeback
+        for song_id in song_ids:
+            self.db.file_states.set_tags_not_written(song_id)
+
+        return SplitResult(moved=relink["moved"], new_tag_created=new_tag_created)
+
+    def update_file_tags(self, file_id: str, rel: str, values: list[str]) -> dict[str, Any]:
+        """Replace all tags for a file+rel with new values.
+
+        Rejects nom: prefix rels (ADR-009). Delegates to set_song_tags
+        and marks the file for writeback.
+
+        Args:
+            file_id: Library file _id
+            rel: Tag key (e.g., "genre", "artist")
+            values: New tag values
+
+        Returns:
+            Dict with updated tags
+
+        Raises:
+            ValueError: If rel has nom: prefix
+
+        """
+        self._reject_nom_prefix(rel=rel)
+        self.db.tags.set_song_tags(file_id, rel, list(values))
+        self.db.file_states.set_tags_not_written(file_id)
+        # Return current tags for the file
+        tags = self.db.tags.get_song_tags(file_id, rel=rel)
+        return {"file_id": file_id, "rel": rel, "tags": tags.to_dict()}
+
+    # ── Query methods (P1-S2) ─────────────────────────────────────────
+
+    def list_tag_values(
+        self,
+        rel: str | None = None,
+        prefix: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> TagListResult:
+        """List tag values with pagination, optionally filtered by rel and prefix.
+
+        Args:
+            rel: Tag rel to filter by (e.g., "genre"). None = all rels.
+            prefix: Substring search on tag value.
+            limit: Max results per page.
+            offset: Pagination offset.
+
+        Returns:
+            TagListResult with tags list and total count.
+
+        """
+        raw_tags = self.db.tags.list_tags_by_rel(rel=rel, limit=limit, offset=offset, search=prefix)
+        total = self.db.tags.count_tags_by_rel(rel=rel, search=prefix)
+
+        tags: list[TagValueItem] = [
+            TagValueItem(
+                id=t["_id"],
+                rel=t["rel"],
+                value=str(t["value"]),
+                song_count=t.get("song_count", 0),
+            )
+            for t in raw_tags
+        ]
+        return TagListResult(tags=tags, total=total)
+
+    def get_tag_songs(
+        self,
+        tag_id: str,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """Get songs linked to a tag with metadata.
+
+        Args:
+            tag_id: Tag _id
+            limit: Max results
+            offset: Pagination offset
+
+        Returns:
+            Dict with songs list and total count.
+
+        """
+        raw_songs = self.db.tags.get_tag_songs_with_metadata(tag_id, limit=limit, offset=offset)
+        total = self.db.tags.count_songs_for_tag(tag_id)
+
+        songs: list[TagSongItem] = [
+            TagSongItem(
+                file_id=s["file_id"],
+                title=s.get("title", ""),
+                artist=s.get("artist", ""),
+                album=s.get("album", ""),
+                path=s.get("path", ""),
+            )
+            for s in raw_songs
+        ]
+        return {"songs": songs, "total": total}
+
+    # ── Commit methods (P1-S3) ────────────────────────────────────────
+
+    def get_pending_commit_count(self) -> int:
+        """Count files with pending tag writes (tags_not_written state)."""
+        return self.db.file_states.count_pending_tag_writes()
+
+    def commit_pending_tags(self, library_id: str | None = None) -> CommitResult:
+        """Commit pending tag writes by reconciling affected libraries.
+
+        Args:
+            library_id: Optional library _id to scope. If None, finds libraries
+                        with pending files.
+
+        Returns:
+            CommitResult with started flag and pending file count.
+
+        """
+        pending = self.db.file_states.count_pending_tag_writes()
+        if pending == 0:
+            return CommitResult(started=False, pending_files=0)
+
+        if library_id:
+            self.reconcile_library(library_id)
+        else:
+            # Reconcile all libraries that have pending files
+            libraries = self.db.libraries.list_libraries()
+            for lib in libraries:
+                self.reconcile_library(lib["_id"])
+
+        return CommitResult(started=True, pending_files=pending)
+
+    # ── Migrated tag query methods (P1-S4) ────────────────────────────
+
+    def get_unique_tag_keys(self, nomarr_only: bool = False) -> UniqueTagKeysResult:
+        """Get all unique tag keys across the library."""
+        keys = get_unique_tag_keys(self.db, nomarr_only)
+        return UniqueTagKeysResult(tag_keys=keys, count=len(keys), calibration=None, library_id=None)
+
+    def get_unique_tag_values(self, tag_key: str, nomarr_only: bool = False) -> UniqueTagKeysResult:
+        """Get all unique values for a specific tag key."""
+        values = get_unique_tag_values(self.db, tag_key, nomarr_only)
+        return UniqueTagKeysResult(tag_keys=values, count=len(values), calibration=None, library_id=None)
+
+    def get_unique_mood_values(self, mood_tier: str = "mood-strict", limit: int = 100) -> UniqueTagKeysResult:
+        """Get unique individual mood values extracted from tuple string tags."""
+        values = self.db.tags.get_unique_mood_values(mood_tier=mood_tier, limit=limit)
+        return UniqueTagKeysResult(tag_keys=values, count=len(values), calibration=None, library_id=None)
+
+    def get_file_tags(self, file_id: str, nomarr_only: bool = False) -> FileTagsResult:
+        """Get all tags for a specific file.
+
+        Args:
+            file_id: Library file ID
+            nomarr_only: If True, only return Nomarr-generated tags
+
+        Returns:
+            FileTagsResult DTO with file info and tags
+
+        Raises:
+            ValueError: If file not found
+
+        """
+        result = get_file_tags_with_path(self.db, file_id, nomarr_only=nomarr_only)
+        if not result:
+            msg = f"File with ID {file_id} not found"
+            raise ValueError(msg)
+
+        tags = [
+            FileTag(
+                key=tag["key"],
+                value=str(tag["value"]),
+                tag_type=tag["type"],
+                is_nomarr=tag["is_nomarr_tag"],
+            )
+            for tag in result["tags"]
+        ]
+
+        return FileTagsResult(
+            file_id=file_id,
+            path=result["path"],
+            tags=tags,
+        )
+
+    def cleanup_orphaned_tags(self, dry_run: bool = False) -> TagCleanupResult:
+        """Clean up orphaned tags from the database.
+
+        Args:
+            dry_run: If True, count orphaned tags but don't delete them
+
+        Returns:
+            TagCleanupResult DTO with orphaned_count and deleted_count
+
+        """
+        result = cleanup_orphaned_tags_workflow(self.db, dry_run=dry_run)
+        return TagCleanupResult(
+            orphaned_count=result["orphaned_count"],
+            deleted_count=result["deleted_count"],
+        )
+
+    def search_files_by_tag(
+        self,
+        tag_key: str,
+        target_value: float | str,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> SearchFilesResult:
+        """Search files by tag value with distance sorting (float) or exact match (string).
+
+        Args:
+            tag_key: Tag key to search (e.g., "nom:bpm", "genre")
+            target_value: Target value (float for distance sort, string for exact match)
+            limit: Maximum number of results
+            offset: Pagination offset
+
+        Returns:
+            SearchFilesResult with matched files
+
+        """
+        files = self.db.library_files.search_files_by_tag(tag_key, target_value, limit, offset)
+        files_with_tags = [map_file_with_tags_to_dto(f) for f in files]
+        return SearchFilesResult(files=files_with_tags, total=len(files), limit=limit, offset=offset)
