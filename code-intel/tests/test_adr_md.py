@@ -339,7 +339,7 @@ def test_parse_adr_metadata_stops_at_section() -> None:
 def test_parse_adr_metadata_keys() -> None:
     md = "# ADR-001: X\n**Status:** Proposed\n**Date:** 2026-01-01\n**Tags:** a\n"
     meta = parse_adr_metadata(md)
-    expected_keys = {"number", "title", "status", "date", "tags", "source_log"}
+    expected_keys = {"number", "title", "status", "date", "tags", "source_log", "supersedes"}
     assert set(meta.keys()) == expected_keys
 
 

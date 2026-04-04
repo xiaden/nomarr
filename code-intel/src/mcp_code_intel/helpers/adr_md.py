@@ -38,6 +38,7 @@ ADR_PREFIX = "ADR-"
 # --- Regex patterns ---
 
 TITLE_PATTERN: re.Pattern[str] = re.compile(r"^#\s+ADR-(\d+):\s+(.+)$")
+DRAFT_TITLE_PATTERN: re.Pattern[str] = re.compile(r"^#\s+ADR-DRAFT:\s+(.+)$")
 META_PATTERN: re.Pattern[str] = re.compile(r"^\*\*(\w[\w\s]*):\*\*\s*(.*)$")
 SECTION_PATTERN: re.Pattern[str] = re.compile(r"^##\s+(.+)$")
 
@@ -58,6 +59,7 @@ class ADR:
     date: str
     tags: list[str] = field(default_factory=list)
     source_log: str | None = None
+    supersedes: list[str] = field(default_factory=list)
     sections: dict[str, str] = field(default_factory=dict)
 
 
@@ -72,6 +74,16 @@ def _slugify(title: str) -> str:
     # Collapse multiple hyphens
     slug = re.sub(r"-{2,}", "-", slug)
     return slug
+
+
+def _unescape_literal_newlines(text: str) -> str:
+    """Replace literal two-character escape sequences with actual characters.
+
+    Handles ``\\n`` → newline (``\\x0a``) and ``\\t`` → tab (``\\x09``).
+    This is needed because MCP transport serializes real newlines as the
+    literal two-character sequence ``\\n``.
+    """
+    return text.replace("\\n", "\n").replace("\\t", "\t")
 
 
 # --- Validation ---
@@ -104,7 +116,10 @@ def generate_adr(adr: ADR) -> str:
     lines: list[str] = []
 
     # Title
-    lines.append(f"# ADR-{adr.number:03d}: {adr.title}")
+    if adr.number == 0:
+        lines.append(f"# ADR-DRAFT: {adr.title}")
+    else:
+        lines.append(f"# ADR-{adr.number:03d}: {adr.title}")
     lines.append("")
 
     # Metadata
@@ -113,6 +128,8 @@ def generate_adr(adr: ADR) -> str:
     lines.append(f"**Tags:** {', '.join(adr.tags)}  ")
     if adr.source_log:
         lines.append(f"**Source Log:** {adr.source_log}  ")
+    if adr.supersedes:
+        lines.append(f"**Supersedes:** {', '.join(adr.supersedes)}  ")
     lines.append("")
 
     # Sections: standard order first, then extras, References last
@@ -167,6 +184,7 @@ def parse_adr(markdown: str) -> ADR:
     adr_date = ""
     tags: list[str] = []
     source_log: str | None = None
+    supersedes: list[str] = []
     sections: dict[str, str] = {}
 
     current_section: str | None = None
@@ -181,6 +199,11 @@ def parse_adr(markdown: str) -> ADR:
             if m:
                 number = int(m.group(1))
                 title = m.group(2).strip()
+                continue
+            m = DRAFT_TITLE_PATTERN.match(stripped)
+            if m:
+                number = 0
+                title = m.group(1).strip()
                 continue
 
         # Section heading
@@ -207,6 +230,8 @@ def parse_adr(markdown: str) -> ADR:
                     tags = [t.strip() for t in value.split(",") if t.strip()]
                 elif key == "Source Log":
                     source_log = value if value else None
+                elif key == "Supersedes":
+                    supersedes = [s.strip() for s in value.split(",") if s.strip()]
                 continue
 
         # Content within a section
@@ -227,6 +252,7 @@ def parse_adr(markdown: str) -> ADR:
         date=adr_date,
         tags=tags,
         source_log=source_log,
+        supersedes=supersedes,
         sections=sections,
     )
 
@@ -246,6 +272,7 @@ def parse_adr_metadata(markdown: str) -> dict[str, Any]:
     adr_date = ""
     tags: list[str] = []
     source_log: str | None = None
+    supersedes: list[str] = []
 
     for line in lines:
         stripped = line.strip()
@@ -261,6 +288,11 @@ def parse_adr_metadata(markdown: str) -> dict[str, Any]:
                 number = int(m.group(1))
                 title = m.group(2).strip()
                 continue
+            m = DRAFT_TITLE_PATTERN.match(stripped)
+            if m:
+                number = 0
+                title = m.group(1).strip()
+                continue
 
         # Metadata
         m = META_PATTERN.match(stripped)
@@ -275,6 +307,8 @@ def parse_adr_metadata(markdown: str) -> dict[str, Any]:
                 tags = [t.strip() for t in value.split(",") if t.strip()]
             elif key == "Source Log":
                 source_log = value if value else None
+            elif key == "Supersedes":
+                supersedes = [s.strip() for s in value.split(",") if s.strip()]
 
     return {
         "number": number,
@@ -283,6 +317,7 @@ def parse_adr_metadata(markdown: str) -> dict[str, Any]:
         "date": adr_date,
         "tags": tags,
         "source_log": source_log,
+        "supersedes": supersedes,
     }
 
 

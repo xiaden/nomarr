@@ -62,9 +62,10 @@ from .helpers.mcp_output_helper import (
     FileLink,
     ToolOutput,
 )
-from .tools.adr_create import adr_create as adr_create_impl
+from .tools.adr_commit import adr_commit as adr_commit_impl
 from .tools.adr_read import adr_read as adr_read_impl
 from .tools.adr_search import adr_search as adr_search_impl
+from .tools.adr_suggest import adr_suggest as adr_suggest_impl
 from .tools.dd_archive import dd_archive as dd_archive_impl
 from .tools.dd_create import dd_create as dd_create_impl
 from .tools.dd_read import dd_read as dd_read_impl
@@ -119,8 +120,9 @@ from .tools.trace_project_endpoint import trace_project_endpoint as trace_projec
 
 # Tool registry for programmatic access (replaces _ToolsNamespace)
 TOOL_IMPLS: dict[str, object] = {
-    "adr_create": adr_create_impl,
+    "adr_commit": adr_commit_impl,
     "adr_read": adr_read_impl,
+    "adr_suggest": adr_suggest_impl,
     "adr_search": adr_search_impl,
     "dd_archive": dd_archive_impl,
     "dd_create": dd_create_impl,
@@ -175,6 +177,7 @@ ROOT = Path.cwd()
 # ──────────────────────────────────────────────────────────────────────
 
 logger = logging.getLogger(__name__)
+logger.info("Workspace root: %s", ROOT)
 
 
 # Global config loaded at startup (can be overridden by tools via dependency injection)
@@ -994,7 +997,7 @@ def dd_read(
 
 
 @mcp.tool()
-def adr_create(
+def adr_suggest(
     title: Annotated[str, "Title of the architecture decision"],
     status: Annotated[str, "Status: Proposed, Accepted, Deprecated, or Superseded"],
     tags: Annotated[list[str], "Tags for categorization (at least one required)"],
@@ -1007,12 +1010,18 @@ def adr_create(
         list[dict[str, str]] | None,
         "Additional sections [{heading, content}] inserted before References (optional)",
     ] = None,
+    supersedes: Annotated[
+        list[str] | None, "List of ADR identifiers this decision supersedes"
+    ] = None,
 ) -> CallToolResult:
-    """Create a new Architecture Decision Record (ADR) in artifacts/decisions/.
+    """Preview an ADR without writing to disk.
 
-    Auto-numbers the ADR. Validates status, tags, and required sections.
+    Returns the generated markdown for user review before committing.
+    Validates status, tags, and required sections.
     """
-    result = adr_create_impl(
+    if supersedes is None:
+        supersedes = []
+    result = adr_suggest_impl(
         title=title,
         status=status,
         tags=tags,
@@ -1022,13 +1031,61 @@ def adr_create(
         references=references,
         source_log=source_log,
         extra_sections=extra_sections,
+        supersedes=supersedes,
+        workspace_root=ROOT,
+    )
+    return ToolOutput(
+        tool_name="adr_suggest",
+        breadcrumb="ADR preview generated",
+        metadata=result,
+    ).to_call_tool_result()
+
+
+@mcp.tool()
+def adr_commit(
+    title: Annotated[str, "Title of the architecture decision"],
+    status: Annotated[str, "Status: Proposed, Accepted, Deprecated, or Superseded"],
+    tags: Annotated[list[str], "Tags for categorization (at least one required)"],
+    context: Annotated[str, "Context section — why this decision is needed"],
+    decision: Annotated[str, "Decision section — what was decided"],
+    consequences: Annotated[str, "Consequences section — what follows from this decision"],
+    references: Annotated[str, "References section content (optional)"] = "",
+    source_log: Annotated[str, "Source log reference '{agent}#L{N}' (optional)"] = "",
+    extra_sections: Annotated[
+        list[dict[str, str]] | None,
+        "Additional sections [{heading, content}] inserted before References (optional)",
+    ] = None,
+    supersedes: Annotated[
+        list[str] | None, "List of ADR identifiers this decision supersedes"
+    ] = None,
+    draft_id: Annotated[str, "Draft ID from adr_suggest for correlation"] = "",
+) -> CallToolResult:
+    """Write an approved ADR to disk in artifacts/decisions/.
+
+    Call only after the user has reviewed and approved the adr_suggest output.
+    Auto-numbers the ADR. Validates status, tags, and required sections.
+    """
+    if supersedes is None:
+        supersedes = []
+    result = adr_commit_impl(
+        title=title,
+        status=status,
+        tags=tags,
+        context=context,
+        decision=decision,
+        consequences=consequences,
+        references=references,
+        source_log=source_log,
+        extra_sections=extra_sections,
+        supersedes=supersedes,
+        draft_id=draft_id,
         workspace_root=ROOT,
     )
     file_links = None
     if "path" in result:
         file_links = [FileLink(file_path=ROOT / result["path"], action="created")]
     return ToolOutput(
-        tool_name="adr_create",
+        tool_name="adr_commit",
         breadcrumb="Created ADR at",
         metadata=result,
         file_links=file_links,
