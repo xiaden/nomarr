@@ -126,8 +126,7 @@ def _find_counter_confidence(
     for idx in range(min(num_labels, len(probs))):
         if idx != label_idx:
             val = float(probs[idx])
-            if val > best_other:
-                best_other = val
+            best_other = max(best_other, val)
     return best_other
 
 

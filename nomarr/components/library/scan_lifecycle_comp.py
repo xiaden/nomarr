@@ -140,7 +140,7 @@ def snapshot_existing_files(
     existing_files_dict: dict[str, dict[str, Any]] = {
         f["path"]: f for f in files_tuple[0]
     }
-    has_tagged_files = db.library_files.library_has_tagged_files(library_id)
+    has_tagged_files = db.file_states.library_has_tagged_files(library_id)
     return existing_files_dict, has_tagged_files
 
 
@@ -209,15 +209,7 @@ def bootstrap_file_state_edges(
             continue
 
         if bootstrap["type"] == "ml_tagged":
-            db.file_states.set_ml_tagged(file_id, version=bootstrap["version"])
-            count += 1
-        elif bootstrap["type"] == "reconciled":
-            db.file_states.set_reconciled(
-                file_id=file_id,
-                mode=bootstrap["mode"],
-                calibration_hash=None,
-                has_namespace=bootstrap.get("has_namespace", False),
-            )
+            db.file_states.set_tagged(file_id)
             count += 1
     return count
 def remove_deleted_files(db: Database, paths: list[str]) -> int:

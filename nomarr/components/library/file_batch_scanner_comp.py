@@ -11,7 +11,6 @@ from typing import Any
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_input
 from nomarr.components.library.metadata_extraction_comp import extract_metadata
-from nomarr.components.tagging.tagging_reader_comp import infer_write_mode_from_tags
 from nomarr.helpers.files_helper import is_audio_file
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence import Database
@@ -148,11 +147,6 @@ def scan_folder_files(
                 skip_ml = True
                 ml_skip_reason = "too_short"
 
-            # Compute namespace tracking for edge bootstrap
-            nom_tags = metadata.get("nom_tags", {})
-            has_nomarr_namespace = bool(nom_tags)
-            last_written_mode = infer_write_mode_from_tags(set(nom_tags.keys())) if has_nomarr_namespace else None
-
             # Prepare batch entry — pure file data, no state fields
             file_entry = {
                 "path": file_path_str,
@@ -173,14 +167,6 @@ def scan_folder_files(
                     "type": "ml_tagged",
                     "version": "scan_skipped" if ml_skip_reason else tagger_version,
                 })
-            if has_nomarr_namespace and last_written_mode:
-                edge_bootstraps.append({
-                    "normalized_path": normalized_path,
-                    "type": "reconciled",
-                    "mode": last_written_mode,
-                    "has_namespace": True,
-                })
-
             # Store metadata for entity seeding
             metadata_map[file_path_str] = metadata
 

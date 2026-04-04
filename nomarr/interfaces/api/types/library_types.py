@@ -434,3 +434,33 @@ class ValidateLibraryTagsResponse(BaseModel):
     files_repaired: int
     expected_heads: int
     missing_rels_summary: dict[str, int]
+
+
+
+class ErroredFileItemResponse(BaseModel):
+    """Single errored file in the response."""
+
+    file_id: str
+    path: str
+    duration_seconds: float | None
+    artist: str | None
+    title: str | None
+
+
+class ErroredFilesResponse(BaseModel):
+    """Response for errored files listing endpoint."""
+
+    files: list[ErroredFileItemResponse]
+    total: int
+
+
+class RetryErroredRequest(BaseModel):
+    """Request body for retrying errored files."""
+
+    file_ids: list[str] | None = None
+
+
+class RetryErroredResponse(BaseModel):
+    """Response for retry errored files endpoint."""
+
+    retried: int

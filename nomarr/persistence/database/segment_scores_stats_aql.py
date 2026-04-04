@@ -51,12 +51,12 @@ class SegmentScoresStatsOperations:
         _key = self._make_key(file_id, head_name, tagger_version)
         ts = now_ms().value
 
+        # UPSERT the stats document
         self.db.aql.execute(
             """
             UPSERT { _key: @_key }
             INSERT {
                 _key: @_key,
-                file_id: @file_id,
                 head_name: @head_name,
                 tagger_version: @tagger_version,
                 num_segments: @num_segments,
@@ -65,7 +65,6 @@ class SegmentScoresStatsOperations:
                 processed_at: @ts
             }
             UPDATE {
-                file_id: @file_id,
                 head_name: @head_name,
                 tagger_version: @tagger_version,
                 num_segments: @num_segments,
@@ -79,7 +78,6 @@ class SegmentScoresStatsOperations:
                 "dict[str, Any]",
                 {
                     "_key": _key,
-                    "file_id": file_id,
                     "head_name": head_name,
                     "tagger_version": tagger_version,
                     "num_segments": num_segments,
@@ -87,6 +85,21 @@ class SegmentScoresStatsOperations:
                     "label_stats": label_stats,
                     "ts": ts,
                 },
+            ),
+        )
+
+        # UPSERT the edge (file -> stats)
+        stats_id = f"segment_scores_stats/{_key}"
+        self.db.aql.execute(
+            """
+            UPSERT { _from: @file_id, _to: @stats_id }
+            INSERT { _from: @file_id, _to: @stats_id }
+            UPDATE {}
+            IN file_has_segment_stats
+            """,
+            bind_vars=cast(
+                "dict[str, Any]",
+                {"file_id": file_id, "stats_id": stats_id},
             ),
         )
 
@@ -122,13 +135,13 @@ class SegmentScoresStatsOperations:
                 }
             )
 
+        # UPSERT the stats documents
         self.db.aql.execute(
             """
             FOR doc IN @docs
                 UPSERT { _key: doc._key }
-                INSERT doc
+                INSERT UNSET(doc, "file_id")
                 UPDATE {
-                    file_id: doc.file_id,
                     head_name: doc.head_name,
                     tagger_version: doc.tagger_version,
                     num_segments: doc.num_segments,
@@ -141,8 +154,27 @@ class SegmentScoresStatsOperations:
             bind_vars=cast("dict[str, Any]", {"docs": docs}),
         )
 
+        # Build edges and UPSERT them
+        edges = [
+            {
+                "_from": d["file_id"],
+                "_to": f"segment_scores_stats/{d['_key']}",
+            }
+            for d in docs
+        ]
+        self.db.aql.execute(
+            """
+            FOR e IN @edges
+                UPSERT { _from: e._from, _to: e._to }
+                INSERT e
+                UPDATE {}
+                IN file_has_segment_stats
+            """,
+            bind_vars=cast("dict[str, Any]", {"edges": edges}),
+        )
+
     def get_stats_for_file(self, file_id: str) -> list[dict[str, Any]]:
-        """Get all segment statistics documents for a given file.
+        """Get all segment statistics documents for a given file via graph traversal.
 
         Args:
             file_id: Library file document ID
@@ -152,13 +184,16 @@ class SegmentScoresStatsOperations:
 
         """
         cursor = self.db.aql.execute(
-            "FOR doc IN segment_scores_stats FILTER doc.file_id == @file_id RETURN doc",
+            """
+            FOR stats IN OUTBOUND @file_id file_has_segment_stats
+                RETURN stats
+            """,
             bind_vars={"file_id": file_id},
         )
         return list(cursor)  # type: ignore[arg-type]
 
     def get_stats_for_files_bulk(self, file_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
-        """Get segment statistics for multiple files in a single AQL query.
+        """Get segment statistics for multiple files via graph traversal.
 
         Args:
             file_ids: List of library file document IDs
@@ -172,18 +207,23 @@ class SegmentScoresStatsOperations:
             return {}
 
         cursor = self.db.aql.execute(
-            "FOR doc IN segment_scores_stats FILTER doc.file_id IN @file_ids RETURN doc",
+            """
+            FOR file_id IN @file_ids
+                FOR stats IN OUTBOUND file_id file_has_segment_stats
+                    RETURN { file_id: file_id, stats: stats }
+            """,
             bind_vars=cast("dict[str, Any]", {"file_ids": file_ids}),
         )
         result: dict[str, list[dict[str, Any]]] = {}
-        for doc in cursor:  # type: ignore[union-attr]
-            fid = doc.get("file_id")
-            if fid:
-                result.setdefault(fid, []).append(doc)
+        for row in cursor:  # type: ignore[union-attr]
+            fid = row["file_id"]
+            result.setdefault(fid, []).append(row["stats"])
         return result
 
     def delete_by_file_id(self, file_id: str) -> int:
-        """Delete all segment statistics documents for a given file.
+        """Delete all segment statistics documents for a given file and their edges.
+
+        Uses graph traversal to find stats, removes them, then cascade-deletes edges.
 
         Args:
             file_id: Library file document ID
@@ -192,21 +232,34 @@ class SegmentScoresStatsOperations:
             Number of documents deleted
 
         """
+        # First, collect the stats doc IDs via traversal
         cursor = self.db.aql.execute(
             """
-            FOR doc IN segment_scores_stats
-                FILTER doc.file_id == @file_id
-                REMOVE doc IN segment_scores_stats
+            FOR stats IN OUTBOUND @file_id file_has_segment_stats
+                REMOVE stats IN segment_scores_stats
                 COLLECT WITH COUNT INTO removed
                 RETURN removed
             """,
             bind_vars={"file_id": file_id},
         )
         results = list(cursor)  # type: ignore[arg-type]
-        return cast("int", results[0]) if results else 0
+        removed = cast("int", results[0]) if results else 0
+
+        # Cascade-delete edges from this file
+        self.db.aql.execute(
+            """
+            FOR e IN file_has_segment_stats
+                FILTER e._from == @file_id
+                REMOVE e IN file_has_segment_stats
+            """,
+            bind_vars={"file_id": file_id},
+        )
+        return removed
 
     def delete_by_file_ids(self, file_ids: list[str]) -> int:
-        """Bulk delete segment statistics documents for multiple files.
+        """Bulk delete segment statistics documents for multiple files and their edges.
+
+        Uses graph traversal to find stats, removes them, then cascade-deletes edges.
 
         Args:
             file_ids: List of library file document IDs
@@ -217,18 +270,31 @@ class SegmentScoresStatsOperations:
         """
         if not file_ids:
             return 0
+
+        # Remove stats docs via traversal
         cursor = self.db.aql.execute(
             """
-            FOR doc IN segment_scores_stats
-                FILTER doc.file_id IN @file_ids
-                REMOVE doc IN segment_scores_stats
-                COLLECT WITH COUNT INTO removed
-                RETURN removed
+            FOR file_id IN @file_ids
+                FOR stats IN OUTBOUND file_id file_has_segment_stats
+                    REMOVE stats IN segment_scores_stats
+                    COLLECT WITH COUNT INTO removed
+                    RETURN removed
             """,
-            bind_vars={"file_ids": file_ids},
+            bind_vars=cast("dict[str, Any]", {"file_ids": file_ids}),
         )
         results = list(cursor)  # type: ignore[arg-type]
-        return cast("int", results[0]) if results else 0
+        removed = cast("int", results[0]) if results else 0
+
+        # Cascade-delete edges from these files
+        self.db.aql.execute(
+            """
+            FOR e IN file_has_segment_stats
+                FILTER e._from IN @file_ids
+                REMOVE e IN file_has_segment_stats
+            """,
+            bind_vars=cast("dict[str, Any]", {"file_ids": file_ids}),
+        )
+        return removed
 
     def truncate(self) -> None:
         """Remove all documents from the segment_scores_stats collection."""
@@ -336,9 +402,13 @@ class SegmentScoresStatsOperations:
             bind_vars={"head_name": head_name},
         )
         results = list(cursor)  # type: ignore[arg-type]
-        return cast("dict[str, Any]", results[0]) if results else {
-            "file_count": 0,
-            "avg_std": None,
-            "min_segments": None,
-            "max_segments": None,
-        }
+        return (
+            cast("dict[str, Any]", results[0])
+            if results
+            else {
+                "file_count": 0,
+                "avg_std": None,
+                "min_segments": None,
+                "max_segments": None,
+            }
+        )

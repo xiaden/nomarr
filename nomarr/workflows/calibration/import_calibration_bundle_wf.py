@@ -94,9 +94,19 @@ def import_calibration_bundle_wf(
         msg = "Bundle contains no calibrations (missing 'labels' key)"
         raise ValueError(msg)
 
+    # Build model lookup cache: (backbone, embedder_release_date) -> model_id
+    all_models = db.ml_models.list_models()
+    model_lookup: dict[tuple[str, str], str] = {}
+    for model in all_models:
+        backbone = model.get("backbone", "")
+        embedder_date = model.get("embedder_release_date", "")
+        if backbone and embedder_date:
+            model_lookup[(backbone, embedder_date)] = model["_id"]
+
     # Import calibrations to database
     imported_count = 0
     skipped_count = 0
+    no_model_count = 0
     errors: list[str] = []
 
     for label, params in labels.items():
@@ -114,13 +124,42 @@ def import_calibration_bundle_wf(
             # Note: This assumes a head_name format (e.g., "mood_happy")
             # Adjust mapping as needed for your schema
             head_name = f"mood_{label.replace(' ', '_')}"
-            model_key = params.get("model_key", "imported")  # Use model_key from bundle or default
 
-            # Generate calibration_def_hash for tracking
-            import hashlib
+            # Parse model_key (e.g., "effnet-20220825") into backbone + date
+            model_key = params.get("model_key", "")
+            if not model_key or model_key == "imported":
+                # Try backbone + embedder_release_date from bundle params directly
+                backbone = params.get("backbone", "")
+                embedder_date = params.get("embedder_release_date", "")
+            else:
+                # Parse model_key format: "{backbone}-{YYYYMMDD}"
+                parts = model_key.rsplit("-", 1)
+                if len(parts) == 2:
+                    backbone = parts[0]
+                    date_str = parts[1]
+                    # Convert YYYYMMDD to YYYY-MM-DD
+                    if len(date_str) == 8:
+                        embedder_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
+                    else:
+                        embedder_date = date_str
+                else:
+                    backbone = model_key
+                    embedder_date = ""
 
-            calib_def = f"{model_key}:{head_name}:{label}:1"
-            calibration_def_hash = hashlib.md5(calib_def.encode()).hexdigest()
+            # Resolve model_id via backbone lookup
+            model_id = model_lookup.get((backbone, embedder_date))
+            if model_id is None:
+                logger.warning(
+                    f"[import_calibration] No model found for {label}: "
+                    f"backbone={backbone}, embedder_date={embedder_date}"
+                )
+                no_model_count += 1
+                continue
+
+            # Import calibration component for hash computation
+            from nomarr.components.ml.calibration.ml_calibration_comp import compute_calibration_def_hash
+
+            calibration_def_hash = compute_calibration_def_hash(model_id, head_name, label)
 
             # Create histogram spec (default 10k bins)
             histogram_spec = {
@@ -132,11 +171,10 @@ def import_calibration_bundle_wf(
 
             save_calibration_state(
                 db,
-                model_key=model_key,
+                model_id=model_id,
                 head_name=head_name,
                 label=label,
                 calibration_def_hash=calibration_def_hash,
-                version=params.get("version", 1),
                 histogram_spec=histogram_spec,
                 p5=float(p5),
                 p95=float(p95),
@@ -162,12 +200,13 @@ def import_calibration_bundle_wf(
 
     logger.info(
         f"[import_calibration] Import complete: {imported_count} imported, "
-        f"{skipped_count} skipped, {len(errors)} errors",
+        f"{skipped_count} skipped, {no_model_count} no model, {len(errors)} errors",
     )
 
     return {
         "imported_count": imported_count,
         "skipped_count": skipped_count,
+        "no_model_count": no_model_count,
         "errors": errors,
         "global_version": global_version,
     }

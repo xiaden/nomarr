@@ -1,6 +1,7 @@
 """Database layer for Nomarr (ArangoDB)."""
 
 import os
+from typing import Any, cast
 
 import yaml
 
@@ -14,6 +15,8 @@ from nomarr.persistence.database.health_aql import HealthOperations
 from nomarr.persistence.database.libraries_aql import LibrariesOperations
 from nomarr.persistence.database.library_files_aql import LibraryFilesOperations
 from nomarr.persistence.database.library_folders_aql import LibraryFoldersOperations
+from nomarr.persistence.database.library_scans_aql import LibraryScansOperations
+from nomarr.persistence.database.locks_aql import LocksOperations
 from nomarr.persistence.database.meta_aql import MetaOperations
 from nomarr.persistence.database.migrations_aql import MigrationOperations
 from nomarr.persistence.database.ml_capacity_aql import MLCapacityOperations
@@ -25,7 +28,6 @@ from nomarr.persistence.database.segment_scores_stats_aql import SegmentScoresSt
 from nomarr.persistence.database.sessions_aql import SessionOperations
 from nomarr.persistence.database.tag_model_output_aql import TagModelOutputOperations
 from nomarr.persistence.database.tags_aql import TagOperations
-from nomarr.persistence.database.vector_promotion_lock_aql import VectorPromotionLockOperations
 from nomarr.persistence.database.vectors_track_aql import (
     VectorsTrackColdOperations,
     VectorsTrackHotOperations,
@@ -133,9 +135,10 @@ class Database:
 
         # Initialize operation classes - one per collection
         self.meta = MetaOperations(self.db)
-        self.libraries = LibrariesOperations(self.db)
+        self.libraries = LibrariesOperations(self.db, parent_db=self)
         self.library_files = LibraryFilesOperations(self.db, parent_db=self)
         self.library_folders = LibraryFoldersOperations(self.db)
+        self.library_scans = LibraryScansOperations(self.db)
         self.sessions = SessionOperations(self.db)
         self.calibration_state = CalibrationStateOperations(self.db)
         self.calibration_history = CalibrationHistoryOperations(self.db)
@@ -146,8 +149,8 @@ class Database:
         self.file_states = FileStatesOperations(self.db)
         self.worker_claims = WorkerClaimsOperations(self.db)
         self.vram_promises = VramPromisesOperations(self.db)
-        self.vector_promotion_locks = VectorPromotionLockOperations(self.db)
-        self.ml_capacity = MLCapacityOperations(self.db)
+        self.locks = LocksOperations(self.db)
+        self.ml_capacity = MLCapacityOperations(self.db, parent_db=self)
         self.ml_models = MLModelsOperations(self.db)
         self.ml_model_outputs = MLModelOutputsOperations(self.db)
         self.tag_model_output = TagModelOutputOperations(self.db)
@@ -167,9 +170,7 @@ class Database:
         # from nomarr.persistence.database.joined_queries_aql import JoinedQueryOperations
         # self.joined_queries = JoinedQueryOperations(self.db)
 
-    def register_vectors_track_backbone(
-        self, backbone_id: str, library_key: str
-    ) -> VectorsTrackHotOperations:
+    def register_vectors_track_backbone(self, backbone_id: str, library_key: str) -> VectorsTrackHotOperations:
         """Get or create a VectorsTrackHotOperations instance for a backbone+library.
 
         Hot operations are for write-only vector storage (no vector index overhead).
@@ -186,9 +187,7 @@ class Database:
         """
         cache_key = f"{backbone_id}__{library_key}"
         if cache_key not in self.vectors_track:
-            self.vectors_track[cache_key] = VectorsTrackHotOperations(
-                self.db, backbone_id, library_key
-            )
+            self.vectors_track[cache_key] = VectorsTrackHotOperations(self.db, backbone_id, library_key)
         return self.vectors_track[cache_key]
 
     def get_vectors_track_cold(
@@ -227,6 +226,7 @@ class Database:
 
         Single orchestration point for cascade delete. Iterates all registered
         backbone+library combinations and removes vectors from both hot and cold collections.
+        Also performs catch-all edge cleanup to remove any orphan edges.
 
         Args:
             file_id: Library file document ID.
@@ -247,12 +247,24 @@ class Database:
             deleted = cold_ops.delete_by_file_id(file_id)
             total_deleted += deleted
 
+        # Catch-all edge cleanup: remove any edges from this file
+        # (covers edges to collections not registered/cached)
+        self.db.aql.execute(
+            """
+            FOR e IN file_has_vectors
+                FILTER e._from == @file_id
+                REMOVE e IN file_has_vectors
+            """,
+            bind_vars={"file_id": file_id},
+        )
+
         return total_deleted
 
     def delete_vectors_by_file_ids(self, file_ids: list[str]) -> int:
         """Delete vectors for multiple files from ALL backbones and libraries (both hot and cold).
 
         Bulk version of delete_vectors_by_file_id.
+        Also performs catch-all edge cleanup to remove any orphan edges.
 
         Args:
             file_ids: List of library file document IDs.
@@ -275,6 +287,17 @@ class Database:
         for cold_ops in self._vectors_track_cold.values():
             deleted = cold_ops.delete_by_file_ids(file_ids)
             total_deleted += deleted
+
+        # Catch-all edge cleanup: remove any edges from these files
+        # (covers edges to collections not registered/cached)
+        self.db.aql.execute(
+            """
+            FOR e IN file_has_vectors
+                FILTER e._from IN @file_ids
+                REMOVE e IN file_has_vectors
+            """,
+            bind_vars=cast("dict[str, Any]", {"file_ids": file_ids}),
+        )
 
         return total_deleted
 

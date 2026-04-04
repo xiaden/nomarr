@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from nomarr.components.ml.onnx.ml_base import BaseONNXModel
-from nomarr.components.ml.onnx.ml_constants import MODEL_SUITE_VERSION
 from nomarr.components.ml.onnx.ml_session_comp import _run_in_batches
 
 if TYPE_CHECKING:
@@ -59,7 +58,6 @@ def head_parts_from_path(path: str) -> tuple[str, str, str]:
     raise ValueError(msg)
 
 
-
 class ONNXHeadModel(BaseONNXModel):
     """ONNX wrapper for classification and regression head models.
 
@@ -74,7 +72,7 @@ class ONNXHeadModel(BaseONNXModel):
 
         model = ONNXHeadModel("/models/effnet/heads/sigmoid/happy.onnx")
         model.load("cpu")
-        scores = model.run(embeddings)   # shape: (n_patches, num_classes)
+        scores = model.run(embeddings)  # shape: (n_patches, num_classes)
         model.unload()
     """
 
@@ -110,8 +108,6 @@ class ONNXHeadModel(BaseONNXModel):
         path: str,
         *,
         labels: list[str] | None = None,
-        head_release_date: str = "",
-        embedder_release_date: str = "",
     ) -> None:
         """Initialise the head model wrapper.
 
@@ -120,8 +116,6 @@ class ONNXHeadModel(BaseONNXModel):
             labels: Class label strings.  When ``None`` (default) labels
                 are left empty — the caller is responsible for injecting
                 labels read from the database.
-            head_release_date: ISO date string (e.g. ``"2022-08-25"``).
-            embedder_release_date: ISO date string for the backbone embedder.
         """
         super().__init__(path)
         self.backbone_name, self.head_type, self.model_name = head_parts_from_path(path)
@@ -131,8 +125,6 @@ class ONNXHeadModel(BaseONNXModel):
         self.output_node = None
         self.input_dim = None
         self.num_classes = None
-        self._head_release_date = head_release_date
-        self._embedder_release_date = embedder_release_date
 
     def load(self, device: DevicePlacement) -> None:
         """Load the ONNX session and resolve tensor metadata.
@@ -206,7 +198,6 @@ class ONNXHeadModel(BaseONNXModel):
 
         return _run_in_batches(_session_fn, embeddings, _HEAD_BATCH_SIZE)
 
-
     @property
     def name(self) -> str:
         """Display name derived from the ONNX filename stem."""
@@ -218,11 +209,13 @@ class ONNXHeadModel(BaseONNXModel):
         calib_method: str = "none",
         calib_version: int = 0,
     ) -> tuple[str, str]:
-        """Build a versioned tag key mirroring :meth:`HeadInfo.build_versioned_tag_key`.
+        """Build a tag key mirroring :meth:`HeadInfo.build_versioned_tag_key`.
 
         Format::
 
-            {label}_{suite_version}_{backbone}{embedder_date}_{label}{head_date}
+            {label}_{backbone}_{model}
+
+        Example: ``"happy_yamnet_mood_happy"``
 
         Args:
             label: Normalised tag label (e.g. ``"happy"``).
@@ -232,18 +225,6 @@ class ONNXHeadModel(BaseONNXModel):
         Returns:
             ``(model_key, calibration_id)`` tuple matching the HeadInfo convention.
         """
-        embedder_date = (
-            self._embedder_release_date.replace("-", "")
-            if self._embedder_release_date
-            else "unknown"
-        )
-        head_date = (
-            self._head_release_date.replace("-", "")
-            if self._head_release_date
-            else "unknown"
-        )
-        embedder_part = f"{self.backbone_name}{embedder_date}"
-        head_part = f"{label}{head_date}"
-        model_key = f"{label}_{MODEL_SUITE_VERSION}_{embedder_part}_{head_part}"
+        model_key = f"{label}_{self.backbone_name}_{self.model_name}"
         calibration_id = f"{calib_method}_{calib_version}"
         return (model_key, calibration_id)

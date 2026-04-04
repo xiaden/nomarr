@@ -300,3 +300,36 @@ Fix the migration code and restart.
 This means `ensure_schema()` is out of date relative to the migrations. If you're
 post-consolidation, this shouldn't happen. If it does, run the consolidation script
 to re-sync the baseline.
+
+## Migration History
+
+### V021_schema_refactor_v1 — FK-to-Edge Schema Refactor
+
+Major schema refactor converting foreign key properties to edge collections for graph-native traversal.
+
+**Edge collections created:**
+
+- `library_contains_file` — library → file relationship
+- `library_has_scan` — library → scan state (separated from libraries)
+- `model_has_output` — ML model → output relationship
+- `model_has_calibration` — ML model → calibration state relationship
+- `file_has_vectors` — file → vector storage relationship
+- `file_has_segment_stats` — file → segment statistics relationship
+
+**Data migrations:**
+
+- Populates all edge collections from existing FK properties
+- Uses `OPTIONS { ignoreErrors: true }` for idempotent edge creation
+
+**FK fields dropped after edge migration:**
+
+- `library_id` (from library_files, library_scans)
+- `model_key` (from ml_model_outputs, calibration_states)
+- `file_id` (from vectors_track_hot, vectors_track_cold, segment_scores_stats)
+
+**Additional changes:**
+
+- Creates unified `locks` collection (consolidates ml_capacity_probe_locks + vector_promotion_locks)
+- Updates graphs: `LibraryGraph`, `MLGraph`, `FileArtifactsGraph`
+
+**Idempotency:** Fully idempotent via `IF NOT EXISTS`, `FILTER != null` guards, and `ignoreErrors` options.

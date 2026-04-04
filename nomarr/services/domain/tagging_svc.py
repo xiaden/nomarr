@@ -136,19 +136,15 @@ class TaggingService:
             msg = "LibraryService not configured. Cannot get library paths."
             raise ValueError(msg)
 
-        # Filter to only files with stale calibration hash.
-        # Falls back to all tagged files when no calibration version exists yet
-        # (first-run case — all files get their initial mood tags).
-        calibration_version = self.db.meta.get("calibration_version")
-        if calibration_version:
-            paths = self.library_service.get_paths_needing_calibration(calibration_version)
+        # Get tagged files that are not yet calibrated (boolean axis).
+        # When no calibration has ever run, all tagged files will be not_calibrated.
+        paths = self.library_service.get_paths_needing_calibration()
+        if paths:
             logger.info(
-                f"[TaggingService] {len(paths)} files need calibration update "
-                f"(hash={calibration_version[:8]}...)"
+                f"[TaggingService] {len(paths)} files need calibration update"
             )
         else:
-            paths = self.library_service.get_tagged_library_paths()
-            logger.info(f"[TaggingService] No calibration version yet — processing all {len(paths)} tagged files")
+            logger.info("[TaggingService] All tagged files are already calibrated")
 
         return apply_calibration_wf(
             db=self.db,
@@ -312,7 +308,7 @@ class TaggingService:
         library_status_list = []
         if global_version and self.library_service:
             # Get library counts
-            status_data = self.db.library_files.get_calibration_status_by_library(global_version)
+            status_data = self.db.file_states.get_calibration_status_by_library()
 
             # Enrich with library names
             for status in status_data:
@@ -320,18 +316,18 @@ class TaggingService:
                 library_doc = self.db.libraries.get_library(library_id)
 
                 if library_doc:
-                    total = status["total_files"]
-                    current = status["current_count"]
-                    outdated = status["outdated_count"]
-                    percentage = (current / total * 100) if total > 0 else 0.0
+                    calibrated = status["calibrated_count"]
+                    not_calibrated = status["not_calibrated_count"]
+                    total = calibrated + not_calibrated
+                    percentage = (calibrated / total * 100) if total > 0 else 0.0
 
                     library_status_list.append(
                         LibraryCalibrationStatus(
                             library_id=library_id,
                             library_name=library_doc.get("name", "Unknown"),
                             total_files=total,
-                            current_count=current,
-                            outdated_count=outdated,
+                            current_count=calibrated,
+                            outdated_count=not_calibrated,
                             percentage=round(percentage, 1),
                         ),
                     )
@@ -410,8 +406,6 @@ class TaggingService:
             raise ValueError(msg)
 
         target_mode = library.get("file_write_mode", "full")
-
-        # Get current calibration hash
         calibration_hash = self.db.meta.get("calibration_version")
         has_calibration = bool(calibration_hash)
 
@@ -419,8 +413,6 @@ class TaggingService:
         worker_id = f"reconcile:{library_id}"
         claimed_files = self.db.library_files.claim_files_for_reconciliation(
             library_id=library_id,
-            target_mode=target_mode,
-            calibration_hash=calibration_hash,
             worker_id=worker_id,
             batch_size=batch_size,
         )
@@ -461,8 +453,6 @@ class TaggingService:
         # Count remaining files needing reconciliation
         remaining = self.db.library_files.count_files_needing_reconciliation(
             library_id=library_id,
-            target_mode=target_mode,
-            calibration_hash=calibration_hash,
         )
 
         logger.info(f"[reconcile] Library {library_id}: processed={processed}, failed={failed}, remaining={remaining}")
@@ -472,6 +462,18 @@ class TaggingService:
             remaining=remaining,
             failed=failed,
         )
+
+    def mark_tags_stale(self, library_id: str) -> int:
+        """Mark all file tags in a library as stale.
+
+        Args:
+            library_id: Library document _id
+
+        Returns:
+            Number of files marked stale
+
+        """
+        return self.db.file_states.bulk_set_tags_stale(library_id)
 
     def get_reconcile_status(
         self,
@@ -492,13 +494,8 @@ class TaggingService:
             msg = f"Library not found: {library_id}"
             raise ValueError(msg)
 
-        target_mode = library.get("file_write_mode", "full")
-        calibration_hash = self.db.meta.get("calibration_version")
-
         pending_count = self.db.library_files.count_files_needing_reconciliation(
             library_id=library_id,
-            target_mode=target_mode,
-            calibration_hash=calibration_hash,
         )
 
         # For now, in_progress is always False (sync reconciliation)

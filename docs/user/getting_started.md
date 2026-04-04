@@ -162,8 +162,6 @@ services:
   nomarr-arangodb:
     image: arangodb:latest
     container_name: nomarr-arangodb
-    networks:
-      - internal_network
     env_file:
       - nomarr-arangodb.env
     command: ["--vector-index"]
@@ -182,12 +180,8 @@ services:
     container_name: nomarr
     user: "1000:1000"
     stop_grace_period: 30s
-    networks:
-      - front_network
-      - internal_network
-    # Uncomment for direct access (without reverse proxy):
-    # ports:
-    #   - "8356:8356"
+    ports:
+      - "8356:8356"
     volumes:
       - ./config:/app/config
       - /path/to/your/music:/media:ro  # CHANGE THIS to your music library path
@@ -205,11 +199,6 @@ services:
               capabilities: [gpu]
     restart: unless-stopped
 
-networks:
-  internal_network:
-    internal: true   # Isolated network for DB
-  front_network:
-    external: true   # Your reverse proxy network
 ```
 
 **Key changes to make:**

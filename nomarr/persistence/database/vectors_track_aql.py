@@ -83,7 +83,6 @@ class VectorsTrackHotOperations:
             UPSERT {{ _key: @_key }}
             INSERT {{
                 _key: @_key,
-                file_id: @file_id,
                 model_suite_hash: @model_suite_hash,
                 embed_dim: @embed_dim,
                 vector: @vector,
@@ -92,7 +91,6 @@ class VectorsTrackHotOperations:
                 created_at: @ts
             }}
             UPDATE {{
-                file_id: @file_id,
                 model_suite_hash: @model_suite_hash,
                 embed_dim: @embed_dim,
                 vector: @vector,
@@ -106,7 +104,6 @@ class VectorsTrackHotOperations:
                 "dict[str, Any]",
                 {
                     "_key": _key,
-                    "file_id": file_id,
                     "model_suite_hash": model_suite_hash,
                     "embed_dim": embed_dim,
                     "vector": vector,
@@ -117,12 +114,29 @@ class VectorsTrackHotOperations:
             ),
         )
 
+        # UPSERT the edge (file -> vector)
+        vector_id = f"{collection_name}/{_key}"
+        self.db.aql.execute(
+            """
+            UPSERT { _from: @file_id, _to: @vector_id }
+            INSERT { _from: @file_id, _to: @vector_id }
+            UPDATE {}
+            IN file_has_vectors
+            """,
+            bind_vars=cast(
+                "dict[str, Any]",
+                {"file_id": file_id, "vector_id": vector_id},
+            ),
+        )
+
     # ------------------------------------------------------------------
     # Read
     # ------------------------------------------------------------------
 
     def get_vector(self, file_id: str) -> dict[str, Any] | None:
         """Get the most recent vector document for a file from hot collection.
+
+        Uses graph traversal via file_has_vectors edge collection.
 
         Args:
             file_id: Library file document ID.
@@ -132,20 +146,22 @@ class VectorsTrackHotOperations:
 
         """
         cursor = self.db.aql.execute(
-            f"""
-            FOR doc IN {self.collection_name}
-                FILTER doc.file_id == @file_id
-                SORT doc.created_at DESC
+            """
+            FOR vec IN OUTBOUND @file_id file_has_vectors
+                FILTER IS_SAME_COLLECTION(@coll, vec)
+                SORT vec.created_at DESC
                 LIMIT 1
-                RETURN doc
+                RETURN vec
             """,
-            bind_vars={"file_id": file_id},
+            bind_vars={"file_id": file_id, "coll": self.collection_name},
         )
         results = list(cursor)  # type: ignore[arg-type]
         return cast("dict[str, Any]", results[0]) if results else None
 
     def get_vectors_by_file_ids(self, file_ids: list[str]) -> list[dict[str, Any]]:
         """Get vector documents for multiple files from hot collection.
+
+        Uses graph traversal via file_has_vectors edge collection.
 
         Args:
             file_ids: List of library file document IDs.
@@ -157,12 +173,13 @@ class VectorsTrackHotOperations:
         if not file_ids:
             return []
         cursor = self.db.aql.execute(
-            f"""
-            FOR doc IN {self.collection_name}
-                FILTER doc.file_id IN @file_ids
-                RETURN doc
+            """
+            FOR file_id IN @file_ids
+                FOR vec IN OUTBOUND file_id file_has_vectors
+                    FILTER IS_SAME_COLLECTION(@coll, vec)
+                    RETURN vec
             """,
-            bind_vars={"file_ids": file_ids},
+            bind_vars={"file_ids": file_ids, "coll": self.collection_name},
         )
         return list(cursor)  # type: ignore[arg-type]
 
@@ -173,6 +190,8 @@ class VectorsTrackHotOperations:
     def delete_by_file_id(self, file_id: str) -> int:
         """Delete all vector documents for a given file from hot collection.
 
+        Uses graph traversal to find vectors, removes them, then cascade-deletes edges.
+
         Args:
             file_id: Library file document ID.
 
@@ -180,21 +199,39 @@ class VectorsTrackHotOperations:
             Number of documents deleted.
 
         """
+        collection_name = self.collection_name
+        # Remove vectors via traversal
         cursor = self.db.aql.execute(
             f"""
-            FOR doc IN {self.collection_name}
-                FILTER doc.file_id == @file_id
-                REMOVE doc IN {self.collection_name}
+            FOR vec IN OUTBOUND @file_id file_has_vectors
+                FILTER IS_SAME_COLLECTION(@coll, vec)
+                REMOVE vec IN {collection_name}
                 COLLECT WITH COUNT INTO removed
                 RETURN removed
             """,
-            bind_vars={"file_id": file_id},
+            bind_vars={"file_id": file_id, "coll": collection_name},
         )
         results = list(cursor)  # type: ignore[arg-type]
-        return cast("int", results[0]) if results else 0
+        removed = cast("int", results[0]) if results else 0
+
+        # Cascade-delete edges pointing to this collection
+        self.db.aql.execute(
+            """
+            FOR e IN file_has_vectors
+                FILTER e._from == @file_id AND STARTS_WITH(e._to, @coll_prefix)
+                REMOVE e IN file_has_vectors
+            """,
+            bind_vars={
+                "file_id": file_id,
+                "coll_prefix": f"{collection_name}/",
+            },
+        )
+        return removed
 
     def delete_by_file_ids(self, file_ids: list[str]) -> int:
         """Bulk delete vector documents for multiple files from hot collection.
+
+        Uses graph traversal to find vectors, removes them, then cascade-deletes edges.
 
         Args:
             file_ids: List of library file document IDs.
@@ -205,18 +242,38 @@ class VectorsTrackHotOperations:
         """
         if not file_ids:
             return 0
+        collection_name = self.collection_name
+        # Remove vectors via traversal
         cursor = self.db.aql.execute(
             f"""
-            FOR doc IN {self.collection_name}
-                FILTER doc.file_id IN @file_ids
-                REMOVE doc IN {self.collection_name}
-                COLLECT WITH COUNT INTO removed
-                RETURN removed
+            FOR file_id IN @file_ids
+                FOR vec IN OUTBOUND file_id file_has_vectors
+                    FILTER IS_SAME_COLLECTION(@coll, vec)
+                    REMOVE vec IN {collection_name}
+                    COLLECT WITH COUNT INTO removed
+                    RETURN removed
             """,
-            bind_vars={"file_ids": file_ids},
+            bind_vars={"file_ids": file_ids, "coll": collection_name},
         )
         results = list(cursor)  # type: ignore[arg-type]
-        return cast("int", results[0]) if results else 0
+        removed = cast("int", results[0]) if results else 0
+
+        # Cascade-delete edges pointing to this collection
+        self.db.aql.execute(
+            """
+            FOR e IN file_has_vectors
+                FILTER e._from IN @file_ids AND STARTS_WITH(e._to, @coll_prefix)
+                REMOVE e IN file_has_vectors
+            """,
+            bind_vars=cast(
+                "dict[str, Any]",
+                {
+                    "file_ids": file_ids,
+                    "coll_prefix": f"{collection_name}/",
+                },
+            ),
+        )
+        return removed
 
     # ------------------------------------------------------------------
     # Maintenance
@@ -245,7 +302,6 @@ class VectorsTrackHotOperations:
         workflow instead to preserve vectors in cold collection.
         """
         self.collection.truncate()
-
 
 
 class VectorsTrackColdOperations:
@@ -278,6 +334,7 @@ class VectorsTrackColdOperations:
     def get_vector(self, file_id: str) -> dict[str, Any] | None:
         """Get the most recent vector document for a file from cold collection.
 
+        Uses graph traversal via file_has_vectors edge collection.
         This is the primary read path for promoted vectors.
 
         Args:
@@ -288,20 +345,22 @@ class VectorsTrackColdOperations:
 
         """
         cursor = self.db.aql.execute(
-            f"""
-            FOR doc IN {self.collection_name}
-                FILTER doc.file_id == @file_id
-                SORT doc.created_at DESC
+            """
+            FOR vec IN OUTBOUND @file_id file_has_vectors
+                FILTER IS_SAME_COLLECTION(@coll, vec)
+                SORT vec.created_at DESC
                 LIMIT 1
-                RETURN doc
+                RETURN vec
             """,
-            bind_vars={"file_id": file_id},
+            bind_vars={"file_id": file_id, "coll": self.collection_name},
         )
         results = list(cursor)  # type: ignore[arg-type]
         return cast("dict[str, Any]", results[0]) if results else None
 
     def get_vectors_by_file_ids(self, file_ids: list[str]) -> list[dict[str, Any]]:
         """Get vector documents for multiple files from cold collection.
+
+        Uses graph traversal via file_has_vectors edge collection.
 
         Args:
             file_ids: List of library file document IDs.
@@ -313,12 +372,13 @@ class VectorsTrackColdOperations:
         if not file_ids:
             return []
         cursor = self.db.aql.execute(
-            f"""
-            FOR doc IN {self.collection_name}
-                FILTER doc.file_id IN @file_ids
-                RETURN doc
+            """
+            FOR file_id IN @file_ids
+                FOR vec IN OUTBOUND file_id file_has_vectors
+                    FILTER IS_SAME_COLLECTION(@coll, vec)
+                    RETURN vec
             """,
-            bind_vars={"file_ids": file_ids},
+            bind_vars={"file_ids": file_ids, "coll": self.collection_name},
         )
         return list(cursor)  # type: ignore[arg-type]
 
@@ -326,9 +386,7 @@ class VectorsTrackColdOperations:
     # Search
     # ------------------------------------------------------------------
 
-    def search_similar(
-        self, vector: list[float], limit: int, nprobe: int = 20
-    ) -> list[dict[str, Any]]:
+    def search_similar(self, vector: list[float], limit: int, nprobe: int = 20) -> list[dict[str, Any]]:
         """Search for similar vectors using ANN index.
 
         Returns raw results with distance scores. Service layer applies min_score filtering.
@@ -344,7 +402,7 @@ class VectorsTrackColdOperations:
 
         Returns:
             List of dicts with keys:
-                - file_id: Library file document ID
+                - file_id: Library file document ID (resolved via file_has_vectors edge)
                 - score: Cosine similarity (higher = more similar)
                 - vector: The stored embedding vector
                 - All other document fields (_key, model_suite_hash, etc.)
@@ -357,9 +415,15 @@ class VectorsTrackColdOperations:
             f"""
             FOR doc IN {self.collection_name}
                 LET score = APPROX_NEAR_COSINE(doc.vector_n, @query_vector, {{nProbe: {nprobe}}})
+                // Resolve file_id via edge traversal (FK-free)
+                LET file_ids = (
+                    FOR f IN INBOUND doc file_has_vectors
+                        RETURN f._id
+                )
+                LET file_id = FIRST(file_ids)
                 SORT score DESC
                 LIMIT @limit
-                RETURN MERGE(doc, {{ score: score }})
+                RETURN MERGE(doc, {{ score: score, file_id: file_id }})
             """,
             bind_vars=cast(
                 "dict[str, Any]",
@@ -394,7 +458,7 @@ class VectorsTrackColdOperations:
 
         Returns:
             List of dicts with keys:
-                - file_id: Library file document ID
+                - file_id: Library file document ID (resolved via file_has_vectors edge)
                 - score: Cosine similarity (higher = more similar)
                 - vector: The stored embedding vector
                 - All other document fields (_key, model_suite_hash, genres, etc.)
@@ -408,9 +472,15 @@ class VectorsTrackColdOperations:
             FOR doc IN {self.collection_name}
                 LET score = APPROX_NEAR_COSINE(doc.vector_n, @query_vector, {{nProbe: {nprobe}}})
                 FILTER @genre IN doc.genres
+                // Resolve file_id via edge traversal (FK-free)
+                LET file_ids = (
+                    FOR f IN INBOUND doc file_has_vectors
+                        RETURN f._id
+                )
+                LET file_id = FIRST(file_ids)
                 SORT score DESC
                 LIMIT @limit
-                RETURN MERGE(doc, {{ score: score }})
+                RETURN MERGE(doc, {{ score: score, file_id: file_id }})
             """,
             bind_vars=cast(
                 "dict[str, Any]",
@@ -444,6 +514,8 @@ class VectorsTrackColdOperations:
     def delete_by_file_id(self, file_id: str) -> int:
         """Delete all vector documents for a given file from cold collection.
 
+        Uses graph traversal to find vectors, removes them, then cascade-deletes edges.
+
         Args:
             file_id: Library file document ID.
 
@@ -451,21 +523,39 @@ class VectorsTrackColdOperations:
             Number of documents deleted.
 
         """
+        collection_name = self.collection_name
+        # Remove vectors via traversal
         cursor = self.db.aql.execute(
             f"""
-            FOR doc IN {self.collection_name}
-                FILTER doc.file_id == @file_id
-                REMOVE doc IN {self.collection_name}
+            FOR vec IN OUTBOUND @file_id file_has_vectors
+                FILTER IS_SAME_COLLECTION(@coll, vec)
+                REMOVE vec IN {collection_name}
                 COLLECT WITH COUNT INTO removed
                 RETURN removed
             """,
-            bind_vars={"file_id": file_id},
+            bind_vars={"file_id": file_id, "coll": collection_name},
         )
         results = list(cursor)  # type: ignore[arg-type]
-        return cast("int", results[0]) if results else 0
+        removed = cast("int", results[0]) if results else 0
+
+        # Cascade-delete edges pointing to this collection
+        self.db.aql.execute(
+            """
+            FOR e IN file_has_vectors
+                FILTER e._from == @file_id AND STARTS_WITH(e._to, @coll_prefix)
+                REMOVE e IN file_has_vectors
+            """,
+            bind_vars={
+                "file_id": file_id,
+                "coll_prefix": f"{collection_name}/",
+            },
+        )
+        return removed
 
     def delete_by_file_ids(self, file_ids: list[str]) -> int:
         """Bulk delete vector documents for multiple files from cold collection.
+
+        Uses graph traversal to find vectors, removes them, then cascade-deletes edges.
 
         Args:
             file_ids: List of library file document IDs.
@@ -476,18 +566,38 @@ class VectorsTrackColdOperations:
         """
         if not file_ids:
             return 0
+        collection_name = self.collection_name
+        # Remove vectors via traversal
         cursor = self.db.aql.execute(
             f"""
-            FOR doc IN {self.collection_name}
-                FILTER doc.file_id IN @file_ids
-                REMOVE doc IN {self.collection_name}
-                COLLECT WITH COUNT INTO removed
-                RETURN removed
+            FOR file_id IN @file_ids
+                FOR vec IN OUTBOUND file_id file_has_vectors
+                    FILTER IS_SAME_COLLECTION(@coll, vec)
+                    REMOVE vec IN {collection_name}
+                    COLLECT WITH COUNT INTO removed
+                    RETURN removed
             """,
-            bind_vars={"file_ids": file_ids},
+            bind_vars={"file_ids": file_ids, "coll": collection_name},
         )
         results = list(cursor)  # type: ignore[arg-type]
-        return cast("int", results[0]) if results else 0
+        removed = cast("int", results[0]) if results else 0
+
+        # Cascade-delete edges pointing to this collection
+        self.db.aql.execute(
+            """
+            FOR e IN file_has_vectors
+                FILTER e._from IN @file_ids AND STARTS_WITH(e._to, @coll_prefix)
+                REMOVE e IN file_has_vectors
+            """,
+            bind_vars=cast(
+                "dict[str, Any]",
+                {
+                    "file_ids": file_ids,
+                    "coll_prefix": f"{collection_name}/",
+                },
+            ),
+        )
+        return removed
 
     def truncate(self) -> None:
         """Remove all documents from cold collection.

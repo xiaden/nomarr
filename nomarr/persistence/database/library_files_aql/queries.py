@@ -81,36 +81,44 @@ class LibraryFilesQueriesMixin:
         )
         return list(cursor)
 
-    def get_library_file(self, path: str, library_id: int | None = None) -> dict[str, Any] | None:
+    def get_library_file(self, path: str, library_id: str | None = None) -> dict[str, Any] | None:
         """Get library file by path.
 
         Searches by normalized_path first (canonical identity), then falls back
         to absolute path for compatibility with existing documents.
 
+        When library_id is provided, uses edge traversal via library_contains_file
+        rather than filtering on a library_id field.
+
         Args:
             path: File path (absolute or relative to library root)
-            library_id: Optional library ID to restrict search
+            library_id: Optional library _id to restrict search (uses edge traversal)
 
         Returns:
             File dict or None if not found
 
         """
-        # Search by normalized_path first, then fall back to absolute path
-        query = """
-            FOR file IN library_files
-                FILTER file.normalized_path == @path OR file.path == @path
-        """
         bind_vars: dict[str, Any] = {"path": path}
 
         if library_id is not None:
-            query += " FILTER file.library_id == @library_id"
+            # Use edge traversal to find files owned by this library
+            query = """
+                FOR file IN OUTBOUND @library_id library_contains_file
+                    FILTER file.normalized_path == @path OR file.path == @path
+                    SORT file._key
+                    LIMIT 1
+                    RETURN file
+            """
             bind_vars["library_id"] = library_id
-
-        query += """
-                SORT file._key
-                LIMIT 1
-                RETURN file
-        """
+        else:
+            # No library filter — scan all files
+            query = """
+                FOR file IN library_files
+                    FILTER file.normalized_path == @path OR file.path == @path
+                    SORT file._key
+                    LIMIT 1
+                    RETURN file
+            """
 
         cursor = cast("Cursor", self.db.aql.execute(query, bind_vars=bind_vars))
         result = list(cursor)
@@ -206,7 +214,7 @@ class LibraryFilesQueriesMixin:
         offset: int = 0,
         artist: str | None = None,
         album: str | None = None,
-        library_id: int | None = None,
+        library_id: str | None = None,
     ) -> tuple[list[dict[str, Any]], int]:
         """List library files with optional filtering.
 
@@ -215,56 +223,73 @@ class LibraryFilesQueriesMixin:
             offset: Number of files to skip
             artist: Filter by artist name
             album: Filter by album name
-            library_id: Filter by library ID
+            library_id: Filter by library ID (uses edge traversal)
 
         Returns:
             Tuple of (files list, total count)
 
         """
-        # Build filter conditions
+        # Build filter conditions (excluding library_id which uses edge traversal)
         filters = []
-
-        if library_id is not None:
-            filters.append("file.library_id == @library_id")
-
         if artist:
             filters.append("file.artist == @artist")
-
         if album:
             filters.append("file.album == @album")
-
         filter_clause = f"FILTER {' AND '.join(filters)}" if filters else ""
 
-        # Build bind_vars for filter conditions (used by count query)
-        filter_bind_vars: dict[str, Any] = {}
-        if library_id is not None:
-            filter_bind_vars["library_id"] = library_id
+        # Build bind_vars for filter conditions
+        bind_vars: dict[str, Any] = {}
         if artist:
-            filter_bind_vars["artist"] = artist
+            bind_vars["artist"] = artist
         if album:
-            filter_bind_vars["album"] = album
+            bind_vars["album"] = album
 
-        # Get total count (only needs filter bind vars)
-        count_query = f"""
-            FOR file IN library_files
-                {filter_clause}
-                COLLECT WITH COUNT INTO total
-                RETURN total
-        """
-        count_cursor = cast("Cursor", self.db.aql.execute(count_query, bind_vars=filter_bind_vars))
-        total = next(count_cursor, 0)
+        if library_id is not None:
+            # Use edge traversal for library filtering
+            bind_vars["library_id"] = library_id
 
-        # Get paginated results (needs filter + pagination bind vars)
-        paginated_bind_vars = {**filter_bind_vars, "limit": limit, "offset": offset}
-        query = f"""
-            FOR file IN library_files
-                {filter_clause}
-                SORT file.artist, file.album, file.title
-                LIMIT @offset, @limit
-                RETURN file
-        """
-        cursor = cast("Cursor", self.db.aql.execute(query, bind_vars=paginated_bind_vars))
-        files = list(cursor)
+            # Get total count via edge traversal
+            count_query = f"""
+                FOR file IN OUTBOUND @library_id library_contains_file
+                    {filter_clause}
+                    COLLECT WITH COUNT INTO total
+                    RETURN total
+            """
+            count_cursor = cast("Cursor", self.db.aql.execute(count_query, bind_vars=bind_vars))
+            total = next(count_cursor, 0)
+
+            # Get paginated results via edge traversal
+            paginated_bind_vars = {**bind_vars, "limit": limit, "offset": offset}
+            query = f"""
+                FOR file IN OUTBOUND @library_id library_contains_file
+                    {filter_clause}
+                    SORT file.artist, file.album, file.title
+                    LIMIT @offset, @limit
+                    RETURN file
+            """
+            cursor = cast("Cursor", self.db.aql.execute(query, bind_vars=paginated_bind_vars))
+            files = list(cursor)
+        else:
+            # No library filter — scan all files
+            count_query = f"""
+                FOR file IN library_files
+                    {filter_clause}
+                    COLLECT WITH COUNT INTO total
+                    RETURN total
+            """
+            count_cursor = cast("Cursor", self.db.aql.execute(count_query, bind_vars=bind_vars))
+            total = next(count_cursor, 0)
+
+            paginated_bind_vars = {**bind_vars, "limit": limit, "offset": offset}
+            query = f"""
+                FOR file IN library_files
+                    {filter_clause}
+                    SORT file.artist, file.album, file.title
+                    LIMIT @offset, @limit
+                    RETURN file
+            """
+            cursor = cast("Cursor", self.db.aql.execute(query, bind_vars=paginated_bind_vars))
+            files = list(cursor)
 
         return files, total
 
@@ -289,6 +314,8 @@ class LibraryFilesQueriesMixin:
     def get_tagged_file_paths(self) -> list[str]:
         """Get all file paths that have been tagged.
 
+        Uses INBOUND traversal on ``file_states/tagged`` to identify tagged files.
+
         Returns:
             List of file paths that have been tagged
 
@@ -298,27 +325,16 @@ class LibraryFilesQueriesMixin:
             self.db.aql.execute(
                 """
             FOR file IN library_files
-                FILTER file.tagged == true
+                FILTER LENGTH(
+                    FOR v IN 1..1 INBOUND "file_states/tagged" file_has_state
+                        FILTER v._id == file._id
+                        RETURN 1
+                ) > 0
                 RETURN file.path
             """,
             ),
         )
         return list(cursor)
-
-    def get_tagged_paths_needing_calibration(self, calibration_hash: str) -> list[str]:
-        """Get paths of tagged files whose DB mood tags are stale.
-
-        Delegates to ``db.file_states.get_tagged_paths_needing_calibration()``.
-
-        Args:
-            calibration_hash: The current global calibration version from
-                ``meta.calibration_version``.
-
-        Returns:
-            List of file paths that need their DB mood tags recomputed.
-        """
-        assert self.parent_db is not None, "parent_db required for edge-based state"
-        return self.parent_db.file_states.get_tagged_paths_needing_calibration(calibration_hash)
 
     def search_library_files_with_tags(
         self,
@@ -393,7 +409,13 @@ class LibraryFilesQueriesMixin:
             filters.append("file.album == @album")
 
         if tagged_only:
-            filters.append("file.tagged == true")
+            filters.append(
+                """LENGTH(
+                FOR v IN 1..1 INBOUND "file_states/tagged" file_has_state
+                    FILTER v._id == file._id
+                    RETURN 1
+            ) > 0"""
+            )
 
         filter_clause = f"FILTER {' AND '.join(filters)}" if filters else ""
 
@@ -461,51 +483,71 @@ class LibraryFilesQueriesMixin:
     def get_recently_processed(
         self, limit: int = 20, library_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Get recently processed files ordered by tagged_at descending.
+        """Get recently processed (tagged) files ordered by scanned_at descending.
 
-        Joins through ``file_has_state`` edges to ``file_states/ml_tagged``
-        to find the tagging timestamp (``tagged_at`` on the edge).
+        Filters to tagged files via INBOUND traversal on ``file_states/tagged``
+        and sorts by ``file.scanned_at DESC``.
+
+        When library_id is provided, filters files using edge traversal via
+        ``library_contains_file``.
 
         Args:
             limit: Maximum number of files to return.
-            library_id: Optional library _id to filter by.
+            library_id: Optional library _id to filter by (uses edge traversal).
 
         Returns:
-            List of {file_id, path, title, artist, album, last_tagged_at}
-            sorted by last_tagged_at DESC.
+            List of {file_id, path, title, artist, album, scanned_at}
+            sorted by scanned_at DESC.
         """
-        library_filter = ""
         bind_vars: dict[str, Any] = {"limit": limit}
 
         if library_id:
-            library_filter = "FILTER f.library_id == @library_id"
             bind_vars["library_id"] = library_id
-
-        query = f"""
-        FOR edge IN file_has_state
-            FILTER edge._to == "file_states/ml_tagged"
-            LET f = DOCUMENT(edge._from)
-            FILTER f != null
-            {library_filter}
-            SORT edge.tagged_at DESC
-            LIMIT @limit
-            RETURN {{
-                file_id: f._id,
-                path: f.normalized_path,
-                title: f.title,
-                artist: f.artist,
-                album: f.album,
-                last_tagged_at: edge.tagged_at
-            }}
-        """
+            query = """
+            FOR file IN OUTBOUND @library_id library_contains_file
+                FILTER LENGTH(
+                    FOR v IN 1..1 INBOUND "file_states/tagged" file_has_state
+                        FILTER v._id == file._id
+                        RETURN 1
+                ) > 0
+                SORT file.scanned_at DESC
+                LIMIT @limit
+                RETURN {
+                    file_id: file._id,
+                    path: file.normalized_path,
+                    title: file.title,
+                    artist: file.artist,
+                    album: file.album,
+                    scanned_at: file.scanned_at
+                }
+            """
+        else:
+            query = """
+            FOR file IN library_files
+                FILTER LENGTH(
+                    FOR v IN 1..1 INBOUND "file_states/tagged" file_has_state
+                        FILTER v._id == file._id
+                        RETURN 1
+                ) > 0
+                SORT file.scanned_at DESC
+                LIMIT @limit
+                RETURN {
+                    file_id: file._id,
+                    path: file.normalized_path,
+                    title: file.title,
+                    artist: file.artist,
+                    album: file.album,
+                    scanned_at: file.scanned_at
+                }
+            """
         cursor = cast("Cursor", self.db.aql.execute(query, bind_vars=bind_vars))
         return list(cursor)
 
     def get_folder_rel_paths(self, library_id: str) -> set[str]:
         """Get all known folder rel_paths for a library.
 
-        Queries the ``library_folders`` cache collection, which is updated
-        after every folder is processed during a scan.
+        Queries the ``library_folders`` cache collection via edge traversal,
+        since folder ownership is tracked via ``library_contains_folder`` edges.
 
         Args:
             library_id: Library document ``_id``
@@ -519,8 +561,7 @@ class LibraryFilesQueriesMixin:
             "Cursor",
             self.db.aql.execute(
                 """
-            FOR folder IN library_folders
-                FILTER folder.library_id == @library_id
+            FOR folder IN OUTBOUND @library_id library_contains_folder
                 RETURN folder.path
             """,
                 bind_vars=cast("dict[str, Any]", {"library_id": library_id}),
@@ -535,6 +576,8 @@ class LibraryFilesQueriesMixin:
     ) -> dict[str, dict[str, Any]]:
         """Get all file documents for a single folder.
 
+        Uses edge traversal via ``library_contains_file`` for library filtering.
+
         Args:
             library_id: Library document ``_id``
             folder_rel_path: POSIX relative folder path (``""`` for library root)
@@ -547,9 +590,8 @@ class LibraryFilesQueriesMixin:
             "Cursor",
             self.db.aql.execute(
                 """
-            FOR file IN library_files
-                FILTER file.library_id == @library_id
-                AND (
+            FOR file IN OUTBOUND @library_id library_contains_file
+                FILTER (
                     (@folder_rel_path == "" AND NOT CONTAINS(file.normalized_path, "/"))
                     OR
                     (@folder_rel_path != "" AND STARTS_WITH(file.normalized_path, CONCAT(@folder_rel_path, "/")))
@@ -571,6 +613,8 @@ class LibraryFilesQueriesMixin:
     ) -> dict[str, dict[str, Any]]:
         """Batch-fetch file documents for multiple folders.
 
+        Uses edge traversal via ``library_contains_file`` for library filtering.
+
         Intended for loading file docs for vanished folders before the
         scan loop starts so they can seed the ``missing_docs`` list.
 
@@ -590,9 +634,8 @@ class LibraryFilesQueriesMixin:
             self.db.aql.execute(
                 """
             LET has_root = @has_root
-            FOR file IN library_files
-                FILTER file.library_id == @library_id
-                AND (
+            FOR file IN OUTBOUND @library_id library_contains_file
+                FILTER (
                     (has_root AND NOT CONTAINS(file.normalized_path, "/"))
                     OR
                     LENGTH(
@@ -619,6 +662,8 @@ class LibraryFilesQueriesMixin:
     def count_library_files(self, library_id: str) -> int:
         """Count total files for a library.
 
+        Uses edge traversal via ``library_contains_file`` for library filtering.
+
         Used to set accurate progress totals at scan start without
         loading all file documents.
 
@@ -633,8 +678,7 @@ class LibraryFilesQueriesMixin:
             "Cursor",
             self.db.aql.execute(
                 """
-            FOR file IN library_files
-                FILTER file.library_id == @library_id
+            FOR file IN OUTBOUND @library_id library_contains_file
                 COLLECT WITH COUNT INTO total
                 RETURN total
             """,

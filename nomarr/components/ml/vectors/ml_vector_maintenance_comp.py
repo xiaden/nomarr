@@ -36,16 +36,12 @@ def derive_embed_dim(models_dir: str, backbone_id: str) -> int:
 
     embedding_graph = _resolve_embedding_graph(models_dir, backbone_id)
     if not embedding_graph:
-        raise ValueError(
-            f"No embedding graph found for backbone '{backbone_id}' in {models_dir}"
-        )
+        raise ValueError(f"No embedding graph found for backbone '{backbone_id}' in {models_dir}")
 
     try:
         import onnxruntime as ort
 
-        session = ort.InferenceSession(
-            embedding_graph, providers=["CPUExecutionProvider"]
-        )
+        session = ort.InferenceSession(embedding_graph, providers=["CPUExecutionProvider"])
         for output in session.get_outputs():
             if output.name == "embeddings":
                 shape = output.shape
@@ -54,9 +50,7 @@ def derive_embed_dim(models_dir: str, backbone_id: str) -> int:
                     if isinstance(dim, int) and dim > 0:
                         return dim
     except Exception as exc:
-        raise ValueError(
-            f"Failed to probe embedding graph '{embedding_graph}'"
-        ) from exc
+        raise ValueError(f"Failed to probe embedding graph '{embedding_graph}'") from exc
 
     raise ValueError(
         f"Cannot determine embed_dim for backbone '{backbone_id}'. "
@@ -72,7 +66,7 @@ def drain_hot_to_cold(db: DatabaseLike, backbone_id: str, library_key: str) -> i
 
     Each drained document is enriched with a ``genres`` field (``list[str]``)
     populated by joining ``song_has_tags`` edges and ``tags`` documents where
-    ``tag.rel == "genre"`` for the document's ``file_id``.
+    ``tag.rel == "genre"`` for the document's file (resolved via edge).
 
     Args:
         db: ArangoDB database handle.
@@ -105,14 +99,18 @@ def drain_hot_to_cold(db: DatabaseLike, backbone_id: str, library_key: str) -> i
         return 0
 
     # Convergent UPSERT with genre enrichment:
-    # Genres are gathered per-doc via a subquery joining song_has_tags → tags
-    # (tag.rel == "genre") and stored on both INSERT and UPDATE branches.
+    # File_id resolved via edge traversal (file_id field dropped in migration)
+    # Genres gathered per-doc via subquery joining song_has_tags → tags
     cursor = db.aql.execute(
         f"""
         FOR doc IN {hot_name}
+            LET file_id = FIRST(
+                FOR f IN INBOUND doc file_has_vectors
+                    RETURN f._id
+            )
             LET genres = (
                 FOR edge IN song_has_tags
-                    FILTER edge._from == doc.file_id
+                    FILTER edge._from == file_id
                     FOR tag IN tags
                         FILTER tag._id == edge._to AND tag.rel == "genre"
                         RETURN tag.value
@@ -127,6 +125,30 @@ def drain_hot_to_cold(db: DatabaseLike, backbone_id: str, library_key: str) -> i
     )
     results = list(cursor)  # type: ignore[arg-type]
     drained: int = results[0] if results else 0
+
+    # Migrate file_has_vectors edges from hot → cold
+    # Resolve file_id via edge traversal (file_id field dropped in migration)
+    db.aql.execute(
+        f"""
+        FOR doc IN {cold_name}
+            LET file_id = FIRST(
+                FOR f IN INBOUND doc file_has_vectors
+                    RETURN f._id
+            )
+            FILTER file_id != null
+            LET hot_id = CONCAT("{hot_name}/", doc._key)
+            LET cold_id = doc._id
+            // Remove old edge pointing to hot (if exists)
+            FOR e IN file_has_vectors
+                FILTER e._to == hot_id
+                REMOVE e IN file_has_vectors
+            // UPSERT edge pointing to cold
+            UPSERT {{ _from: file_id, _to: cold_id }}
+            INSERT {{ _from: file_id, _to: cold_id }}
+            UPDATE {{}}
+            IN file_has_vectors
+        """
+    )
 
     # Clear hot collection now that all docs are in cold
     hot_coll.truncate()
@@ -211,7 +233,8 @@ def has_vector_index(db: DatabaseLike, backbone_id: str, library_key: str) -> bo
     existing_indexes = cold_coll.indexes()
 
     return any(
-        idx.get("type") == "vector" for idx in existing_indexes  # type: ignore[union-attr]
+        idx.get("type") == "vector"
+        for idx in existing_indexes  # type: ignore[union-attr]
     )
 
 
@@ -239,8 +262,7 @@ def build_cold_vector_index(
     cold_name = f"vectors_track_cold__{backbone_id}__{library_key}"
     if not db.has_collection(cold_name):
         raise ValueError(
-            f"Cold collection '{cold_name}' does not exist. "
-            "Run drain_hot_to_cold first to create cold collection."
+            f"Cold collection '{cold_name}' does not exist. Run drain_hot_to_cold first to create cold collection."
         )
 
     cold_coll = db.collection(cold_name)
@@ -276,10 +298,7 @@ def build_cold_vector_index(
             nlists,
             exc_info=True,
         )
-        raise RuntimeError(
-            f"Vector index creation failed on {cold_name}: {exc}"
-        ) from exc
-
+        raise RuntimeError(f"Vector index creation failed on {cold_name}: {exc}") from exc
 
 
 def rebuild_cold_vector_index(
@@ -329,18 +348,14 @@ def rebuild_cold_vector_index(
     logger.info("[rebuild index] Completed for %s", cold_name)
 
 
-
-
-
-
 def backfill_genres(db: DatabaseLike, backbone_id: str, library_key: str) -> int:
     """Backfill genres on cold vector documents that predate genre enrichment.
 
     This is a one-time maintenance operation for cold collection documents that
     were drained before genre enrichment was added to ``drain_hot_to_cold``.
     Each document is updated in-place: a ``genres`` field is populated by joining
-    ``song_has_tags`` edges and ``tags`` documents where ``tag.rel == "genre"``
-    for the document's ``file_id``.
+    via file_has_vectors edge to the file, then song_has_tags edges and tags
+    documents where ``tag.rel == "genre"`` for the associated file.
 
     Args:
         db: ArangoDB database handle.
@@ -364,9 +379,16 @@ def backfill_genres(db: DatabaseLike, backbone_id: str, library_key: str) -> int
     cursor = db.aql.execute(
         """
         FOR doc IN @@cold_coll
+            // Find associated file via edge traversal (FK-free)
+            LET file_ids = (
+                FOR f IN INBOUND doc file_has_vectors
+                    RETURN f._id
+            )
+            LET file_id = FIRST(file_ids)
+            FILTER file_id != null
             LET genres = (
                 FOR edge IN song_has_tags
-                    FILTER edge._from == doc.file_id
+                    FILTER edge._from == file_id
                     FOR tag IN tags
                         FILTER tag._id == edge._to AND tag.rel == "genre"
                         RETURN tag.value

@@ -19,11 +19,11 @@ from .health_aql import HealthOperations
 from .libraries_aql import LibrariesOperations
 from .library_files_aql import LibraryFilesOperations
 from .library_folders_aql import LibraryFoldersOperations
+from .locks_aql import LocksOperations
 from .meta_aql import MetaOperations
 from .segment_scores_stats_aql import SegmentScoresStatsOperations
 from .sessions_aql import SessionOperations
 from .tags_aql import TagOperations
-from .vector_promotion_lock_aql import VectorPromotionLockOperations
 
 # JoinedQueryOperations has circular import with workflows - imported directly in db.py
 
@@ -34,9 +34,9 @@ __all__ = [
     "LibrariesOperations",
     "LibraryFilesOperations",
     "LibraryFoldersOperations",
+    "LocksOperations",
     "MetaOperations",
     "SegmentScoresStatsOperations",
     "SessionOperations",
     "TagOperations",
-    "VectorPromotionLockOperations",
 ]

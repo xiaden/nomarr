@@ -22,9 +22,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def idle_promotion_vectors_workflow(
-    db: Database, worker_id: str, models_dir: str
-) -> int:
+def idle_promotion_vectors_workflow(db: Database, worker_id: str, models_dir: str) -> int:
     """Run hot\u2192cold vector promotion for all pending backbone+library pairs.
 
     Intended to be called from a background thread when the discovery worker
@@ -66,27 +64,26 @@ def idle_promotion_vectors_workflow(
     )
 
     # Step 2: Reap stale locks (crashed workers, >10 minutes)
-    stale_locks = db.vector_promotion_locks.get_stale_locks(stale_after_ms=600_000)
-    for stale_backbone, stale_library in stale_locks:
-        db.vector_promotion_locks.force_release_lock(stale_backbone, stale_library)
+    # Lock type "vector_promotion" with resource_id "backbone_id__library_key"
+    stale_locks = db.locks.get_stale_locks("vector_promotion", stale_after_ms=600_000)
+    for _, resource_id in stale_locks:
+        db.locks.force_release("vector_promotion", resource_id)
         logger.warning(
-            "[%s] Reaped stale promotion lock for %s__%s",
+            "[%s] Reaped stale promotion lock for %s",
             worker_id,
-            stale_backbone,
-            stale_library,
+            resource_id,
         )
 
     # Step 3-4: Acquire lock, compute nlists, promote and rebuild
     promoted = 0
+    ttl_seconds = 1800  # 30 minutes
     for backbone_id, library_key in targets:
-        if not db.vector_promotion_locks.try_acquire_lock(
-            backbone_id, library_key, worker_id
-        ):
+        resource_id = f"{backbone_id}__{library_key}"
+        if not db.locks.try_acquire("vector_promotion", resource_id, worker_id, ttl_seconds):
             logger.debug(
-                "[%s] Lock held for %s__%s \u2014 skipping",
+                "[%s] Lock held for %s — skipping",
                 worker_id,
-                backbone_id,
-                library_key,
+                resource_id,
             )
             continue
 
@@ -99,9 +96,7 @@ def idle_promotion_vectors_workflow(
                 library_key,
                 nlists,
             )
-            promote_and_rebuild_workflow(
-                db, backbone_id, library_key, nlists, models_dir
-            )
+            promote_and_rebuild_workflow(db, backbone_id, library_key, nlists, models_dir)
             promoted += 1
         except Exception:
             logger.exception(
@@ -111,9 +106,7 @@ def idle_promotion_vectors_workflow(
                 library_key,
             )
         finally:
-            db.vector_promotion_locks.release_lock(
-                backbone_id, library_key, worker_id
-            )
+            db.locks.release("vector_promotion", resource_id, worker_id)
 
     logger.info("[%s] Idle promotion complete: %d promoted", worker_id, promoted)
     return promoted

@@ -227,7 +227,7 @@ export function LibraryBrowser({ initialStep }: LibraryBrowserProps) {
     }
 
     // Create label for breadcrumb
-    const label = `${tag.key}: ${typeof value === "number" ? value.toFixed(2) : value}`;
+    const label = `${tag.key}: ${typeof value === "number" ? value.toFixed(4) : value}`;
 
     navigateTo({
       type: "tag-search",
@@ -411,10 +411,10 @@ export function LibraryBrowser({ initialStep }: LibraryBrowserProps) {
                       const parsed = JSON.parse(tag.value);
                       if (Array.isArray(parsed) && parsed.length === 1) {
                         displayValue = typeof parsed[0] === "number" 
-                          ? parsed[0].toFixed(2) 
+                          ? parsed[0].toFixed(4) 
                           : String(parsed[0]);
                       } else if (typeof parsed === "number") {
-                        displayValue = parsed.toFixed(2);
+                        displayValue = parsed.toFixed(4);
                       } else {
                         displayValue = String(parsed);
                       }

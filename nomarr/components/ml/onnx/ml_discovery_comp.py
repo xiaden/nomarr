@@ -18,8 +18,6 @@ import logging
 import os
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.ml.onnx.ml_constants import MODEL_SUITE_VERSION
-
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
@@ -45,8 +43,6 @@ class HeadInfo:
         model_stem: str,
         model_path: str,
         embedding_graph: str,
-        head_release_date: str = "",
-        embedder_release_date: str = "",
         is_regression_head: bool = False,
     ) -> None:
         self.name = name
@@ -56,8 +52,6 @@ class HeadInfo:
         self.model_stem = model_stem
         self.model_path = model_path
         self.embedding_graph = embedding_graph
-        self.head_release_date = head_release_date
-        self.embedder_release_date = embedder_release_date
         self.is_regression_head = is_regression_head
 
     @property
@@ -83,19 +77,14 @@ class HeadInfo:
         calib_method: str = "none",
         calib_version: int = 0,
     ) -> tuple[str, str]:
-        """Build versioned tag key from model metadata and stable suite version.
+        """Build a tag key from model metadata.
 
         Format:
-        - model_key: ``{label}_{suite_version}_{embedder}{date}_{head}{date}``
+        - model_key: ``{label}_{backbone}_{model_stem}``
         - calibration_id: ``{calib_method}_{calib_version}``
 
-        The suite version is the module-level :data:`MODEL_SUITE_VERSION`
-        constant (e.g. ``"v1"``), which tracks deployed model weights — not
-        the inference runtime.  Switching runtimes (TF → ONNX) does not
-        change the key.
-
         Example:
-        - model_key: ``"happy_v1_yamnet20210604_happy20220825"``
+        - model_key: ``"happy_yamnet_mood_happy"``
         - calibration_id: ``"platt_1"``
 
         Args:
@@ -107,18 +96,7 @@ class HeadInfo:
             Tuple of ``(model_tag_key, calibration_id)``
 
         """
-        framework_part = MODEL_SUITE_VERSION
-
-        embedder_date = (
-            self.embedder_release_date.replace("-", "") if self.embedder_release_date else "unknown"
-        )
-        head_date = (
-            self.head_release_date.replace("-", "") if self.head_release_date else "unknown"
-        )
-
-        embedder_part = f"{self.backbone}{embedder_date}"
-        head_part = f"{label}{head_date}"
-        model_key = f"{label}_{framework_part}_{embedder_part}_{head_part}"
+        model_key = f"{label}_{self.backbone}_{self.model_stem}"
         calibration_id = f"{calib_method}_{calib_version}"
         return (model_key, calibration_id)
 
@@ -245,8 +223,6 @@ def _discover_heads_from_db(models_dir: str, db: Database) -> list[HeadInfo]:
                 model_stem=model_stem,
                 model_path=model_path,
                 embedding_graph=embedding_graph,
-                head_release_date=doc.get("head_release_date", ""),
-                embedder_release_date=doc.get("embedder_release_date", ""),
                 is_regression_head=model_stem in _REGRESSION_HEADS,
             )
         )
@@ -368,8 +344,7 @@ def filter_configured_heads(
         fully_configured, output_count = info
         if not fully_configured:
             logger.warning(
-                "Skipping head %s: model not fully configured "
-                "(%d output(s) need labeling via UI)",
+                "Skipping head %s: model not fully configured (%d output(s) need labeling via UI)",
                 head.name,
                 output_count,
             )
@@ -446,8 +421,7 @@ def discover_backbone_models(models_dir: str) -> list[Any]:
             continue
 
         models.extend(
-            ONNXBackboneModel(onnx_path)
-            for onnx_path in sorted(glob.glob(os.path.join(embeddings_dir, "*.onnx")))
+            ONNXBackboneModel(onnx_path) for onnx_path in sorted(glob.glob(os.path.join(embeddings_dir, "*.onnx")))
         )
 
     models.sort(key=lambda m: m.backbone_name)
@@ -488,8 +462,7 @@ def discover_head_models_no_db(models_dir: str) -> list[Any]:
                 continue
 
             models.extend(
-                ONNXHeadModel(onnx_path)
-                for onnx_path in sorted(glob.glob(os.path.join(head_type_dir, "*.onnx")))
+                ONNXHeadModel(onnx_path) for onnx_path in sorted(glob.glob(os.path.join(head_type_dir, "*.onnx")))
             )
 
     models.sort(key=lambda m: (m.backbone_name, m.head_type, m.model_name))
@@ -551,8 +524,6 @@ def discover_head_models(
                     model = ONNXHeadModel(
                         onnx_path,
                         labels=list(info.labels),
-                        head_release_date=info.head_release_date,
-                        embedder_release_date=info.embedder_release_date,
                     )
                 else:
                     model = ONNXHeadModel(onnx_path)

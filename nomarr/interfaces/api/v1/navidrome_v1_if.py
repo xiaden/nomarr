@@ -8,17 +8,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Annotated
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from nomarr.interfaces.api.auth import verify_key
 from nomarr.interfaces.api.web.dependencies import get_navidrome_service
+from nomarr.services.domain.navidrome_svc import NavidromeService
 
 logger = logging.getLogger(__name__)
-if TYPE_CHECKING:
-    from nomarr.services.domain.navidrome_svc import NavidromeService
 
 router = APIRouter(tags=["navidrome"], prefix="/v1/navidrome")
 
@@ -50,7 +49,6 @@ class SimilarTracksResponse(BaseModel):
     """Response for similar tracks endpoint."""
 
     songs: list[SongResult]
-
 
 
 # ------------------------------------------------------------------
@@ -86,7 +84,6 @@ async def navidrome_similar_tracks(
             for r in results
         ],
     )
-
 
 
 # ------------------------------------------------------------------

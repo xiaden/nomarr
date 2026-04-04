@@ -1,8 +1,9 @@
 """Reconciliation operations for library_files collection.
 
 Manages tag reconciliation state — checking whether ML tags in the DB have
-been written to audio files on disk. Uses edge-based state from
-``file_has_state`` and ``worker_claims`` for claim locking.
+been written to audio files on disk. Uses the ``tags_stale`` /
+``tags_written`` / ``tags_current`` axes from ``file_has_state`` and
+``worker_claims`` for claim locking.
 """
 
 from typing import TYPE_CHECKING, Any, cast
@@ -20,9 +21,10 @@ if TYPE_CHECKING:
 class LibraryFilesReconciliationMixin:
     """Reconciliation operations for library_files.
 
-    Uses edge-based state:
-    - ``ml_tagged`` edge = file has ML tags in DB
-    - ``reconciled`` edge = tags have been written to disk with specific mode/hash
+    Uses edge-based state axes:
+    - ``tags_stale`` — file has ML tags in DB that have not been written to disk
+    - ``tags_written`` — tags have been written to the audio file
+    - ``tags_current`` — on-disk tags match the DB tags
     - ``worker_claims`` with ``claim_reconcile_`` prefix = write claim locking
     """
 
@@ -33,23 +35,18 @@ class LibraryFilesReconciliationMixin:
     def claim_files_for_reconciliation(
         self,
         library_id: str,
-        target_mode: str,
-        calibration_hash: str | None,
         worker_id: str,
         batch_size: int = 100,
         lease_ms: int = 60000,
     ) -> list[dict[str, Any]]:
         """Atomically claim files that need tag reconciliation.
 
-        Uses edge-based state to find files needing reconciliation:
-        - Has ``ml_tagged`` edge (file has ML tags in DB)
-        - Missing ``reconciled`` edge, or reconciled edge has wrong mode/hash
-        - No active reconciliation claim in ``worker_claims``
+        Discovers stale files (tags in DB not yet written to disk) via
+        ``file_states.get_stale_file_ids`` and claims them through
+        ``worker_claims``.
 
         Args:
             library_id: Library document _id
-            target_mode: Desired write mode ("none", "minimal", "full")
-            calibration_hash: Current calibration hash (None if no calibration)
             worker_id: Worker claiming the files
             batch_size: Max files to claim
             lease_ms: Claim lease duration in milliseconds
@@ -60,13 +57,16 @@ class LibraryFilesReconciliationMixin:
         """
         assert self.parent_db is not None, "parent_db required for edge-based state"
 
-        # Get files needing reconciliation via edge-based query
-        candidates = self.parent_db.file_states.get_files_needing_reconciliation(
-            library_id=library_id,
-            target_mode=target_mode,
-            calibration_hash=calibration_hash,
-            batch_size=batch_size * 2,  # Over-fetch since some may be claimed
-        )
+        # Get stale file IDs via edge-based state discovery
+        stale_ids = self.parent_db.file_states.get_stale_file_ids(library_id=library_id)
+
+        if not stale_ids:
+            return []
+
+        # Fetch full file documents for stale IDs
+        candidates: list[dict[str, Any]] = [
+            doc for doc in self.collection.get_many(stale_ids) if doc is not None
+        ]
 
         # Try to claim each candidate via worker_claims
         claimed: list[dict[str, Any]] = []
@@ -110,15 +110,14 @@ class LibraryFilesReconciliationMixin:
 
         return claimed
 
-    def set_file_written(self, file_key: str, mode: str, calibration_hash: str | None) -> None:
+    def set_file_written(self, file_key: str) -> None:
         """Update file state after successful tag write.
 
-        Creates/updates the ``reconciled`` edge and releases the write claim.
+        Transitions the file to ``tags_written`` and ``tags_current`` axes,
+        then releases the write claim.
 
         Args:
             file_key: Document _key or _id
-            mode: Write mode used ("none", "minimal", "full")
-            calibration_hash: Calibration hash at time of write
 
         """
         assert self.parent_db is not None, "parent_db required for edge-based state"
@@ -130,12 +129,9 @@ class LibraryFilesReconciliationMixin:
         else:
             file_id = f"library_files/{file_key}"
 
-        # Create/update reconciled edge
-        self.parent_db.file_states.set_reconciled(
-            file_id=file_id,
-            mode=mode,
-            calibration_hash=calibration_hash,
-        )
+        # Transition state axes
+        self.parent_db.file_states.set_tags_written(file_id)
+        self.parent_db.file_states.set_tags_current(file_id)
 
         # Release the reconciliation claim
         claim_key = f"claim_reconcile_{file_key}"
@@ -144,7 +140,8 @@ class LibraryFilesReconciliationMixin:
     def release_claim(self, file_key: str) -> None:
         """Release a write claim without updating state.
 
-        Used when write fails — file remains mismatched for retry.
+        Used when write fails — the file remains in ``tags_stale`` state
+        for retry by another worker.
 
         Args:
             file_key: Document _key or _id
@@ -161,25 +158,18 @@ class LibraryFilesReconciliationMixin:
     def count_files_needing_reconciliation(
         self,
         library_id: str,
-        target_mode: str,
-        calibration_hash: str | None,
     ) -> int:
         """Count files that need tag reconciliation.
 
-        Delegates to edge-based query in ``FileStatesOperations``.
+        Returns the number of files in the ``tags_stale`` state for
+        the given library.
 
         Args:
             library_id: Library document _id
-            target_mode: Desired write mode
-            calibration_hash: Current calibration hash
 
         Returns:
             Number of files needing reconciliation
 
         """
         assert self.parent_db is not None, "parent_db required for edge-based state"
-        return self.parent_db.file_states.count_files_needing_reconciliation(
-            library_id=library_id,
-            target_mode=target_mode,
-            calibration_hash=calibration_hash,
-        )
+        return len(self.parent_db.file_states.get_stale_file_ids(library_id=library_id))

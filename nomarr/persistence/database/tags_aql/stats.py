@@ -199,25 +199,42 @@ class TagStatsMixin:
                            avg_track_length_ms
 
         """
-        filter_clause = "FILTER file.library_id == @library_id" if library_id else ""
-        bind_vars: dict[str, Any] = {"library_id": library_id} if library_id else {}
+        bind_vars: dict[str, Any] = {}
 
-        query = f"""
-        FOR file IN library_files
-            {filter_clause}
-            COLLECT AGGREGATE
-                file_count = COUNT(1),
-                total_duration_s = SUM(file.duration_seconds),
-                total_size = SUM(file.file_size)
-            RETURN {{
-                file_count: file_count,
-                total_duration_ms: FLOOR((total_duration_s || 0) * 1000),
-                total_file_size_bytes: total_size || 0,
-                avg_track_length_ms: file_count > 0
-                    ? ((total_duration_s || 0) / file_count) * 1000
-                    : 0
-            }}
-        """
+        if library_id:
+            bind_vars["library_id"] = library_id
+            query = """
+            FOR file IN OUTBOUND @library_id library_contains_file
+                COLLECT AGGREGATE
+                    file_count = COUNT(1),
+                    total_duration_s = SUM(file.duration_seconds),
+                    total_size = SUM(file.file_size)
+                RETURN {
+                    file_count: file_count,
+                    total_duration_ms: FLOOR((total_duration_s || 0) * 1000),
+                    total_file_size_bytes: total_size || 0,
+                    avg_track_length_ms: file_count > 0
+                        ? ((total_duration_s || 0) / file_count) * 1000
+                        : 0
+                }
+            """
+        else:
+            query = """
+            FOR file IN library_files
+                COLLECT AGGREGATE
+                    file_count = COUNT(1),
+                    total_duration_s = SUM(file.duration_seconds),
+                    total_size = SUM(file.file_size)
+                RETURN {
+                    file_count: file_count,
+                    total_duration_ms: FLOOR((total_duration_s || 0) * 1000),
+                    total_file_size_bytes: total_size || 0,
+                    avg_track_length_ms: file_count > 0
+                        ? ((total_duration_s || 0) / file_count) * 1000
+                        : 0
+                }
+            """
+
         cursor = cast("Cursor", self.db.aql.execute(query, bind_vars=cast("dict[str, Any]", bind_vars)))
         result = next(cursor, None)
         return result or {

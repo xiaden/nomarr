@@ -13,7 +13,6 @@ These routes will be mounted under /api/web via the web router.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -36,13 +35,11 @@ from nomarr.interfaces.api.web.dependencies import (
     get_vector_maintenance_service,
     get_vector_search_service,
 )
+from nomarr.services.domain.vector_maintenance_svc import VectorMaintenanceService
+from nomarr.services.domain.vector_search_svc import VectorSearchService
+from nomarr.services.infrastructure.ml_svc import MLService
 
 logger = logging.getLogger(__name__)
-
-if TYPE_CHECKING:
-    from nomarr.services.domain.vector_maintenance_svc import VectorMaintenanceService
-    from nomarr.services.domain.vector_search_svc import VectorSearchService
-    from nomarr.services.infrastructure.ml_svc import MLService
 
 router = APIRouter(tags=["vectors"], prefix="/vectors")
 
@@ -204,9 +201,7 @@ async def get_vector_stats(
             library_key = lib["_key"]
             for backbone_id in known_backbones:
                 try:
-                    stats = vector_maintenance_service.get_hot_cold_stats(
-                        backbone_id, library_key=library_key
-                    )
+                    stats = vector_maintenance_service.get_hot_cold_stats(backbone_id, library_key=library_key)
                     stats_list.append(
                         VectorHotColdStats(
                             backbone_id=backbone_id,
@@ -217,9 +212,7 @@ async def get_vector_stats(
                         )
                     )
                 except Exception as e:
-                    logger.warning(
-                        f"Failed to get stats for backbone {backbone_id}, library {library_key}: {e}"
-                    )
+                    logger.warning(f"Failed to get stats for backbone {backbone_id}, library {library_key}: {e}")
                     continue
         return stats_list
 
@@ -285,13 +278,10 @@ async def promote_vectors(
         raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
-
 @router.post("/rebuild-index", dependencies=[Depends(verify_session)])
 async def rebuild_vector_index(
     request: VectorRebuildIndexRequest,
-    vector_maintenance_service: VectorMaintenanceService = Depends(
-        get_vector_maintenance_service
-    ),
+    vector_maintenance_service: VectorMaintenanceService = Depends(get_vector_maintenance_service),
 ) -> VectorRebuildIndexResponse:
     """Rebuild vector index without promoting hot vectors.
 

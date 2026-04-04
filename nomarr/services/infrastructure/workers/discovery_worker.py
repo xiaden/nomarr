@@ -121,10 +121,15 @@ def _execute_deferred_writes(
             if stats_entries:
                 db.segment_scores_stats.upsert_stats_batch(stats_entries)
 
-        # 5. All writes succeeded — mark file as tagged
-        db.library_files.mark_file_tagged(file_id, writes.tagger_version)
+        # 5. All writes succeeded — mark file as tagged and vectors extracted
+        db.file_states.set_tagged(file_id)
+        db.file_states.set_vectors_extracted(file_id)
         logger.debug("[%s] Async writes done for %s (%d tags)", worker_id, writes.path, len(writes.db_tags))
     except Exception:
+        try:
+            db.file_states.set_errored(file_id)
+        except Exception:
+            logger.debug("[%s] Failed to set errored state for %s", worker_id, file_id, exc_info=True)
         logger.exception("[%s] Async write failed for %s — file will be retried", worker_id, writes.path)
     finally:
         # 6. Always release claim so file is re-discoverable on failure
@@ -375,8 +380,6 @@ class DiscoveryWorker(multiprocessing.Process):
                 file_id = discover_and_claim_file(
                     db,
                     self.worker_id,
-                    min_duration_s=config.min_duration_s,
-                    allow_short=config.allow_short,
                 )
 
                 if file_id is None:
@@ -582,7 +585,7 @@ class DiscoveryWorker(multiprocessing.Process):
                             self.worker_id,
                             file_path,
                         )
-                        db.library_files.mark_file_tagged(file_id, config.tagger_version)
+                        db.file_states.set_tagged(file_id)
                         release_claim(db, file_id)
                         files_processed += 1
                         consecutive_errors = 0
@@ -613,6 +616,12 @@ class DiscoveryWorker(multiprocessing.Process):
                 except Exception as e:
                     logger.exception("[%s] Error processing %s: %s", self.worker_id, file_id, e)
                     consecutive_errors += 1
+
+                    # Mark file as errored so discovery skips it on next poll
+                    try:
+                        db.file_states.set_errored(file_id)
+                    except Exception:
+                        logger.debug("[%s] Failed to set errored state for %s", self.worker_id, file_id, exc_info=True)
 
                     # Release claim on error - file becomes rediscoverable
                     release_claim(db, file_id)

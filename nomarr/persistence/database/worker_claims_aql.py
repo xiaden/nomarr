@@ -134,7 +134,7 @@ class WorkerClaimsOperations:
     def cleanup_completed_file_claims(self) -> int:
         """Remove claims for files that are already tagged.
 
-        Uses edge-based state: files with ``ml_tagged`` edge are tagged.
+        Uses edge-based state: files with ``tagged`` edge are tagged.
 
         Returns:
             Number of claims removed
@@ -149,7 +149,7 @@ class WorkerClaimsOperations:
                     LET file = DOCUMENT(claim.file_id)
                     LET has_tagged = LENGTH(
                         FOR edge IN file_has_state
-                            FILTER edge._from == claim.file_id AND edge._to == "file_states/ml_tagged"
+                            FILTER edge._from == claim.file_id AND edge._to == "file_states/tagged"
                             LIMIT 1
                             RETURN 1
                     )
@@ -166,7 +166,7 @@ class WorkerClaimsOperations:
 
         Removes claims where:
         - File document no longer exists
-        - File already has ml_tagged edge (for ML claims)
+        - File already has tagged edge (for ML claims)
 
         Returns:
             Number of claims removed
@@ -181,7 +181,7 @@ class WorkerClaimsOperations:
                     LET file = DOCUMENT(claim.file_id)
                     LET has_tagged = LENGTH(
                         FOR edge IN file_has_state
-                            FILTER edge._from == claim.file_id AND edge._to == "file_states/ml_tagged"
+                            FILTER edge._from == claim.file_id AND edge._to == "file_states/tagged"
                             LIMIT 1
                             RETURN 1
                     )
