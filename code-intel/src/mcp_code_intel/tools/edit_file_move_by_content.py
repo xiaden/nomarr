@@ -40,7 +40,9 @@ def _remove_lines(lines: list[str], start: int, end: int) -> list[str]:
 
 
 def _insert_lines(
-    lines: list[str], insert_before: int, new_lines: list[str],
+    lines: list[str],
+    insert_before: int,
+    new_lines: list[str],
 ) -> list[str]:
     """Insert *new_lines* before *insert_before* (1-indexed)."""
     idx = insert_before - 1
@@ -48,7 +50,10 @@ def _insert_lines(
 
 
 def _generate_context(
-    lines: list[str], target_line: int, *, context_lines: int = 2,
+    lines: list[str],
+    target_line: int,
+    *,
+    context_lines: int = 2,
 ) -> str:
     """Show a few lines around *target_line* for confirmation."""
     start = max(1, target_line - context_lines)
@@ -61,7 +66,8 @@ def _generate_context(
 
 
 def _read_and_parse(
-    file_path: str, workspace_root: Path,
+    file_path: str,
+    workspace_root: Path,
 ) -> dict | tuple[Path, str, list[str], list[str], float, str, bool]:
     """Read a file and return parsed line data or an error dict.
 
@@ -117,16 +123,29 @@ def _same_file_move_by_content(
         return parsed
 
     (
-        path_obj, rel, lines, plain, mtime, _eol, trailing,
+        path_obj,
+        rel,
+        lines,
+        plain,
+        mtime,
+        _eol,
+        trailing,
     ) = parsed
 
     # Locate source range
     src_result = find_content_boundaries(
-        plain, start_boundary, end_boundary, expected_line_count,
+        plain,
+        start_boundary,
+        end_boundary,
+        expected_line_count,
     )
     if isinstance(src_result, str):
         return {"error": src_result, "changed": False}
-    src_start, src_end = src_result
+    if len(src_result) == 3:
+        src_start, src_end, boundary_warning = src_result
+    else:
+        src_start, src_end = src_result
+        boundary_warning = None
 
     # Locate target anchor
     anchor_result = find_anchor_line(plain, target_anchor)
@@ -168,12 +187,15 @@ def _same_file_move_by_content(
     path_obj.write_bytes(new_content.encode("utf-8"))
 
     context = _generate_context(new_lines, adjusted)
-    return {
+    result: dict = {
         "path": rel,
         "changed": True,
         "lines_moved": src_end - src_start + 1,
         "new_context": context,
     }
+    if boundary_warning:
+        result["boundary_warning"] = boundary_warning
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -197,8 +219,13 @@ def _cross_file_move_by_content(
     if isinstance(src_parsed, dict):
         return src_parsed
     (
-        src_path, src_rel, src_lines, src_plain,
-        src_mtime, _src_eol, src_trailing,
+        src_path,
+        src_rel,
+        src_lines,
+        src_plain,
+        src_mtime,
+        _src_eol,
+        src_trailing,
     ) = src_parsed
 
     # --- read target ---
@@ -206,17 +233,29 @@ def _cross_file_move_by_content(
     if isinstance(tgt_parsed, dict):
         return tgt_parsed
     (
-        tgt_path, tgt_rel, tgt_lines, tgt_plain,
-        tgt_mtime, tgt_eol, tgt_trailing,
+        tgt_path,
+        tgt_rel,
+        tgt_lines,
+        tgt_plain,
+        tgt_mtime,
+        tgt_eol,
+        tgt_trailing,
     ) = tgt_parsed
 
     # --- locate source range ---
     src_result = find_content_boundaries(
-        src_plain, start_boundary, end_boundary, expected_line_count,
+        src_plain,
+        start_boundary,
+        end_boundary,
+        expected_line_count,
     )
     if isinstance(src_result, str):
         return {"error": src_result, "changed": False}
-    src_start, src_end = src_result
+    if len(src_result) == 3:
+        src_start, src_end, boundary_warning = src_result
+    else:
+        src_start, src_end = src_result
+        boundary_warning = None
 
     # --- locate target anchor ---
     anchor_result = find_anchor_line(tgt_plain, target_anchor)
@@ -249,13 +288,16 @@ def _cross_file_move_by_content(
     src_path.write_bytes(new_src.encode("utf-8"))
 
     context = _generate_context(new_tgt_lines, insert_before)
-    return {
+    result: dict = {
         "source_file": src_rel,
         "target_file": tgt_rel,
         "changed": True,
         "lines_moved": src_end - src_start + 1,
         "new_context": context,
     }
+    if boundary_warning:
+        result["boundary_warning"] = boundary_warning
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -281,8 +323,13 @@ def _new_file_move_by_content(
     if isinstance(src_parsed, dict):
         return src_parsed
     (
-        src_path, src_rel, src_lines, src_plain,
-        src_mtime, _src_eol, src_trailing,
+        src_path,
+        src_rel,
+        src_lines,
+        src_plain,
+        src_mtime,
+        _src_eol,
+        src_trailing,
     ) = src_parsed
 
     # --- resolve target (must not exist) ---
@@ -300,11 +347,18 @@ def _new_file_move_by_content(
 
     # --- locate source range ---
     src_result = find_content_boundaries(
-        src_plain, start_boundary, end_boundary, expected_line_count,
+        src_plain,
+        start_boundary,
+        end_boundary,
+        expected_line_count,
     )
     if isinstance(src_result, str):
         return {"error": src_result, "changed": False}
-    src_start, src_end = src_result
+    if len(src_result) == 3:
+        src_start, src_end, boundary_warning = src_result
+    else:
+        src_start, src_end = src_result
+        boundary_warning = None
 
     # --- build new file content ---
     moved = _extract_lines(src_lines, src_start, src_end)
@@ -318,7 +372,8 @@ def _new_file_move_by_content(
     # --- remove from source ---
     new_src_lines = _remove_lines(src_lines, src_start, src_end)
     new_src = build_content(
-        new_src_lines, had_trailing_newline=src_trailing,
+        new_src_lines,
+        had_trailing_newline=src_trailing,
     )
 
     # --- mtime guard (source only — target is new) ---
@@ -332,13 +387,16 @@ def _new_file_move_by_content(
     src_path.write_bytes(new_src.encode("utf-8"))
 
     tgt_rel = str(tgt_resolved.relative_to(workspace_root))
-    return {
+    result: dict = {
         "source_file": src_rel,
         "target_file": tgt_rel,
         "changed": True,
         "lines_moved": src_end - src_start + 1,
         "created_new_file": True,
     }
+    if boundary_warning:
+        result["boundary_warning"] = boundary_warning
+    return result
 
 
 # ---------------------------------------------------------------------------

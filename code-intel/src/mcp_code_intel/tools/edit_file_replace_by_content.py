@@ -105,7 +105,11 @@ def edit_file_replace_by_content(
             ],
         ).model_dump(exclude_none=True)
 
-    start_line, end_line = match_result  # 1-indexed inclusive
+    if len(match_result) == 3:
+        start_line, end_line, boundary_warning = match_result
+    else:
+        start_line, end_line = match_result
+        boundary_warning = None
 
     # Build replacement --------------------------------------------------------
     new_lines = new_content.splitlines(keepends=True)
@@ -114,12 +118,14 @@ def edit_file_replace_by_content(
 
     result_lines = lines[: start_line - 1] + new_lines + lines[end_line:]
     new_file_content = build_content(
-        result_lines, had_trailing_newline=had_trailing_newline,
+        result_lines,
+        had_trailing_newline=had_trailing_newline,
     )
 
     if new_file_content == content:
         return BatchResponse(
-            status="applied", applied_ops=[],
+            status="applied",
+            applied_ops=[],
         ).model_dump(exclude_none=True)
 
     # mtime guard --------------------------------------------------------------
@@ -139,7 +145,9 @@ def edit_file_replace_by_content(
             status="failed",
             failed_ops=[
                 FailedOp(
-                    index=0, filepath=rel_path, reason=write_error["error"],
+                    index=0,
+                    filepath=rel_path,
+                    reason=write_error["error"],
                 ),
             ],
         ).model_dump(exclude_none=True)
@@ -156,8 +164,10 @@ def edit_file_replace_by_content(
         end_line=final_end,
         new_context=context,
         bytes_written=len(new_file_content.encode("utf-8")),
+        warnings=[boundary_warning] if boundary_warning else None,
     )
 
     return BatchResponse(
-        status="applied", applied_ops=[applied_op],
+        status="applied",
+        applied_ops=[applied_op],
     ).model_dump(exclude_none=True)

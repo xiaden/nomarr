@@ -1,6 +1,7 @@
 ---
 name: feature-planning
 description: Use when decomposing a major feature design into dependency-ordered implementation plans. Handles the full pipeline from design document to validated, cross-referenced plan files with minimal drift. Trigger when user mentions planning a large feature, breaking down a design doc into parts, creating implementation plans for multi-part work, or coordinating plans that span multiple sessions. Not for single plans or simple tasks — use the Plan subagent directly for those.
+applyTo: artifacts/plans/**, artifacts/designs/**
 ---
 
 # Feature Planning
@@ -10,7 +11,7 @@ Pipeline for turning requirements or a design document into a set of validated, 
 ```
 Requirements → [DDAuthor] → Design Doc → Decompose → Initialize Ledger → Plan in Rounds → Cross-Validate
      ↓               ↓             ↓            ↓              ↓                    ↓                ↓
-  Optional    DD Author agent   Already has  parts/README  CONTRACTS.md    plans/TASK-*-{A..Z}.md  Fixes
+  Optional    DD Author agent   Already has  parts/README  CONTRACTS.md    artifacts/plans/pending/TASK-*-{A..Z}.md  Fixes
               for new features    one?
 ```
 
@@ -42,7 +43,7 @@ These exist because every one was violated during real usage and caused drift or
 
 ## Phase 0: Create Design Document (Optional)
 
-**Skip this phase if:** Design document already exists at `plans/dev/design-{feature}.md`
+**Skip this phase if:** Design document already exists at `artifacts/designs/pending/DD-{feature}.md`
 
 If the user has requirements but no design doc, dispatch the DDAuthor agent:
 
@@ -64,7 +65,7 @@ task:
 ```
 
 **After DDAuthor returns:**
-- If `status: DONE` → design doc created at `plans/dev/design-{feature}.md`, proceed to Phase 1
+- If `status: DONE` → design doc created at `artifacts/designs/pending/DD-{feature}.md`, proceed to Phase 1
 - If `status: NEEDS_DECISION` → present questions to user, re-dispatch with answers
 - If `status: BLOCKED` → critical information missing, stop and discuss with user
 
@@ -74,8 +75,8 @@ task:
 
 ## Phase 1: Decompose
 
-**Input:** Design document (e.g., `plans/dev/design-{feature}.md`)
-**Output:** `plans/dev/{feature}-parts/README.md`
+**Input:** Design document (e.g., `artifacts/designs/pending/DD-{feature}.md`)
+**Output:** `artifacts/designs/parts/{feature}/README.md`
 
 Read the design doc. Identify natural part boundaries:
 
@@ -89,7 +90,7 @@ Read the design doc. Identify natural part boundaries:
 
 Assign letters (A, B, C...) in topological order. Group into execution rounds.
 
-Create `plans/dev/{feature}-parts/README.md`:
+Create `artifacts/designs/parts/{feature}/README.md`:
 
 ```markdown
 # {Feature} — Implementation Parts
@@ -124,7 +125,7 @@ Present the README to the user for review before proceeding.
 
 ## Phase 2: Initialize Contracts Ledger
 
-**Output:** `plans/dev/{feature}-parts/CONTRACTS.md`
+**Output:** `artifacts/designs/parts/{feature}/CONTRACTS.md`
 
 The contracts ledger accumulates verified facts from completed plans. Downstream Plan subagents receive it as context, replacing guesswork with concrete signatures.
 
@@ -150,10 +151,10 @@ For each part in the round, dispatch the Planner agent:
 ```yaml
 # Dispatch to Planner agent (see .github/agents/planner.agent.md)
 contextFiles:
-  - plans/dev/design-{feature}.md               # Design doc
-  - plans/dev/{feature}-parts/README.md         # Parts breakdown
-  - plans/dev/{feature}-parts/CONTRACTS.md      # Current contracts
-  - .github/instructions/{layers}.instructions.md  # Per layer in this part
+  - artifacts/designs/pending/DD-{feature}.md              # Design doc
+  - artifacts/designs/parts/{feature}/README.md            # Parts breakdown
+  - artifacts/designs/parts/{feature}/CONTRACTS.md         # Current contracts
+  - .github/instructions/{layers}.instructions.md          # Per layer in this part
 
 task:
   type: CREATE
@@ -169,7 +170,7 @@ task:
 
 After receiving subagent output:
 
-1. Save to `plans/TASK-{feature}-{letter}-{descriptor}.md`
+1. Save to `artifacts/plans/pending/TASK-{feature}-{letter}-{descriptor}.md`
 2. Run `plan_read` — must parse without errors
 3. Quick-scan for:
    - Layer violations (workflow receiving a service, component importing interface)
@@ -222,9 +223,9 @@ Large features will exceed a single session. The skill is designed for this.
 
 **The contracts ledger IS the continuity artifact.** When resuming in a new session:
 
-1. Read `plans/dev/{feature}-parts/README.md` — execution rounds
-2. Read `plans/dev/{feature}-parts/CONTRACTS.md` — all completed decisions
-3. Check which plans exist in `plans/TASK-{feature}-*.md`
+1. Read `artifacts/designs/parts/{feature}/README.md` — execution rounds
+2. Read `artifacts/designs/parts/{feature}/CONTRACTS.md` — all completed decisions
+3. Check which plans exist in `artifacts/plans/pending/TASK-{feature}-*.md`
 4. Resume at the next incomplete round
 
 **Budget estimation:** Each Plan subagent dispatch consumes ~3-5k tokens of orchestrator context (prompt construction + result processing + ledger update). A 7-part feature needs ~25-35k tokens of orchestrator budget. Plan for 4-5 parts per session.
@@ -240,7 +241,7 @@ Large features will exceed a single session. The skill is designed for this.
 
 Before declaring feature planning complete:
 
-- [ ] All parts have plans in `plans/TASK-{feature}-{A..Z}-*.md` **→ No gaps**
+- [ ] All parts have plans in `artifacts/plans/pending/TASK-{feature}-{A..Z}-*.md` **→ No gaps**
 - [ ] All plans parse via `plan_read` **→ Schema compliance**
 - [ ] CONTRACTS.md has entries for every method/API/DTO across all plans **→ Ledger complete**
 - [ ] Cross-validation found no unresolved issues **→ Coherence**

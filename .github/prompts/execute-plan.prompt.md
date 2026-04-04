@@ -31,9 +31,9 @@ Do not modify the plan. Do not summarize it. Treat the plan as authoritative.
 If the plan name follows the pattern `TASK-<feature>-<B|C|D|...>-<outcome>` (i.e., it's not the first part):
 
 1. Check the Problem Statement for `**Prerequisite:** TASK-<feature>-<letter>-<outcome>`
-2. If a prerequisite is declared, verify it exists in `plans/completed/` using `find_file`
-3. If the prerequisite plan is NOT in `plans/completed/`:
-   - Check if it exists in `plans/` and read it to see if all steps are complete
+2. If a prerequisite is declared, verify it exists in `artifacts/plans/completed/` using `find_file`
+3. If the prerequisite plan is NOT in `artifacts/plans/completed/`:
+   - Check if it exists in `artifacts/plans/pending/` and read it to see if all steps are complete
    - If incomplete → BLOCK and stop
 4. If no prerequisite is declared, proceed normally
 
@@ -139,13 +139,13 @@ After ALL steps in the plan are marked complete:
 
 2. **Move to completed directory**
    ```
-   edit_file_move(old_path="plans/<plan-name>.md", new_path="plans/completed/<plan-name>.md")
+   edit_file_move(old_path="artifacts/plans/pending/<plan-name>.md", new_path="artifacts/plans/completed/<plan-name>.md")
    ```
    This creates the `completed/` directory automatically if needed.
 
 3. **Confirm archival**
-   - Verify the file exists in `plans/completed/`
-   - Report: "Plan archived to plans/completed/<plan-name>.md"
+   - Verify the file exists in `artifacts/plans/completed/`
+   - Report: "Plan archived to artifacts/plans/completed/<plan-name>.md"
 
 ---
 

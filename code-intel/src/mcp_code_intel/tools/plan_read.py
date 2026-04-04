@@ -7,7 +7,8 @@ from typing import Any
 
 from ..helpers.plan_md import parse_plan, plan_to_dict
 
-PLANS_DIR = "plans"
+PLANS_PENDING_DIR = "artifacts/plans/pending"
+PLANS_COMPLETED_DIR = "artifacts/plans/completed"
 
 
 def _normalize_plan_name(plan_name: str) -> str:
@@ -24,10 +25,16 @@ def _validate_plan_name(plan_name: str) -> str | None:
     return None
 
 
-def _resolve_plan_path(plan_name: str, workspace_root: Path) -> Path:
-    """Resolve plan name to full path."""
+def _resolve_plan_path(plan_name: str, workspace_root: Path) -> Path | None:
+    """Resolve plan name to full path, searching pending then completed."""
     normalized = _normalize_plan_name(plan_name)
-    return workspace_root / PLANS_DIR / f"{normalized}.md"
+    pending = workspace_root / PLANS_PENDING_DIR / f"{normalized}.md"
+    if pending.exists():
+        return pending
+    completed = workspace_root / PLANS_COMPLETED_DIR / f"{normalized}.md"
+    if completed.exists():
+        return completed
+    return None
 
 
 def plan_read(plan_name: str, workspace_root: Path) -> dict[str, Any]:
@@ -59,11 +66,11 @@ def plan_read(plan_name: str, workspace_root: Path) -> dict[str, Any]:
     plan_path = _resolve_plan_path(plan_name, workspace_root)
 
     # Check file exists
-    if not plan_path.exists():
+    if plan_path is None:
         return {
             "error": "plan_not_found",
             "message": f"Plan not found: {plan_name}",
-            "expected_path": str(plan_path.relative_to(workspace_root)),
+            "searched": [PLANS_PENDING_DIR, PLANS_COMPLETED_DIR],
         }
 
     # Parse and convert

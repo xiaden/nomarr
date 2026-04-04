@@ -9,7 +9,7 @@ from typing import Any
 
 from ..helpers.plan_md import find_step, mark_step_complete, parse_plan, plan_to_dict
 
-PLANS_DIR = "plans"
+PLANS_PENDING_DIR = "artifacts/plans/pending"
 
 
 @dataclass
@@ -39,9 +39,9 @@ def _validate_plan_name(plan_name: str) -> str | None:
 
 
 def _resolve_plan_path(plan_name: str, workspace_root: Path) -> Path:
-    """Resolve plan name to full path."""
+    """Resolve plan name to full path in pending directory only."""
     normalized = _normalize_plan_name(plan_name)
-    return workspace_root / PLANS_DIR / f"{normalized}.md"
+    return workspace_root / PLANS_PENDING_DIR / f"{normalized}.md"
 
 
 # Regex for validating annotation marker (single alphanumeric word)

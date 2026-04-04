@@ -48,30 +48,28 @@ def _find_symbol_in_ast(
     if not symbol_path:
         return None
 
-    current_name = symbol_path[0]
-    remaining = symbol_path[1:]
+    # Iteratively walk the AST: start at module body, descend one level per path part
+    current_body = tree.body
 
-    # Search in module body
-    for node in tree.body:
-        if isinstance(node, ast.ClassDef) and node.name == current_name:
-            if not remaining:
-                return node
-            # Search in class body for methods
-            for item in node.body:
-                if (
-                    isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
-                    and item.name == remaining[0]
-                ):
-                    if len(remaining) == 1:
-                        return item
-                    # Nested classes/functions not supported for now
-                    return None
+    for i, name in enumerate(symbol_path):
+        is_last = i == len(symbol_path) - 1
+        found = None
+
+        for node in current_body:
+            if isinstance(node, ast.ClassDef) and node.name == name:
+                if is_last:
+                    return node
+                # Descend into class body for next part
+                current_body = node.body
+                found = node
+                break
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
+                if is_last:
+                    return node
+                return None  # Functions don't have nested symbols we support
+
+        if found is None:
             return None
-
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == current_name:
-            if not remaining:
-                return node
-            return None  # Functions don't have nested symbols we support
 
     return None
 

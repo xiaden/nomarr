@@ -259,6 +259,26 @@ interfaces → services → workflows → components → (persistence / helpers)
 
 ---
 
+## Writing Style
+
+- **Imperative mood** — "Use", "Avoid", "Always", not "you should" or "it is recommended"
+- **Actionable** — each statement is a single, clear directive
+- **Specific** — concrete examples over abstract rules
+- **No ambiguous qualifiers** — avoid "should", "might", "possibly", "generally"
+
+## Common Pitfalls
+
+Avoid these in instruction files:
+
+- **Overly broad `applyTo`** — `**` injects into every file open; use the narrowest viable glob
+- **Duplicating another instruction file** — check existing files before creating; merge instead
+- **Abstract rules without examples** — "write clean code" is useless; show what clean looks like
+- **Contradictory advice** — instructions drift over time; review for consistency
+- **Copy-pasting from docs** — distill and contextualize; don't just restate the manual
+- **Behavioral meta-guidance with broad scope** — agent behavior rules (always-on tool usage, reasoning patterns) belong in `copilot-instructions.md` or a skill, not an instruction file with `applyTo: '**'`
+
+---
+
 ## When NOT to Use Instruction Files
 
 Avoid instruction files for:

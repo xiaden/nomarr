@@ -62,15 +62,12 @@ from .helpers.mcp_output_helper import (
     FileLink,
     ToolOutput,
 )
-from .tools.analyze_project_api_coverage import (
-    analyze_project_api_coverage as analyze_project_api_coverage_impl,
-)
-from .tools.edit_file_copy_paste_text import (
-    CopyPasteOp,
-)
-from .tools.edit_file_copy_paste_text import (
-    edit_file_copy_paste_text as edit_file_copy_paste_text_impl,
-)
+from .tools.adr_create import adr_create as adr_create_impl
+from .tools.adr_read import adr_read as adr_read_impl
+from .tools.adr_search import adr_search as adr_search_impl
+from .tools.dd_archive import dd_archive as dd_archive_impl
+from .tools.dd_create import dd_create as dd_create_impl
+from .tools.dd_read import dd_read as dd_read_impl
 from .tools.edit_file_create import CreateOp
 from .tools.edit_file_create import edit_file_create as edit_file_create_impl
 from .tools.edit_file_insert_text import InsertBoundaryOp, InsertLineOp
@@ -102,8 +99,10 @@ from .tools.lint_project_frontend import lint_project_frontend as lint_project_f
 from .tools.list_project_directory_tree import (
     list_project_directory_tree as list_project_directory_tree_impl,
 )
-from .tools.list_project_routes import list_project_routes as list_project_routes_impl
 from .tools.locate_module_symbol import locate_module_symbol as locate_module_symbol_impl
+from .tools.log_read import log_read as log_read_impl
+from .tools.log_write import log_write as log_write_impl
+from .tools.plan_archive import plan_archive as plan_archive_impl
 from .tools.plan_complete_step import plan_complete_step as plan_complete_step_impl
 from .tools.plan_read import plan_read as plan_read_impl
 from .tools.py_introspect import py_introspect as py_introspect_impl
@@ -120,10 +119,18 @@ from .tools.trace_project_endpoint import trace_project_endpoint as trace_projec
 
 # Tool registry for programmatic access (replaces _ToolsNamespace)
 TOOL_IMPLS: dict[str, object] = {
+    "adr_create": adr_create_impl,
+    "adr_read": adr_read_impl,
+    "adr_search": adr_search_impl,
+    "dd_archive": dd_archive_impl,
+    "dd_create": dd_create_impl,
+    "dd_read": dd_read_impl,
+    "log_read": log_read_impl,
+    "log_write": log_write_impl,
+    "plan_archive": plan_archive_impl,
     "edit_file_replace_string": edit_file_replace_string_impl,
     "edit_file_move": edit_file_move_impl,
     "edit_file_move_by_content": edit_file_move_by_content_impl,
-    "edit_file_copy_paste_text": edit_file_copy_paste_text_impl,
     "edit_file_create": edit_file_create_impl,
     "edit_file_insert_text": edit_file_insert_text_impl,
     "read_file_line": read_file_line_impl,
@@ -139,9 +146,7 @@ TOOL_IMPLS: dict[str, object] = {
     "locate_module_symbol": locate_module_symbol_impl,
     "plan_complete_step": plan_complete_step_impl,
     "plan_read": plan_read_impl,
-    "analyze_project_api_coverage": analyze_project_api_coverage_impl,
     "list_project_directory_tree": list_project_directory_tree_impl,
-    "list_project_routes": list_project_routes_impl,
     "trace_module_calls": trace_module_calls_impl,
     "trace_project_endpoint": trace_project_endpoint_impl,
     "py_introspect": py_introspect_impl,
@@ -333,8 +338,10 @@ def read_module_source(
     if file_path and start_line:
         file_links = [
             FileLink(
-                file_path=file_path, start_line=start_line,
-                end_line=end_line, action="",
+                file_path=file_path,
+                start_line=start_line,
+                end_line=end_line,
+                action="",
             ),
         ]
     return ToolOutput(
@@ -368,11 +375,14 @@ def read_file_symbol_at_line(
         metadata=result,
         file_links=[
             FileLink(
-                file_path=file_path, start_line=line_number,
-                end_line=line_number, action="",
+                file_path=file_path,
+                start_line=line_number,
+                end_line=line_number,
+                action="",
             ),
         ],
     ).to_call_tool_result()
+
 
 @mcp.tool()
 def locate_module_symbol(
@@ -445,21 +455,6 @@ def trace_module_calls(
 
 
 @mcp.tool()
-def list_project_routes() -> CallToolResult:
-    """List all API routes by static analysis.
-
-    Parses @router decorators from source files. Returns routes with method, path,
-    function, file, and line.
-    """
-    result = list_project_routes_impl(ROOT, config=_config)
-    return ToolOutput(
-        tool_name="list_project_routes",
-        breadcrumb="Listed all API routes",
-        metadata=result,
-    ).to_call_tool_result()
-
-
-@mcp.tool()
 def trace_project_endpoint(
     endpoint: Annotated[
         str,
@@ -494,31 +489,6 @@ def trace_project_endpoint(
         breadcrumb=f"Traced endpoint: {endpoint} at:",
         metadata=result,
         file_links=file_links,
-    ).to_call_tool_result()
-
-
-@mcp.tool()
-def analyze_project_api_coverage(
-    filter_mode: Annotated[
-        str | None,
-        "Filter: 'used' (only used endpoints), 'unused' (only unused), or None (all)",
-    ] = None,
-    route_path: Annotated[
-        str | None,
-        "Specific route to check (e.g., '/api/web/libraries')",
-    ] = None,
-) -> CallToolResult:
-    """Check which backend API endpoints are used by the frontend.
-
-    Filter modes: 'used', 'unused', or None for all endpoints.
-    """
-    result = analyze_project_api_coverage_impl(
-        filter_mode=filter_mode, route_path=route_path, config=_config, project_root=ROOT
-    )
-    return ToolOutput(
-        tool_name="analyze_project_api_coverage",
-        breadcrumb=f"Analyzed API of {route_path}",
-        metadata=result,
     ).to_call_tool_result()
 
 
@@ -590,9 +560,7 @@ def lint_project_frontend() -> CallToolResult:
             file_path = err.get("file")
             line = err.get("line")
             if file_path:
-                file_links.append(
-                    FileLink(file_path=file_path, start_line=line, action="Error")
-                )
+                file_links.append(FileLink(file_path=file_path, start_line=line, action="Error"))
 
     if is_error:
         error_message = result.get("summary", {}).get("error", "unknown")
@@ -943,6 +911,308 @@ def edit_file_replace_by_content(
 
 
 # ──────────────────────────────────────────────────────────────────────
+# Design Document Tools
+# ──────────────────────────────────────────────────────────────────────
+
+
+@mcp.tool()
+def dd_create(
+    title: Annotated[str, "Title of the design document"],
+    slug: Annotated[str, "URL-safe slug (lowercase, hyphens, e.g., 'schema-refactor-v1')"],
+    status: Annotated[str, "Status: Draft, Approved, Completed, or Superseded"],
+    author: Annotated[str, "Author agent or person name (e.g., 'RnD-DDAuthor')"],
+    scope: Annotated[str, "Scope section content"],
+    problem_statement: Annotated[str, "Problem Statement section content"],
+    architecture: Annotated[str, "Architecture section content"],
+    design_goals: Annotated[str, "Design Goals section content (optional)"] = "",
+    constraints: Annotated[str, "Constraints section content (optional)"] = "",
+    open_questions: Annotated[str, "Open Questions section content (optional)"] = "",
+    related_documents: Annotated[
+        list[dict[str, str]] | None,
+        "Related docs list [{title, path, description}] (optional)",
+    ] = None,
+    extra_sections: Annotated[
+        list[dict[str, str]] | None,
+        "Additional sections [{heading, content}] appended after standard sections (optional)",
+    ] = None,
+) -> CallToolResult:
+    """Create a new Design Document (DD) markdown file in artifacts/designs/pending/.
+
+    Validates slug format and status. Generates structured markdown with standard sections.
+    """
+    result = dd_create_impl(
+        title=title,
+        slug=slug,
+        status=status,
+        author=author,
+        scope=scope,
+        problem_statement=problem_statement,
+        architecture=architecture,
+        design_goals=design_goals,
+        constraints=constraints,
+        open_questions=open_questions,
+        related_documents=related_documents,
+        extra_sections=extra_sections,
+        workspace_root=ROOT,
+    )
+    file_links = None
+    if "path" in result:
+        file_links = [FileLink(file_path=ROOT / result["path"], action="created")]
+    return ToolOutput(
+        tool_name="dd_create",
+        breadcrumb="Created DD at",
+        metadata=result,
+        file_links=file_links,
+    ).to_call_tool_result()
+
+
+@mcp.tool()
+def dd_read(
+    name: Annotated[
+        str,
+        "DD name — slug ('my-feature'), filename ('DD-my-feature.md'), or prefix ('DD-my-feature')",
+    ],
+) -> CallToolResult:
+    """Read and parse an existing Design Document.
+
+    Searches pending then completed directories. Returns structured document data.
+    """
+    result = dd_read_impl(name, workspace_root=ROOT)
+    file_links = None
+    if "path" in result:
+        file_links = [FileLink(file_path=ROOT / result["path"], action="")]
+    return ToolOutput(
+        tool_name="dd_read",
+        breadcrumb="Read DD at",
+        metadata=result,
+        file_links=file_links,
+    ).to_call_tool_result()
+
+
+# Architecture Decision Record Tools
+# ──────────────────────────────────────────────────────────────────────
+
+
+@mcp.tool()
+def adr_create(
+    title: Annotated[str, "Title of the architecture decision"],
+    status: Annotated[str, "Status: Proposed, Accepted, Deprecated, or Superseded"],
+    tags: Annotated[list[str], "Tags for categorization (at least one required)"],
+    context: Annotated[str, "Context section — why this decision is needed"],
+    decision: Annotated[str, "Decision section — what was decided"],
+    consequences: Annotated[str, "Consequences section — what follows from this decision"],
+    references: Annotated[str, "References section content (optional)"] = "",
+    source_log: Annotated[str, "Source log reference '{agent}#L{N}' (optional)"] = "",
+    extra_sections: Annotated[
+        list[dict[str, str]] | None,
+        "Additional sections [{heading, content}] inserted before References (optional)",
+    ] = None,
+) -> CallToolResult:
+    """Create a new Architecture Decision Record (ADR) in artifacts/decisions/.
+
+    Auto-numbers the ADR. Validates status, tags, and required sections.
+    """
+    result = adr_create_impl(
+        title=title,
+        status=status,
+        tags=tags,
+        context=context,
+        decision=decision,
+        consequences=consequences,
+        references=references,
+        source_log=source_log,
+        extra_sections=extra_sections,
+        workspace_root=ROOT,
+    )
+    file_links = None
+    if "path" in result:
+        file_links = [FileLink(file_path=ROOT / result["path"], action="created")]
+    return ToolOutput(
+        tool_name="adr_create",
+        breadcrumb="Created ADR at",
+        metadata=result,
+        file_links=file_links,
+    ).to_call_tool_result()
+
+
+@mcp.tool()
+def adr_read(
+    name: Annotated[
+        str,
+        "ADR identifier — number ('3', '003'), filename "
+        "('ADR-003-use-edges.md'), or prefix ('ADR-003')",
+    ],
+) -> CallToolResult:
+    """Read and parse an existing Architecture Decision Record.
+
+    Resolves various name formats. Returns structured ADR data.
+    """
+    result = adr_read_impl(name, workspace_root=ROOT)
+    file_links = None
+    if "path" in result:
+        file_links = [FileLink(file_path=ROOT / result["path"], action="")]
+    return ToolOutput(
+        tool_name="adr_read",
+        breadcrumb="Read ADR at",
+        metadata=result,
+        file_links=file_links,
+    ).to_call_tool_result()
+
+
+@mcp.tool()
+def adr_search(
+    query: Annotated[str, "Text to search in title, tags, and body (optional)"] = "",
+    tag: Annotated[str, "Filter by exact tag match, case-insensitive (optional)"] = "",
+    status: Annotated[str, "Filter by exact status match (optional)"] = "",
+    limit: Annotated[int, "Maximum results to return (capped at 50)"] = 50,
+) -> CallToolResult:
+    """Search Architecture Decision Records by tag, status, and/or text query.
+
+    Returns results sorted by ADR number descending.
+    """
+    result = adr_search_impl(
+        query=query,
+        tag=tag,
+        status=status,
+        limit=limit,
+        workspace_root=ROOT,
+    )
+    return ToolOutput(
+        tool_name="adr_search",
+        breadcrumb="Searched ADRs",
+        metadata=result,
+    ).to_call_tool_result()
+
+
+# Agent Log Tools
+# ──────────────────────────────────────────────────────────────────────
+
+
+@mcp.tool()
+def log_write(
+    agent: Annotated[str, "Agent name (lowercase, hyphens, e.g., 'rnd-ddauthor')"],
+    title: Annotated[str, "Entry title — concise summary of the log entry"],
+    category: Annotated[
+        str,
+        "Category: research, decision, blocker, discovery, "
+        "dead-end, implementation, or observation",
+    ],
+    body: Annotated[str, "Entry body text (optional)"] = "",
+    tags: Annotated[list[str] | None, "Tags for categorization (optional)"] = None,
+) -> CallToolResult:
+    """Append an entry to an agent's log file in artifacts/logs/.
+
+    Creates the log file on first call. Entries are append-only with auto-incrementing IDs.
+    """
+    result = log_write_impl(
+        agent=agent,
+        title=title,
+        category=category,
+        body=body,
+        tags=tags,
+        workspace_root=ROOT,
+    )
+    file_links = None
+    if "path" in result:
+        file_links = [FileLink(file_path=ROOT / result["path"], action="modified")]
+    return ToolOutput(
+        tool_name="log_write",
+        breadcrumb="Wrote log entry at",
+        metadata=result,
+        file_links=file_links,
+    ).to_call_tool_result()
+
+
+@mcp.tool()
+def log_read(
+    agent: Annotated[str, "Agent name (lowercase, hyphens, e.g., 'rnd-ddauthor')"],
+    category: Annotated[str, "Filter by exact category match (optional)"] = "",
+    tag: Annotated[str, "Filter by tag, case-insensitive (optional)"] = "",
+    title_query: Annotated[str, "Filter by case-insensitive substring in title (optional)"] = "",
+    limit: Annotated[int, "Maximum entries to return (capped at 50)"] = 50,
+) -> CallToolResult:
+    """Read an agent's log entries, newest-first, with optional filters.
+
+    Applies AND-combined filters for category, tag, and title query.
+    """
+    result = log_read_impl(
+        agent=agent,
+        category=category,
+        tag=tag,
+        title_query=title_query,
+        limit=limit,
+        workspace_root=ROOT,
+    )
+    file_links = None
+    if "agent" in result:
+        log_path = ROOT / "artifacts" / "logs" / f"{agent}.log.md"
+        if log_path.exists():
+            file_links = [FileLink(file_path=log_path, action="")]
+    return ToolOutput(
+        tool_name="log_read",
+        breadcrumb="Read log for",
+        metadata=result,
+        file_links=file_links,
+    ).to_call_tool_result()
+
+
+# Archive Tools
+# ──────────────────────────────────────────────────────────────────────
+
+
+@mcp.tool()
+def plan_archive(
+    plan_name: Annotated[str, "Plan name (with or without .md extension)"],
+    ignore_blocked: Annotated[
+        bool,
+        "If True, archive despite Blocked annotations on steps",
+    ] = False,
+) -> CallToolResult:
+    """Archive a completed task plan from pending to completed.
+
+    Verifies all steps are checked complete. Warns on Blocked
+    annotations unless ignore_blocked=True.
+    """
+    result = plan_archive_impl(
+        plan_name,
+        ignore_blocked=ignore_blocked,
+        workspace_root=ROOT,
+    )
+    file_links = None
+    if "path" in result:
+        file_links = [FileLink(file_path=ROOT / result["path"], action="archived")]
+    return ToolOutput(
+        tool_name="plan_archive",
+        breadcrumb="Archived plan at",
+        metadata=result,
+        file_links=file_links,
+    ).to_call_tool_result()
+
+
+@mcp.tool()
+def dd_archive(
+    name: Annotated[
+        str,
+        "DD name — slug, filename, or DD-prefixed name",
+    ],
+) -> CallToolResult:
+    """Archive a design document from pending to completed.
+
+    Verifies all convention-linked plans (TASK-{slug}-*) are completed.
+    Updates status to Completed before moving.
+    """
+    result = dd_archive_impl(name, workspace_root=ROOT)
+    file_links = None
+    if "path" in result:
+        file_links = [FileLink(file_path=ROOT / result["path"], action="archived")]
+    return ToolOutput(
+        tool_name="dd_archive",
+        breadcrumb="Archived DD at",
+        metadata=result,
+        file_links=file_links,
+    ).to_call_tool_result()
+
+
 # Task Plan Tools
 # ──────────────────────────────────────────────────────────────────────
 
@@ -980,13 +1250,13 @@ def plan_complete_step(
     ],
     annotation_marker: Annotated[
         str | None,
-        "Annotation marker word (e.g., 'Notes', 'Warning'). Required with annotation_text.",
+        "Annotation marker word. Requires annotation_text, Required with annotation_text.",
     ] = None,
     annotation_text: Annotated[
         str | None,
         (
-            "Text to add under the step."
-            " Cannot contain bullets or step-like items (e.g., ' - ', ' - [', or '1.')."
+            "Text to add under the step. Requires annotation_marker, Required with annotation_marker"
+            " Cannot contain bullets or step-like items."
         ),
     ] = None,
 ) -> CallToolResult:
@@ -1153,37 +1423,6 @@ def edit_file_insert_at_line(
     return ToolOutput(
         tool_name="edit_file_insert_at_line",
         breadcrumb=f"Inserted text at {len(ops)} anchor location(s):",
-        metadata=result,
-        file_links=file_links,
-    ).to_call_tool_result()
-
-
-@mcp.tool()
-def edit_file_copy_paste_text(
-    ops: list[CopyPasteOp],
-) -> CallToolResult:
-    """Copy text from sources and paste to targets atomically.
-
-    Each op dict has: `source_path`, `source_start_line`, `source_end_line`,
-    `target_path`, `target_line`, optional `source_start_col`, `source_end_col`, `target_col`.
-    Sources cached per unique range. For same-file targets: coordinates refer to ORIGINAL state.
-    """
-    ops_dicts = [op.model_dump() for op in ops]
-    result = edit_file_copy_paste_text_impl(ops_dicts, workspace_root=ROOT)
-    applied_ops = result.get("applied_ops", [])
-    file_links = [
-        FileLink(
-            file_path=op["filepath"],
-            start_line=op.get("start_line"),
-            end_line=op.get("end_line"),
-            action="",
-        )
-        for op in applied_ops
-        if op.get("filepath")
-    ] or None
-    return ToolOutput(
-        tool_name="edit_file_copy_paste_text",
-        breadcrumb=f"Pasted text {len(ops)} time(s):",
         metadata=result,
         file_links=file_links,
     ).to_call_tool_result()

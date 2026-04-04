@@ -164,6 +164,7 @@ def _build_success_response(
     for idx, _create_op, resolved_path in validated_ops:
         # Read created file to extract metadata
         content = resolved_path.read_bytes().decode("utf-8")
+        content = content.replace("\r\n", "\n").replace("\r", "\n")
         lines = content.split("\n")
         line_count = len(lines)
         bytes_written = len(content.encode("utf-8"))

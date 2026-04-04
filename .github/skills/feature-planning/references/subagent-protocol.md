@@ -27,7 +27,7 @@ Create an implementation plan for:
 {Part title}: {3-5 sentence scope from README}
 
 ## Design Document
-Read the full design context from: `plans/dev/design-{feature}.md`
+Read the full design context from: `artifacts/designs/pending/DD-{feature}.md`
 Focus on sections relevant to this part.
 
 ## Contracts from Prior Plans
@@ -35,7 +35,7 @@ Focus on sections relevant to this part.
 If this is the first plan, paste the initialized ledger with just architectural rules.}
 
 ## Output
-Create the plan at: `plans/TASK-{feature}-{letter}-{descriptor}.md`
+Create the plan at: `artifacts/plans/pending/TASK-{feature}-{letter}-{descriptor}.md`
 Follow the plan format in task-plans.instructions.md.
 
 ## Constraints

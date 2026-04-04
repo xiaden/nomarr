@@ -1,13 +1,13 @@
 ````markdown
 # Feature Archival Protocol
 
-How to close out a completed feature execution: generate a completion manifest, move all artifacts to `plans/completed/`, and verify clean state.
+How to close out a completed feature execution: generate a completion manifest, move all artifacts to `artifacts/plans/completed/`, and verify clean state.
 
 ---
 
 ## Completion Manifest
 
-After all plans pass review and the ledger is updated, generate `COMPLETION.md` in the `{feature}-parts/` directory. This is the audit trail — anyone reopening this feature later starts here.
+After all plans pass review and the ledger is updated, generate `COMPLETION.md` in the `{feature}/` directory. This is the audit trail — anyone reopening this feature later starts here.
 
 ### Template
 
@@ -15,9 +15,9 @@ After all plans pass review and the ledger is updated, generate `COMPLETION.md` 
 # {Feature} — Completion Manifest
 
 **Completed:** {YYYY-MM-DD}
-**Design doc:** `design-{feature}.md`
-**Parts README:** `{feature}-parts/README.md`
-**Contracts ledger:** `{feature}-parts/CONTRACTS.md`
+**Design doc:** `DD-{feature}.md`
+**Parts README:** `{feature}/README.md`
+**Contracts ledger:** `{feature}/CONTRACTS.md`
 
 ---
 
@@ -87,21 +87,21 @@ Example:
 
 ## Move Protocol
 
-Move artifacts from active directories to `plans/completed/` using `edit_file_move`.
+Move artifacts from active directories to `artifacts/plans/completed/` using `edit_file_move`.
 
 ### Artifacts to Move
 
 | Source | Destination | Notes |
 |---|---|---|
-| `plans/TASK-{feature}-*.md` | `plans/completed/TASK-{feature}-*.md` | All plan files — includes fix plans |
-| `plans/dev/{feature}-parts/` | `plans/completed/{feature}-parts/` | README, CONTRACTS, COMPLETION manifest |
-| `plans/dev/design-{feature}.md` | `plans/completed/design-{feature}.md` | Original design doc |
+| `artifacts/plans/pending/TASK-{feature}-*.md` | `artifacts/plans/completed/TASK-{feature}-*.md` | All plan files — includes fix plans |
+| `artifacts/designs/parts/{feature}/` | `artifacts/designs/completed/{feature}/` | README, CONTRACTS, COMPLETION manifest |
+| `artifacts/designs/pending/DD-{feature}.md` | `artifacts/designs/completed/DD-{feature}.md` | Original design doc |
 
 ### Move Order
 
 1. **Plans first** — move all `TASK-{feature}-*.md` files
-2. **Design doc** — move `design-{feature}.md`
-3. **Parts directory** — move `{feature}-parts/` (contains README, CONTRACTS, COMPLETION)
+2. **Design doc** — move `DD-{feature}.md`
+3. **Parts directory** — move `{feature}/` (contains README, CONTRACTS, COMPLETION)
 
 Parts directory goes last because it contains the completion manifest — you want it written and committed before the move.
 
@@ -111,27 +111,27 @@ After moving, confirm clean state:
 
 ```
 # These should return no results:
-plans/TASK-{feature}-*.md          → none remain
-plans/dev/{feature}-parts/         → directory gone
-plans/dev/design-{feature}.md      → file gone
+artifacts/plans/pending/TASK-{feature}-*.md          → none remain
+artifacts/designs/parts/{feature}/                   → directory gone
+artifacts/designs/pending/DD-{feature}.md            → file gone
 
 # These should exist:
-plans/completed/TASK-{feature}-*.md              → all plans present
-plans/completed/{feature}-parts/COMPLETION.md    → manifest exists
-plans/completed/{feature}-parts/CONTRACTS.md     → ledger preserved
-plans/completed/{feature}-parts/README.md        → decomposition preserved  
-plans/completed/design-{feature}.md              → design doc preserved
+artifacts/plans/completed/TASK-{feature}-*.md              → all plans present
+artifacts/designs/completed/{feature}/COMPLETION.md        → manifest exists
+artifacts/designs/completed/{feature}/CONTRACTS.md         → ledger preserved
+artifacts/designs/completed/{feature}/README.md            → decomposition preserved  
+artifacts/designs/completed/DD-{feature}.md                → design doc preserved
 ```
 
 ---
 
 ## Standalone Plan Archival
 
-Not all plans are part of multi-part features. Single plans (`plans/TASK-{name}.md` without letter suffixes) also need archival.
+Not all plans are part of multi-part features. Single plans (`artifacts/plans/pending/TASK-{name}.md` without letter suffixes) also need archival.
 
 **For standalone plans:**
 1. No COMPLETION.md needed — the plan's own checkboxes and annotations are the audit trail
-2. Move: `plans/TASK-{name}.md` → `plans/completed/TASK-{name}.md`
+2. Move: `artifacts/plans/pending/TASK-{name}.md` → `artifacts/plans/completed/TASK-{name}.md`
 3. No parts directory or design doc to move
 
 ---
@@ -141,8 +141,8 @@ Not all plans are part of multi-part features. Single plans (`plans/TASK-{name}.
 When revisiting a completed feature, read artifacts in this order:
 
 1. **`COMPLETION.md`** — What happened, what deviated, what was decided
-2. **`design-{feature}.md`** — Original intent
-3. **`{feature}-parts/README.md`** — How it was decomposed
-4. **`{feature}-parts/CONTRACTS.md`** — What was actually built (signatures, schemas)
+2. **`DD-{feature}.md`** — Original intent
+3. **`{feature}/README.md`** — How it was decomposed
+4. **`{feature}/CONTRACTS.md`** — What was actually built (signatures, schemas)
 5. **Individual `TASK-*.md` plans** — Step-by-step implementation details with annotations
 ````

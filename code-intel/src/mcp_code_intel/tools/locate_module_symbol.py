@@ -94,9 +94,9 @@ def locate_module_symbol(symbol_name: str) -> dict[str, Any]:
             if py_file.name.startswith(".") or "__pycache__" in py_file.parts:
                 continue
 
-            # Apply path filter if present
+            # Apply path filter if present (segment-boundary match)
             relative_path = py_file.relative_to(root).as_posix()
-            if path_filter and path_filter not in relative_path:
+            if path_filter and f"/{path_filter}/" not in f"/{relative_path}":
                 continue
 
             try:
@@ -171,8 +171,10 @@ def _search_tree(
         # Classes
         if isinstance(node, ast.ClassDef):
             if node.name == symbol_name:
-                # Check parent filter (only applies if we're inside a parent class)
-                if parent_filter and parent_class and parent_class != parent_filter:
+                # Exclude if parent_filter is set but we're at top level
+                if parent_filter and not parent_class:
+                    pass  # Skip top-level matches for parent-scoped query
+                elif parent_filter and parent_class and parent_class != parent_filter:
                     pass  # Skip if nested in wrong parent class
                 else:
                     qualified = f"{module_name}.{node.name}"
@@ -194,8 +196,10 @@ def _search_tree(
         # Functions/Methods
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             if node.name == symbol_name:
-                # Check parent filter (only applies if we're inside a parent class)
-                if parent_filter and parent_class and parent_class != parent_filter:
+                # Exclude if parent_filter is set but we're at top level
+                if parent_filter and not parent_class:
+                    pass  # Skip top-level matches for parent-scoped query
+                elif parent_filter and parent_class and parent_class != parent_filter:
                     pass  # Skip if nested in wrong parent class
                 else:
                     kind = "AsyncFunction" if isinstance(node, ast.AsyncFunctionDef) else "Function"

@@ -41,9 +41,9 @@ All phases of this plan are complete. Review the full implementation for quality
 | Frontend | `.github/instructions/frontend.instructions.md` | React/TS conventions, MUI sx prop, no `any` |
 
 Also include:
-- Target plan: `plans/TASK-{feature}-{letter}-*.md`
-- Contracts ledger: `plans/dev/{feature}-parts/CONTRACTS.md`
-- Feature parts README: `plans/dev/{feature}-parts/README.md`
+- Target plan: `artifacts/plans/pending/TASK-{feature}-{letter}-*.md`
+- Contracts ledger: `artifacts/designs/parts/{feature}/CONTRACTS.md`
+- Feature parts README: `artifacts/designs/parts/{feature}/README.md`
 - This review protocol: `.github/skills/feature-execution/references/review-protocol.md`
 
 ## Plan Content

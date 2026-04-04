@@ -1,0 +1,11 @@
+# Artifact content is transient — ignore everything
+*
+
+# But keep directory structure via .gitkeep
+!.gitignore
+!*/
+!**/.gitkeep
+
+# Keep plan examples committed
+!plans/examples/
+!plans/examples/*.md
