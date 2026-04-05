@@ -161,16 +161,17 @@ jobs:
           VERSION="${{ steps.versions.outputs.version }}"
           BASE_VERSION="${{ steps.versions.outputs.base_version }}"
 
-          if [ "${{ github.ref_name }}" == "main" ]; then
+          if [ "${{ github.ref_name }}" = "main" ]; then
             SEMVER="${VERSION%.dev*}"
             TAGS="${REPO}:latest,${REPO}:v${SEMVER},${REPO}:${SHORT_SHA}"
-            BASE_TAG="v${BASE_VERSION}"
-          else
+          elif [ "${{ github.ref_name }}" = "develop" ]; then
             VERSION_BASE="${VERSION%.dev*}"
             DEV_TAG="${VERSION_BASE}.dev${{ github.run_number }}"
             TAGS="${REPO}:develop,${REPO}:${DEV_TAG},${REPO}:${SHORT_SHA}"
-            BASE_TAG="v${BASE_VERSION}"
+          else
+            TAGS="${REPO}:${SHORT_SHA}"
           fi
+          BASE_TAG="v${BASE_VERSION}"
 
           echo "tags=${TAGS}" >> $GITHUB_OUTPUT
           echo "base_tag=${BASE_TAG}" >> $GITHUB_OUTPUT
