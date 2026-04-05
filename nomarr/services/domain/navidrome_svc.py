@@ -264,7 +264,6 @@ class NavidromeService:
             m3u_output_path=m3u_output_path,
         )
 
-
     # ------------------------------------------------------------------
     # API credentials (live from ConfigService)
     # ------------------------------------------------------------------
@@ -396,7 +395,6 @@ class NavidromeService:
             user_id=api_user,
         )
 
-
     # ------------------------------------------------------------------
     # Similarity search
     # ------------------------------------------------------------------
@@ -434,7 +432,6 @@ class NavidromeService:
             vector_group_size=group_size,
             vector_search_thoroughness=thoroughness,
         )
-
 
     # ------------------------------------------------------------------
     # Scrobble ingestion
@@ -497,16 +494,8 @@ class NavidromeService:
                 ["familiar", "discovery", "hidden_gems", "genre", "universal"],
             )
         )
-        resolved_max_songs = (
-            max_songs
-            if max_songs is not None
-            else self._config_service.get("playlist_max_songs", 50)
-        )
-        resolved_min_songs = (
-            min_songs
-            if min_songs is not None
-            else self._config_service.get("playlist_min_songs", 5)
-        )
+        resolved_max_songs = max_songs if max_songs is not None else self._config_service.get("playlist_max_songs", 50)
+        resolved_min_songs = min_songs if min_songs is not None else self._config_service.get("playlist_min_songs", 5)
         resolved_max_genre_playlists = min(
             max_genre_playlists
             if max_genre_playlists is not None
