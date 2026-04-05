@@ -184,6 +184,7 @@ async def create_library(
             root_path=request.root_path,
             is_enabled=request.is_enabled,
             watch_mode=request.watch_mode,
+            file_write_mode=request.file_write_mode,
         )
         return LibraryResponse.from_dto(library)
     except ValueError:
@@ -208,6 +209,7 @@ async def update_library(
             root_path=request.root_path,
             is_enabled=request.is_enabled,
             watch_mode=request.watch_mode,
+            file_write_mode=request.file_write_mode,
         )
         return LibraryResponse.from_dto(library)
     except ValueError:

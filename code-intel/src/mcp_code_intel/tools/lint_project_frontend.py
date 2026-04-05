@@ -1,6 +1,6 @@
 """Frontend linting tool for MCP server.
 
-Runs ESLint and TypeScript checking on frontend.
+Runs ESLint, TypeScript checking, and Vitest on frontend.
 Returns structured JSON with errors or clean status.
 """
 
@@ -90,10 +90,42 @@ def parse_typescript_output(stdout: str, stderr: str) -> list[dict[str, Any]]:
 
 
 def lint_project_frontend() -> dict[str, Any]:
-    """Run frontend linting tools (ESLint and TypeScript).
+    """Run frontend linting tools (ESLint, TypeScript, and Vitest).
 
     Returns:
-        Structured JSON with errors or clean status
+        Structured JSON:
+        {
+          "status": "error",
+          "summary": {"error": "Frontend directory not found"},
+          "errors": []
+        }
+
+        Or, when lint/test issues are found:
+        {
+          "status": "errors",
+          "summary": {
+            "total_errors": N,
+            "by_tool": {"eslint": N, "typescript": N, "vitest": N}
+          },
+          "errors": [
+            {
+              "tool": "eslint|typescript|vitest",
+              "file": "frontend/..." | null,
+              "line": N | null,
+              "column": N | null,
+              "code": "...",
+              "severity": "error|warning",
+              "message": "...",
+              "fix_available": false
+            }
+          ]
+        }
+
+        Or, when all checks pass:
+        {
+          "status": "clean",
+          "summary": {"tools_run": ["eslint", "typescript", "vitest"]}
+        }
 
     """
     if not frontend_dir.exists():
@@ -154,6 +186,44 @@ def lint_project_frontend() -> dict[str, Any]:
                 "code": "tool-error",
                 "severity": "error",
                 "message": f"Failed to run typescript: {e}",
+                "fix_available": False,
+            },
+        )
+
+    # 3. Run Vitest tests
+    try:
+        test_result = subprocess.run(
+            ["npm", "run", "test"],
+            capture_output=True,
+            text=True,
+            stdin=subprocess.DEVNULL,
+            shell=True,
+            cwd=frontend_dir,
+        )
+        tools_run.append("vitest")
+        if test_result.returncode != 0:
+            all_errors.append(
+                {
+                    "tool": "vitest",
+                    "file": None,
+                    "line": None,
+                    "column": None,
+                    "code": "test-failure",
+                    "severity": "error",
+                    "message": (test_result.stdout + test_result.stderr)[-2000:].strip(),
+                    "fix_available": False,
+                },
+            )
+    except Exception as e:
+        all_errors.append(
+            {
+                "tool": "vitest",
+                "file": None,
+                "line": None,
+                "column": None,
+                "code": "tool-error",
+                "severity": "error",
+                "message": f"Failed to run vitest: {e}",
                 "fix_available": False,
             },
         )

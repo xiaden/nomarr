@@ -71,6 +71,11 @@ jobs:
           source .venv/bin/activate
           mypy nomarr/ --config-file pyproject.toml
 
+      - name: Import linter
+        run: |
+          source .venv/bin/activate
+          lint-imports
+
   frontend-test:
     runs-on: ubuntu-latest
     permissions:
@@ -88,6 +93,13 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm ci --prefix frontend
+
+      - name: Lint (ESLint)
+        run: npm run lint --prefix frontend
+
+      - name: Type check (TypeScript)
+        run: npx tsc -b --noEmit
+        working-directory: frontend
 
       - name: Run frontend tests
         run: npm run test --prefix frontend
@@ -129,7 +141,7 @@ jobs:
 
   build-and-push:
     needs: [test, frontend-test]
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -161,16 +173,17 @@ jobs:
           VERSION="${{ steps.versions.outputs.version }}"
           BASE_VERSION="${{ steps.versions.outputs.base_version }}"
 
-          if [ "${{ github.ref_name }}" == "main" ]; then
+          if [ "${{ github.ref_name }}" = "main" ]; then
             SEMVER="${VERSION%.dev*}"
             TAGS="${REPO}:latest,${REPO}:v${SEMVER},${REPO}:${SHORT_SHA}"
-            BASE_TAG="v${BASE_VERSION}"
-          else
+          elif [ "${{ github.ref_name }}" = "develop" ]; then
             VERSION_BASE="${VERSION%.dev*}"
             DEV_TAG="${VERSION_BASE}.dev${{ github.run_number }}"
             TAGS="${REPO}:develop,${REPO}:${DEV_TAG},${REPO}:${SHORT_SHA}"
-            BASE_TAG="v${BASE_VERSION}"
+          else
+            TAGS="${REPO}:${SHORT_SHA}"
           fi
+          BASE_TAG="v${BASE_VERSION}"
 
           echo "tags=${TAGS}" >> $GITHUB_OUTPUT
           echo "base_tag=${BASE_TAG}" >> $GITHUB_OUTPUT

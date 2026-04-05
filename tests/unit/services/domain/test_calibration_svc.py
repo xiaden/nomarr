@@ -269,9 +269,12 @@ class TestRunHistogramGeneration:
         service = _make_service()
         error = RuntimeError("fail")
 
-        with patch.object(service, "generate_histogram_calibration", side_effect=error), pytest.raises(
-            RuntimeError,
-            match="fail",
+        with (
+            patch.object(service, "generate_histogram_calibration", side_effect=error),
+            pytest.raises(
+                RuntimeError,
+                match="fail",
+            ),
         ):
             service._run_histogram_generation()
 

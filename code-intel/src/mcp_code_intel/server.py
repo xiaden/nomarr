@@ -25,8 +25,9 @@ Call tracing:
 - trace_project_endpoint: Resolve FastAPI DI to trace full endpoint behavior
 
 Quality validation:
-- lint_project_backend: Run ruff+mypy on modified files, or all files+import-linter (check_all=True)
-- lint_project_frontend: Run ESLint and TypeScript type checking on frontend
+- lint_project_backend: Run ruff (check + format) + mypy on modified files
+  (or all with check_all=True), plus import-linter and pytest (always run)
+- lint_project_frontend: Run ESLint, TypeScript type checking, and Vitest on frontend
 
 Task plan tools:
 - plan_read: Read a task plan as structured JSON
@@ -503,13 +504,14 @@ def lint_project_backend(
     *,
     check_all: Annotated[
         bool,
-        "If True, lint ALL files in path and also run import-linter. "
-        "If False (default), only lint git-modified and untracked files (import-linter skipped).",
+        "If True, lint ALL files in path. "
+        "If False (default), only lint git-modified and untracked files. "
+        "import-linter and pytest always run regardless.",
     ] = False,
 ) -> CallToolResult:
     """Run backend linting tools on specified path.
 
-    Runs ruff and mypy. Default: only git-modified/untracked files.
+    Runs ruff (check + format), mypy, import-linter, and pytest. Default: only git-modified/untracked files.
     With check_all=True: all files in path + import-linter contracts.
     """
     result = lint_project_backend_impl(path, check_all)
@@ -519,7 +521,7 @@ def lint_project_backend(
     # Build file locations from errors (max 10)
     file_links: list[FileLink] = []
     if not is_clean:
-        for tool_name in ("ruff", "mypy", "import-linter"):
+        for tool_name in ("ruff", "ruff-format", "mypy", "import-linter"):
             tool_errors = result.get(tool_name, {})
             for code_info in tool_errors.values():
                 for occ in code_info.get("occurrences", []):
@@ -536,11 +538,19 @@ def lint_project_backend(
             if len(file_links) >= 10:
                 break
 
-    breadcrumb = (
-        f"Linted {path or 'nomarr/'} - all checks passed"
-        if is_clean
-        else f"Linted {path or 'nomarr/'} with errors"
-    )
+    pytest_status = result.get("pytest", {}).get("status", "")
+    if is_clean and pytest_status == "pass":
+        breadcrumb = f"Linted {path or 'nomarr/'} - all checks passed (tests OK)"
+    elif is_clean and pytest_status in ("skipped", ""):
+        breadcrumb = f"Linted {path or 'nomarr/'} - all checks passed"
+    elif pytest_status == "fail":
+        breadcrumb = f"Linted {path or 'nomarr/'} with errors (pytest failed)"
+    else:
+        breadcrumb = (
+            f"Linted {path or 'nomarr/'} - all checks passed"
+            if is_clean
+            else f"Linted {path or 'nomarr/'} with errors"
+        )
     return ToolOutput(
         tool_name="lint_project_backend",
         breadcrumb=breadcrumb,
@@ -551,7 +561,7 @@ def lint_project_backend(
 
 @mcp.tool()
 def lint_project_frontend() -> CallToolResult:
-    """Run frontend linting tools (ESLint and TypeScript)."""
+    """Run frontend linting tools (ESLint, TypeScript, and Vitest)."""
     result = lint_project_frontend_impl()
     status = result.get("status", "")
     is_error = status == "error"

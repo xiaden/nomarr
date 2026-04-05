@@ -69,9 +69,9 @@ class LibraryFilesTracksMixin:
         return [
             {
                 "path": row["path"],
-                "title": row["title"] if row["title"] else Path(row["path"]).stem,
-                "artist": row["artist"] if row["artist"] else "Unknown Artist",
-                "album": row["album"] if row["album"] else "Unknown Album",
+                "title": row["title"] or Path(row["path"]).stem,
+                "artist": row["artist"] or "Unknown Artist",
+                "album": row["album"] or "Unknown Album",
             }
             for row in cursor
         ]
