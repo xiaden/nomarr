@@ -10,6 +10,7 @@ import logging
 from pathlib import Path
 from typing import Annotated, Any
 
+import anyio
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from nomarr.helpers.files_helper import resolve_library_path
@@ -65,7 +66,7 @@ async def list_directory(
         entries: list[dict[str, str | bool]] = []
         for item in requested_path.iterdir():
             try:
-                entries.append({"name": item.name, "is_dir": item.is_dir()})
+                entries.append({"name": item.name, "is_dir": await anyio.Path(item).is_dir()})
             except (OSError, PermissionError) as e:
                 logger.debug(f"[FS Browser] Skipping inaccessible item {item}: {e}")
                 continue
