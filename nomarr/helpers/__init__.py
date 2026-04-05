@@ -1,6 +1,7 @@
 """Helpers package."""
 
 from .dto.processing_dto import ProcessorConfig, TagWriteProfile
+from .exceptions import MisconfiguredError
 from .file_validation_helper import (
     check_already_tagged,
     make_skip_result,
@@ -61,6 +62,7 @@ __all__ = [
     "InternalSeconds",
     "ManagedTask",
     "Milliseconds",
+    "MisconfiguredError",
     "NomarrLogFilter",
     "ProcessorConfig",
     "Seconds",

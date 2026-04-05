@@ -154,6 +154,37 @@ that user:
 > **Note:** `genre` playlists are only created for genres that have at least 100
 > similar tracks in the ML index.
 
+### Playlist Generation Behavior
+
+When the plugin asks Nomarr to generate personal playlists, it applies a few
+guards before pushing anything back to Navidrome.
+
+#### Empty playlists are skipped
+
+If Nomarr returns a playlist with zero tracks, the plugin logs a WARN message
+and skips that playlist instead of calling Navidrome's `createPlaylist` API.
+This protects existing Navidrome playlists from being overwritten with empty
+content when no Navidrome track IDs could be resolved for the generated
+playlist.
+
+#### Backend response status handling
+
+The plugin now handles the following response statuses from Nomarr's
+generate-playlists endpoint:
+
+- `ok` (or an empty status for backward compatibility): process playlists
+  normally
+- `no_data`: no playlists were generated, such as when there is not enough
+  listen history yet; logged at INFO and nothing is pushed to Navidrome
+- `misconfigured`: the backend is misconfigured; logged at ERROR with the
+  backend-provided message and nothing is pushed to Navidrome
+
+#### Optional `backbone_id` override
+
+The generate-playlists request also accepts an optional `backbone_id` field.
+When provided, it allows the ML backbone model to be overridden for that
+request. When omitted, Nomarr uses its normal backend default behavior.
+
 ## Troubleshooting
 
 ### Plugin not loading

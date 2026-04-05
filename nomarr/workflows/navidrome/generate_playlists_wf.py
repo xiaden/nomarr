@@ -87,18 +87,22 @@ def generate_playlists(
         top_n=top_n,
     )
     if profile is None:
-        logger.info("No taste profile for user %s \u2014 returning empty", user_id)
+        logger.warning(
+            "No taste profile for playlist generation — returning empty",
+            extra={
+                "user_id": user_id,
+                "backbone_id": backbone_id,
+                "library_key": library_key,
+            },
+        )
         return []
 
     # Step 2: Get user's played tracks and filter by min_play_count
     plays = db.navidrome_playcounts.get_top_plays(user_id, top_n)
     played_tracks: list[TrackPlayData] = [
-        p for p in plays
-        if p["file_id"] is not None and p["playcount"] >= min_play_count
+        p for p in plays if p["file_id"] is not None and p["playcount"] >= min_play_count
     ]
-    played_file_ids: list[str] = [
-        p["file_id"] for p in played_tracks if p["file_id"] is not None
-    ]
+    played_file_ids: list[str] = [p["file_id"] for p in played_tracks if p["file_id"] is not None]
 
     # Step 3: Build context DTO
     ctx = NavidromePersonalPlaylistContext(
@@ -118,12 +122,34 @@ def generate_playlists(
     for playlist_type in enabled_types:
         builder = _BUILDERS.get(playlist_type)
         if builder is None:
-            logger.warning("Unknown playlist type '%s', skipping", playlist_type)
+            logger.warning(
+                "Unknown playlist type '%s', skipping",
+                playlist_type,
+                extra={
+                    "user_id": user_id,
+                    "backbone_id": backbone_id,
+                    "library_key": library_key,
+                    "playlist_type": playlist_type,
+                },
+            )
             continue
         playlists.extend(builder(db, ctx))
 
     # Step 5: Filter out playlists below min_songs
+    playlists_before_filter = len(playlists)
     playlists = [p for p in playlists if len(p["file_ids"]) >= min_songs]
+
+    if playlists_before_filter > 0 and not playlists:
+        logger.warning(
+            "All generated playlists were filtered out by min_songs",
+            extra={
+                "user_id": user_id,
+                "backbone_id": backbone_id,
+                "library_key": library_key,
+                "playlists_before_filter": playlists_before_filter,
+                "min_songs": min_songs,
+            },
+        )
 
     logger.info(
         "generate_playlists: user=%s, types=%s, produced=%d playlists",

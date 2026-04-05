@@ -57,6 +57,7 @@ from nomarr.helpers.dto.ml_dto import (
     SingleHeadResult,
 )
 from nomarr.helpers.dto.navidrome_dto import (
+    NavidromeGeneratePlaylistsResult,
     NavidromePersonalPlaylistContext,
     NavidromePersonalPlaylistEntry,
     NavidromeStaticPlaylistResult,
@@ -108,6 +109,7 @@ __all__ = [
     "MatchResult",
     "MergeResult",
     "MoodDistributionData",
+    "NavidromeGeneratePlaylistsResult",
     "NavidromePersonalPlaylistContext",
     "NavidromePersonalPlaylistEntry",
     "NavidromeStaticPlaylistResult",

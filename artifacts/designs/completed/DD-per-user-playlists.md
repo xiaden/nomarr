@@ -1,3 +1,7 @@
+> [!WARNING]
+> **Deprecated design artifact.** The config namespace references in this document (`playlist_*`, `vector_backbone_id`) are superseded by `pp_*` keys.
+> For the current reference and active design decisions, see `DD-navidrome-plugin-integration-improvements.md`.
+
 # Design: Per-User Playlist Configuration
 
 **Status:** Draft

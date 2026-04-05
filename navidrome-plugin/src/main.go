@@ -221,19 +221,20 @@ type scrobbleRequest struct {
 
 // userConfig represents a single user entry from the plugin's "users" config array.
 type userConfig struct {
-	Username     string   `json:"username"`
-	EnabledTypes []string `json:"enabled_types,omitempty"`
-	MaxSongs     *int     `json:"max_songs,omitempty"`
-	MinSongs     *int     `json:"min_songs,omitempty"`
+	Username          string   `json:"username"`
+	EnabledTypes      []string `json:"enabled_types,omitempty"`
+	MaxSongs          *int     `json:"max_songs,omitempty"`
+	MinSongs          *int     `json:"min_songs,omitempty"`
 	MaxGenrePlaylists *int     `json:"max_genre_playlists,omitempty"`
 }
 
 // generatePlaylistsRequest is the JSON body sent to Nomarr's generate-playlists endpoint.
 type generatePlaylistsRequest struct {
-	UserID       string   `json:"user_id"`
-	EnabledTypes []string `json:"enabled_types,omitempty"`
-	MaxSongs     *int     `json:"max_songs,omitempty"`
-	MinSongs     *int     `json:"min_songs,omitempty"`
+	UserID            string   `json:"user_id"`
+	EnabledTypes      []string `json:"enabled_types,omitempty"`
+	MaxSongs          *int     `json:"max_songs,omitempty"`
+	MinSongs          *int     `json:"min_songs,omitempty"`
+	BackboneID        string   `json:"backbone_id,omitempty"`
 	MaxGenrePlaylists *int     `json:"max_genre_playlists,omitempty"`
 }
 
@@ -247,6 +248,8 @@ type playlistResult struct {
 
 // generatePlaylistsResponse is the JSON response from Nomarr's generate-playlists endpoint.
 type generatePlaylistsResponse struct {
+	Status    string           `json:"status"`
+	Message   string           `json:"message"`
 	Playlists []playlistResult `json:"playlists"`
 }
 
@@ -448,10 +451,10 @@ func generateAndPushPlaylists() {
 
 		// Build per-user request — only include optional fields when set.
 		reqBody := generatePlaylistsRequest{
-			UserID:       user.Username,
-			EnabledTypes: user.EnabledTypes,
-			MaxSongs:     user.MaxSongs,
-			MinSongs:     user.MinSongs,
+			UserID:            user.Username,
+			EnabledTypes:      user.EnabledTypes,
+			MaxSongs:          user.MaxSongs,
+			MinSongs:          user.MinSongs,
 			MaxGenrePlaylists: user.MaxGenrePlaylists,
 		}
 
@@ -480,11 +483,27 @@ func generateAndPushPlaylists() {
 
 		pdk.Log(pdk.LogInfo, fmt.Sprintf("nomarr: received %d playlists for user %s", len(genResp.Playlists), user.Username))
 
+		switch genResp.Status {
+		case "no_data":
+			pdk.Log(pdk.LogInfo, fmt.Sprintf("nomarr: no playlists generated for user %s (no_data)", user.Username))
+			continue
+		case "misconfigured":
+			pdk.Log(pdk.LogError, fmt.Sprintf("nomarr: misconfigured for user %s: %s", user.Username, genResp.Message))
+			continue
+		}
+
 		// Fetch existing playlists to determine create vs. update.
 		existingPlaylists := findExistingPlaylists(user.Username)
+		var created, updated, skippedEmpty int
 
 		// Push each playlist into Navidrome via Subsonic createPlaylist API.
 		for _, pl := range genResp.Playlists {
+			if len(pl.TrackNdIDs) == 0 {
+				pdk.Log(pdk.LogWarn, fmt.Sprintf("nomarr: skipping empty playlist %q for user %s", pl.PlaylistName, user.Username))
+				skippedEmpty++
+				continue
+			}
+
 			var uri string
 			var action string
 
@@ -507,8 +526,16 @@ func generateAndPushPlaylists() {
 				continue
 			}
 
+			if action == "create" {
+				created++
+			} else if action == "update" {
+				updated++
+			}
+
 			pdk.Log(pdk.LogInfo, fmt.Sprintf("nomarr: %s playlist %q (%s, %d tracks) for user %s", action, pl.PlaylistName, pl.PlaylistType, pl.TrackCount, user.Username))
 		}
+
+		pdk.Log(pdk.LogInfo, fmt.Sprintf("nomarr: playlists for user %s: %d created, %d updated, %d skipped (empty)", user.Username, created, updated, skippedEmpty))
 	}
 }
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import MagicMock
 
 import pytest
@@ -194,6 +195,35 @@ class TestFindSimilarTracksEdgeCases:
 
         assert len(results) == 1
         assert results[0]["nd_id"] == "nd-mapped"
+
+    @pytest.mark.unit
+    def test_logs_warning_for_high_unmapped_ratio(self, caplog: pytest.LogCaptureFixture) -> None:
+        """High unmapped ANN ratio should be logged at WARNING level."""
+        db = _make_db(
+            ann_results=[
+                {"file_id": "library_files/mapped", "score": 0.92},
+                {"file_id": "library_files/unmapped-1", "score": 0.9},
+                {"file_id": "library_files/unmapped-2", "score": 0.89},
+            ],
+            nd_bulk_map={"library_files/mapped": "nd-mapped"},
+            file_docs=[{"_id": "library_files/mapped", "title": "Mapped", "artist": "A", "album": "B"}],
+        )
+
+        workflow_logger = logging.getLogger("nomarr.workflows.navidrome.find_similar_tracks_wf")
+        original_propagate = workflow_logger.propagate
+        workflow_logger.propagate = True
+
+        try:
+            with caplog.at_level(logging.WARNING, logger="nomarr.workflows.navidrome.find_similar_tracks_wf"):
+                results = find_similar_tracks("nd-seed", count=10, backbone_id="effnet", db=db)
+        finally:
+            workflow_logger.propagate = original_propagate
+
+        assert len(results) == 1
+        assert any(
+            record.levelno == logging.WARNING and "High ANN unmapped ratio" in record.getMessage()
+            for record in caplog.records
+        )
 
     @pytest.mark.unit
     def test_all_results_unmapped(self) -> None:
