@@ -107,7 +107,11 @@ class FileStatesOperations:
                         AND (e._to == @positive OR e._to == @negative)
                     RETURN e
             )
-            LET _ = old != null ? (REMOVE old._key IN file_has_state) : null
+            LET _ = (
+                FOR o IN (old != null ? [old] : [])
+                    REMOVE o IN file_has_state
+                    RETURN null
+            )
             INSERT { _from: @file_id, _to: @new_state } INTO file_has_state
             """,
             bind_vars=cast(
