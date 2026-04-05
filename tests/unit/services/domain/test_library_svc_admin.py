@@ -50,6 +50,7 @@ class TestCreateLibrary:
         mock_db = MagicMock()
         mock_cfg = MagicMock()
         mock_cfg.library_root = "/music"
+        mock_cfg.models_dir = "/models"
         mixin = _ConcreteAdminMixin(mock_db, mock_cfg)
 
         with (
@@ -62,6 +63,9 @@ class TestCreateLibrary:
                 "nomarr.services.domain.library_svc.admin.create_library",
                 return_value="libraries/1",
             ) as mock_create_library,
+            patch(
+                "nomarr.services.domain.library_svc.admin.provision_vectors_track_for_library",
+            ) as mock_provision_vectors_track,
         ):
             result = mixin.create_library(
                 name="Rock Library",
@@ -78,6 +82,7 @@ class TestCreateLibrary:
             watch_mode="off",
             file_write_mode="minimal",
         )
+        mock_provision_vectors_track.assert_called_once_with(mock_db.db, "/models", "1")
         assert result == _library_dto(file_write_mode="minimal")
 
     @pytest.mark.unit
@@ -87,6 +92,7 @@ class TestCreateLibrary:
         mock_db = MagicMock()
         mock_cfg = MagicMock()
         mock_cfg.library_root = "/music"
+        mock_cfg.models_dir = "/models"
         mixin = _ConcreteAdminMixin(mock_db, mock_cfg)
 
         with (
@@ -95,6 +101,9 @@ class TestCreateLibrary:
                 "nomarr.services.domain.library_svc.admin.create_library",
                 return_value="libraries/1",
             ) as mock_create_library,
+            patch(
+                "nomarr.services.domain.library_svc.admin.provision_vectors_track_for_library",
+            ) as mock_provision_vectors_track,
         ):
             result = mixin.create_library(
                 name="Rock Library",
@@ -110,6 +119,32 @@ class TestCreateLibrary:
             watch_mode="off",
             file_write_mode="full",
         )
+        mock_provision_vectors_track.assert_called_once_with(mock_db.db, "/models", "1")
+        assert result == _library_dto()
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_create_library_calls_provision_vectors_track(self) -> None:
+        """Library creation should provision vectors for the new library key."""
+        mock_db = MagicMock()
+        mock_cfg = MagicMock()
+        mock_cfg.library_root = "/music"
+        mock_cfg.models_dir = "/models"
+        mixin = _ConcreteAdminMixin(mock_db, mock_cfg)
+
+        with (
+            patch.object(mixin, "_get_library_or_error", return_value=_library_record()),
+            patch(
+                "nomarr.services.domain.library_svc.admin.create_library",
+                return_value="libraries/1",
+            ),
+            patch(
+                "nomarr.services.domain.library_svc.admin.provision_vectors_track_for_library",
+            ) as mock_provision_vectors_track,
+        ):
+            result = mixin.create_library(name="Rock Library", root_path="rock")
+
+        mock_provision_vectors_track.assert_called_once_with(mock_db.db, "/models", "1")
         assert result == _library_dto()
 
 

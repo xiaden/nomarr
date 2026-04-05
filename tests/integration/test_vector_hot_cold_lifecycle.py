@@ -308,7 +308,7 @@ def test_bootstrap_creates_hot_collections_only(monkeypatch: pytest.MonkeyPatch)
         indexed_collections.append(collection)
 
     monkeypatch.setattr(
-        "nomarr.components.platform.arango_bootstrap_comp._discover_backbone_ids",
+        "nomarr.components.ml.onnx.ml_discovery_comp.discover_backbones",
         lambda _models_dir: ["effnet", "yamnet"],
     )
     monkeypatch.setattr(

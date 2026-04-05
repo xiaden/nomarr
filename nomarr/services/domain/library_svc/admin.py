@@ -16,6 +16,7 @@ from nomarr.components.library.library_admin_comp import (
     delete_library,
     update_library_root,
 )
+from nomarr.components.platform.arango_bootstrap_comp import provision_vectors_track_for_library
 from nomarr.helpers.config_schema import validate_library_config
 from nomarr.helpers.dto.library_dto import LibraryDict
 from nomarr.helpers.dto.vector_config_dto import VectorConfigResult
@@ -116,7 +117,23 @@ class LibraryAdminMixin:
         watch_mode: str = "off",
         file_write_mode: str = "full",
     ) -> LibraryDict:
-        """Create a new library."""
+        """Create a new library and provision vector collections for it.
+
+        Creates the library record, then performs idempotent vector
+        provisioning for the new library. Vector provisioning is skipped when
+        no ML models are configured.
+
+        Args:
+            name: Optional display name for the library.
+            root_path: Filesystem root path for the library.
+            is_enabled: Whether the library starts enabled.
+            watch_mode: Watch mode to store on the library.
+            file_write_mode: File write mode to store on the library.
+
+        Returns:
+            LibraryDict DTO for the created library record.
+
+        """
         library_id = create_library(
             db=self.db,
             base_library_root=self.cfg.library_root,
@@ -126,6 +143,8 @@ class LibraryAdminMixin:
             watch_mode=watch_mode,
             file_write_mode=file_write_mode,
         )
+        library_key = library_id.split("/", 1)[-1]
+        provision_vectors_track_for_library(self.db.db, self.cfg.models_dir, library_key)
 
         library = self._get_library_or_error(library_id)
         return LibraryDict(**library)

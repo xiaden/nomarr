@@ -456,6 +456,52 @@ def _discover_backbone_ids(models_dir: str) -> list[str]:
         return []
 
 
+def provision_vectors_track_for_library(db: DatabaseLike, models_dir: str, library_key: str) -> None:
+    """Provision vectors_track collections for a single library.
+
+    Creates ``vectors_track_hot__{backbone}__{library_key}`` for every
+    discovered backbone. Safe to call at runtime when a new library is created.
+    Idempotent — skips existing collections.
+
+    Args:
+        db: Database handle
+        models_dir: Path to ML models directory
+        library_key: Key of the library to provision collections for (e.g. "music")
+
+    """
+    try:
+        from nomarr.components.ml.onnx.ml_discovery_comp import discover_backbones
+
+        backbones = discover_backbones(models_dir)
+    except Exception:
+        logger.warning(
+            "[bootstrap] Could not discover backbones from %s — skipping vectors_track provisioning",
+            models_dir,
+        )
+        return
+
+    if not backbones:
+        logger.debug("[bootstrap] No backbones discovered in %s — skipping vectors_track provisioning", models_dir)
+        return
+
+    for backbone in backbones:
+        collection_name = f"vectors_track_hot__{backbone}__{library_key}"
+        created_collection = False
+
+        if not db.has_collection(collection_name):  # type: ignore[union-attr]
+            with contextlib.suppress(CollectionCreateError):
+                db.create_collection(collection_name)  # type: ignore[union-attr]
+                created_collection = True
+
+        _ensure_index(db, collection_name, "persistent", ["_key"], unique=True)
+        _ensure_index(db, collection_name, "persistent", ["file_id"])
+
+        if created_collection:
+            logger.info("[bootstrap] Created collection %s", collection_name)
+        else:
+            logger.info("[bootstrap] Provisioned indexes for %s", collection_name)
+
+
 def _create_vectors_track_collections(db: DatabaseLike, models_dir: str) -> None:
     """Create per-library ``vectors_track_hot__{backbone}__{library_key}`` collections.
 
@@ -469,10 +515,6 @@ def _create_vectors_track_collections(db: DatabaseLike, models_dir: str) -> None
 
     Idempotent — skips existing collections.
     """
-    backbones = _discover_backbone_ids(models_dir)
-    if not backbones:
-        return
-
     # Guard: libraries collection may not exist on first-ever startup
     if not db.has_collection("libraries"):  # type: ignore[union-attr]
         logger.info("[bootstrap] No libraries collection — skipping per-library vector collections")
@@ -484,16 +526,5 @@ def _create_vectors_track_collections(db: DatabaseLike, models_dir: str) -> None
         logger.info("[bootstrap] No libraries found — skipping per-library vector collections")
         return
 
-    for backbone in backbones:
-        for library_key in library_keys:
-            collection_name = f"vectors_track_hot__{backbone}__{library_key}"
-            if not db.has_collection(collection_name):  # type: ignore[union-attr]
-                with contextlib.suppress(CollectionCreateError):
-                    db.create_collection(collection_name)  # type: ignore[union-attr]
-                    logger.info("[bootstrap] Created collection %s", collection_name)
-
-            # Unique persistent index on _key (enforce uniqueness invariant for convergent drain)
-            _ensure_index(db, collection_name, "persistent", ["_key"], unique=True)
-
-            # Persistent index on file_id for cascade delete performance
-            _ensure_index(db, collection_name, "persistent", ["file_id"])
+    for library_key in library_keys:
+        provision_vectors_track_for_library(db, models_dir, library_key)
