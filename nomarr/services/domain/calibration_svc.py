@@ -19,6 +19,7 @@ from nomarr.components.ml.calibration.ml_calibration_state_comp import (
     compute_reconciliation_info,
 )
 from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads_no_db
+from nomarr.helpers import ManagedTask
 from nomarr.helpers.time_helper import now_ms
 from nomarr.workflows.calibration.generate_calibration_wf import (
     generate_histogram_calibration_wf,
@@ -26,9 +27,12 @@ from nomarr.workflows.calibration.generate_calibration_wf import (
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
+    from nomarr.services.infrastructure.background_tasks_svc import BackgroundTaskService
 
 
 logger = logging.getLogger(__name__)
+
+CALIBRATION_GENERATE_TASK_ID = "calibration_generate"
 
 
 @dataclass
@@ -51,17 +55,19 @@ class CalibrationService:
         self,
         db: Database,
         cfg: CalibrationConfig,
+        bts: BackgroundTaskService,
     ) -> None:
         """Initialize calibration service.
 
         Args:
             db: Database instance
             cfg: Calibration configuration
+            bts: BackgroundTaskService for managed background task execution
 
         """
         self._db = db
         self.cfg = cfg
-        self._generation_thread: threading.Thread | None = None
+        self._bts = bts
         self._generation_result: dict[str, Any] | None = None
         self._generation_error: Exception | None = None
         self._progress_lock = threading.Lock()
@@ -78,7 +84,23 @@ class CalibrationService:
             hook: Zero-argument callable, e.g. tagging_service.start_apply_calibration_background
 
         """
-        self._post_generation_hook = hook
+
+        def guarded_hook() -> None:
+            result = self._generation_result
+            if result is None:
+                logger.warning("[CalibrationService] Post-generation hook skipped: no generation result available")
+                return
+            if result.get("heads_failed") != 0:
+                logger.info(
+                    "[CalibrationService] Generation complete with %s failed head(s); skipping auto-apply",
+                    result.get("heads_failed"),
+                )
+                return
+
+            logger.info("[CalibrationService] Generation complete — auto-triggering calibration apply")
+            hook()
+
+        self._post_generation_hook = guarded_hook
 
     # -------------------------------------------------------------------------
     #  Histogram-Based Calibration (Primary System)
@@ -123,12 +145,12 @@ class CalibrationService:
         return result
 
     def start_histogram_calibration_background(self) -> None:
-        """Start histogram-based calibration generation in background thread.
+        """Start histogram-based calibration generation in a managed background task.
 
-        Follows threading pattern from design document.
+        Dispatches via BackgroundTaskService using a ManagedTask.
         Thread-safe: can check is_generation_running() and get_generation_result().
         """
-        if self._generation_thread and self._generation_thread.is_alive():
+        if self.is_generation_running():
             logger.warning("[CalibrationService] Calibration generation already running")
             return
 
@@ -137,13 +159,18 @@ class CalibrationService:
         self._generation_error = None
         self._clear_progress()
 
-        # Start background thread
-        self._generation_thread = threading.Thread(
-            target=self._run_histogram_generation,
-            name="CalibrationGeneration",
+        task = ManagedTask(
+            task_id=CALIBRATION_GENERATE_TASK_ID,
+            fn=self._run_histogram_generation,
+            on_complete=self._post_generation_hook,
             daemon=False,
         )
-        self._generation_thread.start()
+        try:
+            self._bts.start_task(task)
+        except ValueError:
+            logger.warning("[CalibrationService] Calibration generation already running")
+            return
+
         logger.info("[CalibrationService] Started histogram calibration generation in background")
 
     # -- Threading infrastructure (NOT domain logic; see services.instructions.md) --
@@ -164,8 +191,8 @@ class CalibrationService:
         with self._progress_lock:
             self._progress = {}
 
-    def _run_histogram_generation(self) -> None:
-        """Background thread: run histogram calibration generation."""
+    def _run_histogram_generation(self) -> dict[str, Any]:
+        """Managed background task: run histogram calibration generation."""
         try:
             logger.info("[CalibrationService] Background generation started")
             result = self.generate_histogram_calibration()
@@ -174,18 +201,18 @@ class CalibrationService:
                 f"[CalibrationService] Background generation completed: "
                 f"{result['heads_success']} success, {result['heads_failed']} failed",
             )
-            if self._post_generation_hook is not None and result["heads_failed"] == 0:
-                logger.info("[CalibrationService] Generation complete — auto-triggering calibration apply")
-                self._post_generation_hook()
+            return result
         except Exception as e:
             logger.error(f"[CalibrationService] Background generation failed: {e}", exc_info=True)
             self._generation_error = e
+            raise
         finally:
             self._clear_progress()
 
     def is_generation_running(self) -> bool:
         """Check if histogram calibration generation is currently running."""
-        return self._generation_thread is not None and self._generation_thread.is_alive()
+        status = self._bts.get_task_status(CALIBRATION_GENERATE_TASK_ID)
+        return status is not None and status.get("status") == "running"
 
     def get_generation_result(self) -> dict[str, Any] | None:
         """Get result of last histogram calibration generation.

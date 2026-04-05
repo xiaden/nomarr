@@ -11,16 +11,17 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from nomarr.components.navidrome.templates_comp import generate_template_files, get_template_summary
+from nomarr.helpers.dto import NavidromeGeneratePlaylistsResult
 from nomarr.helpers.dto.navidrome_dto import (
     GeneratePlaylistResult,
     GenerateTemplateFilesResult,
     GetTemplateSummaryResult,
-    NavidromePersonalPlaylistEntry,
     NavidromeStaticPlaylistResult,
     PreviewTagStatsResult,
     StaticPlaylistResult,
     TemplateSummaryItem,
 )
+from nomarr.helpers.exceptions import MisconfiguredError
 from nomarr.workflows.navidrome import (
     execute_smart_playlist_filter,
     generate_navidrome_config_workflow,
@@ -170,7 +171,14 @@ class NavidromeService:
                     file_ids=file_ids,
                 )
             except Exception:
-                logger.exception("Failed to push smart playlist '%s' to Navidrome", playlist_name)
+                logger.exception(
+                    "Failed to push smart playlist '%s' to Navidrome",
+                    playlist_name,
+                    extra={
+                        "playlist_name": playlist_name,
+                        "query": query,
+                    },
+                )
 
         return result
 
@@ -264,7 +272,6 @@ class NavidromeService:
             m3u_output_path=m3u_output_path,
         )
 
-
     # ------------------------------------------------------------------
     # API credentials (live from ConfigService)
     # ------------------------------------------------------------------
@@ -350,7 +357,10 @@ class NavidromeService:
             logger.info("Triggered %s Navidrome library rescan", scan_type)
             return True
         except Exception:
-            logger.exception("Failed to trigger Navidrome library rescan")
+            logger.exception(
+                "Failed to trigger Navidrome library rescan",
+                extra={"full_scan": full_scan},
+            )
             return False
 
     def ping(self) -> tuple[bool, str]:
@@ -396,7 +406,6 @@ class NavidromeService:
             user_id=api_user,
         )
 
-
     # ------------------------------------------------------------------
     # Similarity search
     # ------------------------------------------------------------------
@@ -435,7 +444,6 @@ class NavidromeService:
             vector_search_thoroughness=thoroughness,
         )
 
-
     # ------------------------------------------------------------------
     # Scrobble ingestion
     # ------------------------------------------------------------------
@@ -467,11 +475,11 @@ class NavidromeService:
         max_songs: int | None = None,
         min_songs: int | None = None,
         max_genre_playlists: int | None = None,
-    ) -> list[NavidromePersonalPlaylistEntry]:
+    ) -> NavidromeGeneratePlaylistsResult:
         """Generate personal playlists for a Navidrome user.
 
-        Reads backbone, library, and playlist config from ``ConfigService``,
-        then delegates to the playlist generation workflow.
+        Reads backbone, library, and ``pp_*`` playlist config from
+        ``ConfigService``, then delegates to the playlist generation workflow.
 
         Args:
             user_id: Navidrome user identifier.
@@ -481,52 +489,58 @@ class NavidromeService:
             max_genre_playlists: Override for max genre playlists (1-25). Falls back to config.
 
         Returns:
-            List of generated playlists with ``library_files/_id`` track lists.
+            DTO containing playlist generation status and generated playlists.
+
+        Raises:
+            MisconfiguredError: If ``library_key`` is not configured.
 
         """
         from nomarr.workflows.navidrome.generate_playlists_wf import generate_playlists
 
-        backbone_id: str = self._config_service.get("vector_backbone_id", "effnet-discogs")
+        backbone_id: str = self._config_service.get("pp_backbone_id", "effnet-discogs")
         library_key: str = self._config_service.get("library_key", "")
+        if not library_key:
+            raise MisconfiguredError("library_key not configured")
 
+        type_flag_keys = ["familiar", "discovery", "hidden_gems", "genre", "universal"]
         resolved_enabled_types = (
             enabled_types
             if enabled_types is not None
-            else self._config_service.get(
-                "playlist_enabled_types",
-                ["familiar", "discovery", "hidden_gems", "genre", "universal"],
-            )
+            else [t for t in type_flag_keys if self._config_service.get(f"pp_type_{t}", True)]
         )
-        resolved_max_songs = (
-            max_songs
-            if max_songs is not None
-            else self._config_service.get("playlist_max_songs", 50)
-        )
-        resolved_min_songs = (
-            min_songs
-            if min_songs is not None
-            else self._config_service.get("playlist_min_songs", 5)
-        )
+        resolved_max_songs = max_songs if max_songs is not None else self._config_service.get("pp_max_songs", 50)
+        resolved_min_songs = min_songs if min_songs is not None else self._config_service.get("pp_min_songs", 10)
         resolved_max_genre_playlists = min(
             max_genre_playlists
             if max_genre_playlists is not None
-            else self._config_service.get("playlist_max_genre_playlists", 5),
+            else self._config_service.get("pp_max_genre_playlists", 5),
             25,
         )
 
-        return generate_playlists(
+        playlists = generate_playlists(
             db=self._db,
             user_id=user_id,
             backbone_id=backbone_id,
             library_key=library_key,
             enabled_types=resolved_enabled_types,
-            half_life_days=self._config_service.get("playlist_half_life_days", 30.0),
-            top_n=self._config_service.get("playlist_top_n", 200),
+            half_life_days=self._config_service.get("pp_half_life_days", 30.0),
+            top_n=self._config_service.get("pp_top_n", 200),
             max_songs=resolved_max_songs,
-            min_play_count=self._config_service.get("playlist_min_play_count", 1),
+            min_play_count=self._config_service.get("pp_min_play_count", 3),
             min_songs=resolved_min_songs,
             max_genre_playlists=resolved_max_genre_playlists,
         )
+
+        if playlists:
+            result = NavidromeGeneratePlaylistsResult(status="ok", message="", playlists=playlists)
+        else:
+            result = NavidromeGeneratePlaylistsResult(
+                status="no_data",
+                message="No taste profile or no playlists generated",
+                playlists=[],
+            )
+
+        return result
 
     def resolve_files_to_nd(self, file_ids: list[str]) -> dict[str, str]:
         """Resolve ``library_files/_id`` values to Navidrome track IDs.
