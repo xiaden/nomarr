@@ -210,6 +210,7 @@ class CreateLibraryRequest(BaseModel):
     root_path: str
     is_enabled: bool = True
     watch_mode: str = "off"  # 'off', 'event', or 'poll' (default: 'off')
+    file_write_mode: str = "full"  # 'none', 'minimal', or 'full' (default: 'full')
 
 
 class UpdateLibraryRequest(BaseModel):

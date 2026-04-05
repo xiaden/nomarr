@@ -114,6 +114,7 @@ class LibraryAdminMixin:
         root_path: str,
         is_enabled: bool = True,
         watch_mode: str = "off",
+        file_write_mode: str = "full",
     ) -> LibraryDict:
         """Create a new library."""
         library_id = create_library(
@@ -123,6 +124,7 @@ class LibraryAdminMixin:
             root_path=root_path,
             is_enabled=is_enabled,
             watch_mode=watch_mode,
+            file_write_mode=file_write_mode,
         )
 
         library = self._get_library_or_error(library_id)

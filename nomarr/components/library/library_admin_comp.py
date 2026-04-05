@@ -31,6 +31,7 @@ def create_library(
     root_path: str,
     is_enabled: bool = True,
     watch_mode: str = "off",
+    file_write_mode: str = "full",
 ) -> str:
     """Create a new library with validation and name generation.
 
@@ -41,6 +42,7 @@ def create_library(
         root_path: Path to library root (must be within base_library_root)
         is_enabled: Whether library is enabled for scanning
         watch_mode: File watching mode ('off', 'event', or 'poll')
+        file_write_mode: Tag write mode ('none', 'minimal', or 'full')
 
     Returns:
         Created library ID
@@ -55,7 +57,11 @@ def create_library(
     resolved_name = _resolve_library_name(db, name, abs_path)
     try:
         library_id = db.libraries.create_library(
-            name=resolved_name, root_path=abs_path, is_enabled=is_enabled, watch_mode=watch_mode
+            name=resolved_name,
+            root_path=abs_path,
+            is_enabled=is_enabled,
+            watch_mode=watch_mode,
+            file_write_mode=file_write_mode,
         )
     except Exception as e:
         msg = f"Failed to create library: {e}"
