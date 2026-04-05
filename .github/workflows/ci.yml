@@ -71,6 +71,11 @@ jobs:
           source .venv/bin/activate
           mypy nomarr/ --config-file pyproject.toml
 
+      - name: Import linter
+        run: |
+          source .venv/bin/activate
+          lint-imports
+
   frontend-test:
     runs-on: ubuntu-latest
     permissions:
@@ -88,6 +93,13 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm ci --prefix frontend
+
+      - name: Lint (ESLint)
+        run: npm run lint --prefix frontend
+
+      - name: Type check (TypeScript)
+        run: npx tsc -b --noEmit
+        working-directory: frontend
 
       - name: Run frontend tests
         run: npm run test --prefix frontend
