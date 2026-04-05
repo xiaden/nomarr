@@ -41,13 +41,13 @@ jobs:
           SHORT_SHA="${SHA:0:7}"
           BASE_VERSION=$(cat BASE_VERSION)
 
-          if [ "${{ github.ref_name }}" == "main" ]; then
-            MUTABLE_TAG="latest"
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            TAGS="${REPO}:latest,${REPO}:v${BASE_VERSION},${REPO}:sha-${SHORT_SHA}"
+          elif [ "${{ github.ref_name }}" = "develop" ]; then
+            TAGS="${REPO}:develop,${REPO}:v${BASE_VERSION},${REPO}:sha-${SHORT_SHA}"
           else
-            MUTABLE_TAG="develop"
+            TAGS="${REPO}:sha-${SHORT_SHA}"
           fi
-
-          TAGS="${REPO}:v${BASE_VERSION},${REPO}:${MUTABLE_TAG},${REPO}:sha-${SHORT_SHA}"
 
           echo "tags=${TAGS}" >> $GITHUB_OUTPUT
           echo "Image tags: ${TAGS}"
