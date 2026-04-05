@@ -1,14 +1,15 @@
-name: Auto-merge develop → main
+name: Merge develop → main
 
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
-    branches: [develop]
+  workflow_dispatch:
+    inputs:
+      merge_message:
+        description: "Merge commit message"
+        required: false
+        default: "chore: merge develop into main"
 
 jobs:
-  auto-merge:
-    if: github.event.workflow_run.conclusion == 'success'
+  merge:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -21,11 +22,12 @@ jobs:
       - name: Create or merge PR from develop to main
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MERGE_MESSAGE: ${{ github.event.inputs.merge_message }}
         run: |
           PR_URL=$(gh pr list --base main --head develop --json url --jq '.[0].url // empty')
           if [ -z "$PR_URL" ]; then
             PR_URL=$(gh pr create --base main --head develop \
-              --title "chore: merge develop into main" \
-              --body "Auto-created by CI after successful develop build.")
+              --title "$MERGE_MESSAGE" \
+              --body "Manually triggered merge from develop to main.")
           fi
-          gh pr merge "$PR_URL" --merge --auto
+          gh pr merge "$PR_URL" --merge
