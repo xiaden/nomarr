@@ -3,6 +3,7 @@
 Provides safe, read-only browsing of the music library directory.
 All paths are resolved and validated to prevent directory traversal attacks.
 """
+
 from __future__ import annotations
 
 import logging
@@ -19,8 +20,13 @@ from nomarr.interfaces.api.web.dependencies import get_config
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/fs", tags=["filesystem"])
 
+
 @router.get("/list")
-async def list_directory(path: Annotated[str, Query(description="Relative path from library root")]="", config: dict=Depends(get_config), _session: dict=Depends(verify_session)) -> dict[str, Any]:
+async def list_directory(
+    path: Annotated[str, Query(description="Relative path from library root")] = "",
+    config: dict = Depends(get_config),
+    _session: dict = Depends(verify_session),
+) -> dict[str, Any]:
     """List contents of a directory within the music library.
 
     Security features:
@@ -52,7 +58,9 @@ async def list_directory(path: Annotated[str, Query(description="Relative path f
     if not library_root:
         raise HTTPException(status_code=503, detail="Library path not configured. Set library_root in config.yaml")
     try:
-        requested_path = resolve_library_path(library_root=library_root, user_path=path, must_exist=True, must_be_file=False)
+        requested_path = resolve_library_path(
+            library_root=library_root, user_path=path, must_exist=True, must_be_file=False
+        )
         library_root = Path(library_root).resolve()
         entries: list[dict[str, str | bool]] = []
         for item in requested_path.iterdir():
@@ -84,4 +92,6 @@ async def list_directory(path: Annotated[str, Query(description="Relative path f
         raise
     except Exception as e:
         logger.exception(f"[FS Browser] Error listing directory: {e}")
-        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Internal error while listing directory")) from e
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Internal error while listing directory")
+        ) from e

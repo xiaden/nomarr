@@ -78,9 +78,7 @@ def compute_taste_profile(
     vector_docs = cold_ops.get_vectors_by_file_ids(file_ids)  # type: ignore[arg-type]
 
     # Build file_id → vector mapping
-    vector_map: dict[str, list[float]] = {
-        doc["file_id"]: doc["vector"] for doc in vector_docs if "vector" in doc
-    }
+    vector_map: dict[str, list[float]] = {doc["file_id"]: doc["vector"] for doc in vector_docs if "vector" in doc}
 
     # Step 4: Pair plays with their vectors, dropping those without embeddings
     paired: list[tuple[TrackPlayData, list[float]]] = []

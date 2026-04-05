@@ -34,5 +34,9 @@ class UpdateLibraryMetadataComp:
 
         """
         self.db.libraries.update_library(
-            library_id, name=name, is_enabled=is_enabled, watch_mode=watch_mode, file_write_mode=file_write_mode,
+            library_id,
+            name=name,
+            is_enabled=is_enabled,
+            watch_mode=watch_mode,
+            file_write_mode=file_write_mode,
         )

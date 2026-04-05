@@ -282,9 +282,7 @@ def probe_all_models(db: Database, models_dir: str) -> None:
     # Generate synthetic probe waveform — long enough for a full backbone batch
     probe_waveform = _make_probe_waveform()
 
-    all_models: list[tuple[BaseONNXModel, np.ndarray | None]] = [
-        (m, probe_waveform) for m in backbones
-    ] + [
+    all_models: list[tuple[BaseONNXModel, np.ndarray | None]] = [(m, probe_waveform) for m in backbones] + [
         (m, None) for m in heads
     ]
 

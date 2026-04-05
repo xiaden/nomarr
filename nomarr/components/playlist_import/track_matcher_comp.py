@@ -113,10 +113,7 @@ def match_track(
 
     # Strategy 2: Exact normalized title + artist match
     for lib_track in library_tracks:
-        if (
-            lib_track.normalized_title == input_title_norm
-            and lib_track.normalized_artist == input_artist_norm
-        ):
+        if lib_track.normalized_title == input_title_norm and lib_track.normalized_artist == input_artist_norm:
             return MatchResult(
                 input_track=input_track,
                 status="exact_metadata",
@@ -126,7 +123,6 @@ def match_track(
 
     # Strategy 3: Fuzzy matching
     return _fuzzy_match(input_track, input_title_norm, input_artist_norm, library_tracks)
-
 
 
 def _fuzzy_match(
@@ -153,14 +149,10 @@ def _fuzzy_match(
 
     for lib_track in library_tracks:
         # Score title (weighted more heavily)
-        title_score = fuzz.token_sort_ratio(
-            input_title_norm, lib_track.normalized_title
-        )
+        title_score = fuzz.token_sort_ratio(input_title_norm, lib_track.normalized_title)
 
         # Score artist
-        artist_score = fuzz.token_sort_ratio(
-            input_artist_norm, lib_track.normalized_artist
-        )
+        artist_score = fuzz.token_sort_ratio(input_artist_norm, lib_track.normalized_artist)
 
         # Combined score: title 70%, artist 30%
         combined_score = (title_score * 0.7) + (artist_score * 0.3)
@@ -212,7 +204,6 @@ def _fuzzy_match(
         matched_file=_to_file_info(best_match),
         alternatives=tuple(alt_infos),
     )
-
 
 
 def match_tracks(

@@ -10,7 +10,6 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
@@ -181,11 +180,7 @@ def compute_reconciliation_info(
 
     # Get libraries with write modes that use mood tags
     all_libraries = db.libraries.list_libraries()
-    writable_libraries = {
-        lib["_id"]: lib
-        for lib in all_libraries
-        if lib.get("file_write_mode") in ("minimal", "full")
-    }
+    writable_libraries = {lib["_id"]: lib for lib in all_libraries if lib.get("file_write_mode") in ("minimal", "full")}
 
     if not writable_libraries:
         return {"requires_reconciliation": False, "affected_libraries": []}
@@ -211,8 +206,6 @@ def compute_reconciliation_info(
         "requires_reconciliation": len(affected_libraries) > 0,
         "affected_libraries": affected_libraries,
     }
-
-
 
 
 def clear_all_calibration_data(db: Database) -> dict[str, int]:

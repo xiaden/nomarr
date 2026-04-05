@@ -11,7 +11,6 @@ from nomarr.services.infrastructure.config_svc import ConfigService
 logger = logging.getLogger(__name__)
 
 
-
 class VectorSearchService:
     """Service for vector similarity search operations.
 
@@ -133,9 +132,7 @@ class VectorSearchService:
             raise RuntimeError(f"Vector search failed: {e}") from e
 
         # Apply min_score filtering
-        filtered_results = [
-            result for result in raw_results if result.get("score", 0.0) >= min_score
-        ]
+        filtered_results = [result for result in raw_results if result.get("score", 0.0) >= min_score]
 
         logger.debug(
             f"Vector search: backbone={backbone_id}, library={target_library}, limit={limit}, nprobe={nprobe}, "
@@ -143,7 +140,6 @@ class VectorSearchService:
         )
 
         return filtered_results
-
 
     def _search_fan_out(
         self,
@@ -223,9 +219,7 @@ class VectorSearchService:
         )
         return unique[:limit]
 
-    def get_track_vector(
-        self, backbone_id: str, file_id: str
-    ) -> dict[str, Any] | None:
+    def get_track_vector(self, backbone_id: str, file_id: str) -> dict[str, Any] | None:
         """Get vector for a specific track.
 
         Delegates to the get_track_vector workflow, which resolves the

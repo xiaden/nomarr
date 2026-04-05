@@ -86,7 +86,6 @@ def crawl_navidrome_songs(client: SubsonicClient) -> list[CrawledSong]:
     return all_songs
 
 
-
 def _parse_played_to_ms(played: str) -> int:
     """Convert Subsonic ``played`` datetime string to epoch milliseconds.
 

@@ -1,4 +1,5 @@
 """Calibration management endpoints for web UI."""
+
 import logging
 from typing import TYPE_CHECKING, Annotated, Any
 
@@ -40,8 +41,11 @@ async def clear_calibration(
             detail=sanitize_exception_message(e, "Failed to clear calibration data"),
         ) from e
 
+
 @router.post("/start-apply", dependencies=[Depends(verify_session)])
-async def start_apply_calibration(tagging_service: Annotated["TaggingService", Depends(get_tagging_service)]) -> dict[str, Any]:
+async def start_apply_calibration(
+    tagging_service: Annotated["TaggingService", Depends(get_tagging_service)],
+) -> dict[str, Any]:
     """Start calibration apply in background thread.
 
     Non-blocking: returns immediately. Use GET /apply-status to check progress.
@@ -58,11 +62,15 @@ async def start_apply_calibration(tagging_service: Annotated["TaggingService", D
         return {"status": "started", "message": "Calibration apply started in background"}
     except Exception as e:
         logger.error(f"[Web API] Failed to start calibration apply: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to start calibration apply")) from e
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Failed to start calibration apply")
+        ) from e
 
 
 @router.get("/apply-status", dependencies=[Depends(verify_session)])
-async def get_apply_calibration_status(tagging_service: Annotated["TaggingService", Depends(get_tagging_service)]) -> dict[str, Any]:
+async def get_apply_calibration_status(
+    tagging_service: Annotated["TaggingService", Depends(get_tagging_service)],
+) -> dict[str, Any]:
     """Get status of background calibration apply.
 
     Returns:
@@ -78,7 +86,9 @@ async def get_apply_calibration_status(tagging_service: Annotated["TaggingServic
 
 
 @router.get("/apply-progress", dependencies=[Depends(verify_session)])
-async def get_apply_calibration_progress(tagging_service: Annotated["TaggingService", Depends(get_tagging_service)]) -> dict[str, Any]:
+async def get_apply_calibration_progress(
+    tagging_service: Annotated["TaggingService", Depends(get_tagging_service)],
+) -> dict[str, Any]:
     """Get per-file progress of calibration apply.
 
     Returns:
@@ -92,8 +102,11 @@ async def get_apply_calibration_progress(tagging_service: Annotated["TaggingServ
     """
     return tagging_service.get_apply_progress()
 
+
 @router.get("/status", dependencies=[Depends(verify_session)])
-async def get_calibration_status(tagging_service: Annotated["TaggingService", Depends(get_tagging_service)]) -> dict[str, Any]:
+async def get_calibration_status(
+    tagging_service: Annotated["TaggingService", Depends(get_tagging_service)],
+) -> dict[str, Any]:
     """Get current calibration status with per-library breakdown.
 
     Returns:
@@ -117,10 +130,15 @@ async def get_calibration_status(tagging_service: Annotated["TaggingService", De
         return tagging_service.get_calibration_status()
     except Exception as e:
         logger.exception("[Web API] Error fetching calibration status")
-        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get calibration status")) from e
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Failed to get calibration status")
+        ) from e
+
 
 @router.post("/start-histogram", dependencies=[Depends(verify_session)])
-async def start_histogram_calibration_background(calibration_service: Annotated["CalibrationService", Depends(get_calibration_service)]) -> dict[str, Any]:
+async def start_histogram_calibration_background(
+    calibration_service: Annotated["CalibrationService", Depends(get_calibration_service)],
+) -> dict[str, Any]:
     """Start histogram-based calibration generation in background thread.
 
     Non-blocking: returns immediately. Use GET /calibration/histogram-status to check progress.
@@ -141,8 +159,11 @@ async def start_histogram_calibration_background(calibration_service: Annotated[
         logger.error(f"[Web] Failed to start histogram calibration: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to start calibration")) from e
 
+
 @router.get("/histogram-status", dependencies=[Depends(verify_session)])
-async def get_histogram_calibration_status(calibration_service: Annotated["CalibrationService", Depends(get_calibration_service)]) -> dict[str, Any]:
+async def get_histogram_calibration_status(
+    calibration_service: Annotated["CalibrationService", Depends(get_calibration_service)],
+) -> dict[str, Any]:
     """Get status of histogram-based calibration generation.
 
     Returns:
@@ -158,10 +179,15 @@ async def get_histogram_calibration_status(calibration_service: Annotated["Calib
         return calibration_service.get_generation_status()
     except Exception as e:
         logger.error(f"[Web] Failed to get histogram calibration status: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get calibration status")) from e
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Failed to get calibration status")
+        ) from e
+
 
 @router.get("/histogram-progress", dependencies=[Depends(verify_session)])
-async def get_histogram_calibration_progress(calibration_service: Annotated["CalibrationService", Depends(get_calibration_service)]) -> dict[str, Any]:
+async def get_histogram_calibration_progress(
+    calibration_service: Annotated["CalibrationService", Depends(get_calibration_service)],
+) -> dict[str, Any]:
     """Get per-head progress of histogram calibration generation.
 
     Returns:
@@ -178,10 +204,15 @@ async def get_histogram_calibration_progress(calibration_service: Annotated["Cal
         return calibration_service.get_generation_progress()
     except Exception as e:
         logger.error(f"[Web] Failed to get histogram calibration progress: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get calibration progress")) from e
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Failed to get calibration progress")
+        ) from e
+
 
 @router.get("/history", dependencies=[Depends(verify_session)])
-async def get_calibration_history_all(limit: int=100, calibration_service: "CalibrationService"=Depends(get_calibration_service)) -> dict[str, Any]:
+async def get_calibration_history_all(
+    limit: int = 100, calibration_service: "CalibrationService" = Depends(get_calibration_service)
+) -> dict[str, Any]:
     """Get calibration convergence history for all heads.
 
     Query params:
@@ -203,10 +234,15 @@ async def get_calibration_history_all(limit: int=100, calibration_service: "Cali
         return calibration_service.get_calibration_history(limit=limit)
     except Exception as e:
         logger.error(f"[Web] Failed to get calibration history: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get calibration history")) from e
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Failed to get calibration history")
+        ) from e
+
 
 @router.get("/history/{calibration_key:path}", dependencies=[Depends(verify_session)])
-async def get_calibration_history_single(calibration_key: str, limit: int=100, calibration_service: "CalibrationService"=Depends(get_calibration_service)) -> dict[str, Any]:
+async def get_calibration_history_single(
+    calibration_key: str, limit: int = 100, calibration_service: "CalibrationService" = Depends(get_calibration_service)
+) -> dict[str, Any]:
     """Get calibration convergence history for a specific head.
 
     Path params:
@@ -229,10 +265,15 @@ async def get_calibration_history_single(calibration_key: str, limit: int=100, c
         return calibration_service.get_calibration_history(calibration_key=calibration_key, limit=limit)
     except Exception as e:
         logger.error(f"[Web] Failed to get calibration history for {calibration_key}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get calibration history")) from e
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Failed to get calibration history")
+        ) from e
+
 
 @router.get("/convergence", dependencies=[Depends(verify_session)], deprecated=True)
-async def get_convergence_status(calibration_service: Annotated["CalibrationService", Depends(get_calibration_service)]) -> dict[str, Any]:
+async def get_convergence_status(
+    calibration_service: Annotated["CalibrationService", Depends(get_calibration_service)],
+) -> dict[str, Any]:
     """[DEPRECATED] Get latest convergence status for all heads.
 
     Relies on calibration_history collection from progressive calibration.
@@ -256,8 +297,9 @@ async def get_convergence_status(calibration_service: Annotated["CalibrationServ
         return calibration_service.get_latest_convergence_status()
     except Exception as e:
         logger.error(f"[Web] Failed to get convergence status: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get convergence status")) from e
-
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Failed to get convergence status")
+        ) from e
 
 
 @router.get("/histogram/{model_key}/{head_name}/{label}", dependencies=[Depends(verify_session)])

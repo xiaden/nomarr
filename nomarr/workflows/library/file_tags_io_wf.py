@@ -67,4 +67,3 @@ def remove_file_tags_workflow(db: Database, path: str, namespace: str) -> int:
 
     # Remove tags using component
     return remove_tags_from_file(library_path, namespace)
-

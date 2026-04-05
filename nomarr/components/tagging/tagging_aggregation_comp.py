@@ -316,7 +316,12 @@ def _compute_suppressed_keys(
 
     """
     _tier_rank: dict[str, int] = {
-        "high": 3, "strict": 3, "medium": 2, "norm": 2, "normal": 2, "low": 1,
+        "high": 3,
+        "strict": 3,
+        "medium": 2,
+        "norm": 2,
+        "normal": 2,
+        "low": 1,
     }
     tiered = [ho for ho in head_outputs if ho.tier is not None]
     suppressed: set[str] = set()
@@ -336,7 +341,10 @@ def _compute_suppressed_keys(
                 suppressed.add(ho.model_key)
                 logger.debug(
                     "[aggregation] Intra-head suppress: %s (%s) loses to %s (%s)",
-                    ho.model_key, ho.tier, best.model_key, best.tier,
+                    ho.model_key,
+                    ho.tier,
+                    best.model_key,
+                    best.tier,
                 )
 
     # --- Cross-head pass -------------------------------------------------
@@ -354,7 +362,10 @@ def _compute_suppressed_keys(
                 suppressed.add(ho_b.model_key)
                 logger.debug(
                     "[aggregation] Cross-head suppress: %s (%s) vs %s (%s) — semantic conflict",
-                    ho_a.model_key, ho_a.label, ho_b.model_key, ho_b.label,
+                    ho_a.model_key,
+                    ho_a.label,
+                    ho_b.model_key,
+                    ho_b.label,
                 )
 
     return suppressed
@@ -461,7 +472,6 @@ def aggregate_mood_tiers(
     suppressed_keys = _compute_suppressed_keys(head_outputs, OPPONENT_MAP)
     tier_sets = _build_tier_term_sets(tier_map, suppressed_keys)
     return _make_inclusive_mood_tags(tier_sets.strict_terms, tier_sets.regular_terms, tier_sets.loose_terms)
-
 
 
 def collect_mood_outputs(

@@ -85,7 +85,9 @@ class ComputeEmbeddingsForBackboneParams:
     allow_short: bool
     prefer_gpu: bool = True  # GPU/CPU adaptive: False forces CPU execution
     pre_loaded_audio: LoadAudioMonoResult | None = None  # Skip audio loading if provided
-    pre_computed_chromaprint: str | None = None  # Skip chromaprint if provided  # GPU/CPU adaptive: False forces CPU execution
+    pre_computed_chromaprint: str | None = (
+        None  # Skip chromaprint if provided  # GPU/CPU adaptive: False forces CPU execution
+    )
 
 
 @dataclass
@@ -106,7 +108,6 @@ class AnalyzeWithSegmentsResult:
     pooled_vector: Any  # np.ndarray - pooled embedding vector
     segments: Any  # Segments object with waves and bounds
     duration: float  # audio duration in seconds
-
 
 
 @dataclass

@@ -28,7 +28,6 @@ class InvalidIdFormatError(ValueError):
     """Raised when an ID has an invalid format for encoding/decoding."""
 
 
-
 def encode_id(arango_id: str) -> str:
     """Encode an ArangoDB _id for HTTP transport.
 

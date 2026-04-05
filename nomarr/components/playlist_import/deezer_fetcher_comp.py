@@ -23,7 +23,6 @@ class DeezerFetchError(Exception):
     """Raised when Deezer API request fails."""
 
 
-
 def resolve_short_link(short_url: str) -> str:
     """Resolve a Deezer short link to get the actual playlist ID.
 
@@ -40,9 +39,7 @@ def resolve_short_link(short_url: str) -> str:
     """
     try:
         # Follow redirects but don't download full response
-        response = requests.head(
-            short_url, allow_redirects=True, timeout=_REQUEST_TIMEOUT
-        )
+        response = requests.head(short_url, allow_redirects=True, timeout=_REQUEST_TIMEOUT)
         final_url = response.url
 
         # Extract playlist ID from final URL (e.g., deezer.com/playlist/12345)
@@ -52,9 +49,7 @@ def resolve_short_link(short_url: str) -> str:
                 # Remove any query params
                 return parts[1].split("?")[0].split("/")[0]
 
-        raise DeezerFetchError(
-            f"Short link did not resolve to a playlist URL: {final_url}"
-        )
+        raise DeezerFetchError(f"Short link did not resolve to a playlist URL: {final_url}")
 
     except requests.RequestException as e:
         raise DeezerFetchError(f"Failed to resolve short link: {e}") from e

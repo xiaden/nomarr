@@ -77,8 +77,7 @@ def register_vram_promise(
 
     if registered:
         logger.debug(
-            "[vram_coordinator] Registered promise: worker=%s model=%s promised=%.0f MB "
-            "(total=%.0f used=%.0f)",
+            "[vram_coordinator] Registered promise: worker=%s model=%s promised=%.0f MB (total=%.0f used=%.0f)",
             worker_id,
             model_path,
             promised_mb,

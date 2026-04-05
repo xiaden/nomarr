@@ -87,10 +87,7 @@ class TestCrawlNavidromeSongs:
 
     def test_pagination_walks_all_pages(self) -> None:
         albums = [{"id": f"al-{i}"} for i in range(3)]
-        album_details = {
-            f"al-{i}": {"song": [{"id": f"s-{i}", "path": f"/music/t{i}.mp3"}]}
-            for i in range(3)
-        }
+        album_details = {f"al-{i}": {"song": [{"id": f"s-{i}", "path": f"/music/t{i}.mp3"}]} for i in range(3)}
         client = _make_mock_client(albums, album_details)
 
         result = crawl_navidrome_songs(client)

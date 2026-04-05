@@ -97,7 +97,8 @@ def scan_library_quick_workflow(
         if vanished_folder_paths:
             missing_docs_map.update(
                 db.library_files.get_files_for_folders(
-                    library_id, list(vanished_folder_paths),
+                    library_id,
+                    list(vanished_folder_paths),
                 ),
             )
 
@@ -111,11 +112,7 @@ def scan_library_quick_workflow(
         for folder in all_folders:
             # Cache check: skip if folder mtime and file_count match DB record
             cached = cached_folders.get(folder.rel_path)
-            if (
-                cached
-                and cached["mtime"] == folder.mtime
-                and cached["file_count"] == folder.file_count
-            ):
+            if cached and cached["mtime"] == folder.mtime and cached["file_count"] == folder.file_count:
                 stats["folders_skipped"] += 1
                 logger.debug("Skipping unchanged folder: %s", folder.rel_path)
                 continue
@@ -126,7 +123,8 @@ def scan_library_quick_workflow(
                 try:
                     # Fetch only this folder's files from DB
                     existing_for_folder = db.library_files.get_files_for_folder(
-                        library_id, folder.rel_path,
+                        library_id,
+                        folder.rel_path,
                     )
                     batch = scan_folder_files(
                         folder_path=Path(folder.abs_path),
@@ -149,20 +147,12 @@ def scan_library_quick_workflow(
 
                     # Files in DB for this folder that are no longer on disk → could be moves
                     missing_docs_map.update(
-                        {
-                            path: doc
-                            for path, doc in existing_for_folder.items()
-                            if path not in batch.discovered_paths
-                        }
+                        {path: doc for path, doc in existing_for_folder.items() if path not in batch.discovered_paths}
                     )
 
                     # Split entries: updated (DB knows them) vs new to this folder
-                    updated_entries = [
-                        e for e in batch.file_entries if e["path"] in existing_for_folder
-                    ]
-                    new_entries = [
-                        e for e in batch.file_entries if e["path"] not in existing_for_folder
-                    ]
+                    updated_entries = [e for e in batch.file_entries if e["path"] in existing_for_folder]
+                    new_entries = [e for e in batch.file_entries if e["path"] not in existing_for_folder]
 
                     # Upsert updated entries immediately
                     if updated_entries:
@@ -179,19 +169,22 @@ def scan_library_quick_workflow(
                     # Incremental move detection for new entries
                     if has_tagged_files and new_entries:
                         move_result = detect_file_moves(
-                            list(missing_docs_map.values()), new_entries, db,
+                            list(missing_docs_map.values()),
+                            new_entries,
+                            db,
                         )
                         if move_result.moves:
                             apply_detected_moves(
-                                move_result.moves, all_metadata, db, library_root,
+                                move_result.moves,
+                                all_metadata,
+                                db,
+                                library_root,
                             )
                             stats["files_moved"] += move_result.files_moved_count
                             for m in move_result.moves:
                                 missing_docs_map.pop(m.old_path, None)
                         matched_new_paths = {m.new_path for m in move_result.moves}
-                        folder_unmatched = [
-                            e for e in new_entries if e["path"] not in matched_new_paths
-                        ]
+                        folder_unmatched = [e for e in new_entries if e["path"] not in matched_new_paths]
                         unmatched_new.extend(folder_unmatched)
                         unmatched_edge_bootstraps.extend(batch.edge_bootstraps)
                         for e in folder_unmatched:
@@ -233,9 +226,7 @@ def scan_library_quick_workflow(
                             e,
                         )
                         stats["files_failed"] += folder.file_count
-                        warnings.append(
-                            f"Folder {folder.rel_path!r} skipped after error: {e}"
-                        )
+                        warnings.append(f"Folder {folder.rel_path!r} skipped after error: {e}")
 
             update_scan_progress(db, library_id, progress=len(all_discovered_paths))
 
@@ -243,19 +234,22 @@ def scan_library_quick_workflow(
         truly_new: list[dict[str, Any]] = []
         if unmatched_new and has_tagged_files:
             final_move_result = detect_file_moves(
-                list(missing_docs_map.values()), unmatched_new, db,
+                list(missing_docs_map.values()),
+                unmatched_new,
+                db,
             )
             if final_move_result.moves:
                 apply_detected_moves(
-                    final_move_result.moves, all_metadata, db, library_root,
+                    final_move_result.moves,
+                    all_metadata,
+                    db,
+                    library_root,
                 )
                 stats["files_moved"] += final_move_result.files_moved_count
                 for m in final_move_result.moves:
                     missing_docs_map.pop(m.old_path, None)
                 moved_new_paths = {m.new_path for m in final_move_result.moves}
-                truly_new = [
-                    e for e in unmatched_new if e["path"] not in moved_new_paths
-                ]
+                truly_new = [e for e in unmatched_new if e["path"] not in moved_new_paths]
             else:
                 truly_new = unmatched_new
 
@@ -279,9 +273,7 @@ def scan_library_quick_workflow(
         cleanup_stale_folders(db, library_id, discovered_folder_paths)
 
         # Step 9 — Entity graph cleanup (skip when scan was a no-op)
-        has_changes = (
-            stats["files_added"] + stats["files_updated"] + stats["files_removed"] + stats["files_moved"] > 0
-        )
+        has_changes = stats["files_added"] + stats["files_updated"] + stats["files_removed"] + stats["files_moved"] > 0
         if has_changes:
             try:
                 cleanup_orphaned_entities_workflow(db, dry_run=False)
@@ -292,7 +284,11 @@ def scan_library_quick_workflow(
         scan_duration = internal_s().value - start_time.value
         mark_scan_completed(db, library_id)
         update_scan_progress(
-            db, library_id, status="complete", progress=stats["files_discovered"], scan_error=None,
+            db,
+            library_id,
+            status="complete",
+            progress=stats["files_discovered"],
+            scan_error=None,
         )
 
         scan_log = logger.info if has_changes or stats["files_failed"] else logger.debug

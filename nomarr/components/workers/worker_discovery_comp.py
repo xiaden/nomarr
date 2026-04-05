@@ -145,4 +145,3 @@ def release_claims_for_worker(db: Database, worker_id: str) -> list[str]:
 
     """
     return db.worker_claims.release_claims_for_worker(worker_id)
-

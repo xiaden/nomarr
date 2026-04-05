@@ -16,9 +16,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def list_hot_vector_targets(
-    db: Database, models_dir: str
-) -> list[tuple[str, str]]:
+def list_hot_vector_targets(db: Database, models_dir: str) -> list[tuple[str, str]]:
     """Find all (backbone_id, library_key) pairs with pending hot vectors.
 
     Enumerates backbones from the filesystem and libraries from the database,
@@ -96,5 +94,3 @@ def compute_promotion_nlists(db: Database, backbone_id: str, library_key: str) -
         cold_count = db.get_vectors_track_cold(backbone_id, library_key).count()
 
     return compute_nlists(hot_count + cold_count, group_size)
-
-

@@ -138,12 +138,7 @@ def scan_folder_files(
 
             # Override: files too short for ML get skipped at scan time
             duration = metadata.get("duration")
-            if (
-                not skip_ml
-                and min_duration_s is not None
-                and duration is not None
-                and duration < min_duration_s
-            ):
+            if not skip_ml and min_duration_s is not None and duration is not None and duration < min_duration_s:
                 skip_ml = True
                 ml_skip_reason = "too_short"
 
@@ -162,11 +157,13 @@ def scan_folder_files(
 
             # Track edge bootstrap data for post-upsert processing
             if skip_ml:
-                edge_bootstraps.append({
-                    "normalized_path": normalized_path,
-                    "type": "ml_tagged",
-                    "version": "scan_skipped" if ml_skip_reason else tagger_version,
-                })
+                edge_bootstraps.append(
+                    {
+                        "normalized_path": normalized_path,
+                        "type": "ml_tagged",
+                        "version": "scan_skipped" if ml_skip_reason else tagger_version,
+                    }
+                )
             # Store metadata for entity seeding
             metadata_map[file_path_str] = metadata
 

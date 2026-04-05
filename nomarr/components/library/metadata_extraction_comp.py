@@ -389,7 +389,6 @@ def _get_first(tags: Any, key: str) -> str | None:
     return None
 
 
-
 def compute_chromaprint_for_file(path: LibraryPath) -> str:
     """Compute chromaprint for an audio file.
 

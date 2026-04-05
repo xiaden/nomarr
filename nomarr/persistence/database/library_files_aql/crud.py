@@ -166,7 +166,6 @@ class LibraryFilesCrudMixin:
             bind_vars={"file_id": file_id},
         )
 
-
         # Delete file state edges
         if self.parent_db is not None:
             self.parent_db.file_states.clear_all_states(file_id)
@@ -401,7 +400,6 @@ class LibraryFilesCrudMixin:
         results = list(cursor)
         return results[0] if results else 0
 
-
     def delete_files_for_library(self, library_id: str) -> int:
         """Delete all files for a library and cascade to derived data.
 
@@ -492,7 +490,6 @@ class LibraryFilesCrudMixin:
         )
         results = list(cursor)
         return results[0] if results else 0
-
 
     def get_file_library_key(self, file_id: str) -> str | None:
         """Return the library ``_key`` for a given file document ID.

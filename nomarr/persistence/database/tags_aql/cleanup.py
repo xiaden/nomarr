@@ -9,7 +9,6 @@ if TYPE_CHECKING:
     from arango.cursor import Cursor
 
 
-
 logger = logging.getLogger(__name__)
 
 

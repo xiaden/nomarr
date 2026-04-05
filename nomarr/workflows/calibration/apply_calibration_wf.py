@@ -143,10 +143,7 @@ def apply_calibration_wf(
 
         # Prefetch DB data for this chunk only
         _t_prefetch_start = internal_ms()
-        logger.info(
-            f"[apply_calibration] Chunk {chunk_num}/{n_chunks}: "
-            f"prefetching DB data for {chunk_size} files..."
-        )
+        logger.info(f"[apply_calibration] Chunk {chunk_num}/{n_chunks}: prefetching DB data for {chunk_size} files...")
         prefetched_file_docs = db.library_files.get_files_by_paths_bulk(chunk_paths)
         all_file_ids = [doc["_id"] for doc in prefetched_file_docs.values()]
         prefetched_tags = db.tags.get_nomarr_tags_bulk(all_file_ids) if all_file_ids else {}
@@ -221,10 +218,7 @@ def apply_calibration_wf(
         batch_ctx.prefetched_tags = None
         batch_ctx.prefetched_stats = None
 
-        logger.debug(
-            f"[apply_calibration] Chunk {chunk_num}/{n_chunks} done in "
-            f"{_t_io_chunk:.2f}s I/O"
-        )
+        logger.debug(f"[apply_calibration] Chunk {chunk_num}/{n_chunks} done in {_t_io_chunk:.2f}s I/O")
 
     _t_total = (internal_ms().value - _t0.value) / 1000
     logger.info(

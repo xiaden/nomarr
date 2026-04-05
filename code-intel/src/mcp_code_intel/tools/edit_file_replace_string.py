@@ -143,7 +143,7 @@ def _extract_line_context(
     result_lines = []
     for i in range(context_start, context_end):
         line_num = i + 1  # 1-indexed for display
-        line_content = lines[i].rstrip('\n\r')  # Remove trailing newlines for display
+        line_content = lines[i].rstrip("\n\r")  # Remove trailing newlines for display
         result_lines.append(f"{line_num:4d} | {line_content}")
 
     return "\n".join(result_lines)
@@ -168,8 +168,7 @@ def _calculate_new_positions(
 
     # Create list of (original_start, original_end, new_string_len, original_index)
     indexed_edits = [
-        (start, end, len(new_string), i)
-        for i, (start, end, new_string) in enumerate(edits)
+        (start, end, len(new_string), i) for i, (start, end, new_string) in enumerate(edits)
     ]
 
     # Sort by position (ascending) to process from start to end
@@ -186,7 +185,7 @@ def _calculate_new_positions(
         new_positions[idx] = (new_start, new_end)
 
         # Update cumulative offset for next edit
-        cumulative_offset += (new_len - old_len)
+        cumulative_offset += new_len - old_len
 
     # All positions should be filled
     return [pos for pos in new_positions if pos is not None]
@@ -266,13 +265,15 @@ def _validate_all_replacements_upfront(
                 # Track all original spans and edit indices for context extraction
                 edit_end_idx = len(edits)
                 edit_start_idx = edit_end_idx - len(spans_for_this_rep)
-                details.append({
-                    "old_string_preview": old_preview,
-                    "status": "valid",
-                    "original_spans": spans_for_this_rep,
-                    "edit_indices": list(range(edit_start_idx, edit_end_idx)),
-                    "new_string_len": len(normalized_new),
-                })
+                details.append(
+                    {
+                        "old_string_preview": old_preview,
+                        "status": "valid",
+                        "original_spans": spans_for_this_rep,
+                        "edit_indices": list(range(edit_start_idx, edit_end_idx)),
+                        "new_string_len": len(normalized_new),
+                    }
+                )
 
     if errors:
         return {
@@ -317,10 +318,10 @@ def _write_and_build_result(
             "path": rel_path,
             "error": mtime_error,
             "changed": False,
-            "details": [{
-                "old_string_preview": d.get("old_string_preview", ""),
-                "status": d["status"]
-            } for d in details],
+            "details": [
+                {"old_string_preview": d.get("old_string_preview", ""), "status": d["status"]}
+                for d in details
+            ],
         }
     if new_content == content:
         return {
@@ -351,20 +352,27 @@ def _write_and_build_result(
                 if edit_idx < len(new_positions):
                     new_start, new_end = new_positions[edit_idx]
                     context = _extract_line_context(
-                        new_content, new_start, new_end, context_lines=2,
+                        new_content,
+                        new_start,
+                        new_end,
+                        context_lines=2,
                     )
                     contexts.append(context)
-            final_details.append({
-                "status": "applied",
-                "matches_replaced": len(d["edit_indices"]),
-                "new_context": "\n---\n".join(contexts) if contexts else "",
-            })
+            final_details.append(
+                {
+                    "status": "applied",
+                    "matches_replaced": len(d["edit_indices"]),
+                    "new_context": "\n---\n".join(contexts) if contexts else "",
+                }
+            )
         else:
             # For non-valid edits (not_found, count_mismatch, overlapping), keep old_string_preview
-            final_details.append({
-                "old_string_preview": d.get("old_string_preview", ""),
-                "status": d["status"],
-            })
+            final_details.append(
+                {
+                    "old_string_preview": d.get("old_string_preview", ""),
+                    "status": d["status"],
+                }
+            )
 
     return {
         "path": rel_path,

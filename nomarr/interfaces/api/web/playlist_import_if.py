@@ -29,9 +29,7 @@ router = APIRouter(prefix="/playlist-import", tags=["Playlist Import"])
 @router.post("/convert", dependencies=[Depends(verify_session)])
 async def web_convert_playlist(
     request: ConvertPlaylistRequest,
-    playlist_service: Annotated[
-        "PlaylistImportService", Depends(get_playlist_import_service)
-    ],
+    playlist_service: Annotated["PlaylistImportService", Depends(get_playlist_import_service)],
 ) -> ConvertPlaylistResponse:
     """Convert a streaming playlist URL to local M3U playlist.
 
@@ -64,9 +62,7 @@ async def web_convert_playlist(
 
 @router.get("/spotify-status", dependencies=[Depends(verify_session)])
 async def web_spotify_credentials_status(
-    playlist_service: Annotated[
-        "PlaylistImportService", Depends(get_playlist_import_service)
-    ],
+    playlist_service: Annotated["PlaylistImportService", Depends(get_playlist_import_service)],
 ) -> SpotifyCredentialsStatusResponse:
     """Check if Spotify credentials are configured.
 

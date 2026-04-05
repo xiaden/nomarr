@@ -103,7 +103,10 @@ def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
 
 
 def build_library_path_from_db(
-    stored_path: str, db: Database, library_id: str | None = None, check_disk: bool = True,
+    stored_path: str,
+    db: Database,
+    library_id: str | None = None,
+    check_disk: bool = True,
 ) -> LibraryPath:
     """Build LibraryPath from database-stored path.
 

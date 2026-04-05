@@ -59,7 +59,7 @@ def build_m3u(
         abs_path = str(file_doc.get("path", "")).replace("\\", "/")
         # Strip the library root prefix to produce a relative path.
         if abs_path.startswith(root):
-            rel_path = abs_path[len(root):]
+            rel_path = abs_path[len(root) :]
         else:
             # Fallback: use the raw path if the root prefix doesn't match.
             rel_path = abs_path

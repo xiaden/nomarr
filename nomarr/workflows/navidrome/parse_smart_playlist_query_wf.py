@@ -47,7 +47,6 @@ from nomarr.helpers.exceptions import PlaylistQueryError
 MAX_QUERY_LENGTH = 4096
 
 
-
 @dataclass
 class TokenizedGroup:
     """A tokenized group from parenthesis parsing."""
@@ -65,9 +64,7 @@ class TokenizedGroup:
     """Ending position in original query"""
 
 
-def _tokenize_parentheses(
-    query: str, max_depth: int = MAX_RULE_GROUP_DEPTH
-) -> tuple[str, list[tuple[int, int, int]]]:
+def _tokenize_parentheses(query: str, max_depth: int = MAX_RULE_GROUP_DEPTH) -> tuple[str, list[tuple[int, int, int]]]:
     """Tokenize query by parentheses, track depth, and enforce max depth.
 
     Args:
@@ -183,9 +180,7 @@ def _find_top_level_operators(query: str) -> list[tuple[int, str]]:
     return operators
 
 
-def _split_on_operators(
-    query: str, operator_positions: list[tuple[int, str]]
-) -> list[str]:
+def _split_on_operators(query: str, operator_positions: list[tuple[int, str]]) -> list[str]:
     """Split query string at operator positions.
 
     Args:
@@ -320,6 +315,7 @@ def _parse_group(query: str, namespace: str, depth: int = 0) -> RuleGroup:
         conditions=conditions,
         groups=groups,
     )
+
 
 def parse_smart_playlist_query(query: str, namespace: str = "nom") -> SmartPlaylistFilter:
     """Parse Smart Playlist query into structured filter object.

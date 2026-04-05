@@ -30,24 +30,24 @@ class BackbonePreprocessParams(NamedTuple):
 
     sample_rate: int
     n_mels: int
-    n_fft: int            # Windowing frameSize / FrameCutter frameSize
+    n_fft: int  # Windowing frameSize / FrameCutter frameSize
     hop_length: int
-    patch_frames: int     # number of mel frames per patch
-    patch_hop: int        # mel-frame stride between patches
-    fmin: float           # MelBands lowFrequencyBound
-    fmax: float           # MelBands highFrequencyBound
+    patch_frames: int  # number of mel frames per patch
+    patch_hop: int  # mel-frame stride between patches
+    fmin: float  # MelBands lowFrequencyBound
+    fmax: float  # MelBands highFrequencyBound
     # windowing fields
-    zero_padding: int     # Windowing zeroPadding (0 for MusiCNN, 112 for VGGish)
-    zero_phase: bool      # Windowing zeroPhase (True for MusiCNN, False for VGGish)
+    zero_padding: int  # Windowing zeroPadding (0 for MusiCNN, 112 for VGGish)
+    zero_phase: bool  # Windowing zeroPhase (True for MusiCNN, False for VGGish)
     # mel band fields
     warping_formula: str  # MelBands warpingFormula ("slaneyMel" | "htkMel")
-    mel_type: str         # MelBands type ("power" | "magnitude")
-    weighting: str        # MelBands weighting ("linear" | "warping")
-    normalize: str        # MelBands normalize ("unit_tri" | "unit_max")
+    mel_type: str  # MelBands type ("power" | "magnitude")
+    weighting: str  # MelBands weighting ("linear" | "warping")
+    normalize: str  # MelBands normalize ("unit_tri" | "unit_max")
     # compression fields
-    post_shift: float     # UnaryOperator[0] shift: f(scale * x + shift)
-    post_scale: float     # UnaryOperator[0] scale: f(scale * x + shift)
-    compression: str      # UnaryOperator[1] type ("log10" | "log")
+    post_shift: float  # UnaryOperator[0] shift: f(scale * x + shift)
+    post_scale: float  # UnaryOperator[0] scale: f(scale * x + shift)
+    compression: str  # UnaryOperator[1] type ("log10" | "log")
 
 
 _PARAMS: dict[str, BackbonePreprocessParams] = {

@@ -144,7 +144,9 @@ def check_missing_calibrations(models_dir: str) -> list[dict[str, str]]:
 
 
 def ensure_calibrations_exist(
-    repo_url: str, models_dir: str, auto_download: bool = False,
+    repo_url: str,
+    models_dir: str,
+    auto_download: bool = False,
 ) -> EnsureCalibrationsExistResult:
     """Ensure calibration files exist, optionally downloading if missing.
 

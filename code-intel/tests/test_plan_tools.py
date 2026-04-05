@@ -112,11 +112,7 @@ def test_plan_read_step_ids_generated(tmp_path: Path) -> None:
     _write_plan(tmp_path, "id-plan", SAMPLE_PLAN)
     result = plan_read(plan_name="id-plan", workspace_root=tmp_path)
     assert "error" not in result
-    all_ids = [
-        step["id"]
-        for phase in result["phases"]
-        for step in phase["steps"]
-    ]
+    all_ids = [step["id"] for phase in result["phases"] for step in phase["steps"]]
     assert all_ids == ["P1-S1", "P1-S2", "P2-S1"]
 
 
@@ -134,9 +130,7 @@ def test_plan_read_next_pointer(tmp_path: Path) -> None:
 
 def test_complete_step_marks_checkbox(tmp_path: Path) -> None:
     plan_file = _write_plan(tmp_path, "cs-plan", SAMPLE_PLAN)
-    result = plan_complete_step(
-        plan_name="cs-plan", step_id="P1-S1", workspace_root=tmp_path
-    )
+    result = plan_complete_step(plan_name="cs-plan", step_id="P1-S1", workspace_root=tmp_path)
     assert "error" not in result
     assert result["step_id"] == "P1-S1"
     # Verify file on disk
@@ -146,9 +140,7 @@ def test_complete_step_marks_checkbox(tmp_path: Path) -> None:
 
 def test_complete_step_next_advances(tmp_path: Path) -> None:
     _write_plan(tmp_path, "adv-plan", SAMPLE_PLAN)
-    result = plan_complete_step(
-        plan_name="adv-plan", step_id="P1-S1", workspace_root=tmp_path
-    )
+    result = plan_complete_step(plan_name="adv-plan", step_id="P1-S1", workspace_root=tmp_path)
     assert "error" not in result
     # Next should now be P1-S2
     next_step = result.get("next_step")
@@ -159,9 +151,7 @@ def test_complete_step_next_advances(tmp_path: Path) -> None:
 def test_complete_step_already_complete(tmp_path: Path) -> None:
     plan_with_done = SAMPLE_PLAN.replace("- [ ] First step", "- [x] First step")
     _write_plan(tmp_path, "done-plan", plan_with_done)
-    result = plan_complete_step(
-        plan_name="done-plan", step_id="P1-S1", workspace_root=tmp_path
-    )
+    result = plan_complete_step(plan_name="done-plan", step_id="P1-S1", workspace_root=tmp_path)
     assert "error" not in result
     assert result.get("already_marked") is True
 
@@ -207,23 +197,17 @@ def test_complete_step_empty_annotation_text(tmp_path: Path) -> None:
 
 def test_complete_step_unknown_step_id(tmp_path: Path) -> None:
     _write_plan(tmp_path, "unk-plan", SAMPLE_PLAN)
-    result = plan_complete_step(
-        plan_name="unk-plan", step_id="P99-S1", workspace_root=tmp_path
-    )
+    result = plan_complete_step(plan_name="unk-plan", step_id="P99-S1", workspace_root=tmp_path)
     assert result["error"] == "unknown_step_id"
 
 
 def test_complete_step_plan_not_found(tmp_path: Path) -> None:
-    result = plan_complete_step(
-        plan_name="ghost", step_id="P1-S1", workspace_root=tmp_path
-    )
+    result = plan_complete_step(plan_name="ghost", step_id="P1-S1", workspace_root=tmp_path)
     assert result["error"] == "plan_not_found"
 
 
 def test_complete_step_path_traversal(tmp_path: Path) -> None:
-    result = plan_complete_step(
-        plan_name="../hack", step_id="P1-S1", workspace_root=tmp_path
-    )
+    result = plan_complete_step(plan_name="../hack", step_id="P1-S1", workspace_root=tmp_path)
     assert result["error"] == "invalid_plan_name"
 
 
@@ -231,9 +215,7 @@ def test_complete_step_phase_transition(tmp_path: Path) -> None:
     """Completing last step in phase 1 should trigger phase transition."""
     # First complete P1-S1
     _write_plan(tmp_path, "transition-plan", SAMPLE_PLAN)
-    plan_complete_step(
-        plan_name="transition-plan", step_id="P1-S1", workspace_root=tmp_path
-    )
+    plan_complete_step(plan_name="transition-plan", step_id="P1-S1", workspace_root=tmp_path)
     # Then complete P1-S2 — should transition to Phase 2
     result = plan_complete_step(
         plan_name="transition-plan", step_id="P1-S2", workspace_root=tmp_path
@@ -251,9 +233,7 @@ def test_complete_step_last_step_next_is_none(tmp_path: Path) -> None:
     # Complete all steps
     plan_complete_step(plan_name="last-plan", step_id="P1-S1", workspace_root=tmp_path)
     plan_complete_step(plan_name="last-plan", step_id="P1-S2", workspace_root=tmp_path)
-    result = plan_complete_step(
-        plan_name="last-plan", step_id="P2-S1", workspace_root=tmp_path
-    )
+    result = plan_complete_step(plan_name="last-plan", step_id="P2-S1", workspace_root=tmp_path)
     assert "error" not in result
     assert result["next_step"] is None
 
@@ -261,9 +241,7 @@ def test_complete_step_last_step_next_is_none(tmp_path: Path) -> None:
 def test_complete_step_file_modified_on_disk(tmp_path: Path) -> None:
     """Verify the actual file has the checkbox changed."""
     plan_file = _write_plan(tmp_path, "disk-plan", SAMPLE_PLAN)
-    plan_complete_step(
-        plan_name="disk-plan", step_id="P2-S1", workspace_root=tmp_path
-    )
+    plan_complete_step(plan_name="disk-plan", step_id="P2-S1", workspace_root=tmp_path)
     content = plan_file.read_text(encoding="utf-8")
     assert "- [x] Third step" in content
     # Other steps should still be unchecked

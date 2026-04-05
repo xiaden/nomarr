@@ -74,7 +74,6 @@ def load_calibrations_from_db_wf(db: Database) -> dict[str, dict[str, Any]]:
         return {}
 
 
-
 # Module-level cache for calibrations
 _cached_calibrations: dict[str, dict[str, float]] | None = None
 _cached_version: str | None = None

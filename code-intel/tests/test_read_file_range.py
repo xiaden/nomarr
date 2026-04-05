@@ -176,7 +176,10 @@ def test_end_line_exceeds_file_is_clamped(tmp_path: Path) -> None:
 def test_include_imports_non_overlapping(tmp_path: Path) -> None:
     _write_file(tmp_path, "code.py", SAMPLE_PYTHON)
     result = read_file_range(
-        file_path="code.py", start_line=9, end_line=10, workspace_root=tmp_path,
+        file_path="code.py",
+        start_line=9,
+        end_line=10,
+        workspace_root=tmp_path,
         include_imports=True,
     )
     assert "error" not in result
@@ -187,7 +190,10 @@ def test_include_imports_non_overlapping(tmp_path: Path) -> None:
 def test_include_imports_overlapping(tmp_path: Path) -> None:
     _write_file(tmp_path, "code.py", SAMPLE_PYTHON)
     result = read_file_range(
-        file_path="code.py", start_line=1, end_line=3, workspace_root=tmp_path,
+        file_path="code.py",
+        start_line=1,
+        end_line=3,
+        workspace_root=tmp_path,
         include_imports=True,
     )
     assert "error" not in result
@@ -198,7 +204,10 @@ def test_include_imports_overlapping(tmp_path: Path) -> None:
 def test_include_imports_non_python(tmp_path: Path) -> None:
     _write_file(tmp_path, "data.txt", SAMPLE_TEXT)
     result = read_file_range(
-        file_path="data.txt", start_line=3, end_line=5, workspace_root=tmp_path,
+        file_path="data.txt",
+        start_line=3,
+        end_line=5,
+        workspace_root=tmp_path,
         include_imports=True,
     )
     assert "error" not in result
@@ -223,8 +232,6 @@ def test_relative_path(tmp_path: Path) -> None:
 
 def test_absolute_path(tmp_path: Path) -> None:
     f = _write_file(tmp_path, "abs.txt", "one\ntwo\nthree\n")
-    result = read_file_range(
-        file_path=str(f), start_line=1, end_line=2, workspace_root=tmp_path
-    )
+    result = read_file_range(file_path=str(f), start_line=1, end_line=2, workspace_root=tmp_path)
     assert "error" not in result
     assert "one" in result["requested"]["content"]

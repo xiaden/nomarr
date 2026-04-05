@@ -82,9 +82,7 @@ def _resolve(module_name: str, root: Path) -> Path | None:
 # ---------------------------------------------------------------------------
 
 
-def test_get_function_source(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
+def test_get_function_source(tmp_path: Path, _patch_workspace: Path) -> None:
     _setup_package(tmp_path)
     result = read_module_source("mypkg.sample.standalone")
     assert "error" not in result
@@ -94,9 +92,7 @@ def test_get_function_source(
     assert result["symbol_end_line"] >= result["symbol_start_line"]
 
 
-def test_get_async_function_source(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
+def test_get_async_function_source(tmp_path: Path, _patch_workspace: Path) -> None:
     _setup_package(tmp_path)
     result = read_module_source("mypkg.sample.async_func")
     assert "error" not in result
@@ -109,9 +105,7 @@ def test_get_async_function_source(
 # ---------------------------------------------------------------------------
 
 
-def test_get_class_source(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
+def test_get_class_source(tmp_path: Path, _patch_workspace: Path) -> None:
     _setup_package(tmp_path)
     result = read_module_source("mypkg.sample.MyClass")
     assert "error" not in result
@@ -121,9 +115,7 @@ def test_get_class_source(
     assert "def get_value" in result["source"]
 
 
-def test_get_method_source(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
+def test_get_method_source(tmp_path: Path, _patch_workspace: Path) -> None:
     _setup_package(tmp_path)
     result = read_module_source("mypkg.sample.MyClass.get_value")
     assert "error" not in result
@@ -132,9 +124,7 @@ def test_get_method_source(
     assert result["symbol_start_line"] > 0
 
 
-def test_get_constructor_source(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
+def test_get_constructor_source(tmp_path: Path, _patch_workspace: Path) -> None:
     _setup_package(tmp_path)
     result = read_module_source("mypkg.sample.MyClass.__init__")
     assert "error" not in result
@@ -147,26 +137,20 @@ def test_get_constructor_source(
 # ---------------------------------------------------------------------------
 
 
-def test_symbol_not_found(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
+def test_symbol_not_found(tmp_path: Path, _patch_workspace: Path) -> None:
     _setup_package(tmp_path)
     result = read_module_source("mypkg.sample.nonexistent")
     assert "error" in result
     assert "Symbol not found" in result["error"]
 
 
-def test_module_not_found(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
+def test_module_not_found(tmp_path: Path, _patch_workspace: Path) -> None:
     result = read_module_source("nonexistent.module.func")
     assert "error" in result
     assert "Could not find" in result["error"]
 
 
-def test_invalid_qualified_name(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
+def test_invalid_qualified_name(tmp_path: Path, _patch_workspace: Path) -> None:
     result = read_module_source("singlename")
     assert "error" in result
     assert "Invalid qualified name" in result["error"]
@@ -177,9 +161,7 @@ def test_invalid_qualified_name(
 # ---------------------------------------------------------------------------
 
 
-def test_returns_line_numbers(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
+def test_returns_line_numbers(tmp_path: Path, _patch_workspace: Path) -> None:
     _setup_package(tmp_path)
     result = read_module_source("mypkg.sample.standalone")
     assert "error" not in result
@@ -191,9 +173,7 @@ def test_returns_line_numbers(
     assert result["line"] + result["line_count"] - 1 >= result["symbol_end_line"]
 
 
-def test_large_context_expands_range(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
+def test_large_context_expands_range(tmp_path: Path, _patch_workspace: Path) -> None:
     _setup_package(tmp_path)
     normal = read_module_source("mypkg.sample.standalone")
     large = read_module_source("mypkg.sample.standalone", large_context=True)
@@ -203,9 +183,7 @@ def test_large_context_expands_range(
     assert large["line_count"] >= normal["line_count"]
 
 
-def test_symbol_boundaries_within_context(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
+def test_symbol_boundaries_within_context(tmp_path: Path, _patch_workspace: Path) -> None:
     _setup_package(tmp_path)
     result = read_module_source("mypkg.sample.MyClass.get_value")
     assert "error" not in result
@@ -219,9 +197,7 @@ def test_symbol_boundaries_within_context(
 # ---------------------------------------------------------------------------
 
 
-def test_three_level_nesting(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
+def test_three_level_nesting(tmp_path: Path, _patch_workspace: Path) -> None:
     """_find_symbol_in_ast must resolve 3-level paths like Outer.Inner.do_thing."""
     pkg = tmp_path / "mypkg"
     pkg.mkdir(exist_ok=True)

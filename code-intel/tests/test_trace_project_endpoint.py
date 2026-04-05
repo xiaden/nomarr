@@ -17,9 +17,7 @@ from mcp_code_intel.tools.trace_project_endpoint import trace_project_endpoint
 # ---------------------------------------------------------------------------
 
 
-def _make_package(
-    tmp_path: Path, pkg_name: str, modules: dict[str, str]
-) -> None:
+def _make_package(tmp_path: Path, pkg_name: str, modules: dict[str, str]) -> None:
     """Create a Python package with given modules."""
     pkg_dir = tmp_path / pkg_name
     pkg_dir.mkdir(parents=True, exist_ok=True)
@@ -54,14 +52,17 @@ def _default_config() -> dict:
 
 
 def test_trace_endpoint_with_depends(tmp_path: Path) -> None:
-    _make_package(tmp_path, "myapp", {
-        "deps.py": """\
+    _make_package(
+        tmp_path,
+        "myapp",
+        {
+            "deps.py": """\
             from myapp.services import ItemService
 
             def get_item_service() -> ItemService:
                 return ItemService()
         """,
-        "services.py": """\
+            "services.py": """\
             class ItemService:
                 def list_items(self) -> list:
                     return []
@@ -69,7 +70,7 @@ def test_trace_endpoint_with_depends(tmp_path: Path) -> None:
                 def get_item(self, item_id: str) -> dict:
                     return {}
         """,
-        "router.py": """\
+            "router.py": """\
             from fastapi import APIRouter, Depends
             from myapp.deps import get_item_service
 
@@ -79,7 +80,8 @@ def test_trace_endpoint_with_depends(tmp_path: Path) -> None:
             def get_items(svc=Depends(get_item_service)):
                 return svc.list_items()
         """,
-    })
+        },
+    )
     result = trace_project_endpoint(
         "myapp.router.get_items",
         project_root=tmp_path,
@@ -99,19 +101,22 @@ def test_trace_endpoint_with_depends(tmp_path: Path) -> None:
 
 
 def test_trace_endpoint_resolved_type(tmp_path: Path) -> None:
-    _make_package(tmp_path, "myapp", {
-        "deps.py": """\
+    _make_package(
+        tmp_path,
+        "myapp",
+        {
+            "deps.py": """\
             from myapp.services import ItemService
 
             def get_item_service() -> ItemService:
                 return ItemService()
         """,
-        "services.py": """\
+            "services.py": """\
             class ItemService:
                 def list_items(self) -> list:
                     return []
         """,
-        "router.py": """\
+            "router.py": """\
             from fastapi import APIRouter, Depends
             from myapp.deps import get_item_service
 
@@ -121,7 +126,8 @@ def test_trace_endpoint_resolved_type(tmp_path: Path) -> None:
             def get_items(svc=Depends(get_item_service)):
                 return svc.list_items()
         """,
-    })
+        },
+    )
     result = trace_project_endpoint(
         "myapp.router.get_items",
         project_root=tmp_path,
@@ -140,12 +146,16 @@ def test_trace_endpoint_resolved_type(tmp_path: Path) -> None:
 
 
 def test_endpoint_not_found(tmp_path: Path) -> None:
-    _make_package(tmp_path, "myapp", {
-        "router.py": """\
+    _make_package(
+        tmp_path,
+        "myapp",
+        {
+            "router.py": """\
             def existing():
                 pass
         """,
-    })
+        },
+    )
     result = trace_project_endpoint(
         "myapp.router.nonexistent",
         project_root=tmp_path,
@@ -169,8 +179,11 @@ def test_module_not_found(tmp_path: Path) -> None:
 
 
 def test_endpoint_no_dependencies(tmp_path: Path) -> None:
-    _make_package(tmp_path, "myapp", {
-        "router.py": """\
+    _make_package(
+        tmp_path,
+        "myapp",
+        {
+            "router.py": """\
             from fastapi import APIRouter
 
             router = APIRouter()
@@ -179,7 +192,8 @@ def test_endpoint_no_dependencies(tmp_path: Path) -> None:
             def health_check():
                 return {"status": "ok"}
         """,
-    })
+        },
+    )
     result = trace_project_endpoint(
         "myapp.router.health_check",
         project_root=tmp_path,
@@ -196,14 +210,17 @@ def test_endpoint_no_dependencies(tmp_path: Path) -> None:
 
 
 def test_multiple_service_method_calls(tmp_path: Path) -> None:
-    _make_package(tmp_path, "myapp", {
-        "deps.py": """\
+    _make_package(
+        tmp_path,
+        "myapp",
+        {
+            "deps.py": """\
             from myapp.services import ItemService
 
             def get_item_service() -> ItemService:
                 return ItemService()
         """,
-        "services.py": """\
+            "services.py": """\
             class ItemService:
                 def list_items(self) -> list:
                     return []
@@ -211,7 +228,7 @@ def test_multiple_service_method_calls(tmp_path: Path) -> None:
                 def count_items(self) -> int:
                     return 0
         """,
-        "router.py": """\
+            "router.py": """\
             from fastapi import APIRouter, Depends
             from myapp.deps import get_item_service
 
@@ -223,7 +240,8 @@ def test_multiple_service_method_calls(tmp_path: Path) -> None:
                 count = svc.count_items()
                 return {"items": items, "count": count}
         """,
-    })
+        },
+    )
     result = trace_project_endpoint(
         "myapp.router.items_summary",
         project_root=tmp_path,

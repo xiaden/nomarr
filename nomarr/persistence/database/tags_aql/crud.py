@@ -212,6 +212,7 @@ class TagCrudMixin:
         """
         cursor = cast("Any", self.db.aql.execute(query, bind_vars={"pairs": bind_pairs}))
         return {(doc["rel"], doc["value"]): doc["tag_id"] for doc in cursor}
+
     def add_song_tag(self, song_id: str, rel: str, value: TagValue) -> None:
         """Add a single tag to a song (without replacing existing tags for this rel).
 

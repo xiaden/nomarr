@@ -162,7 +162,6 @@ class MoodDistributionResult:
     mood_distribution: list[MoodDistributionItem]
 
 
-
 # ──────────────────────────────────────────────────────────────────────────────
 # Collection Profile Analytics DTOs
 # ──────────────────────────────────────────────────────────────────────────────

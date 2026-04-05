@@ -51,18 +51,24 @@ def test_simple_flat_structure(tmp_path: Path) -> None:
 
 
 def test_nested_directories(tmp_path: Path) -> None:
-    _make_tree(tmp_path, {
-        "src": {"app.py": "pass", "lib": {"utils.py": "pass"}},
-    })
+    _make_tree(
+        tmp_path,
+        {
+            "src": {"app.py": "pass", "lib": {"utils.py": "pass"}},
+        },
+    )
     result = list_project_directory_tree(folder="", workspace_root=tmp_path)
     struct = result["structure"]
     assert "src/" in struct
 
 
 def test_subfolder_shows_files(tmp_path: Path) -> None:
-    _make_tree(tmp_path, {
-        "src": {"app.py": "pass", "lib": {"utils.py": "pass"}},
-    })
+    _make_tree(
+        tmp_path,
+        {
+            "src": {"app.py": "pass", "lib": {"utils.py": "pass"}},
+        },
+    )
     result = list_project_directory_tree(folder="src", workspace_root=tmp_path)
     struct = result["structure"]
     assert "app.py" in struct
@@ -70,9 +76,12 @@ def test_subfolder_shows_files(tmp_path: Path) -> None:
 
 
 def test_subfolder_nested_files(tmp_path: Path) -> None:
-    _make_tree(tmp_path, {
-        "src": {"lib": {"utils.py": "pass"}},
-    })
+    _make_tree(
+        tmp_path,
+        {
+            "src": {"lib": {"utils.py": "pass"}},
+        },
+    )
     result = list_project_directory_tree(folder="src/lib", workspace_root=tmp_path)
     struct = result["structure"]
     assert "utils.py" in struct
@@ -84,10 +93,13 @@ def test_subfolder_nested_files(tmp_path: Path) -> None:
 
 
 def test_venv_excluded(tmp_path: Path) -> None:
-    _make_tree(tmp_path, {
-        ".venv": {"bin": {"python": "#!"}},
-        "main.py": "pass",
-    })
+    _make_tree(
+        tmp_path,
+        {
+            ".venv": {"bin": {"python": "#!"}},
+            "main.py": "pass",
+        },
+    )
     result = list_project_directory_tree(folder="", workspace_root=tmp_path)
     struct = result["structure"]
     assert ".venv/" not in struct
@@ -95,35 +107,47 @@ def test_venv_excluded(tmp_path: Path) -> None:
 
 
 def test_node_modules_excluded(tmp_path: Path) -> None:
-    _make_tree(tmp_path, {
-        "node_modules": {"express": {"index.js": ""}},
-        "index.py": "pass",
-    })
+    _make_tree(
+        tmp_path,
+        {
+            "node_modules": {"express": {"index.js": ""}},
+            "index.py": "pass",
+        },
+    )
     result = list_project_directory_tree(folder="", workspace_root=tmp_path)
     assert "node_modules/" not in result["structure"]
 
 
 def test_pycache_excluded(tmp_path: Path) -> None:
-    _make_tree(tmp_path, {
-        "src": {"__pycache__": {"mod.cpython-312.pyc": "bytes"}},
-    })
+    _make_tree(
+        tmp_path,
+        {
+            "src": {"__pycache__": {"mod.cpython-312.pyc": "bytes"}},
+        },
+    )
     result = list_project_directory_tree(folder="src", workspace_root=tmp_path)
     assert "__pycache__/" not in result["structure"]
 
 
 def test_git_excluded(tmp_path: Path) -> None:
-    _make_tree(tmp_path, {
-        ".git": {"HEAD": "ref: refs/heads/main"},
-        "README.md": "hi",
-    })
+    _make_tree(
+        tmp_path,
+        {
+            ".git": {"HEAD": "ref: refs/heads/main"},
+            "README.md": "hi",
+        },
+    )
     result = list_project_directory_tree(folder="", workspace_root=tmp_path)
     assert ".git/" not in result["structure"]
 
 
 def test_github_not_excluded(tmp_path: Path) -> None:
-    _make_tree(tmp_path, {
-        ".github": {"workflows": {"ci.yml": "name: CI"}},
-    })
+    _make_tree(
+        tmp_path,
+        {
+            ".github": {"workflows": {"ci.yml": "name: CI"}},
+        },
+    )
     result = list_project_directory_tree(folder="", workspace_root=tmp_path)
     assert ".github/" in result["structure"]
 
@@ -156,11 +180,14 @@ def test_empty_subdirectory(tmp_path: Path) -> None:
 
 
 def test_dirs_before_files(tmp_path: Path) -> None:
-    _make_tree(tmp_path, {
-        "zebra": {"a.py": ""},
-        "alpha": {"b.py": ""},
-        "README.md": "hi",
-    })
+    _make_tree(
+        tmp_path,
+        {
+            "zebra": {"a.py": ""},
+            "alpha": {"b.py": ""},
+            "README.md": "hi",
+        },
+    )
     result = list_project_directory_tree(folder="", workspace_root=tmp_path)
     keys = list(result["structure"].keys())
     # All dir keys (ending with /) should come before file keys

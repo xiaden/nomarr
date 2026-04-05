@@ -8,9 +8,11 @@ This module handles:
 
 from __future__ import annotations
 
+import functools
 import logging
 from typing import TYPE_CHECKING, Any
 
+from nomarr.helpers import ManagedTask
 from nomarr.helpers.dto.library_dto import LibraryScanStatusResult, StartScanResult
 from nomarr.helpers.time_helper import now_ms
 from nomarr.services.infrastructure.config_svc import INTERNAL_MIN_DURATION_S
@@ -94,14 +96,18 @@ class LibraryScanMixin:
         if self.background_tasks is None:
             msg = "Background task service is not available"
             raise RuntimeError(msg)
-        self.background_tasks.start_task(
+        task = ManagedTask(
             task_id=task_id,
-            task_fn=scan_library_quick_workflow,
-            db=self.db,
-            library_id=library_id,
-            tagger_version=self.cfg.tagger_version,
-            min_duration_s=INTERNAL_MIN_DURATION_S,
+            fn=functools.partial(
+                scan_library_quick_workflow,
+                db=self.db,
+                library_id=library_id,
+                tagger_version=self.cfg.tagger_version,
+                min_duration_s=INTERNAL_MIN_DURATION_S,
+            ),
+            daemon=True,
         )
+        self.background_tasks.start_task(task)
         return StartScanResult(
             files_discovered=0,
             files_queued=0,
@@ -132,16 +138,20 @@ class LibraryScanMixin:
         if self.background_tasks is None:
             msg = "Background task service is not available"
             raise RuntimeError(msg)
-        self.background_tasks.start_task(
+        task = ManagedTask(
             task_id=task_id,
-            task_fn=scan_library_full_workflow,
-            db=self.db,
-            library_id=library_id,
-            tagger_version=self.cfg.tagger_version,
-            models_dir=self.cfg.models_dir,
-            namespace=self.cfg.namespace,
-            min_duration_s=INTERNAL_MIN_DURATION_S,
+            fn=functools.partial(
+                scan_library_full_workflow,
+                db=self.db,
+                library_id=library_id,
+                tagger_version=self.cfg.tagger_version,
+                models_dir=self.cfg.models_dir,
+                namespace=self.cfg.namespace,
+                min_duration_s=INTERNAL_MIN_DURATION_S,
+            ),
+            daemon=True,
         )
+        self.background_tasks.start_task(task)
         return StartScanResult(
             files_discovered=0,
             files_queued=0,

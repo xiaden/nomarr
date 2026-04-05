@@ -25,9 +25,7 @@ from mcp_code_intel.tools.read_module_api import read_module_api
 # ---------------------------------------------------------------------------
 
 
-def _make_package(
-    tmp_path: Path, pkg_name: str, modules: dict[str, str]
-) -> None:
+def _make_package(tmp_path: Path, pkg_name: str, modules: dict[str, str]) -> None:
     """Create a Python package with given modules."""
     pkg_dir = tmp_path / pkg_name
     pkg_dir.mkdir(parents=True, exist_ok=True)
@@ -56,18 +54,20 @@ def _patch_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def test_module_with_functions(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
-    _make_package(tmp_path, "mypkg", {
-        "funcs.py": """\
+def test_module_with_functions(tmp_path: Path, _patch_workspace: Path) -> None:
+    _make_package(
+        tmp_path,
+        "mypkg",
+        {
+            "funcs.py": """\
             def greet(name: str) -> str:
                 \"\"\"Say hello.\"\"\"\n                return f"Hello {name}"
 
             async def fetch(url: str, timeout: int = 30) -> bytes:
                 \"\"\"Fetch data.\"\"\"\n                return b""
         """,
-    })
+        },
+    )
     result = read_module_api("mypkg.funcs")
     assert "error" not in result
     assert "functions" in result
@@ -81,11 +81,12 @@ def test_module_with_functions(
     assert "timeout: int = 30" in funcs["fetch"]["sig"]
 
 
-def test_module_with_classes(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
-    _make_package(tmp_path, "mypkg", {
-        "models.py": """\
+def test_module_with_classes(tmp_path: Path, _patch_workspace: Path) -> None:
+    _make_package(
+        tmp_path,
+        "mypkg",
+        {
+            "models.py": """\
             class Animal:
                 \"\"\"An animal.\"\"\"\n
                 def speak(self) -> str:
@@ -94,7 +95,8 @@ def test_module_with_classes(
                 def eat(self, food: str) -> None:
                     pass
         """,
-    })
+        },
+    )
     result = read_module_api("mypkg.models")
     assert "error" not in result
     assert "classes" in result
@@ -105,11 +107,12 @@ def test_module_with_classes(
     assert "food: str" in cls["methods"]["eat"]["sig"]
 
 
-def test_module_with_all(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
-    _make_package(tmp_path, "mypkg", {
-        "public.py": """\
+def test_module_with_all(tmp_path: Path, _patch_workspace: Path) -> None:
+    _make_package(
+        tmp_path,
+        "mypkg",
+        {
+            "public.py": """\
             __all__ = ["public_func"]
 
             def public_func() -> None:
@@ -118,7 +121,8 @@ def test_module_with_all(
             def _private_func() -> None:
                 pass
         """,
-    })
+        },
+    )
     result = read_module_api("mypkg.public")
     assert "error" not in result
     assert result["__all__"] == ["public_func"]
@@ -127,9 +131,7 @@ def test_module_with_all(
     assert "_private_func" in result["functions"]
 
 
-def test_nested_package_resolution(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
+def test_nested_package_resolution(tmp_path: Path, _patch_workspace: Path) -> None:
     pkg = tmp_path / "mypkg" / "sub" / "deep"
     pkg.mkdir(parents=True)
     (tmp_path / "mypkg" / "__init__.py").write_text("", encoding="utf-8")
@@ -147,42 +149,45 @@ def test_nested_package_resolution(
     assert "leaf_func" in result["functions"]
 
 
-def test_module_not_found(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
+def test_module_not_found(tmp_path: Path, _patch_workspace: Path) -> None:
     result = read_module_api("nonexistent.module")
     assert "error" in result
     assert "Could not find" in result["error"]
 
 
-def test_syntax_error_in_module(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
-    _make_package(tmp_path, "mypkg", {
-        "broken.py": "def broken(:\n    pass\n",
-    })
+def test_syntax_error_in_module(tmp_path: Path, _patch_workspace: Path) -> None:
+    _make_package(
+        tmp_path,
+        "mypkg",
+        {
+            "broken.py": "def broken(:\n    pass\n",
+        },
+    )
     result = read_module_api("mypkg.broken")
     assert "error" in result
     assert "Syntax error" in result["error"]
 
 
-def test_empty_module(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
-    _make_package(tmp_path, "mypkg", {
-        "empty.py": "\n",
-    })
+def test_empty_module(tmp_path: Path, _patch_workspace: Path) -> None:
+    _make_package(
+        tmp_path,
+        "mypkg",
+        {
+            "empty.py": "\n",
+        },
+    )
     result = read_module_api("mypkg.empty")
     assert "error" not in result
     assert "classes" not in result
     assert "functions" not in result
 
 
-def test_type_annotations_preserved(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
-    _make_package(tmp_path, "mypkg", {
-        "typed.py": """\
+def test_type_annotations_preserved(tmp_path: Path, _patch_workspace: Path) -> None:
+    _make_package(
+        tmp_path,
+        "mypkg",
+        {
+            "typed.py": """\
             from typing import Optional
 
             def process(
@@ -193,7 +198,8 @@ def test_type_annotations_preserved(
             ) -> dict[str, int]:
                 pass
         """,
-    })
+        },
+    )
     result = read_module_api("mypkg.typed")
     assert "error" not in result
     sig = result["functions"]["process"]["sig"]
@@ -203,18 +209,20 @@ def test_type_annotations_preserved(
     assert "**kwargs: str" in sig
 
 
-def test_constants_extracted(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
-    _make_package(tmp_path, "mypkg", {
-        "consts.py": """\
+def test_constants_extracted(tmp_path: Path, _patch_workspace: Path) -> None:
+    _make_package(
+        tmp_path,
+        "mypkg",
+        {
+            "consts.py": """\
             MAX_SIZE = 100
             DEFAULT_NAME = "hello"
 
             def func() -> None:
                 pass
         """,
-    })
+        },
+    )
     result = read_module_api("mypkg.consts")
     assert "error" not in result
     assert "constants" in result
@@ -222,17 +230,19 @@ def test_constants_extracted(
     assert result["constants"]["DEFAULT_NAME"] == "'hello'"
 
 
-def test_class_fields_extracted(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
-    _make_package(tmp_path, "mypkg", {
-        "dto.py": """\
+def test_class_fields_extracted(tmp_path: Path, _patch_workspace: Path) -> None:
+    _make_package(
+        tmp_path,
+        "mypkg",
+        {
+            "dto.py": """\
             class Config:
                 host: str
                 port: int = 8080
                 debug: bool = False
         """,
-    })
+        },
+    )
     result = read_module_api("mypkg.dto")
     assert "error" not in result
     cls = result["classes"]["Config"]
@@ -241,32 +251,36 @@ def test_class_fields_extracted(
     assert cls["fields"]["port"]["default"] == "8080"
 
 
-def test_no_docstrings_option(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
-    _make_package(tmp_path, "mypkg", {
-        "nodoc.py": """\
+def test_no_docstrings_option(tmp_path: Path, _patch_workspace: Path) -> None:
+    _make_package(
+        tmp_path,
+        "mypkg",
+        {
+            "nodoc.py": """\
             def hello() -> None:
                 \"\"\"Greeting.\"\"\"\n                pass
         """,
-    })
+        },
+    )
     result = read_module_api("mypkg.nodoc", include_docstrings=False)
     assert "error" not in result
     assert "doc" not in result["functions"]["hello"]
 
 
-def test_package_init_resolution(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
+def test_package_init_resolution(tmp_path: Path, _patch_workspace: Path) -> None:
     """Resolving a package name finds __init__.py."""
-    _make_package(tmp_path, "mypkg", {
-        "__init__.py": """\
+    _make_package(
+        tmp_path,
+        "mypkg",
+        {
+            "__init__.py": """\
             PACKAGE_VERSION = "1.0"
 
             def init_func() -> None:
                 pass
         """,
-    })
+        },
+    )
     # Overwrite the empty __init__.py
     (tmp_path / "mypkg" / "__init__.py").write_text(
         textwrap.dedent("""\

@@ -162,7 +162,6 @@ class MLModelsOperations:
         _key = model_id.split("/", 1)[-1]
         self.collection.update({"_key": _key, "is_known": value, "updated_at": now_ms().value})  # type: ignore[union-attr]
 
-
     def delete_model(self, model_id: str) -> None:
         """Delete the *ml_models* vertex for *model_id*.
 

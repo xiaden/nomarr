@@ -234,11 +234,13 @@ class NavidromePlaycountsOperations:
             if bkey not in seen_buckets:
                 buckets.append({"_key": bkey, "playcount": pc, "userid": user_id})
                 seen_buckets.add(bkey)
-            edges.append({
-                "_from": f"{_TRACKS}/{p['nd_id']}",
-                "_to": f"{_PLAYCOUNTS}/{bkey}",
-                "last_played": p["last_played"],
-            })
+            edges.append(
+                {
+                    "_from": f"{_TRACKS}/{p['nd_id']}",
+                    "_to": f"{_PLAYCOUNTS}/{bkey}",
+                    "last_played": p["last_played"],
+                }
+            )
 
         # Step 4: Insert buckets
         if buckets:

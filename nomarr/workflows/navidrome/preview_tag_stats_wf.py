@@ -5,6 +5,7 @@ debugging and understanding tag data before generating Navidrome config.
 
 Stats include a short_name for user-friendly display in Navidrome UI.
 """
+
 from __future__ import annotations
 
 import logging

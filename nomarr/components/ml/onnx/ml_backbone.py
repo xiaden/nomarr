@@ -64,7 +64,7 @@ class ONNXBackboneModel(BaseONNXModel):
 
         model = ONNXBackboneModel("/models/effnet/embeddings/effnet.onnx")
         model.load("gpu")
-        embeddings = model.run(waveform)   # shape: (n_patches, 512)
+        embeddings = model.run(waveform)  # shape: (n_patches, 512)
         model.unload()
     """
 
@@ -114,10 +114,7 @@ class ONNXBackboneModel(BaseONNXModel):
 
         patches = preprocess_for_backbone(waveform, self.backbone_name)
         if patches.shape[0] == 0:
-            msg = (
-                f"No patches produced for backbone {self.backbone_name!r} "
-                "— audio may be too short"
-            )
+            msg = f"No patches produced for backbone {self.backbone_name!r} — audio may be too short"
             raise RuntimeError(msg)
 
         session = self._session  # local ref so mypy sees it as non-None inside closure

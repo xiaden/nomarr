@@ -75,7 +75,6 @@ def get_nomarr_tags(
     return db.tags.get_song_tags(file_id, nomarr_only=True)
 
 
-
 # All three mood tier rels that must always be written (or cleared) together.
 # Writing an empty list for a rel deletes any existing edges for it,
 # which prevents stale tiers from persisting when the tier count drops.
@@ -147,10 +146,7 @@ def save_mood_tags_batch(
             nomarr_rel = f"nom:{tag.key}" if not tag.key.startswith("nom:") else tag.key
             written[nomarr_rel] = tag.value
         # Always emit all three tiers; absent ones get an empty list (→ delete)
-        entries.extend(
-            {"song_id": file_id, "rel": rel, "values": written.get(rel, [])}
-            for rel in _MOOD_TIER_RELS
-        )
+        entries.extend({"song_id": file_id, "rel": rel, "values": written.get(rel, [])} for rel in _MOOD_TIER_RELS)
 
     db.tags.set_song_tags_batch(entries)
     return sum(1 for e in entries if e["values"])

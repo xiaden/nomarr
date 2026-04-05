@@ -293,7 +293,6 @@ def test_round_trip_entry_no_tags_no_body(tmp_path: Path) -> None:
     assert parsed.entries[0].tags == []
 
 
-
 # ---------------------------------------------------------------------------
 # CRLF normalization
 # ---------------------------------------------------------------------------

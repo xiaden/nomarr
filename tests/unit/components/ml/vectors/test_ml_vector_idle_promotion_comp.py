@@ -14,9 +14,7 @@ class TestListHotVectorTargets:
     """Tests for list_hot_vector_targets."""
 
     @patch(f"{DISCOVERY_MODULE}.discover_backbones")
-    def test_returns_pairs_with_hot_vectors(
-        self, mock_discover: MagicMock
-    ) -> None:
+    def test_returns_pairs_with_hot_vectors(self, mock_discover: MagicMock) -> None:
         """Returns (backbone, library) pairs where hot count > 0."""
         from nomarr.components.ml.vectors.ml_vector_idle_promotion_comp import (
             list_hot_vector_targets,
@@ -50,9 +48,7 @@ class TestListHotVectorTargets:
 
         def register_backbone(backbone_id: str, library_key: str) -> MagicMock:
             ops = MagicMock()
-            ops.count.return_value = hot_ops_map.get(
-                f"{backbone_id}__{library_key}", 0
-            )
+            ops.count.return_value = hot_ops_map.get(f"{backbone_id}__{library_key}", 0)
             return ops
 
         db.register_vectors_track_backbone.side_effect = register_backbone
@@ -63,9 +59,7 @@ class TestListHotVectorTargets:
         mock_discover.assert_called_once_with("/models")
 
     @patch(f"{DISCOVERY_MODULE}.discover_backbones")
-    def test_returns_empty_when_no_backbones(
-        self, mock_discover: MagicMock
-    ) -> None:
+    def test_returns_empty_when_no_backbones(self, mock_discover: MagicMock) -> None:
         """Returns empty list when no backbones discovered."""
         from nomarr.components.ml.vectors.ml_vector_idle_promotion_comp import (
             list_hot_vector_targets,
@@ -80,9 +74,7 @@ class TestListHotVectorTargets:
         db.libraries.list_libraries.assert_not_called()
 
     @patch(f"{DISCOVERY_MODULE}.discover_backbones")
-    def test_returns_empty_when_no_libraries(
-        self, mock_discover: MagicMock
-    ) -> None:
+    def test_returns_empty_when_no_libraries(self, mock_discover: MagicMock) -> None:
         """Returns empty list when no libraries exist."""
         from nomarr.components.ml.vectors.ml_vector_idle_promotion_comp import (
             list_hot_vector_targets,

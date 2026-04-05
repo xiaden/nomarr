@@ -58,7 +58,6 @@ class Cascade:
     gap_low: float = 0.03
 
 
-
 @dataclass
 class HeadSpec:
     name: str
@@ -71,8 +70,6 @@ class HeadSpec:
     top_ratio: float = 0.5
     prob_input: bool = True
 
-
-
     @classmethod
     def from_head_info(cls, hi: HeadInfo) -> HeadSpec:
         """Build a :class:`HeadSpec` from a :class:`HeadInfo` (DB-backed path)."""
@@ -81,6 +78,8 @@ class HeadSpec:
             kind=hi.head_type,
             labels=list(hi.labels),
         )
+
+
 def decide_regression(values: np.ndarray, labels: list[str]) -> dict[str, float]:
     """Return raw float outputs keyed by label; preserves full precision."""
     out: dict[str, float] = {}

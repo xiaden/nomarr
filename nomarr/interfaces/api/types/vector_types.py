@@ -11,16 +11,10 @@ from pydantic import BaseModel, Field
 class VectorSearchRequest(BaseModel):
     """Request model for vector similarity search."""
 
-    file_id: str = Field(
-        ..., description="Library file document ID to find similar tracks for"
-    )
-    backbone_id: str = Field(
-        ..., description="Backbone identifier (e.g., 'effnet', 'yamnet')"
-    )
+    file_id: str = Field(..., description="Library file document ID to find similar tracks for")
+    backbone_id: str = Field(..., description="Backbone identifier (e.g., 'effnet', 'yamnet')")
     limit: int = Field(10, description="Maximum number of results", ge=1, le=100)
-    min_score: float = Field(
-        0.0, description="Minimum similarity score threshold", ge=0.0
-    )
+    min_score: float = Field(0.0, description="Minimum similarity score threshold", ge=0.0)
     library_scope: str | None = Field(
         None,
         description=(
@@ -41,9 +35,7 @@ class VectorSearchResultItem(BaseModel):
 class VectorSearchResponse(BaseModel):
     """Response model for vector similarity search."""
 
-    results: list[VectorSearchResultItem] = Field(
-        ..., description="List of matching vectors"
-    )
+    results: list[VectorSearchResultItem] = Field(..., description="List of matching vectors")
 
 
 class VectorHotColdStats(BaseModel):
@@ -52,28 +44,20 @@ class VectorHotColdStats(BaseModel):
     backbone_id: str = Field(..., description="Backbone identifier")
     library_key: str = Field(..., description="ArangoDB library _key")
     hot_count: int = Field(..., description="Number of vectors in hot collection")
-    cold_count: int = Field(
-        ..., description="Number of vectors in cold collection"
-    )
-    index_exists: bool = Field(
-        ..., description="Whether cold collection has vector index"
-    )
+    cold_count: int = Field(..., description="Number of vectors in cold collection")
+    index_exists: bool = Field(..., description="Whether cold collection has vector index")
 
 
 class VectorStatsResponse(BaseModel):
     """Response model for vector stats endpoint."""
 
-    stats: list[VectorHotColdStats] = Field(
-        ..., description="Stats for all backbones"
-    )
+    stats: list[VectorHotColdStats] = Field(..., description="Stats for all backbones")
 
 
 class VectorPromoteRequest(BaseModel):
     """Request model for promote & rebuild operation."""
 
-    backbone_id: str = Field(
-        ..., description="Backbone identifier (e.g., 'effnet', 'yamnet')"
-    )
+    backbone_id: str = Field(..., description="Backbone identifier (e.g., 'effnet', 'yamnet')")
     library_key: str = Field(..., description="ArangoDB library _key")
     nlists: int | None = Field(
         None,
@@ -99,13 +83,10 @@ class VectorGetResponse(BaseModel):
     vector: list[float] = Field(..., description="Embedding vector")
 
 
-
 class VectorRebuildIndexRequest(BaseModel):
     """Request model for rebuild-index operation."""
 
-    backbone_id: str = Field(
-        ..., description="Backbone identifier (e.g., 'effnet', 'yamnet')"
-    )
+    backbone_id: str = Field(..., description="Backbone identifier (e.g., 'effnet', 'yamnet')")
     library_key: str = Field(..., description="ArangoDB library _key")
     nlists: int | None = Field(
         None,

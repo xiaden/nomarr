@@ -24,6 +24,7 @@ def normalize_tag_label(label: str) -> str:
         return f"not_{label[4:]}"
     return label
 
+
 MOOD_MAPPING: dict[str, tuple[str, str]] = {
     "approachability_regression": ("mainstream", "fringe"),
     "engagement_regression": ("engaging", "mellow"),

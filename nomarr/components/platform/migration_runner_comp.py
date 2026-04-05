@@ -66,7 +66,9 @@ def _validate_migration_module(module: ModuleType, filename: str) -> None:
     try:
         Version(module.MIGRATION_VERSION)
     except InvalidVersion as exc:
-        msg = f"Migration {filename}: MIGRATION_VERSION {module.MIGRATION_VERSION!r} is not a valid semver string: {exc}"
+        msg = (
+            f"Migration {filename}: MIGRATION_VERSION {module.MIGRATION_VERSION!r} is not a valid semver string: {exc}"
+        )
         raise MigrationError(msg) from exc
 
     if not isinstance(module.DESCRIPTION, str):
@@ -131,9 +133,7 @@ def check_duplicate_versions(migrations: list[tuple[str, ModuleType]]) -> None:
 
     conflicts = {ver: names for ver, names in version_to_names.items() if len(names) > 1}
     if conflicts:
-        conflict_lines = ", ".join(
-            f"{ver!r} in [{', '.join(names)}]" for ver, names in sorted(conflicts.items())
-        )
+        conflict_lines = ", ".join(f"{ver!r} in [{', '.join(names)}]" for ver, names in sorted(conflicts.items()))
         msg = f"Duplicate MIGRATION_VERSION detected: {conflict_lines}"
         raise MigrationError(msg)
 
@@ -158,11 +158,7 @@ def get_pending_migrations(
         pending = list(all_migrations)
     else:
         current = Version(current_db_version)
-        pending = [
-            (name, mod)
-            for name, mod in all_migrations
-            if Version(mod.MIGRATION_VERSION) > current
-        ]
+        pending = [(name, mod) for name, mod in all_migrations if Version(mod.MIGRATION_VERSION) > current]
 
     if pending:
         logger.info(

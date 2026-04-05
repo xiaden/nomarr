@@ -284,7 +284,6 @@ class CalibrationStateOperations:
             # Delete the document
             self.collection.delete(_key)
 
-
     def truncate(self) -> None:
         """Remove all documents from the calibration_state collection."""
         self.collection.truncate()

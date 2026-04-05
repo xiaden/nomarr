@@ -1,6 +1,5 @@
 """Tests for content_boundaries helper — tolerance behavior."""
 
-
 from mcp_code_intel.helpers.content_boundaries import find_content_boundaries
 
 

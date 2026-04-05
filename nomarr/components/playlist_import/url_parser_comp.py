@@ -31,17 +31,12 @@ class PlaylistUrlError(ValueError):
     """Raised when a URL cannot be parsed as a valid playlist URL."""
 
 
-
 # Spotify patterns
-_SPOTIFY_WEB_PATTERN = re.compile(
-    r"(?:https?://)?(?:open\.)?spotify\.com/playlist/([a-zA-Z0-9]+)"
-)
+_SPOTIFY_WEB_PATTERN = re.compile(r"(?:https?://)?(?:open\.)?spotify\.com/playlist/([a-zA-Z0-9]+)")
 _SPOTIFY_URI_PATTERN = re.compile(r"spotify:playlist:([a-zA-Z0-9]+)")
 
 # Deezer patterns
-_DEEZER_WEB_PATTERN = re.compile(
-    r"(?:https?://)?(?:www\.)?deezer\.com/(?:[a-z]{2}/)?playlist/(\d+)"
-)
+_DEEZER_WEB_PATTERN = re.compile(r"(?:https?://)?(?:www\.)?deezer\.com/(?:[a-z]{2}/)?playlist/(\d+)")
 _DEEZER_SHORT_PATTERN = re.compile(r"(?:https?://)?link\.deezer\.com/")
 
 

@@ -175,6 +175,7 @@ class BackgroundTaskService:
         """
         with self._lock:
             removed = 0
+            rotated_without_removal = 0
             while removed < max_count and self._task_order:
                 oldest_id = self._task_order[0]
                 result = self._task_results.get(oldest_id)
@@ -184,11 +185,14 @@ class BackgroundTaskService:
                     if oldest_id in self._tasks:
                         del self._tasks[oldest_id]
                     removed += 1
+                    rotated_without_removal = 0
                 else:
-                    # Running task - move to end and continue
+                    # Running task - move to end and continue.
                     self._task_order.pop(0)
                     self._task_order.append(oldest_id)
-                    # Avoid infinite loop if all are running
-                    if removed == 0 and len(self._task_order) <= max_count:
+                    rotated_without_removal += 1
+                    # Avoid infinite loop if we have cycled through the remaining
+                    # queue without finding a removable task.
+                    if rotated_without_removal >= len(self._task_order):
                         break
             return removed

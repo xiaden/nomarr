@@ -26,9 +26,7 @@ class PlaylistImportService:
 
     Example:
         >>> service = PlaylistImportService(db, config_service)
-        >>> result = service.convert_playlist(
-        ...     "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M"
-        ... )
+        >>> result = service.convert_playlist("https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M")
         >>> print(result.match_rate)  # 0.92 = 92% matched
     """
 

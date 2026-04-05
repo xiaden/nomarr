@@ -21,9 +21,7 @@ from mcp_code_intel.tools.locate_module_symbol import locate_module_symbol
 # ---------------------------------------------------------------------------
 
 
-def _make_package(
-    tmp_path: Path, pkg_name: str, modules: dict[str, str]
-) -> None:
+def _make_package(tmp_path: Path, pkg_name: str, modules: dict[str, str]) -> None:
     """Create a Python package with given modules."""
     pkg_dir = tmp_path / pkg_name
     pkg_dir.mkdir(parents=True, exist_ok=True)
@@ -55,15 +53,17 @@ def _patch_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def test_find_class_by_name(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
-    _make_package(tmp_path, "mypkg", {
-        "models.py": """\
+def test_find_class_by_name(tmp_path: Path, _patch_workspace: Path) -> None:
+    _make_package(
+        tmp_path,
+        "mypkg",
+        {
+            "models.py": """\
             class UserModel:
                 pass
         """,
-    })
+        },
+    )
     result = locate_module_symbol("UserModel")
     assert result["total_matches"] == 1
     match = result["matches"][0]
@@ -72,19 +72,21 @@ def test_find_class_by_name(
     assert "UserModel" in match["qualified_name"]
 
 
-def test_find_class_in_multiple_files(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
-    _make_package(tmp_path, "mypkg", {
-        "a.py": """\
+def test_find_class_in_multiple_files(tmp_path: Path, _patch_workspace: Path) -> None:
+    _make_package(
+        tmp_path,
+        "mypkg",
+        {
+            "a.py": """\
             class Handler:
                 pass
         """,
-        "b.py": """\
+            "b.py": """\
             class Handler:
                 pass
         """,
-    })
+        },
+    )
     result = locate_module_symbol("Handler")
     assert result["total_matches"] == 2
     files = {m["file"] for m in result["matches"]}
@@ -96,29 +98,33 @@ def test_find_class_in_multiple_files(
 # ---------------------------------------------------------------------------
 
 
-def test_find_function_by_name(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
-    _make_package(tmp_path, "mypkg", {
-        "utils.py": """\
+def test_find_function_by_name(tmp_path: Path, _patch_workspace: Path) -> None:
+    _make_package(
+        tmp_path,
+        "mypkg",
+        {
+            "utils.py": """\
             def calculate(x: int) -> int:
                 return x * 2
         """,
-    })
+        },
+    )
     result = locate_module_symbol("calculate")
     assert result["total_matches"] == 1
     assert result["matches"][0]["kind"] == "Function"
 
 
-def test_find_async_function(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
-    _make_package(tmp_path, "mypkg", {
-        "async_mod.py": """\
+def test_find_async_function(tmp_path: Path, _patch_workspace: Path) -> None:
+    _make_package(
+        tmp_path,
+        "mypkg",
+        {
+            "async_mod.py": """\
             async def fetch_data() -> None:
                 pass
         """,
-    })
+        },
+    )
     result = locate_module_symbol("fetch_data")
     assert result["total_matches"] == 1
     assert result["matches"][0]["kind"] == "AsyncFunction"
@@ -129,15 +135,17 @@ def test_find_async_function(
 # ---------------------------------------------------------------------------
 
 
-def test_no_matches(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
-    _make_package(tmp_path, "mypkg", {
-        "mod.py": """\
+def test_no_matches(tmp_path: Path, _patch_workspace: Path) -> None:
+    _make_package(
+        tmp_path,
+        "mypkg",
+        {
+            "mod.py": """\
             def existing() -> None:
                 pass
         """,
-    })
+        },
+    )
     result = locate_module_symbol("nonexistent_symbol")
     assert result["total_matches"] == 0
     assert result["matches"] == []
@@ -148,11 +156,12 @@ def test_no_matches(
 # ---------------------------------------------------------------------------
 
 
-def test_find_method_scoped_to_class(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
-    _make_package(tmp_path, "mypkg", {
-        "svc.py": """\
+def test_find_method_scoped_to_class(tmp_path: Path, _patch_workspace: Path) -> None:
+    _make_package(
+        tmp_path,
+        "mypkg",
+        {
+            "svc.py": """\
             class ServiceA:
                 def process(self) -> None:
                     pass
@@ -161,7 +170,8 @@ def test_find_method_scoped_to_class(
                 def process(self) -> None:
                     pass
         """,
-    })
+        },
+    )
     result = locate_module_symbol("ServiceA.process")
     assert result["total_matches"] == 1
     match = result["matches"][0]
@@ -174,27 +184,31 @@ def test_find_method_scoped_to_class(
 # ---------------------------------------------------------------------------
 
 
-def test_find_assignment(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
-    _make_package(tmp_path, "mypkg", {
-        "consts.py": """\
+def test_find_assignment(tmp_path: Path, _patch_workspace: Path) -> None:
+    _make_package(
+        tmp_path,
+        "mypkg",
+        {
+            "consts.py": """\
             MAX_RETRIES = 3
         """,
-    })
+        },
+    )
     result = locate_module_symbol("MAX_RETRIES")
     assert result["total_matches"] == 1
     assert result["matches"][0]["kind"] == "Assignment"
 
 
-def test_find_annotated_variable(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
-    _make_package(tmp_path, "mypkg", {
-        "typed.py": """\
+def test_find_annotated_variable(tmp_path: Path, _patch_workspace: Path) -> None:
+    _make_package(
+        tmp_path,
+        "mypkg",
+        {
+            "typed.py": """\
             logger: Logger = get_logger()
         """,
-    })
+        },
+    )
     result = locate_module_symbol("logger")
     assert result["total_matches"] == 1
     assert result["matches"][0]["kind"] == "Variable"
@@ -205,11 +219,12 @@ def test_find_annotated_variable(
 # ---------------------------------------------------------------------------
 
 
-def test_match_includes_length(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
-    _make_package(tmp_path, "mypkg", {
-        "multi.py": """\
+def test_match_includes_length(tmp_path: Path, _patch_workspace: Path) -> None:
+    _make_package(
+        tmp_path,
+        "mypkg",
+        {
+            "multi.py": """\
             class Big:
                 def a(self) -> None:
                     pass
@@ -220,16 +235,15 @@ def test_match_includes_length(
                 def c(self) -> None:
                     pass
         """,
-    })
+        },
+    )
     result = locate_module_symbol("Big")
     assert result["total_matches"] == 1
     match = result["matches"][0]
     assert match["length"] > 1  # multi-line class
 
 
-def test_many_matches_triggers_warning(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
+def test_many_matches_triggers_warning(tmp_path: Path, _patch_workspace: Path) -> None:
     """More than 5 matches produces simplified output with warning."""
     modules = {}
     for i in range(7):
@@ -245,12 +259,13 @@ def test_many_matches_triggers_warning(
 # ---------------------------------------------------------------------------
 
 
-def test_parent_filter_excludes_top_level_function(
-    tmp_path: Path, _patch_workspace: Path
-) -> None:
+def test_parent_filter_excludes_top_level_function(tmp_path: Path, _patch_workspace: Path) -> None:
     """Querying Svc.run must NOT return the top-level run() function."""
-    _make_package(tmp_path, "mypkg", {
-        "dual.py": """\
+    _make_package(
+        tmp_path,
+        "mypkg",
+        {
+            "dual.py": """\
             class Svc:
                 def run(self) -> None:
                     pass
@@ -258,7 +273,8 @@ def test_parent_filter_excludes_top_level_function(
             def run() -> None:
                 pass
         """,
-    })
+        },
+    )
     result = locate_module_symbol("Svc.run")
     assert result["total_matches"] == 1
     match = result["matches"][0]
@@ -271,23 +287,29 @@ def test_parent_filter_excludes_top_level_function(
 # ---------------------------------------------------------------------------
 
 
-def test_path_filter_uses_segment_matching(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_path_filter_uses_segment_matching(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Querying services.Foo must NOT match microservices/."""
     # Create two separate packages: services/ and microservices/
-    _make_package(tmp_path, "services", {
-        "impl.py": """\
+    _make_package(
+        tmp_path,
+        "services",
+        {
+            "impl.py": """\
             class Foo:
                 pass
         """,
-    })
-    _make_package(tmp_path, "microservices", {
-        "impl.py": """\
+        },
+    )
+    _make_package(
+        tmp_path,
+        "microservices",
+        {
+            "impl.py": """\
             class Foo:
                 pass
         """,
-    })
+        },
+    )
     # Patch search paths to include both packages
     monkeypatch.setattr(
         "mcp_code_intel.tools.locate_module_symbol.get_workspace_root",

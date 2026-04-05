@@ -123,15 +123,11 @@ def _convert_rule_group_to_nsp(rule_group: RuleGroup, namespace: str) -> dict[st
 
     """
     rules: list[dict[str, Any]] = [
-        _tag_condition_to_nsp_rule(condition, namespace)
-        for condition in rule_group.conditions
+        _tag_condition_to_nsp_rule(condition, namespace) for condition in rule_group.conditions
     ]
 
     # Recursively convert nested groups
-    rules.extend(
-        _convert_rule_group_to_nsp(nested_group, namespace)
-        for nested_group in rule_group.groups
-    )
+    rules.extend(_convert_rule_group_to_nsp(nested_group, namespace) for nested_group in rule_group.groups)
 
     # Wrap in all/any based on logic
     if rule_group.logic == "AND":
@@ -141,7 +137,8 @@ def _convert_rule_group_to_nsp(rule_group: RuleGroup, namespace: str) -> dict[st
 
 
 def _convert_filter_to_nsp_rules(
-    playlist_filter: SmartPlaylistFilter, namespace: str,
+    playlist_filter: SmartPlaylistFilter,
+    namespace: str,
 ) -> dict[str, list[dict[str, Any]]]:
     """Convert SmartPlaylistFilter to .nsp rules format.
 

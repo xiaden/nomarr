@@ -481,7 +481,9 @@ class LibraryFilesQueriesMixin:
         return list(cursor), total
 
     def get_recently_processed(
-        self, limit: int = 20, library_id: str | None = None,
+        self,
+        limit: int = 20,
+        library_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """Get recently processed (tagged) files ordered by scanned_at descending.
 

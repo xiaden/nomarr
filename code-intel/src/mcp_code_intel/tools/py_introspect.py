@@ -35,9 +35,7 @@ logger = logging.getLogger(__name__)
 # Request / Response DTOs
 # ---------------------------------------------------------------------------
 
-CheckType = Literal[
-    "mro", "issubclass", "signature", "doc", "getsource_contains", "ast_raises"
-]
+CheckType = Literal["mro", "issubclass", "signature", "doc", "getsource_contains", "ast_raises"]
 
 
 class MroCheck(BaseModel):
@@ -89,12 +87,7 @@ class AstRaisesCheck(BaseModel):
 
 
 CheckUnion = (
-    MroCheck
-    | IsSubclassCheck
-    | SignatureCheck
-    | DocCheck
-    | GetsourceContainsCheck
-    | AstRaisesCheck
+    MroCheck | IsSubclassCheck | SignatureCheck | DocCheck | GetsourceContainsCheck | AstRaisesCheck
 )
 
 

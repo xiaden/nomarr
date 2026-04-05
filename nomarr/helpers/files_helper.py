@@ -57,7 +57,10 @@ def validate_library_path(file_path: str, library_path: str) -> str:
 
 
 def resolve_library_path(
-    library_root: str | Path, user_path: str | Path, must_exist: bool = True, must_be_file: bool | None = None,
+    library_root: str | Path,
+    user_path: str | Path,
+    must_exist: bool = True,
+    must_be_file: bool | None = None,
 ) -> Path:
     r"""Safely resolve and validate a path within the library root.
 
