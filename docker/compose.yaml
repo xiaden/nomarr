@@ -33,7 +33,7 @@ services:
 
   # ArangoDB database service
   nomarr-arangodb:
-    image: arangodb:latest
+    image: arangodb:3.12
     container_name: nomarr-arangodb
     env_file:
       - nomarr-arangodb.env

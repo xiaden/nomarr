@@ -1,7 +1,8 @@
-"""Tests for log tools — log_write, log_read.
+"""Tests for log tools.
 
 Covers:
-- log_write: first write creates file, subsequent appends, invalid agent/category/title, tags, round-trip
+- log_write: first write creates file, subsequent appends, invalid
+    agent/category/title, tags, round-trip
 - log_read: newest-first, filter by category/tag/title_query, combined, limit, not found
 """
 
@@ -84,7 +85,13 @@ def test_log_write_with_body(tmp_path: Path) -> None:
 
 
 def test_log_write_round_trip(tmp_path: Path) -> None:
-    _write_entry(tmp_path, title="Research entry", category="research", tags=["db"], body="Found something.")
+    _write_entry(
+        tmp_path,
+        title="Research entry",
+        category="research",
+        tags=["db"],
+        body="Found something.",
+    )
     _write_entry(tmp_path, title="Decision entry", category="decision", body="Decided.")
     md = (tmp_path / LOGS_DIR / "test-agent.log.md").read_text(encoding="utf-8")
     parsed = parse_log(md)

@@ -208,7 +208,10 @@ class TestParseEslintOutput:
 
 class TestParseTypescriptOutput:
     def test_standard_ts_error(self) -> None:
-        stdout = "src/App.tsx(15,3): error TS2322: Type 'string' is not assignable to type 'number'.\n"
+        stdout = (
+            "src/App.tsx(15,3): error TS2322: Type 'string' is not assignable to type "
+            "'number'.\n"
+        )
         errors = parse_typescript_output(stdout, "")
         assert len(errors) == 1
         assert errors[0]["line"] == 15

@@ -52,7 +52,7 @@ def test_same_file_move_after_anchor(ws: Path) -> None:
     new_text = (ws / "f.py").read_text()
     # Content should appear after TARGET, not before line B
     lines = new_text.splitlines()
-    target_idx = next(i for i, l in enumerate(lines) if "# TARGET" in l)
+    target_idx = next(i for i, line in enumerate(lines) if "# TARGET" in line)
     assert "# MOVE_START" in lines[target_idx + 1]
 
 
@@ -81,7 +81,7 @@ def test_same_file_move_before_anchor(ws: Path) -> None:
     assert result["changed"] is True
     new_text = (ws / "f.py").read_text()
     lines = new_text.splitlines()
-    target_idx = next(i for i, l in enumerate(lines) if "# TARGET" in l)
+    target_idx = next(i for i, line in enumerate(lines) if "# TARGET" in line)
     # Moved block should be just before TARGET
     assert "# MOVE_END" in lines[target_idx - 1]
 

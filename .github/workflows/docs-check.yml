@@ -3,6 +3,7 @@ name: Docs consistency check
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main, develop]
 
 permissions:
   contents: read
@@ -29,7 +30,7 @@ jobs:
           echo "$CHANGED" | sed 's/^/changed: /'
 
           NEED_DOCS="false"
-          echo "$CHANGED" | grep -E '^(nomarr/(interfaces|core|services|ml)/.+\.py|build_resources/models/.+\.json)$' && NEED_DOCS="true" || true
+          echo "$CHANGED" | grep -E '^(nomarr/(interfaces|services|workflows|components|persistence|helpers)/.+\.py|build_resources/models/.+\.json)$' && NEED_DOCS="true" || true
           echo "need_docs=$NEED_DOCS" >> $GITHUB_OUTPUT
 
       - name: Check README/API_REFERENCE updated

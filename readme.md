@@ -113,6 +113,15 @@ docker compose logs nomarr | grep "Admin password"
 
 That gets you running. The **[Getting Started guide](docs/user/getting_started.md)** has the full walkthrough — GPU setup, reverse proxy, first scan.
 
+### Docker image tags
+
+If you pull published images from GHCR instead of building locally, use these tags:
+
+- `ghcr.io/xiaden/nomarr:latest` — current stable release from `main`
+- `ghcr.io/xiaden/nomarr:v0.2.3` — pinned stable release from `main`
+- `ghcr.io/xiaden/nomarr:0.2.3.dev42` — pre-release development build from `develop`
+- `ghcr.io/xiaden/nomarr:<sha>` — commit-specific image for an exact build
+
 Once running, the API docs live at **`/docs`** (FastAPI's built-in OpenAPI UI).
 
 ---

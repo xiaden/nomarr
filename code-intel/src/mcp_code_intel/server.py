@@ -1312,7 +1312,8 @@ def plan_complete_step(
     annotation_text: Annotated[
         str | None,
         (
-            "Text to add under the step. Requires annotation_marker, Required with annotation_marker"
+            "Text to add under the step. Requires annotation_marker, "
+            "Required with annotation_marker"
             " Cannot contain bullets or step-like items."
         ),
     ] = None,

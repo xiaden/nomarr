@@ -27,6 +27,8 @@ Thank you for your interest in contributing to Nomarr! This document provides gu
 
 ### Submitting Pull Requests
 
+> **Pull requests target `develop`, not `main`.** Nomarr now uses a two-branch workflow: feature branches merge into `develop` first, and `develop` is squash-merged into `main` for stable releases. See [ADR-017](artifacts/decisions/ADR-017-adopt-main-develop-two-branch-model-with-squash-merge-policy.md) for the full branching model.
+
 **Before starting work on a PR:**
 
 1. **Discuss first** - For anything beyond trivial fixes, open an issue or discussion first
@@ -36,11 +38,27 @@ Thank you for your interest in contributing to Nomarr! This document provides gu
 **PR Requirements:**
 
 - Code follows the existing architecture patterns (see below)
+- Pull requests should target `develop` unless you are coordinating an approved hotfix flow
+- CI must pass before merge on `develop` or `main`, including all required gates:
+   - Lint: `ruff check nomarr/ tests/`
+   - Backend tests: `pytest tests/ -m "not container_only and not requires_database and not code_smell"`
+   - Frontend tests: `npm run test -- --run`
+   - CodeQL for pull requests to `main`
 - Python code passes `ruff` linting and `mypy` type checking (zero errors)
 - Frontend code passes ESLint
-- All tests pass (if applicable)
+- All relevant tests pass locally before you open or update the PR
 - Commit messages are descriptive
 - PR description explains what changed and why
+
+**Branch Naming:**
+
+- `feat/<name>` for new features, for example `feat/library-health-panel`
+- `fix/<name>` for bug fixes, for example `fix/calibration-status-count`
+- `chore/<name>` for maintenance work, for example `chore/update-ci-docs`
+- `refactor/<name>` for internal code restructuring, for example `refactor/tagging-workflow-split`
+- `docs/<name>` for documentation-only changes, for example `docs/update-branching-guide`
+
+Keep names short, lowercase, and descriptive.
 
 **For ML model contributions:**
 
@@ -82,6 +100,8 @@ See [.github/instructions/](.github/instructions/) for detailed layer convention
 
 ## 🔧 Development Setup
 
+All development targets the `develop` branch. Clone the repository and switch to `develop` before making changes.
+
 ### Prerequisites
 
 - Python 3.12+
@@ -96,6 +116,7 @@ See [.github/instructions/](.github/instructions/) for detailed layer convention
    ```bash
    git clone https://github.com/xiaden/nomarr.git
    cd nomarr
+   git checkout develop
    ```
 
 2. **Backend setup:**
@@ -120,7 +141,7 @@ See [.github/instructions/](.github/instructions/) for detailed layer convention
 
    ```bash
    # From repo root
-   docker compose up -d arangodb  # Start database only
+   docker compose -f docker/compose.yaml up -d arangodb  # Start database only
 
    # In one terminal - backend
    source .venv/bin/activate

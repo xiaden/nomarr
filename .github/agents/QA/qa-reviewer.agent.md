@@ -116,7 +116,9 @@ Cross-reference plan steps against the implementation:
 
 This is where experience matters. Code can technically satisfy every plan step while missing the point entirely. When you see that happening, flag it.
 
-### 7. Test Coverage Verification
+### 7. Test Coverage Verification — MANDATORY
+
+**You MUST dispatch QA-TestAnalyzer. This is not optional, even if the changes look trivial.**
 
 Dispatch TestAnalyzer to verify test coverage:
 
@@ -133,7 +135,9 @@ TestAnalyzer finds tests for changed code, identifies gaps, and spawns TestGener
 - Critical path without tests → `PLANNING_GAP`
 - Edge case without tests → `MINOR`
 
-### 8. Documentation Verification
+### 8. Documentation Verification — MANDATORY
+
+**You MUST dispatch QA-DocsAnalyzer. This is not optional, even if the changes look trivial.**
 
 Dispatch DocsAnalyzer to verify documentation:
 
@@ -151,6 +155,8 @@ DocsAnalyzer checks docstrings and user docs, spawns DocsGenerator to fill gaps 
 - Complex drift in user docs → `PLANNING_GAP`
 
 ### 9. Classify and Report
+
+**Your output MUST include `testAnalyzerReport` and `docsAnalyzerReport`.** If either is missing, Exec-Manager will reject your review and re-dispatch you. Both analyzer dispatches are required for a complete review.
 
 ## Output
 
@@ -209,10 +215,11 @@ Getting severity right is the most consequential decision you make. A MINOR clas
 
 1. **Full context first.** Reading the plan, contracts, and layer instructions before reviewing is what makes the review meaningful. Without that, you're just pattern-matching.
 2. **Lint is the baseline.** Everything else is moot if the code doesn't pass lint.
-3. **Dispatch and trust.** TestAnalyzer and DocsAnalyzer own their domains. Let them work, then incorporate their results. One cycle — if they can't self-repair, that's useful signal.
-4. **Specificity matters.** File, line, exact issue, suggested fix. Vague findings waste the Fixer's time and often lead to wrong fixes.
-5. **Intent over letter.** Code that satisfies every plan step but misses the design intent is incomplete. This is the hardest check and the most valuable one.
-6. **Round 3 means something is wrong.** If the same plan is on its third review, the issue isn't the code — it's the plan or the process. Escalate.
+3. **Both analyzers, every time.** TestAnalyzer and DocsAnalyzer MUST both be dispatched. Skipping either makes the review incomplete and Exec-Manager will reject it. There is no "the changes are too small for tests/docs" exception.
+4. **Dispatch and trust.** TestAnalyzer and DocsAnalyzer own their domains. Let them work, then incorporate their results. One cycle — if they can't self-repair, that's useful signal.
+5. **Specificity matters.** File, line, exact issue, suggested fix. Vague findings waste the Fixer's time and often lead to wrong fixes.
+6. **Intent over letter.** Code that satisfies every plan step but misses the design intent is incomplete. This is the hardest check and the most valuable one.
+7. **Round 3 means something is wrong.** If the same plan is on its third review, the issue isn't the code — it's the plan or the process. Escalate.
 
 ## Artifact Logging Behavior
 

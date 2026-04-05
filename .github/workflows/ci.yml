@@ -2,25 +2,22 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
     paths:
       - "nomarr/**"
       - "tests/**"
-      - "scripts/**"
-      - "config/**"
-      - "models/**"
       - "frontend/**"
       - "dockerfile"
-      - "compose.yaml"
+      - "docker/compose.yaml"
       - "requirements.txt"
       - "pyproject.toml"
+      - "BASE_VERSION"
       - ".github/workflows/ci.yml"
   pull_request:
-    branches: [main]
+    branches: [main, develop]
     paths:
       - "nomarr/**"
       - "tests/**"
-      - "build_resources/**"
       - "frontend/**"
       - "dockerfile"
       - "docker/compose.yaml"
@@ -28,23 +25,10 @@ on:
       - "pyproject.toml"
       - ".github/workflows/ci.yml"
   workflow_dispatch:
-    inputs:
-      force_build:
-        description: "Force Docker build and push (ignore version check)"
-        required: false
-        type: boolean
-        default: false
-      skip_tests:
-        description: "Skip tests and push anyway"
-        required: false
-        type: boolean
-        default: false
 
 jobs:
-  # Fast unit tests on runner (no Docker needed)
-  test:
+  lint:
     runs-on: ubuntu-latest
-    if: github.event.inputs.skip_tests != 'true'
     permissions:
       contents: read
     steps:
@@ -68,171 +52,134 @@ jobs:
         run: |
           python -m venv .venv
           source .venv/bin/activate
-          python -m pip install --upgrade pip
+          pip install --upgrade pip
           pip install -r requirements.txt
           pip install -e .
 
-      - name: Run unit tests
+      - name: Lint (ruff check)
         run: |
           source .venv/bin/activate
-          # Run unit tests that don't require Docker, database, or GPU
+          ruff check .
+
+      - name: Format check (ruff format)
+        run: |
+          source .venv/bin/activate
+          ruff format --check .
+
+      - name: Type check (mypy)
+        run: |
+          source .venv/bin/activate
+          mypy nomarr/ --config-file pyproject.toml
+
+  frontend-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Run frontend tests
+        run: |
+          npm ci --prefix frontend
+          npx --prefix frontend vitest run
+
+  test:
+    needs: [lint]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Cache virtualenv
+        id: cache-venv
+        uses: actions/cache@v5
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py3.12-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+
+      - name: Install dependencies
+        if: steps.cache-venv.outputs.cache-hit != 'true'
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Run backend tests
+        run: |
+          source .venv/bin/activate
           pytest tests/ -v -m "not container_only and not requires_database and not code_smell"
 
-      - name: Verify frontend build is up-to-date
-        run: |
-          # Find newest file in frontend source
-          NEWEST_SOURCE=$(find frontend/src frontend/public frontend/index.html frontend/vite.config.ts frontend/tsconfig*.json -type f -printf '%T@\n' 2>/dev/null | sort -rn | head -1)
-          
-          # Find oldest file in build output
-          OLDEST_BUILD=$(find nomarr/public_html -type f -printf '%T@\n' 2>/dev/null | sort -n | head -1)
-          
-          if [ -z "$OLDEST_BUILD" ]; then
-            echo "❌ ERROR: No build artifacts found in nomarr/public_html/"
-            echo "Run: cd frontend && npm run build"
-            exit 1
-          fi
-          
-          if (( $(echo "$NEWEST_SOURCE > $OLDEST_BUILD" | bc -l) )); then
-            echo "❌ ERROR: Frontend source is newer than build artifacts!"
-            echo ""
-            echo "Frontend source has uncommitted changes or build is stale."
-            echo "Run these commands locally and commit:"
-            echo "  cd frontend"
-            echo "  npm run build"
-            echo "  git add ../nomarr/public_html/"
-            echo "  git commit -m 'build: rebuild frontend'"
-            exit 1
-          else
-            echo "✅ Frontend build artifacts are up-to-date"
-          fi
-
-  # Docker build and push (based on test results, force_build, or version change)
   build-and-push:
-    needs: test
-    if: always()  # Always run this job (actual build is conditional)
+    needs: [test, frontend-test]
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-      id-token: write  # Required for attestation signing
-      attestations: write  # Required for attestation upload
+      id-token: write
+      attestations: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
         with:
-          fetch-depth: ${{ github.event.inputs.force_build == 'true' && 1 || 2 }}
           submodules: true
 
-      - name: Extract version from code
-        id: version
+      - name: Extract versions
+        id: versions
         run: |
           VERSION=$(python3 -c "exec(open('nomarr/__version__.py').read()); print(__version__)")
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Version detected: $VERSION"
+          BASE_VERSION=$(cat BASE_VERSION)
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "base_version=${BASE_VERSION}" >> $GITHUB_OUTPUT
+          echo "App version: ${VERSION}"
+          echo "Base version: ${BASE_VERSION}"
 
-      - name: Check if version changed
-        id: version_check
-        if: github.event_name == 'push' && github.event.inputs.force_build != 'true'
+      - name: Compute image tags
+        id: tags
         run: |
-          # Get version from previous commit
-          git checkout HEAD~1 -- nomarr/__version__.py 2>/dev/null || echo "First commit"
-          OLD_VERSION=$(python3 -c "exec(open('nomarr/__version__.py').read()); print(__version__)" 2>/dev/null || echo "0.0.0")
-          git checkout HEAD -- nomarr/__version__.py
+          REPO="ghcr.io/${{ github.repository_owner }}/nomarr"
+          SHA="${{ github.sha }}"
+          SHORT_SHA="${SHA:0:7}"
+          VERSION="${{ steps.versions.outputs.version }}"
+          BASE_VERSION="${{ steps.versions.outputs.base_version }}"
 
-          echo "Previous version: $OLD_VERSION"
-          echo "Current version: ${{ steps.version.outputs.version }}"
-
-          if [ "$OLD_VERSION" != "${{ steps.version.outputs.version }}" ]; then
-            echo "changed=true" >> $GITHUB_OUTPUT
-            echo "Version changed! Will publish Docker image."
+          if [ "${{ github.ref_name }}" == "main" ]; then
+            SEMVER="${VERSION%.dev*}"
+            TAGS="${REPO}:latest,${REPO}:v${SEMVER},${REPO}:${SHORT_SHA}"
+            BASE_TAG="v${BASE_VERSION}"
           else
-            echo "changed=false" >> $GITHUB_OUTPUT
-            echo "Version unchanged. Skipping Docker publish."
+            VERSION_BASE="${VERSION%.dev*}"
+            DEV_TAG="${VERSION_BASE}.dev${{ github.run_number }}"
+            TAGS="${REPO}:develop,${REPO}:${DEV_TAG},${REPO}:${SHORT_SHA}"
+            BASE_TAG="v${BASE_VERSION}"
           fi
 
-      - name: Determine if build should proceed
-        id: should_build
-        run: |
-          # Decision tree:
-          # 1. Tests must pass (unless skip_tests was true)
-          # 2. Then check: force_build OR version_changed OR ALWAYS_BUILD
-          
-          # TEMPORARY: Build on every push while in active development
-          ALWAYS_BUILD="true"
-          
-          TESTS_OK="false"
-          if [ "${{ github.event.inputs.skip_tests }}" == "true" ] || [ "${{ needs.test.result }}" == "success" ]; then
-            TESTS_OK="true"
-          fi
-          
-          BUILD="false"
-          if [ "$TESTS_OK" == "true" ]; then
-            if [ "$ALWAYS_BUILD" == "true" ]; then
-              BUILD="true"
-              echo "✅ Building: ALWAYS_BUILD=true (active development mode)"
-            elif [ "${{ github.event.inputs.force_build }}" == "true" ]; then
-              BUILD="true"
-              echo "✅ Building: force_build=true"
-            elif [ "${{ github.event_name }}" == "push" ] && [ "${{ steps.version_check.outputs.changed }}" == "true" ]; then
-              BUILD="true"
-              echo "✅ Building: version changed"
-            else
-              echo "⏭️ Skipping: force_build=false and version unchanged"
-            fi
-          else
-            echo "❌ Skipping: tests failed and skip_tests=false"
-          fi
-          
-          echo "should_build=$BUILD" >> $GITHUB_OUTPUT
+          echo "tags=${TAGS}" >> $GITHUB_OUTPUT
+          echo "base_tag=${BASE_TAG}" >> $GITHUB_OUTPUT
+          echo "Image tags: ${TAGS}"
+          echo "Base image tag: ${BASE_TAG}"
 
       - name: Set up Docker Buildx
-        if: steps.should_build.outputs.should_build == 'true'
         uses: docker/setup-buildx-action@v4
 
       - name: Log in to GitHub Container Registry
-        if: steps.should_build.outputs.should_build == 'true'
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Compute image tags
-        if: steps.should_build.outputs.should_build == 'true'
-        id: tags
-        run: |
-          REPO="ghcr.io/${{ github.repository_owner }}/nomarr"
-          VERSION="v${{ steps.version.outputs.version }}"
-          SHA="${{ github.sha }}"
-
-          # Determine source branch
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
-            BRANCH="${{ github.head_ref }}"
-          else
-            BRANCH="${{ github.ref_name }}"
-          fi
-
-          # Sanitize branch name for Docker tag (lowercase, only [a-z0-9._-])
-          BRANCH_TAG=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g')
-
-          if [ "$BRANCH" == "main" ]; then
-            TAGS="${REPO}:latest"
-            BASE_TAG="latest"
-          else
-            TAGS="${REPO}:${BRANCH_TAG}"
-            BASE_TAG="${BRANCH_TAG}"
-          fi
-          TAGS="${TAGS},${REPO}:${VERSION},${REPO}:${SHA}"
-
-          echo "tags<<EOF" >> $GITHUB_OUTPUT
-          echo "$TAGS" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          echo "base_tag=${BASE_TAG}" >> $GITHUB_OUTPUT
-          echo "Image tags: $TAGS"
-          echo "Base image tag: $BASE_TAG"
-
-      - name: Build and push to GitHub Container Registry with attestation
-        if: steps.should_build.outputs.should_build == 'true'
+      - name: Build and push with attestation
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -245,5 +192,5 @@ jobs:
             type=registry,ref=ghcr.io/${{ github.repository_owner }}/nomarr:buildcache
             type=registry,ref=ghcr.io/${{ github.repository_owner }}/nomarr:latest
           cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/nomarr:buildcache,mode=max
-          provenance: true  # Generate signed build provenance attestation
-          sbom: true  # Generate Software Bill of Materials
+          provenance: true
+          sbom: true

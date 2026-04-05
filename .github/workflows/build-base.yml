@@ -1,68 +1,67 @@
 name: Build Base Image
 
 on:
-    workflow_dispatch: # Manual trigger only
-    push:
-        branches: [main]
-        paths:
-            - "dockerfile.base"
-            - "build_resources/essentia"
+  workflow_dispatch:
+  push:
+    branches: [main, develop]
+    paths:
+      - "dockerfile.base"
+      - "build_resources/essentia/**"
+      - "build_resources/scripts/**"
 
 jobs:
-    build-base:
-        runs-on: ubuntu-latest
-        permissions:
-            contents: read
-            packages: write
-            id-token: write  # Required for attestation
-            attestations: write  # Required for attestation
-        steps:
-            - name: Checkout code
-              uses: actions/checkout@v6
-              with:
-                  submodules: true
+  build-base:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          submodules: true
 
-            - name: Set up Docker Buildx
-              uses: docker/setup-buildx-action@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
 
-            - name: Log in to GitHub Container Registry
-              uses: docker/login-action@v4
-              with:
-                  registry: ghcr.io
-                  username: ${{ github.actor }}
-                  password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-            - name: Compute image tags
-              id: tags
-              run: |
-                  REPO="ghcr.io/xiaden/nomarr-base"
-                  SHA="${{ github.sha }}"
+      - name: Compute image tags
+        id: tags
+        run: |
+          REPO="ghcr.io/${{ github.repository_owner }}/nomarr-base"
+          SHA="${{ github.sha }}"
+          SHORT_SHA="${SHA:0:7}"
+          BASE_VERSION=$(cat BASE_VERSION)
 
-                  BRANCH="${{ github.ref_name }}"
-                  BRANCH_TAG=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g')
+          if [ "${{ github.ref_name }}" == "main" ]; then
+            MUTABLE_TAG="latest"
+          else
+            MUTABLE_TAG="develop"
+          fi
 
-                  if [ "$BRANCH" == "main" ]; then
-                    TAGS="${REPO}:latest"
-                  else
-                    TAGS="${REPO}:${BRANCH_TAG}"
-                  fi
-                  TAGS="${TAGS},${REPO}:${SHA}"
+          TAGS="${REPO}:v${BASE_VERSION},${REPO}:${MUTABLE_TAG},${REPO}:sha-${SHORT_SHA}"
 
-                  echo "tags<<EOF" >> $GITHUB_OUTPUT
-                  echo "$TAGS" >> $GITHUB_OUTPUT
-                  echo "EOF" >> $GITHUB_OUTPUT
-                  echo "Image tags: $TAGS"
+          echo "tags=${TAGS}" >> $GITHUB_OUTPUT
+          echo "Image tags: ${TAGS}"
 
-            - name: Build and push base image with attestation
-              uses: docker/build-push-action@v7
-              with:
-                  context: .
-                  file: ./dockerfile.base
-                  push: true
-                  tags: ${{ steps.tags.outputs.tags }}
-                  cache-from: |
-                      type=registry,ref=ghcr.io/xiaden/nomarr-base:buildcache
-                      type=registry,ref=ghcr.io/xiaden/nomarr-base:latest
-                  cache-to: type=registry,ref=ghcr.io/xiaden/nomarr-base:buildcache,mode=max
-                  provenance: true  # Generate signed build provenance attestation
-                  sbom: true  # Generate Software Bill of Materials
+      - name: Build and push base image with attestation
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./dockerfile.base
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: |
+            type=registry,ref=ghcr.io/${{ github.repository_owner }}/nomarr-base:buildcache
+            type=registry,ref=ghcr.io/${{ github.repository_owner }}/nomarr-base:latest
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/nomarr-base:buildcache,mode=max
+          provenance: true
+          sbom: true

@@ -2,7 +2,8 @@
 
 Covers:
 - plan_read: pending dir, completed dir, not found, empty name, path traversal
-- plan_complete_step: mark step, annotation, already complete, step not found, plan not found, disk write
+- plan_complete_step: mark step, annotation, already complete, step not found,
+  plan not found, disk write
 """
 
 import textwrap

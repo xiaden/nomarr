@@ -21,6 +21,7 @@ from .logging_helper import (
     sanitize_exception_message,
     set_log_context,
 )
+from .managed_task import ManagedTask
 from .time_helper import (
     MS_PER_SECOND,
     NS_PER_MS,
@@ -58,6 +59,7 @@ __all__ = [
     "SECONDS_PER_MINUTE",
     "InternalMilliseconds",
     "InternalSeconds",
+    "ManagedTask",
     "Milliseconds",
     "NomarrLogFilter",
     "ProcessorConfig",

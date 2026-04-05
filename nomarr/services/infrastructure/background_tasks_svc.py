@@ -2,8 +2,9 @@
 
 import logging
 import threading
-from collections.abc import Callable
 from typing import Any
+
+from nomarr.helpers import ManagedTask
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,7 @@ class BackgroundTaskService:
     """
 
     def __init__(self) -> None:
-        self._tasks: dict[str, threading.Thread] = {}
+        self._tasks: dict[str, tuple[threading.Thread, ManagedTask]] = {}
         self._task_results: dict[str, dict[str, Any]] = {}
         self._task_order: list[str] = []  # Track insertion order for eviction
         self._lock = threading.Lock()
@@ -50,38 +51,37 @@ class BackgroundTaskService:
                     logger.warning(f"Task overload: {running_count} tasks running, exceeds limit of {MAX_TASK_RESULTS}")
                     break
 
-    def start_task(
-        self,
-        task_id: str,
-        task_fn: Callable,
-        *args: Any,
-        **kwargs: Any,
-    ) -> str:
+    def start_task(self, task: ManagedTask) -> str:
         """Start a background task and return task_id.
 
         Args:
-            task_id: Unique identifier for the task
-            task_fn: Function to execute in background
-            *args: Positional arguments for task_fn
-            **kwargs: Keyword arguments for task_fn
+            task: Managed task configuration
 
         Returns:
             Task ID for status checking
 
         Raises:
-            Exception: Re-raises task exceptions to crash container (loud failure)
+            ValueError: If a task with the given task_id is already running.
+            Exception: Re-raises task exceptions to crash container (loud failure).
 
         """
 
+        task_id = task.task_id
+
         def wrapper() -> None:
             try:
-                result = task_fn(*args, **kwargs)
+                result = task.fn()
                 with self._lock:
                     self._task_results[task_id] = {
                         "status": "complete",
                         "result": result,
                         "error": None,
                     }
+                if task.on_complete is not None:
+                    try:
+                        task.on_complete()
+                    except Exception as e:
+                        logger.error("Task %s completion callback failed: %s", task_id, e, exc_info=True)
             except Exception as e:
                 logger.error(f"Task {task_id} failed: {e}", exc_info=True)
                 with self._lock:
@@ -93,20 +93,51 @@ class BackgroundTaskService:
                 # Re-raise to crash container (loud failure for alpha)
                 raise
 
-        thread = threading.Thread(target=wrapper, daemon=True)
-        thread.start()
+        thread = threading.Thread(target=wrapper)
+        thread.daemon = task.daemon
 
         with self._lock:
-            self._tasks[task_id] = thread
+            existing = self._tasks.get(task_id)
+            if existing is not None and existing[0].is_alive():
+                raise ValueError(f"Task {task_id!r} is already running")
+
+            self._tasks[task_id] = (thread, task)
             self._task_results[task_id] = {
                 "status": "running",
                 "result": None,
                 "error": None,
             }
+            if task_id in self._task_order:
+                self._task_order.remove(task_id)
             self._task_order.append(task_id)
             self._evict_old_results()
 
+        thread.start()
+
         return task_id
+
+    def cancel_task(self, task_id: str) -> bool:
+        """Signal a running task to stop cooperatively.
+
+        Args:
+            task_id: Task identifier
+
+        Returns:
+            True if the task was running and was signaled
+            False if the task was missing or not running
+
+        """
+        with self._lock:
+            entry = self._tasks.get(task_id)
+            if entry is None:
+                return False
+
+            thread, managed_task = entry
+            if not thread.is_alive():
+                return False
+
+            managed_task.stop_event.set()
+            return True
 
     def get_task_status(self, task_id: str) -> dict[str, Any] | None:
         """Get task status (running, complete, error).

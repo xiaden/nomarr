@@ -190,29 +190,31 @@ git push origin v0.3.1
 
 ### Tagging Strategy
 
-**Version tags:**
-- `ghcr.io/nomarr/nomarr:0.3.1` - Specific version
-- `ghcr.io/nomarr/nomarr:0.3` - Latest patch in 0.3.x
-- `ghcr.io/nomarr/nomarr:0` - Latest version in 0.x.x
-- `ghcr.io/nomarr/nomarr:latest` - Latest release
+**Stable tags from `main`:**
+- `ghcr.io/xiaden/nomarr:latest` - Current stable release
+- `ghcr.io/xiaden/nomarr:v0.3.1` - Specific pinned release
+- `ghcr.io/xiaden/nomarr:<sha>` - Commit-specific image for the exact main build
 
-**Branch tags:**
-- `ghcr.io/nomarr/nomarr:main` - Latest commit on main branch
-- `ghcr.io/nomarr/nomarr:dev` - Latest commit on dev branch
+**Development tags from `develop`:**
+- `ghcr.io/xiaden/nomarr:0.3.1.dev42` - PEP 440 development build from `develop`
+- `ghcr.io/xiaden/nomarr:<sha>` - Commit-specific image for the exact develop build
 
-### When CI creates tags:
+### When CI creates tags
 
-**On version tag push (v0.3.1):**
-- Build and push `0.3.1`
-- Update `0.3` alias
-- Update `0` alias
-- Update `latest` alias
+**On push to `develop`:**
+- Build and push `{version}.devN`
+- Build and push `{sha}`
 
-**On main branch push:**
-- Build and push `main` tag
+**On push to `main`:**
+- Build and push `latest`
+- Build and push `v{semver}`
+- Build and push `{sha}`
 
-**On dev branch push:**
-- Build and push `dev` tag
+**On version tag push (`v0.3.1`):**
+- Run the same stable publication flow as `main`
+- Publish `latest`
+- Publish `v0.3.1`
+- Publish `{sha}`
 
 ### Usage recommendations:
 
@@ -221,7 +223,7 @@ git push origin v0.3.1
 # compose.yaml
 services:
   nomarr:
-    image: ghcr.io/nomarr/nomarr:main
+    image: ghcr.io/xiaden/nomarr:0.3.1.dev42
 ```
 
 **Production:**
@@ -229,7 +231,7 @@ services:
 # compose.yaml
 services:
   nomarr:
-    image: ghcr.io/nomarr/nomarr:0.3.1  # Pin to specific version
+    image: ghcr.io/xiaden/nomarr:v0.3.1  # Pin to specific version
 ```
 
 **Adventurous users:**
@@ -237,7 +239,7 @@ services:
 # compose.yaml
 services:
   nomarr:
-    image: ghcr.io/nomarr/nomarr:latest  # Always get latest release
+    image: ghcr.io/xiaden/nomarr:latest  # Always get latest release
 ```
 
 ---
@@ -246,25 +248,44 @@ services:
 
 ### GitHub Actions Workflows
 
-**On pull request:**
-- Run linting (ruff)
-- Run type checking (mypy)
-- Run tests (pytest)
-- Build Docker image (don't push)
+**Mandatory CI gates:**
+- Lint: `ruff check nomarr/ tests/`
+- Backend tests: `pytest tests/ -m "not container_only and not requires_database and not code_smell"`
+- Frontend tests: `npm run test -- --run`
+- CodeQL: runs weekly and on pull requests to `main`
 
-**On push to main:**
-- Run all checks
-- Build Docker image
-- Push to `ghcr.io/nomarr/nomarr:main`
+**On pull request to `main` or `develop`:**
+- Run lint
+- Run backend tests
+- Run frontend tests
+- All required checks must pass before merge
 
-**On version tag (v0.3.1):**
-- Run all checks
+**On push to `develop`:**
+- Run lint
+- Run backend tests
+- Run frontend tests
 - Build Docker image
-- Push multiple tags:
-  - `ghcr.io/nomarr/nomarr:0.3.1`
-  - `ghcr.io/nomarr/nomarr:0.3`
-  - `ghcr.io/nomarr/nomarr:0`
-  - `ghcr.io/nomarr/nomarr:latest`
+- Push develop image tags using `{version}.devN` and `{sha}`
+
+**On push to `main`:**
+- Run lint
+- Run backend tests
+- Run frontend tests
+- Build Docker image
+- Push `latest`
+- Push `v{semver}`
+- Push `{sha}`
+
+**On version tag (`v0.3.1`):**
+- Run the same checks as `main`
+- Build Docker image
+- Push `latest`
+- Push `v{semver}`
+- Push `{sha}`
+
+**CodeQL schedule:**
+- Runs weekly on Monday at 06:00 UTC
+- Runs on pull requests targeting `main`
 
 ### Automatic Version Detection
 
@@ -432,8 +453,8 @@ git push origin v0.3.1
 
 **5. Verify:**
 ```bash
-docker pull ghcr.io/nomarr/nomarr:0.3.1
-docker pull ghcr.io/nomarr/nomarr:latest
+docker pull ghcr.io/xiaden/nomarr:v0.3.1
+docker pull ghcr.io/xiaden/nomarr:latest
 ```
 
 ---
@@ -500,8 +521,8 @@ docker pull ghcr.io/nomarr/nomarr:latest
 - Version bumps: breaking → MAJOR, features → MINOR, fixes → PATCH
 
 **Docker tags:**
-- Pin to specific version in production: `0.3.1`
-- Use `main` for development
+- Pin to specific version in production: `v0.3.1`
+- Use `0.3.1.dev42`-style tags for development builds from `develop`
 - Use `latest` for auto-updates (risky in alpha)
 
 **Release process:**
