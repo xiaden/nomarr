@@ -152,15 +152,9 @@ class LibraryFilesCrudMixin:
         if self.parent_db is not None:
             self.parent_db.delete_vectors_by_file_id(file_id)
 
-        # Delete segment_scores_stats (derived data)
-        self.db.aql.execute(
-            """
-            FOR doc IN segment_scores_stats
-                FILTER doc.file_id == @file_id
-                REMOVE doc IN segment_scores_stats
-            """,
-            bind_vars={"file_id": file_id},
-        )
+        # Delete segment_scores_stats via graph traversal (file_id field removed in V021)
+        if self.parent_db is not None:
+            self.parent_db.segment_scores_stats.delete_by_file_id(file_id)
 
         # Delete entity edges (referential integrity)
         self.db.aql.execute(

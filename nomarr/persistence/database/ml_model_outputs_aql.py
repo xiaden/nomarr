@@ -17,7 +17,6 @@ import hashlib
 import logging
 from typing import Any, cast
 
-from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.arango_client import DatabaseLike
 
 logger = logging.getLogger(__name__)
@@ -105,7 +104,6 @@ class MLModelOutputsOperations:
                 "_key": _key,
                 "label": label,
                 "fully_labeled": True,
-                "updated_at": now_ms().value,
             }
         )
 
