@@ -141,7 +141,7 @@ class NavidromePlaycountsOperations:
         IN @@playcounts
 
         // Remove old edge if it existed
-        LET _ = (
+        LET removed = (
             existing != null
             ? (FOR x IN [1] REMOVE { _key: existing.edge_key } IN @@has_plays RETURN 1)
             : []

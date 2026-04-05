@@ -107,7 +107,7 @@ class FileStatesOperations:
                         AND (e._to == @positive OR e._to == @negative)
                     RETURN e
             )
-            LET _ = (
+            LET removed = (
                 FOR o IN (old != null ? [old] : [])
                     REMOVE o IN file_has_state
                     RETURN null
