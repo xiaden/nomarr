@@ -889,7 +889,6 @@ class FileStatesOperations:
         )
         return next(cursor, 0)  # type: ignore[arg-type]
 
-
     def count_pending_tag_writes(self) -> int:
         """Count files in the ``tags_not_written`` state.
 

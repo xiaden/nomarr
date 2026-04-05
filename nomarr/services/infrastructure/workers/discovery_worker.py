@@ -83,8 +83,7 @@ def _execute_deferred_writes(
         # 1. Parse and write ML prediction tags with nom: prefix
         parsed_nom_tags = parse_tag_values(writes.db_tags) if writes.db_tags else {}
         prefixed_nom_tags = {
-            (f"nom:{rel}" if not rel.startswith("nom:") else rel): values
-            for rel, values in parsed_nom_tags.items()
+            (f"nom:{rel}" if not rel.startswith("nom:") else rel): values for rel, values in parsed_nom_tags.items()
         }
         save_file_tags(db, file_id, prefixed_nom_tags)
 
@@ -110,14 +109,16 @@ def _execute_deferred_writes(
             stats_entries: list[dict[str, Any]] = []
             for head_name, (segment_scores, labels) in writes.raw_segments.items():
                 label_stats = compute_segment_stats(segment_scores, labels)
-                stats_entries.append({
-                    "file_id": file_id,
-                    "head_name": head_name,
-                    "tagger_version": writes.tagger_version,
-                    "num_segments": segment_scores.shape[0],
-                    "pooling_strategy": "trimmed_mean",
-                    "label_stats": label_stats,
-                })
+                stats_entries.append(
+                    {
+                        "file_id": file_id,
+                        "head_name": head_name,
+                        "tagger_version": writes.tagger_version,
+                        "num_segments": segment_scores.shape[0],
+                        "pooling_strategy": "trimmed_mean",
+                        "label_stats": label_stats,
+                    }
+                )
             if stats_entries:
                 db.segment_scores_stats.upsert_stats_batch(stats_entries)
 
@@ -134,6 +135,8 @@ def _execute_deferred_writes(
     finally:
         # 6. Always release claim so file is re-discoverable on failure
         release_claim(db, file_id)
+
+
 class DiscoveryWorker(multiprocessing.Process):
     """Discovery-based ML processing worker.
 
@@ -230,7 +233,6 @@ class DiscoveryWorker(multiprocessing.Process):
             force=True,  # Override any existing config
         )
 
-
     def _send_health_frame(self, status: str) -> None:
         """Send a health frame to the parent process via pipe.
 
@@ -316,12 +318,14 @@ class DiscoveryWorker(multiprocessing.Process):
 
         # Register worker context for process-local ML coordinator access
         from nomarr.components.ml.resources.ml_worker_context_comp import register_worker_context
+
         register_worker_context(db, self.worker_id)
 
         # Clear any stale VRAM promises from a previous crash of this worker.
         # The service owner also does this via on_status_change("dead"), but we
         # clear here too in case of a restart race or service-side failure.
         from nomarr.components.ml.resources.ml_vram_coordinator_comp import release_worker_promises
+
         try:
             release_worker_promises(db, self.worker_id)
         except Exception:
@@ -491,23 +495,20 @@ class DiscoveryWorker(multiprocessing.Process):
                         from nomarr.components.platform.resource_monitor_comp import (
                             check_nvidia_gpu_capability,
                         )
-                        if (
-                            self.prefer_gpu
-                            and check_nvidia_gpu_capability()
-                            and not has_model_vram_measurements(db)
-                        ):
+
+                        if self.prefer_gpu and check_nvidia_gpu_capability() and not has_model_vram_measurements(db):
                             logger.info("[%s] Running per-model VRAM probe...", self.worker_id)
                             probe_all_models(db, config.models_dir)
                         _cache_device: _DevicePlacement = "gpu" if self.prefer_gpu else "cpu"
                         onnx_cache = _ONNXModelCache(config.models_dir, _cache_device, db=db)
                         from nomarr.components.ml.resources import ml_vram_coordinator_comp as _coordinator
+
                         onnx_cache.warm = True
                         _fleet = _coordinator.get_fleet_vram_state(db)
                         _vram = _fleet["vram"]
                         _promises = _fleet["promises"]
                         _device_lookup: dict[str, str] = {
-                            m._path: (m._device or "cpu").upper()
-                            for m in onnx_cache._all_models()
+                            m._path: (m._device or "cpu").upper() for m in onnx_cache._all_models()
                         }
                         _promise_rows = [
                             f"  {p.get('worker_id', '?'):<20}  "
@@ -517,8 +518,7 @@ class DiscoveryWorker(multiprocessing.Process):
                             for p in _promises
                         ]
                         logger.info(
-                            "[%s] ONNX cache ready (%d models). "
-                            "Fleet promises: %d  |  GPU %d/%d MB\n%s",
+                            "[%s] ONNX cache ready (%d models). Fleet promises: %d  |  GPU %d/%d MB\n%s",
                             self.worker_id,
                             onnx_cache.model_count,
                             len(_promises),
@@ -550,9 +550,7 @@ class DiscoveryWorker(multiprocessing.Process):
                         file_size = os.path.getsize(file_path)
                     except OSError:
                         file_size = -1
-                    logger.debug(
-                        "[%s] Processing %s (size=%d bytes)", self.worker_id, file_path, file_size
-                    )
+                    logger.debug("[%s] Processing %s (size=%d bytes)", self.worker_id, file_path, file_size)
                     sys.stdout.flush()
                     sys.stderr.flush()
 
@@ -592,7 +590,10 @@ class DiscoveryWorker(multiprocessing.Process):
                     elif result.deferred_writes is not None:
                         # File processed — submit writes to background thread
                         pending_write = write_executor.submit(
-                            _execute_deferred_writes, db, result.deferred_writes, self.worker_id,
+                            _execute_deferred_writes,
+                            db,
+                            result.deferred_writes,
+                            self.worker_id,
                         )
                         files_processed += 1
                         consecutive_errors = 0
@@ -659,6 +660,7 @@ class DiscoveryWorker(multiprocessing.Process):
             # the service owner handles this for crashes via on_status_change("dead")
             try:
                 from nomarr.components.ml.resources.ml_vram_coordinator_comp import release_worker_promises
+
                 release_worker_promises(db, self.worker_id)
             except Exception:
                 logger.debug("[%s] Failed to release VRAM promises on shutdown", self.worker_id, exc_info=True)

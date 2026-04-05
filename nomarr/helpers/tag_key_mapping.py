@@ -17,6 +17,7 @@ Examples:
     nom:happy_essentia21-beta6-dev_musicnn20200331_happy20220825 → nom-happy-raw
     nom:mood-strict → nom-mood-strict (already short, pass through)
 """
+
 from __future__ import annotations
 
 import logging
@@ -127,5 +128,3 @@ def make_navidrome_field_name(short_name: str) -> str:
 
     """
     return short_name.replace("-", "_")
-
-

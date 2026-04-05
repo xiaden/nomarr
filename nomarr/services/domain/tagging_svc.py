@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.file_tags_comp import get_file_tags_with_path
 from nomarr.components.library.search_files_comp import get_unique_tag_keys, get_unique_tag_values
+from nomarr.helpers import ManagedTask
 from nomarr.helpers.dto.calibration_dto import (
     GlobalCalibrationStatus,
     LibraryCalibrationStatus,
@@ -33,6 +35,7 @@ from nomarr.helpers.dto.tag_curation_dto import (
     TagValueItem,
 )
 from nomarr.services.domain._library_mapping import map_file_with_tags_to_dto
+from nomarr.services.infrastructure.background_tasks_svc import BackgroundTaskService
 from nomarr.workflows.calibration.apply_calibration_wf import apply_calibration_wf
 from nomarr.workflows.calibration.write_calibrated_tags_wf import write_calibrated_tags_wf
 from nomarr.workflows.library.cleanup_orphaned_tags_wf import cleanup_orphaned_tags_workflow
@@ -46,6 +49,8 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
+
+CALIBRATION_APPLY_TASK_ID = "calibration_apply"
 
 
 @dataclass
@@ -74,13 +79,14 @@ class TaggingService:
     Architecture note:
     - Service provides API surface and DI
     - Actual tagging logic lives in workflows/calibration/write_calibrated_tags_wf.py
-    - Threading/background execution should be in workflow layer, not service layer
+    - Background execution is managed via BackgroundTaskService (BTS), scoped to this service
     """
 
     def __init__(
         self,
         database: Database,
         cfg: TaggingServiceConfig,
+        bts: BackgroundTaskService,
         config_service: ConfigService,
         library_service: LibraryService | None = None,
     ) -> None:
@@ -89,17 +95,18 @@ class TaggingService:
         Args:
             database: Database instance for persistence operations
             cfg: Service configuration (models_dir, namespace, etc.)
+            bts: BackgroundTaskService for managed background task execution
             config_service: Live configuration provider (for calibrate_heads)
             library_service: LibraryService instance (optional, for library operations)
 
         """
         self.db = database
         self.cfg = cfg
+        self._bts = bts
         self._config_service = config_service
         self.library_service = library_service
 
         # Background apply state — explicit lifecycle: idle → running → completed/failed
-        self._apply_thread: threading.Thread | None = None
         self._apply_result: ApplyCalibrationResult | None = None
         self._apply_error: Exception | None = None
         self._apply_progress_lock = threading.Lock()
@@ -177,7 +184,7 @@ class TaggingService:
     # -- Background apply threading infrastructure --
 
     def start_apply_calibration_background(self) -> None:
-        """Start calibration apply in background thread.
+        """Start calibration apply in a managed background task.
 
         Non-blocking: returns immediately. Poll with is_apply_running() and
         get_apply_status() / get_apply_progress().
@@ -188,7 +195,7 @@ class TaggingService:
         worker restarts, multiple uvicorn workers, or horizontal scaling.
 
         """
-        if self._apply_thread and self._apply_thread.is_alive():
+        if self.is_apply_running():
             logger.warning("[TaggingService] Apply already running")
             return
 
@@ -197,17 +204,21 @@ class TaggingService:
         self._apply_error = None
         self._clear_apply_progress()
 
-        # Start background thread
-        self._apply_thread = threading.Thread(
-            target=self._run_apply_calibration,
-            name="CalibrationApply",
+        task = ManagedTask(
+            task_id=CALIBRATION_APPLY_TASK_ID,
+            fn=self._run_apply_calibration,
             daemon=False,
         )
-        self._apply_thread.start()
+        try:
+            self._bts.start_task(task)
+        except ValueError:
+            logger.warning("[TaggingService] Apply already running")
+            return
+
         logger.info("[TaggingService] Started calibration apply in background")
 
-    def _run_apply_calibration(self) -> None:
-        """Background thread: run calibration apply.
+    def _run_apply_calibration(self) -> ApplyCalibrationResult:
+        """Managed background task: run calibration apply.
 
         Progress is NOT cleared on completion — the final snapshot remains queryable
         until the next run starts.
@@ -220,9 +231,11 @@ class TaggingService:
                 f"[TaggingService] Background apply completed: "
                 f"{result.processed} processed, {result.failed} failed out of {result.total}",
             )
+            return result
         except Exception as e:
             logger.error(f"[TaggingService] Background apply failed: {e}", exc_info=True)
             self._apply_error = e
+            raise
 
     def _update_apply_progress(self, **kwargs: int | str | None) -> None:
         """Thread-safe update of apply progress state.
@@ -242,7 +255,8 @@ class TaggingService:
 
     def is_apply_running(self) -> bool:
         """Check if calibration apply is currently running."""
-        return self._apply_thread is not None and self._apply_thread.is_alive()
+        status = self._bts.get_task_status(CALIBRATION_APPLY_TASK_ID)
+        return status is not None and status.get("status") == "running"
 
     def get_apply_status(self) -> dict[str, Any]:
         """Get current status of background calibration apply.
@@ -481,6 +495,50 @@ class TaggingService:
             failed=failed,
         )
 
+    def start_write_tags_background(
+        self,
+        library_id: str,
+        stop_event: threading.Event,
+        on_complete: Callable[[], None] | None = None,
+    ) -> str:
+        """Dispatch a non-blocking background write-tags loop for a library.
+
+        Starts a managed background task that repeatedly calls
+        :meth:`reconcile_library` for the given library until either all pending
+        tag writes have been processed (``remaining == 0``) or ``stop_event`` is
+        set.
+
+        Args:
+            library_id: Library document _id to reconcile
+            stop_event: Cooperative cancellation event. The background loop exits
+                when this event is set.
+            on_complete: Optional callback invoked after successful completion
+                when reconciliation finishes with no remaining files.
+
+        Returns:
+            Task ID string in the form ``"write_tags:{library_id}"`` returned by
+            the background task service. Use this ID for status polling and
+            cancellation.
+
+        """
+        task_id = f"write_tags:{library_id}"
+
+        def _task() -> None:
+            while not stop_event.is_set():
+                result = self.reconcile_library(library_id)
+                if result.remaining == 0:
+                    break
+
+        return self._bts.start_task(
+            ManagedTask(
+                task_id=task_id,
+                fn=_task,
+                stop_event=stop_event,
+                on_complete=on_complete,
+                daemon=True,
+            ),
+        )
+
     def mark_tags_stale(self, library_id: str) -> int:
         """Mark all file tags in a library as stale.
 
@@ -515,12 +573,12 @@ class TaggingService:
         pending_count = self.db.library_files.count_files_needing_reconciliation(
             library_id=library_id,
         )
+        task_status = self._bts.get_task_status(f"write_tags:{library_id}")
+        in_progress = task_status is not None and task_status["status"] == "running"
 
-        # For now, in_progress is always False (sync reconciliation)
-        # Can be extended later for background task tracking
         return {
             "pending_count": pending_count,
-            "in_progress": False,
+            "in_progress": in_progress,
         }
 
     # ── Nom-prefix guard ──────────────────────────────────────────────

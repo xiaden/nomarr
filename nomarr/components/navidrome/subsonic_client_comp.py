@@ -119,9 +119,7 @@ class SubsonicClient:
             return False
         return True
 
-    def get_album_list2(
-        self, type: str, size: int, offset: int
-    ) -> list[dict[str, Any]]:
+    def get_album_list2(self, type: str, size: int, offset: int) -> list[dict[str, Any]]:
         """Get a list of albums using ID3 tags (``getAlbumList2``).
 
         Args:

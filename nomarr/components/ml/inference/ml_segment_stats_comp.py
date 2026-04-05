@@ -39,21 +39,20 @@ def compute_segment_stats(
 
     num_classes = segment_scores.shape[1]
     if num_classes != len(labels):
-        msg = (
-            f"Shape mismatch: segment_scores has {num_classes} classes "
-            f"but {len(labels)} labels provided"
-        )
+        msg = f"Shape mismatch: segment_scores has {num_classes} classes but {len(labels)} labels provided"
         raise ValueError(msg)
 
     stats: list[dict[str, Any]] = []
     for i, label in enumerate(labels):
         col = segment_scores[:, i]
-        stats.append({
-            "label": label,
-            "mean": float(np.mean(col)),
-            "std": float(np.std(col)),
-            "min": float(np.min(col)),
-            "max": float(np.max(col)),
-        })
+        stats.append(
+            {
+                "label": label,
+                "mean": float(np.mean(col)),
+                "std": float(np.std(col)),
+                "min": float(np.min(col)),
+                "max": float(np.max(col)),
+            }
+        )
 
     return stats

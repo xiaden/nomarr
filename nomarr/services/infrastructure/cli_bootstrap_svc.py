@@ -13,6 +13,7 @@ Architecture:
 This module creates a minimal service container for CLI use cases where the
 full Application lifecycle (workers, coordinator, event broker) is not needed.
 """
+
 from __future__ import annotations
 
 import logging
@@ -24,6 +25,7 @@ from nomarr.services.infrastructure.keys_svc import KeyManagementService
 
 logger = logging.getLogger(__name__)
 
+
 def get_database() -> Database:
     """Get Database instance for CLI operations.
 
@@ -34,6 +36,7 @@ def get_database() -> Database:
 
     """
     return Database()
+
 
 def get_keys_service() -> KeyManagementService:
     """Get KeyManagementService instance for CLI operations.
@@ -53,6 +56,7 @@ def get_keys_service() -> KeyManagementService:
     db = get_database()
     return KeyManagementService(db)
 
+
 def get_config_service() -> ConfigService:
     """Get ConfigService instance for CLI operations.
 
@@ -61,6 +65,7 @@ def get_config_service() -> ConfigService:
 
     """
     return ConfigService()
+
 
 def get_metadata_service() -> MetadataService:
     """Get MetadataService instance for CLI operations.
@@ -73,4 +78,6 @@ def get_metadata_service() -> MetadataService:
     """
     db = get_database()
     return MetadataService(db)
+
+
 logger.debug("[CLI Bootstrap] Service container initialized for CLI operations")

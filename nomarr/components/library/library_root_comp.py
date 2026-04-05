@@ -101,7 +101,10 @@ def normalize_library_root(base_library_root: Path, raw_root: str | Path) -> str
     # Validate using resolve_library_path
     try:
         resolved = resolve_library_path(
-            library_root=base_library_root, user_path=user_path, must_exist=True, must_be_file=False,
+            library_root=base_library_root,
+            user_path=user_path,
+            must_exist=True,
+            must_be_file=False,
         )
     except ValueError as e:
         # Re-raise with more context
@@ -177,7 +180,11 @@ def ensure_no_overlapping_library_root(db: Database, candidate_root: str, *, ign
 
 
 def resolve_path_within_library(
-    library_root: str, user_path: str | Path, *, must_exist: bool = True, must_be_file: bool | None = None,
+    library_root: str,
+    user_path: str | Path,
+    *,
+    must_exist: bool = True,
+    must_be_file: bool | None = None,
 ) -> Path:
     """Resolve a user-provided path within a library root.
 
@@ -201,9 +208,11 @@ def resolve_path_within_library(
 
     """
     return resolve_library_path(
-        library_root=library_root, user_path=user_path, must_exist=must_exist, must_be_file=must_be_file,
+        library_root=library_root,
+        user_path=user_path,
+        must_exist=must_exist,
+        must_be_file=must_be_file,
     )
-
 
 
 def validate_library_root(library_root: Path) -> None:

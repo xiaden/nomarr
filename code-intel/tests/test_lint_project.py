@@ -33,22 +33,24 @@ from mcp_code_intel.tools.lint_project_frontend import (
 
 class TestParseRuffErrors:
     def test_valid_ruff_json(self) -> None:
-        ruff_output = json.dumps([
-            {
-                "code": "F401",
-                "message": "os imported but unused",
-                "filename": "nomarr/main.py",
-                "location": {"row": 1, "column": 1},
-                "fix": {"edits": []},
-            },
-            {
-                "code": "E501",
-                "message": "Line too long",
-                "filename": "nomarr/main.py",
-                "location": {"row": 10, "column": 80},
-                "fix": None,
-            },
-        ])
+        ruff_output = json.dumps(
+            [
+                {
+                    "code": "F401",
+                    "message": "os imported but unused",
+                    "filename": "nomarr/main.py",
+                    "location": {"row": 1, "column": 1},
+                    "fix": {"edits": []},
+                },
+                {
+                    "code": "E501",
+                    "message": "Line too long",
+                    "filename": "nomarr/main.py",
+                    "location": {"row": 10, "column": 80},
+                    "fix": None,
+                },
+            ]
+        )
         errors = parse_raw_errors(ruff_output, "", "ruff")
         assert len(errors) == 2
         assert errors[0]["code"] == "F401"
@@ -72,22 +74,28 @@ class TestParseRuffErrors:
 
 class TestParseMypyErrors:
     def test_valid_mypy_json_lines(self) -> None:
-        lines = "\n".join([
-            json.dumps({
-                "severity": "error",
-                "code": "arg-type",
-                "message": "Argument 1 has incompatible type",
-                "file": "nomarr/wf.py",
-                "line": 15,
-            }),
-            json.dumps({
-                "severity": "note",
-                "code": "note",
-                "message": "See docs",
-                "file": "nomarr/wf.py",
-                "line": 16,
-            }),
-        ])
+        lines = "\n".join(
+            [
+                json.dumps(
+                    {
+                        "severity": "error",
+                        "code": "arg-type",
+                        "message": "Argument 1 has incompatible type",
+                        "file": "nomarr/wf.py",
+                        "line": 15,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "severity": "note",
+                        "code": "note",
+                        "message": "See docs",
+                        "file": "nomarr/wf.py",
+                        "line": 16,
+                    }
+                ),
+            ]
+        )
         errors = parse_raw_errors(lines, "", "mypy")
         # Notes are skipped
         assert len(errors) == 1
@@ -124,12 +132,27 @@ class TestParseImportLinterErrors:
 class TestNormalizeToJsonStructure:
     def test_groups_by_code(self) -> None:
         errors = [
-            {"code": "F401", "description": "unused import", "fix_available": True,
-             "file": "a.py", "line": 1},
-            {"code": "F401", "description": "unused import", "fix_available": True,
-             "file": "b.py", "line": 5},
-            {"code": "E501", "description": "line too long", "fix_available": False,
-             "file": "a.py", "line": 10},
+            {
+                "code": "F401",
+                "description": "unused import",
+                "fix_available": True,
+                "file": "a.py",
+                "line": 1,
+            },
+            {
+                "code": "F401",
+                "description": "unused import",
+                "fix_available": True,
+                "file": "b.py",
+                "line": 5,
+            },
+            {
+                "code": "E501",
+                "description": "line too long",
+                "fix_available": False,
+                "file": "a.py",
+                "line": 10,
+            },
         ]
         result = normalize_to_json_structure(errors, "ruff")
         assert "F401" in result
@@ -140,8 +163,13 @@ class TestNormalizeToJsonStructure:
 
     def test_import_linter_no_file_line(self) -> None:
         errors = [
-            {"code": "architecture", "description": "violation",
-             "fix_available": False, "file": None, "line": None},
+            {
+                "code": "architecture",
+                "description": "violation",
+                "fix_available": False,
+                "file": None,
+                "line": None,
+            },
         ]
         result = normalize_to_json_structure(errors, "import-linter")
         assert "architecture" in result
@@ -209,8 +237,7 @@ class TestParseEslintOutput:
 class TestParseTypescriptOutput:
     def test_standard_ts_error(self) -> None:
         stdout = (
-            "src/App.tsx(15,3): error TS2322: Type 'string' is not assignable to type "
-            "'number'.\n"
+            "src/App.tsx(15,3): error TS2322: Type 'string' is not assignable to type 'number'.\n"
         )
         errors = parse_typescript_output(stdout, "")
         assert len(errors) == 1
@@ -249,6 +276,7 @@ def test_lint_frontend_missing_dir(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(mod, "frontend_dir", _Path("/nonexistent/frontend"))
 
     from mcp_code_intel.tools.lint_project_frontend import lint_project_frontend
+
     result = lint_project_frontend()
     assert result["status"] == "error"
     assert "not found" in result["summary"]["error"]

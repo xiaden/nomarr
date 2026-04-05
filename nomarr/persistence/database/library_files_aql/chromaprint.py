@@ -17,9 +17,7 @@ class LibraryFilesChromaprintMixin:
     collection: Any
     parent_db: "Database | None"
 
-    def get_files_by_chromaprint(
-        self, chromaprint: str, library_id: str | None = None
-    ) -> list[dict[str, Any]]:
+    def get_files_by_chromaprint(self, chromaprint: str, library_id: str | None = None) -> list[dict[str, Any]]:
         """Get library files matching a chromaprint (for move detection).
 
         Uses ``library_contains_file`` edge traversal when scoped to a library.

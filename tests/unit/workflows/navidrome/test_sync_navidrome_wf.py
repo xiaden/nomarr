@@ -196,8 +196,6 @@ class TestSyncNavidrome:
 
         assert result["play_edges_upserted"] == 2
         # bulk_upsert_plays(user_id, plays) — plays is the second positional arg
-        call_args: list[dict[str, Any]] = (
-            db.navidrome_playcounts.bulk_upsert_plays.call_args[0][1]
-        )
+        call_args: list[dict[str, Any]] = db.navidrome_playcounts.bulk_upsert_plays.call_args[0][1]
         nd_ids_with_plays = [e["nd_id"] for e in call_args]
         assert nd_ids_with_plays == ["nd-1", "nd-3"]

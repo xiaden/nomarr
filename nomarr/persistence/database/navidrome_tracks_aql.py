@@ -163,10 +163,7 @@ class NavidromeTracksOperations:
         if not mappings:
             return 0
 
-        edges = [
-            {"_from": f"{_TRACKS}/{m['nd_id']}", "_to": m["file_id"]}
-            for m in mappings
-        ]
+        edges = [{"_from": f"{_TRACKS}/{m['nd_id']}", "_to": m["file_id"]} for m in mappings]
         query = """
         FOR edge IN @edges
             UPSERT { _from: edge._from, _to: edge._to }

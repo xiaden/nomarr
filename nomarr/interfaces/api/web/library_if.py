@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import threading
 from typing import TYPE_CHECKING, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -22,11 +23,11 @@ from nomarr.interfaces.api.types.library_types import (
     ListLibrariesResponse,
     ReconcilePathsResponse,
     ReconcileStatusResponse,
-    ReconcileTagsResponse,
     RetryErroredRequest,
     RetryErroredResponse,
     SearchFilesResponse,
     StartScanWithStatusResponse,
+    StartTagWriteResponse,
     TagCleanupResponse,
     UniqueTagKeysResponse,
     UpdateLibraryRequest,
@@ -608,16 +609,17 @@ async def reconcile_library_paths(
         ) from e
 
 
-@router.post("/{library_id}/reconcile-tags", dependencies=[Depends(verify_session)])
+@router.post("/{library_id}/reconcile-tags", dependencies=[Depends(verify_session)], status_code=202)
 async def reconcile_library_tags(
     library_id: str,
-    batch_size: Annotated[int, Query(description="Number of files to process per batch", ge=1, le=1000)] = 100,
     tagging_service: "TaggingService" = Depends(get_tagging_service),
     navidrome_service: "NavidromeService" = Depends(get_navidrome_service),
-) -> ReconcileTagsResponse:
+) -> StartTagWriteResponse:
     """Reconcile file tags for a library.
 
-    Writes tags from database to audio files based on the library's file_write_mode.
+    Starts background tag writes from database to audio files based on the
+    library's file_write_mode.
+
     This handles:
     - Mode changes (e.g., switching from "full" to "minimal")
     - Calibration updates (new mood tag values)
@@ -625,21 +627,26 @@ async def reconcile_library_tags(
 
     Args:
         library_id: Library ID to reconcile
-        batch_size: Files to process per batch (default: 100)
         tagging_service: TaggingService instance (injected)
+        navidrome_service: NavidromeService instance (injected)
 
     Returns:
-        ReconcileTagsResponse with processed, remaining, and failed counts
+        StartTagWriteResponse with background task status and task id
 
     """
     library_id = decode_path_id(library_id)
     try:
-        result = await asyncio.to_thread(
-            tagging_service.reconcile_library, library_id=library_id, batch_size=batch_size
+        stop_event = threading.Event()
+
+        def trigger_navidrome_rescan() -> None:
+            navidrome_service.trigger_rescan()
+
+        task_id = tagging_service.start_write_tags_background(
+            library_id,
+            stop_event=stop_event,
+            on_complete=trigger_navidrome_rescan,
         )
-        # Trigger incremental Navidrome rescan after tag writes.
-        await asyncio.to_thread(navidrome_service.trigger_rescan)
-        return ReconcileTagsResponse.from_dto(result)
+        return StartTagWriteResponse(status="started", task_id=task_id)
     except ValueError:
         raise HTTPException(status_code=404, detail="Library not found") from None
     except Exception as e:

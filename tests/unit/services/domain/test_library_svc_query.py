@@ -103,7 +103,6 @@ class TestGetPathsNeedingCalibration:
         )
 
 
-
 class TestGetErroredFiles:
     """Tests for get_errored_files."""
 

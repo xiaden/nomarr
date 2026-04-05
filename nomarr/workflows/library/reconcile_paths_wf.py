@@ -1,4 +1,5 @@
 """Reconcile library paths workflow - validate all library paths against current config."""
+
 from __future__ import annotations
 
 import logging
@@ -11,7 +12,10 @@ if TYPE_CHECKING:
     from nomarr.helpers.dto.library_dto import ReconcileResult
     from nomarr.persistence.db import Database
 
-def reconcile_library_paths_workflow(db: Database, library_root: str | None, policy: ReconcilePolicy="mark_invalid", batch_size: int=1000) -> ReconcileResult:
+
+def reconcile_library_paths_workflow(
+    db: Database, library_root: str | None, policy: ReconcilePolicy = "mark_invalid", batch_size: int = 1000
+) -> ReconcileResult:
     """Re-validate all library paths against current configuration.
 
     This checks all files in library_files table to detect paths that have
@@ -50,5 +54,7 @@ def reconcile_library_paths_workflow(db: Database, library_root: str | None, pol
         raise ValueError(msg)
     logger.info(f"[reconcile_paths] Starting reconciliation: policy={policy}, batch_size={batch_size}")
     result = reconcile_library_paths(db=db, policy=policy, batch_size=batch_size)
-    logger.info(f"[reconcile_paths] Reconciliation complete: {result['total_files']} files checked, {result['valid_files']} valid, {result['deleted_files']} deleted")
+    logger.info(
+        f"[reconcile_paths] Reconciliation complete: {result['total_files']} files checked, {result['valid_files']} valid, {result['deleted_files']} deleted"
+    )
     return result

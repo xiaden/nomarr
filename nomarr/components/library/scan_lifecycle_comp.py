@@ -110,7 +110,11 @@ def update_scan_progress(
 
     """
     db.libraries.update_scan_status(
-        library_id, status=status, progress=progress, total=total, scan_error=scan_error,
+        library_id,
+        status=status,
+        progress=progress,
+        total=total,
+        scan_error=scan_error,
     )
 
 
@@ -120,7 +124,8 @@ def update_scan_progress(
 
 
 def snapshot_existing_files(
-    db: Database, library_id: str,
+    db: Database,
+    library_id: str,
 ) -> tuple[dict[str, dict[str, Any]], bool]:
     """Load all existing library files and check for tagged files.
 
@@ -137,9 +142,7 @@ def snapshot_existing_files(
 
     """
     files_tuple = db.library_files.list_library_files(limit=1_000_000, offset=0)
-    existing_files_dict: dict[str, dict[str, Any]] = {
-        f["path"]: f for f in files_tuple[0]
-    }
+    existing_files_dict: dict[str, dict[str, Any]] = {f["path"]: f for f in files_tuple[0]}
     has_tagged_files = db.file_states.library_has_tagged_files(library_id)
     return existing_files_dict, has_tagged_files
 
@@ -181,7 +184,6 @@ def upsert_scanned_files(
     return file_ids
 
 
-
 def bootstrap_file_state_edges(
     db: Database,
     edge_bootstraps: list[dict[str, Any]],
@@ -212,6 +214,8 @@ def bootstrap_file_state_edges(
             db.file_states.set_tagged(file_id)
             count += 1
     return count
+
+
 def remove_deleted_files(db: Database, paths: list[str]) -> int:
     """Bulk-delete files that are no longer on disk.
 
@@ -232,7 +236,8 @@ def remove_deleted_files(db: Database, paths: list[str]) -> int:
 
 
 def get_cached_folders(
-    db: Database, library_id: str,
+    db: Database,
+    library_id: str,
 ) -> dict[str, dict[str, Any]]:
     """Load all cached folder records for a library.
 

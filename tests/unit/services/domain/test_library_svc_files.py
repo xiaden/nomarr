@@ -50,7 +50,8 @@ class TestRetryErroredFiles:
         mock_db.file_states.bulk_set_not_errored.return_value = 2
         mixin = _ConcreteFilesMixin(mock_db)
         mixin.retry_errored_files(
-            "abc123", file_ids=["library_files/1", "library_files/3"],
+            "abc123",
+            file_ids=["library_files/1", "library_files/3"],
         )
         mock_db.file_states.bulk_set_not_errored.assert_called_once_with(
             ["library_files/1", "library_files/3"],

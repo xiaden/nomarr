@@ -4,7 +4,7 @@ description: Implements one phase of a plan. Reads context files, executes steps
 model: GPT-5.4 (copilot)
 user-invocable: false
 agents: []
-tools: [read/readFile, edit/editFiles, search/codebase, search/fileSearch, search/listDirectory, search/textSearch, nomarr_dev/edit_file_create, nomarr_dev/edit_file_insert_at_boundary, nomarr_dev/edit_file_move, nomarr_dev/edit_file_replace_content, nomarr_dev/edit_file_replace_string, nomarr_dev/lint_project_backend, nomarr_dev/lint_project_frontend, nomarr_dev/list_project_directory_tree, nomarr_dev/locate_module_symbol, nomarr_dev/plan_complete_step, nomarr_dev/plan_read, nomarr_dev/read_file_line, nomarr_dev/read_file_line_range, nomarr_dev/read_file_symbol_at_line, nomarr_dev/read_module_api, nomarr_dev/read_module_source, nomarr_dev/search_file_text, nomarr_dev/trace_module_calls, nomarr_dev/log_read, nomarr_dev/log_write]
+tools: [execute/getTerminalOutput, execute/awaitTerminal, execute/killTerminal, execute/runInTerminal, read/readFile, edit/editFiles, search/codebase, search/fileSearch, search/listDirectory, search/textSearch, nomarr_dev/edit_file_create, nomarr_dev/edit_file_insert_at_boundary, nomarr_dev/edit_file_move, nomarr_dev/edit_file_replace_content, nomarr_dev/edit_file_replace_string, nomarr_dev/lint_project_backend, nomarr_dev/lint_project_frontend, nomarr_dev/list_project_directory_tree, nomarr_dev/locate_module_symbol, nomarr_dev/plan_complete_step, nomarr_dev/plan_read, nomarr_dev/read_file_line, nomarr_dev/read_file_line_range, nomarr_dev/read_file_symbol_at_line, nomarr_dev/read_module_api, nomarr_dev/read_module_source, nomarr_dev/search_file_text, nomarr_dev/trace_module_calls, nomarr_dev/log_read, nomarr_dev/log_write]
 ---
 
 # Executor Agent

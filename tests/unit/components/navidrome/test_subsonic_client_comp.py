@@ -111,9 +111,7 @@ class TestSubsonicUrlConstruction:
     @patch.object(requests.Session, "get")
     def test_common_auth_params_present(self, mock_get: MagicMock) -> None:
         """All 6 common auth params must be in every request."""
-        mock_get.return_value = _mock_response(
-            _ok_response({"albumList2": {"album": []}})
-        )
+        mock_get.return_value = _mock_response(_ok_response({"albumList2": {"album": []}}))
         client = SubsonicClient("http://navidrome:4533", "admin", "secret")
 
         client.get_album_list2("alphabeticalByName", 500, 0)
@@ -159,9 +157,7 @@ class TestSubsonicJsonResponseParsing:
     def test_get_album_list2_returns_album_list(self, mock_get: MagicMock) -> None:
         """get_album_list2 extracts album list from response."""
         albums = [{"id": "al-1", "name": "Album 1"}, {"id": "al-2", "name": "Album 2"}]
-        mock_get.return_value = _mock_response(
-            _ok_response({"albumList2": {"album": albums}})
-        )
+        mock_get.return_value = _mock_response(_ok_response({"albumList2": {"album": albums}}))
         client = SubsonicClient("http://navidrome:4533", "admin", "secret")
 
         result = client.get_album_list2("alphabeticalByName", 500, 0)
@@ -171,9 +167,7 @@ class TestSubsonicJsonResponseParsing:
     @patch.object(requests.Session, "get")
     def test_get_album_list2_returns_empty_on_no_albums(self, mock_get: MagicMock) -> None:
         """get_album_list2 returns empty list when albumList2 has no album key."""
-        mock_get.return_value = _mock_response(
-            _ok_response({"albumList2": {}})
-        )
+        mock_get.return_value = _mock_response(_ok_response({"albumList2": {}}))
         client = SubsonicClient("http://navidrome:4533", "admin", "secret")
 
         result = client.get_album_list2("alphabeticalByName", 500, 0)
@@ -204,9 +198,7 @@ class TestSubsonicJsonResponseParsing:
     def test_get_playlists_returns_playlist_list(self, mock_get: MagicMock) -> None:
         """get_playlists extracts playlist list from response."""
         playlists = [{"id": "pl-1", "name": "My Mix"}]
-        mock_get.return_value = _mock_response(
-            _ok_response({"playlists": {"playlist": playlists}})
-        )
+        mock_get.return_value = _mock_response(_ok_response({"playlists": {"playlist": playlists}}))
         client = SubsonicClient("http://navidrome:4533", "admin", "secret")
 
         result = client.get_playlists()
@@ -255,9 +247,7 @@ class TestSubsonicErrorHandling:
     @patch.object(requests.Session, "get")
     def test_subsonic_error_raises_exception(self, mock_get: MagicMock) -> None:
         """Non-ok Subsonic response raises SubsonicApiError."""
-        mock_get.return_value = _mock_response(
-            _error_response(code=40, message="Wrong username or password")
-        )
+        mock_get.return_value = _mock_response(_error_response(code=40, message="Wrong username or password"))
         client = SubsonicClient("http://navidrome:4533", "admin", "wrong")
 
         with pytest.raises(SubsonicApiError) as exc_info:
@@ -269,9 +259,7 @@ class TestSubsonicErrorHandling:
     @patch.object(requests.Session, "get")
     def test_error_code_preserved(self, mock_get: MagicMock) -> None:
         """Error code from Subsonic response is accessible on exception."""
-        mock_get.return_value = _mock_response(
-            _error_response(code=70, message="Not found")
-        )
+        mock_get.return_value = _mock_response(_error_response(code=70, message="Not found"))
         client = SubsonicClient("http://navidrome:4533", "admin", "secret")
 
         with pytest.raises(SubsonicApiError) as exc_info:

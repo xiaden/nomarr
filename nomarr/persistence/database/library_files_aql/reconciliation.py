@@ -14,7 +14,6 @@ from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.arango_client import DatabaseLike
 
 if TYPE_CHECKING:
-
     from nomarr.persistence.db import Database
 
 
@@ -64,9 +63,7 @@ class LibraryFilesReconciliationMixin:
             return []
 
         # Fetch full file documents for stale IDs
-        candidates: list[dict[str, Any]] = [
-            doc for doc in self.collection.get_many(stale_ids) if doc is not None
-        ]
+        candidates: list[dict[str, Any]] = [doc for doc in self.collection.get_many(stale_ids) if doc is not None]
 
         # Try to claim each candidate via worker_claims
         claimed: list[dict[str, Any]] = []

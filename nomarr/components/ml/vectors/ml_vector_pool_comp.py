@@ -43,7 +43,10 @@ def pool_embedding_for_storage(
         raise ValueError(msg)
 
     pooled: np.ndarray = pool_scores(
-        embeddings_2d, mode=mode, trim_perc=trim_perc, nan_policy="omit",
+        embeddings_2d,
+        mode=mode,
+        trim_perc=trim_perc,
+        nan_policy="omit",
     )
     return [float(x) for x in pooled]
 

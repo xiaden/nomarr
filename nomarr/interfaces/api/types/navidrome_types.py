@@ -88,7 +88,8 @@ class PlaylistPreviewResponse(BaseModel):
 
     total_count: int = Field(..., description="Total number of tracks matching the query")
     sample_tracks: list[dict[str, str]] = Field(
-        default_factory=list, description="Sample of matching tracks (path, title, artist, album)",
+        default_factory=list,
+        description="Sample of matching tracks (path, title, artist, album)",
     )
     query: str = Field(..., description="Original query string")
 
@@ -106,7 +107,8 @@ class PreviewTagStatsResponse(BaseModel):
     """Pydantic model for PreviewTagStatsResult DTO."""
 
     stats: dict[str, dict[str, str | int | float]] = Field(
-        default_factory=dict, description="Tag statistics keyed by tag name",
+        default_factory=dict,
+        description="Tag statistics keyed by tag name",
     )
 
     @classmethod
@@ -140,7 +142,8 @@ class GeneratePlaylistResponse(BaseModel):
     # {"name": str, "comment": str, "all"|"any": [{"op": {field: value}}, ...], ...}
     # Values can be str, int, float, or nested all/any dicts
     playlist_structure: dict[str, Any] = Field(
-        ..., description="Navidrome .nsp playlist structure",
+        ...,
+        description="Navidrome .nsp playlist structure",
     )
 
     @classmethod
@@ -170,7 +173,8 @@ class GetTemplateSummaryResponse(BaseModel):
     """Pydantic model for GetTemplateSummaryResult DTO."""
 
     templates: list[TemplateSummaryItemResponse] = Field(
-        default_factory=list, description="List of available templates",
+        default_factory=list,
+        description="List of available templates",
     )
 
     @classmethod
@@ -214,7 +218,6 @@ class GenerateTemplateFilesRequest(BaseModel):
     output_dir: str | None = Field(None, description="Optional output directory")
 
 
-
 # ──────────────────────────────────────────────────────────────────────
 # Static Playlist (Vector Search → M3U)
 # ──────────────────────────────────────────────────────────────────────
@@ -224,7 +227,10 @@ class StaticPlaylistRequest(BaseModel):
     """Request model for static playlist generation from file IDs."""
 
     file_ids: list[str] = Field(
-        ..., min_length=1, max_length=200, description="Library file IDs to include in the playlist",
+        ...,
+        min_length=1,
+        max_length=200,
+        description="Library file IDs to include in the playlist",
     )
     playlist_name: str = Field("Vector Search Playlist", description="Name for the generated playlist")
 
@@ -250,7 +256,6 @@ class StaticPlaylistResponse(BaseModel):
         )
 
 
-
 class SyncSongsResponse(BaseModel):
     """Response for Navidrome song sync."""
 
@@ -261,7 +266,6 @@ class SyncSongsResponse(BaseModel):
     play_edges_upserted: int = Field(..., description="Play count edges upserted")
     orphans_removed: int = Field(..., description="Orphan tracks removed")
     duration_ms: int = Field(..., description="Sync duration in milliseconds")
-
 
 
 class PingResponse(BaseModel):

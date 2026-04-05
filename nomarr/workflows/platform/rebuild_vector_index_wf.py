@@ -54,9 +54,7 @@ def rebuild_vector_index_workflow(
     )
 
     embed_dim = derive_embed_dim(models_dir, backbone_id)
-    logger.info(
-        "[rebuild index wf] embed_dim=%d for %s", embed_dim, backbone_id
-    )
+    logger.info("[rebuild index wf] embed_dim=%d for %s", embed_dim, backbone_id)
 
     rebuild_cold_vector_index(db.db, backbone_id, library_key, embed_dim, nlists)
 

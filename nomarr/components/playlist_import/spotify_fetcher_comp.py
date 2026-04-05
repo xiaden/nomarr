@@ -22,15 +22,11 @@ class SpotifyFetchError(Exception):
     """Raised when Spotify API request fails."""
 
 
-
 class SpotifyCredentialsError(SpotifyFetchError):
     """Raised when Spotify credentials are missing or invalid."""
 
 
-
-def create_spotify_client(
-    client_id: str, client_secret: str
-) -> spotipy.Spotify:
+def create_spotify_client(client_id: str, client_secret: str) -> spotipy.Spotify:
     """Create an authenticated Spotify client.
 
     Uses Client Credentials flow (app-level auth) which works for public playlists.
@@ -47,8 +43,7 @@ def create_spotify_client(
     """
     if not client_id or not client_secret:
         raise SpotifyCredentialsError(
-            "Spotify credentials not configured. "
-            "Set spotify_client_id and spotify_client_secret in config."
+            "Spotify credentials not configured. Set spotify_client_id and spotify_client_secret in config."
         )
 
     try:
@@ -59,9 +54,7 @@ def create_spotify_client(
         return spotipy.Spotify(auth_manager=auth_manager)
 
     except Exception as e:
-        raise SpotifyCredentialsError(
-            f"Failed to authenticate with Spotify: {e}"
-        ) from e
+        raise SpotifyCredentialsError(f"Failed to authenticate with Spotify: {e}") from e
 
 
 def fetch_spotify_playlist(
@@ -105,10 +98,7 @@ def fetch_spotify_playlist(
 
     except spotipy.SpotifyException as e:
         if e.http_status == 404:
-            raise SpotifyFetchError(
-                f"Playlist not found: {playlist_id}. "
-                "Make sure the playlist is public."
-            ) from e
+            raise SpotifyFetchError(f"Playlist not found: {playlist_id}. Make sure the playlist is public.") from e
         if e.http_status == 400:
             # 400 errors often mean private/personalized playlists
             raise SpotifyFetchError(
@@ -119,9 +109,7 @@ def fetch_spotify_playlist(
         raise SpotifyFetchError(f"Spotify API error: {e}") from e
 
 
-def _fetch_all_tracks(
-    client: spotipy.Spotify, playlist_id: str
-) -> list[PlaylistTrackInput]:
+def _fetch_all_tracks(client: spotipy.Spotify, playlist_id: str) -> list[PlaylistTrackInput]:
     """Fetch all tracks from a playlist, handling pagination.
 
     Spotify API returns max 100 tracks per request.
@@ -164,9 +152,7 @@ def _fetch_all_tracks(
     return tracks
 
 
-def _extract_track(
-    item: dict[str, Any], position: int
-) -> PlaylistTrackInput | None:
+def _extract_track(item: dict[str, Any], position: int) -> PlaylistTrackInput | None:
     """Extract a PlaylistTrackInput from a Spotify track item.
 
     Args:

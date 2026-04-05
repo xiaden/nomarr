@@ -96,9 +96,7 @@ def promote_and_rebuild_workflow(
 
     # Early return if hot empty and cold has index (idempotent)
     if hot_count_before == 0 and index_exists_before:  # type: ignore[operator]
-        logger.info(
-            "[promote & rebuild] Hot empty and cold has index — already done"
-        )
+        logger.info("[promote & rebuild] Hot empty and cold has index — already done")
         return
 
     # Step 3: Drop cold vector index if exists (free memory before drain)

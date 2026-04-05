@@ -69,9 +69,7 @@ class TestReplaceByContent:
             start_boundary="const handleClick = () => {",
             end_boundary="};",
             expected_line_count=6,
-            new_content=(
-                "    const handleClick = () => setCount(c => c + 1);\n"
-            ),
+            new_content=("    const handleClick = () => setCount(c => c + 1);\n"),
             workspace_root=workspace,
         )
         assert result["status"] == "applied"
@@ -179,12 +177,8 @@ class TestMoveByContent:
         content = _read(workspace, path)
         lines = content.strip().splitlines()
         # helper should now be after utility
-        utility_idx = next(
-            i for i, ln in enumerate(lines) if "def utility" in ln
-        )
-        helper_idx = next(
-            i for i, ln in enumerate(lines) if "def helper" in ln
-        )
+        utility_idx = next(i for i, ln in enumerate(lines) if "def utility" in ln)
+        helper_idx = next(i for i, ln in enumerate(lines) if "def helper" in ln)
         assert helper_idx > utility_idx
 
     def test_cross_file_move(self, workspace: Path) -> None:
@@ -271,7 +265,8 @@ class TestMoveByContent:
         assert 'return "extracted"' in tgt_content
 
     def test_move_to_new_file_fails_if_exists(
-        self, workspace: Path,
+        self,
+        workspace: Path,
     ) -> None:
         """Fail when target_anchor is None but target file exists."""
         src = _write(
@@ -359,9 +354,7 @@ class TestInsertAtAnchor:
         assert "timeout: 30" in content
         lines = content.splitlines()
         port_idx = next(i for i, ln in enumerate(lines) if "port: 8080" in ln)
-        timeout_idx = next(
-            i for i, ln in enumerate(lines) if "timeout: 30" in ln
-        )
+        timeout_idx = next(i for i, ln in enumerate(lines) if "timeout: 30" in ln)
         assert timeout_idx == port_idx + 1
 
     def test_insert_before_anchor(self, workspace: Path) -> None:

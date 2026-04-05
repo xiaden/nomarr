@@ -13,6 +13,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 
+from nomarr.helpers.exceptions import MisconfiguredError
 from nomarr.interfaces.api.auth import verify_key
 from nomarr.interfaces.api.web.dependencies import get_navidrome_service
 from nomarr.services.domain.navidrome_svc import NavidromeService
@@ -153,6 +154,8 @@ class PlaylistResultResponse(BaseModel):
 class GeneratePlaylistsResponse(BaseModel):
     """Response for personal playlist generation."""
 
+    status: str = "ok"
+    message: str = ""
     playlists: list[PlaylistResultResponse]
 
 
@@ -167,27 +170,48 @@ async def navidrome_generate_playlists(
     svc: Annotated[NavidromeService, Depends(get_navidrome_service)],
 ) -> GeneratePlaylistsResponse:
     """Generate personal playlists for a Navidrome user."""
-    results = await asyncio.to_thread(
-        svc.generate_playlists,
-        user_id=body.user_id,
-        enabled_types=body.enabled_types,
-        max_songs=body.max_songs,
-        min_songs=body.min_songs,
-        max_genre_playlists=body.max_genre_playlists,
-    )
+    try:
+        result = await asyncio.to_thread(
+            svc.generate_playlists,
+            user_id=body.user_id,
+            enabled_types=body.enabled_types,
+            max_songs=body.max_songs,
+            min_songs=body.min_songs,
+            max_genre_playlists=body.max_genre_playlists,
+        )
+    except MisconfiguredError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"status": "misconfigured", "message": str(exc)},
+        ) from exc
+
+    if result.status == "misconfigured":
+        raise HTTPException(
+            status_code=422,
+            detail={"status": result.status, "message": result.message},
+        )
+
+    if result.status == "no_data":
+        return GeneratePlaylistsResponse(
+            status=result.status,
+            message=result.message,
+            playlists=[],
+        )
 
     # Resolve internal file_ids to Navidrome track IDs (external concern).
-    all_file_ids = list({fid for r in results for fid in r["file_ids"]})
-    nd_map = await asyncio.to_thread(svc.resolve_files_to_nd, all_file_ids)
+    all_file_ids = list({fid for playlist in result.playlists for fid in playlist["file_ids"]})
+    nd_map = await asyncio.to_thread(svc.resolve_files_to_nd, all_file_ids) if all_file_ids else {}
 
     return GeneratePlaylistsResponse(
+        status=result.status,
+        message=result.message,
         playlists=[
             PlaylistResultResponse(
-                playlist_type=r["playlist_type"],
-                playlist_name=r["playlist_name"],
-                track_nd_ids=[nd_map[fid] for fid in r["file_ids"] if fid in nd_map],
-                track_count=len([fid for fid in r["file_ids"] if fid in nd_map]),
+                playlist_type=playlist["playlist_type"],
+                playlist_name=playlist["playlist_name"],
+                track_nd_ids=[nd_map[fid] for fid in playlist["file_ids"] if fid in nd_map],
+                track_count=len([fid for fid in playlist["file_ids"] if fid in nd_map]),
             )
-            for r in results
+            for playlist in result.playlists
         ],
     )

@@ -82,7 +82,11 @@ def check_already_tagged(path: str, namespace: str, version_tag_key: str, curren
 
 
 def should_skip_processing(
-    path: str, force: bool, namespace: str, version_tag_key: str, tagger_version: str,
+    path: str,
+    force: bool,
+    namespace: str,
+    version_tag_key: str,
+    tagger_version: str,
 ) -> tuple[bool, str | None]:
     """Determine if processing should be skipped for this file.
 

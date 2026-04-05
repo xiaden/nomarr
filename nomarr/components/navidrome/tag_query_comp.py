@@ -91,7 +91,6 @@ def get_playlist_preview_tracks(
     )
 
 
-
 def get_short_to_versioned_mapping(
     db: Database,
     namespace: str = "nom",

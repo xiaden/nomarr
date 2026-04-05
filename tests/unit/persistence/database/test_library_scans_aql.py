@@ -38,12 +38,14 @@ class TestGetOrCreateScan:
         """Executes UPSERT-style query for lazy scan creation."""
         # Mock cursor to return a scan document
         mock_cursor = MagicMock()
-        mock_cursor.__next__ = MagicMock(return_value={
-            "_key": "lib123",
-            "status": "idle",
-            "files_processed": 0,
-            "files_total": 0,
-        })
+        mock_cursor.__next__ = MagicMock(
+            return_value={
+                "_key": "lib123",
+                "status": "idle",
+                "files_processed": 0,
+                "files_total": 0,
+            }
+        )
         mock_db.aql.execute.return_value = mock_cursor
 
         result = ops.get_or_create_scan("libraries/lib123")
@@ -120,12 +122,14 @@ class TestUpdateScan:
     def test_executes_upsert_with_fields(self, ops: LibraryScansOperations, mock_db: MagicMock) -> None:
         """Executes UPSERT query with provided fields."""
         mock_cursor = MagicMock()
-        mock_cursor.__next__ = MagicMock(return_value={
-            "_key": "lib1",
-            "status": "scanning",
-            "files_processed": 50,
-            "files_total": 100,
-        })
+        mock_cursor.__next__ = MagicMock(
+            return_value={
+                "_key": "lib1",
+                "status": "scanning",
+                "files_processed": 50,
+                "files_total": 100,
+            }
+        )
         mock_db.aql.execute.return_value = mock_cursor
 
         result = ops.update_scan(

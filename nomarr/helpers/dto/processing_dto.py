@@ -109,7 +109,6 @@ class WorkerStatusResult:
     workers: list[dict[str, Any]]
 
 
-
 @dataclass
 class DeferredFileWrites:
     """DB write payloads collected during ML processing.
@@ -136,6 +135,7 @@ class DeferredFileWrites:
     chromaprint: str | None
     raw_segments: dict[str, tuple[Any, list[str]]]  # head_name -> (segment_scores ndarray, labels)
     ml_edges: MLEdgeWrites | None = None
+
 
 @dataclass
 class ProcessFileResult:

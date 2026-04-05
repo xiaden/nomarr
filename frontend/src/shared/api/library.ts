@@ -167,21 +167,28 @@ export async function scanFull(id: string): Promise<ScanResult> {
 // Tag Reconciliation API
 // ──────────────────────────────────────────────────────────────────────────────
 
-export interface ReconcileTagsResult {
-  processed: number;
-  remaining: number;
-  failed: number;
+/**
+ * Immediate response returned after starting a background tag-write job.
+ * `status` is the job acceptance status (for example, `"started"`).
+ * `task_id` is the BTS task identifier used to poll progress via `getReconcileStatus()`.
+ */
+export interface StartTagWriteResult {
+  status: string;
+  task_id: string;
 }
 
 /**
- * Reconcile file tags for a library.
- * Writes tags from database to audio files based on the library's file_write_mode.
+ * Start a background tag-write job for a library and return immediately.
+ * Writes tags from the database to audio files based on the library's `file_write_mode`.
+ *
+ * @param libraryId - Library ID
+ * @returns Immediate job start result. Poll `getReconcileStatus()` with the returned
+ *   `task_id` to track background progress.
  */
 export async function reconcileTags(
-  libraryId: string,
-  batchSize = 100
-): Promise<ReconcileTagsResult> {
-  return post(`/api/web/libraries/${libraryId}/reconcile-tags?batch_size=${batchSize}`);
+  libraryId: string
+): Promise<StartTagWriteResult> {
+  return post(`/api/web/libraries/${libraryId}/reconcile-tags`);
 }
 
 export interface ReconcileStatusResult {

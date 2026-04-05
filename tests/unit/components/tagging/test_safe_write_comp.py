@@ -31,9 +31,7 @@ class TestSafeWriteVerification:
         def mock_write_fn(temp_path: Path) -> None:
             temp_path.touch()
 
-        with patch(
-            "nomarr.components.tagging.safe_write_comp._probe_audio_properties"
-        ) as mock_probe:
+        with patch("nomarr.components.tagging.safe_write_comp._probe_audio_properties") as mock_probe:
             mock_probe.return_value = _GOOD_PROPS
 
             mtime_ms = int(test_file.stat().st_mtime * 1000)
@@ -60,9 +58,7 @@ class TestSafeWriteVerification:
 
         truncated_props = _AudioProperties(duration=10.0, sample_rate=44100, channels=2)
 
-        with patch(
-            "nomarr.components.tagging.safe_write_comp._probe_audio_properties"
-        ) as mock_probe:
+        with patch("nomarr.components.tagging.safe_write_comp._probe_audio_properties") as mock_probe:
             mock_probe.side_effect = [_GOOD_PROPS, truncated_props]
 
             mtime_ms = int(test_file.stat().st_mtime * 1000)
@@ -88,9 +84,7 @@ class TestSafeWriteVerification:
 
         wrong_sr_props = _AudioProperties(duration=180.0, sample_rate=22050, channels=2)
 
-        with patch(
-            "nomarr.components.tagging.safe_write_comp._probe_audio_properties"
-        ) as mock_probe:
+        with patch("nomarr.components.tagging.safe_write_comp._probe_audio_properties") as mock_probe:
             mock_probe.side_effect = [_GOOD_PROPS, wrong_sr_props]
 
             mtime_ms = int(test_file.stat().st_mtime * 1000)

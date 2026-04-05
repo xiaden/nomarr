@@ -447,7 +447,10 @@ class HealthMonitorService:
             self._emit_status_change(component_id, old_status, new_status, handler, state)
 
     def _check_component_deadline(
-        self, component_id: str, state: _ComponentState, now: InternalSeconds,
+        self,
+        component_id: str,
+        state: _ComponentState,
+        now: InternalSeconds,
     ) -> tuple[str, ComponentStatus, ComponentStatus, ComponentLifecycleHandler, _ComponentState] | None:
         """Check deadlines for a single component. Returns state change if any."""
         policy = state.policy

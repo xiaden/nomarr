@@ -145,7 +145,6 @@ def get_file_watcher_service() -> FileWatcherService | None:
     return application.services.get("file_watcher")  # type: ignore[return-value]
 
 
-
 def get_playlist_import_service() -> PlaylistImportService:
     """Get PlaylistImportService instance."""
     from nomarr.app import application
@@ -154,7 +153,6 @@ def get_playlist_import_service() -> PlaylistImportService:
     if not service:
         raise HTTPException(status_code=503, detail="Playlist import service not available")
     return service  # type: ignore[no-any-return]
-
 
 
 def get_vector_search_service() -> Any:

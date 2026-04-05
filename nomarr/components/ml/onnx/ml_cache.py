@@ -57,10 +57,10 @@ class ONNXModelCache:
     Example usage::
 
         cache = ONNXModelCache("/models", device="gpu", db=my_db)
-        cache.warm = True    # load all sessions via coordinator
+        cache.warm = True  # load all sessions via coordinator
         emb = cache.backbones["effnet"].run(waveform)
         # ... run heads ...
-        cache.warm = False   # unload all sessions (idle eviction)
+        cache.warm = False  # unload all sessions (idle eviction)
     """
 
     backbones: dict[str, ONNXBackboneModel]

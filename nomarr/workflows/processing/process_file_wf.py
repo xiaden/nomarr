@@ -174,7 +174,9 @@ def process_file_workflow(
         if db is not None and file_id is not None:
             assert library_path.library_id is not None  # validated above
             library_key = library_path.library_id.split("/")[-1]
-            elapsed_store = persist_backbone_vector(db, file_id, backbone, embeddings_2d, model_suite_hash, path, library_key)
+            elapsed_store = persist_backbone_vector(
+                db, file_id, backbone, embeddings_2d, model_suite_hash, path, library_key
+            )
             if elapsed_store is not None:
                 timings[f"vector_store_{backbone}"] = elapsed_store
         del embeddings_2d

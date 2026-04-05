@@ -13,8 +13,6 @@ Covers:
 - Pydantic validation error
 """
 
-
-
 from mcp_code_intel.tools.py_introspect import py_introspect
 
 # ---------------------------------------------------------------------------
@@ -90,11 +88,15 @@ def test_doc_no_docstring() -> None:
 
 
 def test_issubclass_bool_int() -> None:
-    result = py_introspect(checks=[{
-        "check": "issubclass",
-        "child": "builtins.bool",
-        "parent": "builtins.int",
-    }])
+    result = py_introspect(
+        checks=[
+            {
+                "check": "issubclass",
+                "child": "builtins.bool",
+                "parent": "builtins.int",
+            }
+        ]
+    )
     assert result["status"] == "ok"
     r = result["results"][0]
     assert r["ok"] is True
@@ -102,11 +104,15 @@ def test_issubclass_bool_int() -> None:
 
 
 def test_issubclass_int_bool_false() -> None:
-    result = py_introspect(checks=[{
-        "check": "issubclass",
-        "child": "builtins.int",
-        "parent": "builtins.bool",
-    }])
+    result = py_introspect(
+        checks=[
+            {
+                "check": "issubclass",
+                "child": "builtins.int",
+                "parent": "builtins.bool",
+            }
+        ]
+    )
     assert result["status"] == "ok"
     assert result["results"][0]["result"] is False
 
@@ -118,10 +124,14 @@ def test_issubclass_int_bool_false() -> None:
 
 def test_ast_raises_json_loads() -> None:
     """json.loads raises ValueError/JSONDecodeError."""
-    result = py_introspect(checks=[{
-        "check": "ast_raises",
-        "target": "json.decoder.JSONDecoder.decode",
-    }])
+    result = py_introspect(
+        checks=[
+            {
+                "check": "ast_raises",
+                "target": "json.decoder.JSONDecoder.decode",
+            }
+        ]
+    )
     assert result["status"] in ("ok", "partial")
     r = result["results"][0]
     # It at least ran the check
@@ -130,11 +140,15 @@ def test_ast_raises_json_loads() -> None:
 
 def test_ast_raises_with_filter() -> None:
     """Filter for specific exceptions."""
-    result = py_introspect(checks=[{
-        "check": "ast_raises",
-        "target": "json.decoder.JSONDecoder.decode",
-        "exceptions": ["JSONDecodeError", "NonExistentError"],
-    }])
+    result = py_introspect(
+        checks=[
+            {
+                "check": "ast_raises",
+                "target": "json.decoder.JSONDecoder.decode",
+                "exceptions": ["JSONDecodeError", "NonExistentError"],
+            }
+        ]
+    )
     r = result["results"][0]
     if r["ok"]:
         # unmatched should contain NonExistentError
@@ -147,11 +161,13 @@ def test_ast_raises_with_filter() -> None:
 
 
 def test_multiple_checks_batched() -> None:
-    result = py_introspect(checks=[
-        {"check": "mro", "target": "builtins.bool"},
-        {"check": "signature", "target": "json.dumps"},
-        {"check": "doc", "target": "json.loads"},
-    ])
+    result = py_introspect(
+        checks=[
+            {"check": "mro", "target": "builtins.bool"},
+            {"check": "signature", "target": "json.dumps"},
+            {"check": "doc", "target": "json.loads"},
+        ]
+    )
     assert result["status"] == "ok"
     assert len(result["results"]) == 3
     assert all(r["ok"] for r in result["results"])
@@ -180,10 +196,14 @@ def test_invalid_check_type() -> None:
 
 
 def test_invalid_target() -> None:
-    result = py_introspect(checks=[{
-        "check": "mro",
-        "target": "nonexistent.module.Class",
-    }])
+    result = py_introspect(
+        checks=[
+            {
+                "check": "mro",
+                "target": "nonexistent.module.Class",
+            }
+        ]
+    )
     # Should return partial or error with failed result
     assert len(result["results"]) == 1
     r = result["results"][0]
@@ -196,11 +216,15 @@ def test_invalid_target() -> None:
 
 
 def test_getsource_contains_positive() -> None:
-    result = py_introspect(checks=[{
-        "check": "getsource_contains",
-        "target": "json.dumps",
-        "needle": "def",
-    }])
+    result = py_introspect(
+        checks=[
+            {
+                "check": "getsource_contains",
+                "target": "json.dumps",
+                "needle": "def",
+            }
+        ]
+    )
     assert result["status"] == "ok"
     r = result["results"][0]
     assert r["ok"] is True
@@ -209,11 +233,15 @@ def test_getsource_contains_positive() -> None:
 
 
 def test_getsource_contains_negative() -> None:
-    result = py_introspect(checks=[{
-        "check": "getsource_contains",
-        "target": "json.dumps",
-        "needle": "XYZZY_NONEXISTENT_TOKEN",
-    }])
+    result = py_introspect(
+        checks=[
+            {
+                "check": "getsource_contains",
+                "target": "json.dumps",
+                "needle": "XYZZY_NONEXISTENT_TOKEN",
+            }
+        ]
+    )
     assert result["status"] == "ok"
     r = result["results"][0]
     assert r["ok"] is True

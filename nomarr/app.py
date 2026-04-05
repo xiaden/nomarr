@@ -251,6 +251,10 @@ class Application:
         self.health_monitor.start()
         self.register_service("health_monitor", self.health_monitor)
         logger.debug("[Application] HealthMonitorService started")
+        from nomarr.services.infrastructure.background_tasks_svc import BackgroundTaskService
+
+        background_tasks = BackgroundTaskService()
+        self.register_service("background_tasks", background_tasks)
         logger.debug("[Application] Initializing AnalyticsService...")
         from nomarr.services.domain.analytics_svc import AnalyticsConfig
 
@@ -261,7 +265,7 @@ class Application:
         from nomarr.services.domain.calibration_svc import CalibrationConfig
 
         calibration_cfg = CalibrationConfig(models_dir=str(self.models_dir), namespace=self.namespace)
-        calibration_service = CalibrationService(db=self.db, cfg=calibration_cfg)
+        calibration_service = CalibrationService(db=self.db, cfg=calibration_cfg, bts=background_tasks)
         self.register_service("calibration", calibration_service)
         logger.debug("[Application] Initializing NavidromeService...")
         from nomarr.services.domain.navidrome_svc import NavidromeConfig
@@ -272,9 +276,7 @@ class Application:
         navidrome_service = NavidromeService(db=self.db, cfg=navidrome_cfg, config_service=self._config_service)
         self.register_service("navidrome", navidrome_service)
         logger.debug("[Application] Initializing PlaylistImportService...")
-        playlist_import_service = PlaylistImportService(
-            db=self.db, config_service=self._config_service
-        )
+        playlist_import_service = PlaylistImportService(db=self.db, config_service=self._config_service)
         self.register_service("playlist_import", playlist_import_service)
         from nomarr.services.infrastructure.info_svc import InfoConfig, InfoService
 
@@ -293,10 +295,6 @@ class Application:
         )
         info_service = InfoService(cfg=info_cfg, workers_coordinator=self.worker_system, ml_service=ml_service)
         self.register_service("info", info_service)
-        from nomarr.services.infrastructure.background_tasks_svc import BackgroundTaskService
-
-        background_tasks = BackgroundTaskService()
-        self.register_service("background_tasks", background_tasks)
         if self.library_root:
             logger.debug(f"[Application] Registering LibraryService with namespace={self.namespace}")
             library_cfg = LibraryServiceConfig(
@@ -339,12 +337,15 @@ class Application:
                 namespace=self.namespace,
                 version_tag_key=self.version_tag_key,
             ),
+            bts=background_tasks,
             config_service=self._config_service,
             library_service=self.services.get("library"),
         )
         self.register_service("tagging", tagging_service)
         calibration_service.set_post_generation_hook(tagging_service.start_apply_calibration_background)
-        logger.debug("[Application] Wired calibration post-generation hook → TaggingService.start_apply_calibration_background")
+        logger.debug(
+            "[Application] Wired calibration post-generation hook → TaggingService.start_apply_calibration_background"
+        )
         # Vector services (search and maintenance)
         from nomarr.services.domain.vector_maintenance_svc import VectorMaintenanceService
         from nomarr.services.domain.vector_search_svc import VectorSearchService
@@ -381,6 +382,7 @@ class Application:
 
         # Summary log with key startup info
         from nomarr.services.infrastructure import keys_svc
+
         sessions = len(keys_svc._session_cache) if "keys" in self.services else 0
         worker_count = len(self.worker_system._workers) if self.worker_system and self.worker_system._started else 0
         logger.info(
@@ -423,7 +425,6 @@ class Application:
             logger.warning(f"[Application] DB unavailable during shutdown (expected if containers stopping): {e}")
         self._running = False
         logger.info("[Application] Shutdown complete - all workers stopped")
-
 
     def is_running(self) -> bool:
         """Check if application is running."""

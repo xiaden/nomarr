@@ -116,6 +116,7 @@ class TagModelOutputOperations:
             """,
             bind_vars=cast("dict[str, Any]", {"edges": bind_edges, "ts": ts}),
         )
+
     def delete_edges_for_tag(self, tag_id: str) -> int:
         """Remove all outbound edges from *tag_id*.
 
@@ -166,7 +167,6 @@ class TagModelOutputOperations:
         cursor = cast("Any", self.db.aql.execute(query, bind_vars={"tag_id": tag_id}))
         result = list(cursor)
         return bool(result[0]) if result else False
-
 
     def delete_edges_for_outputs(self, output_ids: list[str]) -> int:
         """Bulk-delete all edges whose ``_to`` is in *output_ids*.

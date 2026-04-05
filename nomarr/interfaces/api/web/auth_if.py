@@ -1,4 +1,5 @@
 """Authentication endpoints for web UI."""
+
 from __future__ import annotations
 
 import logging
@@ -18,15 +19,19 @@ from nomarr.interfaces.api.auth import (
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
+
 class LoginRequest(BaseModel):
     password: str
+
 
 class LoginResponse(BaseModel):
     session_token: str
     expires_in: int
 
+
 class LogoutResponse(BaseModel):
     status: str
+
 
 @router.post("/login", response_model=LoginResponse)
 async def login(request: LoginRequest):
@@ -44,6 +49,7 @@ async def login(request: LoginRequest):
     session_token = create_session()
     logger.info("[Web UI] New session created")
     return LoginResponse(session_token=session_token, expires_in=86400)
+
 
 @router.post("/logout", response_model=LogoutResponse, dependencies=[Depends(verify_session)])
 async def logout(creds=Depends(verify_session)):

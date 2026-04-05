@@ -70,6 +70,7 @@ def parse_tag_values(tags: dict[str, str | TagValue | list[TagValue]]) -> dict[s
             try:
                 # Use ast.literal_eval for safe parsing of tuple literals
                 import ast
+
                 parsed_value = ast.literal_eval(value)
                 if isinstance(parsed_value, tuple):
                     parsed[key] = list(parsed_value)

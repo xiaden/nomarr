@@ -124,6 +124,13 @@ class TestBackgroundTaskService:
 
         assert background_task_service.cancel_task(task_id) is False
 
+    def test_cancel_task_returns_false_for_unknown_task(
+        self,
+        background_task_service: BackgroundTaskService,
+    ) -> None:
+        """cancel_task should return False for a task that was never started."""
+        assert background_task_service.cancel_task("never-started") is False
+
     def test_on_complete_fires_after_success_status_is_written(
         self,
         background_task_service: BackgroundTaskService,
@@ -152,6 +159,33 @@ class TestBackgroundTaskService:
         assert callback_called.is_set()
         assert callback_statuses == ["complete"]
 
+    def test_on_complete_callback_errors_are_swallowed(
+        self,
+        background_task_service: BackgroundTaskService,
+    ) -> None:
+        """Task should still complete when on_complete raises an exception."""
+        task_id = "callback-raises"
+
+        def on_complete() -> None:
+            raise RuntimeError("cb_boom")
+
+        managed_task = ManagedTask(
+            task_id=task_id,
+            fn=lambda: "done",
+            on_complete=on_complete,
+        )
+        started_task_id = background_task_service.start_task(managed_task)
+        thread = background_task_service._tasks[started_task_id][0]
+
+        _join_thread(thread)
+
+        status = background_task_service.get_task_status(task_id)
+        assert status is not None
+        assert status["status"] == "complete"
+        assert status["result"] == "done"
+        assert status["error"] is None
+
+    @pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
     def test_on_complete_does_not_fire_when_task_errors(
         self,
         background_task_service: BackgroundTaskService,
@@ -169,10 +203,9 @@ class TestBackgroundTaskService:
             on_complete=lambda: callback_calls.append("called"),
         )
 
-        with pytest.warns(pytest.PytestUnhandledThreadExceptionWarning, match="boom"):
-            started_task_id = background_task_service.start_task(managed_task)
-            thread = background_task_service._tasks[started_task_id][0]
-            _join_thread(thread)
+        started_task_id = background_task_service.start_task(managed_task)
+        thread = background_task_service._tasks[started_task_id][0]
+        _join_thread(thread)
 
         assert callback_calls == []
         status = background_task_service.get_task_status(task_id)
@@ -186,6 +219,7 @@ class TestBackgroundTaskService:
         task_id = "repeat-task"
 
         for cycle in range(3):
+
             def task_fn(current_cycle: int = cycle) -> int:
                 return current_cycle
 
@@ -223,3 +257,87 @@ class TestBackgroundTaskService:
         finally:
             allow_finish.set()
             _join_thread(thread)
+
+
+class TestCleanupCompletedTasks:
+    """Tests for BackgroundTaskService.cleanup_completed_tasks."""
+
+    def test_removes_completed_tasks_up_to_max_count(
+        self,
+        background_task_service: BackgroundTaskService,
+    ) -> None:
+        """cleanup_completed_tasks should remove only up to max_count tasks."""
+        task_ids = [f"cleanup-complete-{index}" for index in range(3)]
+
+        for task_id in task_ids:
+
+            def task_fn(current_id: str = task_id) -> str:
+                return current_id
+
+            started_task_id = background_task_service.start_task(
+                ManagedTask(task_id=task_id, fn=task_fn),
+            )
+            thread = background_task_service._tasks[started_task_id][0]
+            _join_thread(thread)
+
+        removed = background_task_service.cleanup_completed_tasks(max_count=2)
+
+        assert removed == 2
+        assert background_task_service.list_tasks() == [task_ids[-1]]
+        assert background_task_service.get_task_status(task_ids[0]) is None
+        assert background_task_service.get_task_status(task_ids[1]) is None
+        remaining_status = background_task_service.get_task_status(task_ids[2])
+        assert remaining_status == {
+            "status": "complete",
+            "result": task_ids[2],
+            "error": None,
+        }
+
+    def test_skips_running_tasks_and_cleans_completed_ones(
+        self,
+        background_task_service: BackgroundTaskService,
+    ) -> None:
+        """cleanup_completed_tasks should keep running tasks while removing completed ones."""
+        task_started = threading.Event()
+        allow_finish = threading.Event()
+
+        def blocking_task() -> str:
+            task_started.set()
+            allow_finish.wait(timeout=1.0)
+            return "running-done"
+
+        running_task_id = background_task_service.start_task(
+            ManagedTask(task_id="cleanup-running", fn=blocking_task),
+        )
+        running_thread = background_task_service._tasks[running_task_id][0]
+
+        try:
+            assert task_started.wait(timeout=1.0)
+
+            completed_task_id = background_task_service.start_task(
+                ManagedTask(task_id="cleanup-complete", fn=lambda: "complete-done"),
+            )
+            completed_thread = background_task_service._tasks[completed_task_id][0]
+            _join_thread(completed_thread)
+
+            removed = background_task_service.cleanup_completed_tasks()
+
+            assert removed == 1
+            assert background_task_service.list_tasks() == [running_task_id]
+            running_status = background_task_service.get_task_status(running_task_id)
+            assert running_status == {
+                "status": "running",
+                "result": None,
+                "error": None,
+            }
+            assert background_task_service.get_task_status(completed_task_id) is None
+        finally:
+            allow_finish.set()
+            _join_thread(running_thread)
+
+    def test_returns_zero_when_nothing_to_clean(
+        self,
+        background_task_service: BackgroundTaskService,
+    ) -> None:
+        """cleanup_completed_tasks should return zero when no tasks are registered."""
+        assert background_task_service.cleanup_completed_tasks() == 0

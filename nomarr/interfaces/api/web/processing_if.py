@@ -4,6 +4,7 @@ NOTE: With the discovery-based worker system, manual file enqueuing is no longer
 Processing happens automatically via discovery workers that query library_files.
 Files are marked as needing processing during library scans.
 """
+
 import logging
 from typing import TYPE_CHECKING, Annotated
 
@@ -18,8 +19,11 @@ if TYPE_CHECKING:
     from nomarr.services.domain.library_svc import LibraryService
 router = APIRouter(prefix="/processing", tags=["Processing"])
 
+
 @router.get("/status", dependencies=[Depends(verify_session)])
-async def web_processing_status(library_service: Annotated["LibraryService", Depends(get_library_service)]) -> dict[str, int]:
+async def web_processing_status(
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
+) -> dict[str, int]:
     """Get current processing status (files pending processing).
 
     With discovery-based workers, processing state is derived from library_files:
@@ -33,4 +37,6 @@ async def web_processing_status(library_service: Annotated["LibraryService", Dep
         return {"pending": pending, "processed": processed, "total": stats.total_files}
     except Exception as e:
         logger.exception("[Web API] Error getting processing status")
-        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get processing status")) from e
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Failed to get processing status")
+        ) from e

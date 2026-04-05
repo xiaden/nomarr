@@ -88,10 +88,7 @@ def edit_file_move(
     # Return workspace-relative paths — absolute paths leak workstation layout.
     rel_old = str(resolved_old.relative_to(workspace_root))
     rel_new = str(resolved_new.relative_to(workspace_root))
-    dirs_created = [
-        str(d.relative_to(workspace_root))
-        for d in reversed(dirs_to_create)
-    ]
+    dirs_created = [str(d.relative_to(workspace_root)) for d in reversed(dirs_to_create)]
 
     return {
         "status": "moved",

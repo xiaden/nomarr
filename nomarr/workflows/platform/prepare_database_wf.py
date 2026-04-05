@@ -42,9 +42,7 @@ def _is_fresh_database(raw_db: Any) -> bool:
     """
     if not raw_db.has_collection("meta"):
         return True
-    cursor = raw_db.aql.execute(
-        "FOR doc IN meta FILTER doc.key == 'version' LIMIT 1 RETURN doc.value"
-    )
+    cursor = raw_db.aql.execute("FOR doc IN meta FILTER doc.key == 'version' LIMIT 1 RETURN doc.value")
     return next(cursor, None) is None
 
 

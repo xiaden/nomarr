@@ -285,9 +285,7 @@ class TestGetCalibrationStatusByLibrary:
     @pytest.mark.unit
     def test_returns_status_list(self, ops, mock_db):
         """Returns list of per-library status dicts with expected structure."""
-        expected = [
-            {"library_id": "libraries/1", "calibrated_count": 8, "not_calibrated_count": 2}
-        ]
+        expected = [{"library_id": "libraries/1", "calibrated_count": 8, "not_calibrated_count": 2}]
         mock_db.aql.execute.return_value = iter(expected)
         result = ops.get_calibration_status_by_library()
         assert result == expected
@@ -362,7 +360,6 @@ class TestClearAllStates:
         assert "_from" in query
         assert bind_vars["file_id"] == "library_files/abc"
         assert "state" not in bind_vars  # No specific state filter
-
 
 
 # ==================================================================

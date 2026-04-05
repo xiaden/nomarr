@@ -1,4 +1,5 @@
 """System info and health endpoints for web UI."""
+
 import logging
 from typing import TYPE_CHECKING, Annotated, Any
 
@@ -19,17 +20,20 @@ if TYPE_CHECKING:
     from nomarr.services.domain.library_svc import LibraryService
 router = APIRouter(prefix="", tags=["Info"])
 
+
 @router.get("/info", dependencies=[Depends(verify_session)])
 async def web_info(info_service: Annotated[Any, Depends(get_info_service)]) -> SystemInfoResponse:
     """Get system info (web UI proxy)."""
     result = info_service.get_system_info()
     return SystemInfoResponse.from_dto(result)
 
+
 @router.get("/health", dependencies=[Depends(verify_session)])
 async def web_health(info_service: Annotated[Any, Depends(get_info_service)]) -> HealthStatusResponse:
     """Health check endpoint (web UI proxy)."""
     result = info_service.get_health_status()
     return HealthStatusResponse.from_dto(result)
+
 
 @router.get("/health/gpu", dependencies=[Depends(verify_session)])
 async def web_gpu_health(info_service: Annotated[Any, Depends(get_info_service)]) -> GPUHealthResponse:
@@ -50,8 +54,11 @@ async def web_gpu_health(info_service: Annotated[Any, Depends(get_info_service)]
     except RuntimeError:
         return GPUHealthResponse(available=False, error_summary="GPU monitoring not available", monitor_healthy=False)
 
+
 @router.get("/work-status", dependencies=[Depends(verify_session)])
-async def web_work_status(library_service: Annotated["LibraryService", Depends(get_library_service)]) -> WorkStatusResponse:
+async def web_work_status(
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
+) -> WorkStatusResponse:
     """Get unified work status for the system.
 
     Returns status of:

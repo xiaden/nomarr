@@ -16,20 +16,20 @@ class TestFindContentBoundaries:
     """Tests for find_content_boundaries."""
 
     SAMPLE_LINES = [
-        "import os",             # 1
-        "",                      # 2
-        "class Foo:",            # 3
-        "    def bar(self):",    # 4
-        "        x = 1",         # 5
-        "        y = 2",         # 6
+        "import os",  # 1
+        "",  # 2
+        "class Foo:",  # 3
+        "    def bar(self):",  # 4
+        "        x = 1",  # 5
+        "        y = 2",  # 6
         "        return x + y",  # 7
-        "",                      # 8
-        "    def baz(self):",    # 9
-        "        pass",          # 10
-        "",                      # 11
-        "class Qux:",            # 12
-        "    def bar(self):",    # 13
-        "        return 42",     # 14
+        "",  # 8
+        "    def baz(self):",  # 9
+        "        pass",  # 10
+        "",  # 11
+        "class Qux:",  # 12
+        "    def bar(self):",  # 13
+        "        return 42",  # 14
     ]
 
     def test_simple_single_line_boundaries(self) -> None:

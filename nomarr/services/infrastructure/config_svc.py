@@ -62,7 +62,6 @@ INTERNAL_CALIBRATION_MEDIAN_THRESHOLD = 0.05  # Max median drift (5%)
 INTERNAL_CALIBRATION_IQR_THRESHOLD = 0.1  # Max IQR drift (10%)
 
 
-
 # Key sets derived from config_schema — see nomarr.helpers.config_schema
 # ALL_CONFIG_KEYS and WEB_EDITABLE_KEYS are imported at the top of this file.
 _ALLOWED_CONFIG_KEYS = ALL_CONFIG_KEYS

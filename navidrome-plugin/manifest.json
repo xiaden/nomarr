@@ -67,11 +67,11 @@
                 "items": {
                   "type": "string",
                   "enum": [
-                    "familiar_favorites",
-                    "deep_cuts",
-                    "discovery_mix",
-                    "mood_journey",
-                    "recent_radar"
+                    "familiar",
+                    "discovery",
+                    "hidden_gems",
+                    "universal",
+                    "genre"
                   ]
                 },
                 "uniqueItems": true

@@ -1,4 +1,5 @@
 """Tag cleanup workflow - orchestrate orphaned tag cleanup."""
+
 from __future__ import annotations
 
 import logging
@@ -10,7 +11,8 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
-def cleanup_orphaned_tags_workflow(db: Database, dry_run: bool=False) -> dict[str, int]:
+
+def cleanup_orphaned_tags_workflow(db: Database, dry_run: bool = False) -> dict[str, int]:
     """Clean up orphaned tags from the database.
 
     Args:

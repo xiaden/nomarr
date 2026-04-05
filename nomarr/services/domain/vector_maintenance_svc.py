@@ -70,9 +70,7 @@ class VectorMaintenanceService:
                 f"(hot={stats['hot_count']}, cold={stats['cold_count']})"
             )
 
-        logger.info(
-            f"Starting promote & rebuild: backbone={backbone_id}, library={library_key}, nlists={nlists}"
-        )
+        logger.info(f"Starting promote & rebuild: backbone={backbone_id}, library={library_key}, nlists={nlists}")
 
         try:
             promote_and_rebuild_workflow(
@@ -110,17 +108,9 @@ class VectorMaintenanceService:
         cold_coll_name = f"vectors_track_cold__{backbone_id}__{library_key}"
 
         # Check if hot collection exists before counting
-        hot_count = (
-            hot_ops.count()
-            if self.db.db.has_collection(hot_coll_name)
-            else 0
-        )
+        hot_count = hot_ops.count() if self.db.db.has_collection(hot_coll_name) else 0
         # Check if cold collection exists before counting
-        cold_count = (
-            cold_ops.count()
-            if self.db.db.has_collection(cold_coll_name)
-            else 0
-        )
+        cold_count = cold_ops.count() if self.db.db.has_collection(cold_coll_name) else 0
         index_exists = has_vector_index(self.db.db, backbone_id, library_key)
 
         return {
@@ -157,7 +147,6 @@ class VectorMaintenanceService:
 
         return compute_nlists(doc_count, group_size)
 
-
     def rebuild_index(
         self,
         backbone_id: str,
@@ -183,14 +172,9 @@ class VectorMaintenanceService:
         if nlists is None:
             stats = self.get_hot_cold_stats(backbone_id, library_key)
             nlists = self.calculate_optimal_nlists(int(stats["cold_count"]), library_key)
-            logger.info(
-                f"Auto-calculated nlists={nlists} for backbone={backbone_id} "
-                f"(cold={stats['cold_count']})"
-            )
+            logger.info(f"Auto-calculated nlists={nlists} for backbone={backbone_id} (cold={stats['cold_count']})")
 
-        logger.info(
-            f"Starting index rebuild: backbone={backbone_id}, library={library_key}, nlists={nlists}"
-        )
+        logger.info(f"Starting index rebuild: backbone={backbone_id}, library={library_key}, nlists={nlists}")
 
         try:
             rebuild_vector_index_workflow(

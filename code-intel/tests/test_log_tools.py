@@ -17,15 +17,22 @@ from mcp_code_intel.tools.log_write import log_write
 # ---------------------------------------------------------------------------
 
 
-def _write_entry(tmp_path: Path, agent: str = "test-agent", **kwargs) -> dict:
-    defaults = dict(
+def _write_entry(
+    tmp_path: Path,
+    agent: str = "test-agent",
+    title: str = "Test entry",
+    category: str = "research",
+    body: str = "",
+    tags: list[str] | None = None,
+) -> dict:
+    return log_write(
         agent=agent,
-        title="Test entry",
-        category="research",
+        title=title,
+        category=category,
+        body=body,
+        tags=tags,
         workspace_root=tmp_path,
     )
-    defaults.update(kwargs)
-    return log_write(**defaults)
 
 
 # ---------------------------------------------------------------------------

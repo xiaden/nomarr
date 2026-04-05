@@ -223,4 +223,3 @@ class VramPromisesOperations:
             ),
         )
         return list(cursor)  # type: ignore[arg-type]
-

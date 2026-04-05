@@ -216,7 +216,9 @@ def upgrade(db: DatabaseLike) -> None:
     with contextlib.suppress(IndexCreateError):
         db.collection("segment_scores_stats").add_persistent_index(fields=["file_id"])  # type: ignore[union-attr]
     with contextlib.suppress(IndexCreateError):
-        db.collection("segment_scores_stats").add_persistent_index(fields=["file_id", "head_name", "tagger_version"], unique=True)  # type: ignore[union-attr]
+        db.collection("segment_scores_stats").add_persistent_index(
+            fields=["file_id", "head_name", "tagger_version"], unique=True
+        )  # type: ignore[union-attr]
     with contextlib.suppress(IndexCreateError):
         db.collection("segment_scores_stats").add_persistent_index(fields=["head_name"])  # type: ignore[union-attr]
     with contextlib.suppress(IndexCreateError):

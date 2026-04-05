@@ -18,19 +18,36 @@ from mcp_code_intel.tools.dd_read import dd_read
 # ---------------------------------------------------------------------------
 
 
-def _create_sample_dd(tmp_path: Path, slug: str = "my-feature", **kwargs) -> dict:
-    defaults = dict(
-        title="My Feature",
+def _create_sample_dd(
+    tmp_path: Path,
+    slug: str = "my-feature",
+    title: str = "My Feature",
+    status: str = "Draft",
+    author: str = "test-agent",
+    scope: str = "Test scope",
+    problem_statement: str = "Test problem",
+    architecture: str = "Test architecture",
+    design_goals: str = "",
+    constraints: str = "",
+    open_questions: str = "",
+    related_documents: list[dict[str, str]] | None = None,
+    extra_sections: list[dict[str, str]] | None = None,
+) -> dict:
+    return dd_create(
+        title=title,
         slug=slug,
-        status="Draft",
-        author="test-agent",
-        scope="Test scope",
-        problem_statement="Test problem",
-        architecture="Test architecture",
+        status=status,
+        author=author,
+        scope=scope,
+        problem_statement=problem_statement,
+        architecture=architecture,
+        design_goals=design_goals,
+        constraints=constraints,
+        open_questions=open_questions,
+        related_documents=related_documents,
+        extra_sections=extra_sections,
         workspace_root=tmp_path,
     )
-    defaults.update(kwargs)
-    return dd_create(**defaults)
 
 
 # ---------------------------------------------------------------------------

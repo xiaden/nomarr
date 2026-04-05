@@ -34,18 +34,18 @@ class LibrariesOperations:
     ) -> str:
         """Create a new library entry.
 
-        Args:
-            name: Library name (must be unique, can be auto-generated from path)
-            root_path: Absolute path to library root
-            is_enabled: Whether library is enabled for scanning
-            watch_mode: File watching mode ('off', 'event', or 'poll')
-            file_write_mode: Tag write mode ('none', 'minimal', or 'full')
+                Args:
+                    name: Library name (must be unique, can be auto-generated from path)
+                    root_path: Absolute path to library root
+                    is_enabled: Whether library is enabled for scanning
+                    watch_mode: File watching mode ('off', 'event', or 'poll')
+                    file_write_mode: Tag write mode ('none', 'minimal', or 'full')
 
-        Returns:
-            Library _id (e.g., "libraries/12345")
+                Returns:
+                    Library _id (e.g., "libraries/12345")
 
-        Raises:
-Duplicate key error if name already exists
+                Raises:
+        Duplicate key error if name already exists
 
         """
         now = now_ms().value

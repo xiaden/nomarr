@@ -1,0 +1,158 @@
+"""Tests for ``nomarr.services.domain.navidrome_svc`` playlist generation."""
+
+from __future__ import annotations
+
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from nomarr.helpers.dto import NavidromeGeneratePlaylistsResult
+from nomarr.helpers.exceptions import MisconfiguredError
+from nomarr.services.domain.navidrome_svc import NavidromeConfig, NavidromeService
+
+
+def _make_service(config_values: dict[str, object] | None = None) -> tuple[NavidromeService, MagicMock]:
+    """Build a NavidromeService with a configurable config-service mock."""
+    values = config_values or {}
+    config_service = MagicMock()
+    config_service.get.side_effect = lambda key, default=None: values.get(key, default)
+
+    service = NavidromeService(
+        db=MagicMock(),
+        cfg=NavidromeConfig(namespace="nom"),
+        config_service=config_service,
+    )
+    return service, config_service
+
+
+def _playlist_entry() -> dict[str, object]:
+    """Return a representative personal playlist entry."""
+    return {
+        "playlist_type": "familiar",
+        "playlist_name": "Familiar Favorites",
+        "file_ids": ["library_files/track-1", "library_files/track-2"],
+    }
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestNavidromeServiceGeneratePlaylists:
+    """Tests for ``NavidromeService.generate_playlists``."""
+
+    def test_generate_playlists_raises_when_library_key_empty(self) -> None:
+        """Empty ``library_key`` should raise ``MisconfiguredError``."""
+        service, _ = _make_service({"library_key": ""})
+
+        with pytest.raises(MisconfiguredError, match="library_key not configured"):
+            service.generate_playlists("user-1")
+
+    def test_generate_playlists_reads_pp_keys_not_playlist_keys(self) -> None:
+        """Service should read the current ``pp_*`` config keys only."""
+        config_values = {
+            "library_key": "lib-main",
+            "pp_backbone_id": "effnet-discogs",
+            "pp_half_life_days": 45.0,
+            "pp_top_n": 123,
+            "pp_max_songs": 77,
+            "pp_min_songs": 11,
+            "pp_min_play_count": 4,
+            "pp_max_genre_playlists": 6,
+            "pp_type_familiar": True,
+            "pp_type_discovery": True,
+            "pp_type_hidden_gems": True,
+            "pp_type_genre": True,
+            "pp_type_universal": True,
+        }
+        service, config_service = _make_service(config_values)
+
+        with patch(
+            "nomarr.workflows.navidrome.generate_playlists_wf.generate_playlists",
+            return_value=[_playlist_entry()],
+        ):
+            service.generate_playlists("user-1")
+
+        called_keys = [call.args[0] for call in config_service.get.call_args_list]
+        assert called_keys == [
+            "pp_backbone_id",
+            "library_key",
+            "pp_type_familiar",
+            "pp_type_discovery",
+            "pp_type_hidden_gems",
+            "pp_type_genre",
+            "pp_type_universal",
+            "pp_max_songs",
+            "pp_min_songs",
+            "pp_max_genre_playlists",
+            "pp_half_life_days",
+            "pp_top_n",
+            "pp_min_play_count",
+        ]
+        assert "vector_backbone_id" not in called_keys
+        assert not any(key.startswith("playlist_") for key in called_keys)
+
+    def test_generate_playlists_derives_enabled_types_from_type_flags(self) -> None:
+        """Boolean ``pp_type_*`` flags should drive the workflow enabled-types list."""
+        service, _ = _make_service(
+            {
+                "library_key": "lib-main",
+                "pp_type_familiar": True,
+                "pp_type_discovery": False,
+                "pp_type_hidden_gems": True,
+                "pp_type_genre": False,
+                "pp_type_universal": True,
+            },
+        )
+
+        with patch(
+            "nomarr.workflows.navidrome.generate_playlists_wf.generate_playlists",
+            return_value=[_playlist_entry()],
+        ) as mock_generate:
+            service.generate_playlists("user-1")
+
+        assert mock_generate.call_args.kwargs["enabled_types"] == [
+            "familiar",
+            "hidden_gems",
+            "universal",
+        ]
+
+    def test_generate_playlists_returns_result_dto(self) -> None:
+        """Successful service call should return the typed result DTO."""
+        service, _ = _make_service({"library_key": "lib-main"})
+
+        with patch(
+            "nomarr.workflows.navidrome.generate_playlists_wf.generate_playlists",
+            return_value=[_playlist_entry()],
+        ):
+            result = service.generate_playlists("user-1")
+
+        assert isinstance(result, NavidromeGeneratePlaylistsResult)
+        assert result.status == "ok"
+        assert result.message == ""
+        assert result.playlists == [_playlist_entry()]
+
+    def test_generate_playlists_returns_no_data_when_workflow_returns_empty(self) -> None:
+        """Empty workflow results should map to the no-data DTO variant."""
+        service, _ = _make_service({"library_key": "lib-main"})
+
+        with patch(
+            "nomarr.workflows.navidrome.generate_playlists_wf.generate_playlists",
+            return_value=[],
+        ):
+            result = service.generate_playlists("user-1")
+
+        assert isinstance(result, NavidromeGeneratePlaylistsResult)
+        assert result.status == "no_data"
+        assert result.message == "No taste profile or no playlists generated"
+        assert result.playlists == []
+
+    def test_generate_playlists_caps_max_genre_playlists_at_25(self) -> None:
+        """Explicit overrides above the endpoint ceiling should be clamped before workflow dispatch."""
+        service, _ = _make_service({"library_key": "lib-main"})
+
+        with patch(
+            "nomarr.workflows.navidrome.generate_playlists_wf.generate_playlists",
+            return_value=[_playlist_entry()],
+        ) as mock_generate:
+            service.generate_playlists("user-1", max_genre_playlists=30)
+
+        assert mock_generate.call_args.kwargs["max_genre_playlists"] == 25

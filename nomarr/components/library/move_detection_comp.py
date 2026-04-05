@@ -97,9 +97,7 @@ def detect_file_moves(
     # removed file.  Files with unknown duration are never filtered out.
     duration_tolerance = 1.0
     removed_durations: list[float] = [
-        f["duration_seconds"]
-        for f in files_to_remove
-        if f.get("duration_seconds") is not None
+        f["duration_seconds"] for f in files_to_remove if f.get("duration_seconds") is not None
     ]
 
     def _duration_could_match(new_dur: float | None) -> bool:
@@ -153,7 +151,9 @@ def detect_file_moves(
 
                     # Verify duration matches (allow 1 second tolerance)
                     duration_matches = (
-                        removed_duration is None or new_duration is None or abs(removed_duration - new_duration) <= duration_tolerance
+                        removed_duration is None
+                        or new_duration is None
+                        or abs(removed_duration - new_duration) <= duration_tolerance
                     )
 
                     if duration_matches:

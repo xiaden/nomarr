@@ -9,7 +9,8 @@ if TYPE_CHECKING:
 
 
 def compute_collection_overview(
-    db: Database, library_id: str | None = None,
+    db: Database,
+    library_id: str | None = None,
 ) -> dict[str, Any]:
     """Get collection overview: library stats, year/genre distributions.
 

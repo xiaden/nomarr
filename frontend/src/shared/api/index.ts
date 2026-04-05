@@ -28,7 +28,7 @@ export {
     list, reconcileTags,
     scanFull, scanQuick, update, updateWriteMode,
     type CreateLibraryPayload, type LibraryStats,
-    type ReconcileStatusResult, type ReconcileTagsResult, type UpdateLibraryPayload, type UpdateWriteModeResult
+    type ReconcileStatusResult, type StartTagWriteResult, type UpdateLibraryPayload, type UpdateWriteModeResult
 } from "./library";
 
 // Files - explicit exports to avoid conflicts

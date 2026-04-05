@@ -40,6 +40,114 @@ Examples: `worker:discovery:0`, `worker:discovery:1`
 
 ---
 
+## Background Tasks (BTS)
+
+Nomarr also uses an in-process **Background Task Service (BTS)** for lightweight background work that should stay in the main application process.
+
+This is **not** the same as the multiprocessing worker system documented above:
+
+| Mechanism | Runtime model | Best for |
+|-----------|---------------|----------|
+| `BackgroundTaskService` | `threading.Thread` in the API process | Short-to-medium in-process background work, such as write-tags dispatch |
+| `DiscoveryWorker` pool | `multiprocessing.Process` subprocesses | Isolated ML file processing, claim-based discovery, and crash recovery |
+
+Use BTS when the task should share the application's existing services and process state. Use worker processes when the task needs isolation, separate process lifecycle management, or the full discovery/claim pipeline.
+
+### ManagedTask API
+
+`BackgroundTaskService.start_task()` accepts a `ManagedTask` object:
+
+```python
+from functools import partial
+
+from nomarr.helpers import ManagedTask
+
+task = ManagedTask(
+   task_id="write_tags:library_id",
+   fn=partial(run_reconcile_once, library_id="library_id"),
+)
+```
+
+`ManagedTask` fields:
+
+| Field | Purpose |
+|-------|---------|
+| `task_id` | Stable identifier used for deduplication, cancellation, and polling |
+| `fn` | Zero-argument callable executed on the background thread; prefer `functools.partial(...)` when you need to bind arguments |
+| `stop_event` | Cooperative cancellation signal checked by the task at safe checkpoints |
+| `on_complete` | Optional callback invoked after successful completion |
+| `daemon` | Whether the thread runs as a daemon; BTS tasks default to `True` |
+
+### Canonical Dispatch Example: Write-Tags
+
+The write-tags flow is the canonical BTS example. `TaggingService.start_write_tags_background()` builds a task ID, defines the reconcile loop, and submits it through BTS:
+
+```python
+import threading
+
+task_id = tagging_service.start_write_tags_background(
+   library_id="library_id",
+   stop_event=threading.Event(),
+   on_complete=lambda: navidrome_service.trigger_rescan(),
+)
+```
+
+Inside the service, the task is dispatched as a managed in-process thread:
+
+```python
+from nomarr.helpers import ManagedTask
+
+task_id = self._bts.start_task(
+   ManagedTask(
+      task_id=f"write_tags:{library_id}",
+      fn=_task,
+      stop_event=stop_event,
+      on_complete=on_complete,
+      daemon=True,
+   ),
+)
+```
+
+The `_task` function loops until the library is fully reconciled (`remaining == 0`) or cancellation is requested.
+
+### Cancellation Protocol
+
+BTS uses a **signal-and-move-on** cancellation model:
+
+1. Call `bts.cancel_task(task_id)`
+2. BTS sets the task's `stop_event` and returns immediately
+3. The task exits cooperatively when it next checks `stop_event.is_set()`
+
+Example:
+
+```python
+was_signaled = bts.cancel_task("write_tags:library_id")
+
+if was_signaled:
+   logger.info("Write-tags cancellation requested")
+```
+
+Tasks should check `stop_event.is_set()` at natural checkpoints inside loops, before starting another batch, or before expensive follow-up work. BTS does not forcibly kill threads.
+
+### Status Querying
+
+Use `bts.get_task_status(task_id)` to inspect current state:
+
+```python
+status = bts.get_task_status("write_tags:library_id")
+```
+
+Return values:
+
+- `{"status": "running"}` while the task is active
+- `{"status": "complete"}` after successful completion
+- `{"status": "error"}` if the task raised an exception
+- `None` if BTS has never seen that `task_id`
+
+Interface code can combine BTS status with database state for richer polling responses, such as "pending files remaining" plus "is a background reconcile loop still running?"
+
+---
+
 ## Lifecycle
 
 ### 1. Spawn

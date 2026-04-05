@@ -4,6 +4,7 @@ This component re-validates all paths in the library_files table against
 the current library configuration. It detects paths that have become invalid
 due to config changes (library root moves, library deletions, etc.).
 """
+
 from __future__ import annotations
 
 import logging
@@ -18,7 +19,10 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 ReconcilePolicy = Literal["mark_invalid", "delete_invalid", "dry_run"]
 
-def reconcile_library_paths(db: Database, policy: ReconcilePolicy="mark_invalid", batch_size: int=1000) -> ReconcileResult:
+
+def reconcile_library_paths(
+    db: Database, policy: ReconcilePolicy = "mark_invalid", batch_size: int = 1000
+) -> ReconcileResult:
     """Re-validate all library paths against current configuration.
 
     This component scans the library_files table and re-validates each path
@@ -49,7 +53,15 @@ def reconcile_library_paths(db: Database, policy: ReconcilePolicy="mark_invalid"
 
     """
     logger.info(f"[reconcile_library_paths] Starting reconciliation with policy={policy}")
-    result: ReconcileResult = {"total_files": 0, "valid_files": 0, "invalid_config": 0, "not_found": 0, "unknown_status": 0, "deleted_files": 0, "errors": 0}
+    result: ReconcileResult = {
+        "total_files": 0,
+        "valid_files": 0,
+        "invalid_config": 0,
+        "not_found": 0,
+        "unknown_status": 0,
+        "deleted_files": 0,
+        "errors": 0,
+    }
     stats = db.library_files.get_library_stats()
     total_count = stats.get("total_files", 0)
     logger.info(f"[reconcile_library_paths] Found {total_count} files to validate")
@@ -64,7 +76,9 @@ def reconcile_library_paths(db: Database, policy: ReconcilePolicy="mark_invalid"
             file_path = file_record["path"]
             library_id = file_record.get("library_id")
             try:
-                library_path = build_library_path_from_db(stored_path=file_path, db=db, library_id=library_id, check_disk=True)
+                library_path = build_library_path_from_db(
+                    stored_path=file_path, db=db, library_id=library_id, check_disk=True
+                )
                 if library_path.is_valid():
                     result["valid_files"] += 1
                 elif library_path.status == "invalid_config":
@@ -81,14 +95,23 @@ def reconcile_library_paths(db: Database, policy: ReconcilePolicy="mark_invalid"
                 logger.exception(f"[reconcile_library_paths] Error validating {file_path}: {e}")
         offset += len(files)
         if offset % (batch_size * 5) == 0:
-            logger.info(f"[reconcile_library_paths] Progress: {offset}/{total_count} (valid={result['valid_files']}, invalid={result['invalid_config'] + result['not_found']})")
+            logger.info(
+                f"[reconcile_library_paths] Progress: {offset}/{total_count} (valid={result['valid_files']}, invalid={result['invalid_config'] + result['not_found']})"
+            )
     total_invalid = result["invalid_config"] + result["not_found"]
-    logger.info(f"[reconcile_library_paths] Reconciliation complete: total={result['total_files']}, valid={result['valid_files']}, invalid_config={result['invalid_config']}, not_found={result['not_found']}, deleted={result['deleted_files']}, errors={result['errors']}")
+    logger.info(
+        f"[reconcile_library_paths] Reconciliation complete: total={result['total_files']}, valid={result['valid_files']}, invalid_config={result['invalid_config']}, not_found={result['not_found']}, deleted={result['deleted_files']}, errors={result['errors']}"
+    )
     if policy == "dry_run":
-        logger.info(f"[reconcile_library_paths] DRY RUN: Would have affected {total_invalid} files (use policy='delete_invalid' to actually remove them)")
+        logger.info(
+            f"[reconcile_library_paths] DRY RUN: Would have affected {total_invalid} files (use policy='delete_invalid' to actually remove them)"
+        )
     return result
 
-def _handle_invalid_path(db: Database, file_path: str, library_path: LibraryPath, policy: ReconcilePolicy, result: ReconcileResult) -> None:
+
+def _handle_invalid_path(
+    db: Database, file_path: str, library_path: LibraryPath, policy: ReconcilePolicy, result: ReconcileResult
+) -> None:
     """Handle an invalid path based on policy.
 
     Args:

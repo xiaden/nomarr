@@ -42,7 +42,8 @@ class TestClaimFile:
         result = claim_file(mock_db, "library_files/abc", "worker:tag:0")
         assert result is True
         mock_db.worker_claims.try_claim_file.assert_called_once_with(
-            "library_files/abc", "worker:tag:0",
+            "library_files/abc",
+            "worker:tag:0",
         )
 
     @pytest.mark.unit

@@ -11,7 +11,8 @@ if TYPE_CHECKING:
 
 
 def compute_mood_analysis(
-    db: Database, library_id: str | None = None,
+    db: Database,
+    library_id: str | None = None,
 ) -> dict[str, Any]:
     """Get mood analysis: coverage, balance, top pairs, dominant vibes.
 

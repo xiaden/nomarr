@@ -349,6 +349,34 @@ Vector collections (`vectors_track_*`) are registered dynamically per backbone+l
    └→ db.worker_claims.release_claim(file_id)
 ```
 
+### Fire-and-Forget Tag Reconciliation
+
+The write-tags endpoint uses BTS for in-process background dispatch and a separate polling endpoint for progress checks.
+
+**Fire-and-forget dispatch:**
+
+```text
+POST /library/{id}/reconcile-tags
+    → library_if.py handler
+        → TaggingService.start_write_tags_background(library_id)
+            → BTS.start_task(ManagedTask(...))
+                → background thread: reconcile loop until remaining == 0
+    ← 202 {"status": "started", "task_id": "write_tags:{library_id}"}
+```
+
+**Status polling:**
+
+```text
+GET /library/{id}/reconcile-status
+    → library_if.py handler
+        → TaggingService.get_reconcile_status(library_id)
+            → BTS.get_task_status("write_tags:{library_id}") → in_progress
+            → DB: count_files_needing_reconciliation → pending_count
+    ← 200 {"pending_count": N, "in_progress": true|false}
+```
+
+This keeps the request/response contract fast while still exposing observable progress. The POST endpoint only starts work and returns a `task_id`; the GET endpoint combines BTS state with database counts to report whether reconciliation is still in progress.
+
 ---
 
 ## Configuration Flow

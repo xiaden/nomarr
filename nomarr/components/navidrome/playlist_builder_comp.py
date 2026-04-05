@@ -85,10 +85,7 @@ def build_familiar_playlist(
     raw_results = cold_ops.search_similar(ctx["centroid"], fetch_limit, nprobe=nprobe)
 
     # Keep only tracks the user has played, preserving ANN ranking
-    file_ids = [
-        r["file_id"] for r in raw_results
-        if r["file_id"] in played
-    ][: ctx["max_songs"]]
+    file_ids = [r["file_id"] for r in raw_results if r["file_id"] in played][: ctx["max_songs"]]
 
     return [
         NavidromePersonalPlaylistEntry(
@@ -127,9 +124,7 @@ def build_discovery_playlist(
     raw_results = cold_ops.search_similar(ctx["centroid"], fetch_limit, nprobe=nprobe)
 
     # Exclude played tracks
-    file_ids = [
-        r["file_id"] for r in raw_results if r["file_id"] not in played
-    ][: ctx["max_songs"]]
+    file_ids = [r["file_id"] for r in raw_results if r["file_id"] not in played][: ctx["max_songs"]]
 
     return [
         NavidromePersonalPlaylistEntry(
@@ -161,9 +156,7 @@ def build_hidden_gems_playlist(
     played = set(ctx["played_file_ids"])
 
     # Collect known artist tag values via persistence
-    known_artists: set[str] = set(
-        db.tags.get_distinct_tag_values_for_files(ctx["played_file_ids"], "artist")
-    )
+    known_artists: set[str] = set(db.tags.get_distinct_tag_values_for_files(ctx["played_file_ids"], "artist"))
     if not known_artists:
         logger.debug("No known artists for hidden gems, falling back to discovery-style")
 
@@ -178,20 +171,14 @@ def build_hidden_gems_playlist(
     raw_results = cold_ops.search_similar(ctx["centroid"], fetch_limit, nprobe=nprobe)
 
     # Exclude played tracks
-    candidates: list[dict[str, Any]] = [
-        r for r in raw_results if r["file_id"] not in played
-    ]
+    candidates: list[dict[str, Any]] = [r for r in raw_results if r["file_id"] not in played]
 
     if known_artists:
         # Batch-query artist tags for candidates, then exclude known-artist tracks
         candidate_file_ids = [r["file_id"] for r in candidates]
         candidate_artists = db.tags.get_tag_values_grouped_by_file(candidate_file_ids, "artist")
 
-        candidates = [
-            r
-            for r in candidates
-            if not (candidate_artists.get(r["file_id"], set()) & known_artists)
-        ]
+        candidates = [r for r in candidates if not (candidate_artists.get(r["file_id"], set()) & known_artists)]
 
     file_ids = [r["file_id"] for r in candidates][: ctx["max_songs"]]
 
@@ -202,8 +189,6 @@ def build_hidden_gems_playlist(
             file_ids=file_ids,
         )
     ]
-
-
 
 
 def build_universal_playlist(
@@ -251,7 +236,6 @@ def build_universal_playlist(
     ]
 
 
-
 def build_genre_playlists(
     db: Database,
     ctx: NavidromePersonalPlaylistContext,
@@ -292,9 +276,7 @@ def build_genre_playlists(
 
     # Fetch cold vectors for all played tracks in one batch
     vector_docs = cold_ops.get_vectors_by_file_ids(played_file_ids)
-    vector_map: dict[str, list[float]] = {
-        doc["file_id"]: doc["vector"] for doc in vector_docs if "vector" in doc
-    }
+    vector_map: dict[str, list[float]] = {doc["file_id"]: doc["vector"] for doc in vector_docs if "vector" in doc}
     if not vector_map:
         return []
 

@@ -402,7 +402,12 @@ class WorkerSystemService(ComponentLifecycleHandler):
                 # Worker list shrunk? Append instead
                 self._workers.append(new_worker)
 
-            logger.info("[WorkerSystemService] Worker %d restarted successfully (new_pid=%s, old_pid=%s)", worker_index, new_worker.pid, old_worker.pid if old_worker else None)
+            logger.info(
+                "[WorkerSystemService] Worker %d restarted successfully (new_pid=%s, old_pid=%s)",
+                worker_index,
+                new_worker.pid,
+                old_worker.pid if old_worker else None,
+            )
 
         except Exception as e:
             logger.error(

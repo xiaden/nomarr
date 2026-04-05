@@ -312,6 +312,3 @@ def _extract_tag_strings(value: Any) -> list[str]:
 
     # Everything else
     return [str(value)] if value is not None else []
-
-
-

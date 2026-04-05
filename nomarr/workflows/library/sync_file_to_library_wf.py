@@ -3,6 +3,7 @@
 Orchestrates library, tagging, and metadata domain operations to keep
 the library database in sync with audio file state.
 """
+
 from __future__ import annotations
 
 import logging
@@ -65,8 +66,7 @@ def _sync_tags_and_entities(
 
     # Persist nomarr-namespaced tags (prefix rels with "nom:")
     prefixed_nom_tags = {
-        (f"nom:{rel}" if not rel.startswith("nom:") else rel): values
-        for rel, values in parsed_nom_tags.items()
+        (f"nom:{rel}" if not rel.startswith("nom:") else rel): values for rel, values in parsed_nom_tags.items()
     }
     save_file_tags(db, file_id, prefixed_nom_tags)
 
@@ -156,8 +156,7 @@ def sync_file_to_library(
         library_path = build_library_path_from_input(file_path, db)
         if not library_path.is_valid():
             logger.warning(
-                f"[sync_file_to_library] Invalid path ({library_path.status}): "
-                f"{file_path} - {library_path.reason}",
+                f"[sync_file_to_library] Invalid path ({library_path.status}): {file_path} - {library_path.reason}",
             )
             return
 

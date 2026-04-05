@@ -34,6 +34,7 @@ class TrackPlayData(TypedDict):
     playcount: int
     last_played: int | None
 
+
 # Standard ID3/metadata tags that are NOT prefixed with "nom:"
 # These are stored directly by taglib without namespace
 class NdSyncResult(TypedDict):
@@ -53,21 +54,23 @@ class NdSyncResult(TypedDict):
 
 # Standard ID3/metadata tags that are NOT prefixed with "nom:"
 # These are stored directly by taglib without namespace
-STANDARD_TAG_RELS = frozenset({
-    "artist",
-    "artists",
-    "album",
-    "album_artist",
-    "genre",
-    "year",
-    "date",
-    "bpm",
-    "composer",
-    "label",
-    "publisher",
-    "title",
-    "lyricist",
-})
+STANDARD_TAG_RELS = frozenset(
+    {
+        "artist",
+        "artists",
+        "album",
+        "album_artist",
+        "genre",
+        "year",
+        "date",
+        "bpm",
+        "composer",
+        "label",
+        "publisher",
+        "title",
+        "lyricist",
+    }
+)
 
 
 @dataclass
@@ -109,7 +112,6 @@ class RuleGroup:
         if not self.groups:
             return 1
         return 1 + max(g.depth for g in self.groups)
-
 
 
 @dataclass
@@ -193,7 +195,6 @@ class GenerateTemplateFilesResult:
     files_generated: dict[str, str]
 
 
-
 @dataclass
 class StaticPlaylistResult:
     """Result from static playlist generation.
@@ -272,8 +273,6 @@ class TasteCluster(TypedDict):
     track_count: int
 
 
-
-
 class NavidromePersonalPlaylistContext(TypedDict):
     """Input context for personal playlist builder components.
 
@@ -316,3 +315,27 @@ class NavidromePersonalPlaylistEntry(TypedDict):
     playlist_type: str
     playlist_name: str
     file_ids: list[str]
+
+
+@dataclass
+class NavidromeGeneratePlaylistsResult:
+    """Result of a personal playlist generation run.
+
+    Attributes:
+        status: Outcome of the generation run.
+
+            - ``"ok"`` — playlists were generated successfully.
+            - ``"no_data"`` — no taste profile found or zero playlists produced;
+              ``playlists`` will be empty.
+            - ``"misconfigured"`` — a required configuration value was absent;
+              the interface layer raises HTTP 422 when this occurs.
+
+        message: Human-readable detail. Empty string on ``"ok"``.
+        playlists: Generated playlists, each with a ``playlist_type``,
+            ``playlist_name``, and list of ``file_ids``.
+            Empty when ``status`` is not ``"ok"``.
+    """
+
+    status: Literal["ok", "no_data", "misconfigured"]
+    message: str
+    playlists: list[NavidromePersonalPlaylistEntry]

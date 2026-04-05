@@ -64,7 +64,8 @@ class TestDiscoverMigrations:
             patch(
                 "nomarr.components.platform.migration_runner_comp.importlib.import_module",
                 return_value=bad_module,
-            ),pytest.raises(MigrationError, match="missing required attribute")
+            ),
+            pytest.raises(MigrationError, match="missing required attribute"),
         ):
             discover_migrations()
 

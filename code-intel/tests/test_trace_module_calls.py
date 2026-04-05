@@ -18,9 +18,7 @@ from mcp_code_intel.tools.trace_module_calls import trace_module_calls
 # ---------------------------------------------------------------------------
 
 
-def _make_package(
-    tmp_path: Path, pkg_name: str, modules: dict[str, str]
-) -> None:
+def _make_package(tmp_path: Path, pkg_name: str, modules: dict[str, str]) -> None:
     """Create a Python package with given modules."""
     pkg_dir = tmp_path / pkg_name
     pkg_dir.mkdir(parents=True, exist_ok=True)
@@ -45,27 +43,29 @@ def _empty_config() -> dict:
 
 
 def test_trace_simple_call_chain(tmp_path: Path) -> None:
-    _make_package(tmp_path, "app", {
-        "service.py": """\
+    _make_package(
+        tmp_path,
+        "app",
+        {
+            "service.py": """\
             from app.component import do_work
 
             def handle():
                 do_work()
         """,
-        "component.py": """\
+            "component.py": """\
             from app.helper import util
 
             def do_work():
                 util()
         """,
-        "helper.py": """\
+            "helper.py": """\
             def util():
                 pass
         """,
-    })
-    result = trace_module_calls(
-        "app.service.handle", project_root=tmp_path, config=_empty_config()
+        },
     )
+    result = trace_module_calls("app.service.handle", project_root=tmp_path, config=_empty_config())
     assert "error" not in result
     assert result["root"] == "app.service.handle"
     tree = result["tree"]
@@ -79,27 +79,29 @@ def test_trace_simple_call_chain(tmp_path: Path) -> None:
 
 
 def test_trace_deep_chain(tmp_path: Path) -> None:
-    _make_package(tmp_path, "app", {
-        "service.py": """\
+    _make_package(
+        tmp_path,
+        "app",
+        {
+            "service.py": """\
             from app.component import do_work
 
             def handle():
                 do_work()
         """,
-        "component.py": """\
+            "component.py": """\
             from app.helper import util
 
             def do_work():
                 util()
         """,
-        "helper.py": """\
+            "helper.py": """\
             def util():
                 pass
         """,
-    })
-    result = trace_module_calls(
-        "app.service.handle", project_root=tmp_path, config=_empty_config()
+        },
     )
+    result = trace_module_calls("app.service.handle", project_root=tmp_path, config=_empty_config())
     assert "error" not in result
     # Flat chain should contain all levels
     flat_names = [entry["name"] for entry in result["flat"]]
@@ -114,16 +116,18 @@ def test_trace_deep_chain(tmp_path: Path) -> None:
 
 
 def test_trace_leaf_function(tmp_path: Path) -> None:
-    _make_package(tmp_path, "app", {
-        "leaf.py": """\
+    _make_package(
+        tmp_path,
+        "app",
+        {
+            "leaf.py": """\
             def noop():
                 x = 1 + 2
                 return x
         """,
-    })
-    result = trace_module_calls(
-        "app.leaf.noop", project_root=tmp_path, config=_empty_config()
+        },
     )
+    result = trace_module_calls("app.leaf.noop", project_root=tmp_path, config=_empty_config())
     assert "error" not in result
     tree = result["tree"]
     assert tree["name"] == "noop"
@@ -136,12 +140,16 @@ def test_trace_leaf_function(tmp_path: Path) -> None:
 
 
 def test_function_not_found(tmp_path: Path) -> None:
-    _make_package(tmp_path, "app", {
-        "mod.py": """\
+    _make_package(
+        tmp_path,
+        "app",
+        {
+            "mod.py": """\
             def existing():
                 pass
         """,
-    })
+        },
+    )
     result = trace_module_calls(
         "app.mod.nonexistent", project_root=tmp_path, config=_empty_config()
     )
@@ -168,8 +176,11 @@ def test_module_not_found(tmp_path: Path) -> None:
 
 
 def test_recursive_calls_no_infinite_loop(tmp_path: Path) -> None:
-    _make_package(tmp_path, "app", {
-        "recursive.py": """\
+    _make_package(
+        tmp_path,
+        "app",
+        {
+            "recursive.py": """\
             from app.recursive import mutual_b
 
             def mutual_a():
@@ -178,7 +189,8 @@ def test_recursive_calls_no_infinite_loop(tmp_path: Path) -> None:
             def mutual_b():
                 mutual_a()
         """,
-    })
+        },
+    )
     result = trace_module_calls(
         "app.recursive.mutual_a", project_root=tmp_path, config=_empty_config()
     )
@@ -193,15 +205,17 @@ def test_recursive_calls_no_infinite_loop(tmp_path: Path) -> None:
 
 
 def test_returns_stats(tmp_path: Path) -> None:
-    _make_package(tmp_path, "app", {
-        "entry.py": """\
+    _make_package(
+        tmp_path,
+        "app",
+        {
+            "entry.py": """\
             def start():
                 pass
         """,
-    })
-    result = trace_module_calls(
-        "app.entry.start", project_root=tmp_path, config=_empty_config()
+        },
     )
+    result = trace_module_calls("app.entry.start", project_root=tmp_path, config=_empty_config())
     assert "error" not in result
     assert "depth" in result
     assert "call_count" in result
@@ -209,21 +223,23 @@ def test_returns_stats(tmp_path: Path) -> None:
 
 
 def test_flat_output_has_entries(tmp_path: Path) -> None:
-    _make_package(tmp_path, "app", {
-        "entry.py": """\
+    _make_package(
+        tmp_path,
+        "app",
+        {
+            "entry.py": """\
             from app.worker import work
 
             def start():
                 work()
         """,
-        "worker.py": """\
+            "worker.py": """\
             def work():
                 pass
         """,
-    })
-    result = trace_module_calls(
-        "app.entry.start", project_root=tmp_path, config=_empty_config()
+        },
     )
+    result = trace_module_calls("app.entry.start", project_root=tmp_path, config=_empty_config())
     assert "error" not in result
     flat = result["flat"]
     assert len(flat) >= 2

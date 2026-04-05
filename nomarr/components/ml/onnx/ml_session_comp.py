@@ -59,10 +59,7 @@ def require() -> None:
         # proceed with ML operations
     """
     if _ort is None:
-        msg = (
-            "onnxruntime is not installed. "
-            "Install onnxruntime-gpu for GPU support or onnxruntime for CPU-only."
-        )
+        msg = "onnxruntime is not installed. Install onnxruntime-gpu for GPU support or onnxruntime for CPU-only."
         raise RuntimeError(msg)
 
 
@@ -135,8 +132,7 @@ def create_session(
                 )
         else:
             logger.warning(
-                "[onnx] GPU requested but CUDAExecutionProvider not available; "
-                "falling back to CPU for %s",
+                "[onnx] GPU requested but CUDAExecutionProvider not available; falling back to CPU for %s",
                 model_path,
             )
 
@@ -196,7 +192,6 @@ def _build_cuda_provider_options(vram_limit_bytes: int | None) -> dict[str, obje
         "arena_extend_strategy": "kSameAsRequested",
         "gpu_mem_limit": vram_limit_bytes,
     }
-
 
 
 # ---------------------------------------------------------------------------

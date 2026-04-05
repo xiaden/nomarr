@@ -111,15 +111,32 @@ def find_similar_tracks(
     file_id_to_nd_id = db.navidrome_tracks.bulk_resolve_files_to_nd(result_file_ids)
 
     # Filter to only results that have a Navidrome mapping
-    mapped_results = [
-        (r, file_id_to_nd_id[r["file_id"]])
-        for r in results
-        if r["file_id"] in file_id_to_nd_id
-    ]
+    mapped_results = [(r, file_id_to_nd_id[r["file_id"]]) for r in results if r["file_id"] in file_id_to_nd_id]
 
     unmapped_count = len(results) - len(mapped_results)
     if unmapped_count > 0:
-        logger.debug("%d ANN results had no Navidrome mapping, skipped", unmapped_count)
+        if unmapped_count > len(results) * 0.5:
+            logger.warning(
+                "High ANN unmapped ratio; many similar-track results had no Navidrome mapping",
+                extra={
+                    "backbone_id": backbone_id,
+                    "library_key": library_key,
+                    "seed_nd_id": seed_nd_id,
+                    "total_results": len(results),
+                    "unmapped_count": unmapped_count,
+                },
+            )
+        else:
+            logger.debug(
+                "Some ANN results had no Navidrome mapping, skipped",
+                extra={
+                    "backbone_id": backbone_id,
+                    "library_key": library_key,
+                    "seed_nd_id": seed_nd_id,
+                    "total_results": len(results),
+                    "unmapped_count": unmapped_count,
+                },
+            )
 
     if not mapped_results:
         return []

@@ -42,7 +42,6 @@ from nomarr.helpers.exceptions import PlaylistConversionError
 logger = logging.getLogger(__name__)
 
 
-
 def convert_playlist_workflow(
     db: Database,
     playlist_url: str,
@@ -79,9 +78,7 @@ def convert_playlist_workflow(
     except PlaylistUrlError as e:
         raise PlaylistConversionError(str(e)) from e
 
-    logger.info(
-        f"Converting {parsed_url.platform} playlist: {parsed_url.playlist_id or 'short link'}"
-    )
+    logger.info(f"Converting {parsed_url.platform} playlist: {parsed_url.playlist_id or 'short link'}")
 
     # Step 2: Fetch playlist from streaming service
     metadata, input_tracks = _fetch_playlist(parsed_url, spotify_client_id, spotify_client_secret)
@@ -95,9 +92,7 @@ def convert_playlist_workflow(
     logger.info(f"Loaded {len(library_tracks)} library tracks for matching")
 
     if not library_tracks:
-        raise PlaylistConversionError(
-            "No library tracks found. Import a library first."
-        )
+        raise PlaylistConversionError("No library tracks found. Import a library first.")
 
     # Step 4: Match tracks
     match_results = match_tracks(input_tracks, library_tracks)
@@ -114,9 +109,7 @@ def convert_playlist_workflow(
 
     matched_count = exact_isrc + exact_meta + fuzzy
 
-    logger.info(
-        f"Match results: {matched_count} matched, {ambiguous} ambiguous, {not_found} not found"
-    )
+    logger.info(f"Match results: {matched_count} matched, {ambiguous} ambiguous, {not_found} not found")
 
     return PlaylistConversionResult(
         playlist_metadata=metadata,
@@ -187,9 +180,7 @@ def _fetch_spotify(
         return fetch_spotify_playlist(client, parsed_url.playlist_id)
 
     except SpotifyCredentialsError as e:
-        raise PlaylistConversionError(
-            f"Spotify credentials not configured: {e}"
-        ) from e
+        raise PlaylistConversionError(f"Spotify credentials not configured: {e}") from e
     except SpotifyFetchError as e:
         raise PlaylistConversionError(f"Spotify fetch failed: {e}") from e
 
@@ -221,11 +212,7 @@ def _generate_m3u(
     for result in match_results:
         if result.matched_file and result.status in ("exact_isrc", "exact_metadata", "fuzzy"):
             # Add EXTINF with track info
-            duration_s = (
-                result.input_track.duration_ms // 1000
-                if result.input_track.duration_ms
-                else -1
-            )
+            duration_s = result.input_track.duration_ms // 1000 if result.input_track.duration_ms else -1
             artist = result.input_track.artist
             title = result.input_track.title
             lines.append(f"#EXTINF:{duration_s},{artist} - {title}")

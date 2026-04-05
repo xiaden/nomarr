@@ -562,8 +562,7 @@ class FileWatcherService:
             affected_libraries.add(library_id)
 
         logger.info(
-            f"Debounce fired: {len(changes)} file changes across "
-            f"{len(affected_libraries)} library/libraries",
+            f"Debounce fired: {len(changes)} file changes across {len(affected_libraries)} library/libraries",
         )
 
         # Trigger a full scan for each affected library.
@@ -574,4 +573,3 @@ class FileWatcherService:
                 self.library_service.start_quick_scan(library_id)
             except Exception as e:
                 logger.error(f"Failed to trigger scan for library {library_id}: {e}", exc_info=True)
-

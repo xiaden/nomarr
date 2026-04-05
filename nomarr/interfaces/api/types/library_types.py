@@ -410,6 +410,13 @@ class ReconcileTagsResponse(BaseModel):
         return cls(processed=result.processed, remaining=result.remaining, failed=result.failed)
 
 
+class StartTagWriteResponse(BaseModel):
+    """Response for starting background tag reconciliation."""
+
+    status: str
+    task_id: str
+
+
 class ReconcileStatusResponse(BaseModel):
     """Response for reconciliation status endpoint."""
 
@@ -434,7 +441,6 @@ class ValidateLibraryTagsResponse(BaseModel):
     files_repaired: int
     expected_heads: int
     missing_rels_summary: dict[str, int]
-
 
 
 class ErroredFileItemResponse(BaseModel):

@@ -127,9 +127,7 @@ def test_plan_archive_blocked_steps(tmp_path: Path) -> None:
 
 def test_plan_archive_ignore_blocked(tmp_path: Path) -> None:
     _make_plan(tmp_path, "TASK-ign-A-work", BLOCKED_PLAN)
-    result = plan_archive(
-        plan_name="TASK-ign-A-work", ignore_blocked=True, workspace_root=tmp_path
-    )
+    result = plan_archive(plan_name="TASK-ign-A-work", ignore_blocked=True, workspace_root=tmp_path)
     assert result["archived"] is True
 
 

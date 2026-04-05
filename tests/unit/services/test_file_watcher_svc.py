@@ -196,8 +196,6 @@ class TestLibraryEventHandler:
         assert len(received_events) == 0
 
 
-
-
 class TestThreadSafety:
     """Test thread-safe event handling."""
 

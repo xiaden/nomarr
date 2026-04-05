@@ -19,6 +19,7 @@ from typing import Literal, TypedDict
 # Static config — set once via file / ENV, never changed at runtime
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class StaticConfig:
     """Startup-only configuration values.
@@ -36,6 +37,7 @@ class StaticConfig:
 # ---------------------------------------------------------------------------
 # Dynamic config — web-editable, stored in DB, read from cache
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class DynamicConfig:
@@ -66,6 +68,7 @@ class DynamicConfig:
     pp_min_play_count: int = 3
     pp_max_songs: int = 50
     pp_min_songs: int = 10
+    pp_max_genre_playlists: int = 5
     pp_overwrite_playlists: bool = True
     pp_type_familiar: bool = True
     pp_type_discovery: bool = True
@@ -183,6 +186,11 @@ DYNAMIC_FIELD_META: dict[str, FieldMeta] = {
     "pp_min_songs": {
         "label": "Min Songs per Playlist",
         "description": "Minimum number of songs required to create a playlist",
+        "ui_type": "number",
+    },
+    "pp_max_genre_playlists": {
+        "label": "Max Genre Playlists",
+        "description": "Maximum number of genre-focused playlists to generate per run",
         "ui_type": "number",
     },
     "pp_overwrite_playlists": {

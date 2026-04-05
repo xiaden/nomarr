@@ -65,5 +65,3 @@ class ApplyCalibrationResponse(BaseModel):
             total=dto.total,
             message=dto.message,
         )
-
-

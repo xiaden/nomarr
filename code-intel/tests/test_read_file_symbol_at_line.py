@@ -58,9 +58,7 @@ def _write_py(tmp_path: Path, name: str, content: str) -> Path:
 
 def test_line_in_function(tmp_path: Path) -> None:
     _write_py(tmp_path, "mod.py", SAMPLE_MODULE)
-    result = read_file_symbol_at_line(
-        file_path="mod.py", line_number=6, workspace_root=tmp_path
-    )
+    result = read_file_symbol_at_line(file_path="mod.py", line_number=6, workspace_root=tmp_path)
     assert "error" not in result
     assert result["qualified_name"] == "standalone_func"
     assert result["kind"] == "Function"
@@ -70,9 +68,7 @@ def test_line_in_function(tmp_path: Path) -> None:
 def test_line_on_function_def(tmp_path: Path) -> None:
     """Line on the 'def' line itself should still match."""
     _write_py(tmp_path, "mod.py", SAMPLE_MODULE)
-    result = read_file_symbol_at_line(
-        file_path="mod.py", line_number=5, workspace_root=tmp_path
-    )
+    result = read_file_symbol_at_line(file_path="mod.py", line_number=5, workspace_root=tmp_path)
     assert "error" not in result
     assert result["qualified_name"] == "standalone_func"
 
@@ -84,9 +80,7 @@ def test_line_on_function_def(tmp_path: Path) -> None:
 
 def test_line_in_method(tmp_path: Path) -> None:
     _write_py(tmp_path, "mod.py", SAMPLE_MODULE)
-    result = read_file_symbol_at_line(
-        file_path="mod.py", line_number=13, workspace_root=tmp_path
-    )
+    result = read_file_symbol_at_line(file_path="mod.py", line_number=13, workspace_root=tmp_path)
     assert "error" not in result
     assert result["qualified_name"] == "MyClass.method_one"
     assert result["kind"] == "Method"
@@ -94,9 +88,7 @@ def test_line_in_method(tmp_path: Path) -> None:
 
 def test_line_in_second_method(tmp_path: Path) -> None:
     _write_py(tmp_path, "mod.py", SAMPLE_MODULE)
-    result = read_file_symbol_at_line(
-        file_path="mod.py", line_number=16, workspace_root=tmp_path
-    )
+    result = read_file_symbol_at_line(file_path="mod.py", line_number=16, workspace_root=tmp_path)
     assert "error" not in result
     assert result["qualified_name"] == "MyClass.method_two"
 
@@ -104,9 +96,7 @@ def test_line_in_second_method(tmp_path: Path) -> None:
 def test_line_in_inner_class_method(tmp_path: Path) -> None:
     """Innermost symbol wins: InnerClass.inner_method, not MyClass."""
     _write_py(tmp_path, "mod.py", SAMPLE_MODULE)
-    result = read_file_symbol_at_line(
-        file_path="mod.py", line_number=20, workspace_root=tmp_path
-    )
+    result = read_file_symbol_at_line(file_path="mod.py", line_number=20, workspace_root=tmp_path)
     assert "error" not in result
     assert "inner_method" in result["qualified_name"]
 
@@ -119,9 +109,7 @@ def test_line_in_inner_class_method(tmp_path: Path) -> None:
 def test_line_in_class_body_no_method(tmp_path: Path) -> None:
     """Line on class_var (inside class but outside any method)."""
     _write_py(tmp_path, "mod.py", SAMPLE_MODULE)
-    result = read_file_symbol_at_line(
-        file_path="mod.py", line_number=10, workspace_root=tmp_path
-    )
+    result = read_file_symbol_at_line(file_path="mod.py", line_number=10, workspace_root=tmp_path)
     assert "error" not in result
     assert result["qualified_name"] == "MyClass"
     assert result["kind"] == "Class"
@@ -135,9 +123,7 @@ def test_line_in_class_body_no_method(tmp_path: Path) -> None:
 def test_line_outside_any_symbol(tmp_path: Path) -> None:
     """Line on module-level code (e.g., X = 42) → error with hint."""
     _write_py(tmp_path, "mod.py", SAMPLE_MODULE)
-    result = read_file_symbol_at_line(
-        file_path="mod.py", line_number=3, workspace_root=tmp_path
-    )
+    result = read_file_symbol_at_line(file_path="mod.py", line_number=3, workspace_root=tmp_path)
     assert "error" in result
     assert "hint" in result
     assert "source" in result  # Should still return the line with context
@@ -146,9 +132,7 @@ def test_line_outside_any_symbol(tmp_path: Path) -> None:
 def test_line_on_import(tmp_path: Path) -> None:
     """Import line is module-level → error with source context."""
     _write_py(tmp_path, "mod.py", SAMPLE_MODULE)
-    result = read_file_symbol_at_line(
-        file_path="mod.py", line_number=1, workspace_root=tmp_path
-    )
+    result = read_file_symbol_at_line(file_path="mod.py", line_number=1, workspace_root=tmp_path)
     assert "error" in result
     assert "source" in result
 
@@ -160,16 +144,12 @@ def test_line_on_import(tmp_path: Path) -> None:
 
 def test_non_python_file(tmp_path: Path) -> None:
     (tmp_path / "data.txt").write_text("hello\n", encoding="utf-8")
-    result = read_file_symbol_at_line(
-        file_path="data.txt", line_number=1, workspace_root=tmp_path
-    )
+    result = read_file_symbol_at_line(file_path="data.txt", line_number=1, workspace_root=tmp_path)
     assert "error" in result
 
 
 def test_file_not_found(tmp_path: Path) -> None:
-    result = read_file_symbol_at_line(
-        file_path="ghost.py", line_number=1, workspace_root=tmp_path
-    )
+    result = read_file_symbol_at_line(file_path="ghost.py", line_number=1, workspace_root=tmp_path)
     assert "error" in result
 
 
@@ -183,9 +163,7 @@ def test_path_outside_workspace(tmp_path: Path) -> None:
 def test_syntax_error_file(tmp_path: Path) -> None:
     """File with syntax error should return error, not crash."""
     _write_py(tmp_path, "bad.py", "def broken(:\n    pass\n")
-    result = read_file_symbol_at_line(
-        file_path="bad.py", line_number=1, workspace_root=tmp_path
-    )
+    result = read_file_symbol_at_line(file_path="bad.py", line_number=1, workspace_root=tmp_path)
     assert "error" in result
 
 
@@ -215,18 +193,14 @@ def test_async_function(tmp_path: Path) -> None:
 
 def test_response_has_file_field(tmp_path: Path) -> None:
     _write_py(tmp_path, "mod.py", SAMPLE_MODULE)
-    result = read_file_symbol_at_line(
-        file_path="mod.py", line_number=6, workspace_root=tmp_path
-    )
+    result = read_file_symbol_at_line(file_path="mod.py", line_number=6, workspace_root=tmp_path)
     assert "file" in result
     assert result["file"] == "mod.py"
 
 
 def test_response_has_line_boundaries(tmp_path: Path) -> None:
     _write_py(tmp_path, "mod.py", SAMPLE_MODULE)
-    result = read_file_symbol_at_line(
-        file_path="mod.py", line_number=6, workspace_root=tmp_path
-    )
+    result = read_file_symbol_at_line(file_path="mod.py", line_number=6, workspace_root=tmp_path)
     assert "start_line" in result
     assert "end_line" in result
     assert result["start_line"] <= 6

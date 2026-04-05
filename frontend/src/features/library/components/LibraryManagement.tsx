@@ -6,6 +6,7 @@
  * - Create new libraries with path picker
  * - Edit library properties (name, path, enabled)
  * - Scan individual libraries
+ * - Write tags to audio files with background polling
  */
 
 import {
@@ -23,7 +24,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ConfirmDialog, ErrorMessage, Panel, SectionHeader } from "@shared/components/ui";
 
@@ -50,6 +51,8 @@ import { useLibraryVectorStats } from "../hooks/useLibraryVectorStats";
 import { VectorConfigSection } from "./VectorConfigSection";
 import { VectorStatsCard } from "./VectorStatsCard";
 
+const RECONCILE_POLL_INTERVAL_MS = 10_000;
+
 export function LibraryManagement() {
   const { showSuccess } = useNotification();
   const { confirm, isOpen, options, handleConfirm, handleCancel } = useConfirmDialog();
@@ -69,6 +72,7 @@ export function LibraryManagement() {
   const [formWatchMode, setFormWatchMode] = useState<string>("off");
   const [formFileWriteMode, setFormFileWriteMode] = useState<"none" | "minimal" | "full">("full");
   const [showPathPicker, setShowPathPicker] = useState(false);
+  const reconcilePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [reconcilingId, setReconcilingId] = useState<string | null>(null);
   const [reconcileStatus, setReconcileStatus] = useState<Record<string, { pending: number; inProgress: boolean }>>({});
   const [originalFileWriteMode, setOriginalFileWriteMode] = useState<"none" | "minimal" | "full">("full");
@@ -180,6 +184,15 @@ export function LibraryManagement() {
     loadLibraries();
     loadConfig();
   }, [loadLibraries]);
+
+  useEffect(() => {
+    return () => {
+      if (reconcilePollRef.current !== null) {
+        clearInterval(reconcilePollRef.current);
+        reconcilePollRef.current = null;
+      }
+    };
+  }, []);
 
   // Poll for scan/work status updates using unified work-status endpoint
   useEffect(() => {
@@ -312,8 +325,8 @@ export function LibraryManagement() {
         const result = await updateWriteMode(editingId, formFileWriteMode);
         if (result.requires_reconciliation && result.affected_file_count > 0) {
           const confirmed = await confirm({
-            title: "Reconcile Tags?",
-            message: `${result.affected_file_count} files need to be rewritten with the new tag format. Reconcile now?`,
+            title: "Write Tags?",
+            message: `${result.affected_file_count} files need to be rewritten with the new tag format. Write tags now?`,
             severity: "info",
           });
           if (confirmed) {
@@ -412,20 +425,51 @@ export function LibraryManagement() {
   const handleReconcileTags = async (libraryId: string) => {
     try {
       setError(null);
+      await reconcileTags(libraryId);
+      showSuccess("Tag write started");
+
+      if (reconcilePollRef.current !== null) {
+        clearInterval(reconcilePollRef.current);
+        reconcilePollRef.current = null;
+      }
+
       setReconcilingId(libraryId);
-      const result = await reconcileTags(libraryId);
-      showSuccess(
-        `Reconciled ${result.processed} files (${result.remaining} remaining, ${result.failed} failed)`
-      );
-      // Update reconcile status
-      const status = await getReconcileStatus(libraryId);
-      setReconcileStatus(prev => ({
-        ...prev,
-        [libraryId]: { pending: status.pending_count, inProgress: status.in_progress }
-      }));
+
+      const pollStatus = async (): Promise<boolean> => {
+        try {
+          const status = await getReconcileStatus(libraryId);
+          setReconcileStatus(prev => ({
+            ...prev,
+            [libraryId]: { pending: status.pending_count, inProgress: status.in_progress }
+          }));
+
+          if (!status.in_progress) {
+            if (reconcilePollRef.current !== null) {
+              clearInterval(reconcilePollRef.current);
+              reconcilePollRef.current = null;
+            }
+            setReconcilingId(null);
+          }
+
+          return status.in_progress;
+        } catch {
+          // Silent poll failure — don't surface to UI
+          return true;
+        }
+      };
+
+      const isInProgress = await pollStatus();
+      if (!isInProgress) {
+        return;
+      }
+
+      if (reconcilePollRef.current === null) {
+        reconcilePollRef.current = setInterval(() => {
+          void pollStatus();
+        }, RECONCILE_POLL_INTERVAL_MS);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to reconcile tags");
-    } finally {
+      setError(err instanceof Error ? err.message : "Failed to start tag write");
       setReconcilingId(null);
     }
   };
@@ -855,14 +899,14 @@ export function LibraryManagement() {
                   }
                   title={
                     reconcilingId === lib.library_id
-                      ? "Reconciling tags..."
+                      ? "Writing tags..."
                       : "Write tags from database to audio files"
                   }
                   onMouseEnter={() => loadReconcileStatus(lib.library_id)}
                 >
                   {reconcilingId === lib.library_id
-                    ? "Reconciling..."
-                    : "Reconcile Tags"}
+                    ? "Writing tags..."
+                    : "Write Tags"}
                 </Button>
                 <Button
                   variant="contained"

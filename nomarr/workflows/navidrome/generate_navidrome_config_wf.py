@@ -3,6 +3,7 @@
 Generates navidrome.toml custom tag configuration from tags data.
 Uses short, user-friendly field names while preserving full versioned keys as aliases.
 """
+
 from __future__ import annotations
 
 import logging

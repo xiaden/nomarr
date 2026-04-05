@@ -1,4 +1,5 @@
 """Analytics endpoints for web UI."""
+
 import asyncio
 import logging
 from typing import TYPE_CHECKING, Annotated
@@ -31,9 +32,7 @@ async def web_analytics_tag_frequencies(
 ) -> TagFrequenciesResponse:
     """Get tag frequency statistics."""
     try:
-        result = await asyncio.to_thread(
-            analytics_service.get_tag_frequencies_with_result, limit=limit
-        )
+        result = await asyncio.to_thread(analytics_service.get_tag_frequencies_with_result, limit=limit)
         return TagFrequenciesResponse.from_dto(result)
     except Exception as e:
         logger.exception("[Web API] Error getting tag frequencies")
@@ -53,9 +52,7 @@ async def web_analytics_mood_distribution(
     Optionally filtered by library_id.
     """
     try:
-        result = await asyncio.to_thread(
-            analytics_service.get_mood_distribution_with_result, library_id=library_id
-        )
+        result = await asyncio.to_thread(analytics_service.get_mood_distribution_with_result, library_id=library_id)
         return MoodDistributionResponse.from_dto(result)
     except Exception as e:
         logger.exception("[Web API] Error getting mood distribution")
@@ -75,9 +72,7 @@ async def web_analytics_tag_correlations(
     Returns mood-to-mood, mood-to-genre, and mood-to-tier correlations.
     """
     try:
-        result_dto = await asyncio.to_thread(
-            analytics_service.get_tag_correlation_matrix, top_n=top_n
-        )
+        result_dto = await asyncio.to_thread(analytics_service.get_tag_correlation_matrix, top_n=top_n)
         return TagCorrelationsResponse.from_dto(result_dto)
     except Exception as e:
         logger.exception("[Web API] Error getting tag correlations")
@@ -135,9 +130,7 @@ async def web_analytics_collection_overview(
     Optionally filtered by library_id.
     """
     try:
-        result = await asyncio.to_thread(
-            analytics_service.get_collection_overview, library_id=library_id
-        )
+        result = await asyncio.to_thread(analytics_service.get_collection_overview, library_id=library_id)
         return CollectionOverviewResponse(
             stats=result["stats"],
             year_distribution=result["year_distribution"],
@@ -162,9 +155,7 @@ async def web_analytics_mood_analysis(
     Optionally filtered by library_id.
     """
     try:
-        result = await asyncio.to_thread(
-            analytics_service.get_mood_analysis, library_id=library_id
-        )
+        result = await asyncio.to_thread(analytics_service.get_mood_analysis, library_id=library_id)
         return MoodAnalysisResponse(
             coverage=result["coverage"],
             balance=result["balance"],

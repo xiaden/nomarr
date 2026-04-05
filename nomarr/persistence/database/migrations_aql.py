@@ -156,7 +156,6 @@ class MigrationOperations:
         )
         logger.debug("Marked migration %s as applied (%dms)", name, duration_ms)
 
-
     def is_migration_applied(self, name: str) -> bool:
         """Check if a specific migration has been applied.
 
