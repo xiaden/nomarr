@@ -7,7 +7,6 @@ All paths are resolved and validated to prevent directory traversal attacks.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Annotated, Any
 
 import anyio
@@ -62,7 +61,7 @@ async def list_directory(
         requested_path = resolve_library_path(
             library_root=library_root, user_path=path, must_exist=True, must_be_file=False
         )
-        library_root = Path(library_root).resolve()
+        library_root = await anyio.Path(library_root).resolve()
         entries: list[dict[str, str | bool]] = []
         for item in requested_path.iterdir():
             try:
