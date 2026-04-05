@@ -6,6 +6,16 @@
 !*/
 !**/.gitkeep
 
+# ADRs are stable architectural decisions — always committed
+!decisions/*.md
+
+# Completed design docs are committed for auditability
+!designs/completed/*.md
+
+# Archived design docs persist after clearing completed/
+!designs/archive/
+!designs/archive/*.md
+
 # Keep plan examples committed
 !plans/examples/
 !plans/examples/*.md
