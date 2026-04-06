@@ -109,8 +109,10 @@ class TestGetRecentlyProcessed:
         query = mock_db.aql.execute.call_args.args[0]
         bind_vars = mock_db.aql.execute.call_args.kwargs["bind_vars"]
 
-        assert "FOR file IN OUTBOUND @library_id library_contains_file" in query
+        assert 'FOR file IN 1..1 INBOUND "file_states/tagged" file_has_state' in query
         assert "FOR file IN library_files" not in query
+        assert "FOR file IN OUTBOUND @library_id library_contains_file" not in query
+        assert "@library_id" in query
         assert bind_vars["library_id"] == "libraries/123"
 
     @pytest.mark.integration
@@ -126,6 +128,7 @@ class TestGetRecentlyProcessed:
         query = mock_db.aql.execute.call_args.args[0]
         bind_vars = mock_db.aql.execute.call_args.kwargs["bind_vars"]
 
-        assert "FOR file IN library_files" in query
+        assert 'FOR file IN 1..1 INBOUND "file_states/tagged" file_has_state' in query
+        assert "FOR file IN library_files" not in query
         assert "OUTBOUND @library_id library_contains_file" not in query
         assert "library_id" not in bind_vars
