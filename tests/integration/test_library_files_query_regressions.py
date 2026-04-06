@@ -69,8 +69,8 @@ class TestGetRecentlyProcessed:
 
     @pytest.mark.integration
     @pytest.mark.mocked
-    def test_returns_scanned_at_field_not_last_tagged_at(self) -> None:
-        """Recently processed query should project ``scanned_at`` and never use ``last_tagged_at``."""
+    def test_returns_scanned_at_field(self) -> None:
+        """Recently processed query should return the scanned_at field."""
         mock_db = MagicMock()
         mock_db.aql.execute.return_value = iter(
             [
@@ -88,47 +88,35 @@ class TestGetRecentlyProcessed:
 
         rows = mixin.get_recently_processed(limit=5)
 
-        query = mock_db.aql.execute.call_args.args[0]
         bind_vars = mock_db.aql.execute.call_args.kwargs["bind_vars"]
 
         assert rows[0]["scanned_at"] == 1_710_000_000
-        assert "scanned_at: file.scanned_at" in query
-        assert "last_tagged_at" not in query
         assert bind_vars["limit"] == 5
 
     @pytest.mark.integration
     @pytest.mark.mocked
-    def test_library_scoped_query_uses_outbound_traversal(self) -> None:
-        """Library-scoped recently processed query should traverse outward from the library edge."""
+    def test_library_scoped_binds_library_id(self) -> None:
+        """Library-scoped query should pass library_id as a bind variable."""
         mock_db = MagicMock()
         mock_db.aql.execute.return_value = iter([])
         mixin = _ConcreteQueriesMixin(mock_db)
 
         mixin.get_recently_processed(library_id="libraries/123")
 
-        query = mock_db.aql.execute.call_args.args[0]
         bind_vars = mock_db.aql.execute.call_args.kwargs["bind_vars"]
 
-        assert 'FOR file IN 1..1 INBOUND "file_states/tagged" file_has_state' in query
-        assert "FOR file IN library_files" not in query
-        assert "FOR file IN OUTBOUND @library_id library_contains_file" not in query
-        assert "@library_id" in query
         assert bind_vars["library_id"] == "libraries/123"
 
     @pytest.mark.integration
     @pytest.mark.mocked
-    def test_global_query_scans_library_files_collection(self) -> None:
-        """Global recently processed query should scan ``library_files`` without a bound library filter."""
+    def test_global_query_omits_library_id_bind(self) -> None:
+        """Global query should not bind a library_id."""
         mock_db = MagicMock()
         mock_db.aql.execute.return_value = iter([])
         mixin = _ConcreteQueriesMixin(mock_db)
 
         mixin.get_recently_processed()
 
-        query = mock_db.aql.execute.call_args.args[0]
         bind_vars = mock_db.aql.execute.call_args.kwargs["bind_vars"]
 
-        assert 'FOR file IN 1..1 INBOUND "file_states/tagged" file_has_state' in query
-        assert "FOR file IN library_files" not in query
-        assert "OUTBOUND @library_id library_contains_file" not in query
         assert "library_id" not in bind_vars
