@@ -157,6 +157,7 @@ class TestGetErroredFiles:
         assert result["total"] == 0
         assert result["files"] == []
 
+
 class TestGetWorkStatus:
     """Tests for LibraryQueryMixin.get_work_status."""
 

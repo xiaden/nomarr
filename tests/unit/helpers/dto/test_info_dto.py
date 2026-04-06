@@ -278,6 +278,7 @@ class TestPublicInfoResult:
         assert result.queue.depth == 0
         assert result.worker.alive
 
+
 class TestLibraryPipelineInfo:
     """Tests for LibraryPipelineInfo dataclass."""
 
