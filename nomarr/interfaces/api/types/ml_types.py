@@ -60,12 +60,12 @@ class MlModelOutputResponse(BaseModel):
 
 
 class UpdateOutputLabelRequest(BaseModel):
-    """Request body for PATCH /ml/models/{model_id}/outputs/{output_id}."""
+    """Request body for PATCH /api/web/machine-learning/model/{model_id}/output/{output_id}."""
 
     label: str
 
 
 class MarkConfiguredRequest(BaseModel):
-    """Request body for POST /ml/models/{model_id}/mark-configured."""
+    """Request body for POST /api/web/machine-learning/model/{model_id}/mark-configured."""
 
     value: bool

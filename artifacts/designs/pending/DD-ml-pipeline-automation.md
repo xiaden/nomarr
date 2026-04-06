@@ -50,7 +50,7 @@ Stages 4 and 6 are manual. Stage 5 auto-fires after 4 via `post_generation_hook`
 4. **Event-driven** — no polling; state transitions fire immediately when their triggering event occurs
 5. **Consistent with existing patterns** — library state graph mirrors `file_has_state` (ADR-003)
 6. **Non-invasive** — delegates to existing `CalibrationService` and `TaggingService` for actual work
-7. **Observable** — per-library pipeline status via `GET /api/web/libraries/{id}/pipeline`
+7. **Observable** — per-library pipeline status via `GET /api/web/library/{id}/pipeline`
 
 ## Non-Goals
 
@@ -80,7 +80,7 @@ All pipeline stages that need background execution use the merged **ManagedTask 
 | Post-tagging library check | components/workers | Inline in worker after `set_tagged()` | Query untagged count → transition `ml_running → ml_complete` → fire trigger |
 | `CalibrationService` | services/domain | `nomarr/services/domain/calibration_svc.py` | Existing — add state transitions in `post_generation_hook` |
 | `TaggingService` | services/domain | `nomarr/services/domain/tagging_svc.py` | Existing — rename `reconcile_library` → `write_tags_to_files`; add state transitions on completion |
-| `library_if.py` | interfaces/api/web | `nomarr/interfaces/api/web/library_if.py` | New `GET /{id}/pipeline` endpoint; rename `/reconcile-tags` → `/write-tags`; remove `/reconcile-status` |
+| `library_if.py` | interfaces/api/web | `nomarr/interfaces/api/web/library_if.py` | New `GET /{id}/pipeline` endpoint; rename `/reconcile-tags` → `/write-tag`; remove `/reconcile-status` |
 | `LibraryPipelineStatusDTO` | helpers/dto | `nomarr/helpers/dto/library_dto.py` | Pipeline status response DTO |
 
 **`LibraryPipelineService` placement justification:** Infrastructure services coordinate cross-domain orchestration that doesn't belong to any single domain service. `LibraryPipelineService` wires callbacks across `CalibrationService`, `TaggingService`, and `BackgroundTaskService` — the same cross-cutting coordination pattern used by `BackgroundTaskService` itself in `services/infrastructure`. It owns no domain logic; it owns wiring and lifecycle.
@@ -408,9 +408,9 @@ When `file_write_mode` is set to `"none"`, auto-write is blocked even if `librar
 
 ### New Endpoint
 
-**`GET /api/web/libraries/{library_id}/pipeline`**
+**`GET /api/web/library/{library_id}/pipeline`**
 
-Lives on the existing libraries router (`nomarr/interfaces/api/web/library_if.py`, prefix `/libraries`).
+Lives on the existing libraries router (`nomarr/interfaces/api/web/library_if.py`, prefix `/library`).
 
 Returns 404 with `{"detail": "Library not found"}` when `library_id` does not match an existing library.
 
@@ -434,17 +434,17 @@ Counts are selectively populated based on state:
 
 ### Renamed Endpoint
 
-**`POST /api/web/libraries/{library_id}/write-tags`** (was `POST /{library_id}/reconcile-tags`)
+**`POST /api/web/library/{library_id}/write-tag`** (was `POST /{library_id}/reconcile-tags`)
 
 Current implementation already uses `start_write_tags_background()`. Rename the route and endpoint function. Returns `StartTagWriteResponse` with task ID. Navidrome rescan fires via `ManagedTask.on_complete` callback (already wired in current code at `library_if.py` line 640-648).
 
 ### Removed Endpoint
 
-**`GET /api/web/libraries/{library_id}/reconcile-status`** — **removed entirely** (not deprecated). Superseded by `GET /{library_id}/pipeline`. The current implementation uses `ReconcileStatusResponse` (a Pydantic model in `nomarr/interfaces/api/types/library_types.py`) — this class is deleted (not renamed), and the new `PipelineStatusResponse` replaces it with a superset of fields.
+**`GET /api/web/library/{library_id}/reconcile-status`** — **removed entirely** (not deprecated). Superseded by `GET /{library_id}/pipeline`. The current implementation uses `ReconcileStatusResponse` (a Pydantic model in `nomarr/interfaces/api/types/library_types.py`) — this class is deleted (not renamed), and the new `PipelineStatusResponse` replaces it with a superset of fields.
 
 ### Modified Endpoints
 
-**`POST /api/web/libraries`** (create) and **`PUT /api/web/libraries/{id}`** (update):
+**`POST /api/web/library`** (create) and **`PATCH /api/web/library/{id}`** (update):
 - Accept `library_auto_write: bool` field
 
 ---
@@ -486,7 +486,7 @@ Files touched for dashboard integration:
 |-----|-----|
 | `reconcileTags()` | `writeTags()` |
 | `getReconcileStatus()` | `getPipelineStatus()` |
-| Route `/{id}/reconcile-tags` | Route `/{id}/write-tags` |
+| Route `/{id}/reconcile-tags` | Route `/{id}/write-tag` |
 | Route `/{id}/reconcile-status` | Route `/{id}/pipeline` |
 | `ReconcileStatusResponse` | Deleted (replaced by `PipelineStatusResponse`) |
 | UI copy "Reconcile Tags" | "Write Tags" |
@@ -634,8 +634,8 @@ Scan → pipeline state transitions touch these existing files:
 |----------|--------|
 | `docs/user/` | New section on pipeline automation, auto-write setting explanation |
 | `docs/dev/migrations.md` | Reference new V023 migration |
-| `docs/dev/architecture.md` | Update: references to `/reconcile-tags` and `/reconcile-status` must be replaced with `/write-tags` and `/pipeline` |
-| `docs/dev/workers.md` | Update: describes worker behavior around old write-tags path — add idle-path pipeline trigger documentation |
+| `docs/dev/architecture.md` | Update: references to `/reconcile-tags` and `/reconcile-status` must be replaced with `/write-tag` and `/pipeline` |
+| `docs/dev/workers.md` | Update: describes worker behavior around old write-tag path — add idle-path pipeline trigger documentation |
 | `docs/dev/domains.md` | Update: domain mapping will be stale with new `LibraryPipelineService` in infrastructure — add pipeline service entry |
 | `nomarr/persistence/PERSISTENCE.md` | Add `library_pipeline_states_aql.py` to persistence map |
 | API docs (if generated) | New endpoint, removed endpoint, renamed endpoint |
@@ -692,7 +692,7 @@ Ordered for the Exec-Planner. Each phase is independently testable.
 
 1. Rename `reconcile_library` → `write_tags_to_files` in `TaggingService`
 2. Rename `ReconcileTagsResult` → `WriteTagsResult`, `ReconcileTagsResponse` → `WriteTagsResponse`
-3. Rename route `/reconcile-tags` → `/write-tags`
+3. Rename route `/reconcile-tags` → `/write-tag`
 4. Delete `GET /{id}/reconcile-status` endpoint and `ReconcileStatusResponse` class entirely
 5. Add `GET /{id}/pipeline` endpoint returning `PipelineStatusResponse` (404 when library not found)
 6. Wire write completion callback to transition `writing → done` + Navidrome rescan

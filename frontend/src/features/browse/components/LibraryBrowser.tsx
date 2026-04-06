@@ -95,7 +95,7 @@ export function LibraryBrowser({ initialStep }: LibraryBrowserProps) {
     try {
       setLoading(true);
       setError(null);
-      const result = await listEntities("artists", { limit: artistsLimit, offset });
+      const result = await listEntities("artist", { limit: artistsLimit, offset });
       setArtists(result.entities.sort((a, b) => a.display_name.localeCompare(b.display_name)));
       setArtistsTotal(result.total);
       setArtistsOffset(offset);
@@ -125,7 +125,7 @@ export function LibraryBrowser({ initialStep }: LibraryBrowserProps) {
     try {
       setLoading(true);
       setError(null);
-      const result = await listSongsForEntity("albums", albumId, "album", { limit: 500 });
+      const result = await listSongsForEntity("album", albumId, "album", { limit: 500 });
       // Get file details for songs (song_ids are actually library_files _ids)
       if (result.song_ids.length > 0) {
         const filesResult = await getFilesByIds(result.song_ids);

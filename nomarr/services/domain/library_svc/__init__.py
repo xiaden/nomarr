@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
+    from nomarr.services.infrastructure.file_watcher_svc import FileWatcherService
 
 from .admin import LibraryAdminMixin
 from .config import LibraryServiceConfig
@@ -56,18 +57,26 @@ class LibraryService(LibraryAdminMixin, LibraryScanMixin, LibraryQueryMixin, Lib
         service.cleanup_orphaned_tags()
     """
 
-    def __init__(self, cfg: LibraryServiceConfig, db: Database, background_tasks: object | None = None) -> None:
+    def __init__(
+        self,
+        cfg: LibraryServiceConfig,
+        db: Database,
+        background_tasks: object | None = None,
+        file_watcher_service: FileWatcherService | None = None,
+    ) -> None:
         """Initialize LibraryService.
 
         Args:
             cfg: Service configuration (namespace, library_root)
             db: Database instance
             background_tasks: BackgroundTaskService for async scan operations
+            file_watcher_service: Optional file watcher service for library lifecycle orchestration
 
         """
         self.cfg = cfg
         self.db = db
         self.background_tasks = background_tasks
+        self.file_watcher_service = file_watcher_service
 
 
 __all__ = ["LibraryService", "LibraryServiceConfig"]

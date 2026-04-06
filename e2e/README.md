@@ -119,13 +119,13 @@ test('my test', async ({ authenticatedPage: page }) => {
 const api = createApiHelpers(page);
 
 // Wait for specific API call
-const response = await api.waitForApiCall('/api/web/libraries', 'GET');
+const response = await api.waitForApiCall('/api/web/library', 'GET');
 
 // Assert API success
 await api.assertApiSuccess('/api/web/info', 'GET');
 
 // Get JSON response
-const data = await api.getApiResponse('/api/web/libraries', 'GET');
+const data = await api.getApiResponse('/api/web/library', 'GET');
 ```
 
 ### Skipping tests conditionally

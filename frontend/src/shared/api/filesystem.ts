@@ -28,7 +28,7 @@ export async function listFs(path?: string): Promise<FsListResponse> {
   }
 
   const query = queryParams.toString();
-  const endpoint = query ? `/api/web/fs/list?${query}` : "/api/web/fs/list";
+  const endpoint = query ? `/api/web/file-system/list?${query}` : "/api/web/file-system/list";
 
   return get(endpoint);
 }

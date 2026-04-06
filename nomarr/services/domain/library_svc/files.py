@@ -94,6 +94,7 @@ class LibraryFilesMixin:
 
     def reconcile_library_paths(
         self,
+        library_id: str,
         policy: str = "mark_invalid",
         batch_size: int = 1000,
     ) -> ReconcileResult:
@@ -104,6 +105,7 @@ class LibraryFilesMixin:
         Useful after modifying library configurations or recovering from filesystem changes.
 
         Args:
+            library_id: Library document _id to scope reconciliation to
             policy: What to do with invalid paths:
                 - "dry_run": Only report, don't modify database
                 - "mark_invalid": Keep files but log warnings (default)
@@ -126,6 +128,7 @@ class LibraryFilesMixin:
         Example:
             # After changing library root configuration
             result = library_service.reconcile_library_paths(
+                library_id="libraries/12345",
                 policy="delete_invalid",
                 batch_size=500
             )
@@ -134,6 +137,7 @@ class LibraryFilesMixin:
         """
         return reconcile_library_paths_workflow(
             db=self.db,
+            library_id=library_id,
             library_root=self.cfg.library_root,
             policy=policy,  # type: ignore[arg-type]
             batch_size=batch_size,

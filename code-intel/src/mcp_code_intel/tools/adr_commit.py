@@ -8,26 +8,32 @@ from typing import Any
 from ..helpers.adr_md import (
     ADR,
     DECISIONS_DIR,
+    DRAFTS_DIR,
     _unescape_literal_newlines,
     generate_adr,
     make_adr_filename,
     next_adr_number,
+    parse_adr,
     parse_adr_metadata,
     today_iso,
     validate_source_log,
     validate_status,
 )
 
+_STANDARD_SECTION_NAMES: frozenset[str] = frozenset(
+    {"Context", "Decision", "Consequences", "References"}
+)
+
 _MAX_RETRIES = 3
 
 
 def adr_commit(
-    title: str,
-    status: str,
-    tags: list[str],
-    context: str,
-    decision: str,
-    consequences: str,
+    title: str = "",
+    status: str = "",
+    tags: list[str] | None = None,
+    context: str = "",
+    decision: str = "",
+    consequences: str = "",
     references: str = "",
     source_log: str = "",
     extra_sections: list[dict[str, str]] | None = None,
@@ -44,6 +50,53 @@ def adr_commit(
     """
     if supersedes is None:
         supersedes = []
+    if tags is None:
+        tags = []
+
+    # Load from staging draft if draft_id provided
+    _draft_file: Path | None = None
+    if draft_id:
+        _draft_file = workspace_root / DRAFTS_DIR / f"DRAFT-{draft_id}.md"
+        if not _draft_file.exists():
+            return {
+                "error": "draft_not_found",
+                "message": (
+                    f"No draft found for '{draft_id}'. "
+                    "Run adr_suggest first to create a staging draft."
+                ),
+            }
+        try:
+            _parsed = parse_adr(_draft_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            return {"error": "draft_parse_error", "message": str(e)}
+
+        # Use draft fields as defaults; explicit non-empty params override
+        if not title.strip():
+            title = _parsed.title
+        if not status.strip():
+            status = _parsed.status
+        if not tags:
+            tags = _parsed.tags
+        if not context.strip():
+            context = _parsed.sections.get("Context", "")
+        if not decision.strip():
+            decision = _parsed.sections.get("Decision", "")
+        if not consequences.strip():
+            consequences = _parsed.sections.get("Consequences", "")
+        if not references.strip():
+            references = _parsed.sections.get("References", "")
+        if not source_log.strip() and _parsed.source_log:
+            source_log = _parsed.source_log
+        if not supersedes and _parsed.supersedes:
+            supersedes = _parsed.supersedes
+        if extra_sections is None:
+            _extra = [
+                {"heading": h, "content": c}
+                for h, c in _parsed.sections.items()
+                if h not in _STANDARD_SECTION_NAMES
+            ]
+            if _extra:
+                extra_sections = _extra
 
     # Validate inputs (defense in depth — same checks as adr_suggest)
     if not title.strip():
@@ -167,6 +220,13 @@ def adr_commit(
 
             if source_log_warning:
                 result["source_log_warning"] = source_log_warning
+
+            # Remove the staging draft now that the ADR is committed
+            if _draft_file is not None:
+                try:
+                    _draft_file.unlink(missing_ok=True)
+                except OSError:
+                    pass  # Don't fail the commit just because cleanup failed
 
             return result
         except FileExistsError:

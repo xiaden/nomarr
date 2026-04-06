@@ -11,10 +11,10 @@ from nomarr.interfaces.api.web.dependencies import get_tagging_service
 from nomarr.services.domain.tagging_svc import TaggingService
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/tags", tags=["Tags"])
+router = APIRouter(prefix="/tag", tags=["Tag"])
 
 
-@router.get("/show-tags", dependencies=[Depends(verify_session)])
+@router.get("/show", dependencies=[Depends(verify_session)])
 async def web_show_tags(
     path: str, tagging_service: Annotated[TaggingService, Depends(get_tagging_service)]
 ) -> dict[str, Any]:
@@ -30,7 +30,7 @@ async def web_show_tags(
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to read tags")) from e
 
 
-@router.delete("/remove-tags", dependencies=[Depends(verify_session)])
+@router.delete("/remove", dependencies=[Depends(verify_session)])
 async def web_remove_tags(
     path: str, tagging_service: Annotated[TaggingService, Depends(get_tagging_service)]
 ) -> dict[str, Any]:

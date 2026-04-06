@@ -19,6 +19,7 @@ from .health_aql import HealthOperations
 from .libraries_aql import LibrariesOperations
 from .library_files_aql import LibraryFilesOperations
 from .library_folders_aql import LibraryFoldersOperations
+from .library_pipeline_states_aql import LibraryPipelineStatesOps
 from .locks_aql import LocksOperations
 from .meta_aql import MetaOperations
 from .segment_scores_stats_aql import SegmentScoresStatsOperations
@@ -34,6 +35,7 @@ __all__ = [
     "LibrariesOperations",
     "LibraryFilesOperations",
     "LibraryFoldersOperations",
+    "LibraryPipelineStatesOps",
     "LocksOperations",
     "MetaOperations",
     "SegmentScoresStatsOperations",

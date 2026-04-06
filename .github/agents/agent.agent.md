@@ -355,11 +355,11 @@ You are the most common agent — you see the most code and encounter the most s
 
 ### When You Must Create ADRs
 
-ADR creation is a two-phase workflow requiring explicit user approval:
+ADR creation is a two-step workflow (`adr_suggest` → `adr_commit`). User approval is required between steps:
 
-1. **`adr_suggest`** — generates a preview of the ADR markdown without writing to disk. Present the preview to the user.
-2. **User approval** — wait for the user to confirm the ADR content.
-3. **`adr_commit`** — writes the approved ADR to disk.
+1. **`adr_suggest(...)`** — writes a staging draft to `artifacts/decisions/drafts/` for review. Surface the `draft_path` link to the user.
+2. User reads the draft file and approves.
+3. **`adr_commit(draft_id="<slug>")`** — loads from the staging draft, assigns a real ADR number, writes the final ADR to `artifacts/decisions/`, and deletes the staging draft.
 
 Use this workflow when you make decisions that constrain future work:
 

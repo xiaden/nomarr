@@ -37,13 +37,13 @@ from nomarr.components.workers.worker_discovery_comp import (
     cleanup_stale_claims,
     release_claims_for_worker,
 )
-from nomarr.helpers.dto.admin_dto import WorkerOperationResult
 from nomarr.helpers.dto.health_dto import (
     ComponentLifecycleHandler,
     ComponentPolicy,
     ComponentStatus,
     StatusChangeContext,
 )
+from nomarr.services.infrastructure.pipeline_svc import LibraryPipelineService
 from nomarr.services.infrastructure.workers.discovery_worker import (
     DiscoveryWorker,
     create_discovery_worker,
@@ -99,6 +99,7 @@ class WorkerSystemService(ComponentLifecycleHandler):
         self,
         db: Database,
         processor_config: ProcessorConfig,
+        pipeline_svc: LibraryPipelineService,
         health_monitor: HealthMonitorService | None = None,
         worker_count: int = 1,
         default_enabled: bool = True,
@@ -108,6 +109,7 @@ class WorkerSystemService(ComponentLifecycleHandler):
         Args:
             db: Database instance
             processor_config: Configuration for the processing workflow
+            pipeline_svc: Pipeline coordination service for calibration triggers
             health_monitor: HealthMonitor to register workers with
             worker_count: Number of worker processes to spawn (max)
             default_enabled: Default worker_enabled flag if not in DB
@@ -115,9 +117,13 @@ class WorkerSystemService(ComponentLifecycleHandler):
         """
         self.db = db
         self.processor_config = processor_config
+        self.pipeline_svc = pipeline_svc
         self.health_monitor = health_monitor
         self.worker_count = worker_count
         self.default_enabled = default_enabled
+
+        if self.health_monitor is not None:
+            self.health_monitor.set_pipeline_callback(self.pipeline_svc.trigger_calibration)
 
         # Get DB connection info for workers (required for subprocess connections)
         if not db.hosts or not db.password:
@@ -440,36 +446,6 @@ class WorkerSystemService(ComponentLifecycleHandler):
         """Disable worker system globally (sets worker_enabled=false in DB meta)."""
         self.db.meta.set("worker_enabled", "false")
         logger.info("[WorkerSystemService] Worker system globally disabled")
-
-    def pause_worker_system(self) -> WorkerOperationResult:
-        """Pause worker system - disables processing and stops workers.
-
-        Returns:
-            WorkerOperationResult with success status
-
-        """
-        self.disable_worker_system()
-        self.stop_all_workers()
-        return WorkerOperationResult(
-            success=True,
-            message="Worker system paused",
-            worker_enabled=False,
-        )
-
-    def resume_worker_system(self) -> WorkerOperationResult:
-        """Resume worker system - enables processing and starts workers.
-
-        Returns:
-            WorkerOperationResult with success status
-
-        """
-        self.enable_worker_system()
-        self.start_all_workers()
-        return WorkerOperationResult(
-            success=True,
-            message="Worker system resumed",
-            worker_enabled=True,
-        )
 
     # ---------------------------- Worker Lifecycle ----------------------------
 

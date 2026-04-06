@@ -27,7 +27,13 @@ def mock_health_monitor():
 
 
 @pytest.fixture
-def worker_service(mock_db, mock_health_monitor):
+def mock_pipeline_svc() -> MagicMock:
+    """Provide mock LibraryPipelineService."""
+    return MagicMock()
+
+
+@pytest.fixture
+def worker_service(mock_db, mock_health_monitor, mock_pipeline_svc):
     """Provide WorkerSystemService instance with mocked dependencies."""
     from nomarr.helpers.dto.processing_dto import ProcessorConfig
 
@@ -43,6 +49,7 @@ def worker_service(mock_db, mock_health_monitor):
     service = WorkerSystemService(
         db=mock_db,
         processor_config=processor_config,
+        pipeline_svc=mock_pipeline_svc,
         health_monitor=mock_health_monitor,
         default_enabled=True,
         worker_count=2,

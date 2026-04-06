@@ -12,6 +12,7 @@ import functools
 import logging
 from typing import TYPE_CHECKING, Any
 
+from nomarr.components.library.scan_lifecycle_comp import on_scan_complete_pipeline_hook
 from nomarr.helpers import ManagedTask
 from nomarr.helpers.dto.library_dto import LibraryScanStatusResult, StartScanResult
 from nomarr.helpers.time_helper import now_ms
@@ -93,6 +94,7 @@ class LibraryScanMixin:
         """
         scan_setup_workflow(self.db, library_id, scan_type="quick")
         task_id = f"scan_library_{library_id}"
+        on_complete = functools.partial(on_scan_complete_pipeline_hook, self.db, library_id)
         if self.background_tasks is None:
             msg = "Background task service is not available"
             raise RuntimeError(msg)
@@ -105,6 +107,7 @@ class LibraryScanMixin:
                 tagger_version=self.cfg.tagger_version,
                 min_duration_s=INTERNAL_MIN_DURATION_S,
             ),
+            on_complete=on_complete,
             daemon=True,
         )
         self.background_tasks.start_task(task)
@@ -135,6 +138,7 @@ class LibraryScanMixin:
         """
         scan_setup_workflow(self.db, library_id, scan_type="full")
         task_id = f"scan_library_{library_id}"
+        on_complete = functools.partial(on_scan_complete_pipeline_hook, self.db, library_id)
         if self.background_tasks is None:
             msg = "Background task service is not available"
             raise RuntimeError(msg)
@@ -149,6 +153,7 @@ class LibraryScanMixin:
                 namespace=self.cfg.namespace,
                 min_duration_s=INTERNAL_MIN_DURATION_S,
             ),
+            on_complete=on_complete,
             daemon=True,
         )
         self.background_tasks.start_task(task)

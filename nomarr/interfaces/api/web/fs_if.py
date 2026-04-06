@@ -18,7 +18,7 @@ from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import get_config
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/fs", tags=["filesystem"])
+router = APIRouter(prefix="/file-system", tags=["File System"])
 
 
 @router.get("/list")

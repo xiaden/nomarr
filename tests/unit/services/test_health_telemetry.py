@@ -329,6 +329,7 @@ class TestComponentLifecycleHandler:
         service = WorkerSystemService(
             db=mock_db,
             processor_config=mock_config,
+            pipeline_svc=MagicMock(),
             worker_count=1,
         )
 
@@ -358,6 +359,7 @@ class TestComponentLifecycleHandler:
         service = WorkerSystemService(
             db=mock_db,
             processor_config=mock_config,
+            pipeline_svc=MagicMock(),
             worker_count=1,
         )
 

@@ -17,12 +17,13 @@ from typing import TYPE_CHECKING, Self
 
 from pydantic import BaseModel
 
+from nomarr.helpers.dto import LibraryPipelineStatusDTO
 from nomarr.helpers.dto.library_dto import (
     FileTagsResult,
-    ReconcileTagsResult,
     SearchFilesResult,
     TagCleanupResult,
     UniqueTagKeysResult,
+    WriteTagsResult,
 )
 from nomarr.interfaces.api.id_codec import encode_id
 
@@ -46,6 +47,7 @@ class LibraryResponse(BaseModel):
     is_enabled: bool
     watch_mode: str  # 'off', 'event', or 'poll'
     file_write_mode: str = "full"  # 'none', 'minimal', or 'full'
+    library_auto_write: bool = False
     created_at: str
     updated_at: str
     scan_status: str | None = None
@@ -93,6 +95,7 @@ class LibraryResponse(BaseModel):
             is_enabled=library.is_enabled,
             watch_mode=library.watch_mode,
             file_write_mode=library.file_write_mode,
+            library_auto_write=library.library_auto_write,
             created_at=created_at,
             updated_at=updated_at,
             scan_status=library.scan_status,
@@ -211,6 +214,7 @@ class CreateLibraryRequest(BaseModel):
     is_enabled: bool = True
     watch_mode: str = "off"  # 'off', 'event', or 'poll' (default: 'off')
     file_write_mode: str = "full"  # 'none', 'minimal', or 'full' (default: 'full')
+    library_auto_write: bool = False
 
 
 class UpdateLibraryRequest(BaseModel):
@@ -221,6 +225,7 @@ class UpdateLibraryRequest(BaseModel):
     is_enabled: bool | None = None
     watch_mode: str | None = None  # 'off', 'event', or 'poll'
     file_write_mode: str | None = None  # 'none', 'minimal', or 'full'
+    library_auto_write: bool | None = None
 
 
 class ListLibrariesResponse(BaseModel):
@@ -397,32 +402,51 @@ class FileTagsResponse(BaseModel):
 # ──────────────────────────────────────────────────────────────────────
 
 
-class ReconcileTagsResponse(BaseModel):
-    """Response for tag reconciliation endpoint."""
+class WriteTagsResponse(BaseModel):
+    """Response for completed tag write operation."""
 
-    processed: int  # Files successfully reconciled
-    remaining: int  # Files still needing reconciliation
+    processed: int  # Files successfully written
+    remaining: int  # Files still pending tag write
     failed: int  # Files that failed during this batch
 
     @classmethod
-    def from_dto(cls, result) -> ReconcileTagsResponse:
-        """Transform ReconcileTagsResult DTO to API response."""
-        assert isinstance(result, ReconcileTagsResult)
+    def from_dto(cls, result) -> WriteTagsResponse:
+        """Transform WriteTagsResult DTO to API response."""
+        assert isinstance(result, WriteTagsResult)
         return cls(processed=result.processed, remaining=result.remaining, failed=result.failed)
 
 
+class PipelineStatusResponse(BaseModel):
+    """Response for the per-library pipeline status endpoint."""
+
+    library_id: str
+    state: str
+    untagged_count: int | None
+    uncalibrated_count: int | None
+    pending_write_count: int | None
+    library_auto_write: bool
+    file_write_mode: str
+
+    @classmethod
+    def from_dto(cls, dto: LibraryPipelineStatusDTO) -> Self:
+        """Transform LibraryPipelineStatusDTO to API response."""
+        assert isinstance(dto, LibraryPipelineStatusDTO)
+        return cls(
+            library_id=dto.library_id,
+            state=dto.state,
+            untagged_count=dto.untagged_count,
+            uncalibrated_count=dto.uncalibrated_count,
+            pending_write_count=dto.pending_write_count,
+            library_auto_write=dto.library_auto_write,
+            file_write_mode=dto.file_write_mode,
+        )
+
+
 class StartTagWriteResponse(BaseModel):
-    """Response for starting background tag reconciliation."""
+    """Response for starting a background tag write task."""
 
     status: str
     task_id: str
-
-
-class ReconcileStatusResponse(BaseModel):
-    """Response for reconciliation status endpoint."""
-
-    pending_count: int  # Files needing reconciliation
-    in_progress: bool  # Whether reconciliation is running
 
 
 class UpdateWriteModeResponse(BaseModel):

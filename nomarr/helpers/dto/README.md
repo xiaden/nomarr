@@ -18,7 +18,7 @@ Typed dataclasses and TypedDicts shared across all layers — the canonical data
 | `config_dto.py` | `ProcessorConfig` — ML processing configuration passed through layers |
 | `health_dto.py` | `ComponentPolicy`, `ComponentStatus`, `StatusChangeContext`, `ComponentLifecycleHandler` |
 | `info_dto.py` | System info aggregation types |
-| `library_dto.py` | `LibraryPath`, `LibraryDict`, `SearchFilesResult`, `StartScanResult`, `ReconcileTagsResult` (largest — 14 types) |
+| `library_dto.py` | `LibraryPath`, `LibraryDict`, `SearchFilesResult`, `StartScanResult`, `WriteTagsResult` (largest — 14 types) |
 | `metadata_dto.py` | Entity cleanup and metadata seeding types |
 | `ml_dto.py` | `LoadAudioMonoResult`, `AnalyzeWithSegmentsResult`, `SingleHeadResult`, `ProcessHeadPredictionsResult` |
 | `ml_edge_dto.py` | ML model→output edge types for graph operations |

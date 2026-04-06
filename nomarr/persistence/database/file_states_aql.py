@@ -92,34 +92,55 @@ class FileStatesOperations:
     # ------------------------------------------------------------------
 
     def _transition_state(self, file_id: str, axis: str, to_positive: bool) -> None:
-        """Atomically transition a file's state on a single axis.
+        """Transition a file's state on a single axis.
 
-        Removes the existing edge (if any) for the axis and inserts a new
-        edge pointing to the target vertex.
+        Issues sequential AQL queries: reads the existing edge key, removes it
+        if present, then inserts an edge pointing to the target vertex.
+
+        Args:
+            file_id: Document ``_id`` of the library file.
+            axis: State axis key (must be a key in ``AXIS_PAIRS``).
+            to_positive: If True, target the positive vertex; otherwise negative.
         """
         positive, negative = AXIS_PAIRS[axis]
         new_state = positive if to_positive else negative
-        self.db.aql.execute(  # type: ignore[union-attr]
-            """
-            LET old = FIRST(
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(  # type: ignore[union-attr]
+                """
                 FOR e IN file_has_state
                     FILTER e._from == @file_id
                         AND (e._to == @positive OR e._to == @negative)
-                    RETURN e
+                    RETURN e._key
+                """,
+                bind_vars=cast(
+                    "dict[str, Any]",
+                    {
+                        "file_id": file_id,
+                        "positive": positive,
+                        "negative": negative,
+                    },
+                ),
+            ),
+        )
+        old_key = cast("str | None", next(cursor, None))
+
+        if old_key is not None:
+            self.db.aql.execute(  # type: ignore[union-attr]
+                """
+                REMOVE @old_key IN file_has_state
+                """,
+                bind_vars=cast("dict[str, Any]", {"old_key": old_key}),
             )
-            LET removed = (
-                FOR o IN (old != null ? [old] : [])
-                    REMOVE o IN file_has_state
-                    RETURN null
-            )
+
+        self.db.aql.execute(  # type: ignore[union-attr]
+            """
             INSERT { _from: @file_id, _to: @new_state } INTO file_has_state
             """,
             bind_vars=cast(
                 "dict[str, Any]",
                 {
                     "file_id": file_id,
-                    "positive": positive,
-                    "negative": negative,
                     "new_state": new_state,
                 },
             ),
@@ -186,30 +207,65 @@ class FileStatesOperations:
     # ------------------------------------------------------------------
 
     def bulk_set_not_calibrated(self) -> int:
-        """Transition ALL files from calibrated to not_calibrated."""
+        """Transition ALL files from calibrated to not_calibrated.
+
+        Returns:
+            Number of edges transitioned.
+        """
         cursor = cast(
             "Cursor",
             self.db.aql.execute(  # type: ignore[union-attr]
                 """
                 FOR e IN file_has_state
                     FILTER e._to == @calibrated
-                    LET r = (REMOVE e._key IN file_has_state RETURN 1)
-                    INSERT { _from: e._from, _to: @not_calibrated } INTO file_has_state
-                    RETURN 1
+                    RETURN { key: e._key, from_id: e._from }
                 """,
                 bind_vars=cast(
                     "dict[str, Any]",
                     {
                         "calibrated": STATE_CALIBRATED,
-                        "not_calibrated": STATE_NOT_CALIBRATED,
                     },
                 ),
             ),
         )
-        return len(list(cursor))
+        edges = cast("list[dict[str, str]]", list(cursor))
+        if not edges:
+            return 0
+
+        keys = [edge["key"] for edge in edges]
+        from_ids = [edge["from_id"] for edge in edges]
+
+        self.db.aql.execute(  # type: ignore[union-attr]
+            """
+            FOR k IN @keys
+                REMOVE k IN file_has_state
+            """,
+            bind_vars=cast("dict[str, Any]", {"keys": keys}),
+        )
+        self.db.aql.execute(  # type: ignore[union-attr]
+            """
+            FOR fid IN @from_ids
+                INSERT { _from: fid, _to: @not_calibrated } INTO file_has_state
+            """,
+            bind_vars=cast(
+                "dict[str, Any]",
+                {
+                    "from_ids": from_ids,
+                    "not_calibrated": STATE_NOT_CALIBRATED,
+                },
+            ),
+        )
+        return len(edges)
 
     def bulk_set_tags_stale(self, library_id: str | None = None) -> int:
-        """Transition files from tags_current to tags_stale, optionally scoped to a library."""
+        """Transition files from tags_current to tags_stale, optionally scoped to a library.
+
+        Args:
+            library_id: If given, only files belonging to this library are transitioned.
+
+        Returns:
+            Number of edges transitioned.
+        """
         if library_id is not None:
             query = """
                 LET lib_file_ids = (
@@ -217,103 +273,205 @@ class FileStatesOperations:
                 )
                 FOR e IN file_has_state
                     FILTER e._to == @tags_current AND e._from IN lib_file_ids
-                    LET r = (REMOVE e._key IN file_has_state RETURN 1)
-                    INSERT { _from: e._from, _to: @tags_stale } INTO file_has_state
-                    RETURN 1
+                    RETURN { key: e._key, from_id: e._from }
             """
             bind_vars: dict[str, Any] = {
                 "library_id": library_id,
                 "tags_current": STATE_TAGS_CURRENT,
-                "tags_stale": STATE_TAGS_STALE,
             }
         else:
             query = """
                 FOR e IN file_has_state
                     FILTER e._to == @tags_current
-                    LET r = (REMOVE e._key IN file_has_state RETURN 1)
-                    INSERT { _from: e._from, _to: @tags_stale } INTO file_has_state
-                    RETURN 1
+                    RETURN { key: e._key, from_id: e._from }
             """
             bind_vars = {
                 "tags_current": STATE_TAGS_CURRENT,
-                "tags_stale": STATE_TAGS_STALE,
             }
         cursor = cast(
             "Cursor",
             self.db.aql.execute(query, bind_vars=cast("dict[str, Any]", bind_vars)),  # type: ignore[union-attr]
         )
-        return len(list(cursor))
+        edges = cast("list[dict[str, str]]", list(cursor))
+        if not edges:
+            return 0
+
+        keys = [edge["key"] for edge in edges]
+        from_ids = [edge["from_id"] for edge in edges]
+
+        self.db.aql.execute(  # type: ignore[union-attr]
+            """
+            FOR k IN @keys
+                REMOVE k IN file_has_state
+            """,
+            bind_vars=cast("dict[str, Any]", {"keys": keys}),
+        )
+        self.db.aql.execute(  # type: ignore[union-attr]
+            """
+            FOR fid IN @from_ids
+                INSERT { _from: fid, _to: @tags_stale } INTO file_has_state
+            """,
+            bind_vars=cast(
+                "dict[str, Any]",
+                {"from_ids": from_ids, "tags_stale": STATE_TAGS_STALE},
+            ),
+        )
+        return len(edges)
 
     def bulk_set_scanned(self, file_ids: list[str]) -> int:
-        """Transition specified files from not_scanned to scanned."""
+        """Transition specified files from not_scanned to scanned.
+
+        Args:
+            file_ids: Document ``_id`` values of files to mark as scanned.
+
+        Returns:
+            Number of edges transitioned.
+        """
         cursor = cast(
             "Cursor",
             self.db.aql.execute(  # type: ignore[union-attr]
                 """
                 FOR e IN file_has_state
                     FILTER e._to == @not_scanned AND e._from IN @file_ids
-                    LET r = (REMOVE e._key IN file_has_state RETURN 1)
-                    INSERT { _from: e._from, _to: @scanned } INTO file_has_state
-                    RETURN 1
+                    RETURN { key: e._key, from_id: e._from }
                 """,
                 bind_vars=cast(
                     "dict[str, Any]",
                     {
                         "not_scanned": STATE_NOT_SCANNED,
-                        "scanned": STATE_SCANNED,
                         "file_ids": file_ids,
                     },
                 ),
             ),
         )
-        return len(list(cursor))
+        edges = cast("list[dict[str, str]]", list(cursor))
+        if not edges:
+            return 0
+
+        keys = [edge["key"] for edge in edges]
+        from_ids = [edge["from_id"] for edge in edges]
+
+        self.db.aql.execute(  # type: ignore[union-attr]
+            """
+            FOR k IN @keys
+                REMOVE k IN file_has_state
+            """,
+            bind_vars=cast("dict[str, Any]", {"keys": keys}),
+        )
+        self.db.aql.execute(  # type: ignore[union-attr]
+            """
+            FOR fid IN @from_ids
+                INSERT { _from: fid, _to: @scanned } INTO file_has_state
+            """,
+            bind_vars=cast(
+                "dict[str, Any]",
+                {"from_ids": from_ids, "scanned": STATE_SCANNED},
+            ),
+        )
+        return len(edges)
 
     def bulk_set_not_vectors_extracted(self) -> int:
-        """Transition ALL files from vectors_extracted to not_vectors_extracted."""
+        """Transition ALL files from vectors_extracted to not_vectors_extracted.
+
+        Returns:
+            Number of edges transitioned.
+        """
         cursor = cast(
             "Cursor",
             self.db.aql.execute(  # type: ignore[union-attr]
                 """
                 FOR e IN file_has_state
                     FILTER e._to == @vectors_extracted
-                    LET r = (REMOVE e._key IN file_has_state RETURN 1)
-                    INSERT { _from: e._from, _to: @not_vectors_extracted } INTO file_has_state
-                    RETURN 1
+                    RETURN { key: e._key, from_id: e._from }
                 """,
                 bind_vars=cast(
                     "dict[str, Any]",
                     {
                         "vectors_extracted": STATE_VECTORS_EXTRACTED,
-                        "not_vectors_extracted": STATE_NOT_VECTORS_EXTRACTED,
                     },
                 ),
             ),
         )
-        return len(list(cursor))
+        edges = cast("list[dict[str, str]]", list(cursor))
+        if not edges:
+            return 0
+
+        keys = [edge["key"] for edge in edges]
+        from_ids = [edge["from_id"] for edge in edges]
+
+        self.db.aql.execute(  # type: ignore[union-attr]
+            """
+            FOR k IN @keys
+                REMOVE k IN file_has_state
+            """,
+            bind_vars=cast("dict[str, Any]", {"keys": keys}),
+        )
+        self.db.aql.execute(  # type: ignore[union-attr]
+            """
+            FOR fid IN @from_ids
+                INSERT { _from: fid, _to: @not_vectors_extracted } INTO file_has_state
+            """,
+            bind_vars=cast(
+                "dict[str, Any]",
+                {
+                    "from_ids": from_ids,
+                    "not_vectors_extracted": STATE_NOT_VECTORS_EXTRACTED,
+                },
+            ),
+        )
+        return len(edges)
 
     def bulk_set_not_errored(self, file_ids: list[str]) -> int:
-        """Transition specified files from errored to not_errored."""
+        """Transition specified files from errored to not_errored.
+
+        Args:
+            file_ids: Document ``_id`` values of files to clear from the errored state.
+
+        Returns:
+            Number of edges transitioned.
+        """
         cursor = cast(
             "Cursor",
             self.db.aql.execute(  # type: ignore[union-attr]
                 """
                 FOR e IN file_has_state
                     FILTER e._to == @errored AND e._from IN @file_ids
-                    LET r = (REMOVE e._key IN file_has_state RETURN 1)
-                    INSERT { _from: e._from, _to: @not_errored } INTO file_has_state
-                    RETURN 1
+                    RETURN { key: e._key, from_id: e._from }
                 """,
                 bind_vars=cast(
                     "dict[str, Any]",
                     {
                         "errored": STATE_ERRORED,
-                        "not_errored": STATE_NOT_ERRORED,
                         "file_ids": file_ids,
                     },
                 ),
             ),
         )
-        return len(list(cursor))
+        edges = cast("list[dict[str, str]]", list(cursor))
+        if not edges:
+            return 0
+
+        keys = [edge["key"] for edge in edges]
+        from_ids = [edge["from_id"] for edge in edges]
+
+        self.db.aql.execute(  # type: ignore[union-attr]
+            """
+            FOR k IN @keys
+                REMOVE k IN file_has_state
+            """,
+            bind_vars=cast("dict[str, Any]", {"keys": keys}),
+        )
+        self.db.aql.execute(  # type: ignore[union-attr]
+            """
+            FOR fid IN @from_ids
+                INSERT { _from: fid, _to: @not_errored } INTO file_has_state
+            """,
+            bind_vars=cast(
+                "dict[str, Any]",
+                {"from_ids": from_ids, "not_errored": STATE_NOT_ERRORED},
+            ),
+        )
+        return len(edges)
 
     # ------------------------------------------------------------------
     # Initialization
@@ -804,32 +962,28 @@ class FileStatesOperations:
         """
         if not file_ids:
             return 0
-        cursor = cast(
-            "Cursor",
-            self.db.aql.execute(  # type: ignore[union-attr]
-                """
-                FOR edge IN @@coll
-                    FILTER edge._from IN @file_ids AND edge._to == @tagged
-                    REMOVE edge IN @@coll
-
-                FOR fid IN @file_ids
-                    INSERT { _from: fid, _to: @not_tagged } INTO @@coll
-                    OPTIONS { ignoreErrors: true }
-
-                RETURN LENGTH(@file_ids)
-                """,
-                bind_vars=cast(
-                    "dict[str, Any]",
-                    {
-                        "file_ids": file_ids,
-                        "tagged": STATE_TAGGED,
-                        "not_tagged": STATE_NOT_TAGGED,
-                        "@coll": _EDGE_COLLECTION,
-                    },
-                ),
-            ),
+        bind_vars = cast(
+            "dict[str, Any]",
+            {
+                "file_ids": file_ids,
+                "tagged": STATE_TAGGED,
+                "not_tagged": STATE_NOT_TAGGED,
+                "@coll": _EDGE_COLLECTION,
+            },
         )
-        return next(cursor, 0)  # type: ignore[arg-type]
+        self.db.aql.execute(  # type: ignore[union-attr]
+            "FOR edge IN @@coll FILTER edge._from IN @file_ids AND edge._to == @tagged REMOVE edge IN @@coll",
+            bind_vars=bind_vars,
+        )
+        self.db.aql.execute(  # type: ignore[union-attr]
+            """
+            FOR fid IN @file_ids
+                INSERT { _from: fid, _to: @not_tagged } INTO @@coll
+                OPTIONS { ignoreErrors: true }
+            """,
+            bind_vars=bind_vars,
+        )
+        return len(file_ids)
 
     # ------------------------------------------------------------------
     # Cross-state utilities

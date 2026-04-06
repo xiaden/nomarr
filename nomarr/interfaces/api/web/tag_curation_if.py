@@ -130,7 +130,7 @@ async def split_tag(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/values", dependencies=[Depends(verify_session)])
+@router.get("/value", dependencies=[Depends(verify_session)])
 async def list_tag_values(
     tagging_service: Annotated["TaggingService", Depends(get_tagging_service)],
     rel: Annotated[str | None, Query(description="Filter by tag rel (e.g. genre)")] = None,
@@ -156,7 +156,7 @@ async def list_tag_values(
         ) from e
 
 
-@router.get("/{tag_id}/songs", dependencies=[Depends(verify_session)])
+@router.get("/{tag_id}/song", dependencies=[Depends(verify_session)])
 async def get_tag_songs(
     tag_id: str,
     tagging_service: Annotated["TaggingService", Depends(get_tagging_service)],
@@ -228,7 +228,7 @@ async def get_pending_commit_count(
 # ---------------------------------------------------------------------------
 
 
-@router.patch("/files/{file_id}/tags", dependencies=[Depends(verify_session)])
+@router.patch("/file/{file_id}/tag", dependencies=[Depends(verify_session)])
 async def update_file_tags(
     file_id: str,
     request: UpdateFileTagsRequest,

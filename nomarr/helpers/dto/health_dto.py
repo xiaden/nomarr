@@ -32,6 +32,9 @@ from typing import Literal, Protocol, runtime_checkable
 # The six allowed statuses for health monitoring.
 ComponentStatus = Literal["pending", "healthy", "unhealthy", "recovering", "dead", "failed"]
 
+HEALTH_FRAME_PREFIX = "HEALTH|"
+PIPELINE_FRAME_PREFIX = "PIPELINE|"
+
 
 @dataclass
 class ComponentPolicy:

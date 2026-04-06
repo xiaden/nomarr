@@ -1,11 +1,12 @@
 """Combined router for all web UI endpoints.
 
-This module aggregates all web UI routers (auth, analytics, worker, etc.)
+This module aggregates all web UI routers (auth, admin, tags, etc.)
 into a single router that can be included in the main FastAPI app.
 """
 
 from fastapi import APIRouter
 
+from nomarr.interfaces.api.web import admin_if as admin
 from nomarr.interfaces.api.web import analytics_if as analytics
 from nomarr.interfaces.api.web import api_key_if as api_key
 from nomarr.interfaces.api.web import auth_if as auth
@@ -18,16 +19,15 @@ from nomarr.interfaces.api.web import metadata_if as metadata
 from nomarr.interfaces.api.web import ml_if as ml
 from nomarr.interfaces.api.web import navidrome_if as navidrome
 from nomarr.interfaces.api.web import playlist_import_if as playlist_import
-from nomarr.interfaces.api.web import processing_if as processing
 from nomarr.interfaces.api.web import tag_curation_if as tag_curation
 from nomarr.interfaces.api.web import tags_if as tags
 from nomarr.interfaces.api.web import vectors_if as vectors
-from nomarr.interfaces.api.web import worker_if as worker
 
 # Create combined router with /api/web prefix for all browser-facing endpoints
 router = APIRouter(prefix="/api/web")
 
 # Include all web UI routers
+router.include_router(admin.router)
 router.include_router(auth.router)
 router.include_router(analytics.router)
 router.include_router(api_key.router)
@@ -40,8 +40,6 @@ router.include_router(metadata.router)
 router.include_router(ml.router)
 router.include_router(navidrome.router)
 router.include_router(playlist_import.router)
-router.include_router(processing.router)
 router.include_router(tag_curation.router)
 router.include_router(tags.router)
 router.include_router(vectors.router)
-router.include_router(worker.router)

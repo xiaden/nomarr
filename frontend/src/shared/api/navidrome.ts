@@ -77,7 +77,7 @@ export async function previewPlaylist(
   query: string,
   previewLimit = 10
 ): Promise<PlaylistPreviewResponse> {
-  return post("/api/web/navidrome/playlists/preview", {
+  return post("/api/web/navidrome/playlist/preview", {
     query,
     preview_limit: previewLimit,
   });
@@ -103,7 +103,7 @@ export interface GeneratePlaylistResponse {
 export async function generatePlaylist(
   params: GeneratePlaylistParams
 ): Promise<GeneratePlaylistResponse> {
-  return post("/api/web/navidrome/playlists/generate", params);
+  return post("/api/web/navidrome/playlist/generate", params);
 }
 
 export interface PlaylistTemplate {
@@ -123,7 +123,7 @@ export interface GetTemplatesResponse {
  * Get list of all available playlist templates.
  */
 export async function getTemplates(): Promise<GetTemplatesResponse> {
-  return get("/api/web/navidrome/templates");
+  return get("/api/web/navidrome/template");
 }
 
 export interface GeneratedTemplate {
@@ -143,7 +143,7 @@ export interface GenerateTemplatesResponse {
  * Generate all playlist templates as a batch.
  */
 export async function generateTemplates(): Promise<GenerateTemplatesResponse> {
-  return post("/api/web/navidrome/templates");
+  return post("/api/web/navidrome/template");
 }
 
 
@@ -207,7 +207,7 @@ interface TagValuesRawResponse {
  */
 export async function getTagValues(rel: string): Promise<string[]> {
   const raw = await get<TagValuesRawResponse>(
-    `/api/web/navidrome/tag-values?rel=${encodeURIComponent(rel)}`,
+    `/api/web/navidrome/tag-value?rel=${encodeURIComponent(rel)}`,
   );
   return raw.values;
 }
@@ -230,7 +230,7 @@ export async function generateStaticPlaylist(
   fileIds: string[],
   playlistName = "Vector Search Playlist",
 ): Promise<StaticPlaylistResponse> {
-  return post("/api/web/navidrome/playlists/static", {
+  return post("/api/web/navidrome/playlist/static", {
     file_ids: fileIds,
     playlist_name: playlistName,
   });
@@ -242,6 +242,10 @@ export interface PingResponse {
   error: string | null;
 }
 
+/**
+ * Test connectivity to the Navidrome server.
+ * Returns `{ ok, error }`.
+ */
 export async function pingNavidrome(): Promise<PingResponse> {
   return post<PingResponse>("/api/web/navidrome/ping");
 }
@@ -253,6 +257,10 @@ export interface NavidromeStatusResponse {
   configured: boolean;
 }
 
+/**
+ * Check whether Navidrome integration is configured without attempting a connection.
+ * Returns `{ configured }`.
+ */
 export async function getNavidromeStatus(): Promise<NavidromeStatusResponse> {
   return get<NavidromeStatusResponse>("/api/web/navidrome/status");
 }
@@ -274,7 +282,7 @@ export async function pushStaticPlaylist(
   fileIds: string[],
   playlistName = "Vector Search Playlist",
 ): Promise<PushStaticPlaylistResponse> {
-  return post("/api/web/navidrome/playlists/push", {
+  return post("/api/web/navidrome/playlist/push", {
     file_ids: fileIds,
     playlist_name: playlistName,
   });
@@ -296,5 +304,5 @@ export interface SyncSongsResponse {
  * Trigger a full Navidrome song sync to graph collections.
  */
 export async function syncNavidromeSongs(): Promise<SyncSongsResponse> {
-  return post<SyncSongsResponse>("/api/web/navidrome/sync-songs");
+  return post<SyncSongsResponse>("/api/web/navidrome/sync-song");
 }

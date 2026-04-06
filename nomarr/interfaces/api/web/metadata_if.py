@@ -24,13 +24,13 @@ from nomarr.services.domain.metadata_svc import MetadataService
 router = APIRouter(tags=["metadata"], prefix="/metadata")
 
 # Type alias for entity collection names
-EntityCollection = Literal["artists", "albums", "labels", "genres", "years"]
+EntityCollection = Literal["artist", "album", "label", "genre", "year"]
 
 
 # ----------------------------------------------------------------------
-#  GET /metadata/counts
+#  GET /metadata/count
 # ----------------------------------------------------------------------
-@router.get("/counts", dependencies=[Depends(verify_session)])
+@router.get("/count", dependencies=[Depends(verify_session)])
 async def get_entity_counts(
     metadata_service: Annotated[MetadataService, Depends(get_metadata_service)],
 ) -> EntityCountsResponse:
@@ -50,7 +50,7 @@ async def list_entities(
     search: Annotated[str | None, Query(description="Substring search on display_name")] = None,
     metadata_service: MetadataService = Depends(get_metadata_service),
 ) -> EntityListResponse:
-    """List entities from a collection (artists, albums, labels, genres, years)."""
+    """List entities from a collection (artist, album, label, genre, year)."""
     result = metadata_service.list_entities(collection, limit=limit, offset=offset, search=search)
     return EntityListResponse.from_dto(result)
 
@@ -77,20 +77,20 @@ async def get_entity(
 
 
 # ----------------------------------------------------------------------
-#  GET /metadata/{collection}/{entity_id}/songs
+#  GET /metadata/{collection}/{entity_id}/song
 # ----------------------------------------------------------------------
-@router.get("/{collection}/{entity_id}/songs", dependencies=[Depends(verify_session)])
+@router.get("/{collection}/{entity_id}/song", dependencies=[Depends(verify_session)])
 async def list_songs_for_entity(
     collection: EntityCollection,
     entity_id: str,
-    rel: Annotated[str, Query(description="Relation type (artist, artists, album, label, genres, year)")],
+    rel: Annotated[str, Query(description="Relation type (artist, album, label, genre, year)")],
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
     metadata_service: MetadataService = Depends(get_metadata_service),
 ) -> SongListResponse:
     """List songs connected to an entity.
 
-    Example: GET /metadata/artists/artists:v1_abc.../songs?rel=artist
+    Example: GET /metadata/artist/artists:v1_abc.../song?rel=artist
     Returns all songs where this artist is the primary credited artist.
     """
     entity_id = decode_path_id(entity_id)
@@ -99,9 +99,9 @@ async def list_songs_for_entity(
 
 
 # ----------------------------------------------------------------------
-#  GET /metadata/albums/{album_id}/artists
+#  GET /metadata/album/{album_id}/artist
 # ----------------------------------------------------------------------
-@router.get("/albums/{album_id}/artists", dependencies=[Depends(verify_session)])
+@router.get("/album/{album_id}/artist", dependencies=[Depends(verify_session)])
 async def list_artists_for_album(
     album_id: str,
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,
@@ -117,9 +117,9 @@ async def list_artists_for_album(
 
 
 # ----------------------------------------------------------------------
-#  GET /metadata/artists/{artist_id}/albums
+#  GET /metadata/artist/{artist_id}/album
 # ----------------------------------------------------------------------
-@router.get("/artists/{artist_id}/albums", dependencies=[Depends(verify_session)])
+@router.get("/artist/{artist_id}/album", dependencies=[Depends(verify_session)])
 async def list_albums_for_artist(
     artist_id: str,
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,

@@ -11,13 +11,10 @@ import logging
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict
 from typing import cast as type_cast
 
-from nomarr.components.ml.calibration.ml_calibration_state_comp import (
-    compute_convergence_status,
-    compute_reconciliation_info,
-)
+from nomarr.components.ml.calibration.ml_calibration_state_comp import compute_reconciliation_info
 from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads_no_db
 from nomarr.helpers import ManagedTask
 from nomarr.helpers.time_helper import now_ms
@@ -33,6 +30,43 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 CALIBRATION_GENERATE_TASK_ID = "calibration_generate"
+
+
+class HistogramGenerationStatusDict(TypedDict):
+    """Background histogram-generation lifecycle snapshot."""
+
+    running: bool
+    completed: bool
+    error: str | None
+    result: dict[str, Any] | None
+
+
+class HistogramGenerationProgressDict(TypedDict):
+    """Background histogram-generation per-head progress snapshot."""
+
+    current_head: str | None
+    current_head_index: int | None
+    total_heads: int
+    completed_heads: int
+    remaining_heads: int
+    last_updated: int | None
+    is_running: bool
+
+
+class HistogramGenerationCombinedStatusDict(TypedDict):
+    """Combined background histogram-generation lifecycle and progress snapshot."""
+
+    running: bool
+    completed: bool
+    error: str | None
+    result: dict[str, Any] | None
+    current_head: str | None
+    current_head_index: int | None
+    total_heads: int
+    completed_heads: int
+    remaining_heads: int
+    last_updated: int | None
+    is_running: bool
 
 
 @dataclass
@@ -175,7 +209,7 @@ class CalibrationService:
 
     # -- Threading infrastructure (NOT domain logic; see services.instructions.md) --
 
-    def _update_progress(self, **kwargs: float | str | None) -> None:
+    def _update_progress(self, **kwargs: int | str | None) -> None:
         """Thread-safe update of progress state from background thread.
 
         Args:
@@ -232,7 +266,7 @@ class CalibrationService:
         """
         return self._generation_error
 
-    def get_generation_status(self) -> dict[str, Any]:
+    def _get_generation_status(self) -> HistogramGenerationStatusDict:
         """Get current status of histogram calibration generation.
 
         Returns:
@@ -255,7 +289,7 @@ class CalibrationService:
             "result": self._generation_result,
         }
 
-    def get_generation_progress(self) -> dict[str, Any]:
+    def _get_generation_progress(self) -> HistogramGenerationProgressDict:
         """Get calibration generation progress.
 
         When generation is running, returns live progress from background thread:
@@ -282,13 +316,13 @@ class CalibrationService:
             with self._progress_lock:
                 progress = dict(self._progress)
             return {
+                "current_head": type_cast("str | None", progress.get("current_head")),
+                "current_head_index": type_cast("int | None", progress.get("current_head_index")),
                 "total_heads": progress.get("total_heads", 0),
                 "completed_heads": 0,  # Not meaningful during generation
                 "remaining_heads": 0,
                 "last_updated": None,
                 "is_running": True,
-                "current_head": progress.get("current_head"),
-                "current_head_index": progress.get("current_head_index"),
             }
 
         # Not running: fall back to DB query for head completion counts
@@ -322,55 +356,38 @@ class CalibrationService:
         last_updated = next(cursor, None)  # type: ignore
 
         return {
+            "current_head": None,
+            "current_head_index": None,
             "total_heads": total_heads,
             "completed_heads": completed,
             "remaining_heads": total_heads - completed,
             "last_updated": last_updated,
             "is_running": False,
-            "current_head": None,
-            "current_head_index": None,
         }
 
-    def get_calibration_history(
-        self,
-        calibration_key: str | None = None,
-        limit: int = 100,
-    ) -> dict[str, Any]:
-        """Get calibration convergence history.
-
-        NOTE: This method uses the legacy calibration_history collection from
-        progressive calibration. Will be deprecated in favor of histogram visualization.
-
-        Args:
-            calibration_key: Specific head (e.g., "effnet-20220825:mood_happy") or None for all
-            limit: Maximum snapshots to return per head
+    def get_generation_combined_status(self) -> HistogramGenerationCombinedStatusDict:
+        """Get combined lifecycle status and per-head progress for histogram generation.
 
         Returns:
-            {"calibration_key": [...snapshots...]} or {"all_heads": {key: [...snapshots...]}}
+            {
+              "running": bool,
+              "completed": bool,
+              "error": str | None,
+              "result": dict | None,
+              "current_head": str | None,
+              "current_head_index": int | None,
+              "total_heads": int,
+              "completed_heads": int,
+              "remaining_heads": int,
+              "last_updated": int | None,
+              "is_running": bool,
+            }
 
         """
-        if calibration_key:
-            history = self._db.calibration_history.get_history(
-                calibration_key=calibration_key,
-                limit=limit,
-            )
-            return {"calibration_key": calibration_key, "history": history}
-
-        # Inline grouping logic (simplified from removed group_snapshots_by_head)
-        recent = self._db.calibration_history.get_all_recent_snapshots(limit=limit * 10)
-        grouped: dict[str, list[dict[str, Any]]] = {}
-        for snapshot in recent:
-            key = snapshot["calibration_key"]
-            if key not in grouped:
-                grouped[key] = []
-            grouped[key].append(snapshot)
-        for key in grouped:
-            grouped[key] = sorted(grouped[key], key=lambda x: x["snapshot_at"], reverse=True)[:limit]
-        return {"all_heads": grouped}
-
-    def get_latest_convergence_status(self) -> dict[str, Any]:
-        """Get latest convergence metrics for all heads."""
-        return compute_convergence_status(self._db)
+        return {
+            **self._get_generation_status(),
+            **self._get_generation_progress(),
+        }
 
     def get_histogram_for_head(self, model_key: str, head_name: str, label: str) -> dict[str, Any]:
         """Get stored histogram bins for a specific label.

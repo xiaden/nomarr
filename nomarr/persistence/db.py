@@ -15,6 +15,7 @@ from nomarr.persistence.database.health_aql import HealthOperations
 from nomarr.persistence.database.libraries_aql import LibrariesOperations
 from nomarr.persistence.database.library_files_aql import LibraryFilesOperations
 from nomarr.persistence.database.library_folders_aql import LibraryFoldersOperations
+from nomarr.persistence.database.library_pipeline_states_aql import LibraryPipelineStatesOps
 from nomarr.persistence.database.library_scans_aql import LibraryScansOperations
 from nomarr.persistence.database.locks_aql import LocksOperations
 from nomarr.persistence.database.meta_aql import MetaOperations
@@ -147,6 +148,7 @@ class Database:
         self.navidrome_tracks = NavidromeTracksOperations(self.db)
         self.navidrome_playcounts = NavidromePlaycountsOperations(self.db)
         self.file_states = FileStatesOperations(self.db)
+        self.library_pipeline_states = LibraryPipelineStatesOps(self.db)
         self.worker_claims = WorkerClaimsOperations(self.db)
         self.vram_promises = VramPromisesOperations(self.db)
         self.locks = LocksOperations(self.db)

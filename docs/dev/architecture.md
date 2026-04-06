@@ -316,24 +316,16 @@ Vector collections (`vectors_track_*`) are registered dynamically per backbone+l
 ## Data Flow: Processing a File
 
 ```
-1. HTTP Request
-   └→ interfaces/api/web/processing_if.py
-      └→ process_files(request)
-
-2. Service Orchestration
-   └→ services/domain/tagging_svc.py
-      └→ process_files(paths)
-
-3. Worker Discovery (background)
+1. Worker Discovery (automatic)
    └→ services/infrastructure/workers/discovery_worker.py
       └→ queries library_files for needs_tagging=1
       └→ claims file via db.worker_claims.try_claim_file()
 
-4. Workflow Execution
+2. Workflow Execution
    └→ workflows/processing/process_file_wf.py
       └→ process_file_workflow(db, file_doc, config, sessions)
 
-5. Component Logic
+3. Component Logic
    ├→ components/ml/audio/ml_audio_comp.py
    │  └→ load_mono() — load audio via Essentia MonoLoader
    ├→ components/ml/audio/ml_preprocess_comp.py
@@ -345,18 +337,18 @@ Vector collections (`vectors_track_*`) are registered dynamically per backbone+l
    └→ components/tagging/tagging_writer_comp.py
       └→ write_tags() — write predictions to audio file
 
-6. Claim Release
+4. Claim Release
    └→ db.worker_claims.release_claim(file_id)
 ```
 
 ### Fire-and-Forget Tag Reconciliation
 
-The write-tags endpoint uses BTS for in-process background dispatch and a separate polling endpoint for progress checks.
+The write-tag endpoint uses BTS for in-process background dispatch and the pipeline endpoint for progress checks.
 
 **Fire-and-forget dispatch:**
 
 ```text
-POST /library/{id}/reconcile-tags
+POST /library/{id}/write-tag
     → library_if.py handler
         → TaggingService.start_write_tags_background(library_id)
             → BTS.start_task(ManagedTask(...))
@@ -367,15 +359,15 @@ POST /library/{id}/reconcile-tags
 **Status polling:**
 
 ```text
-GET /library/{id}/reconcile-status
+GET /library/{id}/pipeline
     → library_if.py handler
-        → TaggingService.get_reconcile_status(library_id)
-            → BTS.get_task_status("write_tags:{library_id}") → in_progress
-            → DB: count_files_needing_reconciliation → pending_count
-    ← 200 {"pending_count": N, "in_progress": true|false}
+        → pipeline_service.get_pipeline_status(library_id)
+            → BTS.get_task_status("write_tags:{library_id}") → state
+            → DB/service aggregation → PipelineStatusResponse
+    ← 200 {"library_id": "...", "state": "writing", "pending_write_count": N, "library_auto_write": true, "file_write_mode": "full", "untagged_count": null, "uncalibrated_count": null}
 ```
 
-This keeps the request/response contract fast while still exposing observable progress. The POST endpoint only starts work and returns a `task_id`; the GET endpoint combines BTS state with database counts to report whether reconciliation is still in progress.
+This keeps the request/response contract fast while still exposing observable progress. The POST `/library/{id}/write-tag` endpoint only starts work and returns a `task_id`; the GET `/library/{id}/pipeline` endpoint returns the full `PipelineStatusResponse`, including write progress and related pipeline state fields.
 
 ---
 

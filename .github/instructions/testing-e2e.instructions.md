@@ -137,7 +137,7 @@ test('my test', async ({ authenticatedPage: page }) => {
   const api = createApiHelpers(page);
 
   // Wait for API call triggered by navigation
-  const response = await api.waitForApiCall('/api/web/libraries', 'GET');
+  const response = await api.waitForApiCall('/api/web/library', 'GET');
   expect(response.status()).toBe(200);
 
   // Wait and get parsed JSON

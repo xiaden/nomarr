@@ -1,7 +1,6 @@
-import { act, fireEvent } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { getReconcileStatus, list, reconcileTags } from "../../../shared/api/library";
+import { list, writeTags } from "../../../shared/api/library";
 import type { Library } from "../../../shared/types";
 import { renderWithProviders, screen, userEvent, waitFor } from "../../../test/render";
 
@@ -23,8 +22,7 @@ const {
 
 vi.mock("../../../shared/api/library", () => ({
   list: vi.fn().mockResolvedValue([]),
-  reconcileTags: vi.fn().mockResolvedValue({ status: "started", task_id: "task123" }),
-  getReconcileStatus: vi.fn().mockResolvedValue({ pending_count: 0, in_progress: false }),
+  writeTags: vi.fn().mockResolvedValue({ status: "started", task_id: "task123" }),
   scanQuick: vi.fn(),
   scanFull: vi.fn(),
   deleteLibrary: vi.fn(),
@@ -93,8 +91,7 @@ describe("LibraryManagement", () => {
     vi.useRealTimers();
 
     vi.mocked(list).mockResolvedValue([libraryFixture]);
-    vi.mocked(reconcileTags).mockResolvedValue({ status: "started", task_id: "task123" });
-    vi.mocked(getReconcileStatus).mockResolvedValue({ pending_count: 0, in_progress: false });
+    vi.mocked(writeTags).mockResolvedValue({ status: "started", task_id: "task123" });
   });
 
   afterEach(() => {
@@ -113,43 +110,13 @@ describe("LibraryManagement", () => {
     await user.click(screen.getByRole("button", { name: "Write Tags" }));
 
     await waitFor(() => {
-      expect(reconcileTags).toHaveBeenCalledWith("libraries:123");
+      expect(writeTags).toHaveBeenCalledWith("libraries:123");
     });
     expect(mockShowSuccess).toHaveBeenCalledWith("Tag write started");
-    expect(getReconcileStatus).toHaveBeenCalledWith("libraries:123");
-  });
-
-  it("keeps polling reconcile status when the first status check reports work in progress", async () => {
-    vi.mocked(getReconcileStatus)
-      .mockResolvedValueOnce({ pending_count: 2, in_progress: true })
-      .mockResolvedValueOnce({ pending_count: 0, in_progress: false });
-
-    renderWithProviders(<LibraryManagement />);
-
-    await waitFor(() => {
-      expect(screen.getByText("library name")).toBeInTheDocument();
-    });
-
-    vi.useFakeTimers();
-
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Write Tags" }));
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(reconcileTags).toHaveBeenCalledWith("libraries:123");
-    expect(getReconcileStatus).toHaveBeenCalledTimes(1);
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(10_000);
-    });
-
-    expect(getReconcileStatus).toHaveBeenCalledTimes(2);
   });
 
   it("shows an error message when starting tag reconciliation fails", async () => {
-    vi.mocked(reconcileTags).mockRejectedValue(new Error("Network error"));
+    vi.mocked(writeTags).mockRejectedValue(new Error("Network error"));
     const user = userEvent.setup();
 
     renderWithProviders(<LibraryManagement />);

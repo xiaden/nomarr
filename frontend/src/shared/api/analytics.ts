@@ -65,27 +65,6 @@ export interface TopItem {
   percentage: number;
 }
 
-export interface TagCoOccurrencesResponse {
-  tag: string;
-  total_occurrences: number;
-  co_occurrences: CoOccurrence[];
-  top_artists: TopItem[];
-  top_genres: TopItem[];
-  limit: number;
-}
-
-/**
- * Get co-occurrences for a specific tag.
- */
-export async function getTagCoOccurrences(
-  tag: string,
-  limit = 10
-): Promise<TagCoOccurrencesResponse> {
-  return get(
-    `/api/web/analytics/tag-co-occurrences/${encodeURIComponent(tag)}?limit=${limit}`
-  );
-}
-
 export interface TagSpec {
   key: string;
   value: string;

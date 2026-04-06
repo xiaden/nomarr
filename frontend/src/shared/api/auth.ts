@@ -14,13 +14,13 @@ interface LoginResponse {
 /**
  * Login with admin password.
  *
- * Sends credentials to /api/web/auth/login and stores the returned session token.
+ * Sends credentials to /api/web/authentication/login and stores the returned session token.
  *
  * @param password - Admin password
  * @throws ApiError if login fails or response is invalid
  */
 export async function login(password: string): Promise<void> {
-  const response = await post<LoginResponse>("/api/web/auth/login", {
+  const response = await post<LoginResponse>("/api/web/authentication/login", {
     password,
   });
 
@@ -38,7 +38,7 @@ export async function login(password: string): Promise<void> {
  */
 export async function logout(): Promise<void> {
   try {
-    await post("/api/web/auth/logout");
+    await post("/api/web/authentication/logout");
   } catch (error) {
     // Don't throw - just log. The important part is clearing local session.
     console.warn("[Auth] Logout request failed:", error);

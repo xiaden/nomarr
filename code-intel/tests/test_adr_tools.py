@@ -1,9 +1,9 @@
 """Tests for ADR tools — adr_suggest, adr_commit, adr_read, adr_search.
 
 Covers:
-- adr_suggest: happy path, preview without disk write, validation errors, parseable markdown
+- adr_suggest: happy path, writes draft to staging dir, validation errors, parseable markdown
 - adr_commit: happy path, auto-numbering, writes to disk, validation (defense in depth),
-  collision retry, source_log, extra sections, references
+  collision retry, source_log, extra sections, references, commit-from-draft-id, draft cleanup
 - adr_read: by number/filename/prefix, not found, path traversal, empty name
 - adr_search: no filters, by tag, by status, by query, combined, limit, empty dir, sort order
 """
@@ -76,12 +76,23 @@ def test_adr_suggest_happy_path(tmp_path: Path) -> None:
     assert "filename" not in result
 
 
-def test_adr_suggest_does_not_write_to_disk(tmp_path: Path) -> None:
+def test_adr_suggest_writes_draft_to_disk(tmp_path: Path) -> None:
+    result = _suggest_sample_adr(tmp_path)
+    assert "error" not in result
+    assert "draft_path" in result
+    draft_file = tmp_path / result["draft_path"]
+    assert draft_file.exists(), f"Expected draft at {draft_file}"
+    assert "ADR-DRAFT" in draft_file.read_text(encoding="utf-8")
+
+
+def test_adr_suggest_draft_not_in_decisions_dir(tmp_path: Path) -> None:
     result = _suggest_sample_adr(tmp_path)
     assert "error" not in result
     decisions_dir = tmp_path / "artifacts" / "decisions"
-    if decisions_dir.exists():
-        assert list(decisions_dir.iterdir()) == []
+    committed = [
+        p for p in decisions_dir.iterdir() if p.is_file() and p.suffix == ".md"
+    ] if decisions_dir.exists() else []
+    assert committed == [], "adr_suggest should not write to the committed ADR directory"
 
 
 def test_adr_suggest_returns_parseable_markdown(tmp_path: Path) -> None:
@@ -231,6 +242,37 @@ def test_adr_commit_collision_retry(tmp_path: Path) -> None:
 
     assert "path" in result
     assert call_count == 2  # First attempt failed, second succeeded
+
+
+def test_adr_commit_from_draft_id(tmp_path: Path) -> None:
+    """adr_commit loads content from the staging draft when draft_id is given."""
+    suggest_result = _suggest_sample_adr(tmp_path)
+    assert "error" not in suggest_result
+    draft_id = suggest_result["draft_id"]
+
+    result = adr_commit(draft_id=draft_id, workspace_root=tmp_path)
+    assert "error" not in result, result
+    assert result["number"] == 1
+    assert result["title"] == "Use Edges"
+    committed = tmp_path / result["path"]
+    assert committed.exists()
+
+
+def test_adr_commit_draft_deleted_after_commit(tmp_path: Path) -> None:
+    """The staging draft is removed once adr_commit succeeds."""
+    suggest_result = _suggest_sample_adr(tmp_path)
+    draft_id = suggest_result["draft_id"]
+    draft_file = tmp_path / suggest_result["draft_path"]
+    assert draft_file.exists()
+
+    adr_commit(draft_id=draft_id, workspace_root=tmp_path)
+    assert not draft_file.exists(), "Draft should be deleted after successful commit"
+
+
+def test_adr_commit_draft_id_not_found(tmp_path: Path) -> None:
+    """adr_commit returns draft_not_found when the staging file is missing."""
+    result = adr_commit(draft_id="nonexistent-slug", workspace_root=tmp_path)
+    assert result["error"] == "draft_not_found"
 
 
 # ---------------------------------------------------------------------------

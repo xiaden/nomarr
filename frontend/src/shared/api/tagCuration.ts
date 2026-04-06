@@ -83,8 +83,8 @@ export async function cleanupOrphanedTags(
 
   const query = queryParams.toString();
   const endpoint = query
-    ? `/api/web/libraries/cleanup-tags?${query}`
-    : "/api/web/libraries/cleanup-tags";
+    ? `/api/web/library/cleanup-tag?${query}`
+    : "/api/web/library/cleanup-tag";
 
   return post(endpoint);
 }
@@ -101,8 +101,8 @@ export async function getFileTags(
 
   const query = queryParams.toString();
   const endpoint = query
-    ? `/api/web/libraries/files/${fileId}/tags?${query}`
-    : `/api/web/libraries/files/${fileId}/tags`;
+    ? `/api/web/library/file/${fileId}/tag?${query}`
+    : `/api/web/library/file/${fileId}/tag`;
 
   return get(endpoint);
 }
@@ -125,7 +125,7 @@ export async function fetchTagValues(
   if (prefix) params.append("prefix", prefix);
   params.append("limit", String(limit));
   params.append("offset", String(offset));
-  return get(`/api/web/tag-curation/values?${params.toString()}`);
+  return get(`/api/web/tag-curation/value?${params.toString()}`);
 }
 
 /**
@@ -141,7 +141,7 @@ export async function fetchTagSongs(
     offset: String(offset),
   });
   return get(
-    `/api/web/tag-curation/${encodeURIComponent(tagId)}/songs?${params.toString()}`
+    `/api/web/tag-curation/${encodeURIComponent(tagId)}/song?${params.toString()}`
   );
 }
 
@@ -212,7 +212,7 @@ export async function updateFileTags(
   values: string[]
 ): Promise<UpdateFileTagsResult> {
   return patch(
-    `/api/web/tag-curation/files/${encodeURIComponent(fileId)}/tags`,
+    `/api/web/tag-curation/file/${encodeURIComponent(fileId)}/tag`,
     { rel, values }
   );
 }

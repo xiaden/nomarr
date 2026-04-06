@@ -230,8 +230,8 @@ When no work is found:
 `WorkerSystemService` controls workers globally via the `worker_enabled` flag in the `meta` collection:
 
 ```python
-worker_svc.pause_worker_system()   # Disables processing, stops workers
-worker_svc.resume_worker_system()  # Enables processing, starts workers
+worker_svc.disable_worker_system()  # Disables processing, stops workers
+worker_svc.enable_worker_system()   # Enables processing, starts workers
 ```
 
 ### 6. Graceful Termination
@@ -302,8 +302,8 @@ Manages the worker pool lifecycle and implements `ComponentLifecycleHandler` for
 |--------|--------|
 | `start_all_workers()` | Admission control → tier selection → spawn workers |
 | `stop_all_workers(timeout)` | Graceful shutdown with force-kill fallback |
-| `pause_worker_system()` | Disable processing, stop workers |
-| `resume_worker_system()` | Enable processing, start workers |
+| `disable_worker_system()` | Disable processing, stop workers |
+| `enable_worker_system()` | Enable processing, start workers |
 | `is_running()` | Check if any workers are running |
 | `get_workers_status()` | Worker pool status dict |
 | `get_resource_status()` | GPU/CPU tier and capacity info |

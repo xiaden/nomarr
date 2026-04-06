@@ -11,6 +11,11 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from nomarr.helpers.exceptions import LibraryNotFoundError
+from nomarr.persistence.database.library_pipeline_states_aql import (
+    PIPELINE_IDLE,
+    PIPELINE_ML_RUNNING,
+    PIPELINE_SCANNING,
+)
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -116,6 +121,30 @@ def update_scan_progress(
         total=total,
         scan_error=scan_error,
     )
+
+
+def transition_to_scanning(db: Database, library_id: str) -> None:
+    """Transition a library pipeline into the scanning state.
+
+    Args:
+        db: Database instance
+        library_id: Library document ``_id``
+
+    """
+    db.library_pipeline_states.transition_state(library_id, PIPELINE_SCANNING)
+
+
+def on_scan_complete_pipeline_hook(db: Database, library_id: str) -> None:
+    """Transition pipeline state after scan completion based on file count.
+
+    Args:
+        db: Database instance
+        library_id: Library document ``_id``
+
+    """
+    file_count = db.library_files.count_library_files(library_id)
+    next_state = PIPELINE_ML_RUNNING if file_count > 0 else PIPELINE_IDLE
+    db.library_pipeline_states.transition_state(library_id, next_state)
 
 
 # ---------------------------------------------------------------------------

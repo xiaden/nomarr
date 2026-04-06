@@ -30,27 +30,6 @@ class EnsureCalibrationsExistResult:
     action_required: str | None
 
 
-@dataclass
-class CalibrationRunResult:
-    """Single calibration run from calibration_svc.get_calibration_history."""
-
-    _id: str  # ArangoDB _id
-    model_name: str
-    head_name: str
-    version: int
-    file_count: int
-    timestamp: int
-    p5: float
-    p95: float
-    value_range: float
-    reference_version: int | None
-    apd_p5: float | None
-    apd_p95: float | None
-    srd: float | None
-    jsd: float | None
-    median_drift: float | None
-    iqr_drift: float | None
-    is_stable: int
 
 
 @dataclass

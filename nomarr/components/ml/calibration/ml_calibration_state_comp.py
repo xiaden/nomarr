@@ -122,46 +122,6 @@ def update_file_calibration_hashes_batch(
         db.file_states.set_calibrated(file_id)
 
 
-# ---------------------------------------------------------------------------
-# Calibration analysis (convergence, reconciliation, history grouping)
-# ---------------------------------------------------------------------------
-
-
-def compute_convergence_status(db: Database) -> dict[str, Any]:
-    """Compute latest convergence metrics for all calibration heads.
-
-    Iterates every calibration state, fetches its most recent snapshot,
-    and evaluates whether the head has converged
-    (``|p5_delta| < 0.01`` **and** ``|p95_delta| < 0.01``).
-
-    Returns:
-        ``{head_key: {"latest_snapshot": ..., "p5_delta": ..., "converged": bool}}``
-    """
-    all_states = db.calibration_state.get_all_calibration_states()
-    convergence_status: dict[str, Any] = {}
-
-    for state in all_states:
-        calibration_key = f"{state['model_key']}:{state['head_name']}"
-        latest = db.calibration_history.get_latest_snapshot(calibration_key)
-
-        if latest:
-            p5_delta = latest.get("p5_delta")
-            p95_delta = latest.get("p95_delta")
-            converged = False
-            if p5_delta is not None and p95_delta is not None:
-                converged = abs(p5_delta) < 0.01 and abs(p95_delta) < 0.01
-
-            convergence_status[calibration_key] = {
-                "latest_snapshot": latest,
-                "p5_delta": p5_delta,
-                "p95_delta": p95_delta,
-                "n": latest.get("n", 0),
-                "converged": converged,
-            }
-
-    return convergence_status
-
-
 def compute_reconciliation_info(
     db: Database,
     global_version: str | None,

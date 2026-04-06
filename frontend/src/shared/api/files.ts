@@ -66,8 +66,8 @@ export async function search(params?: SearchFilesParams): Promise<SearchFilesRes
 
   const query = queryParams.toString();
   const endpoint = query
-    ? `/api/web/libraries/files/search?${query}`
-    : "/api/web/libraries/files/search";
+    ? `/api/web/library/file/search?${query}`
+    : "/api/web/library/file/search";
 
   return get(endpoint);
 }
@@ -77,7 +77,7 @@ export async function search(params?: SearchFilesParams): Promise<SearchFilesRes
  * Used for batch lookup (e.g., when browsing songs for an entity).
  */
 export async function getFilesByIds(fileIds: string[]): Promise<SearchFilesResponse> {
-  return post("/api/web/libraries/files/by-ids", { file_ids: fileIds });
+  return post("/api/web/library/file/by-ids", { file_ids: fileIds });
 }
 
 export interface TagSearchParams {
@@ -93,7 +93,7 @@ export interface TagSearchParams {
  * For string values: Returns files with exact match on the tag value.
  */
 export async function searchByTag(params: TagSearchParams): Promise<SearchFilesResponse> {
-  return post("/api/web/libraries/files/by-tag", params);
+  return post("/api/web/library/file/by-tag", params);
 }
 
 export interface UniqueTagKeysResponse {
@@ -112,8 +112,8 @@ export async function getUniqueTagKeys(
 
   const query = queryParams.toString();
   const endpoint = query
-    ? `/api/web/libraries/files/tags/unique-keys?${query}`
-    : "/api/web/libraries/files/tags/unique-keys";
+    ? `/api/web/library/file/tag/unique-keys?${query}`
+    : "/api/web/library/file/tag/unique-keys";
 
   return get(endpoint);
 }
@@ -134,7 +134,7 @@ export async function getTagValues(
   queryParams.append("tag_key", tagKey);
   if (nomarrOnly) queryParams.append("nomarr_only", "true");
 
-  return get(`/api/web/libraries/files/tags/values?${queryParams.toString()}`);
+  return get(`/api/web/library/file/tag/values?${queryParams.toString()}`);
 }
 
 /**
@@ -161,5 +161,5 @@ export async function getMoodValues(
   queryParams.append("mood_tier", moodTier);
   queryParams.append("limit", limit.toString());
 
-  return get(`/api/web/libraries/files/tags/mood-values?${queryParams.toString()}`);
+  return get(`/api/web/library/file/tag/mood-values?${queryParams.toString()}`);
 }

@@ -1,20 +1,11 @@
 """Unit tests for WorkerRestartPolicyOperations (worker_restart_policy_aql.py)."""
 
-from unittest.mock import MagicMock
 
 import pytest
 
 from nomarr.persistence.database.worker_restart_policy_aql import (
     WorkerRestartPolicyOperations,
 )
-
-
-@pytest.fixture
-def mock_db():
-    """Provide mock ArangoDB."""
-    db = MagicMock()
-    db.name = "test_db"
-    return db
 
 
 @pytest.fixture

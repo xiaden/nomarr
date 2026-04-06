@@ -16,6 +16,7 @@ from nomarr.components.library.library_admin_comp import (
     delete_library,
     update_library_root,
 )
+from nomarr.components.library.update_library_metadata_comp import UpdateLibraryMetadataComp
 from nomarr.components.platform.arango_bootstrap_comp import provision_vectors_track_for_library
 from nomarr.helpers.config_schema import validate_library_config
 from nomarr.helpers.dto.library_dto import LibraryDict
@@ -24,6 +25,7 @@ from nomarr.helpers.dto.vector_config_dto import VectorConfigResult
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
     from nomarr.services.infrastructure.config_svc import ConfigService
+    from nomarr.services.infrastructure.file_watcher_svc import FileWatcherService
 
     from .config import LibraryServiceConfig
 
@@ -34,6 +36,7 @@ class LibraryAdminMixin:
     # Attributes provided by composed class (LibraryService)
     cfg: LibraryServiceConfig
     db: Database
+    file_watcher_service: FileWatcherService | None
 
     def _get_library_or_error(self, library_id: str) -> dict[str, Any]:
         """Get a library by ID or raise an error.
@@ -116,6 +119,7 @@ class LibraryAdminMixin:
         is_enabled: bool = True,
         watch_mode: str = "off",
         file_write_mode: str = "full",
+        library_auto_write: bool = False,
     ) -> LibraryDict:
         """Create a new library and provision vector collections for it.
 
@@ -129,6 +133,7 @@ class LibraryAdminMixin:
             is_enabled: Whether the library starts enabled.
             watch_mode: Watch mode to store on the library.
             file_write_mode: File write mode to store on the library.
+            library_auto_write: Whether to enable automatic tag writing for the library.
 
         Returns:
             LibraryDict DTO for the created library record.
@@ -142,6 +147,7 @@ class LibraryAdminMixin:
             is_enabled=is_enabled,
             watch_mode=watch_mode,
             file_write_mode=file_write_mode,
+            library_auto_write=library_auto_write,
         )
         library_key = library_id.split("/", 1)[-1]
         provision_vectors_track_for_library(self.db.db, self.cfg.models_dir, library_key)
@@ -169,27 +175,58 @@ class LibraryAdminMixin:
         is_enabled: bool | None = None,
         watch_mode: str | None = None,
         file_write_mode: str | None = None,
+        library_auto_write: bool | None = None,
     ) -> LibraryDict:
-        """Update library properties."""
+        """Update library properties.
+
+        Args:
+            library_id: Library document ``_id``.
+            name: New display name (optional).
+            root_path: New filesystem root path (optional).
+            is_enabled: New enabled state (optional).
+            watch_mode: New watch mode ('off', 'event', or 'poll') (optional).
+            file_write_mode: New tag write mode ('none', 'minimal', or 'full') (optional).
+            library_auto_write: New auto-write setting (optional).
+
+        Returns:
+            Updated LibraryDict DTO.
+
+        """
         # Validate library exists
         self._get_library_or_error(library_id)
 
         if root_path is not None:
             self.update_library_root(library_id, root_path)
 
-        if name is not None or is_enabled is not None or watch_mode is not None or file_write_mode is not None:
+        if (
+            name is not None
+            or is_enabled is not None
+            or watch_mode is not None
+            or file_write_mode is not None
+            or library_auto_write is not None
+        ):
             self.update_library_metadata(
                 library_id,
                 name=name,
                 is_enabled=is_enabled,
                 watch_mode=watch_mode,
                 file_write_mode=file_write_mode,
+                library_auto_write=library_auto_write,
             )
 
         return self.get_library(library_id)
 
     def delete_library(self, library_id: str) -> bool:
-        """Delete a library."""
+        """Stop file watching for a library and delete it.
+
+        Args:
+            library_id: Library document ``_id`` to delete.
+
+        Returns:
+            True if the library was deleted, False if it was not found.
+        """
+        if self.file_watcher_service is not None and library_id in self.file_watcher_service.observers:
+            self.file_watcher_service.stop_watching_library(library_id)
         return delete_library(db=self.db, library_id=library_id)
 
     def update_library_metadata(
@@ -200,15 +237,17 @@ class LibraryAdminMixin:
         is_enabled: bool | None = None,
         watch_mode: str | None = None,
         file_write_mode: str | None = None,
+        library_auto_write: bool | None = None,
     ) -> LibraryDict:
         """Update library metadata (name, enabled, watch_mode, file_write_mode)."""
         self._get_library_or_error(library_id)
-        self.db.libraries.update_library(
+        UpdateLibraryMetadataComp(self.db).update(
             library_id,
             name=name,
             is_enabled=is_enabled,
             watch_mode=watch_mode,
             file_write_mode=file_write_mode,
+            library_auto_write=library_auto_write,
         )
 
         updated = self._get_library_or_error(library_id)

@@ -7,6 +7,7 @@ from typing import Any
 
 from ..helpers.adr_md import (
     ADR,
+    DRAFTS_DIR,
     _slugify,
     _unescape_literal_newlines,
     generate_adr,
@@ -114,9 +115,17 @@ def adr_suggest(
     # Derive draft_id from title
     draft_id = _slugify(title.strip())
 
+    # Write draft to local staging folder (gitignored, not committed to repo)
+    drafts_dir = workspace_root / DRAFTS_DIR
+    drafts_dir.mkdir(parents=True, exist_ok=True)
+    draft_file = drafts_dir / f"DRAFT-{draft_id}.md"
+    draft_file.write_text(markdown, encoding="utf-8")
+    draft_path = f"{DRAFTS_DIR}/DRAFT-{draft_id}.md"
+
     return {
         "markdown": markdown,
         "title": adr.title,
         "draft_id": draft_id,
+        "draft_path": draft_path,
         "word_count": word_count,
     }

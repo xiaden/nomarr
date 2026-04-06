@@ -80,6 +80,7 @@ export interface Library {
   isEnabled: boolean;
   watchMode: string; // 'off', 'event', or 'poll'
   fileWriteMode: "none" | "minimal" | "full"; // Tag writing mode
+  libraryAutoWrite?: boolean;
   createdAt?: string | number; // Can be ISO string or Unix timestamp
   updatedAt?: string | number; // Can be ISO string or Unix timestamp
   scannedAt?: string | null; // null if never scanned, ISO string if scanned
@@ -214,6 +215,8 @@ export interface EntityCounts {
   years: number;
 }
 
-export type EntityCollection = "artists" | "albums" | "labels" | "genres" | "years";
+export type EntityCollection = "artist" | "album" | "label" | "genre" | "year";
 
 // Add more types as needed
+
+

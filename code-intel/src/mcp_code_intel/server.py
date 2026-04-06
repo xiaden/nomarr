@@ -1045,21 +1045,41 @@ def adr_suggest(
         supersedes=supersedes,
         workspace_root=ROOT,
     )
+    file_links = None
+    if "draft_path" in result:
+        file_links = [FileLink(file_path=ROOT / result["draft_path"], action="draft")]
     return ToolOutput(
         tool_name="adr_suggest",
-        breadcrumb="ADR preview generated",
+        breadcrumb="ADR draft saved at",
         metadata=result,
+        file_links=file_links,
     ).to_call_tool_result()
 
 
 @mcp.tool()
 def adr_commit(
-    title: Annotated[str, "Title of the architecture decision"],
-    status: Annotated[str, "Status: Proposed, Accepted, Deprecated, or Superseded"],
-    tags: Annotated[list[str], "Tags for categorization (at least one required)"],
-    context: Annotated[str, "Context section — why this decision is needed"],
-    decision: Annotated[str, "Decision section — what was decided"],
-    consequences: Annotated[str, "Consequences section — what follows from this decision"],
+    draft_id: Annotated[
+        str,
+        "Slug from adr_suggest (e.g. 'use-onnx-runtime'). "
+        "If provided, all content is loaded from the staging draft file; "
+        "other params become optional overrides.",
+    ] = "",
+    title: Annotated[str, "Title of the architecture decision (optional when draft_id given)"] = "",
+    status: Annotated[
+        str, "Status: Proposed, Accepted, Deprecated, or Superseded (optional when draft_id given)"
+    ] = "",
+    tags: Annotated[
+        list[str], "Tags for categorization (optional when draft_id given)"
+    ] = [],  # noqa: B006  FastMCP reads this as a default annotation, not a mutable default
+    context: Annotated[
+        str, "Context section — why this decision is needed (optional when draft_id given)"
+    ] = "",
+    decision: Annotated[
+        str, "Decision section — what was decided (optional when draft_id given)"
+    ] = "",
+    consequences: Annotated[
+        str, "Consequences section — what follows from this decision (optional when draft_id given)"
+    ] = "",
     references: Annotated[str, "References section content (optional)"] = "",
     source_log: Annotated[str, "Source log reference '{agent}#L{N}' (optional)"] = "",
     extra_sections: Annotated[
@@ -1069,11 +1089,14 @@ def adr_commit(
     supersedes: Annotated[
         list[str] | None, "List of ADR identifiers this decision supersedes"
     ] = None,
-    draft_id: Annotated[str, "Draft ID from adr_suggest for correlation"] = "",
 ) -> CallToolResult:
     """Write an approved ADR to disk in artifacts/decisions/.
 
-    Call only after the user has reviewed and approved the adr_suggest output.
+    Primary workflow: call with draft_id after user reviews the adr_suggest output.
+    The staging draft at artifacts/decisions/drafts/ is loaded, assigned a number,
+    written to artifacts/decisions/, and deleted from staging.
+
+    Fallback workflow: provide all content params explicitly (no draft required).
     Auto-numbers the ADR. Validates status, tags, and required sections.
     """
     if supersedes is None:
@@ -1081,7 +1104,7 @@ def adr_commit(
     result = adr_commit_impl(
         title=title,
         status=status,
-        tags=tags,
+        tags=tags or [],
         context=context,
         decision=decision,
         consequences=consequences,

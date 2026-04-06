@@ -89,7 +89,7 @@ export function SearchResults({ results, onNavigate }: SearchResultsProps) {
     async (artistName: string) => {
       let artist: Entity = { entity_id: "", key: "", display_name: artistName };
       try {
-        const result = await listEntities("artists", { search: artistName, limit: 5 });
+        const result = await listEntities("artist", { search: artistName, limit: 5 });
         const match = result.entities.find(
           (e) => e.display_name.toLowerCase() === artistName.toLowerCase()
         ) ?? result.entities[0];
@@ -108,8 +108,8 @@ export function SearchResults({ results, onNavigate }: SearchResultsProps) {
       let album = { entity_id: "", display_name: albumName };
       try {
         const [artistResult, albumResult] = await Promise.all([
-          listEntities("artists", { search: artistName, limit: 5 }),
-          listEntities("albums", { search: albumName, limit: 5 }),
+          listEntities("artist", { search: artistName, limit: 5 }),
+          listEntities("album", { search: albumName, limit: 5 }),
         ]);
         const artistMatch =
           artistResult.entities.find(

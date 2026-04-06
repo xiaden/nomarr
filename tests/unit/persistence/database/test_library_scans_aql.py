@@ -12,14 +12,6 @@ from nomarr.persistence.database.library_scans_aql import LibraryScansOperations
 
 
 @pytest.fixture
-def mock_db() -> MagicMock:
-    """Provide mock ArangoDB."""
-    db = MagicMock()
-    db.name = "test_db"
-    return db
-
-
-@pytest.fixture
 def ops(mock_db: MagicMock) -> LibraryScansOperations:
     """Provide LibraryScansOperations instance."""
     return LibraryScansOperations(mock_db)

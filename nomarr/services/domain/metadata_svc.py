@@ -3,12 +3,12 @@
 Provides read-only access to tag collections and song-tag relationships.
 Uses the unified tags schema where entities are just tags with specific rel values.
 
-TAG_UNIFICATION_REFACTOR: Entities are now tags. Collections map to rel values:
-  - "artists" → rel="artist" or rel="artists"
-  - "albums" → rel="album"
-  - "labels" → rel="label"
-  - "genres" → rel="genre"
-  - "years" → rel="year"
+TAG_UNIFICATION_REFACTOR: Entities are now tags. Route collection values map to rel values:
+    - "artist" → rel="artist"
+    - "album" → rel="album"
+    - "label" → rel="label"
+    - "genre" → rel="genre"
+    - "year" → rel="year"
 """
 
 import logging
@@ -20,15 +20,15 @@ from nomarr.persistence.db import Database
 logger = logging.getLogger(__name__)
 
 # Type alias for entity collection names (for API compatibility)
-EntityCollection = Literal["artists", "albums", "labels", "genres", "years"]
+EntityCollection = Literal["artist", "album", "label", "genre", "year"]
 
 # Mapping of collection name to rel value(s) for queries
 COLLECTION_REL_MAP: dict[EntityCollection, str] = {
-    "artists": "artist",  # Primary artist (singular)
-    "albums": "album",
-    "labels": "label",
-    "genres": "genre",
-    "years": "year",
+    "artist": "artist",
+    "album": "album",
+    "label": "label",
+    "genre": "genre",
+    "year": "year",
 }
 
 

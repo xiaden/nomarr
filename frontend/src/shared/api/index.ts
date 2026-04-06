@@ -2,11 +2,10 @@
  * API module exports.
  *
  * Import domain functions directly:
- *   import { getProcessingStatus } from "@/shared/api/processing";
  *   import { list, create } from "@/shared/api/library";
  *
  * Or import from index for convenience:
- *   import { getProcessingStatus, list } from "@/shared/api";
+ *   import { list } from "@/shared/api";
  */
 
 // Re-export all domain modules
@@ -24,11 +23,11 @@ export * from "./vectors";
 
 // Library - explicit exports to avoid conflicts with files module
 export {
-    create, deleteLibrary, getLibrary, getReconcileStatus, getStats,
-    list, reconcileTags,
+    create, deleteLibrary, getLibrary, getPipelineStatus, getStats,
+    list, writeTags,
     scanFull, scanQuick, update, updateWriteMode,
-    type CreateLibraryPayload, type LibraryStats,
-    type ReconcileStatusResult, type StartTagWriteResult, type UpdateLibraryPayload, type UpdateWriteModeResult
+    type CreateLibraryPayload, type LibraryPipelineStatus, type LibraryStats,
+    type StartTagWriteResult, type UpdateLibraryPayload, type UpdateWriteModeResult
 } from "./library";
 
 // Files - explicit exports to avoid conflicts

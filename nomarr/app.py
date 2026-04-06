@@ -34,6 +34,7 @@ from nomarr.services.domain.tagging_svc import TaggingService, TaggingServiceCon
 from nomarr.services.infrastructure.config_svc import ConfigService
 from nomarr.services.infrastructure.health_monitor_svc import HealthMonitorService
 from nomarr.services.infrastructure.keys_svc import KeyManagementService
+from nomarr.services.infrastructure.pipeline_svc import LibraryPipelineService
 from nomarr.services.infrastructure.worker_system_svc import WorkerSystemService
 
 logger = logging.getLogger(__name__)
@@ -342,10 +343,20 @@ class Application:
             library_service=self.services.get("library"),
         )
         self.register_service("tagging", tagging_service)
-        calibration_service.set_post_generation_hook(tagging_service.start_apply_calibration_background)
-        logger.debug(
-            "[Application] Wired calibration post-generation hook → TaggingService.start_apply_calibration_background"
+        pipeline_svc = LibraryPipelineService(
+            db=self.db,
+            bts=background_tasks,
+            calibration_svc=calibration_service,
+            tagging_svc=tagging_service,
+            navidrome_svc=navidrome_service,
         )
+        self.register_service("pipeline", pipeline_svc)
+        calibration_service.set_post_generation_hook(pipeline_svc.on_calibration_complete)
+        logger.debug(
+            "[Application] Wired calibration post-generation hook → LibraryPipelineService.on_calibration_complete"
+        )
+        recovery_counts = pipeline_svc.recover_stale_states()
+        logger.debug("[Application] Recovered pipeline stale states on startup: %s", recovery_counts)
         # Vector services (search and maintenance)
         from nomarr.services.domain.vector_maintenance_svc import VectorMaintenanceService
         from nomarr.services.domain.vector_search_svc import VectorSearchService
@@ -365,6 +376,7 @@ class Application:
         self.worker_system = WorkerSystemService(
             db=self.db,
             processor_config=processor_config,
+            pipeline_svc=pipeline_svc,
             health_monitor=self.health_monitor,
             worker_count=worker_count,
             default_enabled=self.worker_enabled_default,

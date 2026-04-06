@@ -6,14 +6,24 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
-  HistogramCalibrationProgress,
+  HistogramCombinedStatus,
   HistogramCalibrationResult,
 } from "../../../shared/api/calibration";
 import {
-  getHistogramProgress,
-  getHistogramStatus,
+  getHistogramCombinedStatus,
   startHistogramCalibration,
 } from "../../../shared/api/calibration";
+
+type HistogramCalibrationProgress = Pick<
+  HistogramCombinedStatus,
+  | "total_heads"
+  | "completed_heads"
+  | "remaining_heads"
+  | "last_updated"
+  | "is_running"
+  | "current_head"
+  | "current_head_index"
+>;
 
 export interface CalibrationGenerationState {
   /** Whether generation is currently running */
@@ -38,6 +48,11 @@ export interface UseHistogramCalibrationReturn {
 
 const POLL_INTERVAL_MS = 1000;
 
+/**
+ * Hook for managing background histogram calibration generation with polling.
+ *
+ * @returns State object with generation status/progress, plus `startGeneration` and `reset` actions.
+ */
 export function useHistogramCalibrationGeneration(): UseHistogramCalibrationReturn {
   const [state, setState] = useState<CalibrationGenerationState>({
     isGenerating: false,
@@ -73,36 +88,43 @@ export function useHistogramCalibrationGeneration(): UseHistogramCalibrationRetu
     if (!isMountedRef.current) return;
 
     try {
-      const [status, progress] = await Promise.all([
-        getHistogramStatus(),
-        getHistogramProgress(),
-      ]);
+      const combinedStatus = await getHistogramCombinedStatus();
 
       if (!isMountedRef.current) return;
+
+      const progress: HistogramCalibrationProgress = {
+        total_heads: combinedStatus.total_heads,
+        completed_heads: combinedStatus.completed_heads,
+        remaining_heads: combinedStatus.remaining_heads,
+        last_updated: combinedStatus.last_updated,
+        is_running: combinedStatus.is_running,
+        current_head: combinedStatus.current_head,
+        current_head_index: combinedStatus.current_head_index,
+      };
 
       // Update progress
       setState((prev) => ({
         ...prev,
         progress,
-        isGenerating: status.running,
+        isGenerating: combinedStatus.running,
       }));
 
       // Check for completion
-      if (!status.running) {
+      if (!combinedStatus.running) {
         stopPolling();
 
-        if (status.error) {
+        if (combinedStatus.error) {
           setState((prev) => ({
             ...prev,
             isGenerating: false,
-            error: status.error,
+            error: combinedStatus.error,
             completed: true,
           }));
-        } else if (status.completed && status.result) {
+        } else if (combinedStatus.completed && combinedStatus.result) {
           setState((prev) => ({
             ...prev,
             isGenerating: false,
-            result: status.result,
+            result: combinedStatus.result,
             completed: true,
           }));
         }
@@ -170,7 +192,7 @@ export function useHistogramCalibrationGeneration(): UseHistogramCalibrationRetu
   useEffect(() => {
     const checkInitialStatus = async () => {
       try {
-        const status = await getHistogramStatus();
+        const status = await getHistogramCombinedStatus();
         if (status.running) {
           setState((prev) => ({ ...prev, isGenerating: true }));
           startPolling();

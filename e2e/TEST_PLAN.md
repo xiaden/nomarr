@@ -27,7 +27,7 @@ This document outlines the complete e2e test coverage for Nomarr.
 - ✅ Login with correct password
 - ✅ Show error with incorrect password
 - ✅ Logout successfully
-- **API Coverage**: `/api/web/auth/login`, `/api/web/auth/logout`
+- **API Coverage**: `/api/web/authentication/login`, `/api/web/authentication/logout`
 
 ### Library Management (P1)
 - ✅ Load libraries list
@@ -35,7 +35,7 @@ This document outlines the complete e2e test coverage for Nomarr.
 - ✅ Navigate to library management section
 - ✅ Show create library form
 - ⏭️ Create new library (skipped - requires valid path)
-- **API Coverage**: `/api/web/libraries`, `/api/web/libraries/stats`, `/api/web/libraries/{id}`
+- **API Coverage**: `/api/web/library`, `/api/web/library/stats`, `/api/web/library/{id}`
 
 ### Calibration (P1)
 - ✅ Load calibration status
@@ -65,7 +65,7 @@ This document outlines the complete e2e test coverage for Nomarr.
 - ⏭️ Pause worker (skipped - modifies state)
 - ⏭️ Resume worker (skipped - modifies state)
 - ✅ Load processing status
-- **API Coverage**: `/api/web/worker/*`, `/api/web/processing/status`
+- **API Coverage**: `/api/web/admin/*`, `[REMOVED - endpoint no longer exists]` (previously `/api/web/processing/status`)
 
 ### System Info (P1)
 - ✅ Load system info
@@ -86,15 +86,15 @@ This document outlines the complete e2e test coverage for Nomarr.
 ## API Endpoint Coverage
 
 ### Fully Covered (✅)
-- `/api/web/auth/login`
-- `/api/web/auth/logout`
+- `/api/web/authentication/login`
+- `/api/web/authentication/logout`
 - `/api/web/info`
 - `/api/web/health`
 - `/api/web/health/gpu`
 - `/api/web/work-status`
-- `/api/web/libraries`
-- `/api/web/libraries/stats`
-- `/api/web/libraries/{id}`
+- `/api/web/library`
+- `/api/web/library/stats`
+- `/api/web/library/{id}`
 - `/api/web/calibration/status`
 - `/api/web/calibration/history`
 - `/api/web/calibration/convergence`
@@ -102,28 +102,28 @@ This document outlines the complete e2e test coverage for Nomarr.
 - `/api/web/analytics/mood-distribution`
 - `/api/web/analytics/tag-correlations`
 - `/api/web/metadata/counts`
-- `/api/web/metadata/artists`
-- `/api/web/metadata/albums`
-- `/api/web/processing/status`
+- `/api/web/metadata/artist`
+- `/api/web/metadata/album`
+- `[REMOVED - endpoint no longer exists]` (previously `/api/web/processing/status`)
 
 ### Partially Covered (⚠️)
 - `/api/web/calibration/generate` (test exists but skipped)
 - `/api/web/calibration/apply` (not tested yet)
-- `/api/web/libraries` POST (test exists but skipped)
-- `/api/web/libraries/{id}` PATCH, DELETE (not tested yet)
-- `/api/web/libraries/{id}/scan` (not tested yet)
-- `/api/web/worker/pause` (test exists but skipped)
-- `/api/web/worker/resume` (test exists but skipped)
+- `/api/web/library` POST (test exists but skipped)
+- `/api/web/library/{id}` PATCH, DELETE (not tested yet)
+- `/api/web/library/{id}/scan` (not tested yet)
+- `/api/web/admin/pause` (test exists but skipped)
+- `/api/web/admin/resume` (test exists but skipped)
 
 ### Not Covered (❌)
 - `/api/web/config` (GET/POST)
-- `/api/web/fs/list`
-- `/api/web/libraries/cleanup-*`
-- `/api/web/libraries/files/*`
-- `/api/web/libraries/{id}/reconcile*`
+- `/api/web/file-system/list`
+- `/api/web/library/cleanup-*`
+- `/api/web/library/files/*`
+- `/api/web/library/{id}/reconcile*`
 - `/api/web/navidrome/*`
-- `/api/web/tags/*`
-- `/api/web/worker/restart`
+- `/api/web/tag/*`
+- `/api/web/admin/restart`
 
 ## Test Execution Strategy
 

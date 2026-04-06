@@ -31,14 +31,14 @@ search freshness should be updated by draining to cold.
 
 - Trigger the workflow **after a batch of ML processing completes** so that all
   recent vectors are captured in the subsequent cold collection snapshot.
-- Use `VectorMaintenanceService.get_hot_cold_stats()` (exposed via the admin API)
+- Use `VectorMaintenanceService.get_hot_cold_stats()` (exposed via the web vector API)
   to inspect `hot_count` versus `cold_count`. When hot grows beyond a batch's
   worth of files, schedule a promote to keep search freshness bounded.
 - Run promote & rebuild during operational quiet periods. The workflow is
   synchronous and rebuilds the ANN index; keeping it off the ingest critical path
   prevents worker stalls.
 - Skip automatic interval-based scheduling for now. Operators can manually
-  trigger the `/api/v1/admin/vectors/promote` endpoint once the ML pipeline has
+  trigger the `/api/web/vector/promote` endpoint once the ML pipeline has
   drained its queue.
 
 ## Calculating `nlists`
@@ -52,7 +52,7 @@ higher/lower recall-performance tradeoff.
 
 ## Search Semantics
 
-- `/api/v1/vectors/search` and `VectorSearchService` query **cold collections only**.
+- `/api/web/vector/search` and `VectorSearchService` query **cold collections only**.
 - Responses represent the state **as of the last promote & rebuild**. Newly
   ingested vectors will show up after the next maintenance cycle.
 - Hot collections are never searched; this guarantees predictable ANN latency
@@ -99,7 +99,7 @@ backbones.
 | Components / Persistence | Low-level ArangoDB operations for hot/cold collections |
 | Workflows | `promote_and_rebuild_workflow` orchestrates drain, rebuild, and convergence checks |
 | Services | `VectorSearchService` (cold-only search + fallback reads), `VectorMaintenanceService` (promote + stats) |
-| Interfaces | `/api/v1/vectors/search`, `/api/v1/admin/vectors/*` expose search + maintenance endpoints |
+| Interfaces | `/api/web/vector/*` exposes search and maintenance endpoints |
 
 Subsequent sections describe operational guidance, search semantics, and upgrade
 paths for existing deployments.

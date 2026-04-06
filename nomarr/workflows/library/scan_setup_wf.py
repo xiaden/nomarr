@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 from nomarr.components.library.scan_lifecycle_comp import (
     check_interrupted_scan,
     resolve_library_for_scan,
+    transition_to_scanning,
     update_scan_progress,
 )
 from nomarr.helpers.exceptions import LibraryAlreadyScanningError
@@ -70,5 +71,6 @@ def scan_setup_workflow(
     )
 
     update_scan_progress(db, library_id, status="scanning", progress=0, total=0)
+    transition_to_scanning(db, library_id)
 
     return library

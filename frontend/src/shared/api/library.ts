@@ -17,7 +17,7 @@ export interface LibraryStats {
  * Get library statistics.
  */
 export async function getStats(): Promise<LibraryStats> {
-  return get("/api/web/libraries/stats");
+  return get("/api/web/library/stats");
 }
 
 interface LibraryResponse {
@@ -27,6 +27,7 @@ interface LibraryResponse {
   is_enabled: boolean;
   watch_mode: string;
   file_write_mode: "none" | "minimal" | "full";
+  library_auto_write?: boolean;
   created_at?: string | number;
   updated_at?: string | number;
   scanned_at?: string | null;
@@ -46,6 +47,7 @@ function mapLibraryResponse(lib: LibraryResponse): Library {
     isEnabled: lib.is_enabled,
     watchMode: lib.watch_mode,
     fileWriteMode: lib.file_write_mode,
+    libraryAutoWrite: lib.library_auto_write,
     createdAt: lib.created_at,
     updatedAt: lib.updated_at,
     scannedAt: lib.scanned_at,
@@ -64,7 +66,7 @@ function mapLibraryResponse(lib: LibraryResponse): Library {
 export async function list(enabledOnly = false): Promise<Library[]> {
   const query = enabledOnly ? "?enabled_only=true" : "";
   const response = await get<{ libraries: LibraryResponse[] }>(
-    `/api/web/libraries${query}`
+    `/api/web/library${query}`
   );
   return response.libraries.map(mapLibraryResponse);
 }
@@ -81,7 +83,7 @@ export async function getLibraries(enabledOnly = false): Promise<Library[]> {
  */
 export async function getLibrary(id: string): Promise<Library> {
   // ID is already HTTP-encoded (e.g., "libraries:3970")
-  const response = await get<LibraryResponse>(`/api/web/libraries/${id}`);
+  const response = await get<LibraryResponse>(`/api/web/library/${id}`);
   return mapLibraryResponse(response);
 }
 
@@ -91,18 +93,20 @@ export interface CreateLibraryPayload {
   isEnabled?: boolean;
   watchMode?: string;  // 'off', 'event', or 'poll'
   fileWriteMode?: "none" | "minimal" | "full";  // Tag writing mode
+  libraryAutoWrite?: boolean;
 }
 
 /**
  * Create a new library.
  */
 export async function create(payload: CreateLibraryPayload): Promise<Library> {
-  const response = await post<LibraryResponse>("/api/web/libraries", {
+  const response = await post<LibraryResponse>("/api/web/library", {
     name: payload.name,
     root_path: payload.rootPath,
     is_enabled: payload.isEnabled ?? true,
     watch_mode: payload.watchMode ?? "off",
     file_write_mode: payload.fileWriteMode ?? "full",
+    library_auto_write: payload.libraryAutoWrite,
   });
   return mapLibraryResponse(response);
 }
@@ -113,6 +117,7 @@ export interface UpdateLibraryPayload {
   isEnabled?: boolean;
   watchMode?: string;  // 'off', 'event', or 'poll'
   fileWriteMode?: "none" | "minimal" | "full";  // Tag writing mode
+  libraryAutoWrite?: boolean;
 }
 
 /**
@@ -128,10 +133,11 @@ export async function update(
   if (payload.isEnabled !== undefined) body.is_enabled = payload.isEnabled;
   if (payload.watchMode !== undefined) body.watch_mode = payload.watchMode;
   if (payload.fileWriteMode !== undefined) body.file_write_mode = payload.fileWriteMode;
+  if (payload.libraryAutoWrite !== undefined) body.library_auto_write = payload.libraryAutoWrite;
 
   // ID is already HTTP-encoded (e.g., "libraries:3970")
   const response = await patch<LibraryResponse>(
-    `/api/web/libraries/${id}`,
+    `/api/web/library/${id}`,
     body
   );
   return mapLibraryResponse(response);
@@ -142,7 +148,7 @@ export async function update(
  */
 export async function deleteLibrary(id: string): Promise<void> {
   // ID is already HTTP-encoded (e.g., "libraries:3970")
-  await del(`/api/web/libraries/${id}`);
+  await del(`/api/web/library/${id}`);
 }
 
 /**
@@ -151,7 +157,7 @@ export async function deleteLibrary(id: string): Promise<void> {
  */
 export async function scanQuick(id: string): Promise<ScanResult> {
   // ID is already HTTP-encoded (e.g., "libraries:3970")
-  return post<ScanResult>(`/api/web/libraries/${id}/scan/quick`, {});
+  return post<ScanResult>(`/api/web/library/${id}/scan/quick`, {});
 }
 
 /**
@@ -160,7 +166,7 @@ export async function scanQuick(id: string): Promise<ScanResult> {
  */
 export async function scanFull(id: string): Promise<ScanResult> {
   // ID is already HTTP-encoded (e.g., "libraries:3970")
-  return post<ScanResult>(`/api/web/libraries/${id}/scan/full`, {});
+  return post<ScanResult>(`/api/web/library/${id}/scan/full`, {});
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -170,7 +176,6 @@ export async function scanFull(id: string): Promise<ScanResult> {
 /**
  * Immediate response returned after starting a background tag-write job.
  * `status` is the job acceptance status (for example, `"started"`).
- * `task_id` is the BTS task identifier used to poll progress via `getReconcileStatus()`.
  */
 export interface StartTagWriteResult {
   status: string;
@@ -182,25 +187,35 @@ export interface StartTagWriteResult {
  * Writes tags from the database to audio files based on the library's `file_write_mode`.
  *
  * @param libraryId - Library ID
- * @returns Immediate job start result. Poll `getReconcileStatus()` with the returned
- *   `task_id` to track background progress.
+ * @returns Immediate job start result.
  */
-export async function reconcileTags(
+export async function writeTags(
   libraryId: string
 ): Promise<StartTagWriteResult> {
-  return post(`/api/web/libraries/${libraryId}/reconcile-tags`);
+  return post(`/api/web/library/${libraryId}/write-tag`);
 }
 
-export interface ReconcileStatusResult {
-  pending_count: number;
-  in_progress: boolean;
+export interface LibraryPipelineStatus {
+  library_id: string;
+  state: string;
+  untagged_count: number | null;
+  uncalibrated_count: number | null;
+  pending_write_count: number | null;
+  library_auto_write: boolean;
+  file_write_mode: "none" | "minimal" | "full";
 }
 
 /**
- * Get tag reconciliation status for a library.
+ * Fetch the current pipeline processing state for a library.
+ * Returns pipeline status details including pending counts and auto-write configuration.
+ *
+ * @param libraryId - Library ID
+ * @returns Current pipeline status including counts and auto-write config.
  */
-export async function getReconcileStatus(libraryId: string): Promise<ReconcileStatusResult> {
-  return get(`/api/web/libraries/${libraryId}/reconcile-status`);
+export async function getPipelineStatus(
+  libraryId: string
+): Promise<LibraryPipelineStatus> {
+  return get(`/api/web/library/${libraryId}/pipeline`);
 }
 
 export interface UpdateWriteModeResult {
@@ -216,7 +231,7 @@ export async function updateWriteMode(
   libraryId: string,
   mode: "none" | "minimal" | "full"
 ): Promise<UpdateWriteModeResult> {
-  return patch(`/api/web/libraries/${libraryId}/write-mode?file_write_mode=${mode}`);
+  return patch(`/api/web/library/${libraryId}/write-mode?file_write_mode=${mode}`);
 }
 
 // ────────────────────────────────────────────────────────────────────────────────
@@ -246,7 +261,7 @@ export async function getRecentActivity(
   const params = new URLSearchParams();
   params.append("limit", limit.toString());
   if (libraryId) params.append("library_id", libraryId);
-  return get(`/api/web/libraries/recent-activity?${params.toString()}`);
+  return get(`/api/web/machine-learning/recent-activity?${params.toString()}`);
 }
 
 // ────────────────────────────────────────────────────────────────────────────────
@@ -281,7 +296,7 @@ export interface LibraryVectorStatsResponse {
  * Get the effective vector search config for a library.
  */
 export async function getLibraryVectorConfig(libraryId: string): Promise<VectorConfigResponse> {
-  return get(`/api/web/libraries/${libraryId}/vector-config`);
+  return get(`/api/web/library/${libraryId}/vector-config`);
 }
 
 /**
@@ -292,14 +307,14 @@ export async function updateLibraryVectorConfig(
   libraryId: string,
   config: VectorConfigUpdate
 ): Promise<VectorConfigResponse> {
-  return put(`/api/web/libraries/${libraryId}/vector-config`, config);
+  return put(`/api/web/library/${libraryId}/vector-config`, config);
 }
 
 /**
  * Get per-library vector statistics (hot/cold counts per backbone, index status).
  */
 export async function getLibraryVectorStats(libraryId: string): Promise<LibraryVectorStatsResponse> {
-  return get(`/api/web/libraries/${libraryId}/vector-stats`);
+  return get(`/api/web/library/${libraryId}/vector-stats`);
 }
 
 // ────────────────────────────────────────────────────────────────────────────────
@@ -323,7 +338,7 @@ export interface ErroredFilesResult {
  * Get errored files for a library.
  */
 export async function getErroredFiles(libraryId: string): Promise<ErroredFilesResult> {
-  return get(`/api/web/libraries/${libraryId}/errored-files`);
+  return get(`/api/web/library/${libraryId}/errored-file`);
 }
 
 export interface RetryErroredResult {
@@ -339,5 +354,5 @@ export async function retryErroredFiles(
   fileIds?: string[]
 ): Promise<RetryErroredResult> {
   const body = fileIds ? { file_ids: fileIds } : {};
-  return post(`/api/web/libraries/${libraryId}/retry-errored`, body);
+  return post(`/api/web/library/${libraryId}/retry-errored`, body);
 }

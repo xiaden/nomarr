@@ -143,8 +143,9 @@ class LibraryQueryMixin:
 
         """
         files = self.db.library_files.search_files_by_tag(tag_key, target_value, limit, offset)
+        total = self.db.library_files.count_files_by_tag(tag_key, target_value)
         files_with_tags = [map_file_with_tags_to_dto(f) for f in files]
-        return SearchFilesResult(files=files_with_tags, total=len(files), limit=limit, offset=offset)
+        return SearchFilesResult(files=files_with_tags, total=total, limit=limit, offset=offset)
 
     def get_unique_tag_keys(self, nomarr_only: bool = False) -> UniqueTagKeysResult:
         """Get all unique tag keys across the library."""

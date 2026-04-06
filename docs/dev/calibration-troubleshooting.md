@@ -190,14 +190,14 @@ FOR doc IN calibration_state
 2. **Trigger regeneration via API:**
    ```powershell
    # Login
-   $login = Invoke-RestMethod -Uri "http://127.0.0.1:8356/api/web/auth/login" `
+   $login = Invoke-RestMethod -Uri "http://127.0.0.1:8356/api/web/authentication/login" `
      -Method Post -ContentType "application/json" `
      -Body '{"password":"<admin_password>"}'
    $token = $login.session_token
    
    # Generate calibration
    $headers = @{Authorization="Bearer $token"}
-   Invoke-RestMethod -Uri "http://127.0.0.1:8356/api/web/calibration/generate-histogram" `
+   Invoke-RestMethod -Uri "http://127.0.0.1:8356/api/web/calibration/histogram/start" `
      -Method Post -Headers $headers -TimeoutSec 120
    ```
 

@@ -9,21 +9,6 @@
 
 import { get } from "./client";
 
-export interface ProcessingStatus {
-  pending: number;
-  processed: number;
-  total: number;
-}
-
-/**
- * Get current processing status.
- *
- * Returns counts of pending, processed, and total files.
- */
-export async function getProcessingStatus(): Promise<ProcessingStatus> {
-  return get<ProcessingStatus>("/api/web/processing/status");
-}
-
 /**
  * Scanning library info.
  */
@@ -63,5 +48,5 @@ export interface WorkStatus {
  * Use this for polling - poll at 1s when busy, 30s when idle.
  */
 export async function getWorkStatus(): Promise<WorkStatus> {
-  return get<WorkStatus>("/api/web/work-status");
+  return get<WorkStatus>("/api/web/machine-learning/work-status");
 }

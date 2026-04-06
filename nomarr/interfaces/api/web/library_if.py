@@ -21,8 +21,8 @@ from nomarr.interfaces.api.types.library_types import (
     LibraryResponse,
     LibraryStatsResponse,
     ListLibrariesResponse,
+    PipelineStatusResponse,
     ReconcilePathsResponse,
-    ReconcileStatusResponse,
     RetryErroredRequest,
     RetryErroredResponse,
     SearchFilesResponse,
@@ -36,25 +36,22 @@ from nomarr.interfaces.api.types.library_types import (
 )
 from nomarr.interfaces.api.web.dependencies import (
     get_config_service,
-    get_file_watcher_service,
     get_library_service,
-    get_metadata_service,
-    get_ml_service,
     get_navidrome_service,
+    get_pipeline_service,
     get_tagging_service,
     get_vector_maintenance_service,
 )
+from nomarr.services.infrastructure.pipeline_svc import LibraryPipelineService
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from nomarr.services.domain.library_svc import LibraryService
-    from nomarr.services.domain.metadata_svc import MetadataService
     from nomarr.services.domain.navidrome_svc import NavidromeService
     from nomarr.services.domain.tagging_svc import TaggingService
     from nomarr.services.domain.vector_maintenance_svc import VectorMaintenanceService
     from nomarr.services.infrastructure.config_svc import ConfigService
-    from nomarr.services.infrastructure.ml_svc import MLService
-router = APIRouter(prefix="/libraries", tags=["Library"])
+router = APIRouter(prefix="/library", tags=["Library"])
 
 
 class VectorConfigResponse(BaseModel):
@@ -116,45 +113,6 @@ async def list_libraries(
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to list libraries")) from e
 
 
-class RecentFileItem(BaseModel):
-    """A recently processed file."""
-
-    file_id: str
-    path: str
-    title: str | None
-    artist: str | None
-    album: str | None
-    last_tagged_at: int
-
-
-class RecentFilesResponse(BaseModel):
-    """Response for recently processed files."""
-
-    files: list[RecentFileItem]
-
-
-@router.get("/recent-activity", dependencies=[Depends(verify_session)])
-async def web_library_recent_activity(
-    library_service: Annotated["LibraryService", Depends(get_library_service)],
-    limit: int = Query(default=20, ge=1, le=100, description="Number of recent files to return"),
-    library_id: str | None = Query(default=None, description="Optional library ID to filter by"),
-) -> RecentFilesResponse:
-    """Get recently processed files.
-
-    Returns files sorted by last_tagged_at descending.
-    """
-    try:
-        decoded_library_id = decode_path_id(library_id) if library_id else None
-        files = library_service.get_recently_processed(limit=limit, library_id=decoded_library_id)
-        return RecentFilesResponse(files=[RecentFileItem(**f) for f in files])
-    except Exception as e:
-        logger.exception("[Web API] Error getting recent activity")
-        raise HTTPException(
-            status_code=500,
-            detail=sanitize_exception_message(e, "Failed to get recent activity"),
-        ) from e
-
-
 @router.get("/{library_id}", dependencies=[Depends(verify_session)])
 async def get_library(
     library_id: str,
@@ -185,6 +143,7 @@ async def create_library(
             is_enabled=request.is_enabled,
             watch_mode=request.watch_mode,
             file_write_mode=request.file_write_mode,
+            library_auto_write=request.library_auto_write,
         )
         return LibraryResponse.from_dto(library)
     except ValueError:
@@ -199,10 +158,24 @@ async def update_library(
     library_id: str,
     request: UpdateLibraryRequest,
     library_service: Annotated["LibraryService", Depends(get_library_service)],
+    pipeline_service: Annotated[LibraryPipelineService, Depends(get_pipeline_service)],
 ) -> LibraryResponse:
-    """Update a library's properties."""
+    """Update a library's properties.
+
+    Reactive pipeline side-effect: if ``library_auto_write`` changes, this
+    endpoint inspects the current pipeline state and either starts or cancels
+    the write stage automatically:
+    - Enabling auto-write while the pipeline is in ``write_ready`` → dispatches
+      write immediately.
+    - Disabling auto-write while the pipeline is ``writing`` → requests
+      graceful write cancellation.
+    """
     library_id = decode_path_id(library_id)
     try:
+        current_library = None
+        if request.library_auto_write is not None:
+            current_library = library_service.get_library(library_id)
+
         library = library_service.update_library(
             library_id,
             name=request.name,
@@ -210,7 +183,25 @@ async def update_library(
             is_enabled=request.is_enabled,
             watch_mode=request.watch_mode,
             file_write_mode=request.file_write_mode,
+            library_auto_write=request.library_auto_write,
         )
+
+        if current_library is not None and current_library.library_auto_write != library.library_auto_write:
+            pipeline_status = pipeline_service.get_pipeline_status(library_id)
+            if pipeline_status is not None:
+                if (
+                    not current_library.library_auto_write
+                    and library.library_auto_write
+                    and pipeline_status.state == "write_ready"
+                ):
+                    pipeline_service.handle_auto_write_enabled(library_id)
+                elif (
+                    current_library.library_auto_write
+                    and not library.library_auto_write
+                    and pipeline_status.state == "writing"
+                ):
+                    pipeline_service.handle_auto_write_disabled(library_id)
+
         return LibraryResponse.from_dto(library)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid library update") from None
@@ -232,10 +223,6 @@ async def delete_library(
     """
     library_id = decode_path_id(library_id)
     try:
-        file_watcher = get_file_watcher_service()
-        if file_watcher and library_id in file_watcher.observers:
-            file_watcher.stop_watching_library(library_id)
-            logger.info(f"[Web API] Stopped file watcher for library {library_id}")
         deleted = library_service.delete_library(library_id)
         if not deleted:
             raise HTTPException(status_code=404, detail="Library not found")
@@ -247,7 +234,7 @@ async def delete_library(
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to delete library")) from e
 
 
-@router.get("/files/search", dependencies=[Depends(verify_session)])
+@router.get("/file/search", dependencies=[Depends(verify_session)])
 async def search_library_files(
     q: Annotated[str, Query(description="Search query for artist/album/title")] = "",
     artist: Annotated[str | None, Query(description="Filter by artist name")] = None,
@@ -287,7 +274,7 @@ class FileIdsRequest(BaseModel):
     file_ids: list[str] = Field(..., description="List of file _ids to fetch", max_length=500)
 
 
-@router.post("/files/by-ids", dependencies=[Depends(verify_session)])
+@router.post("/file/by-ids", dependencies=[Depends(verify_session)])
 async def get_files_by_ids(
     request: FileIdsRequest,
     library_service: Annotated["LibraryService", Depends(get_library_service)],
@@ -318,7 +305,7 @@ class TagSearchRequest(BaseModel):
     offset: int = Field(0, ge=0, description="Pagination offset")
 
 
-@router.post("/files/by-tag", dependencies=[Depends(verify_session)])
+@router.post("/file/by-tag", dependencies=[Depends(verify_session)])
 async def search_files_by_tag(
     request: TagSearchRequest,
     tagging_service: Annotated["TaggingService", Depends(get_tagging_service)],
@@ -341,7 +328,7 @@ async def search_files_by_tag(
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to search files")) from e
 
 
-@router.get("/files/tags/unique-keys", dependencies=[Depends(verify_session)])
+@router.get("/file/tag/unique-keys", dependencies=[Depends(verify_session)])
 async def get_unique_tag_keys(
     nomarr_only: Annotated[bool, Query(description="Only show Nomarr tags")] = False,
     tagging_service: "TaggingService" = Depends(get_tagging_service),
@@ -358,7 +345,7 @@ async def get_unique_tag_keys(
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get tag keys")) from e
 
 
-@router.get("/files/tags/values", dependencies=[Depends(verify_session)])
+@router.get("/file/tag/values", dependencies=[Depends(verify_session)])
 async def get_unique_tag_values(
     tag_key: Annotated[str, Query(description="Tag key to get values for")],
     nomarr_only: Annotated[bool, Query(description="Only show Nomarr tag values")] = True,
@@ -376,7 +363,7 @@ async def get_unique_tag_values(
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get tag values")) from e
 
 
-@router.get("/files/tags/mood-values", dependencies=[Depends(verify_session)])
+@router.get("/file/tag/mood-values", dependencies=[Depends(verify_session)])
 async def get_unique_mood_values(
     mood_tier: Annotated[str, Query(description="Mood tier (mood-strict, mood-regular, mood-loose)")] = "mood-strict",
     limit: Annotated[int, Query(description="Maximum values to return")] = 100,
@@ -398,7 +385,7 @@ async def get_unique_mood_values(
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get mood values")) from e
 
 
-@router.post("/cleanup-tags", dependencies=[Depends(verify_session)])
+@router.post("/cleanup-tag", dependencies=[Depends(verify_session)])
 async def cleanup_orphaned_tags(
     dry_run: Annotated[bool, Query(description="Preview orphaned tags without deleting")] = False,
     tagging_service: "TaggingService" = Depends(get_tagging_service),
@@ -425,36 +412,7 @@ async def cleanup_orphaned_tags(
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to clean up tags")) from e
 
 
-@router.post("/cleanup-entities", dependencies=[Depends(verify_session)])
-async def cleanup_orphaned_entities(
-    dry_run: Annotated[bool, Query(description="Preview orphaned entities without deleting")] = False,
-    metadata_service: "MetadataService" = Depends(get_metadata_service),
-) -> dict[str, int | dict[str, int]]:
-    """Clean up orphaned entities (artists, albums, genres, labels, years).
-
-    Entities become orphaned when:
-    - Songs are deleted from the library
-    - Song metadata is updated to reference different entities
-
-    This endpoint identifies and removes entity vertices that have no incoming
-    edges from songs. Useful for database maintenance after library changes.
-
-    Args:
-        dry_run: If True, only count orphaned entities without deleting them
-        metadata_service: MetadataService instance (injected)
-
-    Returns:
-        Dict with orphaned_counts, deleted_counts, total_orphaned, total_deleted
-
-    """
-    try:
-        return metadata_service.cleanup_orphaned_entities(dry_run=dry_run)
-    except Exception as e:
-        logger.exception("[Web API] Error cleaning up orphaned entities")
-        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to clean up entities")) from e
-
-
-@router.get("/files/{file_id}/tags", dependencies=[Depends(verify_session)])
+@router.get("/file/{file_id}/tag", dependencies=[Depends(verify_session)])
 async def get_file_tags(
     file_id: str,
     nomarr_only: Annotated[bool, Query(description="Only return Nomarr-generated tags")] = False,
@@ -596,7 +554,12 @@ async def reconcile_library_paths(
     """
     library_id = decode_path_id(library_id)
     try:
-        stats = await asyncio.to_thread(library_service.reconcile_library_paths, policy=policy, batch_size=batch_size)
+        stats = await asyncio.to_thread(
+            library_service.reconcile_library_paths,
+            library_id,
+            policy=policy,
+            batch_size=batch_size,
+        )
         return ReconcilePathsResponse.from_dict(stats)
     except ValueError as e:
         error_message = str(e).lower()
@@ -611,13 +574,13 @@ async def reconcile_library_paths(
         ) from e
 
 
-@router.post("/{library_id}/reconcile-tags", dependencies=[Depends(verify_session)], status_code=202)
-async def reconcile_library_tags(
+@router.post("/{library_id}/write-tag", dependencies=[Depends(verify_session)], status_code=202)
+async def write_library_tags(
     library_id: str,
     tagging_service: "TaggingService" = Depends(get_tagging_service),
     navidrome_service: "NavidromeService" = Depends(get_navidrome_service),
 ) -> StartTagWriteResponse:
-    """Reconcile file tags for a library.
+    """Write pending file tags for a library.
 
     Starts background tag writes from database to audio files based on the
     library's file_write_mode.
@@ -628,7 +591,7 @@ async def reconcile_library_tags(
     - New ML results (files analyzed but never written)
 
     Args:
-        library_id: Library ID to reconcile
+        library_id: Library ID to write
         tagging_service: TaggingService instance (injected)
         navidrome_service: NavidromeService instance (injected)
 
@@ -652,39 +615,29 @@ async def reconcile_library_tags(
     except ValueError:
         raise HTTPException(status_code=404, detail="Library not found") from None
     except Exception as e:
-        logger.exception(f"[Web API] Error reconciling tags for library {library_id}")
-        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to reconcile tags")) from e
+        logger.exception(f"[Web API] Error writing tags for library {library_id}")
+        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to write tags")) from e
 
 
-@router.get("/{library_id}/reconcile-status", dependencies=[Depends(verify_session)])
-async def get_reconcile_status(
+@router.get("/{library_id}/pipeline", dependencies=[Depends(verify_session)])
+async def get_library_pipeline_status(
     library_id: str,
-    tagging_service: Annotated["TaggingService", Depends(get_tagging_service)],
-) -> ReconcileStatusResponse:
-    """Get tag reconciliation status for a library.
-
-    Returns the count of files needing reconciliation and whether
-    a reconciliation operation is currently in progress.
-
-    Args:
-        library_id: Library ID to check
-        tagging_service: TaggingService instance (injected)
-
-    Returns:
-        ReconcileStatusResponse with pending_count and in_progress status
-
-    """
+    pipeline_service: Annotated[LibraryPipelineService, Depends(get_pipeline_service)],
+) -> PipelineStatusResponse:
+    """Get the current pipeline status for a single library."""
     library_id = decode_path_id(library_id)
     try:
-        status = tagging_service.get_reconcile_status(library_id=library_id)
-        return ReconcileStatusResponse(pending_count=status["pending_count"], in_progress=status["in_progress"])
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Library not found") from None
+        status = pipeline_service.get_pipeline_status(library_id)
+        if status is None:
+            raise HTTPException(status_code=404, detail="Library not found")
+        return PipelineStatusResponse.from_dto(status)
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.exception(f"[Web API] Error getting reconcile status for library {library_id}")
+        logger.exception(f"[Web API] Error getting pipeline status for library {library_id}")
         raise HTTPException(
             status_code=500,
-            detail=sanitize_exception_message(e, "Failed to get reconcile status"),
+            detail=sanitize_exception_message(e, "Failed to get pipeline status"),
         ) from e
 
 
@@ -733,7 +686,7 @@ async def update_write_mode(
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to update write mode")) from e
 
 
-@router.post("/{library_id}/validate-tags", dependencies=[Depends(verify_session)])
+@router.post("/{library_id}/validate-tag", dependencies=[Depends(verify_session)])
 async def validate_library_tags(
     library_id: str,
     auto_repair: Annotated[bool, Query(description="Auto-repair incomplete files by marking for re-tagging")] = True,
@@ -841,8 +794,6 @@ async def update_library_vector_config(
 @router.get("/{library_id}/vector-stats", dependencies=[Depends(verify_session)])
 async def get_library_vector_stats(
     library_id: str,
-    library_service: Annotated["LibraryService", Depends(get_library_service)],
-    ml_service: Annotated["MLService", Depends(get_ml_service)],
     vector_maintenance_service: Annotated["VectorMaintenanceService", Depends(get_vector_maintenance_service)],
 ) -> LibraryVectorStatsResponse:
     """Get per-library vector statistics across all backbones.
@@ -852,8 +803,6 @@ async def get_library_vector_stats(
 
     Args:
         library_id: Library ID to query
-        library_service: LibraryService instance (injected)
-        ml_service: MLService instance (injected)
         vector_maintenance_service: VectorMaintenanceService instance (injected)
 
     Returns:
@@ -862,31 +811,25 @@ async def get_library_vector_stats(
     """
     library_id = decode_path_id(library_id)
     try:
-        library = library_service.get_library(library_id)
+        stats = vector_maintenance_service.get_library_vector_stats(library_id)
     except ValueError:
         raise HTTPException(status_code=404, detail="Library not found") from None
 
-    library_key = library._key
-    stats: list[VectorStatsItem] = []
-    for backbone_id in ml_service.list_backbones():
-        try:
-            s = vector_maintenance_service.get_hot_cold_stats(backbone_id, library_key)
-            stats.append(
-                VectorStatsItem(
-                    backbone_id=backbone_id,
-                    hot_count=int(s["hot_count"]),
-                    cold_count=int(s["cold_count"]),
-                    index_exists=bool(s["index_exists"]),
-                )
+    return LibraryVectorStatsResponse(
+        library_key=library_id.rsplit("/", 1)[-1],
+        stats=[
+            VectorStatsItem(
+                backbone_id=str(stat["backbone_id"]),
+                hot_count=int(stat["hot_count"]),
+                cold_count=int(stat["cold_count"]),
+                index_exists=bool(stat["index_exists"]),
             )
-        except Exception:
-            logger.debug("Failed to get vector stats for backbone %s, library %s", backbone_id, library_key)
-            continue
-
-    return LibraryVectorStatsResponse(library_key=library_key, stats=stats)
+            for stat in stats
+        ],
+    )
 
 
-@router.get("/{library_id}/errored-files", dependencies=[Depends(verify_session)])
+@router.get("/{library_id}/errored-file", dependencies=[Depends(verify_session)])
 async def get_errored_files(
     library_id: str,
     library_service: "LibraryService" = Depends(get_library_service),

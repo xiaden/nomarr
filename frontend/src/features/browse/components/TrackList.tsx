@@ -23,6 +23,14 @@ interface TrackListProps {
   relationType: string;
 }
 
+const ENTITY_LABELS: Record<EntityCollection, string> = {
+  artist: "artist",
+  album: "album",
+  label: "label",
+  genre: "genre",
+  year: "year",
+};
+
 export function TrackList({
   entityId,
   entityName,
@@ -167,7 +175,7 @@ export function TrackList({
           <Typography color="text.secondary" textAlign="center">
             {filterQuery
               ? `No tracks matching "${filterQuery}".`
-              : `No tracks found for this ${collection.slice(0, -1)}.`}
+              : `No tracks found for this ${ENTITY_LABELS[collection]}.`}
           </Typography>
         </Panel>
       )}

@@ -124,63 +124,104 @@ class TestStartHistogramCalibrationBackground:
         assert service._generation_error is None
 
 
-class TestGetGenerationStatus:
-    """Tests for generation status snapshots."""
+class TestGetGenerationCombinedStatus:
+    """Tests for combined generation status snapshots."""
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_get_generation_status_idle(self) -> None:
-        """Fresh service should report idle status."""
+    def test_get_generation_combined_status_idle(self) -> None:
+        """Fresh service should report idle combined status."""
         mock_bts = MagicMock()
         mock_bts.get_task_status.return_value = None
         service = _make_service(bts=mock_bts)
 
-        status = service.get_generation_status()
+        with (
+            patch("nomarr.services.domain.calibration_svc.discover_heads_no_db", return_value=[]),
+            patch("nomarr.services.domain.calibration_svc.now_ms") as mock_now_ms,
+        ):
+            mock_now_ms.return_value.value = 2_000
+            service._db.db.aql.execute.side_effect = [iter([0]), iter([None])]
+
+            status = service.get_generation_combined_status()
 
         assert status == {
             "running": False,
             "completed": False,
             "error": None,
             "result": None,
+            "current_head": None,
+            "current_head_index": None,
+            "total_heads": 0,
+            "completed_heads": 0,
+            "remaining_heads": 0,
+            "last_updated": None,
+            "is_running": False,
         }
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_get_generation_status_running(self) -> None:
-        """Running BTS status should report running without completion."""
+    def test_get_generation_combined_status_running(self) -> None:
+        """Running BTS status should report combined live progress without completion."""
         mock_bts = MagicMock()
         mock_bts.get_task_status.return_value = {"status": "running"}
         service = _make_service(bts=mock_bts)
+        service._progress = {
+            "current_head": "mood_happy",
+            "current_head_index": 2,
+            "total_heads": 12,
+        }
 
-        status = service.get_generation_status()
+        status = service.get_generation_combined_status()
 
         assert status["running"] is True
         assert status["completed"] is False
+        assert status["current_head"] == "mood_happy"
+        assert status["current_head_index"] == 2
+        assert status["total_heads"] == 12
+        assert status["is_running"] is True
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_get_generation_status_completed(self) -> None:
-        """Stored generation result should surface as completed status."""
+    def test_get_generation_combined_status_completed(self) -> None:
+        """Stored generation result should surface in the combined status output."""
         mock_bts = MagicMock()
         mock_bts.get_task_status.return_value = None
         service = _make_service(bts=mock_bts)
         service._generation_result = {"heads_success": 3}
 
-        status = service.get_generation_status()
+        with (
+            patch("nomarr.services.domain.calibration_svc.discover_heads_no_db", return_value=["a", "b", "c"]),
+            patch("nomarr.services.domain.calibration_svc.now_ms") as mock_now_ms,
+        ):
+            mock_now_ms.return_value.value = 2_000
+            service._db.db.aql.execute.side_effect = [iter([2]), iter([1_500])]
+
+            status = service.get_generation_combined_status()
 
         assert status["completed"] is True
         assert status["result"] == {"heads_success": 3}
+        assert status["total_heads"] == 3
+        assert status["completed_heads"] == 2
+        assert status["remaining_heads"] == 1
+        assert status["last_updated"] == 1_500
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_get_generation_status_failed(self) -> None:
-        """Stored generation error should surface in status output."""
+    def test_get_generation_combined_status_failed(self) -> None:
+        """Stored generation error should surface in combined status output."""
         mock_bts = MagicMock()
         mock_bts.get_task_status.return_value = None
         service = _make_service(bts=mock_bts)
         service._generation_error = RuntimeError("boom")
 
-        status = service.get_generation_status()
+        with (
+            patch("nomarr.services.domain.calibration_svc.discover_heads_no_db", return_value=[]),
+            patch("nomarr.services.domain.calibration_svc.now_ms") as mock_now_ms,
+        ):
+            mock_now_ms.return_value.value = 2_000
+            service._db.db.aql.execute.side_effect = [iter([0]), iter([None])]
+
+            status = service.get_generation_combined_status()
 
         assert status["error"] == "boom"
         assert status["running"] is False

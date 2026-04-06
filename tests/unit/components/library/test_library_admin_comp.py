@@ -49,7 +49,9 @@ class TestCreateLibrary:
             is_enabled=True,
             watch_mode="off",
             file_write_mode="minimal",
+            library_auto_write=False,
         )
+        mock_db.library_pipeline_states.transition_state.assert_called_once()
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -87,4 +89,6 @@ class TestCreateLibrary:
             is_enabled=True,
             watch_mode="off",
             file_write_mode="full",
+            library_auto_write=False,
         )
+        mock_db.library_pipeline_states.transition_state.assert_called_once()

@@ -1,11 +1,11 @@
 """Vector search and maintenance API endpoints.
 
 Routes:
-- /vectors/search (POST) - Vector similarity search
-- /vectors/track (GET) - Get track vector
-- /vectors/stats (GET) - Get hot/cold stats
-- /vectors/promote (POST) - Promote hot→cold + rebuild index
-- /vectors/rebuild-index (POST) - Rebuild index only (no hot→cold drain)
+- /vector/search (POST) - Vector similarity search
+- /vector/track (GET) - Get track vector
+- /vector/stats (GET) - Get hot/cold stats
+- /vector/promote (POST) - Promote hot→cold + rebuild index
+- /vector/rebuild-index (POST) - Rebuild index only (no hot→cold drain)
 
 These routes will be mounted under /api/web via the web router.
 """
@@ -41,10 +41,10 @@ from nomarr.services.infrastructure.ml_svc import MLService
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["vectors"], prefix="/vectors")
+router = APIRouter(tags=["Vector"], prefix="/vector")
 
 
-@router.get("/backbones", dependencies=[Depends(verify_session)])
+@router.get("/backbone", dependencies=[Depends(verify_session)])
 async def list_backbones(
     ml_service: MLService = Depends(get_ml_service),
 ) -> dict[str, list[str]]:

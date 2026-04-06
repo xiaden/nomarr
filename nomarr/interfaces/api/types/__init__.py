@@ -68,19 +68,9 @@ from .navidrome_types import (
     TagConditionResponse,
     TemplateSummaryItemResponse,
 )
-from .processing_types import (
-    BatchPathResult,
-    BatchProcessRequest,
-    BatchProcessResponse,
-    ProcessFileRequest,
-    ProcessFileResponse,
-)
 
 __all__ = [
     "ApplyCalibrationResponse",
-    "BatchPathResult",
-    "BatchProcessRequest",
-    "BatchProcessResponse",
     "CalibrationHistoryResponse",
     "ConfigInfoResponse",
     "ConfigResponse",
@@ -113,8 +103,6 @@ __all__ = [
     "PlaylistPreviewRequest",
     "PlaylistPreviewResponse",
     "PreviewTagStatsResponse",
-    "ProcessFileRequest",
-    "ProcessFileResponse",
     "PublicInfoResponse",
     "QueueInfoResponse",
     "RecalibrationStatusResponse",

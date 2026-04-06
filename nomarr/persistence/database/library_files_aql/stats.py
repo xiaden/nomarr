@@ -321,3 +321,69 @@ class LibraryFilesStatsMixin:
                 ),
             )
         return list(cursor)
+
+    def count_files_by_tag(self, tag_key: str, target_value: float | str) -> int:
+        """Count files matching a tag value filter.
+
+        Uses the same float-distance vs string-exact filter branches as
+        ``search_files_by_tag`` but returns the total row count before pagination.
+
+        Args:
+            tag_key: Tag rel to search (e.g. "nom:bpm", "genre")
+            target_value: Target value (float for numeric-match branch, string for exact match)
+
+        Returns:
+            Total number of matching files
+
+        """
+        is_float = isinstance(target_value, float | int) and not isinstance(target_value, bool)
+
+        if is_float:
+            cursor = cast(
+                "Cursor",
+                self.db.aql.execute(
+                    """
+                FOR tag IN tags
+                    FILTER tag.rel == @tag_key
+                    FILTER IS_NUMBER(tag.value)
+                    LET distance = ABS(tag.value - @target_value)
+
+                    FOR edge IN song_has_tags
+                        FILTER edge._to == tag._id
+                        LET file = DOCUMENT(edge._from)
+                        FILTER file != null
+
+                        COLLECT WITH COUNT INTO total
+                        RETURN total
+                """,
+                    bind_vars=cast(
+                        "dict[str, Any]",
+                        {"tag_key": tag_key, "target_value": float(target_value)},
+                    ),
+                ),
+            )
+        else:
+            cursor = cast(
+                "Cursor",
+                self.db.aql.execute(
+                    """
+                FOR tag IN tags
+                    FILTER tag.rel == @tag_key AND tag.value == @target_value
+
+                    FOR edge IN song_has_tags
+                        FILTER edge._to == tag._id
+                        LET file = DOCUMENT(edge._from)
+                        FILTER file != null
+
+                        COLLECT WITH COUNT INTO total
+                        RETURN total
+                """,
+                    bind_vars=cast(
+                        "dict[str, Any]",
+                        {"tag_key": tag_key, "target_value": str(target_value)},
+                    ),
+                ),
+            )
+
+        result = next(cursor, 0)
+        return int(result)

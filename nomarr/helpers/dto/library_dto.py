@@ -63,6 +63,7 @@ class LibraryDict:
     updated_at: str | int  # Can be ISO string or Unix timestamp (ms)
     watch_mode: Literal["off", "event", "poll"] = "off"  # File watching mode (default: off)
     file_write_mode: Literal["none", "minimal", "full"] = "full"  # Tag write mode (default: full)
+    library_auto_write: bool = False
     scan_status: str | None = None
     scan_progress: int | None = None
     scan_total: int | None = None
@@ -87,7 +88,6 @@ class StartScanResult:
     job_ids: list[int] | list[str]  # Can be int (legacy queue IDs) or str (task IDs)
 
 
-@dataclass
 @dataclass
 class UpdateLibraryFromTagsParams:
     """Parameters for components/library/library_update_comp.py::update_library_from_tags."""
@@ -189,20 +189,25 @@ class FileTagsResult:
 
 
 @dataclass
-class ReconcileTagsResult:
-    """Result from tagging_svc.reconcile_library."""
+class WriteTagsResult:
+    """Result from tagging_svc.write_tags_to_files."""
 
-    processed: int  # Number of files successfully reconciled
-    remaining: int  # Files still needing reconciliation
+    processed: int  # Number of files successfully written
+    remaining: int  # Files still pending tag write
     failed: int  # Files that failed during this batch
 
 
 @dataclass
-class ReconcileStatusResult:
-    """Result from reconcile status check."""
+class LibraryPipelineStatusDTO:
+    """Pipeline status payload for a single library."""
 
-    pending_count: int  # Number of files needing reconciliation
-    in_progress: bool  # Whether reconciliation is currently running
+    library_id: str
+    state: str
+    untagged_count: int | None
+    uncalibrated_count: int | None
+    pending_write_count: int | None
+    library_auto_write: bool
+    file_write_mode: str
 
 
 class ErroredFileItem(TypedDict):
@@ -235,10 +240,9 @@ __all__ = [
     "FileTagsResult",
     "LibraryDict",
     "LibraryFileWithTags",
+    "LibraryPipelineStatusDTO",
     "LibraryScanStatusResult",
     "LibraryStatsResult",
-    "ReconcileStatusResult",
-    "ReconcileTagsResult",
     "RetryErroredResult",
     "SearchFilesQuery",
     "SearchFilesResult",
@@ -246,4 +250,5 @@ __all__ = [
     "TagCleanupResult",
     "UniqueTagKeysResult",
     "UpdateLibraryFromTagsParams",
+    "WriteTagsResult",
 ]

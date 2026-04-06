@@ -14,7 +14,11 @@ if TYPE_CHECKING:
 
 
 def reconcile_library_paths_workflow(
-    db: Database, library_root: str | None, policy: ReconcilePolicy = "mark_invalid", batch_size: int = 1000
+    db: Database,
+    library_id: str,
+    library_root: str | None,
+    policy: ReconcilePolicy = "mark_invalid",
+    batch_size: int = 1000,
 ) -> ReconcileResult:
     """Re-validate all library paths against current configuration.
 
@@ -24,6 +28,7 @@ def reconcile_library_paths_workflow(
 
     Args:
         db: Database instance
+        library_id: Library document _id to scope reconciliation to
         library_root: Library root configuration (must be set)
         policy: What to do with invalid paths:
             - "dry_run": Only report, don't modify database
@@ -53,7 +58,7 @@ def reconcile_library_paths_workflow(
         msg = f"Invalid policy '{policy}'. Must be one of: {valid_policies}"
         raise ValueError(msg)
     logger.info(f"[reconcile_paths] Starting reconciliation: policy={policy}, batch_size={batch_size}")
-    result = reconcile_library_paths(db=db, policy=policy, batch_size=batch_size)
+    result = reconcile_library_paths(db=db, library_id=library_id, policy=policy, batch_size=batch_size)
     logger.info(
         f"[reconcile_paths] Reconciliation complete: {result['total_files']} files checked, {result['valid_files']} valid, {result['deleted_files']} deleted"
     )

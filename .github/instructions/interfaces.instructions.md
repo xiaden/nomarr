@@ -98,7 +98,7 @@ Pydantic models live **only** in interfaces. Never let them leak into services.
 ### Web API (`/api/web/*`)
 - Uses `verify_session` for session token authentication
 - All routes MUST include `dependencies=[Depends(verify_session)]` or `_session: dict = Depends(verify_session)` as a parameter
-- **Exception:** `/api/web/auth/login` is the only unauthenticated endpoint
+- **Exception:** `/api/web/authentication/login` is the only unauthenticated endpoint
 
 ### v1 API (`/api/v1/*`)
 - Uses `verify_key` for API key authentication

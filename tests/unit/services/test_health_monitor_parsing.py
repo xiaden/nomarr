@@ -14,9 +14,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from nomarr.helpers.dto.health_dto import ComponentPolicy
-
-HEALTH_FRAME_PREFIX = "HEALTH|"
+from nomarr.helpers.dto.health_dto import HEALTH_FRAME_PREFIX, PIPELINE_FRAME_PREFIX, ComponentPolicy
 
 
 class TestHandleFrameParsing:
@@ -185,3 +183,68 @@ class TestHandleFrameParsing:
         monitor._handle_frame("gpu_monitor", frame)
 
         assert monitor.get_status("gpu_monitor") == "healthy"
+
+
+class TestPipelineFrameForwarding:
+    """Tests for PIPELINE| frame forwarding behavior."""
+
+    @pytest.fixture
+    def monitor_with_component(self) -> tuple:
+        """Create HealthMonitorService with one registered component."""
+        from nomarr.services.infrastructure.health_monitor_svc import (
+            HealthMonitorConfig,
+            HealthMonitorService,
+        )
+
+        monitor = HealthMonitorService(cfg=HealthMonitorConfig(), db=None)
+        mock_handler = MagicMock()
+        mock_pipe = MagicMock()
+
+        monitor.register_component(
+            component_id="test:component:0",
+            handler=mock_handler,
+            pipe_conn=mock_pipe,
+            policy=ComponentPolicy(),
+        )
+
+        return monitor, mock_handler
+
+    @pytest.mark.unit
+    def test_calls_registered_callback_for_pipeline_frame(self, monitor_with_component: tuple) -> None:
+        """PIPELINE frames should invoke the registered pipeline callback."""
+        monitor, _mock_handler = monitor_with_component
+        callback = MagicMock()
+        monitor.set_pipeline_callback(callback)
+
+        monitor._handle_frame("test:component:0", PIPELINE_FRAME_PREFIX + "calibration_trigger")
+
+        callback.assert_called_once_with()
+
+    @pytest.mark.unit
+    def test_pipeline_frame_without_registered_callback_is_no_op(self, monitor_with_component: tuple) -> None:
+        """PIPELINE frames should be safely ignored when no callback is registered."""
+        monitor, mock_handler = monitor_with_component
+
+        monitor._handle_frame("test:component:0", PIPELINE_FRAME_PREFIX + "calibration_trigger")
+
+        assert monitor.get_status("test:component:0") == "pending"
+        mock_handler.on_status_change.assert_not_called()
+
+    @pytest.mark.unit
+    def test_non_pipeline_frames_are_not_forwarded_to_pipeline_callback(self, monitor_with_component: tuple) -> None:
+        """Regular HEALTH frames should keep the pipeline callback untouched."""
+        monitor, mock_handler = monitor_with_component
+        callback = MagicMock()
+        monitor.set_pipeline_callback(callback)
+
+        frame = HEALTH_FRAME_PREFIX + json.dumps(
+            {
+                "component_id": "test:component:0",
+                "status": "healthy",
+            },
+        )
+
+        monitor._handle_frame("test:component:0", frame)
+
+        callback.assert_not_called()
+        mock_handler.on_status_change.assert_called_once()

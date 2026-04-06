@@ -44,14 +44,14 @@ export interface MarkConfiguredPayload {
  * Return all registered ML model vertices with their configuration status.
  */
 export async function listModels(): Promise<MlModel[]> {
-  return get("/api/web/ml/models");
+  return get("/api/web/machine-learning/model");
 }
 
 /**
  * Return all output activation vertices for a model.
  */
 export async function getModelOutputs(modelId: string): Promise<MlModelOutput[]> {
-  return get(`/api/web/ml/models/${modelId}/outputs`);
+  return get(`/api/web/machine-learning/model/${modelId}/output`);
 }
 
 /**
@@ -62,7 +62,7 @@ export async function updateOutputLabel(
   outputId: string,
   payload: UpdateLabelPayload
 ): Promise<{ status: string }> {
-  return patch(`/api/web/ml/models/${modelId}/outputs/${outputId}`, payload);
+  return patch(`/api/web/machine-learning/model/${modelId}/output/${outputId}`, payload);
 }
 
 /**
@@ -72,7 +72,7 @@ export async function markModelConfigured(
   modelId: string,
   payload: MarkConfiguredPayload
 ): Promise<{ status: string; fully_configured: string }> {
-  return post(`/api/web/ml/models/${modelId}/mark-configured`, payload);
+  return post(`/api/web/machine-learning/model/${modelId}/mark-configured`, payload);
 }
 
 /**
@@ -80,5 +80,5 @@ export async function markModelConfigured(
  * Clears existing measurements so the next worker startup re-probes.
  */
 export async function triggerVramProbe(): Promise<VramProbeResponse> {
-  return post("/api/web/ml/vram-probe");
+  return post("/api/web/machine-learning/vram-probe");
 }

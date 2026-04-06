@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from nomarr.services.infrastructure.config_svc import ConfigService
     from nomarr.services.infrastructure.file_watcher_svc import FileWatcherService
     from nomarr.services.infrastructure.info_svc import InfoService
+    from nomarr.services.infrastructure.pipeline_svc import LibraryPipelineService
     from nomarr.services.infrastructure.worker_system_svc import WorkerSystemService
 
 
@@ -55,6 +56,7 @@ def get_library_service() -> LibraryService:
     service = application.services.get("library")
     if not service:
         raise HTTPException(status_code=503, detail="Library service not available")
+    service.file_watcher_service = get_file_watcher_service()
     return service  # type: ignore[no-any-return]
 
 
@@ -115,6 +117,16 @@ def get_tagging_service() -> TaggingService:
     service = application.services.get("tagging")
     if not service:
         raise HTTPException(status_code=503, detail="Tagging service not available")
+    return service  # type: ignore[no-any-return]
+
+
+def get_pipeline_service() -> LibraryPipelineService:
+    """Get LibraryPipelineService instance."""
+    from nomarr.app import application
+
+    service = application.services.get("pipeline")
+    if not service:
+        raise HTTPException(status_code=503, detail="Pipeline service not available")
     return service  # type: ignore[no-any-return]
 
 

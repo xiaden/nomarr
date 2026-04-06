@@ -98,7 +98,7 @@ export interface VectorGetResponse {
  * @returns List of available backbone IDs (e.g., ["effnet", "musicnn"])
  */
 export async function listBackbones(): Promise<VectorBackbonesResponse> {
-  return get("/api/web/vectors/backbones");
+  return get("/api/web/vector/backbone");
 }
 // ============================================================================
 
@@ -131,7 +131,7 @@ export async function searchVectors(
     min_score,
     library_scope: library_scope ?? null,
   };
-  return post("/api/web/vectors/search", body);
+  return post("/api/web/vector/search", body);
 }
 
 /**
@@ -142,7 +142,7 @@ export async function searchVectors(
  * @returns Stats for all backbones (hot_count, cold_count, index_exists)
  */
 export async function getVectorStats(): Promise<VectorStatsResponse> {
-  return get("/api/web/vectors/stats");
+  return get("/api/web/vector/stats");
 }
 
 /**
@@ -165,7 +165,7 @@ export async function promoteVectors(
     library_key,
     nlists: nlists ?? null,
   };
-  return post("/api/web/vectors/promote", body);
+  return post("/api/web/vector/promote", body);
 }
 
 /**
@@ -184,7 +184,7 @@ export async function getTrackVector(
   file_id: string
 ): Promise<VectorGetResponse> {
   const params = new URLSearchParams({ backbone_id, file_id });
-  return get(`/api/web/vectors/track?${params.toString()}`);
+  return get(`/api/web/vector/track?${params.toString()}`);
 }
 
 
@@ -228,5 +228,5 @@ export async function rebuildVectorIndex(
     library_key,
     nlists: nlists ?? null,
   };
-  return post("/api/web/vectors/rebuild-index", body);
+  return post("/api/web/vector/rebuild-index", body);
 }

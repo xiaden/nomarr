@@ -8,6 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import get_calibration_service, get_tagging_service
+from nomarr.services.domain.calibration_svc import HistogramGenerationCombinedStatusDict
+from nomarr.services.domain.tagging_svc import ApplyCalibrationCombinedStatusDict
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
@@ -42,13 +44,13 @@ async def clear_calibration(
         ) from e
 
 
-@router.post("/start-apply", dependencies=[Depends(verify_session)])
+@router.post("/apply/start", dependencies=[Depends(verify_session)])
 async def start_apply_calibration(
     tagging_service: Annotated["TaggingService", Depends(get_tagging_service)],
 ) -> dict[str, Any]:
     """Start calibration apply in background thread.
 
-    Non-blocking: returns immediately. Use GET /apply-status to check progress.
+    Non-blocking: returns immediately. Use GET /apply/status to check progress.
 
     Returns:
         {"status": "started"} or {"status": "already_running"}
@@ -67,32 +69,17 @@ async def start_apply_calibration(
         ) from e
 
 
-@router.get("/apply-status", dependencies=[Depends(verify_session)])
+@router.get("/apply/status", dependencies=[Depends(verify_session)])
 async def get_apply_calibration_status(
     tagging_service: Annotated["TaggingService", Depends(get_tagging_service)],
-) -> dict[str, Any]:
-    """Get status of background calibration apply.
+) -> ApplyCalibrationCombinedStatusDict:
+    """Get combined status and progress of background calibration apply.
 
     Returns:
         {
-          "running": bool,
-          "completed": bool,
+          "status": "idle" | "running" | "completed" | "failed",
+          "result": {"processed": int, "failed": int, "total": int, "message": str} | None,
           "error": str | None,
-          "result": {"queued": int, "message": str} | None,
-        }
-
-    """
-    return tagging_service.get_apply_status()
-
-
-@router.get("/apply-progress", dependencies=[Depends(verify_session)])
-async def get_apply_calibration_progress(
-    tagging_service: Annotated["TaggingService", Depends(get_tagging_service)],
-) -> dict[str, Any]:
-    """Get per-file progress of calibration apply.
-
-    Returns:
-        {
           "total_files": int,
           "completed_files": int,
           "current_file": str | None,
@@ -100,7 +87,7 @@ async def get_apply_calibration_progress(
         }
 
     """
-    return tagging_service.get_apply_progress()
+    return tagging_service.get_apply_combined_status()
 
 
 @router.get("/status", dependencies=[Depends(verify_session)])
@@ -135,15 +122,15 @@ async def get_calibration_status(
         ) from e
 
 
-@router.post("/start-histogram", dependencies=[Depends(verify_session)])
+@router.post("/histogram/start", dependencies=[Depends(verify_session)])
 async def start_histogram_calibration_background(
     calibration_service: Annotated["CalibrationService", Depends(get_calibration_service)],
 ) -> dict[str, Any]:
     """Start histogram-based calibration generation in background thread.
 
-    Non-blocking: returns immediately. Use GET /calibration/histogram-status to check progress.
+    Non-blocking: returns immediately. Use GET /calibration/histogram/status to check progress.
 
-    On success, automatically triggers DB tag-writing (equivalent to POST /calibration/start-apply).
+    On success, automatically triggers DB tag-writing (equivalent to POST /calibration/apply/start).
     Writing tags to audio files on disk remains a separate manual step (reconcile endpoint).
 
     Returns:
@@ -160,182 +147,35 @@ async def start_histogram_calibration_background(
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to start calibration")) from e
 
 
-@router.get("/histogram-status", dependencies=[Depends(verify_session)])
+@router.get("/histogram/status", dependencies=[Depends(verify_session)])
 async def get_histogram_calibration_status(
     calibration_service: Annotated["CalibrationService", Depends(get_calibration_service)],
-) -> dict[str, Any]:
-    """Get status of histogram-based calibration generation.
+) -> HistogramGenerationCombinedStatusDict:
+    """Get combined status and progress of histogram-based calibration generation.
 
     Returns:
         {
           "running": bool,
           "completed": bool,
           "error": str | None,
-          "result": {heads_processed, heads_success, heads_failed, ...} | None
+          "result": {heads_processed, heads_success, heads_failed, ...} | None,
+          "current_head": str | None,
+          "current_head_index": int | None,
+          "total_heads": int,
+          "completed_heads": int,
+          "remaining_heads": int,
+          "last_updated": int | None,
+          "is_running": bool,
         }
 
     """
     try:
-        return calibration_service.get_generation_status()
+        return calibration_service.get_generation_combined_status()
     except Exception as e:
         logger.error(f"[Web] Failed to get histogram calibration status: {e}", exc_info=True)
         raise HTTPException(
             status_code=500, detail=sanitize_exception_message(e, "Failed to get calibration status")
         ) from e
-
-
-@router.get("/histogram-progress", dependencies=[Depends(verify_session)])
-async def get_histogram_calibration_progress(
-    calibration_service: Annotated["CalibrationService", Depends(get_calibration_service)],
-) -> dict[str, Any]:
-    """Get per-head progress of histogram calibration generation.
-
-    Returns:
-        {
-          "total_heads": int,
-          "completed_heads": int,
-          "remaining_heads": int,
-          "last_updated": int | None,
-          "is_running": bool
-        }
-
-    """
-    try:
-        return calibration_service.get_generation_progress()
-    except Exception as e:
-        logger.error(f"[Web] Failed to get histogram calibration progress: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail=sanitize_exception_message(e, "Failed to get calibration progress")
-        ) from e
-
-
-@router.get("/history", dependencies=[Depends(verify_session)])
-async def get_calibration_history_all(
-    limit: int = 100, calibration_service: "CalibrationService" = Depends(get_calibration_service)
-) -> dict[str, Any]:
-    """Get calibration convergence history for all heads.
-
-    Query params:
-        limit: Max snapshots per head (default 100)
-
-    Returns:
-        {
-          "all_heads": {
-            "calibration_key": [
-              {snapshot_at, p5, p95, n, p5_delta, p95_delta, n_delta},
-              ...
-            ],
-            ...
-          }
-        }
-
-    """
-    try:
-        return calibration_service.get_calibration_history(limit=limit)
-    except Exception as e:
-        logger.error(f"[Web] Failed to get calibration history: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail=sanitize_exception_message(e, "Failed to get calibration history")
-        ) from e
-
-
-@router.get("/history/{calibration_key:path}", dependencies=[Depends(verify_session)])
-async def get_calibration_history_single(
-    calibration_key: str, limit: int = 100, calibration_service: "CalibrationService" = Depends(get_calibration_service)
-) -> dict[str, Any]:
-    """Get calibration convergence history for a specific head.
-
-    Path params:
-        calibration_key: Head identifier (e.g., "effnet-20220825:mood_happy")
-
-    Query params:
-        limit: Max snapshots to return (default 100)
-
-    Returns:
-        {
-          "calibration_key": str,
-          "history": [
-            {snapshot_at, p5, p95, n, p5_delta, p95_delta, n_delta, underflow_count, overflow_count},
-            ...
-          ]
-        }
-
-    """
-    try:
-        return calibration_service.get_calibration_history(calibration_key=calibration_key, limit=limit)
-    except Exception as e:
-        logger.error(f"[Web] Failed to get calibration history for {calibration_key}: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail=sanitize_exception_message(e, "Failed to get calibration history")
-        ) from e
-
-
-@router.get("/convergence", dependencies=[Depends(verify_session)], deprecated=True)
-async def get_convergence_status(
-    calibration_service: Annotated["CalibrationService", Depends(get_calibration_service)],
-) -> dict[str, Any]:
-    """[DEPRECATED] Get latest convergence status for all heads.
-
-    Relies on calibration_history collection from progressive calibration.
-    Frontend now uses histogram visualization instead.
-    This endpoint may be removed in a future release.
-
-    Returns:
-        {
-          "head_key": {
-            "latest_snapshot": {...},
-            "p5_delta": float | None,
-            "p95_delta": float | None,
-            "n": int,
-            "converged": bool (deltas < 0.01)
-          },
-          ...
-        }
-
-    """
-    try:
-        return calibration_service.get_latest_convergence_status()
-    except Exception as e:
-        logger.error(f"[Web] Failed to get convergence status: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail=sanitize_exception_message(e, "Failed to get convergence status")
-        ) from e
-
-
-@router.get("/histogram/{model_key}/{head_name}/{label}", dependencies=[Depends(verify_session)])
-async def get_histogram_for_head(
-    model_key: str,
-    head_name: str,
-    label: str,
-    calibration_service: "CalibrationService" = Depends(get_calibration_service),
-) -> dict[str, Any]:
-    """Get histogram bins for a specific label.
-
-    Path params:
-        model_key: Model identifier (e.g., "effnet-20220825")
-        head_name: Head name (e.g., "mood_happy")
-        label: Label name (e.g., "happy", "male")
-
-    Returns:
-        {
-          "model_key": str,
-          "head_name": str,
-          "label": str,
-          "histogram_bins": [{val: float, count: int}, ...],
-          "p5": float,
-          "p95": float,
-          "n": int,
-          "histogram_spec": {lo, hi, bins, bin_width}
-        }
-
-    """
-    try:
-        return calibration_service.get_histogram_for_head(model_key, head_name, label)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-    except Exception as e:
-        logger.error(f"[Web] Failed to get histogram for {model_key}:{head_name}:{label}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get histogram")) from e
 
 
 @router.get("/histogram", dependencies=[Depends(verify_session)])

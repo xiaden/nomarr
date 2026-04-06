@@ -295,16 +295,17 @@ def test_includes_flac_files(): ...
 def test_handles_empty_directory(): ...
 
 # ❌ Mocking what you're testing
-@patch("nomarr.components.ml.calibration_state_comp.compute_convergence_status")
-def test_compute_convergence_status(mock_fn):
+@patch("nomarr.components.ml.calibration.ml_calibration_state_comp.compute_reconciliation_info")
+def test_compute_reconciliation_info(mock_fn):
     mock_fn.return_value = {...}  # You're testing the mock, not the function
 
 # ✅ Mock dependencies, not the subject
-def test_compute_convergence_status():
+def test_compute_reconciliation_info():
     mock_db = MagicMock()
-    mock_db.calibration_state.get_all_calibration_states.return_value = [...]
-    result = compute_convergence_status(mock_db)
-    assert result["head_key"]["converged"] is True
+    mock_db.libraries.list_libraries.return_value = [{"_id": "libraries/1", "name": "Main Library", "file_write_mode": "full"}]
+    mock_db.file_states.get_calibration_status_by_library.return_value = [{"library_id": "libraries/1", "not_calibrated_count": 3}]
+    result = compute_reconciliation_info(mock_db, "v1")
+    assert result["requires_reconciliation"] is True
 ```
 
 ---

@@ -15,7 +15,7 @@ export interface ShowTagsResponse {
  * Read tags from an audio file.
  */
 export async function showTags(path: string): Promise<ShowTagsResponse> {
-  return get(`/api/web/tags/show-tags?path=${encodeURIComponent(path)}`);
+  return get(`/api/web/tag/show?path=${encodeURIComponent(path)}`);
 }
 
 export interface RemoveTagsResponse {
@@ -28,5 +28,5 @@ export interface RemoveTagsResponse {
  * Remove all namespaced tags from an audio file.
  */
 export async function removeTags(path: string): Promise<RemoveTagsResponse> {
-  return del(`/api/web/tags/remove-tags?path=${encodeURIComponent(path)}`);
+  return del(`/api/web/tag/remove?path=${encodeURIComponent(path)}`);
 }

@@ -39,11 +39,14 @@ import json
 import logging
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from multiprocessing.connection import wait
 from typing import TYPE_CHECKING, Any
 
 from nomarr.helpers.dto.health_dto import (
+    HEALTH_FRAME_PREFIX,
+    PIPELINE_FRAME_PREFIX,
     ComponentLifecycleHandler,
     ComponentPolicy,
     ComponentStatus,
@@ -55,9 +58,6 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
-
-# Health frame prefix for parsing
-HEALTH_FRAME_PREFIX = "HEALTH|"
 
 
 @dataclass
@@ -119,6 +119,7 @@ class HealthMonitorService:
         self._stop_event = threading.Event()
         self._monitor_thread: threading.Thread | None = None
         self._history_thread: threading.Thread | None = None
+        self._pipeline_callback: Callable[[], None] | None = None
 
     # ----------------------------- Registration ------------------------------
 
@@ -240,6 +241,10 @@ class HealthMonitorService:
         with self._lock:
             return {cid: state.status for cid, state in self._components.items()}
 
+    def set_pipeline_callback(self, callback: Callable[[], None] | None) -> None:
+        """Register a callback for PIPELINE pipe frames."""
+        self._pipeline_callback = callback
+
     # ---------------------------- Lifecycle ----------------------------------
 
     def start(self) -> None:
@@ -346,7 +351,22 @@ class HealthMonitorService:
 
     def _handle_frame(self, component_id: str, data: Any) -> None:
         """Process a received health frame."""
-        if not isinstance(data, str) or not data.startswith(HEALTH_FRAME_PREFIX):
+        if not isinstance(data, str):
+            return
+
+        if data.startswith(PIPELINE_FRAME_PREFIX):
+            if self._pipeline_callback is not None:
+                try:
+                    self._pipeline_callback()
+                except Exception as exc:
+                    logger.exception(
+                        "[HealthMonitor] Pipeline callback error for %s: %s",
+                        component_id,
+                        exc,
+                    )
+            return
+
+        if not data.startswith(HEALTH_FRAME_PREFIX):
             return
 
         try:

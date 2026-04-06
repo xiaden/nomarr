@@ -33,7 +33,7 @@ Use `.docker/compose.yaml` to run the containerized test environment (app + Aran
 ## Nomarr API Auth
 
 ```powershell
-$login = Invoke-RestMethod -Uri "http://127.0.0.1:8356/api/web/auth/login" -Method Post `
+$login = Invoke-RestMethod -Uri "http://127.0.0.1:8356/api/web/authentication/login" -Method Post `
   -ContentType "application/json" -Body '{"password":"<admin_password>"}'
 $token = $login.session_token
 $headers = @{Authorization="Bearer $token"}

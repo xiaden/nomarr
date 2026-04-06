@@ -78,6 +78,9 @@ classification_results.json
 scripts/outputs/
 scripts/human-scripts/outputs/
 
+# ADR staging drafts (local only, not for review)
+artifacts/decisions/drafts/
+
 # Temp scripts & debugging
 scripts/temp/
 

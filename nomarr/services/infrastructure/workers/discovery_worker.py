@@ -41,6 +41,48 @@ IDLE_POLLS_BEFORE_PROMOTION: int = 3  # Trigger hot→cold promotion after this 
 HEALTH_FRAME_PREFIX = "HEALTH|"
 
 
+def _check_idle_pipeline_completion(db: Database, health_pipe: Any) -> int:
+    """Advance completed ML libraries and notify the main process.
+
+    Late imports keep subprocess startup free of avoidable circular-import risk.
+
+    Args:
+        db: Worker subprocess database handle.
+        health_pipe: Optional parent-process pipe used for trigger signaling.
+
+    Returns:
+        Number of completed-library rows processed.
+
+    """
+    from nomarr.helpers.dto.health_dto import PIPELINE_FRAME_PREFIX
+    from nomarr.persistence.database.library_pipeline_states_aql import (
+        PIPELINE_AWAITING_CALIBRATION,
+        PIPELINE_TOO_SMALL,
+    )
+    from nomarr.services.infrastructure.config_svc import INTERNAL_CALIBRATION_MIN_FILES
+
+    pipeline_states = db.library_pipeline_states
+    completed = pipeline_states.find_ml_complete_libraries(INTERNAL_CALIBRATION_MIN_FILES)
+
+    transitions_fired = 0
+    for result in completed:
+        library_id = result["library_id"]
+        tagged_count = result["tagged_count"]
+        target_state = (
+            PIPELINE_AWAITING_CALIBRATION if tagged_count >= INTERNAL_CALIBRATION_MIN_FILES else PIPELINE_TOO_SMALL
+        )
+        pipeline_states.transition_state(library_id, target_state)
+        transitions_fired += 1
+
+    if transitions_fired > 0 and health_pipe is not None:
+        try:
+            health_pipe.send(PIPELINE_FRAME_PREFIX + "calibration_trigger")
+        except (OSError, BrokenPipeError) as exc:
+            logger.debug("Idle pipeline trigger send failed: %s", exc)
+
+    return transitions_fired
+
+
 def _malloc_trim() -> None:
     """Advise glibc to release free heap pages back to the OS.
 
@@ -435,6 +477,8 @@ class DiscoveryWorker(multiprocessing.Process):
                         promotion_running.start()
                         idle_consecutive_polls = 0
                         logger.info("[%s] Spawning idle vector promotion thread", self.worker_id)
+
+                    _check_idle_pipeline_completion(db, self._health_pipe)
 
                     time.sleep(IDLE_SLEEP_S)
                     continue

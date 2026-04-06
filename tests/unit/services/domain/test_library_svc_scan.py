@@ -34,7 +34,12 @@ class TestScanDispatch:
         mock_bts = MagicMock()
         service = _make_service(background_tasks=mock_bts)
 
-        with patch("nomarr.services.domain.library_svc.scan.scan_setup_workflow") as mock_scan_setup:
+        with (
+            patch("nomarr.services.domain.library_svc.scan.scan_setup_workflow") as mock_scan_setup,
+            patch(
+                "nomarr.services.domain.library_svc.scan.on_scan_complete_pipeline_hook",
+            ) as mock_on_complete_hook,
+        ):
             result = service.start_quick_scan("lib1")
 
         mock_scan_setup.assert_called_once_with(service.db, "lib1", scan_type="quick")
@@ -42,6 +47,9 @@ class TestScanDispatch:
         managed_task = mock_bts.start_task.call_args.args[0]
         assert isinstance(managed_task, ManagedTask)
         assert managed_task.task_id == "scan_library_lib1"
+        assert managed_task.on_complete is not None
+        managed_task.on_complete()
+        mock_on_complete_hook.assert_called_once_with(service.db, "lib1")
         assert result.job_ids == ["scan_library_lib1"]
 
     @pytest.mark.unit
@@ -51,7 +59,12 @@ class TestScanDispatch:
         mock_bts = MagicMock()
         service = _make_service(background_tasks=mock_bts)
 
-        with patch("nomarr.services.domain.library_svc.scan.scan_setup_workflow") as mock_scan_setup:
+        with (
+            patch("nomarr.services.domain.library_svc.scan.scan_setup_workflow") as mock_scan_setup,
+            patch(
+                "nomarr.services.domain.library_svc.scan.on_scan_complete_pipeline_hook",
+            ) as mock_on_complete_hook,
+        ):
             result = service.start_full_scan("lib1")
 
         mock_scan_setup.assert_called_once_with(service.db, "lib1", scan_type="full")
@@ -59,4 +72,7 @@ class TestScanDispatch:
         managed_task = mock_bts.start_task.call_args.args[0]
         assert isinstance(managed_task, ManagedTask)
         assert managed_task.task_id == "scan_library_lib1"
+        assert managed_task.on_complete is not None
+        managed_task.on_complete()
+        mock_on_complete_hook.assert_called_once_with(service.db, "lib1")
         assert result.job_ids == ["scan_library_lib1"]

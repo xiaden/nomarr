@@ -6,7 +6,7 @@ import logging
 import threading
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, TypedDict
 
 from nomarr.components.library.file_tags_comp import get_file_tags_with_path
 from nomarr.components.library.search_files_comp import get_unique_tag_keys, get_unique_tag_values
@@ -19,10 +19,10 @@ from nomarr.helpers.dto.calibration_dto import (
 from nomarr.helpers.dto.library_dto import (
     FileTag,
     FileTagsResult,
-    ReconcileTagsResult,
     SearchFilesResult,
     TagCleanupResult,
     UniqueTagKeysResult,
+    WriteTagsResult,
 )
 from nomarr.helpers.dto.recalibration_dto import ApplyCalibrationResult
 from nomarr.helpers.dto.tag_curation_dto import (
@@ -51,6 +51,44 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 CALIBRATION_APPLY_TASK_ID = "calibration_apply"
+
+
+class ApplyCalibrationResultDict(TypedDict):
+    """Structured apply-calibration result payload."""
+
+    processed: int
+    failed: int
+    total: int
+    message: str
+
+
+class ApplyCalibrationStatusDict(TypedDict):
+    """Background apply lifecycle snapshot."""
+
+    status: Literal["idle", "running", "completed", "failed"]
+    result: ApplyCalibrationResultDict | None
+    error: str | None
+
+
+class ApplyCalibrationProgressDict(TypedDict):
+    """Background apply per-file progress snapshot."""
+
+    total_files: int
+    completed_files: int
+    current_file: str | None
+    is_running: bool
+
+
+class ApplyCalibrationCombinedStatusDict(TypedDict):
+    """Combined background apply lifecycle and progress snapshot."""
+
+    status: Literal["idle", "running", "completed", "failed"]
+    result: ApplyCalibrationResultDict | None
+    error: str | None
+    total_files: int
+    completed_files: int
+    current_file: str | None
+    is_running: bool
 
 
 @dataclass
@@ -187,7 +225,7 @@ class TaggingService:
         """Start calibration apply in a managed background task.
 
         Non-blocking: returns immediately. Poll with is_apply_running() and
-        get_apply_status() / get_apply_progress().
+        get_apply_combined_status().
 
         Uses configuration from TaggingServiceConfig for models_dir, namespace, etc.
 
@@ -258,8 +296,8 @@ class TaggingService:
         status = self._bts.get_task_status(CALIBRATION_APPLY_TASK_ID)
         return status is not None and status.get("status") == "running"
 
-    def get_apply_status(self) -> dict[str, Any]:
-        """Get current status of background calibration apply.
+    def _get_apply_status(self) -> ApplyCalibrationStatusDict:
+        """Get current lifecycle status of background calibration apply.
 
         Lifecycle: idle → running → completed | failed.
         Status remains queryable after completion until next start clears it.
@@ -274,6 +312,7 @@ class TaggingService:
         """
         running = self.is_apply_running()
 
+        status: Literal["idle", "running", "completed", "failed"]
         if running:
             status = "running"
         elif self._apply_error:
@@ -284,7 +323,7 @@ class TaggingService:
             status = "idle"
 
         error = str(self._apply_error) if self._apply_error else None
-        result_dict = None
+        result_dict: ApplyCalibrationResultDict | None = None
         if self._apply_result:
             result_dict = {
                 "processed": self._apply_result.processed,
@@ -299,7 +338,7 @@ class TaggingService:
             "error": error,
         }
 
-    def get_apply_progress(self) -> dict[str, Any]:
+    def _get_apply_progress(self) -> ApplyCalibrationProgressDict:
         """Get calibration apply progress.
 
         Progress snapshot persists after completion until next run.
@@ -322,6 +361,34 @@ class TaggingService:
             "completed_files": progress.get("completed_files", 0),
             "current_file": progress.get("current_file"),
             "is_running": running,
+        }
+
+    def get_apply_combined_status(self) -> ApplyCalibrationCombinedStatusDict:
+        """Get combined lifecycle status and per-file progress for apply.
+
+        Returns:
+            {
+              "status": "idle" | "running" | "completed" | "failed",
+              "result": {"processed": int, "failed": int, "total": int, "message": str} | None,
+              "error": str | None,
+              "total_files": int,
+              "completed_files": int,
+              "current_file": str | None,
+              "is_running": bool,
+            }
+
+        """
+        status = self._get_apply_status()
+        progress = self._get_apply_progress()
+
+        return {
+            "status": status["status"],
+            "result": status["result"],
+            "error": status["error"],
+            "total_files": progress["total_files"],
+            "completed_files": progress["completed_files"],
+            "current_file": progress["current_file"],
+            "is_running": progress["is_running"],
         }
 
     def get_calibration_status(self) -> dict[str, Any]:
@@ -408,13 +475,13 @@ class TaggingService:
         """
         return remove_file_tags_workflow(db=self.db, path=path, namespace=namespace)
 
-    def reconcile_library(
+    def write_tags_to_files(
         self,
         library_id: str,
         batch_size: int = 100,
         namespace: str = "nom",
-    ) -> ReconcileTagsResult:
-        """Reconcile file tags for a library based on its file_write_mode.
+    ) -> WriteTagsResult:
+        """Write pending file tags for a library based on its file_write_mode.
 
         Claims files with mismatched projection state and writes tags according
         to the library's current mode and calibration. This handles:
@@ -428,7 +495,7 @@ class TaggingService:
             namespace: Tag namespace (default: "nom")
 
         Returns:
-            ReconcileTagsResult with processed, remaining, and failed counts
+            WriteTagsResult with processed, remaining, and failed counts
 
         """
         # Get library settings
@@ -489,7 +556,7 @@ class TaggingService:
 
         logger.info(f"[reconcile] Library {library_id}: processed={processed}, failed={failed}, remaining={remaining}")
 
-        return ReconcileTagsResult(
+        return WriteTagsResult(
             processed=processed,
             remaining=remaining,
             failed=failed,
@@ -504,12 +571,12 @@ class TaggingService:
         """Dispatch a non-blocking background write-tags loop for a library.
 
         Starts a managed background task that repeatedly calls
-        :meth:`reconcile_library` for the given library until either all pending
+        :meth:`write_tags_to_files` for the given library until either all pending
         tag writes have been processed (``remaining == 0``) or ``stop_event`` is
         set.
 
         Args:
-            library_id: Library document _id to reconcile
+            library_id: Library document _id to write
             stop_event: Cooperative cancellation event. The background loop exits
                 when this event is set.
             on_complete: Optional callback invoked after successful completion
@@ -525,7 +592,7 @@ class TaggingService:
 
         def _task() -> None:
             while not stop_event.is_set():
-                result = self.reconcile_library(library_id)
+                result = self.write_tags_to_files(library_id)
                 if result.remaining == 0:
                     break
 
@@ -811,7 +878,7 @@ class TaggingService:
         return self.db.file_states.count_pending_tag_writes()
 
     def commit_pending_tags(self, library_id: str | None = None) -> CommitResult:
-        """Commit pending tag writes by reconciling affected libraries.
+        """Commit pending tag writes by writing tags for affected libraries.
 
         Args:
             library_id: Optional library _id to scope. If None, finds libraries
@@ -826,12 +893,12 @@ class TaggingService:
             return CommitResult(started=False, pending_files=0)
 
         if library_id:
-            self.reconcile_library(library_id)
+            self.write_tags_to_files(library_id)
         else:
-            # Reconcile all libraries that have pending files
+            # Write tags for all libraries that have pending files
             libraries = self.db.libraries.list_libraries()
             for lib in libraries:
-                self.reconcile_library(lib["_id"])
+                self.write_tags_to_files(lib["_id"])
 
         return CommitResult(started=True, pending_files=pending)
 
@@ -923,5 +990,6 @@ class TaggingService:
 
         """
         files = self.db.library_files.search_files_by_tag(tag_key, target_value, limit, offset)
+        total = self.db.library_files.count_files_by_tag(tag_key, target_value)
         files_with_tags = [map_file_with_tags_to_dto(f) for f in files]
-        return SearchFilesResult(files=files_with_tags, total=len(files), limit=limit, offset=offset)
+        return SearchFilesResult(files=files_with_tags, total=total, limit=limit, offset=offset)

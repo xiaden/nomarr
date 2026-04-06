@@ -63,39 +63,6 @@ class CalibrationHistoryOperations:
         result = self.collection.insert(doc)
         return result["_id"]  # type: ignore
 
-    def get_history(
-        self,
-        calibration_key: str,
-        limit: int = 100,
-    ) -> list[dict[str, Any]]:
-        """Get calibration history for a specific head.
-
-        Args:
-            calibration_key: Reference to calibration_state._key
-            limit: Maximum number of snapshots to return
-
-        Returns:
-            List of snapshot documents, sorted by snapshot_at descending
-
-        """
-        cursor = self.db.aql.execute(
-            """
-            FOR h IN calibration_history
-                FILTER h.calibration_key == @calibration_key
-                SORT h.snapshot_at DESC
-                LIMIT @limit
-                RETURN h
-            """,
-            bind_vars=cast(
-                "dict[str, Any]",
-                {
-                    "calibration_key": calibration_key,
-                    "limit": limit,
-                },
-            ),
-        )
-        return list(cursor)  # type: ignore
-
     def get_latest_snapshot(
         self,
         calibration_key: str,
@@ -124,53 +91,6 @@ class CalibrationHistoryOperations:
         )
         results = list(cursor)  # type: ignore
         return results[0] if results else None  # type: ignore
-
-    def get_all_recent_snapshots(
-        self,
-        since_ms: int | None = None,
-        limit: int = 1000,
-    ) -> list[dict[str, Any]]:
-        """Get recent calibration snapshots across all heads.
-
-        Args:
-            since_ms: Only return snapshots after this timestamp (optional)
-            limit: Maximum number of snapshots to return
-
-        Returns:
-            List of snapshot documents, sorted by snapshot_at descending
-
-        """
-        if since_ms:
-            cursor = self.db.aql.execute(
-                """
-                FOR h IN calibration_history
-                    FILTER h.snapshot_at >= @since_ms
-                    SORT h.snapshot_at DESC
-                    LIMIT @limit
-                    RETURN h
-                """,
-                bind_vars=cast(
-                    "dict[str, Any]",
-                    {
-                        "since_ms": since_ms,
-                        "limit": limit,
-                    },
-                ),
-            )
-        else:
-            cursor = self.db.aql.execute(
-                """
-                FOR h IN calibration_history
-                    SORT h.snapshot_at DESC
-                    LIMIT @limit
-                    RETURN h
-                """,
-                bind_vars=cast(
-                    "dict[str, Any]",
-                    {"limit": limit},
-                ),
-            )
-        return list(cursor)  # type: ignore
 
     def delete_old_snapshots(
         self,

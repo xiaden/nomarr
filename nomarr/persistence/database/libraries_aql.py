@@ -31,21 +31,23 @@ class LibrariesOperations:
         is_enabled: bool = True,
         watch_mode: str = "off",
         file_write_mode: str = "full",
+        library_auto_write: bool = False,
     ) -> str:
         """Create a new library entry.
 
-                Args:
-                    name: Library name (must be unique, can be auto-generated from path)
-                    root_path: Absolute path to library root
-                    is_enabled: Whether library is enabled for scanning
-                    watch_mode: File watching mode ('off', 'event', or 'poll')
-                    file_write_mode: Tag write mode ('none', 'minimal', or 'full')
+        Args:
+            name: Library name (must be unique, can be auto-generated from path)
+            root_path: Absolute path to library root
+            is_enabled: Whether library is enabled for scanning
+            watch_mode: File watching mode ('off', 'event', or 'poll')
+            file_write_mode: Tag write mode ('none', 'minimal', or 'full')
+            library_auto_write: Whether to enable automatic tag writing for the library.
 
-                Returns:
-                    Library _id (e.g., "libraries/12345")
+        Returns:
+            Library _id (e.g., "libraries/12345")
 
-                Raises:
-        Duplicate key error if name already exists
+        Raises:
+            Duplicate key error if name already exists
 
         """
         now = now_ms().value
@@ -59,6 +61,7 @@ class LibrariesOperations:
                     "is_enabled": is_enabled,
                     "watch_mode": watch_mode,
                     "file_write_mode": file_write_mode,
+                    "library_auto_write": library_auto_write,
                     "created_at": now,
                     "updated_at": now,
                 },
@@ -204,6 +207,7 @@ class LibrariesOperations:
         is_enabled: bool | None = None,
         watch_mode: str | None = None,
         file_write_mode: str | None = None,
+        library_auto_write: bool | None = None,
     ) -> None:
         """Update library fields.
 
@@ -214,6 +218,7 @@ class LibrariesOperations:
             is_enabled: New enabled status (optional)
             watch_mode: New watch mode ('off', 'event', 'poll') (optional)
             file_write_mode: New file write mode ('none', 'minimal', 'full') (optional)
+            library_auto_write: New auto-write setting (optional).
 
         """
         update_fields: dict[str, Any] = {"updated_at": now_ms().value}
@@ -234,6 +239,8 @@ class LibrariesOperations:
                 msg = f"Invalid file_write_mode: {file_write_mode}. Must be 'none', 'minimal', or 'full'"
                 raise ValueError(msg)
             update_fields["file_write_mode"] = file_write_mode
+        if library_auto_write is not None:
+            update_fields["library_auto_write"] = library_auto_write
 
         self.db.aql.execute(
             """

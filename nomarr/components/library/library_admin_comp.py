@@ -18,6 +18,7 @@ from nomarr.components.library.library_root_comp import (
     get_base_library_root,
     normalize_library_root,
 )
+from nomarr.persistence.database.library_pipeline_states_aql import PIPELINE_IDLE
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
@@ -32,6 +33,7 @@ def create_library(
     is_enabled: bool = True,
     watch_mode: str = "off",
     file_write_mode: str = "full",
+    library_auto_write: bool = False,
 ) -> str:
     """Create a new library with validation and name generation.
 
@@ -43,6 +45,7 @@ def create_library(
         is_enabled: Whether library is enabled for scanning
         watch_mode: File watching mode ('off', 'event', or 'poll')
         file_write_mode: Tag write mode ('none', 'minimal', or 'full')
+        library_auto_write: Whether to enable automatic tag writing for the library.
 
     Returns:
         Created library ID
@@ -62,7 +65,9 @@ def create_library(
             is_enabled=is_enabled,
             watch_mode=watch_mode,
             file_write_mode=file_write_mode,
+            library_auto_write=library_auto_write,
         )
+        db.library_pipeline_states.transition_state(library_id, PIPELINE_IDLE)
     except Exception as e:
         msg = f"Failed to create library: {e}"
         raise ValueError(msg) from e

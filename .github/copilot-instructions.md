@@ -94,9 +94,9 @@ Log entries are cheap. Silence is expensive. Log when:
 
 ADRs use a two-phase workflow requiring explicit user approval:
 
-1. **`adr_suggest`** — generates a preview of the ADR markdown without writing to disk. Present the preview to the user.
-2. **User approval** — wait for the user to confirm the ADR content.
-3. **`adr_commit`** — writes the approved ADR to disk. Never call this without user approval.
+1. **`adr_suggest(...)`** — writes a staging draft to `artifacts/decisions/drafts/` for review. Surface the `draft_path` link to the user.
+2. **User approval** — user reads the draft file and confirms the content.
+3. **`adr_commit(draft_id="<slug>")`** — loads from the staging draft, assigns a real ADR number, writes the final ADR to `artifacts/decisions/`, and deletes the staging draft. Never call this without user approval.
 
 Create an ADR when:
 

@@ -108,7 +108,7 @@ class NavidromePlaycountsOperations:
         nd_id: str,
         timestamp_ms: int,
     ) -> None:
-        """Atomically increment play count by moving edge to next bucket.
+        """Increment play count by moving the track's edge to the next bucket.
 
         Finds the current bucket for (user, track).  If found, deletes the old
         edge and creates a new edge to bucket ``{old+1}:{userid}``.  If no edge
@@ -120,47 +120,75 @@ class NavidromePlaycountsOperations:
             timestamp_ms: Epoch-millisecond timestamp of the scrobble.
         """
         track_id = f"{_TRACKS}/{nd_id}"
-
-        query = """
-        LET existing = FIRST(
-            FOR e IN @@has_plays
-                FILTER e._from == @track_id
-                LET bucket = DOCUMENT(e._to)
-                FILTER bucket != null AND bucket.userid == @user_id
-                RETURN { edge_key: e._key, old_count: bucket.playcount }
-        )
-
-        LET new_count = existing != null ? existing.old_count + 1 : 1
-        LET new_bkey = CONCAT(TO_STRING(new_count), ":", @user_id)
-        LET new_bucket_id = CONCAT(@playcounts_prefix, new_bkey)
-
-        // Ensure new bucket vertex
-        UPSERT { _key: new_bkey }
-        INSERT { _key: new_bkey, playcount: new_count, userid: @user_id }
-        UPDATE {}
-        IN @@playcounts
-
-        // Remove old edge if it existed
-        LET removed = (
-            existing != null
-            ? (FOR x IN [1] REMOVE { _key: existing.edge_key } IN @@has_plays RETURN 1)
-            : []
-        )
-
-        // Insert new edge to new bucket
-        INSERT { _from: @track_id, _to: new_bucket_id, last_played: @timestamp_ms }
-        IN @@has_plays
-
-        RETURN { new_count: new_count }
+        read_query = """
+        FOR e IN @@has_plays
+            FILTER e._from == @track_id
+            LET bucket = DOCUMENT(e._to)
+            FILTER bucket != null AND bucket.userid == @user_id
+            RETURN { edge_key: e._key, old_count: bucket.playcount }
         """
         cursor: Cursor = self.db.aql.execute(  # type: ignore[union-attr, assignment]
-            query,
+            read_query,
             bind_vars={
                 "track_id": track_id,
                 "user_id": user_id,
+                "@has_plays": _HAS_PLAYS,
+            },
+        )
+        existing = next(cursor, None)
+        cursor.close(ignore_missing=True)
+
+        old_count = existing["old_count"] if existing is not None else 0
+        new_count = old_count + 1
+        new_bkey = _bucket_key(new_count, user_id)
+        new_bucket_id = f"{_PLAYCOUNTS}/{new_bkey}"
+
+        write_query = """
+        UPSERT { _key: @new_bkey }
+        INSERT { _key: @new_bkey, playcount: @new_count, userid: @user_id }
+        UPDATE {}
+        IN @@playcounts
+
+        REMOVE @old_edge_key IN @@has_plays
+        """
+        if existing is not None:
+            cursor = self.db.aql.execute(  # type: ignore[union-attr, assignment]
+                write_query,
+                bind_vars={
+                    "new_bkey": new_bkey,
+                    "new_count": new_count,  # type: ignore[dict-item]
+                    "user_id": user_id,
+                    "old_edge_key": existing["edge_key"],
+                    "@playcounts": _PLAYCOUNTS,
+                    "@has_plays": _HAS_PLAYS,
+                },
+            )
+        else:
+            cursor = self.db.aql.execute(  # type: ignore[union-attr, assignment]
+                """
+                UPSERT { _key: @new_bkey }
+                INSERT { _key: @new_bkey, playcount: @new_count, userid: @user_id }
+                UPDATE {}
+                IN @@playcounts
+                """,
+                bind_vars={
+                    "new_bkey": new_bkey,
+                    "new_count": new_count,  # type: ignore[dict-item]
+                    "user_id": user_id,
+                    "@playcounts": _PLAYCOUNTS,
+                },
+            )
+        cursor.close(ignore_missing=True)
+
+        cursor = self.db.aql.execute(  # type: ignore[union-attr, assignment]
+            """
+            INSERT { _from: @track_id, _to: @new_bucket_id, last_played: @timestamp_ms }
+            IN @@has_plays
+            """,
+            bind_vars={
+                "track_id": track_id,
+                "new_bucket_id": new_bucket_id,
                 "timestamp_ms": timestamp_ms,  # type: ignore[dict-item]
-                "playcounts_prefix": f"{_PLAYCOUNTS}/",
-                "@playcounts": _PLAYCOUNTS,
                 "@has_plays": _HAS_PLAYS,
             },
         )

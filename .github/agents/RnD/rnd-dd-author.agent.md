@@ -196,6 +196,6 @@ Every architectural choice in the design doc should be evaluated for ADR-worthin
 - The choice involves a non-obvious tradeoff
 - The choice supersedes or contradicts a prior decision
 
-Log the decision reasoning first (`log_write` with `decision` category), then use the two-phase ADR workflow: call `adr_suggest` to generate a preview, present it for user approval, and call `adr_commit` to write the ADR once approved.
+Log the decision reasoning first (`log_write` with `decision` category), then use the two-step ADR workflow: call `adr_suggest` to write a staging draft to `artifacts/decisions/drafts/`, surface the `draft_path` link to the user, wait for the user to review the draft file and approve, then call `adr_commit(draft_id="<slug>")` to write the final ADR.
 
 Log your agent name as `rnd-dd-author`.

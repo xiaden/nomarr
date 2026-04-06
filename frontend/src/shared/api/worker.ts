@@ -13,5 +13,5 @@ export interface WorkerResponse {
  * Restart the API server.
  */
 export async function restart(): Promise<WorkerResponse> {
-  return post("/api/web/worker/restart");
+  return post("/api/web/admin/restart");
 }

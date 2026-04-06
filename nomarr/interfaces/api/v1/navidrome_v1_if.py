@@ -1,6 +1,6 @@
 """Navidrome v1 API endpoints for integration use.
 
-Routes: /v1/navidrome/similar-tracks, /v1/navidrome/scrobble, /v1/navidrome/generate-playlists.
+Routes: /v1/navidrome/similar-track, /v1/navidrome/scrobble, /v1/navidrome/playlist/generate.
 Auth: API key (verify_key).
 """
 
@@ -57,7 +57,7 @@ class SimilarTracksResponse(BaseModel):
 # ------------------------------------------------------------------
 
 
-@router.post("/similar-tracks", dependencies=[Depends(verify_key)])
+@router.post("/similar-track", dependencies=[Depends(verify_key)])
 async def navidrome_similar_tracks(
     body: SimilarTracksRequest,
     svc: Annotated[NavidromeService, Depends(get_navidrome_service)],
@@ -164,7 +164,7 @@ class GeneratePlaylistsResponse(BaseModel):
 # ------------------------------------------------------------------
 
 
-@router.post("/generate-playlists", dependencies=[Depends(verify_key)])
+@router.post("/playlist/generate", dependencies=[Depends(verify_key)])
 async def navidrome_generate_playlists(
     body: GeneratePlaylistsRequest,
     svc: Annotated[NavidromeService, Depends(get_navidrome_service)],

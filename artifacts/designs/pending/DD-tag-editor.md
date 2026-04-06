@@ -124,14 +124,14 @@ The existing backend has tag CRUD primitives in `TagOperations` persistence and 
 |-----------|-------|----------------|
 | `TaggingService` | services (existing, expanded) | Owns ML calibration (existing) + tag curation (new) + tag queries (migrated from LibraryService). Enforces `nom:` rejection. Single vertical slice for tags domain. |
 | `TagOperations` | persistence (existing) | Add `relink_tag_edges()`, `list_tags_with_counts()`, `get_tag_songs()`, `count_pending_tag_writes()`. Keep existing methods. (ADR-014) |
-| `POST /api/web/tags/rename` | interfaces | Rename a tag value (re-links all edges) |
-| `POST /api/web/tags/merge` | interfaces | Merge 2+ tag values into canonical |
-| `POST /api/web/tags/split` | interfaces | Re-tag subset of songs from one value to another |
-| `POST /api/web/tags/commit` | interfaces | Trigger writing pending tag changes to audio files on disk |
-| `GET /api/web/tags/pending-count` | interfaces | Return count of files with `tags_not_written` state |
-| `PATCH /api/web/files/{id}/tags` | interfaces | Single-song tag edit (kept from original DD) |
-| `GET /api/web/tags/values` | interfaces | List tag values with song counts, filterable by rel |
-| `GET /api/web/tags/{tag_id}/songs` | interfaces | Get songs linked to a specific tag value |
+| `POST /api/web/tag-curation/rename` | interfaces | Rename a tag value (re-links all edges) |
+| `POST /api/web/tag-curation/merge` | interfaces | Merge 2+ tag values into canonical |
+| `POST /api/web/tag-curation/split` | interfaces | Re-tag subset of songs from one value to another |
+| `POST /api/web/tag-curation/commit` | interfaces | Trigger writing pending tag changes to audio files on disk |
+| `GET /api/web/tag-curation/pending-count` | interfaces | Return count of files with `tags_not_written` state |
+| `PATCH /api/web/tag-curation/file/{id}/tag` | interfaces | Single-song tag edit (kept from original DD) |
+| `GET /api/web/tag-curation/value` | interfaces | List tag values with song counts, filterable by rel |
+| `GET /api/web/tag-curation/{tag_id}/song` | interfaces | Get songs linked to a specific tag value |
 | `TagCurationPage` | frontend | New page at `/tag-curation` |
 | `TagValueGrid` | frontend | MUI DataGrid: `(rel, value, song_count)` with expandable detail panels |
 | `CommitBar` | frontend | Persistent banner: pending write count + "Commit Changes" button |
@@ -159,7 +159,7 @@ All curation operations follow a two-phase pattern:
 ```
 Curate:  User renames/merges/splits → DB updated immediately → file state set to tags_not_written
 Pending: UI shows "N files have pending tag changes" via CommitBar
-Commit:  User clicks "Commit Changes" → POST /tags/commit → TaggingService.reconcile_library()
+Commit:  User clicks "Commit Changes" → POST /tag-curation/commit → TaggingService.reconcile_library()
          processes tags_not_written files → state set to tags_written
 ```
 
@@ -169,8 +169,8 @@ Commit:  User clicks "Commit Changes" → POST /tags/commit → TaggingService.r
 - This marks "DB tags do not match file on disk" — pending writes accumulate
 
 **Phase 2 — Commit (batch, user-initiated file I/O):**
-- `CommitBar` component polls `GET /tags/pending-count` to show pending file count
-- User clicks "Commit Changes" → `POST /tags/commit` → `TaggingService.reconcile_library()` processes all files in `tags_not_written` state
+- `CommitBar` component polls `GET /tag-curation/pending-count` to show pending file count
+- User clicks "Commit Changes" → `POST /tag-curation/commit` → `TaggingService.reconcile_library()` processes all files in `tags_not_written` state
 - `reconcile_library()` already exists on `TaggingService` — it reads DB tags and writes them to audio files, then sets state to `tags_written`
 - Progress indicator shown during commit (reuses existing `get_reconcile_status` polling)
 
@@ -230,20 +230,20 @@ def count_pending_tag_writes() -> int:
 #### Curation Endpoints (New)
 
 ```
-POST /api/web/tags/rename
+POST /api/web/tag-curation/rename
   Body: { "tag_id": "tags/123", "new_value": "post-punk" }
   → Service finds or creates target tag with same rel + new value
   → Calls relink_tag_edges(source=tag_id, target=new_or_existing_tag_id)
   → Sets affected files to tags_not_written state
   → Returns: { "moved": 312, "merged_into_existing": true/false }
 
-POST /api/web/tags/merge
+POST /api/web/tag-curation/merge
   Body: { "source_tag_ids": ["tags/123", "tags/456"], "canonical_tag_id": "tags/789" }
   → For each source tag: relink_tag_edges(source, canonical)
   → Sets affected files to tags_not_written state
   → Returns: { "total_moved": 500, "sources_removed": 2 }
 
-POST /api/web/tags/split
+POST /api/web/tag-curation/split
   Body: { "source_tag_id": "tags/123", "song_ids": ["library_files/a", ...], "new_value": "alt-rock" }
   → Service finds or creates target tag with same rel + new_value
   → Calls relink_tag_edges(source, target, song_ids=song_ids)
@@ -254,13 +254,13 @@ POST /api/web/tags/split
 #### Commit Endpoints (New)
 
 ```
-POST /api/web/tags/commit
+POST /api/web/tag-curation/commit
   Body: { "library_id": "libraries/abc" }  (optional — if omitted, commits all libraries)
   → Triggers TaggingService.reconcile_library() for files in tags_not_written state
   → Returns: { "started": true, "pending_files": 47 }
-  → Progress polled via existing GET /api/web/tagging/reconcile-status/{library_id}
+  → Progress polled via GET /api/web/library/{library_id}/pipeline
 
-GET /api/web/tags/pending-count
+GET /api/web/tag-curation/pending-count
   → Returns: { "count": 47 }
   → Uses count_pending_tag_writes() persistence method (O(1) via ADR-003 state vertex)
 ```
@@ -278,10 +278,10 @@ PATCH /api/web/files/{file_id}/tags
 #### Query Endpoints (New)
 
 ```
-GET /api/web/tags/values?rel=genre&prefix=roc&limit=100&offset=0
+GET /api/web/tag-curation/value?rel=genre&prefix=roc&limit=100&offset=0
   → Returns tag values with song counts
 
-GET /api/web/tags/{tag_id}/songs?limit=50&offset=0
+GET /api/web/tag-curation/{tag_id}/song?limit=50&offset=0
   → Returns songs linked to this tag with file metadata
 ```
 
@@ -358,7 +358,7 @@ TagCurationPage (lazy-loaded route: /tag-curation)
 | `useTagSongs(tagId)` | Fetch songs linked to a tag value, handle pagination |
 | `useCurationActions()` | Submit rename/merge/split/single-song APIs with optimistic UI |
 | `useSelection()` | Cross-page selection management: `Set<string>` of IDs, select/deselect, select-all-matching mode, count display |
-| `usePendingCommit()` | Poll pending count via `GET /tags/pending-count`, trigger commit via `POST /tags/commit`, track commit progress |
+| `usePendingCommit()` | Poll pending count via `GET /tag-curation/pending-count`, trigger commit via `POST /tag-curation/commit`, track commit progress |
 
 #### Cross-Page Selection
 
@@ -375,14 +375,14 @@ TagCurationPage (lazy-loaded route: /tag-curation)
 #### Data Flow
 
 ```
-Browse:     LibrarySelector + SearchBar → useTagValues → GET /tags/values → TaggingService → AQL
-Expand:     Detail panel → useTagSongs → GET /tags/{id}/songs → TaggingService → AQL
-Rename:     DataGrid processRowUpdate → useCurationActions → POST /tags/rename → TaggingService → relink_tag_edges → set tags_not_written
-Merge:      MergeDialog confirm → useCurationActions → POST /tags/merge → TaggingService → relink_tag_edges (per source) → set tags_not_written
-Split:      Detail panel "Re-tag as…" → useCurationActions → POST /tags/split → TaggingService → relink_tag_edges → set tags_not_written
-Single:     Detail panel tag chip edit → useCurationActions → PATCH /files/{id}/tags → TaggingService → set_song_tags → set tags_not_written
-Pending:    usePendingCommit → GET /tags/pending-count → TaggingService → count_pending_tag_writes() → AQL on tags_not_written vertex
-Commit:     CommitBar "Commit Changes" → usePendingCommit → POST /tags/commit → TaggingService.reconcile_library() → write files → set tags_written
+Browse:     LibrarySelector + SearchBar → useTagValues → GET /tag-curation/value → TaggingService → AQL
+Expand:     Detail panel → useTagSongs → GET /tag-curation/{id}/song → TaggingService → AQL
+Rename:     DataGrid processRowUpdate → useCurationActions → POST /tag-curation/rename → TaggingService → relink_tag_edges → set tags_not_written
+Merge:      MergeDialog confirm → useCurationActions → POST /tag-curation/merge → TaggingService → relink_tag_edges (per source) → set tags_not_written
+Split:      Detail panel "Re-tag as…" → useCurationActions → POST /tag-curation/split → TaggingService → relink_tag_edges → set tags_not_written
+Single:     Detail panel tag chip edit → useCurationActions → PATCH /tag-curation/file/{id}/tag → TaggingService → set_song_tags → set tags_not_written
+Pending:    usePendingCommit → GET /tag-curation/pending-count → TaggingService → count_pending_tag_writes() → AQL on tags_not_written vertex
+Commit:     CommitBar "Commit Changes" → usePendingCommit → POST /tag-curation/commit → TaggingService.reconcile_library() → write files → set tags_written
 ```
 
 ---
@@ -453,10 +453,10 @@ Same defense-in-depth as ADR-009, now on expanded `TaggingService`:
 2. **Tag value types:** `rel` has no type metadata — values are polymorphic (`str | int | float | bool`). Should the UI validate types or accept all as strings?
 3. **Undo support:** Should curation operations support undo? Rename/merge are lossy if the source tag is orphan-cleaned. Consider a confirmation step with preview counts instead.
 4. **Export/import:** Future extensibility — should the API design accommodate CSV tag export/import?
-5. **Autocomplete cardinality for split:** The "Re-tag as…" autocomplete needs existing tag values. Server-side prefix filtering via `GET /tags/values?prefix=...` handles large cardinalities.
+5. **Autocomplete cardinality for split:** The "Re-tag as…" autocomplete needs existing tag values. Server-side prefix filtering via `GET /tag-curation/value?prefix=...` handles large cardinalities.
 6. **Commit UX — progress and errors:** Should commit show per-file progress or just a spinner? What happens if some files fail to write (e.g., file locked, permissions)? Partial commit with error report?
 7. **Commit scope:** Should commit be per-library or global? Current design supports both (optional `library_id` param). Per-library may be more predictable for users.
 8. **Re-scan vs pending commits:** If a user triggers a library re-scan while files have pending tag commits, the scan may overwrite curated DB tags. Options: (a) force commit before re-scan, (b) skip `tags_not_written` files during re-scan, (c) warn and let user choose.
-9. **State edge semantics for single-song edits:** When a user edits one tag on a song via `PATCH /files/{id}/tags`, should only that file be marked `tags_not_written`, or all files affected by the tag value? (Answer: only the directly edited file.)
+9. **State edge semantics for single-song edits:** When a user edits one tag on a song via `PATCH /tag-curation/file/{id}/tag`, should only that file be marked `tags_not_written`, or all files affected by the tag value? (Answer: only the directly edited file.)
 10. **Select All Matching implementation:** Should the backend return all matching IDs (simple but large payload), or should bulk operations accept filter criteria directly (more complex but scalable)?
 11. **Bulk merge:** Should the UI support selecting 10+ tags for merge, or cap at a reasonable limit to prevent accidental mass merges?

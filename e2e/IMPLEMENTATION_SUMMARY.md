@@ -92,13 +92,13 @@ Created a comprehensive end-to-end test suite for Nomarr using Playwright that c
 ## Test Coverage
 
 ### API Endpoints Covered
-- ✅ Authentication: `/api/web/auth/login`, `/api/web/auth/logout`
-- ✅ Libraries: `/api/web/libraries`, `/api/web/libraries/{id}`, `/api/web/libraries/stats`
+- ✅ Authentication: `/api/web/authentication/login`, `/api/web/authentication/logout`
+- ✅ Libraries: `/api/web/library`, `/api/web/library/{id}`, `/api/web/library/stats`
 - ✅ Calibration: `/api/web/calibration/*` (status, history, generate, convergence)
 - ✅ Analytics: `/api/web/analytics/*` (frequencies, mood, correlations)
-- ✅ Metadata: `/api/web/metadata/*` (counts, artists, albums)
-- ✅ Worker: `/api/web/worker/*` (pause, resume)
-- ✅ Processing: `/api/web/processing/status`
+- ✅ Metadata: `/api/web/metadata/*` (counts, artist, album)
+- ✅ Worker: `/api/web/admin/*` (pause, resume)
+- ✅ Processing: `[REMOVED - endpoint no longer exists]` (previously `/api/web/processing/status`)
 - ✅ Info/Health: `/api/web/info`, `/api/web/health`, `/api/web/health/gpu`, `/api/web/work-status`
 
 ### Test Strategies Used

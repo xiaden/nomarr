@@ -6,14 +6,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
+  ApplyCombinedStatus,
   ApplyCalibrationResponse,
-  ApplyProgress,
 } from "../../../shared/api/calibration";
 import {
-  getApplyProgress,
-  getApplyStatus,
+  getApplyCombinedStatus,
   startApplyCalibration,
 } from "../../../shared/api/calibration";
+
+type ApplyProgress = Pick<
+  ApplyCombinedStatus,
+  "total_files" | "completed_files" | "current_file" | "is_running"
+>;
 
 export interface CalibrationApplyState {
   /** Whether apply is currently running */
@@ -38,6 +42,11 @@ export interface UseCalibrationApplyReturn {
 
 const POLL_INTERVAL_MS = 1000;
 
+/**
+ * Hook for managing background calibration apply with polling.
+ *
+ * @returns State object with apply status/progress, plus `startApply` and `reset` actions.
+ */
 export function useCalibrationApply(): UseCalibrationApplyReturn {
   const [state, setState] = useState<CalibrationApplyState>({
     isApplying: false,
@@ -73,36 +82,43 @@ export function useCalibrationApply(): UseCalibrationApplyReturn {
     if (!isMountedRef.current) return;
 
     try {
-      const [status, progress] = await Promise.all([
-        getApplyStatus(),
-        getApplyProgress(),
-      ]);
+      const combinedStatus = await getApplyCombinedStatus();
 
       if (!isMountedRef.current) return;
+
+      const progress: ApplyProgress = {
+        total_files: combinedStatus.total_files,
+        completed_files: combinedStatus.completed_files,
+        current_file: combinedStatus.current_file,
+        is_running: combinedStatus.is_running,
+      };
 
       // Update progress
       setState((prev) => ({
         ...prev,
         progress,
-        isApplying: status.status === "running",
+        isApplying: combinedStatus.status === "running",
       }));
 
       // Check for completion
-      if (status.status !== "running") {
+      if (combinedStatus.status !== "running") {
         stopPolling();
 
-        if (status.status === "failed") {
+        if (combinedStatus.status === "failed") {
           setState((prev) => ({
             ...prev,
             isApplying: false,
-            error: status.error,
+            error: combinedStatus.error,
             completed: true,
           }));
-        } else if (status.status === "completed" && status.result) {
+        } else if (
+          combinedStatus.status === "completed" &&
+          combinedStatus.result
+        ) {
           setState((prev) => ({
             ...prev,
             isApplying: false,
-            result: status.result,
+            result: combinedStatus.result,
             completed: true,
           }));
         }
@@ -173,7 +189,7 @@ export function useCalibrationApply(): UseCalibrationApplyReturn {
   useEffect(() => {
     const checkInitialStatus = async () => {
       try {
-        const status = await getApplyStatus();
+        const status = await getApplyCombinedStatus();
         if (status.status === "running") {
           setState((prev) => ({ ...prev, isApplying: true }));
           startPolling();

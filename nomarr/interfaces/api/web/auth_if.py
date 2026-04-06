@@ -17,7 +17,7 @@ from nomarr.interfaces.api.auth import (
 )
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/auth", tags=["Auth"])
+router = APIRouter(prefix="/authentication", tags=["Authentication"])
 
 
 class LoginRequest(BaseModel):
@@ -36,7 +36,7 @@ class LogoutResponse(BaseModel):
 @router.post("/login", response_model=LoginResponse)
 async def login(request: LoginRequest):
     """Authenticate with admin password and receive a session token.
-    The session token should be used for all subsequent /web/api/* requests.
+    The session token should be used for all subsequent /api/web/* requests.
     """
     try:
         password_hash = get_admin_password_hash()

@@ -86,7 +86,7 @@ class VramPromisesOperations:
         total_mb: float,
         used_mb: float,
     ) -> bool:
-        """Atomically register a VRAM promise if the model fits.
+        """Register a VRAM promise if the model fits within available headroom.
 
         Checks whether ``(total_mb - used_mb) - sum(existing_promises) >= promised_mb + reserve``
         and, if so, inserts (or replaces) the promise document.
@@ -105,50 +105,51 @@ class VramPromisesOperations:
         """
         key = _promise_key(worker_id, model_path)
         ts = now_ms().value
-
         cursor = cast(
             "Cursor",
             self.db.aql.execute(  # type: ignore[union-attr]
                 """
-                LET sum_promised = FIRST(
-                    FOR p IN vram_promises
+                FOR p IN vram_promises
                     COLLECT AGGREGATE s = SUM(TO_NUMBER(p.promised_mb))
                     RETURN s
-                )
-                LET free_mb = @total_mb - @used_mb
-                LET headroom = free_mb - (sum_promised != null ? sum_promised : 0) - @reserve_mb
-                FILTER headroom >= @promised_mb
-                INSERT {
-                    _key: @key,
-                    worker_id: @worker_id,
-                    pid: @pid,
-                    model_path: @model_path,
-                    promised_mb: @promised_mb,
-                    total_mb: @total_mb,
-                    used_mb: @used_mb,
-                    last_seen_ms: @now_ms
-                } INTO vram_promises
-                OPTIONS { overwriteMode: "replace" }
-                RETURN true
                 """,
-                bind_vars=cast(
-                    "dict[str, Any]",
-                    {
-                        "key": key,
-                        "worker_id": worker_id,
-                        "pid": pid,
-                        "model_path": model_path,
-                        "promised_mb": promised_mb,
-                        "total_mb": total_mb,
-                        "used_mb": used_mb,
-                        "reserve_mb": float(_RESERVE_MB),
-                        "now_ms": ts,
-                    },
-                ),
             ),
         )
-        results = list(cursor)
-        return len(results) > 0
+        sum_promised = cast("float | int | None", next(cursor, None))
+        free_mb = total_mb - used_mb
+        headroom = free_mb - float(sum_promised if sum_promised is not None else 0) - float(_RESERVE_MB)
+        if headroom < promised_mb:
+            return False
+
+        self.db.aql.execute(  # type: ignore[union-attr]
+            """
+            INSERT {
+                _key: @key,
+                worker_id: @worker_id,
+                pid: @pid,
+                model_path: @model_path,
+                promised_mb: @promised_mb,
+                total_mb: @total_mb,
+                used_mb: @used_mb,
+                last_seen_ms: @now_ms
+            } INTO vram_promises
+            OPTIONS { overwriteMode: "replace" }
+            """,
+            bind_vars=cast(
+                "dict[str, Any]",
+                {
+                    "key": key,
+                    "worker_id": worker_id,
+                    "pid": pid,
+                    "model_path": model_path,
+                    "promised_mb": promised_mb,
+                    "total_mb": total_mb,
+                    "used_mb": used_mb,
+                    "now_ms": ts,
+                },
+            ),
+        )
+        return True
 
     def release(self, worker_id: str, model_path: str) -> None:
         """Release the promise for a specific worker+model pair.

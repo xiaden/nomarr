@@ -24,7 +24,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ConfirmDialog, ErrorMessage, Panel, SectionHeader } from "@shared/components/ui";
 
@@ -34,9 +34,8 @@ import { getConfig } from "../../../shared/api/config";
 import {
   create as createLibrary,
   deleteLibrary,
-  getReconcileStatus,
   list as listLibraries,
-  reconcileTags,
+  writeTags,
   scanFull,
   scanQuick,
   update as updateLibrary,
@@ -50,8 +49,6 @@ import { useLibraryVectorStats } from "../hooks/useLibraryVectorStats";
 
 import { VectorConfigSection } from "./VectorConfigSection";
 import { VectorStatsCard } from "./VectorStatsCard";
-
-const RECONCILE_POLL_INTERVAL_MS = 10_000;
 
 export function LibraryManagement() {
   const { showSuccess } = useNotification();
@@ -72,9 +69,6 @@ export function LibraryManagement() {
   const [formWatchMode, setFormWatchMode] = useState<string>("off");
   const [formFileWriteMode, setFormFileWriteMode] = useState<"none" | "minimal" | "full">("full");
   const [showPathPicker, setShowPathPicker] = useState(false);
-  const reconcilePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [reconcilingId, setReconcilingId] = useState<string | null>(null);
-  const [reconcileStatus, setReconcileStatus] = useState<Record<string, { pending: number; inProgress: boolean }>>({});
   const [originalFileWriteMode, setOriginalFileWriteMode] = useState<"none" | "minimal" | "full">("full");
 
   // Vector search config and stats for the editing library
@@ -184,15 +178,6 @@ export function LibraryManagement() {
     loadLibraries();
     loadConfig();
   }, [loadLibraries]);
-
-  useEffect(() => {
-    return () => {
-      if (reconcilePollRef.current !== null) {
-        clearInterval(reconcilePollRef.current);
-        reconcilePollRef.current = null;
-      }
-    };
-  }, []);
 
   // Poll for scan/work status updates using unified work-status endpoint
   useEffect(() => {
@@ -330,7 +315,7 @@ export function LibraryManagement() {
             severity: "info",
           });
           if (confirmed) {
-            await handleReconcileTags(editingId);
+            await handleWriteTags(editingId);
           }
         }
       }
@@ -422,67 +407,13 @@ export function LibraryManagement() {
     }
   };
 
-  const handleReconcileTags = async (libraryId: string) => {
+  const handleWriteTags = async (libraryId: string) => {
     try {
       setError(null);
-      await reconcileTags(libraryId);
+      await writeTags(libraryId);
       showSuccess("Tag write started");
-
-      if (reconcilePollRef.current !== null) {
-        clearInterval(reconcilePollRef.current);
-        reconcilePollRef.current = null;
-      }
-
-      setReconcilingId(libraryId);
-
-      const pollStatus = async (): Promise<boolean> => {
-        try {
-          const status = await getReconcileStatus(libraryId);
-          setReconcileStatus(prev => ({
-            ...prev,
-            [libraryId]: { pending: status.pending_count, inProgress: status.in_progress }
-          }));
-
-          if (!status.in_progress) {
-            if (reconcilePollRef.current !== null) {
-              clearInterval(reconcilePollRef.current);
-              reconcilePollRef.current = null;
-            }
-            setReconcilingId(null);
-          }
-
-          return status.in_progress;
-        } catch {
-          // Silent poll failure — don't surface to UI
-          return true;
-        }
-      };
-
-      const isInProgress = await pollStatus();
-      if (!isInProgress) {
-        return;
-      }
-
-      if (reconcilePollRef.current === null) {
-        reconcilePollRef.current = setInterval(() => {
-          void pollStatus();
-        }, RECONCILE_POLL_INTERVAL_MS);
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start tag write");
-      setReconcilingId(null);
-    }
-  };
-
-  const loadReconcileStatus = async (libraryId: string) => {
-    try {
-      const status = await getReconcileStatus(libraryId);
-      setReconcileStatus(prev => ({
-        ...prev,
-        [libraryId]: { pending: status.pending_count, inProgress: status.in_progress }
-      }));
-    } catch {
-      // Silently ignore errors for status checks
     }
   };
 
@@ -805,13 +736,6 @@ export function LibraryManagement() {
                         size="small"
                       />
                     </Tooltip>
-                    {reconcileStatus[lib.library_id]?.pending > 0 && (
-                      <Chip 
-                        label={`${reconcileStatus[lib.library_id].pending} pending`}
-                        color="warning"
-                        size="small"
-                      />
-                    )}
                   </Stack>
                 </Box>
                 <Stack direction="row" alignItems="center" spacing={1}>
@@ -891,22 +815,14 @@ export function LibraryManagement() {
                   variant="outlined"
                   color="secondary"
                   size="small"
-                  onClick={() => handleReconcileTags(lib.library_id)}
+                  onClick={() => handleWriteTags(lib.library_id)}
                   disabled={
                     !lib.isEnabled || 
-                    reconcilingId === lib.library_id ||
                     lib.scanStatus === "scanning"
                   }
-                  title={
-                    reconcilingId === lib.library_id
-                      ? "Writing tags..."
-                      : "Write tags from database to audio files"
-                  }
-                  onMouseEnter={() => loadReconcileStatus(lib.library_id)}
+                  title="Write tags from database to audio files"
                 >
-                  {reconcilingId === lib.library_id
-                    ? "Writing tags..."
-                    : "Write Tags"}
+                  Write Tags
                 </Button>
                 <Button
                   variant="contained"

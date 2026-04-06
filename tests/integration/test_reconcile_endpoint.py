@@ -1,4 +1,4 @@
-"""Integration tests for the reconcile-tags web endpoints."""
+"""Integration tests for the write-tag web endpoint."""
 
 from __future__ import annotations
 
@@ -58,7 +58,7 @@ def client(app: FastAPI) -> Iterator[TestClient]:
 
 
 class TestReconcileEndpoints:
-    """Tests for reconcile write-tag dispatch and status polling endpoints."""
+    """Tests for write-tag dispatch endpoint behavior."""
 
     @pytest.mark.integration
     @pytest.mark.mocked
@@ -70,7 +70,7 @@ class TestReconcileEndpoints:
         """POST should start the background task and return task metadata."""
         mock_tagging_service.start_write_tags_background.return_value = "write_tags:test_lib"
 
-        response = client.post("/api/web/libraries/libraries:test_lib/reconcile-tags")
+        response = client.post("/api/web/library/libraries:test_lib/write-tag")
 
         assert response.status_code == 202
         assert response.json() == {
@@ -91,43 +91,7 @@ class TestReconcileEndpoints:
             "Library not found",
         )
 
-        response = client.post("/api/web/libraries/libraries:test_lib/reconcile-tags")
-
-        assert response.status_code == 404
-        assert response.json() == {"detail": "Library not found"}
-
-    @pytest.mark.integration
-    @pytest.mark.mocked
-    def test_get_reconcile_status_returns_correct_shape(
-        self,
-        client: TestClient,
-        mock_tagging_service: MagicMock,
-    ) -> None:
-        """GET should return the polling payload expected by the frontend."""
-        mock_tagging_service.get_reconcile_status.return_value = {
-            "pending_count": 3,
-            "in_progress": True,
-        }
-
-        response = client.get("/api/web/libraries/libraries:test_lib/reconcile-status")
-
-        assert response.status_code == 200
-        assert response.json() == {
-            "pending_count": 3,
-            "in_progress": True,
-        }
-
-    @pytest.mark.integration
-    @pytest.mark.mocked
-    def test_get_reconcile_status_returns_404_for_unknown_library(
-        self,
-        client: TestClient,
-        mock_tagging_service: MagicMock,
-    ) -> None:
-        """GET should translate missing-library service errors into HTTP 404."""
-        mock_tagging_service.get_reconcile_status.side_effect = ValueError("Library not found")
-
-        response = client.get("/api/web/libraries/libraries:test_lib/reconcile-status")
+        response = client.post("/api/web/library/libraries:test_lib/write-tag")
 
         assert response.status_code == 404
         assert response.json() == {"detail": "Library not found"}

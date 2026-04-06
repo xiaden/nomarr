@@ -129,58 +129,76 @@ class TestStartApplyCalibrationBackground:
         assert service._apply_error is None
 
 
-class TestGetApplyStatus:
-    """Tests for apply status snapshots."""
+class TestGetApplyCombinedStatus:
+    """Tests for combined apply status and progress snapshots."""
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_get_apply_status_idle(self) -> None:
-        """Fresh service should report idle status."""
+    def test_get_apply_combined_status_idle(self) -> None:
+        """Fresh service should report idle status with empty progress."""
         mock_bts = MagicMock()
         mock_bts.get_task_status.return_value = None
         service = _make_service(bts=mock_bts)
 
-        status = service.get_apply_status()
+        status = service.get_apply_combined_status()
 
-        assert status == {"status": "idle", "result": None, "error": None}
+        assert status == {
+            "status": "idle",
+            "result": None,
+            "error": None,
+            "total_files": 0,
+            "completed_files": 0,
+            "current_file": None,
+            "is_running": False,
+        }
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_get_apply_status_running(self) -> None:
-        """Running BTS status should report running without a result."""
+    def test_get_apply_combined_status_running(self) -> None:
+        """Running BTS status should report running with progress fields."""
         mock_bts = MagicMock()
         mock_bts.get_task_status.return_value = {"status": "running"}
         service = _make_service(bts=mock_bts)
+        service._apply_progress = {
+            "total_files": 10,
+            "completed_files": 3,
+            "current_file": "track.flac",
+        }
 
-        status = service.get_apply_status()
+        status = service.get_apply_combined_status()
 
         assert status["status"] == "running"
         assert status["result"] is None
+        assert status["total_files"] == 10
+        assert status["completed_files"] == 3
+        assert status["current_file"] == "track.flac"
+        assert status["is_running"] is True
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_get_apply_status_completed(self) -> None:
+    def test_get_apply_combined_status_completed(self) -> None:
         """Stored apply result should surface as completed status."""
         mock_bts = MagicMock()
         mock_bts.get_task_status.return_value = None
         service = _make_service(bts=mock_bts)
         service._apply_result = MagicMock(processed=5, failed=0, total=5, message="done")
 
-        status = service.get_apply_status()
+        status = service.get_apply_combined_status()
 
         assert status["status"] == "completed"
         assert status["result"]["processed"] == 5
+        assert status["is_running"] is False
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_get_apply_status_failed(self) -> None:
+    def test_get_apply_combined_status_failed(self) -> None:
         """Stored apply error should surface as failed status."""
         mock_bts = MagicMock()
         mock_bts.get_task_status.return_value = None
         service = _make_service(bts=mock_bts)
         service._apply_error = RuntimeError("boom")
 
-        status = service.get_apply_status()
+        status = service.get_apply_combined_status()
 
         assert status["status"] == "failed"
         assert status["error"] == "boom"

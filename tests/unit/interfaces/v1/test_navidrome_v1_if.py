@@ -54,7 +54,7 @@ class TestGeneratePlaylistsEndpoint:
         )
 
         response = client.post(
-            "/api/v1/navidrome/generate-playlists",
+            "/api/v1/navidrome/playlist/generate",
             json={"user_id": "user-1"},
         )
 
@@ -78,7 +78,7 @@ class TestGeneratePlaylistsEndpoint:
         )
 
         response = client.post(
-            "/api/v1/navidrome/generate-playlists",
+            "/api/v1/navidrome/playlist/generate",
             json={"user_id": "user-1"},
         )
 
@@ -110,7 +110,7 @@ class TestGeneratePlaylistsEndpoint:
         }
 
         response = client.post(
-            "/api/v1/navidrome/generate-playlists",
+            "/api/v1/navidrome/playlist/generate",
             json={"user_id": "user-1"},
         )
 
@@ -143,7 +143,7 @@ class TestGeneratePlaylistsEndpoint:
         )
 
         response = client.post(
-            "/api/v1/navidrome/generate-playlists",
+            "/api/v1/navidrome/playlist/generate",
             json={"user_id": "user-1"},
         )
 

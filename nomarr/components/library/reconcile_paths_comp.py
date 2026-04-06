@@ -21,7 +21,10 @@ ReconcilePolicy = Literal["mark_invalid", "delete_invalid", "dry_run"]
 
 
 def reconcile_library_paths(
-    db: Database, policy: ReconcilePolicy = "mark_invalid", batch_size: int = 1000
+    db: Database,
+    library_id: str,
+    policy: ReconcilePolicy = "mark_invalid",
+    batch_size: int = 1000,
 ) -> ReconcileResult:
     """Re-validate all library paths against current configuration.
 
@@ -31,6 +34,7 @@ def reconcile_library_paths(
 
     Args:
         db: Database instance
+        library_id: Library document _id to scope reconciliation to
         policy: What to do with invalid paths:
             - "dry_run": Only report, don't modify database
             - "mark_invalid": Keep files but log warnings
@@ -46,6 +50,7 @@ def reconcile_library_paths(
 
         result = reconcile_library_paths(
             db=db,
+            library_id="libraries/12345",
             policy="delete_invalid",
             batch_size=500
         )
@@ -67,17 +72,17 @@ def reconcile_library_paths(
     logger.info(f"[reconcile_library_paths] Found {total_count} files to validate")
     offset = 0
     while True:
-        files, _ = db.library_files.list_library_files(limit=batch_size, offset=offset)
+        files, _ = db.library_files.list_library_files(library_id=library_id, limit=batch_size, offset=offset)
         if not files:
             break
         logger.debug(f"[reconcile_library_paths] Processing batch at offset {offset} ({len(files)} files)")
         for file_record in files:
             result["total_files"] += 1
             file_path = file_record["path"]
-            library_id = file_record.get("library_id")
+            file_library_id = file_record.get("library_id", library_id)
             try:
                 library_path = build_library_path_from_db(
-                    stored_path=file_path, db=db, library_id=library_id, check_disk=True
+                    stored_path=file_path, db=db, library_id=file_library_id, check_disk=True
                 )
                 if library_path.is_valid():
                     result["valid_files"] += 1

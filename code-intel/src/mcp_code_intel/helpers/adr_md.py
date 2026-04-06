@@ -33,6 +33,7 @@ from typing import Any
 ADR_STATUSES: frozenset[str] = frozenset({"Proposed", "Accepted", "Deprecated", "Superseded"})
 SOURCE_LOG_PATTERN: re.Pattern[str] = re.compile(r"^[a-z][a-z0-9-]*[a-z0-9]#L\d+$")
 DECISIONS_DIR = "artifacts/decisions"
+DRAFTS_DIR = "artifacts/decisions/drafts"
 ADR_PREFIX = "ADR-"
 
 # --- Regex patterns ---

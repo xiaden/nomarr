@@ -43,69 +43,107 @@ See [config_schema.json](config_schema.json) for full configuration options.
 
 | Tool | Description |
 |------|-------------|
-| `read_module_api` | Static API discovery using AST (no imports) |
-| `read_module_source` | Get source code of functions/classes |
-| `locate_module_symbol` | Find symbol definitions across configured paths |
+| `list_project_directory_tree` | List directory contents with smart filtering |
+| `read_module_api` | Discover the entire API of any Python module |
+| `read_module_source` | Get source code of a function/method/class by import path |
+| `read_file_symbol_at_line` | Get full function/class containing a line |
+| `locate_module_symbol` | Find all definitions of a symbol across the codebase |
 | `trace_module_calls` | Trace function call chains |
 | `trace_project_endpoint` | Trace FastAPI endpoints through DI |
+
+### Artifact / ADR Tools
+
+| Tool | Description |
+|------|-------------|
+| `adr_suggest` | Write staging draft to artifacts/decisions/drafts/ for review |
+| `adr_commit` | Write an approved ADR to disk in artifacts/decisions/ |
+| `adr_read` | Read and parse an existing Architecture Decision Record |
+| `adr_search` | Search ADRs by tag, status, and/or text query |
+
+### Design Doc Tools
+
+| Tool | Description |
+|------|-------------|
+| `dd_create` | Create a new Design Document markdown file |
+| `dd_read` | Read and parse an existing Design Document |
+| `dd_archive` | Archive a design document from pending to completed |
+
+### Agent Log Tools
+
+| Tool | Description |
+|------|-------------|
+| `log_write` | Append an entry to an agent's log file |
+| `log_read` | Read an agent's log entries with optional filters |
 
 ### File Reading
 
 | Tool | Description |
 |------|-------------|
-| `read_file_line` | Quick context around a specific line |
-| `read_file_range` | Read a range of lines |
-| `search_file_text` | Search for text patterns in files |
-| `read_read_file_symbol_at_line` | Get symbol context at a line |
+| `read_file_line` | Quick error context (target line + 2 lines around) |
+| `read_file_line_range` | Read a range of lines from any file (max 100 lines) |
+| `search_file_text` | Find exact text in files with 2-line context |
+
 
 ### File Editing
 
 | Tool | Description |
 |------|-------------|
-| `edit_edit_edit_file_replace_content_content_string` | Multiple string replacements in single write |
-| `edit_file_move_text` | Move lines within/between files |
-| `edit_file_create` | Create new files atomically (fails if exists) |
-| `edit_edit_file_replace_content_content` | Replace entire file contents atomically |
-| `edit_edit_file_insert_text` | Insert text at specific positions (bof/eof/before/after line) |
-| `edit_edit_file_copy_paste_text` | Copy text from sources to targets (stamp decorator pattern) |
-
-### Project Analysis
-
-| Tool | Description |
-|------|-------------|
-| `list_project_directory_tree` | Smart directory listing with filtering |
-| `project_list_routes` | List API routes by static analysis |
-| `analyze_project_api_coverage` | Check frontend usage of backend APIs |
+| `edit_file_create` | Create new files atomically (batch, fails if exists) |
+| `edit_file_replace_content` | Replace entire file contents atomically (batch) |
+| `edit_file_replace_string` | Apply multiple string replacements atomically (single write) |
+| `edit_file_replace_by_content` | Replace a line range identified by content boundaries |
+| `edit_file_insert_at_boundary` | Insert text at bof or eof of file(s) |
+| `edit_file_insert_at_line` | Insert text before or after a content anchor in file(s) |
+| `edit_file_move` | Move/rename a file within the workspace |
+| `edit_file_move_by_content` | Move text between locations using content boundaries |
 
 ### Linting
 
 | Tool | Description |
 |------|-------------|
-| `lint_project_backend` | Run ruff, mypy, import-linter |
-| `lint_project_frontend` | Run ESLint and TypeScript checks |
+| `lint_project_backend` | Run ruff, mypy, import-linter (optionally pytest) |
+| `lint_project_frontend` | Run ESLint, TypeScript checks, and Vitest |
 
 ### Task Planning
 
 | Tool | Description |
 |------|-------------|
-| `plan_read` | Parse task plan markdown files |
+| `plan_read` | Read a task plan as structured JSON |
 | `plan_complete_step` | Mark steps complete with annotations |
+| `plan_archive` | Archive a completed task plan from pending to completed |
+
+### Python Introspection
+
+| Tool | Description |
+|------|-------------|
+| `py_introspect` | Run whitelist-only Python introspection checks in isolated subprocess |
 
 ## File Mutation Capabilities
 
-The server provides 4 atomic file mutation tools designed for bulk editing operations:
+The server provides 8 file editing tools designed for atomic, bulk-safe editing operations:
 
-- **Batch-first APIs**: All tools accept arrays for atomic multi-file operations
+- `edit_file_create`
+- `edit_file_replace_content`
+- `edit_file_replace_string`
+- `edit_file_replace_by_content`
+- `edit_file_insert_at_boundary`
+- `edit_file_insert_at_line`
+- `edit_file_move`
+- `edit_file_move_by_content`
+
+All of them are designed around the same operational principles:
+
+- **Batch-first APIs**: Create, replace, and insert tools accept arrays for atomic multi-file operations
 - **Atomic transactions**: All-or-nothing execution with complete rollback on any failure
-- **Context as validation**: Returns changed regions with ±2 lines of context to eliminate verification reads
-- **Coordinate space rule**: For same-file operations, all coordinates refer to ORIGINAL file state
+- **Context as validation**: Mutation responses include changed regions with nearby context so callers can validate without extra reads
+- **Content-aware targeting**: Boundary- and anchor-based tools avoid brittle line-number editing where possible
 
 ### Common Use Cases
 
-- **Extract functions to new files**: Create targets → copy code → move/delete originals
-- **Stamp decorator across codebase**: Copy same decorator to 50+ methods in one atomic operation
+- **Scaffold new files**: Create multiple files and directories in one atomic operation
 - **Batch configuration updates**: Replace multiple config files atomically
-- **Precise insertions**: Add imports, comments, or type hints without string matching
+- **Targeted structural edits**: Replace or move bounded content without relying on fragile line numbers
+- **Precise insertions**: Add imports, comments, or helper blocks at file boundaries or near content anchors
 
 See [MCP Tools Reference](docs/mcp-tools-reference.md) for complete API documentation, examples, and usage patterns.
 

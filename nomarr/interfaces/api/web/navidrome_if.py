@@ -49,7 +49,7 @@ async def web_navidrome_preview(
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to generate preview")) from e
 
 
-@router.get("/tag-values", dependencies=[Depends(verify_session)])
+@router.get("/tag-value", dependencies=[Depends(verify_session)])
 async def web_navidrome_tag_values(
     rel: str,
     navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
@@ -76,7 +76,7 @@ async def web_navidrome_config(
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to generate config")) from e
 
 
-@router.post("/playlists/preview", dependencies=[Depends(verify_session)])
+@router.post("/playlist/preview", dependencies=[Depends(verify_session)])
 async def web_navidrome_playlist_preview(
     request: PlaylistPreviewRequest, navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)]
 ) -> PlaylistPreviewResponse:
@@ -95,7 +95,7 @@ async def web_navidrome_playlist_preview(
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to preview playlist")) from e
 
 
-@router.post("/playlists/generate", dependencies=[Depends(verify_session)])
+@router.post("/playlist/generate", dependencies=[Depends(verify_session)])
 async def web_navidrome_playlist_generate(
     request: PlaylistGenerateRequest, navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)]
 ) -> GeneratePlaylistResponse:
@@ -119,7 +119,7 @@ async def web_navidrome_playlist_generate(
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to generate playlist")) from e
 
 
-@router.get("/templates", dependencies=[Depends(verify_session)])
+@router.get("/template", dependencies=[Depends(verify_session)])
 async def web_navidrome_templates_list(
     navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
 ) -> GetTemplateSummaryResponse:
@@ -132,7 +132,7 @@ async def web_navidrome_templates_list(
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to list templates")) from e
 
 
-@router.post("/templates", dependencies=[Depends(verify_session)])
+@router.post("/template", dependencies=[Depends(verify_session)])
 async def web_navidrome_templates_generate(
     request: GenerateTemplateFilesRequest,
     navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
@@ -152,7 +152,7 @@ async def web_navidrome_templates_generate(
         ) from e
 
 
-@router.post("/playlists/static", dependencies=[Depends(verify_session)])
+@router.post("/playlist/static", dependencies=[Depends(verify_session)])
 async def web_navidrome_static_playlist(
     request: StaticPlaylistRequest, navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)]
 ) -> StaticPlaylistResponse:
@@ -173,7 +173,7 @@ async def web_navidrome_static_playlist(
         ) from e
 
 
-@router.post("/playlists/push", dependencies=[Depends(verify_session)], response_model=PushStaticPlaylistResponse)
+@router.post("/playlist/push", dependencies=[Depends(verify_session)], response_model=PushStaticPlaylistResponse)
 async def web_navidrome_push_playlist(
     request: StaticPlaylistRequest,
     navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
@@ -200,7 +200,7 @@ async def web_navidrome_push_playlist(
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to push playlist")) from e
 
 
-@router.post("/sync-songs", dependencies=[Depends(verify_session)])
+@router.post("/sync-song", dependencies=[Depends(verify_session)])
 async def web_navidrome_sync_songs(
     navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
 ) -> SyncSongsResponse:

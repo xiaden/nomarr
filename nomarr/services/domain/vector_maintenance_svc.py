@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from nomarr.services.infrastructure.config_svc import ConfigService
 
+from nomarr.components.ml.onnx.ml_discovery_comp import discover_backbones
 from nomarr.components.ml.vectors.ml_vector_maintenance_comp import has_vector_index
 from nomarr.helpers.vector_params_helper import compute_nlists
 from nomarr.persistence.db import Database
@@ -118,6 +119,44 @@ class VectorMaintenanceService:
             "cold_count": cold_count,
             "index_exists": index_exists,
         }
+
+    def get_library_vector_stats(self, library_id: str) -> list[dict[str, str | int | bool]]:
+        """Get per-backbone vector statistics for a library.
+
+        Args:
+            library_id: Library document ``_id`` or ``_key``.
+
+        Returns:
+            List of stats rows containing ``backbone_id``, ``hot_count``,
+            ``cold_count``, and ``index_exists``.
+
+        Raises:
+            ValueError: If library not found
+
+        """
+        library = self.db.libraries.get_library(library_id)
+        if library is None:
+            msg = f"Library not found: {library_id}"
+            raise ValueError(msg)
+
+        library_key = str(library["_key"])
+        stats: list[dict[str, str | int | bool]] = []
+        for backbone_id in discover_backbones(self.models_dir):
+            try:
+                backbone_stats = self.get_hot_cold_stats(backbone_id, library_key)
+                stats.append(
+                    {
+                        "backbone_id": backbone_id,
+                        "hot_count": int(backbone_stats["hot_count"]),
+                        "cold_count": int(backbone_stats["cold_count"]),
+                        "index_exists": bool(backbone_stats["index_exists"]),
+                    }
+                )
+            except Exception:
+                logger.debug("Failed to get vector stats for backbone %s, library %s", backbone_id, library_key)
+                continue
+
+        return stats
 
     def calculate_optimal_nlists(self, doc_count: int, library_key: str | None = None) -> int:
         """Calculate optimal nlists for vector index based on document count.
