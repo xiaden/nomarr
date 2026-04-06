@@ -98,6 +98,11 @@ class TestRecoverStaleStates:
 
         assert result == {"scanning": 1, "calibrating": 0, "applying": 0, "writing": 0}
         mock_db.library_pipeline_states.bulk_transition.assert_any_call(PIPELINE_SCANNING, PIPELINE_IDLE)
+        mock_db.libraries.update_scan_status.assert_called_once_with(
+            library_id,
+            status="idle",
+            error="Scan interrupted by server restart",
+        )
 
     def test_recover_stale_states_calibrating(
         self,
@@ -125,6 +130,7 @@ class TestRecoverStaleStates:
             PIPELINE_CALIBRATING,
             PIPELINE_AWAITING_CALIBRATION,
         )
+        mock_db.libraries.update_scan_status.assert_not_called()
 
     def test_recover_stale_states_applying(
         self,
@@ -152,6 +158,7 @@ class TestRecoverStaleStates:
             PIPELINE_APPLYING,
             PIPELINE_AWAITING_CALIBRATION,
         )
+        mock_db.libraries.update_scan_status.assert_not_called()
 
     def test_recover_stale_states_writing(
         self,
@@ -170,6 +177,7 @@ class TestRecoverStaleStates:
 
         assert result == {"scanning": 0, "calibrating": 0, "applying": 0, "writing": 1}
         mock_db.library_pipeline_states.transition_state.assert_called_once_with(library_id, PIPELINE_WRITE_READY)
+        mock_db.libraries.update_scan_status.assert_not_called()
 
 
 class TestTriggerCalibration:
@@ -209,13 +217,15 @@ class TestTriggerCalibration:
 
     def test_trigger_calibration_existing_calibration(
         self,
+        monkeypatch: pytest.MonkeyPatch,
         pipeline_service: LibraryPipelineService,
         mock_db: MagicMock,
     ) -> None:
         """Existing calibration should shortcut directly into apply dispatch."""
         mock_db.calibration_state.get_all_calibration_states.return_value = [{"version": 1}]
         mock_db.library_pipeline_states.bulk_transition.side_effect = [2, 2]
-        pipeline_service._dispatch_apply = MagicMock()
+        mock_dispatch_apply = MagicMock()
+        monkeypatch.setattr(pipeline_service, "_dispatch_apply", mock_dispatch_apply)
 
         pipeline_service.trigger_calibration()
 
@@ -223,7 +233,7 @@ class TestTriggerCalibration:
             ((PIPELINE_AWAITING_CALIBRATION, PIPELINE_CALIBRATING),),
             ((PIPELINE_CALIBRATING, PIPELINE_APPLYING),),
         ]
-        pipeline_service._dispatch_apply.assert_called_once_with()
+        mock_dispatch_apply.assert_called_once_with()
 
 
 class TestOnApplyComplete:
@@ -231,6 +241,7 @@ class TestOnApplyComplete:
 
     def test_on_apply_complete_auto_write_enabled(
         self,
+        monkeypatch: pytest.MonkeyPatch,
         pipeline_service: LibraryPipelineService,
         mock_db: MagicMock,
     ) -> None:
@@ -241,15 +252,17 @@ class TestOnApplyComplete:
             "library_auto_write": True,
             "file_write_mode": "id3",
         }
-        pipeline_service._dispatch_write = MagicMock()
+        mock_dispatch_write = MagicMock()
+        monkeypatch.setattr(pipeline_service, "_dispatch_write", mock_dispatch_write)
 
         pipeline_service.on_apply_complete()
 
         mock_db.library_pipeline_states.transition_state.assert_called_once_with(library_id, PIPELINE_WRITING)
-        pipeline_service._dispatch_write.assert_called_once_with(library_id)
+        mock_dispatch_write.assert_called_once_with(library_id)
 
     def test_on_apply_complete_auto_write_disabled(
         self,
+        monkeypatch: pytest.MonkeyPatch,
         pipeline_service: LibraryPipelineService,
         mock_db: MagicMock,
     ) -> None:
@@ -260,15 +273,17 @@ class TestOnApplyComplete:
             "library_auto_write": False,
             "file_write_mode": "id3",
         }
-        pipeline_service._dispatch_write = MagicMock()
+        mock_dispatch_write = MagicMock()
+        monkeypatch.setattr(pipeline_service, "_dispatch_write", mock_dispatch_write)
 
         pipeline_service.on_apply_complete()
 
         mock_db.library_pipeline_states.transition_state.assert_called_once_with(library_id, PIPELINE_WRITE_READY)
-        pipeline_service._dispatch_write.assert_not_called()
+        mock_dispatch_write.assert_not_called()
 
     def test_on_apply_complete_write_mode_none(
         self,
+        monkeypatch: pytest.MonkeyPatch,
         pipeline_service: LibraryPipelineService,
         mock_db: MagicMock,
     ) -> None:
@@ -279,12 +294,13 @@ class TestOnApplyComplete:
             "library_auto_write": True,
             "file_write_mode": "none",
         }
-        pipeline_service._dispatch_write = MagicMock()
+        mock_dispatch_write = MagicMock()
+        monkeypatch.setattr(pipeline_service, "_dispatch_write", mock_dispatch_write)
 
         pipeline_service.on_apply_complete()
 
         mock_db.library_pipeline_states.transition_state.assert_called_once_with(library_id, PIPELINE_WRITE_READY)
-        pipeline_service._dispatch_write.assert_not_called()
+        mock_dispatch_write.assert_not_called()
 
 
 class TestOnWriteComplete:
@@ -345,6 +361,11 @@ class TestRecoverStaleStatesAdditional:
         assert (PIPELINE_SCANNING, PIPELINE_IDLE) not in [
             call.args for call in mock_db.library_pipeline_states.bulk_transition.call_args_list
         ]
+        mock_db.libraries.update_scan_status.assert_called_once_with(
+            stale_library_id,
+            status="idle",
+            error="Scan interrupted by server restart",
+        )
 
     def test_recover_stale_states_writing_task_still_running(
         self,
@@ -371,6 +392,7 @@ class TestRecoverStaleStatesAdditional:
 
         assert result == {"scanning": 0, "calibrating": 0, "applying": 0, "writing": 0}
         mock_db.library_pipeline_states.transition_state.assert_not_called()
+        mock_db.libraries.update_scan_status.assert_not_called()
 
 
 class TestOnCalibrationComplete:
@@ -378,11 +400,13 @@ class TestOnCalibrationComplete:
 
     def test_on_calibration_complete_dispatches_apply(
         self,
+        monkeypatch: pytest.MonkeyPatch,
         pipeline_service: LibraryPipelineService,
         mock_db: MagicMock,
     ) -> None:
         """Calibration completion should transition libraries and dispatch apply."""
-        pipeline_service._dispatch_apply = MagicMock()
+        mock_dispatch_apply = MagicMock()
+        monkeypatch.setattr(pipeline_service, "_dispatch_apply", mock_dispatch_apply)
 
         pipeline_service.on_calibration_complete()
 
@@ -390,7 +414,7 @@ class TestOnCalibrationComplete:
             PIPELINE_CALIBRATING,
             PIPELINE_APPLYING,
         )
-        pipeline_service._dispatch_apply.assert_called_once_with()
+        mock_dispatch_apply.assert_called_once_with()
 
 
 class TestDispatchApply:
@@ -450,6 +474,7 @@ class TestOnApplyCompleteAdditional:
 
     def test_on_apply_complete_missing_library(
         self,
+        monkeypatch: pytest.MonkeyPatch,
         pipeline_service: LibraryPipelineService,
         mock_db: MagicMock,
     ) -> None:
@@ -457,7 +482,8 @@ class TestOnApplyCompleteAdditional:
         library_id = "libraries/lib-missing"
         mock_db.library_pipeline_states.get_libraries_in_state.return_value = [library_id]
         mock_db.libraries.get_library.return_value = None
-        pipeline_service._dispatch_write = MagicMock()
+        mock_dispatch_write = MagicMock()
+        monkeypatch.setattr(pipeline_service, "_dispatch_write", mock_dispatch_write)
 
         pipeline_service.on_apply_complete()
 
@@ -465,7 +491,7 @@ class TestOnApplyCompleteAdditional:
             library_id,
             PIPELINE_WRITE_READY,
         )
-        pipeline_service._dispatch_write.assert_not_called()
+        mock_dispatch_write.assert_not_called()
 
 
 class TestDispatchWrite:

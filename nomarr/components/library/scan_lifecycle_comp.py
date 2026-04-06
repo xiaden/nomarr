@@ -92,6 +92,37 @@ def is_library_scanning(db: Database, library_id: str) -> bool:
     return pipeline_state_key == _PIPELINE_SCANNING_KEY
 
 
+def get_scanning_library_ids(db: Database) -> set[str]:
+    """Return the set of library IDs currently in PIPELINE_SCANNING state."""
+    return set(db.library_pipeline_states.get_libraries_in_state(PIPELINE_SCANNING))
+
+
+def get_library_scan_histories(
+    db: Database,
+    limit: int | None = None,
+) -> list[dict[str, Any]]:
+    """Return scan history records for all libraries, including disabled ones.
+
+    Args:
+        db: Database connection.
+        limit: Maximum number of records to return. None for all.
+
+    """
+    libraries = db.libraries.list_libraries(enabled_only=False)
+    if limit is not None:
+        libraries = libraries[:limit]
+
+    return [
+        {
+            "library_id": library["_id"],
+            "name": library.get("name", "Unknown"),
+            "scanned_at": library.get("scanned_at"),
+            "scan_status": library.get("scan_status", "idle"),
+        }
+        for library in libraries
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Scan status tracking
 # ---------------------------------------------------------------------------

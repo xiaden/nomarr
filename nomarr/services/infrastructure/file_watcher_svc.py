@@ -37,7 +37,8 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
-from nomarr.components.library.scan_lifecycle_comp import PIPELINE_SCANNING
+from nomarr.components.library import get_library_watch_config, list_watchable_libraries
+from nomarr.components.library.update_library_metadata_comp import UpdateLibraryMetadataComp
 from nomarr.helpers.exceptions import LibraryAlreadyScanningError, LibraryNotFoundError
 from nomarr.helpers.time_helper import InternalSeconds, internal_s
 
@@ -141,7 +142,6 @@ class FileWatcherService:
     3. Triggering full library scans via LibraryService
 
     It does NOT:
-    - Access persistence directly (violates architecture)
     - Make domain decisions (when to scan, what to process)
     - Trigger ML/tagging pipelines (those are manual)
 
@@ -163,7 +163,16 @@ class FileWatcherService:
         event_loop: asyncio.AbstractEventLoop | None = None,
         polling_interval_seconds: float = 300.0,
     ) -> None:
-        self.db = db
+        """Initialise the FileWatcherService.
+
+        Args:
+            db: ArangoDB database handle.
+            library_service: Domain service used to trigger scans.
+            debounce_seconds: Quiet period before triggering a scan after file events.
+            event_loop: Explicit event loop to use; if None, uses the running loop or creates a new one.
+            polling_interval_seconds: Interval between polls when using poll watch mode.
+        """
+        self._db = db
         self.library_service = library_service
         self.debounce_seconds = debounce_seconds
         # Use provided loop or get running loop (avoid deprecated get_event_loop)
@@ -192,62 +201,16 @@ class FileWatcherService:
             f"FileWatcherService initialized (debounce={debounce_seconds}s, poll_interval={polling_interval_seconds}s)",
         )
 
-    def _reset_stale_scan_statuses(self) -> None:
-        """Reset stale scan metadata for libraries still marked scanning.
-
-        LibraryPipelineService.recover_stale_states() owns authoritative pipeline
-        state recovery. This helper only clears scan-document metadata for
-        libraries that are still in ``PIPELINE_SCANNING`` when watcher sync runs,
-        so progress/status fields do not remain stuck at ``scanning`` after a
-        restart.
-
-        Called once at startup via sync_watchers().
-        """
-        scanning_library_ids: set[str] = set(
-            self.db.library_pipeline_states.get_libraries_in_state(PIPELINE_SCANNING),
-        )
-        if not scanning_library_ids:
-            return
-
-        all_libraries = self.db.libraries.list_libraries()
-        reset_count = 0
-
-        for lib in all_libraries:
-            library_id = str(lib["_id"])
-            if library_id not in scanning_library_ids:
-                continue
-
-            logger.warning(
-                "[FileWatcherService] Clearing stale scan metadata for library %s "
-                "during startup sync; pipeline state recovery is handled separately",
-                lib.get("name", library_id),
-            )
-            self.db.libraries.update_scan_status(
-                library_id,
-                status="idle",
-                error="Scan interrupted by server restart",
-            )
-            reset_count += 1
-
-        if reset_count > 0:
-            logger.info("[FileWatcherService] Reset stale scan metadata for %s libraries", reset_count)
-
     def sync_watchers(self) -> None:
         """Sync watchers with the library collection (DB is source of truth).
 
-        - Clears stale scan metadata on startup for libraries still in scanning state
         - Starts watchers for libraries in DB with watch_mode != 'off'
         - Stops watchers for libraries no longer in DB or with watch_mode == 'off'
 
         Should be called on startup and can be called periodically if needed.
         """
-        # Clear stale scan metadata for libraries that still appear in the
-        # scanning pipeline state during watcher sync. Pipeline recovery itself
-        # is owned by LibraryPipelineService.recover_stale_states().
-        self._reset_stale_scan_statuses()
-
         # Get libraries that should be watched from DB
-        watchable = self.db.libraries.list_watchable_libraries()
+        watchable = list_watchable_libraries(self._db)
         watchable_ids = {lib["_id"] for lib in watchable}
 
         # Stop watchers for libraries no longer watchable
@@ -300,7 +263,7 @@ class FileWatcherService:
 
         """
         # Get library info
-        library = self.db.libraries.get_library(library_id)
+        library = get_library_watch_config(self._db, library_id)
         if not library:
             msg = f"Library {library_id} not found"
             raise ValueError(msg)
@@ -406,7 +369,7 @@ class FileWatcherService:
                 await asyncio.sleep(self.polling_interval_seconds)
 
                 # Validate library still exists and should be watched
-                library = self.db.libraries.get_library(library_id)
+                library = get_library_watch_config(self._db, library_id)
                 if not library:
                     logger.info(f"Library {library_id} no longer exists, stopping watcher")
                     self._schedule_cleanup(library_id)
@@ -431,6 +394,7 @@ class FileWatcherService:
                     return
                 except LibraryAlreadyScanningError:
                     logger.debug(f"Library {library_id} is already being scanned, skipping this poll")
+                    # Benign startup race: watcher may poll before recover_stale_states() runs, so skipping is correct.
                     continue  # Don't exit the loop! Continue polling.
                 except Exception as e:
                     logger.error(f"Failed to trigger poll scan for library {library_id}: {e}", exc_info=True)
@@ -502,7 +466,7 @@ class FileWatcherService:
             raise ValueError(msg)
 
         # Verify library exists
-        library = self.db.libraries.get_library(library_id)
+        library = get_library_watch_config(self._db, library_id)
         if not library:
             msg = f"Library {library_id} not found"
             raise ValueError(msg)
@@ -517,7 +481,7 @@ class FileWatcherService:
             self.pending_changes = {(lib_id, path) for lib_id, path in self.pending_changes if lib_id != library_id}
 
         # Update watch_mode in database
-        self.db.libraries.update_library(library_id, watch_mode=new_mode)
+        UpdateLibraryMetadataComp(self._db).update(library_id, watch_mode=new_mode)
         logger.info(f"Updated library {library_id} watch_mode to '{new_mode}'")
 
         # Start new mode if not 'off'

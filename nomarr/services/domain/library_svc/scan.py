@@ -3,7 +3,6 @@
 This module handles:
 - Starting and cancelling scans
 - Scan status and history
-- Worker health checks for scanning
 """
 
 from __future__ import annotations
@@ -12,10 +11,14 @@ import functools
 import logging
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.library.scan_lifecycle_comp import PIPELINE_SCANNING, on_scan_complete_pipeline_hook
+from nomarr.components.library import (
+    get_library_scan_histories,
+    get_scanning_library_ids,
+    resolve_library_for_scan,
+)
+from nomarr.components.library.scan_lifecycle_comp import on_scan_complete_pipeline_hook
 from nomarr.helpers import ManagedTask
 from nomarr.helpers.dto.library_dto import LibraryScanStatusResult, StartScanResult
-from nomarr.helpers.time_helper import now_ms
 from nomarr.services.infrastructure.config_svc import INTERNAL_MIN_DURATION_S
 from nomarr.workflows.library.scan_library_full_wf import scan_library_full_workflow
 from nomarr.workflows.library.scan_library_quick_wf import scan_library_quick_workflow
@@ -35,43 +38,6 @@ class LibraryScanMixin:
     cfg: LibraryServiceConfig
     db: Database
     background_tasks: Any | None
-
-    def _get_library_or_error(self, library_id: str) -> dict[str, Any]:
-        """Get a library by ID or raise an error."""
-        result = self.db.libraries.get_library(library_id)
-        if result is None:
-            msg = f"Library not found: {library_id}"
-            raise ValueError(msg)
-        return result
-
-    def _has_healthy_library_workers(self) -> bool:
-        """Check if any library workers are healthy and available.
-
-        Returns:
-            True if at least one library worker has a recent heartbeat
-
-        """
-        workers = self.db.health.get_all_workers()
-        for worker in workers:
-            component = worker.get("component")
-            if not isinstance(component, str) or not component.startswith("worker:library:"):
-                continue
-            health = self.db.health.get_component(component)
-            if health and health.get("status") == "healthy":
-                last_heartbeat = health.get("last_heartbeat", 0)
-                if now_ms().value - last_heartbeat < 30000:
-                    return True
-        return False
-
-    def _is_scan_running(self) -> bool:
-        """Check if any scan is currently running.
-
-        Returns:
-            True if any library pipeline is in the scanning state
-
-        """
-        scanning_libraries: list[str] = self.db.library_pipeline_states.get_libraries_in_state(PIPELINE_SCANNING)
-        return len(scanning_libraries) > 0
 
     def start_quick_scan(self, library_id: str) -> StartScanResult:
         """Start a quick (incremental) library scan.
@@ -203,9 +169,7 @@ class LibraryScanMixin:
                 pending_jobs=0,
                 running_jobs=0,
             )
-        scanning_library_ids: set[str] = set(
-            self.db.library_pipeline_states.get_libraries_in_state(PIPELINE_SCANNING),
-        )
+        scanning_library_ids = get_scanning_library_ids(self.db)
         if library_id is None:
             return LibraryScanStatusResult(
                 configured=True,
@@ -214,7 +178,7 @@ class LibraryScanMixin:
                 pending_jobs=0,
                 running_jobs=len(scanning_library_ids),
             )
-        library = self._get_library_or_error(library_id)
+        library = resolve_library_for_scan(self.db, library_id)
         scan_status = library.get("scan_status", "idle")
         scan_progress = library.get("scan_progress", 0)
         scan_total = library.get("scan_total", 0)
@@ -247,16 +211,7 @@ class LibraryScanMixin:
             List of scan info dicts with library_id, name, scanned_at, scan_status
 
         """
-        libraries = self.db.libraries.list_libraries(enabled_only=False)
-        return [
-            {
-                "library_id": lib["_id"],
-                "name": lib.get("name", "Unknown"),
-                "scanned_at": lib.get("scanned_at"),
-                "scan_status": lib.get("scan_status", "idle"),
-            }
-            for lib in libraries[:limit]
-        ]
+        return get_library_scan_histories(self.db, limit=limit)
 
     def validate_library_tags(
         self,
@@ -277,7 +232,7 @@ class LibraryScanMixin:
             Validation summary dict (files_checked, incomplete_files, etc.)
 
         """
-        self._get_library_or_error(library_id)
+        resolve_library_for_scan(self.db, library_id)
         return validate_library_tags_workflow(
             db=self.db,
             models_dir=self.cfg.models_dir,

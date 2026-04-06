@@ -17,6 +17,10 @@ from .library_root_comp import (
     resolve_path_within_library,
     validate_library_root,
 )
+from .library_watch_config_comp import (
+    get_library_watch_config,
+    list_watchable_libraries,
+)
 from .metadata_extraction_comp import (
     compute_chromaprint_for_file,
     extract_metadata,
@@ -27,6 +31,8 @@ from .scan_lifecycle_comp import (
     check_interrupted_scan,
     cleanup_stale_folders,
     get_cached_folders,
+    get_library_scan_histories,
+    get_scanning_library_ids,
     mark_scan_completed,
     mark_scan_started,
     remove_deleted_files,
@@ -56,9 +62,13 @@ __all__ = [
     "get_file_library_key",
     "get_file_tags_with_path",
     "get_library_file",
+    "get_library_scan_histories",
+    "get_library_watch_config",
     "get_orphaned_tag_count",
+    "get_scanning_library_ids",
     "get_unique_tag_keys",
     "get_unique_tag_values",
+    "list_watchable_libraries",
     "mark_file_tagged",
     "mark_scan_completed",
     "mark_scan_started",

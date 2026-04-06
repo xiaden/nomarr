@@ -84,36 +84,6 @@ class TestScanStateQueries:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_is_scan_running_returns_true_when_pipeline_has_scanning_library(self) -> None:
-        """A non-empty scanning pipeline state should report an active scan."""
-        service = _make_service()
-        mock_get_libraries_in_state = cast(
-            "MagicMock",
-            service.db.library_pipeline_states.get_libraries_in_state,
-        )
-        mock_get_libraries_in_state.return_value = ["libraries/lib1"]
-
-        assert service._is_scan_running() is True
-
-        mock_get_libraries_in_state.assert_called_once()
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_is_scan_running_returns_false_when_pipeline_is_idle(self) -> None:
-        """An empty scanning pipeline result should report no active scan."""
-        service = _make_service()
-        mock_get_libraries_in_state = cast(
-            "MagicMock",
-            service.db.library_pipeline_states.get_libraries_in_state,
-        )
-        mock_get_libraries_in_state.return_value = []
-
-        assert service._is_scan_running() is False
-
-        mock_get_libraries_in_state.assert_called_once()
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
     def test_get_status_aggregate_counts_running_jobs_from_pipeline_state(self) -> None:
         """Aggregate running_jobs should equal the number of scanning pipeline libraries."""
         service = _make_service()
@@ -145,7 +115,13 @@ class TestScanStateQueries:
         mock_get_libraries_in_state.return_value = ["libraries/lib2"]
         mock_get_library.return_value = {
             "_id": "libraries/lib1",
+            "_key": "lib1",
+            "_rev": "_abc",
             "name": "Rock Library",
+            "root_path": "/music",
+            "is_enabled": True,
+            "created_at": "2024-01-01T00:00:00",
+            "updated_at": "2024-01-01T00:00:00",
             "scan_status": "scanning",
             "scan_progress": 5,
             "scan_total": 10,
@@ -171,7 +147,13 @@ class TestScanStateQueries:
         mock_get_libraries_in_state.return_value = ["libraries/lib1"]
         mock_get_library.return_value = {
             "_id": "libraries/lib1",
+            "_key": "lib1",
+            "_rev": "_abc",
             "name": "Rock Library",
+            "root_path": "/music",
+            "is_enabled": True,
+            "created_at": "2024-01-01T00:00:00",
+            "updated_at": "2024-01-01T00:00:00",
             "scan_status": "idle",
             "scan_progress": 0,
             "scan_total": 0,
@@ -183,3 +165,114 @@ class TestScanStateQueries:
 
         assert result.scan_status == "idle"
         assert result.running_jobs == 1
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_get_status_returns_unconfigured_when_library_root_is_none(self) -> None:
+        service = LibraryService(
+            cfg=LibraryServiceConfig(
+                models_dir="models",
+                namespace="nom",
+                tagger_version="tagger-v1",
+                library_root=None,
+            ),
+            db=MagicMock(),
+            background_tasks=MagicMock(),
+        )
+
+        result = service.get_status()
+
+        assert result.configured is False
+        assert result.running_jobs == 0
+
+
+class TestGetScanHistory:
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_get_scan_history_delegates_to_component_with_limit(self) -> None:
+        service = _make_service()
+        expected = [
+            {
+                "library_id": "libraries/lib1",
+                "name": "Rock Library",
+                "scan_status": "idle",
+            },
+        ]
+
+        with patch(
+            "nomarr.services.domain.library_svc.scan.get_library_scan_histories",
+            return_value=expected,
+        ) as mock_get_library_scan_histories:
+            result = service.get_scan_history(limit=5)
+
+        mock_get_library_scan_histories.assert_called_once_with(service.db, limit=5)
+        assert result == expected
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_get_scan_history_uses_default_limit_of_100(self) -> None:
+        service = _make_service()
+
+        with patch(
+            "nomarr.services.domain.library_svc.scan.get_library_scan_histories",
+            return_value=[],
+        ) as mock_get_library_scan_histories:
+            result = service.get_scan_history()
+
+        mock_get_library_scan_histories.assert_called_once_with(service.db, limit=100)
+        assert result == []
+
+
+class TestValidateLibraryTags:
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_validate_library_tags_calls_resolve_then_workflow(self) -> None:
+        service = _make_service()
+        library_id = "libraries/lib1"
+        expected = {
+            "files_checked": 10,
+            "incomplete_files": 2,
+            "repaired_files": 2,
+        }
+
+        with (
+            patch(
+                "nomarr.services.domain.library_svc.scan.resolve_library_for_scan",
+            ) as mock_resolve_library_for_scan,
+            patch(
+                "nomarr.services.domain.library_svc.scan.validate_library_tags_workflow",
+                return_value=expected,
+            ) as mock_validate_library_tags_workflow,
+        ):
+            result = service.validate_library_tags(library_id)
+
+        mock_resolve_library_for_scan.assert_called_once_with(service.db, library_id)
+        mock_validate_library_tags_workflow.assert_called_once_with(
+            db=service.db,
+            models_dir=service.cfg.models_dir,
+            library_id=library_id,
+            namespace=service.cfg.namespace,
+            auto_repair=True,
+        )
+        assert result == expected
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_validate_library_tags_propagates_library_not_found(self) -> None:
+        service = _make_service()
+        library_id = "libraries/missing"
+
+        with (
+            patch(
+                "nomarr.services.domain.library_svc.scan.resolve_library_for_scan",
+                side_effect=ValueError("not found"),
+            ) as mock_resolve_library_for_scan,
+            patch(
+                "nomarr.services.domain.library_svc.scan.validate_library_tags_workflow",
+            ) as mock_validate_library_tags_workflow,
+            pytest.raises(ValueError, match="not found"),
+        ):
+            service.validate_library_tags(library_id)
+
+        mock_resolve_library_for_scan.assert_called_once_with(service.db, library_id)
+        mock_validate_library_tags_workflow.assert_not_called()

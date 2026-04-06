@@ -67,9 +67,20 @@ class LibraryPipelineService:
                     PIPELINE_SCANNING,
                     PIPELINE_IDLE,
                 )
+                for library_id in stale_scanning:
+                    self.db.libraries.update_scan_status(
+                        library_id,
+                        status="idle",
+                        error="Scan interrupted by server restart",
+                    )
             else:
                 for library_id in stale_scanning:
                     self.db.library_pipeline_states.transition_state(library_id, PIPELINE_IDLE)
+                    self.db.libraries.update_scan_status(
+                        library_id,
+                        status="idle",
+                        error="Scan interrupted by server restart",
+                    )
                 recovery_counts["scanning"] = len(stale_scanning)
             logger.info(
                 "Recovered %s stale scanning libraries to idle",

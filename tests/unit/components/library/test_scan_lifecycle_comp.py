@@ -8,6 +8,8 @@ import pytest
 
 from nomarr.components.library.scan_lifecycle_comp import (
     bootstrap_file_state_edges,
+    get_library_scan_histories,
+    get_scanning_library_ids,
     is_library_scanning,
 )
 from nomarr.persistence.database.library_pipeline_states_aql import PIPELINE_SCANNING
@@ -70,6 +72,96 @@ class TestIsLibraryScanning:
 
         assert result is False
         mock_db.library_pipeline_states.get_state.assert_called_once_with(library_id)
+
+
+class TestGetScanningLibraryIds:
+    """Tests for get_scanning_library_ids."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_calls_scanning_state_query_and_returns_set(self) -> None:
+        mock_db = MagicMock()
+        mock_db.library_pipeline_states.get_libraries_in_state.return_value = [
+            "libraries/one",
+            "libraries/two",
+            "libraries/one",
+        ]
+
+        result = get_scanning_library_ids(mock_db)
+
+        assert result == {"libraries/one", "libraries/two"}
+        assert isinstance(result, set)
+        mock_db.library_pipeline_states.get_libraries_in_state.assert_called_once_with(
+            PIPELINE_SCANNING,
+        )
+
+
+class TestGetLibraryScanHistories:
+    """Tests for get_library_scan_histories."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_returns_projected_scan_history_for_all_libraries(self) -> None:
+        mock_db = MagicMock()
+        mock_db.libraries.list_libraries.return_value = [
+            {
+                "_id": "libraries/one",
+                "name": "Main Library",
+                "scanned_at": 123,
+                "scan_status": "complete",
+                "ignored": "value",
+            },
+            {
+                "_id": "libraries/two",
+                "scanned_at": None,
+            },
+        ]
+
+        result = get_library_scan_histories(mock_db)
+
+        assert result == [
+            {
+                "library_id": "libraries/one",
+                "name": "Main Library",
+                "scanned_at": 123,
+                "scan_status": "complete",
+            },
+            {
+                "library_id": "libraries/two",
+                "name": "Unknown",
+                "scanned_at": None,
+                "scan_status": "idle",
+            },
+        ]
+        mock_db.libraries.list_libraries.assert_called_once_with(enabled_only=False)
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_applies_limit_before_projection(self) -> None:
+        mock_db = MagicMock()
+        mock_db.libraries.list_libraries.return_value = [
+            {"_id": "libraries/one", "name": "One", "scan_status": "idle"},
+            {"_id": "libraries/two", "name": "Two", "scan_status": "scanning"},
+            {"_id": "libraries/three", "name": "Three", "scan_status": "complete"},
+        ]
+
+        result = get_library_scan_histories(mock_db, limit=2)
+
+        assert result == [
+            {
+                "library_id": "libraries/one",
+                "name": "One",
+                "scanned_at": None,
+                "scan_status": "idle",
+            },
+            {
+                "library_id": "libraries/two",
+                "name": "Two",
+                "scanned_at": None,
+                "scan_status": "scanning",
+            },
+        ]
+        mock_db.libraries.list_libraries.assert_called_once_with(enabled_only=False)
 
     @pytest.mark.unit
     @pytest.mark.mocked
