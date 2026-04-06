@@ -510,10 +510,11 @@ class LibraryFilesQueriesMixin:
         if library_id:
             bind_vars["library_id"] = library_id
             query = """
-            FOR file IN OUTBOUND @library_id library_contains_file
+            FOR file IN 1..1 INBOUND "file_states/tagged" file_has_state
                 FILTER LENGTH(
-                    FOR v IN 1..1 INBOUND "file_states/tagged" file_has_state
-                        FILTER v._id == file._id
+                    FOR e IN library_contains_file
+                        FILTER e._from == @library_id AND e._to == file._id
+                        LIMIT 1
                         RETURN 1
                 ) > 0
                 SORT file.scanned_at DESC
@@ -529,12 +530,7 @@ class LibraryFilesQueriesMixin:
             """
         else:
             query = """
-            FOR file IN library_files
-                FILTER LENGTH(
-                    FOR v IN 1..1 INBOUND "file_states/tagged" file_has_state
-                        FILTER v._id == file._id
-                        RETURN 1
-                ) > 0
+            FOR file IN 1..1 INBOUND "file_states/tagged" file_has_state
                 SORT file.scanned_at DESC
                 LIMIT @limit
                 RETURN {
