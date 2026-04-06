@@ -94,8 +94,10 @@ class FileStatesOperations:
     def _transition_state(self, file_id: str, axis: str, to_positive: bool) -> None:
         """Transition a file's state on a single axis.
 
-        Issues sequential AQL queries: reads the existing edge key, removes it
-        if present, then inserts an edge pointing to the target vertex.
+        Executes a single atomic AQL query that removes any existing axis edge
+        and upserts the target state edge.  Using one round-trip eliminates the
+        TOCTOU race that caused unique-constraint violations when two workers
+        transitioned the same file concurrently.
 
         Args:
             file_id: Document ``_id`` of the library file.
@@ -104,43 +106,23 @@ class FileStatesOperations:
         """
         positive, negative = AXIS_PAIRS[axis]
         new_state = positive if to_positive else negative
-        cursor = cast(
-            "Cursor",
-            self.db.aql.execute(  # type: ignore[union-attr]
-                """
-                FOR e IN file_has_state
-                    FILTER e._from == @file_id
-                        AND (e._to == @positive OR e._to == @negative)
-                    RETURN e._key
-                """,
-                bind_vars=cast(
-                    "dict[str, Any]",
-                    {
-                        "file_id": file_id,
-                        "positive": positive,
-                        "negative": negative,
-                    },
-                ),
-            ),
-        )
-        old_key = cast("str | None", next(cursor, None))
-
-        if old_key is not None:
-            self.db.aql.execute(  # type: ignore[union-attr]
-                """
-                REMOVE @old_key IN file_has_state
-                """,
-                bind_vars=cast("dict[str, Any]", {"old_key": old_key}),
-            )
-
         self.db.aql.execute(  # type: ignore[union-attr]
             """
-            INSERT { _from: @file_id, _to: @new_state } INTO file_has_state
+            FOR e IN file_has_state
+                FILTER e._from == @file_id
+                    AND (e._to == @positive OR e._to == @negative)
+                REMOVE e IN file_has_state OPTIONS { ignoreErrors: true }
+            UPSERT { _from: @file_id, _to: @new_state }
+                INSERT { _from: @file_id, _to: @new_state }
+                UPDATE {}
+                IN file_has_state
             """,
             bind_vars=cast(
                 "dict[str, Any]",
                 {
                     "file_id": file_id,
+                    "positive": positive,
+                    "negative": negative,
                     "new_state": new_state,
                 },
             ),

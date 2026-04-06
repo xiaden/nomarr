@@ -525,53 +525,41 @@ class TestCountErroredFiles:
 
 
 class TestTransitionState:
-    """Test _transition_state() three-phase call structure."""
+    """Test _transition_state() bind variables and query contract."""
 
     @pytest.mark.unit
-    def test_three_phase_when_existing_edge(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
-        """Issues read, remove, and insert when an existing edge is found."""
-        mock_db.aql.execute.side_effect = [
-            iter(["existingkey"]),
-            MagicMock(),
-            MagicMock(),
-        ]
+    def test_positive_transition_passes_correct_new_state(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
+        """Positive transition binds the positive state vertex as new_state."""
+        mock_db.aql.execute.return_value = MagicMock()
 
         ops._transition_state("library_files/abc", "tagged", to_positive=True)
 
-        assert mock_db.aql.execute.call_count == 3
-        remove_bind_vars = mock_db.aql.execute.call_args_list[1][1]["bind_vars"]
-        assert remove_bind_vars["old_key"] == "existingkey"
-        insert_bind_vars = mock_db.aql.execute.call_args_list[2][1]["bind_vars"]
-        assert insert_bind_vars["new_state"] == "file_states/tagged"
+        assert mock_db.aql.execute.call_count == 1
+        bind_vars = mock_db.aql.execute.call_args[1]["bind_vars"]
+        assert bind_vars["new_state"] == "file_states/tagged"
 
     @pytest.mark.unit
-    def test_two_phase_when_no_existing_edge(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
-        """Issues only read and insert on first-time state setting (no existing edge)."""
-        mock_db.aql.execute.side_effect = [
-            iter([]),
-            MagicMock(),
-        ]
+    def test_negative_transition_passes_correct_new_state(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
+        """Negative transition binds the negative state vertex as new_state."""
+        mock_db.aql.execute.return_value = MagicMock()
 
         ops._transition_state("library_files/abc", "tagged", to_positive=False)
 
-        assert mock_db.aql.execute.call_count == 2
-        insert_bind_vars = mock_db.aql.execute.call_args_list[1][1]["bind_vars"]
-        assert insert_bind_vars["new_state"] == "file_states/not_tagged"
+        assert mock_db.aql.execute.call_count == 1
+        bind_vars = mock_db.aql.execute.call_args[1]["bind_vars"]
+        assert bind_vars["new_state"] == "file_states/not_tagged"
 
     @pytest.mark.unit
-    def test_read_query_uses_both_axis_vertices(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
-        """Read phase bind_vars include both positive and negative state for the axis."""
-        mock_db.aql.execute.side_effect = [
-            iter([]),
-            MagicMock(),
-        ]
+    def test_query_bind_vars_include_both_axis_vertices(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
+        """Bind vars include both positive and negative state vertices for the axis so old edges can be removed."""
+        mock_db.aql.execute.return_value = MagicMock()
 
         ops._transition_state("library_files/abc", "tagged", to_positive=True)
 
-        read_bind_vars = mock_db.aql.execute.call_args_list[0][1]["bind_vars"]
-        assert read_bind_vars["positive"] == "file_states/tagged"
-        assert read_bind_vars["negative"] == "file_states/not_tagged"
-        assert read_bind_vars["file_id"] == "library_files/abc"
+        bind_vars = mock_db.aql.execute.call_args[1]["bind_vars"]
+        assert bind_vars["positive"] == "file_states/tagged"
+        assert bind_vars["negative"] == "file_states/not_tagged"
+        assert bind_vars["file_id"] == "library_files/abc"
 
 
 # ==================================================================

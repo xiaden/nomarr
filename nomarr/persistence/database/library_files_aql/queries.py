@@ -74,7 +74,12 @@ class LibraryFilesQueriesMixin:
                             is_nomarr: STARTS_WITH(tag.rel, "nom:")
                         }
                 )
-                RETURN MERGE(file, { tags: tags })
+                LET lib_id = FIRST(
+                    FOR lib IN INBOUND file._id library_contains_file
+                        LIMIT 1
+                        RETURN lib._id
+                )
+                RETURN MERGE(file, { tags: tags, library_id: lib_id })
             """,
                 bind_vars=cast("dict[str, Any]", {"file_ids": file_ids}),
             ),
