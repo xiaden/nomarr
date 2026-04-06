@@ -593,7 +593,16 @@ def _find_read_write_conflicts(aql: str) -> set[str]:
     # Pattern B: FOR-loop iterating collection + body has REMOVE AND INSERT on it
     for_colls = {m.group(1).lower() for m in _RE_FOR_IN.finditer(aql)}
     remove_colls = {m.group(1).lower() for m in _RE_REMOVE_IN.finditer(aql)}
-    insert_colls = {m.group(1).lower() for m in _RE_INSERT_IN.finditer(aql)}
+    # Strip UPSERT blocks before checking for standalone INSERTs — the INSERT
+    # branch inside UPSERT is atomic (not a separate write) and must not trigger
+    # Pattern B.
+    aql_for_insert_check = re.sub(
+        r"\bUPSERT\b.*?\bIN(?:TO)?\s+\w+",
+        "",
+        aql,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    insert_colls = {m.group(1).lower() for m in _RE_INSERT_IN.finditer(aql_for_insert_check)}
     for coll in for_colls:
         if coll in remove_colls and coll in insert_colls:
             conflicts.add(coll)

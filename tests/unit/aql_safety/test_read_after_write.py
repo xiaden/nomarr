@@ -74,6 +74,25 @@ class TestFindReadWriteConflicts:
         assert "coll_a" in conflicts
         assert "coll_b" in conflicts
 
+    @pytest.mark.unit
+    def test_upsert_insert_branch_not_flagged_as_standalone_write(self) -> None:
+        """Pattern B: INSERT inside a UPSERT block is atomic and must not be flagged as a standalone write conflict."""
+        aql = (
+            "FOR e IN edges REMOVE e IN edges "
+            "UPSERT {_key: e._key} INSERT {_from: e._from, _to: e._to} UPDATE {} IN edges"
+        )
+        assert _find_read_write_conflicts(aql) == set()
+
+    @pytest.mark.unit
+    def test_standalone_insert_after_upsert_block_still_flagged(self) -> None:
+        """Pattern B: a standalone INSERT after the UPSERT block on the same collection is still flagged."""
+        aql = (
+            "FOR e IN edges REMOVE e IN edges "
+            "UPSERT {_key: e._key} INSERT {_from: e._from, _to: e._to} UPDATE {} IN edges "
+            "INSERT {_from: 'x', _to: 'y'} INTO edges"
+        )
+        assert _find_read_write_conflicts(aql) == {"edges"}
+
 
 @pytest.mark.unit
 def test_no_mixed_read_write_aql_in_production_code() -> None:
