@@ -115,11 +115,21 @@ This scaffold provides the foundation. Feature implementation will follow the pa
 4. Add routes to `AppRouter.tsx`
 5. Add navigation links to `NavTabs.tsx`
 
+## Library management features
+
+The library management UI now includes pipeline-oriented controls and status surfaces:
+
+- **Pipeline status badges** on library cards so users can see whether a library is scanning, running ML, waiting for calibration, ready to write, writing, or done
+- **Auto-write toggle** in library create/edit flows so users can choose whether writeback starts automatically after calibration apply completes
+- **Pipeline status API integration** via the per-library pipeline endpoint for selective counts and current state
+
+These features complement the existing scan controls and make it easier to see which libraries need attention versus which ones are progressing automatically.
+
 ## Next Steps
 
 - Implement LoginPage with form and API integration
 - Implement QueuePage with table and SSE updates
 - Add analytics charts
-- Add library management UI
+- Expand library management UI polish and coverage
 - Add worker monitoring
 - Add calibration UI

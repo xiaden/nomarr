@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from nomarr.helpers.dto.info_dto import WorkStatusResult
 from nomarr.helpers.dto.library_dto import LibraryStatsResult
 from nomarr.services.domain.library_svc.query import LibraryQueryMixin
 
@@ -155,3 +156,65 @@ class TestGetErroredFiles:
         result = mixin.get_errored_files("abc123")
         assert result["total"] == 0
         assert result["files"] == []
+
+class TestGetWorkStatus:
+    """Tests for LibraryQueryMixin.get_work_status."""
+
+    def _make_db_mock(self) -> MagicMock:
+        """Build a mock DB with sensible defaults for get_work_status calls."""
+        mock_db = MagicMock()
+        mock_db.libraries.list_libraries.return_value = [
+            {"_id": "libraries/1", "name": "Rock Library", "library_auto_write": False},
+        ]
+        mock_db.library_files.get_library_stats.return_value = {
+            "total_files": 100,
+            "total_artists": 5,
+            "total_albums": 10,
+            "total_duration": 36000,
+            "total_size": 500_000_000,
+            "needs_tagging_count": 0,
+        }
+        mock_db.library_pipeline_states.get_libraries_in_state.return_value = []
+        return mock_db
+
+    @pytest.mark.unit
+    def test_returns_work_status_result(self) -> None:
+        """Should return a WorkStatusResult instance."""
+        mock_db = self._make_db_mock()
+        mixin = _ConcreteQueryMixin(mock_db)
+        result = mixin.get_work_status()
+        assert isinstance(result, WorkStatusResult)
+
+    @pytest.mark.unit
+    def test_pipeline_states_bulk_fetched(self) -> None:
+        """Library in write_ready state registry maps to state='write_ready' in result."""
+        mock_db = self._make_db_mock()
+
+        def _state_side_effect(doc_id: str) -> list[str]:
+            if doc_id == "library_pipeline_states/write_ready":
+                return ["libraries/1"]
+            return []
+
+        mock_db.library_pipeline_states.get_libraries_in_state.side_effect = _state_side_effect
+        mixin = _ConcreteQueryMixin(mock_db)
+        result = mixin.get_work_status()
+        assert len(result.pipeline_libraries) == 1
+        assert result.pipeline_libraries[0].state == "write_ready"
+
+    @pytest.mark.unit
+    def test_no_libraries_returns_empty_pipeline(self) -> None:
+        """Empty library list produces empty pipeline_libraries."""
+        mock_db = MagicMock()
+        mock_db.libraries.list_libraries.return_value = []
+        mock_db.library_files.get_library_stats.return_value = {
+            "total_files": 0,
+            "total_artists": 0,
+            "total_albums": 0,
+            "total_duration": 0,
+            "total_size": 0,
+            "needs_tagging_count": 0,
+        }
+        mock_db.library_pipeline_states.get_libraries_in_state.return_value = []
+        mixin = _ConcreteQueryMixin(mock_db)
+        result = mixin.get_work_status()
+        assert result.pipeline_libraries == []

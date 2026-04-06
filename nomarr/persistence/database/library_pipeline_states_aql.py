@@ -116,7 +116,14 @@ class LibraryPipelineStatesOps:
         return state_key
 
     def get_libraries_in_state(self, state: str) -> list[str]:
-        """Get library document IDs currently in the given pipeline state."""
+        """Get library document IDs currently in the given pipeline state.
+
+        Args:
+            state: Pipeline state document ID to filter by (e.g., ``PIPELINE_IDLE``).
+
+        Returns:
+            List of library ``_id`` strings currently in that state.
+        """
         cursor = cast(
             "Cursor",
             self.db.aql.execute(  # type: ignore[union-attr]
@@ -183,3 +190,49 @@ class LibraryPipelineStatesOps:
             ),
         )
         return len(edges)
+
+    def find_ml_complete_libraries(self, min_files: int) -> list[dict[str, Any]]:
+        """Find ml_running libraries whose files are all tagged.
+
+        Returns completed libraries with their tagged counts so callers can
+        decide whether they advance to ``awaiting_calibration`` or block in
+        ``too_small``. The ``min_files`` parameter is retained for the
+        established worker-facing contract even though threshold branching is
+        performed by the caller.
+
+        Args:
+            min_files: Minimum calibration threshold supplied by the caller.
+
+        Returns:
+            List of ``{"library_id": str, "tagged_count": int}`` rows for
+            libraries currently in ``ml_running`` with zero untagged files.
+        """
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(  # type: ignore[union-attr]
+                """
+                FOR lib IN libraries
+                    LET state_edge = FIRST(
+                        FOR state IN OUTBOUND lib._id library_has_pipeline_state
+                            RETURN state._key
+                    )
+                    FILTER state_edge == "ml_running"
+                    LET untagged = LENGTH(
+                        FOR file IN OUTBOUND lib._id library_contains_file
+                            FOR e IN file_has_state
+                                FILTER e._from == file._id AND e._to == "file_states/not_tagged"
+                                RETURN 1
+                    )
+                    FILTER untagged == 0
+                    LET tagged_count = LENGTH(
+                        FOR file IN OUTBOUND lib._id library_contains_file
+                            FOR e IN file_has_state
+                                FILTER e._from == file._id AND e._to == "file_states/tagged"
+                                RETURN 1
+                    )
+                    RETURN { library_id: lib._id, tagged_count: tagged_count }
+                """,
+                bind_vars=cast("dict[str, Any]", {}),
+            ),
+        )
+        return cast("list[dict[str, Any]]", list(cursor))

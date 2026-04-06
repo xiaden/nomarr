@@ -49,9 +49,7 @@ INTERNAL_WORKER_ENABLED = True  # Start worker on startup
 INTERNAL_LIBRARY_SCAN_POLL_INTERVAL = 10  # Library scanner poll interval (seconds)
 
 # Calibration automation settings
-INTERNAL_CALIBRATION_AUTO_RUN = False  # Auto-trigger calibration
 INTERNAL_CALIBRATION_MIN_FILES = 100  # Min files before auto-calibration
-INTERNAL_CALIBRATION_CHECK_INTERVAL = 604800  # 1 week between checks
 INTERNAL_CALIBRATION_QUALITY_THRESHOLD = 0.85  # Don't recalibrate if quality > this
 
 # Calibration drift thresholds

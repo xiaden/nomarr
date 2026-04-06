@@ -230,7 +230,7 @@ def process_file_workflow(
             namespace=config.namespace,
             tagger_version=config.tagger_version,
             chromaprint=shared_chromaprint,
-            raw_segments=all_raw_segments if all_raw_segments else {},
+            raw_segments=all_raw_segments or {},
             ml_edges=MLEdgeWrites(output_edges=output_edges) if output_edges else None,
         )
     elapsed_ms = internal_ms().value - start_all.value
@@ -253,7 +253,7 @@ def process_file_workflow(
         heads_processed=total_heads_succeeded,
         tags_written=len(tags_accum),
         head_results=all_head_results,
-        mood_aggregations=mood_info if mood_info else None,
+        mood_aggregations=mood_info or None,
         tags=Tags.from_dict(dict(tags_accum)),
         timing_summary=timing_summary,
         deferred_writes=deferred,

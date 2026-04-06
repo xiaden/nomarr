@@ -1,3 +1,7 @@
+/**
+ * PipelineStateBadge component.
+ * Displays the current pipeline state for a library.
+ */
 import { Chip } from "@mui/material";
 
 interface PipelineStateBadgeProps {

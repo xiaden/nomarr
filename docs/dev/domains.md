@@ -316,6 +316,11 @@ Each domain maps to a subfolder under `components/` and owns specific ArangoDB c
 - `health_comp.py` — Health status helpers
 - `path_comp.py` — Path resolution utilities
 
+**Related infrastructure services:**
+- `HealthMonitorService` — Reads worker health and pipeline frames from OS pipes
+- `WorkerSystemService` — Owns worker process lifecycle and health callback wiring
+- `LibraryPipelineService` — Coordinates startup recovery, calibration triggers, apply callbacks, and file-write transitions for the per-library automation pipeline
+
 ---
 
 ## Decision Rules

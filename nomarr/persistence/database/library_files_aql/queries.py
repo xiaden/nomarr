@@ -37,7 +37,7 @@ class LibraryFilesQueriesMixin:
             ),
         )
         result: dict[str, Any] = next(cursor, {})
-        return result if result else None
+        return result or None
 
     def get_files_by_ids_with_tags(self, file_ids: list[str]) -> list[dict[str, Any]]:
         """Get files by IDs with their associated tags.

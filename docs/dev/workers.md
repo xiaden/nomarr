@@ -225,6 +225,23 @@ When no work is found:
 - After 40 seconds idle (`CACHE_IDLE_TIMEOUT_S`), evict ONNX model cache to free VRAM
 - After enough idle polls, spawn background vector promotion thread
 
+### Idle-Path Pipeline Trigger
+
+The worker idle path also advances the library automation pipeline.
+
+When `discover_and_claim_file()` returns `None`, the subprocess checks `db.library_pipeline_states.find_ml_complete_libraries(...)` for libraries still in `ml_running` whose untagged file count has reached zero. For each completed library, the worker transitions the pipeline state to:
+
+- `awaiting_calibration` when the tagged file count meets the calibration minimum
+- `too_small` when the library is fully tagged but still below that minimum
+
+If at least one transition fires, the worker sends a pipeline frame over the existing health pipe:
+
+```text
+PIPELINE|calibration_trigger
+```
+
+`HealthMonitorService` reads that frame in the main process and forwards it through the registered pipeline callback. `WorkerSystemService` wires the callback directly to `pipeline_svc.trigger_calibration()`, keeping calibration dispatch in the main process where `BackgroundTaskService`, `CalibrationService`, and the other long-lived services already live.
+
 ### 5. Pause/Resume
 
 `WorkerSystemService` controls workers globally via the `worker_enabled` flag in the `meta` collection:

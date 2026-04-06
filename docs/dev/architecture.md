@@ -147,7 +147,7 @@ async def process_files(
 
 **Contains:**
 - `domain/` — Library, analytics, calibration, metadata, navidrome, tagging, vector search/maintenance, playlist import
-- `infrastructure/` — Config, workers, health monitor, ML, file watcher, background tasks, CLI bootstrap
+- `infrastructure/` — Config, workers, health monitor, pipeline orchestration, ML, file watcher, background tasks, CLI bootstrap
 
 **Purpose:** Own runtime resources, wire dependencies, orchestrate workflows.
 
@@ -367,7 +367,7 @@ GET /library/{id}/pipeline
     ← 200 {"library_id": "...", "state": "writing", "pending_write_count": N, "library_auto_write": true, "file_write_mode": "full", "untagged_count": null, "uncalibrated_count": null}
 ```
 
-This keeps the request/response contract fast while still exposing observable progress. The POST `/library/{id}/write-tag` endpoint only starts work and returns a `task_id`; the GET `/library/{id}/pipeline` endpoint returns the full `PipelineStatusResponse`, including write progress and related pipeline state fields.
+This keeps the request/response contract fast while still exposing observable progress. The POST `/library/{id}/write-tag` endpoint only starts work and returns a `task_id`; the GET `/library/{id}/pipeline` endpoint returns the full `PipelineStatusResponse`, including write progress and related pipeline state fields. `LibraryPipelineService` coordinates the worker idle-path trigger, calibration/apply callbacks, and write completion transitions behind those endpoints.
 
 ---
 
@@ -395,17 +395,27 @@ ml_svc = MLService(db=db, models_dir=config.models_dir)
 # 5. Initialize health monitor (services/infrastructure/health_monitor_svc.py)
 health_monitor = HealthMonitorService(cfg=HealthMonitorConfig(), db=db)
 
-# 6. Initialize worker system (services/infrastructure/worker_system_svc.py)
+# 6. Initialize pipeline service (services/infrastructure/pipeline_svc.py)
+pipeline_svc = LibraryPipelineService(
+    db=db,
+    bts=background_task_svc,
+    calibration_svc=calibration_svc,
+    tagging_svc=tagging_svc,
+    navidrome_svc=navidrome_svc,
+)
+
+# 7. Initialize worker system (services/infrastructure/worker_system_svc.py)
 worker_svc = WorkerSystemService(
     db=db,
     processor_config=ml_svc.processor_config,
+    pipeline_svc=pipeline_svc,
     health_monitor=health_monitor,
 )
 
-# 7. Start workers — admission control → tier selection → spawn
+# 8. Start workers — admission control → tier selection → spawn
 worker_svc.start_all_workers()
 
-# 8. Start API server (interfaces/api/api_app.py)
+# 9. Start API server (interfaces/api/api_app.py)
 app = create_app(...)
 ```
 

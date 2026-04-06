@@ -67,6 +67,7 @@ class TestMlIfRoutes:
         mock_library_service.get_work_status.return_value = WorkStatusResult(
             is_scanning=False,
             scanning_libraries=[],
+            pipeline_libraries=[],
             is_processing=False,
             pending_files=0,
             processed_files=0,
@@ -82,6 +83,7 @@ class TestMlIfRoutes:
         assert response.json() == {
             "is_scanning": False,
             "scanning_libraries": [],
+            "pipeline_libraries": [],
             "is_processing": False,
             "pending_files": 0,
             "processed_files": 0,

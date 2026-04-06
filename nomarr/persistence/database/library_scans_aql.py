@@ -68,7 +68,7 @@ class LibraryScansOperations:
             ),
         )
         result = next(cursor, None)
-        return result if result else self._default_scan_state(library_key)
+        return result or self._default_scan_state(library_key)
 
     def update_scan(self, library_id: str, **fields: Any) -> dict[str, Any]:
         """Update scan state fields.
@@ -106,7 +106,7 @@ class LibraryScansOperations:
             ),
         )
         result = next(cursor, None)
-        return result if result else {}
+        return result or {}
 
     def get_scan_state(self, library_id: str) -> dict[str, Any] | None:
         """Get scan state for library.

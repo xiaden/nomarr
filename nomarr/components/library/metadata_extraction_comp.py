@@ -181,7 +181,7 @@ def resolve_artists(all_tags: dict[str, str]) -> tuple[str | None, list[str] | N
         artist_str = deduplicated[0]
     elif artist_str and (not deduplicated):
         deduplicated = [artist_str]
-    return (artist_str, deduplicated if deduplicated else None)
+    return (artist_str, deduplicated or None)
 
 
 def extract_metadata(file_path: LibraryPath, namespace: str = "nom") -> dict[str, Any]:

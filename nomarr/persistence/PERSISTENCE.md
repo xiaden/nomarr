@@ -39,6 +39,7 @@ persistence/
     ├── health_aql.py
     ├── libraries_aql.py
     ├── library_folders_aql.py
+    ├── library_pipeline_states_aql.py
     ├── meta_aql.py
     ├── migrations_aql.py
     ├── ml_capacity_aql.py
@@ -81,6 +82,20 @@ persistence/
 - **Methods:** Verb-noun describing the operation (`create_library`, `get_file_by_id`)
 
 **Subpackage pattern:** When an operations class exceeds ~500 lines, split into a subpackage directory (e.g., `library_files_aql/`) with logical module groupings (`crud.py`, `queries.py`, `stats.py`). The import path stays the same: `from nomarr.persistence.database import LibraryFilesOperations`.
+
+### Library pipeline state operations
+
+`library_pipeline_states_aql.py` defines `LibraryPipelineStatesOps`, the persistence owner for the per-library automation pipeline graph.
+
+**Collections involved:**
+- `library_pipeline_states` — Singleton vertex collection containing the states `idle`, `scanning`, `ml_running`, `too_small`, `awaiting_calibration`, `calibrating`, `applying`, `write_ready`, `writing`, and `done`
+- `library_has_pipeline_state` — Edge collection linking each `libraries/{key}` document to exactly one current pipeline state vertex
+
+**Primary responsibilities:**
+- Atomic single-library state transitions
+- Inbound queries for all libraries currently in a given state
+- Bulk transitions used by startup recovery and orchestration callbacks
+- Idle-path completion lookup for `ml_running` libraries whose untagged file count has reached zero
 
 ---
 

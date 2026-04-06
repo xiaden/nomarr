@@ -9,11 +9,14 @@ from nomarr.helpers.dto.info_dto import (
     ConfigInfo,
     GPUHealthResult,
     HealthStatusResult,
+    LibraryPipelineInfo,
     ModelsInfo,
     PublicInfoResult,
     QueueInfo,
+    ScanningLibraryInfo,
     SystemInfoResult,
     WorkerInfo,
+    WorkStatusResult,
 )
 
 
@@ -274,3 +277,106 @@ class TestPublicInfoResult:
         assert result.models.total_heads == 25
         assert result.queue.depth == 0
         assert result.worker.alive
+
+class TestLibraryPipelineInfo:
+    """Tests for LibraryPipelineInfo dataclass."""
+
+    @pytest.mark.unit
+    def test_can_create_pipeline_info(self) -> None:
+        """Should create pipeline info with all fields."""
+        info = LibraryPipelineInfo(
+            library_id="libraries/1",
+            name="Rock Library",
+            state="write_ready",
+            library_auto_write=True,
+        )
+        assert info.library_id == "libraries/1"
+        assert info.name == "Rock Library"
+        assert info.state == "write_ready"
+        assert info.library_auto_write is True
+
+    @pytest.mark.unit
+    def test_library_auto_write_false(self) -> None:
+        """Should handle auto-write disabled."""
+        info = LibraryPipelineInfo(
+            library_id="libraries/2",
+            name="Jazz Library",
+            state="idle",
+            library_auto_write=False,
+        )
+        assert not info.library_auto_write
+        assert info.state == "idle"
+
+
+class TestWorkStatusResult:
+    """Tests for WorkStatusResult dataclass."""
+
+    @pytest.mark.unit
+    def test_can_create_with_pipeline_libraries(self) -> None:
+        """Should create work status with pipeline_libraries populated."""
+        pipeline_lib = LibraryPipelineInfo(
+            library_id="libraries/1",
+            name="Rock Library",
+            state="ml_running",
+            library_auto_write=False,
+        )
+        result = WorkStatusResult(
+            is_scanning=False,
+            scanning_libraries=[],
+            pipeline_libraries=[pipeline_lib],
+            is_processing=True,
+            pending_files=50,
+            processed_files=950,
+            total_files=1000,
+            files_per_minute=10.0,
+            estimated_minutes_remaining=5.0,
+            is_busy=True,
+        )
+        assert len(result.pipeline_libraries) == 1
+        assert result.pipeline_libraries[0].state == "ml_running"
+        assert result.is_processing
+        assert result.is_busy
+
+    @pytest.mark.unit
+    def test_idle_state_has_no_eta(self) -> None:
+        """Should represent idle system with None ETA and empty pipeline_libraries."""
+        result = WorkStatusResult(
+            is_scanning=False,
+            scanning_libraries=[],
+            pipeline_libraries=[],
+            is_processing=False,
+            pending_files=0,
+            processed_files=100,
+            total_files=100,
+            files_per_minute=0.0,
+            estimated_minutes_remaining=None,
+            is_busy=False,
+        )
+        assert not result.is_busy
+        assert result.estimated_minutes_remaining is None
+        assert result.pipeline_libraries == []
+
+    @pytest.mark.unit
+    def test_scanning_state_is_busy(self) -> None:
+        """Should treat active scanning as busy."""
+        scanning = ScanningLibraryInfo(
+            library_id="libraries/1",
+            name="Rock Library",
+            progress=50,
+            total=200,
+        )
+        result = WorkStatusResult(
+            is_scanning=True,
+            scanning_libraries=[scanning],
+            pipeline_libraries=[],
+            is_processing=False,
+            pending_files=0,
+            processed_files=0,
+            total_files=0,
+            files_per_minute=0.0,
+            estimated_minutes_remaining=None,
+            is_busy=True,
+        )
+        assert result.is_scanning
+        assert len(result.scanning_libraries) == 1
+        assert result.scanning_libraries[0].progress == 50

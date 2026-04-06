@@ -350,6 +350,27 @@ to re-sync the baseline.
 
 ## Migration History
 
+### V023_library_pipeline_states — Library Pipeline Automation Graph
+
+Adds the persistence graph that backs end-to-end library pipeline automation.
+
+**Schema changes:**
+
+- Creates `library_pipeline_states` with the singleton states `idle`, `scanning`, `ml_running`, `too_small`, `awaiting_calibration`, `calibrating`, `applying`, `write_ready`, `writing`, and `done`
+- Creates `library_has_pipeline_state` so each library points to exactly one current pipeline state vertex
+- Adds `library_auto_write: false` to existing library documents
+
+**Data migration:**
+
+- Derives an initial pipeline state for each existing library from file-state counts
+- Seeds one `library_has_pipeline_state` edge per library during migration
+
+**Operational impact:**
+
+- Enables idle-path transitions out of `ml_running`
+- Supports startup recovery of `scanning`, `calibrating`, `applying`, and `writing`
+- Makes auto-write a per-library setting instead of a global calibration loop switch
+
 ### V021_schema_refactor_v1 — FK-to-Edge Schema Refactor
 
 Major schema refactor converting foreign key properties to edge collections for graph-native traversal.

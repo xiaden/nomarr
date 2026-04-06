@@ -43,6 +43,7 @@ nav:
   - Home: index.md
   - User Guide:
       - Getting Started: user/getting_started.md
+      - Pipeline Automation: user/pipeline.md
       - Deployment: user/deployment.md
       - Navidrome Integration: user/navidrome.md
       - Playlist Import: user/playlist_import.md
