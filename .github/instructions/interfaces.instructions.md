@@ -137,6 +137,15 @@ def get_file(file_key: str, library_service: LibraryService = Depends(...)) -> F
 
 ---
 
+## Size Guidelines
+
+- **Consider splitting** at 300 LOC — review whether multiple resource types or route groups are coexisting
+- **MUST split** at 500 LOC — no exceptions; split by resource type or route group before committing
+
+When splitting, extract a sibling interface module (e.g., `library_if.py` + `library_scan_if.py`). Each module should own one coherent API surface.
+
+---
+
 ## Validation Checklist
 
 Before committing interface code, verify:

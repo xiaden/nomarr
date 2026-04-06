@@ -339,6 +339,12 @@ class WorkerSystemService(ComponentLifecycleHandler):
         # Remove timer from pending dict (already executed)
         self._pending_restart_timers.pop(component_id, None)
 
+        # Abort if shutdown was requested — timer.cancel() sets a flag but cannot
+        # interrupt a callback that has already started executing, so we must check here.
+        if self._stop_event.is_set():
+            logger.info("[WorkerSystemService] Skipping restart for %s (shutdown in progress)", component_id)
+            return
+
         # Re-check worker_enabled (user may have disabled during backoff)
         if not self.is_worker_system_enabled():
             logger.info(
@@ -357,6 +363,32 @@ class WorkerSystemService(ComponentLifecycleHandler):
         # Spawn replacement worker
         logger.info("[WorkerSystemService] Restarting worker %d", worker_index)
         try:
+            # Drain the old worker first so there is never an overlap where both
+            # the old and new process are simultaneously alive.  The health monitor
+            # already signalled EOF on the pipe, so join() should return instantly,
+            # but we force-kill just in case the process is a zombie or D-state.
+            old_worker: DiscoveryWorker | None = None
+            if worker_index < len(self._workers):
+                old_worker = self._workers[worker_index]
+            if old_worker is not None:
+                old_worker.join(timeout=2.0)
+                if old_worker.is_alive():
+                    logger.warning(
+                        "[WorkerSystemService] Old worker %s (pid=%s) still alive before restart, terminating",
+                        old_worker.worker_id,
+                        old_worker.pid,
+                    )
+                    old_worker.terminate()
+                    old_worker.join(timeout=1.0)
+                    if old_worker.is_alive():
+                        logger.error(
+                            "[WorkerSystemService] Worker %s (pid=%s) still alive after terminate(), force killing",
+                            old_worker.worker_id,
+                            old_worker.pid,
+                        )
+                        old_worker.kill()
+                        old_worker.join(timeout=0.5)
+
             # Create dedicated pipe for this worker's health telemetry
             parent_conn, child_conn = Pipe(duplex=False)
 
@@ -379,30 +411,8 @@ class WorkerSystemService(ComponentLifecycleHandler):
             if self.health_monitor:
                 self.health_monitor.register_component(new_worker.worker_id, self, parent_conn)
 
-            # Replace worker in list (terminate old worker if still alive)
+            # Replace worker in list
             if worker_index < len(self._workers):
-                old_worker = self._workers[worker_index]
-                if old_worker is not None:
-                    # Signal worker to stop and wait
-                    old_worker.join(timeout=2.0)
-                    # Force-terminate if still alive (prevents zombies)
-                    if old_worker.is_alive():
-                        logger.warning(
-                            "[WorkerSystemService] Old worker %s (pid=%s) did not stop gracefully, terminating",
-                            old_worker.worker_id,
-                            old_worker.pid,
-                        )
-                        old_worker.terminate()
-                        old_worker.join(timeout=1.0)
-                        # Final kill if terminate failed
-                        if old_worker.is_alive():
-                            logger.error(
-                                "[WorkerSystemService] Worker %s (pid=%s) still alive after terminate(), force killing",
-                                old_worker.worker_id,
-                                old_worker.pid,
-                            )
-                            old_worker.kill()
-                            old_worker.join(timeout=0.5)
                 self._workers[worker_index] = new_worker
             else:
                 # Worker list shrunk? Append instead

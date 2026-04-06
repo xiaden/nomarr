@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nomarr.helpers.exceptions import LibraryAlreadyScanningError
 from nomarr.persistence.database.library_pipeline_states_aql import PIPELINE_SCANNING
 from nomarr.workflows.library.scan_setup_wf import scan_setup_workflow
 
@@ -29,6 +30,7 @@ class TestScanSetupWorkflowPipeline:
                 "nomarr.workflows.library.scan_setup_wf.check_interrupted_scan",
                 return_value=(False, None),
             ),
+            patch("nomarr.workflows.library.scan_setup_wf.is_library_scanning", return_value=False),
             patch("nomarr.workflows.library.scan_setup_wf.update_scan_progress") as mock_update,
             patch("nomarr.workflows.library.scan_setup_wf.transition_to_scanning") as mock_transition_to_scanning,
         ):
@@ -64,6 +66,7 @@ class TestScanSetupWorkflowPipeline:
                 "nomarr.workflows.library.scan_setup_wf.check_interrupted_scan",
                 return_value=(False, None),
             ),
+            patch("nomarr.workflows.library.scan_setup_wf.is_library_scanning", return_value=False),
             patch("nomarr.workflows.library.scan_setup_wf.update_scan_progress") as mock_update,
             patch("nomarr.workflows.library.scan_setup_wf.transition_to_scanning") as mock_transition_to_scanning,
         ):
@@ -82,3 +85,25 @@ class TestScanSetupWorkflowPipeline:
             mock_db,
             "libraries/abc123",
         )
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_scan_setup_rejects_library_already_in_scanning_pipeline_state(self) -> None:
+        """Duplicate scans should be rejected when the pipeline state is already scanning."""
+        mock_db = MagicMock()
+        library = {"_id": "libraries/abc123", "name": "Main Library", "scan_status": "idle"}
+
+        with (
+            patch(
+                "nomarr.workflows.library.scan_setup_wf.resolve_library_for_scan",
+                return_value=library,
+            ),
+            patch("nomarr.workflows.library.scan_setup_wf.is_library_scanning", return_value=True),
+            patch("nomarr.workflows.library.scan_setup_wf.update_scan_progress") as mock_update,
+            patch("nomarr.workflows.library.scan_setup_wf.transition_to_scanning") as mock_transition,
+            pytest.raises(LibraryAlreadyScanningError, match="already being scanned"),
+        ):
+            scan_setup_workflow(mock_db, "libraries/abc123", scan_type="quick")
+
+        mock_update.assert_not_called()
+        mock_transition.assert_not_called()

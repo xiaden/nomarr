@@ -121,6 +121,53 @@ class TestLibraryHasTaggedFiles:
         assert bind_vars["library_id"] == "libraries/123"
 
 
+class TestGetFilesWithIncompleteTags:
+    """Tests for get_files_with_incomplete_tags()."""
+
+    @pytest.mark.unit
+    def test_returns_rows_from_cursor(self, ops, mock_db):
+        """Returns the cursor rows unchanged."""
+        expected = [
+            {
+                "file_id": "library_files/1",
+                "file_key": "1",
+                "library_id": "libraries/123",
+                "matched_count": 1,
+                "missing_count": 0,
+                "missing_heads": [],
+            }
+        ]
+        mock_db.aql.execute.return_value = iter(expected)
+
+        result = ops.get_files_with_incomplete_tags(
+            expected_heads=[{"head_key": "mood", "labels": ["happy"], "model_key_for_tag": "model"}],
+            namespace_prefix="nom:",
+            library_id="libraries/123",
+        )
+
+        assert result == expected
+
+    @pytest.mark.unit
+    def test_library_scoped_query_uses_edge_filter_and_bind_var_library_id(self, ops, mock_db):
+        """Library scoping should use library_contains_file traversal and return @library_id."""
+        mock_db.aql.execute.return_value = iter([])
+
+        ops.get_files_with_incomplete_tags(
+            expected_heads=[{"head_key": "mood", "labels": ["happy"], "model_key_for_tag": "model"}],
+            namespace_prefix="nom:",
+            library_id="libraries/123",
+        )
+
+        query = mock_db.aql.execute.call_args[0][0]
+        bind_vars = mock_db.aql.execute.call_args[1]["bind_vars"]
+
+        assert "FOR lib IN INBOUND file._id library_contains_file" in query
+        assert "FILTER lib._id == @library_id" in query
+        assert "library_id: @library_id" in query
+        assert "FILTER file.library_id == @library_id" not in query
+        assert bind_vars["library_id"] == "libraries/123"
+
+
 # ==================================================================
 # Calibration state
 # ==================================================================

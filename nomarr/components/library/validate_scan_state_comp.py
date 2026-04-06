@@ -73,7 +73,8 @@ def _heal_short_files(
 
     Args:
         db: Database instance
-        library_id: Library document _id
+        library_id: Library document ``_id``; files are sourced via OUTBOUND
+            edge traversal on ``library_contains_file``.
         min_duration_s: Files with duration_seconds < this are "short"
 
     Returns:
@@ -83,8 +84,7 @@ def _heal_short_files(
     # Find short files missing too_short state
     cursor = db.db.aql.execute(
         """
-        FOR file IN library_files
-            FILTER file.library_id == @library_id
+        FOR file IN OUTBOUND @library_id library_contains_file
             FILTER file.duration_seconds != null
             FILTER file.duration_seconds < @min_duration_s
             LET has_too_short = LENGTH(

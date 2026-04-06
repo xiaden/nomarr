@@ -99,7 +99,31 @@ class TestComputeWorkStatus:
 
     @pytest.mark.unit
     def test_scanning_library_identified(self) -> None:
-        """Library with scan_status='scanning' appears in scanning_libraries."""
+        """Pipeline state drives scanning even when the scan doc says otherwise."""
+        libraries = [
+            {
+                "_id": "libraries/1",
+                "name": "Rock Library",
+                "scan_status": "idle",
+                "scan_progress": 50,
+                "scan_total": 200,
+                "library_auto_write": False,
+            },
+        ]
+        result = compute_work_status(
+            libraries=libraries,
+            stats=_make_stats(),
+            recently_tagged_count=0,
+            pipeline_states={"libraries/1": "scanning"},
+        )
+        assert result.is_scanning
+        assert len(result.scanning_libraries) == 1
+        assert result.scanning_libraries[0].progress == 50
+        assert result.scanning_libraries[0].total == 200
+
+    @pytest.mark.unit
+    def test_scan_status_ignored_without_scanning_pipeline_state(self) -> None:
+        """scan_status alone does not mark a library as scanning."""
         libraries = [
             {
                 "_id": "libraries/1",
@@ -116,10 +140,30 @@ class TestComputeWorkStatus:
             recently_tagged_count=0,
             pipeline_states={},
         )
-        assert result.is_scanning
-        assert len(result.scanning_libraries) == 1
-        assert result.scanning_libraries[0].progress == 50
-        assert result.scanning_libraries[0].total == 200
+        assert result.is_scanning is False
+        assert result.scanning_libraries == []
+
+    @pytest.mark.unit
+    def test_scan_status_ignored_when_other_library_is_scanning(self) -> None:
+        """Only the matching library pipeline state should mark it as scanning."""
+        libraries = [
+            {
+                "_id": "libraries/1",
+                "name": "Rock Library",
+                "scan_status": "scanning",
+                "scan_progress": 50,
+                "scan_total": 200,
+                "library_auto_write": False,
+            },
+        ]
+        result = compute_work_status(
+            libraries=libraries,
+            stats=_make_stats(),
+            recently_tagged_count=0,
+            pipeline_states={"libraries/other": "scanning"},
+        )
+        assert result.is_scanning is False
+        assert result.scanning_libraries == []
 
     @pytest.mark.unit
     def test_velocity_calculation(self) -> None:

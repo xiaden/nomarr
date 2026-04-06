@@ -1,7 +1,7 @@
 """Pre-scan setup workflow.
 
 Validates the library is ready to scan, guards against concurrent scans,
-and sets scan_status to 'scanning' before the background task is launched.
+and sets scan progress status to 'scanning' before the background task is launched.
 Raises typed exceptions so the HTTP layer can map them to the correct status codes.
 """
 
@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.scan_lifecycle_comp import (
     check_interrupted_scan,
+    is_library_scanning,
     resolve_library_for_scan,
     transition_to_scanning,
     update_scan_progress,
@@ -50,7 +51,7 @@ def scan_setup_workflow(
     """
     library = resolve_library_for_scan(db, library_id)  # raises LibraryNotFoundError
 
-    if library.get("scan_status") == "scanning":
+    if is_library_scanning(db, library_id):
         msg = f"Library {library_id} is already being scanned"
         raise LibraryAlreadyScanningError(msg)
 

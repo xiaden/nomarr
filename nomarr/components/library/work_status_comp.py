@@ -9,9 +9,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from nomarr.helpers.dto.info_dto import LibraryPipelineInfo, ScanningLibraryInfo, WorkStatusResult
+from nomarr.persistence.database.library_pipeline_states_aql import PIPELINE_SCANNING
 
 if TYPE_CHECKING:
     from nomarr.helpers.dto.library_dto import LibraryStatsResult
+
+
+_PIPELINE_SCANNING_KEY: str = PIPELINE_SCANNING.rsplit("/", 1)[-1]
 
 
 def compute_work_status(
@@ -44,7 +48,7 @@ def compute_work_status(
             total=lib.get("scan_total") or 0,
         )
         for lib in libraries
-        if lib.get("scan_status") == "scanning"
+        if pipeline_states.get(lib["_id"]) == _PIPELINE_SCANNING_KEY
     ]
     is_scanning = len(scanning_libraries) > 0
 

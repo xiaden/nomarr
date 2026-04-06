@@ -16,6 +16,7 @@ from nomarr.components.library.scan_lifecycle_comp import on_scan_complete_pipel
 from nomarr.helpers import ManagedTask
 from nomarr.helpers.dto.library_dto import LibraryScanStatusResult, StartScanResult
 from nomarr.helpers.time_helper import now_ms
+from nomarr.persistence.database.library_pipeline_states_aql import PIPELINE_SCANNING
 from nomarr.services.infrastructure.config_svc import INTERNAL_MIN_DURATION_S
 from nomarr.workflows.library.scan_library_full_wf import scan_library_full_workflow
 from nomarr.workflows.library.scan_library_quick_wf import scan_library_quick_workflow
@@ -66,14 +67,12 @@ class LibraryScanMixin:
     def _is_scan_running(self) -> bool:
         """Check if any scan is currently running.
 
-        Uses library.scan_status field instead of queue jobs.
-
         Returns:
-            True if any library has scan_status='scanning'
+            True if any library pipeline is in the scanning state
 
         """
-        libraries = self.db.libraries.list_libraries(enabled_only=False)
-        return any(lib.get("scan_status") == "scanning" for lib in libraries)
+        scanning_libraries: list[str] = self.db.library_pipeline_states.get_libraries_in_state(PIPELINE_SCANNING)
+        return len(scanning_libraries) > 0
 
     def start_quick_scan(self, library_id: str) -> StartScanResult:
         """Start a quick (incremental) library scan.
@@ -194,7 +193,7 @@ class LibraryScanMixin:
             library_id: Library ID to check scan status for
 
         Returns:
-            LibraryScanStatusResult with configured, library_path, enabled, scan_status, progress, total
+            LibraryScanStatusResult with configured, library_path, enabled, scan_status, progress, total, and running_jobs, where ``running_jobs`` counts libraries whose pipeline state is ``scanning``
 
         """
         if not self.cfg.library_root:
@@ -205,13 +204,16 @@ class LibraryScanMixin:
                 pending_jobs=0,
                 running_jobs=0,
             )
+        scanning_library_ids: set[str] = set(
+            self.db.library_pipeline_states.get_libraries_in_state(PIPELINE_SCANNING),
+        )
         if library_id is None:
             return LibraryScanStatusResult(
                 configured=True,
                 library_path=self.cfg.library_root,
                 enabled=self.background_tasks is not None,
                 pending_jobs=0,
-                running_jobs=0,
+                running_jobs=len(scanning_library_ids),
             )
         library = self._get_library_or_error(library_id)
         scan_status = library.get("scan_status", "idle")
@@ -225,7 +227,7 @@ class LibraryScanMixin:
             library_path=self.cfg.library_root,
             enabled=enabled,
             pending_jobs=0,
-            running_jobs=1 if scan_status == "scanning" else 0,
+            running_jobs=1 if library_id in scanning_library_ids else 0,
             scan_status=scan_status,
             scan_progress=scan_progress,
             scan_total=scan_total,

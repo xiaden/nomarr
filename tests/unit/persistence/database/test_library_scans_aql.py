@@ -158,6 +158,24 @@ class TestUpdateScan:
         bind_vars = mock_db.aql.execute.call_args[1]["bind_vars"]
         assert bind_vars["fields"] == {"status": "complete"}
 
+    @pytest.mark.unit
+    def test_upserts_library_has_scan_edge(self, ops: LibraryScansOperations, mock_db: MagicMock) -> None:
+        """update_scan should also maintain the library_has_scan edge."""
+        mock_cursor = MagicMock()
+        mock_cursor.__next__ = MagicMock(return_value={"_key": "lib1", "status": "scanning"})
+        mock_db.aql.execute.return_value = mock_cursor
+
+        ops.update_scan("libraries/lib1", status="scanning")
+
+        call_args = mock_db.aql.execute.call_args
+        query = call_args[0][0]
+        bind_vars = call_args[1]["bind_vars"]
+
+        assert "IN library_has_scan" in query
+        assert 'UPSERT { _from: @library_id, _to: CONCAT("library_scans/", @library_key) }' in query
+        assert bind_vars["library_id"] == "libraries/lib1"
+        assert bind_vars["library_key"] == "lib1"
+
 
 # ==================================================================
 # get_scan_state

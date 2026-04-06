@@ -30,6 +30,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+_PIPELINE_SCANNING_KEY: str = PIPELINE_SCANNING.rsplit("/", 1)[-1]
+
+
 # ---------------------------------------------------------------------------
 # Library resolution
 # ---------------------------------------------------------------------------
@@ -69,6 +72,24 @@ def check_interrupted_scan(db: Database, library_id: str) -> tuple[bool, str | N
 
     """
     return db.libraries.check_interrupted_scan(library_id)
+
+
+def is_library_scanning(db: Database, library_id: str) -> bool:
+    """Return whether the library pipeline is currently in the scanning state.
+
+    Args:
+        db: Database instance
+        library_id: Library document ``_id``
+
+    Returns:
+        ``True`` when the library pipeline state is ``scanning``; otherwise ``False``.
+
+    """
+    try:
+        pipeline_state_key: str = db.library_pipeline_states.get_state(library_id)
+    except ValueError:
+        return False
+    return pipeline_state_key == _PIPELINE_SCANNING_KEY
 
 
 # ---------------------------------------------------------------------------

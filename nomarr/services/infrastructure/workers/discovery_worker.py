@@ -452,6 +452,7 @@ class DiscoveryWorker(multiprocessing.Process):
                     if (
                         idle_consecutive_polls >= IDLE_POLLS_BEFORE_PROMOTION
                         and not promotion_suppressed
+                        and not self._stop_event.is_set()
                         and (promotion_running is None or not promotion_running.is_alive())
                     ):
                         from nomarr.workflows.platform.idle_promotion_vectors_wf import (
@@ -478,7 +479,14 @@ class DiscoveryWorker(multiprocessing.Process):
                         idle_consecutive_polls = 0
                         logger.info("[%s] Spawning idle vector promotion thread", self.worker_id)
 
-                    _check_idle_pipeline_completion(db, self._health_pipe)
+                    try:
+                        _check_idle_pipeline_completion(db, self._health_pipe)
+                    except Exception:
+                        logger.debug(
+                            "[%s] _check_idle_pipeline_completion failed",
+                            self.worker_id,
+                            exc_info=True,
+                        )
 
                     time.sleep(IDLE_SLEEP_S)
                     continue
@@ -688,9 +696,11 @@ class DiscoveryWorker(multiprocessing.Process):
                     logger.exception("[%s] Pending write failed during shutdown", self.worker_id)
             write_executor.shutdown(wait=True)
 
-            # Wait for in-progress promotion to finish gracefully
+            # Wait for in-progress promotion to finish gracefully.
+            # Timeout must be less than stop_all_workers join timeout (10 s) so the
+            # worker process exits before the parent force-terminates it.
             if promotion_running is not None and promotion_running.is_alive():
-                promotion_running.join(timeout=60)
+                promotion_running.join(timeout=8)
 
             # Cleanup on exit
             logger.info(

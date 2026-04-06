@@ -35,6 +35,21 @@ class TestHealShortFiles:
         for fid in file_ids:
             mock_db.file_states.set_too_short.assert_any_call(fid)
 
+    @pytest.mark.unit
+    def test_query_uses_outbound_library_edge_traversal(self) -> None:
+        """Library scoping should traverse library_contains_file instead of file.library_id."""
+        mock_db = MagicMock()
+        mock_db.db.aql.execute.return_value = iter([])
+
+        _heal_short_files(mock_db, "libraries/1", 30)
+
+        query = mock_db.db.aql.execute.call_args[0][0]
+        bind_vars = mock_db.db.aql.execute.call_args[1]["bind_vars"]
+
+        assert "FOR file IN OUTBOUND @library_id library_contains_file" in query
+        assert "FILTER file.library_id == @library_id" not in query
+        assert bind_vars["library_id"] == "libraries/1"
+
 
 class TestValidateUnchangedFiles:
     """Tests for validate_unchanged_files."""

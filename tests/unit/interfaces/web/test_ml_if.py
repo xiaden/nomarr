@@ -100,12 +100,32 @@ class TestMlIfRoutes:
         mock_library_service: MagicMock,
     ) -> None:
         """The recent-activity endpoint should be reachable under /machine-learning."""
-        mock_library_service.get_recently_processed.return_value = []
+        mock_library_service.get_recently_processed.return_value = [
+            {
+                "file_id": "library_files/1",
+                "path": "Music/Test Song.flac",
+                "title": "Test Song",
+                "artist": "Test Artist",
+                "album": "Test Album",
+                "scanned_at": 1_712_345_678,
+            },
+        ]
 
         response = client.get("/api/web/machine-learning/recent-activity")
 
         assert response.status_code == 200
-        assert response.json() == {"files": []}
+        assert response.json() == {
+            "files": [
+                {
+                    "file_id": "library_files/1",
+                    "path": "Music/Test Song.flac",
+                    "title": "Test Song",
+                    "artist": "Test Artist",
+                    "album": "Test Album",
+                    "scanned_at": 1_712_345_678,
+                },
+            ],
+        }
         mock_library_service.get_recently_processed.assert_called_once_with(limit=20, library_id=None)
 
     def test_list_models_is_reachable_at_machine_learning_prefix(

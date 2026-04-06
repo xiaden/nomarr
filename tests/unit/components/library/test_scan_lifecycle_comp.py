@@ -6,7 +6,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from nomarr.components.library.scan_lifecycle_comp import bootstrap_file_state_edges
+from nomarr.components.library.scan_lifecycle_comp import (
+    bootstrap_file_state_edges,
+    is_library_scanning,
+)
+from nomarr.persistence.database.library_pipeline_states_aql import PIPELINE_SCANNING
 
 
 class TestBootstrapFileStateEdges:
@@ -50,3 +54,44 @@ class TestBootstrapFileStateEdges:
         result = bootstrap_file_state_edges(mock_db, bootstraps, file_id_by_path)
         assert result == 0
         mock_db.file_states.set_tagged.assert_not_called()
+
+
+class TestIsLibraryScanning:
+    """Tests for is_library_scanning."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_returns_false_when_get_state_raises_value_error(self) -> None:
+        mock_db = MagicMock()
+        library_id = "libraries/test"
+        mock_db.library_pipeline_states.get_state.side_effect = ValueError()
+
+        result = is_library_scanning(mock_db, library_id)
+
+        assert result is False
+        mock_db.library_pipeline_states.get_state.assert_called_once_with(library_id)
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_returns_true_when_pipeline_state_is_scanning(self) -> None:
+        mock_db = MagicMock()
+        library_id = "libraries/test"
+        scanning_key = PIPELINE_SCANNING.rsplit("/", maxsplit=1)[-1]
+        mock_db.library_pipeline_states.get_state.return_value = scanning_key
+
+        result = is_library_scanning(mock_db, library_id)
+
+        assert result is True
+        mock_db.library_pipeline_states.get_state.assert_called_once_with(library_id)
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_returns_false_when_pipeline_state_is_not_scanning(self) -> None:
+        mock_db = MagicMock()
+        library_id = "libraries/test"
+        mock_db.library_pipeline_states.get_state.return_value = "idle"
+
+        result = is_library_scanning(mock_db, library_id)
+
+        assert result is False
+        mock_db.library_pipeline_states.get_state.assert_called_once_with(library_id)

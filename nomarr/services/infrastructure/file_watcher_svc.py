@@ -39,6 +39,7 @@ from watchdog.observers import Observer
 
 from nomarr.helpers.exceptions import LibraryAlreadyScanningError, LibraryNotFoundError
 from nomarr.helpers.time_helper import InternalSeconds, internal_s
+from nomarr.persistence.database.library_pipeline_states_aql import PIPELINE_SCANNING
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -192,46 +193,57 @@ class FileWatcherService:
         )
 
     def _reset_stale_scan_statuses(self) -> None:
-        """Reset stale scan_status on startup.
+        """Reset stale scan metadata for libraries still marked scanning.
 
-        If a scan was interrupted (server crash/restart), the library may be stuck
-        in scan_status='scanning' even though no scan is actually running.
-        This resets such libraries to 'idle' so new scans can be started.
+        LibraryPipelineService.recover_stale_states() owns authoritative pipeline
+        state recovery. This helper only clears scan-document metadata for
+        libraries that are still in ``PIPELINE_SCANNING`` when watcher sync runs,
+        so progress/status fields do not remain stuck at ``scanning`` after a
+        restart.
 
         Called once at startup via sync_watchers().
         """
+        scanning_library_ids: set[str] = set(
+            self.db.library_pipeline_states.get_libraries_in_state(PIPELINE_SCANNING),
+        )
+        if not scanning_library_ids:
+            return
+
         all_libraries = self.db.libraries.list_libraries()
         reset_count = 0
 
         for lib in all_libraries:
-            if lib.get("scan_status") == "scanning":
-                library_id = lib["_id"]
-                logger.warning(
-                    f"[FileWatcherService] Resetting stale scan_status for library {lib.get('name', library_id)} "
-                    f"(was 'scanning' at startup, likely from interrupted scan)",
-                )
-                self.db.libraries.update_scan_status(
-                    library_id,
-                    status="idle",
-                    error="Scan interrupted by server restart",
-                )
-                reset_count += 1
+            library_id = str(lib["_id"])
+            if library_id not in scanning_library_ids:
+                continue
+
+            logger.warning(
+                "[FileWatcherService] Clearing stale scan metadata for library %s "
+                "during startup sync; pipeline state recovery is handled separately",
+                lib.get("name", library_id),
+            )
+            self.db.libraries.update_scan_status(
+                library_id,
+                status="idle",
+                error="Scan interrupted by server restart",
+            )
+            reset_count += 1
 
         if reset_count > 0:
-            logger.info(f"[FileWatcherService] Reset {reset_count} libraries with stale scan_status")
+            logger.info("[FileWatcherService] Reset stale scan metadata for %s libraries", reset_count)
 
     def sync_watchers(self) -> None:
         """Sync watchers with the library collection (DB is source of truth).
 
-        - Resets stale scan_status on startup (handles interrupted scans from crashes)
+        - Clears stale scan metadata on startup for libraries still in scanning state
         - Starts watchers for libraries in DB with watch_mode != 'off'
         - Stops watchers for libraries no longer in DB or with watch_mode == 'off'
 
         Should be called on startup and can be called periodically if needed.
         """
-        # Reset stale scan_status for all libraries on startup
-        # If scan_status is 'scanning' but no scan is actually running (server restart),
-        # reset it to 'idle' so users can start new scans
+        # Clear stale scan metadata for libraries that still appear in the
+        # scanning pipeline state during watcher sync. Pipeline recovery itself
+        # is owned by LibraryPipelineService.recover_stale_states().
         self._reset_stale_scan_statuses()
 
         # Get libraries that should be watched from DB

@@ -165,6 +165,15 @@ def is_component_healthy(self, component_id: str) -> bool:
 
 ---
 
+## Size Guidelines
+
+- **Consider splitting** at 400 LOC — review whether queries and mutations have grown independently
+- **MUST split** at 600 LOC — no exceptions; separate queries from mutations or split by sub-domain
+
+AQL string literals inflate line counts. If the module stays coherent, 400–600 is acceptable. Beyond 600, the sub-domain is too broad.
+
+---
+
 ## Validation Checklist
 
 Before committing persistence code, verify:

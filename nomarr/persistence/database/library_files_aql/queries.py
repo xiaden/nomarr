@@ -362,7 +362,10 @@ class LibraryFilesQueriesMixin:
             offset: Pagination offset
 
         Returns:
-            Tuple of (files list with tags, total count)
+            Tuple of (files_list, total_count). Each dict in files_list
+            contains all file fields merged with ``tags`` (list of tag dicts)
+            and ``library_id`` (derived via INBOUND edge traversal on
+            ``library_contains_file``).
 
         """
         # Build filter conditions
@@ -472,7 +475,8 @@ class LibraryFilesQueriesMixin:
                             is_nomarr: STARTS_WITH(tag.rel, "nom:")
                         }}
                 )
-                RETURN MERGE(file, {{ tags: tags }})
+                LET lib_id = FIRST(FOR lib IN INBOUND file._id library_contains_file LIMIT 1 RETURN lib._id)
+                RETURN MERGE(file, {{ tags: tags, library_id: lib_id }})
             """,
                 bind_vars=cast("dict[str, Any]", bind_vars),
             ),

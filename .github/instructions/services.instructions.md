@@ -245,6 +245,15 @@ class LibraryService:
 
 ---
 
+## Size Guidelines
+
+- **Consider splitting** at 300 LOC — review whether the service owns more than one bounded domain concern
+- **MUST split** at 500 LOC — no exceptions; split by bounded domain before committing
+
+Services are wiring and coordination only — large services almost always contain logic that belongs in workflows or components.
+
+---
+
 ## Validation Checklist
 
 Before committing service code, verify:

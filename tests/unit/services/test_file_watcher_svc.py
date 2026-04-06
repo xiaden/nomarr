@@ -626,5 +626,53 @@ class TestPerLibraryWatchMode:
         assert len(watcher.observers) == 0
 
 
+class TestResetStaleScanStatuses:
+    """Tests for startup stale scan metadata cleanup."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_resets_only_libraries_in_scanning_pipeline_state(self) -> None:
+        """Pipeline state, not scan_status text on library docs, should drive stale resets."""
+        mock_db = MagicMock()
+        mock_db.library_pipeline_states.get_libraries_in_state.return_value = ["libraries/lib1"]
+        mock_db.libraries.list_libraries.return_value = [
+            {
+                "_id": "libraries/lib1",
+                "name": "Pipeline Scanning",
+                "scan_status": "idle",
+            },
+            {
+                "_id": "libraries/lib2",
+                "name": "Doc Says Scanning",
+                "scan_status": "scanning",
+            },
+        ]
+
+        watcher = FileWatcherService(db=mock_db, library_service=MagicMock())
+
+        watcher._reset_stale_scan_statuses()
+
+        mock_db.library_pipeline_states.get_libraries_in_state.assert_called_once()
+        mock_db.libraries.update_scan_status.assert_called_once_with(
+            "libraries/lib1",
+            status="idle",
+            error="Scan interrupted by server restart",
+        )
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_skips_reset_when_no_libraries_are_in_scanning_pipeline_state(self) -> None:
+        """No pipeline scanning libraries means no metadata reset work."""
+        mock_db = MagicMock()
+        mock_db.library_pipeline_states.get_libraries_in_state.return_value = []
+
+        watcher = FileWatcherService(db=mock_db, library_service=MagicMock())
+
+        watcher._reset_stale_scan_statuses()
+
+        mock_db.libraries.list_libraries.assert_not_called()
+        mock_db.libraries.update_scan_status.assert_not_called()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

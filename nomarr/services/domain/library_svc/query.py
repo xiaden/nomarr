@@ -235,8 +235,8 @@ class LibraryQueryMixin:
             library_id: Optional library _id to filter by.
 
         Returns:
-            List of {file_id, path, title, artist, album, last_tagged_at}
-            sorted by last_tagged_at DESC.
+            List of {file_id, path, title, artist, album, scanned_at}
+            sorted by scanned_at DESC.
         """
         return self.db.library_files.get_recently_processed(limit=limit, library_id=library_id)
 

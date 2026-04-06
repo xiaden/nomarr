@@ -18,7 +18,7 @@ from nomarr.components.library.library_root_comp import (
     get_base_library_root,
     normalize_library_root,
 )
-from nomarr.persistence.database.library_pipeline_states_aql import PIPELINE_IDLE
+from nomarr.persistence.database.library_pipeline_states_aql import PIPELINE_IDLE, PIPELINE_SCANNING
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
@@ -68,6 +68,7 @@ def create_library(
             library_auto_write=library_auto_write,
         )
         db.library_pipeline_states.transition_state(library_id, PIPELINE_IDLE)
+        db.library_scans.get_or_create_scan(library_id)
     except Exception as e:
         msg = f"Failed to create library: {e}"
         raise ValueError(msg) from e
@@ -163,6 +164,6 @@ def _resolve_library_name(db: Database, name: str | None, abs_path: str) -> str:
 
 
 def _is_scan_running(db: Database) -> bool:
-    """Check if any library has an active scan."""
-    libraries = db.libraries.list_libraries(enabled_only=False)
-    return any(lib.get("scan_status") == "scanning" for lib in libraries)
+    """Check if any library pipeline is currently in the scanning state."""
+    scanning_libraries: list[str] = db.library_pipeline_states.get_libraries_in_state(PIPELINE_SCANNING)
+    return len(scanning_libraries) > 0

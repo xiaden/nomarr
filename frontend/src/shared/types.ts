@@ -122,7 +122,6 @@ export interface LibraryFile {
   title?: string;
   calibration?: string;
   scanned_at?: number;
-  last_tagged_at?: number;
   tagged: boolean; // Arango boolean
   tagged_version?: string;
   skip_auto_tag: boolean; // Arango boolean

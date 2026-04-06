@@ -12,10 +12,8 @@ Pydantic request and response models for all API endpoints.
 
 | Module | Purpose |
 |--------|--------|
-| `admin_types.py` | Worker operations, calibration, retag responses |
 | `analytics_types.py` | Tag frequencies, mood distribution, correlations, collection overview |
 | `api_key_types.py` | API key management requests/responses |
-| `calibration_types.py` | Calibration run, history, recalibration status |
 | `config_types.py` | Config read/update requests and responses |
 | `info_types.py` | System info, health status, GPU health, models info |
 | `library_types.py` | Library CRUD, scan, search, file tags, reconciliation |

@@ -40,10 +40,8 @@ interfaces/
 │   ├── id_codec.py                  # URL-safe ID encoding/decoding
 │   │
 │   ├── types/                       # Pydantic request/response models
-│   │   ├── admin_types.py           # Admin operation types
 │   │   ├── analytics_types.py       # Analytics types
 │   │   ├── api_key_types.py         # API key types
-│   │   ├── calibration_types.py     # Calibration types
 │   │   ├── config_types.py          # Config types
 │   │   ├── info_types.py            # System info types
 │   │   ├── library_types.py         # Library types

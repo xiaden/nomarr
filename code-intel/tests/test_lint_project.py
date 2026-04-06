@@ -318,73 +318,6 @@ def test_lint_frontend_missing_dir(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 # ===================================================================
-# Backend — lint_project_backend: ruff format parsing
-# ===================================================================
-
-
-class TestRuffFormatParsing:
-    def test_ruff_format_violation_produces_ruff_format_key(self) -> None:
-        from mcp_code_intel.tools.lint_project_backend import lint_project_backend
-
-        with patch(
-            "mcp_code_intel.tools.lint_project_backend.subprocess.run",
-            side_effect=[
-                _make_proc_bytes(stdout=b"[]", stderr=b"", returncode=0),
-                _make_proc_bytes(
-                    stdout=b"Would reformat: /abs/path/file.py\n",
-                    stderr=b"",
-                    returncode=1,
-                ),
-                _make_proc_bytes(stdout=b"", stderr=b"", returncode=0),
-            ],
-        ):
-            result = lint_project_backend(path=".", check_all=False)
-
-        assert "ruff-format" in result
-        assert "/abs/path/file.py" in result["ruff-format"]
-        assert result["ruff-format"]["/abs/path/file.py"]["fix_available"] is True
-        assert result["ruff-format"]["/abs/path/file.py"]["occurrences"][0]["line"] is None
-
-    def test_ruff_format_clean_omits_ruff_format_key(self) -> None:
-        from mcp_code_intel.tools.lint_project_backend import lint_project_backend
-
-        with patch(
-            "mcp_code_intel.tools.lint_project_backend.subprocess.run",
-            side_effect=[
-                _make_proc_bytes(stdout=b"[]", stderr=b"", returncode=0),
-                _make_proc_bytes(stdout=b"", stderr=b"", returncode=0),
-                _make_proc_bytes(stdout=b"", stderr=b"", returncode=0),
-            ],
-        ):
-            result = lint_project_backend(path=".", check_all=False)
-
-        assert "ruff-format" not in result
-
-    def test_ruff_format_multiple_files(self) -> None:
-        from mcp_code_intel.tools.lint_project_backend import lint_project_backend
-
-        with patch(
-            "mcp_code_intel.tools.lint_project_backend.subprocess.run",
-            side_effect=[
-                _make_proc_bytes(stdout=b"[]", stderr=b"", returncode=0),
-                _make_proc_bytes(
-                    stdout=(
-                        b"Would reformat: /abs/path/one.py\nWould reformat: /abs/path/two.py\n"
-                    ),
-                    stderr=b"",
-                    returncode=1,
-                ),
-                _make_proc_bytes(stdout=b"", stderr=b"", returncode=0),
-            ],
-        ):
-            result = lint_project_backend(path=".", check_all=False)
-
-        assert "ruff-format" in result
-        assert "/abs/path/one.py" in result["ruff-format"]
-        assert "/abs/path/two.py" in result["ruff-format"]
-
-
-# ===================================================================
 # Backend — lint_project_backend: pytest summary
 # ===================================================================
 
@@ -453,8 +386,15 @@ class TestPytestSummary:
         assert result["pytest"]["failed"] == 2
         assert "output" in result["pytest"]
 
-    def test_pytest_omitted_when_check_all_false(self) -> None:
+    def test_pytest_skipped_when_check_all_false_and_no_matching_tests(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        import mcp_code_intel.tools.lint_project_backend as mod
         from mcp_code_intel.tools.lint_project_backend import lint_project_backend
+
+        monkeypatch.setattr(mod, "project_root", _prepare_backend_project_root(tmp_path))
 
         with patch(
             "mcp_code_intel.tools.lint_project_backend.subprocess.run",
@@ -462,11 +402,45 @@ class TestPytestSummary:
                 _make_proc_bytes(stdout=b"[]", stderr=b"", returncode=0),
                 _make_proc_bytes(stdout=b"", stderr=b"", returncode=0),
                 _make_proc_bytes(stdout=b"", stderr=b"", returncode=0),
+                _make_proc_bytes(stdout=b"", stderr=b"", returncode=0),
             ],
         ):
             result = lint_project_backend(path=".", check_all=False)
 
-        assert "pytest" not in result
+        assert result["pytest"]["status"] == "skipped"
+        assert "no related tests" in result["pytest"]["reason"]
+
+    def test_pytest_scoped_to_matching_test_file(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        import mcp_code_intel.tools.lint_project_backend as mod
+        from mcp_code_intel.tools.lint_project_backend import lint_project_backend
+
+        project_root = _prepare_backend_project_root(tmp_path)
+        # Create the source file so the path resolves
+        (project_root / "nomarr").mkdir()
+        (project_root / "nomarr" / "foo_comp.py").write_text("")
+        # Create the matching test file for the glob to find
+        (project_root / "tests" / "unit").mkdir(parents=True)
+        (project_root / "tests" / "unit" / "test_foo_comp.py").write_text("")
+        monkeypatch.setattr(mod, "project_root", project_root)
+
+        with patch(
+            "mcp_code_intel.tools.lint_project_backend.subprocess.run",
+            side_effect=[
+                _make_proc_bytes(stdout=b"[]", stderr=b"", returncode=0),
+                _make_proc_bytes(stdout=b"", stderr=b"", returncode=0),
+                _make_proc_bytes(stdout=b"", stderr=b"", returncode=0),
+                _make_proc_bytes(stdout=b"All contracts satisfied.\n", stderr=b"", returncode=0),
+                _make_proc_bytes(stdout=b"1 passed in 0.1s\n", stderr=b"", returncode=0),
+            ],
+        ):
+            result = lint_project_backend(path="nomarr/foo_comp.py", check_all=False)
+
+        assert result["pytest"]["status"] == "pass"
+        assert result["pytest"]["passed"] == 1
 
     def test_pytest_error_on_subprocess_exception(
         self,

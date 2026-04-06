@@ -84,12 +84,8 @@ def test_no_mixed_read_write_aql_in_production_code() -> None:
 
 
 @pytest.mark.unit
-@pytest.mark.xfail(
-    strict=False,
-    reason="scripts/ contains legacy dev tools with known mixed-AQL patterns",
-)
 def test_no_mixed_read_write_aql_in_scripts() -> None:
-    """Advisory check for legacy scripts that still contain mixed-AQL patterns."""
+    """Ensure no mixed read/write AQL patterns exist in scripts/."""
     if not _SCRIPTS_ROOT.exists():
         pytest.skip("scripts/ directory does not exist")
 

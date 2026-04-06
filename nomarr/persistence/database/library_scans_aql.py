@@ -80,6 +80,10 @@ class LibraryScansOperations:
         Returns:
             Updated scan state
 
+        Note:
+            Also upserts a ``library_has_scan`` edge between ``library_id`` and the
+            scan document, ensuring graph connectivity.
+
         """
         library_key = library_id.split("/")[-1]
 
@@ -87,22 +91,31 @@ class LibraryScansOperations:
             "Cursor",
             self.db.aql.execute(
                 """
-                UPSERT { _key: @library_key }
-                INSERT MERGE({
-                    _key: @library_key,
-                    status: "idle",
-                    files_processed: 0,
-                    files_total: 0,
-                    completed_at: null,
-                    started_at: null,
-                    error: null,
-                    scan_type: null
-                }, @fields)
-                UPDATE @fields
-                IN library_scans
-                RETURN NEW
+                LET scan = (
+                    UPSERT { _key: @library_key }
+                    INSERT MERGE({
+                        _key: @library_key,
+                        status: "idle",
+                        files_processed: 0,
+                        files_total: 0,
+                        completed_at: null,
+                        started_at: null,
+                        error: null,
+                        scan_type: null
+                    }, @fields)
+                    UPDATE @fields
+                    IN library_scans
+                    RETURN NEW
+                )[0]
+
+                UPSERT { _from: @library_id, _to: CONCAT("library_scans/", @library_key) }
+                INSERT { _from: @library_id, _to: CONCAT("library_scans/", @library_key) }
+                UPDATE {}
+                IN library_has_scan
+
+                RETURN scan
                 """,
-                bind_vars={"library_key": library_key, "fields": fields},
+                bind_vars={"library_id": library_id, "library_key": library_key, "fields": fields},
             ),
         )
         result = next(cursor, None)

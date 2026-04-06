@@ -883,59 +883,99 @@ class FileStatesOperations:
             expected_heads: List of ``{head_key, labels, model_key_for_tag}``
                 dicts describing the heads every tagged file should have.
             namespace_prefix: Namespace prefix including colon (e.g. ``"nom:"``).
-            library_id: Optional library ``_id`` to restrict the scan.
+            library_id: Optional library ``_id`` to restrict the scan via
+                INBOUND edge traversal on ``library_contains_file``.
 
         Returns:
             List of ``{file_id, file_key, library_id, matched_count,
             missing_count, missing_heads}`` for **all** tagged files
             (caller filters for incomplete ones).
         """
-        library_filter = ""
         bind_vars: dict[str, Any] = {
             "namespace_prefix": namespace_prefix,
             "expected_heads": expected_heads,
         }
         if library_id:
-            library_filter = "FILTER file.library_id == @library_id"
             bind_vars["library_id"] = library_id
-
-        query = f"""
-        LET expected = @expected_heads
-        FOR edge IN file_has_state
-          FILTER edge._to == "file_states/tagged"
-          LET file = DOCUMENT(edge._from)
-          FILTER file != null
-          {library_filter}
-          LET matched_heads = UNIQUE(
-            FOR tag_edge IN song_has_tags
-              FILTER tag_edge._from == file._id
-              LET tag = DOCUMENT(tag_edge._to)
-              FILTER tag != null
-              FILTER STARTS_WITH(tag.rel, @namespace_prefix)
-              LET rel_without_prefix = SUBSTRING(tag.rel, 4)
-              LET first_underscore = FIND_FIRST(rel_without_prefix, "_")
-              LET label = first_underscore >= 0
-                ? SUBSTRING(rel_without_prefix, 0, first_underscore)
-                : rel_without_prefix
-              FOR exp IN expected
-                FILTER label IN exp.labels
-                FILTER CONTAINS(rel_without_prefix, exp.model_key_for_tag)
-                RETURN exp.head_key
-          )
-          LET missing_heads = (
-            FOR exp IN expected
-              FILTER exp.head_key NOT IN matched_heads
-              RETURN exp.head_key
-          )
-          RETURN {{
-            file_id: file._id,
-            file_key: file._key,
-            library_id: file.library_id,
-            matched_count: LENGTH(matched_heads),
-            missing_count: LENGTH(missing_heads),
-            missing_heads: missing_heads
-          }}
-        """
+            query = """
+                        LET expected = @expected_heads
+                        FOR edge IN file_has_state
+                            FILTER edge._to == "file_states/tagged"
+                            LET file = DOCUMENT(edge._from)
+                            FILTER file != null
+                            FILTER LENGTH(
+                                FOR lib IN INBOUND file._id library_contains_file
+                                    FILTER lib._id == @library_id
+                                    LIMIT 1
+                                    RETURN 1
+                            ) > 0
+                            LET matched_heads = UNIQUE(
+                                FOR tag_edge IN song_has_tags
+                                    FILTER tag_edge._from == file._id
+                                    LET tag = DOCUMENT(tag_edge._to)
+                                    FILTER tag != null
+                                    FILTER STARTS_WITH(tag.rel, @namespace_prefix)
+                                    LET rel_without_prefix = SUBSTRING(tag.rel, 4)
+                                    LET first_underscore = FIND_FIRST(rel_without_prefix, "_")
+                                    LET label = first_underscore >= 0
+                                        ? SUBSTRING(rel_without_prefix, 0, first_underscore)
+                                        : rel_without_prefix
+                                    FOR exp IN expected
+                                        FILTER label IN exp.labels
+                                        FILTER CONTAINS(rel_without_prefix, exp.model_key_for_tag)
+                                        RETURN exp.head_key
+                            )
+                            LET missing_heads = (
+                                FOR exp IN expected
+                                    FILTER exp.head_key NOT IN matched_heads
+                                    RETURN exp.head_key
+                            )
+                            RETURN {
+                                file_id: file._id,
+                                file_key: file._key,
+                                library_id: @library_id,
+                                matched_count: LENGTH(matched_heads),
+                                missing_count: LENGTH(missing_heads),
+                                missing_heads: missing_heads
+                            }
+                        """
+        else:
+            query = """
+                        LET expected = @expected_heads
+                        FOR edge IN file_has_state
+                            FILTER edge._to == "file_states/tagged"
+                            LET file = DOCUMENT(edge._from)
+                            FILTER file != null
+                            LET matched_heads = UNIQUE(
+                                FOR tag_edge IN song_has_tags
+                                    FILTER tag_edge._from == file._id
+                                    LET tag = DOCUMENT(tag_edge._to)
+                                    FILTER tag != null
+                                    FILTER STARTS_WITH(tag.rel, @namespace_prefix)
+                                    LET rel_without_prefix = SUBSTRING(tag.rel, 4)
+                                    LET first_underscore = FIND_FIRST(rel_without_prefix, "_")
+                                    LET label = first_underscore >= 0
+                                        ? SUBSTRING(rel_without_prefix, 0, first_underscore)
+                                        : rel_without_prefix
+                                    FOR exp IN expected
+                                        FILTER label IN exp.labels
+                                        FILTER CONTAINS(rel_without_prefix, exp.model_key_for_tag)
+                                        RETURN exp.head_key
+                            )
+                            LET missing_heads = (
+                                FOR exp IN expected
+                                    FILTER exp.head_key NOT IN matched_heads
+                                    RETURN exp.head_key
+                            )
+                            RETURN {
+                                file_id: file._id,
+                                file_key: file._key,
+                                library_id: file.library_id,
+                                matched_count: LENGTH(matched_heads),
+                                missing_count: LENGTH(missing_heads),
+                                missing_heads: missing_heads
+                            }
+                        """
         cursor = cast(
             "Cursor",
             self.db.aql.execute(  # type: ignore[union-attr]

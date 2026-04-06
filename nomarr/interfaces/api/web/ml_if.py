@@ -32,7 +32,7 @@ class RecentFileItem(BaseModel):
     title: str | None
     artist: str | None
     album: str | None
-    last_tagged_at: int
+    scanned_at: int
 
 
 class RecentFilesResponse(BaseModel):
@@ -167,7 +167,7 @@ async def web_recent_activity(
 ) -> RecentFilesResponse:
     """Get recently processed files.
 
-    Returns files sorted by last_tagged_at descending.
+    Returns files sorted by scanned_at descending.
     """
     try:
         decoded_library_id = decode_path_id(library_id) if library_id else None

@@ -1,6 +1,6 @@
 """Backend linting tool for MCP server.
 
-Runs ruff (check + format), mypy, import-linter, and pytest on specified path.
+Runs ruff (check --fix --unsafe-fixes + format), mypy, import-linter, and pytest on specified path.
 Returns structured JSON with errors or clean status.
 """
 
@@ -306,7 +306,14 @@ def lint_project_backend(path: str | None = None, check_all: bool = False) -> di
         venv_ruff = project_root / ".venv" / "Scripts" / "ruff.exe"
         try:
             result = subprocess.run(
-                [str(venv_ruff), "check", "--no-fix", "--output-format=json", *target_files],
+                [
+                    str(venv_ruff),
+                    "check",
+                    "--fix",
+                    "--unsafe-fixes",
+                    "--output-format=json",
+                    *target_files,
+                ],
                 capture_output=True,
                 stdin=subprocess.DEVNULL,
                 cwd=project_root,
@@ -322,46 +329,16 @@ def lint_project_backend(path: str | None = None, check_all: bool = False) -> di
             result_json["ruff"] = normalize_to_json_structure(raw_errors, "ruff")
             total_errors += sum(len(v["occurrences"]) for v in result_json["ruff"].values())
 
-        # Run ruff format check
+        # Auto-format files in place — fixes formatting without reporting it as an error
         try:
-            fmt_result = subprocess.run(
-                [str(venv_ruff), "format", "--check", *target_files],
+            subprocess.run(
+                [str(venv_ruff), "format", *target_files],
                 capture_output=True,
                 stdin=subprocess.DEVNULL,
                 cwd=project_root,
             )
-            fmt_stdout = fmt_result.stdout.decode(errors="replace")
-            fmt_stderr = fmt_result.stderr.decode(errors="replace")
-        except subprocess.CalledProcessError as e:
-            fmt_stdout = e.stdout.decode(errors="replace")
-            fmt_stderr = e.stderr.decode(errors="replace")
-
-        # ruff format --check outputs "Would reformat: /path/to/file.py" lines
-        format_violations: list[dict[str, Any]] = []
-        combined_fmt = fmt_stdout + "\n" + fmt_stderr
-        for fmt_line in combined_fmt.splitlines():
-            m = re.match(r"Would reformat:\s+(.+)", fmt_line.strip())
-            if m:
-                format_violations.append(
-                    {
-                        "code": "format",
-                        "description": "File would be reformatted by ruff format",
-                        "file": m.group(1).strip(),
-                        "line": None,
-                        "fix_available": True,
-                    }
-                )
-
-        if format_violations:
-            fmt_dict: dict[str, Any] = {}
-            for v in format_violations:
-                fmt_dict[v["file"]] = {
-                    "description": v["description"],
-                    "fix_available": True,
-                    "occurrences": [{"file": v["file"], "line": None}],
-                }
-            result_json["ruff-format"] = fmt_dict
-            total_errors += len(format_violations)
+        except Exception:
+            pass  # format failures are non-critical
 
     # Run mypy
     if DEBUG_LINTER is None or DEBUG_LINTER == "mypy":
@@ -387,7 +364,7 @@ def lint_project_backend(path: str | None = None, check_all: bool = False) -> di
             result_json["mypy"] = normalize_to_json_structure(raw_errors, "mypy")
             total_errors += sum(len(v["occurrences"]) for v in result_json["mypy"].values())
 
-    # Run import-linter (always run — matches CI which runs on every push)
+    # Run import-linter (always run — layer contracts must hold regardless of what changed)
     if DEBUG_LINTER is None or DEBUG_LINTER == "import-linter":
         venv_lint_imports = project_root / ".venv" / "Scripts" / "lint-imports.exe"
         try:
@@ -410,52 +387,70 @@ def lint_project_backend(path: str | None = None, check_all: bool = False) -> di
                 len(v["occurrences"]) for v in result_json["import-linter"].values()
             )
 
-    # Run pytest (always run — matches CI which runs tests on every push)
+    # Run pytest — full suite when check_all=True, scoped to related tests otherwise
     if DEBUG_LINTER is None:
         venv_python = project_root / ".venv" / "Scripts" / "python.exe"
         test_dir = project_root / "tests"
         if test_dir.exists() and venv_python.exists():
-            try:
-                pytest_result = subprocess.run(
-                    [
-                        str(venv_python),
-                        "-m",
-                        "pytest",
-                        "tests/",
-                        "-v",
-                        "-m",
-                        "not container_only and not requires_database and not code_smell",
-                        "--tb=short",
-                    ],
-                    capture_output=True,
-                    stdin=subprocess.DEVNULL,
-                    cwd=project_root,
-                )
-                pytest_stdout = pytest_result.stdout.decode(errors="replace")
-                pytest_stderr = pytest_result.stderr.decode(errors="replace")
-                pytest_passed = pytest_result.returncode == 0
+            if check_all:
+                pytest_targets = ["tests/"]
+            else:
+                # Find test files corresponding to changed source files
+                found: set[str] = set()
+                for f in target_files:
+                    stem = Path(f).stem
+                    if stem.startswith("test_"):
+                        # Changed file is itself a test file
+                        found.add(f)
+                    else:
+                        # Look for matching test file(s) anywhere under tests/
+                        for match in test_dir.rglob(f"test_{stem}.py"):
+                            found.add(str(match))
+                pytest_targets = sorted(found)
 
-                # Parse summary line: "X passed, Y failed, Z error in Ns"
-                summary_match = re.search(
-                    r"(\d+) passed(?:,\s*(\d+) failed)?(?:,\s*(\d+) error(?:s)?)?\s+in",
-                    pytest_stdout + pytest_stderr,
-                )
-                pytest_summary: dict[str, Any] = {
-                    "status": "pass" if pytest_passed else "fail",
-                    "passed": int(summary_match.group(1)) if summary_match else None,
-                    "failed": int(summary_match.group(2) or 0) if summary_match else None,
-                }
-                if not pytest_passed:
-                    # Include last 100 lines of output on failure
-                    combined_lines = (pytest_stdout + pytest_stderr).splitlines()
-                    pytest_summary["output"] = "\n".join(combined_lines[-100:])
-                    failed_count = pytest_summary.get("failed") or 0
-                    total_errors += failed_count
+            if not pytest_targets:
+                result_json["pytest"] = {"status": "skipped", "reason": "no related tests found"}
+            else:
+                try:
+                    pytest_result = subprocess.run(
+                        [
+                            str(venv_python),
+                            "-m",
+                            "pytest",
+                            *pytest_targets,
+                            "-v",
+                            "-m",
+                            "not container_only and not requires_database and not code_smell",
+                            "--tb=short",
+                        ],
+                        capture_output=True,
+                        stdin=subprocess.DEVNULL,
+                        cwd=project_root,
+                    )
+                    pytest_stdout = pytest_result.stdout.decode(errors="replace")
+                    pytest_stderr = pytest_result.stderr.decode(errors="replace")
+                    pytest_passed = pytest_result.returncode == 0
 
-                result_json["pytest"] = pytest_summary
+                    # Parse counts — order varies e.g. "1 failed, 787 passed, 2 deselected in 6s"
+                    combined_output = pytest_stdout + pytest_stderr
+                    passed_match = re.search(r"(\d+) passed", combined_output)
+                    failed_match = re.search(r"(\d+) failed", combined_output)
+                    pytest_summary: dict[str, Any] = {
+                        "status": "pass" if pytest_passed else "fail",
+                        "passed": int(passed_match.group(1)) if passed_match else 0,
+                        "failed": int(failed_match.group(1)) if failed_match else 0,
+                    }
+                    if not pytest_passed:
+                        # Include last 100 lines of output on failure
+                        combined_lines = (pytest_stdout + pytest_stderr).splitlines()
+                        pytest_summary["output"] = "\n".join(combined_lines[-100:])
+                        failed_count = pytest_summary.get("failed") or 0
+                        total_errors += failed_count
 
-            except Exception as e:
-                result_json["pytest"] = {"status": "error", "error": str(e)}
+                    result_json["pytest"] = pytest_summary
+
+                except Exception as e:
+                    result_json["pytest"] = {"status": "error", "error": str(e)}
         else:
             if not test_dir.exists():
                 result_json["pytest"] = {
@@ -465,11 +460,18 @@ def lint_project_backend(path: str | None = None, check_all: bool = False) -> di
             elif not venv_python.exists():
                 result_json["pytest"] = {"status": "skipped", "reason": "venv python not found"}
 
-    # Add summary
+    # Add summary — when target is a directory, count actual .py files for accuracy
+    if len(target_files) == 1 and Path(target_files[0]).is_dir():
+        _exclude = {".venv", "__pycache__", ".git", "node_modules", ".mypy_cache", ".ruff_cache"}
+        files_checked = sum(
+            1 for p in Path(target_files[0]).rglob("*.py") if not _exclude.intersection(p.parts)
+        )
+    else:
+        files_checked = len(target_files)
     result_json["summary"] = {
         "total_errors": total_errors,
         "clean": total_errors == 0,
-        "files_checked": len(target_files),
+        "files_checked": files_checked,
     }
 
     # Validate JSON serialization

@@ -199,6 +199,15 @@ def should_restart_worker(restart_count: int, last_restart_ms: int) -> RestartDe
 
 ---
 
+## Size Guidelines
+
+- **Consider splitting** at 300 LOC — review whether multiple domain concerns are coexisting in one class
+- **MUST split** at 500 LOC — no exceptions; split before committing
+
+When splitting, extract a sibling component (e.g., `ml_calibration_comp.py` + `ml_calibration_helpers_comp.py`). Never grow past the hard limit by adding more private helpers.
+
+---
+
 ## Validation Checklist
 
 Before committing component code, verify:
