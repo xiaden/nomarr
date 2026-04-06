@@ -12,11 +12,10 @@ import functools
 import logging
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.library.scan_lifecycle_comp import on_scan_complete_pipeline_hook
+from nomarr.components.library.scan_lifecycle_comp import PIPELINE_SCANNING, on_scan_complete_pipeline_hook
 from nomarr.helpers import ManagedTask
 from nomarr.helpers.dto.library_dto import LibraryScanStatusResult, StartScanResult
 from nomarr.helpers.time_helper import now_ms
-from nomarr.persistence.database.library_pipeline_states_aql import PIPELINE_SCANNING
 from nomarr.services.infrastructure.config_svc import INTERNAL_MIN_DURATION_S
 from nomarr.workflows.library.scan_library_full_wf import scan_library_full_workflow
 from nomarr.workflows.library.scan_library_quick_wf import scan_library_quick_workflow

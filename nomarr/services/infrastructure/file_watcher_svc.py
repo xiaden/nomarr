@@ -37,9 +37,9 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
+from nomarr.components.library.scan_lifecycle_comp import PIPELINE_SCANNING
 from nomarr.helpers.exceptions import LibraryAlreadyScanningError, LibraryNotFoundError
 from nomarr.helpers.time_helper import InternalSeconds, internal_s
-from nomarr.persistence.database.library_pipeline_states_aql import PIPELINE_SCANNING
 
 if TYPE_CHECKING:
     from collections.abc import Callable
