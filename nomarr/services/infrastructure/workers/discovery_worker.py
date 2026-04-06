@@ -54,11 +54,11 @@ def _check_idle_pipeline_completion(db: Database, health_pipe: Any) -> int:
         Number of completed-library rows processed.
 
     """
-    from nomarr.helpers.dto.health_dto import PIPELINE_FRAME_PREFIX
-    from nomarr.persistence.database.library_pipeline_states_aql import (
+    from nomarr.components.library.scan_lifecycle_comp import (
         PIPELINE_AWAITING_CALIBRATION,
         PIPELINE_TOO_SMALL,
     )
+    from nomarr.helpers.dto.health_dto import PIPELINE_FRAME_PREFIX
     from nomarr.services.infrastructure.config_svc import INTERNAL_CALIBRATION_MIN_FILES
 
     pipeline_states = db.library_pipeline_states

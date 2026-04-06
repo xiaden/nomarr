@@ -10,18 +10,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.library.search_files_comp import get_unique_tag_keys, get_unique_tag_values, search_library_files
-from nomarr.components.library.work_status_comp import compute_work_status
-from nomarr.helpers.dto.info_dto import WorkStatusResult
-from nomarr.helpers.dto.library_dto import (
-    ErroredFileItem,
-    ErroredFilesResult,
-    LibraryStatsResult,
-    SearchFilesQuery,
-    SearchFilesResult,
-    UniqueTagKeysResult,
-)
-from nomarr.persistence.database.library_pipeline_states_aql import (
+from nomarr.components.library.scan_lifecycle_comp import (
     PIPELINE_APPLYING,
     PIPELINE_AWAITING_CALIBRATION,
     PIPELINE_CALIBRATING,
@@ -32,6 +21,21 @@ from nomarr.persistence.database.library_pipeline_states_aql import (
     PIPELINE_TOO_SMALL,
     PIPELINE_WRITE_READY,
     PIPELINE_WRITING,
+)
+from nomarr.components.library.search_files_comp import (
+    get_unique_tag_keys,
+    get_unique_tag_values,
+    search_library_files,
+)
+from nomarr.components.library.work_status_comp import compute_work_status
+from nomarr.helpers.dto.info_dto import WorkStatusResult
+from nomarr.helpers.dto.library_dto import (
+    ErroredFileItem,
+    ErroredFilesResult,
+    LibraryStatsResult,
+    SearchFilesQuery,
+    SearchFilesResult,
+    UniqueTagKeysResult,
 )
 from nomarr.services.domain._library_mapping import map_file_with_tags_to_dto
 

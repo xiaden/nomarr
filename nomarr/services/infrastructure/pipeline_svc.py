@@ -6,9 +6,7 @@ import functools
 import logging
 import threading
 
-from nomarr.helpers import ManagedTask
-from nomarr.helpers.dto.library_dto import LibraryPipelineStatusDTO
-from nomarr.persistence.database.library_pipeline_states_aql import (
+from nomarr.components.library.scan_lifecycle_comp import (
     PIPELINE_APPLYING,
     PIPELINE_AWAITING_CALIBRATION,
     PIPELINE_CALIBRATING,
@@ -18,6 +16,8 @@ from nomarr.persistence.database.library_pipeline_states_aql import (
     PIPELINE_WRITE_READY,
     PIPELINE_WRITING,
 )
+from nomarr.helpers import ManagedTask
+from nomarr.helpers.dto.library_dto import LibraryPipelineStatusDTO
 from nomarr.persistence.db import Database
 from nomarr.services.domain.calibration_svc import CALIBRATION_GENERATE_TASK_ID, CalibrationService
 from nomarr.services.domain.navidrome_svc import NavidromeService
