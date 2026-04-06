@@ -21,12 +21,38 @@ from nomarr.helpers.dto.library_dto import (
     SearchFilesResult,
     UniqueTagKeysResult,
 )
+from nomarr.persistence.database.library_pipeline_states_aql import (
+    PIPELINE_APPLYING,
+    PIPELINE_AWAITING_CALIBRATION,
+    PIPELINE_CALIBRATING,
+    PIPELINE_DONE,
+    PIPELINE_IDLE,
+    PIPELINE_ML_RUNNING,
+    PIPELINE_SCANNING,
+    PIPELINE_TOO_SMALL,
+    PIPELINE_WRITE_READY,
+    PIPELINE_WRITING,
+)
 from nomarr.services.domain._library_mapping import map_file_with_tags_to_dto
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
     from .config import LibraryServiceConfig
+
+
+_PIPELINE_STATE_DOC_IDS: tuple[str, ...] = (
+    PIPELINE_IDLE,
+    PIPELINE_SCANNING,
+    PIPELINE_ML_RUNNING,
+    PIPELINE_TOO_SMALL,
+    PIPELINE_AWAITING_CALIBRATION,
+    PIPELINE_CALIBRATING,
+    PIPELINE_APPLYING,
+    PIPELINE_WRITE_READY,
+    PIPELINE_WRITING,
+    PIPELINE_DONE,
+)
 
 
 class LibraryQueryMixin:
@@ -179,7 +205,19 @@ class LibraryQueryMixin:
         libraries = self.db.libraries.list_libraries(enabled_only=False)
         stats = self.get_library_stats()
         recently_tagged = 0  # count_recently_tagged removed — deferred to model versioning
-        return compute_work_status(libraries, stats, recently_tagged)
+        pipeline_states: dict[str, str] = {}
+        for state_doc_id in _PIPELINE_STATE_DOC_IDS:
+            state_key = state_doc_id.rsplit("/", 1)[-1]
+            for library_id in self.db.library_pipeline_states.get_libraries_in_state(state_doc_id):
+                pipeline_states[library_id] = state_key
+
+        return compute_work_status(
+            libraries,
+            stats,
+            recently_tagged,
+            pipeline_states,
+            library_docs=libraries,
+        )
 
     def get_recently_processed(
         self,

@@ -115,6 +115,16 @@ class ScanningLibraryInfo:
 
 
 @dataclass
+class LibraryPipelineInfo:
+    """Per-library pipeline state info for dashboard work-status polling."""
+
+    library_id: str
+    name: str
+    state: str
+    library_auto_write: bool
+
+
+@dataclass
 class WorkStatusResult:
     """Result from get_work_status service method.
 
@@ -124,6 +134,7 @@ class WorkStatusResult:
     # Scanning status
     is_scanning: bool
     scanning_libraries: list[ScanningLibraryInfo]
+    pipeline_libraries: list[LibraryPipelineInfo]
 
     # ML processing status (files needing tagging)
     is_processing: bool

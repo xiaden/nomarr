@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from nomarr.helpers.dto.info_dto import (
         GPUHealthResult,
         HealthStatusResult,
+        LibraryPipelineInfo,
         PublicInfoResult,
         ScanningLibraryInfo,
         SystemInfoResult,
@@ -186,6 +187,25 @@ class ScanningLibraryResponse(BaseModel):
         )
 
 
+class LibraryPipelineInfoResponse(BaseModel):
+    """Per-library pipeline state info for dashboard work-status polling."""
+
+    library_id: str = Field(..., description="Library document _id")
+    name: str = Field(..., description="Library name")
+    state: str = Field(..., description="Current pipeline state key")
+    library_auto_write: bool = Field(..., description="Whether the library auto-writes tags")
+
+    @classmethod
+    def from_dto(cls, dto: LibraryPipelineInfo) -> LibraryPipelineInfoResponse:
+        """Convert LibraryPipelineInfo DTO to Pydantic response model."""
+        return cls(
+            library_id=dto.library_id,
+            name=dto.name,
+            state=dto.state,
+            library_auto_write=dto.library_auto_write,
+        )
+
+
 class WorkStatusResponse(BaseModel):
     """Unified work status for the system.
 
@@ -196,6 +216,10 @@ class WorkStatusResponse(BaseModel):
     # Scanning status
     is_scanning: bool = Field(..., description="Any library is currently being scanned")
     scanning_libraries: list[ScanningLibraryResponse] = Field(..., description="Libraries currently being scanned")
+    pipeline_libraries: list[LibraryPipelineInfoResponse] = Field(
+        ...,
+        description="Per-library pipeline states for dashboard progress display",
+    )
 
     # ML processing status (files needing tagging)
     is_processing: bool = Field(..., description="Files are pending ML processing")
@@ -216,6 +240,7 @@ class WorkStatusResponse(BaseModel):
         return cls(
             is_scanning=dto.is_scanning,
             scanning_libraries=[ScanningLibraryResponse.from_dto(lib) for lib in dto.scanning_libraries],
+            pipeline_libraries=[LibraryPipelineInfoResponse.from_dto(lib) for lib in dto.pipeline_libraries],
             is_processing=dto.is_processing,
             pending_files=dto.pending_files,
             processed_files=dto.processed_files,

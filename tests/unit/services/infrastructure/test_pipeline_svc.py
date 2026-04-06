@@ -83,8 +83,8 @@ class TestRecoverStaleStates:
         """Missing scan task should bulk-transition scanning libraries to idle."""
         library_id = "libraries/lib1"
         mock_db.library_pipeline_states.get_libraries_in_state.side_effect = [[library_id], []]
-        mock_db.library_pipeline_states.bulk_transition.side_effect = (
-            lambda from_state, to_state: 1 if (from_state, to_state) == (PIPELINE_SCANNING, PIPELINE_IDLE) else 0
+        mock_db.library_pipeline_states.bulk_transition.side_effect = lambda from_state, to_state: (
+            1 if (from_state, to_state) == (PIPELINE_SCANNING, PIPELINE_IDLE) else 0
         )
 
         def get_task_status(task_id: str) -> dict[str, str] | None:
@@ -107,10 +107,8 @@ class TestRecoverStaleStates:
     ) -> None:
         """Missing calibration-generate task should restore libraries to awaiting_calibration."""
         mock_db.library_pipeline_states.get_libraries_in_state.side_effect = [[], []]
-        mock_db.library_pipeline_states.bulk_transition.side_effect = (
-            lambda from_state, to_state: 2
-            if (from_state, to_state) == (PIPELINE_CALIBRATING, PIPELINE_AWAITING_CALIBRATION)
-            else 0
+        mock_db.library_pipeline_states.bulk_transition.side_effect = lambda from_state, to_state: (
+            2 if (from_state, to_state) == (PIPELINE_CALIBRATING, PIPELINE_AWAITING_CALIBRATION) else 0
         )
 
         def get_task_status(task_id: str) -> dict[str, str] | None:
@@ -136,10 +134,8 @@ class TestRecoverStaleStates:
     ) -> None:
         """Missing calibration-apply task should restore libraries to awaiting_calibration."""
         mock_db.library_pipeline_states.get_libraries_in_state.side_effect = [[], []]
-        mock_db.library_pipeline_states.bulk_transition.side_effect = (
-            lambda from_state, to_state: 3
-            if (from_state, to_state) == (PIPELINE_APPLYING, PIPELINE_AWAITING_CALIBRATION)
-            else 0
+        mock_db.library_pipeline_states.bulk_transition.side_effect = lambda from_state, to_state: (
+            3 if (from_state, to_state) == (PIPELINE_APPLYING, PIPELINE_AWAITING_CALIBRATION) else 0
         )
 
         def get_task_status(task_id: str) -> dict[str, str] | None:
@@ -166,8 +162,8 @@ class TestRecoverStaleStates:
         """Missing write-tags task should move writing libraries back to write_ready."""
         library_id = "libraries/lib-write"
         mock_db.library_pipeline_states.get_libraries_in_state.side_effect = [[], [library_id]]
-        mock_bts.get_task_status.side_effect = (
-            lambda task_id: None if task_id == f"write_tags:{library_id}" else {"status": "running"}
+        mock_bts.get_task_status.side_effect = lambda task_id: (
+            None if task_id == f"write_tags:{library_id}" else {"status": "running"}
         )
 
         result = pipeline_service.recover_stale_states()

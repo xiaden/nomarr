@@ -20,6 +20,7 @@ import {
   MenuItem,
   Select,
   Stack,
+  Switch,
   TextField,
   Tooltip,
   Typography,
@@ -41,12 +42,13 @@ import {
   update as updateLibrary,
   updateWriteMode,
 } from "../../../shared/api/library";
-import { getWorkStatus } from "../../../shared/api/processing";
+import { getWorkStatus, type PipelineLibrary } from "../../../shared/api/processing";
 import { ServerFilePicker } from "../../../shared/components/ServerFilePicker";
 import type { Library } from "../../../shared/types";
 import { useLibraryVectorConfig } from "../hooks/useLibraryVectorConfig";
 import { useLibraryVectorStats } from "../hooks/useLibraryVectorStats";
 
+import { PipelineStateBadge } from "./PipelineStateBadge";
 import { VectorConfigSection } from "./VectorConfigSection";
 import { VectorStatsCard } from "./VectorStatsCard";
 
@@ -68,8 +70,10 @@ export function LibraryManagement() {
   const [formIsEnabled, setFormIsEnabled] = useState(true);
   const [formWatchMode, setFormWatchMode] = useState<string>("off");
   const [formFileWriteMode, setFormFileWriteMode] = useState<"none" | "minimal" | "full">("full");
+  const [formLibraryAutoWrite, setFormLibraryAutoWrite] = useState(false);
   const [showPathPicker, setShowPathPicker] = useState(false);
   const [originalFileWriteMode, setOriginalFileWriteMode] = useState<"none" | "minimal" | "full">("full");
+  const [pipelineLibraries, setPipelineLibraries] = useState<PipelineLibrary[]>([]);
 
   // Vector search config and stats for the editing library
   const { config: vectorConfig, loading: vectorConfigLoading, saving: vectorSaving, updateConfig: updateVectorConfig } = useLibraryVectorConfig(editingId);
@@ -79,6 +83,11 @@ export function LibraryManagement() {
     if (!vectorStats) return 0;
     return vectorStats.stats.reduce((sum, s) => sum + s.hot_count + s.cold_count, 0);
   }, [vectorStats]);
+
+  const pipelineLibraryById = useMemo(
+    () => new Map(pipelineLibraries.map((library) => [library.library_id, library])),
+    [pipelineLibraries],
+  );
 
   // Initial load - shows loading state
   const loadLibraries = useCallback(async () => {
@@ -190,6 +199,8 @@ export function LibraryManagement() {
         const status = await getWorkStatus();
         if (!active) return;
 
+        setPipelineLibraries(status.pipeline_libraries ?? []);
+
         // If busy (scanning or processing), poll with silent refresh
         if (status.is_busy) {
           if (!interval) {
@@ -239,6 +250,7 @@ export function LibraryManagement() {
     setFormIsEnabled(true);
     setFormWatchMode("off");
     setFormFileWriteMode("full");
+    setFormLibraryAutoWrite(false);
     setOriginalFileWriteMode("full");
     setShowPathPicker(false);
     setIsCreating(false);
@@ -256,10 +268,31 @@ export function LibraryManagement() {
     setFormIsEnabled(library.isEnabled);
     setFormWatchMode(library.watchMode);
     setFormFileWriteMode(library.fileWriteMode);
+    setFormLibraryAutoWrite(library.libraryAutoWrite ?? false);
     setOriginalFileWriteMode(library.fileWriteMode);
     setEditingId(library.library_id);
     setIsCreating(false);
   };
+
+  const handleLibraryAutoWriteToggle = useCallback(
+    async (checked: boolean) => {
+      if (checked && !formLibraryAutoWrite) {
+        const confirmed = await confirm({
+          title: "Enable Auto-Write?",
+          message:
+            "This will write tags to audio files automatically when processing completes. Are you sure?",
+          severity: "warning",
+        });
+
+        if (!confirmed) {
+          return;
+        }
+      }
+
+      setFormLibraryAutoWrite(checked);
+    },
+    [confirm, formLibraryAutoWrite],
+  );
 
   const handleCreate = async () => {
     if (!formRootPath.trim()) {
@@ -275,6 +308,7 @@ export function LibraryManagement() {
         isEnabled: formIsEnabled,
         watchMode: formWatchMode,
         fileWriteMode: formFileWriteMode,
+        libraryAutoWrite: formLibraryAutoWrite,
       });
       await loadLibraries();
       resetForm();
@@ -302,6 +336,7 @@ export function LibraryManagement() {
         rootPath: formRootPath,
         isEnabled: formIsEnabled,
         watchMode: formWatchMode,
+        libraryAutoWrite: formLibraryAutoWrite,
         ...(writeModeChanged ? {} : { fileWriteMode: formFileWriteMode }),
       });
 
@@ -505,6 +540,23 @@ export function LibraryManagement() {
               label="Enabled"
             />
 
+            <Box>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={formLibraryAutoWrite}
+                    onChange={async (e) => {
+                      await handleLibraryAutoWriteToggle(e.target.checked);
+                    }}
+                  />
+                }
+                label="Automatically write tags to audio files when processing completes"
+              />
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", ml: 1.75 }}>
+                New libraries default to manual write approval. Enable this only if you want automatic file writeback.
+              </Typography>
+            </Box>
+
             {/* Watch Mode Selection */}
             <Box>
               <FormControl fullWidth>
@@ -624,7 +676,11 @@ export function LibraryManagement() {
 
       {!loading && !isFormMode && libraries.length > 0 && (
         <Stack spacing={2}>
-          {libraries.map((lib) => (
+          {libraries.map((lib) => {
+            const pipelineLibrary = pipelineLibraryById.get(lib.library_id);
+            const pipelineState = pipelineLibrary?.state ?? "idle";
+
+            return (
             <Panel key={lib.library_id}>
               <Stack
                 direction="row"
@@ -635,6 +691,7 @@ export function LibraryManagement() {
                 <Box>
                   <Stack direction="row" alignItems="center" spacing={1.25} sx={{ mb: 0.5 }}>
                     <Typography variant="h6">{lib.name}</Typography>
+                    <PipelineStateBadge state={pipelineState} />
                     {isOutsideLibraryRoot(lib.rootPath) && (
                       <Chip
                         label="Outside library_root"
@@ -737,6 +794,9 @@ export function LibraryManagement() {
                       />
                     </Tooltip>
                   </Stack>
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: "block" }}>
+                    Auto-write: {pipelineLibrary?.library_auto_write ?? lib.libraryAutoWrite ? "Enabled" : "Disabled"}
+                  </Typography>
                 </Box>
                 <Stack direction="row" alignItems="center" spacing={1}>
                   <Box
@@ -835,7 +895,8 @@ export function LibraryManagement() {
                 </Button>
               </Stack>
             </Panel>
-          ))}
+            );
+          })}
         </Stack>
       )}
 

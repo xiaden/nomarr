@@ -45,7 +45,7 @@ dependencies = [
 dev = [
     "pytest>=8.3.0",
     "pytest-cov>=5.0.0",
-    "ruff>=0.14.0",
+    "ruff==0.15.9",
     "mypy>=1.19.0",
     "bandit>=1.7.5",
     "vulture>=2.10",

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from nomarr.helpers.dto.info_dto import ScanningLibraryInfo, WorkStatusResult
+from nomarr.helpers.dto.info_dto import LibraryPipelineInfo, ScanningLibraryInfo, WorkStatusResult
 
 if TYPE_CHECKING:
     from nomarr.helpers.dto.library_dto import LibraryStatsResult
@@ -18,6 +18,8 @@ def compute_work_status(
     libraries: list[dict[str, Any]],
     stats: LibraryStatsResult,
     recently_tagged_count: int,
+    pipeline_states: dict[str, str],
+    library_docs: list[dict[str, Any]] | None = None,
     velocity_window_seconds: int = 300,
 ) -> WorkStatusResult:
     """Compute unified work status from raw data.
@@ -26,6 +28,8 @@ def compute_work_status(
         libraries: All library documents (with scan_status, scan_progress, etc.)
         stats: Aggregated library stats (total_files, needs_tagging_count, etc.)
         recently_tagged_count: Number of files tagged in the velocity window.
+        pipeline_states: Library document IDs mapped to pipeline state keys.
+        library_docs: Library documents used to populate pipeline library metadata.
         velocity_window_seconds: Window size for velocity calculation (default 5 min).
 
     Returns:
@@ -44,6 +48,17 @@ def compute_work_status(
     ]
     is_scanning = len(scanning_libraries) > 0
 
+    pipeline_source_docs = library_docs if library_docs is not None else libraries
+    pipeline_libraries = [
+        LibraryPipelineInfo(
+            library_id=lib["_id"],
+            name=lib.get("name", "Unknown"),
+            state=pipeline_states.get(lib["_id"], "idle"),
+            library_auto_write=bool(lib.get("library_auto_write", False)),
+        )
+        for lib in pipeline_source_docs
+    ]
+
     pending = stats.needs_tagging_count or 0
     processed = stats.total_files - pending
     is_processing = pending > 0
@@ -58,6 +73,7 @@ def compute_work_status(
     return WorkStatusResult(
         is_scanning=is_scanning,
         scanning_libraries=scanning_libraries,
+        pipeline_libraries=pipeline_libraries,
         is_processing=is_processing,
         pending_files=pending,
         processed_files=processed,

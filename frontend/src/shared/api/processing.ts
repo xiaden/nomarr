@@ -20,12 +20,23 @@ export interface ScanningLibrary {
 }
 
 /**
+ * Per-library pipeline status info for dashboard polling.
+ */
+export interface PipelineLibrary {
+  library_id: string;
+  name: string;
+  state: string;
+  library_auto_write: boolean;
+}
+
+/**
  * Unified work status for the system.
  */
 export interface WorkStatus {
   // Scanning status
   is_scanning: boolean;
   scanning_libraries: ScanningLibrary[];
+  pipeline_libraries: PipelineLibrary[];
 
   // ML processing status
   is_processing: boolean;

@@ -1,5 +1,5 @@
-import { MusicNote } from "@mui/icons-material";
-import { Box, List, ListItem, ListItemIcon, ListItemText, Stack, Typography } from "@mui/material";
+import MusicNote from "@mui/icons-material/MusicNote";
+import { Alert, Box, List, ListItem, ListItemIcon, ListItemText, Stack, Typography } from "@mui/material";
 import { PieChart } from "@mui/x-charts/PieChart";
 import { useEffect, useMemo, useState } from "react";
 
@@ -16,6 +16,7 @@ import { formatTotalDuration } from "@shared/utils/format";
 
 import { getRecentActivity, getStats, type RecentFile } from "../../shared/api/library";
 import { getWorkStatus, type WorkStatus } from "../../shared/api/processing";
+import { PipelineStateBadge } from "../library/components/PipelineStateBadge";
 
 /**
  * Dashboard page component.
@@ -156,6 +157,7 @@ export function DashboardPage() {
 
   const hasPending = workStatus && workStatus.pending_files > 0;
   const isScanning = workStatus?.is_scanning ?? false;
+  const pipelineLibraries = workStatus?.pipeline_libraries ?? [];
   const progressPercent =
     progress && progress.totalFiles > 0
       ? Math.round((progress.processedCount / progress.totalFiles) * 100)
@@ -224,6 +226,79 @@ export function DashboardPage() {
               </ResponsiveGrid>
             </Panel>
           )}
+
+          <Panel>
+            <SectionHeader title="Library Pipeline Progress" />
+            {pipelineLibraries.length === 0 ? (
+              <Typography color="text.secondary" fontStyle="italic">
+                No libraries reported pipeline state yet.
+              </Typography>
+            ) : (
+              <Stack spacing={1.25}>
+                {pipelineLibraries.map((library) => {
+                  const needsAttention = library.state === "too_small" || library.state === "write_ready";
+
+                  return needsAttention ? (
+                    <Alert
+                      key={library.library_id}
+                      severity={library.state === "too_small" ? "warning" : "info"}
+                      variant="outlined"
+                    >
+                      <Stack
+                        direction={{ xs: "column", sm: "row" }}
+                        spacing={1}
+                        alignItems={{ xs: "flex-start", sm: "center" }}
+                        justifyContent="space-between"
+                        width="100%"
+                      >
+                        <Box>
+                          <Typography variant="subtitle2">{library.name}</Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {library.state === "too_small"
+                              ? "Needs more tagged files before calibration can continue."
+                              : "Ready for file writeback review."}
+                          </Typography>
+                        </Box>
+                        <Stack direction="row" spacing={1} alignItems="center">
+                          <PipelineStateBadge state={library.state} />
+                          <Typography variant="caption" color="text.secondary">
+                            Auto-write: {library.library_auto_write ? "On" : "Off"}
+                          </Typography>
+                        </Stack>
+                      </Stack>
+                    </Alert>
+                  ) : (
+                    <Box
+                      key={library.library_id}
+                      sx={{
+                        px: 2,
+                        py: 1.5,
+                        border: 1,
+                        borderColor: "divider",
+                        borderRadius: 1,
+                        bgcolor: "background.paper",
+                      }}
+                    >
+                      <Stack
+                        direction={{ xs: "column", sm: "row" }}
+                        spacing={1}
+                        alignItems={{ xs: "flex-start", sm: "center" }}
+                        justifyContent="space-between"
+                      >
+                        <Box>
+                          <Typography variant="subtitle2">{library.name}</Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            Auto-write: {library.library_auto_write ? "On" : "Off"}
+                          </Typography>
+                        </Box>
+                        <PipelineStateBadge state={library.state} />
+                      </Stack>
+                    </Box>
+                  );
+                })}
+              </Stack>
+            )}
+          </Panel>
 
           {/* Processing Summary with Chart */}
           <Panel>
